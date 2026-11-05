@@ -307,6 +307,13 @@ internal sealed class OwnedJob : IDisposable
         return accounting;
     }
     internal bool IsActive()=>ReadAccounting().ActiveProcesses>0;
+    internal bool SuccessfulExit()
+    {
+        if(IsActive())return false;
+        if(!Native.GetExitCodeProcess(process,out uint code))
+            throw Native.Error("Native preflight exit code unavailable");
+        return code==0;
+    }
     internal object Status()
     {
         var accounting=ReadAccounting();
@@ -459,10 +466,13 @@ internal static class Program
     }
     private static int Probe()
     {
-        var executable=Path.Combine(Environment.SystemDirectory,"whoami.exe");
+        // Probe the installed owner binary itself. It does no work, opens
+        // no project files and requires neither a console nor another tool.
+        var executable=Environment.ProcessPath
+            ??throw new InvalidOperationException("Native owner binary path unavailable");
         var spec=new JobSpec{
             JobId=Guid.NewGuid().ToString("D"),Token=new string('a',64),
-            Executable=executable,Args=Array.Empty<string>(),
+            Executable=executable,Args=new[]{"--probe-child"},
             Cpus=1,HostCpus=Environment.ProcessorCount,
             RamMb=256,ReceiptPath=Path.Combine(Path.GetTempPath(),
                 "unused-"+Guid.NewGuid().ToString("N")+".json")};
@@ -470,7 +480,8 @@ internal static class Program
         var deadline=DateTime.UtcNow.AddSeconds(10);
         while(owned.IsActive()&&DateTime.UtcNow<deadline)
             Thread.Sleep(100);
-        if(owned.IsActive())throw new InvalidOperationException("Native preflight did not terminate");
+        if(owned.IsActive()||!owned.SuccessfulExit())
+            throw new InvalidOperationException("Native preflight child did not exit successfully");
         Console.WriteLine(JsonSerializer.Serialize(new {
             passed=true,cpu_hard_cap_verified=true,memory_limit_verified=true,
             job_process_assignment_verified=true
@@ -486,6 +497,7 @@ internal static class Program
         }
         try
         {
+            if(args.Length==1&&args[0]=="--probe-child")return 0;
             if(args.Length==1&&args[0]=="--probe")return Probe();
             if(args.Length!=2||args[0]!="--run")
                 throw new ArgumentException("Usage: --probe or --run <local-job-spec>");
