@@ -207,7 +207,13 @@ learned `LevelDiscovery` to select previously discovered enemies (including
 those outside current sight), and real active static-collider bounds to
 rasterize discovered obstacles. Learned collision asteroids also project
 their current native collider bounds, rotation, velocity, and effective
-health directly into v26 observations. Team exploration reads living
+health directly into v26 observations. Ordinary MapObjects are now
+authoritative gameplay records paired with actual native obstacle colliders.
+Projectile hits reduce their health, produce gameplay events and retire
+their collider and faction discovery when destroyed. Learned MapObjects
+use the primary Collider2D equivalent for vision and map-object observations.
+Fire Tanks are rejected until their attributed explosion and debris
+mechanics are ported, rather than silently treated as ordinary MapObjects. Team exploration reads living
 allied ship positions and requires actual effective sight ranges. First-use ship
 identity order is preserved by sorting live candidates before assigning
 permuted episode IDs. `CombatWorld::refresh_hivemind_vision` now performs
@@ -231,9 +237,10 @@ The benchmark reports sweeps/second, candidate pairs, bounds rejections,
 exact collider tests, and newly learned enemies. Its initial placements
 and sight ranges are synthetic; it is not a training benchmark.
 
-**Integration boundary:** the native game/Level adapter still needs to
-provide the real observer/weapon/special data, MapObject colliders, mining
-and other authored metadata, and episode reward state. GPU inference,
+**Integration boundary:** the native game/Level adapter must supply
+the actual MapObject prefab geometry/layer on registration and the real
+observer/weapon/special data, mining and other authored metadata, and
+episode reward state. GPU inference,
 policy-action execution and the learner remain unconnected. These
 interfaces are **not yet a working or parity-certified training loop**.
 Rust tests and benchmarks have not been executed in this environment.
