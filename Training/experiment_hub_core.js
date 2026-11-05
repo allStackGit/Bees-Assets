@@ -67,10 +67,12 @@ function boundedReport(value) {
         throw Error('Invalid locally installed execution adapters.');
     return {cpus:value.cpus,ram_mb:value.ram_mb,
         platform:value.platform,execution,
-        local_executor:localExecutor&&value.platform==='linux',
-        native_preflight_passed:localExecutor&&value.platform==='linux'&&preflight,
+        local_executor:localExecutor&&['linux','win32'].includes(value.platform),
+        native_preflight_passed:localExecutor&&
+            ['linux','win32'].includes(value.platform)&&preflight,
         native_preflight_reason:reason||null,
-        installed_projects:value.platform==='linux'&&localExecutor?installed.slice():[]};
+        installed_projects:['linux','win32'].includes(value.platform)&&
+            localExecutor?installed.slice():[]};
 }
 
 function object(value) {
@@ -376,23 +378,25 @@ class ExperimentHub {
                 throw Error('Continuation lineage or original machine can no longer be verified.');
         }
         if(!lease||!lease.receipt_fresh||!machine||
-            machine.status!=='connected'||machine.agent_platform!=='linux'||
+            machine.status!=='connected'||
+            !['linux','win32'].includes(machine.agent_platform)||
             machine.local_executor_enabled!==true||
             machine.native_preflight_passed!==true||
-            machine.execution_capabilities?.cgroup_v2_detected!==true||
-            !['cpu','memory'].every(c=>
-                machine.execution_capabilities?.cgroup_controllers.includes(c))||
+            (machine.agent_platform==='linux'&&
+                (machine.execution_capabilities?.cgroup_v2_detected!==true||
+                !['cpu','memory'].every(c=>
+                    machine.execution_capabilities?.cgroup_controllers.includes(c))))||
             !machine.installed_projects?.includes(job.project_id)||
             !r||r.ram_mb<128||r.gpu_count!==0||(r.gpus||[]).length||
             lease.resources.gpu_count!==0||
             r.cpus>machine.reported_cpus||r.ram_mb>machine.reported_ram_mb)
-            throw Error('Fresh Linux agent, installed local adapter and CPU-only acknowledged lease required.');
+            throw Error('Qualified native agent, installed local adapter and CPU-only acknowledged lease required.');
         const next=copy(this.state);
         const selected=next.jobs.find(j=>j.id===job.id);
         selected.status='start_requested';
         selected.dispatch_id=crypto.randomUUID();
         selected.start_requested_at=now();
-        selected.status_reason='Start authorized; waiting for machine-local systemd verification.';
+        selected.status_reason='Start authorized; waiting for machine-local OS resource enforcement verification.';
         this.commit(next);
         return {id:selected.id,status:selected.status,dispatch_id:selected.dispatch_id};
     }
@@ -466,7 +470,7 @@ class ExperimentHub {
                     :state==='stop_requested'
                     ?'Stop requested; native process still reported running.'
                     :state==='running'
-                    ?'Locally verified systemd service running.'
+                    ?'Locally verified native service running.'
                     :'Native service state reported by its machine-local supervisor.';
                 job.execution_diagnostic=report.diagnostic||null;
                 job.execution_updated_at=now();
@@ -630,8 +634,8 @@ class ExperimentHub {
         }
         const reports=value.execution_reports==null?[]:value.execution_reports;
         if(reports.length&&(!report.local_executor||
-            report.platform!=='linux'))
-            throw Error('Native lifecycle reports require a locally enabled Linux executor.');
+            !['linux','win32'].includes(report.platform)))
+            throw Error('Native lifecycle reports require a locally enabled supported executor.');
         if(this.recordExecution(next,machine,reports,report.installed_projects))
             changed=true;
         if (changed) this.commit(next);
