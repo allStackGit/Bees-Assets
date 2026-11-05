@@ -335,6 +335,15 @@ impl NativeLevelEventProcessor {
         self.episode.sides()
     }
 
+    /// Returns the real alternating self-play team when MA-POCA group
+    /// delivery is configured. Standalone graphical inference without
+    /// groups must provide its policy route explicitly.
+    pub fn policy_team_id(&self, side: i32) -> Option<u8> {
+        self.group_delivery.as_ref().and_then(
+            |group| group.team_id(side),
+        )
+    }
+
     /// The same elapsed/timeout value used for terminal and exploration
     /// observations. No separately maintained training timer.
     pub fn normalized_episode_progress(&self) -> f32 {

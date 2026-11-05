@@ -25,6 +25,7 @@ pub enum NativeInferenceError {
     InvalidAgent,
     SnapshotIdentityMismatch,
     SnapshotStateMismatch,
+    UnmatchedTeamRoute,
     WorldUnavailable,
     AlreadyFinalized,
     NotFinalized,
@@ -41,18 +42,32 @@ impl From<PolicyBatchError> for NativeInferenceError {
     fn from(value: PolicyBatchError) -> Self { Self::Batch(value) }
 }
 
+/// The native host resolves this row's actual learner/opponent model
+/// from the episode's team and checkpoint schedule. The numeric model
+/// slot is opaque to the simulator, but must reference a real loaded
+/// policy in the backend. Different rows can route to different models.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct NativePolicyRoute {
+    pub team_id: u8,
+    pub model_slot: u32,
+}
+
 /// Backend-independent execution of one exact v26 policy batch. A
 /// CPU/ROCm/ONNX implementation may batch multiple native worlds into
 /// one call without accessing or mutating the game simulation. Outputs
 /// are row-major [agent][16 continuous] and [agent][6 discrete].
-/// The number of rows equals action_masks.len(); the backend must apply
-/// these masks BEFORE discrete sampling. Final validation independently
+/// All keys, policy routes, and masks contain exactly one entry per
+/// observation row; the backend uses the route to dispatch learner versus
+/// opponent weights. It must apply masks BEFORE discrete sampling.
+/// Final validation independently
 /// rejects any masked action that slips through.
 pub trait NativePolicyInference {
     type Error;
 
     fn forward(
         &mut self,
+        keys: &[PolicyAgentKey],
+        routes: &[NativePolicyRoute],
         observations: &[f32],
         action_masks: &[PolicyActionMask],
         continuous: &mut [f32],
@@ -74,6 +89,7 @@ pub struct NativeLevelInferenceBatch {
     batch: PolicyBatch,
     writer: NativePerceptionWriter,
     keyed_decisions: Vec<(PolicyAgentKey, Decision)>,
+    routes: Vec<NativePolicyRoute>,
     finalized: bool,
     failed: bool,
 }
@@ -84,6 +100,7 @@ impl NativeLevelInferenceBatch {
     pub fn clear(&mut self) {
         self.batch.clear();
         self.keyed_decisions.clear();
+        self.routes.clear();
         self.finalized = false;
         self.failed = false;
     }
@@ -94,6 +111,11 @@ impl NativeLevelInferenceBatch {
         self.batch.reserve_agents(count)?;
         self.keyed_decisions.try_reserve(
             count.saturating_sub(self.keyed_decisions.len()),
+        ).map_err(|_| NativeInferenceError::Batch(
+            PolicyBatchError::AllocationFailed,
+        ))?;
+        self.routes.try_reserve(
+            count.saturating_sub(self.routes.len()),
         ).map_err(|_| NativeInferenceError::Batch(
             PolicyBatchError::AllocationFailed,
         ))?;
@@ -116,6 +138,10 @@ impl NativeLevelInferenceBatch {
         self.batch.keys()
     }
 
+    pub fn routes(&self) -> &[NativePolicyRoute] {
+        &self.routes
+    }
+
     /// An inference library fills BOTH buffers: 16 continuous channels
     /// and 6 discrete branches per agent. The underlying PolicyBatch
     /// performs complete finite/range/mask validation at finalization.
@@ -136,6 +162,7 @@ impl NativeLevelInferenceBatch {
         &mut self,
         world: &World<NativeLevelState<M, A>>,
         ship_id: i64,
+        route: NativePolicyRoute,
         snapshot: &PolicyPerceptionSnapshot<'_>,
     ) -> Result<(), NativeInferenceError> {
         if self.finalized { return Err(NativeInferenceError::AlreadyFinalized); }
@@ -186,11 +213,19 @@ impl NativeLevelInferenceBatch {
             snapshot.capability.special_phase != special.phase {
             return Err(NativeInferenceError::SnapshotStateMismatch);
         }
+        if !world.state.events.sides().contains(&ship.side) {
+            return Err(NativeInferenceError::SnapshotStateMismatch);
+        }
+        if world.state.events.policy_team_id(ship.side)
+            .is_some_and(|team| team != route.team_id) {
+            return Err(NativeInferenceError::UnmatchedTeamRoute);
+        }
         let mask = combat.policy_action_mask(ship_id)?;
         let frame = combat.policy_frame(ship_id)
             .ok_or(NativeInferenceError::InvalidAgent)?;
         let key = PolicyAgentKey::from_world(world, agent);
         self.writer.push_to_batch(&mut self.batch, key, mask, snapshot, frame)?;
+        self.routes.push(route);
         Ok(())
     }
 
@@ -229,10 +264,12 @@ impl NativeLevelInferenceBatch {
                 NativeInferenceError::FailedBatch,
             ));
         }
-        let (observations, action_masks, continuous, discrete) =
+        let (keys, observations, action_masks, continuous, discrete) =
             self.batch.inference_buffers_mut();
+        debug_assert_eq!(keys.len(), self.routes.len());
         if let Err(error) = backend.forward(
-            observations, action_masks, continuous, discrete,
+            keys, &self.routes, observations, action_masks,
+            continuous, discrete,
         ) {
             self.failed = true;
             return Err(NativeInferenceRunError::Backend(error));

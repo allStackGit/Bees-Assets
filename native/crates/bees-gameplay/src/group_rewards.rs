@@ -126,6 +126,11 @@ impl NativeGroupRewardDelivery {
         self.sides
     }
 
+    pub fn team_id(&self, side: i32) -> Option<u8> {
+        self.sides.iter().position(|&value| value == side)
+            .map(|index| self.teams[index])
+    }
+
     fn side_index(&self, side: i32) -> Result<usize, GroupRewardError> {
         self.sides.iter().position(|&x| x == side)
             .ok_or(GroupRewardError::UnknownSide)

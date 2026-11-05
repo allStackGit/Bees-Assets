@@ -245,8 +245,12 @@ impl PolicyBatch {
     /// or special actions from observation features alone.
     pub fn inference_buffers_mut(
         &mut self,
-    ) -> (&[f32], &[PolicyActionMask], &mut [f32], &mut [u8]) {
+    ) -> (
+        &[PolicyAgentKey], &[f32], &[PolicyActionMask],
+        &mut [f32], &mut [u8],
+    ) {
         (
+            self.keys.as_slice(),
             self.observations.as_slice(),
             self.masks.as_slice(),
             self.continuous.as_mut_slice(),

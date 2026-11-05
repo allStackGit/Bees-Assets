@@ -25,7 +25,9 @@ use bees_sim::perception_environment::{
 use bees_sim::perception_weapons::SelfWeapon;
 use bees_sim::simulation::{RandomStream, World, WorldId};
 
-use crate::inference::{NativeInferenceError, NativeLevelInferenceBatch};
+use crate::inference::{
+    NativeInferenceError, NativeLevelInferenceBatch, NativePolicyRoute,
+};
 use crate::level_rules::NativeLevelState;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -146,13 +148,14 @@ impl NativeWorldPerceptionAssembler {
         batch: &mut NativeLevelInferenceBatch,
         world: &World<NativeLevelState<M, A>>,
         ship_id: i64,
+        route: NativePolicyRoute,
         inputs: NativeLevelPerceptionInputs<'a>,
         authored_ship: impl FnMut(i64) -> Option<AuthoredShipPerception>,
     ) -> Result<(), NativeWorldPerceptionError> {
         let snapshot = self.assemble(
             world, ship_id, inputs, authored_ship,
         )?;
-        batch.push_agent(world, ship_id, &snapshot)?;
+        batch.push_agent(world, ship_id, route, &snapshot)?;
         Ok(())
     }
 
