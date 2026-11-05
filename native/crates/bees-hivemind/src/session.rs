@@ -52,7 +52,7 @@ pub enum StrategyReceipt {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum HiveMindSessionError {
     InvalidOwner,
-    ExhaustedRequestIds,
+    DuplicateRequestHash,
     UnknownRequest,
     InvalidResponse(HiveMindProtocolErrorCode),
 }
@@ -96,7 +96,6 @@ impl From<HiveMindProtocolError> for HiveMindSessionError {
 /// Levels share its Hive Mind Game. No process-global mutable request map.
 #[derive(Default)]
 pub struct HiveMindSession {
-    next_hash: i64,
     pending: HashMap<i64, PendingStrategy>,
     latest_by_squad: HashMap<SquadLifetime, i64>,
 }
@@ -108,10 +107,13 @@ impl HiveMindSession {
 
     /// Reissuing an order for a squad retires its prior request but retains
     /// it until a late response can be converted into explicit discards.
+    /// The caller must supply a transport-owned connection-unique Hash,
+    /// including uniqueness against non-strategy requests.
     /// A new squad lifecycle is a different owner even if a pooled object
     /// reused its numeric Squad.ItemId.
     pub fn request_strategy(
         &mut self,
+        hash: i64,
         owner: SquadLifetime,
         enemy_squad_id: Option<i64>,
         matchup: String,
@@ -122,12 +124,15 @@ impl HiveMindSession {
         if !owner.valid() || enemy_squad_id.is_some_and(|id| id <= 0) {
             return Err(HiveMindSessionError::InvalidOwner);
         }
-        let hash = self.next_hash.checked_add(1)
-            .ok_or(HiveMindSessionError::ExhaustedRequestIds)?;
+        // The WebSocket transport assigns unique Hash values across ALL
+        // request types (setup, strategy, StoreCommands, etc.), not just
+        // get-strategy. This registry must not generate colliding hashes.
+        if hash <= 0 || self.pending.contains_key(&hash) {
+            return Err(HiveMindSessionError::DuplicateRequestHash);
+        }
         let request = GetStrategyRequest::new(
             hash, matchup, shooting_matchup, opponent_id, banned_strats,
         )?;
-        self.next_hash = hash;
         if let Some(old) = self.latest_by_squad.insert(owner, hash) {
             if let Some(pending) = self.pending.get_mut(&old) {
                 pending.retired = true;
