@@ -334,46 +334,85 @@ pub fn update_exploration_from_world(
     Ok(explorers.len())
 }
 
+/// One sortable record computed once at collection time. Comparing these
+/// fields avoids four repeated CombatWorld hash lookups for every comparison
+/// made by the nearest-first sort in large battles.
+#[derive(Clone, Copy)]
+struct ShipCandidateKey {
+    id: i64,
+    distance_squared: f32,
+    ship_type: u8,
+    fleet_id: i64,
+}
+
 /// Read-only Level ship candidate staging. Sorting real live ships BEFORE
 /// assigning episode identity scalars preserves Unity's source order:
 /// squared distance, ship type, fleet ID, runtime ID. The buffer retains
 /// capacity across policy decisions; no per-ship allocation is needed.
 #[derive(Default)]
 pub struct LiveShipCandidateCollector {
-    ordered_ids: Vec<i64>,
+    candidates: Vec<ShipCandidateKey>,
 }
 
 impl LiveShipCandidateCollector {
     pub fn new() -> Self { Self::default() }
 
+    fn add_candidate(
+        &mut self,
+        world: &CombatWorld,
+        ship: &CombatShip,
+        body: &ShipBody,
+        origin: Vec2,
+    ) -> Result<(), CombatPerceptionError> {
+        if ship.entity_id != body.id {
+            return Err(CombatPerceptionError::MismatchedWorldStorage);
+        }
+        let distance_squared = (body.motion.position - origin).length_squared();
+        if !distance_squared.is_finite() {
+            return Err(CombatPerceptionError::InvalidAuthoredMetadata);
+        }
+        self.candidates.push(ShipCandidateKey {
+            id: ship.entity_id,
+            distance_squared,
+            ship_type: ship.ship_type,
+            fleet_id: world.ship_fleet_identity(ship.entity_id)
+                .unwrap_or(i64::MAX),
+        });
+        Ok(())
+    }
+
     fn sort_and_project(
         &mut self,
         world: &CombatWorld,
-        observer_position: Vec2,
         identities: &mut EpisodeShipIdentities,
         mut metadata_for: impl FnMut(i64) -> Option<AuthoredShipPerception>,
         output: &mut Vec<ObservedShip>,
     ) -> Result<usize, CombatPerceptionError> {
-        self.ordered_ids.sort_unstable_by(|left_id, right_id| {
-            let left = world.ship(*left_id).expect("validated live ship");
-            let right = world.ship(*right_id).expect("validated live ship");
-            let left_body = world.ship_body(*left_id).expect("validated ship body");
-            let right_body = world.ship_body(*right_id).expect("validated ship body");
-            (left_body.motion.position - observer_position).length_squared()
-                .total_cmp(&(right_body.motion.position - observer_position).length_squared())
+        self.candidates.sort_unstable_by(|left, right| {
+            left.distance_squared.total_cmp(&right.distance_squared)
                 .then_with(|| left.ship_type.cmp(&right.ship_type))
-                .then_with(|| world.ship_fleet_identity(*left_id).unwrap_or(i64::MAX)
-                    .cmp(&world.ship_fleet_identity(*right_id).unwrap_or(i64::MAX)))
-                .then_with(|| left_id.cmp(right_id))
+                .then_with(|| left.fleet_id.cmp(&right.fleet_id))
+                .then_with(|| left.id.cmp(&right.id))
         });
-
         output.clear();
         // Unity writes at most 64 allies and 64 enemies. Assigning identities
         // for farther unused candidates would change first-use ordinals.
-        for &id in self.ordered_ids.iter().take(64) {
-            let metadata = metadata_for(id)
-                .ok_or(CombatPerceptionError::MissingShipMetadata(id))?;
-            output.push(observed_ship_from_world(world, id, metadata, identities)?);
+        for candidate in self.candidates.iter().take(64) {
+            let id = candidate.id;
+            let metadata = match metadata_for(id) {
+                Some(value) => value,
+                None => {
+                    output.clear();
+                    return Err(CombatPerceptionError::MissingShipMetadata(id));
+                }
+            };
+            match observed_ship_from_world(world, id, metadata, identities) {
+                Ok(ship) => output.push(ship),
+                Err(error) => {
+                    output.clear();
+                    return Err(error);
+                }
+            }
         }
         Ok(output.len())
     }
@@ -389,19 +428,23 @@ impl LiveShipCandidateCollector {
         output: &mut Vec<ObservedShip>,
     ) -> Result<usize, CombatPerceptionError> {
         let (observer, observer_body) = live_ship(world, observer_id)?;
+        let side = observer.side;
         let origin = observer_body.motion.position;
-        self.ordered_ids.clear();
-        for candidate in world.ships() {
-            if candidate.side != observer.side || candidate.entity_id == observer_id {
+        self.candidates.clear();
+        if world.ships().len() != world.physics().ships().len() {
+            return Err(CombatPerceptionError::MismatchedWorldStorage);
+        }
+        for (candidate, body) in world.ships().iter().zip(world.physics().ships()) {
+            if candidate.entity_id != body.id {
+                return Err(CombatPerceptionError::MismatchedWorldStorage);
+            }
+            if candidate.side != side || candidate.entity_id == observer_id ||
+                !body.active || candidate.vitals.is_dead() {
                 continue;
             }
-            match live_ship(world, candidate.entity_id) {
-                Ok(_) => self.ordered_ids.push(candidate.entity_id),
-                Err(CombatPerceptionError::InactiveShip(_)) => continue,
-                Err(error) => return Err(error),
-            }
+            self.add_candidate(world, candidate, body, origin)?;
         }
-        self.sort_and_project(world, origin, identities, metadata_for, output)
+        self.sort_and_project(world, identities, metadata_for, output)
     }
 
     /// Source: GameState.VisionCache[observer.Side - 1]. Previously learned
@@ -416,24 +459,25 @@ impl LiveShipCandidateCollector {
         output: &mut Vec<ObservedShip>,
     ) -> Result<usize, CombatPerceptionError> {
         let (observer, observer_body) = live_ship(world, observer_id)?;
+        let side = observer.side;
         let origin = observer_body.motion.position;
-        self.ordered_ids.clear();
-        if let Some(known) = world.discovery().ship_ids(observer.side) {
+        self.candidates.clear();
+        if let Some(known) = world.discovery().ship_ids(side) {
             for &id in known {
                 let Some(candidate) = world.ship(id) else {
                     continue; // a target retired before cache cleanup
                 };
-                if candidate.side == observer.side {
+                if candidate.side == side {
                     continue;
                 }
                 match live_ship(world, id) {
-                    Ok(_) => self.ordered_ids.push(id),
+                    Ok((ship, body)) => self.add_candidate(world, ship, body, origin)?,
                     Err(CombatPerceptionError::InactiveShip(_)) => continue,
                     Err(error) => return Err(error),
                 }
             }
         }
-        self.sort_and_project(world, origin, identities, metadata_for, output)
+        self.sort_and_project(world, identities, metadata_for, output)
     }
 }
 
