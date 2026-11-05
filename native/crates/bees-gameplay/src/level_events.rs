@@ -311,9 +311,10 @@ impl NativeLevelEventProcessor {
         Ok(())
     }
 
-    /// Only a completed, source-observed native mining/healing/warp
-    /// gameplay action may call this. The TSV value is an authoritative
-    /// post-action delta/preserved ship value, not a policy prediction.
+    /// Only completed Beehive healing or WarpGate returns use this
+    /// immediate tactical shaping path. Mining uses record_mined_value
+    /// and the separate economic ledger, never duplicate tactical credit.
+    /// The TSV value is an authoritative post-action result.
     pub fn record_successful_capability_outcome(
         &mut self, side: i32, tsv_value: i32,
     ) -> Result<(), NativeLevelEventError> {
