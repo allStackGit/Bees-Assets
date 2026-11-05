@@ -158,6 +158,56 @@ function config(value) {
     if (serialized.length > 65536) throw Error('Configuration exceeds 64 KiB.');
     return JSON.parse(serialized);
 }
+// Pure, non-authorizing readiness projection. The dashboard and the actual
+// start authorization share one eligibility contract; displaying readiness
+// does not claim a reservation or dispatch any native process.
+function nativeStartReadiness(snapshot, job) {
+    const block=reason=>({eligible:false,reason});
+    if(!job||job.status!=='waiting_adapter'||
+        job.adapter!=='unconfigured'||job.project_id==='bees')
+        return block('Only queued non-Bees jobs support Hub native starts.');
+    if(!job.lease_id)
+        return block('Coordinate machine capacity before requesting Start.');
+    const lease=snapshot.reservations.find(l=>l.id===job.lease_id &&
+        l.job_id===job.id&&l.project_id===job.project_id &&
+        l.machine_id===job.assigned_machine_id&&
+        l.issued_by==='experiment-hub'&&l.status==='acknowledged');
+    if(!lease||!lease.receipt_fresh)
+        return block('A fresh, acknowledged matching machine lease is required.');
+    const machine=snapshot.machines.find(m=>m.id===job.assigned_machine_id);
+    if(!machine||machine.status!=='connected')
+        return block('The assigned machine must have a fresh authenticated heartbeat.');
+    if(!['linux','win32'].includes(machine.agent_platform)||
+        machine.local_executor_enabled!==true)
+        return block('A supported locally installed native executor is required.');
+    if(machine.native_preflight_passed!==true)
+        return block('The local CPU/RAM supervisor preflight has not passed.');
+    if(machine.agent_platform==='linux'&&
+        (machine.execution_capabilities?.cgroup_v2_detected!==true||
+            !['cpu','memory'].every(c=>
+                machine.execution_capabilities?.cgroup_controllers.includes(c))))
+        return block('Linux cgroup v2 CPU and memory controllers are unavailable.');
+    if(!machine.installed_projects?.includes(job.project_id))
+        return block('The assigned machine has no trusted adapter for this project.');
+    const r=job.resources;
+    if(!r||r.ram_mb<128||r.gpu_count!==0||
+        (r.gpus||[]).length||lease.resources.gpu_count!==0)
+        return block('Native GPU execution remains disabled; only CPU/RAM jobs may start.');
+    if(r.cpus>machine.reported_cpus||r.ram_mb>machine.reported_ram_mb)
+        return block('Requested CPU/RAM exceeds the machine\'s fresh reported capacity.');
+    if(job.continuation_of_job_id) {
+        const parent=snapshot.jobs.find(j=>j.id===job.continuation_of_job_id);
+        if(!parent||parent.project_id!==job.project_id||
+            !['finished','stopped'].includes(parent.status)||
+            !parent.capacity_released_at||
+            parent.assigned_machine_id!==job.assigned_machine_id||
+            (parent.artifact_lineage_root_id||parent.id)!==
+                job.artifact_lineage_root_id||
+            job.continuation_machine_id!==job.assigned_machine_id)
+            return block('Continuation lineage, completed parent, or original machine is not verified.');
+    }
+    return {eligible:true,reason:'Eligible for explicit CPU-only native Start authorization.'};
+}
 function writeAtomic(file, value) {
     fs.mkdirSync(path.dirname(file), {recursive:true});
     const pending = file + '.' + process.pid + '.' + crypto.randomBytes(6).toString('hex') + '.tmp';
@@ -289,6 +339,10 @@ class ExperimentHub {
                 report?.instance_id===proof.agent_instance_id&&stillMatched);
             return job;
         });
+        for(const job of snapshot.jobs) {
+            if(job.status==='waiting_adapter'&&job.project_id!=='bees')
+                job.native_start_readiness=nativeStartReadiness(snapshot,job);
+        }
         return snapshot;
     }
     progressComparison(projectId) {
@@ -576,40 +630,9 @@ class ExperimentHub {
             throw Error('Explicitly confirm which queued job to start.');
         const snapshot=this.snapshot();
         const job=snapshot.jobs.find(j=>j.id===value.job_id);
-        if(!job||job.status!=='waiting_adapter'||!job.lease_id||
-            job.adapter!=='unconfigured'||job.project_id==='bees')
-            throw Error('Only a leased, unstarted non-Bees job can request execution.');
-        const lease=snapshot.reservations.find(l=>l.id===job.lease_id &&
-            l.job_id===job.id&&l.project_id===job.project_id &&
-            l.machine_id===job.assigned_machine_id &&
-            l.issued_by==='experiment-hub'&&l.status==='acknowledged');
-        const machine=snapshot.machines.find(m=>m.id===job.assigned_machine_id);
-        const r=job.resources;
-        if(job.continuation_of_job_id) {
-            const parent=snapshot.jobs.find(j=>j.id===job.continuation_of_job_id);
-            if(!parent||parent.project_id!==job.project_id||
-                !['finished','stopped'].includes(parent.status)||
-                !parent.capacity_released_at||
-                parent.assigned_machine_id!==job.assigned_machine_id||
-                (parent.artifact_lineage_root_id||parent.id)!==
-                    job.artifact_lineage_root_id||
-                job.continuation_machine_id!==job.assigned_machine_id)
-                throw Error('Continuation lineage or original machine can no longer be verified.');
-        }
-        if(!lease||!lease.receipt_fresh||!machine||
-            machine.status!=='connected'||
-            !['linux','win32'].includes(machine.agent_platform)||
-            machine.local_executor_enabled!==true||
-            machine.native_preflight_passed!==true||
-            (machine.agent_platform==='linux'&&
-                (machine.execution_capabilities?.cgroup_v2_detected!==true||
-                !['cpu','memory'].every(c=>
-                    machine.execution_capabilities?.cgroup_controllers.includes(c))))||
-            !machine.installed_projects?.includes(job.project_id)||
-            !r||r.ram_mb<128||r.gpu_count!==0||(r.gpus||[]).length||
-            lease.resources.gpu_count!==0||
-            r.cpus>machine.reported_cpus||r.ram_mb>machine.reported_ram_mb)
-            throw Error('Qualified native agent, installed local adapter and CPU-only acknowledged lease required.');
+        const readiness=nativeStartReadiness(snapshot,job);
+        if(!readiness.eligible)
+            throw Error(readiness.reason);
         const next=copy(this.state);
         const selected=next.jobs.find(j=>j.id===job.id);
         selected.status='start_requested';
