@@ -442,6 +442,96 @@ class ExperimentHub {
     }
     // The administrative endpoint never supplies an executable. It persists
     // a single authorization for one already frozen, explicitly leased job.
+    // Explicitly request an inert GPU device-filter proof, not a launch.
+    requestGpuQualification(value) {
+        if(!object(value)||value.confirm_qualify!==true||
+            !UUID.test(String(value.job_id||'')))
+            throw Error('Explicitly confirm the job whose GPU access will be probed.');
+        const snapshot=this.snapshot();
+        const job=snapshot.jobs.find(j=>j.id===value.job_id);
+        const lease=snapshot.reservations.find(l=>l.id===job?.lease_id);
+        const machine=snapshot.machines.find(m=>m.id===job?.assigned_machine_id);
+        if(!job||job.project_id==='bees'||job.adapter!=='unconfigured'||
+            job.status!=='waiting_adapter'||job.dispatch_id||
+            !lease||lease.job_id!==job.id||lease.project_id!==job.project_id||
+            lease.machine_id!==job.assigned_machine_id||
+            lease.issued_by!=='experiment-hub'||
+            lease.status!=='acknowledged'||!lease.receipt_fresh||
+            !machine||machine.status!=='connected'||
+            machine.agent_platform!=='linux'||machine.local_executor_enabled!==true||
+            machine.native_preflight_passed!==true||
+            !machine.installed_projects?.includes(job.project_id)||
+            job.resources.gpu_mode!=='exclusive'||
+            job.resources.gpu_count!==1||job.resources.gpus?.length!==1||
+            lease.resources.gpu_mode!=='exclusive'||
+            lease.resources.gpu_count!==1||lease.resources.gpus?.length!==1||
+            physicalGpuBindings(machine,{
+                gpu_inventory_source:machine.gpu_inventory_source,
+                gpu_devices:machine.observed_gpus,
+            },lease.resources,lease.gpu_bindings)?.length!==1)
+            throw Error('GPU access probe needs a fresh exclusive single-GPU lease on a qualified Linux agent.');
+        if(job.gpu_qualification?.status==='requested')
+            throw Error('GPU access probe is already requested for this job.');
+        const next=copy(this.state);
+        const selected=next.jobs.find(j=>j.id===job.id);
+        selected.gpu_qualification={
+            request_id:crypto.randomUUID(),lease_id:lease.id,
+            machine_id:machine.id,status:'requested',
+            requested_at:now(),
+        };
+        this.commit(next);
+        return {job_id:job.id,lease_id:lease.id,
+            request_id:selected.gpu_qualification.request_id,
+            status:'requested',starts_training:false};
+    }
+    // A GPU preflight report never changes the job's execution state.
+    recordGpuQualifications(next,machine,reports,instanceId) {
+        if(!Array.isArray(reports)||reports.length>4)
+            throw Error('Invalid GPU qualification report count.');
+        const seen=new Set();
+        let changed=false;
+        for(const report of reports) {
+            if(!object(report)||!UUID.test(String(report.job_id||''))||
+                !UUID.test(String(report.lease_id||''))||
+                !UUID.test(String(report.dispatch_id||''))||
+                !['verified','rejected'].includes(report.result)||
+                seen.has(report.job_id)||
+                !Array.isArray(report.selected_pci_addresses)||
+                report.selected_pci_addresses.length>1||
+                report.selected_pci_addresses.some(p=>!PCI.test(String(p)))||
+                (report.diagnostic!=null&&
+                    (typeof report.diagnostic!=='string'||report.diagnostic.length>160)))
+                throw Error('Invalid bounded GPU preflight report.');
+            seen.add(report.job_id);
+            const job=next.jobs.find(j=>j.id===report.job_id);
+            const lease=next.reservations.find(l=>l.id===report.lease_id);
+            const request=job?.gpu_qualification;
+            if(!job||!lease||!request||request.request_id!==report.dispatch_id||
+                request.lease_id!==lease.id||request.machine_id!==machine.id||
+                job.lease_id!==lease.id||job.assigned_machine_id!==machine.id||
+                job.status!=='waiting_adapter'||lease.job_id!==job.id||
+                lease.machine_id!==machine.id||lease.project_id!==job.project_id||
+                lease.status!=='acknowledged')
+                throw Error('GPU proof does not belong to this job and machine.');
+            if(request.status!=='requested')continue;
+            const pinned=lease.gpu_bindings;
+            const verified=report.result==='verified'&&
+                report.selected_pci_addresses.length===1&&
+                pinned?.length===1&&
+                report.selected_pci_addresses[0]===pinned[0].pci_address;
+            if(report.result==='verified'&&!verified)
+                throw Error('GPU proof does not match the frozen physical PCI allocation.');
+            request.status=report.result;
+            request.diagnostic=report.diagnostic||null;
+            request.observed_at=now();
+            request.agent_instance_id=instanceId;
+            request.selected_pci_addresses=verified
+                ?report.selected_pci_addresses.slice():[];
+            changed=true;
+        }
+        return changed;
+    }
+
     authorizeStart(value) {
         if(!object(value)||value.confirm_start!==true||
             typeof value.job_id!=='string')
@@ -752,6 +842,13 @@ class ExperimentHub {
             !['linux','win32'].includes(report.platform)))
             throw Error('Native lifecycle reports require a locally enabled supported executor.');
         if(this.recordExecution(next,machine,reports,report.installed_projects))
+            changed=true;
+        const gpuReports=value.gpu_qualification_reports==null
+            ?[]:value.gpu_qualification_reports;
+        if(gpuReports.length&&(!report.local_executor||
+            report.platform!=='linux'||!report.native_preflight_passed))
+            throw Error('GPU access reports require a qualified Linux executor.');
+        if(this.recordGpuQualifications(next,machine,gpuReports,instance))
             changed=true;
         if (changed) this.commit(next);
         // Do not mark receipt or liveness until the durable acknowledgement
