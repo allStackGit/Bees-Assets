@@ -52,7 +52,13 @@ function remaining(machine,reservations) {
         ?Math.min(machine.ram_mb,machine.reported_ram_mb):machine.ram_mb;
     const usedCpus=claimed.reduce((sum,r)=>sum+(r.resources?.cpus||0),0);
     const usedRam=claimed.reduce((sum,r)=>sum+(r.resources?.ram_mb||0),0);
-    const capacity=machine.gpus.map(g=>({id:g.id,vram_mb:g.vram_mb,
+    // Physical GPU capacity is available only after matching a registered
+    // logical GPU ID to a fresh authenticated PCI/VRAM sysfs observation.
+    // Operator-entered names and stale/offline hardware cannot be claimed.
+    // This remains advisory; it does NOT enforce GPU isolation or free VRAM.
+    const verified=machine.status==='connected'&&
+        Array.isArray(machine.verified_gpus)?machine.verified_gpus:[];
+    const capacity=verified.map(g=>({id:g.id,vram_mb:g.vram_mb,
         available_vram_mb:g.vram_mb,available_compute_pct:100,exclusive:false}));
     const indexed=new Map(capacity.map(g=>[g.id,g]));
     for(const claim of claimed) {
@@ -106,8 +112,10 @@ function placements(machines,reservations,input) {
             fits:false,capacity_fits:capacityFits,
             suggested_gpus:capacityFits?selected.map(g=>g.id):[],
             reason:!online?'No currently authenticated agent; capacity preview only'
-                :capacityFits?'Agent connected; resource isolation unavailable'
-                :'Insufficient CPU, RAM, GPU VRAM, or GPU compute budget'};
+                :capacityFits?'Agent connected; physical GPU identity matches, but resource isolation unavailable'
+                :wanted.gpu_count&&!verified.length
+                    ?'No physical GPU matched registered PCI identity on this connected agent'
+                    :'Insufficient CPU, RAM, verified GPU VRAM, or advisory GPU compute budget'};
     });
 }
 
