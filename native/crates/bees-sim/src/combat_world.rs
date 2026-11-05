@@ -817,6 +817,52 @@ impl CombatWorld {
         }
     }
 
+    /// Unity Ship.MoveToTrackedPoint for following another moving entity.
+    /// A moving target does not invalidate an active A* worker or a failed
+    /// path's two-second retry lease. The recurring ClosestFriendly command
+    /// calls this no faster than once every three scaled seconds, so Unity's
+    /// additional one-second path replan gate cannot elapse between calls.
+    /// This is distinct from ordinary MoveToPoint, which may replace a
+    /// superseded path request while a worker is running.
+    pub fn move_ship_to_tracked_point(
+        &mut self,
+        ship_id: i64,
+        order: GamePointOrder,
+    ) -> Result<GamePointOrderResult, CombatWorldError> {
+        if !order.valid() {
+            return Err(CombatWorldError::InvalidGameMovementOrder);
+        }
+        self.validate_ship_game_order(ship_id)?;
+        let &index = self.ship_by_id.get(&ship_id)
+            .ok_or(CombatWorldError::UnknownShip)?;
+        let motion = &self.physics.ships()[index].motion;
+        if motion.cannot_change_movement_orders {
+            // Match Unity: movement locks preserve the latest requested point.
+            return self.move_ship_to_point(ship_id, order);
+        }
+        if self.navigation_requests.is_pathfinding(ship_id) {
+            return Ok(GamePointOrderResult::Unchanged);
+        }
+        let steering = self.game_ship_steering.get(&ship_id)
+            .ok_or(CombatWorldError::MissingGameMovementProfile)?;
+        if steering.has_pending_path_retry() {
+            return Ok(GamePointOrderResult::Unchanged);
+        }
+        let destination = order.bounded_destination();
+        // Pathfinder.Scale * 2 = 8 world units in Unity. A recurring
+        // tracked order ignores lesser endpoint drift, preserving the current
+        // useful path or direct target instead of restarting navigation.
+        const TRACKED_REPLAN_DISTANCE_SQUARED: f32 = 8.0 * 8.0;
+        let endpoint = steering.final_destination
+            .unwrap_or(motion.target_coordinates);
+        if (steering.is_following_path || motion.has_target_coordinates) &&
+            (destination - endpoint).length_squared() <
+                TRACKED_REPLAN_DISTANCE_SQUARED {
+            return Ok(GamePointOrderResult::Unchanged);
+        }
+        self.move_ship_to_point(ship_id, order)
+    }
+
     /// Tick source ScaledTimer path retries before the ship's ordinary
     /// fixed-step steering. A scheduled failure retry is never allowed to
     /// restart a still-running or superseded request.
