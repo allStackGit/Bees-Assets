@@ -51,5 +51,6 @@ pub mod ship_assets;
 pub mod squad_movement;
 pub mod team_exploration;
 pub mod telemetry;
+pub mod vision;
 pub mod timer;
 pub mod turret;
