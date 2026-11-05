@@ -23,6 +23,7 @@ pub mod explosion_lifecycle;
 pub mod episode_ship_identity;
 pub mod geometry;
 pub mod full_perception;
+pub mod level_discovery;
 pub mod movement;
 pub mod local_navigation_observation;
 pub mod navigation;
