@@ -111,13 +111,42 @@ fn build_worlds(
     sim
 }
 
+/// Stable, noncryptographic state fingerprint, computed only AFTER the
+/// timed window. This catches divergent world poses/RNG/vitals between
+/// serial and parallel execution of the same real native physics rules.
+fn fingerprint(sim: &Simulation<CombatWorld, CombatWorldRules>) -> u64 {
+    let mut hash = 0xcbf2_9ce4_8422_2325_u64;
+    let mut absorb = |word: u64| {
+        hash = (hash ^ word).wrapping_mul(0x0000_0100_0000_01b3);
+    };
+    for index in 0..sim.world_count() {
+        let world = sim.world(index).expect("existing world");
+        absorb(world.id.0);
+        absorb(world.tick());
+        absorb(world.random.state());
+        for body in world.state.physics().ships() {
+            absorb(body.id as u64);
+            absorb(u64::from(body.motion.position.x.to_bits()));
+            absorb(u64::from(body.motion.position.y.to_bits()));
+            absorb(u64::from(body.motion.rotation_degrees.to_bits()));
+            absorb(u64::from(body.motion.current_speed.to_bits()));
+            absorb(u64::from(body.active));
+        }
+        for ship in world.state.ships() {
+            absorb(ship.entity_id as u64);
+            absorb(ship.vitals.health() as u64);
+        }
+    }
+    hash
+}
+
 fn measure(
     opt: Options,
     workers: usize,
     label: &str,
     assets: &ShipAssetCatalog,
     projectiles: &Arc<ProjectileAssetCatalog>,
-) {
+) -> (u64, u64, u64, u64, u64, u64) {
     let mut sim = build_worlds(opt, assets, projectiles);
     let no_policy_actions = |_: &World<CombatWorld>, _: &mut Vec<Decision>| {};
     // Same unmeasured warm-up in both configurations.
@@ -143,6 +172,8 @@ fn measure(
         m.integrated_bodies, m.broadphase_candidates,
         m.narrowphase_tests, m.trigger_enters,
     );
+    (fingerprint(&sim), m.ticks, m.integrated_bodies,
+        m.broadphase_candidates, m.narrowphase_tests, m.trigger_enters)
 }
 
 fn main() {
@@ -153,6 +184,11 @@ fn main() {
         ProjectileAssetCatalog::embedded().expect("authored projectile collider catalog"),
     );
     println!("mode,worlds,ships_per_world,workers,world_steps,wall_seconds,world_steps_per_second,integrated_bodies,broadphase_candidates,narrowphase_tests,contacts");
-    measure(opt, 1, "serial", &assets, &projectiles);
-    measure(opt, opt.workers, "parallel", &assets, &projectiles);
+    let serial = measure(opt, 1, "serial", &assets, &projectiles);
+    let parallel = measure(opt, opt.workers, "parallel", &assets, &projectiles);
+    assert_eq!(
+        serial, parallel,
+        "serial and parallel native physics state/workload differed",
+    );
+    eprintln!("State, RNG and physics workload parity: verified for this baseline fixture.");
 }
