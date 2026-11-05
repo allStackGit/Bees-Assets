@@ -522,6 +522,103 @@ impl CombatWorld {
         Ok(())
     }
 
+    /// Execute LaserBeam.FixedUpdate -> ExtendBeam on the authoritative
+    /// collider and projectile body. The source prefab is a 2x2 box scaled
+    /// initially to (1, 0.5). Each subsequent FixedUpdate grows local X
+    /// scale by 2, keeping Y scale, until its *previous* X scale is at
+    /// least Range/2. The beam is centered one half-length ahead of the
+    /// shooter and moves with the shooter's Rigidbody2D velocity.
+    ///
+    /// Contacts are processed earlier in the same CombatWorld tick, matching
+    /// Projectile.FixedUpdate's base contact-before-ExtendBeam ordering.
+    pub(super) fn advance_beam_projectiles(&mut self)
+        -> Result<(), CombatWorldError>
+    {
+        for index in 0..self.projectiles.len() {
+            if !self.physics.projectiles()[index].active {
+                continue;
+            }
+            let ImpactBehavior::Beam {
+                length_scale, just_spawned, ..
+            } = &self.projectiles[index].behavior else {
+                continue;
+            };
+            // A just-created beam enters the physics step with its prefab's
+            // 1x0.5 scale. The FIRST following FixedUpdate expands it.
+            if *just_spawned {
+                if let ImpactBehavior::Beam {
+                    just_spawned, ..
+                } = &mut self.projectiles[index].behavior {
+                    *just_spawned = false;
+                }
+                continue;
+            }
+            let old_length = *length_scale;
+            let range = self.physics.projectiles()[index].motion.range;
+            let owner_id = self.projectiles[index].owner.shooter_id;
+            let beam_id = self.projectiles[index].entity_id;
+            let Some(&ship_index) = self.ship_by_id.get(&owner_id) else {
+                self.end_projectile(index);
+                continue;
+            };
+            if !self.physics.ships()[ship_index].active ||
+                self.ships[ship_index].vitals.is_dead() {
+                self.end_projectile(index);
+                continue;
+            }
+            let Some(turret_rotation) =
+                self.policy_ship_runtime.get(&owner_id).and_then(|runtime|
+                    runtime.turrets.iter().flatten().find_map(|turret|
+                        (turret.active_beam_projectile_id == Some(beam_id))
+                            .then_some(turret.state.rotation_degrees)))
+            else {
+                // A beam without an owning real cannon cannot be allowed to
+                // survive as a permanently active synthetic collider.
+                self.end_projectile(index);
+                continue;
+            };
+            if old_length >= range / 2.0 {
+                self.end_projectile(index);
+                continue;
+            }
+            let new_length = old_length + 2.0;
+            let body = &self.physics.projectiles()[index];
+            let half_height = match body.shape() {
+                Some(ShipShape::Box {
+                    offset, half_extents,
+                }) if *offset == Vec2::ZERO => half_extents.y,
+                _ => return Err(CombatWorldError::Physics(
+                    PhysicsError::InvalidCollider,
+                )),
+            };
+            let ship_motion = &self.physics.ships()[ship_index].motion;
+            let radians = turret_rotation.to_radians();
+            let forward = Vec2::new(-radians.sin(), radians.cos());
+            // Source worldAngle = BeamCannon.Rotation + 90, then the
+            // local scale.x offset is transformed through Shooter's pose.
+            // The resulting center is ship center + forward * scale.x.
+            let position = ship_motion.position + forward * new_length;
+            let velocity = ship_motion.body_velocity;
+            let world_rotation = turret_rotation + 90.0;
+            let new_shape = ShipShape::Box {
+                offset: Vec2::ZERO,
+                half_extents: Vec2::new(new_length, half_height),
+            };
+            let body = &mut self.physics.projectiles_mut()[index];
+            body.replace_shape(Some(new_shape))?;
+            body.rotation_degrees = world_rotation;
+            body.motion.position = position;
+            body.motion.velocity = velocity;
+            body.motion.angle_radians = -world_rotation.to_radians();
+            if let ImpactBehavior::Beam {
+                length_scale, ..
+            } = &mut self.projectiles[index].behavior {
+                *length_scale = new_length;
+            }
+        }
+        Ok(())
+    }
+
     pub(super) fn apply_policy_turret_requests(
         &mut self, ship_id: i64,
         requests: &[WeaponRequest; 5],
