@@ -931,13 +931,27 @@ class ExperimentHub {
         // Only this authenticated machine may acknowledge its own offers.
         // No lease is evidence of OS resource enforcement.
         const next=copy(this.state);
+        // Receipt IDs are based on the agent's previous offer response,
+        // while this heartbeat reports the current host capacity. Reject
+        // carried-over IDs if *all* outstanding claims no longer fit.
+        const outstanding=next.reservations.filter(l=>
+            l.machine_id===machine.id&&l.issued_by==='experiment-hub'&&
+            ['offered','acknowledged'].includes(l.status));
+        const withinCapacity=outstanding.every(l=>
+            Number.isSafeInteger(l.resources?.cpus)&&l.resources.cpus>0&&
+            Number.isSafeInteger(l.resources?.ram_mb)&&l.resources.ram_mb>0)&&
+            outstanding.reduce((sum,l)=>sum+l.resources.cpus,0)<=report.cpus&&
+            outstanding.reduce((sum,l)=>sum+l.resources.ram_mb,0)<=report.ram_mb;
+        const acknowledgedIds=new Set();
         let changed=false;
         for (const id of ids) {
+            if(!withinCapacity)break;
             const lease=next.reservations.find(x=>x.id===id &&
                 x.machine_id===machine.id && x.issued_by==='experiment-hub');
             if (!lease || !['offered','acknowledged'].includes(lease.status)) continue;
             if(physicalGpuBindings(machine,report,lease.resources,lease.gpu_bindings)===null)
                 continue;
+            acknowledgedIds.add(id);
             if (lease.status==='offered') {
                 lease.status='acknowledged';
                 lease.acknowledged_at=new Date(received).toISOString();
@@ -979,21 +993,16 @@ class ExperimentHub {
         this.agentReports.set(machine.id,{
             ...report,instance_id:instance||null,received_ms:received,
         });
-        // A GPU disappearing or moving PCI slots invalidates its lease
-        // receipt immediately, not only after the general heartbeat TTL.
+        // A successful heartbeat supersedes the previous receipt set for
+        // this machine. Missing IDs, reduced CPU/RAM capacity, or changed GPU
+        // identity revoke *freshness* immediately, without freeing the
+        // persisted capacity claims or touching native processes.
         for(const lease of this.state.reservations) {
-            if(lease.machine_id===machine.id&&
-                lease.status==='acknowledged'&&
-                lease.resources?.gpu_count>0&&
-                physicalGpuBindings(machine,report,lease.resources,lease.gpu_bindings)===null)
+            if(lease.machine_id!==machine.id)continue;
+            if(!acknowledgedIds.has(lease.id))
                 this.leaseReceipts.delete(lease.id);
-        }
-        for (const id of ids) {
-            const lease=this.state.reservations.find(x=>x.id===id &&
-                x.machine_id===machine.id && x.status==='acknowledged' &&
-                x.issued_by==='experiment-hub');
-            if (lease&&physicalGpuBindings(machine,report,lease.resources,lease.gpu_bindings)!==null)
-                this.leaseReceipts.set(id,received);
+            else if(lease.status==='acknowledged')
+                this.leaseReceipts.set(lease.id,received);
         }
         for(const item of reports) {
             const job=this.state.jobs.find(j=>j.id===item.job_id);
