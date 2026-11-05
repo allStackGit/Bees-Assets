@@ -208,20 +208,33 @@ those outside current sight), and real active static-collider bounds to
 rasterize discovered obstacles. Team exploration reads living allied ship
 positions and requires actual effective sight ranges. First-use ship
 identity order is preserved by sorting live candidates before assigning
-permuted episode IDs. Actual vision detection calls
-`CombatWorld::record_hivemind_ship_sighting`, which validates the live
-opposing ships, observer registration and setup suppression before
-emitting a first-sighting event. Memory survives observer exit/death;
-target removal and episode reset are explicit lifecycle boundaries.
+permuted episode IDs. `CombatWorld::refresh_hivemind_vision` now performs
+source-matched real-collider closest-point sight checks for live enemy
+ships and environment obstacles, using a cheap bounding-box rejection,
+then writes first sightings to its faction discovery memory. It keeps a
+separate per-side flag for **currently** visible enemies. The game supplies
+the actual enabled/registered Hive Mind observer roster, effective sight
+ranges and setup-suppression state; these cannot be inferred from hull
+geometry. Learned memory survives observer exit/death, but actual ship and
+collision-asteroid retirement forgets those targets.
 
-**Integration boundary:** the game/Level adapter must still report actual
-Hive Mind sighting events, supply authored weapon/role/special metadata,
-calculate effective sight ranges and collect real mining/map/asteroid
-objects and reward state. The bridge rejects missing required metadata
-rather than guessing. Native action execution, GPU inference and the
-learner remain unconnected, so this is **not yet a working or
-parity-certified training loop**. Rust feature tests have not been
-executed in this environment.
+For reproducible CPU vision profiling with authored ship collider geometry
+on Windows or Linux:
+
+```sh
+cargo run --release --manifest-path native/Cargo.toml -p bees-sim --example vision_throughput -- --ships-per-side 32 --sweeps 250 --range 60
+```
+
+The benchmark reports sweeps/second, candidate pairs, bounds rejections,
+exact collider tests, and newly learned enemies. Its initial placements
+and sight ranges are synthetic; it is not a training benchmark.
+
+**Integration boundary:** the native game/Level adapter still needs to
+provide the real observer/weapon/special data, MapObject colliders, mining
+and other authored metadata, and episode reward state. GPU inference,
+policy-action execution and the learner remain unconnected. These
+interfaces are **not yet a working or parity-certified training loop**.
+Rust tests and benchmarks have not been executed in this environment.
 
 ## Independent CPU rollout windows
 
