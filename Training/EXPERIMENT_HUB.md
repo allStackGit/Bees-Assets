@@ -589,8 +589,16 @@ a lost or expired report restores urgent Stop priority. This prevents a
 slow shutdown from monopolizing observations of unrelated jobs. The
 manager records `running`, `finished`, `failed`, `stopped`, or
 `unverified` status from the authenticated machine and exposes
-current memory use, CPU time and task count without per-poll history
-duplication. Only lifecycle reports accepted by the coordinator update live
+current memory use, cumulative CPU time and task count without per-poll
+history duplication. Train and Monitor also show **average CPU-core
+equivalents** computed from native cumulative CPU nanoseconds divided
+by the server-observed time between two authenticated reports (0.50
+means half of one logical CPU core on average). The rate requires
+the same dispatch and agent instance, continuous running/stop intent,
+a nondecreasing counter, and an interval of 1–120 seconds. It is
+ephemeral and observational, not a capacity claim or scheduler input.
+Windows may provide CPU time without a separate RAM measurement,
+and those observations are displayed independently. Only lifecycle reports accepted by the coordinator update live
 telemetry or Ants comparison samples; late state regressions and duplicate
 terminal reports cannot overwrite a completed job's last valid metrics.
 Ants live learning progress retains its latest accepted source snapshot when
