@@ -639,6 +639,19 @@ impl CombatWorld {
         observers: &[HiveMindObserver],
         setup_suppressed: bool,
     ) -> Result<VisionSweepCounts, VisionError> {
+        // Unity returns immediately during RL scene setup. The roster and
+        // storage can legitimately be incomplete while ships are spawning,
+        // so do not run visibility validation until setup has finished.
+        if setup_suppressed {
+            self.vision_live_enemy_sides.clear();
+            let counts = VisionSweepCounts {
+                completed_sweeps: 1,
+                suppressed_sweeps: 1,
+                ..VisionSweepCounts::default()
+            };
+            self.vision_measurements.merge(&counts);
+            return Ok(counts);
+        }
         if self.ships.len() != self.physics.ships().len() ||
             self.obstacles.len() != self.physics.obstacles().len() {
             return Err(VisionError::StorageMismatch);
@@ -677,11 +690,6 @@ impl CombatWorld {
         self.vision_live_enemy_sides.clear();
         let mut counts = VisionSweepCounts::default();
         counts.completed_sweeps = 1;
-        if setup_suppressed {
-            counts.suppressed_sweeps = 1;
-            self.vision_measurements.merge(&counts);
-            return Ok(counts);
-        }
         for observer in observers {
             if !observer.registered || !observer.enabled ||
                 observer.effective_range == 0 {
