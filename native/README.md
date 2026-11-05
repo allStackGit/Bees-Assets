@@ -205,8 +205,10 @@ The `combat_perception_bridge` now reads live ship health, motion, side,
 type and fleet identity directly from `CombatWorld`. It uses the world's
 learned `LevelDiscovery` to select previously discovered enemies (including
 those outside current sight), and real active static-collider bounds to
-rasterize discovered obstacles. Team exploration reads living allied ship
-positions and requires actual effective sight ranges. First-use ship
+rasterize discovered obstacles. Learned collision asteroids also project
+their current native collider bounds, rotation, velocity, and effective
+health directly into v26 observations. Team exploration reads living
+allied ship positions and requires actual effective sight ranges. First-use ship
 identity order is preserved by sorting live candidates before assigning
 permuted episode IDs. `CombatWorld::refresh_hivemind_vision` now performs
 source-matched real-collider closest-point sight checks for live enemy
