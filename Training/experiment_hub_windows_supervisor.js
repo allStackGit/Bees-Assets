@@ -355,6 +355,17 @@ class WindowsSupervisor {
             // A lost reply could mean that termination already happened.
             // Never issue a second TerminateJobObject command automatically.
         }
+        // The independent owner stops accepting pipe connections before
+        // it atomically publishes its signed terminal receipt. An immediate
+        // new inspection can hit that handoff gap and falsely quarantine an
+        // otherwise completed Stop. Wait only for the ownership proof; do
+        // not resend Stop, guess a PID or release capacity without a receipt.
+        for(let attempt=0;attempt<20;attempt++) {
+            if(this.verifyReceipt(updated))return this.reconcile(jobId);
+            await new Promise(resolve=>setTimeout(resolve,100));
+        }
+        // A genuinely missing or invalid receipt remains unverified and
+        // requires manual inspection. This wait never grants authority.
         return this.reconcile(jobId);
     }
 }
