@@ -206,6 +206,28 @@ document.addEventListener('DOMContentLoaded', () => {
             statusCell.title=detail||j.status_reason||status;
             cell(tr,j.resources.cpus+' CPU / '+j.resources.ram_mb+' MiB / '+
                 j.resources.gpu_count+' GPUs');
+            const p=live?.progress||j.final_progress;
+            let progressText='—';
+            if(p?.source==='ants-summary-v1') {
+                const pct=x=>x==null?'—':(x*100).toFixed(1)+'%';
+                progressText='Episodes '+p.episodes_completed.toLocaleString()+
+                    ' · Policy '+p.policy_version.toLocaleString()+
+                    ' · Level '+p.curriculum_level+
+                    ' · Current curriculum window '+pct(p.curriculum_window_success_rate)+
+                    (p.curriculum_window_episodes==null?''
+                        :' ('+p.curriculum_window_episodes+' episodes)')+
+                    ' · Segment success '+pct(p.segment_success_rate)+
+                    (p.simulation_steps_per_second==null?''
+                        :' · Last-episode simulation '+Math.round(
+                            p.simulation_steps_per_second).toLocaleString()+' steps/s')+
+                    ' · Summary written '+new Date(p.source_modified_at)
+                        .toLocaleString();
+            }else if(live?.progress_issue)
+                progressText='Local progress unavailable: '+live.progress_issue;
+            else if(j.project_id==='ants'&&j.dispatch_id)
+                progressText=j.final_progress?'Final snapshot unavailable':
+                    'Awaiting production summary';
+            cell(tr,progressText);
             const actions=cell(tr,'');
             if(j.status==='waiting_adapter'&&!j.lease_id)
                 actions.append(button('Coordinate capacity',()=>allocateJob([j.id])));
@@ -275,7 +297,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         if(!records.length) {
             const tr=document.createElement('tr');
-            cell(tr,'No queued jobs for this project.').colSpan=5;
+            cell(tr,'No queued jobs for this project.').colSpan=6;
             $('hub-job-rows').append(tr);
         }
         const waiting=records.filter(j=>j.status==='waiting_adapter').length;
