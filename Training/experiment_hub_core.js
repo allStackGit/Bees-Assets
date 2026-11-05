@@ -766,7 +766,10 @@ class ExperimentHub {
         // using the planner's original-input-order result contract.
         const pending=jobs.filter(j=>!j.lease_id);
         const proposed=plan(snapshot.machines,snapshot.reservations,
-            pending.map((job,index)=>({id:'job_'+index,resources:job.resources})))
+            pending.map((job,index)=>({
+                id:'job_'+index,resources:job.resources,
+                machine_id:job.continuation_machine_id||null,
+            })))
             .map((row,index)=>{
                 const job=pending[index];
                 return {...row,id:job.id,project_id:job.project_id,
