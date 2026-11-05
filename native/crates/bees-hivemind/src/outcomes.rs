@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::protocol::{
     HiveMindProtocolError, StoreCommandsRequest, StoreCommandsResponse,
-    StoredOutcome, ValidatedStrategySelection,
+    StoredOutcome, ValidatedStrategySelection, ValidatedTargetingSelection,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -41,6 +41,41 @@ pub struct FinalizedCommand {
     /// The caller must explicitly credit or discard that second reservation.
     pub shooting: OutcomeSettlement,
     pub targeting: Option<OutcomeSettlement>,
+}
+
+impl FinalizedCommand {
+    /// Build from the server's validated reservations. An absence of
+    /// shooting TSV explicitly discards its reserved ID; an absent
+    /// targeting selection means no targeting reservation was issued.
+    /// The game must decide eligibility based on actual executed behavior.
+    pub fn from_selections(
+        strategy: &ValidatedStrategySelection,
+        command_tsv: i64,
+        shooting_tsv: Option<i64>,
+        targeting: Option<(&ValidatedTargetingSelection, Option<i64>)>,
+    ) -> Self {
+        Self {
+            command: OutcomeSettlement::Credit {
+                outcome_id: strategy.command_outcome_id, tsv: command_tsv,
+            },
+            shooting: match shooting_tsv {
+                Some(tsv) => OutcomeSettlement::Credit {
+                    outcome_id: strategy.shooting_outcome_id, tsv,
+                },
+                None => OutcomeSettlement::Discard {
+                    outcome_id: strategy.shooting_outcome_id,
+                },
+            },
+            targeting: targeting.map(|(selection, tsv)| match tsv {
+                Some(tsv) => OutcomeSettlement::Credit {
+                    outcome_id: selection.outcome_id, tsv,
+                },
+                None => OutcomeSettlement::Discard {
+                    outcome_id: selection.outcome_id,
+                },
+            }),
+        }
+    }
 }
 
 #[derive(Default)]
@@ -119,6 +154,13 @@ impl OutcomeBatch {
             selection.command_outcome_id,
             selection.shooting_outcome_id,
         ])
+    }
+
+    pub fn discard_targeting(
+        &mut self,
+        selection: &ValidatedTargetingSelection,
+    ) -> Result<(), HiveMindProtocolError> {
+        self.discard_reservations([selection.outcome_id])
     }
 
     pub fn into_request(
