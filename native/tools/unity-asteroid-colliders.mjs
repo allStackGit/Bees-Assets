@@ -261,12 +261,62 @@ function asteroidFromVariant(name, content, base, baseGuid) {
     if (number(proximityId, 'm_IsTrigger', 1) !== 1) {
         fail(name, 'proximity collider no longer a trigger');
     }
+    const clearance = base.clearance;
+    const clearanceId = base.ids.clearance;
+    if ([...mods.keys()].some(key =>
+        key.startsWith(base.ids.clearanceTransform + '/m_LocalRotation.') ||
+        key === base.ids.clearanceTransform + '/m_Father')) {
+        fail(name, 'unsupported clearance child rotation or reparenting');
+    }
+    const clearanceLayer = number(base.ids.clearanceGame, 'm_Layer', clearance.layer);
+    const clearanceScale = [
+        number(base.ids.clearanceTransform, 'm_LocalScale.x', clearance.scale[0]),
+        number(base.ids.clearanceTransform, 'm_LocalScale.y', clearance.scale[1]),
+    ];
+    const clearancePosition = [
+        number(base.ids.clearanceTransform, 'm_LocalPosition.x', clearance.position[0]),
+        number(base.ids.clearanceTransform, 'm_LocalPosition.y', clearance.position[1]),
+    ];
+    const clearanceOffset = [
+        number(clearanceId, 'm_Offset.x', clearance.offset[0]),
+        number(clearanceId, 'm_Offset.y', clearance.offset[1]),
+    ];
+    const clearancePathCount = number(clearanceId, 'm_Points.m_Paths.Array.size',
+        clearance.paths.length);
+    if (clearancePathCount !== 1) {
+        fail(name, 'multiple active clearance paths require compound physics');
+    }
+    const clearanceKey = 'm_Points.m_Paths.Array.data[0].Array.';
+    const clearanceCount = number(clearanceId, clearanceKey + 'size',
+        clearance.paths[0].length);
+    if (!Number.isInteger(clearanceCount) || clearanceCount < 3 ||
+        clearanceCount > 4096) {
+        fail(name, 'invalid clearance polygon vertex count');
+    }
+    const clearanceVertices = [];
+    for (let i = 0; i < clearanceCount; i++) {
+        const point = clearance.paths[0][i];
+        const x = get(clearanceId, clearanceKey + `data[${i}].x`, point?.[0]);
+        const y = get(clearanceId, clearanceKey + `data[${i}].y`, point?.[1]);
+        clearanceVertices.push([
+            finiteNumber(x, name + ' clearance vertex x ' + i),
+            finiteNumber(y, name + ' clearance vertex y ' + i),
+        ]);
+    }
+    if (number(clearanceId, 'm_IsTrigger', 1) !== 1) {
+        fail(name, 'clearance collider no longer a trigger');
+    }
     return {
         sizeClass, layer, scale, offset, vertices,
         proximity: {
             layer: proximityLayer, scale: proximityScale,
             position: proximityPosition, offset: proximityOffset,
             vertices: proximityVertices,
+        },
+        clearance: {
+            layer: clearanceLayer, scale: clearanceScale,
+            position: clearancePosition, offset: clearanceOffset,
+            vertices: clearanceVertices,
         },
     };
 }
