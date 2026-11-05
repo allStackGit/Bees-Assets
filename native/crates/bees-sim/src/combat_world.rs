@@ -81,7 +81,7 @@ mod shot_outcomes;
 pub use self::shot_outcomes::{ProjectileRootOutcome, ProjectileOutcomeMeasurements};
 use self::shot_outcomes::{ProjectileOutcomeTracker, NEAR_MISS_DISTANCE};
 pub use self::scout::{ScoutBeaconSpec, ScoutBeaconStatus};
-use self::policy::{PolicyShipRuntime, PolicyShipSpecial, WARP_GATE_TYPE};
+use self::policy::{PolicyShipRuntime, PolicyShipSpecial};
 pub use self::policy::PolicySpecialObservations;
 use self::weapons::PendingPolicyShot;
 pub use self::weapons::{NativeFirePattern, NativeTurretSpec};
@@ -642,10 +642,10 @@ pub struct CombatWorld {
     /// ship-class specials (choice 1); both remain in the one world.
     policy_pending_healing: Vec<i64>,
     policy_pending_warp: Vec<i64>,
-    /// Derived index of living WarpGates with imported child colliders.
-    /// The authoritative ship and physics arrays remain the source of truth;
-    /// registration/retirement maintain these sorted IDs for action masks.
-    warp_gate_ids_by_side: HashMap<i32, Vec<i64>>,
+    /// Sorted IDs of living ships with imported child support colliders.
+    /// Indexed by (authored ship type, side); the ship and physics arrays
+    /// remain authoritative. Used by WarpGate and Beehive action masks.
+    support_zone_ids: HashMap<(u8, i32), Vec<i64>>,
     policy_special_measurements: PolicySpecialMeasurements,
     /// One hit per victim for each active charge; cleared when the
     /// owning Barge starts another charge or is removed from the world.
@@ -736,7 +736,7 @@ impl CombatWorld {
             policy_pending_ship_specials: Vec::new(),
             policy_pending_healing: Vec::new(),
             policy_pending_warp: Vec::new(),
-            warp_gate_ids_by_side: HashMap::new(),
+            support_zone_ids: HashMap::new(),
             policy_special_measurements: PolicySpecialMeasurements::default(),
             barge_charge_hits: HashSet::new(),
             barge_contact_candidates: Vec::new(),
@@ -810,6 +810,35 @@ impl CombatWorld {
         result
     }
 
+    /// Add one successful authored child-collider registration to the
+    /// derived support index. Duplicate registrations update the same
+    /// collider but do not add duplicate IDs to the index.
+    fn register_support_zone(&mut self, ship_type: u8, side: i32, id: i64) {
+        let registered = self.support_zone_ids.entry((ship_type, side))
+            .or_default();
+        if let Err(at) = registered.binary_search(&id) {
+            registered.insert(at, id);
+        }
+    }
+
+    /// The same canonical ship-retirement path removes all authored zone
+    /// memberships. Empty keys are released, so no-zone action-mask checks
+    /// do not scan the complete combat roster.
+    fn retire_support_zone(&mut self, ship_type: u8, side: i32, id: i64) {
+        let key = (ship_type, side);
+        let empty = if let Some(registered) = self.support_zone_ids.get_mut(&key) {
+            if let Ok(at) = registered.binary_search(&id) {
+                registered.remove(at);
+            }
+            registered.is_empty()
+        } else {
+            false
+        };
+        if empty {
+            self.support_zone_ids.remove(&key);
+        }
+    }
+
     /// All direct and projectile deaths share one world-owned retirement
     /// boundary: physics, sight, policy, path and collision-sensor membership
     /// cannot retain a dead ship. This does not impersonate Level's squad,
@@ -857,21 +886,7 @@ impl CombatWorld {
         self.scout_beacon_specs.remove(&victim_id);
         self.discovery.retire(DiscoveryKind::Ship, victim_id);
         self.policy_ship_runtime.remove(&victim_id);
-        if self.ships[index].ship_type == WARP_GATE_TYPE {
-            let empty = if let Some(gates) =
-                self.warp_gate_ids_by_side.get_mut(&side)
-            {
-                if let Ok(position) = gates.binary_search(&victim_id) {
-                    gates.remove(position);
-                }
-                gates.is_empty()
-            } else {
-                false
-            };
-            if empty {
-                self.warp_gate_ids_by_side.remove(&side);
-            }
-        }
+        self.retire_support_zone(self.ships[index].ship_type, side, victim_id);
         self.barge_charge_hits.retain(|&(attacker, victim)|
             attacker != victim_id && victim != victim_id);
         self.navigation_requests.retire_ship(victim_id);
