@@ -294,10 +294,16 @@ impl EpisodeShaping {
                     }
                 }
                 CombatEvent::CapabilityHealed {
-                    side, tsv_gain, ..
+                    side, tsv_gain: value, ..
+                } |
+                CombatEvent::ShipWarped {
+                    side, preserved_tsv: value, ..
                 } => {
+                    // One actual capability event, one shaping entry:
+                    // warp keeps its ship TSV before the EndKill event,
+                    // while healing supplies only the real TSV increase.
                     if let Some(reward) = self
-                        .record_successful_capability_outcome(*side, *tsv_gain)
+                        .record_successful_capability_outcome(*side, *value)
                     {
                         if reward.amount != 0.0 {
                             emissions.push(reward);
