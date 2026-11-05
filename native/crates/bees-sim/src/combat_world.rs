@@ -3149,8 +3149,7 @@ impl CombatWorld {
                 ..StepCounts::default()
             });
         }
-        self.advance_policy_healing_cooldowns(dt);
-        self.advance_policy_mining_cooldowns(dt);
+        self.advance_policy_capability_cooldowns(dt);
         self.apply_pending_policy_mining()?;
         self.apply_pending_policy_ship_specials(collision_matrix)?;
         self.apply_pending_policy_healing()?;
