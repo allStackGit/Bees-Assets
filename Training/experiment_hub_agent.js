@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 'use strict';
 
-// Cross-platform Experiment Hub presence and lease-receipt agent.
-// The only agent output is machine observations and acknowledged offer IDs.
-// It never runs commands, launches jobs, or enforces hardware quotas.
+// Cross-platform Experiment Hub agent. Observation-only by default.
+// Native workload ownership requires explicit machine-local adapter opt-in;
+// it cannot accept executable paths or shell commands from the Hub.
 const http = require('node:http');
 const os = require('node:os');
 const crypto=require('node:crypto');
@@ -165,7 +165,7 @@ async function main() {
                 console.log('[experiment-hub-agent] connected ('+id+
                     (executor
                         ?advertisement.native_preflight_passed
-                            ?'; Linux CPU/memory preflight passed'
+                            ?'; native CPU/memory preflight passed'
                             :'; native starts blocked (preflight failed)'
                         :'; observation only, no job execution')+').');
             last='connected';
