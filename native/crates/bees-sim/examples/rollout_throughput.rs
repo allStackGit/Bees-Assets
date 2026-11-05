@@ -130,7 +130,7 @@ fn fingerprint(sim: &Simulation<CombatWorld, CombatWorldRules>) -> u64 {
             absorb(u64::from(body.motion.position.y.to_bits()));
             absorb(u64::from(body.motion.rotation_degrees.to_bits()));
             absorb(u64::from(body.motion.current_speed.to_bits()));
-            absorb(u64::from(body.active));
+            absorb(if body.active { 1 } else { 0 });
         }
         for ship in world.state.ships() {
             absorb(ship.entity_id as u64);
