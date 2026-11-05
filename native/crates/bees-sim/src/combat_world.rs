@@ -36,7 +36,7 @@ use crate::physics::{
 };
 use crate::policy::Decision;
 use crate::geometry::Vec2;
-use crate::level_discovery::LevelDiscovery;
+use crate::level_discovery::{DiscoveryKind, LevelDiscovery};
 use crate::movement::ShipMotion;
 use crate::navigation_clearance::NavigationClearance;
 use crate::navigation_runtime::NavigationRuntime;
@@ -558,6 +558,41 @@ impl CombatWorld {
     /// insertion, and removed entities retired via Level teardown.
     pub fn discovery(&self) -> &LevelDiscovery { &self.discovery }
     pub fn discovery_mut(&mut self) -> &mut LevelDiscovery { &mut self.discovery }
+
+    /// Unity's GameState.RecordHiveMindSighting is the sole transition from
+    /// a verified observer->target contact into faction-wide learned ship
+    /// memory. Call ONLY after the authoritative vision collider/geometric
+    /// detector establishes that sighting. The caller supplies whether the
+    /// observer is currently registered as a Hive Mind ship and whether
+    /// RL ship setup suppresses learning.
+    ///
+    /// Returns true only for the first side-wide discovery; repeated
+    /// observations from this or any other observer are not new rewards.
+    /// Exiting range or an observer dying MUST NOT clear this memory.
+    pub fn record_hivemind_ship_sighting(
+        &mut self,
+        observer_id: i64,
+        spotted_id: i64,
+        observer_registered: bool,
+        setup_suppressed: bool,
+    ) -> bool {
+        if !observer_registered || setup_suppressed || observer_id == spotted_id {
+            return false;
+        }
+        let Some(observer) = self.ship(observer_id) else { return false; };
+        let Some(spotted) = self.ship(spotted_id) else { return false; };
+        let side = observer.side;
+        if side <= 0 || side == spotted.side ||
+            observer.vitals.is_dead() || spotted.vitals.is_dead() {
+            return false;
+        }
+        if !self.ship_body(observer_id).is_some_and(|body| body.active) ||
+            !self.ship_body(spotted_id).is_some_and(|body| body.active) {
+            return false;
+        }
+        self.discovery.record(side, DiscoveryKind::Ship, spotted_id)
+            .unwrap_or(false)
+    }
 
     /// O(1) live ship lookup through the world's canonical entity index.
     /// Squad commands must not scan all world ships for every formation
