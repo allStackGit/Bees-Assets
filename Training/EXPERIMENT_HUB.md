@@ -1337,10 +1337,12 @@ status. **No real Ants training or Linux service qualification has run here.**
 A draft can set an optional `evaluation_stop` alongside its adapter parameters.
 Design accepts a suite ID, minimum trial count and minimum success rate, for
 example `{"suite_id":"heldout","min_trials":100,"min_success_rate":0.8}`.
-Queueing freezes the rule. Only hosts advertising the project's independent
-evaluation adapter can claim or start a job with the rule.
+Queueing freezes the rule. Only hosts advertising the requested suite for
+that project can claim or start the job. Agents without suite advertisements
+remain eligible for jobs without an evaluation stop.
 
-The locally installed adapter can provide synchronous `readEvaluation(context)`.
+The locally installed adapter declares `evaluation_suites`, an array of one
+to eight suite IDs, and provides synchronous `readEvaluation(context)`.
 It reads completed, independently generated evidence for the requested suite
 and dispatch and returns either null or a version 1 report with `suite_id`,
 `dispatch_id`, `checkpoint_sha256`, `trials` and `successes` alongside
