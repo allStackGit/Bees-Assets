@@ -21,3 +21,4 @@ pub mod level_rules;
 pub mod inference;
 pub mod group_rewards;
 pub mod rollout;
+pub mod perception_world;
