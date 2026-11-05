@@ -67,7 +67,10 @@ impl GameShipSteering {
         motion: &mut ShipMotion,
         destination: Vec2,
     ) -> bool {
-        if !motion.mobile || !destination.is_finite() { return false; }
+        if !motion.mobile || !destination.is_finite() ||
+            (motion.is_policy_controlled && !motion.user_controlled) {
+            return false;
+        }
         if motion.cannot_change_movement_orders {
             self.deferred_direct_destination = Some(destination);
             return false;
@@ -87,7 +90,10 @@ impl GameShipSteering {
     /// policy action. It clears the old navigation destination.
     pub fn set_direction(&mut self, motion: &mut ShipMotion, direction: f32) -> bool {
         if !motion.mobile || motion.cannot_change_movement_orders ||
-            !direction.is_finite() { return false; }
+            !direction.is_finite() ||
+            (motion.is_policy_controlled && !motion.user_controlled) {
+            return false;
+        }
         self.stop(motion);
         self.target_direction = Some(direction);
         true
@@ -129,6 +135,7 @@ impl GameShipSteering {
         path: &NavigationPath,
     ) -> bool {
         if !motion.mobile || path.points.is_empty() ||
+            (motion.is_policy_controlled && !motion.user_controlled) ||
             path.points.iter().any(|point| !point.is_finite()) {
             return false;
         }
