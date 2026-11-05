@@ -1,0 +1,12 @@
+[package]
+name = "bees-gameplay"
+version = "0.1.0"
+edition.workspace = true
+publish = false
+
+# Shared application orchestration, not an alternate simulation.
+# Presentation, WebSocket transport, authentication and SQL stay in
+# their respective native client/server adapters.
+[dependencies]
+bees-sim = { path = "../bees-sim" }
+bees-hivemind = { path = "../bees-hivemind" }
