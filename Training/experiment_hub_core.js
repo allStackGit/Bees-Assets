@@ -269,7 +269,7 @@ class ExperimentHub {
         // session. Restarting the coordinator never restores permission to
         // start unattended workloads, even though claims/jobs persist.
         this.automation = {
-            enabled:false,machine_ids:[],agent_instances:{},
+            enabled:false,machine_ids:[],agent_instances:{},managed_job_ids:[],
             armed_at:null,last_tick_at:null,last_action:null,last_error:null,
             last_transition_at:null,waiting_reason:null,
         };
@@ -381,8 +381,8 @@ class ExperimentHub {
         return snapshot;
     }
     automationStatus() {
-        const {agent_instances,...publicState}=this.automation;
-        return copy(publicState);
+        const {agent_instances,managed_job_ids,...publicState}=this.automation;
+        return {...copy(publicState),managed_jobs:managed_job_ids.length};
     }
     configureAutomation(value) {
         if(!object(value)||typeof value.enabled!=='boolean')
@@ -391,7 +391,7 @@ class ExperimentHub {
             if(value.confirm_disarm!==true)
                 throw Error('Explicitly confirm disarming native automation.');
             this.automation={
-                enabled:false,machine_ids:[],agent_instances:{},
+                enabled:false,machine_ids:[],agent_instances:{},managed_job_ids:[],
                 armed_at:null,last_tick_at:this.automation.last_tick_at,
                 last_action:'Disarmed by operator.',last_error:null,
                 last_transition_at:this.automation.last_transition_at,
@@ -428,7 +428,7 @@ class ExperimentHub {
         }
         this.automation={
             enabled:true,machine_ids:ids.slice(),agent_instances:agentInstances,
-            armed_at:now(),last_tick_at:null,
+            managed_job_ids:[],armed_at:now(),last_tick_at:null,
             last_action:'Armed for qualified CPU-only jobs; no job dispatched yet.',
             last_error:null,last_transition_at:null,waiting_reason:null,
         };
@@ -466,6 +466,7 @@ class ExperimentHub {
                 ['unverified','failed'].includes(j.status));
             if(unsafe)throw Error('Job '+unsafe.id+' requires operator review before further automatic execution.');
             const complete=snapshot.jobs.find(j=>
+                session.managed_job_ids.includes(j.id)&&
                 session.machine_ids.includes(j.assigned_machine_id)&&
                 !j.capacity_released_at&&j.execution_updated_at&&
                 ['finished','stopped'].includes(j.status)&&
@@ -475,6 +476,7 @@ class ExperimentHub {
                     l.issued_by==='experiment-hub'&&l.status==='acknowledged'));
             if(complete) {
                 this.releaseLease({lease_id:complete.lease_id,confirm_release:true});
+                session.managed_job_ids=session.managed_job_ids.filter(id=>id!==complete.id);
                 return transitioned('Released verified capacity: '+complete.project_id+
                     ' / '+(complete.configuration_name||complete.id.slice(-8))+'.');
             }
@@ -489,6 +491,7 @@ class ExperimentHub {
                     blockedMachines.has(job.assigned_machine_id)||
                     job.native_start_readiness?.eligible!==true)continue;
                 this.authorizeStart({job_id:job.id,confirm_start:true});
+                session.managed_job_ids.push(job.id);
                 return transitioned('Authorized CPU-only Start: '+job.project_id+
                     ' / '+(job.configuration_name||job.id.slice(-8))+'.');
             }
@@ -516,7 +519,13 @@ class ExperimentHub {
                     (job.configuration_name||job.id.slice(-8))+
                     ' on '+chosen.machine_id+'; awaiting agent receipt.');
             }
-            session.waiting_reason='No eligible CPU-only transition; awaiting agent receipts or available capacity.';
+            const manualComplete=snapshot.jobs.some(j=>
+                session.machine_ids.includes(j.assigned_machine_id)&&
+                !session.managed_job_ids.includes(j.id)&&!j.capacity_released_at&&
+                ['finished','stopped'].includes(j.status)&&j.lease_id);
+            session.waiting_reason=manualComplete
+                ?'Completed jobs outside this automation session retain capacity until manually released.'
+                :'No eligible CPU-only transition; awaiting agent receipts or available capacity.';
             return this.automationStatus();
         }catch(error) {
             // An ambiguous state must never provoke repeated automatic
