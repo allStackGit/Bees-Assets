@@ -88,13 +88,29 @@ or OS-enforced isolation exists. Later edits to a saved configuration do not
 change jobs that already reference it. The queue will reject a stale selected
 revision rather than silently freezing a newer draft.
 
-The UI can explicitly cancel a waiting job; its status and cancellation time
-are retained. It cannot cancel running or unknown jobs through this route.
-To continue a completed experiment, save a resume-mode configuration,
-select its eligible predecessor in Train, and queue with
-`continuation_of_job_id` in `POST /api/hub/jobs`. The Hub will keep
-its original machine affinity and artifact lineage. Completion alone
-does not schedule another stage or launch a process.
+The UI can explicitly cancel a waiting job, including a stage blocked on
+its predecessor; its status and cancellation time are retained. It cannot
+cancel running or unknown jobs through this route.
+To continue an experiment, save a resume-mode configuration, select its
+eligible predecessor in Train, and queue with `continuation_of_job_id` in
+`POST /api/hub/jobs`. The Hub keeps the original machine affinity and
+artifact lineage. For Ants, the predecessor may already be dispatched
+and running (or may have finished but not yet released capacity). The
+frozen continuation then has `status: "waiting_predecessor"` and **cannot
+claim CPU/RAM, be started manually, or be started by automation**.
+When a verified `finished` predecessor's Hub capacity is released, the
+same atomic registry update moves its waiting successor to
+`waiting_adapter`. Automatic allocation and Start still require the
+separately armed, qualified CPU-only scheduler; manual Start retains its
+normal authorization gate. A `stopped`, `failed`, or `unverified`
+predecessor never triggers automatic advancement. The operator can
+cancel the blocked continuation; stopped predecessors can still be
+continued manually via the existing completed-job workflow where
+eligible. The Ants adapter independently checks checkpoint viability
+and qualification on every launch. This is completion-based stage
+readiness, **not benchmark-driven early stopping**. Prequeueing a
+multi-stage chain requires the next predecessor to have been dispatched,
+so this does not yet implement arbitrary DAG workflows.
 The read-only queued-job placement preview now rehearses the **same
 round-robin project fairness, FIFO ordering, connected-agent requirement,
 continuation host affinity and best-fit resource selection** as the actual
@@ -230,7 +246,8 @@ the meaningful event during idle polling.
 While armed, a coordinator pass every ten seconds performs **at most one
 durable transition**: release capacity only for a job started in the
 **current automation session** after an authenticated native `finished`
-or `stopped` report, authorize one CPU-only Start that passes
+or `stopped` report (activating an eligible prequeued successor in the
+same write after `finished`), authorize one CPU-only Start that passes
 the same live readiness gate as the manual Start button, or claim available
 CPU/RAM budget for an unassigned non-Bees job. Jobs completed under
 older/manual sessions require explicit capacity release. A machine cannot
