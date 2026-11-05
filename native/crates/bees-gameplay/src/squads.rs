@@ -177,11 +177,15 @@ impl NativeSquadRoster {
             .ok_or(SquadRosterError::MissingScout(*scout_id))?;
         let beacon = world.ship(*beacon_id)
             .ok_or(SquadRosterError::MissingBeacon(*beacon_id))?;
+        // Beacon may already be dead by the time the Level consumes
+        // this tick's immutable spawn event. Scout/Beacon IDs, type,
+        // side and inherited fleet identity survive in CombatWorld's
+        // historical ship table. Do NOT require a live collider or the
+        // retired Beacon's transient parent mapping. Its subsequent
+        // ShipDied event will retire this one-member minion Squad.
         if parent.ship_type != SCOUT_TYPE ||
             beacon.ship_type != BEACON_TYPE ||
-            beacon.side != parent.side || beacon.vitals.is_dead() ||
-            !world.ship_body(*beacon_id).is_some_and(|body| body.active) ||
-            world.scout_beacon_parent(*beacon_id) != Some(*scout_id) ||
+            beacon.side != parent.side ||
             world.ship_fleet_identity(*beacon_id) != Some(*parent_fleet_id) ||
             world.ship_fleet_identity(*scout_id) != Some(*parent_fleet_id) ||
             self.owner_by_ship.contains_key(beacon_id)
