@@ -407,9 +407,10 @@ Repeated launch instructions are reconciled against the durable local
 journal, never executed twice. One directive is delivered per heartbeat:
 stops take priority, then starts, then GPU device probes, then
 inspections. Jobs rotate fairly within each priority level using
-independent cursors, so intermittent Stops do not reset Start or Inspect
-rotation. One requested Stop can remain pending without monopolizing
-other Stop requests. The
+independent cursors. Once an authenticated native report confirms local
+Stop intent, that job moves into ordinary inspection while it shuts down;
+a lost or expired report restores urgent Stop priority. This prevents a
+slow shutdown from monopolizing observations of unrelated jobs. The
 manager records `running`, `finished`, `failed`, `stopped`, or
 `unverified` status from the authenticated machine and exposes
 current memory use, CPU time and task count without per-poll history
