@@ -245,7 +245,9 @@ They reproduce Unity's two-pass clearance distances, signed-static egress
 map, preferred-clearance penalties, eight-neighbor A* with diagonal
 corner checks, static-obstacle egress, and route smoothing. Per-search
 arrays and heap storage are reusable, with route points returned in
-Level-local grid coordinates.
+Level-local grid coordinates. The destination-clearance check and
+nearest-walkable ring search are also available; the Level retains
+responsibility for its exact ForceBounds behavior.
 
 **Integration is still incomplete:** native ship movement does not yet
 request or follow these paths. Source-equivalent asynchronous request
