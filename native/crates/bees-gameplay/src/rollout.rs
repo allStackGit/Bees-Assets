@@ -26,14 +26,17 @@ pub struct NativeBatchedStepCounts {
     pub worlds_stepped: usize,
     pub worlds_complete_or_failed: usize,
     pub policy_agents_inferred: usize,
-    /// Host wall time across every participating world's observation
+    /// False when Simulation timing sampling is disabled or this call
+    /// was not selected. The three durations are then exactly zero.
+    pub phase_timing_sampled: bool,
+    /// Sampled host wall time across each world's observation
     /// assembly, roster checks and snapshot validation.
     pub observation_build_nanos: u128,
-    /// Full inference boundary including backend call and action checks.
+    /// Sampled full inference boundary including model and action checks.
     /// For asynchronous accelerators this measures synchronization only
     /// when the backend waits for completion.
     pub inference_and_validation_nanos: u128,
-    /// Host wall time to dispatch validated actions and advance worlds.
+    /// Sampled host wall time to dispatch actions and advance worlds.
     /// Shared Simulation already measures sampled individual world steps.
     pub world_dispatch_and_step_nanos: u128,
 }
@@ -88,9 +91,14 @@ where
         &World<NativeLevelState<M, A>>, &mut NativeLevelInferenceBatch,
     ) -> Result<(), SourceError>,
 {
+    let sample_phases =
+        batch.sample_rollout_phase_timing(simulation.timing_sample_period());
     batch.clear();
-    let mut counts = NativeBatchedStepCounts::default();
-    let observations_started = Instant::now();
+    let mut counts = NativeBatchedStepCounts {
+        phase_timing_sampled: sample_phases,
+        ..NativeBatchedStepCounts::default()
+    };
+    let observations_started = sample_phases.then(Instant::now);
     for index in 0..simulation.world_count() {
         {
             let world = simulation.world_mut(index)
@@ -149,8 +157,10 @@ where
         // a complete one-to-one roster for this world.
     }
     counts.policy_agents_inferred = batch.keys().len();
-    counts.observation_build_nanos = observations_started.elapsed().as_nanos();
-    let inference_started = Instant::now();
+    if let Some(started) = observations_started {
+        counts.observation_build_nanos = started.elapsed().as_nanos();
+    }
+    let inference_started = sample_phases.then(Instant::now);
     if batch.keys().is_empty() {
         batch.finalize().map_err(|err|
             NativeBatchedStepError::Inference(
@@ -160,8 +170,10 @@ where
     } else {
         batch.infer(backend).map_err(NativeBatchedStepError::Inference)?;
     }
-    counts.inference_and_validation_nanos = inference_started.elapsed().as_nanos();
-    let dispatch_started = Instant::now();
+    if let Some(started) = inference_started {
+        counts.inference_and_validation_nanos = started.elapsed().as_nanos();
+    }
+    let dispatch_started = sample_phases.then(Instant::now);
     for index in 0..simulation.world_count() {
         let world = simulation.world(index)
             .ok_or(NativeBatchedStepError::MissingWorld { index })?;
@@ -179,7 +191,9 @@ where
         )?;
         counts.worlds_stepped += 1;
     }
-    counts.world_dispatch_and_step_nanos = dispatch_started.elapsed().as_nanos();
+    if let Some(started) = dispatch_started {
+        counts.world_dispatch_and_step_nanos = started.elapsed().as_nanos();
+    }
     Ok(counts)
 }
 
