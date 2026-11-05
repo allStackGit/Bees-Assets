@@ -13,6 +13,7 @@ use crate::geometry::{
 };
 use crate::movement::{MotionUpdate, ShipMotion};
 use crate::navigation_search::NavigationPath;
+use crate::timer::ScaledTimer;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct GameMovementProfile {
@@ -47,6 +48,8 @@ pub struct GameShipSteering {
     next_waypoints: VecDeque<Vec2>,
     target_direction: Option<f32>,
     deferred_direct_destination: Option<Vec2>,
+    path_failures: u8,
+    failed_path_retry_timer: Option<ScaledTimer>,
 }
 
 impl GameShipSteering {
@@ -57,6 +60,7 @@ impl GameShipSteering {
             is_following_path: false, remaining_egress_waypoints: 0,
             next_waypoints: VecDeque::new(), target_direction: None,
             deferred_direct_destination: None,
+            path_failures: 0, failed_path_retry_timer: None,
         })
     }
 
@@ -81,6 +85,8 @@ impl GameShipSteering {
         self.final_destination = Some(destination);
         self.target_direction = None;
         self.deferred_direct_destination = None;
+        self.failed_path_retry_timer = None;
+        self.path_failures = 0;
         motion.target_coordinates = destination;
         motion.has_target_coordinates = true;
         true
@@ -107,6 +113,7 @@ impl GameShipSteering {
         self.target_direction = None;
         self.final_destination = None;
         self.deferred_direct_destination = None;
+        self.failed_path_retry_timer = None;
         self.remaining_egress_waypoints = 0;
         self.is_following_path = false;
         motion.has_target_coordinates = false;
@@ -158,9 +165,40 @@ impl GameShipSteering {
         self.is_following_path = true;
         self.target_direction = None;
         self.deferred_direct_destination = None;
+        self.failed_path_retry_timer = None;
+        self.path_failures = 0;
         self.skip_close_waypoints(motion.position);
         self.advance_waypoint(motion);
         true
+    }
+
+    /// Unity MergePathfindingPaths retries failed routes at most five
+    /// times, separated by two seconds of ScaledTimer simulation time.
+    pub fn failed_path(&mut self, motion: &mut ShipMotion) -> bool {
+        self.stop(motion);
+        if self.path_failures >= 5 {
+            self.path_failures = 0;
+            return false;
+        }
+        self.path_failures += 1;
+        self.failed_path_retry_timer = Some(ScaledTimer::new(2.0, false, false));
+        true
+    }
+
+    /// Returns true once on strict elapsed >2s; the Level re-runs
+    /// MoveToPoint and its live box cast instead of blindly retrying A*.
+    pub fn advance_failed_path_retry(&mut self, dt: f32) -> bool {
+        let Some(timer) = self.failed_path_retry_timer.as_mut() else {
+            return false;
+        };
+        let Some(due) = timer.begin_update(dt) else { return false };
+        timer.finish_update(due);
+        self.failed_path_retry_timer = None;
+        true
+    }
+
+    pub fn has_pending_path_retry(&self) -> bool {
+        self.failed_path_retry_timer.is_some()
     }
 
     fn skip_close_waypoints(&mut self, current_position: Vec2) {
