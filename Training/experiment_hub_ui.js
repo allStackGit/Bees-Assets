@@ -87,6 +87,32 @@ document.addEventListener('DOMContentLoaded', () => {
         $('hub-config-save').textContent='Save draft';
         feedback('hub-config-message','');
     }
+    function learningSummary(job) {
+        const live=job.live_execution;
+        const p=live?.progress||job.final_progress;
+        if(p?.source==='ants-summary-v1') {
+            const pct=x=>x==null?'—':(x*100).toFixed(1)+'%';
+            return 'Episodes '+p.episodes_completed.toLocaleString()+
+                ' · Policy '+p.policy_version.toLocaleString()+
+                ' · Level '+p.curriculum_level+
+                ' · Current curriculum window '+pct(p.curriculum_window_success_rate)+
+                (p.curriculum_window_episodes==null?''
+                    :' ('+p.curriculum_window_episodes+' episodes)')+
+                ' · Segment success '+pct(p.segment_success_rate)+
+                (p.simulation_steps_per_second==null?''
+                    :' · Last-episode simulation '+Math.round(
+                        p.simulation_steps_per_second).toLocaleString()+' steps/s')+
+                (p.ppo_unique_samples_per_second==null?''
+                    :' · Last-update PPO '+Math.round(
+                        p.ppo_unique_samples_per_second).toLocaleString()+
+                        ' unique samples/s')+
+                ' · Summary written '+new Date(p.source_modified_at).toLocaleString();
+        }
+        if(live?.progress_issue)
+            return 'Local progress unavailable: '+live.progress_issue;
+        return job.project_id==='ants'&&job.dispatch_id
+            ?'Awaiting production summary':'—';
+    }
     function display() {
         if(!state)return;
         const current=project;
@@ -206,28 +232,7 @@ document.addEventListener('DOMContentLoaded', () => {
             statusCell.title=detail||j.status_reason||status;
             cell(tr,j.resources.cpus+' CPU / '+j.resources.ram_mb+' MiB / '+
                 j.resources.gpu_count+' GPUs');
-            const p=live?.progress||j.final_progress;
-            let progressText='—';
-            if(p?.source==='ants-summary-v1') {
-                const pct=x=>x==null?'—':(x*100).toFixed(1)+'%';
-                progressText='Episodes '+p.episodes_completed.toLocaleString()+
-                    ' · Policy '+p.policy_version.toLocaleString()+
-                    ' · Level '+p.curriculum_level+
-                    ' · Current curriculum window '+pct(p.curriculum_window_success_rate)+
-                    (p.curriculum_window_episodes==null?''
-                        :' ('+p.curriculum_window_episodes+' episodes)')+
-                    ' · Segment success '+pct(p.segment_success_rate)+
-                    (p.simulation_steps_per_second==null?''
-                        :' · Last-episode simulation '+Math.round(
-                            p.simulation_steps_per_second).toLocaleString()+' steps/s')+
-                    ' · Summary written '+new Date(p.source_modified_at)
-                        .toLocaleString();
-            }else if(live?.progress_issue)
-                progressText='Local progress unavailable: '+live.progress_issue;
-            else if(j.project_id==='ants'&&j.dispatch_id)
-                progressText=j.final_progress?'Final snapshot unavailable':
-                    'Awaiting production summary';
-            cell(tr,progressText);
+            cell(tr,learningSummary(j));
             const actions=cell(tr,'');
             if(j.status==='waiting_adapter'&&!j.lease_id)
                 actions.append(button('Coordinate capacity',()=>allocateJob([j.id])));
@@ -313,6 +318,29 @@ document.addEventListener('DOMContentLoaded', () => {
             running+' native services reported running · '+pendingNative+
             ' start/stop operations pending · '+uncertain+' requiring inspection · '+
             cancelled+' cancelled. Remote status is heartbeat-based.');
+        $('hub-monitor-rows').replaceChildren();
+        for(const j of records.slice(-30).reverse()) {
+            const tr=document.createElement('tr');
+            const live=j.live_execution;
+            const progress=live?.progress||j.final_progress;
+            cell(tr,j.configuration_name+
+                (j.continuation_of_job_id?' · continuation':''));
+            cell(tr,j.status+
+                (j.capacity_released_at?' · capacity released':''));
+            cell(tr,learningSummary(j));
+            cell(tr,progress?.source_modified_at
+                ?new Date(progress.source_modified_at).toLocaleString():'—');
+            cell(tr,live?.memory_current_mb==null?'—':
+                live.memory_current_mb.toLocaleString()+' MiB RAM'+
+                (live.cpu_time_ns==null?'':' · '+Math.round(
+                    live.cpu_time_ns/1e9).toLocaleString()+' CPU seconds'));
+            $('hub-monitor-rows').append(tr);
+        }
+        if(!records.length) {
+            const tr=document.createElement('tr');
+            cell(tr,'No project jobs yet.').colSpan=5;
+            $('hub-monitor-rows').append(tr);
+        }
         $('hub-machine-rows').replaceChildren();
         for(const m of state.machines) {
             const tr=document.createElement('tr');
