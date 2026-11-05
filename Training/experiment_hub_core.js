@@ -765,10 +765,12 @@ class ExperimentHub {
             j.status==='start_requested'?1:
             j.gpu_qualification?.status==='requested'?2:3;
         jobs.sort((a,b)=>priority(a)-priority(b));
-        const last=this.executionOrderCursor.get(machineId);
         const ordered=[];
         for(const level of [0,1,2,3]) {
             const group=jobs.filter(j=>priority(j)===level);
+            // Keep a separate cursor for each priority tier. An urgent
+            // Stop must not reset fair rotation among pending Starts.
+            const last=this.executionOrderCursor.get(machineId+':'+level);
             if(group.length>1) {
                 const position=group.findIndex(j=>j.id===last);
                 if(position>=0)
@@ -803,7 +805,7 @@ class ExperimentHub {
                     gpu_devices:machine.observed_gpus,
                 },lease.resources,lease.gpu_bindings)?.length!==1))
                 continue;
-            this.executionOrderCursor.set(machineId,job.id);
+            this.executionOrderCursor.set(machineId+':'+priority(job),job.id);
             return [{
                 action,dispatch_id:action==='qualify_gpu'
                     ?job.gpu_qualification.request_id:job.dispatch_id,
