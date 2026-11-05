@@ -1330,13 +1330,31 @@ The adapter/native lifecycle has been exercised only with bounded
 simulations of filesystem, qualification pinning, metrics and systemd
 status. **No real Ants training or Linux service qualification has run here.**
 
+### Independent evaluation stops for non-Bees jobs
+
+A draft can set an optional `evaluation_stop` alongside its adapter parameters.
+Design accepts a suite ID, minimum trial count and minimum success rate, for
+example `{"suite_id":"heldout","min_trials":100,"min_success_rate":0.8}`.
+Queueing freezes the rule. Only hosts advertising the project's independent
+evaluation adapter can claim or start a job with the rule.
+
+The locally installed adapter can provide synchronous `readEvaluation(context)`.
+It reads completed, independently generated evidence for the requested suite
+and dispatch and returns either null or a version 1 report with `suite_id`,
+`dispatch_id`, `checkpoint_sha256`, `trials` and `successes` alongside
+`schema_version:1`. The adapter owns evaluator provenance and held-out data
+selection. The Hub verifies ownership and the frozen threshold, records the
+triggering report, and requests Stop through the existing native supervisor.
+The job retains capacity until terminal handling, and a stopped stage never
+automatically advances a sequence. Training progress has no stopping authority.
+
 ## Not yet implemented
 
 Production installation and qualification of project-specific adapters,
 real-machine Linux systemd qualification, GPU isolation and runtime
 device-selection enforcement, production coexistence qualification of the
-CPU-only scheduler, **generic non-Bees** benchmark- and capability-driven
-stop criteria, trusted production-source metrics adapters for additional
+CPU-only scheduler, production independent evaluators for non-Bees adapters,
+trusted production-source metrics adapters for additional
 projects, safe live rebalancing, and comprehensive
 CLI parity for all runtime configuration controls remain future work.
 Isolated Windows Job Object and browser-controlled CPU-only queue/disconnect

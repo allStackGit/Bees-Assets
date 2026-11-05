@@ -7,6 +7,7 @@ const crypto = require('node:crypto');
 const {request: resourceRequest,placements: resourcePlacements} =
     require('./experiment_hub_resources');
 const {validateProgress}=require('./experiment_hub_progress');
+const {evaluationPolicy,evaluationEvidence}=require('./experiment_hub_evaluation');
 const {ProgressHistory}=require('./experiment_hub_history');
 const ID = /^[a-z][a-z0-9_-]{0,47}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -132,6 +133,11 @@ function boundedReport(value) {
         new Set(installed).size!==installed.length||
         (!localExecutor&&installed.length))
         throw Error('Invalid locally installed execution adapters.');
+    const evaluators=value.evaluation_projects??[];
+    if(!Array.isArray(evaluators)||evaluators.length>installed.length||
+        new Set(evaluators).size!==evaluators.length||
+        evaluators.some(project=>!installed.includes(project)))
+        throw Error('Evaluation capability requires a corresponding installed adapter.');
     return {cpus:value.cpus,ram_mb:value.ram_mb,
         platform:value.platform,execution,
         gpu_inventory_source:gpuSource,gpu_devices:observedGpus,
@@ -139,6 +145,7 @@ function boundedReport(value) {
         native_preflight_passed:localExecutor&&
             ['linux','win32'].includes(value.platform)&&preflight,
         native_preflight_reason:reason||null,
+        evaluation_projects:localExecutor?evaluators.slice():[],
         installed_projects:['linux','win32'].includes(value.platform)&&
             localExecutor?installed.slice():[]};
 }
@@ -189,6 +196,8 @@ function nativeStartReadiness(snapshot, job) {
         return block('Linux cgroup v2 CPU and memory controllers are unavailable.');
     if(!machine.installed_projects?.includes(job.project_id))
         return block('The assigned machine has no trusted adapter for this project.');
+    if(job.evaluation_stop&&!machine.evaluation_projects?.includes(job.project_id))
+        return block('The assigned adapter does not advertise independent evaluation.');
     const r=job.resources;
     if(!r||r.ram_mb<128||r.gpu_count!==0||
         (r.gpus||[]).length||lease.resources.gpu_count!==0)
@@ -291,7 +300,10 @@ function waitingStageReason(job,byId) {
 }
 function allocationChoice(machines,reservations,job,preferredMachineId=null,
     following=[],futureMachinesFor=()=>machines) {
-    const options=resourcePlacements(machines,reservations,job.resources)
+    const supportsEvaluation=(machine,selected)=>!selected.evaluation_stop||
+        machine.evaluation_projects?.includes(selected.project_id);
+    const options=resourcePlacements(
+        machines.filter(machine=>supportsEvaluation(machine,job)),reservations,job.resources)
         .filter(p=>p.capacity_fits&&
             (!preferredMachineId||p.machine_id===preferredMachineId)&&
             (!job.continuation_machine_id||
@@ -305,7 +317,8 @@ function allocationChoice(machines,reservations,job,preferredMachineId=null,
     // no lease, execution permission or native ownership is conferred.
     const soleOptions=following.filter(next=>!next.lease_id)
         .map(next=>{
-            const places=resourcePlacements(futureMachinesFor(next),
+            const places=resourcePlacements(
+                futureMachinesFor(next).filter(machine=>supportsEvaluation(machine,next)),
                 reservations,next.resources)
                 .filter(p=>p.capacity_fits&&
                     (!next.continuation_machine_id||
@@ -434,6 +447,7 @@ class ExperimentHub {
                 machine.native_preflight_passed = report.native_preflight_passed;
                 machine.native_preflight_reason = report.native_preflight_reason;
                 machine.installed_projects = report.installed_projects.slice();
+                machine.evaluation_projects = report.evaluation_projects.slice();
             }
             return machine;
         });
@@ -1020,7 +1034,8 @@ class ExperimentHub {
     }
     // The report is authenticated by the machine-token heartbeat. A second
     // machine, retired dispatch ID or unrelated lease cannot update the job.
-    recordExecution(next,machine,items,installedProjects=[],accepted=new Map()) {
+    recordExecution(next,machine,items,installedProjects=[],accepted=new Map(),
+        evaluationProjects=[]) {
         if(!Array.isArray(items)||items.length>50)
             throw Error('Invalid execution reports.');
         const seen=new Set();
@@ -1076,7 +1091,21 @@ class ExperimentHub {
             // Only reports accepted into the lifecycle may update live
             // telemetry and comparison samples. A delayed older report
             // must not make a terminal job appear to be running again.
-            accepted.set(report.job_id,progress);
+            let evaluation=null,evaluationIssue=null;
+            if(state==='running'&&job.evaluation_stop&&
+                evaluationProjects.includes(job.project_id)) {
+                evaluationIssue=typeof report.evaluation_issue==='string'
+                    ?report.evaluation_issue.slice(0,160):null;
+                if(report.evaluation!=null) {
+                    try {
+                        evaluation=evaluationEvidence(
+                            report.evaluation,job.evaluation_stop,job.dispatch_id);
+                    }catch(error) {
+                        evaluationIssue=error.message;
+                    }
+                }
+            }
+            accepted.set(report.job_id,{progress,evaluation,evaluationIssue});
             if(job.status!==state||
                 (job.execution_diagnostic||null)!==(report.diagnostic||null)) {
                 job.status=state;
@@ -1089,6 +1118,14 @@ class ExperimentHub {
                     :'Native service state reported by its machine-local supervisor.';
                 job.execution_diagnostic=report.diagnostic||null;
                 job.execution_updated_at=now();
+                changed=true;
+            }
+            if(evaluation&&evaluation.trials>=job.evaluation_stop.min_trials&&
+                evaluation.successes/evaluation.trials>=job.evaluation_stop.min_success_rate) {
+                job.status='stop_requested';
+                job.stop_requested_at=now();
+                job.status_reason='Independent evaluation target met; awaiting native Stop.';
+                job.evaluation_stop_evidence=evaluation;
                 changed=true;
             }
             // Keep the last accepted source version if the terminal report
@@ -1169,7 +1206,8 @@ class ExperimentHub {
             // journal and cannot authorize a new launch.
             if((action==='start'||action==='qualify_gpu')&&!lease.receipt_fresh)
                 continue;
-            if(action==='start'&&machine.native_preflight_passed!==true)
+            if(action==='start'&&(machine.native_preflight_passed!==true||
+                job.evaluation_stop&&!machine.evaluation_projects?.includes(job.project_id)))
                 continue;
             if(action==='qualify_gpu'&&(
                 machine.agent_platform!=='linux'||
@@ -1194,6 +1232,7 @@ class ExperimentHub {
                     continuation_of_job_id:job.continuation_of_job_id||null,
                     artifact_lineage_root_id:job.artifact_lineage_root_id||job.id,
                     resources:copy(job.resources),
+                    ...(job.evaluation_stop?{evaluation_stop:copy(job.evaluation_stop)}:{}),
                 },
                 lease:{
                     id:lease.id,job_id:job.id,project_id:lease.project_id,
@@ -1341,7 +1380,7 @@ class ExperimentHub {
             throw Error('Native lifecycle reports require a locally enabled supported executor.');
         const acceptedReports=new Map();
         if(this.recordExecution(next,machine,reports,
-            report.installed_projects,acceptedReports))
+            report.installed_projects,acceptedReports,report.evaluation_projects))
             changed=true;
         const gpuReports=value.gpu_qualification_reports==null
             ?[]:value.gpu_qualification_reports;
@@ -1386,7 +1425,7 @@ class ExperimentHub {
         let changedHistory=false,terminalHistory=false;
         for(const item of reports) {
             if(!acceptedReports.has(item.job_id))continue;
-            const progress=acceptedReports.get(item.job_id);
+            const {progress,evaluation,evaluationIssue}=acceptedReports.get(item.job_id);
             const previousTelemetry=this.executionTelemetry.get(item.job_id);
             const previousProgress=previousTelemetry?.progress||null;
             const job=this.state.jobs.find(j=>j.id===item.job_id);
@@ -1424,6 +1463,8 @@ class ExperimentHub {
                 process_tasks:item.process_tasks??null,
                 progress:progressAccepted?progress:previousProgress,
                 progress_issue:item.progress_issue||null,
+                evaluation:evaluation||previousTelemetry?.evaluation||null,
+                evaluation_issue:evaluationIssue,
             });
         }
         if(changedHistory||terminalHistory)
@@ -1463,6 +1504,9 @@ class ExperimentHub {
         if (!object(value)) throw Error('Missing configuration.');
         const project = this.project(value.project_id);
         const params = config(value.parameters);
+        const stop=evaluationPolicy(value.evaluation_stop);
+        if(stop&&project.adapter==='bees')
+            throw Error('Bees evaluation targets use the existing Bees experiment configuration.');
         const time = now();
         const next = copy(this.state);
         let item;
@@ -1482,6 +1526,8 @@ class ExperimentHub {
             };
             next.configurations.push(item);
         }
+        if(stop)item.evaluation_stop=stop;
+        else if(Object.hasOwn(value,'evaluation_stop'))delete item.evaluation_stop;
         this.commit(next);
         return copy(item);
     }
@@ -1652,6 +1698,8 @@ class ExperimentHub {
             configuration_sha256:crypto.createHash('sha256')
                 .update(JSON.stringify(frozen)).digest('hex'),
             frozen_parameters:frozen, resources,
+            ...(selected.evaluation_stop
+                ?{evaluation_stop:evaluationPolicy(selected.evaluation_stop)}:{}),
             status:waitingPredecessor?'waiting_predecessor':'waiting_adapter',
             status_reason:waitingPredecessor
                 ?'Prequeued stage; awaiting successful predecessor completion and capacity release.'
