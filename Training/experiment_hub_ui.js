@@ -451,6 +451,41 @@ document.addEventListener('DOMContentLoaded', () => {
             !records.some(j=>j.status==='waiting_adapter'&&!j.lease_id);
         $('hub-global-allocate').disabled=!(state.jobs||[]).some(j=>
             j.adapter==='unconfigured'&&j.status==='waiting_adapter'&&!j.lease_id);
+        const automation=state.automation||{enabled:false,machine_ids:[]};
+        const automationOptions=$('hub-automation-machines');
+        const selectedAutomation=new Set([
+            ...automationOptions.querySelectorAll('input:checked')
+        ].map(input=>input.value));
+        if(automation.enabled)
+            for(const id of automation.machine_ids)selectedAutomation.add(id);
+        const automationCandidates=state.machines.filter(m=>
+            m.status==='connected'&&m.local_executor_enabled&&
+            m.native_preflight_passed&&m.installed_projects?.length&&
+            (m.agent_platform==='win32'||m.agent_platform==='linux'&&
+                m.execution_capabilities?.cgroup_v2_detected===true&&
+                ['cpu','memory'].every(c=>
+                    m.execution_capabilities?.cgroup_controllers.includes(c))));
+        automationOptions.replaceChildren();
+        for(const machine of automationCandidates) {
+            const label=document.createElement('label');
+            label.style.display='block';
+            const input=document.createElement('input');
+            input.type='checkbox';input.value=machine.id;
+            input.checked=selectedAutomation.has(machine.id);
+            label.append(input,document.createTextNode(' '+machine.name+
+                ' ('+machine.id+') · '+machine.agent_platform+
+                ' · adapters: '+machine.installed_projects.join(', ')));
+            automationOptions.append(label);
+        }
+        if(!automationCandidates.length)
+            automationOptions.textContent='No connected native-capable machines with a passing preflight.';
+        $('hub-automation-arm').disabled=automation.enabled||!automationCandidates.length;
+        $('hub-automation-disarm').disabled=!automation.enabled;
+        feedback('hub-automation-status',
+            (automation.enabled?'Armed for '+automation.machine_ids.join(', ')
+                :'Disarmed')+
+            (automation.last_action?' · '+automation.last_action:'')+
+            (automation.last_error?' · REQUIRES REVIEW: '+automation.last_error:''));
         $('hub-job-rows').replaceChildren();
         for(const j of records.slice(-50).reverse()) {
             const tr=document.createElement('tr');
@@ -1015,6 +1050,30 @@ document.addEventListener('DOMContentLoaded', () => {
         }catch(e){feedback('hub-placements',e.message);}
     });
 
+    $('hub-automation-arm').addEventListener('click',async()=>{
+        const ids=[...$('hub-automation-machines').querySelectorAll('input:checked')]
+            .map(input=>input.value);
+        if(!ids.length) {
+            feedback('hub-automation-status','Select at least one native-capable machine.');
+            return;
+        }
+        if(!confirm('Arm native CPU-only queue automation on '+ids.join(', ')+
+            '? This WILL automatically launch locally installed, qualified non-Bees adapters without asking again for each job, and automatically release verified completed capacity. You confirm that CPU/RAM used by Bees and other unmanaged workloads on these machines has been accounted for. GPU jobs and unverified native jobs remain blocked. Restart disarms automation.'))return;
+        try {
+            await action('hub/automation',{
+                enabled:true,machine_ids:ids,
+                confirm_arm:true,confirm_untracked_load:true,
+            });
+            await reload();
+        }catch(error){feedback('hub-automation-status',error.message);}
+    });
+    $('hub-automation-disarm').addEventListener('click',async()=>{
+        if(!confirm('Disarm new automatic allocations and starts? Existing native processes are NOT stopped and capacity claims remain held.'))return;
+        try {
+            await action('hub/automation',{enabled:false,confirm_disarm:true});
+            await reload();
+        }catch(error){feedback('hub-automation-status',error.message);}
+    });
     $('hub-global-allocate').addEventListener('click',async()=>{
         const projects=new Set((state.jobs||[]).filter(j=>
             j.adapter==='unconfigured'&&j.status==='waiting_adapter'&&!j.lease_id)
