@@ -2,9 +2,9 @@
 //!
 //! Unity: Scripts/Entities/MapObject.cs. This object is owned by the
 //! CombatWorld and shares its real collider/contact pipeline. The special
-//! CanisterBomb (Fire Tank) is deliberately rejected until its attributed
-//! RocketExplosion and debris mechanics are ported: it must never silently
-//! behave like an ordinary MapObject.
+//! CanisterBomb (Fire Tank) delegates its explosion to the same attributed
+//! native projectile gameplay as ordinary weapons. A linked static obstacle
+//! is removed by the combat world; graphical debris is a rendering concern.
 
 /// Gameplay MapObject identity, including Unity's source-defined RL map-bit
 /// discriminators. The neural encoder imports this type from gameplay;
@@ -21,6 +21,16 @@ pub enum MapObjectError {
     InvalidId,
     InvalidMaxHealth,
     UnsupportedFireTank,
+    InvalidFireTankPower,
+    InvalidFireTankTarget,
+}
+
+/// Source CanisterBomb.Power and optional TargetObstacle. The latter is an
+/// authored Level entity reference, not an object chosen by proximity.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FireTankConfig {
+    pub explosion_power: i32,
+    pub target_obstacle_id: Option<i64>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -37,6 +47,7 @@ pub struct CombatMapObject {
     pub kind: MapObjectKind,
     pub health: i32,
     pub max_health: i32,
+    pub fire_tank: Option<FireTankConfig>,
 }
 
 impl CombatMapObject {
@@ -52,6 +63,35 @@ impl CombatMapObject {
         }
         Ok(Self {
             entity_id, kind, health: max_health, max_health,
+            fire_tank: None,
+        })
+    }
+
+    /// Authored Fire Tank with its actual CanisterBomb.Power and optional
+    /// level-linked obstacle. No default blast power or target is fabricated.
+    pub fn new_fire_tank(
+        entity_id: i64,
+        max_health: i32,
+        explosion_power: i32,
+        target_obstacle_id: Option<i64>,
+    ) -> Result<Self, MapObjectError> {
+        if entity_id <= 0 { return Err(MapObjectError::InvalidId); }
+        if max_health <= 0 { return Err(MapObjectError::InvalidMaxHealth); }
+        if explosion_power < 0 {
+            return Err(MapObjectError::InvalidFireTankPower);
+        }
+        if target_obstacle_id.is_some_and(|id| id <= 0 || id == entity_id) {
+            return Err(MapObjectError::InvalidFireTankTarget);
+        }
+        Ok(Self {
+            entity_id,
+            kind: MapObjectKind::FireTank,
+            health: max_health,
+            max_health,
+            fire_tank: Some(FireTankConfig {
+                explosion_power,
+                target_obstacle_id,
+            }),
         })
     }
 
