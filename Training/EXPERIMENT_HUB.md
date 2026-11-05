@@ -1155,7 +1155,15 @@ The Compare tab supports up to four manually selected jobs, an
 X-axis choice of cumulative experiment episodes or environment steps,
 and a Y-axis choice of curriculum-window success, segment success,
 curriculum level, policy version, last-episode simulation rate, or PPO
-unique samples/s. Environment steps account for unequal episode lengths
+unique samples/s. A curriculum-level filter excludes observations from
+other levels and preserves line breaks across omitted intervals; the
+horizontal axis remains cumulative, not normalized to level start.
+The selected runs and samples can be exported as UTF-8 CSV or JSON for
+external analysis, with configuration fingerprints, machine identity,
+checkpoint lineage, source timestamps and plot-selection metadata.
+Configuration bodies, checkpoints and private artifacts are not exported.
+CSV escapes untrusted labels to prevent spreadsheet formula execution.
+These are **observed training measurements, not benchmark results**. Environment steps account for unequal episode lengths
 when reported by Ants; missing step counts are not replaced by guessed
 values. Source segment changes, policy/episode rollback and decreases
 in reported cumulative environment steps break chart lines, including
