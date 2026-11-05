@@ -1,0 +1,250 @@
+//! Native Level squad membership and lifecycle bookkeeping.
+//!
+//! Source: Squad.AddShip / RemoveShip / Kill, Ship.Kill and Scout.DropBeacon.
+//! The physics and deaths remain solely in bees-sim. This module tracks
+//! which exact live SquadLifetime owns each ship, and reports formation/
+//! command invalidation obligations to the gameplay adapter. It never
+//! mutates combat state or silently settles HiveMind reservations.
+
+use std::collections::{BTreeMap, HashMap, HashSet};
+
+use bees_hivemind::session::SquadLifetime;
+use bees_sim::combat_world::{CombatEvent, CombatWorld};
+
+const SCOUT_TYPE: u8 = 18;
+const BEACON_TYPE: u8 = 14;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SquadRosterError {
+    InvalidOwner,
+    InvalidMembers,
+    DuplicateSquad,
+    DuplicateShip(i64),
+    MissingScout(i64),
+    MissingBeacon(i64),
+    InvalidBeaconEvent,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SquadRosterChange {
+    /// Unity RemoveShip -> RefreshCompositionCommandBans, SetOffsets and
+    /// MoveSquadBox on surviving combat squads. The Level adapter owns
+    /// the actual geometry, formation and command adjustments.
+    MemberLost {
+        squad: SquadLifetime,
+        ship_id: i64,
+        remaining: usize,
+    },
+    /// Unity Squad.Kill after its final ship dies. The caller MUST retire
+    /// this lifecycle in both NativeSquadCommandDirector and HiveMindSession,
+    /// retaining pending OutcomeIds for explicit later settlement.
+    SquadRetired { squad: SquadLifetime },
+    /// Scout spawned a real Beacon ship and a new one-ship minion Squad.
+    /// Native Level must create its display/command/formation entities.
+    MinionCreated {
+        squad: SquadLifetime,
+        mother_squad: SquadLifetime,
+        scout_id: i64,
+        beacon_id: i64,
+    },
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct SquadRosterMeasurements {
+    pub squads_registered: u64,
+    pub minion_squads_registered: u64,
+    pub ships_removed: u64,
+    pub squads_retired: u64,
+    pub peak_squads: usize,
+}
+
+/// Contains only data the Level already owns; physical positions, health,
+/// vision and abilities are deliberately not duplicated here.
+#[derive(Clone, Debug)]
+pub struct NativeSquadEntry {
+    pub owner: SquadLifetime,
+    pub side: i32,
+    pub members: Vec<i64>,
+    pub mother_squad: Option<SquadLifetime>,
+}
+
+#[derive(Default)]
+pub struct NativeSquadRoster {
+    active: BTreeMap<SquadLifetime, NativeSquadEntry>,
+    owner_by_ship: HashMap<i64, SquadLifetime>,
+    measurements: SquadRosterMeasurements,
+}
+
+impl NativeSquadRoster {
+    pub fn new() -> Self { Self::default() }
+
+    pub fn measurements(&self) -> SquadRosterMeasurements {
+        self.measurements
+    }
+
+    pub fn active_squad_count(&self) -> usize {
+        self.active.len()
+    }
+
+    pub fn owning_squad(&self, ship_id: i64) -> Option<SquadLifetime> {
+        self.owner_by_ship.get(&ship_id).copied()
+    }
+
+    pub fn get(&self, owner: SquadLifetime) -> Option<&NativeSquadEntry> {
+        self.active.get(&owner)
+    }
+
+    /// Called at the source Level's Squad.Setup + AddShip boundary.
+    /// Reject pooled squad IDs whose previous lifecycle is still active;
+    /// a new lifecycle must never silently inherit its predecessor's
+    /// command reservation or ownership.
+    pub fn register_squad(
+        &mut self,
+        world: &CombatWorld,
+        owner: SquadLifetime,
+        side: i32,
+        members: &[i64],
+    ) -> Result<(), SquadRosterError> {
+        if !owner.valid() || side <= 0 || members.is_empty() {
+            return Err(SquadRosterError::InvalidOwner);
+        }
+        if self.active.keys().any(|other|
+            other.level_id == owner.level_id &&
+            other.squad_id == owner.squad_id
+        ) {
+            return Err(SquadRosterError::DuplicateSquad);
+        }
+        let mut distinct = HashSet::with_capacity(members.len());
+        for &ship_id in members {
+            if ship_id <= 0 || !distinct.insert(ship_id) ||
+                !world.ship(ship_id).is_some_and(|ship|
+                    ship.side == side && !ship.vitals.is_dead()) ||
+                !world.ship_body(ship_id).is_some_and(|body| body.active)
+            {
+                return Err(SquadRosterError::InvalidMembers);
+            }
+            if self.owner_by_ship.contains_key(&ship_id) {
+                return Err(SquadRosterError::DuplicateShip(ship_id));
+            }
+        }
+        let entry = NativeSquadEntry {
+            owner, side, members: members.to_vec(), mother_squad: None,
+        };
+        self.active.insert(owner, entry);
+        for &ship_id in members {
+            self.owner_by_ship.insert(ship_id, owner);
+        }
+        self.measurements.squads_registered += 1;
+        self.measurements.peak_squads =
+            self.measurements.peak_squads.max(self.active.len());
+        Ok(())
+    }
+
+    /// Translate the already-executed CombatWorld::ScoutBeaconDropped into
+    /// the source Level's minion Squad.Setup + AddShip. The Level provides
+    /// a unique transient SquadLifetime; no synthetic global ID allocator
+    /// or training-only squad is introduced here.
+    ///
+    /// Process world events in their recorded order, so a Scout killed
+    /// later in the same tick still owns its earlier Beacon creation.
+    pub fn register_scout_beacon(
+        &mut self,
+        world: &CombatWorld,
+        event: &CombatEvent,
+        minion_owner: SquadLifetime,
+    ) -> Result<SquadRosterChange, SquadRosterError> {
+        let CombatEvent::ScoutBeaconDropped {
+            scout_id, beacon_id, parent_fleet_id,
+        } = event else {
+            return Err(SquadRosterError::InvalidBeaconEvent);
+        };
+        let Some(mother_squad) = self.owning_squad(*scout_id) else {
+            return Err(SquadRosterError::MissingScout(*scout_id));
+        };
+        if !minion_owner.valid() ||
+            minion_owner.level_id != mother_squad.level_id ||
+            self.active.keys().any(|other|
+                other.level_id == minion_owner.level_id &&
+                other.squad_id == minion_owner.squad_id
+            ) {
+            return Err(SquadRosterError::InvalidOwner);
+        }
+        let parent = world.ship(*scout_id)
+            .ok_or(SquadRosterError::MissingScout(*scout_id))?;
+        let beacon = world.ship(*beacon_id)
+            .ok_or(SquadRosterError::MissingBeacon(*beacon_id))?;
+        if parent.ship_type != SCOUT_TYPE ||
+            beacon.ship_type != BEACON_TYPE ||
+            beacon.side != parent.side || beacon.vitals.is_dead() ||
+            !world.ship_body(*beacon_id).is_some_and(|body| body.active) ||
+            world.scout_beacon_parent(*beacon_id) != Some(*scout_id) ||
+            world.ship_fleet_identity(*beacon_id) != Some(*parent_fleet_id) ||
+            world.ship_fleet_identity(*scout_id) != Some(*parent_fleet_id) ||
+            self.owner_by_ship.contains_key(beacon_id)
+        {
+            return Err(SquadRosterError::InvalidBeaconEvent);
+        }
+        let entry = NativeSquadEntry {
+            owner: minion_owner,
+            side: beacon.side,
+            members: vec![*beacon_id],
+            mother_squad: Some(mother_squad),
+        };
+        self.active.insert(minion_owner, entry);
+        self.owner_by_ship.insert(*beacon_id, minion_owner);
+        self.measurements.squads_registered += 1;
+        self.measurements.minion_squads_registered += 1;
+        self.measurements.peak_squads =
+            self.measurements.peak_squads.max(self.active.len());
+        Ok(SquadRosterChange::MinionCreated {
+            squad: minion_owner, mother_squad,
+            scout_id: *scout_id, beacon_id: *beacon_id,
+        })
+    }
+
+    /// Match the source Ship.Kill sequence: remove this ship from its
+    /// owning Squad, refresh surviving members, and retire the Squad only
+    /// when it becomes empty. A parent Scout's death does not itself
+    /// destroy independently living minion squads.
+    pub fn on_ship_death(
+        &mut self,
+        ship_id: i64,
+        changes: &mut Vec<SquadRosterChange>,
+    ) {
+        let Some(owner) = self.owner_by_ship.remove(&ship_id) else {
+            return;
+        };
+        let Some(squad) = self.active.get_mut(&owner) else {
+            unreachable!("ship mapping and owning squad updated atomically");
+        };
+        let Some(index) = squad.members.iter().position(|&id| id == ship_id)
+        else {
+            unreachable!("ship mapping must match member list");
+        };
+        squad.members.remove(index); // preserve formation list order
+        self.measurements.ships_removed += 1;
+        if squad.members.is_empty() {
+            self.active.remove(&owner);
+            self.measurements.squads_retired += 1;
+            changes.push(SquadRosterChange::SquadRetired { squad: owner });
+        } else {
+            changes.push(SquadRosterChange::MemberLost {
+                squad: owner, ship_id, remaining: squad.members.len(),
+            });
+        }
+    }
+
+    /// Feed this from the one authoritative world event queue, not from
+    /// recreated training-only health logic. The caller separately passes
+    /// ScoutBeaconDropped events to register_scout_beacon with an actual
+    /// Level-allocated transient squad lifecycle.
+    pub fn on_combat_death(
+        &mut self,
+        event: &CombatEvent,
+        changes: &mut Vec<SquadRosterChange>,
+    ) {
+        if let CombatEvent::ShipDied { victim_id, .. } = event {
+            self.on_ship_death(*victim_id, changes);
+        }
+    }
+}
