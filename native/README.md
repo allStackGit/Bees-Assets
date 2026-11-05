@@ -117,10 +117,13 @@ No native full-game client, server adapter or executable loop is wired yet.
 
 ## Low-overhead performance and command measurements
 
-`Simulation.measurements()` provides cumulative per-fixed-step counters
-(ticks, decisions, events, active-body snapshots), plus integrated body
-counts, broadphase candidates, narrowphase tests and contact entries
-already counted by the shared physics core. Wall-clock timings are collected
+`Simulation.measurements()` provides cumulative cross-world
+per-fixed-step counters (ticks, decisions, events, active-body snapshots),
+plus integrated body counts, broadphase candidates, narrowphase tests and
+contact entries already counted by the shared physics core. Each
+`World.measurements()` also exposes the same bounded counters for its
+current episode; `reset_episode` clears only that world's measurements,
+not the simulation's cumulative totals. Wall-clock timings are collected
 **only** when the caller enables a nonzero sample period; the fixed-size
 log2-nanosecond histogram provides bounded-memory approximate latency
 percentiles via `sampled_step_percentile_upper_nanos`. Snapshots can be
