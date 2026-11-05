@@ -69,8 +69,10 @@ VRAM and compute budgets fit.
 `POST /api/hub/plan` accepts `{"jobs":[{"id":"bees_actor",
 "resources":{"cpus":4,"ram_mb":8192,"gpu_count":1,"gpu_mode":"shared",
 "gpu_vram_mb":8192,"gpu_compute_pct":40}}]}` and returns a placement preview,
-**not** a queued job. The planner is greedy, does not optimize all possible
-assignments, and does not mutate persistent jobs, reservations, or machines.
+**not** a queued job. The planner uses a bounded, capability-scarcity-first greedy order,
+protecting exact machine affinity and uniquely capable large-VRAM hosts
+before assigning flexible workloads. It is not an exhaustive global
+optimizer and does not mutate persistent jobs, reservations, or machines.
 It may preview physically registered but unverified machines.
 
 **Capacity budgets are not performance guarantees.** Compute percentages
@@ -255,6 +257,17 @@ configuration with **exactly** `{"kind":"inert"}`, request 1 CPU and
 limits, Stop and terminal reporting before trying automation or any real
 project adapter. Do not run it on a machine carrying unaccounted Bees or
 other active workloads.
+
+Manual batch claims and the read-only pending-queue preview continue
+to preserve FIFO within each project and interleave projects fairly. They
+now prefer an alternative capable host when a flexible job would
+otherwise consume the **only** placement available to a later queued
+job. This single-host lookahead respects existing offered/acknowledged
+leases, does not reorder jobs, does not guarantee a globally optimal
+packing, and does not authorize native execution. The separate
+multi-workload what-if planner can reorder proposed workloads by
+capacity scarcity; its result is **not** a guarantee of the FIFO live
+claim order.
 
 ### Opt-in native CPU-only queue automation
 
