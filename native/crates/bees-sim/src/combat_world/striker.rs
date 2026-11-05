@@ -174,3 +174,144 @@ impl CombatWorld {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+    use crate::collision::Aabb;
+    use crate::combat::ShipVitals;
+    use crate::movement::ShipMotion;
+    use crate::policy::Action;
+    use crate::projectile_assets::ProjectileAssetCatalog;
+    use crate::ship_assets::ShipAssetCatalog;
+    use crate::simulation::{World, WorldId};
+
+    fn actual_striker_world() -> CombatWorld {
+        let projectiles = Arc::new(ProjectileAssetCatalog::embedded().unwrap());
+        let hulls = ShipAssetCatalog::embedded().unwrap();
+        let mut world = CombatWorld::new(Aabb {
+            min: Vec2::new(-200.0, -200.0),
+            max: Vec2::new(200.0, 200.0),
+        }, 8.0, projectiles).unwrap();
+
+        // 19=Striker; 5=Carrier; 21=Wasp. These use their actual
+        // prefab hulls, not a training-only collision radius.
+        for (id, ship_type, side, position) in [
+            (1, 19, 1, Vec2::new(-100.0, 0.0)),
+            (2, 5, 1, Vec2::new(-75.0, 0.0)),
+            (3, 21, 2, Vec2::new(75.0, 0.0)),
+        ] {
+            world.spawn_ship(
+                hulls.by_type(ship_type).unwrap(), id, side,
+                ShipVitals::new(100, 100, 1000, 0).unwrap(),
+                ShipMotion::new(position, 0.0, 0.0, 0.0, 3.0),
+            ).unwrap();
+        }
+        world.set_ship_fleet_identity(1, 101).unwrap();
+        world.bind_policy_ship(1, PolicyFrame::new(0), false).unwrap();
+        world.configure_policy_striker(1, 2, 25).unwrap();
+        world
+    }
+
+    #[test]
+    fn actual_hull_contact_triggers_striker_special_and_delayed_projectile_damage() {
+        let state = actual_striker_world();
+        assert_eq!(state.policy_action_mask(1).unwrap().fire, [false; 5]);
+        assert_eq!(state.policy_action_mask(1).unwrap().special,
+            [true, true, false, false, false]);
+        let mut world = World::new(WorldId(23), 7, state);
+        let rules = CombatWorldRules {
+            collision_matrix: CollisionMatrix::from_rows([0; 32]),
+        };
+        let mut action = Action::ZERO;
+        action.discrete[5] = 1; // Unity ShipSpecialAction
+        let command = Decision { agent_id: 1, action };
+
+        // A ready Striker cannot bomb a distant enemy. No projectile or
+        // readiness change occurs until the authored colliders touch.
+        rules.step(&mut world, &[command], 0.02).unwrap();
+        assert_eq!(world.state.policy_striker_bomb_ready(1), Some(true));
+        assert_eq!(world.state.projectile_storage_metrics().active_projectiles, 0);
+
+        // Move the actual Striker collider into the Wasp's hull, then
+        // execute the identical RL special through real CombatWorldRules.
+        let target_position = world.state.physics.ships()[2].motion.position;
+        world.state.physics.ships_mut()[0].motion.position = target_position;
+        rules.step(&mut world, &[command], 0.02).unwrap();
+        let shot_id = world.state.events().iter().find_map(|event| match event {
+            CombatEvent::StrikerBombDropped {
+                ship_id: 1, target_id: 3, projectile_id,
+            } => Some(*projectile_id),
+            _ => None,
+        }).expect("contacted Striker must drop its real bomb");
+        let index = *world.state.projectile_by_id.get(&shot_id).unwrap();
+        assert!(world.state.physics.projectiles()[index].active);
+        assert_eq!(world.state.projectiles()[index].projectile_type, 12);
+        assert_eq!(world.state.projectiles()[index].power, 25);
+        assert_eq!(world.state.projectiles()[index].owner.shooter_id, 1);
+        assert_eq!(world.state.policy_striker_bomb_ready(1), Some(false));
+        assert!(!world.state.policy_action_mask(1).unwrap().special[1]);
+        assert_eq!(world.state.ship(3).unwrap().vitals.health(), 100);
+
+        // The same native StrikerBombFuse owns detonation at 1.5 seconds
+        // and damage 0.5 seconds later. Before the second callback the
+        // target's health remains unaffected.
+        let mut detonated = false;
+        let mut hit = false;
+        for _ in 0..120 {
+            rules.step(&mut world, &[], 0.02).unwrap();
+            detonated |= world.state.events().iter().any(|event|
+                matches!(event, CombatEvent::BombDetonated {
+                    projectile_id, target_id: 3,
+                } if *projectile_id == shot_id));
+            hit |= world.state.events().iter().any(|event|
+                matches!(event, CombatEvent::Hit(h)
+                    if h.projectile_id == shot_id && h.shooter_id == 1));
+        }
+        assert!(detonated);
+        assert!(hit);
+        assert_eq!(world.state.ship(3).unwrap().vitals.health(), 75);
+        assert!(!world.state.physics.projectiles()[index].active);
+        assert!(!world.state.policy_action_mask(1).unwrap().special[1]);
+    }
+
+    #[test]
+    fn bomb_reloads_on_carrier_timer_not_on_elapsed_bomb_fuse() {
+        let mut state = actual_striker_world();
+        state.physics.ships_mut()[0].motion.position =
+            state.physics.ships()[2].motion.position;
+        let mut action = Action::ZERO;
+        action.discrete[5] = 1;
+        state.apply_policy_decisions(&[Decision { agent_id: 1, action }])
+            .unwrap();
+        assert_eq!(state.policy_striker_bomb_ready(1), Some(false));
+        assert_eq!(state.projectile_storage_metrics().active_projectiles, 1);
+
+        // The carrier is far away: neither time alone nor a completed
+        // bomb fuse can rearm the Striker.
+        state.advance_policy_striker_reloads(2.0);
+        assert_eq!(state.policy_striker_bomb_ready(1), Some(false));
+
+        // Reapproach the actual carrier; the next recurring one-second
+        // check makes another policy special legal.
+        state.physics.ships_mut()[0].motion.position =
+            state.physics.ships()[1].motion.position;
+        state.advance_policy_striker_reloads(1.02);
+        assert_eq!(state.policy_striker_bomb_ready(1), Some(true));
+        assert!(state.policy_action_mask(1).unwrap().special[1]);
+        assert!(state.events().iter().any(|event|
+            matches!(event, CombatEvent::StrikerBombReloaded {
+                ship_id: 1, carrier_id: 2,
+            })));
+
+        // Physically touching the target again creates a SECOND distinct
+        // fuse without replacing the first, which is still in flight.
+        state.physics.ships_mut()[0].motion.position =
+            state.physics.ships()[2].motion.position;
+        state.apply_policy_decisions(&[Decision { agent_id: 1, action }])
+            .unwrap();
+        assert_eq!(state.projectile_storage_metrics().active_projectiles, 2);
+        assert_eq!(state.policy_striker_bomb_ready(1), Some(false));
+    }
+}
