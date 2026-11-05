@@ -28,6 +28,7 @@ pub enum NativeInferenceError {
     WorldUnavailable,
     AlreadyFinalized,
     NotFinalized,
+    FailedBatch,
     Combat(CombatWorldError),
     Batch(PolicyBatchError),
     StaleAction(PolicyAgentKey),
@@ -40,6 +41,28 @@ impl From<PolicyBatchError> for NativeInferenceError {
     fn from(value: PolicyBatchError) -> Self { Self::Batch(value) }
 }
 
+/// Backend-independent execution of one exact v26 policy batch. A
+/// CPU/ROCm/ONNX implementation may batch multiple native worlds into
+/// one call without accessing or mutating the game simulation. Outputs
+/// are row-major [agent][16 continuous] and [agent][6 discrete].
+pub trait NativePolicyInference {
+    type Error;
+
+    fn forward(
+        &mut self,
+        observations: &[f32],
+        rows: usize,
+        continuous: &mut [f32],
+        discrete: &mut [u8],
+    ) -> Result<(), Self::Error>;
+}
+
+#[derive(Debug)]
+pub enum NativeInferenceRunError<E> {
+    Boundary(NativeInferenceError),
+    Backend(E),
+}
+
 /// Reuse numeric observation and action buffers across inference requests.
 /// A single instance may contain agents from multiple independent native
 /// Levels, enabling CPU/GPU batching without a process-global world state.
@@ -49,6 +72,7 @@ pub struct NativeLevelInferenceBatch {
     writer: NativePerceptionWriter,
     keyed_decisions: Vec<(PolicyAgentKey, Decision)>,
     finalized: bool,
+    failed: bool,
 }
 
 impl NativeLevelInferenceBatch {
@@ -58,6 +82,7 @@ impl NativeLevelInferenceBatch {
         self.batch.clear();
         self.keyed_decisions.clear();
         self.finalized = false;
+        self.failed = false;
     }
 
     pub fn reserve_agents(&mut self, count: usize)
@@ -97,6 +122,7 @@ impl NativeLevelInferenceBatch {
         if self.finalized {
             return Err(NativeInferenceError::AlreadyFinalized);
         }
+        if self.failed { return Err(NativeInferenceError::FailedBatch); }
         Ok(self.batch.output_buffers_mut())
     }
 
@@ -111,6 +137,7 @@ impl NativeLevelInferenceBatch {
         frame: PolicyFrame,
     ) -> Result<(), NativeInferenceError> {
         if self.finalized { return Err(NativeInferenceError::AlreadyFinalized); }
+        if self.failed { return Err(NativeInferenceError::FailedBatch); }
         if world.is_failed() || world.state.events.is_failed() ||
             world.state.events.completed() ||
             world.state.combat.frozen_after_elimination {
@@ -169,9 +196,45 @@ impl NativeLevelInferenceBatch {
         -> Result<&[(PolicyAgentKey, Decision)], NativeInferenceError>
     {
         if self.finalized { return Err(NativeInferenceError::AlreadyFinalized); }
-        self.batch.collect_decisions(&mut self.keyed_decisions)?;
+        if self.failed { return Err(NativeInferenceError::FailedBatch); }
+        if let Err(error) = self.batch.collect_decisions(
+            &mut self.keyed_decisions,
+        ) {
+            self.failed = true;
+            return Err(NativeInferenceError::Batch(error));
+        }
         self.finalized = true;
         Ok(&self.keyed_decisions)
+    }
+
+    /// Execute one model inference against the contiguous v26 buffers.
+    /// A backend failure invalidates the whole batch, including any
+    /// partially written actions; only clear() permits another attempt.
+    /// The same final validation as the manual-output path applies.
+    pub fn infer<B: NativePolicyInference>(
+        &mut self,
+        backend: &mut B,
+    ) -> Result<&[(PolicyAgentKey, Decision)], NativeInferenceRunError<B::Error>> {
+        if self.finalized {
+            return Err(NativeInferenceRunError::Boundary(
+                NativeInferenceError::AlreadyFinalized,
+            ));
+        }
+        if self.failed {
+            return Err(NativeInferenceRunError::Boundary(
+                NativeInferenceError::FailedBatch,
+            ));
+        }
+        let rows = self.batch.len();
+        let (observations, continuous, discrete) =
+            self.batch.inference_buffers_mut();
+        if let Err(error) = backend.forward(
+            observations, rows, continuous, discrete,
+        ) {
+            self.failed = true;
+            return Err(NativeInferenceRunError::Backend(error));
+        }
+        self.finalize().map_err(NativeInferenceRunError::Boundary)
     }
 
     /// Extract only the keys for this specific world. Check ALL matching
@@ -183,6 +246,7 @@ impl NativeLevelInferenceBatch {
         world: &World<NativeLevelState<M, A>>,
         output: &mut Vec<Decision>,
     ) -> Result<(), NativeInferenceError> {
+        if self.failed { return Err(NativeInferenceError::FailedBatch); }
         if !self.finalized { return Err(NativeInferenceError::NotFinalized); }
         if world.is_failed() || world.state.events.is_failed() ||
             world.state.events.completed() ||

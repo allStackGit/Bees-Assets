@@ -240,6 +240,19 @@ impl PolicyBatch {
         (self.continuous.as_mut_slice(), self.discrete.as_mut_slice())
     }
 
+    /// Zero-copy inference input/output handoff. Split field borrows
+    /// permit an accelerator model to read the frozen observation batch
+    /// while writing both contiguous action arrays in the same call.
+    pub fn inference_buffers_mut(
+        &mut self,
+    ) -> (&[f32], &mut [f32], &mut [u8]) {
+        (
+            self.observations.as_slice(),
+            self.continuous.as_mut_slice(),
+            self.discrete.as_mut_slice(),
+        )
+    }
+
     /// Validate every model result before publishing ANY decisions. This
     /// checks both the frozen action ABI and Unity's live discrete masks.
     pub fn validate_outputs(&self) -> Result<(), PolicyBatchError> {
