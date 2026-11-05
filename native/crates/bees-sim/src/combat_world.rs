@@ -642,6 +642,10 @@ pub struct CombatWorld {
     /// ship-class specials (choice 1); both remain in the one world.
     policy_pending_healing: Vec<i64>,
     policy_pending_warp: Vec<i64>,
+    /// Derived index of living WarpGates with imported child colliders.
+    /// The authoritative ship and physics arrays remain the source of truth;
+    /// registration/retirement maintain these sorted IDs for action masks.
+    warp_gate_ids_by_side: HashMap<i32, Vec<i64>>,
     policy_special_measurements: PolicySpecialMeasurements,
     /// One hit per victim for each active charge; cleared when the
     /// owning Barge starts another charge or is removed from the world.
@@ -732,6 +736,7 @@ impl CombatWorld {
             policy_pending_ship_specials: Vec::new(),
             policy_pending_healing: Vec::new(),
             policy_pending_warp: Vec::new(),
+            warp_gate_ids_by_side: HashMap::new(),
             policy_special_measurements: PolicySpecialMeasurements::default(),
             barge_charge_hits: HashSet::new(),
             barge_contact_candidates: Vec::new(),
@@ -852,6 +857,13 @@ impl CombatWorld {
         self.scout_beacon_specs.remove(&victim_id);
         self.discovery.retire(DiscoveryKind::Ship, victim_id);
         self.policy_ship_runtime.remove(&victim_id);
+        if self.ships[index].ship_type == 20 {
+            if let Some(gates) = self.warp_gate_ids_by_side.get_mut(&side) {
+                if let Ok(position) = gates.binary_search(&victim_id) {
+                    gates.remove(position);
+                }
+            }
+        }
         self.barge_charge_hits.retain(|&(attacker, victim)|
             attacker != victim_id && victim != victim_id);
         self.navigation_requests.retire_ship(victim_id);
