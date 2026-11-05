@@ -935,8 +935,8 @@ class ExperimentHub {
         // while this heartbeat reports the current host capacity. Reject
         // carried-over IDs if *all* outstanding claims no longer fit.
         const outstanding=next.reservations.filter(l=>
-            l.machine_id===machine.id&&l.issued_by==='experiment-hub'&&
-            ['offered','acknowledged'].includes(l.status));
+            l.machine_id===machine.id&&
+            ['active','offered','acknowledged'].includes(l.status));
         const withinCapacity=outstanding.every(l=>
             Number.isSafeInteger(l.resources?.cpus)&&l.resources.cpus>0&&
             Number.isSafeInteger(l.resources?.ram_mb)&&l.resources.ram_mb>0)&&
