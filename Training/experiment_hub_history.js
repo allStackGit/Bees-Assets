@@ -8,9 +8,20 @@ const {validateProgress}=require('./experiment_hub_progress');
 const MAX_FILE_BYTES=4*1024*1024;
 const MAX_JOBS=24;
 const MAX_POINTS=96;
+const PROJECT=/^[a-z][a-z0-9_-]{0,47}$/;
 const MIN_SAMPLE_INTERVAL_MS=60000;
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 function compact(progress,receivedMs) {
+    if(progress.source==='hub-metrics-v1') {
+        return {
+            observed_at:new Date(receivedMs).toISOString(),
+            source_modified_at:progress.source_modified_at,
+            experiment_id:progress.experiment_id,
+            segment_id:progress.segment_id,
+            steps_completed:progress.steps_completed,
+            metrics:progress.metrics,
+        };
+    }
     return {
         observed_at:new Date(receivedMs).toISOString(),
         source_modified_at:progress.source_modified_at,
@@ -47,7 +58,8 @@ class ProgressHistory {
             const seen=new Set();
             for(const entry of saved.samples) {
                 if(!entry||!UUID.test(String(entry.job_id))||
-                    entry.project_id!=='ants'||seen.has(entry.job_id)||
+                    !PROJECT.test(String(entry.project_id))||
+                    entry.project_id==='bees'||seen.has(entry.job_id)||
                     !Array.isArray(entry.points)||!entry.points.length||
                     entry.points.length>MAX_POINTS||
                     !Number.isSafeInteger(entry.last_received_ms)||
@@ -64,8 +76,10 @@ class ProgressHistory {
                         throw Error('Invalid chart archive sample.');
                     const {observed_at,break_before,...values}=point;
                     const verified=validateProgress({
-                        ...values,schema_version:1,source:'ants-summary-v1',
-                    },'ants');
+                        ...values,schema_version:1,
+                        source:entry.project_id==='ants'
+                            ?'ants-summary-v1':'hub-metrics-v1',
+                    },entry.project_id);
                     if(verified.experiment_id!==entry.experiment_id||
                         (i>0&&Date.parse(verified.source_modified_at)<=
                             Date.parse(entry.points[i-1].source_modified_at))||
@@ -79,7 +93,8 @@ class ProgressHistory {
                     entry.last_received_ms)
                     throw Error('Chart archive receipt order invalid.');
                 this.byJob.set(entry.job_id,{
-                    project_id:'ants',experiment_id:entry.experiment_id,
+                    project_id:entry.project_id,
+                    experiment_id:entry.experiment_id,
                     points,last_received_ms:entry.last_received_ms,
                     bucket_started_ms:entry.bucket_started_ms,
                 });
@@ -94,8 +109,10 @@ class ProgressHistory {
         }
     }
     record(jobId,projectId,progress,receivedMs=Date.now()) {
-        if(projectId!=='ants'||!UUID.test(String(jobId))||!progress||
-            progress.source!=='ants-summary-v1'||
+        if(!PROJECT.test(String(projectId))||projectId==='bees'||
+            !UUID.test(String(jobId))||!progress||
+            progress.source!==(projectId==='ants'
+                ?'ants-summary-v1':'hub-metrics-v1')||
             !Number.isFinite(receivedMs))
             return false;
         const point=compact(progress,receivedMs);
@@ -116,7 +133,8 @@ class ProgressHistory {
                 points:[],last_received_ms:receivedMs};
             this.byJob.set(jobId,entry);
         }
-        if(entry.experiment_id!==point.experiment_id)return false;
+        if(entry.project_id!==projectId||
+            entry.experiment_id!==point.experiment_id)return false;
         const previous=entry.points[entry.points.length-1];
         // The source file is written atomically. Repeated reads of the same
         // exact source version must never manufacture extra chart points.
@@ -129,7 +147,13 @@ class ProgressHistory {
             point.policy_version<previous.policy_version||
             (Number.isSafeInteger(point.total_environment_steps)&&
                 Number.isSafeInteger(previous.total_environment_steps)&&
-                point.total_environment_steps<previous.total_environment_steps)));
+                point.total_environment_steps<previous.total_environment_steps)||
+            (Number.isSafeInteger(point.steps_completed)&&
+                Number.isSafeInteger(previous.steps_completed)&&
+                point.steps_completed<previous.steps_completed)||
+            Object.entries(point.metrics||{}).some(([key,metric])=>
+                previous.metrics?.[key]&&
+                previous.metrics[key].unit!==metric.unit)));
         if(previous&&entry.points.length>1&&!point.break_before&&
             receivedMs-entry.bucket_started_ms<MIN_SAMPLE_INTERVAL_MS) {
             // Coalesce a recent sample without losing the discontinuity
