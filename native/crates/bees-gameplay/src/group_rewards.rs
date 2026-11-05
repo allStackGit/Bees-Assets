@@ -228,17 +228,27 @@ impl NativeGroupRewardDelivery {
         Ok(&self.events)
     }
 
-    /// Non-combat first-discovery rewards may occur between fixed-step
-    /// events. Forward them through the same single side-group stream
-    /// immediately, exactly once at the verified source callback.
-    /// Consumers must deliver before the next consume_tick clears events.
-    pub fn apply_immediate(
+    /// Discoveries and other source callbacks can occur between fixed
+    /// steps, possibly multiple times before one physics tick. Return
+    /// exactly the *new* event by value so a prior unconsumed discovery
+    /// cannot be overwritten or sent a second time. The native transport
+    /// dispatches this event immediately, as Unity's group callback does.
+    pub fn immediate_event(
         &mut self, emission: RewardEmission,
-    ) -> Result<&[GroupRewardEvent], GroupRewardError> {
+    ) -> Result<Option<GroupRewardEvent>, GroupRewardError> {
         if self.completed { return Err(GroupRewardError::AlreadyComplete) }
         let index = self.side_index(emission.side)?;
-        self.events.clear();
-        self.emit(index, GroupRewardKind::Immediate, emission.amount);
-        Ok(&self.events)
+        if self.participants[index].is_empty() {
+            self.measurements.skipped_without_participant += 1;
+            return Ok(None);
+        }
+        self.measurements.group_reward_events += 1;
+        Ok(Some(GroupRewardEvent {
+            side: emission.side,
+            team_id: self.teams[index],
+            episode_number: self.episode_number,
+            kind: GroupRewardKind::Immediate,
+            amount: emission.amount,
+        }))
     }
 }
