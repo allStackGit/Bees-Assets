@@ -105,9 +105,19 @@ same atomic registry update moves its waiting successor to
 separately armed, qualified CPU-only scheduler; manual Start retains its
 normal authorization gate. A `stopped`, `failed`, or `unverified`
 predecessor never triggers automatic advancement. The operator can
-cancel the blocked continuation; stopped predecessors can still be
-continued manually via the existing completed-job workflow where
-eligible. The Ants adapter independently checks checkpoint viability
+cancel the blocked continuation. For a verified `stopped` Ants
+predecessor whose capacity has already been released, Train also offers
+an explicit **Approve stopped predecessor** action. Its API
+`POST /api/hub/jobs/approve-stopped` requires
+`{"job_id":"...","confirm_stopped_checkpoint_risk":true}`,
+a matching released lease and durable native terminal report. Approval
+only changes the blocked stage to `waiting_adapter` and pins its
+original machine; it does not start or allocate a process. The next
+trusted Ants adapter launch independently validates checkpoint integrity,
+qualification and source lineage. Since the most recent durable
+checkpoint may predate an interrupted training run, approval warns
+that progress after that checkpoint could be lost. Failed, unverified
+or still-running predecessors cannot use this path. The Ants adapter independently checks checkpoint viability
 and qualification on every launch. This is completion-based stage
 readiness, **not benchmark-driven early stopping**. Further continuation
 stages can be prequeued against an already blocked Ants continuation
