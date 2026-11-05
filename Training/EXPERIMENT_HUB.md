@@ -21,8 +21,9 @@ remain authoritative.
   manager owns a run or has an armed queue. Ordinary runs are observed via the
   existing control plane, not inserted into the experiment database.
   Non-Bees projects can queue immutable jobs, cancel unstarted jobs,
-  explicitly authorize locally approved CPU-only Linux execution, request
-  native stops, and inspect signed agent lifecycle reports.
+  explicitly authorize locally approved CPU-only Linux or Windows execution,
+  request native stops, and inspect native lifecycle reports. Real-host
+  qualification is still required before treating either backend as deployable.
 - **Monitor and Compare:** Existing Bees live status, performance, benchmark
   reports and research charts remain intact. Non-experiment training is shown
   as distinct from experiment-owned training. For Ants, Compare can plot up to
@@ -116,7 +117,12 @@ Only the Hub ledger's estimated CPU, RAM and per-GPU budgets are admitted.
 Allocation links the job and an `offered` coordination lease in the
 **same atomic registry write**. The job remains `waiting_adapter` until a separate, explicitly
 confirmed native start authorization. The agent's lease receipt alone
-does not prove resource enforcement or authorize any program launch. Assigned
+does not prove resource enforcement or authorize any program launch.
+The Train tab reports a read-only native Start readiness reason for each
+waiting non-Bees job. It uses the same CPU-only, trusted-adapter,
+acknowledged-lease, native preflight, and continuation-lineage conditions
+as actual start authorization. A "ready" label only enables the
+separately confirmed Start action; it does not launch a job. Assigned
 jobs remain assigned after coordinator restart or agent disconnection;
 there is no automatic reclaim without evidence that workloads have
 stopped. The read-only planner displays linked assignments separately
@@ -246,15 +252,16 @@ authenticated heartbeat. The manager accepts discovery only as
 `backend:"none"` with native enforcement flags false; that report
 describes the host **before any job is launched** and is not a service
 attestation. Separately, the agent may explicitly advertise a locally
-configured Linux adapter. The resulting systemd unit's exact CPU and
-RAM limits are checked for each job before the manager records it as
-running. Older agents without the installed execution bridge remain
-observation-only.
+configured Linux or Windows adapter. Linux uses checked systemd CPU/RAM
+limits; Windows uses the locally compiled, SHA-pinned Job Object owner.
+Older agents without the installed execution bridge remain observation-only.
 
 A heartbeat, detected cgroup or coordination lease alone **never**
 permits execution. A locally opted-in installed project adapter, explicit
 administrator start authorization, and successful native service/limit
-verification are all required. GPU and Windows execution remain blocked.
+verification are all required. Native GPU execution remains blocked on
+all platforms. Windows CPU-only execution is implemented but has not
+been compiled or qualified on a real Windows machine.
 
 ## Linux native supervisor and authenticated dispatch (CPU-only)
 
