@@ -270,10 +270,10 @@ class LinuxSupervisor {
         // A proof of denial requires a second GPU render node that the same
         // unconfined account can open. Do not mistake a UNIX ACL failure for
         // a working eBPF device filter.
-        const denied=plan.unselected[0];
-        if(!denied||plan.selected.length!==1)
-            throw Error('GPU access qualification needs one selected and one excluded AMD render node.');
-        const openable=[plan.kfd.node,plan.selected[0].node,denied.node];
+        if(!plan.unselected.length||plan.selected.length!==1)
+            throw Error('GPU access qualification needs one selected and at least one excluded AMD render node.');
+        const denied=plan.unselected.map(device=>device.node).sort();
+        const openable=[plan.kfd.node,plan.selected[0].node,...denied];
         for(const node of openable) {
             let handle;
             try{handle=this.fs.openSync(node,'r+');}
@@ -300,11 +300,10 @@ class LinuxSupervisor {
             '--description='+description,
             '--property=CPUQuota=100%',
             '--property=MemoryMax=268435456',
-            '--property=DevicePolicy=closed',
-            ...plan.device_properties.slice(1).map(p=>'--property='+p),
+            ...plan.device_properties.map(p=>'--property='+p),
             '--',process.execPath,
             path.join(__dirname,'experiment_hub_linux_gpu_probe.js'),
-            plan.kfd.node,plan.selected[0].node,denied.node];
+            plan.kfd.node,plan.selected[0].node,...denied];
         let failure=null;
         try {
             const response=await this.runner(SYSTEMD_RUN,args,
@@ -312,10 +311,13 @@ class LinuxSupervisor {
             const actual=JSON.parse(response.stdout.trim());
             if(actual.kfd!==plan.kfd.node||
                 actual.allowed!==plan.selected[0].node||
-                actual.denied!==denied.node||
-                actual.kfd_access!==true||
-                actual.allowed_access!==true||
-                actual.denied_access!==false)
+                !Array.isArray(actual.denied)||
+                actual.denied.length!==denied.length||
+                denied.some((node,index)=>actual.denied[index]!==node)||
+                actual.kfd_access!==true||actual.allowed_access!==true||
+                !Array.isArray(actual.denied_access)||
+                actual.denied_access.length!==denied.length||
+                actual.denied_access.some(access=>access!==false))
                 throw Error('Linux device filter did not prove allowed and denied GPU access.');
         }catch(error){failure=error;}
         // A timed-out device probe may still be running. Only control the
@@ -327,7 +329,8 @@ class LinuxSupervisor {
                 {timeout:12000,maxBuffer:16384,windowsHide:true});
             const state=parseShow(show.stdout);
             if(state.LoadState!=='not-found') {
-                if(state.Id!==unit||state.Description!==description)
+                if(state.LoadState!=='loaded'||state.Id!==unit||
+                    state.Description!==description)
                     throw Error('GPU preflight unit identity is ambiguous.');
                 if(['active','activating','deactivating'].includes(state.ActiveState)) {
                     await this.runner(SYSTEMCTL,
@@ -338,9 +341,13 @@ class LinuxSupervisor {
                             '--property=Id,Description,LoadState,ActiveState'],
                         {timeout:12000,maxBuffer:16384,windowsHide:true});
                     const after=parseShow(ended.stdout);
-                    if(!['inactive','failed'].includes(after.ActiveState)&&
-                        after.LoadState!=='not-found')
+                    if(after.LoadState!=='not-found'&&
+                        (after.LoadState!=='loaded'||after.Id!==unit||
+                         after.Description!==description||
+                         !['inactive','failed'].includes(after.ActiveState)))
                         throw Error('GPU preflight cleanup was not confirmed.');
+                }else if(!['inactive','failed'].includes(state.ActiveState)) {
+                    throw Error('GPU preflight service state is uncertain.');
                 }
             }
         }catch(cleanup) {
@@ -361,8 +368,14 @@ class LinuxSupervisor {
         if(failure)
             throw Error('GPU device access preflight failed: '+
                 String(failure.message||failure).slice(0,160));
-        const qualifiedAt=new Date().toISOString();
-        return {qualified_at:qualifiedAt,
+        const observed=resolveRocmDevices(bindings,{fsApi:this.fs});
+        const identities=devices=>devices.map(device=>
+            [device.pci_address||null,device.node,device.major,device.minor].join(':'))
+            .sort().join('\n');
+        if(identities([plan.kfd,...plan.selected,...plan.unselected])!==
+            identities([observed.kfd,...observed.selected,...observed.unselected]))
+            throw Error('GPU device identity changed during the access probe.');
+        return {qualified_at:new Date().toISOString(),
             selected:plan.selected.map(g=>g.pci_address)};
     }
 

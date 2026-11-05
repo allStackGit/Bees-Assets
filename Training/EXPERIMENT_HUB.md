@@ -750,12 +750,14 @@ partitions, moved PCI devices and insufficient VRAM are rejected.
 The Linux supervisor now has an optional, **locally invoked**
 `qualifyGpuDeviceAccess(bindings)` method. It first proves that the
 same ordinary user account can open the selected render device,
-an excluded render device, and /dev/kfd. It then starts an inert,
+every resolved excluded AMD render device, and /dev/kfd. It then starts an inert,
 uniquely named systemd user service with DevicePolicy=closed and
 DeviceAllow entries for only /dev/kfd and the selected render node.
 The fixed Node probe must demonstrate that /dev/kfd and the
-selected render device remain openable **while the excluded,
-previously openable GPU becomes inaccessible**. Failure, unavailable
+selected render device remain openable **while every baseline-openable
+excluded AMD render device becomes inaccessible**. The supervisor checks
+the PCI and character-device mapping again after cleanup to reject
+reenumeration during the probe. Failure, unavailable
 systemd eBPF device filtering, an ambiguous unit or unconfirmed
 cleanup leaves qualification blocked. The probe opens and closes
 device files but does not submit GPU work or run training. Every
