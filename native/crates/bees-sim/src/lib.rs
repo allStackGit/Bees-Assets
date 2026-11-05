@@ -43,6 +43,7 @@ pub mod perception_environment;
 pub mod perception_weapons;
 pub mod policy;
 pub mod policy_batch;
+pub mod ppo_activity;
 pub mod polygon_obstacle_assets;
 pub mod projectile;
 pub mod projectile_assets;
