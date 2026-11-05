@@ -270,6 +270,7 @@ class ExperimentHub {
         // start unattended workloads, even though claims/jobs persist.
         this.automation = {
             enabled:false,machine_ids:[],agent_instances:{},managed_job_ids:[],
+            session_id:null,
             armed_at:null,last_tick_at:null,last_action:null,last_error:null,
             last_transition_at:null,waiting_reason:null,
         };
@@ -376,12 +377,20 @@ class ExperimentHub {
         for(const job of snapshot.jobs) {
             if(job.status==='waiting_adapter'&&job.project_id!=='bees')
                 job.native_start_readiness=nativeStartReadiness(snapshot,job);
+            if(job.status==='start_requested'&&job.automation_start_session_id)
+                job.automation_start_paused=!(
+                    this.automation.enabled&&
+                    this.automation.session_id===job.automation_start_session_id&&
+                    this.automation.agent_instances[job.assigned_machine_id]===
+                        this.agentReports.get(job.assigned_machine_id)?.instance_id&&
+                    snapshot.machines.some(m=>m.id===job.assigned_machine_id&&
+                        m.status==='connected'));
         }
         snapshot.automation=this.automationStatus();
         return snapshot;
     }
     automationStatus() {
-        const {agent_instances,managed_job_ids,...publicState}=this.automation;
+        const {agent_instances,managed_job_ids,session_id,...publicState}=this.automation;
         return {...copy(publicState),managed_jobs:managed_job_ids.length};
     }
     configureAutomation(value) {
@@ -392,7 +401,7 @@ class ExperimentHub {
                 throw Error('Explicitly confirm disarming native automation.');
             this.automation={
                 enabled:false,machine_ids:[],agent_instances:{},managed_job_ids:[],
-                armed_at:null,last_tick_at:this.automation.last_tick_at,
+                session_id:null,armed_at:null,last_tick_at:this.automation.last_tick_at,
                 last_action:'Disarmed by operator.',last_error:null,
                 last_transition_at:this.automation.last_transition_at,
                 waiting_reason:null,
@@ -428,7 +437,8 @@ class ExperimentHub {
         }
         this.automation={
             enabled:true,machine_ids:ids.slice(),agent_instances:agentInstances,
-            managed_job_ids:[],armed_at:now(),last_tick_at:null,
+            managed_job_ids:[],session_id:crypto.randomUUID(),
+            armed_at:now(),last_tick_at:null,
             last_action:'Armed for qualified CPU-only jobs; no job dispatched yet.',
             last_error:null,last_transition_at:null,waiting_reason:null,
         };
@@ -497,7 +507,7 @@ class ExperimentHub {
                     blockedMachines.has(job.assigned_machine_id)||
                     startingMachines.has(job.assigned_machine_id)||
                     job.native_start_readiness?.eligible!==true)continue;
-                this.authorizeStart({job_id:job.id,confirm_start:true});
+                this.authorizeStart({job_id:job.id,confirm_start:true},'automation');
                 session.managed_job_ids.push(job.id);
                 return transitioned('Authorized CPU-only Start: '+job.project_id+
                     ' / '+(job.configuration_name||job.id.slice(-8))+'.');
@@ -806,7 +816,9 @@ class ExperimentHub {
         return changed;
     }
 
-    authorizeStart(value) {
+    authorizeStart(value,origin='operator') {
+        if(!['operator','automation'].includes(origin))
+            throw Error('Unknown native Start authorization source.');
         if(!object(value)||value.confirm_start!==true||
             typeof value.job_id!=='string')
             throw Error('Explicitly confirm which queued job to start.');
@@ -815,9 +827,15 @@ class ExperimentHub {
         const readiness=nativeStartReadiness(snapshot,job);
         if(!readiness.eligible)
             throw Error(readiness.reason);
+        if(origin==='automation'&&(!this.automation.enabled||
+            !this.automation.machine_ids.includes(job.assigned_machine_id)||
+            !UUID.test(String(this.automation.session_id||''))))
+            throw Error('Native automation session no longer authorizes this Start.');
         const next=copy(this.state);
         const selected=next.jobs.find(j=>j.id===job.id);
         selected.status='start_requested';
+        if(origin==='automation')
+            selected.automation_start_session_id=this.automation.session_id;
         selected.dispatch_id=crypto.randomUUID();
         selected.start_requested_at=now();
         selected.status_reason='Start authorized; waiting for machine-local OS resource enforcement verification.';
@@ -964,6 +982,15 @@ class ExperimentHub {
                 l.machine_id===machineId&&l.status==='acknowledged');
             if(!lease||!machine.installed_projects.includes(job.project_id))continue;
             const action=actionFor(job);
+            // An automatic Start belongs only to its live arm session.
+            // Restart/disarm may leave the request pending but cannot issue
+            // another native launch. Stop/Inspect still reconcile it safely.
+            if(action==='start'&&job.automation_start_session_id&&
+                (!this.automation.enabled||
+                 this.automation.session_id!==job.automation_start_session_id||
+                 this.automation.agent_instances[machineId]!==
+                    this.agentReports.get(machineId)?.instance_id))
+                continue;
             // A stale capacity receipt forbids creating a new workload or
             // probing a GPU, but must not strand an already owned process.
             // Authenticated Stop/Inspect only reconcile the local ownership
