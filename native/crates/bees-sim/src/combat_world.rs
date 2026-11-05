@@ -792,6 +792,35 @@ impl CombatWorld {
         }
     }
 
+    /// Tick source ScaledTimer path retries before the ship's ordinary
+    /// fixed-step steering. A scheduled failure retry is never allowed to
+    /// restart a still-running or superseded request.
+    fn advance_failed_game_paths(&mut self, dt: f32) -> Result<(), CombatWorldError> {
+        let mut ready = Vec::new();
+        for (&ship_id, steering) in &mut self.game_ship_steering {
+            if steering.advance_failed_path_retry(dt) {
+                if let Some(&order) = self.latest_game_point_orders.get(&ship_id) {
+                    ready.push((ship_id, order));
+                }
+            }
+        }
+        ready.sort_unstable_by_key(|(ship_id, _)| *ship_id);
+        for (ship_id, mut order) in ready {
+            let Some(&index) = self.ship_by_id.get(&ship_id) else { continue };
+            if self.ships[index].vitals.is_dead() ||
+                !self.physics.ships()[index].active ||
+                self.navigation_requests.is_pathfinding(ship_id) {
+                continue;
+            }
+            // Retry from the current position, checking current obstacles.
+            // Unity's TryToFindPathAgain invokes MoveToPoint without the
+            // FoundNearbyAsteroid override.
+            order.newly_found_obstacle = false;
+            self.move_ship_to_point(ship_id, order)?;
+        }
+        Ok(())
+    }
+
     /// The equivalent of Unity's WaitingTargetCoordinates release after a
     /// movement lock. Resolve at most one (latest) command per unlocked ship.
     /// Sorting by immutable ship ID keeps re-issued orders deterministic.
@@ -975,9 +1004,17 @@ impl CombatWorld {
                 let motion = &mut self.physics.ships_mut()[index].motion;
                 if !(motion.is_policy_controlled && !motion.user_controlled) &&
                     !path.as_ref().is_some_and(|route| steering.install_path(motion, route)) {
-                    // Unity stops moving on an empty/failed path; the
-                    // caller owns its retry schedule and associated limits.
-                    steering.stop(motion);
+                    // Unity MergePathfindingPaths: empty/failed route stops
+                    // motion and schedules a two-second retry. Only a
+                    // remembered Level order has enough bounds/clearance
+                    // context to safely re-enter MoveToPoint.
+                    let may_retry = self.latest_game_point_orders.get(&job.ship_id)
+                        .is_some_and(|order| order.bounded_destination() == job.destination);
+                    if may_retry {
+                        steering.failed_path(motion);
+                    } else {
+                        steering.stop(motion);
+                    }
                 }
             }
         }
@@ -2378,6 +2415,7 @@ impl CombatWorld {
         }
 
         self.apply_unlocked_game_point_orders()?;
+        self.advance_failed_game_paths(dt)?;
         for ship in self.physics.ships_mut() {
             if !ship.active { continue; }
             // A switch to neural-policy ownership must drop stale gameplay
