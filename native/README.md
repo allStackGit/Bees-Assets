@@ -208,8 +208,11 @@ those outside current sight), and real active static-collider bounds to
 rasterize discovered obstacles. Team exploration reads living allied ship
 positions and requires actual effective sight ranges. First-use ship
 identity order is preserved by sorting live candidates before assigning
-permuted episode IDs. Memory survives observer exit/death; target removal
-and episode reset are explicit lifecycle boundaries.
+permuted episode IDs. Actual vision detection calls
+`CombatWorld::record_hivemind_ship_sighting`, which validates the live
+opposing ships, observer registration and setup suppression before
+emitting a first-sighting event. Memory survives observer exit/death;
+target removal and episode reset are explicit lifecycle boundaries.
 
 **Integration boundary:** the game/Level adapter must still report actual
 Hive Mind sighting events, supply authored weapon/role/special metadata,
