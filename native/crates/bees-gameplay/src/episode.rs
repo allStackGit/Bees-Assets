@@ -211,20 +211,6 @@ impl NativeEpisodeRewardCoordinator {
         }
     }
 
-    /// Source RecordResolvedProjectileMiss: exactly one completed root
-    /// shot, after the physical near-miss classification is finalized.
-    pub fn record_resolved_projectile_miss(
-        &mut self, shooter_side: i32, near: bool,
-    ) -> Result<Option<RewardEmission>, NativeEpisodeRewardError> {
-        if self.terminal.result().is_some() {
-            return Err(NativeEpisodeRewardError::AlreadyComplete);
-        }
-        if self.failed {
-            return Err(NativeEpisodeRewardError::FailedEpisode);
-        }
-        Ok(self.shaping.record_resolved_projectile_miss(shooter_side, near))
-    }
-
     /// Called by the Level's real mining/campaign integration whenever
     /// FleetShip.MineralsMinedThisLevel is updated. This data never
     /// comes from ShipVitals.mined_cargo or a policy observation guess.
