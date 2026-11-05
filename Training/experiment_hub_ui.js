@@ -729,13 +729,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     'prior experiment')+' on original machine':'';
             const parent=state.jobs.find(p=>p.id===j.continuation_of_job_id);
             const waitingOnParent=j.status==='waiting_predecessor'
-                ?'Prequeued · No capacity claim · Awaiting predecessor '+
-                    (parent?.status||'unknown')+
-                    (parent?.status==='stopped'&&parent.capacity_released_at
-                        ?' · Operator may explicitly approve a checkpoint continuation'
-                        :['failed','stopped','unverified','cancelled'].includes(parent?.status)
-                            ?' · Requires review or cancellation; will not auto-advance'
-                            :' · Advances only after finished + capacity released')
+                ?'Prequeued · No capacity claim · '+
+                    (j.predecessor_wait?.reason||
+                        'Awaiting predecessor '+(parent?.status||'unknown'))
                 :null;
             const status=waitingOnParent||(
                 j.status==='waiting_adapter'
@@ -922,7 +918,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const progress=live?.progress||j.final_progress;
             cell(tr,j.configuration_name+
                 (j.continuation_of_job_id?' · continuation':''));
-            cell(tr,nativeJobLabel(j,j.status)+
+            cell(tr,(j.status==='waiting_predecessor'
+                    ?j.predecessor_wait?.reason||'Waiting for predecessor'
+                    :nativeJobLabel(j,j.status))+
                 (j.capacity_released_at?' · capacity released':''));
             cell(tr,learningSummary(j));
             cell(tr,progress?.source_modified_at
