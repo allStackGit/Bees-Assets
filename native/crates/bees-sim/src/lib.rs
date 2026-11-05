@@ -48,6 +48,7 @@ pub mod projectile;
 pub mod projectile_assets;
 pub mod projectile_rules;
 pub mod rl_shaping;
+pub mod rl_economy;
 pub mod simulation;
 pub mod ship_assets;
 pub mod squad_movement;
