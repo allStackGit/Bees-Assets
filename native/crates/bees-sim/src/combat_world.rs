@@ -38,6 +38,8 @@ use crate::policy::Decision;
 use crate::geometry::Vec2;
 use crate::movement::ShipMotion;
 use crate::navigation_clearance::NavigationClearance;
+use crate::navigation_runtime::NavigationRuntime;
+use crate::navigation::NavigationRasterCounts;
 use crate::navigation_movement::{GameMovementProfile, GameShipSteering};
 use crate::movement::MotionUpdate;
 use crate::navigation_search::NavigationSearch;
@@ -987,6 +989,51 @@ impl CombatWorld {
         let path = search.find_level_path(
             layers, job.start, job.destination, job.ship_clearance,
         )?;
+        Ok(Some(self.complete_path_job(job, path)?))
+    }
+
+    /// The reusable, Level-owned navigation workspace reads actual live
+    /// obstacles rather than keeping an independent entity list. Call with
+    /// static_changed=true after static obstacles are added, moved or
+    /// removed. The Level decides whether collision asteroids are active.
+    /// Unity updates dynamic clearance once per fixed frame when requested;
+    /// the caller makes this call once at the appropriate frame boundary.
+    pub fn refresh_world_navigation(
+        &self,
+        runtime: &mut NavigationRuntime,
+        static_changed: bool,
+        collision_asteroids_enabled: bool,
+    ) -> Result<(Option<NavigationRasterCounts>, NavigationRasterCounts), CombatWorldError> {
+        let static_counts = if static_changed {
+            Some(runtime.refresh_static(self.static_navigation_obstacles())?)
+        } else {
+            None
+        };
+        let dynamic_counts = runtime.refresh_dynamic(
+            collision_asteroids_enabled,
+            self.dynamic_navigation_asteroids(),
+        )?;
+        Ok((static_counts, dynamic_counts))
+    }
+
+    /// Consumes one queued request using the Level's persistent immutable
+    /// clearance snapshot and reusable search arrays. The runtime converts
+    /// world coordinates to the Map transform's local grid and converts
+    /// waypoints back to world before updating shared ship movement.
+    /// Caller controls worker count and update timing; no path search
+    /// is launched implicitly by PPO decision boundaries.
+    pub fn solve_next_world_navigation_job(
+        &mut self,
+        runtime: &mut NavigationRuntime,
+    ) -> Result<Option<NavigationCompletion>, CombatWorldError> {
+        let Some(job) = self.claim_next_path_job() else { return Ok(None) };
+        let path = match runtime.search(job) {
+            Ok(path) => path,
+            Err(error) => {
+                self.navigation_requests.abandon_failed_job(job);
+                return Err(error.into());
+            }
+        };
         Ok(Some(self.complete_path_job(job, path)?))
     }
 
