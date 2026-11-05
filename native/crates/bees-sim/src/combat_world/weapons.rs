@@ -101,6 +101,13 @@ impl NativeTurretSpec {
                 projectile_type: self.projectile_type,
             });
         }
+        // Projectile.Range is an int in Unity, and LaserBeam.Setup uses
+        // integer Range / 2 before widening its collider. An odd authored
+        // range must not silently become a fractional half range.
+        if matches!(self.fire_pattern, NativeFirePattern::BeamCannon) &&
+            (self.range.fract() != 0.0 || self.range >= i32::MAX as f32) {
+            return Err(CombatWorldError::InvalidPolicyTurret);
+        }
         if let NativeFirePattern::DualCannon {
             left_offset, right_offset,
         } = self.fire_pattern {
