@@ -49,48 +49,17 @@ pub enum StrategyReceipt {
     },
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum HiveMindSessionError {
     InvalidOwner,
     DuplicateRequestHash,
     UnknownRequest,
-    InvalidResponse(HiveMindProtocolErrorCode),
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum HiveMindProtocolErrorCode {
-    InvalidRequest,
-    RequestHashExhausted,
-    UnknownStrategy,
-    StrategyIdentityMismatch,
-    BannedStrategy,
-    RequestIdentityMismatch,
-    InvalidReservation,
-    DuplicateReservation,
-    InvalidResponse,
-}
-
-impl From<&HiveMindProtocolError> for HiveMindProtocolErrorCode {
-    fn from(value: &HiveMindProtocolError) -> Self {
-        match value {
-            HiveMindProtocolError::InvalidRequest => Self::InvalidRequest,
-            HiveMindProtocolError::RequestHashExhausted => Self::RequestHashExhausted,
-            HiveMindProtocolError::UnknownStrategy => Self::UnknownStrategy,
-            HiveMindProtocolError::StrategyIdentityMismatch =>
-                Self::StrategyIdentityMismatch,
-            HiveMindProtocolError::BannedStrategy => Self::BannedStrategy,
-            HiveMindProtocolError::RequestIdentityMismatch =>
-                Self::RequestIdentityMismatch,
-            HiveMindProtocolError::InvalidReservation => Self::InvalidReservation,
-            HiveMindProtocolError::DuplicateReservation => Self::DuplicateReservation,
-            HiveMindProtocolError::InvalidResponse => Self::InvalidResponse,
-        }
-    }
+    InvalidResponse(HiveMindProtocolError),
 }
 
 impl From<HiveMindProtocolError> for HiveMindSessionError {
     fn from(value: HiveMindProtocolError) -> Self {
-        Self::InvalidResponse((&value).into())
+        Self::InvalidResponse(value)
     }
 }
 
