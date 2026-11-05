@@ -14,6 +14,37 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 pub const STRATEGY_REQUEST_TYPE: &str = "get-strategy";
 pub const STORE_COMMANDS_TYPE: &str = "store-commands";
+/// Unity Utilities.Unique53Hash deliberately stays exactly representable
+/// in JavaScript Number, unlike generic 64-bit hash generators.
+pub const MAX_SAFE_REQUEST_HASH: i64 = (1_i64 << 53) - 1;
+pub const REQUEST_CLIENT_PREFIX_BITS: u32 = 21;
+
+/// One allocator per native client process, shared by ALL request types.
+/// The host supplies a securely generated 21-bit client prefix. A 32-bit
+/// monotonically increasing counter matches Unity's Unique53Hash scheme.
+#[derive(Clone, Debug)]
+pub struct RequestHashAllocator {
+    client_prefix: u32,
+    counter: u32,
+}
+
+impl RequestHashAllocator {
+    pub fn new(client_prefix: u32) -> Result<Self, HiveMindProtocolError> {
+        if client_prefix >= (1 << REQUEST_CLIENT_PREFIX_BITS) {
+            return Err(HiveMindProtocolError::InvalidRequest);
+        }
+        Ok(Self { client_prefix, counter: 0 })
+    }
+
+    pub fn next_hash(&mut self) -> Result<i64, HiveMindProtocolError> {
+        self.counter = self.counter.checked_add(1)
+            .ok_or(HiveMindProtocolError::RequestHashExhausted)?;
+        let hash = ((u64::from(self.client_prefix)) << 32)
+            | u64::from(self.counter);
+        Ok(hash as i64)
+    }
+}
+
 pub const LOCAL_MOVE_TO_POINT_NAME: &str = "Move To Point";
 /// Valid Unity command names that have no independent server strategy ID.
 pub const LOCAL_ONLY_COMMAND_NAMES: [&str; 3] = [
@@ -67,6 +98,7 @@ impl StrategyIdentity {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum HiveMindProtocolError {
     InvalidRequest,
+    RequestHashExhausted,
     UnknownStrategy,
     StrategyIdentityMismatch,
     BannedStrategy,
@@ -151,7 +183,8 @@ impl GetStrategyRequest {
         opponent_id: u64,
         banned_strats: impl IntoIterator<Item = String>,
     ) -> Result<Self, HiveMindProtocolError> {
-        if hash <= 0 || matchup.is_empty() || shooting_matchup.is_empty() {
+        if hash <= 0 || hash > MAX_SAFE_REQUEST_HASH ||
+            matchup.is_empty() || shooting_matchup.is_empty() {
             return Err(HiveMindProtocolError::InvalidRequest);
         }
         let mut bans = Vec::new();
@@ -313,7 +346,9 @@ pub struct StoreCommandsRequest {
 
 impl StoreCommandsRequest {
     pub fn new(hash: i64) -> Result<Self, HiveMindProtocolError> {
-        if hash <= 0 { return Err(HiveMindProtocolError::InvalidRequest); }
+        if hash <= 0 || hash > MAX_SAFE_REQUEST_HASH {
+            return Err(HiveMindProtocolError::InvalidRequest);
+        }
         Ok(Self {
             message_type: STORE_COMMANDS_TYPE.to_owned(), hash,
             commands: Vec::new(),
