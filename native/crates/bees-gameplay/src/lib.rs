@@ -20,3 +20,4 @@ pub mod level_events;
 pub mod level_rules;
 pub mod inference;
 pub mod group_rewards;
+pub mod rollout;
