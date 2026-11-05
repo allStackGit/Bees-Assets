@@ -156,6 +156,36 @@ An installed local trusted adapter, explicit dashboard authorization
 and verified native CPU/RAM service limits are required before a
 job can transition out of `waiting_adapter`.
 
+### Opt-in native CPU-only queue automation
+
+The non-Bees Train tab can explicitly **arm 1–16 selected, enrolled native
+machines** using the loopback-only `POST /api/hub/automation` endpoint.
+Arming requires a passing local CPU/RAM preflight, a current authenticated
+agent instance, installed trusted project adapters, and confirmation that
+the operator has accounted for Bees and any other **untracked workloads**
+on those machines. The automation session is process-local and starts
+**disarmed**, including after every coordinator restart. Disarming does
+not stop a running service or release its capacity.
+
+While armed, a coordinator pass every ten seconds performs **at most one
+durable transition**: release capacity only after an authenticated native
+`finished` or `stopped` report, authorize one CPU-only Start that passes
+the same live readiness gate as the manual Start button, or claim available
+CPU/RAM budget for an unassigned non-Bees job. Project queues are
+interleaved fairly (FIFO within each project). An agent must first
+acknowledge each fresh claim. Jobs requesting any GPU remain outside
+this automation; existing Bees training remains under its own operator.
+
+A failed or unverified managed job, disappearing/replaced agent, or
+failed coordinator operation disarms the session without retrying an
+uncertain native launch or freeing uncertain capacity. Stop/recovery of
+failed jobs remains manual. This is **implemented orchestration logic,
+not qualified unattended execution**: real Linux/Windows host limits,
+subprocess ownership, networking, and coexistence must be verified before
+arming it for meaningful production work. It does not implement
+benchmark-based completion criteria, dynamic live rebalancing, or measured
+CPU/GPU performance shares.
+
 ## Coordinated resource leases (not process isolation)
 
 The Machines tab can issue a **standalone coordination lease** for a selected
@@ -836,10 +866,10 @@ status. **No real Ants training or Linux service qualification has run here.**
 
 Installed project-specific Windows and Linux adapters, real-machine
 qualification of Windows Job Objects and Linux systemd execution, GPU isolation
-and runtime device-selection enforcement, automatic multi-project job scheduling,
-metrics ingestion for additional projects, safe live rebalancing, and
-comprehensive CLI parity for all runtime configuration controls remain
-future work. These
+and runtime device-selection enforcement, live qualification of the opt-in
+CPU-only scheduler, benchmark- and capability-driven stop criteria, metrics
+ingestion for additional projects, safe live rebalancing, and comprehensive
+CLI parity for all runtime configuration controls remain future work. These
 must not create a second owner of the Bees training lifecycle or treat
 reporting a worker as proof of exclusive host ownership.
 
