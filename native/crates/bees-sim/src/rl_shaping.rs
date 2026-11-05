@@ -149,10 +149,10 @@ impl EpisodeShaping {
         })
     }
 
-    /// Source RecordSuccessfulCapabilityOutcome for successful mining,
-    /// Beehive healing and WarpGate exit. Caller supplies the actual
-    /// positive fleet TSV change or preserved TSV from gameplay; this
-    /// method neither mutates the world nor creates capability events.
+    /// Source RecordSuccessfulCapabilityOutcome for Beehive healing and
+    /// WarpGate exit. Mining updates the separate economic ledger rather
+    /// than issuing an additional tactical reward. Caller supplies the
+    /// actual positive TSV change or preserved TSV from gameplay.
     /// Positive and negative TSV sources share the SAME shaping cap.
     pub fn record_successful_capability_outcome(
         &mut self, side: i32, tsv_value: i32,
