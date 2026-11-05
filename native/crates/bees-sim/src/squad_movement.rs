@@ -251,6 +251,34 @@ fn execute_squad_move(
     }))
 }
 
+/// Unity Squad.SetSquadSpeed sets the current speed of every ship,
+/// including stationary members, clamped individually to authored Speed.
+/// Preflight the complete membership before applying any mutation.
+pub fn set_squad_game_speed(
+    world: &mut CombatWorld,
+    members: &[SquadFormationMember],
+    speed: f32,
+) -> Result<(), SquadOrderError> {
+    if !speed.is_finite() || speed < 0.0 {
+        return Err(SquadOrderError::Formation(
+            SquadFormationError::InvalidRequest,
+        ));
+    }
+    let mut seen = HashSet::with_capacity(members.len());
+    for member in members {
+        if member.ship_id <= 0 || !seen.insert(member.ship_id) {
+            return Err(SquadOrderError::Formation(
+                SquadFormationError::InvalidRequest,
+            ));
+        }
+        world.validate_ship_game_order(member.ship_id)?;
+    }
+    for member in members {
+        world.set_ship_game_speed(member.ship_id, speed)?;
+    }
+    Ok(())
+}
+
 /// Unity Squad.StopMoving only stops members that are mobile. A Hold
 /// command invokes this path, rather than issuing a zero-distance order
 /// that could accidentally leave an A* job or pending waypoint active.
