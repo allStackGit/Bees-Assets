@@ -133,6 +133,19 @@ impl From<Arc<[Vec2]>> for ShipShape {
 }
 
 impl ShipShape {
+    /// Conservative radius about the local origin; invariant under rotation.
+    fn maximum_extent(&self) -> f32 {
+        match self {
+            Self::Polygon(points) => points.iter()
+                .map(|p| p.length_squared()).fold(0.0_f32, f32::max).sqrt(),
+            Self::Circle { offset, radius } =>
+                offset.length_squared().sqrt() + *radius,
+            Self::Box { offset, half_extents } =>
+                Vec2::new(offset.x.abs() + half_extents.x,
+                          offset.y.abs() + half_extents.y).length_squared().sqrt(),
+        }
+    }
+
     fn valid(&self) -> bool {
         match self {
             Self::Polygon(vertices) => {
@@ -326,6 +339,8 @@ pub struct ShipBody {
     pub motion: ShipMotion,
     pub layer: u8,
     pub active: bool,
+    /// Authored shape extent, recomputed only when the hull changes.
+    hull_radius_bound: f32,
     collider: WorldCollider,
 }
 
@@ -340,12 +355,14 @@ impl ShipBody {
             !motion.rotation_degrees.is_finite() {
             return Err(PhysicsError::InvalidCollider);
         }
+        let collider = WorldCollider::new(shape.into())?;
+        // Outward padding cannot suppress an actual contact; it only causes
+        // an occasional extra exact test at a numerical boundary.
+        let radius = collider.shape.maximum_extent();
         Ok(Self {
-            id,
-            motion,
-            layer,
-            active: true,
-            collider: WorldCollider::new(shape.into())?,
+            id, motion, layer, active: true,
+            hull_radius_bound: radius * 1.0001 + 0.001,
+            collider,
         })
     }
 
@@ -368,7 +385,10 @@ impl ShipBody {
 
     /// Invalidates cached geometry before the next fixed step.
     pub fn replace_shape(&mut self, shape: ShipShape) -> Result<(), PhysicsError> {
-        self.collider.replace_shape(shape)
+        let radius = shape.maximum_extent();
+        self.collider.replace_shape(shape)?;
+        self.hull_radius_bound = radius * 1.0001 + 0.001;
+        Ok(())
     }
 
     fn update_hull(&mut self) {
@@ -752,6 +772,15 @@ impl SpatialGrid {
     }
 }
 
+/// Work performed by an on-demand exact ship-hull contact query.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ShipHullOverlap {
+    Ineligible,
+    RejectedByDistance,
+    ExactMiss,
+    Contact,
+}
+
 /// The same physical scene type will be owned by graphical and headless
 /// worlds. The caller supplies authored movement velocities and consumes
 /// trigger entries; no PPO/Unity/rendering dependency is present.
@@ -820,22 +849,38 @@ impl KinematicPhysics {
         })
     }
 
-    /// Test the actual authored ship colliders at their current poses.
-    /// Striker.TryToDropBombs requires Ship.Collider.IsTouching rather than
-    /// proximity or center distance. This on-demand query avoids paying
-    /// for every ship/ship pair when no loaded Striker requests its special.
-    /// It refreshes each cached collider, including newly spawned ships.
-    pub fn ship_hulls_overlap(
+    /// Reject distant hull pairs before any polygon transform. A close
+    /// candidate always uses the original exact authored geometry.
+    pub fn ship_hulls_overlap_detailed(
         &mut self, a: usize, b: usize, collisions: &CollisionMatrix,
-    ) -> bool {
+    ) -> ShipHullOverlap {
         if a == b || a >= self.ships.len() || b >= self.ships.len() ||
             !self.ships[a].active || !self.ships[b].active ||
             !collisions.allows(self.ships[a].layer, self.ships[b].layer) {
-            return false;
+            return ShipHullOverlap::Ineligible;
         }
+        let distance_limit =
+            self.ships[a].hull_radius_bound + self.ships[b].hull_radius_bound;
+        if (self.ships[a].motion.position - self.ships[b].motion.position)
+            .length_squared() > distance_limit * distance_limit {
+            return ShipHullOverlap::RejectedByDistance;
+        }
+        // Read the current poses even if the most recent physics step
+        // predates a ship's spawn or motion change.
         self.ships[a].update_hull();
         self.ships[b].update_hull();
-        self.ships[a].collider.overlaps(&self.ships[b].collider)
+        if self.ships[a].collider.overlaps(&self.ships[b].collider) {
+            ShipHullOverlap::Contact
+        } else {
+            ShipHullOverlap::ExactMiss
+        }
+    }
+
+    pub fn ship_hulls_overlap(
+        &mut self, a: usize, b: usize, collisions: &CollisionMatrix,
+    ) -> bool {
+        self.ship_hulls_overlap_detailed(a, b, collisions) ==
+            ShipHullOverlap::Contact
     }
 
     pub fn ships(&self) -> &[ShipBody] { &self.ships }
@@ -1442,6 +1487,41 @@ mod tests {
             &[TriggerEnter { projectile_id: 2, ship_id: 1 }]);
         assert_eq!(physics.projectiles()[0].motion.position, Vec2::ZERO);
         assert!(physics.step(0.02, &mask).unwrap().is_empty());
+    }
+
+    #[test]
+    fn ship_contact_prefilter_preserves_offset_hulls_and_shape_replacement() {
+        let mut physics = KinematicPhysics::new(
+            Aabb { min: Vec2::new(-100.0, -100.0), max: Vec2::new(100.0, 100.0) },
+            8.0,
+        ).unwrap();
+        physics.add_ship(ShipBody::new(
+            1, ShipMotion::new(Vec2::ZERO, 0.0, 0.0, 0.0, 2.0),
+            12, ShipShape::Box {
+                offset: Vec2::new(5.0, 0.0),
+                half_extents: Vec2::new(1.0, 1.0),
+            },
+        ).unwrap()).unwrap();
+        physics.add_ship(ShipBody::new(
+            2, ShipMotion::new(Vec2::new(30.0, 0.0), 0.0, 0.0, 0.0, 2.0),
+            13, ShipShape::Circle { offset: Vec2::ZERO, radius: 0.5 },
+        ).unwrap()).unwrap();
+        let mut rows = [0u32; 32];
+        rows[12] |= 1u32 << 13;
+        let allowed = CollisionMatrix::from_rows(rows);
+        assert_eq!(physics.ship_hulls_overlap_detailed(0, 1, &allowed),
+            ShipHullOverlap::RejectedByDistance);
+        physics.ships_mut()[1].motion.position = Vec2::new(5.9, 0.0);
+        assert_eq!(physics.ship_hulls_overlap_detailed(0, 1, &allowed),
+            ShipHullOverlap::Contact);
+        physics.ships_mut()[0].replace_shape(
+            ShipShape::Circle { offset: Vec2::ZERO, radius: 0.5 },
+        ).unwrap();
+        assert_eq!(physics.ship_hulls_overlap_detailed(0, 1, &allowed),
+            ShipHullOverlap::RejectedByDistance);
+        assert_eq!(physics.ship_hulls_overlap_detailed(
+            0, 1, &CollisionMatrix::from_rows([0; 32]),
+        ), ShipHullOverlap::Ineligible);
     }
 
     #[test]

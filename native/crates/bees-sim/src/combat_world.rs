@@ -448,6 +448,8 @@ impl CombatProjectile {
 pub struct PolicySpecialMeasurements {
     pub requests: u64,
     pub striker_hull_checks: u64,
+    pub striker_distance_rejections: u64,
+    pub striker_exact_overlap_tests: u64,
     pub striker_contact_misses: u64,
     pub striker_bombs_dropped: u64,
     pub striker_reloads: u64,

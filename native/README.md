@@ -249,6 +249,12 @@ this new path.
 validated special requests, Striker exact hull checks/contact misses,
 real bombs/reloads, and Fire Barge detonations. Subtract snapshots to
 profile expensive contact searches without per-frame logs or allocations.
+The Striker contact path now rejects distant ship pairs using a
+rotation-invariant bound computed from each ship's authored hull at spawn
+or shape replacement, without suppressing close exact collider tests.
+Separate distance-rejection and exact-test counters measure how much
+polygon work this saves during real large-battle runs. A speedup has
+not yet been benchmarked.
 
 **Not yet implemented:** scripted BombingRun command coordination,
 Yellow Jacket, Scout and Barge ship specials, complete Level-to-perception snapshot

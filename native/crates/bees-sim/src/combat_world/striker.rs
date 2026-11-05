@@ -7,6 +7,7 @@
 //! original shooter-fleet attribution, even after the Striker is destroyed.
 
 use super::*;
+use crate::physics::ShipHullOverlap;
 
 /// The RL special repeatedly attempts an actual contact drop. There is no
 /// BombingRun command in native policy control, just as in Unity's RL path.
@@ -91,10 +92,22 @@ impl CombatWorld {
                 continue;
             }
             self.policy_special_measurements.striker_hull_checks += 1;
-            if self.physics.ship_hulls_overlap(ship_index, index, collisions) {
-                let id = self.ships[index].entity_id;
-                if target.map_or(true, |previous| id < previous) {
-                    target = Some(id);
+            match self.physics.ship_hulls_overlap_detailed(
+                ship_index, index, collisions,
+            ) {
+                ShipHullOverlap::Ineligible => {}
+                ShipHullOverlap::RejectedByDistance => {
+                    self.policy_special_measurements.striker_distance_rejections += 1;
+                }
+                ShipHullOverlap::ExactMiss => {
+                    self.policy_special_measurements.striker_exact_overlap_tests += 1;
+                }
+                ShipHullOverlap::Contact => {
+                    self.policy_special_measurements.striker_exact_overlap_tests += 1;
+                    let id = self.ships[index].entity_id;
+                    if target.map_or(true, |previous| id < previous) {
+                        target = Some(id);
+                    }
                 }
             }
         }
@@ -248,6 +261,10 @@ mod tests {
         rules.step(&mut world, &[command], 0.02).unwrap();
         assert_eq!(world.state.policy_striker_bomb_ready(1), Some(true));
         assert_eq!(world.state.projectile_storage_metrics().active_projectiles, 0);
+        let far = world.state.policy_special_measurements();
+        assert_eq!(far.striker_hull_checks, 1);
+        assert_eq!(far.striker_distance_rejections, 1);
+        assert_eq!(far.striker_exact_overlap_tests, 0);
 
         // Move the actual Striker collider into the Wasp's hull, then
         // execute the identical RL special through real CombatWorldRules.
