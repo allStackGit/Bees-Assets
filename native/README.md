@@ -212,9 +212,18 @@ authoritative gameplay records paired with actual native obstacle colliders.
 Projectile hits reduce their health, produce gameplay events and retire
 their collider and faction discovery when destroyed. Learned MapObjects
 use the primary Collider2D equivalent for vision and map-object observations.
-Fire Tanks are rejected until their attributed explosion and debris
-mechanics are ported, rather than silently treated as ordinary MapObjects. Team exploration reads living
-allied ship positions and requires actual effective sight ranges. First-use ship
+Fire Tanks require explicit authored `CanisterBomb.Power` and optional
+linked static-obstacle ID. A fatal projectile hit spawns the existing
+type-15 explosion with inherited shooter/root-shot/command attribution;
+the blast uses normal explosion damage, including friendly fire. Linked
+static obstacles leave the physical world and learned discovery cache;
+the `FireTankObstacleBrokenApart` event tells the renderer to create its
+source-authored **cosmetic** debris and the Level to refresh static
+navigation. Other linked obstacle types remain unsupported rather than
+silently applying incorrect breakup behavior.
+
+Team exploration reads living allied ship positions and requires actual
+effective sight ranges. First-use ship
 identity order is preserved by sorting live candidates before assigning
 permuted episode IDs. `CombatWorld::refresh_hivemind_vision` now performs
 source-matched real-collider closest-point sight checks for live enemy
