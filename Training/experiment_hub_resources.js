@@ -119,7 +119,11 @@ function plan(machines,reservations,jobs) {
     const work=jobs.map((job,index)=>{
         if(!job||typeof job!=='object'||typeof job.id!=='string'||!ID.test(job.id))
             throw Error('Every workload needs a valid unique ID.');
-        return {id:job.id,index,resources:request(job.resources)};
+        if(job.machine_id!=null&&
+            (typeof job.machine_id!=='string'||!ID.test(job.machine_id)))
+            throw Error('Invalid machine affinity for workload.');
+        return {id:job.id,index,resources:request(job.resources),
+            machine_id:job.machine_id||null};
     });
     if(new Set(work.map(j=>j.id)).size!==work.length)
         throw Error('Workload IDs must be unique.');
@@ -130,7 +134,8 @@ function plan(machines,reservations,jobs) {
     const claimed=reservations.slice(),results=[];
     for(const item of work) {
         const eligible=placements(machines,claimed,item.resources)
-            .filter(p=>p.capacity_fits)
+            .filter(p=>p.capacity_fits&&
+                (!item.machine_id||p.machine_id===item.machine_id))
             .sort((a,b)=>a.available.cpus-b.available.cpus||
                 a.available.ram_mb-b.available.ram_mb||
                 a.machine_id.localeCompare(b.machine_id));
