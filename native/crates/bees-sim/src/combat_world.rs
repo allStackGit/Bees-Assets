@@ -75,6 +75,8 @@ mod striker;
 mod fire_barge;
 mod yellow_jacket;
 mod barge;
+mod scout;
+pub use self::scout::{ScoutBeaconSpec, ScoutBeaconStatus};
 use self::policy::{PolicyShipRuntime, PolicyShipSpecial};
 use self::weapons::PendingPolicyShot;
 pub use self::weapons::{NativeFirePattern, NativeTurretSpec};
@@ -117,6 +119,7 @@ pub enum CombatWorldError {
     InvalidPolicyFireBarge,
     InvalidPolicyYellowJacket,
     InvalidPolicyBarge,
+    InvalidPolicyScout,
     UnsupportedPolicyTurret { weapon_type: u8, projectile_type: u8 },
     DuplicatePolicyTurret { ship_id: i64, slot: usize },
     MapObject(MapObjectError),
@@ -242,6 +245,11 @@ pub enum CombatEvent {
     BargeChargeStarted { ship_id: i64 },
     BargeChargeHit { ship_id: i64, target_id: i64 },
     BargeChargeStopped { ship_id: i64 },
+    /// A real type-14 Beacon ship joined the active roster and inherits
+    /// the parent's persistent FleetShip identity (not its runtime ID).
+    ScoutBeaconDropped {
+        scout_id: i64, beacon_id: i64, parent_fleet_id: i64,
+    },
     /// Emitted for projectile impacts against static geometry; the
     /// dedicated RL coordinator determines the corresponding reward.
     StaticObstacleImpact { projectile_id: i64, obstacle_id: i64 },
@@ -474,6 +482,8 @@ pub struct PolicySpecialMeasurements {
     pub barge_contact_checks: u64,
     pub barge_contact_hits: u64,
     pub barge_charges_stopped: u64,
+    pub scout_beacons_spawned: u64,
+    pub scout_spawns_blocked_by_cap: u64,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -571,6 +581,15 @@ pub struct CombatWorld {
     free_obstacle_slots: Vec<usize>,
     obstacle_slot_reuses: u64,
     ship_by_id: HashMap<i64, usize>,
+    /// Updated only at canonical spawn/death boundaries. Scout RL action
+    /// masks can enforce a team cap in O(1), even in large battles.
+    live_ships_by_side: HashMap<i32, usize>,
+    /// Each temporary Beacon has its own runtime ID and records the source
+    /// Scout. The physical squad formation remains a Level adapter concern.
+    beacon_parent_by_id: HashMap<i64, i64>,
+    /// Prefab-derived Beacon health, motion and collider, supplied at setup.
+    /// An RL Scout never invents missing authored prefab data at runtime.
+    scout_beacon_specs: HashMap<i64, ScoutBeaconSpec>,
     navigation_requests: NavigationRequests,
     game_ship_steering: HashMap<i64, GameShipSteering>,
     /// The Level-owned policy controller stores actual ongoing action
@@ -652,6 +671,9 @@ impl CombatWorld {
             free_obstacle_slots: Vec::new(),
             obstacle_slot_reuses: 0,
             ship_by_id: HashMap::new(),
+            live_ships_by_side: HashMap::new(),
+            beacon_parent_by_id: HashMap::new(),
+            scout_beacon_specs: HashMap::new(),
             navigation_requests: NavigationRequests::new(),
             game_ship_steering: HashMap::new(),
             policy_ship_runtime: BTreeMap::new(),
@@ -747,7 +769,14 @@ impl CombatWorld {
             self.spawn_fire_barge_explosion(index, false)?;
         }
         let victim_id = self.ships[index].entity_id;
+        let side = self.ships[index].side;
         self.physics.ships_mut()[index].active = false;
+        if let Some(live) = self.live_ships_by_side.get_mut(&side) {
+            debug_assert!(*live > 0, "side roster decrement underflow");
+            *live = live.saturating_sub(1);
+        }
+        self.beacon_parent_by_id.remove(&victim_id);
+        self.scout_beacon_specs.remove(&victim_id);
         self.discovery.retire(DiscoveryKind::Ship, victim_id);
         self.policy_ship_runtime.remove(&victim_id);
         self.barge_charge_hits.retain(|&(attacker, victim)|
@@ -841,6 +870,16 @@ impl CombatWorld {
     pub fn ship_body(&self, entity_id: i64) -> Option<&ShipBody> {
         let &index = self.ship_by_id.get(&entity_id)?;
         self.physics.ships().get(index)
+    }
+
+    /// Living members include temporary/minion ships, as Unity's RL
+    /// training-team cap requires; dead wrappers never occupy a slot.
+    pub fn living_ships_on_side(&self, side: i32) -> usize {
+        self.live_ships_by_side.get(&side).copied().unwrap_or(0)
+    }
+
+    pub fn scout_beacon_parent(&self, beacon_id: i64) -> Option<i64> {
+        self.beacon_parent_by_id.get(&beacon_id).copied()
     }
 
     /// Canonical gameplay fleet identity, if this runtime ship belongs to
@@ -1646,6 +1685,7 @@ impl CombatWorld {
         self.next_entity_id = self.next_entity_id.max(next_id);
         debug_assert_eq!(index, self.ships.len());
         self.ship_by_id.insert(ship.entity_id, index);
+        *self.live_ships_by_side.entry(ship.side).or_insert(0) += 1;
         self.ships.push(ship);
         Ok(())
     }
@@ -2845,6 +2885,7 @@ impl CombatWorld {
             });
         }
         self.apply_pending_policy_ship_specials(collision_matrix)?;
+        self.advance_policy_scout_cooldowns(dt);
         self.advance_policy_barge_phases(dt)?;
         self.advance_asteroid_deaths(dt);
         self.advance_asteroid_pieces(dt);

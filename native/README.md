@@ -287,8 +287,22 @@ teleport or collision model. Phase transitions, contact work, hits and
 stops have per-world counters. The rendered Level still needs animation,
 presentation and squad-command integration.
 
+**Scout Beacon policy special:** the native policy Scout now supports
+the source's five one-use Beacon drops with a ten-second scaled-game
+cooldown and an optional RL per-side living-ship cap. The caller supplies
+authored Beacon collider, health and motion (not guessed defaults).
+Each temporary Beacon enters the *same* CombatWorld ship roster,
+increments the live-side count, inherits the parent's persistent fleet
+identity, and records its Scout parent for the Level/game adapter.
+Special masks use an O(1) side count even in large battles; sorted policy
+requests recheck the cap at execution so concurrent Scout requests
+cannot exceed it. Beacon spawning and cap denial have separate counters.
+The graphical Level must still instantiate and register the Beacon's
+minion Squad, presentation and autonomous orders using the spawn event;
+these are not represented as magically complete in the native world.
+
 **Not yet implemented:** scripted BombingRun command coordination,
-Scout ship special, complete Level-to-perception snapshot
+complete Level-to-perception snapshot
 collection, GPU inference, and an ML-Agents-compatible learner. Unity targeting timers
 run on the Level's scaled update clock; this native implementation
 currently advances the same timer semantics on the game fixed-step delta,

@@ -1,0 +1,284 @@
+//! Source Scout.DropBeacon policy special and native Beacon spawn lifecycle.
+//! Sources: Scripts/Entities/Ships/Scout.cs, Beacon.cs,
+//! RlOneVsOneTrainingBootstrap.GetAvailableSpawnSlots.
+//! Beacon is a real ship in the same combat world, not an observation-only
+//! token. The graphical Level owns the minion Squad and presentation adapter.
+
+use super::*;
+use crate::combat::ShipVitals;
+
+/// ConfigData.Gameplay constants. These are source gameplay defaults,
+/// independent of rendering or Unity's wall clock.
+const COOLDOWN_SECONDS: f32 = 10.0;
+const MAX_BEACONS: u8 = 5;
+const SCOUT_TYPE: u8 = 18;
+const BEACON_TYPE: u8 = 14;
+
+/// Level-supplied real prefab metadata. ship-colliders.json intentionally
+/// has no health or movement stats; never invent those from the hull.
+/// A None side cap is ordinary campaign/Free Play semantics.
+#[derive(Clone, Debug)]
+pub struct ScoutBeaconSpec {
+    pub beacon_asset: ShipAsset,
+    pub beacon_vitals: ShipVitals,
+    pub beacon_base_speed: f32,
+    pub beacon_rotation_speed: f32,
+    pub beacon_height: f32,
+    pub max_living_ships_per_side: Option<usize>,
+}
+
+impl ScoutBeaconSpec {
+    fn valid(&self) -> bool {
+        self.beacon_asset.ship_type == BEACON_TYPE &&
+            !self.beacon_vitals.is_dead() &&
+            self.beacon_base_speed.is_finite() &&
+            self.beacon_base_speed >= 0.0 &&
+            self.beacon_rotation_speed.is_finite() &&
+            self.beacon_rotation_speed >= 0.0 &&
+            self.beacon_height.is_finite() && self.beacon_height > 0.0 &&
+            self.max_living_ships_per_side != Some(0)
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(super) struct PolicyScoutRuntime {
+    pub(super) dropped: u8,
+    pub(super) remaining_cooldown: f32,
+    pub(super) enabled: bool,
+}
+
+/// A single policy observation can use all three source channels:
+/// readiness (action mask), resource fraction, and cooldown/phase.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ScoutBeaconStatus {
+    pub dropped: u8,
+    pub remaining: u8,
+    pub cooldown_fraction: f32,
+    pub resource_fraction: f32,
+    pub phase: f32,
+    pub ready: bool,
+}
+
+impl CombatWorld {
+    /// Bind one Scout to its authored Beacon prefab and persistent fleet ID.
+    /// The side cap is optional in ordinary gameplay, required by the
+    /// dedicated training adapter. A Scout already has a policy frame.
+    pub fn configure_policy_scout(
+        &mut self, scout_id: i64, spec: ScoutBeaconSpec,
+    ) -> Result<(), CombatWorldError> {
+        let &index = self.ship_by_id.get(&scout_id)
+            .ok_or(CombatWorldError::UnknownShip)?;
+        if self.ships[index].ship_type != SCOUT_TYPE ||
+            self.ships[index].vitals.is_dead() ||
+            !self.physics.ships()[index].active ||
+            !spec.valid() {
+            return Err(CombatWorldError::InvalidPolicyScout);
+        }
+        if !self.fleet_id_by_ship.get(&scout_id).is_some_and(|&id| id > 0) {
+            return Err(CombatWorldError::InvalidFleetIdentity);
+        }
+        let runtime = self.policy_ship_runtime.get_mut(&scout_id)
+            .ok_or(CombatWorldError::UnknownShip)?;
+        if runtime.special.is_some() {
+            return Err(CombatWorldError::InvalidPolicyScout);
+        }
+        self.scout_beacon_specs.insert(scout_id, spec);
+        runtime.special = Some(PolicyShipSpecial::Scout(PolicyScoutRuntime {
+            dropped: 0, remaining_cooldown: 0.0, enabled: true,
+        }));
+        Ok(())
+    }
+
+    /// Unity's CanDropBeacons can be disabled independently from a fully
+    /// charged but temporarily blocked RL action mask.
+    pub fn set_policy_scout_enabled(
+        &mut self, scout_id: i64, enabled: bool,
+    ) -> Result<(), CombatWorldError> {
+        let Some(PolicyShipSpecial::Scout(scout)) = self.policy_ship_runtime
+            .get_mut(&scout_id).and_then(|r| r.special.as_mut()) else {
+            return Err(CombatWorldError::InvalidPolicyScout);
+        };
+        scout.enabled = enabled;
+        Ok(())
+    }
+
+    pub(super) fn policy_scout_ready(
+        &self, scout_id: i64, scout: PolicyScoutRuntime,
+    ) -> bool {
+        if !scout.enabled || scout.dropped >= MAX_BEACONS ||
+            scout.remaining_cooldown > 0.0 {
+            return false;
+        }
+        let Some(spec) = self.scout_beacon_specs.get(&scout_id) else {
+            return false;
+        };
+        let Some(ship) = self.ship(scout_id) else { return false };
+        spec.max_living_ships_per_side
+            .is_none_or(|cap| self.living_ships_on_side(ship.side) < cap)
+    }
+
+    pub fn policy_scout_beacon_status(
+        &self, scout_id: i64,
+    ) -> Option<ScoutBeaconStatus> {
+        let PolicyShipSpecial::Scout(scout) =
+            self.policy_ship_runtime.get(&scout_id)?.special? else {
+            return None;
+        };
+        let remaining = MAX_BEACONS.saturating_sub(scout.dropped);
+        let ready = self.policy_scout_ready(scout_id, scout);
+        let cooldown_fraction =
+            (scout.remaining_cooldown / COOLDOWN_SECONDS).clamp(0.0, 1.0);
+        Some(ScoutBeaconStatus {
+            dropped: scout.dropped, remaining,
+            cooldown_fraction,
+            resource_fraction: f32::from(remaining) / f32::from(MAX_BEACONS),
+            phase: if remaining == 0 || !scout.enabled {
+                1.0
+            } else if ready { 0.0 } else { 0.75 },
+            ready,
+        })
+    }
+
+    /// Each accepted ship-special decision rechecks the live-side cap after
+    /// earlier Scouts in the same tick may have already consumed its slots.
+    /// A cap denial never consumes a Beacon or starts the cooldown.
+    pub(super) fn try_drop_policy_scout_beacon(
+        &mut self, scout_id: i64,
+    ) -> Result<bool, CombatWorldError> {
+        let &index = self.ship_by_id.get(&scout_id)
+            .ok_or(CombatWorldError::UnknownShip)?;
+        let scout = match self.policy_ship_runtime.get(&scout_id)
+            .and_then(|r| r.special) {
+            Some(PolicyShipSpecial::Scout(scout)) => scout,
+            _ => return Err(CombatWorldError::InvalidPolicyScout),
+        };
+        if !self.physics.ships()[index].active ||
+            self.ships[index].vitals.is_dead() ||
+            !scout.enabled || scout.dropped >= MAX_BEACONS ||
+            scout.remaining_cooldown > 0.0 {
+            return Ok(false);
+        }
+        let Some(spec) = self.scout_beacon_specs.get(&scout_id) else {
+            return Err(CombatWorldError::InvalidPolicyScout);
+        };
+        let side = self.ships[index].side;
+        if spec.max_living_ships_per_side
+            .is_some_and(|cap| self.living_ships_on_side(side) >= cap) {
+            self.policy_special_measurements.scout_spawns_blocked_by_cap += 1;
+            return Ok(false);
+        }
+        let spec = spec.clone(); // Arc-backed hull; only copied on actual drop.
+        let parent_fleet_id = self.fleet_id_by_ship.get(&scout_id).copied()
+            .ok_or(CombatWorldError::InvalidFleetIdentity)?;
+        let beacon_id = self.next_entity_id;
+        if beacon_id == i64::MAX {
+            return Err(CombatWorldError::EntityIdExhausted);
+        }
+        let mother_motion = &self.physics.ships()[index].motion;
+        let motion = ShipMotion::new(
+            mother_motion.position, mother_motion.rotation_degrees,
+            spec.beacon_rotation_speed, spec.beacon_base_speed,
+            spec.beacon_height,
+        );
+        self.spawn_ship(
+            &spec.beacon_asset, beacon_id, side, spec.beacon_vitals, motion,
+        )?;
+        self.set_ship_fleet_identity(beacon_id, parent_fleet_id)?;
+        self.beacon_parent_by_id.insert(beacon_id, scout_id);
+
+        let Some(PolicyShipSpecial::Scout(scout)) =
+            self.policy_ship_runtime.get_mut(&scout_id)
+                .and_then(|r| r.special.as_mut()) else {
+            unreachable!("prevalidated live Scout");
+        };
+        scout.dropped += 1;
+        scout.remaining_cooldown = COOLDOWN_SECONDS;
+        if scout.dropped >= MAX_BEACONS { scout.enabled = false; }
+        self.policy_special_measurements.scout_beacons_spawned += 1;
+        self.events.push(CombatEvent::ScoutBeaconDropped {
+            scout_id, beacon_id, parent_fleet_id,
+        });
+        Ok(true)
+    }
+
+    /// Scaled game time, not wall time; BTreeMap order is already stable.
+    /// The fresh Scout is initially charged exactly as Unity Setup intends.
+    pub(super) fn advance_policy_scout_cooldowns(&mut self, dt: f32) {
+        for runtime in self.policy_ship_runtime.values_mut() {
+            let Some(PolicyShipSpecial::Scout(scout)) =
+                runtime.special.as_mut() else { continue };
+            if scout.remaining_cooldown > 0.0 {
+                scout.remaining_cooldown =
+                    (scout.remaining_cooldown - dt).max(0.0);
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+    use crate::collision::Aabb;
+    use crate::projectile_assets::ProjectileAssetCatalog;
+    use crate::ship_assets::ShipAssetCatalog;
+    use crate::policy::Action;
+    use crate::simulation::{World, WorldId};
+
+    #[test]
+    fn competing_scouts_enforce_shared_live_side_cap() {
+        let ships = ShipAssetCatalog::embedded().unwrap();
+        let shots = Arc::new(ProjectileAssetCatalog::embedded().unwrap());
+        let mut state = CombatWorld::new(Aabb {
+            min: Vec2::new(-100.0, -100.0),
+            max: Vec2::new(100.0, 100.0),
+        }, 8.0, shots).unwrap();
+        for id in 1..=2 {
+            state.spawn_ship(
+                ships.by_type(SCOUT_TYPE).unwrap(), id, 1,
+                ShipVitals::new(100, 100, 1000, 0).unwrap(),
+                ShipMotion::new(
+                    Vec2::new(id as f32 * 10.0, 0.0),
+                    0.0, 0.0, 0.0, 3.0,
+                ),
+            ).unwrap();
+            state.set_ship_fleet_identity(id, 100 + id).unwrap();
+            state.bind_policy_ship(id, PolicyFrame::new(0), false).unwrap();
+            state.configure_policy_scout(id, ScoutBeaconSpec {
+                beacon_asset: ships.by_type(BEACON_TYPE).unwrap().clone(),
+                beacon_vitals: ShipVitals::new(20, 20, 0, 0).unwrap(),
+                beacon_base_speed: 0.0,
+                beacon_rotation_speed: 0.0,
+                beacon_height: 2.0,
+                max_living_ships_per_side: Some(3),
+            }).unwrap();
+            assert!(state.policy_action_mask(id).unwrap().special[1]);
+        }
+        let mut action = Action::ZERO;
+        action.discrete[5] = 1;
+        let decisions = [
+            Decision { agent_id: 1, action },
+            Decision { agent_id: 2, action },
+        ];
+        let rules = CombatWorldRules {
+            collision_matrix: CollisionMatrix::from_rows([0; 32]),
+        };
+        let mut world = World::new(WorldId(71), 22, state);
+        rules.step(&mut world, &decisions, 0.02).unwrap();
+        assert_eq!(world.state.living_ships_on_side(1), 3);
+        assert_eq!(world.state.ships().len(), 3);
+        let beacon_id = world.state.events().iter().find_map(|event|
+            if let CombatEvent::ScoutBeaconDropped {
+                scout_id: 1, beacon_id, parent_fleet_id: 101,
+            } = event { Some(*beacon_id) } else { None }
+        ).expect("first Scout spawned the one available Beacon");
+        assert_eq!(world.state.ship(beacon_id).unwrap().ship_type, BEACON_TYPE);
+        assert_eq!(world.state.ship_fleet_identity(beacon_id), Some(101));
+        assert_eq!(world.state.scout_beacon_parent(beacon_id), Some(1));
+        assert_eq!(world.state.policy_scout_beacon_status(1).unwrap().remaining, 4);
+        assert!(!world.state.policy_action_mask(1).unwrap().special[1]);
+        assert_eq!(world.state.policy_scout_beacon_status(2).unwrap().remaining, 5);
+        assert_eq!(world.state.policy_special_measurements().scout_beacons_spawned, 1);
+        assert_eq!(world.state.policy_special_measurements().scout_spawns_blocked_by_cap, 1);
+    }
+}
