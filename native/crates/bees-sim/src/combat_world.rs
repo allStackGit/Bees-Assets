@@ -1028,6 +1028,15 @@ impl CombatWorld {
         self.navigation_requests.next()
     }
 
+    pub(crate) fn has_waiting_path_jobs(&self) -> bool {
+        self.navigation_requests.has_waiting_jobs()
+    }
+
+    /// A failed native worker is not a gameplay path-not-found result.
+    pub(crate) fn abandon_path_job(&mut self, job: NavigationRequest) {
+        self.navigation_requests.abandon_failed_job(job);
+    }
+
     /// A path job's result is delivered only to the same live ship and
     /// newest request owner. A superseding order is requeued from the
     /// ship's current physics position, rather than a stale snapshot.
