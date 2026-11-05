@@ -1729,6 +1729,11 @@ class ExperimentHub {
         }
         if(!future.length)throw Error('No queued successor jobs to cancel.');
         const cancelledIds=future.map(job=>job.id);
+        const expected=value.expected_job_ids;
+        if(Object.hasOwn(value,'expected_job_ids')&&
+            (!Array.isArray(expected)||expected.length!==cancelledIds.length||
+             cancelledIds.some((id,index)=>id!==expected[index])))
+            throw Error('The queued successors changed. Review the refreshed sequence before cancelling.');
         const cancellationTime=now();
         // Descendants first. Reuse existing unstarted lease release and
         // GPU-qualification cancellation, then commit every state together.
