@@ -6,7 +6,15 @@
 //! RocketExplosion and debris mechanics are ported: it must never silently
 //! behave like an ordinary MapObject.
 
-use crate::perception_environment::MapObjectKind;
+/// Gameplay MapObject identity, including Unity's source-defined RL map-bit
+/// discriminators. The neural encoder imports this type from gameplay;
+/// perception must not define gameplay entity kinds.
+#[repr(u8)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum MapObjectKind {
+    Generic = 2,
+    FireTank = 3,
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MapObjectError {
