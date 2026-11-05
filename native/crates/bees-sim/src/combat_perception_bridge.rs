@@ -15,7 +15,7 @@ use crate::geometry::Vec2;
 use crate::local_navigation_observation::{LocalNavigationError, LocalNavigationOccupancy};
 use crate::obstacle::ObstacleKind;
 use crate::perception::{SelfSource, ship_type_scalar};
-use crate::perception_environment::CollisionAsteroid;
+use crate::perception_environment::{CollisionAsteroid, MapObject as MapObjectObservation};
 use crate::team_exploration::{Explorer, ExplorationError, TeamExplorationGrid};
 use crate::perception_entities::{ObservedShip, ObservedWeapon};
 use crate::physics::ShipBody;
@@ -422,6 +422,64 @@ pub fn collect_learned_collision_asteroids(
             health_fraction: (vitals.health as f32 /
                 vitals.effective_max_health as f32).clamp(0.0, 1.0),
             alive: true,
+        });
+    }
+    Ok(output.len())
+}
+
+/// MapObject.Collider and MapObject.Health belong to the native gameplay
+/// world, not to an observation-only list. Collect only living MapObjects
+/// that Hive Mind discovery has actually learned for the observing side.
+/// Fire Tanks cannot be registered until their real explosion is ported.
+pub fn collect_learned_map_objects(
+    world: &CombatWorld,
+    observing_side: i32,
+    output: &mut Vec<MapObjectObservation>,
+) -> Result<usize, CombatPerceptionError> {
+    if observing_side <= 0 ||
+        world.obstacles().len() != world.physics().obstacles().len() {
+        return Err(CombatPerceptionError::InvalidObstacleStorage);
+    }
+    output.clear();
+    for (obstacle, body) in world.obstacles().iter()
+        .zip(world.physics().obstacles()) {
+        if obstacle.entity_id != body.id {
+            output.clear();
+            return Err(CombatPerceptionError::InvalidObstacleStorage);
+        }
+        if obstacle.kind != ObstacleKind::MapObject || !body.active ||
+            !world.discovery().has(
+                observing_side,
+                crate::level_discovery::DiscoveryKind::MapObject,
+                obstacle.entity_id,
+            ) {
+            continue;
+        }
+        let Some(object) = world.map_object(obstacle.entity_id) else {
+            output.clear();
+            return Err(CombatPerceptionError::InvalidObstacleStorage);
+        };
+        let Some(bounds) = body.primary_bounds() else {
+            output.clear();
+            return Err(CombatPerceptionError::MissingNavigationBounds(
+                obstacle.entity_id,
+            ));
+        };
+        let half_extents = Vec2::new(
+            (bounds.max.x - bounds.min.x).abs() * 0.5,
+            (bounds.max.y - bounds.min.y).abs() * 0.5,
+        );
+        if !body.pose.position.is_finite() || !half_extents.is_finite() {
+            output.clear();
+            return Err(CombatPerceptionError::InvalidAuthoredMetadata);
+        }
+        output.push(MapObjectObservation {
+            id: obstacle.entity_id,
+            kind: object.kind,
+            position: body.pose.position,
+            half_extents,
+            health_fraction: object.health_fraction(),
+            alive: object.alive(),
         });
     }
     Ok(output.len())
