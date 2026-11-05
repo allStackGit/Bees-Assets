@@ -70,6 +70,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // Only a fresh, authenticated native report can distinguish a Stop
     // still awaiting delivery from a service already shutting down.
     function nativeJobLabel(job, fallback) {
+        if(job.status==='start_requested'&&job.automation_start_paused)
+            return 'Automatic Start suspended; inspect or request Stop';
         return job.status==='stop_requested'&&
             job.live_execution?.state==='stop_requested'
             ?'Stop acknowledged; awaiting exit':fallback;
