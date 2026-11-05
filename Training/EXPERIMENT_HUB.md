@@ -291,8 +291,17 @@ that the running main PID belongs to that cgroup.** Merely setting
 systemd properties is insufficient to report a service as running.
 If the kernel limits are missing or mismatched, the native service
 becomes `unverified` and cannot be silently relaunched or have
-its allocation released. The recorded service remains stoppable through
-its exact systemd identity, even if its kernel limits are wrong. Read-only
+its allocation released. If an initial launch does not pass kernel-limit verification, the
+supervisor records a quarantine state and makes **one nonblocking
+systemd stop request** after checking that the unit name and
+description exactly match the locally recorded job. A quarantined job
+remains `unverified` even if the stop subsequently completes; this
+requires operator review because the service may have executed briefly
+before the limit failure was detected. A failed/ambiguous cleanup is
+reported, never silently retried or assumed successful. Previously
+running services with a later limit mismatch are also marked
+unverified, but their exact recorded unit can still be stopped from
+the dashboard without allowing an unknown unit to be killed. Read-only
 native status includes bounded current RAM, accumulated CPU time and task
 count when the unit reports them. These are live observations returned by
 the local API, **not** a high-volume metrics archive. Identical
