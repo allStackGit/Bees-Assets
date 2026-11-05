@@ -232,7 +232,8 @@ pub enum CombatEvent {
         ship_id: i64, target_id: i64, projectile_id: i64,
     },
     StrikerBombReloaded { ship_id: i64, carrier_id: i64 },
-    /// FireBarge.Detonate created the real type-14 explosion before self-death.
+    /// FireBarge.Kill creates type-14 explosion on self or combat death.
+    /// ShotOwner.self_detonation differentiates the two reward sources.
     FireBargeDetonated { ship_id: i64, projectile_id: i64 },
     /// Yellow Jacket's direct reciprocal Bomb hits have no projectile.
     YellowJacketDetonated { ship_id: i64, target_id: i64 },
@@ -458,6 +459,7 @@ pub struct PolicySpecialMeasurements {
     pub striker_bombs_dropped: u64,
     pub striker_reloads: u64,
     pub fire_barge_detonations: u64,
+    pub fire_barge_death_explosions: u64,
     pub yellow_jacket_contact_misses: u64,
     pub yellow_jacket_hull_checks: u64,
     pub yellow_jacket_distance_rejections: u64,
@@ -598,6 +600,9 @@ pub struct CombatWorld {
     asteroid_delayed_kills: HashMap<i64, ScaledTimer>,
     expired_asteroid_ids: Vec<i64>,
     fleet_id_by_ship: HashMap<i64, i64>,
+    /// Authoritative per-ship Bomb.Power, also for non-policy Fire Barges.
+    /// Consumed once at Kill; no second explosion can be spawned.
+    fire_barge_bomb_powers: HashMap<i64, i32>,
     projectile_by_id: HashMap<i64, usize>,
     reservations: DamageReservations,
     pending_contacts: Vec<TriggerEnter>,
@@ -661,6 +666,7 @@ impl CombatWorld {
             asteroid_delayed_kills: HashMap::new(),
             expired_asteroid_ids: Vec::new(),
             fleet_id_by_ship: HashMap::new(),
+            fire_barge_bomb_powers: HashMap::new(),
             projectile_by_id: HashMap::new(),
             reservations: DamageReservations::new(),
             pending_contacts: Vec::new(),
@@ -715,8 +721,18 @@ impl CombatWorld {
     /// economy or presentation cleanup, which belongs to the game adapter.
     fn retire_dead_ship(
         &mut self, index: usize, killer_id: i64, command_outcome_id: i64,
-    ) {
+    ) -> Result<(), CombatWorldError> {
         debug_assert!(self.ships[index].vitals.is_dead());
+        if !self.physics.ships()[index].active {
+            return Ok(());
+        }
+        // Unity FireBarge.Kill creates the same explosion whether the
+        // death came from its special, projectile fire or a collision.
+        // Explicit self-detonations consume their bomb first, so this is
+        // strictly once even when both paths reach this retirement.
+        if self.ships[index].ship_type == 10 {
+            self.spawn_fire_barge_explosion(index, false)?;
+        }
         let victim_id = self.ships[index].entity_id;
         self.physics.ships_mut()[index].active = false;
         self.discovery.retire(DiscoveryKind::Ship, victim_id);
@@ -730,6 +746,7 @@ impl CombatWorld {
         self.events.push(CombatEvent::ShipDied {
             victim_id, killer_id, command_outcome_id,
         });
+        Ok(())
     }
 
     pub fn policy_special_measurements(&self) -> PolicySpecialMeasurements {
@@ -2075,7 +2092,7 @@ impl CombatWorld {
                                     target_index,
                                     if identity_valid { owner.shooter_id } else { 0 },
                                     if identity_valid { attribution.command_outcome_id } else { 0 },
-                                );
+                                )?;
                             }
                         }
                     }
@@ -2200,7 +2217,7 @@ impl CombatWorld {
                 if delta.killed {
                     self.retire_dead_ship(
                         ship_index, owner.shooter_id, attribution.command_outcome_id,
-                    );
+                    )?;
                 }
             }
         }
@@ -2508,7 +2525,7 @@ impl CombatWorld {
                 );
                 self.events.push(CombatEvent::UnattributedDamage { target_id: ship_id, delta });
                 if delta.killed {
-                    self.retire_dead_ship(ship_index, 0, 0);
+                    self.retire_dead_ship(ship_index, 0, 0)?;
                 }
             }
             if asteroid_damage.killed {

@@ -234,16 +234,19 @@ uses the lowest enemy runtime ID rather than Unity's last-entered
 TouchingShip; the rendered bomb's random cosmetic attachment point also
 remains a Level integration detail.
 
-**Fire Barge policy special:** native ShipTypes=10 uses its configured
-Bomb.Power to create the real type-14 Fire Barge Explosion at the live
-ship's position, then deals the ship's remaining health as unattributed
-self-damage and retires the same physical ship. The shared projectile
-collider/timeline owns growing radius, friendly fire, hit attribution and
-expiry; the action cannot be used twice. The caller must provide the
-authoritative Bomb.Power and stable FleetShip identity. Automatic death
-explosions from other causes and squad/game-state cleanup still need
-Level integration, and no benchmarked throughput claim follows from
-this new path.
+**Fire Barge explosion lifecycle:** gameplay setup registers source
+Bomb.Power through `configure_fire_barge_bomb`, after assigning the
+persistent FleetShip identity. Policy-controlled barges can also call
+`configure_policy_fire_barge`, reusing the same registration.
+`FireBarge.Kill` now creates the source-authored type-14 explosion
+on either self-detonation or a lethal physical hit (projectile, Striker
+bomb, contact bomber or asteroid). The one-shot registration is
+consumed only after successful launch, preventing duplicate explosions;
+the existing collider/timeline owns growth, friendly fire and expiry.
+The two causes have separate counters, and the immutable projectile
+owner preserves their correct RL source attribution. Non-policy
+graphical-level squad and persistent-game accounting still require
+integration. No measured throughput claim follows from this path.
 
 `policy_special_measurements()` exposes bounded per-world counts of
 validated special requests, Striker exact hull checks/contact misses,

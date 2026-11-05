@@ -6,28 +6,85 @@
 use super::*;
 
 impl CombatWorld {
-    /// Register the actual FireBarge Bomb.Power, never a guessed damage value.
-    /// The FleetShip identity must already be bound for future attribution.
-    pub fn configure_policy_fire_barge(
+    /// Bind the real authored Bomb.Power for gameplay AND training. A
+    /// graphical Fire Barge needs this even when it has no policy controller.
+    /// Call after assigning its stable FleetShip identity.
+    pub fn configure_fire_barge_bomb(
         &mut self, ship_id: i64, bomb_power: i32,
     ) -> Result<(), CombatWorldError> {
         let &index = self.ship_by_id.get(&ship_id)
             .ok_or(CombatWorldError::UnknownShip)?;
         if self.ships[index].ship_type != 10 ||
             self.ships[index].vitals.is_dead() ||
-            !self.physics.ships()[index].active || bomb_power < 0 {
+            !self.physics.ships()[index].active ||
+            bomb_power < 0 || self.fire_barge_bomb_powers.contains_key(&ship_id) {
             return Err(CombatWorldError::InvalidPolicyFireBarge);
         }
         if !self.fleet_id_by_ship.get(&ship_id).is_some_and(|&id| id > 0) {
             return Err(CombatWorldError::InvalidFleetIdentity);
         }
-        let runtime = self.policy_ship_runtime.get_mut(&ship_id)
+        self.fire_barge_bomb_powers.insert(ship_id, bomb_power);
+        Ok(())
+    }
+
+    /// The policy special uses the same bomb as normal game death handling.
+    pub fn configure_policy_fire_barge(
+        &mut self, ship_id: i64, bomb_power: i32,
+    ) -> Result<(), CombatWorldError> {
+        let runtime = self.policy_ship_runtime.get(&ship_id)
             .ok_or(CombatWorldError::UnknownShip)?;
         if runtime.special.is_some() {
             return Err(CombatWorldError::InvalidPolicyFireBarge);
         }
-        runtime.special = Some(PolicyShipSpecial::FireBarge { bomb_power });
+        match self.fire_barge_bomb_powers.get(&ship_id) {
+            Some(&configured) if configured != bomb_power =>
+                return Err(CombatWorldError::InvalidPolicyFireBarge),
+            Some(_) => {},
+            None => self.configure_fire_barge_bomb(ship_id, bomb_power)?,
+        }
+        self.policy_ship_runtime.get_mut(&ship_id)
+            .expect("validated bound Fire Barge").special =
+            Some(PolicyShipSpecial::FireBarge);
         Ok(())
+    }
+
+    /// Launch type-14 as a real physical, source-owned explosion. One
+    /// successful launch consumes the Bomb.Power registration. A failed
+    /// launch leaves it intact, so the Level can diagnose the failure.
+    pub(super) fn spawn_fire_barge_explosion(
+        &mut self, index: usize, self_detonation: bool,
+    ) -> Result<bool, CombatWorldError> {
+        let ship_id = self.ships[index].entity_id;
+        let Some(&power) = self.fire_barge_bomb_powers.get(&ship_id) else {
+            return Ok(false);
+        };
+        let shot_id = self.next_entity_id;
+        if shot_id == i64::MAX {
+            return Err(CombatWorldError::EntityIdExhausted);
+        }
+        let asset = self.projectile_assets.by_type(14)
+            .ok_or(CombatWorldError::InvalidProjectileType(14))?.clone();
+        let position = self.physics.ships()[index].motion.position;
+        let side = self.ships[index].side;
+        self.spawn_projectile(
+            &asset, shot_id,
+            ShotOwner {
+                shooter_id: ship_id, shooter_side: side,
+                shooter_is_fire_barge: true, self_detonation,
+            },
+            power, ProjectileMotion::new(position, 0.0, 0.0, 0.0, shot_id, 0),
+            0.0,
+        )?;
+        self.fire_barge_bomb_powers.remove(&ship_id);
+        self.events.push(CombatEvent::FireBargeDetonated {
+            ship_id, projectile_id: shot_id,
+        });
+        if self_detonation {
+            self.policy_special_measurements.fire_barge_detonations += 1;
+        } else {
+            self.policy_special_measurements.fire_barge_death_explosions += 1;
+        }
+        Ok(true)
     }
 
     /// A Fire Barge's special does not require proximity to an enemy. Unity
@@ -42,43 +99,25 @@ impl CombatWorld {
             !self.physics.ships()[index].active {
             return Ok(false);
         }
-        let power = self.policy_ship_runtime.get(&ship_id)
-            .and_then(|runtime| match runtime.special {
-                Some(PolicyShipSpecial::FireBarge { bomb_power }) => Some(bomb_power),
-                _ => None,
-            })
-            .ok_or(CombatWorldError::InvalidPolicyFireBarge)?;
-        let shot_id = self.next_entity_id;
-        if shot_id == i64::MAX {
-            return Err(CombatWorldError::EntityIdExhausted);
+        if !matches!(
+            self.policy_ship_runtime.get(&ship_id).and_then(|runtime| runtime.special),
+            Some(PolicyShipSpecial::FireBarge)
+        ) {
+            return Err(CombatWorldError::InvalidPolicyFireBarge);
         }
-        let asset = self.projectile_assets.by_type(14)
-            .ok_or(CombatWorldError::InvalidProjectileType(14))?.clone();
-        let position = self.physics.ships()[index].motion.position;
-        let side = self.ships[index].side;
-        // Spawn successfully BEFORE retiring the source ship. Subsequent
-        // damage belongs to this immutable shot owner, not a recycled ship.
-        self.spawn_projectile(
-            &asset, shot_id,
-            ShotOwner {
-                shooter_id: ship_id, shooter_side: side,
-                shooter_is_fire_barge: true, self_detonation: true,
-            },
-            power, ProjectileMotion::new(position, 0.0, 0.0, 0.0, shot_id, 0),
-            0.0,
-        )?;
+        // Exactly one explosion regardless of whether the Fire Barge dies
+        // through its special or an external damage path.
+        if !self.spawn_fire_barge_explosion(index, true)? {
+            return Err(CombatWorldError::InvalidPolicyFireBarge);
+        }
         let remaining_health = self.ships[index].vitals.health();
         let delta = self.ships[index].vitals.apply_damage(remaining_health, false)?
             .expect("validated live Fire Barge");
         self.reservations.target_health_changed(ship_id, 0);
-        self.events.push(CombatEvent::FireBargeDetonated {
-            ship_id, projectile_id: shot_id,
-        });
-        self.policy_special_measurements.fire_barge_detonations += 1;
         self.events.push(CombatEvent::UnattributedDamage {
             target_id: ship_id, delta,
         });
-        self.retire_dead_ship(index, 0, 0);
+        self.retire_dead_ship(index, 0, 0)?;
         Ok(true)
     }
 }

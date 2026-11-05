@@ -17,7 +17,7 @@ use super::striker::PolicyStrikerRuntime;
 #[derive(Clone, Copy, Debug)]
 pub(super) enum PolicyShipSpecial {
     Striker(PolicyStrikerRuntime),
-    FireBarge { bomb_power: i32 },
+    FireBarge,
     YellowJacket { bomb_power: i32 },
 }
 
@@ -95,7 +95,7 @@ impl CombatWorld {
                 match runtime.special {
                     None => false,
                     Some(PolicyShipSpecial::Striker(striker)) => striker.ready,
-                    Some(PolicyShipSpecial::FireBarge { .. }) |
+                    Some(PolicyShipSpecial::FireBarge) |
                     Some(PolicyShipSpecial::YellowJacket { .. }) => true,
                 },
                 false, false, false,
@@ -200,7 +200,7 @@ impl CombatWorld {
                 return Err(CombatWorldError::UnsupportedPolicyActions);
             };
             match special {
-                PolicyShipSpecial::FireBarge { .. } =>
+                PolicyShipSpecial::FireBarge =>
                     { self.try_detonate_policy_fire_barge(ship_id)?; }
                 PolicyShipSpecial::Striker(_) =>
                     { self.try_drop_policy_striker_bomb(ship_id, collisions)?; }

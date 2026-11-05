@@ -86,12 +86,12 @@ impl CombatWorld {
             0, DamageSource::Bomb, self_delta, true,
         )));
         if enemy_delta.killed {
-            self.retire_dead_ship(target_index, ship_id, 0);
+            self.retire_dead_ship(target_index, ship_id, 0)?;
         }
         if self_delta.killed {
             // YellowJacket.HasCompletedRun marks this as self-detonation
             // for RL death attribution despite the historical killer ID.
-            self.retire_dead_ship(ship_index, target_id, 0);
+            self.retire_dead_ship(ship_index, target_id, 0)?;
         }
         Ok(true)
     }
