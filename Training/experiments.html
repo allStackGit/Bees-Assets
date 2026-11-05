@@ -384,22 +384,32 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
         <option value="total_environment_steps">Cumulative environment steps</option>
       </select>
     </label>
+    <label>Curriculum level
+      <select id="hub-compare-level">
+        <option value="">All curriculum levels</option>
+      </select>
+    </label>
     <label>Run A<select id="hub-compare-a"></select></label>
     <label>Run B<select id="hub-compare-b"></select></label>
     <label>Run C<select id="hub-compare-c"></select></label>
     <label>Run D<select id="hub-compare-d"></select></label>
   </div>
+  <div class="hub-controls">
+    <button type="button" id="hub-compare-export-csv" disabled>Export selected CSV</button>
+    <button type="button" id="hub-compare-export-json" disabled>Export selected JSON</button>
+  </div>
+  <p id="hub-compare-export-message" class="muted" role="status"></p>
   <div class="hub-progress-plot">
     <svg id="hub-compare-svg" xmlns="http://www.w3.org/2000/svg"
       role="img" aria-label="Run progress by cumulative training episodes"
       viewBox="0 0 900 320" preserveAspectRatio="xMidYMid meet"></svg>
   </div>
-  <p id="hub-compare-chart-note" class="muted">Live chart points are sampled in memory. A coordinator restart clears curves; final job summaries remain.</p>
+  <p id="hub-compare-chart-note" class="muted">Bounded comparison curves are saved separately from training records. Comparisons are observational, not independent evaluations.</p>
   <div class="tablewrap hub-table"><table>
     <thead><tr><th>Run</th><th>Status / host</th><th>Episodes / level</th><th>Window success</th><th>Segment success</th><th>Policy</th><th>Latest summary</th></tr></thead>
     <tbody id="hub-compare-rows"></tbody>
   </table></div>
-  <p class="muted">Choose cumulative episodes or environment steps from each Ants experiment on the horizontal axis. Environment steps account for different episode lengths, but do not normalize curriculum, scenarios, hardware or experimental conditions. Runs without published environment-step counts cannot be plotted on that axis. Window success and segment success have different denominators. Continuation jobs share a checkpoint, experiment ID, and episode history with their predecessor, so they are not independent replicates. Comparisons are descriptive; matching configurations, seeds, scenarios, hardware and evaluation cohorts are required before drawing learning-quality conclusions.</p>
+  <p class="muted">Filter to one curriculum level to inspect comparable phases without joining interrupted segments. Exported CSV/JSON includes selected observed samples and job provenance, not full training artifacts or independent evaluation evidence. Choose cumulative episodes or environment steps from each Ants experiment on the horizontal axis. Environment steps account for different episode lengths, but do not normalize curriculum, scenarios, hardware or experimental conditions. Runs without published environment-step counts cannot be plotted on that axis. Window success and segment success have different denominators. Continuation jobs share a checkpoint, experiment ID, and episode history with their predecessor, so they are not independent replicates. Comparisons are descriptive; matching configurations, seeds, scenarios, hardware and evaluation cohorts are required before drawing learning-quality conclusions.</p>
 </section>
 <section data-hub-tab="machines">
   <h2>Machine inventory and resource admission</h2>
