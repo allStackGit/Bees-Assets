@@ -30,8 +30,9 @@ use crate::combat::{CombatError, DamageSource, HitEvent, ShipVitals};
 use crate::damage::can_basic_projectile_damage;
 use crate::damage_reservations::{DamageReservations, DamageStatus, ReservationError};
 use crate::physics::{
-    CollisionMatrix, KinematicPhysics, ObstacleBody, ObstaclePairContact, ObstacleTriggerEnter,
-    PhysicsError, ProjectileBody, ShipBody, ShipShape, TriggerEnter,
+    CollisionMatrix, KinematicPhysics, MovementObstacleHit, ObstacleBody,
+    ObstaclePairContact, ObstacleTriggerEnter, PhysicsError, ProjectileBody,
+    ShipBody, ShipShape, TriggerEnter,
 };
 use crate::policy::Decision;
 use crate::geometry::Vec2;
@@ -623,6 +624,43 @@ impl CombatWorld {
             .ok_or(CombatWorldError::InvalidGameMovementProfile)?;
         self.game_ship_steering.insert(ship_id, controller);
         Ok(())
+    }
+
+    /// Unity Ship.Geometry.GetObstacleInPath:
+    /// BoxCastNonAlloc(origin, GetSize(), GetDegreesTowardsPoint(destination),
+    /// -DirectionToPoint(destination), DistanceToPoint(destination), layer 19).
+    /// Excludes dead obstacles and map borders using ShouldAvoidObstacle.
+    /// Geometry is queried from the real current physics bodies (never
+    /// approximated using pathfinder clearance or an obstacle radius).
+    ///
+    /// Source Unity converts level-local ship position to world by adding
+    /// Level.GetPosition(). The native caller must provide positions and
+    /// destination in the world/physics frame used by this CombatWorld.
+    pub fn ship_movement_obstacle(
+        &self,
+        ship_id: i64,
+        destination: Vec2,
+    ) -> Result<Option<MovementObstacleHit>, CombatWorldError> {
+        let &index = self.ship_by_id.get(&ship_id)
+            .ok_or(CombatWorldError::UnknownShip)?;
+        if self.ships[index].vitals.is_dead() ||
+            !self.physics.ships()[index].active {
+            return Err(CombatWorldError::UnknownShip);
+        }
+        let profile = self.game_ship_steering.get(&ship_id)
+            .ok_or(CombatWorldError::MissingGameMovementProfile)?.profile;
+        let origin = self.physics.ships()[index].motion.position;
+        let angle = crate::geometry::heading_towards(destination - origin);
+        let size = Vec2::new(profile.half_width * 2.0, profile.half_height * 2.0);
+        Ok(self.physics.cast_ship_movement_box(
+            origin, size, angle, destination,
+            |body| self.obstacle_by_id.get(&body.id).is_some_and(|&obstacle_index| {
+                let obstacle = &self.obstacles[obstacle_index];
+                obstacle.live() && matches!(obstacle.kind,
+                    ObstacleKind::StaticObstacle | ObstacleKind::CollisionAsteroid |
+                    ObstacleKind::AsteroidPiece)
+            }),
+        )?)
     }
 
     pub fn move_ship_direct(
