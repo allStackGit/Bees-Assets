@@ -11,6 +11,7 @@
 use super::*;
 use crate::policy_batch::PolicyActionMask;
 use super::weapons::PolicyTurretMount;
+use super::striker::PolicyStrikerRuntime;
 
 #[derive(Clone, Debug)]
 pub(super) struct PolicyShipRuntime {
@@ -23,6 +24,8 @@ pub(super) struct PolicyShipRuntime {
     pub(super) last_hull_rotation: f32,
     /// Forwarded from the live gameplay ship's cease-fire state.
     pub(super) cease_fire: bool,
+    /// Authoritative Striker.Bomb readiness/reload state. Not a turret slot.
+    pub(super) striker: Option<PolicyStrikerRuntime>,
 }
 
 impl CombatWorld {
@@ -47,6 +50,7 @@ impl CombatWorld {
             turrets: [None; 5],
             last_hull_rotation: rotation,
             cease_fire: false,
+            striker: None,
         });
         Ok(())
     }
@@ -78,7 +82,11 @@ impl CombatWorld {
             .expect("validated bound policy ship");
         Ok(PolicyActionMask {
             fire: std::array::from_fn(|slot| runtime.turrets[slot].is_some()),
-            special: [true, false, false, false, false],
+            special: [
+                true,
+                runtime.striker.as_ref().is_some_and(|striker| striker.ready),
+                false, false, false,
+            ],
         })
     }
 
@@ -147,6 +155,11 @@ impl CombatWorld {
                 motion.disable_policy_movement();
             } else {
                 motion.accept_policy_movement(decoded.movement_world);
+            }
+            if decision.action.discrete[5] == 1 {
+                // The Unity RL ShipSpecialAction dispatches Striker's
+                // TryToDropBombs, not Bomb as a turret fire branch.
+                self.try_drop_policy_striker_bomb(id)?;
             }
         }
         Ok(())
