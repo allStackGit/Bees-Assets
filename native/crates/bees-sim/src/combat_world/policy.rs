@@ -133,6 +133,10 @@ impl CombatWorld {
             }
         }
 
+        // Apply the whole preflight first; only then replace this tick's
+        // pending specials. World execution happens after fixed-step event
+        // clearing, so UI, telemetry and RL receive the drop event.
+        self.policy_pending_striker_specials.clear();
         for decision in decisions {
             let id = decision.agent_id as i64;
             let (decoded, disabled) = {
@@ -159,7 +163,7 @@ impl CombatWorld {
             if decision.action.discrete[5] == 1 {
                 // The Unity RL ShipSpecialAction dispatches Striker's
                 // TryToDropBombs, not Bomb as a turret fire branch.
-                self.try_drop_policy_striker_bomb(id)?;
+                self.policy_pending_striker_specials.push(id);
             }
         }
         Ok(())
