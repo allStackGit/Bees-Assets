@@ -450,16 +450,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 machine.native_preflight_passed===true&&
                 machine.installed_projects?.includes(j.project_id)&&
                 j.resources.gpu_count===0)
-                actions.append(button('Start on Linux',async()=>{
+                actions.append(button('Start native job',async()=>{
+                    const windows=machine.agent_platform==='win32';
                     if(!confirm('Authorize native CPU/RAM-limited execution of '+
                         j.configuration_name+' on '+machine.name+
-                        '? Only the installed local adapter selects executable code. This starts a real process; verify host capacity and experimental validity.'))return;
+                        '? Only locally installed adapter code selects the executable. '+
+                        (windows?'Windows Stop FORCE-TERMINATES the entire process tree without checkpoint-aware interruption. ':
+                            'Linux uses the locally selected service stop policy. ')+
+                        'This starts a real process; verify host capacity and experimental validity.'))return;
                     try{
                         await action('hub/jobs/start',{
                             job_id:j.id,confirm_start:true,
                         });
                         feedback('hub-job-message',
-                            'Native start authorized. Awaiting local systemd verification.');
+                            'Native start authorized. Awaiting local OS enforcement verification.');
                         await reload();
                     }catch(e){feedback('hub-job-message',e.message);}
                 }));
@@ -561,7 +565,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const control=cell(tr,m.status==='connected'
                 ?m.local_executor_enabled
                     ?m.native_preflight_passed
-                        ?'Local Linux CPU/RAM preflight passed · GPU not isolated'
+                        ?(m.agent_platform==='win32'
+                            ?'Windows Job Object CPU/RAM preflight passed · GPU not isolated'
+                            :'Linux kernel cgroup CPU/RAM preflight passed · GPU not isolated')
                         :'Native start blocked · preflight incomplete or failed'
                     :'Observation only'+(capability?.cgroup_v2_detected
                         ?' · Linux cgroup v2 detected':'')
