@@ -25,6 +25,9 @@ pub struct ShipMotion {
     pub position: Vec2,
     pub rotation_degrees: f32,
     pub rotation_speed_degrees_per_second: f32,
+    /// Immutable authored Ship.Speed. Unity SetCurrentSpeed clamps to this
+    /// value unless explicitly passed an alternate special-ability cap.
+    pub base_speed: f32,
     pub current_speed: f32,
     pub body_velocity: Vec2,
     pub height: f32,
@@ -53,6 +56,7 @@ impl ShipMotion {
             position,
             rotation_degrees,
             rotation_speed_degrees_per_second,
+            base_speed,
             current_speed: base_speed,
             body_velocity: Vec2::ZERO,
             height,
