@@ -272,6 +272,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const chartAxes={
         episodes_completed:{label:'Cumulative training episodes'},
         total_environment_steps:{label:'Cumulative environment steps'},
+        steps_completed:{label:'Cumulative project steps'},
     };
     async function loadComparison() {
         if(!state||project==='bees')return;
@@ -331,12 +332,34 @@ document.addEventListener('DOMContentLoaded', () => {
             return job?{job,color:chartPalette[i],slot:slot.toUpperCase(),
                 points:history.get(id)||[]}:null;
         }).filter(Boolean);
+        const metricSelect=$('hub-compare-metric'),oldMetric=metricSelect.value;
+        const metricOptions=project==='ants'
+            ?Object.entries(chartMetrics).map(([key,meta])=>({
+                key,label:meta.label,
+            }))
+            :hubGenericMetricCatalog(chartable.map(job=>({
+                job,points:history.get(job.id)||[],
+            }))).map(metric=>({
+                key:'metric:'+metric.key,
+                label:metric.key+' ('+metric.units.join('/')+')',
+            }));
+        metricSelect.replaceChildren(...metricOptions.map(m=>
+            new Option(m.label,m.key)));
+        if(metricOptions.some(m=>m.key===oldMetric))metricSelect.value=oldMetric;
+        const axisSelect=$('hub-compare-x-axis'),oldAxis=axisSelect.value;
+        const axes=project==='ants'
+            ?['episodes_completed','total_environment_steps']
+            :['steps_completed'];
+        axisSelect.replaceChildren(...axes.map(key=>
+            new Option(chartAxes[key].label,key)));
+        if(axes.includes(oldAxis))axisSelect.value=oldAxis;
         const levelSelect=$('hub-compare-level');
         const oldLevel=levelSelect.value;
         const levels=[...new Set(runs.flatMap(run=>
             hubComparisonPoints(run).map(p=>p.curriculum_level)
                 .filter(Number.isSafeInteger)))].sort((a,b)=>a-b);
-        levelSelect.replaceChildren(new Option('All curriculum levels',''),
+        levelSelect.replaceChildren(
+            new Option(project==='ants'?'All curriculum levels':'All phases',''),
             ...levels.map(level=>new Option('Level '+level,String(level))));
         if(levels.some(level=>String(level)===oldLevel))
             levelSelect.value=oldLevel;
@@ -346,8 +369,6 @@ document.addEventListener('DOMContentLoaded', () => {
         $('hub-compare-export-json').disabled=!hasExportData;
         const note=comparisonError&&comparisonProject===project
             ?'Unable to load comparison history: '+comparisonError
-            :project!=='ants'
-            ?'This project has no supported learning-curve adapter yet. Native job state and terminal records are still available.'
             :comparisonProject!==project
                 ?'Loading bounded, in-memory progress history...'
                 :comparisonData?.storage_warning
@@ -399,9 +420,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 chartAxes.episodes_completed.label)+'. Not wall-clock time. '+
             (level!==''?'Showing curriculum level '+level+
                 ' only; axes remain cumulative, not stage-relative. ':'')+
-            'Source timestamps show when Ants last published a summary. No training decisions use chart data.');
+            'Source timestamps show when a trusted adapter published a summary. No training decisions use chart data.');
         const table=$('hub-compare-rows');
         table.replaceChildren();
+        const headings=[...table.closest('table').querySelectorAll('thead th')];
+        const labels=project==='ants'
+            ?['Run','Status / host','Episodes / level','Window success',
+                'Segment success','Policy','Latest summary']
+            :['Run','Status / host','Project steps','Selected metric',
+                'Reported metrics','Segment','Latest summary'];
+        labels.forEach((label,i)=>{if(headings[i])headings[i].textContent=label;});
         for(const run of runs) {
             const j=run.job,p=j.live_execution?.progress||j.final_progress||
                 run.points[run.points.length-1]||null;
@@ -409,6 +437,17 @@ document.addEventListener('DOMContentLoaded', () => {
             cell(tr,run.slot+' · '+j.configuration_name+
                 (j.continuation_of_job_id?' (continuation)':''));
             cell(tr,j.status+' · '+(j.assigned_machine_id||'unassigned'));
+            if(project!=='ants') {
+                const metric=p?.metrics?.[metricSelect.value.slice(7)];
+                cell(tr,p?.steps_completed?.toLocaleString()||'—');
+                cell(tr,metric?metric.value.toLocaleString()+' '+metric.unit:'—');
+                cell(tr,Object.keys(p?.metrics||{}).join(', ')||'—');
+                cell(tr,p?.segment_id||'—');
+                cell(tr,p?.source_modified_at
+                    ?new Date(p.source_modified_at).toLocaleString():'—');
+                table.append(tr);
+                continue;
+            }
             cell(tr,p?p.episodes_completed.toLocaleString()+
                 ' / level '+p.curriculum_level:'—');
             cell(tr,p?.curriculum_window_success_rate==null?'—':
@@ -428,6 +467,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 'No reported learning progress for this project.').colSpan=7;
             table.append(tr);
         }
+        $('hub-compare-threshold-panel').hidden=project!=='ants';
         const thresholdRows=$('hub-compare-threshold-rows');
         thresholdRows.replaceChildren();
         const rateInput=$('hub-compare-threshold-rate').value.trim();
