@@ -758,7 +758,7 @@ class ExperimentHub {
         const ordered=[];
         for(const level of [0,1,2,3]) {
             const group=jobs.filter(j=>priority(j)===level);
-            if(level>=2&&group.length>1) {
+            if(group.length>1) {
                 const position=group.findIndex(j=>j.id===last);
                 if(position>=0)
                     group.push(...group.splice(0,position+1));
