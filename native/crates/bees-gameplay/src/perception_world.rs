@@ -14,7 +14,7 @@ use bees_sim::combat_perception_bridge::{
     capability_source_from_world, collect_learned_map_objects,
     collect_learned_collision_asteroids,
 };
-use bees_sim::combat_world::CombatWorld;
+use bees_sim::combat_world::{CombatWorld, CombatWorldError};
 use bees_sim::episode_ship_identity::EpisodeShipIdentities;
 use bees_sim::full_perception::PolicyPerceptionSnapshot;
 use bees_sim::perception::{CapabilitySource, EXPLORATION_LEN, NAV_LEN};
@@ -34,6 +34,7 @@ pub enum NativeWorldPerceptionError {
     InvalidEpisodeSide(i32),
     Combat(CombatPerceptionError),
     Inference(NativeInferenceError),
+    Game(CombatWorldError),
 }
 impl From<CombatPerceptionError> for NativeWorldPerceptionError {
     fn from(error: CombatPerceptionError) -> Self {
@@ -43,6 +44,11 @@ impl From<CombatPerceptionError> for NativeWorldPerceptionError {
 impl From<NativeInferenceError> for NativeWorldPerceptionError {
     fn from(error: NativeInferenceError) -> Self {
         Self::Inference(error)
+    }
+}
+impl From<CombatWorldError> for NativeWorldPerceptionError {
+    fn from(error: CombatWorldError) -> Self {
+        Self::Game(error)
     }
 }
 
@@ -92,6 +98,9 @@ pub struct NativeWorldPerceptionAssembler {
     candidates: LiveShipCandidateCollector,
     allies: Vec<ObservedShip>,
     enemies: Vec<ObservedShip>,
+    /// Live native turrets override the Level's non-turret weapon slots.
+    /// Reused across agents, just like ally and enemy buffers.
+    own_weapons: [Option<SelfWeapon>; 5],
     environment_by_side: HashMap<i32, SideEnvironment>,
 }
 
@@ -102,6 +111,7 @@ impl NativeWorldPerceptionAssembler {
             candidates: LiveShipCandidateCollector::new(),
             allies: Vec::new(),
             enemies: Vec::new(),
+            own_weapons: [None; 5],
             environment_by_side: HashMap::new(),
         }
     }
@@ -115,6 +125,7 @@ impl NativeWorldPerceptionAssembler {
         self.identities.reset(random);
         self.allies.clear();
         self.enemies.clear();
+        self.own_weapons = [None; 5];
         // Retain storage for recurring episode resets but never reuse
         // old discovery data under a new identity permutation.
         for environment in self.environment_by_side.values_mut() {
@@ -175,6 +186,16 @@ impl NativeWorldPerceptionAssembler {
         )?;
         let capability =
             capability_source_from_world(world, ship_id, inputs.capability);
+        self.own_weapons = *inputs.own_weapons;
+        // Real registered turrets own aiming, cooldown, attachment
+        // offsets and readiness; an external snapshot may only supply
+        // as-yet-unported non-turret weapon slots.
+        let native_weapons = world.policy_self_weapons(ship_id)?;
+        for (slot, weapon) in native_weapons.into_iter().enumerate() {
+            if let Some(weapon) = weapon {
+                self.own_weapons[slot] = Some(weapon);
+            }
+        }
         let parent_carrier = if let Some(parent) = inputs.parent_carrier_id {
             let parent_metadata = authored_ship(parent).ok_or(
                 NativeWorldPerceptionError::MissingAuthoredShip(parent),
@@ -227,7 +248,7 @@ impl NativeWorldPerceptionAssembler {
             parent_carrier,
             same_side_ships: &self.allies,
             vision_cache_enemies: &self.enemies,
-            own_weapons: inputs.own_weapons,
+            own_weapons: &self.own_weapons,
             visible_mining: inputs.visible_mining,
             visible_map_objects: &environment.objects,
             visible_collision_asteroids: &environment.asteroids,
