@@ -1195,8 +1195,9 @@ curriculum, or modify its source files.
 
 ### Bounded learning curves and run comparisons
 
-The coordinator now samples the already-validated Ants production
-progress projection into `experiment_hub_history.js`, with a fixed
+The coordinator samples the already-validated Ants production progress
+projection or a project-neutral summary from a locally installed trusted
+adapter into `experiment_hub_history.js`, with a fixed
 one-minute sampling bucket, a maximum of **96 points per job**, and a
 maximum of **24 jobs** in memory and in a separately bounded
 `hub-chart-v1.json` visualization archive. Accepted new samples are saved
@@ -1211,7 +1212,7 @@ points are decimated to preserve a useful overview; when the episode
 clock or policy version decreases, or a segment changes, the graph
 breaks the line rather than fabricating uninterrupted learning.
 
-`GET /api/hub/progress?project_id=ants` is a loopback-only,
+`GET /api/hub/progress?project_id=<project>` is a loopback-only,
 **read-only** chart endpoint. It transmits bounded visualization samples
 only when the Compare tab requests them, instead of copying series into
 every ten-second Hub status response. No chart series is written to
@@ -1247,7 +1248,40 @@ fingerprints do not prove equal seeds, evaluation scenarios or
 environment/runtime identity. **The curves do not normalize differing
 level, seed, scenario, hardware, or configuration conditions** and are
 not qualification, promotion, benchmark or superiority evidence.
-The Compare tab also provides a read-only, curriculum-level
+For a non-Bees, non-Ants project, a trusted local adapter may return a
+`hub-metrics-v1` observation through its existing `readProgress` method.
+The wire contract is strictly bounded: one project-owned experiment ID,
+segment ID, ISO source modification time, cumulative nonnegative
+`steps_completed`, and 1–12 numeric measurements named by lowercase
+slug. Every measurement is `{"value": number, "unit": "scalar|ratio|count|rate|seconds"}`
+(the unit must be one of those five literal values). Ratios are 0–1,
+counts are nonnegative integers, rates and seconds are nonnegative, and
+the payload is capped at 4 KiB. The adapter, not Hub config JSON, owns
+the trusted metric source and semantics. Example observational payload:
+
+```json
+{
+  "schema_version": 1,
+  "source": "hub-metrics-v1",
+  "experiment_id": "run_1",
+  "segment_id": "phase_1",
+  "source_modified_at": "2026-11-05T20:00:00.000Z",
+  "steps_completed": 1000,
+  "metrics": {
+    "loss": {"value": 0.42, "unit": "scalar"},
+    "accuracy": {"value": 0.81, "unit": "ratio"}
+  }
+}
+```
+
+Generic projects can chart a selected reported measurement against
+cumulative project steps. The chart refuses incompatible units, includes
+negative scalar values, and exports selected numeric measurements with
+their units in CSV/JSON. Generic metric names do not grant stopping,
+model promotion or benchmark authority. A concrete project adapter must
+still be installed and independently qualified to produce real metrics.
+
+The Ants Compare tab also provides a read-only, curriculum-level
 **first-observed rolling-window target** screening table. The operator
 chooses a success percentage and minimum number of episodes represented
 by each source rolling window. Per selected run, the table identifies
@@ -1272,8 +1306,8 @@ Production installation and qualification of project-specific adapters,
 real-machine Linux systemd qualification, GPU isolation and runtime
 device-selection enforcement, production coexistence qualification of the
 CPU-only scheduler, **generic non-Bees** benchmark- and capability-driven
-stop criteria, metrics ingestion for additional projects, safe live
-rebalancing, and comprehensive
+stop criteria, trusted production-source metrics adapters for additional
+projects, safe live rebalancing, and comprehensive
 CLI parity for all runtime configuration controls remain future work.
 Isolated Windows Job Object and browser-controlled CPU-only queue/disconnect
 qualifications have passed on real hardware; these do not establish
