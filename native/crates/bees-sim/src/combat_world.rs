@@ -637,10 +637,16 @@ impl CombatWorld {
         }
         let controller = self.game_ship_steering.get_mut(&ship_id)
             .ok_or(CombatWorldError::MissingGameMovementProfile)?;
-        let accepted = controller.set_direct_destination(
-            &mut self.physics.ships_mut()[index].motion, destination,
-        );
-        if accepted { self.navigation_requests.invalidate(ship_id)?; }
+        let motion = &mut self.physics.ships_mut()[index].motion;
+        let deferred = motion.mobile && motion.cannot_change_movement_orders &&
+            !(motion.is_policy_controlled && !motion.user_controlled) &&
+            destination.is_finite();
+        let accepted = controller.set_direct_destination(motion, destination);
+        // A movement lock stores the latest order until it can be applied.
+        // The old A* result must not overwrite that deferred order.
+        if accepted || deferred {
+            self.navigation_requests.invalidate(ship_id)?;
+        }
         Ok(accepted)
     }
 
@@ -671,9 +677,9 @@ impl CombatWorld {
         if !self.physics.ships()[index].active || self.ships[index].vitals.is_dead() {
             return Err(CombatWorldError::UnknownShip);
         }
-        self.navigation_requests.invalidate(ship_id)?;
         let controller = self.game_ship_steering.get_mut(&ship_id)
             .ok_or(CombatWorldError::MissingGameMovementProfile)?;
+        self.navigation_requests.invalidate(ship_id)?;
         controller.stop(&mut self.physics.ships_mut()[index].motion);
         Ok(())
     }
@@ -694,7 +700,11 @@ impl CombatWorld {
             !self.physics.ships()[index].active {
             return Err(CombatWorldError::UnknownShip);
         }
-        let position = self.physics.ships()[index].motion.position;
+        let body = &self.physics.ships()[index].motion;
+        if body.is_policy_controlled && !body.user_controlled {
+            return Err(CombatWorldError::UnsupportedPolicyActions);
+        }
+        let position = body.position;
         let disposition = self.navigation_requests.request(
             ship_id, position, destination, ship_clearance,
             newly_found_obstacle,
