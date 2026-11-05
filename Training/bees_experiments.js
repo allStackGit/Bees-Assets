@@ -5,13 +5,17 @@ const os = require('node:os');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { execFile } = require('node:child_process');
-const { invokeStart, invokeStop, invokeWorkerRuntime } = require('./operator/commands');
+const { invokeStart, invokeStop, invokeBuild, invokeWorkerRuntime } = require('./operator/commands');
 const { invokeMaintenanceUnityRebuild } = require('./operator/build');
 const { summarize: summarizeResearch, differences: compareResearch,
     sampleEfficiency: researchEfficiency } = require('./bees_experiment_research');
 const { freezePlan: freezeEvaluator, supportsPurpose: evaluatorSupportsPurpose } =
     require('./bees_experiment_evaluator_versions');
 const { selectedRoot, copyAndSelect } = require('./bees_experiment_storage');
+const { ExperimentHub } = require('./experiment_hub_core');
+const { createAgentServer, AGENT_PORT, AGENT_HOST } =
+    require('./experiment_hub_agent_listener');
+const { placements: hubPlacements, plan: hubPlan } = require('./experiment_hub_resources');
 const { append: appendMetricSample, plot: archivedMetricsChart,
     filename: metricArchivePath } = require('./bees_experiment_metrics');
 const { getStatus } = require('./operator/control');
@@ -33,6 +37,19 @@ const RESEARCH_EXPORTER = path.join(__dirname, 'bees_experiment_research_export.
 const BENCHMARK_REPORTS = path.join(DATA_ROOT, 'Benchmarks');
 const empty = () => ({ version: 1, armed: false, stop_requested: false, active_id: null, message: '', items: [] });
 const state = fs.existsSync(DB) ? readJson(DB) : empty();
+// The Hub's own registry must never prevent the existing Bees coordinator from
+// recovering an active experiment if its optional registry becomes invalid.
+let hub = null, hubInitializationError = null;
+try { hub = new ExperimentHub(DATA_ROOT); }
+catch (error) {
+    hubInitializationError = error.message;
+    console.error('[hub] separate project registry unavailable:', error.message);
+}
+function requireHub() {
+    if (!hub) throw Error('Experiment Hub unavailable: ' + hubInitializationError);
+    return hub;
+}
+
 if (!state || state.version !== 1 || !Array.isArray(state.items) || typeof state.armed !== 'boolean') {
     throw Error('Invalid experiment data; no training started: ' + DB);
 }
@@ -45,6 +62,30 @@ let busy = false;
 let rebuildProgress = null;
 let logExportBusy = false;
 let storageMigrationPending = false;
+let hubOperatorOperation = null;
+function runHubOperatorOperation(kind, execute) {
+    if (hubOperatorOperation?.status === 'running' || busy)
+        throw Error('Another training operation is in progress.');
+    const op = {kind, status:'running', started_at:now(), message:'Starting ' + kind};
+    hubOperatorOperation = op;
+    busy = true;
+    setImmediate(async () => {
+        try {
+            await execute();
+            op.status = 'completed';
+            op.message = kind + ' completed. Check the live training status.';
+        } catch (error) {
+            op.status = 'failed';
+            op.message = error.message;
+            console.error('[hub operator]', kind, error.stack || String(error));
+        } finally {
+            op.finished_at = now();
+            busy = false;
+        }
+    });
+    return {...op};
+}
+
 const logExportSessions = new Map();
 let lastRoutineSaveMs = 0;
 const save = () => { ensureDir(path.dirname(DB)); writeJsonAtomic(DB, state); };
@@ -1847,13 +1888,15 @@ function json(res, status, obj) {
         'X-Content-Type-Options': 'nosniff' });
     res.end(body);
 }
-async function body(req) {
+async function body(req, limitBytes = 5_000_000) {
     if (!String(req.headers['content-type'] || '').startsWith('application/json'))
         throw Error('JSON requests only.');
-    let raw = '';
+    let raw = '', received = 0;
     for await (const chunk of req) {
+        received += chunk.length;
+        if (received > limitBytes)
+            throw Error('JSON request exceeds allowed byte limit.');
         raw += chunk.toString('utf8');
-        if (raw.length > 5_000_000) throw Error('Request exceeds 5 MB.');
     }
     return JSON.parse(raw || '{}');
 }
@@ -2041,6 +2084,16 @@ const server = http.createServer(async (req, res) => {
     try {
         const url = new URL(req.url, 'http://localhost');
         const route = url.pathname;
+        if (req.method === 'GET' && route === '/experiment-hub-ui.js') {
+            const script = fs.readFileSync(path.join(__dirname, 'experiment_hub_ui.js'));
+            res.writeHead(200, {
+                'Content-Type':'text/javascript; charset=utf-8',
+                'Content-Length':script.length,
+                'Cache-Control':'no-store',
+                'X-Content-Type-Options':'nosniff',
+            });
+            return res.end(script);
+        }
         if (req.method === 'GET' && route === '/') {
             const page = fs.readFileSync(HTML);
             res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8',
@@ -2076,6 +2129,80 @@ const server = http.createServer(async (req, res) => {
                 return json(res, 400, { error: 'Select 1, 5, 10, 25, 50 or 100 percent.' });
             }
             return await exportExperimentLogs(item, res, percent);
+        }
+        if (req.method === 'GET' && route === '/api/hub/jobs/plan') {
+            return json(res, 200, requireHub().plannedJobs());
+        }
+        if (req.method === 'GET' && route === '/api/hub/automation') {
+            return json(res, 200, requireHub().automationStatus());
+        }
+        if (req.method === 'GET' && route === '/api/hub/progress') {
+            const projectId=url.searchParams.get('project_id');
+            return json(res, 200, requireHub().progressComparison(projectId));
+        }
+        if (req.method === 'GET' && route === '/api/hub/state') {
+            const data = requireHub().snapshot();
+            // Existing Bees state is exposed, not imported or rewritten. The Hub
+            // never assumes ownership of these live runs.
+            return json(res, 200, {
+                ...data, bees: {
+                    active_id:state.active_id,
+                    queue_armed:state.armed,
+                    runs:state.items.map(x=>({id:x.id, name:x.name, status:x.status,
+                        run_id:x.run_id, step:x.step, group:x.group})),
+                },
+            });
+        }
+        if (req.method === 'GET' && route === '/api/hub/bees/workers') {
+            // This is a view of Bees' authoritative control plane, not a second
+            // machine registry. Trainer IDs are not assumed to identify hosts.
+            return json(res, 200, workerSnapshot(await control()));
+        }
+        if (req.method === 'GET' && route === '/api/hub/bees/control') {
+            // The first RL build precedes the existence of a release/control
+            // server. Do not make the browser dependent on CLI bootstrap.
+            if (!fs.existsSync(paths.latestReleasePath)) {
+                return json(res, 200, {
+                    run_id:null, training_enabled:false, pending_release:false,
+                    env_args:[], experiment_owned:Boolean(state.active_id),
+                    queue_armed:state.armed,
+                    operator_operation:hubOperatorOperation,
+                    initial_build_required:true,
+                });
+            }
+            const status = await control();
+            const d = status.desired || {};
+            return json(res, 200, {
+                run_id:d.run_id || null,
+                training_enabled:Boolean(d.training_enabled),
+                pending_release:Boolean(d.pending_release),
+                env_args:Array.isArray(d.environment_args) ? d.environment_args : [],
+                experiment_owned:Boolean(state.active_id),
+                queue_armed:state.armed,
+                operator_operation:hubOperatorOperation,
+                initial_build_required:false,
+                // The CLI and UI share the same Bees control plane.
+            });
+        }
+        if (req.method === 'GET' && route === '/api/hub/placements') {
+            const data = requireHub().snapshot();
+            const gpus = (url.searchParams.get('gpus') || '').split(',').filter(Boolean);
+            return json(res, 200, {
+                placements:hubPlacements(data.machines, data.reservations, {
+                    cpus:Number(url.searchParams.get('cpus')),
+                    ram_mb:Number(url.searchParams.get('ram_mb')), gpus,
+                    gpu_count:url.searchParams.has('gpu_count')
+                        ?Number(url.searchParams.get('gpu_count')):undefined,
+                    min_gpu_vram_mb:url.searchParams.has('min_gpu_vram_mb')
+                        ?Number(url.searchParams.get('min_gpu_vram_mb')):undefined,
+                    gpu_mode:url.searchParams.get('gpu_mode') || 'exclusive',
+                    gpu_vram_mb:url.searchParams.has('gpu_vram_mb')
+                        ?Number(url.searchParams.get('gpu_vram_mb')):undefined,
+                    gpu_compute_pct:url.searchParams.has('gpu_compute_pct')
+                        ?Number(url.searchParams.get('gpu_compute_pct')):undefined,
+                }),
+                note:'Inventory and reservations are advisory until authenticated agents enforce isolation.',
+            });
         }
         if (req.method === 'GET' && route === '/api/state') {
             return json(res, 200, { ...state, busy, rebuild_progress: rebuildProgress,
@@ -2175,9 +2302,143 @@ const server = http.createServer(async (req, res) => {
         if (storageMigrationPending) {
             return json(res, 409, { error: 'Data-location switch prepared. Restart this manager before making other changes.' });
         }
+        if (route === '/api/hub/plan') {
+            // Planning is a read-only what-if calculation. It cannot create
+            // reservations, infer physical ownership, or execute a job.
+            const registry = requireHub().snapshot();
+            return json(res, 200, {
+                placements:hubPlan(registry.machines, registry.reservations, value.jobs),
+                note:'Advisory only: neither scheduling nor GPU compute isolation is enforced.',
+            });
+        }
+        if (route === '/api/hub/bees/start' ||
+            route === '/api/hub/bees/stop' ||
+            route === '/api/hub/bees/build' ||
+            route === '/api/hub/bees/update-workers') {
+            if (state.active_id || state.armed || state.stop_requested || busy) {
+                return json(res, 409, {
+                    error:'An experiment or another operator action owns training. Use experiment controls.',
+                });
+            }
+            const action = route.slice('/api/hub/bees/'.length);
+            // Initial build must be possible before any Bees release or control
+            // server exists. The operator itself owns bootstrap validation.
+            if (action === 'build' && !fs.existsSync(paths.latestReleasePath)) {
+                if (value.confirm_build !== true)
+                    return json(res, 409, {error:'Confirm the initial training release build.'});
+                return json(res, 202, {
+                    operation:runHubOperatorOperation('Initial Bees RL build', async()=>invokeBuild({})),
+                });
+            }
+            const before = await control();
+            if (!before.desired || before.desired.pending_release) {
+                return json(res, 409, {error:'Training control unavailable or a release pending.'});
+            }
+            if (action === 'stop') {
+                if (!before.desired.training_enabled)
+                    return json(res, 409, {error:'Bees training is already stopped.'});
+                if (value.confirm_stop !== true)
+                    return json(res, 409, {error:'Explicitly confirm graceful stop.'});
+                return json(res, 202, {
+                    operation:runHubOperatorOperation('Graceful Bees stop', async()=>invokeStop({})),
+                });
+            }
+            if (before.desired.training_enabled) {
+                return json(res, 409, {error:'Stop the current training run safely first.'});
+            }
+            if (action === 'build') {
+                if (value.confirm_build !== true)
+                    return json(res, 409, {error:'Confirm the training release build.'});
+                return json(res, 202, {
+                    operation:runHubOperatorOperation('Bees RL build', async()=>invokeBuild({})),
+                });
+            }
+            if (action === 'update-workers') {
+                if (value.confirm_update !== true)
+                    return json(res, 409, {error:'Confirm publishing the worker-only runtime.'});
+                return json(res, 202, {
+                    operation:runHubOperatorOperation('Bees worker software update',
+                        async()=>invokeWorkerRuntime({expectedRunId:before.desired.run_id})),
+                });
+            }
+            if (!['resume','new'].includes(value.mode))
+                return json(res, 400, {error:'Use resume or new run mode.'});
+            if (value.mode === 'new' && value.confirm_new_run !== true)
+                return json(res, 409, {error:'Confirm starting a fresh optimizer and run identity.'});
+            const currentArgs = Array.isArray(before.desired.environment_args)
+                ? before.desired.environment_args : [];
+            // Validation of the actual Unity release arguments remains in
+            // invokeStart -> assertRlEnvironmentArgsValid. Never execute input.
+            const args = value.env_args === undefined ? currentArgs : value.env_args;
+            if (!Array.isArray(args) || args.length > 64 ||
+                args.some(arg=>typeof arg !== 'string' || arg.length > 512 ||
+                    !/^--rl-[a-z0-9-]+(?:=.*)?$/i.test(arg))) {
+                return json(res, 400, {error:'Enter up to 64 valid --rl-... environment arguments.'});
+            }
+            if (value.mode === 'resume' && !matches(args, currentArgs) &&
+                value.confirm_environment_change !== true) {
+                return json(res, 409, {
+                    error:'Confirm changing the environment for this existing run; training comparisons may be affected.',
+                });
+            }
+            return json(res, 202, {
+                operation:runHubOperatorOperation(
+                    value.mode === 'new' ? 'New Bees run' : 'Resume Bees run',
+                    async()=>invokeStart({newRun:value.mode==='new',envArgs:args}),
+                ),
+            });
+        }
+        if (route === '/api/hub/projects') {
+            return json(res, 201, requireHub().addProject(value));
+        }
+        if (route === '/api/hub/configurations') {
+            return json(res, 200, requireHub().saveConfiguration(value));
+        }
+        if (route === '/api/hub/machines') {
+            return json(res, 201, requireHub().addMachine(value));
+        }
+        if (route === '/api/hub/machines/gpus') {
+            return json(res, 200, requireHub().bindMachineGpus(value));
+        }
+        if (route === '/api/hub/machines/enroll') {
+            // One-time secret returned only to the loopback dashboard caller.
+            return json(res, 201, requireHub().enrollMachine(value));
+        }
+        if (route === '/api/hub/machines/revoke') {
+            return json(res, 200, requireHub().revokeMachine(value));
+        }
+        if (route === '/api/hub/leases') {
+            // Claim admission budget only; no remote program may be launched.
+            return json(res, 201, requireHub().requestLease(value));
+        }
+        if (route === '/api/hub/leases/release') {
+            return json(res, 200, requireHub().releaseLease(value));
+        }
+        if (route === '/api/hub/jobs') {
+            return json(res, 201, requireHub().queueConfiguration(value));
+        }
+        if (route === '/api/hub/jobs/cancel') {
+            return json(res, 200, requireHub().cancelJob(value));
+        }
+        if (route === '/api/hub/jobs/allocate') {
+            return json(res, 200, requireHub().allocateJobs(value));
+        }
+        if (route === '/api/hub/automation') {
+            return json(res, 200, requireHub().configureAutomation(value));
+        }
+        if (route === '/api/hub/jobs/qualify-gpu') {
+            return json(res, 200, requireHub().requestGpuQualification(value));
+        }
+        if (route === '/api/hub/jobs/start') {
+            return json(res, 200, requireHub().authorizeStart(value));
+        }
+        if (route === '/api/hub/jobs/stop') {
+            return json(res, 200, requireHub().authorizeStop(value));
+        }
         if (route === '/api/storage') {
-            if (busy || state.active_id || state.armed || state.stop_requested) {
-                return json(res, 409, { error: 'Stop and complete all active experiments before relocating data.' });
+            if (busy || state.active_id || state.armed || state.stop_requested ||
+                hub?.automation?.enabled) {
+                return json(res, 409, { error: 'Disarm native automation and stop active experiments before relocating data.' });
             }
             if (value.root === DATA_ROOT)
                 return json(res, 200, { root: DATA_ROOT, restart_required: false });
@@ -2560,15 +2821,36 @@ const server = http.createServer(async (req, res) => {
         }
         return json(res, 404, { error: 'Not found.' });
     } catch (err) {
-        return json(res, 400, { error: err.message });
+        return json(res, err.status === 401 ? 401 : 400, { error: err.message });
     }
 });
+// The dedicated worker-only HTTP boundary is shared with the isolated
+// transport smoke. It cannot serve Hub administration or Bees training.
+const agentServer=createAgentServer(requireHub);
 if (require.main === module) {
     server.listen(PORT, HOST, () => {
         console.log('Bees experiments: http://' + HOST + ':' + PORT);
         console.log('Records: ' + DB);
         setImmediate(cycle);
         setInterval(cycle, 10000);
+        // The separate Hub scheduler is inert until an operator explicitly
+        // arms named native-capable machines. Native service state and Bees
+        // training ownership remain separate; faults disarm Hub automation.
+        setInterval(() => {
+            if(!hub?.automation?.enabled)return;
+            const status=hub.tickAutomation();
+            if(status.last_error)
+                console.error('[hub] native automation disarmed: '+status.last_error);
+        }, 10000);
+    });
+    // Optional Hub agent service must not prevent the existing Bees
+    // coordinator from recovering training if this secondary port is busy.
+    agentServer.on('error', error => {
+        console.error('[hub] agent heartbeat listener unavailable:', error.message);
+    });
+    agentServer.listen(AGENT_PORT, AGENT_HOST, () => {
+        console.log('Experiment Hub machine heartbeat port: '+
+            AGENT_HOST+':'+AGENT_PORT);
     });
 }
-module.exports = { server, definition, measure, workerSnapshot, benchmarkReports, benchmarkPlan, verifyBenchmarkPlan };
+module.exports = { server, agentServer, definition, measure, workerSnapshot, benchmarkReports, benchmarkPlan, verifyBenchmarkPlan };

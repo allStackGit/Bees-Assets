@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Bees · Experiments</title>
+<title>Experiment Hub · Bees</title>
 <style>
 :root {
     color-scheme: light;
@@ -217,13 +217,277 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
     section { padding: 14px 0 17px; }
     .summary span { flex-basis: 50%; }
 }
+
+[hidden] { display: none !important; }
+.hub-tabs { display: flex; flex-wrap: wrap; gap: 7px; padding: 8px 0 14px; border-bottom: 4px solid var(--ink); align-items: flex-end; }
+.hub-tabs button[aria-selected="true"] { background: var(--ink); color: var(--paper); }
+.hub-tabs label { margin-left: auto; min-width: 160px; }
+.hub-standalone { border: 2px solid var(--ink); padding: 12px; margin: 14px 0; }
+.hub-standalone h3 { margin: 0 0 8px; font-size: 17px; }
+.hub-table td { white-space: normal; }
+.hub-notice { font-size: 12px; font-weight: 700; border-bottom: 2px solid var(--ink); padding: 6px 0; }
+.hub-controls { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 10px; }
+.hub-controls button { flex: 0 1 auto; }
+.hub-tabs label select { min-width: 150px; }
+#hub-placements, #hub-plan-result { white-space: pre-line; }
+.hub-progress-plot { margin: 12px 0; width: 100%; border: 2px solid var(--ink); background: var(--paper); padding: 8px; }
+.hub-progress-plot svg { display: block; width: 100%; height: auto; max-height: 350px; }
+.hub-progress-plot text { font: 13px Arial, Helvetica, sans-serif; fill: #000; }
+.hub-progress-plot .plot-axis { stroke: #000; stroke-width: 2; }
+.hub-progress-plot .plot-grid { stroke: #ddd; stroke-width: 1; }
+.hub-progress-plot .plot-line { fill: none; stroke-width: 3; }
+.hub-progress-plot .plot-point { stroke: #fff; stroke-width: 1.5; }
 </style>
 </head>
 <body>
-<header><div><h1>Bees Experiments</h1><small>Local experiment queue and training comparisons · Version 1</small></div>
-<div class="bar"><button id="start" class="primary">Run queue</button><button id="pause">Pause for maintenance</button><button id="update-workers" hidden>Update worker software</button><button id="rebuild-unity" hidden>Rebuild Unity (experimental)</button><button id="resume" class="primary" hidden>Resume training</button><button id="stop" class="danger">Stop safely</button></div></header>
+<header><div><h1>Experiment Hub</h1><small>Independent projects · unified training management · Bees integration</small></div>
+<div class="bar" id="bees-controls"><button id="start" class="primary">Run queue</button><button id="pause">Pause for maintenance</button><button id="update-workers" hidden>Update worker software</button><button id="rebuild-unity" hidden>Rebuild Unity (experimental)</button><button id="resume" class="primary" hidden>Resume training</button><button id="stop" class="danger">Stop safely</button></div></header>
+
+<nav class="hub-tabs" role="tablist" aria-label="Experiment Hub navigation">
+  <button type="button" data-hub-go="design" aria-selected="false">Design</button>
+  <button type="button" data-hub-go="train" aria-selected="false">Train</button>
+  <button type="button" data-hub-go="monitor" aria-selected="true">Monitor</button>
+  <button type="button" data-hub-go="compare" aria-selected="false">Compare</button>
+  <button type="button" data-hub-go="machines" aria-selected="false">Machines</button>
+  <label>Project <select id="hub-project"><option value="bees">Bees</option></select></label>
+</nav>
 <div id="message" role="status"></div>
-<section>
+<section data-hub-tab="design">
+  <h2>Configuration library</h2>
+  <p class="muted">Save and revise configurations without scheduling training. Projects own their simulation and training implementation; a new project needs a trusted adapter before it can execute.</p>
+  <div class="hub-standalone">
+    <h3>Saved configuration</h3>
+    <form id="hub-config-form">
+      <div class="formgrid">
+        <label>Configuration name<input id="hub-config-name" maxlength="100" required placeholder="Aiming baseline — beta 0.001"></label>
+        <label class="wide">Parameters (JSON)<textarea id="hub-config-json" rows="9" required>{}</textarea></label>
+      </div>
+      <div class="hub-controls">
+        <button class="primary" type="submit" id="hub-config-save">Save draft</button>
+        <button type="button" id="hub-config-cancel">New draft</button>
+        <button type="button" id="hub-copy-bees-form">Copy current Bees training form</button>
+      </div>
+    </form>
+    <p id="hub-config-message" class="hub-notice" role="status"></p>
+  </div>
+  <div class="tablewrap hub-table"><table>
+    <thead><tr><th>Configuration</th><th>Project</th><th>Revision</th><th>Updated</th><th>Actions</th></tr></thead>
+    <tbody id="hub-config-rows"></tbody>
+  </table></div>
+  <div class="hub-standalone">
+    <h3>Register a project</h3>
+    <form id="hub-project-form">
+      <div class="formgrid">
+        <label>Project ID<input id="hub-new-project-id" required placeholder="ants"></label>
+        <label>Name<input id="hub-new-project-name" required placeholder="Ants"></label>
+        <label class="wide">Description<input id="hub-new-project-description" placeholder="Independent simulation and training system"></label>
+      </div>
+      <button type="submit">Add project</button>
+      <p class="muted">Project registration does not install executable code. Only trusted server-side adapters may launch jobs.</p>
+    </form>
+  </div>
+</section>
+<section data-hub-tab="train" data-project="bees">
+  <h2>Ordinary Bees training</h2>
+  <p class="muted">Start a new run or continue the current optimizer lineage without entering the experiment queue. These controls use the same Bees operator as the CLI. Existing experiment-owned runs must be managed through their own controls.</p>
+  <p id="hub-bees-control-status" class="hub-notice">Loading Bees training control…</p>
+  <label>Unity environment arguments for this ordinary run (one --rl-... argument per line)
+    <textarea id="hub-bees-env-args" rows="4" placeholder="Current release defaults"></textarea>
+  </label>
+  <p class="muted">Existing-run starts use these arguments. Changing the environment within the same run requires confirmation and can affect comparability. Actual argument validation is performed against the built Unity release before training starts.</p>
+  <div class="hub-controls">
+    <button type="button" id="hub-bees-resume" class="primary">Start / resume existing run</button>
+    <button type="button" id="hub-bees-new">Start fresh run</button>
+    <button type="button" id="hub-bees-build">Build Windows + Linux RL</button>
+    <button type="button" id="hub-bees-update-workers">Update remote workers</button>
+    <button type="button" id="hub-bees-stop" class="danger">Stop gracefully</button>
+  </div>
+  <p id="hub-operator-message" class="hub-notice" role="status"></p>
+</section>
+<section data-hub-tab="train" data-project="other">
+  <h2>Project job queue</h2>
+  <p class="hub-notice">Queue frozen configurations, coordinate resource claims, and explicitly start or stop CPU-only jobs on supported Linux or Windows machines with a locally installed, opted-in trusted adapter. Real-host native execution still requires qualification. Workloads cannot execute from configuration JSON alone. GPU jobs, disconnected agents, and unverified native limits remain blocked. Bees training stays under its existing operator.</p>
+  <div class="hub-standalone">
+    <h3>Queue a saved configuration</h3>
+    <div class="formgrid">
+      <label>Saved configuration<select id="hub-job-configuration"></select></label>
+      <label>Continue previous job (optional)<select id="hub-job-predecessor"></select></label>
+      <label class="wide">Requested resources (JSON)<textarea id="hub-job-resources" rows="5">{"cpus":2,"ram_mb":2048,"gpu_count":0}</textarea></label>
+    </div>
+    <button type="button" id="hub-job-queue">Queue job</button>
+    <button type="button" id="hub-job-preview">Preview queued placements</button>
+    <p id="hub-job-message" class="hub-notice" role="status">No work scheduled or executing.</p>
+    <div class="hub-standalone">
+      <h3>Coordinate queued workload capacity</h3>
+      <p class="muted">These operations only claim capacity within the Hub ledger. They do not isolate CPU/RAM/GPUs, launch a process, or guarantee unused resources on the host. Only presently connected machines are eligible for new claims. Claims survive disconnects and restarts.</p>
+      <label>Preferred machine for one job (optional)<select id="hub-job-machine"></select></label>
+      <button type="button" id="hub-job-allocate-all">Coordinate all eligible queued jobs</button>
+      <p id="hub-job-allocate-message" class="hub-notice" role="status">No capacity claims made.</p>
+    </div>
+    <div class="hub-standalone">
+      <h3>Native CPU-only queue automation</h3>
+      <p class="muted">Optional, disabled by default. Arm specific enrolled machines to automatically claim CPU/RAM budget, start only jobs with fresh authenticated native readiness, and release capacity after confirmed finished/stopped reports. One durable transition per pass. The scheduler stops on uncertain or failed jobs, agent replacement, disconnect, or coordinator restart. GPU execution, unqualified adapters and Bees training remain excluded. The Hub does not measure or reserve capacity consumed by unmanaged workloads on a host.</p>
+      <p class="muted">Select only machines where you have accounted for existing Bees workers and other processes. Native service execution requires separately installed and verified adapters, including a completed OS preflight.</p>
+      <div id="hub-automation-machines" class="hub-notice">No eligible native machines connected.</div>
+      <button type="button" id="hub-automation-arm">Arm selected machines</button>
+      <button type="button" id="hub-automation-disarm">Disarm automation</button>
+      <p id="hub-automation-status" class="hub-notice" role="status">Automation disarmed.</p>
+    </div>
+  </div>
+  <div class="tablewrap hub-table"><table>
+    <thead><tr><th>Configuration</th><th>Revision</th><th>Status</th><th>Resources</th><th>Learning progress</th><th>Action</th></tr></thead>
+    <tbody id="hub-job-rows"></tbody>
+  </table></div>
+  <div id="hub-job-plan" class="hub-notice" role="status">Capacity previews do not reserve resources.</div>
+</section>
+<section data-hub-tab="monitor" data-project="other">
+  <h2>Project monitoring</h2>
+  <p id="hub-other-monitor" class="hub-notice">No managed work reported yet.</p>
+  <div class="tablewrap hub-table"><table>
+    <thead><tr><th>Job</th><th>Native state</th><th>Learning progress</th><th>Summary timestamp</th><th>Host use</th></tr></thead>
+    <tbody id="hub-monitor-rows"></tbody>
+  </table></div>
+  <p class="muted">Native CPU-only service status and CPU/RAM observations appear when an approved Linux or Windows agent reports them. Windows native supervision has not yet been qualified on a real host. Unknown service states require manual review; GPU isolation and cross-project GPU execution are not available.</p>
+</section>
+<section data-hub-tab="compare" data-project="other">
+  <h2>Project comparisons</h2>
+  <p id="hub-compare-notice" class="hub-notice">Select two or more jobs to compare reported learning progress. A chart describes progress; it does not establish experimental equivalence.</p>
+  <div class="formgrid">
+    <label>Metric
+      <select id="hub-compare-metric">
+        <option value="curriculum_window_success_rate">Current curriculum-window success</option>
+        <option value="segment_success_rate">Segment success rate</option>
+        <option value="curriculum_level">Curriculum level</option>
+        <option value="policy_version">Policy version</option>
+        <option value="simulation_steps_per_second">Last-episode simulation steps/s</option>
+        <option value="ppo_unique_samples_per_second">Last-episode PPO unique samples/s</option>
+      </select>
+    </label>
+    <label>Horizontal axis
+      <select id="hub-compare-x-axis">
+        <option value="episodes_completed">Cumulative training episodes</option>
+        <option value="total_environment_steps">Cumulative environment steps</option>
+      </select>
+    </label>
+    <label>Run A<select id="hub-compare-a"></select></label>
+    <label>Run B<select id="hub-compare-b"></select></label>
+    <label>Run C<select id="hub-compare-c"></select></label>
+    <label>Run D<select id="hub-compare-d"></select></label>
+  </div>
+  <div class="hub-progress-plot">
+    <svg id="hub-compare-svg" xmlns="http://www.w3.org/2000/svg"
+      role="img" aria-label="Run progress by cumulative training episodes"
+      viewBox="0 0 900 320" preserveAspectRatio="xMidYMid meet"></svg>
+  </div>
+  <p id="hub-compare-chart-note" class="muted">Live chart points are sampled in memory. A coordinator restart clears curves; final job summaries remain.</p>
+  <div class="tablewrap hub-table"><table>
+    <thead><tr><th>Run</th><th>Status / host</th><th>Episodes / level</th><th>Window success</th><th>Segment success</th><th>Policy</th><th>Latest summary</th></tr></thead>
+    <tbody id="hub-compare-rows"></tbody>
+  </table></div>
+  <p class="muted">Choose cumulative episodes or environment steps from each Ants experiment on the horizontal axis. Environment steps account for different episode lengths, but do not normalize curriculum, scenarios, hardware or experimental conditions. Runs without published environment-step counts cannot be plotted on that axis. Window success and segment success have different denominators. Continuation jobs share a checkpoint, experiment ID, and episode history with their predecessor, so they are not independent replicates. Comparisons are descriptive; matching configurations, seeds, scenarios, hardware and evaluation cohorts are required before drawing learning-quality conclusions.</p>
+</section>
+<section data-hub-tab="machines">
+  <h2>Machine inventory and resource admission</h2>
+  <div class="hub-standalone">
+    <h3>Live Bees training workers</h3>
+    <p class="muted">Read-only data from the existing Bees control plane. Worker IDs are not necessarily distinct physical machines. These reports are not registered as verified generic compute agents.</p>
+    <button type="button" id="hub-live-bees-refresh">Refresh worker status</button>
+    <div class="tablewrap hub-table"><table>
+      <thead><tr><th>Trainer</th><th>Role</th><th>Platform</th><th>State</th><th>Environments</th><th>CPU %</th><th>RAM %</th><th>Accepted/s</th><th>Diagnostic</th></tr></thead>
+      <tbody id="hub-live-bees-rows"></tbody>
+    </table></div>
+    <p id="hub-live-bees-note" class="hub-notice"></p>
+  </div>
+  <p class="muted">Register capacities and preview concurrent CPU, RAM, and GPU placement. Linux agents may report a locally passed CPU/RAM service preflight after explicit native opt-in; each managed service is then verified against kernel cgroup limits. This does not establish exclusive physical host ownership or GPU isolation. GPU percentages are advisory budgets, not enforceable performance guarantees. Windows native jobs require an independently built and SHA-pinned local Job Object helper; none is installed automatically.</p>
+  <div class="hub-standalone">
+    <h3>Register machine</h3>
+    <form id="hub-machine-form">
+      <div class="formgrid">
+        <label>Machine ID<input id="hub-machine-id" required placeholder="halifax"></label>
+        <label>Name<input id="hub-machine-name" required placeholder="Halifax"></label>
+        <label>CPU slots<input id="hub-machine-cpus" type="number" min="1" max="4096" value="16" required></label>
+        <label>RAM MiB<input id="hub-machine-ram" type="number" min="128" value="98304" required></label>
+        <label class="wide">GPU devices (JSON array: ID, nominal VRAM MiB, optional PCI address)<textarea id="hub-machine-gpus" rows="3">[]</textarea></label>
+      </div>
+      <button type="submit">Register unverified machine</button>
+    </form>
+  </div>
+  <div class="hub-standalone">
+    <h3>Bind physical AMD GPUs</h3>
+    <p class="muted">Only a connected Linux agent with fresh AMDGPU sysfs observations can bind a logical GPU ID to a PCI address. Bindings must match the observed devices. Existing GPU coordination leases must be released first. Binding improves identity-aware capacity planning; it does not enable GPU execution, VRAM enforcement or device isolation.</p>
+    <form id="hub-gpu-bind-form">
+      <div class="formgrid">
+        <label>Connected Linux machine<select id="hub-gpu-bind-machine"></select></label>
+        <label class="wide">Logical GPU IDs, nominal VRAM MiB and exact observed PCI addresses (JSON)
+          <textarea id="hub-gpu-bind-json" rows="4">[]</textarea>
+        </label>
+      </div>
+      <button type="submit">Save GPU identity bindings</button>
+    </form>
+    <p id="hub-gpu-bind-message" class="hub-notice"></p>
+  </div>
+  <div class="tablewrap hub-table"><table>
+    <thead><tr><th>Machine</th><th>Agent</th><th>CPU slots</th><th>RAM MiB</th><th>GPUs</th><th>Native controls</th><th>Last seen</th><th>Credentials</th></tr></thead>
+    <tbody id="hub-machine-rows"></tbody>
+  </table></div>
+  <div class="hub-standalone">
+    <h3>Machine agent enrollment</h3>
+    <p class="muted">Enroll a registered machine once, then configure its agent with its machine ID and enrollment token. Rotate invalidates the previous token. Revoke disables access. Only the issued response shows the token; routine dashboard refreshes cannot retrieve it. Run Training/experiment_hub_agent.js on the machine using the restricted agent-only localhost port 7149 (or a trusted SSH tunnel forwarding that port). Never forward the privileged dashboard port 7148 to workers. Agent heartbeats report CPU, memory, and operating system, not physical GPU isolation.</p>
+    <p id="hub-enrollment-message" class="hub-notice" role="status">No enrollment token issued in this session.</p>
+    <label>One-time machine token<textarea id="hub-enrollment-token" readonly rows="2" spellcheck="false"></textarea></label>
+    <button id="hub-enrollment-clear" type="button">Clear token display</button>
+  </div>
+  <div class="hub-standalone">
+    <h3>Placement preview</h3>
+    <div class="formgrid">
+      <label>Requested CPU slots<input id="hub-request-cpus" type="number" value="2" min="1"></label>
+      <label>Requested RAM MiB<input id="hub-request-ram" type="number" value="2048" min="1"></label>
+      <label>GPU count<input id="hub-request-gpu-count" type="number" value="0" min="0" max="32"></label>
+      <label>Minimum VRAM per GPU (MiB)<input id="hub-request-gpu-vram" type="number" value="0" min="0"></label>
+      <label>GPU allocation mode<select id="hub-request-gpu-mode"><option value="exclusive">Exclusive device</option><option value="shared">Shared budget (advisory)</option></select></label>
+      <label>Shared VRAM budget per GPU (MiB)<input id="hub-request-share-vram" type="number" value="8192" min="1" disabled></label>
+      <label>Shared compute budget per GPU (%)<input id="hub-request-share-compute" type="number" value="50" min="1" max="100" disabled></label>
+      <label class="wide">Exact GPU device IDs (optional, comma separated)<input id="hub-request-gpus" placeholder="Leave empty to choose any suitable GPU"></label>
+    </div>
+    <button type="button" id="hub-preview">Check capacity</button>
+    <div id="hub-placements" class="hub-notice" role="status">Resource placement does not start a workload.</div>
+    <div class="hub-standalone">
+      <h3>Coordinate a resource lease</h3>
+      <p class="muted">Uses the CPU, RAM and GPU requirements above. Only connected machines may receive a lease. Issuing a lease blocks capacity for other Hub requests; the agent acknowledges its receipt but does not enforce isolation, reserve actual GPU memory, or start training. Existing untracked processes may still conflict. You must release a lease explicitly.</p>
+      <div class="formgrid">
+        <label>Project<select id="hub-lease-project"></select></label>
+        <label>Connected machine<select id="hub-lease-machine"></select></label>
+      </div>
+      <button type="button" id="hub-lease-request">Issue coordination lease</button>
+      <p id="hub-lease-message" class="hub-notice" role="status">No lease requested.</p>
+    </div>
+  </div>
+  <div class="hub-standalone">
+    <h3>Current coordination leases</h3>
+    <p class="muted">An acknowledged lease means the agent saw the request. Receipt freshness is lost after disconnection or coordinator restart, but the capacity claim remains until it is explicitly released.</p>
+    <div class="tablewrap hub-table"><table>
+      <thead><tr><th>Project</th><th>Machine</th><th>CPU / RAM</th><th>GPUs</th><th>Lease state</th><th>Action</th></tr></thead>
+      <tbody id="hub-lease-rows"></tbody>
+    </table></div>
+  </div>
+  <div class="hub-standalone">
+    <h3>Cross-project capacity coordination</h3>
+    <p class="muted">Coordinate available Hub budgets across all queued non-Bees projects in round-robin order. Each project gets an opportunity before its next waiting job. This changes only the Hub's advisory lease ledger. No machine process starts and no OS resource limit is enforced.</p>
+    <button type="button" id="hub-global-allocate">Coordinate pending jobs across projects</button>
+    <p id="hub-global-allocate-result" class="hub-notice" role="status">No cross-project claims made.</p>
+  </div>
+  <div class="hub-standalone">
+    <h3>Simultaneous workload preview</h3>
+    <p class="muted">Enter a JSON array of workloads, each with a unique ID and resource request. CPU and RAM are required; GPU fields are optional. Shared GPUs additionally require gpu_mode = shared, gpu_count, gpu_vram_mb, and gpu_compute_pct. This is greedy capacity planning, not scheduling, process isolation, or a performance promise.</p>
+    <label class="wide">Workloads (JSON)
+      <textarea id="hub-plan-json" rows="8">[]</textarea>
+    </label>
+    <button type="button" id="hub-plan">Preview concurrent workloads</button>
+    <div id="hub-plan-result" class="hub-notice" role="status">No resources reserved or processes launched.</div>
+  </div>
+</section>
+
+<section data-hub-tab="machines">
 <details id="storage-panel">
 <summary>Experiment data storage</summary>
 <div class="formgrid">
@@ -234,11 +498,13 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
 <p class="muted">Default: the existing Training/Experiments directory. Changing this copies experiment definitions, evaluator snapshots, benchmark reports, and full metric history to a new empty directory. Original data is retained as a backup. Only available while the manager is idle. Restart the manager to activate the new location. Unity builds, model checkpoints and the learner registry remain in their existing Bees locations.</p>
 </details>
 </section>
-<section>
-<h2>Overview</h2><div id="overview" class="summary"></div>
+<section data-hub-tab="monitor" data-project="bees">
+<h2>Bees training</h2>
+<p id="hub-monitor-training" class="hub-notice">Loading live training status…</p>
+<h2>Experiment overview</h2><div id="overview" class="summary"></div>
 <p class="muted">Progress is measured from the active run's ML-Agents learner summaries. Combat metrics are sampled from live worker windows, <strong>not</strong> a frozen evaluation benchmark.</p>
 </section>
-<section>
+<section data-hub-tab="monitor" data-project="bees">
 <details id="worker-panel" class="worker-details">
 <summary class="worker-summary">Worker Status <small id="worker-indicator">· Open for live diagnostics</small></summary>
 <p class="muted" id="worker-summary">Loading current Bees training control status…</p>
@@ -249,7 +515,7 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
 <p class="muted">Live training-control information (same source as <code>bees.ps1 status</code>). Cumulative accepted/consumed counts are reported by each worker process and may reset when a worker restarts; compare only workers reporting for the current run. Use +/- to set a persistent per-worker environment target. Clicking a button explicitly authorizes that live adjustment; changing capacity can affect throughput and before/after performance comparisons. The row confirms when the request was accepted and when the worker actually applied it. Disabled controls explain why the worker cannot resize. Other workers and the learner are not restarted by a live environment-count change. Workers must be online to change their targets. Worker status refreshes without duplicating history.</p>
 </details>
 </section>
-<section>
+<section data-hub-tab="train" data-project="bees">
 <h2 id="create-title">Queue an experiment</h2>
 <form id="create">
 <div class="formgrid">
@@ -297,10 +563,10 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
 <small id="heldout-config">Configure Training/Experiments/heldout-benchmark-settings.json before using this option. The suite is frozen when queued and never runs automatically.</small>
 <p class="muted">Evaluations pin an ONNX checkpoint, run the unchanged benchmark suite, and resume the same optimizer. Periodic evaluations can occur within a stage. For unlimited runs, evaluations occur every 100M steps. Evaluations require a configured frozen benchmark suite; failures disarm the queue.</p>
 <fieldset id="replication-controls"><legend>Optional scientific replication</legend><label><input id="replicate-enabled" type="checkbox" style="width:auto"> Queue fresh independent-seed runs</label><label>Run count <input id="replicate-count" type="number" min="2" max="32" step="1" value="3" disabled></label><p class="muted">Off by default. When enabled, queues fresh sequential training runs with consecutive ML-Agents initialization seeds. Unity's training scenario randomness is independently randomized.</p></fieldset>
-<button class="primary" type="submit">Add to queue</button> <button id="cancel-edit" type="button" hidden>Cancel editing</button>
+<button class="primary" type="submit">Add to queue</button> <button id="hub-save-bees-draft" type="button">Save as draft</button> <button id="cancel-edit" type="button" hidden>Cancel editing</button>
 </form>
 </section>
-<section>
+<section data-hub-tab="compare" data-project="bees">
 <div class="bar"><h2>Runs and comparisons</h2><label>Show group <select id="filter"><option value="">All</option></select></label>
 <label>Graph <select id="metric"><option value="timeout_pct">Timeout %</option><option value="bee_hits_per_shot">Bee hits per shot</option><option value="human_hits_per_shot">Human hits per shot</option><option value="bee_aim_error_deg">Bee aim error °</option><option value="human_aim_error_deg">Human aim error °</option><option value="bee_near_miss_pct">Bee near-miss %</option><option value="human_near_miss_pct">Human near-miss %</option><option value="bee_win_pct">Bee win %</option><option value="human_win_pct">Human win %</option><option value="group_reward" selected>Mean Group Reward</option><option value="reward">Mean Reward (individual)</option><option value="steps_per_second">Reported learner steps/s</option><option value="effective_steps_per_second">Effective learner steps/s</option><option value="ppo_busy_pct">PPO busy %</option><option value="ppo_update_s">PPO seconds/update</option><option value="ppo_minibatches_s">PPO minibatches/s</option><option value="ppo_gpu_pct">PPO GPU utilization %</option><option value="pipeline_staged_s">Worker staged/s</option><option value="pipeline_accepted_s">Worker accepted/s</option><option value="pipeline_consumed_s">Worker consumed/s</option><option value="pipeline_broker_q">Broker queue depth</option></select></label>
 <label>Horizontal axis <select id="axis"><option value="steps">Learner steps</option><option value="time">Observed training hours</option></select></label>
@@ -312,7 +578,7 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
 <div id="aggregate" class="summary" style="margin:14px 0"></div>
 <div class="tablewrap"><table><thead><tr><th>Plot</th><th>Experiment</th><th>Status</th><th>Steps</th><th>Training hours</th><th>Effective steps/s</th><th>Timeout</th><th>Hit/shot</th><th>Run</th></tr></thead><tbody id="rows"></tbody></table></div>
 </section>
-<section>
+<section data-hub-tab="compare" data-project="bees">
 <details id="research-panel" class="worker-details">
 <summary class="worker-summary">Research comparisons <small>· independent training seeds and uncertainty</small></summary>
 <p class="muted">Results are grouped only when the study, frozen training settings, checkpoint target, Unity build, evaluator, opponent, and benchmark recipe agree. The unit of analysis is the independently trained network, not individual matches or shots. Confidence intervals across seeds use a Student-t calculation and do not establish causality. Development and held-out suites remain separate.</p>
@@ -329,7 +595,7 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
 <div class="tablewrap"><table><thead><tr><th>Campaign</th><th>Beta</th><th>Benchmark</th><th>Reached</th><th>Median first observed steps</th><th>Threshold</th></tr></thead><tbody id="research-efficiency-rows"></tbody></table></div>
 </details>
 </section>
-<section>
+<section data-hub-tab="monitor" data-project="bees">
 <details id="performance-panel" class="worker-details">
 <summary class="worker-summary">Training efficiency <small>· Speed and bottleneck signals by curriculum stage</small></summary>
 <p class="muted">Effective steps/s = observed learner-step increase divided by observed training time. Paused evaluations and checkpoint transitions are excluded; the first partial interval after a restart is not counted. PPO busy uses the learner's cumulative optimizer clock. The PPO update, CPU and GPU columns sample the latest completed update; CPU/GPU and detailed timing require existing PPO diagnostics. Missing readings remain blank. These are screening signals, not definitive bottleneck diagnoses.</p>
@@ -339,7 +605,7 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
 <p class="muted">Keep hardware, worker capacity, execution flags, and diagnostics settings identical when comparing runs. Quality at the same learner step is not the same as quality after the same number of training hours. The experiment manager does not automatically enable profiling.</p>
 </details>
 </section>
-<section>
+<section data-hub-tab="compare" data-project="bees">
 <details id="benchmark-panel" class="worker-details">
 <summary class="worker-summary">Checkpoint evaluations <small>· What can this network do?</small></summary>
 <p class="muted">At each curriculum checkpoint, the saved network fights <strong>three fixed opponents</strong>, 100 matches each. The opponents and test conditions stay the same across beta runs. These matches measure ability; they do not train the network.</p>
@@ -371,6 +637,7 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
 </details>
 </details>
 </section>
+<script src="/experiment-hub-ui.js"></script>
 <script>
 'use strict';
 const $ = id => document.getElementById(id);
@@ -2179,34 +2446,7 @@ async function openQueuedEditor(id) {
 $('create').addEventListener('submit', async e => {
     e.preventDefault();
     try {
-        const payload = {
-            name: $('name').value, group: $('group').value,
-            max_steps: Number($('steps').value),
-            scenario_seed: $('scenario-seed').value.trim() === ''
-                ? null : Number($('scenario-seed').value),
-            unlimited_steps: $('unlimited-steps').checked,
-            max_minutes: $('minutes').value.trim() === '' ? null : Number($('minutes').value),
-            stall_minutes: $('stall').value.trim() === '' ? null : Number($('stall').value),
-            env_args: $('args').value.split('\n').map(s => s.trim()).filter(Boolean),
-            stage_name: $('stage-name').value,
-            target_timeout_pct: $('stage-target').value.trim() || null,
-            stages: [...$('stage-rows').children].map(row => ({
-                name: row.querySelector('.stage-name').value,
-                steps: Number(row.querySelector('.stage-steps').value),
-                target_timeout_pct: row.querySelector('.stage-target').value.trim() || null,
-                env_args: row.querySelector('.stage-args').value.split('\n')
-                    .map(x => x.trim()).filter(Boolean),
-            })),
-            evaluation_mode: $('evaluation-mode').value,
-            reserve_heldout: $('reserve-heldout').checked,
-            replicates: !editingId && $('replicate-enabled').checked
-                ? Number($('replicate-count').value) : 1,
-            trainer: {
-                hyperparameters: Object.fromEntries(['beta','lambd','learning_rate','batch_size','buffer_size','num_epoch'].map(k => [k, Number($('trainer-' + k).value)])),
-                network_settings: { num_layers: Number($('trainer-num_layers').value), normalize: $('trainer-normalize').value === 'true' },
-                seed: Number($('trainer-seed').value),
-            },
-        };
+        const payload = trainingFormPayload();
         if (editingId) {
             await request('/api/edit-queued', {
                 id: editingId, revision: editingRevision,
