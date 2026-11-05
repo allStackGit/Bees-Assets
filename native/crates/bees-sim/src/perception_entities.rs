@@ -13,16 +13,14 @@ use crate::geometry::Vec2;
 use crate::perception::{
     ALLIES_START, ALLY_LEN, ENEMIES_START, ENEMY_LEN, MAX_ALLIES, MAX_ENEMIES,
     PARENT_CARRIER_LEN, PARENT_CARRIER_START, PerceptionError, normalize_positive,
-    ship_type_scalar, weapon_type_scalar,
+    ship_type_scalar, weapon_type_scalar, policy_heading, squash_signed_distance,
 };
 use crate::policy::OBSERVATION_FLOATS;
 
 const OBSERVED_WEAPON_LEN: usize = 5;
 const OBSERVED_WEAPON_SLOTS: usize = 5;
 const ENTITY_CORE_LEN: usize = 16;
-const LOCAL_DISTANCE_SCALE: f32 = 40.0;
-
-#[derive(Clone, Copy, Debug)]
+ #[derive(Clone, Copy, Debug)]
 pub struct ObservedWeapon {
     pub weapon_type: u8,
     pub range: f32,
@@ -59,13 +57,6 @@ pub struct ObservedShip {
     pub communication: Option<[f32; 4]>,
 }
 
-#[inline]
-fn squash_signed_distance(value: f32) -> f32 {
-    let absolute = value.abs();
-    if absolute <= 0.0 { 0.0 }
-    else { value.signum() * absolute / (absolute + LOCAL_DISTANCE_SCALE) }
-}
-
 fn observed_ship_valid(ship: &ObservedShip) -> bool {
     ship.entity_id > 0 &&
     ship.identity.is_finite() && (-1.0..=1.0).contains(&ship.identity) &&
@@ -74,7 +65,7 @@ fn observed_ship_valid(ship: &ObservedShip) -> bool {
     [ship.speed, ship.current_speed, ship.linear_velocity.x,
         ship.linear_velocity.y, ship.longest_side, ship.max_range, ship.firepower]
         .iter().all(|v| v.is_finite()) &&
-    ship.communication.is_none_or(|values| values.iter().all(|v| v.is_finite())) &&
+    ship.communication.map_or(true, |values| values.iter().all(|v| v.is_finite())) &&
     ship.weapons.iter().flatten().all(|weapon| {
         weapon_type_scalar(weapon.weapon_type).is_some() &&
         [weapon.range, weapon.power, weapon.rate_of_fire]
@@ -105,10 +96,7 @@ fn write_ship(
         return Err(PerceptionError::InvalidSource);
     }
     let relative = frame.world_to_policy(ship.position - observer_position);
-    let angle = ship.rotation_degrees.to_radians();
-    let heading = frame.world_to_policy(
-        Vec2::new(-angle.sin(), angle.cos())
-    );
+    let heading = policy_heading(ship.rotation_degrees, frame);
     let observed_speed = if ship.linear_velocity.length_squared() <= 0.0001 {
         0.0
     } else { ship.current_speed };
