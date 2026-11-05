@@ -122,12 +122,23 @@ impl CombatWorld {
                 .ok_or(CombatWorldError::InvalidPolicyMining)?.health;
             let amount_mined = MINING_ACTION_RATE.min(health);
             if amount_mined <= 0 { continue; }
+            let &ship_index = self.ship_by_id.get(&ship_id)
+                .ok_or(CombatWorldError::UnknownShip)?;
+            let new_cargo = self.ships[ship_index].vitals.mined_cargo()
+                .checked_add(amount_mined)
+                .ok_or(CombatWorldError::InvalidPolicyMining)?;
             let depleted = {
                 let vitals = self.obstacles[index].vitals.as_mut()
                     .ok_or(CombatWorldError::InvalidPolicyMining)?;
                 vitals.health -= amount_mined;
                 vitals.health <= 0
             };
+            // Source TryApplyMiningAction immediately updates
+            // FleetShip.MineralsMinedThisLevel and Ship.Tsv before any
+            // subsequent same-tick weapon hits or safe warp. Advance
+            // the world-local value now; the Level commits and reconciles
+            // the persistent FleetShip value before reward consumption.
+            self.ships[ship_index].vitals.set_mined_cargo(new_cargo)?;
             if let Some(mining) = self.policy_ship_runtime.get_mut(&ship_id)
                 .and_then(|runtime| runtime.mining.as_mut()) {
                 mining.cooldown_remaining = MINING_COOLDOWN_SECONDS;
