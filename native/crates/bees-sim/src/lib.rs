@@ -31,6 +31,7 @@ pub mod navigation_scheduler;
 pub mod obstacle;
 pub mod physics;
 pub mod policy;
+pub mod policy_batch;
 pub mod polygon_obstacle_assets;
 pub mod projectile;
 pub mod projectile_assets;
