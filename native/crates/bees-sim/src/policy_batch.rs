@@ -10,6 +10,8 @@
 
 use std::collections::HashSet;
 
+use crate::perception::PerceptionError;
+
 use crate::policy::{
     Action, ActionError, Decision, CONTINUOUS_ACTIONS, DISCRETE_BRANCHES,
     OBSERVATION_FLOATS, WEAPON_SLOTS,
@@ -65,6 +67,7 @@ impl PolicyActionMask {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PolicyBatchError {
     WrongObservationLength { actual: usize },
+    Perception(PerceptionError),
     NonFiniteObservation { row: usize, feature: usize },
     DuplicateAgent(PolicyAgentKey),
     InvalidActionMask { row: usize },
@@ -183,6 +186,21 @@ impl PolicyBatch {
         mask: PolicyActionMask,
         encode: impl FnOnce(&mut [f32]),
     ) -> Result<(), PolicyBatchError> {
+        self.push_encoded_result(key, mask, |row| {
+            encode(row);
+            Ok(())
+        })
+    }
+
+    /// Source encoders can fail without panicking or leaving a partial batch
+    /// row behind. This keeps full-game data validation separate from model
+    /// execution; invalid observations never reach the GPU.
+    pub fn push_encoded_result(
+        &mut self,
+        key: PolicyAgentKey,
+        mask: PolicyActionMask,
+        encode: impl FnOnce(&mut [f32]) -> Result<(), PolicyBatchError>,
+    ) -> Result<(), PolicyBatchError> {
         let row = self.keys.len();
         if !mask.valid() {
             return Err(PolicyBatchError::InvalidActionMask { row });
@@ -194,7 +212,10 @@ impl PolicyBatch {
         let end = start.checked_add(OBSERVATION_FLOATS)
             .ok_or(PolicyBatchError::CapacityOverflow)?;
         self.observations.resize(end, f32::NAN);
-        encode(&mut self.observations[start..end]);
+        if let Err(error) = encode(&mut self.observations[start..end]) {
+            self.observations.truncate(start);
+            return Err(error);
+        }
         if let Some(feature) = self.observations[start..end]
             .iter().position(|value| !value.is_finite()) {
             self.observations.truncate(start);
