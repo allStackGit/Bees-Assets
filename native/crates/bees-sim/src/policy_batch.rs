@@ -14,7 +14,7 @@ use crate::policy::{
     Action, ActionError, Decision, CONTINUOUS_ACTIONS, DISCRETE_BRANCHES,
     OBSERVATION_FLOATS, WEAPON_SLOTS,
 };
-use crate::simulation::WorldId;
+use crate::simulation::{World, WorldId};
 
 pub const SPECIAL_BRANCH: usize = WEAPON_SLOTS;
 pub const SPECIAL_ACTIONS: usize = DISCRETE_BRANCHES[SPECIAL_BRANCH] as usize;
@@ -22,7 +22,32 @@ pub const SPECIAL_ACTIONS: usize = DISCRETE_BRANCHES[SPECIAL_BRANCH] as usize;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct PolicyAgentKey {
     pub world: WorldId,
+    /// Exact episode revision at the moment observations were collected.
+    pub episode: u64,
+    /// Exact fixed tick. Results from an earlier decision cannot be applied
+    /// when the same agent requests another decision later in the episode.
+    pub tick: u64,
     pub agent: u64,
+}
+
+impl PolicyAgentKey {
+    pub fn from_world<S>(world: &World<S>, agent: u64) -> Self {
+        Self {
+            world: world.id,
+            episode: world.episode_revision(),
+            tick: world.tick(),
+            agent,
+        }
+    }
+
+    /// The caller must check this before applying model outputs to a world.
+    /// Inference completion is not guaranteed to preserve episode lifetime.
+    pub fn is_current_for<S>(self, world: &World<S>) -> bool {
+        self.world == world.id &&
+            self.episode == world.episode_revision() &&
+            self.tick == world.tick() &&
+            !world.is_failed()
+    }
 }
 
 /// Unity WriteDiscreteActionMask disables firing without a turret and masks
@@ -229,7 +254,9 @@ mod tests {
     fn complete_observations_and_masked_actions_are_required() {
         let mut batch = PolicyBatch::new();
         batch.reserve_agents(2).unwrap();
-        let key = PolicyAgentKey { world: WorldId(3), agent: 9 };
+        let key = PolicyAgentKey {
+            world: WorldId(3), episode: 0, tick: 0, agent: 9,
+        };
         let mask = PolicyActionMask {
             fire: [true, false, false, false, false],
             special: [true, false, false, false, false],
@@ -265,6 +292,20 @@ mod tests {
     }
 
     #[test]
+    fn delayed_decision_cannot_cross_episode_or_tick_boundaries() {
+        let mut world = World::new(WorldId(42), 123, ());
+        let old = PolicyAgentKey::from_world(&world, 8);
+        assert!(old.is_current_for(&world));
+        world.reset_episode(456, ());
+        assert!(!old.is_current_for(&world));
+        let new_key = PolicyAgentKey::from_world(&world, 8);
+        assert_ne!(old, new_key);
+        assert!(new_key.is_current_for(&world));
+        let another_world = World::new(WorldId(43), 456, ());
+        assert!(!new_key.is_current_for(&another_world));
+    }
+
+    #[test]
     fn independent_worlds_keep_distinct_agent_keys() {
         let mut batch = PolicyBatch::new();
         let mask = PolicyActionMask {
@@ -272,7 +313,9 @@ mod tests {
             special: [true, false, false, false, false],
         };
         for world in [WorldId(1), WorldId(2)] {
-            batch.push_encoded(PolicyAgentKey { world, agent: 17 },
+            batch.push_encoded(PolicyAgentKey {
+                world, episode: 0, tick: 0, agent: 17,
+            },
                 mask, |row| row.fill(0.0)).unwrap();
         }
         assert_eq!(batch.len(), 2);
