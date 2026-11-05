@@ -108,9 +108,13 @@ cancel the blocked continuation; stopped predecessors can still be
 continued manually via the existing completed-job workflow where
 eligible. The Ants adapter independently checks checkpoint viability
 and qualification on every launch. This is completion-based stage
-readiness, **not benchmark-driven early stopping**. Prequeueing a
-multi-stage chain requires the next predecessor to have been dispatched,
-so this does not yet implement arbitrary DAG workflows.
+readiness, **not benchmark-driven early stopping**. Further continuation
+stages can be prequeued against an already blocked Ants continuation
+while its original machine affinity and artifact lineage remain frozen.
+This supports a linear chain of future stages, not an arbitrary DAG;
+only one non-cancelled successor is allowed per parent. Blocked stages
+carry no capacity claims, and a parent with a non-cancelled child must
+be cancelled from the end of the chain backward.
 The read-only queued-job placement preview now rehearses the **same
 round-robin project fairness, FIFO ordering, connected-agent requirement,
 continuation host affinity and best-fit resource selection** as the actual
