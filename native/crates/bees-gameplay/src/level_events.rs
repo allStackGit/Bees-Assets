@@ -5,7 +5,7 @@
 //! scheduler, reward model or a substitute for the Unity/MA-POCA adapter.
 //! All mutable scratch is reused per Level, never process-global.
 
-use bees_hivemind::session::SquadLifetime;
+use bees_hivemind::session::{HiveMindSession, SquadLifetime};
 use bees_sim::combat_world::CombatWorld;
 use bees_sim::navigation_runtime::NavigationRuntime;
 use bees_sim::rl_shaping::{DamageRewardMetadata, RewardEmission};
@@ -150,6 +150,23 @@ impl NativeLevelEventProcessor {
         }
         self.pending_session_retirements.drain(..count);
         Ok(())
+    }
+
+    /// Called by the ONE connection owner between simulation windows,
+    /// after accessing this Level through Simulation::world_mut.
+    /// HiveMindSession::retire_squad is synchronous and infallible:
+    /// pending late replies remain explicit discard obligations, while
+    /// this Level's outbox is cleared only as each retirement is applied.
+    /// This does not transmit a server message or settle OutcomeIds.
+    pub fn flush_retirements_to_connection(
+        &mut self,
+        connection: &mut HiveMindSession,
+    ) -> usize {
+        let count = self.pending_session_retirements.len();
+        for squad in self.pending_session_retirements.drain(..) {
+            connection.retire_squad(squad);
+        }
+        count
     }
 
     pub fn episode_mut(&mut self) -> &mut NativeEpisodeRewardCoordinator {

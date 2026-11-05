@@ -213,6 +213,15 @@ impl<S, R: GameRules<S>> Simulation<S, R> {
         self.worlds.get(index)
     }
 
+    /// Access one owned world between simulation steps or parallel
+    /// windows. The mutable borrow prevents concurrent scheduler work
+    /// and lets a connection-owned transport apply/acknowledge pending
+    /// Hive Mind retirements or refresh game adapters without process
+    /// globals. Do not mutate physics mid-step or bypass reset semantics.
+    pub fn world_mut(&mut self, index: usize) -> Option<&mut World<S>> {
+        self.worlds.get_mut(index)
+    }
+
     pub fn world_count(&self) -> usize {
         self.worlds.len()
     }
