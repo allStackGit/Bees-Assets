@@ -127,7 +127,7 @@ impl NavigationScheduler {
                             Ok(result) => Outcome::Completed(result),
                             Err(_) => Outcome::Panicked,
                         };
-                        let panicked = matches!(outcome, Outcome::Panicked);
+                        let panicked = matches!(&outcome, Outcome::Panicked);
                         if completed.send(Reply {
                             worker_index: index,
                             request: job.request,
