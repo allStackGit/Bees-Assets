@@ -36,6 +36,22 @@ pub struct EpisodeTerminalRewards {
     pub human_time: f32,
 }
 
+/// Source GetRetainedMiningTsvForWinningSide and
+/// RlOneVsOneReward.CalculateEconomicValueReward. This economic channel is
+/// uncapped and separate from the 0.2 tactical-shaping budget.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct EpisodeEconomicRewards {
+    pub bee_retained_mined_tsv: i32,
+    pub human_retained_mined_tsv: i32,
+    pub bee_retained_reward: f32,
+    pub human_retained_reward: f32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EpisodeEconomicError {
+    InvalidAuthoredEconomicValue,
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct EpisodeTerminalMeasurements {
     pub ticks_observed: u64,
@@ -252,6 +268,47 @@ impl NativeEpisodeTerminal {
             non_opponent_loss(self.bee_side, result.bee_side_eliminated),
             non_opponent_loss(self.human_side, result.human_side_eliminated),
         )
+    }
+
+    /// A source Level supplies actual FleetShip mined TSV retained on the
+    /// surviving side; no CombatWorld collider or temporary cargo estimate
+    /// is used here. Losing sides and timeout draws retain no terminal
+    /// mining bonus. Enemy-miner destruction rewards occur at kill time and
+    /// belong to a separate economic-event consumer.
+    pub fn terminal_economic_rewards(
+        &self,
+        bee_starting_tsv: i32,
+        human_starting_tsv: i32,
+        bee_retainable_mined_tsv: i32,
+        human_retainable_mined_tsv: i32,
+    ) -> Result<Option<EpisodeEconomicRewards>, EpisodeEconomicError> {
+        if bee_starting_tsv < 0 || human_starting_tsv < 0 ||
+            bee_retainable_mined_tsv < 0 ||
+            human_retainable_mined_tsv < 0 {
+            return Err(EpisodeEconomicError::InvalidAuthoredEconomicValue);
+        }
+        let Some(outcome) = self.completed else { return Ok(None) };
+        let bee_retained =
+            if outcome.winner_side == self.bee_side {
+                bee_retainable_mined_tsv
+            } else { 0 };
+        let human_retained =
+            if outcome.winner_side == self.human_side {
+                human_retainable_mined_tsv
+            } else { 0 };
+        let reward = |tsv: i32, starting: i32| -> f32 {
+            if tsv <= 0 || starting <= 0 {
+                0.0
+            } else {
+                tsv as f32 / starting as f32
+            }
+        };
+        Ok(Some(EpisodeEconomicRewards {
+            bee_retained_mined_tsv: bee_retained,
+            human_retained_mined_tsv: human_retained,
+            bee_retained_reward: reward(bee_retained, bee_starting_tsv),
+            human_retained_reward: reward(human_retained, human_starting_tsv),
+        }))
     }
 
     /// Call at the end of each authoritative fixed gameplay tick after
