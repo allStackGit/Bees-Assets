@@ -115,7 +115,11 @@ impl NativeTurretSpec {
             self.power < 0 ||
             !self.rate_of_fire.is_finite() || self.rate_of_fire <= 0.0 ||
             !self.projectile_value.is_finite() || self.projectile_value < 0.0 ||
-            !self.projectile_speed.is_finite() || self.projectile_speed <= 0.0 {
+            !self.projectile_speed.is_finite() ||
+            (matches!(self.fire_pattern, NativeFirePattern::BeamCannon)
+                && self.projectile_speed != 0.0) ||
+            (!matches!(self.fire_pattern, NativeFirePattern::BeamCannon)
+                && self.projectile_speed <= 0.0) {
             return Err(CombatWorldError::InvalidPolicyTurret);
         }
         let asset = catalog.by_type(self.projectile_type)
@@ -125,6 +129,17 @@ impl NativeTurretSpec {
                 weapon_type: self.weapon_type,
                 projectile_type: self.projectile_type,
             });
+        }
+        if matches!(self.fire_pattern, NativeFirePattern::BeamCannon) &&
+            !matches!(&asset.shape, Some(ShipShape::Box {
+                offset, half_extents,
+            }) if *offset == Vec2::ZERO &&
+                *half_extents == Vec2::new(1.0, 0.5))
+        {
+            // LaserBeam.ClearData sets localScale (1, 0.5), and its
+            // authored prefab has a 2x2 BoxCollider2D. Extending any
+            // incompatible shape would silently break hit detection.
+            return Err(CombatWorldError::InvalidPolicyTurret);
         }
         if asset.shot_speed.is_some_and(|known|
             (known - self.projectile_speed).abs() > 0.00001) {
@@ -403,7 +418,13 @@ impl CombatWorld {
                     }
                     mount.timer.finish_update(due);
                 }
-                if launch_now {
+                if launch_now &&
+                    !(matches!(mount.spec.fire_pattern,
+                        NativeFirePattern::BeamCannon) &&
+                        mount.active_beam_projectile_id.is_some()) {
+                    // BeamCannon.SendProjectile does nothing while
+                    // IsFiringLaserBeam is true, even when the targeting
+                    // timer grants another firing opportunity.
                     let target_world =
                         if matches!(mount.spec.fire_pattern,
                             NativeFirePattern::FullShipTurret) {
@@ -460,7 +481,8 @@ impl CombatWorld {
                 match shot.spec.fire_pattern {
                     NativeFirePattern::Single |
                     NativeFirePattern::LaserBuilder |
-                    NativeFirePattern::FullShipTurret => (
+                    NativeFirePattern::FullShipTurret |
+                    NativeFirePattern::BeamCannon => (
                         [shot.turret_position, Vec2::ZERO],
                         1usize,
                         shot.turret_position,
@@ -511,6 +533,13 @@ impl CombatWorld {
                 // Source DualCannon increments FleetShip.ShotsFired twice.
                 // Emit once per actual shot so reward and telemetry counts
                 // match the physical projectiles, not timer passes.
+                if matches!(shot.spec.fire_pattern, NativeFirePattern::BeamCannon) {
+                    let runtime = self.policy_ship_runtime.get_mut(&shot.ship_id)
+                        .expect("prevalidated live beam cannon");
+                    let mount = runtime.turrets[usize::from(shot.slot)].as_mut()
+                        .expect("prevalidated beam cannon mount");
+                    mount.active_beam_projectile_id = Some(projectile_id);
+                }
                 self.events.push(CombatEvent::PolicyWeaponFired {
                     ship_id: shot.ship_id,
                     slot: shot.slot,
