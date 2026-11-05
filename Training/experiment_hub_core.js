@@ -7,6 +7,7 @@ const crypto = require('node:crypto');
 const {request: resourceRequest,placements: resourcePlacements} =
     require('./experiment_hub_resources');
 const {validateProgress}=require('./experiment_hub_progress');
+const {ProgressHistory}=require('./experiment_hub_history');
 const ID = /^[a-z][a-z0-9_-]{0,47}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const now = () => new Date().toISOString();
@@ -108,6 +109,7 @@ class ExperimentHub {
         this.leaseReceipts = new Map();
         // Native process usage observations are ephemeral, not registry history.
         this.executionTelemetry = new Map();
+        this.progressHistory = new ProgressHistory();
         this.executionOrderCursor = new Map();
         const s = this.state;
         if (!object(s) || s.version !== 1 ||
@@ -170,6 +172,10 @@ class ExperimentHub {
                 observedAt - this.leaseReceipts.get(lease.id) < AGENT_HEARTBEAT_TTL_MS,
         }));
         return snapshot;
+    }
+    progressComparison(projectId) {
+        this.project(projectId);
+        return this.progressHistory.snapshot(projectId,this.state.jobs);
     }
     // These are conservative coordinator-side claims, NOT operating system
     // isolation or an authorization to execute a workload.
@@ -638,6 +644,11 @@ class ExperimentHub {
                         this.state.jobs.find(j=>j.id===item.job_id).project_id),
                 progress_issue:item.progress_issue||null,
             });
+            if(item.progress) {
+                const job=this.state.jobs.find(j=>j.id===item.job_id);
+                this.progressHistory.record(job.id,job.project_id,
+                    validateProgress(item.progress,job.project_id),received);
+            }
         }
         return {machine_id:machine.id,status:'connected',
             heartbeat_ttl_seconds:Math.floor(AGENT_HEARTBEAT_TTL_MS/1000),
