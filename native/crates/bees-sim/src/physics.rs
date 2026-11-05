@@ -389,13 +389,15 @@ impl ObstacleBody {
         {
             return Err(PhysicsError::InvalidCollider);
         }
-        Ok(Self {
+        let mut body = Self {
             id, pose, linear_velocity, angular_velocity_degrees, layer,
             active: true, tracks_body_contacts: false,
             collider: WorldCollider::new(shape)?,
             proximity_layer: None, proximity_collider: None,
             clearance_layer: None, clearance_collider: None,
-        })
+        };
+        body.update_hull();
+        Ok(body)
     }
 
     pub fn shape(&self) -> &ShipShape {
@@ -412,7 +414,8 @@ impl ObstacleBody {
         if layer >= 32 {
             return Err(PhysicsError::InvalidCollider);
         }
-        let collider = WorldCollider::new(shape)?;
+        let mut collider = WorldCollider::new(shape)?;
+        collider.update(self.pose);
         self.proximity_layer = Some(layer);
         self.proximity_collider = Some(collider);
         Ok(())
@@ -426,8 +429,10 @@ impl ObstacleBody {
         if layer >= 32 {
             return Err(PhysicsError::InvalidCollider);
         }
+        let mut collider = WorldCollider::new(shape)?;
+        collider.update(self.pose);
         self.clearance_layer = Some(layer);
-        self.clearance_collider = Some(WorldCollider::new(shape)?);
+        self.clearance_collider = Some(collider);
         Ok(())
     }
 
@@ -436,8 +441,7 @@ impl ObstacleBody {
     /// its primary hull without adding a second collision pair stream.
     pub fn navigation_bounds(&self) -> Option<Aabb> {
         if !self.active { return None; }
-        self.clearance_collider.as_ref().or(Some(&self.collider))
-            .and_then(|collider| collider.bounds)
+        self.clearance_collider.as_ref().unwrap_or(&self.collider).bounds
     }
 
     pub fn navigation_shape(&self) -> &ShipShape {
