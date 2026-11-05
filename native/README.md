@@ -239,9 +239,19 @@ a caller-owned blocked-cell mask using Unity's four-unit grid scale,
 2.5-second absolute-velocity bounds padding, five point-overlap probes,
 closest-point contact and projected-velocity probe. Its explicit map-space
 conversion callbacks preserve the Level's local/world transform boundary.
-This is not the complete pathfinder: merging the dynamic mask with static
-clearance, clearance-distance propagation, A* route search, path refresh
-and ship steering remain to be ported.
+The `NavigationClearance` and `NavigationSearch` modules now consume this
+same occupancy rasterizer for static obstacle masks and moving asteroids.
+They reproduce Unity's two-pass clearance distances, signed-static egress
+map, preferred-clearance penalties, eight-neighbor A* with diagonal
+corner checks, static-obstacle egress, and route smoothing. Per-search
+arrays and heap storage are reusable, with route points returned in
+Level-local grid coordinates.
+
+**Integration is still incomplete:** native ship movement does not yet
+request or follow these paths. Source-equivalent asynchronous request
+ownership, result invalidation, dynamic frame scheduling, the Unity
+five-second wall-clock search cap, and map-specific/static-clearance
+refresh triggers are not yet connected to the gameplay loop.
 
 The catalog stores normal `SizeClass × CollisionAsteroidHealthIncrement` durability;
 training must still pass its effective-health override when spawning, while
