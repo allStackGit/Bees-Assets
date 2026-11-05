@@ -569,7 +569,10 @@ mod tests {
     use std::sync::Arc;
 
     use crate::combat::ShipVitals;
+    use crate::collision::Pose;
     use crate::movement::ShipMotion;
+    use crate::obstacle::{CombatObstacle, ObstacleVitals};
+    use crate::physics::{ObstacleBody, ShipShape};
     use crate::projectile_assets::ProjectileAssetCatalog;
     use crate::ship_assets::ShipAssetCatalog;
 
@@ -671,5 +674,47 @@ mod tests {
             |_| Some(50),
         ).unwrap(), 1);
         assert!(exploration.last_seen().iter().any(|&seen| seen == 0.5));
+
+        // A discovered native CollisionAsteroid exposes its actual
+        // clearance/physics bounds, health and body velocity to perception.
+        world.add_obstacle(
+            CombatObstacle {
+                entity_id: 4,
+                kind: ObstacleKind::CollisionAsteroid,
+                vitals: Some(ObstacleVitals::new(50, 100).unwrap()),
+                size_class: 2,
+            },
+            ObstacleBody::new(
+                4,
+                Pose { position: Vec2::new(10.0, 5.0),
+                    rotation_degrees: 0.0 },
+                0,
+                ShipShape::Box {
+                    offset: Vec2::ZERO,
+                    half_extents: Vec2::new(5.0, 2.0),
+                },
+                Vec2::new(-2.0, 1.0),
+                0.0,
+            ).unwrap(),
+        ).unwrap();
+        assert!(world.discovery_mut().record(
+            1, crate::level_discovery::DiscoveryKind::Obstacle, 4,
+        ).unwrap());
+        let mut asteroids = Vec::new();
+        assert_eq!(collect_learned_collision_asteroids(
+            &world, 1, &mut asteroids,
+        ).unwrap(), 1);
+        assert_eq!(asteroids[0].id, 4);
+        assert_eq!(asteroids[0].position, Vec2::new(10.0, 5.0));
+        assert_eq!(asteroids[0].half_extents, Vec2::new(5.0, 2.0));
+        assert_eq!(asteroids[0].level_velocity, Vec2::new(-2.0, 1.0));
+        assert_eq!(asteroids[0].health_fraction, 0.5);
+        assert!(world.kill_collision_asteroid(4, true).unwrap());
+        assert_eq!(collect_learned_collision_asteroids(
+            &world, 1, &mut asteroids,
+        ).unwrap(), 0);
+        assert!(!world.discovery().has(
+            1, crate::level_discovery::DiscoveryKind::Obstacle, 4,
+        ));
     }
 }
