@@ -680,24 +680,43 @@ hash. The existing machine-local execution opt-in, adapter module
 and private journal root settings remain required. There is **no
 PowerShell dependency** in the Windows process supervisor.
 
-Before installing any Windows production adapter or contacting the Hub,
-perform the isolated **Windows-native preflight** on a host with the reviewed
-and locally built helper:
+### Windows-first isolated qualification (no Halifax or Linux required)
+
+Use a checkout of this PR branch on a Windows machine with Node.js 18+
+and the .NET 8 SDK. First review the pinned owner helper source; compile
+it into a **temporary directory outside the repository**, so no large
+binary becomes part of a commit. From the checkout root in PowerShell:
 
 ```powershell
-$env:EXPERIMENT_HUB_WINDOWS_HELPER = 'C:\Approved\ExperimentHubWindowsOwner.exe'
+$publish = Join-Path $env:TEMP 'experiment-hub-owner-qualification'
+dotnet publish .\Training\experiment_hub_windows_owner\ExperimentHubWindowsOwner.csproj -c Release -r win-x64 --self-contained true -o $publish
+$env:EXPERIMENT_HUB_WINDOWS_HELPER = Join-Path $publish 'ExperimentHubWindowsOwner.exe'
 $env:EXPERIMENT_HUB_WINDOWS_HELPER_SHA256 = (Get-FileHash $env:EXPERIMENT_HUB_WINDOWS_HELPER -Algorithm SHA256).Hash.ToLowerInvariant()
-node Training/experiment_hub_native_smoke_windows.js --preflight
+
+node .\Training\experiment_hub_smoke.js
+node .\Training\experiment_hub_native_smoke_windows.js --preflight
+node .\Training\experiment_hub_native_smoke_windows.js --run-inert
+node .\Training\experiment_hub_windows_end_to_end_smoke.js --run-inert
 ```
 
-The helper path is illustrative; use the actual reviewed, installed
-binary. This command verifies its SHA-256 and executes the helper's
-fixed inert `--probe` against real Windows Job Object controls in an
-isolated temporary journal. It starts no project runner and does not
-connect to the dashboard or Bees coordinator. A failure preserves the
-private journal location for inspection. A passing probe **does not**
-qualify full live Windows job launch/stop, recovery or multi-project
-scheduling; those require a separate controlled host test.
+Run them **in order** and stop on the first error. The first exercises
+the production worker-only listener on ephemeral real loopback HTTP with
+a disposable coordinator registry, without a native child. The second
+validates the helper's fixed `--probe` and kernel Job Object controls.
+The third starts and terminates one fixed 30-second `--smoke-child`
+inside the Job Object, then verifies the signed terminal receipt after
+reopening the Windows supervisor. The final test connects a disposable
+Hub registry and real agent HTTP transport to a *single* manual
+allocation, authenticated native Start, Stop, terminal receipt,
+explicit capacity release and coordinator restart. **Automation remains
+disarmed, and Bees/Ants training is never launched by these commands.**
+
+These are controlled local tests, not production deployment. A failing
+native smoke retains its private journal and prints the location; do
+not retry an ambiguous launch or delete those records before inspecting
+the owned service. A passing suite does **not** qualify browser/admin
+workflows, independent remote workers, GPU isolation or concurrent
+production projects.
 
 A Windows-local project adapter must return a reviewed executable,
 bounded argv, and explicitly specify \`stop_policy:'terminate-group'\`.
