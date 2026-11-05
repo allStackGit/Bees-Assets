@@ -144,6 +144,26 @@ performance needs profiling at 1v1 and large-battle sizes. These are
 runtime comparisons remain necessary once a native executable loop exists. The shared simulation
 stays platform-independent for Windows and Linux.
 
+## Independent CPU rollout windows
+
+`Simulation::run_parallel_window` advances each world through the **same**
+`GameRules::step` as `Simulation::step_world`. Worlds are assigned to disjoint
+CPU shards for multiple fixed steps per call; their state, RNG and
+episode-local measurements are never shared. The single-world path remains
+inline without launching threads. The caller supplies a policy/decision
+callback and controls the number of CPU workers and the window length. The
+callback reuses one action buffer per worker instead of allocating every tick.
+The returned `ParallelWindow` includes real host wall elapsed and observed
+world-steps/s, worker failure details, and summed physics measurements.
+Individual failed worlds remain stopped until explicitly reset; panicking
+workers invalidate the whole window.
+
+This API is suitable for independent CPU inference or scripted rollout
+windows where each arena's decisions can be generated locally. **Do not**
+use it to invent surrogate neural decisions or force an externally batched
+GPU policy into per-world synchronous calls. Batched GPU inference, rollout
+transfer and PPO scheduling remain separate integration work.
+
 ## Cross-platform CPU throughput baseline
 
 From the repository root, with Rust/Cargo installed on Windows or Linux:
