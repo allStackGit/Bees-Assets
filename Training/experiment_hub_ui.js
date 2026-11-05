@@ -60,6 +60,24 @@ function hubComparisonPoints(run,level='') {
         return [item];
     });
 }
+// Descriptive screening only. Bounded, decimated observations cannot
+// establish the true first crossing or a held-out benchmark outcome.
+function hubObservedThreshold(run,level,threshold,minWindow) {
+    if(level===''||!Number.isSafeInteger(Number(level))||
+        !Number.isFinite(threshold)||threshold<0||threshold>1||
+        !Number.isSafeInteger(minWindow)||minWindow<1)
+        return null;
+    const points=hubComparisonPoints(run,level).filter(p=>
+        Number.isFinite(p.curriculum_window_success_rate)&&
+        p.curriculum_window_success_rate>=0&&
+        p.curriculum_window_success_rate<=1&&
+        Number.isSafeInteger(p.curriculum_window_episodes)&&
+        p.curriculum_window_episodes>=minWindow&&
+        Number.isSafeInteger(p.episodes_completed)&&p.episodes_completed>=0);
+    return {observations:points.length,
+        first:points.find(p=>p.curriculum_window_success_rate>=threshold)||null,
+        last:points[points.length-1]||null};
+}
 function hubComparisonCsv(exported) {
     const fields=[
         'slot','job_id','configuration_name','configuration_sha256',
@@ -381,6 +399,39 @@ document.addEventListener('DOMContentLoaded', () => {
             cell(tr,chartable.length?'Select a run above to compare.':
                 'No reported learning progress for this project.').colSpan=7;
             table.append(tr);
+        }
+        const thresholdRows=$('hub-compare-threshold-rows');
+        thresholdRows.replaceChildren();
+        const targetPct=Number($('hub-compare-threshold-rate').value);
+        const minWindow=Number($('hub-compare-threshold-window').value);
+        const validTarget=Number.isFinite(targetPct)&&targetPct>=0&&
+            targetPct<=100&&Number.isSafeInteger(minWindow)&&
+            minWindow>=1&&minWindow<=1000000;
+        feedback('hub-compare-threshold-note',project!=='ants'
+            ?'Observed Ants rolling-window screening is unavailable for this project.'
+            :level===''
+                ?'Select one curriculum level to compare the same training phase. All-level success rates are not comparable.'
+                :!validTarget
+                    ?'Enter a 0–100% target and a minimum observed rolling-window size between 1 and 1,000,000.'
+                    :'First observed qualifying sample only, not the true first crossing. This bounded history may omit earlier or intermediate measurements. Not observed means censored, never failure. No evaluation or training decisions use this table.');
+        if(project==='ants'&&level!==''&&validTarget) {
+            for(const run of runs) {
+                const result=hubObservedThreshold(run,level,targetPct/100,minWindow);
+                const tr=document.createElement('tr');
+                cell(tr,run.slot+' · '+run.job.configuration_name+
+                    (run.job.continuation_of_job_id?' (continuation)':''));
+                cell(tr,result?.observations??0);
+                const first=result?.first;
+                cell(tr,first
+                    ?'Observed at '+(first.curriculum_window_success_rate*100).toFixed(1)+'%'
+                    :result?.observations?'Not observed (censored)':'No qualifying window samples');
+                cell(tr,first?first.episodes_completed.toLocaleString():'—');
+                cell(tr,first?.total_environment_steps==null?'—':
+                    first.total_environment_steps.toLocaleString());
+                cell(tr,result?.last?.episodes_completed==null?'—':
+                    result.last.episodes_completed.toLocaleString());
+                thresholdRows.append(tr);
+            }
         }
         drawComparisonChart(runs,$('hub-compare-metric').value,
             $('hub-compare-x-axis').value);
@@ -1189,6 +1240,8 @@ document.addEventListener('DOMContentLoaded', () => {
     $('hub-compare-metric').addEventListener('change',renderComparison);
     $('hub-compare-x-axis').addEventListener('change',renderComparison);
     $('hub-compare-level').addEventListener('change',renderComparison);
+    $('hub-compare-threshold-rate').addEventListener('change',renderComparison);
+    $('hub-compare-threshold-window').addEventListener('change',renderComparison);
     for(const format of ['csv','json'])
         $('hub-compare-export-'+format).addEventListener('click',()=>{
             try{exportComparison(format);}
