@@ -832,6 +832,7 @@ impl CombatWorld {
         // The old A* result must not overwrite that deferred order.
         if accepted || deferred {
             self.pending_game_point_orders.remove(&ship_id);
+            self.latest_game_point_orders.remove(&ship_id);
             self.navigation_requests.invalidate(ship_id)?;
         }
         Ok(accepted)
@@ -854,6 +855,7 @@ impl CombatWorld {
         );
         if accepted {
             self.pending_game_point_orders.remove(&ship_id);
+            self.latest_game_point_orders.remove(&ship_id);
             self.navigation_requests.invalidate(ship_id)?;
         }
         Ok(accepted)
@@ -875,6 +877,7 @@ impl CombatWorld {
             .ok_or(CombatWorldError::MissingGameMovementProfile)?;
         self.navigation_requests.invalidate(ship_id)?;
         self.pending_game_point_orders.remove(&ship_id);
+        self.latest_game_point_orders.remove(&ship_id);
         controller.stop(&mut self.physics.ships_mut()[index].motion);
         Ok(())
     }
@@ -1591,6 +1594,7 @@ impl CombatWorld {
                                 self.navigation_requests.retire_ship(target_id);
                                 self.game_ship_steering.remove(&target_id);
                                 self.pending_game_point_orders.remove(&target_id);
+                                self.latest_game_point_orders.remove(&target_id);
                                 self.events.push(CombatEvent::ShipDied {
                                     victim_id: target_id,
                                     killer_id: if identity_valid { owner.shooter_id } else { 0 },
@@ -1723,6 +1727,7 @@ impl CombatWorld {
                     self.navigation_requests.retire_ship(target.entity_id);
                     self.game_ship_steering.remove(&target.entity_id);
                     self.pending_game_point_orders.remove(&target.entity_id);
+                    self.latest_game_point_orders.remove(&target.entity_id);
                     self.events.push(CombatEvent::ShipDied {
                         victim_id: target.entity_id,
                         killer_id: owner.shooter_id,
@@ -2024,6 +2029,7 @@ impl CombatWorld {
                     self.navigation_requests.retire_ship(ship_id);
                     self.game_ship_steering.remove(&ship_id);
                     self.pending_game_point_orders.remove(&ship_id);
+                    self.latest_game_point_orders.remove(&ship_id);
                     self.nearby_asteroid_ships.retain(|&(_, other_id)| other_id != ship_id);
                     self.events.push(CombatEvent::ShipDied {
                         victim_id: ship_id, killer_id: 0, command_outcome_id: 0,
