@@ -11,6 +11,9 @@
 use std::collections::HashSet;
 
 use crate::perception::PerceptionError;
+use crate::ppo_activity::{
+    PolicyDimensionActivity, PolicyDimensionError, policy_dimension_activity,
+};
 
 use crate::policy::{
     Action, ActionError, Decision, CONTINUOUS_ACTIONS, DISCRETE_BRANCHES,
@@ -74,6 +77,14 @@ pub enum PolicyBatchError {
     InvalidAction { row: usize, cause: ActionError },
     MaskedAction { row: usize, branch: usize, choice: u8 },
     CapacityOverflow,
+    AllocationFailed,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PocaActivityBatchError {
+    WrongGroupmateCount { expected: usize, actual: usize },
+    InvalidActions(PolicyBatchError),
+    InvalidDimension { row: usize, cause: PolicyDimensionError },
     AllocationFailed,
 }
 
@@ -256,6 +267,62 @@ impl PolicyBatch {
             self.continuous.as_mut_slice(),
             self.discrete.as_mut_slice(),
         )
+    }
+
+    /// Export the active PPO dimensions from the same encoded observations,
+    /// sampled actions and discrete masks as the validated inference batch.
+    /// The native POCA caller MUST supply real live groupmate counts per
+    /// row; no missing count is silently treated as zero. This is a
+    /// compact 22-float weight per row, not a second observation history.
+    ///
+    /// A failed batch leaves `output` empty, preventing partial policy
+    /// samples from being handed to the learner.
+    pub fn poca_dimension_activity(
+        &self,
+        groupmate_counts: &[u32],
+        output: &mut Vec<PolicyDimensionActivity>,
+    ) -> Result<(), PocaActivityBatchError> {
+        if groupmate_counts.len() != self.len() {
+            output.clear();
+            return Err(PocaActivityBatchError::WrongGroupmateCount {
+                expected: self.len(), actual: groupmate_counts.len(),
+            });
+        }
+        if let Err(error) = self.validate_outputs() {
+            output.clear();
+            return Err(PocaActivityBatchError::InvalidActions(error));
+        }
+        output.clear();
+        output.try_reserve(self.len()).map_err(|_|
+            PocaActivityBatchError::AllocationFailed,
+        )?;
+        for (row, (&mask, &groupmates)) in self.masks.iter()
+            .zip(groupmate_counts).enumerate() {
+            let mut action = Action::ZERO;
+            let first_cont = row * CONTINUOUS_ACTIONS;
+            let first_disc = row * DISCRETE_BRANCHES.len();
+            action.continuous.copy_from_slice(
+                &self.continuous[first_cont..first_cont + CONTINUOUS_ACTIONS],
+            );
+            action.discrete.copy_from_slice(
+                &self.discrete[first_disc..first_disc + DISCRETE_BRANCHES.len()],
+            );
+            let start = row * OBSERVATION_FLOATS;
+            let result = policy_dimension_activity(
+                &self.observations[start..start + OBSERVATION_FLOATS],
+                mask, &action, Some(groupmates),
+            );
+            match result {
+                Ok(activity) => output.push(activity),
+                Err(cause) => {
+                    output.clear();
+                    return Err(PocaActivityBatchError::InvalidDimension {
+                        row, cause,
+                    });
+                }
+            }
+        }
+        Ok(())
     }
 
     /// Validate every model result before publishing ANY decisions. This
