@@ -381,6 +381,18 @@ struct ShipCandidateKey {
     fleet_id: i64,
 }
 
+/// Exactly Unity SortShipsForObservation's total ordering. Shared by
+/// top-K selection and final sorting so ties cannot change which ship
+/// gets a finite policy observation slot.
+fn compare_ship_candidates(
+    left: &ShipCandidateKey, right: &ShipCandidateKey,
+) -> std::cmp::Ordering {
+    left.distance_squared.total_cmp(&right.distance_squared)
+        .then_with(|| left.ship_type.cmp(&right.ship_type))
+        .then_with(|| left.fleet_id.cmp(&right.fleet_id))
+        .then_with(|| left.id.cmp(&right.id))
+}
+
 /// Gather only discovered, alive collision asteroids from the actual
 /// native obstacle registry. Unity's RlCombatPerception uses the active
 /// clearance-mapping collider AABB (or primary collider), the body's
@@ -562,16 +574,22 @@ impl LiveShipCandidateCollector {
         mut metadata_for: impl FnMut(i64) -> Option<AuthoredShipPerception>,
         output: &mut Vec<ObservedShip>,
     ) -> Result<usize, CombatPerceptionError> {
-        self.candidates.sort_unstable_by(|left, right| {
-            left.distance_squared.total_cmp(&right.distance_squared)
-                .then_with(|| left.ship_type.cmp(&right.ship_type))
-                .then_with(|| left.fleet_id.cmp(&right.fleet_id))
-                .then_with(|| left.id.cmp(&right.id))
-        });
+        // The policy can observe at most 64 ships from this category.
+        // A full O(N log N) sort wastes work in large fleet battles.
+        // Selection is O(N) expected and final sorting is bounded by
+        // 64 elements; the exact comparator preserves all tie-breaks.
+        const MAX_OBSERVED_SHIPS: usize = 64;
+        if self.candidates.len() > MAX_OBSERVED_SHIPS {
+            self.candidates.select_nth_unstable_by(
+                MAX_OBSERVED_SHIPS, compare_ship_candidates,
+            );
+            self.candidates.truncate(MAX_OBSERVED_SHIPS);
+        }
+        self.candidates.sort_unstable_by(compare_ship_candidates);
         output.clear();
         // Unity writes at most 64 allies and 64 enemies. Assigning identities
         // for farther unused candidates would change first-use ordinals.
-        for candidate in self.candidates.iter().take(64) {
+        for candidate in &self.candidates {
             let id = candidate.id;
             let metadata = match metadata_for(id) {
                 Some(value) => value,
