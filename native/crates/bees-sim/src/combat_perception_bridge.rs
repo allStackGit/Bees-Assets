@@ -12,7 +12,10 @@ use crate::collision::Aabb;
 use crate::combat_world::{CombatShip, CombatWorld};
 use crate::episode_ship_identity::{EpisodeShipIdentities, ShipIdentityError};
 use crate::geometry::Vec2;
+use crate::local_navigation_observation::{LocalNavigationError, LocalNavigationOccupancy};
+use crate::obstacle::ObstacleKind;
 use crate::perception::{SelfSource, ship_type_scalar};
+use crate::team_exploration::{Explorer, ExplorationError, TeamExplorationGrid};
 use crate::perception_entities::{ObservedShip, ObservedWeapon};
 use crate::physics::ShipBody;
 
@@ -25,6 +28,18 @@ pub enum CombatPerceptionError {
     MismatchedWorldStorage,
     Identity(ShipIdentityError),
     CountOverflow,
+    InvalidObstacleStorage,
+    MissingNavigationBounds(i64),
+    MissingEffectiveVision(i64),
+    Navigation(LocalNavigationError),
+    Exploration(ExplorationError),
+}
+
+impl From<LocalNavigationError> for CombatPerceptionError {
+    fn from(value: LocalNavigationError) -> Self { Self::Navigation(value) }
+}
+impl From<ExplorationError> for CombatPerceptionError {
+    fn from(value: ExplorationError) -> Self { Self::Exploration(value) }
 }
 
 impl From<ShipIdentityError> for CombatPerceptionError {
@@ -233,6 +248,89 @@ pub fn live_ship_position(
 ) -> Result<Vec2, CombatPerceptionError> {
     let (_, body) = live_ship(world, entity_id)?;
     Ok(body.motion.position)
+}
+
+/// Directly rasterize the actual Level's active, living, DISCOVERED
+/// static collider bounds. The visibility predicate must read the faction's
+/// authoritative HiveMind discovery cache. A physical obstacle that is not
+/// discovered must not leak into RL observations.
+pub fn navigation_from_world(
+    world: &CombatWorld,
+    bounds: Aabb,
+    observer: Vec2,
+    occupancy: &mut LocalNavigationOccupancy,
+    mut is_visible_to_hivemind: impl FnMut(i64) -> bool,
+) -> Result<usize, CombatPerceptionError> {
+    if world.obstacles().len() != world.physics().obstacles().len() {
+        return Err(CombatPerceptionError::InvalidObstacleStorage);
+    }
+    occupancy.reset(bounds, observer)?;
+    let mut included = 0;
+    for (obstacle, body) in world.obstacles().iter().zip(world.physics().obstacles()) {
+        if obstacle.entity_id != body.id {
+            return Err(CombatPerceptionError::InvalidObstacleStorage);
+        }
+        if obstacle.kind != ObstacleKind::StaticObstacle ||
+            !body.active || !obstacle.live() ||
+            !is_visible_to_hivemind(obstacle.entity_id) {
+            continue;
+        }
+        let area = body.navigation_bounds()
+            .ok_or(CombatPerceptionError::MissingNavigationBounds(obstacle.entity_id))?;
+        // World/level coordinates are already identical for the native
+        // gameplay arena. Unity's source takes the clearance collider's
+        // world AABB and transforms it into Level-local coordinates here.
+        let center = Vec2::new(
+            (area.min.x + area.max.x) * 0.5,
+            (area.min.y + area.max.y) * 0.5,
+        );
+        let extents = Vec2::new(
+            (area.max.x - area.min.x).abs() * 0.5,
+            (area.max.y - area.min.y).abs() * 0.5,
+        );
+        occupancy.mark_static_aabb(center, extents)?;
+        included += 1;
+    }
+    Ok(included)
+}
+
+/// Prepare the actual alive allied ship inventory for the existing
+/// TeamExplorationGrid::update. The caller supplies the effective vision
+/// range from the SAME authored HiveMindVision rules used for player view.
+/// Scratch is caller-owned and reused across steps; no per-ship allocation.
+pub fn update_exploration_from_world(
+    world: &CombatWorld,
+    side: i32,
+    bounds: Aabb,
+    episode_progress: f32,
+    grid: &mut TeamExplorationGrid,
+    explorers: &mut Vec<Explorer>,
+    mut effective_vision: impl FnMut(i64) -> Option<i32>,
+) -> Result<usize, CombatPerceptionError> {
+    if side <= 0 || world.ships().len() != world.physics().ships().len() {
+        return Err(CombatPerceptionError::MismatchedWorldStorage);
+    }
+    explorers.clear();
+    for (ship, body) in world.ships().iter().zip(world.physics().ships()) {
+        if ship.entity_id != body.id {
+            return Err(CombatPerceptionError::MismatchedWorldStorage);
+        }
+        if ship.side != side || !body.active || ship.vitals.is_dead() {
+            continue;
+        }
+        let range = effective_vision(ship.entity_id)
+            .ok_or(CombatPerceptionError::MissingEffectiveVision(ship.entity_id))?;
+        if range < 0 {
+            return Err(CombatPerceptionError::InvalidAuthoredMetadata);
+        }
+        explorers.push(Explorer {
+            position: body.motion.position,
+            effective_vision_range: range,
+            alive: true,
+        });
+    }
+    grid.update(bounds, explorers, episode_progress)?;
+    Ok(explorers.len())
 }
 
 #[cfg(test)]
