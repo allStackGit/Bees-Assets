@@ -57,6 +57,7 @@ function route(hub,method,pathname,query,value,bees) {
         '/api/hub/leases':[201,'requestLease'],
         '/api/hub/leases/release':[200,'releaseLease'],
         '/api/hub/jobs':[201,'queueConfiguration'],
+        '/api/hub/pipelines':[201,'queuePipeline'],
         '/api/hub/jobs/cancel':[200,'cancelJob'],
         '/api/hub/jobs/allocate':[200,'allocateJobs'],
         '/api/hub/automation':[200,'configureAutomation'],
