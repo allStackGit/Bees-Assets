@@ -37,6 +37,8 @@ pub enum NativeLevelEventError {
     Group(GroupRewardError),
     InvalidGroupConfiguration,
     InvalidRetirementAcknowledgement,
+    InvalidOutputAcknowledgement,
+    OutputBackpressure { pending: usize, new_events: usize },
     FailedLevel,
 }
 
@@ -58,6 +60,31 @@ pub struct NativeLevelTick<'a> {
     pub finalized: Option<NativeEpisodeFinal>,
 }
 
+/// Sparse, lossless notifications for a multi-step rollout. The event
+/// contains the EXACT completed fixed tick on which it occurred.
+#[derive(Clone, Debug)]
+pub struct NativeLevelNotification {
+    pub tick: u64,
+    pub kind: NativeLevelNotificationKind,
+}
+
+#[derive(Clone, Debug)]
+pub enum NativeLevelNotificationKind {
+    SquadChange(SquadRosterChange),
+    FinishedCommand(FinishedNativeCommand),
+    /// Only emitted when group delivery is not configured. Never also
+    /// apply this raw reward to a group-enabled PPO trajectory.
+    Reward(RewardEmission),
+    /// A ready-to-send group command, including terminal/ELO markers.
+    GroupReward(GroupRewardEvent),
+    EpisodeFinal(NativeEpisodeFinal),
+}
+
+/// Prevent unbounded RAM growth when a host neglects the output queue.
+/// At 1M sparse events this is far beyond a normal rollout window, but
+/// still fails the episode before any events are silently dropped.
+const MAX_PENDING_NOTIFICATIONS: usize = 1_048_576;
+
 /// Deliver this immediately through the host transport; it is not
 /// replayed from the next fixed-step reward buffer.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -74,6 +101,8 @@ pub struct NativeLevelEventMeasurements {
     pub group_delivery: Option<GroupRewardMeasurements>,
     pub ticks_integrated: u64,
     pub pending_session_retirements: usize,
+    pub pending_notifications: usize,
+    pub peak_pending_notifications: usize,
 }
 
 /// Owns the authoritative native Level's squad/command/episode state.
@@ -87,6 +116,10 @@ pub struct NativeLevelEventProcessor {
     /// Persistent until acknowledged by the connection-owned transport.
     /// Never discard squad retirement obligations at the next fixed tick.
     pending_session_retirements: Vec<SquadLifetime>,
+    /// Sparse output outbox survives multiple fixed ticks. No per-tick
+    /// arena snapshots and no duplicated per-agent group rewards.
+    pending_notifications: Vec<NativeLevelNotification>,
+    peak_pending_notifications: usize,
     episode: NativeEpisodeRewardCoordinator,
     group_delivery: Option<NativeGroupRewardDelivery>,
     next_tick: u64,
@@ -105,6 +138,8 @@ impl NativeLevelEventProcessor {
             roster: NativeSquadRoster::new(),
             commands: NativeSquadCommandDirector::new(),
             pending_session_retirements: Vec::new(),
+            pending_notifications: Vec::new(),
+            peak_pending_notifications: 0,
             episode,
             group_delivery: None,
             next_tick: 1,
@@ -169,6 +204,50 @@ impl NativeLevelEventProcessor {
         count
     }
 
+    /// Read events in order after any number of fixed steps, including
+    /// across parallel rollout windows. Transport/PPO consumers must
+    /// acknowledge only the prefix they durably accepted.
+    pub fn pending_notifications(&self) -> &[NativeLevelNotification] {
+        &self.pending_notifications
+    }
+
+    pub fn acknowledge_notifications(
+        &mut self, count: usize,
+    ) -> Result<(), NativeLevelEventError> {
+        if count > self.pending_notifications.len() {
+            return Err(NativeLevelEventError::InvalidOutputAcknowledgement);
+        }
+        self.pending_notifications.drain(..count);
+        Ok(())
+    }
+
+    fn reserve_output_records(&mut self, count: usize)
+        -> Result<(), NativeLevelEventError>
+    {
+        let total = self.pending_notifications.len()
+            .checked_add(count)
+            .ok_or(NativeLevelEventError::OutputBackpressure {
+                pending: self.pending_notifications.len(),
+                new_events: count,
+            })?;
+        if total > MAX_PENDING_NOTIFICATIONS {
+            self.failed = true;
+            return Err(NativeLevelEventError::OutputBackpressure {
+                pending: self.pending_notifications.len(),
+                new_events: count,
+            });
+        }
+        // Growth is amortized; event records are created only when an
+        // actual squad/command/reward/terminal notification exists.
+        self.pending_notifications.reserve(count);
+        Ok(())
+    }
+
+    fn update_output_peak(&mut self) {
+        self.peak_pending_notifications = self.peak_pending_notifications
+            .max(self.pending_notifications.len());
+    }
+
     pub fn episode_mut(&mut self) -> &mut NativeEpisodeRewardCoordinator {
         &mut self.episode
     }
@@ -208,6 +287,7 @@ impl NativeLevelEventProcessor {
         if self.is_failed() || self.completed() {
             return Err(NativeLevelEventError::FailedLevel);
         }
+        self.reserve_output_records(1)?;
         let emission = match self.episode.record_verified_discovery(
             side, kind, entity_id, authored_value,
         ) {
@@ -230,6 +310,20 @@ impl NativeLevelEventProcessor {
         } else {
             None
         };
+        let notification = if let Some(event) = group_event {
+            Some(NativeLevelNotificationKind::GroupReward(event))
+        } else if self.group_delivery.is_none() {
+            emission.map(NativeLevelNotificationKind::Reward)
+        } else {
+            None
+        };
+        if let Some(kind) = notification {
+            self.pending_notifications.push(NativeLevelNotification {
+                tick: self.next_tick.saturating_sub(1),
+                kind,
+            });
+            self.update_output_peak();
+        }
         Ok(NativeImmediateReward { emission, group_event })
     }
 
@@ -307,6 +401,16 @@ impl NativeLevelEventProcessor {
             self.failed = true;
             return Err(NativeLevelEventError::Commands(error));
         }
+        self.reserve_output_records(self.timed_finished.len())?;
+        for finished in &self.timed_finished {
+            self.pending_notifications.push(NativeLevelNotification {
+                tick: completed_tick,
+                kind: NativeLevelNotificationKind::FinishedCommand(
+                    finished.clone(),
+                ),
+            });
+        }
+        self.update_output_peak();
         self.finished.append(&mut self.timed_finished);
         self.last_advanced_command_tick = Some(completed_tick);
         Ok(())
@@ -322,6 +426,8 @@ impl NativeLevelEventProcessor {
             ),
             ticks_integrated: self.next_tick - 1,
             pending_session_retirements: self.pending_session_retirements.len(),
+            pending_notifications: self.pending_notifications.len(),
+            peak_pending_notifications: self.peak_pending_notifications,
         }
     }
 
@@ -398,6 +504,54 @@ impl NativeLevelEventProcessor {
         } else {
             None
         };
+        // Copy only sparse, meaningful notifications into a persistent
+        // per-Level outbox. Quiet steps allocate and record nothing.
+        // Group-enabled runners receive ONLY GroupReward wire events,
+        // not duplicated raw side rewards.
+        let reward_count = group_events.map_or(
+            reward.emissions.len(), |events| events.len(),
+        );
+        let new_count = self.changes.len()
+            .saturating_add(self.finished.len())
+            .saturating_add(reward_count)
+            .saturating_add(usize::from(reward.finalized.is_some()));
+        self.reserve_output_records(new_count)?;
+        for &change in &self.changes {
+            self.pending_notifications.push(NativeLevelNotification {
+                tick: completed_tick,
+                kind: NativeLevelNotificationKind::SquadChange(change),
+            });
+        }
+        for finished in &self.finished {
+            self.pending_notifications.push(NativeLevelNotification {
+                tick: completed_tick,
+                kind: NativeLevelNotificationKind::FinishedCommand(
+                    finished.clone(),
+                ),
+            });
+        }
+        if let Some(group) = group_events {
+            for &event in group {
+                self.pending_notifications.push(NativeLevelNotification {
+                    tick: completed_tick,
+                    kind: NativeLevelNotificationKind::GroupReward(event),
+                });
+            }
+        } else {
+            for &event in reward.emissions {
+                self.pending_notifications.push(NativeLevelNotification {
+                    tick: completed_tick,
+                    kind: NativeLevelNotificationKind::Reward(event),
+                });
+            }
+        }
+        if let Some(finalized) = reward.finalized {
+            self.pending_notifications.push(NativeLevelNotification {
+                tick: completed_tick,
+                kind: NativeLevelNotificationKind::EpisodeFinal(finalized),
+            });
+        }
+        self.update_output_peak();
         self.next_tick = self.next_tick.checked_add(1)
             .expect("monotonic native Level tick exhausted");
         self.last_finalized = reward.finalized;
