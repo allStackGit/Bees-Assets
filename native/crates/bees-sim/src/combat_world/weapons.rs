@@ -454,6 +454,11 @@ mod tests {
             ShipVitals::new(100, 100, 1000, 0).unwrap(),
             ShipMotion::new(ship_position, 90.0, 0.0, 0.0, 3.0),
         ).unwrap();
+        combat.spawn_ship(
+            hulls.by_type(21).unwrap(), 2, 2,
+            ShipVitals::new(100, 100, 1000, 0).unwrap(),
+            ShipMotion::new(Vec2::new(-35.0, 8.0), 0.0, 0.0, 0.0, 3.0),
+        ).unwrap();
         combat.bind_policy_ship(1, PolicyFrame::new(0), false).unwrap();
         let spec = NativeTurretSpec {
             weapon_type: 6,
@@ -530,6 +535,19 @@ mod tests {
         }
         assert!((bodies[0].velocity.x - bodies[1].velocity.x).abs() < 1e-5);
         assert!((bodies[0].velocity.y - bodies[1].velocity.y).abs() < 1e-5);
+
+        // Two actual independent projectile impacts apply 10+10, not
+        // one 21-damage synthetic volley. Ordinary combat hit events and
+        // target health are updated by the existing canonical path.
+        for &id in &fired {
+            world.state.resolve_contact(TriggerEnter {
+                projectile_id: id, ship_id: 2,
+            }).unwrap();
+        }
+        assert_eq!(world.state.ship(2).unwrap().vitals.health(), 80);
+        assert_eq!(world.state.events().iter()
+            .filter(|event| matches!(event, CombatEvent::Hit(_)))
+            .count(), 2);
     }
 
     #[test]
