@@ -3,9 +3,9 @@
 //!
 //! Unity: RlOneVsOneAgent.OnActionReceived, ApplyMovementCommand,
 //! SetCommunicationActions and Ship.RlDirectionalMovement.
-//! Source-supported turrets, healing, selected ship specials and authored
+//! Source-supported turrets, mining, healing, ship specials and authored
 //! WarpGate returns execute in the same shared CombatWorld. Unported
-//! weapon subclasses and mining stay masked, never treated as no-ops.
+//! weapon subclasses remain masked, never treated as no-ops.
 
 use super::*;
 use crate::policy_batch::PolicyActionMask;
