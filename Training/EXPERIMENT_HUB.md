@@ -26,8 +26,8 @@ remain authoritative.
 - **Monitor and Compare:** Existing Bees live status, performance, benchmark
   reports and research charts remain intact. Non-experiment training is shown
   as distinct from experiment-owned training. For Ants, Compare can plot up to
-  four selected Hub jobs against cumulative experiment episodes and show their
-  most recent learning summaries. These plots are observational only.
+  four selected Hub jobs against cumulative experiment episodes or environment
+  steps and show their most recent learning summaries. These plots are observational only.
 - **Machines:** Show read-only Bees worker reports from the existing control
   plane. Manually register project-independent machines (CPU, RAM, GPU capacity)
   and preview CPU/RAM, GPU count, and per-GPU VRAM requirements. A machine
@@ -759,10 +759,15 @@ The latest job metrics and one final persisted snapshot remain usable
 after restart; historical curves are not reconstructed from unrelated
 metrics files.
 
-The Compare tab supports up to four manually selected jobs and a
-choice of curriculum-window success, segment success, curriculum
-level, policy version, last-episode simulation rate, or PPO unique
-samples/s. The PPO chart does not treat a non-updating episode as a
+The Compare tab supports up to four manually selected jobs, an
+X-axis choice of cumulative experiment episodes or environment steps,
+and a Y-axis choice of curriculum-window success, segment success,
+curriculum level, policy version, last-episode simulation rate, or PPO
+unique samples/s. Environment steps account for unequal episode lengths
+when reported by Ants; missing step counts are not replaced by guessed
+values. Source segment changes, policy/episode rollback and decreases
+in reported cumulative environment steps break chart lines, including
+after one-minute sample coalescing and bounded decimation. The PPO chart does not treat a non-updating episode as a
 measured zero-throughput optimizer update. Jobs sharing the original
 Ants artifact lineage are labeled as continuations, not independent
 replicates. **The curves do not normalize differing level, seed,
