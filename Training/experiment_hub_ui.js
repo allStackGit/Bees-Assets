@@ -436,13 +436,17 @@ document.addEventListener('DOMContentLoaded', () => {
             .filter(j=>j.continuation_of_job_id&&j.status!=='cancelled')
             .map(j=>j.continuation_of_job_id));
         const availableParents=(state.jobs||[]).filter(j=>
-            j.project_id===project&&['finished','stopped'].includes(j.status)&&
-            j.capacity_released_at&&j.assigned_machine_id&&
-            !successors.has(j.id));
+            j.project_id===project&&j.assigned_machine_id&&j.dispatch_id&&
+            !successors.has(j.id)&&(
+                ['finished','stopped'].includes(j.status)&&j.capacity_released_at||
+                project==='ants'&&(
+                    ['start_requested','launch_requested','running'].includes(j.status)||
+                    j.status==='finished'&&!j.capacity_released_at)));
         predecessorSelect.replaceChildren(
             new Option('New experiment (no predecessor)',''),
             ...availableParents.map(j=>new Option(
-                j.configuration_name+' · '+j.status+' on '+
+                j.configuration_name+' · '+j.status+
+                (!j.capacity_released_at?' · stage will wait':'')+' on '+
                 (state.machines.find(m=>m.id===j.assigned_machine_id)?.name||
                     j.assigned_machine_id)+' · '+j.id.slice(-8),j.id)));
         if(availableParents.some(j=>j.id===previousParent))
@@ -507,6 +511,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const labels={
                 start_requested:'Start requested',launch_requested:'Starting',
                 running:'Running (native verified)',
+                waiting_predecessor:'Waiting for predecessor',
                 stop_requested:'Stop requested',finished:'Finished',
                 failed:'Failed',stopped:'Stopped',unverified:'Needs inspection',
                 cancelled:'Cancelled',
@@ -520,12 +525,21 @@ document.addEventListener('DOMContentLoaded', () => {
                 ?' · Resumes '+(state.jobs.find(p=>
                     p.id===j.continuation_of_job_id)?.configuration_name||
                     'prior experiment')+' on original machine':'';
-            const status=j.status==='waiting_adapter'
-                ?linked?('Hub budget claim on '+linked.machine_id+' · '+
-                    (linked.receipt_fresh?'Receipt fresh':linked.status)+
-                    ' · Not started')
-                    :'Waiting for trusted adapter · No claim'
-                :nativeJobLabel(j,labels[j.status]||j.status)+usage+
+            const parent=state.jobs.find(p=>p.id===j.continuation_of_job_id);
+            const waitingOnParent=j.status==='waiting_predecessor'
+                ?'Prequeued · No capacity claim · Awaiting predecessor '+
+                    (parent?.status||'unknown')+
+                    (['failed','stopped','unverified','cancelled'].includes(parent?.status)
+                        ?' · Requires review or cancellation; will not auto-advance'
+                        :' · Advances only after finished + capacity released')
+                :null;
+            const status=waitingOnParent||(
+                j.status==='waiting_adapter'
+                    ?linked?('Hub budget claim on '+linked.machine_id+' · '+
+                        (linked.receipt_fresh?'Receipt fresh':linked.status)+
+                        ' · Not started')
+                        :'Waiting for trusted adapter · No claim'
+                    :nativeJobLabel(j,labels[j.status]||j.status)+usage)+
                     (j.capacity_released_at?' · Capacity released':'')+
                     (machine?.status==='offline'?' · Agent offline':'');
             const proof=j.gpu_qualification;
@@ -641,7 +655,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         await reload();
                     }catch(e){feedback('hub-job-allocate-message',e.message);}
                 }));
-            if(j.status==='waiting_adapter')actions.append(button('Cancel',async()=>{
+            if(['waiting_adapter','waiting_predecessor'].includes(j.status))
+                actions.append(button('Cancel',async()=>{
                 if(!confirm('Cancel this unstarted '+j.project_id+' job? No process is running.'))return;
                 try{
                     await action('hub/jobs/cancel',{job_id:j.id,confirm_cancel:true});
@@ -657,6 +672,7 @@ document.addEventListener('DOMContentLoaded', () => {
             $('hub-job-rows').append(tr);
         }
         const waiting=records.filter(j=>j.status==='waiting_adapter').length;
+        const blocked=records.filter(j=>j.status==='waiting_predecessor').length;
         const cancelled=records.filter(j=>j.status==='cancelled').length;
         const allocated=records.filter(j=>j.status==='waiting_adapter'&&j.lease_id).length;
         const running=records.filter(j=>j.status==='running').length;
@@ -665,7 +681,8 @@ document.addEventListener('DOMContentLoaded', () => {
         ].includes(j.status)).length;
         const uncertain=records.filter(j=>j.status==='unverified').length;
         feedback('hub-other-monitor',
-            waiting+' queued · '+allocated+' with advisory claims · '+
+            waiting+' ready to coordinate · '+blocked+' prequeued stages waiting on predecessors · '+
+            allocated+' with advisory claims · '+
             running+' native services reported running · '+pendingNative+
             ' start/stop operations pending · '+uncertain+' requiring inspection · '+
             cancelled+' cancelled. Remote status is heartbeat-based.');
@@ -1181,21 +1198,27 @@ document.addEventListener('DOMContentLoaded', () => {
         if(project==='ants'&&
             (selected.parameters?.mode==='resume')!==Boolean(predecessor)){
             feedback('hub-job-message',
-                'For Ants, resume mode needs a completed predecessor, and new mode must not select one.');
+                'For Ants, resume mode needs an eligible predecessor (active or completed), and new mode must not select one.');
             return;
         }
+        const parent=state.jobs.find(j=>j.id===predecessor);
+        const prequeue=Boolean(parent&&!parent.capacity_released_at);
         if(!confirm('Freeze '+selected.name+' revision '+selected.revision+
-            (predecessor?' as a continuation of the selected completed job':
+            (predecessor?' as a continuation of the selected predecessor':
                 ' as a new job')+
-            '? This queues work; execution still needs separate authorization.'))return;
+            '? '+(prequeue
+                ?'This stage remains blocked until its predecessor FINISHES and capacity is released. Stops and failures do not auto-advance it. '
+                :'')+
+            'Queueing alone does not authorize execution.'))return;
         try{
             const job=await action('hub/jobs',{
                 configuration_id:selected.id,expected_revision:selected.revision,
                 resources:JSON.parse($('hub-job-resources').value),
                 ...(predecessor?{continuation_of_job_id:predecessor}:{}),
             });
-            feedback('hub-job-message',
-                'Queued job '+job.id+'. Coordinate capacity before explicitly authorizing native execution.');
+            feedback('hub-job-message',job.status==='waiting_predecessor'
+                ?'Prequeued stage '+job.id+'. It cannot claim capacity or start until the predecessor finishes and releases capacity.'
+                :'Queued job '+job.id+'. Coordinate capacity before explicitly authorizing native execution.');
             await reload();
         }catch(e){feedback('hub-job-message',e.message);}
     });
