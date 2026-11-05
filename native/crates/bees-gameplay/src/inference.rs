@@ -6,6 +6,8 @@
 //! and completed tick, so a GPU batch cannot silently apply stale actions.
 //! The model backend is external; no guessed action or network here.
 
+use std::collections::HashMap;
+
 use bees_sim::combat_world::CombatWorldError;
 use bees_sim::combat_perception_bridge::live_ship_counts;
 use bees_sim::full_perception::{
@@ -16,7 +18,7 @@ use bees_sim::policy_batch::{
     PolicyActionMask, PolicyAgentKey, PolicyBatch, PolicyBatchError,
     PolicyBatchFootprint,
 };
-use bees_sim::simulation::World;
+use bees_sim::simulation::{World, WorldId};
 
 use crate::level_rules::NativeLevelState;
 
@@ -89,6 +91,9 @@ pub struct NativeLevelInferenceBatch {
     batch: PolicyBatch,
     writer: NativePerceptionWriter,
     keyed_decisions: Vec<(PolicyAgentKey, Decision)>,
+    /// Reused per-world row positions, avoiding rescanning every agent
+    /// in the multi-world model batch at every dispatch.
+    world_rows: HashMap<WorldId, Vec<usize>>,
     routes: Vec<NativePolicyRoute>,
     finalized: bool,
     failed: bool,
@@ -100,6 +105,9 @@ impl NativeLevelInferenceBatch {
     pub fn clear(&mut self) {
         self.batch.clear();
         self.keyed_decisions.clear();
+        for rows in self.world_rows.values_mut() {
+            rows.clear();
+        }
         self.routes.clear();
         self.finalized = false;
         self.failed = false;
@@ -225,6 +233,8 @@ impl NativeLevelInferenceBatch {
             .ok_or(NativeInferenceError::InvalidAgent)?;
         let key = PolicyAgentKey::from_world(world, agent);
         self.writer.push_to_batch(&mut self.batch, key, mask, snapshot, frame)?;
+        let row = self.batch.keys().len() - 1;
+        self.world_rows.entry(world.id).or_default().push(row);
         self.routes.push(route);
         Ok(())
     }
@@ -277,10 +287,9 @@ impl NativeLevelInferenceBatch {
         self.finalize().map_err(NativeInferenceRunError::Boundary)
     }
 
-    /// Extract only the keys for this specific world. Check ALL matching
-    /// keys against its current episode/tick before mutating `output`;
-    /// mixed-world batches remain supported without stale-action leaks.
-    /// Caller then feeds decisions to the one NativeLevelRules.step.
+    /// Dispatch only this world's indexed rows. Check all keys against
+    /// current episode/tick BEFORE changing the caller's output.
+    /// Interleaved world rows retain their insertion order.
     pub fn decisions_for_world<M, A>(
         &self,
         world: &World<NativeLevelState<M, A>>,
@@ -293,15 +302,20 @@ impl NativeLevelInferenceBatch {
             world.state.combat.frozen_after_elimination {
             return Err(NativeInferenceError::WorldUnavailable);
         }
-        for (key, _) in &self.keyed_decisions {
-            if key.world == world.id && !key.is_current_for(world) {
-                return Err(NativeInferenceError::StaleAction(*key));
+        let rows = self.world_rows.get(&world.id);
+        if let Some(rows) = rows {
+            for &row in rows {
+                let key = self.keyed_decisions[row].0;
+                if !key.is_current_for(world) {
+                    return Err(NativeInferenceError::StaleAction(key));
+                }
             }
         }
         output.clear();
-        for (key, decision) in &self.keyed_decisions {
-            if key.world == world.id {
-                output.push(*decision);
+        if let Some(rows) = rows {
+            output.reserve(rows.len());
+            for &row in rows {
+                output.push(self.keyed_decisions[row].1);
             }
         }
         Ok(())
