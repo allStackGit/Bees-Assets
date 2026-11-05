@@ -2005,11 +2005,16 @@ impl CombatWorld {
     /// then a primary overlap applies CollisionAsteroid.ShipCollision's
     /// shared asteroid and ship damage rules.
     fn process_asteroid_ship_contacts(&mut self) -> Result<(), CombatWorldError> {
+        let mut newly_nearby_ships = Vec::new();
         for index in 0..self.physics.proximity_ship_exits().len() {
             let contact = self.physics.proximity_ship_exits()[index];
             self.nearby_asteroid_ships.remove(&(
                 contact.obstacle_id, contact.ship_id,
             ));
+            if !self.nearby_asteroid_ships.iter()
+                .any(|&(_, ship_id)| ship_id == contact.ship_id) {
+                self.asteroid_navigation_refresh.remove(&contact.ship_id);
+            }
         }
         for index in 0..self.physics.proximity_ship_entries().len() {
             let contact = self.physics.proximity_ship_entries()[index];
@@ -2020,9 +2025,14 @@ impl CombatWorld {
             if self.obstacles[asteroid_index].kind == ObstacleKind::CollisionAsteroid &&
                 self.physics.obstacles()[asteroid_index].active &&
                 self.physics.ships()[ship_index].active {
-                self.nearby_asteroid_ships.insert((
+                if self.nearby_asteroid_ships.insert((
                     contact.obstacle_id, contact.ship_id,
-                ));
+                )) {
+                    newly_nearby_ships.push(contact.ship_id);
+                    self.asteroid_navigation_refresh
+                        .entry(contact.ship_id)
+                        .or_insert_with(|| ScaledTimer::new(1.0, true, false));
+                }
             }
         }
         for index in 0..self.physics.ship_obstacle_entries().len() {
@@ -2086,6 +2096,27 @@ impl CombatWorld {
                 self.asteroid_delayed_kills.entry(asteroid_id)
                     .or_insert_with(|| ScaledTimer::new(0.35, false, false));
             }
+        }
+
+        // Unity CollisionAsteroid.ShipCollision invokes
+        // Ship.FoundNearbyAsteroid on a new nearby-ship contact.
+        // A Queen, immobile ship or policy-controlled ship never reissues
+        // path commands. Replan at most once per fixed tick, even when
+        // multiple asteroid proximity colliders enter simultaneously.
+        newly_nearby_ships.sort_unstable();
+        newly_nearby_ships.dedup();
+        for ship_id in newly_nearby_ships {
+            let Some(&ship_index) = self.ship_by_id.get(&ship_id) else { continue };
+            let body = &self.physics.ships()[ship_index];
+            if !body.active || !body.motion.mobile ||
+                self.ships[ship_index].ship_type == 17 ||
+                (body.motion.is_policy_controlled && !body.motion.user_controlled) {
+                continue;
+            }
+            let Some(mut order) = self.latest_game_point_orders.get(&ship_id).copied()
+                else { continue };
+            order.newly_found_obstacle = true;
+            self.move_ship_to_point(ship_id, order)?;
         }
         Ok(())
     }
