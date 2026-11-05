@@ -25,7 +25,9 @@ remain authoritative.
   native stops, and inspect signed agent lifecycle reports.
 - **Monitor and Compare:** Existing Bees live status, performance, benchmark
   reports and research charts remain intact. Non-experiment training is shown
-  as distinct from experiment-owned training.
+  as distinct from experiment-owned training. For Ants, Compare can plot up to
+  four selected Hub jobs against cumulative experiment episodes and show their
+  most recent learning summaries. These plots are observational only.
 - **Machines:** Show read-only Bees worker reports from the existing control
   plane. Manually register project-independent machines (CPU, RAM, GPU capacity)
   and preview CPU/RAM, GPU count, and per-GPU VRAM requirements. A machine
@@ -513,6 +515,37 @@ or event logs are copied over the agent transport. The Train and
 Monitor tabs use the same formatting. This integration has no
 authority to start/stop work, release capacity, alter Ants PPO/
 curriculum, or modify its source files.
+
+### Bounded learning curves and run comparisons
+
+The coordinator now samples the already-validated Ants production
+progress projection into `experiment_hub_history.js`, with a fixed
+one-minute sampling bucket, a maximum of **96 points per job**, and a
+maximum of **24 jobs** in memory. Repeated reads of an unchanged
+source summary do not create artificial points. On saturation, older
+points are decimated to preserve a useful overview; when the episode
+clock or policy version decreases, or a segment changes, the graph
+breaks the line rather than fabricating uninterrupted learning.
+
+`GET /api/hub/progress?project_id=ants` is a loopback-only,
+**read-only** chart endpoint. It transmits bounded ephemeral samples
+only when the Compare tab requests them, instead of copying series into
+every ten-second Hub status response. No chart series is written to
+`hub-v1.json`, and a coordinator restart intentionally clears it.
+The latest job metrics and one final persisted snapshot remain usable
+after restart; historical curves are not reconstructed from unrelated
+metrics files.
+
+The Compare tab supports up to four manually selected jobs and a
+choice of curriculum-window success, segment success, curriculum
+level, policy version, last-episode simulation rate, or PPO unique
+samples/s. The PPO chart does not treat a non-updating episode as a
+measured zero-throughput optimizer update. Jobs sharing the original
+Ants artifact lineage are labeled as continuations, not independent
+replicates. **The curves do not normalize differing level, seed,
+scenario, hardware, or configuration conditions** and are not
+qualification, promotion, benchmark or superiority evidence.
+No new Ants metric meaning or production behavior is introduced.
 
 The adapter/native lifecycle has been exercised only with bounded
 simulations of filesystem, qualification pinning, metrics and systemd
