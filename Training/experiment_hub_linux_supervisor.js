@@ -10,6 +10,7 @@ const crypto=require('node:crypto');
 const {promisify}=require('node:util');
 const {execFile}=require('node:child_process');
 const {inspectHost}=require('./experiment_hub_host');
+const {verifyKernelLimits}=require('./experiment_hub_linux_cgroup');
 const runDefault=promisify(execFile);
 // Use known system binaries, not the agent's PATH.
 const SYSTEMD_RUN='/usr/bin/systemd-run';
@@ -180,10 +181,10 @@ class LinuxSupervisor {
         }
     }
     snapshot(){return JSON.parse(JSON.stringify(this.state.records));}
-    async inspectUnit(record) {
+    async inspectUnit(record,{requireKernel=true}={}) {
         const out=await this.runner(SYSTEMCTL,
             ['--user','show',record.unit,'--no-pager',
-                '--property=Id,Description,LoadState,ActiveState,SubState,Result,MainPID,MemoryMax,CPUQuotaPerSecUSec,MemoryCurrent,CPUUsageNSec,TasksCurrent,KillMode,KillSignal,ExecMainStatus'],
+                '--property=Id,Description,LoadState,ActiveState,SubState,Result,MainPID,MemoryMax,CPUQuotaPerSecUSec,MemoryCurrent,CPUUsageNSec,TasksCurrent,KillMode,KillSignal,ExecMainStatus,ControlGroup'],
             {timeout:12000,maxBuffer:16384,windowsHide:true});
         const p=parseShow(out.stdout);
         if(p.LoadState==='not-found')
@@ -202,10 +203,13 @@ class LinuxSupervisor {
                 !['SIGINT','2'].includes(p.KillSignal)))
             throw Error('Systemd did not confirm checkpoint-aware interrupt semantics.');
         if(p.ActiveState==='active'||p.ActiveState==='deactivating') {
+            const kernel=requireKernel
+                ?verifyKernelLimits(p,record.cpus,record.ram_mb,this.fs):null;
             const numeric=value=>/^[0-9]+$/.test(value||'')&&
                 Number.isSafeInteger(Number(value))?Number(value):null;
             const memoryBytes=numeric(p.MemoryCurrent);
             return {state:'running',active:true,unit_exists:true,
+                kernel_limits_verified:kernel?.verified===true,
                 pid:numeric(p.MainPID)||null,
                 memory_current_mb:memoryBytes==null?null:
                     Math.round(memoryBytes/1048576),
@@ -313,7 +317,10 @@ class LinuxSupervisor {
         const record=this.state.records.find(r=>r.job_id===jobId);
         if(!record)throw Error('Unknown locally supervised job.');
         // Re-check exact unit identity AND quota properties before stopping.
-        const existing=await this.inspectUnit(record);
+        // A service with failed/missing kernel limits must still be
+        // stoppable by its owning agent. Exact unit identity and the
+        // original systemd resource properties remain required.
+        const existing=await this.inspectUnit(record,{requireKernel:false});
         if(!existing.active)return this.reconcile(jobId);
         if(record.stop_requested_at)
             return this.reconcile(jobId);
