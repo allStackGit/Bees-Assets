@@ -165,6 +165,17 @@ pub fn observed_ship_from_world(
         return Err(CombatPerceptionError::InvalidAuthoredMetadata);
     }
     let identity = identities.get_or_assign(entity_id)?;
+    // Bound turret mounts belong to live gameplay. Their measured weapon
+    // stats override stale external snapshots, while unrelated non-turret
+    // slots remain sourced by the authored Level adapter.
+    let mut observed_weapons = metadata.observed_weapons;
+    if let Some(registered) = world.policy_observed_weapons(entity_id) {
+        for slot in 0..observed_weapons.len() {
+            if let Some(weapon) = registered[slot] {
+                observed_weapons[slot] = Some(weapon);
+            }
+        }
+    }
     Ok(ObservedShip {
         entity_id,
         fleet_ship_id: world.ship_fleet_identity(entity_id),
@@ -185,7 +196,7 @@ pub fn observed_ship_from_world(
         is_bomber: metadata.is_bomber,
         is_alive: true,
         mined_tsv: metadata.minerals_mined_this_level,
-        weapons: metadata.observed_weapons,
+        weapons: observed_weapons,
         // A bound RL ship's actual private communication lives on the
         // canonical world controller. External authored controllers continue
         // to provide the fallback when no native policy is bound.
