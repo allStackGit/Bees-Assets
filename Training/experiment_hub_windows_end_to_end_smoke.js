@@ -21,9 +21,118 @@ const {waitForSignedTerminal}=
 const terminal=state=>state==='finished'||state==='stopped';
 const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 
+async function qualifyQueue({hub,executor,url,token,advertisement,firstJob,
+    localRoot,localOptions}) {
+    const project=hub.addProject({
+        id:'smokeextra',name:'Second isolated Windows workload',
+    });
+    const secondConfig=hub.saveConfiguration({
+        project_id:project.id,name:'Second fixed inert owner child',
+        parameters:{kind:'inert'},
+    });
+    const thirdConfig=hub.saveConfiguration({
+        project_id:'smoke',name:'Queued behind CPU/RAM capacity',
+        parameters:{kind:'inert'},
+    });
+    const makeJob=(configuration,resources)=>hub.queueConfiguration({
+        configuration_id:configuration.id,
+        expected_revision:configuration.revision,resources,
+    });
+    const second=makeJob(secondConfig,{cpus:1,ram_mb:256,gpu_count:0});
+    const third=makeJob(thirdConfig,{cpus:1,ram_mb:256,gpu_count:0});
+    // GPU-capable hardware is deliberately not needed or exercised here.
+    const gpu=makeJob(thirdConfig,{cpus:1,ram_mb:256,gpu_count:1});
+    const cpuJobs=[firstJob,second,third];
+    let receipts=[],pending=[],starts=0,stops=0,peakRunning=0;
+    const poll=async()=>{
+        const result=await sendHeartbeat(url,'smoke',token,receipts,
+            pending,advertisement);
+        pending=[];
+        receipts=observedOffers(result.lease_offers,observations('smoke'));
+        assert((result.execution_orders||[]).length<=1,
+            'Agent received more than one native execution directive.');
+        if(result.execution_orders?.length) {
+            const order=result.execution_orders[0];
+            assert.equal(order.job.project_id==='smoke'||
+                order.job.project_id==='smokeextra',true);
+            assert.equal(order.job.resources.gpu_count,0);
+            if(order.action==='start')starts++;
+            if(order.action==='stop')stops++;
+            const report=await executor.handle(order);
+            pending=[report];
+        }
+        const snapshot=hub.snapshot();
+        peakRunning=Math.max(peakRunning,snapshot.jobs.filter(j=>
+            ['running','stop_requested'].includes(j.status)).length);
+        return snapshot;
+    };
+    await poll();
+    const armed=hub.configureAutomation({
+        enabled:true,machine_ids:['smoke'],
+        confirm_arm:true,confirm_untracked_load:true,
+    });
+    assert.equal(armed.enabled,true);
+    async function until(condition,reason) {
+        for(let i=0;i<100;i++) {
+            const automation=hub.tickAutomation();
+            if(!automation.enabled)
+                throw Error('Native automation disarmed: '+automation.last_error);
+            const snapshot=await poll();
+            if(condition(snapshot))return snapshot;
+            await pause(80);
+        }
+        throw Error('Isolated automatic queue did not reach '+reason+'.');
+    }
+    // Two one-CPU jobs fit the deliberately registered two-CPU, 512 MiB
+    // budget. The third and the GPU job must not be launched.
+    const two=await until(s=>cpuJobs.slice(0,2).every(j=>
+        s.jobs.find(x=>x.id===j.id)?.status==='running'),
+        'two concurrent verified native services');
+    assert.equal(two.jobs.find(j=>j.id===third.id).status,'waiting_adapter');
+    assert.equal(two.jobs.find(j=>j.id===gpu.id).status,'waiting_adapter');
+    assert.equal(two.reservations.filter(l=>l.status!=='released').length,2);
+    assert.equal(peakRunning,2);
+    console.log('PASS: two concurrent Windows Job Objects within a fixed');
+    console.log('      2-CPU / 512-MiB claimed budget; third and GPU job held.');
+    hub.authorizeStop({job_id:firstJob.id,confirm_stop:true});
+    await until(s=>s.jobs.find(x=>x.id===third.id)?.status==='running',
+        'capacity reuse and third qualified Start');
+    assert.equal(hub.state.jobs.find(x=>x.id===firstJob.id).capacity_released_at!=null,true);
+    console.log('PASS: first native Stop acknowledged; verified terminal');
+    console.log('      capacity automatically released and third job started.');
+
+    for(const job of [second,third]) {
+        if(hub.state.jobs.find(j=>j.id===job.id).status==='running')
+            hub.authorizeStop({job_id:job.id,confirm_stop:true});
+    }
+    await until(s=>cpuJobs.every(job=>
+        s.jobs.find(x=>x.id===job.id)?.capacity_released_at!=null),
+        'all native terminals and released capacity');
+    for(const job of cpuJobs)
+        await waitForSignedTerminal(localRoot,job.id,localOptions);
+    const done=hub.snapshot();
+    assert.equal(done.reservations.filter(l=>l.status!=='released').length,0);
+    assert.equal(done.jobs.find(j=>j.id===gpu.id).status,'waiting_adapter');
+    assert.equal(done.automation.managed_jobs,0);
+    assert.equal(done.automation.enabled,true);
+    hub.configureAutomation({enabled:false,confirm_disarm:true});
+    const restored=new ExperimentHub(hub.file.slice(0,-'/hub-v1.json'.length));
+    assert.equal(restored.automationStatus().enabled,false);
+    assert.equal(restored.state.jobs.filter(j=>
+        cpuJobs.some(x=>x.id===j.id)&&j.capacity_released_at!=null).length,3);
+    console.log('PASS: verified signed terminal receipts, no outstanding');
+    console.log('      CPU claims, explicit disarm and restart-safe registry.');
+    console.log('Queue observations: '+JSON.stringify({
+        starts,stops,peak_running:peakRunning,
+        cpu_jobs_released:3,gpu_jobs_started:0,
+    }));
+}
+
+
 async function main(argv=process.argv.slice(2),env=process.env) {
-    if(argv.length!==1||argv[0]!=='--run-inert')
-        throw Error('Specify --run-inert to authorize one isolated Windows native lifecycle.');
+    if(argv.length!==1||!['--run-inert','--run-queue'].includes(argv[0]))
+        throw Error('Specify --run-inert or --run-queue for isolated Windows qualification.');
+    const queueMode=argv[0]==='--run-queue';
     if(os.platform()!=='win32')
         throw Error('This controlled end-to-end smoke requires Windows.');
     const helper=env.EXPERIMENT_HUB_WINDOWS_HELPER;
@@ -37,10 +146,11 @@ async function main(argv=process.argv.slice(2),env=process.env) {
     const localOptions={
         root:localRoot,machineId:'smoke',
         helperPath:helper,helperSha256:sha,
-        adapters:{smoke:{
-            executable:helper,stop_policy:'terminate-group',
-            args:()=>['--smoke-child'],
-        }},
+        adapters:Object.fromEntries((queueMode?['smoke','smokeextra']:['smoke'])
+            .map(project=>[project,{
+                executable:helper,stop_policy:'terminate-group',
+                args:()=>['--smoke-child'],
+            }])),
     };
     let server=null,clean=false,jobId=null;
     const began=Date.now(),durations={};
@@ -51,15 +161,18 @@ async function main(argv=process.argv.slice(2),env=process.env) {
         durations.preflight_ms=Date.now()-preflightBegan;
         assert(supervisor.qualifiedAt,'Windows resource preflight must pass.');
         const executor=new LocalExecution({
-            machineId:'smoke',supervisor,projects:['smoke'],
+            machineId:'smoke',supervisor,
+            projects:queueMode?['smoke','smokeextra']:['smoke'],
         });
         const hub=new ExperimentHub(path.join(root,'hub'));
         hub.addProject({id:'smoke',name:'Isolated Windows qualification'});
         const available=observations('smoke');
+        if(queueMode&&(available.cpus<2||available.ram_mb<512))
+            throw Error('Concurrent queue qualification requires at least two logical CPUs and 512 MiB RAM.');
         hub.addMachine({
             id:'smoke',name:'Temporary Windows worker',
-            cpus:Math.min(available.cpus,4096),
-            ram_mb:Math.min(available.ram_mb,100000000),
+            cpus:queueMode?2:Math.min(available.cpus,4096),
+            ram_mb:queueMode?512:Math.min(available.ram_mb,100000000),
             gpus:[],
         });
         const token=hub.enrollMachine({
@@ -91,6 +204,13 @@ async function main(argv=process.argv.slice(2),env=process.env) {
         const connected=await send();
         assert.equal(connected.status,'connected');
         assert.equal(hub.snapshot().automation.enabled,false);
+        if(queueMode) {
+            await qualifyQueue({hub,executor,url,token,advertisement,
+                firstJob:job,localRoot,localOptions});
+            clean=true;
+            console.log('No Bees or Ants training was started.');
+            return;
+        }
         const placement=hub.allocateJobs({
             all_projects:true,job_ids:[job.id],
             machine_id:'smoke',confirm_allocate:true,
