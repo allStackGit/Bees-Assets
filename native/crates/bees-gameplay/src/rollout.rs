@@ -168,7 +168,8 @@ where
             )
         )?;
     } else {
-        batch.infer(backend).map_err(NativeBatchedStepError::Inference)?;
+        batch.infer_with_timing(backend, sample_phases)
+            .map_err(NativeBatchedStepError::Inference)?;
     }
     if let Some(started) = inference_started {
         counts.inference_and_validation_nanos = started.elapsed().as_nanos();
