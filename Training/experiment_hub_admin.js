@@ -61,6 +61,7 @@ function route(hub,method,pathname,query,value,bees) {
         '/api/hub/sequences':[201,'queueSequence'],
         '/api/hub/jobs/approve-stopped':[200,'approveStoppedContinuation'],
         '/api/hub/jobs/cancel':[200,'cancelJob'],
+        '/api/hub/jobs/cancel-future':[200,'cancelFutureJobs'],
         '/api/hub/jobs/allocate':[200,'allocateJobs'],
         '/api/hub/automation':[200,'configureAutomation'],
         '/api/hub/jobs/qualify-gpu':[200,'requestGpuQualification'],
