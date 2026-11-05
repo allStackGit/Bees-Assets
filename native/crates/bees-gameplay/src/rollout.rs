@@ -6,7 +6,7 @@
 //! World-local rewards, command completions and squad changes remain in
 //! each Level's persistent tick-stamped notification outbox.
 
-use bees_hivemind::session::SquadLifetime;
+use bees_hivemind::session::{HiveMindSession, SquadLifetime};
 use bees_sim::policy::Decision;
 use bees_sim::simulation::{Simulation, StepError, World};
 
@@ -118,4 +118,70 @@ where
         counts.worlds_stepped += 1;
     }
     Ok(counts)
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NativeLevelResetError {
+    MissingWorld { index: usize },
+    PendingNotifications { count: usize },
+    PendingSessionRetirements { count: usize },
+}
+
+/// A successful or failed episode must not be discarded while group
+/// rewards, command completions or shared-session retirement instructions
+/// remain unacknowledged. Callers explicitly deliver/acknowledge the
+/// pending notifications and apply HiveMindSession retirements first.
+/// World::reset_episode then increments the revision, invalidating late
+/// inference results for this reused WorldId.
+pub fn reset_level_after_delivery<M, A>(
+    simulation: &mut Simulation<NativeLevelState<M, A>, NativeLevelRules>,
+    index: usize,
+    seed: u64,
+    replacement: NativeLevelState<M, A>,
+) -> Result<(), NativeLevelResetError>
+where
+    M: NativeLevelRewardMetadata + NativeLevelCommandContext,
+    A: FnMut(SquadLifetime, i64) -> Result<SquadLifetime, SquadRosterError>,
+{
+    let world = simulation.world(index)
+        .ok_or(NativeLevelResetError::MissingWorld { index })?;
+    let remaining = world.state.events.pending_notifications().len();
+    if remaining > 0 {
+        return Err(NativeLevelResetError::PendingNotifications {
+            count: remaining,
+        });
+    }
+    let retirements =
+        world.state.events.pending_session_retirements().len();
+    if retirements > 0 {
+        return Err(NativeLevelResetError::PendingSessionRetirements {
+            count: retirements,
+        });
+    }
+    // Indices are validated above, and this call preserves the
+    // Simulation's existing episode-reset and measurement semantics.
+    simulation.reset_world(index, seed, replacement)
+        .map_err(|_| NativeLevelResetError::MissingWorld { index })
+}
+
+/// The network connection owns exactly one HiveMindSession shared by
+/// many Levels. Apply all pending retirement instructions between
+/// rollout windows, before handling delayed strategy responses.
+/// No RPCs or OutcomeId settlements are performed here.
+pub fn flush_all_squad_retirements<M, A>(
+    simulation: &mut Simulation<NativeLevelState<M, A>, NativeLevelRules>,
+    connection: &mut HiveMindSession,
+) -> usize
+where
+    M: NativeLevelRewardMetadata + NativeLevelCommandContext,
+    A: FnMut(SquadLifetime, i64) -> Result<SquadLifetime, SquadRosterError>,
+{
+    let mut total = 0;
+    for index in 0..simulation.world_count() {
+        if let Some(world) = simulation.world_mut(index) {
+            total += world.state.events
+                .flush_retirements_to_connection(connection);
+        }
+    }
+    total
 }
