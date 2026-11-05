@@ -1068,8 +1068,10 @@ class ExperimentHub {
             if(['finished','failed','stopped'].includes(job.status)&&
                 !job.final_progress) {
                 const previous=this.executionTelemetry.get(job.id);
+                const source=job.project_id==='ants'
+                    ?'ants-summary-v1':'hub-metrics-v1';
                 const latest=previous?.dispatch_id===job.dispatch_id&&
-                    previous.progress?.source==='ants-summary-v1'
+                    previous.progress?.source===source
                     ?previous.progress:null;
                 const selected=latest&&(!progress||
                     progress.experiment_id!==latest.experiment_id||
