@@ -16,6 +16,22 @@ const AGENT_HEARTBEAT_TTL_MS = 45000;
 function fingerprint(machineId, token) {
     return crypto.createHash('sha256').update(machineId + ':' + token).digest('hex');
 }
+function configuredGpus(input,requirePci=false) {
+    if(!Array.isArray(input)||input.length>32||
+        input.some(g=>!object(g)||!ID.test(String(g.id||''))||
+            !Number.isSafeInteger(g.vram_mb)||g.vram_mb<1||
+            g.vram_mb>1000000||
+            (requirePci&&!PCI.test(String(g.pci_address||'')))||
+            (g.pci_address!=null&&!PCI.test(String(g.pci_address))))||
+        new Set(input.map(g=>g.id)).size!==input.length||
+        new Set(input.filter(g=>g.pci_address).map(g=>g.pci_address)).size!==
+            input.filter(g=>g.pci_address).length)
+        throw Error('GPU IDs, PCI addresses, or nominal VRAM inventory invalid.');
+    return input.map(g=>({
+        id:g.id,vram_mb:g.vram_mb,
+        ...(g.pci_address?{pci_address:g.pci_address}:{}),
+    }));
+}
 function boundedReport(value) {
     if (!object(value) ||
         !Number.isSafeInteger(value.cpus) || value.cpus < 1 || value.cpus > 4096 ||
@@ -577,6 +593,28 @@ class ExperimentHub {
         }
         return [];
     }
+    bindMachineGpus(value) {
+        if(!object(value)||value.confirm_bind!==true||
+            !ID.test(String(value.machine_id||'')))
+            throw Error('Explicitly confirm the machine whose GPU bindings will change.');
+        const gpu=configuredGpus(value.gpus,true);
+        const snapshot=this.snapshot();
+        const machine=snapshot.machines.find(m=>m.id===value.machine_id);
+        if(!machine||machine.status!=='connected'||
+            machine.gpu_inventory_source!=='amdgpu-sysfs-v1')
+            throw Error('A fresh authenticated Linux AMDGPU inventory is required to bind physical GPUs.');
+        if(gpu.some(g=>!machine.observed_gpus.some(actual=>
+            actual.pci_address===g.pci_address)))
+            throw Error('Configured PCI GPU does not match a currently observed physical device.');
+        if(this.state.reservations.some(l=>l.machine_id===machine.id&&
+            ['active','offered','acknowledged'].includes(l.status)&&
+            (l.resources?.gpu_count>0||(l.resources?.gpus||[]).length)))
+            throw Error('Release all GPU-bearing leases before rebinding machine GPU identities.');
+        const next=copy(this.state);
+        next.machines.find(m=>m.id===machine.id).gpus=gpu;
+        this.commit(next);
+        return {machine_id:machine.id,gpus:copy(gpu)};
+    }
     enrollMachine(value) {
         if (!object(value) || !ID.test(String(value.machine_id || '')))
             throw Error('Invalid machine identity.');
@@ -888,14 +926,7 @@ class ExperimentHub {
         if (!Number.isSafeInteger(cpu) || cpu < 1 || cpu > 4096 ||
             !Number.isSafeInteger(ram) || ram < 128 || ram > 100000000)
             throw Error('Machine CPU and RAM capacity must be positive integers.');
-        const gpu = Array.isArray(value.gpus) ? value.gpus : [];
-        if (gpu.length > 32 || gpu.some(g=>!object(g) || !ID.test(String(g.id||'')) ||
-            !Number.isSafeInteger(g.vram_mb) || g.vram_mb < 1 ||
-            (g.pci_address!=null&&!PCI.test(String(g.pci_address)))) ||
-            new Set(gpu.map(g=>g.id)).size!==gpu.length||
-            new Set(gpu.filter(g=>g.pci_address).map(g=>g.pci_address)).size!==
-                gpu.filter(g=>g.pci_address).length)
-            throw Error('Invalid GPU inventory.');
+        const gpu=configuredGpus(value.gpus==null?[]:value.gpus);
         const machine = {
             id:value.id, name:name(value.name,'Machine name'),
             // All machines start inactive. An installed agent must prove health
