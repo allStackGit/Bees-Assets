@@ -507,8 +507,15 @@ document.addEventListener('DOMContentLoaded', () => {
             $('hub-compare-x-axis').value);
     }
     function drawComparisonChart(runs,key,xKey) {
-        const svg=$('hub-compare-svg'),metric=chartMetrics[key],
-            axis=chartAxes[xKey];
+        const svg=$('hub-compare-svg'),axis=chartAxes[xKey];
+        const genericKey=key.startsWith('metric:')?key.slice(7):null;
+        const units=project==='ants'||!genericKey?[]:
+            [...new Set(runs.flatMap(run=>
+                hubComparisonPoints(run).map(point=>
+                    point.metrics?.[genericKey]?.unit).filter(Boolean)))];
+        const metric=project==='ants'?chartMetrics[key]:
+            genericKey?{label:genericKey+' ('+(units.join('/')||'unknown')+')',
+                rate:units.length===1&&units[0]==='ratio'}:null;
         svg.replaceChildren();
         if(!metric||!axis)return;
         const ns='http://www.w3.org/2000/svg';
@@ -520,10 +527,15 @@ document.addEventListener('DOMContentLoaded', () => {
             svg.append(item);
             return item;
         };
+        if(units.length>1) {
+            node('text',{x:450,y:160,'text-anchor':'middle'},
+                'Selected metric uses incompatible units across runs');
+            return;
+        }
         svg.setAttribute('aria-label',metric.label+
             ' by '+axis.label.toLowerCase()+' for selected runs');
         const usable=p=>Number.isSafeInteger(p[xKey])&&p[xKey]>=0&&
-            Number.isFinite(p[key])&&
+            Number.isFinite(hubMetricValue(p,key))&&
             !(key==='ppo_unique_samples_per_second'&&
                 p.latest_episode_policy_updated===false);
         const series=runs.map(run=>({
@@ -531,7 +543,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }));
         const values=series.flatMap(r=>r.valid
             .filter(usable)
-            .map(p=>({x:p[xKey],y:p[key]})));
+            .map(p=>({x:p[xKey],y:hubMetricValue(p,key)})));
         if(!values.length) {
             node('text',{x:450,y:160,'text-anchor':'middle'},
                 'No recorded samples for the selected runs and metric');
@@ -540,12 +552,17 @@ document.addEventListener('DOMContentLoaded', () => {
         const bounds={left:85,right:865,top:64,bottom:265};
         const xmin=Math.min(...values.map(v=>v.x)),
             xmax=Math.max(...values.map(v=>v.x));
-        const ymax=metric.rate?1:Math.max(1,...values.map(v=>v.y))*1.05;
+        const ymin=project==='ants'||metric.rate?0:
+            Math.min(0,...values.map(v=>v.y))*1.05;
+        const ymax=metric.rate?1:project==='ants'
+            ?Math.max(1,...values.map(v=>v.y))*1.05
+            :Math.max(0.001,...values.map(v=>v.y))*1.05;
         const x=v=>bounds.left+(v-xmin)/Math.max(1,xmax-xmin)*
             (bounds.right-bounds.left);
-        const y=v=>bounds.bottom-(v/ymax)*(bounds.bottom-bounds.top);
+        const y=v=>bounds.bottom-(v-ymin)/Math.max(1e-9,ymax-ymin)*
+            (bounds.bottom-bounds.top);
         for(let i=0;i<=4;i++) {
-            const value=ymax*i/4,yp=y(value);
+            const value=ymin+(ymax-ymin)*i/4,yp=y(value);
             node('line',{x1:bounds.left,y1:yp,x2:bounds.right,y2:yp,
                 class:'plot-grid'});
             node('text',{x:75,y:yp+4,'text-anchor':'end'},
@@ -575,7 +592,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if(part.length>1)
                     node('path',{d:part.map((p,i)=>(i?'L':'M')+
                         x(p[xKey]).toFixed(1)+' '+
-                        y(p[key]).toFixed(1)).join(' '),
+                        y(hubMetricValue(p,key)).toFixed(1)).join(' '),
                         stroke:run.color,class:'plot-line'});
                 part=[];
             };
@@ -583,7 +600,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if(point.break_before||!usable(point))flush();
                 if(!usable(point))continue;
                 part.push(point);
-                node('circle',{cx:x(point[xKey]),cy:y(point[key]),
+                node('circle',{cx:x(point[xKey]),cy:y(hubMetricValue(point,key)),
                     r:3.5,fill:run.color,class:'plot-point'});
             }
             flush();
