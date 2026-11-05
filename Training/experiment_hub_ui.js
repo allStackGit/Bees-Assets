@@ -78,6 +78,21 @@ function hubObservedThreshold(run,level,threshold,minWindow) {
         first:points.find(p=>p.curriculum_window_success_rate>=threshold)||null,
         last:points[points.length-1]||null};
 }
+function hubGenericMetricCatalog(runs) {
+    const types=new Map();
+    for(const run of runs)for(const point of hubComparisonPoints(run))
+        for(const [key,metric] of Object.entries(point.metrics||{})) {
+            if(!types.has(key))types.set(key,new Set());
+            types.get(key).add(metric.unit);
+        }
+    return [...types].sort(([a],[b])=>a.localeCompare(b))
+        .map(([key,units])=>({key,units:[...units]}));
+}
+function hubMetricValue(point,key) {
+    return key.startsWith('metric:')
+        ?point.metrics?.[key.slice(7)]?.value
+        :point[key];
+}
 function hubComparisonCsv(exported) {
     const fields=[
         'slot','job_id','configuration_name','configuration_sha256',
@@ -90,6 +105,14 @@ function hubComparisonCsv(exported) {
         'segment_success_rate','simulation_steps_per_second',
         'ppo_unique_samples_per_second','latest_episode_policy_updated',
     ];
+    if(exported.project_id!=='ants') {
+        fields.push('steps_completed');
+        const metrics=new Set(exported.runs.flatMap(run=>
+            run.points.flatMap(point=>Object.keys(point.metrics||{}))));
+        for(const key of [...metrics].sort()) {
+            fields.push('metric_'+key,'unit_'+key);
+        }
+    }
     const encode=value=>{
         if(value==null)return '';
         let str=String(value);
@@ -113,6 +136,11 @@ function hubComparisonCsv(exported) {
         artifact_lineage_root_id:run.artifact_lineage_root_id,
         continuation_of_job_id:run.continuation_of_job_id,
         status:run.status,...point,
+        ...Object.fromEntries(Object.entries(point.metrics||{}).flatMap(
+            ([key,metric])=>[
+                ['metric_'+key,metric.value],
+                ['unit_'+key,metric.unit],
+            ])),
     })));
     const crlf=String.fromCharCode(13,10);
     return String.fromCharCode(0xFEFF)+fields.join(',')+crlf+
