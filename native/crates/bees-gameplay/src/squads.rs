@@ -277,3 +277,79 @@ pub fn reconcile_retired_squad(
     session.retire_squad(squad);
     Ok(finished)
 }
+
+/// A native fixed step must project the one CombatWorld event stream into
+/// gameplay ownership before the next tick/command/inference pass.
+/// Returning an error is fatal to this world's integration step: replaying
+/// an already applied partial event batch would duplicate registrations.
+#[derive(Debug)]
+pub enum SquadEventBridgeError {
+    Roster(SquadRosterError),
+    Commands(GameCommandError),
+}
+
+impl From<SquadRosterError> for SquadEventBridgeError {
+    fn from(value: SquadRosterError) -> Self { Self::Roster(value) }
+}
+impl From<GameCommandError> for SquadEventBridgeError {
+    fn from(value: GameCommandError) -> Self { Self::Commands(value) }
+}
+
+impl NativeSquadRoster {
+    /// Consume just the source world's combat/special events in their
+    /// original order. The Level supplies a fresh temporary SquadLifetime
+    /// for each Scout Beacon; no static allocator or training-only identity
+    /// participates in physics, squad ownership or HiveMind reservations.
+    ///
+    /// `changes` and `finished` are reused output buffers. The caller must
+    /// settle every finished command's real TSV/outcome reservations and
+    /// recompute survivor formation offsets for MemberLost. A minion creation
+    /// requires registering the graphical squad and its presentation in the
+    /// ordinary Level adapter.
+    pub fn reconcile_combat_tick(
+        &mut self,
+        world: &mut CombatWorld,
+        commands: &mut NativeSquadCommandDirector,
+        session: &mut HiveMindSession,
+        mut allocate_minion: impl FnMut(SquadLifetime, i64)
+            -> Result<SquadLifetime, SquadRosterError>,
+        changes: &mut Vec<SquadRosterChange>,
+        finished: &mut Vec<FinishedNativeCommand>,
+    ) -> Result<(), SquadEventBridgeError> {
+        changes.clear();
+        finished.clear();
+        // Read only the small discriminants needed by the roster. The
+        // combat event store remains authoritative and is not drained.
+        // Command retirement after this pass can mutate world speed safely.
+        for event in world.events() {
+            match event {
+                CombatEvent::ScoutBeaconDropped {
+                    scout_id, beacon_id, ..
+                } => {
+                    let mother = self.owning_squad(*scout_id)
+                        .ok_or(SquadRosterError::MissingScout(*scout_id))?;
+                    let owner = allocate_minion(mother, *beacon_id)?;
+                    changes.push(self.register_scout_beacon(
+                        world, event, owner,
+                    )?);
+                }
+                CombatEvent::ShipDied { victim_id, .. } =>
+                    self.on_ship_death(*victim_id, changes),
+                _ => {}
+            }
+        }
+        // Only whole dead squads retire in-flight strategies. Surviving
+        // squads keep their lifecycle: their Level adapter may refresh or
+        // supersede orders after recomputing formation and command bans.
+        for &change in changes.iter() {
+            if let SquadRosterChange::SquadRetired { .. } = change {
+                if let Some(command) = reconcile_retired_squad(
+                    change, world, commands, session,
+                )? {
+                    finished.push(command);
+                }
+            }
+        }
+        Ok(())
+    }
+}
