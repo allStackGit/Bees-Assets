@@ -1230,6 +1230,19 @@ fingerprints do not prove equal seeds, evaluation scenarios or
 environment/runtime identity. **The curves do not normalize differing
 level, seed, scenario, hardware, or configuration conditions** and are
 not qualification, promotion, benchmark or superiority evidence.
+The Compare tab also provides a read-only, curriculum-level
+**first-observed rolling-window target** screening table. The operator
+chooses a success percentage and minimum number of episodes represented
+by each source rolling window. Per selected run, the table identifies
+the first retained observation meeting the target, cumulative training
+episodes and environment steps at that observation, and the latest
+eligible episode count. Runs without a retained qualifying observation
+are explicitly censored, not marked as failures. This is bounded and
+possibly decimated training history, **not** an independently evaluated
+first success, benchmark qualification, or automatic stopping rule.
+The table requires a single curriculum level to avoid comparing
+unrelated training phases.
+
 No new Ants metric meaning or production behavior is introduced.
 
 The adapter/native lifecycle has been exercised only with bounded
