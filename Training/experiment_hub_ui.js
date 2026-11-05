@@ -151,23 +151,26 @@ function hubComparisonCsv(exported) {
 // A read-only cross-project view. No dependency record is ever mutated
 // by rendering, and observed native completion is not benchmark success.
 function independentSequenceRows(jobs) {
-    const byId=new Map(jobs.map(job=>[job.id,job]));
     const successor=new Map();
-    for(const job of jobs)if(job.after_job_id&&job.status!=='cancelled') {
-        if(!successor.has(job.after_job_id))successor.set(job.after_job_id,[]);
-        successor.get(job.after_job_id).push(job);
+    for(const job of jobs) {
+        const parent=job.after_job_id||job.continuation_of_job_id;
+        if(!parent||job.status==='cancelled')continue;
+        if(!successor.has(parent))successor.set(parent,[]);
+        successor.get(parent).push(job);
     }
-    return jobs.filter(job=>!job.after_job_id&&successor.has(job.id))
+    return jobs.filter(job=>!job.after_job_id&&
+        successor.get(job.id)?.some(child=>child.after_job_id))
         .sort((a,b)=>String(b.created_at||'').localeCompare(
             String(a.created_at||'')))
         .slice(0,20).map(root=>{
             const chain=[root],visited=new Set([root.id]);
-            let conflict=false;
-            for(let i=0;i<16;i++) {
+            let conflict=false,continuesCheckpoint=false;
+            while(true) {
                 const candidates=successor.get(chain[chain.length-1].id)||[];
                 if(candidates.length>1){conflict=true;break;}
                 const child=candidates[0];
                 if(!child)break;
+                if(child.continuation_of_job_id){continuesCheckpoint=true;break;}
                 if(visited.has(child.id)){conflict=true;break;}
                 visited.add(child.id);
                 chain.push(child);
@@ -175,10 +178,11 @@ function independentSequenceRows(jobs) {
             const current=chain.find(job=>job.status!=='finished'||
                 !job.capacity_released_at)||chain[chain.length-1];
             const blocked=chain.find(job=>job.status==='waiting_predecessor');
-            return {root,chain,current,
+            return {root,chain,current,canCancel:!conflict&&!continuesCheckpoint,
                 completed:chain.filter(job=>job.status==='finished'&&
                     job.capacity_released_at).length,
                 reason:conflict?'Conflicting or cyclic successor records; inspect the registry.'
+                    :continuesCheckpoint?'An Ants checkpoint continuation follows this sequence.'
                     :blocked?.predecessor_wait?.reason||
                         current?.status_reason||'—'};
         });
@@ -846,6 +850,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const sequenceRows=independentSequenceRows(state.jobs||[]);
         $('hub-sequence-overview-panel').hidden=project==='bees'||
             !sequenceRows.length;
+        $('hub-sequence-message').hidden=project==='bees';
         const sequenceTable=$('hub-sequence-overview-rows');
         sequenceTable.replaceChildren();
         for(const summary of sequenceRows) {
@@ -865,9 +870,9 @@ document.addEventListener('DOMContentLoaded', () => {
             cell(tr,summary.reason);
             const actions=cell(tr,'');
             const future=summary.chain.slice(position);
-            if(future.length&&future.every(job=>
-                ['waiting_adapter','waiting_predecessor'].includes(job.status)&&
-                !job.dispatch_id)) {
+            if(summary.canCancel&&future.length&&future.every(job=>
+                !job.dispatch_id&&(job.status==='waiting_adapter'||
+                    job.status==='waiting_predecessor'&&!job.lease_id))) {
                 actions.append(button('Cancel future queued jobs',async()=>{
                     if(!confirm('Cancel '+future.length+' unstarted future jobs across '+
                         [...new Set(future.map(job=>job.project_id))].join(', ')+
@@ -876,16 +881,18 @@ document.addEventListener('DOMContentLoaded', () => {
                     try {
                         const result=await action('hub/jobs/cancel-future',{
                             after_job_id:summary.current.id,confirm_cancel:true,
+                            expected_job_ids:future.map(job=>job.id),
                         });
                         feedback('hub-sequence-message',
                             'Cancelled '+result.cancelled_count+
                             ' future queued jobs. Current native jobs were not stopped.');
                         await reload();
                     }catch(error){
+                        await reload();
                         feedback('hub-sequence-message',String(error.message||error));
                     }
                 }));
-            }else if(future.length) {
+            }else if(future.length&&summary.canCancel) {
                 actions.textContent='A downstream job has started or needs inspection.';
             }
             sequenceTable.append(tr);
