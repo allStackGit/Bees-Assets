@@ -31,6 +31,9 @@ impl CombatWorld {
         }
         self.physics.ships_mut()[index]
             .set_healing_zone(child_shape)?;
+        // Register only after the real child collider was accepted.
+        let side = self.ships[index].side;
+        self.register_support_zone(BEEHIVE_TYPE, side, beehive_id);
         Ok(())
     }
 
@@ -66,31 +69,28 @@ impl CombatWorld {
         Ok(())
     }
 
-    /// Same-side Beehive selection uses the lowest live runtime ID,
-    /// matching FindTouchingBeehive. The separate child hull is
-    /// maintained by KinematicPhysics at the last fixed-step pose.
+    /// The same-side Beehive index is sorted by runtime ID. The first
+    /// authored HealCollider contact matches FindTouchingBeehive's
+    /// lowest-ID tie-breaker. No-zone levels avoid a full ship scan.
     fn touching_beehive(&self, ship_id: i64) -> Option<i64> {
         let &target_index = self.ship_by_id.get(&ship_id)?;
         let target = &self.ships[target_index];
         if target.vitals.is_dead() { return None; }
         let target_body = &self.physics.ships()[target_index];
-        let mut selected = None;
-        for (index, beehive) in self.ships.iter().enumerate() {
-            if beehive.ship_type != BEEHIVE_TYPE ||
-                beehive.side != target.side ||
-                beehive.entity_id == ship_id ||
-                beehive.vitals.is_dead() {
+        for &beehive_id in self.support_zone_ids.get(&(BEEHIVE_TYPE, target.side))? {
+            let Some(&index) = self.ship_by_id.get(&beehive_id) else {
                 continue;
-            }
-            let owner = &self.physics.ships()[index];
-            if owner.healing_zone_touches(target_body) {
-                let id = beehive.entity_id;
-                if selected.map_or(true, |previous| id < previous) {
-                    selected = Some(id);
-                }
+            };
+            let beehive = &self.ships[index];
+            if beehive.ship_type == BEEHIVE_TYPE &&
+                beehive.side == target.side &&
+                beehive.entity_id != ship_id &&
+                !beehive.vitals.is_dead() &&
+                self.physics.ships()[index].healing_zone_touches(target_body) {
+                return Some(beehive_id);
             }
         }
-        selected
+        None
     }
 
     /// Source CanUseHealingAction eligibility, independent of whether
