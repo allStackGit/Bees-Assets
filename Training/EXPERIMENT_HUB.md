@@ -190,16 +190,26 @@ agent instance, installed trusted project adapters, and confirmation that
 the operator has accounted for Bees and any other **untracked workloads**
 on those machines. The automation session is process-local and starts
 **disarmed**, including after every coordinator restart. Disarming does
-not stop a running service or release its capacity. The Train tab
+not stop a running service or release its capacity. Automatic Start
+requests are tagged with the ephemeral arming session and agent instance:
+after disarm, restart, or replacement, the coordinator will **not issue a
+new Start directive** for an older automatic request. A command already
+delivered to the agent may nevertheless be executing; use manual Stop
+and native inspection to resolve it. Re-arming does not revive an older
+session's pending Start. The Train tab
 retains the last actual scheduler transition, its timestamp and a
 separate current waiting reason instead of repeatedly overwriting
 the meaningful event during idle polling.
 
 While armed, a coordinator pass every ten seconds performs **at most one
-durable transition**: release capacity only after an authenticated native
-`finished` or `stopped` report, authorize one CPU-only Start that passes
+durable transition**: release capacity only for a job started in the
+**current automation session** after an authenticated native `finished`
+or `stopped` report, authorize one CPU-only Start that passes
 the same live readiness gate as the manual Start button, or claim available
-CPU/RAM budget for an unassigned non-Bees job. Project queues are
+CPU/RAM budget for an unassigned non-Bees job. Jobs completed under
+older/manual sessions require explicit capacity release. A machine cannot
+receive a second automatic Start authorization while another Start is
+awaiting its native running/terminal acknowledgement. Project queues are
 interleaved fairly (FIFO within each project). An agent must first
 acknowledge each fresh claim. Jobs requesting any GPU remain outside
 this automation; existing Bees training remains under its own operator.
