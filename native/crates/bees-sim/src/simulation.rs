@@ -440,6 +440,111 @@ mod tests {
     }
 
     #[test]
+    fn independent_parallel_rollout_matches_serial_world_state_and_work() {
+        use crate::policy::Action;
+        let build = || {
+            let mut sim = Simulation::new(CountingRules, 0.02).unwrap();
+            for id in 1..=7 {
+                sim.add_world(World::new(WorldId(id), id * 100, 0)).unwrap();
+            }
+            sim
+        };
+        let mut serial = build();
+        let mut parallel = build();
+        let decide = |world: &World<u64>, out: &mut Vec<Decision>| {
+            out.push(Decision {
+                agent_id: world.id.0,
+                action: Action::ZERO,
+            });
+            if world.tick() % 3 == 0 {
+                out.push(Decision {
+                    agent_id: world.id.0 + 100,
+                    action: Action::ZERO,
+                });
+            }
+        };
+        let mut actions = Vec::new();
+        for index in 0..7 {
+            for _ in 0..13 {
+                actions.clear();
+                decide(serial.world(index).unwrap(), &mut actions);
+                serial.step_world(index, &actions).unwrap();
+            }
+        }
+
+        let report = parallel.run_parallel_window(
+            NonZeroU32::new(13).unwrap(),
+            NonZeroUsize::new(4).unwrap(),
+            &decide,
+        );
+        assert!(report.failed_worlds.is_empty());
+        assert_eq!(report.skipped_failed_worlds, 0);
+        assert_eq!(report.measurements, serial.measurements());
+        assert_eq!(parallel.measurements(), serial.measurements());
+        assert_eq!(report.measurements.ticks, 91);
+        assert!(report.steps_per_second().is_some());
+        for index in 0..7 {
+            let a = serial.world(index).unwrap();
+            let b = parallel.world(index).unwrap();
+            assert_eq!(a.id, b.id);
+            assert_eq!(a.state, b.state);
+            assert_eq!(a.tick(), b.tick());
+            assert_eq!(a.random.state(), b.random.state());
+            assert_eq!(a.measurements(), b.measurements());
+        }
+    }
+
+    #[test]
+    fn parallel_rollout_failures_do_not_advance_failed_arenas() {
+        struct FailingRules;
+        impl GameRules<u64> for FailingRules {
+            type Error = &'static str;
+
+            fn step(
+                &self,
+                world: &mut World<u64>,
+                _: &[Decision],
+                _: f32,
+            ) -> Result<StepCounts, Self::Error> {
+                if world.id.0 == 2 && world.tick() == 2 {
+                    return Err("arena failed");
+                }
+                world.state += 1;
+                Ok(StepCounts::default())
+            }
+        }
+
+        let mut sim = Simulation::new(FailingRules, 0.02).unwrap();
+        for id in 1..=3 {
+            sim.add_world(World::new(WorldId(id), id * 10, 0)).unwrap();
+        }
+        let decide = |_: &World<u64>, _: &mut Vec<Decision>| {};
+        let report = sim.run_parallel_window(
+            NonZeroU32::new(5).unwrap(),
+            NonZeroUsize::new(3).unwrap(),
+            &decide,
+        );
+        assert_eq!(report.failed_worlds.len(), 1);
+        assert_eq!(report.measurements.ticks, 12);
+        assert_eq!(report.measurements.failed_steps, 1);
+        assert_eq!(sim.world(1).unwrap().tick(), 2);
+        assert!(sim.world(1).unwrap().is_failed());
+        assert_eq!(sim.world(0).unwrap().tick(), 5);
+        assert_eq!(sim.world(2).unwrap().tick(), 5);
+
+        let next = sim.run_parallel_window(
+            NonZeroU32::new(1).unwrap(),
+            NonZeroUsize::new(3).unwrap(),
+            &decide,
+        );
+        assert_eq!(next.skipped_failed_worlds, 1);
+        assert!(next.failed_worlds.is_empty());
+        assert_eq!(sim.world(1).unwrap().tick(), 2);
+        assert_eq!(sim.world(0).unwrap().tick(), 6);
+        assert_eq!(sim.world(2).unwrap().tick(), 6);
+    }
+
+    #[test]
     fn reproducible_world_random_stream_and_no_modulo_bias_path() {
         let mut one = RandomStream::new(987);
         let mut two = RandomStream::new(987);
