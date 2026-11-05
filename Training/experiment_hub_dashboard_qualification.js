@@ -152,15 +152,38 @@ async function main(argv=process.argv.slice(2),env=process.env) {
             }finally{active=false;}
         };
 
+        const measurements={
+            peak_running:0,peak_claimed_cpus:0,peak_claimed_ram_mb:0,
+            observed_offline:false,automation_safety_disarms:0,
+        };
+        const observeSnapshot=()=>{
+            const snapshot=hub.snapshot();
+            const claimed=snapshot.reservations.filter(l=>
+                ['active','offered','acknowledged'].includes(l.status));
+            measurements.peak_running=Math.max(measurements.peak_running,
+                snapshot.jobs.filter(j=>j.status==='running').length);
+            measurements.peak_claimed_cpus=Math.max(measurements.peak_claimed_cpus,
+                claimed.reduce((n,l)=>n+l.resources.cpus,0));
+            measurements.peak_claimed_ram_mb=Math.max(measurements.peak_claimed_ram_mb,
+                claimed.reduce((n,l)=>n+l.resources.ram_mb,0));
+            if(snapshot.machines.find(m=>m.id==='smoke')?.status==='offline')
+                measurements.observed_offline=true;
+            return snapshot;
+        };
         const tickScheduler=()=>{
-            if(closing||!hub.automation.enabled)return;
+            if(closing)return;
+            observeSnapshot();
+            if(!hub.automation.enabled)return;
             const status=hub.tickAutomation();
-            if(!status.enabled)
+            if(!status.enabled) {
+                measurements.automation_safety_disarms++;
                 console.error('[qualification automation] Disarmed: '+
                     status.last_error);
+            }
+            observeSnapshot();
         };
         const qualificationStatus=()=>{
-            const snapshot=hub.snapshot();
+            const snapshot=observeSnapshot();
             const claims=snapshot.reservations.filter(l=>
                 ['active','offered','acknowledged'].includes(l.status));
             const jobs=snapshot.jobs.filter(j=>j.project_id==='smoke');
@@ -314,10 +337,23 @@ async function main(argv=process.argv.slice(2),env=process.env) {
             clearInterval(heartbeatTimer);
             clearInterval(schedulerTimer);
             console.log('Qualification listeners stopping. Private registry preserved: '+root);
-            const snapshot=hub.snapshot();
+            const snapshot=observeSnapshot();
+            const records=supervisor.snapshot();
+            console.log('Qualification measurements: '+JSON.stringify({
+                ...measurements,
+                jobs_started:snapshot.jobs.filter(j=>j.dispatch_id).length,
+                terminal_jobs:snapshot.jobs.filter(j=>
+                    ['stopped','finished','failed'].includes(j.status)).length,
+                jobs_with_released_capacity:snapshot.jobs.filter(j=>
+                    Boolean(j.capacity_released_at)).length,
+                outstanding_claims:snapshot.reservations.filter(r=>
+                    ['active','offered','acknowledged'].includes(r.status)).length,
+                native_owner_records:records.length,
+                automation_enabled:hub.automation.enabled,
+            }));
             if(snapshot.reservations.some(r=>
                 ['active','offered','acknowledged'].includes(r.status))||
-                supervisor.snapshot().some(record=>
+                records.some(record=>
                     !['finished','failed','stopped'].includes(record.state)))
                 console.error('Outstanding/uncertain native ownership remains; inspect the private journal. No processes were force-killed.');
             admin.close();worker.close();
