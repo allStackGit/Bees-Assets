@@ -48,7 +48,17 @@ HumanSide ID. A successful overlapping return emits `ShipWarped` before
 shaping stream, and lets the separate economic ledger retain mined cargo.
 Policy masks reject warp actions without an authored active gate contact;
 the rendered Level still owns any WarpGate sound/presentation.
-Mining physical capability actions remain unported and masked.
+Native Factory and CarpenterBee policy mining uses the actual
+MiningAsteroid collider, its authored health, a five-unit extraction rate
+and a five-second cooldown. Depleted asteroids retire from the shared
+physics/discovery registry, with an event for the Level's presentation and
+mining-command lifecycle. Before tick rewards are processed, the Level
+must implement `NativeLevelRewardMetadata::credit_mined_minerals` to
+update its persistent FleetShip value. Missing or inconsistent metadata
+fails the Level step rather than crediting fictitious minerals. Mining
+contributes to economic accounting, not an additional immediate tactical
+capability reward. The rendered command/fleet adapter and physical
+Windows/Linux qualification still require integration.
 
 `NativeGroupRewardDelivery` is an optional per-episode MA-POCA delivery
 adapter. The runner registers participating agents, consumes side-wide
