@@ -19,6 +19,28 @@ created from the current `feat/experiment-queue-ui` branch.
 - Linux, Windows and macOS are required targets for both the game and headless
   workers. Native development must work without the Unity editor.
 
+## Hive Mind / server migration boundary
+
+The native workspace now also contains `bees-hivemind`, a separate,
+network-independent protocol and outcome-ownership crate. It preserves the
+deployed `get-strategy` and `store-commands` JSON fields, server command
+strategy IDs **1–15**, shooting IDs **1–40**, 53-bit request hashes, and exact
+unsigned matchup identities. Request hashes are allocated once by the client
+transport for **all** message types; multiple Levels may share one WebSocket
+and one server Hive Mind Game. Each strategy request captures its squad
+lifecycle, so a late response for a retired squad becomes an explicit
+reservation-discard obligation rather than an executable command.
+
+For completed commands, the game must settle every issued primary/shooting
+OutcomeId, independently decide whether a targeting reservation earned TSV,
+and persist a StoreCommands submission before sending it. Native
+`PendingStoreCommands` retains that submission until the authoritative
+server confirms durable success; a stale or failed acknowledgement does not
+silently release ownership. Transport authentication, reconnection, durable
+client retry storage, the native squad-command executor, and the server-side
+learning/persistence implementation remain separate work. **The existing
+BeesServer production behavior has not been replaced in this increment.**
+
 ## Current status
 
 The portable `bees-sim` crate currently contains:
