@@ -883,6 +883,26 @@ impl KinematicPhysics {
             ShipHullOverlap::Contact
     }
 
+    /// Get current-physics-step ship neighbors from the existing spatial
+    /// index. Only an AABB candidate query: the caller still tests exact
+    /// hulls and layer permissions. Stable dense index order matches the
+    /// previous full-roster contact iteration and avoids callback ordering
+    /// depending on the spatial grid's cell traversal.
+    ///
+    /// Call after step(), which refreshes the grid for current ship poses.
+    /// The caller owns/reuses the output buffer; this never allocates a
+    /// new container for a charge or physics tick.
+    pub fn ship_contact_candidates(
+        &mut self, index: usize, output: &mut Vec<usize>,
+    ) {
+        output.clear();
+        let Some(ship) = self.ships.get(index) else { return };
+        if !ship.active { return; }
+        let Some(bounds) = ship.collider.bounds else { return };
+        self.grid.candidates(bounds, output);
+        output.sort_unstable();
+    }
+
     pub fn ships(&self) -> &[ShipBody] { &self.ships }
     pub fn ships_mut(&mut self) -> &mut [ShipBody] { &mut self.ships }
     pub fn projectiles(&self) -> &[ProjectileBody] { &self.projectiles }

@@ -182,7 +182,15 @@ impl CombatWorld {
             if barge.phase != 2 { continue; }
             let ship_index = self.ship_by_id[&ship_id];
             let side = self.ships[ship_index].side;
-            for target_index in 0..self.ships.len() {
+            // Reuse the physics step's existing ship spatial grid instead
+            // of scanning every combat ship at 50 ticks per second.
+            self.physics.ship_contact_candidates(
+                ship_index, &mut self.barge_contact_candidates,
+            );
+            self.policy_special_measurements.barge_broadphase_candidates +=
+                self.barge_contact_candidates.len() as u64;
+            for candidate in 0..self.barge_contact_candidates.len() {
+                let target_index = self.barge_contact_candidates[candidate];
                 if !self.physics.ships()[ship_index].active ||
                     self.ships[ship_index].vitals.is_dead() {
                     break;
@@ -203,12 +211,14 @@ impl CombatWorld {
                 self.events.push(CombatEvent::BargeChargeHit {
                     ship_id, target_id,
                 });
+                // Unity Ship.LogAttackingDamage respects MakeShotsHarmless
+                // even for Barge charge contact and reciprocal recoil.
                 let enemy_delta = self.ships[target_index].vitals
-                    .apply_damage(barge.power, false)?
+                    .apply_damage(barge.power, self.shots_harmless)?
                     .expect("validated living Barge target");
                 let recoil_power = ((enemy_delta.applied_damage as f32) * 0.75) as i32;
                 let self_delta = self.ships[ship_index].vitals
-                    .apply_damage(recoil_power, false)?
+                    .apply_damage(recoil_power, self.shots_harmless)?
                     .expect("validated living charging Barge");
                 self.reservations.target_health_changed(
                     target_id, self.ships[target_index].vitals.health(),
@@ -238,6 +248,23 @@ impl CombatWorld {
             }
         }
         Ok(())
+    }
+
+    /// Source RlCombatPerception.GetSpecialCooldownFraction: remaining
+    /// authored time for current phase plus future cooldown, over 13s.
+    /// Unlike RlChargePhase this continuously decreases while wind-up,
+    /// charge, or cooldown is running.
+    pub fn policy_barge_charge_cooldown_fraction(&self, ship_id: i64) -> Option<f32> {
+        let PolicyShipSpecial::Barge(barge) =
+            self.policy_ship_runtime.get(&ship_id)?.special? else { return None };
+        let remaining = match barge.phase {
+            0 => 0.0,
+            1 => (WINDUP - barge.elapsed).max(0.0) + CHARGING + COOLDOWN,
+            2 => (CHARGING - barge.elapsed).max(0.0) + COOLDOWN,
+            3 => (COOLDOWN - barge.elapsed).max(0.0),
+            _ => COOLDOWN,
+        };
+        Some((remaining / (WINDUP + CHARGING + COOLDOWN)).clamp(0.0, 1.0))
     }
 
     /// Snapshot exposed to the RL observation adapter.

@@ -479,6 +479,7 @@ pub struct PolicySpecialMeasurements {
     pub yellow_jacket_exact_overlap_tests: u64,
     pub yellow_jacket_detonations: u64,
     pub barge_charges_started: u64,
+    pub barge_broadphase_candidates: u64,
     pub barge_contact_checks: u64,
     pub barge_contact_hits: u64,
     pub barge_charges_stopped: u64,
@@ -605,6 +606,9 @@ pub struct CombatWorld {
     /// One hit per victim for each active charge; cleared when the
     /// owning Barge starts another charge or is removed from the world.
     barge_charge_hits: HashSet<(i64, i64)>,
+    /// Reused current-grid candidate buffer. No per-charge per-tick Vec
+    /// allocation even in battles with many active Barges.
+    barge_contact_candidates: Vec<usize>,
     pending_game_point_orders: HashMap<i64, GamePointOrder>,
     latest_game_point_orders: HashMap<i64, GamePointOrder>,
     ship_collision_profiles: HashMap<i64, ShipCollisionProfile>,
@@ -682,6 +686,7 @@ impl CombatWorld {
             policy_pending_ship_specials: Vec::new(),
             policy_special_measurements: PolicySpecialMeasurements::default(),
             barge_charge_hits: HashSet::new(),
+            barge_contact_candidates: Vec::new(),
             pending_game_point_orders: HashMap::new(),
             latest_game_point_orders: HashMap::new(),
             ship_collision_profiles: HashMap::new(),

@@ -283,8 +283,14 @@ Charge completion inflicts the source's 200 self-damage through normal
 unattributed health and death processing. The source's once-per-victim
 charge contact memory is world-owned and cleared on cooldown or death.
 Movement locks use the same ShipMotion, rather than a training-only
-teleport or collision model. Phase transitions, contact work, hits and
-stops have per-world counters. The rendered Level still needs animation,
+teleport or collision model. Active contact queries now reuse the
+physics step's spatial ship grid and one buffer rather than scanning
+the entire ship roster every tick. Narrowphase checks still use exact
+authored hulls and collision permissions in stable index order.
+Separate broadphase/narrowphase counters measure candidate reduction;
+no throughput improvement has yet been benchmarked. Charge damage
+respects MakeShotsHarmless, matching Unity LogAttackingDamage.
+The authored 13s cycle has a normalized time-until-ready observation. The rendered Level still needs animation,
 presentation and squad-command integration.
 
 **Scout Beacon policy special:** the native policy Scout now supports
