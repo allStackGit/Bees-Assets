@@ -121,7 +121,7 @@ function observedOffers(offers,observation) {
 }
 
 function sendHeartbeat(url,machineId,token,observedLeaseIds=[],
-    executionReports=[],advertisement={}) {
+    executionReports=[],advertisement={},gpuQualificationReports=[]) {
     if (typeof token !== 'string' || !TOKEN.test(token))
         return Promise.reject(Error('Missing/invalid EXPERIMENT_HUB_AGENT_TOKEN.'));
     if (!Array.isArray(observedLeaseIds) || observedLeaseIds.length>100 ||
@@ -129,11 +129,14 @@ function sendHeartbeat(url,machineId,token,observedLeaseIds=[],
             !/^[0-9a-f-]{36}$/.test(id)))
         return Promise.reject(Error('Invalid lease acknowledgement IDs.'));
     if(!Array.isArray(executionReports)||executionReports.length>50||
+        !Array.isArray(gpuQualificationReports)||
+        gpuQualificationReports.length>4||
         !advertisement||typeof advertisement!=='object')
         return Promise.reject(Error('Invalid local execution report batch.'));
     const payload=JSON.stringify({
         ...observations(machineId),observed_lease_ids:observedLeaseIds,
         execution_reports:executionReports,
+        gpu_qualification_reports:gpuQualificationReports,
         local_executor:advertisement.local_executor===true,
         installed_projects:advertisement.installed_projects||[],
         native_preflight_passed:advertisement.native_preflight_passed===true,
@@ -199,23 +202,29 @@ async function main() {
         native_preflight_reason:nativePreflightReason,
         instance_id:crypto.randomUUID(),
     };
-    let active=false,last='initial',receipts=[],pendingReports=[];
+    let active=false,last='initial',receipts=[],pendingReports=[],
+        pendingGpuReports=[];
     const poll=async()=>{
         if(active)return;
         active=true;
         try{
             const response=await sendHeartbeat(url,id,token,receipts,
-                pendingReports,advertisement);
+                pendingReports,advertisement,pendingGpuReports);
             // The coordinator accepted these reports. Any subsequent agent
             // crash is reconciled using the native service journal.
             pendingReports=[];
+            pendingGpuReports=[];
             receipts=observedOffers(response.lease_offers||[],observations(id));
             if(executor) {
                 const orders=response.execution_orders||[];
                 if(!Array.isArray(orders)||orders.length>1)
                     throw Error('Invalid machine execution order batch.');
-                if(orders.length)
-                    pendingReports=[await executor.handle(orders[0])];
+                if(orders.length) {
+                    const result=await executor.handle(orders[0]);
+                    if(result?.kind==='gpu_qualification')
+                        pendingGpuReports=[result];
+                    else pendingReports=[result];
+                }
             }
             if(last!=='connected')
                 console.log('[experiment-hub-agent] connected ('+id+
@@ -234,10 +243,11 @@ async function main() {
     await poll();
     if(process.argv.includes('--once')) {
         if(last!=='connected')process.exitCode=1;
-        else if(receipts.length||pendingReports.length) {
+        else if(receipts.length||pendingReports.length||
+            pendingGpuReports.length) {
             try {
                 await sendHeartbeat(url,id,token,receipts,pendingReports,
-                    advertisement);
+                    advertisement,pendingGpuReports);
             }catch(error) {
                 console.error('[experiment-hub-agent] Final receipt failed: '+error.message);
                 process.exitCode=1;
