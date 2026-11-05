@@ -404,6 +404,15 @@ manager records `running`, `finished`, `failed`, `stopped`, or
 current memory use, CPU time and task count without per-poll history
 duplication.
 
+If the coordinator commits a terminal native report but its HTTP response
+is lost, the agent retries that same report. An operator may have already
+released the completed job's capacity. The coordinator accepts an exact
+matching terminal state from that job's original authenticated machine,
+lease and dispatch after release, without restoring the lease, changing
+the completed job or adding new live metrics. Any mismatched ownership or
+nonterminal late report remains rejected. This receipt recovery does not
+authorize another start or silently free capacity.
+
 `POST /api/hub/jobs/stop` with `{job_id,confirm_stop:true}` records
 `stop_requested`. If the worker is offline, the request persists
 until it reconnects. A verified native stop is required before the
