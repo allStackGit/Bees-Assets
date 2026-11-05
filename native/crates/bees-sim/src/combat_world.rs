@@ -73,6 +73,7 @@ mod policy;
 mod weapons;
 use self::policy::PolicyShipRuntime;
 use self::weapons::PendingPolicyShot;
+pub use self::weapons::NativeTurretSpec;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CombatWorldError {
