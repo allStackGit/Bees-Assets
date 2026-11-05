@@ -267,6 +267,28 @@ class ExperimentHub {
                 observedAt >= this.leaseReceipts.get(lease.id) &&
                 observedAt - this.leaseReceipts.get(lease.id) < AGENT_HEARTBEAT_TTL_MS,
         }));
+        snapshot.jobs=snapshot.jobs.map(job=>{
+            const proof=job.gpu_qualification;
+            if(!proof)return job;
+            const machine=snapshot.machines.find(m=>m.id===proof.machine_id);
+            const lease=snapshot.reservations.find(l=>l.id===proof.lease_id);
+            const report=this.agentReports.get(proof.machine_id);
+            const pinned=lease?.gpu_bindings;
+            const stillMatched=Boolean(lease&&machine&&
+                pinned?.length===1&&
+                proof.selected_pci_addresses?.length===1&&
+                proof.selected_pci_addresses[0]===pinned[0].pci_address&&
+                machine.verified_gpus?.some(g=>
+                    g.pci_address===pinned[0].pci_address&&
+                    g.vram_mb>=pinned[0].vram_mb));
+            proof.current=Boolean(proof.status==='verified'&&
+                job.status==='waiting_adapter'&&
+                job.lease_id===proof.lease_id&&lease?.receipt_fresh&&
+                machine?.status==='connected'&&
+                machine.native_preflight_passed===true&&
+                report?.instance_id===proof.agent_instance_id&&stillMatched);
+            return job;
+        });
         return snapshot;
     }
     progressComparison(projectId) {
@@ -673,19 +695,22 @@ class ExperimentHub {
         if(!machine||machine.status!=='connected'||
             machine.local_executor_enabled!==true)return [];
         const jobs=snapshot.jobs.filter(j=>j.assigned_machine_id===machineId &&
-            j.dispatch_id&&['start_requested','launch_requested','running',
-                'stop_requested','unverified'].includes(j.status));
+            (j.dispatch_id&&['start_requested','launch_requested','running',
+                'stop_requested','unverified'].includes(j.status)||
+             j.status==='waiting_adapter'&&
+                j.gpu_qualification?.status==='requested'));
         // Stops have priority over starts, which have priority over
         // inspections. Round-robin within each priority tier so long-running
         // services cannot starve other services of fresh observations.
         const priority=j=>j.status==='stop_requested'?0:
-            j.status==='start_requested'?1:2;
+            j.status==='start_requested'?1:
+            j.gpu_qualification?.status==='requested'?2:3;
         jobs.sort((a,b)=>priority(a)-priority(b));
         const last=this.executionOrderCursor.get(machineId);
         const ordered=[];
-        for(const level of [0,1,2]) {
+        for(const level of [0,1,2,3]) {
             const group=jobs.filter(j=>priority(j)===level);
-            if(level===2&&group.length>1) {
+            if(level>=2&&group.length>1) {
                 const position=group.findIndex(j=>j.id===last);
                 if(position>=0)
                     group.push(...group.splice(0,position+1));
@@ -697,12 +722,25 @@ class ExperimentHub {
                 l.job_id===job.id&&l.status==='acknowledged'&&l.receipt_fresh);
             if(!lease||!machine.installed_projects.includes(job.project_id))continue;
             const action=job.status==='stop_requested'?'stop':
-                job.status==='start_requested'?'start':'inspect';
+                job.status==='start_requested'?'start':
+                job.gpu_qualification?.status==='requested'?'qualify_gpu':'inspect';
             if(action==='start'&&machine.native_preflight_passed!==true)
+                continue;
+            if(action==='qualify_gpu'&&(
+                machine.agent_platform!=='linux'||
+                machine.native_preflight_passed!==true||
+                job.resources.gpu_mode!=='exclusive'||
+                job.resources.gpu_count!==1||
+                job.gpu_qualification.lease_id!==lease.id||
+                physicalGpuBindings(machine,{
+                    gpu_inventory_source:machine.gpu_inventory_source,
+                    gpu_devices:machine.observed_gpus,
+                },lease.resources,lease.gpu_bindings)?.length!==1))
                 continue;
             this.executionOrderCursor.set(machineId,job.id);
             return [{
-                action,dispatch_id:job.dispatch_id,
+                action,dispatch_id:action==='qualify_gpu'
+                    ?job.gpu_qualification.request_id:job.dispatch_id,
                 job:{
                     id:job.id,project_id:job.project_id,adapter:job.adapter,
                     lease_id:job.lease_id,status:'waiting_adapter',
@@ -717,6 +755,7 @@ class ExperimentHub {
                     machine_id:lease.machine_id,issued_by:lease.issued_by,
                     status:lease.status,receipt_fresh:true,
                     resources:copy(lease.resources),
+                    gpu_bindings:copy(lease.gpu_bindings||[]),
                 },
             }];
         }
