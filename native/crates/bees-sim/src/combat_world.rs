@@ -1996,6 +1996,7 @@ impl CombatWorld {
                             }
                             if delta.killed {
                                 self.physics.ships_mut()[target_index].active = false;
+                                self.discovery.retire(DiscoveryKind::Ship, target_id);
                                 self.navigation_requests.retire_ship(target_id);
                                 self.game_ship_steering.remove(&target_id);
                                 self.pending_game_point_orders.remove(&target_id);
@@ -2130,6 +2131,7 @@ impl CombatWorld {
                 )));
                 if delta.killed {
                     self.physics.ships_mut()[ship_index].active = false;
+                    self.discovery.retire(DiscoveryKind::Ship, target.entity_id);
                     self.navigation_requests.retire_ship(target.entity_id);
                     self.game_ship_steering.remove(&target.entity_id);
                     self.pending_game_point_orders.remove(&target.entity_id);
@@ -2443,6 +2445,7 @@ impl CombatWorld {
                 self.events.push(CombatEvent::UnattributedDamage { target_id: ship_id, delta });
                 if delta.killed {
                     self.physics.ships_mut()[ship_index].active = false;
+                    self.discovery.retire(DiscoveryKind::Ship, ship_id);
                     self.navigation_requests.retire_ship(ship_id);
                     self.game_ship_steering.remove(&ship_id);
                     self.pending_game_point_orders.remove(&ship_id);
@@ -2533,6 +2536,7 @@ impl CombatWorld {
             vitals.is_dead = true;
         }
         self.physics.obstacles_mut()[index].active = false;
+        self.discovery.retire(DiscoveryKind::Obstacle, entity_id);
         self.obstacle_by_id.remove(&entity_id);
         self.asteroid_border_states.remove(&entity_id);
         self.asteroid_shard_family.remove(&entity_id);
