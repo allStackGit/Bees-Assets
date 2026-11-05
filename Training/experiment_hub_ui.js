@@ -1646,12 +1646,16 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     $('hub-pipeline-predecessor').addEventListener('change',renderPipelineStages);
     $('hub-pipeline-queue').addEventListener('click',async()=>{
-        if(project!=='ants'||!state)return;
+        if(project==='bees'||!state)return;
         try {
-            const configs=state.configurations.filter(c=>c.project_id==='ants');
+            const antsPipeline=project==='ants';
+            const configs=state.configurations.filter(c=>antsPipeline
+                ?c.project_id==='ants'
+                :c.project_id!=='bees'&&
+                    (c.project_id!=='ants'||c.parameters?.mode==='new'));
             const rows=[...$('hub-pipeline-rows').children];
             if(rows.length<2||rows.length>16)
-                throw Error('Choose 2–16 stages for this pipeline.');
+                throw Error('Choose 2–16 jobs for this sequence.');
             const stages=rows.map(row=>{
                 const selected=configs.find(c=>
                     c.id===row.querySelector('select').value);
@@ -1661,7 +1665,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     resources:JSON.parse(row.querySelector('input').value)};
             });
             const predecessor=$('hub-pipeline-predecessor').value;
-            for(let i=0;i<stages.length;i++) {
+            if(antsPipeline)for(let i=0;i<stages.length;i++) {
                 const selected=configs.find(c=>c.id===stages[i].configuration_id);
                 const requiresResume=i>0||Boolean(predecessor);
                 if((selected.parameters?.mode==='resume')!==requiresResume)
@@ -1669,16 +1673,20 @@ document.addEventListener('DOMContentLoaded', () => {
                         (requiresResume?'a resume':'a new-run')+
                         ' Ants configuration.');
             }
-            if(!confirm('Queue '+stages.length+' frozen Ants stages as one atomic pipeline? '+
-                'Future stages remain blocked until their immediate predecessor finishes and releases capacity. '+
-                'This does not start training or bypass native execution qualification.'))return;
-            const result=await action('hub/pipelines',{
+            const question=antsPipeline
+                ?'Queue '+stages.length+' frozen Ants checkpoint-continuation stages? They share verified checkpoint lineage and original machine.'
+                :'Queue '+stages.length+' independent jobs as a frozen sequence? No job inherits any previous checkpoint, machine affinity, optimizer state or evaluation evidence.';
+            if(!confirm(question+
+                ' Each successor remains blocked until its predecessor FINISHES and releases capacity. No work starts without the separate native authorization gates.'))return;
+            const result=await action(antsPipeline?'hub/pipelines':'hub/sequences',{
                 confirm_queue:true,stages,
-                ...(predecessor?{continuation_of_job_id:predecessor}:{}),
+                ...(predecessor?(antsPipeline
+                    ?{continuation_of_job_id:predecessor}
+                    :{after_job_id:predecessor}):{}),
             });
             feedback('hub-pipeline-message',
-                'Queued '+result.jobs.length+' stages atomically; no work started. '+
-                'The first eligible stage may be allocated separately.');
+                'Queued '+result.jobs.length+' jobs atomically; no work started. '+
+                'Only the first eligible job may request capacity.');
             await reload();
         }catch(error){
             feedback('hub-pipeline-message',String(error.message||error));
