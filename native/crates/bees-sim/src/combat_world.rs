@@ -71,6 +71,7 @@ mod vision;
 mod map_object;
 mod policy;
 mod weapons;
+mod striker;
 use self::policy::PolicyShipRuntime;
 use self::weapons::PendingPolicyShot;
 pub use self::weapons::{NativeFirePattern, NativeTurretSpec};
@@ -109,6 +110,7 @@ pub enum CombatWorldError {
     UnknownPolicyAgent(u64),
     DuplicatePolicyAgent(u64),
     InvalidPolicyTurret,
+    InvalidPolicyStriker,
     UnsupportedPolicyTurret { weapon_type: u8, projectile_type: u8 },
     DuplicatePolicyTurret { ship_id: i64, slot: usize },
     MapObject(MapObjectError),
@@ -221,6 +223,11 @@ pub enum CombatEvent {
     Hit(HitEvent),
     UnattributedDamage { target_id: i64, delta: crate::combat::DamageDelta },
     BombDetonated { projectile_id: i64, target_id: i64 },
+    /// Striker.TryToDropBombs created the real delayed StrikerBomb fuse.
+    StrikerBombDropped {
+        ship_id: i64, target_id: i64, projectile_id: i64,
+    },
+    StrikerBombReloaded { ship_id: i64, carrier_id: i64 },
     /// Emitted for projectile impacts against static geometry; the
     /// dedicated RL coordinator determines the corresponding reward.
     StaticObstacleImpact { projectile_id: i64, obstacle_id: i64 },
@@ -2836,6 +2843,10 @@ impl CombatWorld {
         self.update_explosion_timelines(dt)?;
         let new_contacts = self.physics.step(dt, collision_matrix)?;
         self.pending_contacts.extend_from_slice(new_contacts);
+        // Striker.CheckCarrierReload runs on the same Level timer clock.
+        // A policy can request another bomb only after a real carrier
+        // proximity check has rearmed its authored bomb state.
+        self.advance_policy_striker_reloads(dt);
         self.pending_obstacle_contacts
             .extend_from_slice(self.physics.obstacle_trigger_entries());
         self.process_map_border_contacts();
