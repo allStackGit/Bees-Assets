@@ -271,15 +271,47 @@ function waitingStageReason(job,byId) {
     return {status:'broken_lineage',depth:1000,
         reason:'Prequeued pipeline depth exceeds the job-history bound; operator review required.'};
 }
-function allocationChoice(machines,reservations,job,preferredMachineId=null) {
-    return resourcePlacements(machines,reservations,job.resources)
+function allocationChoice(machines,reservations,job,preferredMachineId=null,
+    following=[]) {
+    const options=resourcePlacements(machines,reservations,job.resources)
         .filter(p=>p.capacity_fits&&
             (!preferredMachineId||p.machine_id===preferredMachineId)&&
             (!job.continuation_machine_id||
                 p.machine_id===job.continuation_machine_id))
         .sort((a,b)=>a.available.cpus-b.available.cpus||
             a.available.ram_mb-b.available.ram_mb||
-            a.machine_id.localeCompare(b.machine_id))[0]||null;
+            a.machine_id.localeCompare(b.machine_id));
+    if(options.length<2||!following.length)return options[0]||null;
+    // Preserve FIFO jobs while avoiding a placement that would block a
+    // later job with exactly one capable host. This is advisory lookahead:
+    // no lease, execution permission or native ownership is conferred.
+    const soleOptions=following.filter(next=>!next.lease_id)
+        .map(next=>{
+            const places=resourcePlacements(machines,reservations,next.resources)
+                .filter(p=>p.capacity_fits&&
+                    (!next.continuation_machine_id||
+                        p.machine_id===next.continuation_machine_id));
+            return places.length===1
+                ?{job:next,machine_id:places[0].machine_id}:null;
+        }).filter(Boolean);
+    if(!soleOptions.length)return options[0];
+    const remainingOptionLoss=option=>{
+        const shadow=reservations.concat([{
+            machine_id:option.machine_id,status:'offered',
+            resources:{...job.resources,
+                gpus:option.suggested_gpus},
+        }]);
+        let lost=0;
+        const machine=machines.find(m=>m.id===option.machine_id);
+        for(const later of soleOptions) {
+            if(later.machine_id!==option.machine_id)continue;
+            if(!resourcePlacements([machine],shadow,later.job.resources)[0]
+                .capacity_fits)lost++;
+        }
+        return lost;
+    };
+    options.sort((a,b)=>remainingOptionLoss(a)-remainingOptionLoss(b));
+    return options[0];
 }
 function writeAtomic(file, value) {
     fs.mkdirSync(path.dirname(file), {recursive:true});
@@ -768,7 +800,7 @@ class ExperimentHub {
             throw Error('A preferred machine may only be selected for one job.');
         const machines=this.snapshot().machines.filter(m=>m.status==='connected');
         const results=[];
-        for(const job of jobs) {
+        for(const [index,job] of jobs.entries()) {
             if(job.lease_id) {
                 const lease=next.reservations.find(l=>l.id===job.lease_id &&
                     l.job_id===job.id && l.project_id===job.project_id &&
@@ -779,7 +811,7 @@ class ExperimentHub {
                 continue;
             }
             const chosen=allocationChoice(machines,next.reservations,job,
-                value.machine_id||null);
+                value.machine_id||null,jobs.slice(index+1));
             if(!chosen) {
                 results.push({job_id:job.id,machine_id:null,lease_id:null,
                     status:'insufficient_capacity'});
@@ -1596,12 +1628,13 @@ class ExperimentHub {
         const reservations=copy(snapshot.reservations);
         const machines=snapshot.machines.filter(m=>m.status==='connected');
         const proposed=[];
-        for(const job of ordered) {
+        for(const [index,job] of ordered.entries()) {
             if(job.lease_id)continue;
             const claimCount=reservations.filter(r=>
                 ['active','offered','acknowledged'].includes(r.status)).length;
             const chosen=claimCount<100
-                ?allocationChoice(machines,reservations,job):null;
+                ?allocationChoice(machines,reservations,job,null,
+                    ordered.slice(index+1)):null;
             if(chosen)reservations.push({
                 machine_id:chosen.machine_id,status:'offered',
                 resources:{...resourceRequest(job.resources),
