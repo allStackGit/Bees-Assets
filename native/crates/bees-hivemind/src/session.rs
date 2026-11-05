@@ -75,12 +75,12 @@ pub enum HiveMindSessionError {
     InvalidOwner,
     DuplicateRequestHash,
     UnknownRequest,
-    InvalidResponse(HiveMindProtocolError),
+    Protocol(HiveMindProtocolError),
 }
 
 impl From<HiveMindProtocolError> for HiveMindSessionError {
     fn from(value: HiveMindProtocolError) -> Self {
-        Self::InvalidResponse(value)
+        Self::Protocol(value)
     }
 }
 
