@@ -85,14 +85,6 @@ pub enum NativeLevelNotificationKind {
 /// still fails the episode before any events are silently dropped.
 const MAX_PENDING_NOTIFICATIONS: usize = 1_048_576;
 
-/// Deliver this immediately through the host transport; it is not
-/// replayed from the next fixed-step reward buffer.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub struct NativeImmediateReward {
-    pub emission: Option<RewardEmission>,
-    pub group_event: Option<GroupRewardEvent>,
-}
-
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct NativeLevelEventMeasurements {
     pub squads: SquadRosterMeasurements,
@@ -270,18 +262,18 @@ impl NativeLevelEventProcessor {
         self.group_delivery.as_mut()
     }
 
-    /// Source-verified HiveMind sighting between fixed ticks. This is the
-    /// same bounded shaping budget as projectile hits and misses, but
-    /// must be sent immediately (not silently merged into the next
-    /// physics-tick event buffer). Only one group reward is generated
-    /// regardless of how many agents are currently participating.
+    /// Source-verified HiveMind sighting between fixed ticks. It shares
+    /// the tactical shaping budget with combat, but delivery has ONE
+    /// authoritative path: pending_notifications(). The host drains
+    /// the outbox immediately after this callback for Unity parity.
+    /// Returning a second reward here would permit duplicate PPO credit.
     pub fn record_verified_discovery(
         &mut self,
         side: i32,
         kind: DiscoveryKind,
         entity_id: i64,
         authored_value: i32,
-    ) -> Result<NativeImmediateReward, NativeLevelEventError> {
+    ) -> Result<(), NativeLevelEventError> {
         if self.is_failed() || self.completed() {
             return Err(NativeLevelEventError::FailedLevel);
         }
@@ -327,7 +319,7 @@ impl NativeLevelEventProcessor {
                 self.pending_notifications.len(),
             );
         }
-        Ok(NativeImmediateReward { emission, group_event })
+        Ok(())
     }
 
     pub fn is_failed(&self) -> bool {
