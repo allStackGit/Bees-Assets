@@ -41,21 +41,32 @@ may be exported from a failed step.
 adapter. The runner registers participating agents, consumes side-wide
 immediate and per-step group events once, sends the separate ELO marker
 as transport-only metadata (not PPO reward), then ends both participating
-side groups on terminal completion. Source-verified discoveries between
-ticks must be delivered from `record_verified_discovery` immediately.
+side groups on terminal completion. `pending_notifications()` retains
+sparse, tick-stamped rewards, group events, completed commands and
+squad changes across many fixed steps. The host durably consumes and
+`acknowledge_notifications` only for the delivered prefix. Drain promptly
+after `record_verified_discovery` to preserve Unity's immediate timing.
+Do **not** separately deliver an event returned by another path.
 
 The *connection*, not each Level, owns `HiveMindSession`. After parallel
 rollout windows, inspect the persistent `pending_session_retirements`
 outbox on each world and call `flush_retirements_to_connection` through
 `Simulation::world_mut`. This prevents squad deaths on earlier ticks
 from losing their pending-request invalidations. Pending OutcomeIds
-still require ordinary persistent StoreCommands settlement.
+still require ordinary persistent StoreCommands settlement. Before
+episode reset, use `reset_level_after_delivery` to reject a discarded
+notification or unflushed retirement. Normal terminal episodes are
+reported as completed, not failed simulation steps.
 
 `NativeLevelInferenceBatch` shares the full v26
 `PolicyPerceptionSnapshot` encoder and live CombatWorld action masks;
-every model output must match world ID, episode revision and tick. The
-host still must provide authoritative snapshot data and an actual
-CPU/GPU neural model. **This is not yet a runnable game or distributed
+every model output must match world ID, episode revision and tick.
+`NativeWorldPerceptionAssembler` reuses the world's true self/parent,
+allied and VisionCache projections, with Level-only weapon, map and
+economic values required from the caller. `step_batched_levels`
+combines multiple world observations into one validated model call.
+`NativePolicyInference` is the backend contract, not an implemented
+neural network. The host still must supply an actual CPU/GPU model. **This is not yet a runnable game or distributed
 RL training replacement.** Renderer/input, full remaining gameplay,
 model execution, policy optimization/checkpoints, transport, and
 cross-engine/Windows/Linux qualification remain outstanding. No
