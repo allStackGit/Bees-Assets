@@ -13,21 +13,21 @@ function canOpen(device) {
         throw error;
     }finally{if(fd!==undefined)fs.closeSync(fd);}
 }
-function probe(kfd,allowed,denied) {
-    if(kfd!=='/dev/kfd'||!RENDER.test(allowed)||
-        !RENDER.test(denied)||allowed===denied)
+function probe(kfd,allowed,...denied) {
+    if(kfd!=='/dev/kfd'||!RENDER.test(allowed)||denied.length<1||
+        denied.length>31||new Set(denied).size!==denied.length||
+        denied.some(node=>!RENDER.test(node)||node===allowed))
         throw Error('Invalid trusted Linux GPU probe devices.');
     const result={kfd,allowed,denied,
         kfd_access:canOpen(kfd),
         allowed_access:canOpen(allowed),
-        denied_access:canOpen(denied)};
-    if(!result.kfd_access||!result.allowed_access||result.denied_access)
+        denied_access:denied.map(canOpen)};
+    if(!result.kfd_access||!result.allowed_access||result.denied_access.some(Boolean))
         throw Error('Device-policy probe did not establish allowed/blocked access.');
     return result;
 }
 if(require.main===module) {
     try{
-        if(process.argv.length!==5)throw Error('Expected exact local device arguments.');
         process.stdout.write(JSON.stringify(probe(...process.argv.slice(2)))+'\n');
     }catch(error){
         console.error('GPU device access preflight failed: '+
