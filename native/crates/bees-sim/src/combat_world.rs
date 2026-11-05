@@ -81,7 +81,7 @@ mod shot_outcomes;
 pub use self::shot_outcomes::{ProjectileRootOutcome, ProjectileOutcomeMeasurements};
 use self::shot_outcomes::{ProjectileOutcomeTracker, NEAR_MISS_DISTANCE};
 pub use self::scout::{ScoutBeaconSpec, ScoutBeaconStatus};
-use self::policy::{PolicyShipRuntime, PolicyShipSpecial};
+use self::policy::{PolicyShipRuntime, PolicyShipSpecial, WARP_GATE_TYPE};
 pub use self::policy::PolicySpecialObservations;
 use self::weapons::PendingPolicyShot;
 pub use self::weapons::{NativeFirePattern, NativeTurretSpec};
@@ -857,11 +857,19 @@ impl CombatWorld {
         self.scout_beacon_specs.remove(&victim_id);
         self.discovery.retire(DiscoveryKind::Ship, victim_id);
         self.policy_ship_runtime.remove(&victim_id);
-        if self.ships[index].ship_type == 20 {
-            if let Some(gates) = self.warp_gate_ids_by_side.get_mut(&side) {
+        if self.ships[index].ship_type == WARP_GATE_TYPE {
+            let empty = if let Some(gates) =
+                self.warp_gate_ids_by_side.get_mut(&side)
+            {
                 if let Ok(position) = gates.binary_search(&victim_id) {
                     gates.remove(position);
                 }
+                gates.is_empty()
+            } else {
+                false
+            };
+            if empty {
+                self.warp_gate_ids_by_side.remove(&side);
             }
         }
         self.barge_charge_hits.retain(|&(attacker, victim)|
