@@ -166,9 +166,43 @@ document.addEventListener('DOMContentLoaded', () => {
         feedback('hub-compare-notice',note);
         const knownRoots=new Set(runs.map(r=>
             r.job.artifact_lineage_root_id||r.job.id));
-        const related=knownRoots.size<runs.length;
+        const warnings=[];
+        if(knownRoots.size<runs.length)
+            warnings.push('Some selected jobs share checkpoint/artifact lineage, so they are not independent replicates.');
+        if(runs.length>1) {
+            const fingerprints=runs.map(r=>r.job.configuration_sha256);
+            if(fingerprints.some(h=>typeof h!=='string'||h.length!==64))
+                warnings.push('Frozen configuration fingerprints are unavailable for one or more runs.');
+            else if(new Set(fingerprints).size>1) {
+                // Show field names rather than JSON parameter values: enough
+                // to explain a discrepancy without filling the chart with
+                // long training configurations or experimental secrets.
+                const configurations=runs.map(r=>r.job.frozen_parameters||{});
+                const keys=[...new Set(configurations.flatMap(Object.keys))].sort();
+                const different=keys.filter(key=>{
+                    const first=JSON.stringify(configurations[0][key]);
+                    return configurations.slice(1).some(c=>
+                        JSON.stringify(c[key])!==first);
+                });
+                warnings.push('Different frozen configurations'+
+                    (different.length?'; changed top-level fields: '+
+                        different.slice(0,6).join(', ')+
+                        (different.length>6?' and '+(different.length-6)+' more':''):'')+
+                    '. Do not treat these as controlled replicates.');
+            }else warnings.push('Frozen configurations match; this alone does not establish comparable evaluation cohorts or seeds.');
+            const hostIds=runs.map(r=>r.job.assigned_machine_id).filter(Boolean);
+            if(new Set(hostIds).size>1)
+                warnings.push('Runs used different assigned machines; performance measurements may not be comparable.');
+            const levels=runs.map(r=>{
+                const p=r.job.live_execution?.progress||r.job.final_progress||
+                    r.points[r.points.length-1];
+                return p?.curriculum_level;
+            }).filter(Number.isSafeInteger);
+            if(new Set(levels).size>1)
+                warnings.push('Runs are at different curriculum levels; success rates describe different training conditions.');
+        }
         feedback('hub-compare-chart-note',
-            (related?'Some selected jobs share a checkpoint/artifact lineage; they are not independent replicates. ':'')+
+            warnings.join(' ')+(warnings.length?' ':'')+
             'Horizontal axis: '+(chartAxes[$('hub-compare-x-axis').value]?.label||
                 chartAxes.episodes_completed.label)+'. Not wall-clock time. '+
             'Source timestamps show when Ants last published a summary. No training decisions use chart data.');
