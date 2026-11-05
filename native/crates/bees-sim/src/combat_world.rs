@@ -36,6 +36,7 @@ use crate::physics::{
 };
 use crate::policy::Decision;
 use crate::geometry::Vec2;
+use crate::level_discovery::LevelDiscovery;
 use crate::movement::ShipMotion;
 use crate::navigation_clearance::NavigationClearance;
 use crate::navigation_runtime::NavigationRuntime;
@@ -443,6 +444,9 @@ pub struct CombatWorld {
     projectile_assets: Arc<ProjectileAssetCatalog>,
     next_entity_id: i64,
     ships: Vec<CombatShip>,
+    /// Same Level-owned learned visibility in gameplay, evaluation and
+    /// training. Replaced with the world on episode reset.
+    discovery: LevelDiscovery,
     projectiles: Vec<CombatProjectile>,
     obstacles: Vec<CombatObstacle>,
     free_projectile_slots: Vec<usize>,
@@ -503,6 +507,7 @@ impl CombatWorld {
             projectile_assets,
             next_entity_id: 1,
             ships: Vec::new(),
+            discovery: LevelDiscovery::new(),
             projectiles: Vec::new(),
             obstacles: Vec::new(),
             free_projectile_slots: Vec::new(),
@@ -548,6 +553,12 @@ impl CombatWorld {
     pub fn physics(&self) -> &KinematicPhysics { &self.physics }
     pub fn events(&self) -> &[CombatEvent] { &self.events }
     pub fn ships(&self) -> &[CombatShip] { &self.ships }
+    /// Learned faction vision belongs to this Level's game state. Sight
+    /// events must be validated by the authoritative vision detector before
+    /// insertion, and removed entities retired via Level teardown.
+    pub fn discovery(&self) -> &LevelDiscovery { &self.discovery }
+    pub fn discovery_mut(&mut self) -> &mut LevelDiscovery { &mut self.discovery }
+
     /// O(1) live ship lookup through the world's canonical entity index.
     /// Squad commands must not scan all world ships for every formation
     /// member on each scaled tick.
