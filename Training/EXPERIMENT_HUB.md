@@ -173,6 +173,14 @@ Acknowledgement means **received and accounted for**, not *resources enforced*.
 `receipt_fresh` is true only when an acknowledgement has been seen recently
 during the current coordinator process and that machine's heartbeat is fresh.
 
+A fresh receipt is mandatory for a new native **Start** or GPU device probe.
+If reported host capacity falls below existing claims, the agent may stop
+renewing receipts. An authenticated native agent may still receive **Stop**
+and **Inspect** for a previously dispatched job with an acknowledged,
+exactly matching job/project/machine lease. Those directives use the
+machine-local ownership journal and cannot launch a workload; no lease is
+automatically released or treated as safe to reallocate.
+
 Leases are **not released automatically** when agents disconnect, tokens are
 rotated/revoked, or the coordinator restarts: those conditions cannot establish
 that an independent process has stopped. The ledger survives restart and
