@@ -16,7 +16,6 @@ use bees_sim::policy_batch::{
     PolicyAgentKey, PolicyBatch, PolicyBatchError, PolicyBatchFootprint,
 };
 use bees_sim::simulation::World;
-use bees_sim::telemetry::Measurements;
 
 use crate::level_rules::NativeLevelState;
 
@@ -63,9 +62,11 @@ impl NativeLevelInferenceBatch {
         -> Result<(), NativeInferenceError>
     {
         self.batch.reserve_agents(count)?;
-        self.keyed_decisions.reserve(count.saturating_sub(
-            self.keyed_decisions.capacity(),
-        ));
+        self.keyed_decisions.try_reserve(
+            count.saturating_sub(self.keyed_decisions.len()),
+        ).map_err(|_| NativeInferenceError::Batch(
+            PolicyBatchError::AllocationFailed,
+        ))?;
         Ok(())
     }
 
