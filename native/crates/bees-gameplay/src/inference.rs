@@ -7,6 +7,7 @@
 //! The model backend is external; no guessed action or network here.
 
 use std::collections::HashMap;
+use std::time::Instant;
 
 use bees_sim::combat_world::CombatWorldError;
 use bees_sim::combat_perception_bridge::live_ship_counts;
@@ -83,6 +84,18 @@ pub enum NativeInferenceRunError<E> {
     Backend(E),
 }
 
+/// Cumulative, low-cardinality measurements: avoid tracing every action
+/// or allocating a per-row timestamp. Model forward elapsed includes
+/// accelerator launch/synchronization only when its backend synchronizes.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct NativeInferenceMeasurements {
+    pub model_calls: u64,
+    pub model_rows: u64,
+    pub model_forward_nanos: u128,
+    pub backend_failures: u64,
+    pub invalid_action_batches: u64,
+}
+
 /// Reuse numeric observation and action buffers across inference requests.
 /// A single instance may contain agents from multiple independent native
 /// Levels, enabling CPU/GPU batching without a process-global world state.
@@ -97,6 +110,7 @@ pub struct NativeLevelInferenceBatch {
     routes: Vec<NativePolicyRoute>,
     finalized: bool,
     failed: bool,
+    measurements: NativeInferenceMeasurements,
 }
 
 impl NativeLevelInferenceBatch {
@@ -128,6 +142,10 @@ impl NativeLevelInferenceBatch {
             PolicyBatchError::AllocationFailed,
         ))?;
         Ok(())
+    }
+
+    pub fn measurements(&self) -> NativeInferenceMeasurements {
+        self.measurements
     }
 
     pub fn perceptions(&self) -> PerceptionWork {
@@ -250,6 +268,7 @@ impl NativeLevelInferenceBatch {
             &mut self.keyed_decisions,
         ) {
             self.failed = true;
+            self.measurements.invalid_action_batches += 1;
             return Err(NativeInferenceError::Batch(error));
         }
         self.finalized = true;
@@ -277,11 +296,19 @@ impl NativeLevelInferenceBatch {
         let (keys, observations, action_masks, continuous, discrete) =
             self.batch.inference_buffers_mut();
         debug_assert_eq!(keys.len(), self.routes.len());
-        if let Err(error) = backend.forward(
+        let started = Instant::now();
+        let result = backend.forward(
             keys, &self.routes, observations, action_masks,
             continuous, discrete,
-        ) {
+        );
+        self.measurements.model_calls += 1;
+        self.measurements.model_rows += keys.len() as u64;
+        self.measurements.model_forward_nanos =
+            self.measurements.model_forward_nanos
+                .saturating_add(started.elapsed().as_nanos());
+        if let Err(error) = result {
             self.failed = true;
+            self.measurements.backend_failures += 1;
             return Err(NativeInferenceRunError::Backend(error));
         }
         self.finalize().map_err(NativeInferenceRunError::Boundary)
