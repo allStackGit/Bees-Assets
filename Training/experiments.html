@@ -353,6 +353,12 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
     <p id="hub-job-message" class="hub-notice" role="status">No work scheduled or executing.</p>
     <div class="hub-standalone" id="hub-pipeline-panel" hidden>
       <h3 id="hub-pipeline-title">Queue a multi-job pipeline</h3>
+      <label>Relationship between jobs
+        <select id="hub-pipeline-kind">
+          <option value="independent">Independent fresh jobs (no shared checkpoint)</option>
+          <option value="continuation">Ants checkpoint-continuation stages</option>
+        </select>
+      </label>
       <p class="muted" id="hub-pipeline-description">Choose two or more saved configurations. Queueing is atomic and does not authorize execution.</p>
       <label><span id="hub-pipeline-predecessor-label">Run after existing job (optional)</span>
         <select id="hub-pipeline-predecessor"><option value="">Start new sequence</option></select>
