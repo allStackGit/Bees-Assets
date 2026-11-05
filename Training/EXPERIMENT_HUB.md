@@ -402,6 +402,72 @@ delegation/permissions, real process termination and limits,
 Windows Job Objects, GPU device mapping/isolation, and cross-project
 throughput/rebalancing remain outstanding.
 
+## Windows native Job Object owner (opt-in, CPU/RAM only)
+
+The Windows backend is provided as **source only** under
+\`Training/experiment_hub_windows_owner/\` (a self-contained .NET 8 project).
+The machine administrator must review, build and locally install its
+helper executable; the Hub does not ship a compiled native binary.
+An example build is:
+
+    dotnet publish Training/experiment_hub_windows_owner/ExperimentHubWindowsOwner.csproj -c Release -r win-x64 --self-contained true
+
+Compute the local published executable's SHA-256, and set
+\`EXPERIMENT_HUB_WINDOWS_HELPER\` to that executable's absolute path and
+\`EXPERIMENT_HUB_WINDOWS_HELPER_SHA256\` to its lowercase 64-character
+hash. The existing machine-local execution opt-in, adapter module
+and private journal root settings remain required. There is **no
+PowerShell dependency** in the Windows process supervisor.
+
+A Windows-local project adapter must return a reviewed executable,
+bounded argv, and explicitly specify \`stop_policy:'terminate-group'\`.
+The Hub never accepts a path or shell command from configuration JSON.
+The Ants-v2 production adapter currently uses Linux-only checkpoint-aware
+SIGINT and is **not** approved for this Windows force-stop backend.
+Bees training stays under its existing operator, not this helper.
+
+On the explicitly opted-in worker, the helper's inert \`--probe\`
+creates only a \`--probe-child\` of itself, suspended and assigned to
+a Windows Job Object with CPU and memory limits. It verifies the native
+settings and process association; no project runner or experiment
+artifact is involved. Successful preflight is process-local, not
+durable evidence after restart. The helper's installed SHA-256 is also
+rechecked before every job launch.
+
+Each authorized job writes a private one-time request and a durable
+ownership record before starting an independent helper. The helper
+creates a Windows Job Object with job-wide committed memory limits,
+a CPU-rate **hard cap**, and kill-on-last-handle-close semantics.
+It creates the locally selected workload **suspended**, assigns it
+to the limited Job Object, verifies the limits and assignment,
+then resumes the workload. CPU slots translate into a share of host
+logical processing capacity; they are **not dedicated cores**.
+Windows' job memory limit applies to job committed memory, which
+is not identical to instantaneous physical RAM usage.
+
+The independent helper owns the Job Object handle for the lifetime
+of the workload; when that last handle closes unexpectedly, Windows
+terminates the owned process tree. A same-user named pipe accepts
+only token-authenticated \`inspect\` and \`stop\` requests, not
+commands or alternate executables. Signed terminal receipts allow
+the local supervisor to distinguish durable completion from an
+unknown or lost helper. Ambiguous starts remain unverified with
+one bounded local stop attempt and **no automatic relaunch**.
+
+**Windows Stop force-terminates the process tree** via Job Objects.
+It cannot promise checkpoint-safe interruption, so Windows adapters
+must explicitly acknowledge that behavior. CPU-only jobs mask
+common CUDA/HIP/ROCm selector environment variables, but do not
+provide enforceable GPU isolation; GPU requests remain blocked.
+
+**Not yet qualified on actual Windows hardware.** The .NET helper
+has not been compiled or executed on a Windows host in this work.
+The Node bridge and manager were exercised with simulated Windows
+status pipes and filesystem ownership. Build, process containment,
+OS-level quota enforcement, session lifecycle, reconnection,
+production adapter compatibility and real stop semantics remain
+unverified and must not be inferred from the simulations.
+
 ## Ants-v2 production adapter (locally installed, CPU-only)
 
 `Training/experiment_hub_ants_adapter.js` exports
@@ -584,8 +650,8 @@ status. **No real Ants training or Linux service qualification has run here.**
 
 ## Not yet implemented
 
-Preinstalled and deployed project-specific adapters, Windows Job Objects,
-real-machine qualification of Linux systemd execution, GPU device
+Installed project-specific Windows and Linux adapters, real-machine
+qualification of Windows Job Objects and Linux systemd execution, GPU device
 verification and isolation, automatic multi-project job scheduling,
 metrics ingestion for additional projects, safe live rebalancing, and
 comprehensive CLI parity for all runtime configuration controls remain
