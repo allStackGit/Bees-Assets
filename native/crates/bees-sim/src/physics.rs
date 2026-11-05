@@ -149,6 +149,16 @@ impl ShipShape {
     }
 }
 
+/// Outcome of a geometric Hive Mind vision query. Distinguishing the
+/// bounding-box rejection from the collider test lets benchmark telemetry
+/// quantify the actual cost of broadphase versus narrowphase perception.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum VisionProximity {
+    RejectedByBounds,
+    OutsideCollider,
+    WithinRange,
+}
+
 /// A transformed collision shape with cached geometry. Ships, rockets,
 /// explosions and beam projectiles all use exactly this implementation.
 #[derive(Clone, Debug)]
@@ -229,6 +239,30 @@ impl WorldCollider {
                 (point - self.circle_world).length_squared() <= radius * radius
             }
             _ => crate::collision::circle_overlaps_polygon(point, 0.0, &self.polygon_world),
+        }
+    }
+
+    /// Unity HiveMindVision.CanSee uses Collider2D.ClosestPoint, not a
+    /// target-center approximation. The cached broadphase AABB can cheaply
+    /// reject targets beyond range, without changing the exact test for
+    /// targets close enough to matter.
+    #[inline]
+    fn vision_proximity(&self, observer: Vec2, range_squared: f32) -> VisionProximity {
+        let Some(bounds) = self.bounds else {
+            return VisionProximity::RejectedByBounds;
+        };
+        let dx = (bounds.min.x - observer.x).max(0.0)
+            .max(observer.x - bounds.max.x);
+        let dy = (bounds.min.y - observer.y).max(0.0)
+            .max(observer.y - bounds.max.y);
+        if dx * dx + dy * dy > range_squared {
+            return VisionProximity::RejectedByBounds;
+        }
+        if (self.closest_point(observer) - observer).length_squared()
+            <= range_squared {
+            VisionProximity::WithinRange
+        } else {
+            VisionProximity::OutsideCollider
         }
     }
 
@@ -317,6 +351,19 @@ impl ShipBody {
 
     pub fn shape(&self) -> &ShipShape {
         &self.collider.shape
+    }
+
+    /// Exact Unity ship-collider sight test. Updating the cached hull here
+    /// also permits correct sight checks on newly spawned ships before
+    /// their first fixed physics update.
+    pub fn vision_proximity(
+        &mut self, observer: Vec2, range_squared: f32,
+    ) -> VisionProximity {
+        if !self.active {
+            return VisionProximity::RejectedByBounds;
+        }
+        self.update_hull();
+        self.collider.vision_proximity(observer, range_squared)
     }
 
     /// Invalidates cached geometry before the next fixed step.
@@ -500,6 +547,20 @@ impl ObstacleBody {
 
     pub fn navigation_shape(&self) -> &ShipShape {
         &self.clearance_collider.as_ref().unwrap_or(&self.collider).shape
+    }
+
+    /// Unity selects the clearance-mapping collider when one exists,
+    /// otherwise the primary Collider2D. The authored active hull is used,
+    /// not an approximate sprite rectangle or the proximity trigger.
+    pub fn vision_proximity(
+        &mut self, observer: Vec2, range_squared: f32,
+    ) -> VisionProximity {
+        if !self.active {
+            return VisionProximity::RejectedByBounds;
+        }
+        self.update_hull();
+        self.clearance_collider.as_ref().unwrap_or(&self.collider)
+            .vision_proximity(observer, range_squared)
     }
 
     pub fn navigation_contains_point(&self, point: Vec2) -> bool {
