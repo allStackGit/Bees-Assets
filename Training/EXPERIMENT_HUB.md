@@ -308,7 +308,11 @@ continuously ready earlier project therefore cannot take every
 successive allocation or Start ahead of another ready project. The
 cursors are ephemeral, reset on disarm or coordinator restart, and
 never override capacity, preflight, machine affinity, or pending-Start
-safety gates. The manual allocation pass and read-only queue preview
+safety gates. The automatic CPU-only claim pass also avoids consuming
+the sole remaining qualified adapter host of a later queued job when an
+equivalent host is available to the current job. It preserves project
+round-robin order, and checks the installed adapter inventory before
+treating a future host as capable. The manual allocation pass and read-only queue preview
 keep their stable per-project interleave rather than guessing what a
 future armed scheduler session will choose. An agent must first
 acknowledge each fresh claim. Jobs requesting any GPU remain outside
