@@ -959,6 +959,17 @@ impl KinematicPhysics {
         })
     }
 
+    /// Cached equivalent of Collider2D.IsTouching between a ship's
+    /// authored hull and an obstacle's primary collider. The fixed-step
+    /// physics update maintains these poses; no geometry is allocated or
+    /// reconstructed for every mining action-mask check.
+    pub fn ship_obstacle_hulls_touch(&self, ship: usize, obstacle: usize) -> bool {
+        let Some(ship) = self.ships.get(ship) else { return false; };
+        let Some(obstacle) = self.obstacles.get(obstacle) else { return false; };
+        ship.active && obstacle.active &&
+            ship.collider.overlaps(&obstacle.collider)
+    }
+
     /// Reject distant hull pairs before any polygon transform. A close
     /// candidate always uses the original exact authored geometry.
     pub fn ship_hulls_overlap_detailed(
