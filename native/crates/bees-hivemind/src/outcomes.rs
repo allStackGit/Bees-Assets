@@ -222,6 +222,7 @@ pub struct PendingStoreCommands {
     /// Terminal 409 responses may contain stale reservations even though
     /// every other outcome has already committed. Persist these IDs across
     /// restarts until the host explicitly records reconciliation.
+    #[serde(default)]
     reconciliation: HashMap<i64, Vec<i64>>,
 }
 
@@ -233,6 +234,7 @@ impl PendingStoreCommands {
         request: StoreCommandsRequest,
     ) -> Result<(), HiveMindProtocolError> {
         if request.hash <= 0 ||
+            request.hash > crate::protocol::MAX_SAFE_REQUEST_HASH ||
             request.message_type != crate::protocol::STORE_COMMANDS_TYPE ||
             (self.submissions.contains_key(&request.hash) ||
              self.reconciliation.contains_key(&request.hash)) {
