@@ -381,20 +381,24 @@ pub fn collect_learned_collision_asteroids(
             ) {
             continue;
         }
-        let vitals = obstacle.vitals
-            .ok_or(CombatPerceptionError::MissingAsteroidVitals(
+        let Some(vitals) = obstacle.vitals else {
+            output.clear();
+            return Err(CombatPerceptionError::MissingAsteroidVitals(
                 obstacle.entity_id,
-            ))?;
+            ));
+        };
         if vitals.effective_max_health <= 0 {
             output.clear();
             return Err(CombatPerceptionError::MissingAsteroidVitals(
                 obstacle.entity_id,
             ));
         }
-        let bounds = body.navigation_bounds()
-            .ok_or(CombatPerceptionError::MissingNavigationBounds(
+        let Some(bounds) = body.navigation_bounds() else {
+            output.clear();
+            return Err(CombatPerceptionError::MissingNavigationBounds(
                 obstacle.entity_id,
-            ))?;
+            ));
+        };
         let position = Vec2::new(
             (bounds.min.x + bounds.max.x) * 0.5,
             (bounds.min.y + bounds.max.y) * 0.5,
