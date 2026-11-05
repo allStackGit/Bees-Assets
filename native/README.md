@@ -144,6 +144,28 @@ performance needs profiling at 1v1 and large-battle sizes. These are
 runtime comparisons remain necessary once a native executable loop exists. The shared simulation
 stays platform-independent for Windows and Linux.
 
+## Cross-platform CPU throughput baseline
+
+From the repository root, with Rust/Cargo installed on Windows or Linux:
+
+```sh
+cargo run --release --manifest-path native/Cargo.toml -p bees-sim --example rollout_throughput -- --worlds 16 --ships 2 --steps 1000 --workers 4
+```
+
+The CLI creates real authored Wasp/Gunship collider worlds, warms both
+configurations, then compares the serial execution path against CPU-parallel
+rollout windows. It emits CSV with observed wall seconds, world-steps/s and
+the physics workload counters, so runs from different machines/configurations
+can be compared. Try larger `--ships` counts to measure arena-size scaling,
+and adjust `--worlds` and `--workers` independently.
+
+**Scope:** this is a movement/physics *baseline*, not a completed Bees game,
+neural-inference benchmark or an end-to-end training measurement. The fixture
+explicitly disables collision layers, firing, and AI because the authored
+Unity collision-matrix and full game control path have not been integrated.
+The production core retains its requirement for caller-supplied collision
+rules; the benchmark does not change them.
+
 ## Current status
 
 The portable `bees-sim` crate currently contains:
