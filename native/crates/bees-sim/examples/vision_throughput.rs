@@ -119,7 +119,7 @@ fn main() {
         "{},{},{},{},{:.6},{:.1},{},{},{},{},{},{}",
         options.ships_per_side, options.range, options.spacing,
         options.sweeps, elapsed, options.sweeps as f64 / elapsed,
-        steady.live_ship_pairs, steady.live_obstacle_pairs,
+        steady.live_ship_pairs, steady.unlearned_obstacle_pairs,
         steady.aabb_rejections, steady.exact_collider_tests,
         steady.visible_enemy_pairs, first.first_ship_discoveries,
     );
