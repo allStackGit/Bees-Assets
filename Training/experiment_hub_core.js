@@ -1224,11 +1224,11 @@ class ExperimentHub {
             // progress visible while fresh native process metrics arrive.
             const progressAccepted=progress&&this.progressHistory.record(
                 job.id,job.project_id,progress,received);
-            if(progressAccepted){
-                changedHistory=true;
-                if(['finished','failed','stopped'].includes(job.status))
-                    terminalHistory=true;
-            }
+            if(progressAccepted)changedHistory=true;
+            // A terminal report may omit new metrics. Still flush any
+            // previously sampled history before the coordinator exits.
+            if(['finished','failed','stopped'].includes(job.status))
+                terminalHistory=true;
             this.executionTelemetry.set(item.job_id,{
                 at:new Date(received).toISOString(),state:item.state,
                 memory_current_mb:item.memory_current_mb??null,
