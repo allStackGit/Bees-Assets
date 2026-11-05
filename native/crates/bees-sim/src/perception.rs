@@ -401,7 +401,7 @@ mod tests {
         write_self(&mut row, source(), PolicyFrame::new(1)).unwrap();
         assert_eq!(row[0], -0.25);
         assert_eq!(row[1], -1.0 + 22.0 / 23.0);
-        assert_eq!(row[2], -0.3); // -normalize(y), frame 1
+        assert!((row[2] + 0.3).abs() < 1e-6); // -normalize(y), frame 1
         assert!((row[3] - 0.4).abs() < 1e-6); // normalize(x), frame 1
         assert!((row[4] - 2.0 / 3.0).abs() < 1e-6); // height 200 / (200+100)
         assert_eq!(row[6], -1.0); // +Y physical forward -> -X in frame 1
