@@ -1342,10 +1342,18 @@ function completeBenchmarkTarget(item) {
     if(!item.benchmark_target_met)return false;
     const winning=(item.checkpoint_history||[]).find(record=>
         record.ordinal===item.benchmark_target_met.checkpoint_ordinal);
+    // The scheduler may skip multiple milestones after evaluating one
+    // overshot checkpoint. Its next ordinal is not the evaluation's ID.
+    // Require the latest completed evaluation on this curriculum stage,
+    // rather than inferring an ID from the next scheduled checkpoint.
+    const latestCompleted=(item.checkpoint_history||[])
+        .filter(record=>record.stage_index===(item.stage_index||0)&&
+            record.evaluation?.status==='completed')
+        .reduce((latest,record)=>!latest||record.ordinal>latest.ordinal
+            ?record:latest,null);
     const expected=item.status==='checkpointing'
         ?item.checkpoint_active_ordinal
-        :item.status==='transitioning'
-            ?(item.checkpoint_next_index||1)-1:null;
+        :item.status==='transitioning'?latestCompleted?.ordinal:null;
     if(!winning||winning.ordinal!==expected||
         winning.stage_index!==(item.stage_index||0))
         throw Error('Benchmark completion checkpoint lineage changed.');
