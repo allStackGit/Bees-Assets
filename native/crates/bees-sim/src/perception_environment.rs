@@ -28,13 +28,9 @@ pub struct MiningAsteroid {
     pub alive: bool,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub enum MapObjectKind {
-    /// Current Unity GenericMapObjectObservationType = 2.
-    Generic = 2,
-    /// Current Unity FireTankObservationType = 3 (CanisterBomb).
-    FireTank = 3,
-}
+// Preserve the original encoder-facing path while owning the type in
+// gameplay. Its discriminators are source-defined observation map bits.
+pub use crate::map_object::MapObjectKind;
 
 #[derive(Clone, Copy, Debug)]
 pub struct MapObject {
