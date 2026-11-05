@@ -272,7 +272,7 @@ function waitingStageReason(job,byId) {
         reason:'Prequeued pipeline depth exceeds the job-history bound; operator review required.'};
 }
 function allocationChoice(machines,reservations,job,preferredMachineId=null,
-    following=[]) {
+    following=[],futureMachinesFor=()=>machines) {
     const options=resourcePlacements(machines,reservations,job.resources)
         .filter(p=>p.capacity_fits&&
             (!preferredMachineId||p.machine_id===preferredMachineId)&&
@@ -287,7 +287,8 @@ function allocationChoice(machines,reservations,job,preferredMachineId=null,
     // no lease, execution permission or native ownership is conferred.
     const soleOptions=following.filter(next=>!next.lease_id)
         .map(next=>{
-            const places=resourcePlacements(machines,reservations,next.resources)
+            const places=resourcePlacements(futureMachinesFor(next),
+                reservations,next.resources)
                 .filter(p=>p.capacity_fits&&
                     (!next.continuation_machine_id||
                         p.machine_id===next.continuation_machine_id));
@@ -613,13 +614,21 @@ class ExperimentHub {
                     (m.execution_capabilities?.cgroup_v2_detected===true&&
                      ['cpu','memory'].every(c=>
                         m.execution_capabilities?.cgroup_controllers.includes(c)))));
-            for(const job of pendingClaims) {
+            for(const [index,job] of pendingClaims.entries()) {
                 if(job.lease_id||job.resources.gpu_count!==0||
                     (job.resources.gpus||[]).length||job.resources.ram_mb<128)
                     continue;
                 const eligible=capable.filter(m=>
                     m.installed_projects?.includes(job.project_id));
-                const chosen=allocationChoice(eligible,snapshot.reservations,job);
+                // Keep project round-robin order, but do not place this
+                // flexible CPU job on the sole adapter-capable host for
+                // another pending CPU-only job.
+                const following=pendingClaims.slice(index+1).filter(next=>
+                    !next.lease_id&&next.resources.gpu_count===0&&
+                    !(next.resources.gpus||[]).length&&next.resources.ram_mb>=128);
+                const chosen=allocationChoice(eligible,snapshot.reservations,
+                    job,null,following,next=>capable.filter(m=>
+                        m.installed_projects?.includes(next.project_id)));
                 if(!chosen)continue;
                 const result=this.allocateJobs({
                     all_projects:true,job_ids:[job.id],
