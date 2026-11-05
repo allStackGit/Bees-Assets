@@ -486,9 +486,16 @@ class ExperimentHub {
             const blockedMachines=new Set(snapshot.jobs.filter(j=>
                 ['stop_requested','unverified','failed'].includes(j.status)&&
                 !j.capacity_released_at).map(j=>j.assigned_machine_id));
+            // A coordinator Start authorization is durable and can outlive
+            // the next scheduler pass. Wait for its native acknowledgement
+            // before authorizing another service launch on the same host.
+            const startingMachines=new Set(snapshot.jobs.filter(j=>
+                ['start_requested','launch_requested'].includes(j.status)&&
+                !j.capacity_released_at).map(j=>j.assigned_machine_id));
             for(const job of pending) {
                 if(!job.lease_id||!session.machine_ids.includes(job.assigned_machine_id)||
                     blockedMachines.has(job.assigned_machine_id)||
+                    startingMachines.has(job.assigned_machine_id)||
                     job.native_start_readiness?.eligible!==true)continue;
                 this.authorizeStart({job_id:job.id,confirm_start:true});
                 session.managed_job_ids.push(job.id);
