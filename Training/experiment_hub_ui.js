@@ -1073,7 +1073,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }catch(error){feedback('hub-automation-status',error.message);}
     });
     $('hub-automation-disarm').addEventListener('click',async()=>{
-        if(!confirm('Disarm new automatic allocations and starts? Existing native processes are NOT stopped and capacity claims remain held.'))return;
+        if(!confirm('Disarm future automatic allocations and Start directives? Already delivered Starts may still be executing; existing processes are NOT stopped and capacity claims remain held. Use manual Stop and native inspection to resolve suspended Start requests.'))return;
         try {
             await action('hub/automation',{enabled:false,confirm_disarm:true});
             await reload();
