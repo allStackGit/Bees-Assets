@@ -606,6 +606,78 @@ impl CombatWorld {
         self.add_projectile(metadata, body)
     }
 
+    /// Normal gameplay ship movement needs the live configuration's
+    /// ShipTurningRadius and the ship sprite's half-extents. They are
+    /// deliberately not guessed from the collision hull or RL observation.
+    pub fn configure_ship_game_movement(
+        &mut self,
+        ship_id: i64,
+        profile: GameMovementProfile,
+    ) -> Result<(), CombatWorldError> {
+        let &index = self.ship_by_id.get(&ship_id)
+            .ok_or(CombatWorldError::UnknownShip)?;
+        if !self.physics.ships()[index].active || self.ships[index].vitals.is_dead() {
+            return Err(CombatWorldError::UnknownShip);
+        }
+        let controller = GameShipSteering::new(profile)
+            .ok_or(CombatWorldError::InvalidGameMovementProfile)?;
+        self.game_ship_steering.insert(ship_id, controller);
+        Ok(())
+    }
+
+    pub fn move_ship_direct(
+        &mut self,
+        ship_id: i64,
+        destination: Vec2,
+    ) -> Result<bool, CombatWorldError> {
+        let &index = self.ship_by_id.get(&ship_id)
+            .ok_or(CombatWorldError::UnknownShip)?;
+        if !self.physics.ships()[index].active || self.ships[index].vitals.is_dead() {
+            return Err(CombatWorldError::UnknownShip);
+        }
+        let controller = self.game_ship_steering.get_mut(&ship_id)
+            .ok_or(CombatWorldError::MissingGameMovementProfile)?;
+        let accepted = controller.set_direct_destination(
+            &mut self.physics.ships_mut()[index].motion, destination,
+        );
+        if accepted { self.navigation_requests.invalidate(ship_id)?; }
+        Ok(accepted)
+    }
+
+    pub fn move_ship_in_direction(
+        &mut self,
+        ship_id: i64,
+        heading_degrees: f32,
+    ) -> Result<bool, CombatWorldError> {
+        let &index = self.ship_by_id.get(&ship_id)
+            .ok_or(CombatWorldError::UnknownShip)?;
+        if !self.physics.ships()[index].active || self.ships[index].vitals.is_dead() {
+            return Err(CombatWorldError::UnknownShip);
+        }
+        let controller = self.game_ship_steering.get_mut(&ship_id)
+            .ok_or(CombatWorldError::MissingGameMovementProfile)?;
+        let accepted = controller.set_direction(
+            &mut self.physics.ships_mut()[index].motion, heading_degrees,
+        );
+        if accepted { self.navigation_requests.invalidate(ship_id)?; }
+        Ok(accepted)
+    }
+
+    pub fn stop_ship_game_movement(
+        &mut self, ship_id: i64,
+    ) -> Result<(), CombatWorldError> {
+        let &index = self.ship_by_id.get(&ship_id)
+            .ok_or(CombatWorldError::UnknownShip)?;
+        if !self.physics.ships()[index].active || self.ships[index].vitals.is_dead() {
+            return Err(CombatWorldError::UnknownShip);
+        }
+        self.navigation_requests.invalidate(ship_id)?;
+        let controller = self.game_ship_steering.get_mut(&ship_id)
+            .ok_or(CombatWorldError::MissingGameMovementProfile)?;
+        controller.stop(&mut self.physics.ships_mut()[index].motion);
+        Ok(())
+    }
+
     /// World-owned source of truth for an active ship's pathfinding job.
     /// The caller decides whether direct movement is obstructed; this does
     /// not infer a substitute Unity GetObstacleInPath raycast.
@@ -623,10 +695,19 @@ impl CombatWorld {
             return Err(CombatWorldError::UnknownShip);
         }
         let position = self.physics.ships()[index].motion.position;
-        Ok(self.navigation_requests.request(
+        let disposition = self.navigation_requests.request(
             ship_id, position, destination, ship_clearance,
             newly_found_obstacle,
-        )?)
+        )?;
+        if matches!(disposition,
+            NavigationRequestDisposition::Queued |
+            NavigationRequestDisposition::UpdatedQueued
+        ) {
+            if let Some(steering) = self.game_ship_steering.get_mut(&ship_id) {
+                steering.await_path(&mut self.physics.ships_mut()[index].motion);
+            }
+        }
+        Ok(disposition)
     }
 
     /// Explicit StopMoving or command replacement invalidates any queued
@@ -667,7 +748,18 @@ impl CombatWorld {
             return Ok(NavigationCompletion::Discarded);
         }
         let position = self.physics.ships()[index].motion.position;
-        Ok(self.navigation_requests.complete(job, path, position)?)
+        let completion = self.navigation_requests.complete(job, path, position)?;
+        if let NavigationCompletion::Accepted { path, .. } = &completion {
+            if let Some(steering) = self.game_ship_steering.get_mut(&job.ship_id) {
+                let motion = &mut self.physics.ships_mut()[index].motion;
+                if !path.as_ref().is_some_and(|route| steering.install_path(motion, route)) {
+                    // Unity stops moving on an empty/failed path; the
+                    // caller owns its retry schedule and associated limits.
+                    steering.stop(motion);
+                }
+            }
+        }
+        Ok(completion)
     }
 
     /// Synchronous world-local worker entrypoint. A future native scheduler
