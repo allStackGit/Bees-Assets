@@ -19,6 +19,48 @@ created from the current `feat/experiment-queue-ui` branch.
 - Linux, Windows and macOS are required targets for both the game and headless
   workers. Native development must work without the Unity editor.
 
+## Native Level and inference integration (development status)
+
+`bees-gameplay::level_rules::NativeLevelRules` is the current canonical
+gameplay-to-simulator adapter. A `NativeLevelState` owns the real
+`CombatWorld`, one `NativeLevelEventProcessor`, and Level-supplied
+persistent FleetShip metadata and minion SquadLifetime allocation.
+`NativeLevelRewardMetadata` supplies actual fleet values; the separate
+`NativeLevelCommandContext` supplies fresh, Level-order squad snapshots
+and authored navigation when live Hive Mind commands need scaled timer
+callbacks. Never construct these inputs from guessed hull sizes.
+
+For each native Level episode, register real squad membership before
+stepping. Each successful fixed step runs one policy/combat transaction,
+reconciles ordered ship deaths and Scout minions, computes hit/mining/shot
+rewards and termination, then advances any surviving timed commands.
+The world remains failed on partial event/metadata errors; no sample
+may be exported from a failed step.
+
+`NativeGroupRewardDelivery` is an optional per-episode MA-POCA delivery
+adapter. The runner registers participating agents, consumes side-wide
+immediate and per-step group events once, sends the separate ELO marker
+as transport-only metadata (not PPO reward), then ends both participating
+side groups on terminal completion. Source-verified discoveries between
+ticks must be delivered from `record_verified_discovery` immediately.
+
+The *connection*, not each Level, owns `HiveMindSession`. After parallel
+rollout windows, inspect the persistent `pending_session_retirements`
+outbox on each world and call `flush_retirements_to_connection` through
+`Simulation::world_mut`. This prevents squad deaths on earlier ticks
+from losing their pending-request invalidations. Pending OutcomeIds
+still require ordinary persistent StoreCommands settlement.
+
+`NativeLevelInferenceBatch` shares the full v26
+`PolicyPerceptionSnapshot` encoder and live CombatWorld action masks;
+every model output must match world ID, episode revision and tick. The
+host still must provide authoritative snapshot data and an actual
+CPU/GPU neural model. **This is not yet a runnable game or distributed
+RL training replacement.** Renderer/input, full remaining gameplay,
+model execution, policy optimization/checkpoints, transport, and
+cross-engine/Windows/Linux qualification remain outstanding. No
+performance or parity gains are claimed without executable measurements.
+
 ## Hive Mind / server migration boundary
 
 The native workspace now also contains `bees-hivemind`, a separate,
