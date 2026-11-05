@@ -10,6 +10,7 @@ const {validateProgress}=require('./experiment_hub_progress');
 const {ProgressHistory}=require('./experiment_hub_history');
 const ID = /^[a-z][a-z0-9_-]{0,47}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const PCI = /^[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]$/;
 const now = () => new Date().toISOString();
 const AGENT_HEARTBEAT_TTL_MS = 45000;
 function fingerprint(machineId, token) {
@@ -52,6 +53,24 @@ function boundedReport(value) {
             cgroup_controllers:e.cgroup_controllers.slice(),reason:e.reason,
         };
     }
+    const gpuSource=value.gpu_inventory_source||'none';
+    const devices=value.gpu_devices==null?[]:value.gpu_devices;
+    if(!['none','amdgpu-sysfs-v1'].includes(gpuSource)||
+        (gpuSource==='amdgpu-sysfs-v1'&&value.platform!=='linux')||
+        !Array.isArray(devices)||devices.length>32||
+        (gpuSource==='none'&&devices.length)||
+        devices.some(g=>!object(g)||!PCI.test(String(g.pci_address||''))||
+            !Number.isSafeInteger(g.vram_mb)||g.vram_mb<1||
+            g.vram_mb>1000000||
+            (g.used_vram_mb!=null&&
+                (!Number.isSafeInteger(g.used_vram_mb)||
+                    g.used_vram_mb<0||g.used_vram_mb>g.vram_mb)))||
+        new Set(devices.map(g=>g.pci_address)).size!==devices.length)
+        throw Error('Invalid bounded physical GPU inventory.');
+    const observedGpus=devices.map(g=>({
+        pci_address:g.pci_address,vram_mb:g.vram_mb,
+        used_vram_mb:g.used_vram_mb??null,
+    }));
     const localExecutor=value.local_executor===true;
     const preflight=value.native_preflight_passed===true;
     const reason=value.native_preflight_reason;
@@ -67,6 +86,7 @@ function boundedReport(value) {
         throw Error('Invalid locally installed execution adapters.');
     return {cpus:value.cpus,ram_mb:value.ram_mb,
         platform:value.platform,execution,
+        gpu_inventory_source:gpuSource,gpu_devices:observedGpus,
         local_executor:localExecutor&&['linux','win32'].includes(value.platform),
         native_preflight_passed:localExecutor&&
             ['linux','win32'].includes(value.platform)&&preflight,
@@ -154,6 +174,22 @@ class ExperimentHub {
             machine.status = !enrolled ? 'unverified' : fresh ? 'connected' : 'offline';
             machine.last_seen_at = report
                 ? new Date(report.received_ms).toISOString() : null;
+            machine.gpu_inventory_source=fresh?report.gpu_inventory_source:'none';
+            machine.observed_gpus=fresh?copy(report.gpu_devices):[];
+            // Only PCI-address-bound configured GPUs enter the planner.
+            // A manually named GPU without a matching physical identity
+            // remains advisory and unavailable for even a Hub capacity claim.
+            machine.verified_gpus=fresh?machine.gpus.flatMap(configured=>{
+                if(!configured.pci_address)return [];
+                const actual=report.gpu_devices.find(g=>
+                    g.pci_address===configured.pci_address);
+                return actual?[{
+                    id:configured.id,pci_address:configured.pci_address,
+                    vram_mb:Math.min(configured.vram_mb,actual.vram_mb),
+                    observed_vram_mb:actual.vram_mb,
+                    used_vram_mb:actual.used_vram_mb,
+                }]:[];
+            }):[];
             if (fresh) {
                 machine.reported_cpus = report.cpus;
                 machine.reported_ram_mb = report.ram_mb;
@@ -854,8 +890,11 @@ class ExperimentHub {
             throw Error('Machine CPU and RAM capacity must be positive integers.');
         const gpu = Array.isArray(value.gpus) ? value.gpus : [];
         if (gpu.length > 32 || gpu.some(g=>!object(g) || !ID.test(String(g.id||'')) ||
-            !Number.isSafeInteger(g.vram_mb) || g.vram_mb < 1) ||
-            new Set(gpu.map(g=>g.id)).size!==gpu.length)
+            !Number.isSafeInteger(g.vram_mb) || g.vram_mb < 1 ||
+            (g.pci_address!=null&&!PCI.test(String(g.pci_address)))) ||
+            new Set(gpu.map(g=>g.id)).size!==gpu.length||
+            new Set(gpu.filter(g=>g.pci_address).map(g=>g.pci_address)).size!==
+                gpu.filter(g=>g.pci_address).length)
             throw Error('Invalid GPU inventory.');
         const machine = {
             id:value.id, name:name(value.name,'Machine name'),
