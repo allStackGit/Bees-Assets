@@ -239,7 +239,14 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
 }
 .hub-notice { font-size: 12px; font-weight: 700; border-bottom: 2px solid var(--ink); padding: 6px 0; }
 .hub-controls { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 10px; }
-.hub-controls button { flex: 0 1 auto; }
+ .hub-controls button { flex: 0 1 auto; }
+#benchmark-target-controls .benchmark-target-toggle {
+    display: flex; flex-direction: row; align-items: flex-start;
+    gap: 8px; cursor: pointer;
+}
+#benchmark-target-controls .benchmark-target-toggle input[type="checkbox"] {
+    flex: 0 0 16px; width: 16px; height: 16px; margin: 2px 0 0;
+}
 #hub-automation-machines label {
     display: flex;
     align-items: center;
@@ -622,6 +629,17 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
 <option value="none">No automatic evaluations</option>
 </select></label>
 <small id="benchmark-config">Loading evaluation settings…</small></p>
+<fieldset id="benchmark-target-controls">
+<legend>Optional verified development benchmark completion</legend>
+<label class="benchmark-target-toggle"><input id="benchmark-target-enabled" type="checkbox"> End the run early when every frozen development scenario passes the target at consecutive periodic checkpoints</label>
+<div class="formgrid">
+<label>Minimum win rate %<input id="benchmark-target-wins" type="number" min="0" max="100" step="any" value="70"></label>
+<label>Maximum timeout rate %<input id="benchmark-target-timeouts" type="number" min="0" max="100" step="any" value="5"></label>
+<label>Minimum matches per scenario<input id="benchmark-target-matches" type="number" min="30" max="10000" step="1" value="100"></label>
+<label>Consecutive passing checkpoints<input id="benchmark-target-passes" type="number" min="1" max="4" step="1" value="2"></label>
+</div>
+<p class="muted">Off by default. Requires periodic evaluation and sufficient frozen matches in every scenario. Uses validated independent development evaluations, not live training statistics or the reserved held-out suite. A passing target completes the run after the verified checkpoint stop; it does not skip checkpoint verification or establish statistical certainty.</p>
+</fieldset>
 <label><input id="reserve-heldout" type="checkbox" style="width:auto"> Reserve a separate held-out benchmark suite for optional final validation</label>
 <small id="heldout-config">Configure Training/Experiments/heldout-benchmark-settings.json before using this option. The suite is frozen when queued and never runs automatically.</small>
 <p class="muted">Evaluations pin an ONNX checkpoint, run the unchanged benchmark suite, and resume the same optimizer. Periodic evaluations can occur within a stage. For unlimited runs, evaluations occur every 100M steps. Evaluations require a configured frozen benchmark suite; failures disarm the queue.</p>
