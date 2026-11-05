@@ -1335,6 +1335,44 @@ async function resumeActiveRun(item, status) {
 // Pause the learner at a fixed periodic checkpoint without advancing the
 // curriculum. The durable status, pinned ONNX candidate and immutable reports
 // allow a coordinator restart to resume the same operation safely.
+// Both a periodic pause and a curriculum boundary may evaluate the same
+// frozen checkpoint. Never let the stage-transition path resume a model
+// after a verified opt-in completion target has already been reached.
+function completeBenchmarkTarget(item) {
+    if(!item.benchmark_target_met)return false;
+    const winning=(item.checkpoint_history||[]).find(record=>
+        record.ordinal===item.benchmark_target_met.checkpoint_ordinal);
+    const expected=item.status==='checkpointing'
+        ?item.checkpoint_active_ordinal
+        :item.status==='transitioning'
+            ?(item.checkpoint_next_index||1)-1:null;
+    if(!winning||winning.ordinal!==expected||
+        winning.stage_index!==(item.stage_index||0))
+        throw Error('Benchmark completion checkpoint lineage changed.');
+    // A saved success flag cannot authorize completion after restart:
+    // reverify exact report bytes and candidate/recipe provenance.
+    evaluatePeriodicTarget(item,winning);
+    if(!winning.benchmark_target_result?.passed||
+        winning.benchmark_target_result.consecutive_passes<
+            item.benchmark_target.consecutive_passes)
+        throw Error('Frozen benchmark evidence no longer supports completion.');
+    assertSameLineageCheckpoint(item);
+    const stage=stageRecord(item);
+    stage.finished_at=stage.finished_at||now();
+    stage.finished_step=item.step;
+    item.end_reason='benchmark_target';
+    item.status='completed';
+    item.finished_at=now();
+    state.active_id=null;
+    state.stop_requested=false;
+    delete item.checkpoint_active_ordinal;
+    delete item.checkpoint_resume_pending;
+    state.message='Completed '+item.name+
+        ' after meeting its frozen development benchmark target.';
+    save();
+    return true;
+}
+
 async function checkpointPeriodic(item, status) {
     const d = status?.desired || {};
     if (d.run_id !== item.run_id || d.pending_release ||
@@ -1388,36 +1426,7 @@ async function checkpointPeriodic(item, status) {
             await finalize(item, status);
             return;
         }
-        if(item.benchmark_target_met) {
-            // A saved success decision cannot authorize completion after a
-            // restart until every pinned report and candidate hash matches
-            // again. Do not restart or stop the already-idle optimizer.
-            const winning=(item.checkpoint_history||[]).find(record=>
-                record.ordinal===item.benchmark_target_met.checkpoint_ordinal);
-            if(!winning||winning.ordinal!==item.checkpoint_active_ordinal||
-                winning.stage_index!==(item.stage_index||0))
-                throw Error('Benchmark completion checkpoint lineage changed.');
-            evaluatePeriodicTarget(item,winning);
-            if(!winning.benchmark_target_result?.passed||
-                winning.benchmark_target_result.consecutive_passes<
-                    item.benchmark_target.consecutive_passes)
-                throw Error('Frozen benchmark evidence no longer supports completion.');
-            assertSameLineageCheckpoint(item);
-            const stage=stageRecord(item);
-            stage.finished_at=stage.finished_at||now();
-            stage.finished_step=item.step;
-            item.end_reason='benchmark_target';
-            item.status='completed';
-            item.finished_at=now();
-            state.active_id=null;
-            state.stop_requested=false;
-            delete item.checkpoint_active_ordinal;
-            delete item.checkpoint_resume_pending;
-            state.message='Completed '+item.name+
-                ' after meeting its frozen development benchmark target.';
-            save();
-            return;
-        }
+        if(completeBenchmarkTarget(item))return;
         assertSameLineageCheckpoint(item);
         item.awaiting_resume_sample_step = item.step ?? 0;
         item.checkpoint_resume_pending = true;
@@ -1550,6 +1559,7 @@ async function transitionStage(item, status) {
             await finalize(item, status);
             return;
         }
+        if(completeBenchmarkTarget(item))return;
         assertSameLineageCheckpoint(item);
         // After evaluation/restart the previous live log can still contain
         // the outgoing learner's last summary. Require genuine new progress
