@@ -114,13 +114,30 @@ impl NavigationGrid {
                 min: bounds.min - padding,
                 max: bounds.max + padding,
             };
-            let top_left = world_to_level(Vec2::new(expanded.min.x, expanded.max.y));
-            let bottom_right = world_to_level(Vec2::new(expanded.max.x, expanded.min.y));
-            if !top_left.is_finite() || !bottom_right.is_finite() {
-                return Err(NavigationError::NonFiniteMapTransform);
+            // The original Unity code transforms two opposite bounds
+            // corners. With an affine map transform that can be rotated
+            // or sheared, those two corners may not contain the remaining
+            // two; conservatively project all four to avoid missing cells.
+            let corners = [
+                Vec2::new(expanded.min.x, expanded.min.y),
+                Vec2::new(expanded.min.x, expanded.max.y),
+                Vec2::new(expanded.max.x, expanded.min.y),
+                Vec2::new(expanded.max.x, expanded.max.y),
+            ];
+            let mut min_level = Vec2::new(f32::INFINITY, f32::INFINITY);
+            let mut max_level = Vec2::new(f32::NEG_INFINITY, f32::NEG_INFINITY);
+            for corner in corners {
+                let level = world_to_level(corner);
+                if !level.is_finite() {
+                    return Err(NavigationError::NonFiniteMapTransform);
+                }
+                min_level.x = min_level.x.min(level.x);
+                min_level.y = min_level.y.min(level.y);
+                max_level.x = max_level.x.max(level.x);
+                max_level.y = max_level.y.max(level.y);
             }
-            let (first_x, first_y) = self.to_cell(top_left);
-            let (last_x, last_y) = self.to_cell(bottom_right);
+            let (first_x, first_y) = self.to_cell(min_level);
+            let (last_x, last_y) = self.to_cell(max_level);
             for y in first_y.min(last_y)..=first_y.max(last_y) {
                 for x in first_x.min(last_x)..=first_x.max(last_x) {
                     let idx = y * self.width + x;
