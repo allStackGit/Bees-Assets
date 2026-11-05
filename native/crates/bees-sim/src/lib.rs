@@ -23,6 +23,7 @@ pub mod geometry;
 pub mod movement;
 pub mod navigation;
 pub mod navigation_clearance;
+pub mod navigation_search;
 pub mod obstacle;
 pub mod physics;
 pub mod policy;
