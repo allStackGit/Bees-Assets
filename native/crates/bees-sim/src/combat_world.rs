@@ -2745,7 +2745,7 @@ impl CombatWorld {
                 ..StepCounts::default()
             });
         }
-        self.apply_pending_policy_striker_specials()?;
+        self.apply_pending_policy_striker_specials(collision_matrix)?;
         self.advance_asteroid_deaths(dt);
         self.advance_asteroid_pieces(dt);
         // Swap buffers instead of allocating a queue for every frame.
