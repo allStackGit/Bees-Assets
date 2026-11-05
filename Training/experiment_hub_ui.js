@@ -41,7 +41,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const $ = id => document.getElementById(id);
     let project = document.documentElement.dataset.hubDefaultProject || 'bees';
     let tab = 'monitor', state = null, editing = null;
-    let comparisonData = null,comparisonProject = null;
+    let comparisonData = null,comparisonProject = null,comparisonError = null;
     let comparisonRequest = 0,selectionProject = null;
     let comparisonDefaultsApplied = false;
     let envArgsTouched = false;
@@ -120,12 +120,13 @@ document.addEventListener('DOMContentLoaded', () => {
             if(serial!==comparisonRequest||requested!==project)return;
             comparisonData=body;
             comparisonProject=requested;
+            comparisonError=null;
             renderComparison();
         }catch(error){
             if(serial!==comparisonRequest||requested!==project)return;
             comparisonData=null;
             comparisonProject=requested;
-            feedback('hub-compare-notice',error.message);
+            comparisonError=String(error.message||error);
             renderComparison();
         }
     }
@@ -166,13 +167,17 @@ document.addEventListener('DOMContentLoaded', () => {
             return job?{job,color:chartPalette[i],slot:slot.toUpperCase(),
                 points:history.get(id)||[]}:null;
         }).filter(Boolean);
-        const note=project!=='ants'
+        const note=comparisonError&&comparisonProject===project
+            ?'Unable to load comparison history: '+comparisonError
+            :project!=='ants'
             ?'This project has no supported learning-curve adapter yet. Native job state and terminal records are still available.'
             :comparisonProject!==project
                 ?'Loading bounded, in-memory progress history...'
-                :comparisonData?.ephemeral
-                    ?'Live chart samples are held in memory only (up to 96 per job). Coordinator restarts clear curves; final job summaries remain available.'
-                    :'Only current/final snapshots are available.';
+                :comparisonData?.storage_warning
+                    ?comparisonData.storage_warning+' Live chart samples remain available; saved history may be incomplete.'
+                    :comparisonData?.ephemeral
+                        ?'Live chart samples are held in memory only. Final summaries remain available.'
+                        :'Bounded chart history is saved separately from the training registry (up to 96 points per job and 24 jobs). Recent unsaved samples may be lost on abrupt shutdown.';
         feedback('hub-compare-notice',note);
         const knownRoots=new Set(runs.map(r=>
             r.job.artifact_lineage_root_id||r.job.id));
