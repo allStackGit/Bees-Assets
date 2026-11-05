@@ -82,8 +82,19 @@ function validateLocalInput(job,lease,machineId,adapters,hostOs=os) {
     const stopPolicy=adapter.stop_policy||'terminate-group';
     if(!['terminate-group','interrupt-main'].includes(stopPolicy))
         throw Error('Unknown locally installed native stop policy.');
+    const predecessor=job.continuation_of_job_id||null;
+    const lineageRoot=job.artifact_lineage_root_id||job.id;
+    if(!UUID.test(String(lineageRoot))||
+        (predecessor!==null&&(!UUID.test(String(predecessor))||
+            predecessor===job.id||lineageRoot===job.id))||
+        (predecessor===null&&lineageRoot!==job.id))
+        throw Error('Invalid immutable local continuation ancestry.');
     const args=adapter.args(JSON.parse(JSON.stringify(job.frozen_parameters)),
-        Object.freeze({job_id:job.id,project_id:job.project_id}));
+        Object.freeze({
+            job_id:job.id,project_id:job.project_id,
+            continuation_of_job_id:predecessor,
+            artifact_lineage_root_id:lineageRoot,
+        }));
     if(!Array.isArray(args)||args.length>64||
         args.some(a=>typeof a!=='string'||a.length>1024||
             !SAFE_ARG.test(a)))
@@ -247,6 +258,18 @@ class LinuxSupervisor {
             throw Error('Job already has a local launch record; reconcile rather than restart.');
         const invocation=validateLocalInput(job,lease,this.machineId,
             this.adapters,this.hostOs);
+        if(job.continuation_of_job_id) {
+            const parent=this.state.records.find(r=>
+                r.job_id===job.continuation_of_job_id);
+            if(!parent||parent.project_id!==job.project_id||
+                !['finished','stopped'].includes(parent.state)||
+                (parent.artifact_lineage_root_id||parent.job_id)!==
+                    job.artifact_lineage_root_id)
+                throw Error('Local predecessor is missing, unverified or not terminal.');
+            const native=await this.inspectUnit(parent);
+            if(native.active||!['finished','failed'].includes(native.state))
+                throw Error('Predecessor service is not demonstrably inactive.');
+        }
         if(this.state.records.length>=MAX_RECORDS)
             throw Error('Supervisor history capacity reached; no launch permitted.');
         // Refuse to create a service when a deterministic unit already
@@ -259,6 +282,8 @@ class LinuxSupervisor {
             throw Error('A matching systemd unit already exists without a local ownership record.');
         const record={
             job_id:job.id,lease_id:lease.id,project_id:job.project_id,
+            continuation_of_job_id:job.continuation_of_job_id||null,
+            artifact_lineage_root_id:job.artifact_lineage_root_id||job.id,
             unit:unitFor(job.id),state:'launch_requested',
             cpus:invocation.cpus,ram_mb:invocation.ram_mb,
             stop_policy:invocation.stop_policy,
