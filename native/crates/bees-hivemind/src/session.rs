@@ -9,8 +9,9 @@
 use std::collections::HashMap;
 
 use crate::protocol::{
-    GetStrategyRequest, GetStrategyResponse, HiveMindProtocolError,
-    ValidatedStrategySelection,
+    GetStrategyRequest, GetStrategyResponse, GetTargetingRequest,
+    GetTargetingResponse, HiveMindProtocolError, ValidatedStrategySelection,
+    ValidatedTargetingSelection,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -32,6 +33,26 @@ pub struct PendingStrategy {
     pub enemy_squad_id: Option<i64>,
     pub request: GetStrategyRequest,
     retired: bool,
+}
+
+#[derive(Clone, Debug)]
+pub struct PendingTargeting {
+    pub owner: SquadLifetime,
+    pub request: GetTargetingRequest,
+    retired: bool,
+}
+
+#[derive(Clone, Debug)]
+pub enum TargetingReceipt {
+    Accepted {
+        owner: SquadLifetime,
+        selection: ValidatedTargetingSelection,
+    },
+    /// Delayed targeting selection must be discarded by StoreCommands.
+    Retired {
+        owner: SquadLifetime,
+        reservation_id: i64,
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -69,12 +90,16 @@ impl From<HiveMindProtocolError> for HiveMindSessionError {
 pub struct HiveMindSession {
     pending: HashMap<i64, PendingStrategy>,
     latest_by_squad: HashMap<SquadLifetime, i64>,
+    pending_targeting: HashMap<i64, PendingTargeting>,
+    latest_targeting_by_squad: HashMap<SquadLifetime, i64>,
 }
 
 impl HiveMindSession {
     pub fn new() -> Self { Self::default() }
 
-    pub fn pending_count(&self) -> usize { self.pending.len() }
+    pub fn pending_count(&self) -> usize {
+        self.pending.len() + self.pending_targeting.len()
+    }
 
     /// Reissuing an order for a squad retires its prior request but retains
     /// it until a late response can be converted into explicit discards.
@@ -98,7 +123,8 @@ impl HiveMindSession {
         // The WebSocket transport assigns unique Hash values across ALL
         // request types (setup, strategy, StoreCommands, etc.), not just
         // get-strategy. This registry must not generate colliding hashes.
-        if hash <= 0 || self.pending.contains_key(&hash) {
+        if hash <= 0 || self.pending.contains_key(&hash) ||
+            self.pending_targeting.contains_key(&hash) {
             return Err(HiveMindSessionError::DuplicateRequestHash);
         }
         let request = GetStrategyRequest::new(
@@ -115,6 +141,67 @@ impl HiveMindSession {
         Ok(request)
     }
 
+    /// Targeting requests use a separate persistent ID registry and may
+    /// overlap with get-strategy on this shared connection. Both kinds
+    /// still use ONE transport-wide request Hash namespace.
+    pub fn request_targeting(
+        &mut self,
+        hash: i64,
+        owner: SquadLifetime,
+        ships: String,
+        opponent_id: u64,
+        banned: impl IntoIterator<Item = String>,
+    ) -> Result<GetTargetingRequest, HiveMindSessionError> {
+        if !owner.valid() { return Err(HiveMindSessionError::InvalidOwner); }
+        if hash <= 0 || self.pending.contains_key(&hash) ||
+            self.pending_targeting.contains_key(&hash) {
+            return Err(HiveMindSessionError::DuplicateRequestHash);
+        }
+        let request = GetTargetingRequest::new(hash, ships, opponent_id, banned)?;
+        if let Some(old) = self.latest_targeting_by_squad.insert(owner, hash) {
+            if let Some(pending) = self.pending_targeting.get_mut(&old) {
+                pending.retired = true;
+            }
+        }
+        self.pending_targeting.insert(hash, PendingTargeting {
+            owner, request: request.clone(), retired: false,
+        });
+        Ok(request)
+    }
+
+    pub fn resend_targeting_request(&self, hash: i64) -> Option<&GetTargetingRequest> {
+        self.pending_targeting.get(&hash).filter(|p| !p.retired)
+            .map(|p| &p.request)
+    }
+
+    /// The exact targeting response must match its original request and
+    /// the caller's current Squad lifetime before its server reservation
+    /// may become an active targeting strategy.
+    pub fn receive_targeting(
+        &mut self,
+        response: &GetTargetingResponse,
+        live_owner: Option<SquadLifetime>,
+    ) -> Result<TargetingReceipt, HiveMindSessionError> {
+        let pending = self.pending_targeting.get(&response.hash)
+            .ok_or(HiveMindSessionError::UnknownRequest)?;
+        let selection = response.validate_for(&pending.request)?;
+        let owner = pending.owner;
+        let retired = pending.retired ||
+            self.latest_targeting_by_squad.get(&owner) != Some(&response.hash) ||
+            live_owner != Some(owner);
+        self.pending_targeting.remove(&response.hash);
+        if self.latest_targeting_by_squad.get(&owner) == Some(&response.hash) {
+            self.latest_targeting_by_squad.remove(&owner);
+        }
+        if retired {
+            Ok(TargetingReceipt::Retired {
+                owner, reservation_id: selection.outcome_id,
+            })
+        } else {
+            Ok(TargetingReceipt::Accepted { owner, selection })
+        }
+    }
+
     /// Retry the exact original serialized request and Hash. The current
     /// server's per-connection request admission uses Hash as its key.
     pub fn resend_request(&self, hash: i64) -> Option<&GetStrategyRequest> {
@@ -126,6 +213,12 @@ impl HiveMindSession {
     pub fn retire_squad(&mut self, owner: SquadLifetime) {
         self.latest_by_squad.remove(&owner);
         for pending in self.pending.values_mut() {
+            if pending.owner == owner {
+                pending.retired = true;
+            }
+        }
+        self.latest_targeting_by_squad.remove(&owner);
+        for pending in self.pending_targeting.values_mut() {
             if pending.owner == owner {
                 pending.retired = true;
             }
@@ -174,10 +267,13 @@ impl HiveMindSession {
     /// transport's recovery bookkeeping; do NOT falsely claim that server
     /// reservations were discarded or that learning was committed.
     pub fn retire_connection(&mut self) -> Vec<i64> {
-        let mut unresolved: Vec<_> = self.pending.keys().copied().collect();
+        let mut unresolved: Vec<_> = self.pending.keys().copied()
+            .chain(self.pending_targeting.keys().copied()).collect();
         unresolved.sort_unstable();
         self.pending.clear();
+        self.pending_targeting.clear();
         self.latest_by_squad.clear();
+        self.latest_targeting_by_squad.clear();
         unresolved
     }
 }
