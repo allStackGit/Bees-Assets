@@ -68,12 +68,12 @@ impl CombatWorld {
     /// actual game tick. Ordering by stable entity ID makes one pending
     /// action batch independent of the inference host's input order.
     pub(super) fn apply_pending_policy_striker_specials(
-        &mut self,
+        &mut self, collisions: &CollisionMatrix,
     ) -> Result<(), CombatWorldError> {
         self.policy_pending_striker_specials.sort_unstable();
         for index in 0..self.policy_pending_striker_specials.len() {
             let ship_id = self.policy_pending_striker_specials[index];
-            self.try_drop_policy_striker_bomb(ship_id)?;
+            self.try_drop_policy_striker_bomb(ship_id, collisions)?;
         }
         self.policy_pending_striker_specials.clear();
         Ok(())
@@ -84,7 +84,7 @@ impl CombatWorld {
     /// within an invented radius. Unity caches its most recent TouchingShip;
     /// native ambiguity is resolved by stable runtime entity ID.
     pub(super) fn try_drop_policy_striker_bomb(
-        &mut self, striker_id: i64,
+        &mut self, striker_id: i64, collisions: &CollisionMatrix,
     ) -> Result<bool, CombatWorldError> {
         let &ship_index = self.ship_by_id.get(&striker_id)
             .ok_or(CombatWorldError::UnknownShip)?;
@@ -105,7 +105,7 @@ impl CombatWorld {
                 !self.physics.ships()[index].active {
                 continue;
             }
-            if self.physics.ship_hulls_overlap(ship_index, index) {
+            if self.physics.ship_hulls_overlap(ship_index, index, collisions) {
                 let id = self.ships[index].entity_id;
                 if target.map_or(true, |previous| id < previous) {
                     target = Some(id);
@@ -202,6 +202,15 @@ mod tests {
     use crate::ship_assets::ShipAssetCatalog;
     use crate::simulation::{World, WorldId};
 
+    fn striker_contact_matrix(world: &CombatWorld) -> CollisionMatrix {
+        let striker_layer = world.physics.ships()[0].layer;
+        let target_layer = world.physics.ships()[2].layer;
+        let mut rows = [0u32; 32];
+        rows[usize::from(striker_layer)] |= 1u32 << target_layer;
+        rows[usize::from(target_layer)] |= 1u32 << striker_layer;
+        CollisionMatrix::from_rows(rows)
+    }
+
     fn actual_striker_world() -> CombatWorld {
         let projectiles = Arc::new(ProjectileAssetCatalog::embedded().unwrap());
         let hulls = ShipAssetCatalog::embedded().unwrap();
@@ -237,7 +246,7 @@ mod tests {
             [true, true, false, false, false]);
         let mut world = World::new(WorldId(23), 7, state);
         let rules = CombatWorldRules {
-            collision_matrix: CollisionMatrix::from_rows([0; 32]),
+            collision_matrix: striker_contact_matrix(&world.state),
         };
         let mut action = Action::ZERO;
         action.discrete[5] = 1; // Unity ShipSpecialAction
@@ -294,13 +303,14 @@ mod tests {
     #[test]
     fn bomb_reloads_on_carrier_timer_not_on_elapsed_bomb_fuse() {
         let mut state = actual_striker_world();
+        let collisions = striker_contact_matrix(&state);
         let target_pos = state.physics.ships()[2].motion.position;
         state.physics.ships_mut()[0].motion.position = target_pos;
         let mut action = Action::ZERO;
         action.discrete[5] = 1;
         state.apply_policy_decisions(&[Decision { agent_id: 1, action }])
             .unwrap();
-        state.step_fixed(0.02, &CollisionMatrix::from_rows([0; 32]))
+        state.step_fixed(0.02, &collisions)
             .unwrap();
         assert_eq!(state.policy_striker_bomb_ready(1), Some(false));
         assert_eq!(state.projectile_storage_metrics().active_projectiles, 1);
@@ -327,7 +337,7 @@ mod tests {
         state.physics.ships_mut()[0].motion.position = target_pos;
         state.apply_policy_decisions(&[Decision { agent_id: 1, action }])
             .unwrap();
-        state.step_fixed(0.02, &CollisionMatrix::from_rows([0; 32]))
+        state.step_fixed(0.02, &collisions)
             .unwrap();
         assert_eq!(state.projectile_storage_metrics().active_projectiles, 2);
         assert_eq!(state.policy_striker_bomb_ready(1), Some(false));
