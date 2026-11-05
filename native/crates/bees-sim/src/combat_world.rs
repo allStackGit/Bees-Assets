@@ -37,6 +37,8 @@ use crate::policy::Decision;
 use crate::geometry::Vec2;
 use crate::movement::ShipMotion;
 use crate::navigation_clearance::NavigationClearance;
+use crate::navigation_movement::{GameMovementProfile, GameShipSteering};
+use crate::movement::MotionUpdate;
 use crate::navigation_search::NavigationSearch;
 use crate::navigation_requests::{
     NavigationCompletion, NavigationRequest, NavigationRequestDisposition,
@@ -63,6 +65,8 @@ pub enum CombatWorldError {
     Reservation(ReservationError),
     Navigation(NavigationRequestError),
     NavigationMap(crate::navigation::NavigationError),
+    MissingGameMovementProfile,
+    InvalidGameMovementProfile,
     UnknownProjectile,
     UnknownShip,
     UnknownObstacle,
@@ -394,6 +398,7 @@ pub struct CombatWorld {
     obstacle_slot_reuses: u64,
     ship_by_id: HashMap<i64, usize>,
     navigation_requests: NavigationRequests,
+    game_ship_steering: HashMap<i64, GameShipSteering>,
     ship_collision_profiles: HashMap<i64, ShipCollisionProfile>,
     nearby_asteroid_ships: HashSet<(i64, i64)>,
     obstacle_by_id: HashMap<i64, usize>,
@@ -447,6 +452,7 @@ impl CombatWorld {
             obstacle_slot_reuses: 0,
             ship_by_id: HashMap::new(),
             navigation_requests: NavigationRequests::new(),
+            game_ship_steering: HashMap::new(),
             ship_collision_profiles: HashMap::new(),
             nearby_asteroid_ships: HashSet::new(),
             obstacle_by_id: HashMap::new(),
