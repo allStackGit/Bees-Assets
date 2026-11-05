@@ -992,6 +992,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 ['active','offered','acknowledged'].includes(l.status));
             const claimedCpus=claims.reduce((sum,l)=>sum+(l.resources?.cpus||0),0);
             const claimedRam=claims.reduce((sum,l)=>sum+(l.resources?.ram_mb||0),0);
+            // These are measurements from reporting Hub-owned native jobs
+            // only. Bees workers, OS services and other software are excluded.
+            const activeJobs=state.jobs.filter(j=>j.assigned_machine_id===m.id&&
+                ['running','stop_requested'].includes(j.status));
+            const sampledCpu=activeJobs.filter(j=>
+                Number.isFinite(j.live_execution?.cpu_cores_used));
+            const sampledRam=activeJobs.filter(j=>
+                Number.isFinite(j.live_execution?.memory_current_mb));
+            const observedCpu=sampledCpu.reduce((sum,j)=>
+                sum+j.live_execution.cpu_cores_used,0);
+            const observedRam=sampledRam.reduce((sum,j)=>
+                sum+j.live_execution.memory_current_mb,0);
             const overClaimed=m.status==='connected'&&(
                 claimedCpus>(m.reported_cpus??m.cpus)||
                 claimedRam>(m.reported_ram_mb??m.ram_mb));
@@ -1002,10 +1014,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 status.title='Hub claims exceed fresh agent CPU/RAM capacity; new starts require renewed receipts. Existing processes are not stopped.';
             cell(tr,m.cpus+' configured'+
                 (m.reported_cpus!=null?' / '+m.reported_cpus+' reported':'')+
-                ' / '+claimedCpus+' claimed');
+                ' / '+claimedCpus+' claimed'+
+                (sampledCpu.length?' · '+observedCpu.toFixed(2)+
+                    ' average cores from '+sampledCpu.length+'/'+activeJobs.length+
+                    ' Hub native jobs':''));
             cell(tr,m.ram_mb+' MiB configured'+
                 (m.reported_ram_mb!=null?' / '+m.reported_ram_mb+' MiB reported':'')+
-                ' / '+claimedRam+' MiB claimed');
+                ' / '+claimedRam+' MiB claimed'+
+                (sampledRam.length?' · '+Math.round(observedRam).toLocaleString()+
+                    ' MiB observed from '+sampledRam.length+'/'+activeJobs.length+
+                    ' Hub native jobs':''));
             const verified=new Map((m.verified_gpus||[]).map(g=>[g.id,g]));
             const configured=(m.gpus||[]).map(g=>{
                 const matched=verified.get(g.id);
