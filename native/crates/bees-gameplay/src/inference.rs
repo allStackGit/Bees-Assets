@@ -14,7 +14,8 @@ use bees_sim::full_perception::{
 };
 use bees_sim::policy::Decision;
 use bees_sim::policy_batch::{
-    PolicyAgentKey, PolicyBatch, PolicyBatchError, PolicyBatchFootprint,
+    PolicyActionMask, PolicyAgentKey, PolicyBatch, PolicyBatchError,
+    PolicyBatchFootprint,
 };
 use bees_sim::simulation::World;
 
@@ -45,13 +46,16 @@ impl From<PolicyBatchError> for NativeInferenceError {
 /// CPU/ROCm/ONNX implementation may batch multiple native worlds into
 /// one call without accessing or mutating the game simulation. Outputs
 /// are row-major [agent][16 continuous] and [agent][6 discrete].
+/// The number of rows equals action_masks.len(); the backend must apply
+/// these masks BEFORE discrete sampling. Final validation independently
+/// rejects any masked action that slips through.
 pub trait NativePolicyInference {
     type Error;
 
     fn forward(
         &mut self,
         observations: &[f32],
-        rows: usize,
+        action_masks: &[PolicyActionMask],
         continuous: &mut [f32],
         discrete: &mut [u8],
     ) -> Result<(), Self::Error>;
@@ -225,11 +229,10 @@ impl NativeLevelInferenceBatch {
                 NativeInferenceError::FailedBatch,
             ));
         }
-        let rows = self.batch.len();
-        let (observations, continuous, discrete) =
+        let (observations, action_masks, continuous, discrete) =
             self.batch.inference_buffers_mut();
         if let Err(error) = backend.forward(
-            observations, rows, continuous, discrete,
+            observations, action_masks, continuous, discrete,
         ) {
             self.failed = true;
             return Err(NativeInferenceRunError::Backend(error));

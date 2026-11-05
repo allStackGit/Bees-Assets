@@ -240,14 +240,15 @@ impl PolicyBatch {
         (self.continuous.as_mut_slice(), self.discrete.as_mut_slice())
     }
 
-    /// Zero-copy inference input/output handoff. Split field borrows
-    /// permit an accelerator model to read the frozen observation batch
-    /// while writing both contiguous action arrays in the same call.
+    /// Zero-copy inference handoff, including the action masks used by
+    /// Unity during discrete sampling. The model must not infer fire
+    /// or special actions from observation features alone.
     pub fn inference_buffers_mut(
         &mut self,
-    ) -> (&[f32], &mut [f32], &mut [u8]) {
+    ) -> (&[f32], &[PolicyActionMask], &mut [f32], &mut [u8]) {
         (
             self.observations.as_slice(),
+            self.masks.as_slice(),
             self.continuous.as_mut_slice(),
             self.discrete.as_mut_slice(),
         )
