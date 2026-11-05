@@ -271,6 +271,7 @@ class ExperimentHub {
         this.automation = {
             enabled:false,machine_ids:[],agent_instances:{},
             armed_at:null,last_tick_at:null,last_action:null,last_error:null,
+            last_transition_at:null,waiting_reason:null,
         };
         const s = this.state;
         if (!object(s) || s.version !== 1 ||
@@ -393,6 +394,8 @@ class ExperimentHub {
                 enabled:false,machine_ids:[],agent_instances:{},
                 armed_at:null,last_tick_at:this.automation.last_tick_at,
                 last_action:'Disarmed by operator.',last_error:null,
+                last_transition_at:this.automation.last_transition_at,
+                waiting_reason:null,
             };
             return this.automationStatus();
         }
@@ -427,7 +430,7 @@ class ExperimentHub {
             enabled:true,machine_ids:ids.slice(),agent_instances:agentInstances,
             armed_at:now(),last_tick_at:null,
             last_action:'Armed for qualified CPU-only jobs; no job dispatched yet.',
-            last_error:null,
+            last_error:null,last_transition_at:null,waiting_reason:null,
         };
         return this.automationStatus();
     }
@@ -438,6 +441,12 @@ class ExperimentHub {
         const session=this.automation;
         if(!session.enabled)return this.automationStatus();
         session.last_tick_at=now();
+        const transitioned=message=>{
+            session.last_action=message;
+            session.last_transition_at=now();
+            session.waiting_reason=null;
+            return this.automationStatus();
+        };
         try {
             const snapshot=this.snapshot();
             const selected=snapshot.machines.filter(m=>
@@ -466,8 +475,7 @@ class ExperimentHub {
                     l.issued_by==='experiment-hub'&&l.status==='acknowledged'));
             if(complete) {
                 this.releaseLease({lease_id:complete.lease_id,confirm_release:true});
-                session.last_action='Released verified terminal capacity for '+complete.id+'.';
-                return this.automationStatus();
+                return transitioned('Released verified terminal capacity for '+complete.id+'.');
             }
             const pending=fairPending(snapshot.jobs.filter(j=>
                 j.adapter==='unconfigured'&&j.status==='waiting_adapter'&&
@@ -480,8 +488,7 @@ class ExperimentHub {
                     blockedMachines.has(job.assigned_machine_id)||
                     job.native_start_readiness?.eligible!==true)continue;
                 this.authorizeStart({job_id:job.id,confirm_start:true});
-                session.last_action='Authorized one qualified CPU-only native Start: '+job.id+'.';
-                return this.automationStatus();
+                return transitioned('Authorized one qualified CPU-only native Start: '+job.id+'.');
             }
             const capable=selected.filter(m=>!blockedMachines.has(m.id)&&
                 ['linux','win32'].includes(m.agent_platform)&&
@@ -503,11 +510,10 @@ class ExperimentHub {
                 });
                 if(result.results[0]?.status!=='claimed')
                     throw Error('Selected placement did not produce an atomic claim.');
-                session.last_action='Claimed CPU/RAM budget for '+job.id+
-                    ' on '+chosen.machine_id+'; awaiting agent receipt.';
-                return this.automationStatus();
+                return transitioned('Claimed CPU/RAM budget for '+job.id+
+                    ' on '+chosen.machine_id+'; awaiting agent receipt.');
             }
-            session.last_action='No eligible CPU-only transition; waiting for agent receipts or capacity.';
+            session.waiting_reason='No eligible CPU-only transition; awaiting agent receipts or available capacity.';
             return this.automationStatus();
         }catch(error) {
             // An ambiguous state must never provoke repeated automatic
@@ -515,6 +521,7 @@ class ExperimentHub {
             session.enabled=false;
             session.last_error=String(error.message||error).slice(0,240);
             session.last_action='Automation disarmed; operator review required.';
+            session.waiting_reason=null;
             return this.automationStatus();
         }
     }
