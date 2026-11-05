@@ -12,7 +12,7 @@
 //! use stable entity IDs for ordering; Unity callback ordering is not
 //! guaranteed to match until checked with a live reference build.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
 
 use crate::collision::{Aabb, Pose};
@@ -70,7 +70,9 @@ use crate::vision::{HiveMindObserver, VisionError, VisionSweepCounts};
 mod vision;
 mod map_object;
 mod policy;
+mod weapons;
 use self::policy::PolicyShipRuntime;
+use self::weapons::PendingPolicyShot;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CombatWorldError {
@@ -105,6 +107,9 @@ pub enum CombatWorldError {
     InvalidPolicyAction(ActionError),
     UnknownPolicyAgent(u64),
     DuplicatePolicyAgent(u64),
+    InvalidPolicyTurret,
+    UnsupportedPolicyTurret { weapon_type: u8, projectile_type: u8 },
+    DuplicatePolicyTurret { ship_id: i64, slot: usize },
     MapObject(MapObjectError),
 }
 
@@ -287,6 +292,11 @@ pub enum CombatEvent {
     ProjectileContinued {
         parent_id: i64,
         continuation_id: i64,
+    },
+    /// An authored rotating turret launched a real physical shot through
+    /// the same projectile spawn/impact path as rendered gameplay.
+    PolicyWeaponFired {
+        ship_id: i64, slot: u8, projectile_id: i64,
     },
 }
 
@@ -504,8 +514,10 @@ pub struct CombatWorld {
     game_ship_steering: HashMap<i64, GameShipSteering>,
     /// The Level-owned policy controller stores actual ongoing action
     /// state for each bound ship; no secondary training-only movement world.
-    policy_ship_runtime: HashMap<i64, PolicyShipRuntime>,
+    // Stable ship-ID iteration is necessary for reproducible shot IDs.
+    policy_ship_runtime: BTreeMap<i64, PolicyShipRuntime>,
     policy_decision_seen: HashSet<u64>,
+    policy_pending_shots: Vec<PendingPolicyShot>,
     pending_game_point_orders: HashMap<i64, GamePointOrder>,
     latest_game_point_orders: HashMap<i64, GamePointOrder>,
     ship_collision_profiles: HashMap<i64, ShipCollisionProfile>,
@@ -571,8 +583,9 @@ impl CombatWorld {
             ship_by_id: HashMap::new(),
             navigation_requests: NavigationRequests::new(),
             game_ship_steering: HashMap::new(),
-            policy_ship_runtime: HashMap::new(),
+            policy_ship_runtime: BTreeMap::new(),
             policy_decision_seen: HashSet::new(),
+            policy_pending_shots: Vec::new(),
             pending_game_point_orders: HashMap::new(),
             latest_game_point_orders: HashMap::new(),
             ship_collision_profiles: HashMap::new(),
@@ -2789,6 +2802,9 @@ impl CombatWorld {
                 }
             }
         }
+        // Turrets use the same ship pose updated above, and create real
+        // projectile bodies before the subsequent shared physics step.
+        self.advance_policy_turrets(dt)?;
         self.update_rocket_timers(dt);
         self.update_striker_bombs(dt)?;
         self.update_explosion_timelines(dt)?;
