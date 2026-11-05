@@ -62,6 +62,13 @@ pub fn policy_dimension_activity(
         return Err(PolicyDimensionError::InvalidMask);
     }
     sampled_action.validate().map_err(PolicyDimensionError::InvalidAction)?;
+    if !action_mask.special[usize::from(
+        sampled_action.discrete[SPECIAL_BRANCH],
+    )] || (0..WEAPON_SLOTS).any(|slot|
+        sampled_action.discrete[slot] == 1 && !action_mask.fire[slot]
+    ) {
+        return Err(PolicyDimensionError::InvalidMask);
+    }
     let mut weights = [1.0; PPO_ACTION_DIMENSIONS];
 
     // Unity's CanMove and Barge charge phases 1..3 are independent
@@ -99,4 +106,20 @@ pub fn policy_dimension_activity(
     ));
 
     Ok(PolicyDimensionActivity { weights })
+}
+
+/// Source _poca_inverse_group_size_weight_array: distribute one active
+/// group-timestep's policy weight equally across participating agents.
+/// Padded, invalid rollout steps have zero weight. The caller supplies
+/// the actual POCA group size minus this particular agent.
+#[inline]
+pub fn poca_inverse_group_sample_weight(
+    groupmate_count: u32,
+    valid_timestep: bool,
+) -> f32 {
+    if valid_timestep {
+        1.0 / (groupmate_count as f32 + 1.0)
+    } else {
+        0.0
+    }
 }
