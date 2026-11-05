@@ -87,6 +87,20 @@ fn distance_to_bounds_squared(asteroid: &CollisionAsteroid, origin: Vec2) -> f32
     dx * dx + dy * dy
 }
 
+/// Select exactly the nearest source-visible K observations before
+/// sorting them. The comparator must use the same total order for both
+/// selection and sort, preserving Unity's tie-breaking and padding.
+fn sort_nearest<T>(
+    items: &mut Vec<T>, slots: usize,
+    mut compare: impl FnMut(&T, &T) -> std::cmp::Ordering,
+) {
+    if items.len() > slots {
+        items.select_nth_unstable_by(slots, &mut compare);
+        items.truncate(slots);
+    }
+    items.sort_unstable_by(compare);
+}
+
 /// Reuse candidate sorting storage across decisions. All zero padding here
 /// represents source-defined absent objects, not missing simulator features.
 #[derive(Default)]
@@ -115,7 +129,7 @@ impl EnvironmentSlotEncoder {
         }
         self.mining.clear();
         self.mining.extend(candidates.iter().copied().filter(|item| item.alive));
-        self.mining.sort_unstable_by(|left, right| {
+        sort_nearest(&mut self.mining, MINING_SLOTS, |left, right| {
             center_distance(left.position, observer).total_cmp(
                 &center_distance(right.position, observer)
             ).then_with(|| left.id.cmp(&right.id))
@@ -155,7 +169,7 @@ impl EnvironmentSlotEncoder {
         }
         self.objects.clear();
         self.objects.extend(candidates.iter().copied().filter(|item| item.alive));
-        self.objects.sort_unstable_by(|left, right| {
+        sort_nearest(&mut self.objects, MAP_OBJECT_SLOTS, |left, right| {
             center_distance(left.position, observer).total_cmp(
                 &center_distance(right.position, observer)
             ).then_with(|| left.kind.cmp(&right.kind))
@@ -204,7 +218,7 @@ impl EnvironmentSlotEncoder {
         }
         self.asteroids.clear();
         self.asteroids.extend(candidates.iter().copied().filter(|item| item.alive));
-        self.asteroids.sort_unstable_by(|left, right| {
+        sort_nearest(&mut self.asteroids, ASTEROID_SLOTS, |left, right| {
             distance_to_bounds_squared(left, observer).total_cmp(
                 &distance_to_bounds_squared(right, observer)
             ).then_with(|| left.id.cmp(&right.id))
