@@ -447,6 +447,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if(j.status==='waiting_adapter'&&linked?.receipt_fresh&&
                 machine?.status==='connected'&&
                 machine.local_executor_enabled===true&&
+                machine.native_preflight_passed===true&&
                 machine.installed_projects?.includes(j.project_id)&&
                 j.resources.gpu_count===0)
                 actions.append(button('Start on Linux',async()=>{
@@ -559,10 +560,14 @@ document.addEventListener('DOMContentLoaded', () => {
             const capability=m.execution_capabilities;
             const control=cell(tr,m.status==='connected'
                 ?m.local_executor_enabled
-                    ?'Local Linux CPU/RAM adapter opted in; verify per started service'
-                    :'Not installed'+(capability?.cgroup_v2_detected?' · Linux cgroup v2 detected':'')
-                :'Not verified');
-            control.title=capability?.reason||'No authenticated native capability report.';
+                    ?m.native_preflight_passed
+                        ?'Local Linux CPU/RAM preflight passed · GPU not isolated'
+                        :'Native start blocked · preflight incomplete or failed'
+                    :'Observation only'+(capability?.cgroup_v2_detected
+                        ?' · Linux cgroup v2 detected':'')
+                :'Offline or not verified');
+            control.title=m.native_preflight_reason||
+                capability?.reason||'No authenticated native capability report.';
             cell(tr,m.last_seen_at?.replace('T',' ').slice(0,19)||'—');
             const actions=cell(tr,'');
             actions.append(button(m.agent_enrolled?'Rotate':'Enroll',async()=>{
