@@ -17,7 +17,7 @@ pub struct StepCounts {
     pub trigger_enters: u64,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Measurements {
     pub ticks: u64,
     pub decisions: u64,
@@ -40,6 +40,30 @@ pub struct Measurements {
     pub sampled_step_latency_log2_ns: [u64; 64],
     pub last_active_ships: u32,
     pub last_active_projectiles: u32,
+}
+
+// Long fixed-size arrays do not implement Default on all supported Rust
+// toolchains. Keep the zero state explicit and allocation-free.
+impl Default for Measurements {
+    fn default() -> Self {
+        Self {
+            ticks: 0,
+            decisions: 0,
+            events: 0,
+            integrated_bodies: 0,
+            broadphase_candidates: 0,
+            narrowphase_tests: 0,
+            trigger_enters: 0,
+            failed_steps: 0,
+            sampled_failed_steps: 0,
+            sampled_failed_wall_nanos: 0,
+            sampled_ticks: 0,
+            sampled_wall_nanos: 0,
+            sampled_step_latency_log2_ns: [0; 64],
+            last_active_ships: 0,
+            last_active_projectiles: 0,
+        }
+    }
 }
 
 impl Measurements {
