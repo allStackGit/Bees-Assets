@@ -3,10 +3,9 @@
 //!
 //! Unity: RlOneVsOneAgent.OnActionReceived, ApplyMovementCommand,
 //! SetCommunicationActions and Ship.RlDirectionalMovement.
-//! Source-authored base rotating turrets can now execute their real
-//! cooldown/aim/shot pipeline in CombatWorld. Weapon subclasses with
-//! different launch/animation rules, healing, mining, warp and specials
-//! remain masked. No plausible-looking no-op firing is accepted.
+//! Source-supported turrets, healing, selected ship specials and authored
+//! WarpGate returns execute in the same shared CombatWorld. Unported
+//! weapon subclasses and mining stay masked, never treated as no-ops.
 
 use super::*;
 use crate::policy_batch::PolicyActionMask;
