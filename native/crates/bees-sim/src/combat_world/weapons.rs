@@ -2,14 +2,15 @@
 //!
 //! Source: Turret.Create/Setup/TargetingSequence, Turret.Aiming,
 //! RlOneVsOneAgent.ApplyWeaponCommand, Level.AddProjectile and Projectile.Setup.
-//! Simple rotating turrets and DualCannon are handled here. BeamCannon,
-//! LaserBuilder/SplitShot, FullShipTurret and Bomb have materially different
-//! firing or animation continuations and remain unsupported.
+//! Rotating turrets, DualCannon, LaserBuilder/SplitShot and FullShipTurret
+//! share this controller. Charged weapons reproduce the event time in their
+//! Unity animation clip; BeamCannon and Bomb have different active-projectile
+//! / delivery lifecycles and remain unsupported.
 //! Missing prefab and live Level fields are errors, not guessed defaults.
 
 use super::*;
 use crate::control::WeaponRequest;
-use crate::geometry::Vec2;
+use crate::geometry::{delta_angle, heading_towards, Vec2};
 use crate::perception_weapons::{SelfWeapon, TurretObservation};
 use crate::perception_entities::ObservedWeapon;
 use crate::turret::TurretState;
@@ -24,6 +25,23 @@ pub enum NativeFirePattern {
         left_offset: Vec2,
         right_offset: Vec2,
     },
+    /// LaserBuilder.SendProjectile starts the Leaf Cutter Shot Form clip;
+    /// LaserBuilderControl.Fire calls ActuallyShoot at the clip event 0.8s.
+    LaserBuilder,
+    /// FullShipTurret derives from LaserBuilder, queues until the Flagship
+    /// Laser Charging clip event at 2.75s, then fires along its current
+    /// physical heading (regardless of earlier policy aim).
+    FullShipTurret,
+}
+
+impl NativeFirePattern {
+    fn fire_event_seconds(self) -> Option<f32> {
+        match self {
+            Self::LaserBuilder => Some(0.8),
+            Self::FullShipTurret => Some(2.75),
+            _ => None,
+        }
+    }
 }
 
 /// Supplied from the REAL authored weapon and turret piece, not a collider
@@ -49,30 +67,29 @@ pub struct NativeTurretSpec {
     /// serialized in the current native catalog; other types MUST have a
     /// value supplied by the authored Level/Stage adapter.
     pub projectile_speed: f64,
-    /// DualCannon fires precisely two HumanSmall shots, with C# integer
-    /// division of Power by two, both aimed from Ship.GetPosition().
+    /// DualCannon uses two HumanSmall muzzles. LaserBuilder and
+    /// FullShipTurret delay their shots until their authored animation event.
     pub fire_pattern: NativeFirePattern,
 }
 
 impl NativeTurretSpec {
     fn valid(self, catalog: &ProjectileAssetCatalog) -> Result<(), CombatWorldError> {
-        let supported_weapon = matches!(self.weapon_type, 2 | 3 | 5 | 6 | 7 | 8);
-        // These cases use the same projectile setup and collision rules as
-        // base Turret.SendProjectile; subclasses with bespoke launch paths
-        // are deliberately not accepted.
+        let valid_pattern = match self.weapon_type {
+            2 | 3 | 5 | 7 | 8 =>
+                matches!(self.fire_pattern, NativeFirePattern::Single),
+            6 => self.projectile_type == 6 &&
+                matches!(self.fire_pattern, NativeFirePattern::DualCannon { .. }),
+            9 => self.projectile_type == 9 &&
+                matches!(self.fire_pattern, NativeFirePattern::LaserBuilder),
+            4 => self.projectile_type == 4 &&
+                matches!(self.fire_pattern, NativeFirePattern::FullShipTurret),
+            _ => false,
+        };
         let supported_projectile = matches!(
-            self.projectile_type, 1 | 2 | 3 | 5 | 6 | 7 | 10 | 11
+            self.projectile_type, 1 | 2 | 3 | 4 | 5 | 6 | 7 | 9 | 10 | 11
         );
-        if !supported_weapon || !supported_projectile {
-            return Err(CombatWorldError::UnsupportedPolicyTurret {
-                weapon_type: self.weapon_type,
-                projectile_type: self.projectile_type,
-            });
-        }
-        if (self.weapon_type == 5) != (self.projectile_type == 5) ||
-            (self.weapon_type == 6) !=
-                matches!(self.fire_pattern, NativeFirePattern::DualCannon { .. }) ||
-            (self.weapon_type == 6 && self.projectile_type != 6) {
+        if !valid_pattern || !supported_projectile ||
+            (self.weapon_type == 5) != (self.projectile_type == 5) {
             return Err(CombatWorldError::UnsupportedPolicyTurret {
                 weapon_type: self.weapon_type,
                 projectile_type: self.projectile_type,
@@ -116,6 +133,9 @@ pub(super) struct PolicyTurretMount {
     pub(super) spec: NativeTurretSpec,
     pub(super) state: TurretState,
     pub(super) timer: ScaledTimer,
+    /// None until an accepted policy shot starts the authored charging clip.
+    /// A second targeting pass cannot restart an already charging clip.
+    pub(super) charge_elapsed_seconds: Option<f32>,
 }
 
 impl PolicyTurretMount {
@@ -125,6 +145,7 @@ impl PolicyTurretMount {
                 spec.initial_rotation_degrees, spec.rotation_rate,
             ),
             timer: ScaledTimer::new(spec.rate_of_fire / 3.0, true, false),
+            charge_elapsed_seconds: None,
             spec,
         }
     }
