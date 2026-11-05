@@ -545,6 +545,26 @@ impl ObstacleBody {
         self.clearance_collider.as_ref().unwrap_or(&self.collider).bounds
     }
 
+    /// MapObject.Collider is its own authored trigger, not the obstacle's
+    /// optional pathfinder clearance shape. Project its primary bounds into
+    /// native perception without inventing a sprite AABB.
+    pub fn primary_bounds(&self) -> Option<Aabb> {
+        if !self.active { return None; }
+        self.collider.bounds
+    }
+
+    /// MapObject visibility uses its primary collider, whereas Obstacle
+    /// visibility uses the clearance mapping collider when available.
+    pub fn vision_proximity_primary(
+        &mut self, observer: Vec2, range_squared: f32,
+    ) -> VisionProximity {
+        if !self.active {
+            return VisionProximity::RejectedByBounds;
+        }
+        self.update_hull();
+        self.collider.vision_proximity(observer, range_squared)
+    }
+
     pub fn navigation_shape(&self) -> &ShipShape {
         &self.clearance_collider.as_ref().unwrap_or(&self.collider).shape
     }
