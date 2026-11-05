@@ -1929,6 +1929,7 @@ impl CombatWorld {
                             if delta.killed {
                                 self.physics.ships_mut()[target_index].active = false;
                                 self.discovery.retire(DiscoveryKind::Ship, target_id);
+                                self.policy_ship_runtime.remove(&target_id);
                                 self.navigation_requests.retire_ship(target_id);
                                 self.game_ship_steering.remove(&target_id);
                                 self.pending_game_point_orders.remove(&target_id);
@@ -2064,6 +2065,7 @@ impl CombatWorld {
                 if delta.killed {
                     self.physics.ships_mut()[ship_index].active = false;
                     self.discovery.retire(DiscoveryKind::Ship, target.entity_id);
+                    self.policy_ship_runtime.remove(&target.entity_id);
                     self.navigation_requests.retire_ship(target.entity_id);
                     self.game_ship_steering.remove(&target.entity_id);
                     self.pending_game_point_orders.remove(&target.entity_id);
@@ -2383,6 +2385,7 @@ impl CombatWorld {
                 if delta.killed {
                     self.physics.ships_mut()[ship_index].active = false;
                     self.discovery.retire(DiscoveryKind::Ship, ship_id);
+                    self.policy_ship_runtime.remove(&ship_id);
                     self.navigation_requests.retire_ship(ship_id);
                     self.game_ship_steering.remove(&ship_id);
                     self.pending_game_point_orders.remove(&ship_id);
