@@ -13,6 +13,7 @@ use serde::de::{self, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 pub const STRATEGY_REQUEST_TYPE: &str = "get-strategy";
+pub const TARGETING_REQUEST_TYPE: &str = "get-matchup-strategy";
 pub const STORE_COMMANDS_TYPE: &str = "store-commands";
 /// Unity Utilities.Unique53Hash deliberately stays exactly representable
 /// in JavaScript Number, unlike generic 64-bit hash generators.
@@ -69,6 +70,20 @@ pub const SHOOTING_STRATEGIES: [&str; 40] = [
     "Type J", "Type K", "Type L", "Type M", "Type N", "Type O",
     "Type P", "Type Q", "Type R", "Type S", "Type T", "Type U",
     "Type V", "Type W", "Type X",
+];
+
+/// Persistent BeesServer Game.targetingStratTypes order, IDs 1-40.
+/// This is NOT the same numeric order as shooting, even though many
+/// targeting and shooting names overlap.
+pub const TARGETING_STRATEGIES: [&str; 40] = [
+    "Random", "Revenge", "Most Dangerous", "Least Health", "Most Health",
+    "Most Powerful", "Least Powerful", "Closest", "Furthest",
+    "Most Range", "Least Range", "Fastest", "Slowest",
+    "In Combat", "Gang Up", "Most Valuable", "Least Valuable",
+    "Type A", "Type B", "Type C", "Type D", "Type E", "Type F",
+    "Type G", "Type H", "Type I", "Type J", "Type K", "Type L",
+    "Type M", "Type N", "Type O", "Type P", "Type Q", "Type R",
+    "Type S", "Type T", "Type U", "Type V", "Type W",
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -377,5 +392,109 @@ impl StoreCommandsResponse {
             self.hash == request_hash &&
             (self.status == 1 || (200..300).contains(&self.status)) &&
             self.stale_outcome_ids.is_empty()
+    }
+}
+
+/// Scripts/Server/GetMatchupStrategy.cs; the Banned list is made from
+/// currently unavailable enemy ship types ("Type A", etc.), and may
+/// legitimately include Type X even though the current server's targeting
+/// registry stops at Type W.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GetTargetingRequest {
+    #[serde(rename = "Type")]
+    pub message_type: String,
+    #[serde(rename = "Hash")]
+    pub hash: i64,
+    #[serde(rename = "Ships")]
+    pub ships: String,
+    #[serde(rename = "OpponentId")]
+    pub opponent_id: u64,
+    #[serde(rename = "Banned")]
+    pub banned: Vec<String>,
+}
+
+impl GetTargetingRequest {
+    pub fn new(
+        hash: i64,
+        ships: String,
+        opponent_id: u64,
+        banned: impl IntoIterator<Item = String>,
+    ) -> Result<Self, HiveMindProtocolError> {
+        if hash <= 0 || hash > MAX_SAFE_REQUEST_HASH || ships.is_empty() {
+            return Err(HiveMindProtocolError::InvalidRequest);
+        }
+        let mut seen = HashSet::new();
+        let mut bans = Vec::new();
+        for entry in banned {
+            if !entry.starts_with("Type ") ||
+                entry.len() != 6 ||
+                !entry.as_bytes()[5].is_ascii_uppercase() {
+                return Err(HiveMindProtocolError::UnknownStrategy);
+            }
+            if seen.insert(entry.clone()) { bans.push(entry); }
+        }
+        Ok(Self {
+            message_type: TARGETING_REQUEST_TYPE.to_owned(),
+            hash, ships, opponent_id, banned: bans,
+        })
+    }
+}
+
+/// The server's separate targeting response uses MatchupID, not MatchupId.
+/// Its MatchupString can carry the `target-v2:` learning-key namespace
+/// and need not equal the request's raw Ships field.
+#[derive(Clone, Debug, Deserialize)]
+pub struct GetTargetingResponse {
+    #[serde(rename = "Type")]
+    pub message_type: String,
+    #[serde(rename = "Hash")]
+    pub hash: i64,
+    #[serde(rename = "Name")]
+    pub name: String,
+    #[serde(rename = "StrategyId")]
+    pub strategy_id: i32,
+    #[serde(rename = "OutcomeId")]
+    pub outcome_id: i64,
+    #[serde(rename = "MatchupString")]
+    pub matchup_string: String,
+    #[serde(rename = "MatchupID", alias = "MatchupId", default)]
+    pub matchup_id: Option<MatchupIdentity>,
+    #[serde(rename = "ServerLatency", default)]
+    pub server_latency: Option<f64>,
+    #[serde(rename = "Status", default)]
+    pub status: Option<i32>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ValidatedTargetingSelection {
+    pub strategy: StrategyIdentity,
+    pub outcome_id: i64,
+}
+
+impl GetTargetingResponse {
+    pub fn validate_for(
+        &self,
+        request: &GetTargetingRequest,
+    ) -> Result<ValidatedTargetingSelection, HiveMindProtocolError> {
+        if self.message_type != TARGETING_REQUEST_TYPE ||
+            request.message_type != TARGETING_REQUEST_TYPE ||
+            self.hash != request.hash ||
+            self.status.is_some_and(|status|
+                status != 1 && !(200..300).contains(&status)) {
+            return Err(HiveMindProtocolError::RequestIdentityMismatch);
+        }
+        if self.outcome_id <= 0 {
+            return Err(HiveMindProtocolError::InvalidReservation);
+        }
+        let strategy = StrategyIdentity::from_registry(
+            self.strategy_id, &self.name, &TARGETING_STRATEGIES,
+        )?;
+        if request.banned.iter().any(|name| name == strategy.name) {
+            return Err(HiveMindProtocolError::BannedStrategy);
+        }
+        Ok(ValidatedTargetingSelection {
+            strategy,
+            outcome_id: self.outcome_id,
+        })
     }
 }
