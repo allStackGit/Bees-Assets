@@ -4,7 +4,7 @@
 //! invokes the same shared physics world and formation navigation used by
 //! user orders, the render client, and headless evaluation.
 //!
-//! Only Hold and MoveToRandom have their movement/timer phases ported here.
+//! Hold, MoveToRandom and Patrol have their movement/timer phases ported here.
 //! Every other server strategy is explicitly unsupported until its Unity
 //! gameplay mechanics and reward effects are implemented. Caller-owned
 //! targeting/shooting and command reward accumulation are not fabricated.
@@ -62,6 +62,10 @@ pub struct HiveMindCommandSettings {
     pub max_command_seconds: f32,
     /// From ConfigData.Configuration.AIRandomMovementMaxDistance.
     pub ai_random_max_distance: f32,
+    /// From ConfigData.Configuration.AIPatrolMaxSize.
+    pub ai_patrol_max_size: f32,
+    /// From ConfigData.Configuration.AISquadPatrolTime.
+    pub ai_squad_patrol_seconds: f32,
 }
 
 impl HiveMindCommandSettings {
@@ -69,7 +73,11 @@ impl HiveMindCommandSettings {
         self.max_command_seconds.is_finite() &&
         self.max_command_seconds > 0.0 &&
         self.ai_random_max_distance.is_finite() &&
-        self.ai_random_max_distance >= 0.0
+        self.ai_random_max_distance >= 0.0 &&
+        self.ai_patrol_max_size.is_finite() &&
+        self.ai_patrol_max_size >= 0.0 &&
+        self.ai_squad_patrol_seconds.is_finite() &&
+        self.ai_squad_patrol_seconds > 0.0
     }
 }
 
@@ -173,10 +181,21 @@ pub enum Activation {
     Unsupported(ResolvedHiveMindCommand),
 }
 
+struct PatrolRoute {
+    /// Unity's destination queue starts with top-left. On each timer tick,
+    /// an arrived squad rotates the head to the tail and moves to the new
+    /// head, so the first immediate tick chooses top-right.
+    corners: [Vec2; 4],
+    current: usize,
+    members: Vec<SquadFormationMember>,
+    formation: SquadFormationOptions,
+}
+
 struct ActiveNativeCommand {
     selection: ResolvedHiveMindCommand,
     timeout: ScaledTimer,
-    random_poll: Option<ScaledTimer>,
+    command_poll: Option<ScaledTimer>,
+    patrol: Option<PatrolRoute>,
     /// Authoritative game-owned member snapshot at command issue.
     /// The Level must retire/reissue on squad composition changes.
     member_ids: Vec<i64>,
@@ -267,6 +286,7 @@ impl NativeSquadCommandDirector {
             return Err(GameCommandError::InvalidSettings);
         }
 
+        let mut patrol = None;
         let issued_move = match selection.local_command {
             LocalCommandKind::Hold => {
                 stop_squad_game_movement(world, squad.members)?;
@@ -275,12 +295,36 @@ impl NativeSquadCommandDirector {
             LocalCommandKind::MoveToRandom => {
                 let requested = choose_random_coordinate(
                     random, squad.squad_center, squad.formation.map_bounds,
-                    settings.ai_random_max_distance,
+                    settings.ai_random_max_distance, RANDOM_MIN_DISTANCE,
                 );
                 issue_squad_move(
                     world, navigation, squad.members,
                     requested, squad.formation,
                 )?.is_some()
+            }
+            LocalCommandKind::Patrol => {
+                let top_left = choose_random_coordinate(
+                    random, squad.squad_center, squad.formation.map_bounds,
+                    settings.ai_patrol_max_size, 10.0,
+                );
+                let bottom_right = choose_random_coordinate(
+                    random, squad.squad_center, squad.formation.map_bounds,
+                    settings.ai_patrol_max_size, 10.0,
+                );
+                patrol = Some(PatrolRoute {
+                    corners: [
+                        top_left,
+                        Vec2::new(bottom_right.x, top_left.y),
+                        bottom_right,
+                        Vec2::new(top_left.x, bottom_right.y),
+                    ],
+                    current: 0,
+                    members: squad.members.to_vec(),
+                    formation: squad.formation,
+                });
+                // Patrol.Execute installs a timer; the first movement occurs
+                // on its immediate callback, not during Execute itself.
+                false
             }
             _ => return Ok(Activation::Unsupported(selection)),
         };
@@ -288,11 +332,20 @@ impl NativeSquadCommandDirector {
         // Native world action above has succeeded. Only now can this
         // command supersede an earlier one; a failed order leaves the
         // existing HiveMind command and its reserved IDs intact.
+        let timeout_seconds = if selection.local_command == LocalCommandKind::Patrol {
+            settings.ai_squad_patrol_seconds
+        } else {
+            settings.max_command_seconds
+        };
         let active = ActiveNativeCommand {
-            timeout: ScaledTimer::new(settings.max_command_seconds, false, false),
-            random_poll: if selection.local_command == LocalCommandKind::MoveToRandom {
+            timeout: ScaledTimer::new(timeout_seconds, false, false),
+            command_poll: if matches!(
+                selection.local_command,
+                LocalCommandKind::MoveToRandom | LocalCommandKind::Patrol
+            ) {
                 Some(ScaledTimer::new(RANDOM_COMMAND_POLL_SECONDS, true, true))
             } else { None },
+            patrol,
             member_ids: squad.members.iter().map(|m| m.ship_id).collect(),
             selection,
         };
@@ -313,7 +366,8 @@ impl NativeSquadCommandDirector {
     /// FinishedNativeCommand with real TSV and explicit unused reserves.
     pub fn advance(
         &mut self,
-        world: &CombatWorld,
+        world: &mut CombatWorld,
+        navigation: &NavigationRuntime,
         dt: f32,
     ) -> Result<Vec<FinishedNativeCommand>, GameCommandError> {
         if !dt.is_finite() || dt < 0.0 {
@@ -326,9 +380,8 @@ impl NativeSquadCommandDirector {
                 completed.push((owner, CommandFinishCause::Timeout));
                 continue;
             }
-            if let Some(timer) = command.random_poll.as_mut() {
+            if let Some(timer) = command.command_poll.as_mut() {
                 if let Some(due) = timer.begin_update(dt) {
-                    timer.finish_update(due);
                     // Unity Ship.HasReachedDestination means exactly
                     // !HasTargetCoordinates (not "velocity nearly zero").
                     let all_arrived = command.member_ids.iter().all(|id| {
@@ -338,10 +391,22 @@ impl NativeSquadCommandDirector {
                                 !ship.motion.has_target_coordinates)
                     });
                     if all_arrived {
-                        completed.push((
-                            owner, CommandFinishCause::ReachedRandomDestination,
-                        ));
+                        if let Some(route) = command.patrol.as_mut() {
+                            // Patrol rotates the queue before calling Move;
+                            // a blocked move still advances the queue.
+                            let next = (route.current + 1) % route.corners.len();
+                            issue_squad_move(
+                                world, navigation, &route.members,
+                                route.corners[next], route.formation,
+                            )?;
+                            route.current = next;
+                        } else {
+                            completed.push((
+                                owner, CommandFinishCause::ReachedRandomDestination,
+                            ));
+                        }
                     }
+                    timer.finish_update(due);
                 }
             }
         }
@@ -379,14 +444,15 @@ fn choose_random_coordinate(
     position: Vec2,
     bounds: Aabb,
     max_distance: f32,
+    min_distance: f32,
 ) -> Vec2 {
     let mut location = Vec2::ZERO;
     for _ in 0..RANDOM_POSITION_ATTEMPTS {
         let x = position.x +
-            (next_unit(random) * max_distance + RANDOM_MIN_DISTANCE) *
+            (next_unit(random) * max_distance + min_distance) *
                 next_sign(random);
         let y = position.y +
-            (next_unit(random) * max_distance + RANDOM_MIN_DISTANCE) *
+            (next_unit(random) * max_distance + min_distance) *
                 next_sign(random);
         location = Vec2::new(x, y);
         if location != Vec2::ZERO &&
