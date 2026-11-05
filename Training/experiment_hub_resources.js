@@ -135,8 +135,22 @@ function plan(machines,reservations,jobs) {
     });
     if(new Set(work.map(j=>j.id)).size!==work.length)
         throw Error('Workload IDs must be unique.');
-    work.sort((a,b)=>b.resources.gpu_count-a.resources.gpu_count||
+    // A flexible workload must not consume the only host capable of a
+    // pinned or large-VRAM workload. Rank scarce initial placement options
+    // first; unlike repeated global searches this is bounded to one preview
+    // pass per workload and does not affect the training hot path.
+    for(const item of work) {
+        item.options=placements(machines,reservations,item.resources)
+            .filter(p=>p.capacity_fits&&
+                (!item.machine_id||p.machine_id===item.machine_id)).length;
+    }
+    work.sort((a,b)=>
+        Number(a.options===0)-Number(b.options===0)||
+        a.options-b.options||
+        b.resources.gpu_count-a.resources.gpu_count||
         Number(b.resources.gpu_mode==='exclusive')-Number(a.resources.gpu_mode==='exclusive')||
+        b.resources.min_gpu_vram_mb-a.resources.min_gpu_vram_mb||
+        b.resources.gpu_vram_mb-a.resources.gpu_vram_mb||
         b.resources.cpus-a.resources.cpus||
         b.resources.ram_mb-a.resources.ram_mb||a.index-b.index);
     const claimed=reservations.slice(),results=[];
