@@ -24,6 +24,46 @@ function verifiedFile(file,expectedSha256,fsApi=fs) {
     if(digest!==expectedSha256)
         throw Error('Pinned Ants config/report content changed; revalidate qualification and adapter.');
 }
+function resolveOwnedCheckpoint(artifactRoot,rootId,fsApi=fs) {
+    if(!UUID.test(String(rootId||'')))
+        throw Error('Resume requires a valid Hub artifact lineage root.');
+    const checkpoints=path.join(artifactRoot,rootId,'checkpoints');
+    const pointer=path.join(checkpoints,'latest.json');
+    let name;
+    try {
+        const raw=fsApi.readFileSync(pointer,'utf8');
+        if(typeof raw!=='string'||raw.length>4096)
+            throw Error('Unexpected durable checkpoint pointer size.');
+        const value=JSON.parse(raw);
+        name=value?.checkpoint;
+    }catch(error) {
+        throw Error('Cannot read durable Ants continuation pointer: '+
+            String(error.message||error).slice(0,120));
+    }
+    if(typeof name!=='string'||
+        !/^checkpoint_[a-zA-Z0-9_-]{1,120}$/.test(name))
+        throw Error('Invalid Ants durable checkpoint pointer target.');
+    const candidate=path.join(checkpoints,name);
+    let directory;
+    try {
+        const root=fsApi.realpathSync(checkpoints);
+        directory=fsApi.realpathSync(candidate);
+        if(!directory.startsWith(root+path.sep)||
+            !fsApi.statSync(directory).isDirectory())
+            throw Error('Checkpoint directory is outside the approved artifact root.');
+        const metadata=JSON.parse(fsApi.readFileSync(
+            path.join(directory,'metadata.json'),'utf8'));
+        if(!metadata||typeof metadata!=='object'||
+            String(metadata.reason||'').toUpperCase()==='REGRESSION')
+            throw Error('Forensic REGRESSION checkpoints cannot continue production.');
+    }catch(error) {
+        throw Error('Invalid or unavailable local Ants continuation checkpoint: '+
+            String(error.message||error).slice(0,120));
+    }
+    // Ants itself validates full checkpoint manifests, writer provenance,
+    // compatible runtime device identity, curriculum and optimizer state.
+    return directory;
+}
 function createAntsProductionAdapter(options={}) {
     const {python,projectRoot,configPath,qualificationReport,
         artifactRoot,configSha256,qualificationSha256}=options;
@@ -55,22 +95,31 @@ function createAntsProductionAdapter(options={}) {
         args(frozen,context) {
             if(!frozen||typeof frozen!=='object'||Array.isArray(frozen)||
                 Object.keys(frozen).some(key=>key!=='episodes'&&key!=='mode')||
-                (frozen.mode!==undefined&&frozen.mode!=='new')||
+                !['new','resume',undefined].includes(frozen.mode)||
                 !Number.isSafeInteger(frozen.episodes)||
                 frozen.episodes<1||frozen.episodes>MAX_EPISODES||
                 !context||!UUID.test(String(context.job_id||''))||
                 context.project_id!=='ants')
-                throw Error('Expected a fresh, bounded production Ants job with an episode count.');
+                throw Error('Expected a bounded production Ants job with an episode count.');
             check();
-            // Prevent concurrent or resumed jobs from silently reusing an
-            // existing experiment's checkpoint, metrics or rollback history.
-            const root=path.join(artifactRoot,context.job_id);
-            return ['-m','antsim','train',
+            const resume=frozen.mode==='resume';
+            const rootId=context.artifact_lineage_root_id||context.job_id;
+            const prior=context.continuation_of_job_id||null;
+            if(!UUID.test(String(rootId))||
+                (resume&&(!UUID.test(String(prior))||
+                    prior===context.job_id||rootId===context.job_id))||
+                (!resume&&(prior!==null||rootId!==context.job_id)))
+                throw Error('Ants new/resume job ancestry is inconsistent.');
+            const root=path.join(artifactRoot,rootId);
+            const args=['-m','antsim','train',
                 '--config',configPath,
                 '--artifact-root',root,
                 '--qualification-report',qualificationReport,
                 '--checkpoint-on-exit',
                 '--episodes',String(frozen.episodes)];
+            if(resume)args.push('--resume-from-checkpoint',
+                resolveOwnedCheckpoint(artifactRoot,rootId,fsApi));
+            return args;
         },
     });
 }
