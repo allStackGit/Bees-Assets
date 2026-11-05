@@ -3003,6 +3003,31 @@ impl CombatWorld {
         self.step_fixed_inner(dt, collision_matrix, Some(random))
     }
 
+    /// One source of truth for policy decisions and the shared fixed-step
+    /// combat transaction. Rendered gameplay and headless Level rules
+    /// both call this, so late post-terminal inference cannot reactivate
+    /// movement, turret fire or specials. The actual decisions processed
+    /// are counted for the multi-world telemetry sink.
+    pub fn step_policy_combat_with_random(
+        &mut self,
+        decisions: &[Decision],
+        dt: f32,
+        collision_matrix: &CollisionMatrix,
+        random: &mut RandomStream,
+    ) -> Result<StepCounts, CombatWorldError> {
+        if !self.frozen_after_elimination {
+            self.apply_policy_decisions(decisions)?;
+        }
+        let mut counts =
+            self.step_fixed_with_random(dt, collision_matrix, random)?;
+        counts.decisions = if self.frozen_after_elimination {
+            0
+        } else {
+            decisions.len() as u64
+        };
+        Ok(counts)
+    }
+
     fn step_fixed_inner(
         &mut self,
         dt: f32,
@@ -3181,14 +3206,9 @@ impl GameRules<CombatWorld> for CombatWorldRules {
         decisions: &[Decision],
         dt_seconds: f32,
     ) -> Result<StepCounts, Self::Error> {
-        // A completed episode is immutable until an explicit world reset.
-        // Do not accept post-terminal movement, turret shots or specials
-        // when a late inference batch arrives before the controller resets.
-        if !world.state.frozen_after_elimination {
-            world.state.apply_policy_decisions(decisions)?;
-        }
-        world.state.step_fixed_with_random(
-            dt_seconds, &self.collision_matrix, &mut world.random,
+        world.state.step_policy_combat_with_random(
+            decisions, dt_seconds, &self.collision_matrix,
+            &mut world.random,
         )
     }
 }

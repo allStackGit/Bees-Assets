@@ -97,14 +97,11 @@ where
                 NativeLevelEventError::FailedLevel,
             ));
         }
-        // CombatWorldRules and this Level use the SAME authoritative
-        // functions, RNG and source collision matrix, not two differing
-        // native training/gameplay behaviors.
-        if !state.combat.frozen_after_elimination {
-            state.combat.apply_policy_decisions(decisions)?;
-        }
-        let mut counts = state.combat.step_fixed_with_random(
-            dt_seconds, &self.collision_matrix, &mut world.random,
+        // No independent policy/physics rules in gameplay or training:
+        // both adapters invoke CombatWorld's one canonical transaction.
+        let counts = state.combat.step_policy_combat_with_random(
+            decisions, dt_seconds, &self.collision_matrix,
+            &mut world.random,
         )?;
         let metadata = &state.metadata;
         let allocate = &mut state.allocate_minion;
@@ -114,7 +111,6 @@ where
             |id| metadata.damage_metadata(id),
             |id| metadata.current_mined_tsv(id),
         )?;
-        counts.decisions = decisions.len() as u64;
         Ok(counts)
     }
 }
