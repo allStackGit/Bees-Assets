@@ -10,7 +10,7 @@
 //! gameplay mechanics and reward effects are implemented. Caller-owned
 //! targeting/shooting and command reward accumulation are not fabricated.
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 use bees_hivemind::dispatch::{
     resolve_hivemind_command, LocalCommandKind, ResolvedHiveMindCommand,
@@ -315,10 +315,9 @@ pub struct CommandMeasurements {
 
 #[derive(Default)]
 pub struct NativeSquadCommandDirector {
-    active: HashMap<SquadLifetime, ActiveNativeCommand>,
-    /// Reused per-update ordering scratch: deterministic without allocating
-    /// a new list for every fixed step in every simulated arena.
-    ordered_owners: Vec<SquadLifetime>,
+    /// Sorted by (level, squad, lifecycle), matching the deterministic
+    /// native ordering while avoiding a per-frame key sort.
+    active: BTreeMap<SquadLifetime, ActiveNativeCommand>,
     measurements: CommandMeasurements,
 }
 
@@ -700,16 +699,10 @@ impl NativeSquadCommandDirector {
             return Ok(Vec::new());
         }
         let mut completed = Vec::new();
-        // Stable order matters when several squads issue movement on the
-        // same fixed frame. Reuse scratch capacity across every step.
-        self.ordered_owners.clear();
-        self.ordered_owners.extend(self.active.keys().copied());
-        self.ordered_owners.sort_unstable_by_key(|owner| (
-            owner.level_id, owner.squad_id, owner.lifecycle_id,
-        ));
-        self.measurements.commands_examined += self.ordered_owners.len() as u64;
-        for &owner in &self.ordered_owners {
-            let command = self.active.get_mut(&owner).expect("active owner");
+        // BTreeMap stores exact lifecycle order. Iteration is linear,
+        // stable, and allocation-free on each fixed step.
+        self.measurements.commands_examined += self.active.len() as u64;
+        for (&owner, command) in self.active.iter_mut() {
             let mut finished_by_poll = false;
             // Unity registers the recurring command timer before its
             // timeout: on a shared due frame, command completion wins.
