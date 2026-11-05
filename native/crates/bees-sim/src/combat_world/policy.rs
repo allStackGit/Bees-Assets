@@ -14,6 +14,7 @@ use super::weapons::PolicyTurretMount;
 use super::striker::PolicyStrikerRuntime;
 use super::barge::PolicyBargeCharge;
 use super::scout::PolicyScoutRuntime;
+use super::healing::PolicyHealingRuntime;
 
 /// One source of truth for v26's readiness, resource, cooldown and
 /// phase observation channels. A missing special yields all zeros.
@@ -56,6 +57,9 @@ pub(super) struct PolicyShipRuntime {
     pub(super) cease_fire: bool,
     /// This is a single native owner, not overlapping optional subclasses.
     pub(super) special: Option<PolicyShipSpecial>,
+    /// Healing is its own action branch, and can coexist with a
+    /// registered ship special without conflicting state ownership.
+    pub(super) healing: Option<PolicyHealingRuntime>,
 }
 
 impl CombatWorld {
@@ -103,6 +107,7 @@ impl CombatWorld {
             last_hull_rotation: rotation,
             cease_fire: false,
             special: None,
+            healing: None,
         });
         Ok(())
     }
@@ -197,7 +202,7 @@ impl CombatWorld {
                     Some(PolicyShipSpecial::Scout(scout)) =>
                         self.policy_scout_ready(ship_id, scout),
                 },
-                false, false, false,
+                false, self.policy_healing_ready(ship_id), false,
             ],
         })
     }
@@ -249,6 +254,7 @@ impl CombatWorld {
         // pending specials. World execution happens after fixed-step event
         // clearing, so UI, telemetry and RL receive the drop event.
         self.policy_pending_ship_specials.clear();
+        self.policy_pending_healing.clear();
         for decision in decisions {
             let id = decision.agent_id as i64;
             let (decoded, disabled) = {
@@ -272,10 +278,16 @@ impl CombatWorld {
             } else {
                 motion.accept_policy_movement(decoded.movement_world);
             }
-            if decision.action.discrete[5] == 1 {
-                // One source-defined special branch, with the ship's actual
-                // subclass determining its gameplay behavior during the tick.
-                self.policy_pending_ship_specials.push(id);
+            match decision.action.discrete[5] {
+                1 => {
+                    // Exactly one ship-class special per controller.
+                    self.policy_pending_ship_specials.push(id);
+                }
+                3 => {
+                    // Beehive healing is a separate capability request.
+                    self.policy_pending_healing.push(id);
+                }
+                _ => {}
             }
         }
         Ok(())

@@ -293,6 +293,18 @@ impl EpisodeShaping {
                         }
                     }
                 }
+                CombatEvent::CapabilityHealed {
+                    side, tsv_gain, ..
+                } => {
+                    if let Some(reward) = self
+                        .record_successful_capability_outcome(*side, *tsv_gain)
+                    {
+                        if reward.amount != 0.0 {
+                            emissions.push(reward);
+                            self.damage_measurements.emissions += 1;
+                        }
+                    }
+                }
                 CombatEvent::ProjectileRootCompleted(root) => {
                     self.damage_measurements.projectile_roots_completed += 1;
                     if !root.enemy_contact {

@@ -76,6 +76,7 @@ mod fire_barge;
 mod yellow_jacket;
 mod barge;
 mod scout;
+mod healing;
 mod shot_outcomes;
 pub use self::shot_outcomes::{ProjectileRootOutcome, ProjectileOutcomeMeasurements};
 use self::shot_outcomes::{ProjectileOutcomeTracker, NEAR_MISS_DISTANCE};
@@ -125,6 +126,7 @@ pub enum CombatWorldError {
     InvalidPolicyYellowJacket,
     InvalidPolicyBarge,
     InvalidPolicyScout,
+    InvalidPolicyHealing,
     UnsupportedPolicyTurret { weapon_type: u8, projectile_type: u8 },
     DuplicatePolicyTurret { ship_id: i64, slot: usize },
     MapObject(MapObjectError),
@@ -254,6 +256,12 @@ pub enum CombatEvent {
     /// the parent's persistent FleetShip identity (not its runtime ID).
     ScoutBeaconDropped {
         scout_id: i64, beacon_id: i64, parent_fleet_id: i64,
+    },
+    /// A real health restoration at an authored Beehive.HealCollider.
+    /// This is NOT a damage hit and never changes kill attribution.
+    CapabilityHealed {
+        ship_id: i64, beehive_id: i64, side: i32,
+        healed_health: i32, tsv_gain: i32,
     },
     /// Emitted for projectile impacts against static geometry; the
     /// dedicated RL coordinator determines the corresponding reward.
@@ -494,6 +502,9 @@ pub struct PolicySpecialMeasurements {
     pub barge_charges_stopped: u64,
     pub scout_beacons_spawned: u64,
     pub scout_spawns_blocked_by_cap: u64,
+    pub healing_requests: u64,
+    pub healing_touch_checks: u64,
+    pub healing_actions_completed: u64,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -618,6 +629,9 @@ pub struct CombatWorld {
     /// Validated ship specials use one queue across different authored ships.
     /// Commit after event clearing and before physics, in stable ship-ID order.
     policy_pending_ship_specials: Vec<i64>,
+    /// v26 SpecialAction.Healing (branch choice 3) is distinct from
+    /// ship-class specials (choice 1); both remain in the one world.
+    policy_pending_healing: Vec<i64>,
     policy_special_measurements: PolicySpecialMeasurements,
     /// One hit per victim for each active charge; cleared when the
     /// owning Barge starts another charge or is removed from the world.
@@ -706,6 +720,7 @@ impl CombatWorld {
             policy_decision_seen: HashSet::new(),
             policy_pending_shots: Vec::new(),
             policy_pending_ship_specials: Vec::new(),
+            policy_pending_healing: Vec::new(),
             policy_special_measurements: PolicySpecialMeasurements::default(),
             barge_charge_hits: HashSet::new(),
             barge_contact_candidates: Vec::new(),
@@ -3050,7 +3065,9 @@ impl CombatWorld {
                 ..StepCounts::default()
             });
         }
+        self.advance_policy_healing_cooldowns(dt);
         self.apply_pending_policy_ship_specials(collision_matrix)?;
+        self.apply_pending_policy_healing()?;
         self.advance_policy_scout_cooldowns(dt);
         self.advance_policy_barge_phases(dt)?;
         self.advance_asteroid_deaths(dt);
