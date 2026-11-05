@@ -1521,6 +1521,14 @@ async function transitionStage(item, status) {
         blocked(item, 'Another operator changed environment arguments during curriculum transition.');
         return;
     }
+    if (item.benchmark_target_met && d.training_enabled) {
+        // Recovery may observe an external restart into the next stage
+        // after a verified benchmark target was met but before completion
+        // was recorded. Do not silently accept that restart as a stage
+        // transition or take ownership of the external process.
+        blocked(item, 'Benchmark completion target was met, but training restarted before completion. Queue disarmed; inspect and safely stop the active run before recovery.');
+        return;
+    }
     if (!state.armed && !state.stop_requested) return; // error pause: do not restart
     if (state.stop_requested || !state.armed) {
         item.end_reason = 'manual';
