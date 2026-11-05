@@ -5,6 +5,8 @@
 //! Dynamic moving-asteroid occupancy replaces cells in a COPY of the static
 //! clearance map before recalculating, exactly as Unity does. Path search may
 //! read an immutable snapshot without racing a concurrent update.
+use std::collections::{HashMap, VecDeque};
+
 use crate::geometry::Vec2;
 use crate::navigation::{
     NavigationError, NavigationGrid, NavigationRasterCounts,
@@ -20,6 +22,10 @@ pub struct NavigationClearance {
     signed_static: Vec<i32>,
     dynamic: Vec<i32>,
     moving_blocked: Vec<bool>,
+    /// Unity's static-region cache is keyed by effective ship clearance.
+    /// Dynamic asteroids do not invalidate these permanent connectivity
+    /// components; static obstacle updates do.
+    static_components_by_clearance: HashMap<i32, Vec<i32>>,
 }
 
 impl NavigationClearance {
@@ -34,6 +40,7 @@ impl NavigationClearance {
             signed_static: vec![0; length],
             dynamic: vec![0; length],
             moving_blocked: vec![false; length],
+            static_components_by_clearance: HashMap::new(),
         };
         layers.set_static_blocked(static_blocked)?;
         Ok(layers)
@@ -93,6 +100,85 @@ impl NavigationClearance {
         None
     }
 
+    /// Unity Pathfinder.Connectivity.AreStaticallyConnected: reject only
+    /// when two otherwise statically walkable locations lie in different
+    /// permanently reachable regions. Starts inside authored geometry must
+    /// be permitted here so the separate signed-clearance egress can work.
+    /// Callers apply the Level's ForceBounds before converting coordinates.
+    pub fn are_statically_connected(
+        &mut self,
+        start: Vec2,
+        destination: Vec2,
+        ship_clearance: i32,
+    ) -> bool {
+        if !start.is_finite() || !destination.is_finite() {
+            return false;
+        }
+        let clearance = ship_clearance.max(2);
+        let (sx, sy) = self.grid.to_cell(start);
+        let (dx, dy) = self.grid.to_cell(destination);
+        let from = sy * self.grid.width + sx;
+        let to = dy * self.grid.width + dx;
+        if self.base[from] < clearance || self.base[to] < clearance {
+            return true;
+        }
+        if !self.static_components_by_clearance.contains_key(&clearance) {
+            let components = self.build_static_components(clearance);
+            self.static_components_by_clearance.insert(clearance, components);
+        }
+        let components = &self.static_components_by_clearance[&clearance];
+        components[from] != 0 && components[from] == components[to]
+    }
+
+    /// Unity's eight-neighbor order and no-diagonal-corner-cutting rule.
+    /// Components are computed only when queried for a given ship size.
+    fn build_static_components(&self, clearance: i32) -> Vec<i32> {
+        const NEIGHBORS: [(i32, i32); 8] = [
+            (-1, -1), (-1, 0), (-1, 1), (0, -1),
+            (0, 1), (1, -1), (1, 0), (1, 1),
+        ];
+        let mut components = vec![0i32; self.base.len()];
+        let mut queue = VecDeque::new();
+        let mut next_component = 0i32;
+        let width = self.grid.width;
+        let height = self.grid.height;
+
+        for origin in 0..self.base.len() {
+            if components[origin] != 0 || self.base[origin] < clearance {
+                continue;
+            }
+            next_component += 1;
+            components[origin] = next_component;
+            queue.push_back(origin);
+            while let Some(current) = queue.pop_front() {
+                let x = current % width;
+                let y = current / width;
+                for (dx, dy) in NEIGHBORS {
+                    let nx = x as i64 + i64::from(dx);
+                    let ny = y as i64 + i64::from(dy);
+                    if nx < 0 || ny < 0 ||
+                        nx >= width as i64 || ny >= height as i64 {
+                        continue;
+                    }
+                    let nx = nx as usize;
+                    let ny = ny as usize;
+                    let neighbor = ny * width + nx;
+                    if components[neighbor] != 0 || self.base[neighbor] < clearance {
+                        continue;
+                    }
+                    if dx != 0 && dy != 0 &&
+                        (self.base[ny * width + x] < clearance ||
+                         self.base[y * width + nx] < clearance) {
+                        continue;
+                    }
+                    components[neighbor] = next_component;
+                    queue.push_back(neighbor);
+                }
+            }
+        }
+        components
+    }
+
     /// Called when the map's *static* obstacles change; it replaces both
     /// base and signed-static layers. Static changes invalidate the old
     /// dynamic map, so the owning Level should refresh dynamic occupancy.
@@ -135,6 +221,7 @@ impl NavigationClearance {
     }
 
     fn rebuild_static_fields(&mut self) {
+        self.static_components_by_clearance.clear();
         calculate_clearance(self.grid, &mut self.base);
         build_signed_static(self.grid, &self.base, &mut self.signed_static);
         self.dynamic.copy_from_slice(&self.base);
