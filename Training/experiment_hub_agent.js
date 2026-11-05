@@ -66,7 +66,58 @@ function observedOffers(offers,observation) {
     // CPU/RAM capacity. Physical availability and GPU identity are unproven.
     if (claimedCpus>observation.cpus || claimedRam>observation.ram_mb)
         return [];
-    return [...ids];
+    const deviceByPci=new Map((observation.gpu_devices||[])
+        .map(g=>[g.pci_address,g]));
+    const gpuClaims=new Map(),approved=[];
+    for(const offer of offers) {
+        const r=offer.resources;
+        if(r.gpu_count===0&&!r.gpus?.length) {
+            approved.push(offer.id);
+            continue;
+        }
+        if(observation.gpu_inventory_source!=='amdgpu-sysfs-v1'||
+            !Number.isSafeInteger(r.gpu_count)||r.gpu_count<1||
+            !Array.isArray(r.gpus)||r.gpus.length!==r.gpu_count||
+            !Array.isArray(offer.gpu_bindings)||
+            offer.gpu_bindings.length!==r.gpu_count)
+            continue;
+        const proposed=[];
+        let safe=true;
+        for(const id of r.gpus) {
+            const binding=offer.gpu_bindings.find(g=>g?.id===id);
+            const physical=deviceByPci.get(binding?.pci_address);
+            if(!binding||!physical||
+                !Number.isSafeInteger(binding.vram_mb)||
+                binding.vram_mb<1||binding.vram_mb>physical.vram_mb||
+                binding.vram_mb<(r.min_gpu_vram_mb||0)||
+                proposed.some(p=>p.pci===binding.pci_address)) {
+                safe=false;break;
+            }
+            const previous=gpuClaims.get(binding.pci_address)||
+                {exclusive:false,used_vram:0,used_compute:0};
+            const perDevice=r.gpu_mode==='shared'?r.gpu_vram_mb:binding.vram_mb;
+            const compute=r.gpu_mode==='shared'?r.gpu_compute_pct:100;
+            if(previous.exclusive||
+                !Number.isSafeInteger(perDevice)||perDevice<1||
+                !Number.isSafeInteger(compute)||compute<1||
+                previous.used_vram+perDevice>binding.vram_mb||
+                previous.used_compute+compute>100||
+                (r.gpu_mode==='exclusive'&&previous.used_compute!==0)) {
+                safe=false;break;
+            }
+            proposed.push({pci:binding.pci_address,
+                exclusive:r.gpu_mode!=='shared',
+                used_vram:previous.used_vram+perDevice,
+                used_compute:previous.used_compute+compute});
+        }
+        if(!safe)continue;
+        for(const next of proposed)gpuClaims.set(next.pci,{
+            exclusive:next.exclusive,
+            used_vram:next.used_vram,used_compute:next.used_compute,
+        });
+        approved.push(offer.id);
+    }
+    return approved;
 }
 
 function sendHeartbeat(url,machineId,token,observedLeaseIds=[],
