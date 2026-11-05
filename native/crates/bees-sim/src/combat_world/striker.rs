@@ -64,6 +64,21 @@ impl CombatWorld {
             .striker.as_ref().map(|striker| striker.ready)
     }
 
+    /// Commit only the validated Striker special requests, during the
+    /// actual game tick. Ordering by stable entity ID makes one pending
+    /// action batch independent of the inference host's input order.
+    pub(super) fn apply_pending_policy_striker_specials(
+        &mut self,
+    ) -> Result<(), CombatWorldError> {
+        self.policy_pending_striker_specials.sort_unstable();
+        for index in 0..self.policy_pending_striker_specials.len() {
+            let ship_id = self.policy_pending_striker_specials[index];
+            self.try_drop_policy_striker_bomb(ship_id)?;
+        }
+        self.policy_pending_striker_specials.clear();
+        Ok(())
+    }
+
     /// Striker.TryToDropBombs is a contact-triggered ship special. Find an
     /// enemy physically touching the *real* collider, never one merely
     /// within an invented radius. Unity caches its most recent TouchingShip;
@@ -285,6 +300,8 @@ mod tests {
         action.discrete[5] = 1;
         state.apply_policy_decisions(&[Decision { agent_id: 1, action }])
             .unwrap();
+        state.step_fixed(0.02, &CollisionMatrix::from_rows([0; 32]))
+            .unwrap();
         assert_eq!(state.policy_striker_bomb_ready(1), Some(false));
         assert_eq!(state.projectile_storage_metrics().active_projectiles, 1);
 
@@ -309,6 +326,8 @@ mod tests {
         // fuse without replacing the first, which is still in flight.
         state.physics.ships_mut()[0].motion.position = target_pos;
         state.apply_policy_decisions(&[Decision { agent_id: 1, action }])
+            .unwrap();
+        state.step_fixed(0.02, &CollisionMatrix::from_rows([0; 32]))
             .unwrap();
         assert_eq!(state.projectile_storage_metrics().active_projectiles, 2);
         assert_eq!(state.policy_striker_bomb_ready(1), Some(false));
