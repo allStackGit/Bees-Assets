@@ -30,8 +30,8 @@ use bees_sim::geometry::Vec2;
 use bees_sim::navigation_runtime::NavigationRuntime;
 use bees_sim::simulation::RandomStream;
 use bees_sim::squad_movement::{
-    issue_squad_move, issue_squad_tracked_move, stop_squad_game_movement,
-    SquadFormationMember,
+    issue_squad_move, issue_squad_tracked_move, set_squad_game_speed,
+    stop_squad_game_movement, SquadFormationMember,
     SquadFormationOptions, SquadOrderError,
 };
 use bees_sim::timer::ScaledTimer;
@@ -39,6 +39,8 @@ use bees_sim::timer::ScaledTimer;
 const COMMAND_FREQUENCY_SECONDS: f32 = 3.0;
 const RANDOM_POSITION_ATTEMPTS: usize = 35;
 const RANDOM_MIN_DISTANCE: f32 = 32.0;
+const GUARD_PADDING: f32 = 4.0;
+const GUARD_SPEED_MATCH_DISTANCE_SQUARED: f32 = 1.5 * 1.5;
 
 #[derive(Clone, Copy, Debug)]
 pub struct NativeSquadOrder<'a> {
@@ -78,12 +80,32 @@ pub struct NativeFriendlySquad {
     pub side: i32,
     pub position: Vec2,
     pub is_alive: bool,
-    pub is_following_friend: bool,
+    /// Current Unity command kind (including player/scripted commands),
+    /// derived from the live Level registry, not this director alone.
+    pub active_command: Option<LocalCommandKind>,
+    /// For active Guards: the exact protected squad lifecycle.
+    pub guarded_squad: Option<SquadLifetime>,
+    /// Live Squad.GetWidth()/GetHeight(), not an inferred point radius.
+    pub width: f32,
+    pub height: f32,
+    /// Unity Squad.GetSlowestShipSpeed() from authored ship Speed values.
+    pub slowest_ship_speed: f32,
 }
 
 impl NativeFriendlySquad {
     pub fn valid(self) -> bool {
-        self.owner.valid() && self.position.is_finite()
+        self.owner.valid() && self.position.is_finite() &&
+        self.width.is_finite() && self.width >= 0.0 &&
+        self.height.is_finite() && self.height >= 0.0 &&
+        self.slowest_ship_speed.is_finite() &&
+        self.slowest_ship_speed >= 0.0 &&
+        match (self.active_command, self.guarded_squad) {
+            (Some(LocalCommandKind::Guard), Some(target)) =>
+                target.valid() && target.level_id == self.owner.level_id,
+            (Some(LocalCommandKind::Guard), None) => false,
+            (_, None) => true,
+            (_, Some(_)) => false,
+        }
     }
 }
 
@@ -106,6 +128,8 @@ pub struct HiveMindCommandSettings {
     pub ai_squad_patrol_seconds: f32,
     /// From ConfigData.Configuration.AISquadFollowingTime.
     pub ai_squad_following_seconds: f32,
+    /// From ConfigData.Configuration.AISquadGuardTime.
+    pub ai_squad_guard_seconds: f32,
 }
 
 impl HiveMindCommandSettings {
@@ -119,7 +143,9 @@ impl HiveMindCommandSettings {
         self.ai_squad_patrol_seconds.is_finite() &&
         self.ai_squad_patrol_seconds > 0.0 &&
         self.ai_squad_following_seconds.is_finite() &&
-        self.ai_squad_following_seconds > 0.0
+        self.ai_squad_following_seconds > 0.0 &&
+        self.ai_squad_guard_seconds.is_finite() &&
+        self.ai_squad_guard_seconds > 0.0
     }
 }
 
@@ -144,6 +170,12 @@ impl From<SquadOrderError> for GameCommandError {
 pub enum StrategyReceiptAction {
     Applied(Activation),
     DiscardReservations(Vec<i64>),
+    /// Unity Guard bans the strategy until the next eligibility reset when
+    /// there is no squad to protect. The host must update live banned strats.
+    BanAndDiscardReservations {
+        reservation_ids: Vec<i64>,
+        command: LocalCommandKind,
+    },
 }
 
 #[derive(Debug)]
@@ -168,6 +200,8 @@ pub enum CommandFinishCause {
     ReachedRetreatDestination,
     AlreadySafe,
     FriendlyGone,
+    GuardTargetGone,
+    GuardFinished,
     Superseded,
     SquadRetired,
 }
@@ -226,8 +260,8 @@ pub enum Activation {
     /// No side effects. The native caller MUST discard or otherwise
     /// reconcile this validated server selection's reservations.
     Unsupported(ResolvedHiveMindCommand),
-    /// Unity ClosestFriendly.Execute cannot install a command without an
-    /// eligible target. No server reservation has earned learning credit.
+    /// Unity ClosestFriendly/Guard cannot install without a valid target.
+    /// No server reservation has earned learning credit.
     Unavailable(ResolvedHiveMindCommand),
 }
 
@@ -246,6 +280,9 @@ struct FollowingFriendly {
     side: i32,
     members: Vec<SquadFormationMember>,
     formation: SquadFormationOptions,
+    /// None = ClosestFriendly; Some(slot) = Guard. Guard's slot is assigned
+    /// only once, by the number of existing guards of this specific target.
+    guard_slot: Option<usize>,
 }
 
 struct ActiveNativeCommand {
@@ -335,11 +372,19 @@ impl NativeSquadCommandDirector {
         match self.activate_hivemind(
             world, navigation, random, squad, friendlies, settings, resolved,
         ) {
-            Ok(Activation::Unavailable(unavailable)) =>
-                Ok(StrategyReceiptAction::DiscardReservations(vec![
+            Ok(Activation::Unavailable(unavailable)) => {
+                let reservation_ids = vec![
                     unavailable.command_outcome_id,
                     unavailable.shooting_outcome_id,
-                ])),
+                ];
+                if unavailable.local_command == LocalCommandKind::Guard {
+                    Ok(StrategyReceiptAction::BanAndDiscardReservations {
+                        reservation_ids, command: LocalCommandKind::Guard,
+                    })
+                } else {
+                    Ok(StrategyReceiptAction::DiscardReservations(reservation_ids))
+                }
+            },
             Ok(activation) => Ok(StrategyReceiptAction::Applied(activation)),
             Err(cause) => Err(StrategyReceiptFailure {
                 selection,
@@ -433,7 +478,8 @@ impl NativeSquadCommandDirector {
                     }
                     if candidate.owner.level_id != squad.owner.level_id ||
                         candidate.owner == squad.owner || candidate.side != side ||
-                        !candidate.is_alive || candidate.is_following_friend {
+                        !candidate.is_alive ||
+                        candidate.active_command == Some(LocalCommandKind::ClosestFriendly) {
                         continue;
                     }
                     let distance = (candidate.position - squad.squad_center)
@@ -450,9 +496,80 @@ impl NativeSquadCommandDirector {
                     target: nearest.owner, side,
                     members: squad.members.to_vec(),
                     formation: squad.formation,
+                    guard_slot: None,
                 });
                 // Unity ClosestFriendly.Execute schedules its first
                 // MoveTracked callback after the first three-second delay.
+                false
+            }
+            LocalCommandKind::Guard => {
+                // The Level supplies all current squads in its registry
+                // order. Guard excludes only squads already guarding another
+                // squad, not squads running ClosestFriendly.
+                let mut side = None;
+                for member in squad.members {
+                    world.validate_ship_game_order(member.ship_id)
+                        .map_err(|err| GameCommandError::Squad(
+                            SquadOrderError::Ship(err),
+                        ))?;
+                    let ship = world.ships().iter().find(
+                        |ship| ship.entity_id == member.ship_id,
+                    ).ok_or(GameCommandError::InvalidSquad)?;
+                    if side.is_some_and(|existing| existing != ship.side) {
+                        return Err(GameCommandError::InvalidSquad);
+                    }
+                    side = Some(ship.side);
+                }
+                let side = side.ok_or(GameCommandError::InvalidSquad)?;
+                let self_entry = lookup_friendly(friendlies, squad.owner)?
+                    .filter(|entry| entry.is_alive && entry.side == side)
+                    .ok_or(GameCommandError::InvalidFriendlies)?;
+                // Guard uses the same Squad.GetPosition as ClosestFriendly.
+                // A target tied on distance retains Level registry order.
+                let mut nearest = None;
+                let mut best_distance = f32::MAX;
+                for &candidate in friendlies {
+                    if !candidate.valid() {
+                        return Err(GameCommandError::InvalidFriendlies);
+                    }
+                    if candidate.owner.level_id != squad.owner.level_id ||
+                        candidate.owner == squad.owner || candidate.side != side ||
+                        !candidate.is_alive ||
+                        candidate.active_command == Some(LocalCommandKind::Guard) {
+                        continue;
+                    }
+                    let distance = (candidate.position - squad.squad_center)
+                        .length_squared().sqrt();
+                    if nearest.is_none() || distance < best_distance {
+                        nearest = Some(candidate);
+                        best_distance = distance;
+                    }
+                }
+                let Some(nearest) = nearest else {
+                    return Ok(Activation::Unavailable(selection));
+                };
+                if !self_entry.valid() {
+                    return Err(GameCommandError::InvalidFriendlies);
+                }
+                // Unity Guard.Execute links each existing Guard of the
+                // chosen target, then assigns OtherGuardSquads.Count % 4.
+                // Active Level registry entries already own those links:
+                // no secondary mutable registry is necessary.
+                let other_guards = friendlies.iter().filter(|candidate|
+                    candidate.owner.level_id == squad.owner.level_id &&
+                    candidate.owner != squad.owner &&
+                    candidate.side == side && candidate.is_alive &&
+                    candidate.active_command == Some(LocalCommandKind::Guard) &&
+                    candidate.guarded_squad == Some(nearest.owner)
+                ).count();
+                following = Some(FollowingFriendly {
+                    target: nearest.owner, side,
+                    members: squad.members.to_vec(),
+                    formation: squad.formation,
+                    guard_slot: Some(other_guards % 4),
+                });
+                // Guard's first movement is its immediate scaled callback,
+                // not Execute itself.
                 false
             }
             LocalCommandKind::Retreat => {
@@ -493,6 +610,7 @@ impl NativeSquadCommandDirector {
             LocalCommandKind::Patrol => Some(settings.ai_squad_patrol_seconds),
             LocalCommandKind::ClosestFriendly =>
                 Some(settings.ai_squad_following_seconds),
+            LocalCommandKind::Guard => Some(settings.ai_squad_guard_seconds),
             LocalCommandKind::Retreat if retreat_already_safe => Some(3.0),
             LocalCommandKind::Retreat => None,
             _ => Some(settings.max_command_seconds),
@@ -503,7 +621,8 @@ impl NativeSquadCommandDirector {
             command_poll: if matches!(
                 selection.local_command,
                 LocalCommandKind::MoveToRandom | LocalCommandKind::Patrol |
-                LocalCommandKind::ClosestFriendly
+                LocalCommandKind::ClosestFriendly |
+                LocalCommandKind::Guard
             ) || (selection.local_command == LocalCommandKind::Retreat &&
                 !retreat_already_safe) {
                 Some(ScaledTimer::new(
@@ -644,6 +763,22 @@ impl NativeSquadCommandDirector {
             cause: CommandFinishCause::SquadRetired,
         })
     }
+}
+
+/// A missing or duplicated current squad must not be treated as a new
+/// squad with the same numeric ID. All accesses use exact lifecycle owners.
+fn lookup_friendly(
+    friendlies: &[NativeFriendlySquad],
+    owner: SquadLifetime,
+) -> Result<Option<NativeFriendlySquad>, GameCommandError> {
+    let mut matches = friendlies.iter()
+        .filter(|candidate| candidate.owner == owner);
+    let result = matches.next().copied();
+    if matches.next().is_some() ||
+        result.is_some_and(|candidate| !candidate.valid()) {
+        return Err(GameCommandError::InvalidFriendlies);
+    }
+    Ok(result)
 }
 
 /// Utilities.RandomCoordinate(Level, Squad.GetPosition(), range, minimum):
