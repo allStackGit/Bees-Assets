@@ -312,25 +312,91 @@ impl CombatWorld {
                 let Some(mount) = turret else { continue };
                 let position = mount.position(pose, heading);
                 mount.state.apply_hull_turn(hull_delta);
-                mount.state.aim_fixed_step(position, dt, runtime.cease_fire);
+                match mount.spec.fire_pattern {
+                    NativeFirePattern::LaserBuilder => {
+                        // LaserBuilder.Aim in RL mode marks the requested
+                        // point aligned without rotating the physical mount.
+                        if mount.state.is_rl_controlled && !runtime.cease_fire {
+                            mount.state.is_aligned_with_target = true;
+                        }
+                    }
+                    NativeFirePattern::FullShipTurret => {
+                        // FullShipTurret.AimRlMainCannon never rotates the
+                        // hull or turret; it only reports alignment for
+                        // diagnostics. Firing eligibility is unconditional.
+                        if mount.state.is_rl_controlled && !runtime.cease_fire {
+                            let desired = heading_towards(
+                                mount.state.target_world - position,
+                            );
+                            mount.state.is_aligned_with_target = delta_angle(
+                                mount.state.rotation_degrees, desired,
+                            ).abs() <= 3.0;
+                        }
+                    }
+                    _ => {
+                        mount.state.aim_fixed_step(
+                            position, dt, runtime.cease_fire,
+                        );
+                    }
+                }
+                let mut launch_now = false;
+                if let Some(elapsed) = mount.charge_elapsed_seconds {
+                    let next = elapsed + dt;
+                    if mount.spec.fire_pattern.fire_event_seconds()
+                        .is_some_and(|event| next + 0.000001 >= event) {
+                        // LaserBuilderControl.Fire -> ActuallyShoot:
+                        // the previously queued request survives later
+                        // policy fire=false, but cannot fire if ceased.
+                        mount.charge_elapsed_seconds = None;
+                        launch_now = !runtime.cease_fire
+                            && mount.state.is_rl_controlled;
+                    } else {
+                        mount.charge_elapsed_seconds = Some(next);
+                    }
+                }
                 if let Some(due) = mount.timer.begin_update(dt) {
-                    let may_fire = mount.state.is_aligned_with_target;
+                    let may_fire = match mount.spec.fire_pattern {
+                        NativeFirePattern::FullShipTurret => true,
+                        _ => mount.state.is_aligned_with_target,
+                    };
                     if mount.state.targeting_timer_pass(
                         may_fire, runtime.cease_fire,
                     ) {
-                        self.policy_pending_shots.push(PendingPolicyShot {
-                            ship_id,
-                            slot: slot as u8,
-                            shooter_side: ship.side,
-                            shooter_is_fire_barge: ship.ship_type == 10,
-                            turret_position: position,
-                            ship_position: pose,
-                            turret_rotation: mount.state.rotation_degrees,
-                            target_world: mount.state.target_world,
-                            spec: mount.spec,
-                        });
+                        if mount.spec.fire_pattern.fire_event_seconds().is_some() {
+                            // Repeated timer passes during an active
+                            // charging clip do not restart the clip.
+                            if mount.charge_elapsed_seconds.is_none() {
+                                mount.charge_elapsed_seconds = Some(0.0);
+                            }
+                        } else {
+                            launch_now = true;
+                        }
                     }
                     mount.timer.finish_update(due);
+                }
+                if launch_now {
+                    let target_world =
+                        if matches!(mount.spec.fire_pattern,
+                            NativeFirePattern::FullShipTurret) {
+                            // FullShipTurret.GetRlForwardFirePoint samples
+                            // its physical rotation at the Fire event,
+                            // not the point requested when charging began.
+                            let rad = mount.state.rotation_degrees.to_radians();
+                            position + Vec2::new(-rad.sin(), rad.cos())
+                        } else {
+                            mount.state.target_world
+                        };
+                    self.policy_pending_shots.push(PendingPolicyShot {
+                        ship_id,
+                        slot: slot as u8,
+                        shooter_side: ship.side,
+                        shooter_is_fire_barge: ship.ship_type == 10,
+                        turret_position: position,
+                        ship_position: pose,
+                        turret_rotation: mount.state.rotation_degrees,
+                        target_world,
+                        spec: mount.spec,
+                    });
                 }
             }
         }
@@ -340,8 +406,8 @@ impl CombatWorld {
         // barrel if the shared ID space is exhausted.
         let shot_count: usize = self.policy_pending_shots.iter()
             .map(|shot| match shot.spec.fire_pattern {
-                NativeFirePattern::Single => 1,
                 NativeFirePattern::DualCannon { .. } => 2,
+                _ => 1,
             }).sum();
         let count_i64 = i64::try_from(shot_count)
             .map_err(|_| CombatWorldError::EntityIdExhausted)?;
@@ -363,7 +429,9 @@ impl CombatWorld {
             // for BOTH muzzles; ordinary Turret uses GetPosition().
             let (positions, barrels, origin, power) =
                 match shot.spec.fire_pattern {
-                    NativeFirePattern::Single => (
+                    NativeFirePattern::Single |
+                    NativeFirePattern::LaserBuilder |
+                    NativeFirePattern::FullShipTurret => (
                         [shot.turret_position, Vec2::ZERO],
                         1usize,
                         shot.turret_position,
