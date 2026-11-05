@@ -49,8 +49,25 @@ function renderQualificationPage() {
             '<strong>ISOLATED WINDOWS QUALIFICATION</strong> — '+
             'Only the fixed 30-second inert Windows helper is executable. '+
             'No Bees or Ants workloads, production experiments, or training controls are connected. '+
-            'This session uses a temporary Hub registry and local agent.</div>')
-        +'\n</body></html>\n';
+            'This session uses a temporary Hub registry and local agent.</div>'+
+            '<section id="hub-qual-panel"><h2>Isolated worker and resource qualification</h2>'+
+            '<p>Pause worker heartbeats to simulate a disconnected agent without terminating'+
+            ' its already-owned native processes. The scheduler continues safety checks.'+
+            ' Pausing longer than the heartbeat lease (45 seconds) should disarm automation.'+
+            ' Resume only after verifying held capacity and job states.</p>'+
+            '<div class="hub-controls"><button type="button" id="hub-qual-pause">'+
+            'Pause agent heartbeats</button><button type="button" id="hub-qual-resume">'+
+            'Resume agent heartbeats</button></div>'+
+            '<p class="hub-notice" role="status" id="hub-qual-status">'+
+            'Loading isolated agent status...</p>'+
+            '<p class="hub-notice" role="status" id="hub-qual-resources">'+
+            'Loading resource claims...</p>'+
+            '<div class="tablewrap hub-table"><table>'+
+            '<thead><tr><th>Job</th><th>State</th><th>CPU time</th><th>Processes</th>'+
+            '<th>Observed RAM</th><th>Claim</th></tr></thead>'+
+            '<tbody id="hub-qual-job-rows"></tbody></table></div></section>')
+        +'\n<script src="/experiment-hub-qualification-ui.js"></script>\n'+
+        '</body></html>\n';
 }
 async function readJson(req) {
     if(!String(req.headers['content-type']||'').startsWith('application/json'))
@@ -75,8 +92,9 @@ async function main(argv=process.argv.slice(2),env=process.env) {
         throw Error('Set the locally built absolute Windows helper path and SHA-256 pin first.');
     const page=renderQualificationPage();
     const root=fs.mkdtempSync(path.join(os.tmpdir(),'hub-dashboard-qualification-'));
-    let admin=null,worker=null,timer=null,closing=false,active=false;
-    let receipts=[],reports=[],lastError=null,token;
+    let admin=null,worker=null,heartbeatTimer=null,schedulerTimer=null,
+        closing=false,active=false,heartbeatPaused=false;
+    let receipts=[],reports=[],lastError=null,lastHeartbeatAt=null,token;
     const nativeRoot=path.join(root,'native');
     try {
         const supervisor=new WindowsSupervisor({
@@ -112,7 +130,7 @@ async function main(argv=process.argv.slice(2),env=process.env) {
         });
         const workerUrl=endpoint('http://'+HOST+':'+worker.address().port);
         const poll=async()=>{
-            if(active||closing)return;
+            if(active||closing||heartbeatPaused)return;
             active=true;
             try {
                 const reply=await sendHeartbeat(workerUrl,'smoke',token,
@@ -123,12 +141,7 @@ async function main(argv=process.argv.slice(2),env=process.env) {
                     throw Error('Agent received multiple native execution orders.');
                 if(reply.execution_orders?.length)
                     reports=[await executor.handle(reply.execution_orders[0])];
-                if(hub.automation.enabled) {
-                    const status=hub.tickAutomation();
-                    if(!status.enabled)
-                        console.error('[qualification automation] Disarmed: '+
-                            status.last_error);
-                }
+                lastHeartbeatAt=new Date().toISOString();
                 if(lastError)console.log('[qualification agent] reconnected');
                 lastError=null;
             }catch(error) {
@@ -139,6 +152,51 @@ async function main(argv=process.argv.slice(2),env=process.env) {
             }finally{active=false;}
         };
 
+        const tickScheduler=()=>{
+            if(closing||!hub.automation.enabled)return;
+            const status=hub.tickAutomation();
+            if(!status.enabled)
+                console.error('[qualification automation] Disarmed: '+
+                    status.last_error);
+        };
+        const qualificationStatus=()=>{
+            const snapshot=hub.snapshot();
+            const claims=snapshot.reservations.filter(l=>
+                ['active','offered','acknowledged'].includes(l.status));
+            const jobs=snapshot.jobs.filter(j=>j.project_id==='smoke');
+            return {
+                heartbeats_paused:heartbeatPaused,
+                last_heartbeat_at:lastHeartbeatAt,
+                agent_status:snapshot.machines.find(m=>m.id==='smoke')?.status||'unknown',
+                automation:snapshot.automation,
+                cpu_budget:2,ram_budget_mb:512,
+                claimed_cpus:claims.reduce((n,l)=>n+l.resources.cpus,0),
+                claimed_ram_mb:claims.reduce((n,l)=>n+l.resources.ram_mb,0),
+                active_claims:claims.length,
+                running_jobs:jobs.filter(j=>j.status==='running').length,
+                pending_jobs:jobs.filter(j=>
+                    ['waiting_adapter','start_requested','launch_requested',
+                        'stop_requested'].includes(j.status)).length,
+                terminal_unreleased:jobs.filter(j=>j.lease_id&&
+                    !j.capacity_released_at&&['stopped','finished','failed']
+                        .includes(j.status)).length,
+                unverified_jobs:jobs.filter(j=>j.status==='unverified').length,
+                active_native_owners:supervisor.snapshot().filter(r=>
+                    !['finished','stopped','failed'].includes(r.state)).length,
+                // Job Object CPU time is reported by the production Hub
+                // telemetry. Windows memory_current_mb is currently unknown.
+                jobs:jobs.map(j=>({
+                    name:j.configuration_name,
+                    status:j.status,
+                    cpu_time_ns:j.live_execution?.cpu_time_ns??null,
+                    process_tasks:j.live_execution?.process_tasks??null,
+                    memory_current_mb:j.live_execution?.memory_current_mb??null,
+                    machine_online:snapshot.machines.some(m=>
+                        m.id===j.assigned_machine_id&&m.status==='connected'),
+                    capacity_released:Boolean(j.capacity_released_at),
+                })),
+            };
+        };
         admin=http.createServer(async(req,res)=>{
             const port=admin.address().port;
             const host=req.headers.host,origin=req.headers.origin;
@@ -160,6 +218,31 @@ async function main(argv=process.argv.slice(2),env=process.env) {
                             "object-src 'none'; base-uri 'none'",
                     });
                     return res.end(page);
+                }
+                if(req.method==='GET'&&route==='/experiment-hub-qualification-ui.js') {
+                    const source=fs.readFileSync(
+                        path.join(__dirname,'experiment_hub_qualification_ui.js'));
+                    res.writeHead(200,{
+                        'Content-Type':'text/javascript; charset=utf-8',
+                        'Content-Length':source.length,'Cache-Control':'no-store',
+                        'X-Content-Type-Options':'nosniff',
+                    });
+                    return res.end(source);
+                }
+                if(req.method==='GET'&&route==='/api/hub/qualification/status')
+                    return respond(res,200,qualificationStatus());
+                if(req.method==='POST'&&route==='/api/hub/qualification/heartbeats') {
+                    const value=await readJson(req);
+                    if(typeof value.paused!=='boolean'||
+                        value.confirm_change!==true)
+                        return respond(res,400,{
+                            error:'Explicit confirmation and boolean paused state required.',
+                        });
+                    heartbeatPaused=value.paused;
+                    console.log('[qualification worker] heartbeat '+(
+                        heartbeatPaused?'paused by operator':'resumed by operator'));
+                    if(!heartbeatPaused)setImmediate(poll);
+                    return respond(res,200,qualificationStatus());
                 }
                 if(req.method==='GET'&&route==='/experiment-hub-ui.js') {
                     const source=fs.readFileSync(
@@ -213,7 +296,8 @@ async function main(argv=process.argv.slice(2),env=process.env) {
         });
         await poll();
         if(lastError)throw Error('Initial isolated agent heartbeat failed: '+lastError);
-        timer=setInterval(poll,REPORT_INTERVAL_MS);
+        heartbeatTimer=setInterval(poll,REPORT_INTERVAL_MS);
+        schedulerTimer=setInterval(tickScheduler,REPORT_INTERVAL_MS);
         const url='http://'+HOST+':'+admin.address().port+'/';
         console.log('ISOLATED Experiment Hub browser qualification: '+url);
         console.log('Project: Windows qualification (smoke); machine: smoke');
@@ -222,10 +306,13 @@ async function main(argv=process.argv.slice(2),env=process.env) {
         console.log('Create a draft, queue one CPU-only job, claim it, then Start/Stop');
         console.log('using the browser. Stop/release all claims before Ctrl+C.');
         console.log('Native execution is disarmed by default; browser arming is explicit.');
+        console.log('Qualification controls can pause/resume the local worker heartbeats.');
+        console.log('The separate scheduler continues checking safety while the worker is paused.');
         const stop=()=>{
             if(closing)return;
             closing=true;
-            clearInterval(timer);
+            clearInterval(heartbeatTimer);
+            clearInterval(schedulerTimer);
             console.log('Qualification listeners stopping. Private registry preserved: '+root);
             const snapshot=hub.snapshot();
             if(snapshot.reservations.some(r=>
@@ -239,7 +326,8 @@ async function main(argv=process.argv.slice(2),env=process.env) {
         process.once('SIGTERM',stop);
         return {url,root};
     }catch(error) {
-        if(timer)clearInterval(timer);
+        if(heartbeatTimer)clearInterval(heartbeatTimer);
+        if(schedulerTimer)clearInterval(schedulerTimer);
         if(admin?.listening)admin.close();
         if(worker?.listening)worker.close();
         console.error('Qualification failed; private state preserved: '+root);
