@@ -1325,6 +1325,7 @@ impl CombatWorld {
                             if delta.killed {
                                 self.physics.ships_mut()[target_index].active = false;
                                 self.navigation_requests.retire_ship(target_id);
+                                self.game_ship_steering.remove(&target_id);
                                 self.events.push(CombatEvent::ShipDied {
                                     victim_id: target_id,
                                     killer_id: if identity_valid { owner.shooter_id } else { 0 },
@@ -1455,6 +1456,7 @@ impl CombatWorld {
                 if delta.killed {
                     self.physics.ships_mut()[ship_index].active = false;
                     self.navigation_requests.retire_ship(target.entity_id);
+                    self.game_ship_steering.remove(&target.entity_id);
                     self.events.push(CombatEvent::ShipDied {
                         victim_id: target.entity_id,
                         killer_id: owner.shooter_id,
@@ -1754,6 +1756,7 @@ impl CombatWorld {
                 if delta.killed {
                     self.physics.ships_mut()[ship_index].active = false;
                     self.navigation_requests.retire_ship(ship_id);
+                    self.game_ship_steering.remove(&ship_id);
                     self.nearby_asteroid_ships.retain(|&(_, other_id)| other_id != ship_id);
                     self.events.push(CombatEvent::ShipDied {
                         victim_id: ship_id, killer_id: 0, command_outcome_id: 0,
@@ -2102,8 +2105,12 @@ impl CombatWorld {
         }
 
         for ship in self.physics.ships_mut() {
-            if ship.active {
-                ship.motion.fixed_step_rl(dt);
+            if !ship.active { continue; }
+            let policy_step = ship.motion.fixed_step_rl(dt);
+            if matches!(policy_step, MotionUpdate::NotPolicyControlled) {
+                if let Some(steering) = self.game_ship_steering.get_mut(&ship.id) {
+                    steering.fixed_step(&mut ship.motion, dt);
+                }
             }
         }
         self.update_rocket_timers(dt);
