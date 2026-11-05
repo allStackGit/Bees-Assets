@@ -126,10 +126,10 @@ impl CombatWorld {
                     !self.physics.obstacles()[target].active {
                     continue;
                 }
-                let kind = if obstacle.kind == ObstacleKind::MiningAsteroid {
-                    DiscoveryKind::MiningAsteroid
-                } else {
-                    DiscoveryKind::Obstacle
+                let kind = match obstacle.kind {
+                    ObstacleKind::MiningAsteroid => DiscoveryKind::MiningAsteroid,
+                    ObstacleKind::MapObject => DiscoveryKind::MapObject,
+                    _ => DiscoveryKind::Obstacle,
                 };
                 let target_id = obstacle.entity_id;
                 // Learned obstacle memory is sticky and no gameplay
@@ -139,15 +139,24 @@ impl CombatWorld {
                     continue;
                 }
                 counts.unlearned_obstacle_pairs += 1;
-                let proximity = self.physics.obstacles_mut()[target]
-                    .vision_proximity(origin, range_squared);
+                let proximity = if kind == DiscoveryKind::MapObject {
+                    self.physics.obstacles_mut()[target]
+                        .vision_proximity_primary(origin, range_squared)
+                } else {
+                    self.physics.obstacles_mut()[target]
+                        .vision_proximity(origin, range_squared)
+                };
                 if counts.record_proximity(proximity) {
                     if self.discovery.record(side, kind, target_id)
                         .expect("prevalidated side and entity ID") {
-                        if kind == DiscoveryKind::MiningAsteroid {
-                            counts.first_mining_discoveries += 1;
-                        } else {
-                            counts.first_obstacle_discoveries += 1;
+                        match kind {
+                            DiscoveryKind::MiningAsteroid => {
+                                counts.first_mining_discoveries += 1;
+                            }
+                            DiscoveryKind::MapObject => {
+                                counts.first_map_object_discoveries += 1;
+                            }
+                            _ => { counts.first_obstacle_discoveries += 1; }
                         }
                     }
                 }
