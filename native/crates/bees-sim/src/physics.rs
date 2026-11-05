@@ -312,6 +312,57 @@ impl WorldCollider {
         }
     }
 
+    /// Exact nonnegative minimum separation between current transformed
+    /// circle/box/polygon hulls, analogous to Unity Collider2D.Distance.
+    /// Concave polygon boundaries remain actual authored edge geometry.
+    /// Called only if the cheap swept near-pass calculation missed.
+    fn separation_squared(&self, other: &Self) -> f32 {
+        if self.overlaps(other) { return 0.0; }
+        match (&self.shape, &other.shape) {
+            (
+                ShipShape::Circle { radius: first, .. },
+                ShipShape::Circle { radius: second, .. },
+            ) => {
+                let center_distance = (self.circle_world - other.circle_world)
+                    .length_squared().sqrt();
+                let gap = (center_distance - first - second).max(0.0);
+                gap * gap
+            }
+            (ShipShape::Circle { radius, .. }, _) => {
+                let closest = other.closest_point(self.circle_world);
+                let distance = (self.circle_world - closest)
+                    .length_squared().sqrt();
+                let gap = (distance - radius).max(0.0);
+                gap * gap
+            }
+            (_, ShipShape::Circle { radius, .. }) => {
+                let closest = self.closest_point(other.circle_world);
+                let distance = (other.circle_world - closest)
+                    .length_squared().sqrt();
+                let gap = (distance - radius).max(0.0);
+                gap * gap
+            }
+            _ => {
+                // With nonintersecting polygon edges, their closest
+                // boundary pair contains an endpoint of one polygon.
+                // Testing both sets captures the exact edge-to-edge
+                // minimum, including concave imported shapes.
+                let mut nearest = f32::INFINITY;
+                for &point in &self.polygon_world {
+                    let other_point = other.closest_point(point);
+                    nearest = nearest.min(
+                        (point - other_point).length_squared(),
+                    );
+                }
+                for &point in &other.polygon_world {
+                    let own_point = self.closest_point(point);
+                    nearest = nearest.min((point - own_point).length_squared());
+                }
+                nearest
+            }
+        }
+    }
+
     #[inline]
     fn overlaps(&self, other: &Self) -> bool {
         if !self.bounds.zip(other.bounds)
@@ -1010,13 +1061,10 @@ impl KinematicPhysics {
         if (closest_pass - hull).length_squared() <= threshold * threshold {
             return true;
         }
-        // Approximation of Unity Collider2D.Distance at the current
-        // transformed pose; exact closest-point behavior is provided by
-        // the shared native hulls. Full polygon-pair minimum separation
-        // still requires cross-engine qualification.
-        let projectile_point = projectile.closest_point(center);
-        let enemy_point = ship.collider.closest_point(projectile_point);
-        (projectile_point - enemy_point).length_squared()
+        // Unity's second condition is Collider2D.Distance <= 2.
+        // This is the actual nonnegative minimum distance between the
+        // imported transformed shapes, rather than just a center probe.
+        projectile.separation_squared(&ship.collider)
             <= near_distance * near_distance
     }
 
