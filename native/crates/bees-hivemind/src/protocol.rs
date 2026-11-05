@@ -1,0 +1,337 @@
+//! Deployed Unity <-> BeesServer Hive Mind protocol, without network code.
+//!
+//! This crate deliberately preserves server database strategy IDs and JSON
+//! property names. The IDs below are NOT the numeric values of Unity's
+//! ConfigData.CommandTypes enum. Changing them would corrupt historical
+//! learning attribution. The game and headless simulator do not depend on
+//! WebSocket, authentication, SQL, or a server event loop.
+
+use std::collections::HashSet;
+use std::fmt;
+
+use serde::de::{self, Visitor};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+pub const STRATEGY_REQUEST_TYPE: &str = "get-strategy";
+pub const STORE_COMMANDS_TYPE: &str = "store-commands";
+pub const LOCAL_MOVE_TO_POINT_NAME: &str = "Move To Point";
+
+/// Persistent BeesServer Game.possibleStratTypes order, IDs 1-15.
+pub const COMMAND_STRATEGIES: [&str; 15] = [
+    "Aggressive", "Defensive", "Random", "Circle", "Right Swipe",
+    "Left Swipe", "Closest Friendly", "In and Out", "Patrol", "Guard",
+    "Scouting", "Mining", "Full Retreat", "Hold", "Heal",
+];
+
+/// Persistent BeesServer Game.shootingStratTypes order, IDs 1-40.
+/// Entries 17-40 are preferred target *ship types*, not additional commands.
+pub const SHOOTING_STRATEGIES: [&str; 40] = [
+    "First Seen", "Random", "Revenge", "Most Dangerous", "Most Health",
+    "Least Health", "Most Powerful", "Least Powerful", "Closest",
+    "Furthest", "Most Range", "Least Range", "Fastest", "Slowest",
+    "Most Valuable", "Least Valuable", "Type A", "Type B", "Type C",
+    "Type D", "Type E", "Type F", "Type G", "Type H", "Type I",
+    "Type J", "Type K", "Type L", "Type M", "Type N", "Type O",
+    "Type P", "Type Q", "Type R", "Type S", "Type T", "Type U",
+    "Type V", "Type W", "Type X",
+];
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct StrategyIdentity {
+    pub id: u8,
+    pub name: &'static str,
+}
+
+impl StrategyIdentity {
+    fn from_registry(
+        id: i32,
+        name: &str,
+        registry: &'static [&'static str],
+    ) -> Result<Self, HiveMindProtocolError> {
+        let index = usize::try_from(id - 1)
+            .map_err(|_| HiveMindProtocolError::UnknownStrategy)?;
+        let expected = registry.get(index).copied()
+            .ok_or(HiveMindProtocolError::UnknownStrategy)?;
+        if name != expected {
+            return Err(HiveMindProtocolError::StrategyIdentityMismatch);
+        }
+        Ok(Self { id: id as u8, name: expected })
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum HiveMindProtocolError {
+    InvalidRequest,
+    UnknownStrategy,
+    StrategyIdentityMismatch,
+    BannedStrategy,
+    RequestIdentityMismatch,
+    InvalidReservation,
+    DuplicateReservation,
+    InvalidResponse,
+}
+
+/// Matchup IDs are unsigned xxHash64 decimal identities, NOT JavaScript
+/// numbers. Read either the exact JSON integer or decimal string, then
+/// retain the decimal representation without floating-point conversion.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct MatchupIdentity(String);
+
+impl MatchupIdentity {
+    pub fn as_decimal(&self) -> &str { &self.0 }
+
+    pub fn from_decimal(s: &str) -> Result<Self, HiveMindProtocolError> {
+        let number = s.parse::<u64>()
+            .map_err(|_| HiveMindProtocolError::InvalidResponse)?;
+        Ok(Self(number.to_string()))
+    }
+}
+
+impl Serialize for MatchupIdentity {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(&self.0)
+    }
+}
+
+impl<'de> Deserialize<'de> for MatchupIdentity {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct DecimalVisitor;
+        impl<'de> Visitor<'de> for DecimalVisitor {
+            type Value = MatchupIdentity;
+            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.write_str("an unsigned 64-bit decimal ID as a string or exact JSON integer")
+            }
+            fn visit_str<E: de::Error>(self, value: &str) -> Result<Self::Value, E> {
+                MatchupIdentity::from_decimal(value).map_err(|_| E::custom("invalid matchup ID"))
+            }
+            fn visit_string<E: de::Error>(self, value: String) -> Result<Self::Value, E> {
+                self.visit_str(&value)
+            }
+            fn visit_u64<E: de::Error>(self, value: u64) -> Result<Self::Value, E> {
+                Ok(MatchupIdentity(value.to_string()))
+            }
+            fn visit_i64<E: de::Error>(self, value: i64) -> Result<Self::Value, E> {
+                u64::try_from(value).map(|number| MatchupIdentity(number.to_string()))
+                    .map_err(|_| E::custom("negative matchup ID"))
+            }
+        }
+        deserializer.deserialize_any(DecimalVisitor)
+    }
+}
+
+/// The same property names as Scripts/Server/GetStrategy.cs. The caller
+/// supplies a request hash unique on its WebSocket connection; a resend
+/// reuses the SAME hash. Multiple Levels may share one server Game.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GetStrategyRequest {
+    #[serde(rename = "Type")]
+    pub message_type: String,
+    #[serde(rename = "Hash")]
+    pub hash: i64,
+    #[serde(rename = "Matchup")]
+    pub matchup: String,
+    #[serde(rename = "ShootingMatchup")]
+    pub shooting_matchup: String,
+    #[serde(rename = "OpponentId")]
+    pub opponent_id: u64,
+    #[serde(rename = "BannedStrats")]
+    pub banned_strats: Vec<String>,
+}
+
+impl GetStrategyRequest {
+    pub fn new(
+        hash: i64,
+        matchup: String,
+        shooting_matchup: String,
+        opponent_id: u64,
+        banned_strats: impl IntoIterator<Item = String>,
+    ) -> Result<Self, HiveMindProtocolError> {
+        if hash <= 0 || matchup.is_empty() || shooting_matchup.is_empty() {
+            return Err(HiveMindProtocolError::InvalidRequest);
+        }
+        let mut bans = Vec::new();
+        let mut seen = HashSet::new();
+        for name in banned_strats {
+            if name != LOCAL_MOVE_TO_POINT_NAME &&
+                !COMMAND_STRATEGIES.contains(&name.as_str()) {
+                return Err(HiveMindProtocolError::UnknownStrategy);
+            }
+            if seen.insert(name.clone()) {
+                bans.push(name);
+            }
+        }
+        if seen.insert(LOCAL_MOVE_TO_POINT_NAME.to_owned()) {
+            bans.push(LOCAL_MOVE_TO_POINT_NAME.to_owned());
+        }
+        Ok(Self {
+            message_type: STRATEGY_REQUEST_TYPE.to_owned(),
+            hash, matchup, shooting_matchup, opponent_id,
+            banned_strats: bans,
+        })
+    }
+}
+
+/// The existing server emits MatchupID/ShootingStrategyMatchupID (capital
+/// "ID"), unlike some older Unity DTO field spellings. Support both on
+/// read; do not change the production server's response to satisfy a
+/// native-only client convenience.
+#[derive(Clone, Debug, Deserialize)]
+pub struct GetStrategyResponse {
+    #[serde(rename = "Type")]
+    pub message_type: String,
+    #[serde(rename = "Hash")]
+    pub hash: i64,
+    #[serde(rename = "Name")]
+    pub name: String,
+    #[serde(rename = "StrategyId")]
+    pub strategy_id: i32,
+    #[serde(rename = "OutcomeId")]
+    pub outcome_id: i64,
+    #[serde(rename = "MatchupString")]
+    pub matchup_string: String,
+    #[serde(rename = "MatchupID", alias = "MatchupId", default)]
+    pub matchup_id: Option<MatchupIdentity>,
+    #[serde(rename = "ShootingStrategyName")]
+    pub shooting_strategy_name: String,
+    #[serde(rename = "ShootingStrategyId")]
+    pub shooting_strategy_id: i32,
+    #[serde(rename = "ShootingStrategyOutcomeId")]
+    pub shooting_strategy_outcome_id: i64,
+    #[serde(rename = "ShootingStrategyMatchupString")]
+    pub shooting_strategy_matchup_string: String,
+    #[serde(rename = "ShootingStrategyMatchupID",
+        alias = "ShootingStrategyMatchupId", default)]
+    pub shooting_strategy_matchup_id: Option<MatchupIdentity>,
+    #[serde(rename = "ServerLatency", default)]
+    pub server_latency: Option<f64>,
+    #[serde(rename = "Status", default)]
+    pub status: Option<i32>,
+    #[serde(rename = "IsCached", default)]
+    pub is_cached: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ValidatedStrategySelection {
+    pub command: StrategyIdentity,
+    pub shooting: StrategyIdentity,
+    pub command_outcome_id: i64,
+    pub shooting_outcome_id: i64,
+}
+
+impl GetStrategyResponse {
+    /// A server-selected strategy must agree with the exact request and
+    /// the historical ID registry. Unknown, banned and mismatched choices
+    /// cannot silently become executable native commands.
+    pub fn validate_for(
+        &self, request: &GetStrategyRequest,
+    ) -> Result<ValidatedStrategySelection, HiveMindProtocolError> {
+        if self.message_type != STRATEGY_REQUEST_TYPE ||
+            request.message_type != STRATEGY_REQUEST_TYPE ||
+            self.hash != request.hash ||
+            self.matchup_string != request.matchup {
+            return Err(HiveMindProtocolError::RequestIdentityMismatch);
+        }
+        if self.outcome_id <= 0 || self.shooting_strategy_outcome_id <= 0 ||
+            self.outcome_id == self.shooting_strategy_outcome_id {
+            return Err(HiveMindProtocolError::InvalidReservation);
+        }
+        let command = StrategyIdentity::from_registry(
+            self.strategy_id, &self.name, &COMMAND_STRATEGIES)?;
+        if request.banned_strats.iter().any(|name| name == command.name) {
+            return Err(HiveMindProtocolError::BannedStrategy);
+        }
+        let shooting = StrategyIdentity::from_registry(
+            self.shooting_strategy_id,
+            &self.shooting_strategy_name, &SHOOTING_STRATEGIES,
+        )?;
+        Ok(ValidatedStrategySelection {
+            command, shooting,
+            command_outcome_id: self.outcome_id,
+            shooting_outcome_id: self.shooting_strategy_outcome_id,
+        })
+    }
+
+    pub fn reservation_ids(&self) -> Vec<i64> {
+        let mut ids = Vec::with_capacity(2);
+        for id in [self.outcome_id, self.shooting_strategy_outcome_id] {
+            if id > 0 && !ids.contains(&id) {
+                ids.push(id);
+            }
+        }
+        ids
+    }
+}
+
+/// An individual row of Scripts/Server/ServerStoredCommand.cs.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StoredOutcome {
+    #[serde(rename = "Tsv")]
+    pub tsv: i64,
+    #[serde(rename = "OutcomeId")]
+    pub outcome_id: i64,
+    #[serde(rename = "DiscardReservation", default)]
+    pub discard_reservation: bool,
+}
+
+impl StoredOutcome {
+    pub fn reward(outcome_id: i64, tsv: i64) -> Self {
+        Self { outcome_id, tsv, discard_reservation: false }
+    }
+    pub fn discard(outcome_id: i64) -> Self {
+        Self { outcome_id, tsv: 0, discard_reservation: true }
+    }
+}
+
+/// A StoreCommands submission preserves the server's deployed dual
+/// discard representation: DiscardedOutcomeIds AND explicit zero-TSV
+/// DiscardReservation entries in Commands. Success means durable commit
+/// only after the server confirms it, NEVER after serialization or send.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StoreCommandsRequest {
+    #[serde(rename = "Type")]
+    pub message_type: String,
+    #[serde(rename = "Hash")]
+    pub hash: i64,
+    #[serde(rename = "Commands")]
+    pub commands: Vec<StoredOutcome>,
+    #[serde(rename = "ShootingCommands")]
+    pub shooting_commands: Vec<StoredOutcome>,
+    #[serde(rename = "TargetingCommands")]
+    pub targeting_commands: Vec<StoredOutcome>,
+    #[serde(rename = "DiscardedOutcomeIds")]
+    pub discarded_outcome_ids: Vec<i64>,
+}
+
+impl StoreCommandsRequest {
+    pub fn new(hash: i64) -> Result<Self, HiveMindProtocolError> {
+        if hash <= 0 { return Err(HiveMindProtocolError::InvalidRequest); }
+        Ok(Self {
+            message_type: STORE_COMMANDS_TYPE.to_owned(), hash,
+            commands: Vec::new(),
+            shooting_commands: Vec::new(),
+            targeting_commands: Vec::new(),
+            discarded_outcome_ids: Vec::new(),
+        })
+    }
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct StoreCommandsResponse {
+    #[serde(rename = "Type")]
+    pub message_type: String,
+    #[serde(rename = "Hash")]
+    pub hash: i64,
+    #[serde(rename = "Status")]
+    pub status: i32,
+    #[serde(rename = "StaleOutcomeIds", default)]
+    pub stale_outcome_ids: Vec<i64>,
+}
+
+impl StoreCommandsResponse {
+    pub fn acknowledges_durable_commit(&self, request_hash: i64) -> bool {
+        self.message_type == STORE_COMMANDS_TYPE &&
+            self.hash == request_hash &&
+            (self.status == 1 || (200..300).contains(&self.status)) &&
+            self.stale_outcome_ids.is_empty()
+    }
+}
