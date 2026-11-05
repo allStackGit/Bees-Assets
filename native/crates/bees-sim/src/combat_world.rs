@@ -442,6 +442,18 @@ impl CombatProjectile {
     }
 }
 
+/// Per-world, allocation-free special-action workload counters. Snapshot
+/// and subtract values to measure experiment windows without per-step logs.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct PolicySpecialMeasurements {
+    pub requests: u64,
+    pub striker_hull_checks: u64,
+    pub striker_contact_misses: u64,
+    pub striker_bombs_dropped: u64,
+    pub striker_reloads: u64,
+    pub fire_barge_detonations: u64,
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct ProjectileStorageMetrics {
     pub allocated_slots: usize,
@@ -540,6 +552,7 @@ pub struct CombatWorld {
     /// Validated ship specials use one queue across different authored ships.
     /// Commit after event clearing and before physics, in stable ship-ID order.
     policy_pending_ship_specials: Vec<i64>,
+    policy_special_measurements: PolicySpecialMeasurements,
     pending_game_point_orders: HashMap<i64, GamePointOrder>,
     latest_game_point_orders: HashMap<i64, GamePointOrder>,
     ship_collision_profiles: HashMap<i64, ShipCollisionProfile>,
@@ -609,6 +622,7 @@ impl CombatWorld {
             policy_decision_seen: HashSet::new(),
             policy_pending_shots: Vec::new(),
             policy_pending_ship_specials: Vec::new(),
+            policy_special_measurements: PolicySpecialMeasurements::default(),
             pending_game_point_orders: HashMap::new(),
             latest_game_point_orders: HashMap::new(),
             ship_collision_profiles: HashMap::new(),
@@ -663,6 +677,10 @@ impl CombatWorld {
         self.events.push(CombatEvent::ShipDied {
             victim_id, killer_id, command_outcome_id,
         });
+    }
+
+    pub fn policy_special_measurements(&self) -> PolicySpecialMeasurements {
+        self.policy_special_measurements
     }
 
     pub fn physics(&self) -> &KinematicPhysics { &self.physics }

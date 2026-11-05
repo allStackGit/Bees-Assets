@@ -245,6 +245,11 @@ explosions from other causes and squad/game-state cleanup still need
 Level integration, and no benchmarked throughput claim follows from
 this new path.
 
+`policy_special_measurements()` exposes bounded per-world counts of
+validated special requests, Striker exact hull checks/contact misses,
+real bombs/reloads, and Fire Barge detonations. Subtract snapshots to
+profile expensive contact searches without per-frame logs or allocations.
+
 **Not yet implemented:** scripted BombingRun command coordination,
 Yellow Jacket, Scout and Barge ship specials, complete Level-to-perception snapshot
 collection, GPU inference, and an ML-Agents-compatible learner. Unity targeting timers

@@ -90,6 +90,7 @@ impl CombatWorld {
                 !self.physics.ships()[index].active {
                 continue;
             }
+            self.policy_special_measurements.striker_hull_checks += 1;
             if self.physics.ship_hulls_overlap(ship_index, index, collisions) {
                 let id = self.ships[index].entity_id;
                 if target.map_or(true, |previous| id < previous) {
@@ -97,7 +98,10 @@ impl CombatWorld {
                 }
             }
         }
-        let Some(target_id) = target else { return Ok(false); };
+        let Some(target_id) = target else {
+            self.policy_special_measurements.striker_contact_misses += 1;
+            return Ok(false);
+        };
         let fleet_id = *self.fleet_id_by_ship.get(&striker_id)
             .ok_or(CombatWorldError::InvalidFleetIdentity)?;
         let shot_id = self.next_entity_id;
@@ -133,6 +137,7 @@ impl CombatWorld {
             target_id,
             projectile_id: shot_id,
         });
+        self.policy_special_measurements.striker_bombs_dropped += 1;
         Ok(true)
     }
 
@@ -166,6 +171,7 @@ impl CombatWorld {
             }
             profile.reload_timer.finish_update(due);
             if !ready_before && profile.ready {
+                self.policy_special_measurements.striker_reloads += 1;
                 self.events.push(CombatEvent::StrikerBombReloaded {
                     ship_id,
                     carrier_id: profile.carrier_id,

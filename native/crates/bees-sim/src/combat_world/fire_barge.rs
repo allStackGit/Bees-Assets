@@ -71,6 +71,7 @@ impl CombatWorld {
         self.events.push(CombatEvent::FireBargeDetonated {
             ship_id, projectile_id: shot_id,
         });
+        self.policy_special_measurements.fire_barge_detonations += 1;
         self.events.push(CombatEvent::UnattributedDamage {
             target_id: ship_id, delta,
         });
@@ -149,6 +150,10 @@ mod tests {
         assert_eq!(world.state.projectiles()[shot_index].projectile_type, 14);
         assert!(world.state.projectiles()[shot_index].owner.self_detonation);
         assert_eq!(world.state.projectiles()[shot_index].power, 35);
+        let counts = world.state.policy_special_measurements();
+        assert_eq!(counts.requests, 1);
+        assert_eq!(counts.fire_barge_detonations, 1);
+        assert_eq!(counts.striker_bombs_dropped, 0);
 
         // Authored animation changes the same collider used by physics.
         // Its normal contacts, not the special handler, damage the enemy.

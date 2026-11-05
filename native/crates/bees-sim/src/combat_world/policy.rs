@@ -182,6 +182,7 @@ impl CombatWorld {
         self.policy_pending_ship_specials.sort_unstable();
         for index in 0..self.policy_pending_ship_specials.len() {
             let ship_id = self.policy_pending_ship_specials[index];
+            self.policy_special_measurements.requests += 1;
             let Some(runtime) = self.policy_ship_runtime.get(&ship_id) else {
                 // An earlier action in this tick may have killed the ship.
                 continue;
