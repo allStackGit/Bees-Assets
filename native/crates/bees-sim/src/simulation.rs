@@ -5,7 +5,7 @@
 //! This initial foundation deliberately does not substitute approximate
 //! physics for Unity's behavior.
 
-use std::num::NonZeroU32;
+use std::num::{NonZeroU32, NonZeroUsize};
 use std::time::Instant;
 
 use crate::policy::Decision;
@@ -125,9 +125,30 @@ pub enum StepError<E> {
     Rules { id: WorldId, source: E },
 }
 
-/// A single world scheduler is initially deliberately serial. Starting
-/// threads on each tick would add overhead; long-lived parallel workers may
-/// be introduced only with the same rules and world ownership contracts.
+/// Results for a bounded independent rollout window. A failed world is
+/// marked failed by the same step implementation used in serial mode; other
+/// worlds continue. The caller must reset failed worlds explicitly.
+#[derive(Debug)]
+pub struct ParallelWindow<E> {
+    pub measurements: Measurements,
+    pub failed_worlds: Vec<StepError<E>>,
+    pub skipped_failed_worlds: usize,
+}
+
+impl<E> Default for ParallelWindow<E> {
+    fn default() -> Self {
+        Self {
+            measurements: Measurements::default(),
+            failed_worlds: Vec::new(),
+            skipped_failed_worlds: 0,
+        }
+    }
+}
+
+/// A single world scheduler defaults to the cheapest serial path. For
+/// independent rollout windows, the same worlds and rules may be partitioned
+/// across scoped CPU workers for many steps at a time, amortizing thread
+/// creation instead of spawning threads on each simulation tick.
 pub struct Simulation<S, R> {
     rules: R,
     worlds: Vec<World<S>>,
@@ -192,34 +213,150 @@ impl<S, R: GameRules<S>> Simulation<S, R> {
         let world = self.worlds
             .get_mut(index)
             .ok_or(StepError::MissingWorld { index })?;
-        if world.failed {
-            return Err(StepError::FailedWorld { id: world.id });
+        step_one(
+            &self.rules, self.dt_seconds, self.sample_every,
+            world, decisions, &mut self.measurements,
+        )
+    }
+
+    /// Advance independent arenas for multiple fixed steps per CPU worker.
+    /// Each world stays on exactly one worker for the entire window; no
+    /// world state, RNG, or mutable game scratch is shared between workers.
+    ///
+    /// `decide` fills a worker-local reusable decision buffer for the
+    /// current world. It must derive actions from real observations/policy
+    /// state; the simulation does not invent neural actions. A GPU-batched
+    /// inference pipeline should use the existing explicit `step_world`
+    /// interface instead, so policy inference can synchronize across worlds.
+    ///
+    /// One arena or one requested worker runs inline, with no thread spawn.
+    /// Multiple arenas use scoped threads once per window, not once per
+    /// frame. This is not a promise of faster execution for small windows.
+    pub fn run_parallel_window<F>(
+        &mut self,
+        steps_per_world: NonZeroU32,
+        worker_count: NonZeroUsize,
+        decide: &F,
+    ) -> ParallelWindow<R::Error>
+    where
+        S: Send,
+        R: Sync,
+        R::Error: Send,
+        F: Fn(&World<S>, &mut Vec<Decision>) + Sync,
+    {
+        let mut result = ParallelWindow::default();
+        if self.worlds.is_empty() {
+            return result;
         }
 
-        let sample = self.sample_every.is_some_and(|period| {
-            world.tick % u64::from(period.get()) == 0
-        });
-        let start = if sample { Some(Instant::now()) } else { None };
+        let workers = worker_count.get().min(self.worlds.len());
+        let rules = &self.rules;
+        let dt = self.dt_seconds;
+        let sample = self.sample_every;
+        let steps = steps_per_world.get();
 
-        let counts = match self.rules.step(world, decisions, self.dt_seconds) {
-            Ok(counts) => counts,
-            Err(source) => {
-                // A failing rules update may have partially mutated world state.
-                // Never resume the same world silently from that state.
-                world.failed = true;
-                let duration = start.map(|start| start.elapsed());
-                world.measurements.record_failure(duration);
-                self.measurements.record_failure(duration);
-                return Err(StepError::Rules { id: world.id, source });
+        if workers == 1 {
+            let part = run_partition(rules, dt, sample, &mut self.worlds, steps, decide);
+            self.measurements.merge(&part.measurements);
+            return part;
+        }
+
+        // Consecutive world ranges preserve stable aggregation order.
+        // World's mutable storage remains owned by its scoped worker.
+        let chunk_size = self.worlds.len() / workers +
+            usize::from(self.worlds.len() % workers != 0);
+        let worlds = &mut self.worlds;
+        std::thread::scope(|scope| {
+            let mut handles = Vec::with_capacity(workers);
+            for chunk in worlds.chunks_mut(chunk_size) {
+                handles.push(scope.spawn(move || {
+                    run_partition(rules, dt, sample, chunk, steps, decide)
+                }));
             }
-        };
-
-        world.tick += 1;
-        let duration = start.map(|start| start.elapsed());
-        world.measurements.record(counts, duration);
-        self.measurements.record(counts, duration);
-        Ok(counts)
+            for handle in handles {
+                // A worker panic aborts this window rather than pretending
+                // its potentially partially updated worlds are still usable.
+                let part = handle.join().expect("native world worker panicked");
+                self.measurements.merge(&part.measurements);
+                result.measurements.merge(&part.measurements);
+                result.skipped_failed_worlds += part.skipped_failed_worlds;
+                result.failed_worlds.extend(part.failed_worlds);
+            }
+        });
+        result
     }
+}
+
+/// One authoritative step, independent of serial or partitioned scheduling.
+/// The only counters written during the step belong to this world and the
+/// single caller-owned aggregate (never contended across threads).
+fn step_one<S, R: GameRules<S>>(
+    rules: &R,
+    dt: f32,
+    sample_every: Option<NonZeroU32>,
+    world: &mut World<S>,
+    decisions: &[Decision],
+    aggregate: &mut Measurements,
+) -> Result<StepCounts, StepError<R::Error>> {
+    if world.failed {
+        return Err(StepError::FailedWorld { id: world.id });
+    }
+    let sampled = sample_every.is_some_and(|period|
+        world.tick % u64::from(period.get()) == 0
+    );
+    let start = if sampled { Some(Instant::now()) } else { None };
+    let counts = match rules.step(world, decisions, dt) {
+        Ok(counts) => counts,
+        Err(source) => {
+            // Rules may have partially mutated a world. It cannot be stepped
+            // again until a caller explicitly resets its episode state.
+            world.failed = true;
+            let duration = start.map(|instant| instant.elapsed());
+            world.measurements.record_failure(duration);
+            aggregate.record_failure(duration);
+            return Err(StepError::Rules { id: world.id, source });
+        }
+    };
+    world.tick += 1;
+    let duration = start.map(|instant| instant.elapsed());
+    world.measurements.record(counts, duration);
+    aggregate.record(counts, duration);
+    Ok(counts)
+}
+
+fn run_partition<S, R, F>(
+    rules: &R,
+    dt: f32,
+    sample_every: Option<NonZeroU32>,
+    worlds: &mut [World<S>],
+    steps: u32,
+    decide: &F,
+) -> ParallelWindow<R::Error>
+where
+    R: GameRules<S>,
+    F: Fn(&World<S>, &mut Vec<Decision>),
+{
+    let mut report = ParallelWindow::default();
+    // Reuse action memory across every world and step in this worker.
+    let mut decisions = Vec::new();
+    for world in worlds {
+        if world.failed {
+            report.skipped_failed_worlds += 1;
+            continue;
+        }
+        for _ in 0..steps {
+            decisions.clear();
+            decide(world, &mut decisions);
+            if let Err(error) = step_one(
+                rules, dt, sample_every, world, &decisions,
+                &mut report.measurements,
+            ) {
+                report.failed_worlds.push(error);
+                break;
+            }
+        }
+    }
+    report
 }
 
 #[cfg(test)]
