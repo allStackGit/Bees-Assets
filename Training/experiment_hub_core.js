@@ -1256,7 +1256,8 @@ class ExperimentHub {
         for(const item of reports) {
             if(!acceptedReports.has(item.job_id))continue;
             const progress=acceptedReports.get(item.job_id);
-            const previousProgress=this.executionTelemetry.get(item.job_id)?.progress||null;
+            const previousTelemetry=this.executionTelemetry.get(item.job_id);
+            const previousProgress=previousTelemetry?.progress||null;
             const job=this.state.jobs.find(j=>j.id===item.job_id);
             // Comparison history rejects duplicate, out-of-order and
             // unrelated experiment snapshots. Keep the last accepted
@@ -1268,10 +1269,27 @@ class ExperimentHub {
             // previously sampled history before the coordinator exits.
             if(['finished','failed','stopped'].includes(job.status))
                 terminalHistory=true;
+            // Estimate CPU-core equivalents from authenticated server
+            // arrival times, not a worker-supplied wall clock. Neither a
+            // restarted agent nor a replaced native dispatch is continuous.
+            const elapsedMs=received-Date.parse(previousTelemetry?.at||'');
+            const cpuBefore=previousTelemetry?.cpu_time_ns;
+            const cpuAfter=item.cpu_time_ns;
+            const continuous=previousTelemetry?.dispatch_id===item.dispatch_id&&
+                previousTelemetry.agent_instance_id===instance&&
+                ['running','stop_requested'].includes(previousTelemetry.state)&&
+                ['running','stop_requested'].includes(item.state);
+            const cpuCores=continuous&&
+                Number.isSafeInteger(cpuBefore)&&Number.isSafeInteger(cpuAfter)&&
+                cpuAfter>=cpuBefore&&Number.isFinite(elapsedMs)&&
+                elapsedMs>=1000&&elapsedMs<=120000
+                ?(cpuAfter-cpuBefore)/(elapsedMs*1000000):null;
             this.executionTelemetry.set(item.job_id,{
                 at:new Date(received).toISOString(),state:item.state,
+                dispatch_id:item.dispatch_id,agent_instance_id:instance||null,
                 memory_current_mb:item.memory_current_mb??null,
-                cpu_time_ns:item.cpu_time_ns??null,
+                cpu_time_ns:cpuAfter??null,
+                cpu_cores_used:cpuCores,
                 process_tasks:item.process_tasks??null,
                 progress:progressAccepted?progress:previousProgress,
                 progress_issue:item.progress_issue||null,
