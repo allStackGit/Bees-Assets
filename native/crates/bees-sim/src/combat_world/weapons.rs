@@ -613,7 +613,9 @@ impl CombatWorld {
                 self.end_projectile(index);
                 continue;
             };
-            if old_length >= range / 2.0 {
+            // Unity LaserBeam._halfRange = Range / 2 uses integer
+            // division, since Projectile.Range is an int.
+            if old_length >= (range as i32 / 2) as f32 {
                 self.end_projectile(index);
                 continue;
             }
