@@ -4,8 +4,8 @@
 //! RlOneVsOneAgent.ApplyWeaponCommand, Level.AddProjectile and Projectile.Setup.
 //! Rotating turrets, DualCannon, LaserBuilder/SplitShot and FullShipTurret
 //! share this controller. Charged weapons reproduce the event time in their
-//! Unity animation clip; BeamCannon and Bomb have different active-projectile
-//! / delivery lifecycles and remain unsupported.
+//! Unity animation clip. BeamCannon owns a single growing beam projectile
+//! until it dies; Bomb has a separate delivery lifecycle and is unsupported.
 //! Missing prefab and live Level fields are errors, not guessed defaults.
 
 use super::*;
@@ -32,6 +32,10 @@ pub enum NativeFirePattern {
     /// Laser Charging clip event at 2.75s, then fires along its current
     /// physical heading (regardless of earlier policy aim).
     FullShipTurret,
+    /// BeamCannon.SendProjectile creates one persistent LaserBeam (type 8).
+    /// A second firing pass cannot spawn another until its Kill clears the
+    /// owner. LaserBeam.ExtendBeam updates collider/position every fixed tick.
+    BeamCannon,
 }
 
 impl NativeFirePattern {
@@ -83,10 +87,12 @@ impl NativeTurretSpec {
                 matches!(self.fire_pattern, NativeFirePattern::LaserBuilder),
             4 => self.projectile_type == 4 &&
                 matches!(self.fire_pattern, NativeFirePattern::FullShipTurret),
+            1 => self.projectile_type == 8 &&
+                matches!(self.fire_pattern, NativeFirePattern::BeamCannon),
             _ => false,
         };
         let supported_projectile = matches!(
-            self.projectile_type, 1 | 2 | 3 | 4 | 5 | 6 | 7 | 9 | 10 | 11
+            self.projectile_type, 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11
         );
         if !valid_pattern || !supported_projectile ||
             (self.weapon_type == 5) != (self.projectile_type == 5) {
@@ -136,6 +142,9 @@ pub(super) struct PolicyTurretMount {
     /// None until an accepted policy shot starts the authored charging clip.
     /// A second targeting pass cannot restart an already charging clip.
     pub(super) charge_elapsed_seconds: Option<f32>,
+    /// Unity BeamCannon.IsFiringLaserBeam is set on its single active beam.
+    /// Cleared by the canonical CombatWorld::end_projectile on any kill path.
+    pub(super) active_beam_projectile_id: Option<i64>,
 }
 
 impl PolicyTurretMount {
@@ -146,6 +155,7 @@ impl PolicyTurretMount {
             ),
             timer: ScaledTimer::new(spec.rate_of_fire / 3.0, true, false),
             charge_elapsed_seconds: None,
+            active_beam_projectile_id: None,
             spec,
         }
     }
