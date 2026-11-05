@@ -16,6 +16,8 @@ use super::barge::PolicyBargeCharge;
 use super::scout::PolicyScoutRuntime;
 use super::healing::PolicyHealingRuntime;
 
+const WARP_GATE_TYPE: u8 = 20;
+
 /// One source of truth for v26's readiness, resource, cooldown and
 /// phase observation channels. A missing special yields all zeros.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -60,6 +62,8 @@ pub(super) struct PolicyShipRuntime {
     /// Healing is its own action branch, and can coexist with a
     /// registered ship special without conflicting state ownership.
     pub(super) healing: Option<PolicyHealingRuntime>,
+    /// Source human-side Warp action can coexist with a ship special.
+    pub(super) warp_enabled: bool,
 }
 
 impl CombatWorld {
@@ -108,6 +112,7 @@ impl CombatWorld {
             cease_fire: false,
             special: None,
             healing: None,
+            warp_enabled: false,
         });
         Ok(())
     }
@@ -202,7 +207,8 @@ impl CombatWorld {
                     Some(PolicyShipSpecial::Scout(scout)) =>
                         self.policy_scout_ready(ship_id, scout),
                 },
-                false, self.policy_healing_ready(ship_id), false,
+                false, self.policy_healing_ready(ship_id),
+                self.policy_warp_ready(ship_id),
             ],
         })
     }
@@ -255,6 +261,7 @@ impl CombatWorld {
         // clearing, so UI, telemetry and RL receive the drop event.
         self.policy_pending_ship_specials.clear();
         self.policy_pending_healing.clear();
+        self.policy_pending_warp.clear();
         for decision in decisions {
             let id = decision.agent_id as i64;
             let (decoded, disabled) = {
@@ -286,6 +293,10 @@ impl CombatWorld {
                 3 => {
                     // Beehive healing is a separate capability request.
                     self.policy_pending_healing.push(id);
+                }
+                4 => {
+                    // A real WarpGate child collider gates a safe EndKill.
+                    self.policy_pending_warp.push(id);
                 }
                 _ => {}
             }
@@ -324,6 +335,109 @@ impl CombatWorld {
             }
         }
         self.policy_pending_ship_specials.clear();
+        Ok(())
+    }
+}
+
+
+impl CombatWorld {
+    /// Source WarpGate.WarpCollider is a separate authored child trigger,
+    /// never inferred from the parent ship's primary collision hull.
+    pub fn configure_warp_gate_zone(
+        &mut self, gate_id: i64, child_shape: ShipShape,
+    ) -> Result<(), CombatWorldError> {
+        let &index = self.ship_by_id.get(&gate_id)
+            .ok_or(CombatWorldError::UnknownShip)?;
+        if self.ships[index].ship_type != WARP_GATE_TYPE ||
+            self.ships[index].vitals.is_dead() ||
+            !self.physics.ships()[index].active {
+            return Err(CombatWorldError::InvalidPolicyWarp);
+        }
+        self.physics.ships_mut()[index].set_warp_zone(child_shape)?;
+        Ok(())
+    }
+
+    /// ConfigData.Configuration.HumanSide is supplied by the owning
+    /// Level. Any living Human ship except WarpGate is eligible.
+    pub fn configure_policy_warp(
+        &mut self, ship_id: i64, human_side: i32,
+    ) -> Result<(), CombatWorldError> {
+        let &index = self.ship_by_id.get(&ship_id)
+            .ok_or(CombatWorldError::UnknownShip)?;
+        if human_side <= 0 || self.ships[index].side != human_side ||
+            self.ships[index].ship_type == WARP_GATE_TYPE ||
+            self.ships[index].vitals.is_dead() ||
+            !self.physics.ships()[index].active {
+            return Err(CombatWorldError::InvalidPolicyWarp);
+        }
+        let runtime = self.policy_ship_runtime.get_mut(&ship_id)
+            .ok_or(CombatWorldError::UnknownShip)?;
+        runtime.warp_enabled = true;
+        Ok(())
+    }
+
+    /// Source FindTouchingWarpGate: inspect only living same-side WarpGate
+    /// child WarpCollider contacts, breaking ties by lowest entity ID.
+    /// The physics core keeps each child trigger attached to its real pose.
+    fn touching_warp_gate(&self, ship_id: i64) -> Option<i64> {
+        let &index = self.ship_by_id.get(&ship_id)?;
+        let ship = &self.ships[index];
+        let body = &self.physics.ships()[index];
+        if ship.vitals.is_dead() || !body.active {
+            return None;
+        }
+        let mut selected: Option<i64> = None;
+        for (gate, gate_body) in self.ships.iter().zip(self.physics.ships()) {
+            if gate.ship_type != WARP_GATE_TYPE ||
+                gate.side != ship.side || gate.entity_id == ship_id ||
+                gate.vitals.is_dead() || !gate_body.active ||
+                !gate_body.warp_zone_touches(body) {
+                continue;
+            }
+            if selected.map_or(true, |previous| gate.entity_id < previous) {
+                selected = Some(gate.entity_id);
+            }
+        }
+        selected
+    }
+
+    pub(super) fn policy_warp_ready(&self, ship_id: i64) -> bool {
+        self.policy_ship_runtime.get(&ship_id)
+            .is_some_and(|runtime| runtime.warp_enabled) &&
+            self.touching_warp_gate(ship_id).is_some()
+    }
+
+    /// Source TryApplyWarpAction calls EndKill, not combat damage.
+    /// ShipWarped must precede ShipDied so the same economy consumer
+    /// retains mined cargo. No second attributed hit or death explosion.
+    pub(super) fn apply_pending_policy_warp(
+        &mut self,
+    ) -> Result<(), CombatWorldError> {
+        self.policy_pending_warp.sort_unstable();
+        for item in 0..self.policy_pending_warp.len() {
+            let ship_id = self.policy_pending_warp[item];
+            self.policy_special_measurements.warp_requests += 1;
+            if !self.policy_ship_runtime.get(&ship_id)
+                .is_some_and(|runtime| runtime.warp_enabled) {
+                continue;
+            }
+            let Some(gate_id) = self.touching_warp_gate(ship_id) else {
+                continue;
+            };
+            let &index = self.ship_by_id.get(&ship_id)
+                .ok_or(CombatWorldError::UnknownShip)?;
+            let side = self.ships[index].side;
+            // ShipVitals holds the authoritative live health/cargo TSV.
+            // Capture before EndKill zeros the value.
+            let preserved_tsv = self.ships[index].vitals.tsv().max(0);
+            self.ships[index].vitals.kill_without_hit();
+            self.events.push(CombatEvent::ShipWarped {
+                ship_id, gate_id, side, preserved_tsv,
+            });
+            self.retire_dead_ship_with_mode(index, 0, 0, true)?;
+            self.policy_special_measurements.warp_actions_completed += 1;
+        }
+        self.policy_pending_warp.clear();
         Ok(())
     }
 }
