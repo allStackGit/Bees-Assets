@@ -131,11 +131,12 @@ HiveMind command update or an end-to-end PPO training pass.
 `NativeSquadCommandDirector.measurements()` independently reports update
 calls, active commands examined, recurring and timeout callbacks, started,
 completed, superseded and retired command counts, and peak active commands.
-The director reuses its deterministic squad-order scratch buffer across
-ticks rather than allocating a new list on every update. These are
-**instrumentation and removed-allocation claims**, not measured speedups:
-runtime comparisons between 1v1 and large-battle configurations remain
-necessary once a native executable loop is available. The shared simulation
+The director uses a lifecycle-ordered map so command iteration is
+deterministic and does not allocate or sort an owner list every frame.
+The tradeoff is logarithmic command insertion and removal; the relative
+performance needs profiling at 1v1 and large-battle sizes. These are
+**instrumentation and algorithmic changes**, not measured speedups:
+runtime comparisons remain necessary once a native executable loop exists. The shared simulation
 stays platform-independent for Windows and Linux.
 
 ## Current status
