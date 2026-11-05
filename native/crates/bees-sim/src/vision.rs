@@ -6,6 +6,8 @@
 //! MapObjects are not yet modeled in CombatWorld and remain an explicit
 //! gameplay adapter responsibility; their sightings must not be fabricated.
 
+use crate::physics::VisionProximity;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct HiveMindObserver {
     pub ship_id: i64,
@@ -43,6 +45,25 @@ pub enum VisionError {
 
 /// Rollup throughput costs without allocations inside the combat loop.
 impl VisionSweepCounts {
+    /// Account for broadphase and exact geometry effort in both ship and
+    /// environment vision, without rechecking the collider or allocating.
+    pub(crate) fn record_proximity(&mut self, result: VisionProximity) -> bool {
+        match result {
+            VisionProximity::RejectedByBounds => {
+                self.aabb_rejections += 1;
+                false
+            }
+            VisionProximity::OutsideCollider => {
+                self.exact_collider_tests += 1;
+                false
+            }
+            VisionProximity::WithinRange => {
+                self.exact_collider_tests += 1;
+                true
+            }
+        }
+    }
+
     pub fn merge(&mut self, other: &Self) {
         self.active_observers += other.active_observers;
         self.live_ship_pairs += other.live_ship_pairs;
