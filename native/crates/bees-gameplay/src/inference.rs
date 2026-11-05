@@ -8,7 +8,6 @@
 
 use bees_sim::combat_world::CombatWorldError;
 use bees_sim::combat_perception_bridge::live_ship_counts;
-use bees_sim::control::PolicyFrame;
 use bees_sim::full_perception::{
     NativePerceptionWriter, PerceptionWork, PolicyPerceptionSnapshot,
 };
@@ -138,7 +137,6 @@ impl NativeLevelInferenceBatch {
         world: &World<NativeLevelState<M, A>>,
         ship_id: i64,
         snapshot: &PolicyPerceptionSnapshot<'_>,
-        frame: PolicyFrame,
     ) -> Result<(), NativeInferenceError> {
         if self.finalized { return Err(NativeInferenceError::AlreadyFinalized); }
         if self.failed { return Err(NativeInferenceError::FailedBatch); }
@@ -189,6 +187,8 @@ impl NativeLevelInferenceBatch {
             return Err(NativeInferenceError::SnapshotStateMismatch);
         }
         let mask = combat.policy_action_mask(ship_id)?;
+        let frame = combat.policy_frame(ship_id)
+            .ok_or(NativeInferenceError::InvalidAgent)?;
         let key = PolicyAgentKey::from_world(world, agent);
         self.writer.push_to_batch(&mut self.batch, key, mask, snapshot, frame)?;
         Ok(())

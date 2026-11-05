@@ -25,16 +25,23 @@ use bees_sim::perception_environment::{
 use bees_sim::perception_weapons::SelfWeapon;
 use bees_sim::simulation::{RandomStream, World, WorldId};
 
+use crate::inference::{NativeInferenceError, NativeLevelInferenceBatch};
 use crate::level_rules::NativeLevelState;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NativeWorldPerceptionError {
     MissingAuthoredShip(i64),
     Combat(CombatPerceptionError),
+    Inference(NativeInferenceError),
 }
 impl From<CombatPerceptionError> for NativeWorldPerceptionError {
     fn from(error: CombatPerceptionError) -> Self {
         Self::Combat(error)
+    }
+}
+impl From<NativeInferenceError> for NativeWorldPerceptionError {
+    fn from(error: NativeInferenceError) -> Self {
+        Self::Inference(error)
     }
 }
 
@@ -118,6 +125,25 @@ impl NativeWorldPerceptionAssembler {
 
     pub fn assigned_identity_count(&self) -> usize {
         self.identities.assigned_count()
+    }
+
+    /// One game-owned observation path: project canonical ship, parent,
+    /// allies and discovered obstacles, then encode the model input
+    /// using this ship's actual bound policy frame and action mask.
+    /// The temporary snapshot is never retained or copied between ticks.
+    pub fn push_agent<'a, M, A>(
+        &'a mut self,
+        batch: &mut NativeLevelInferenceBatch,
+        world: &World<NativeLevelState<M, A>>,
+        ship_id: i64,
+        inputs: NativeLevelPerceptionInputs<'a>,
+        authored_ship: impl FnMut(i64) -> Option<AuthoredShipPerception>,
+    ) -> Result<(), NativeWorldPerceptionError> {
+        let snapshot = self.assemble(
+            world, ship_id, inputs, authored_ship,
+        )?;
+        batch.push_agent(world, ship_id, &snapshot)?;
+        Ok(())
     }
 
     /// Call when a source Level changes its discovery or obstacle

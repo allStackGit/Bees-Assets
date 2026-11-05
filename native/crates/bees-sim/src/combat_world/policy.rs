@@ -67,6 +67,14 @@ impl CombatWorld {
         self.policy_ship_runtime.len()
     }
 
+    /// Use the controller's actual episode frame for both observation
+    /// encoding and action execution. External callers must never
+    /// supply a second independently stored frame.
+    pub fn policy_frame(&self, ship_id: i64) -> Option<PolicyFrame> {
+        self.policy_ship_runtime.get(&ship_id)
+            .map(|runtime| runtime.frame)
+    }
+
     /// Bind a real living ship to its episode-specific policy frame.
     /// Call only when the episode controller is bound to this ship. A new
     /// CombatWorld owns fresh controllers when an episode resets.
