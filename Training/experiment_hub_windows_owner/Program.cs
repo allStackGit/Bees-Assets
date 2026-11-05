@@ -4,7 +4,9 @@
 // This executable must be installed and SHA-256 pinned by the host admin.
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using System.ComponentModel;
+using System.Linq;
 using System.IO;
 using System.IO.Pipes;
 using System.Runtime.InteropServices;
@@ -337,7 +339,19 @@ internal sealed class OwnedJob : IDisposable
     }
     internal void WriteTerminalReceipt(object status)
     {
-        var raw=JsonSerializer.Serialize(status);
+        using var parsed=JsonDocument.Parse(JsonSerializer.Serialize(status));
+        var result=parsed.RootElement;
+        var state=result.GetProperty("state").GetString()!;
+        var code=result.GetProperty("exit_code").GetUInt32();
+        if(!new[]{"finished","failed","stopped"}.Contains(state))
+            throw new InvalidOperationException("Cannot certify a nonterminal Job Object state");
+        var payload=spec.JobId+"\n"+state+"\n"+code.ToString();
+        var mac=Convert.ToHexString(HMACSHA256.HashData(
+            Convert.FromHexString(spec.Token),Encoding.UTF8.GetBytes(payload)))
+            .ToLowerInvariant();
+        var raw=JsonSerializer.Serialize(new {
+            job_id=spec.JobId,state,exit_code=code,receipt_hmac=mac
+        });
         var temp=spec.ReceiptPath+"."+Guid.NewGuid().ToString("N")+".tmp";
         try
         {
@@ -379,9 +393,10 @@ internal static class Program
             spec.HostCpus>Environment.ProcessorCount||
             spec.RamMb<128||spec.RamMb>100000000||
             !Path.IsPathFullyQualified(spec.ReceiptPath)||
-            !Path.GetDirectoryName(Path.GetFullPath(spec.ReceiptPath))!
-                .Equals(Path.GetDirectoryName(Path.GetFullPath(file)),
-                    StringComparison.OrdinalIgnoreCase))
+            !string.Equals(
+                Path.GetDirectoryName(Path.GetFullPath(spec.ReceiptPath)),
+                Path.GetDirectoryName(Path.GetFullPath(file)),
+                StringComparison.OrdinalIgnoreCase))
             throw new ArgumentException("Unsafe or inconsistent locally installed native job");
         return spec;
     }
@@ -452,8 +467,6 @@ internal static class Program
             RamMb=256,ReceiptPath=Path.Combine(Path.GetTempPath(),
                 "unused-"+Guid.NewGuid().ToString("N")+".json")};
         using var owned=new OwnedJob(spec);
-        if(Native.WaitForSingleObject(GetMainProcessForProbe(owned),0)==uint.MaxValue)
-            throw new InvalidOperationException("Native preflight process handle unavailable");
         var deadline=DateTime.UtcNow.AddSeconds(10);
         while(owned.IsActive()&&DateTime.UtcNow<deadline)
             Thread.Sleep(100);
@@ -464,9 +477,6 @@ internal static class Program
         }));
         return 0;
     }
-    // Process membership is already verified by OwnedJob before it resumes.
-    // The bounded probe uses Job Object active process accounting instead.
-    private static IntPtr GetMainProcessForProbe(OwnedJob job)=>IntPtr.Zero;
     internal static async Task<int> Main(string[] args)
     {
         if(!OperatingSystem.IsWindows())
