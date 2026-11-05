@@ -16,3 +16,4 @@
 pub mod outcomes;
 pub mod protocol;
 pub mod session;
+pub mod wire;
