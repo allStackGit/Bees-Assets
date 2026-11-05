@@ -758,12 +758,15 @@ class ExperimentHub {
                 'stop_requested','unverified'].includes(j.status)||
              j.status==='waiting_adapter'&&
                 j.gpu_qualification?.status==='requested'));
-        // Stops have priority over starts, which have priority over
-        // inspections. Round-robin within each priority tier so long-running
-        // services cannot starve other services of fresh observations.
-        const priority=j=>j.status==='stop_requested'?0:
-            j.status==='start_requested'?1:
-            j.gpu_qualification?.status==='requested'?2:3;
+        // A native Stop acknowledgement means the local supervisor has
+        // persisted its stop intent. Further observations only need Inspect;
+        // repeatedly dispatching Stop would starve unrelated running jobs.
+        // A lost/stale acknowledgement keeps Stop urgent until confirmed.
+        const actionFor=j=>j.status==='stop_requested'
+            ?j.live_execution?.state==='stop_requested'?'inspect':'stop'
+            :j.status==='start_requested'?'start'
+            :j.gpu_qualification?.status==='requested'?'qualify_gpu':'inspect';
+        const priority=j=>({stop:0,start:1,qualify_gpu:2,inspect:3})[actionFor(j)];
         jobs.sort((a,b)=>priority(a)-priority(b));
         const ordered=[];
         for(const level of [0,1,2,3]) {
@@ -783,9 +786,7 @@ class ExperimentHub {
                 l.job_id===job.id&&l.project_id===job.project_id&&
                 l.machine_id===machineId&&l.status==='acknowledged');
             if(!lease||!machine.installed_projects.includes(job.project_id))continue;
-            const action=job.status==='stop_requested'?'stop':
-                job.status==='start_requested'?'start':
-                job.gpu_qualification?.status==='requested'?'qualify_gpu':'inspect';
+            const action=actionFor(job);
             // A stale capacity receipt forbids creating a new workload or
             // probing a GPU, but must not strand an already owned process.
             // Authenticated Stop/Inspect only reconcile the local ownership
