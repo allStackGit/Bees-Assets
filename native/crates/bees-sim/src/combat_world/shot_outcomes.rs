@@ -6,6 +6,9 @@
 
 use std::collections::HashMap;
 
+/// Source RlOneVsOneReward.NearMissDistance.
+pub(super) const NEAR_MISS_DISTANCE: f32 = 2.0;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ProjectileRootOutcome {
     pub root_shot_id: i64,

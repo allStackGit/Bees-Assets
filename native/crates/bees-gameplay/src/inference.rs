@@ -89,8 +89,13 @@ impl NativeLevelInferenceBatch {
     /// An inference library fills BOTH buffers: 16 continuous channels
     /// and 6 discrete branches per agent. The underlying PolicyBatch
     /// performs complete finite/range/mask validation at finalization.
-    pub fn output_buffers_mut(&mut self) -> (&mut [f32], &mut [u8]) {
-        self.batch.output_buffers_mut()
+    pub fn output_buffers_mut(
+        &mut self,
+    ) -> Result<(&mut [f32], &mut [u8]), NativeInferenceError> {
+        if self.finalized {
+            return Err(NativeInferenceError::AlreadyFinalized);
+        }
+        Ok(self.batch.output_buffers_mut())
     }
 
     /// Authoritative input only: the snapshot's exact living ship/side

@@ -78,7 +78,7 @@ mod barge;
 mod scout;
 mod shot_outcomes;
 pub use self::shot_outcomes::{ProjectileRootOutcome, ProjectileOutcomeMeasurements};
-use self::shot_outcomes::ProjectileOutcomeTracker;
+use self::shot_outcomes::{ProjectileOutcomeTracker, NEAR_MISS_DISTANCE};
 pub use self::scout::{ScoutBeaconSpec, ScoutBeaconStatus};
 use self::policy::{PolicyShipRuntime, PolicyShipSpecial};
 pub use self::policy::PolicySpecialObservations;
@@ -1943,7 +1943,7 @@ impl CombatWorld {
             if !self.shot_outcomes.needs_nearness(root) { continue; }
             let shooter_side = self.projectiles[index].owner.shooter_side;
             if self.physics.projectile_near_candidates(
-                index, dt, 2.0, &mut self.projectile_near_candidates,
+                index, dt, NEAR_MISS_DISTANCE, &mut self.projectile_near_candidates,
             ) {
                 self.shot_outcomes.record_ship_grid_rebuild();
             }
@@ -1957,7 +1957,7 @@ impl CombatWorld {
                 }
                 self.shot_outcomes.record_near_hull_check();
                 if self.physics.projectile_passed_near_ship(
-                    index, candidate, dt, 2.0,
+                    index, candidate, dt, NEAR_MISS_DISTANCE,
                 ) {
                     self.shot_outcomes.near_enemy(root);
                     break;
