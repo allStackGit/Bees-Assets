@@ -455,6 +455,10 @@ pub struct CombatWorld {
     latest_game_point_orders: HashMap<i64, GamePointOrder>,
     ship_collision_profiles: HashMap<i64, ShipCollisionProfile>,
     nearby_asteroid_ships: HashSet<(i64, i64)>,
+    /// Unity NearbyAsteroidDoubleCheck runs at one-second intervals while
+    /// the ship has nearby collision asteroids. One timer per ship avoids
+    /// repeated route invalidation for multiple overlapping sensors.
+    asteroid_navigation_refresh: HashMap<i64, ScaledTimer>,
     obstacle_by_id: HashMap<i64, usize>,
     asteroid_border_states: HashMap<i64, AsteroidBorderState>,
     /// Directional child-proximity contacts; a primary collider entry only
@@ -511,6 +515,7 @@ impl CombatWorld {
             latest_game_point_orders: HashMap::new(),
             ship_collision_profiles: HashMap::new(),
             nearby_asteroid_ships: HashSet::new(),
+            asteroid_navigation_refresh: HashMap::new(),
             obstacle_by_id: HashMap::new(),
             asteroid_border_states: HashMap::new(),
             nearby_asteroid_pairs: HashSet::new(),
@@ -1632,6 +1637,7 @@ impl CombatWorld {
                                 self.game_ship_steering.remove(&target_id);
                                 self.pending_game_point_orders.remove(&target_id);
                                 self.latest_game_point_orders.remove(&target_id);
+                                self.asteroid_navigation_refresh.remove(&target_id);
                                 self.events.push(CombatEvent::ShipDied {
                                     victim_id: target_id,
                                     killer_id: if identity_valid { owner.shooter_id } else { 0 },
@@ -1765,6 +1771,7 @@ impl CombatWorld {
                     self.game_ship_steering.remove(&target.entity_id);
                     self.pending_game_point_orders.remove(&target.entity_id);
                     self.latest_game_point_orders.remove(&target.entity_id);
+                    self.asteroid_navigation_refresh.remove(&target.entity_id);
                     self.events.push(CombatEvent::ShipDied {
                         victim_id: target.entity_id,
                         killer_id: owner.shooter_id,
@@ -2067,6 +2074,7 @@ impl CombatWorld {
                     self.game_ship_steering.remove(&ship_id);
                     self.pending_game_point_orders.remove(&ship_id);
                     self.latest_game_point_orders.remove(&ship_id);
+                    self.asteroid_navigation_refresh.remove(&ship_id);
                     self.nearby_asteroid_ships.retain(|&(_, other_id)| other_id != ship_id);
                     self.events.push(CombatEvent::ShipDied {
                         victim_id: ship_id, killer_id: 0, command_outcome_id: 0,
