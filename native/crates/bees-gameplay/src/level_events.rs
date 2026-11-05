@@ -7,10 +7,12 @@
 
 use bees_hivemind::session::{HiveMindSession, SquadLifetime};
 use bees_sim::combat_world::CombatWorld;
+use bees_sim::navigation_runtime::NavigationRuntime;
 use bees_sim::rl_shaping::{DamageRewardMetadata, RewardEmission};
 
 use crate::commands::{
-    CommandMeasurements, FinishedNativeCommand, NativeSquadCommandDirector,
+    CommandMeasurements, FinishedNativeCommand, GameCommandError,
+    NativeFriendlySquad, NativeSquadCommandDirector,
 };
 use crate::episode::{
     NativeEpisodeFinal, NativeEpisodeRewardCoordinator,
@@ -26,6 +28,7 @@ pub enum NativeLevelEventError {
     MissingOrRepeatedTick { expected: u64, got: u64 },
     Roster(SquadEventBridgeError),
     Rewards(NativeEpisodeRewardError),
+    Commands(GameCommandError),
     FailedLevel,
 }
 
@@ -62,6 +65,8 @@ pub struct NativeLevelEventProcessor {
     last_finalized: Option<NativeEpisodeFinal>,
     changes: Vec<SquadRosterChange>,
     finished: Vec<FinishedNativeCommand>,
+    /// Reused for timer completions; death-retirement output remains intact.
+    timed_finished: Vec<FinishedNativeCommand>,
 }
 
 impl NativeLevelEventProcessor {
@@ -76,6 +81,7 @@ impl NativeLevelEventProcessor {
             last_finalized: None,
             changes: Vec::new(),
             finished: Vec::new(),
+            timed_finished: Vec::new(),
         }
     }
 
@@ -83,6 +89,14 @@ impl NativeLevelEventProcessor {
     /// independently reconstructed per-tick registries.
     pub fn roster_mut(&mut self) -> &mut NativeSquadRoster {
         &mut self.roster
+    }
+
+    pub fn roster(&self) -> &NativeSquadRoster {
+        &self.roster
+    }
+
+    pub fn has_active_commands(&self) -> bool {
+        self.commands.active_count() > 0
     }
 
     pub fn commands_mut(&mut self) -> &mut NativeSquadCommandDirector {
@@ -121,6 +135,37 @@ impl NativeLevelEventProcessor {
 
     pub fn latest_finalized_episode(&self) -> Option<NativeEpisodeFinal> {
         self.last_finalized
+    }
+
+    /// Unity scaled timer callbacks are advanced on every Level tick,
+    /// not only when a policy batch requests a new action. The caller
+    /// supplies the freshly refreshed Level.State.Squads projection and
+    /// the real authored NavigationRuntime. The command director may
+    /// issue new waypoint/Guard speed orders, but never simulate physics.
+    ///
+    /// This must run only after the current combat events were reconciled.
+    /// A terminal match does not execute further gameplay commands.
+    pub fn advance_timed_commands(
+        &mut self,
+        world: &mut CombatWorld,
+        navigation: &NavigationRuntime,
+        friendlies: &[NativeFriendlySquad],
+        dt: f32,
+    ) -> Result<(), NativeLevelEventError> {
+        if self.is_failed() {
+            return Err(NativeLevelEventError::FailedLevel);
+        }
+        if self.completed() || self.commands.active_count() == 0 {
+            return Ok(());
+        }
+        if let Err(error) = self.commands.advance_into(
+            world, navigation, friendlies, dt, &mut self.timed_finished,
+        ) {
+            self.failed = true;
+            return Err(NativeLevelEventError::Commands(error));
+        }
+        self.finished.append(&mut self.timed_finished);
+        Ok(())
     }
 
     pub fn measurements(&self) -> NativeLevelEventMeasurements {

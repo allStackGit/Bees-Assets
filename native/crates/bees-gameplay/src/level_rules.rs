@@ -9,22 +9,39 @@
 
 use bees_hivemind::session::SquadLifetime;
 use bees_sim::combat_world::{CombatWorld, CombatWorldError};
+use bees_sim::navigation_runtime::NavigationRuntime;
 use bees_sim::physics::CollisionMatrix;
 use bees_sim::policy::Decision;
 use bees_sim::rl_shaping::DamageRewardMetadata;
 use bees_sim::simulation::{GameRules, World};
 use bees_sim::telemetry::StepCounts;
 
+use crate::commands::{GameCommandError, NativeFriendlySquad};
 use crate::level_events::{
     NativeLevelEventError, NativeLevelEventProcessor,
 };
-use crate::squads::SquadRosterError;
+use crate::squads::{NativeSquadRoster, SquadRosterError};
 
 /// The native game Level's authoritative FleetShip metadata. This is NOT
 /// computed from collider size or estimated from training observations.
 pub trait NativeLevelRewardMetadata {
     fn damage_metadata(&self, ship_id: i64) -> Option<DamageRewardMetadata>;
     fn current_mined_tsv(&self, ship_id: i64) -> Option<i32>;
+}
+
+/// Source-facing gameplay inputs for timed Hive Mind commands.
+    /// Must be refreshed after the combat/roster step from live Level
+    /// geometry, preserving Level.State.Squads order. Command activation
+    /// and timer callbacks use this same authoritative view.
+pub trait NativeLevelCommandContext {
+    fn collect_live_friendlies(
+        &mut self,
+        combat: &CombatWorld,
+        roster: &NativeSquadRoster,
+        output: &mut Vec<NativeFriendlySquad>,
+    ) -> Result<(), GameCommandError>;
+
+    fn navigation(&self) -> &NavigationRuntime;
 }
 
 pub struct NativeLevelState<M, A> {
@@ -35,6 +52,8 @@ pub struct NativeLevelState<M, A> {
     /// Keeping it separate from immutable reward metadata permits safe
     /// borrowing of both providers during the one event-processing pass.
     pub allocate_minion: A,
+    /// Reused source Level.State.Squads snapshot; no per-frame allocation.
+    command_friendlies: Vec<NativeFriendlySquad>,
 }
 
 impl<M, A> NativeLevelState<M, A> {
@@ -44,7 +63,10 @@ impl<M, A> NativeLevelState<M, A> {
         metadata: M,
         allocate_minion: A,
     ) -> Self {
-        Self { combat, events, metadata, allocate_minion }
+        Self {
+            combat, events, metadata, allocate_minion,
+            command_friendlies: Vec::new(),
+        }
     }
 }
 
@@ -75,7 +97,7 @@ pub struct NativeLevelRules {
 
 impl<M, A> GameRules<NativeLevelState<M, A>> for NativeLevelRules
 where
-    M: NativeLevelRewardMetadata,
+    M: NativeLevelRewardMetadata + NativeLevelCommandContext,
     A: FnMut(SquadLifetime, i64) -> Result<SquadLifetime, SquadRosterError>,
 {
     type Error = NativeLevelStepError;
@@ -111,6 +133,22 @@ where
             |id| metadata.damage_metadata(id),
             |id| metadata.current_mined_tsv(id),
         )?;
+        if state.events.has_active_commands() && !state.events.completed() {
+            // Snapshot from the actual current ship/squad positions after
+            // casualty removal; no stale formation or Guard target.
+            state.metadata.collect_live_friendlies(
+                &state.combat, state.events.roster(),
+                &mut state.command_friendlies,
+            ).map_err(|err|
+                NativeLevelStepError::Events(
+                    NativeLevelEventError::Commands(err)
+                )
+            )?;
+            state.events.advance_timed_commands(
+                &mut state.combat, state.metadata.navigation(),
+                &state.command_friendlies, dt_seconds,
+            )?;
+        }
         Ok(counts)
     }
 }
