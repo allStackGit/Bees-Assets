@@ -235,14 +235,15 @@ where
                 _ => None,
             };
             let Some((ship_id, amount)) = mined else { continue; };
-            let old_total = state.combat.ship(ship_id)
+            // Combat already applied this exact yield to live ShipVitals
+            // before subsequent same-tick hits/warps. The persistent
+            // FleetShip total must include at least that provisional value.
+            let provisional_total = state.combat.ship(ship_id)
                 .ok_or(NativeLevelStepError::InvalidMiningFleetValue(ship_id))?
                 .vitals.mined_cargo();
-            let minimum = old_total.checked_add(amount)
-                .ok_or(NativeLevelStepError::InvalidMiningFleetValue(ship_id))?;
             let total = state.metadata.credit_mined_minerals(ship_id, amount)
                 .ok_or(NativeLevelStepError::MissingMiningFleetValue(ship_id))?;
-            if total < minimum {
+            if total < provisional_total {
                 return Err(NativeLevelStepError::InvalidMiningFleetValue(ship_id));
             }
             state.combat.sync_mined_fleet_value(ship_id, total)?;
