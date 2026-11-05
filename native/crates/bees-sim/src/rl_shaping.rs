@@ -13,6 +13,7 @@
 //! need to be connected to the same side-wide shaping budget before training.
 
 use crate::combat::HitEvent;
+use crate::combat_world::{CombatEvent, CombatWorld};
 
 pub const TSV_REWARD_SCALE: f32 = 0.1;
 pub const MAX_POSITIVE_SHAPING: f32 = 0.2;
@@ -68,12 +69,36 @@ pub struct HitShaping {
     pub victim: Option<RewardEmission>,
 }
 
+/// The same authoritative Level metadata used by Unity for hit rewards.
+/// Persistent-fleet TSV is not equivalent to a ship collider or its
+/// temporary mined cargo, so callers must supply these values explicitly.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct DamageRewardMetadata {
+    pub has_persistent_fleet_value: bool,
+    pub mined_cargo_before: i32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DamageShapingError {
+    MissingTarget(i64),
+    MissingTargetMetadata(i64),
+    InvalidTargetMetadata(i64),
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct DamageShapingMeasurements {
+    pub attributed_hits: u64,
+    pub unattributed_damage: u64,
+    pub emissions: u64,
+}
+
 /// Per-episode shaping state, independent per faction. Both positive and
 /// negative effects for a faction share their own cap across source types.
 pub struct EpisodeShaping {
     sides: [i32; 2],
     combined_starting_tsv: i32,
     accumulators: [TacticalShaping; 2],
+    damage_measurements: DamageShapingMeasurements,
 }
 
 impl EpisodeShaping {
@@ -89,12 +114,18 @@ impl EpisodeShaping {
             sides: [bee_side, human_side],
             combined_starting_tsv: combined_starting_tsv.max(1),
             accumulators: [TacticalShaping::default(); 2],
+            damage_measurements: DamageShapingMeasurements::default(),
         })
     }
 
     pub fn reset(&mut self, combined_starting_tsv: i32) {
         self.combined_starting_tsv = combined_starting_tsv.max(1);
         self.accumulators = [TacticalShaping::default(); 2];
+        self.damage_measurements = DamageShapingMeasurements::default();
+    }
+
+    pub fn damage_measurements(&self) -> DamageShapingMeasurements {
+        self.damage_measurements
     }
 
     pub fn for_side(&self, side: i32) -> Option<&TacticalShaping> {
@@ -159,6 +190,89 @@ impl EpisodeShaping {
         };
         let victim = self.add_raw_for_side(hit.target_side, -raw);
         HitShaping { attacker, victim }
+    }
+
+    /// Consume the *same* CombatWorld event queue used by the renderer
+    /// and physical combat. Only events with real TSV loss need metadata,
+    /// avoiding any lookup on harmless/zero-damage hits. The caller supplies
+    /// source FleetShip values (never guessed from ShipVitals) and a reusable
+    /// emissions buffer for the MA-POCA reward adapter.
+    ///
+    /// An error invalidates the partial emissions and episode. The caller
+    /// must not continue a partially processed tick or emit training samples.
+    pub fn consume_damage_events(
+        &mut self,
+        world: &CombatWorld,
+        events: &[CombatEvent],
+        mut metadata: impl FnMut(i64) -> Option<DamageRewardMetadata>,
+        emissions: &mut Vec<RewardEmission>,
+    ) -> Result<(), DamageShapingError> {
+        emissions.clear();
+        for event in events {
+            match event {
+                CombatEvent::Hit(hit) if hit.delta.tsv_loss > 0 => {
+                    let target = world.ship(hit.target_id)
+                        .ok_or(DamageShapingError::MissingTarget(hit.target_id))?;
+                    if target.side != hit.target_side {
+                        return Err(DamageShapingError::InvalidTargetMetadata(
+                            hit.target_id,
+                        ));
+                    }
+                    let entry = metadata(hit.target_id)
+                        .ok_or(DamageShapingError::MissingTargetMetadata(
+                            hit.target_id,
+                        ))?;
+                    if entry.mined_cargo_before < 0 {
+                        return Err(DamageShapingError::InvalidTargetMetadata(
+                            hit.target_id,
+                        ));
+                    }
+                    self.damage_measurements.attributed_hits += 1;
+                    let rewards = self.record_hit(
+                        hit, entry.has_persistent_fleet_value,
+                        entry.mined_cargo_before,
+                    );
+                    if let Some(attacker) = rewards.attacker {
+                        if attacker.amount != 0.0 {
+                            emissions.push(attacker);
+                            self.damage_measurements.emissions += 1;
+                        }
+                    }
+                    if let Some(victim) = rewards.victim {
+                        if victim.amount != 0.0 {
+                            emissions.push(victim);
+                            self.damage_measurements.emissions += 1;
+                        }
+                    }
+                }
+                CombatEvent::UnattributedDamage { target_id, delta }
+                    if delta.tsv_loss > 0 => {
+                    let target = world.ship(*target_id)
+                        .ok_or(DamageShapingError::MissingTarget(*target_id))?;
+                    let entry = metadata(*target_id)
+                        .ok_or(DamageShapingError::MissingTargetMetadata(
+                            *target_id,
+                        ))?;
+                    if entry.mined_cargo_before < 0 {
+                        return Err(DamageShapingError::InvalidTargetMetadata(
+                            *target_id,
+                        ));
+                    }
+                    self.damage_measurements.unattributed_damage += 1;
+                    if let Some(reward) = self.record_unattributed_loss(
+                        target.side, delta.tsv_loss, entry.mined_cargo_before,
+                        delta.killed, entry.has_persistent_fleet_value,
+                    ) {
+                        if reward.amount != 0.0 {
+                            emissions.push(reward);
+                            self.damage_measurements.emissions += 1;
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        Ok(())
     }
 
     /// Port of RecordUnattributedTsvLoss. The source only emits a negative
