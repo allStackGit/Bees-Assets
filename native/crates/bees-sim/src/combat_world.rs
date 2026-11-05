@@ -36,6 +36,12 @@ use crate::physics::{
 use crate::policy::Decision;
 use crate::geometry::Vec2;
 use crate::movement::ShipMotion;
+use crate::navigation_clearance::NavigationClearance;
+use crate::navigation_search::NavigationSearch;
+use crate::navigation_requests::{
+    NavigationCompletion, NavigationRequest, NavigationRequestDisposition,
+    NavigationRequestError, NavigationRequests,
+};
 use crate::obstacle::{
     resolve_asteroid_pair_damage, resolve_asteroid_ship_damage,
     AsteroidBreakup, AsteroidDamage,
@@ -55,6 +61,8 @@ pub enum CombatWorldError {
     Physics(PhysicsError),
     Combat(CombatError),
     Reservation(ReservationError),
+    Navigation(NavigationRequestError),
+    NavigationMap(crate::navigation::NavigationError),
     UnknownProjectile,
     UnknownShip,
     UnknownObstacle,
@@ -84,6 +92,12 @@ impl From<CombatError> for CombatWorldError {
 }
 impl From<ReservationError> for CombatWorldError {
     fn from(value: ReservationError) -> Self { Self::Reservation(value) }
+}
+impl From<NavigationRequestError> for CombatWorldError {
+    fn from(value: NavigationRequestError) -> Self { Self::Navigation(value) }
+}
+impl From<crate::navigation::NavigationError> for CombatWorldError {
+    fn from(value: crate::navigation::NavigationError) -> Self { Self::NavigationMap(value) }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -379,6 +393,7 @@ pub struct CombatWorld {
     free_obstacle_slots: Vec<usize>,
     obstacle_slot_reuses: u64,
     ship_by_id: HashMap<i64, usize>,
+    navigation_requests: NavigationRequests,
     ship_collision_profiles: HashMap<i64, ShipCollisionProfile>,
     nearby_asteroid_ships: HashSet<(i64, i64)>,
     obstacle_by_id: HashMap<i64, usize>,
@@ -431,6 +446,7 @@ impl CombatWorld {
             free_obstacle_slots: Vec::new(),
             obstacle_slot_reuses: 0,
             ship_by_id: HashMap::new(),
+            navigation_requests: NavigationRequests::new(),
             ship_collision_profiles: HashMap::new(),
             nearby_asteroid_ships: HashSet::new(),
             obstacle_by_id: HashMap::new(),
@@ -679,6 +695,9 @@ impl CombatWorld {
             return Err(CombatWorldError::DuplicateEntity);
         }
         let next_id = body.id.checked_add(1).ok_or(CombatWorldError::EntityIdExhausted)?;
+        // Each new entity gets its own lifecycle token, so results from a
+        // dead or pooled ship cannot write into a new movement order.
+        self.navigation_requests.register_ship(ship.entity_id)?;
         let index = self.physics.add_ship(body)?;
         self.next_entity_id = self.next_entity_id.max(next_id);
         debug_assert_eq!(index, self.ships.len());
