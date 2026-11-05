@@ -1,7 +1,7 @@
 'use strict';
 
-// Ephemeral visualization samples only. This is not training evidence,
-// a checkpoint history or a durable replacement for project-owned metrics.
+// Bounded visualization samples only. The optional chart archive is not
+// training evidence, checkpoint history, or project-owned metrics.
 const fs=require('node:fs');
 const crypto=require('node:crypto');
 const {validateProgress}=require('./experiment_hub_progress');
