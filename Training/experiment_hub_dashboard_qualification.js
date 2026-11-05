@@ -87,7 +87,7 @@ async function readJson(req) {
 
 async function main(argv=process.argv.slice(2),env=process.env) {
     if(argv.length!==1||argv[0]!=='--run-inert-ui')
-        throw Error('Specify --run-inert-ui for the isolated Windows browser qualification.');
+        throw Error('Specify --run-inert-ui for isolated native browser qualification.');
     const platform=os.platform();
     if(!['win32','linux'].includes(platform))
         throw Error('Native browser qualification requires Linux or Windows.');
@@ -336,7 +336,7 @@ async function main(argv=process.argv.slice(2),env=process.env) {
         schedulerTimer=setInterval(tickScheduler,REPORT_INTERVAL_MS);
         const url='http://'+HOST+':'+admin.address().port+'/';
         console.log('ISOLATED '+platformName+' Experiment Hub browser qualification: '+url);
-        console.log('Project: Windows qualification (smoke); machine: smoke');
+        console.log('Project: '+platformName+' qualification (smoke); machine: smoke');
         console.log('Private qualification registry: '+root);
         console.log('The normal Bees dashboard on port 7148 is not used.');
         console.log('Create a draft, queue one CPU-only job, claim it, then Start/Stop');
