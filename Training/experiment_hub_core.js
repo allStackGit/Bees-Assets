@@ -1433,6 +1433,41 @@ class ExperimentHub {
         return {jobs:jobs.map(j=>byId.get(j.id)),note:
             'Read-only preview of the fair allocation pass, not a persistent claim, OS isolation or execution permission.'};
     }
+    updateMachineBudget(value) {
+        if(!object(value)||value.confirm_budget!==true||
+            !ID.test(String(value.machine_id||'')))
+            throw Error('Explicitly confirm the machine whose Hub budget will change.');
+        const cpu=value.cpus,ram=value.ram_mb;
+        if(!Number.isSafeInteger(cpu)||cpu<1||cpu>4096||
+            !Number.isSafeInteger(ram)||ram<128||ram>100000000)
+            throw Error('Hub CPU and RAM budgets must be positive bounded integers.');
+        if(this.automation.enabled)
+            throw Error('Disarm native queue automation before changing machine budgets.');
+        const machine=this.state.machines.find(m=>m.id===value.machine_id);
+        if(!machine)throw Error('Machine not registered.');
+        if(value.expected_cpus!==machine.cpus||
+            value.expected_ram_mb!==machine.ram_mb)
+            throw Error('Machine budget changed; refresh the displayed values before saving.');
+        const claimed=this.state.reservations.filter(l=>
+            l.machine_id===machine.id&&
+            ['active','offered','acknowledged'].includes(l.status));
+        const claimedCpu=claimed.reduce((total,l)=>total+l.resources.cpus,0);
+        const claimedRam=claimed.reduce((total,l)=>total+l.resources.ram_mb,0);
+        // Never reduce admission below claims for processes that may already
+        // exist. Budgets are bookkeeping, not OS controls and never Stop jobs.
+        if(cpu<claimedCpu||ram<claimedRam)
+            throw Error('Release or finish existing Hub claims before reducing capacity below their total.');
+        if(cpu===machine.cpus&&ram===machine.ram_mb)
+            return {machine_id:machine.id,cpus:cpu,ram_mb:ram,
+                claimed_cpus:claimedCpu,claimed_ram_mb:claimedRam,changed:false};
+        const next=copy(this.state);
+        const updated=next.machines.find(m=>m.id===machine.id);
+        updated.cpus=cpu;updated.ram_mb=ram;
+        updated.budget_updated_at=now();
+        this.commit(next);
+        return {machine_id:machine.id,cpus:cpu,ram_mb:ram,
+            claimed_cpus:claimedCpu,claimed_ram_mb:claimedRam,changed:true};
+    }
     addMachine(value) {
         if (!object(value) || !ID.test(String(value.id||''))) throw Error('Use a lowercase machine ID.');
         if (this.state.machines.some(m=>m.id===value.id)) throw Error('Machine already registered.');
