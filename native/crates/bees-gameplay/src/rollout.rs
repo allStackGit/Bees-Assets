@@ -9,6 +9,7 @@
 use bees_hivemind::session::{HiveMindSession, SquadLifetime};
 use bees_sim::policy::Decision;
 use bees_sim::simulation::{Simulation, StepError, World};
+use std::time::Instant;
 
 use crate::inference::{
     NativeInferenceError, NativeInferenceRunError, NativeLevelInferenceBatch,
@@ -25,6 +26,16 @@ pub struct NativeBatchedStepCounts {
     pub worlds_stepped: usize,
     pub worlds_complete_or_failed: usize,
     pub policy_agents_inferred: usize,
+    /// Host wall time across every participating world's observation
+    /// assembly, roster checks and snapshot validation.
+    pub observation_build_nanos: u128,
+    /// Full inference boundary including backend call and action checks.
+    /// For asynchronous accelerators this measures synchronization only
+    /// when the backend waits for completion.
+    pub inference_and_validation_nanos: u128,
+    /// Host wall time to dispatch validated actions and advance worlds.
+    /// Shared Simulation already measures sampled individual world steps.
+    pub world_dispatch_and_step_nanos: u128,
 }
 
 #[derive(Debug)]
@@ -79,6 +90,7 @@ where
 {
     batch.clear();
     let mut counts = NativeBatchedStepCounts::default();
+    let observations_started = Instant::now();
     for index in 0..simulation.world_count() {
         {
             let world = simulation.world_mut(index)
@@ -137,6 +149,8 @@ where
         // a complete one-to-one roster for this world.
     }
     counts.policy_agents_inferred = batch.keys().len();
+    counts.observation_build_nanos = observations_started.elapsed().as_nanos();
+    let inference_started = Instant::now();
     if batch.keys().is_empty() {
         batch.finalize().map_err(|err|
             NativeBatchedStepError::Inference(
@@ -146,6 +160,8 @@ where
     } else {
         batch.infer(backend).map_err(NativeBatchedStepError::Inference)?;
     }
+    counts.inference_and_validation_nanos = inference_started.elapsed().as_nanos();
+    let dispatch_started = Instant::now();
     for index in 0..simulation.world_count() {
         let world = simulation.world(index)
             .ok_or(NativeBatchedStepError::MissingWorld { index })?;
@@ -163,6 +179,7 @@ where
         )?;
         counts.worlds_stepped += 1;
     }
+    counts.world_dispatch_and_step_nanos = dispatch_started.elapsed().as_nanos();
     Ok(counts)
 }
 
