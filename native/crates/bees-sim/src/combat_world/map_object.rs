@@ -113,3 +113,87 @@ impl CombatWorld {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+    use crate::collision::Pose;
+    use crate::projectile_assets::ProjectileAssetCatalog;
+    use crate::projectile::ProjectileMotion;
+
+    #[test]
+    fn ordinary_map_object_damage_and_discovery_use_the_shared_combat_world() {
+        let assets = Arc::new(ProjectileAssetCatalog::embedded().unwrap());
+        let mut world = CombatWorld::new(
+            Aabb {
+                min: Vec2::new(-100.0, -100.0),
+                max: Vec2::new(100.0, 100.0),
+            },
+            8.0,
+            Arc::clone(&assets),
+        ).unwrap();
+        let id = 1;
+        world.add_map_object(
+            CombatMapObject::new(id, MapObjectKind::Generic, 100).unwrap(),
+            ObstacleBody::new(
+                id,
+                Pose { position: Vec2::new(10.0, 0.0),
+                    rotation_degrees: 0.0 },
+                0,
+                ShipShape::Box {
+                    offset: Vec2::ZERO,
+                    half_extents: Vec2::new(5.0, 5.0),
+                },
+                Vec2::ZERO,
+                0.0,
+            ).unwrap(),
+        ).unwrap();
+        assert!(world.discovery_mut().record(
+            1, DiscoveryKind::MapObject, id,
+        ).unwrap());
+
+        let owner = ShotOwner {
+            shooter_id: 55,
+            shooter_side: 1,
+            shooter_is_fire_barge: false,
+            self_detonation: false,
+        };
+        for (shot, power) in [(2, 30), (3, 90)] {
+            world.spawn_projectile(
+                assets.by_type(1).unwrap(),
+                shot,
+                owner,
+                power,
+                ProjectileMotion::new(
+                    Vec2::ZERO, 10.0, 0.0, 100.0, shot, 0,
+                ),
+                0.0,
+            ).unwrap();
+            world.resolve_obstacle_contact(
+                ObstacleTriggerEnter { projectile_id: shot,
+                    obstacle_id: id },
+            ).unwrap();
+            assert!(!world.physics.projectiles()[
+                *world.projectile_by_id.get(&shot).unwrap()
+            ].active);
+            if shot == 2 {
+                assert_eq!(world.map_object(id).unwrap().health, 70);
+                assert!(world.discovery().has(
+                    1, DiscoveryKind::MapObject, id,
+                ));
+            }
+        }
+        assert!(world.map_object(id).is_none());
+        assert!(!world.discovery().has(
+            1, DiscoveryKind::MapObject, id,
+        ));
+        assert_eq!(world.map_object_count(), 0);
+        assert!(!world.obstacle_by_id.contains_key(&id));
+        assert!(world.events().iter().any(|event| matches!(
+            event, CombatEvent::MapObjectDestroyed {
+                object_id: 1, projectile_id: 3,
+            }
+        )));
+    }
+}
