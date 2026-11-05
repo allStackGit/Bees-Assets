@@ -26,7 +26,7 @@ class LocalExecution {
         return {local_executor:true,installed_projects:this.projects.slice()};
     }
     async handle(order) {
-        if(!order||!['start','stop','inspect'].includes(order.action)||
+        if(!order||!['start','stop','inspect','qualify_gpu'].includes(order.action)||
             !UUID.test(String(order.dispatch_id||''))||
             !order.job||!order.lease||
             !UUID.test(String(order.job.id||''))||
@@ -38,6 +38,46 @@ class LocalExecution {
             !this.projects.includes(order.job.project_id))
             throw Error('Rejected invalid or unauthorized local dispatch instruction.');
         const {job,lease}=order;
+        if(order.action==='qualify_gpu') {
+            // This is not a job launch. Linux device access is tested using
+            // a fixed inert helper; the native Start gate remains CPU-only.
+            if(typeof this.supervisor.qualifyGpuDeviceAccess!=='function'||
+                !this.supervisor.qualifiedAt||
+                job.status!=='waiting_adapter'||
+                job.resources?.gpu_mode!=='exclusive'||
+                job.resources?.gpu_count!==1||
+                lease.resources?.gpu_mode!=='exclusive'||
+                lease.resources?.gpu_count!==1||
+                lease.status!=='acknowledged'||lease.receipt_fresh!==true||
+                !Array.isArray(lease.gpu_bindings)||
+                lease.gpu_bindings.length!==1||
+                lease.gpu_bindings[0].id!==job.resources.gpus?.[0]||
+                lease.gpu_bindings[0].id!==lease.resources.gpus?.[0])
+                throw Error('GPU access probe requires a locally qualified, frozen exclusive Linux lease.');
+            // A previously launched process cannot be silently converted
+            // into a device policy inspection.
+            if(this.supervisor.snapshot().some(r=>r.job_id===job.id))
+                throw Error('GPU access probe refused for an already owned native service.');
+            try {
+                const result=await this.supervisor.qualifyGpuDeviceAccess(
+                    lease.gpu_bindings);
+                if(!Array.isArray(result?.selected)||
+                    result.selected.length!==1||
+                    result.selected[0]!==lease.gpu_bindings[0].pci_address)
+                    throw Error('GPU preflight returned a different physical device.');
+                return {kind:'gpu_qualification',
+                    job_id:job.id,lease_id:lease.id,
+                    dispatch_id:order.dispatch_id,
+                    result:'verified',
+                    selected_pci_addresses:result.selected};
+            }catch(error) {
+                return {kind:'gpu_qualification',
+                    job_id:job.id,lease_id:lease.id,
+                    dispatch_id:order.dispatch_id,
+                    result:'rejected',selected_pci_addresses:[],
+                    diagnostic:String(error.message||error).slice(0,160)};
+            }
+        }
         let observed,diagnostic=null;
         try {
             const record=this.supervisor.snapshot().find(r=>r.job_id===job.id);
