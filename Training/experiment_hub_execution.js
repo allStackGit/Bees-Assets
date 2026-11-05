@@ -6,6 +6,7 @@ const os=require('node:os');
 const path=require('node:path');
 const {LinuxSupervisor}=require('./experiment_hub_linux_supervisor');
 const {inspectHost}=require('./experiment_hub_host');
+const {validateProgress}=require('./experiment_hub_progress');
 const ID=/^[a-z][a-z0-9_-]{0,47}$/;
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
@@ -69,7 +70,7 @@ class LocalExecution {
         }
         const state=['launch_requested','running','stop_requested','finished','failed','stopped']
             .includes(observed.state)?observed.state:'unverified';
-        return {
+        const report={
             job_id:job.id,lease_id:lease.id,
             dispatch_id:order.dispatch_id,state,
             ...(diagnostic?{diagnostic}:{}),
@@ -83,6 +84,30 @@ class LocalExecution {
                 observed.process_tasks>=0
                 ?{process_tasks:observed.process_tasks}:{}),
         };
+        // Optional adapter metrics are observational. A malformed or
+        // unavailable summary must never turn verified service state into
+        // an unverified start/stop or influence the policy/checkpoint.
+        const owned=this.supervisor.snapshot().find(r=>r.job_id===job.id);
+        const localAdapter=this.supervisor.adapters?.[job.project_id];
+        if(owned&&owned.lease_id===lease.id&&
+            (owned.artifact_lineage_root_id||owned.job_id)===
+                (job.artifact_lineage_root_id||job.id)&&
+            typeof localAdapter?.readProgress==='function'&&
+            ['running','stop_requested','finished','failed','stopped']
+                .includes(state)) {
+            try {
+                const result=await localAdapter.readProgress(Object.freeze({
+                    job_id:job.id,project_id:job.project_id,
+                    continuation_of_job_id:job.continuation_of_job_id||null,
+                    artifact_lineage_root_id:job.artifact_lineage_root_id||job.id,
+                }));
+                if(result!==null&&result!==undefined)
+                    report.progress=validateProgress(result,job.project_id);
+            }catch(error) {
+                report.progress_issue=String(error.message||error).slice(0,160);
+            }
+        }
+        return report;
     }
 }
 function fromEnvironment(env=process.env,options={}) {
