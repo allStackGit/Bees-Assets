@@ -306,7 +306,7 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
 </section>
 <section data-hub-tab="train" data-project="other">
   <h2>Project job queue</h2>
-  <p class="hub-notice">Queue frozen configurations, coordinate resource claims, and explicitly start or stop CPU-only jobs on Linux machines with a locally installed, opted-in trusted adapter. Workloads cannot execute from configuration JSON alone. GPU jobs, Windows execution, disconnected agents, and unverified native limits remain blocked. Bees training stays under its existing operator.</p>
+  <p class="hub-notice">Queue frozen configurations, coordinate resource claims, and explicitly start or stop CPU-only jobs on supported Linux or Windows machines with a locally installed, opted-in trusted adapter. Real-host native execution still requires qualification. Workloads cannot execute from configuration JSON alone. GPU jobs, disconnected agents, and unverified native limits remain blocked. Bees training stays under its existing operator.</p>
   <div class="hub-standalone">
     <h3>Queue a saved configuration</h3>
     <div class="formgrid">
@@ -347,7 +347,7 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
     <thead><tr><th>Job</th><th>Native state</th><th>Learning progress</th><th>Summary timestamp</th><th>Host use</th></tr></thead>
     <tbody id="hub-monitor-rows"></tbody>
   </table></div>
-  <p class="muted">Native CPU-only service status and current memory/CPU usage appear when a locally approved Linux job reports them. Unknown service states require manual review; GPU isolation and cross-project GPU execution are not available.</p>
+  <p class="muted">Native CPU-only service status and CPU/RAM observations appear when an approved Linux or Windows agent reports them. Windows native supervision has not yet been qualified on a real host. Unknown service states require manual review; GPU isolation and cross-project GPU execution are not available.</p>
 </section>
 <section data-hub-tab="compare" data-project="other">
   <h2>Project comparisons</h2>
