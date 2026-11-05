@@ -435,7 +435,13 @@ durable evidence after restart. The helper's installed SHA-256 is also
 rechecked before every job launch.
 
 Each authorized job writes a private one-time request and a durable
-ownership record before starting an independent helper. The helper
+ownership record before starting an independent helper. **Configure
+the Windows private journal directory with restrictive NTFS access
+control for the agent's Windows account.** POSIX-style file modes
+alone do not reliably configure NTFS ACLs. Do not place passwords,
+API tokens, or other secrets in adapter command-line arguments or
+experiment JSON, because process command lines and request files
+may reveal them to locally privileged users. The helper
 creates a Windows Job Object with job-wide committed memory limits,
 a CPU-rate **hard cap**, and kill-on-last-handle-close semantics.
 It creates the locally selected workload **suspended**, assigns it
