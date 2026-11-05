@@ -123,3 +123,91 @@ pub fn poca_inverse_group_sample_weight(
         0.0
     }
 }
+
+
+/// Exact _normalize_poca_advantages input contract: one sampled advantage,
+/// live POCA groupmate count and rollout validity flag per row. Numerical
+/// accumulation uses f64 to reduce cancellation in large minibatches;
+/// the normalized results remain f32 as in the active Python trainer.
+///
+/// These are REAL trainer-computed advantages, not estimates inferred from
+/// native simulation rewards or policy actions.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PocaAdvantageError {
+    WrongLengths {
+        advantages: usize,
+        groupmate_counts: usize,
+        valid_timesteps: usize,
+    },
+    NonFiniteAdvantage { row: usize },
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct PocaAdvantageNormalization {
+    /// Sum of 1 / (1 + live groupmate count) over valid rollout rows.
+    /// Useful as the effective group-timestep sample weight.
+    pub active_weight: f64,
+    pub weighted_mean: f64,
+    pub weighted_std_dev: f64,
+}
+
+/// Source _normalize_poca_advantages: standardize the entire minibatch
+/// using only valid, inverse-group-size-weighted POCA observations.
+/// Invalid/padded rows do not influence the moments; if any valid rows
+/// exist they are still transformed (their PPO loss mask excludes them).
+///
+/// Two read-only passes and one in-place pass; no per-sample allocation.
+/// Invalid lengths or nonfinite inputs leave the caller's buffer untouched.
+pub fn poca_normalize_advantages(
+    advantages: &mut [f32],
+    groupmate_counts: &[u32],
+    valid_timesteps: &[bool],
+) -> Result<PocaAdvantageNormalization, PocaAdvantageError> {
+    let len = advantages.len();
+    if groupmate_counts.len() != len || valid_timesteps.len() != len {
+        return Err(PocaAdvantageError::WrongLengths {
+            advantages: len,
+            groupmate_counts: groupmate_counts.len(),
+            valid_timesteps: valid_timesteps.len(),
+        });
+    }
+    for (row, &advantage) in advantages.iter().enumerate() {
+        if !advantage.is_finite() {
+            return Err(PocaAdvantageError::NonFiniteAdvantage { row });
+        }
+    }
+    let mut total_weight = 0.0_f64;
+    let mut weighted_sum = 0.0_f64;
+    for ((&advantage, &mates), &valid) in advantages.iter()
+        .zip(groupmate_counts).zip(valid_timesteps) {
+        if valid {
+            let weight = 1.0 / (f64::from(mates) + 1.0);
+            total_weight += weight;
+            weighted_sum += weight * f64::from(advantage);
+        }
+    }
+    if total_weight == 0.0 {
+        advantages.fill(0.0);
+        return Ok(PocaAdvantageNormalization::default());
+    }
+    let mean = weighted_sum / total_weight;
+    let mut weighted_square_deviation = 0.0_f64;
+    for ((&advantage, &mates), &valid) in advantages.iter()
+        .zip(groupmate_counts).zip(valid_timesteps) {
+        if valid {
+            let weight = 1.0 / (f64::from(mates) + 1.0);
+            let centered = f64::from(advantage) - mean;
+            weighted_square_deviation += weight * centered * centered;
+        }
+    }
+    let std_dev = (weighted_square_deviation / total_weight).max(0.0).sqrt();
+    let denominator = std_dev + 1.0e-10;
+    for advantage in advantages.iter_mut() {
+        *advantage = ((f64::from(*advantage) - mean) / denominator) as f32;
+    }
+    Ok(PocaAdvantageNormalization {
+        active_weight: total_weight,
+        weighted_mean: mean,
+        weighted_std_dev: std_dev,
+    })
+}
