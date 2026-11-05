@@ -15,6 +15,7 @@ use crate::geometry::Vec2;
 use crate::local_navigation_observation::{LocalNavigationError, LocalNavigationOccupancy};
 use crate::obstacle::ObstacleKind;
 use crate::perception::{SelfSource, ship_type_scalar};
+use crate::perception_environment::CollisionAsteroid;
 use crate::team_exploration::{Explorer, ExplorationError, TeamExplorationGrid};
 use crate::perception_entities::{ObservedShip, ObservedWeapon};
 use crate::physics::ShipBody;
@@ -30,6 +31,7 @@ pub enum CombatPerceptionError {
     CountOverflow,
     InvalidObstacleStorage,
     MissingNavigationBounds(i64),
+    MissingAsteroidVitals(i64),
     MissingEffectiveVision(i64),
     MissingShipMetadata(i64),
     Navigation(LocalNavigationError),
@@ -343,6 +345,82 @@ struct ShipCandidateKey {
     distance_squared: f32,
     ship_type: u8,
     fleet_id: i64,
+}
+
+/// Gather only discovered, alive collision asteroids from the actual
+/// native obstacle registry. Unity's RlCombatPerception uses the active
+/// clearance-mapping collider AABB (or primary collider), the body's
+/// level-local velocity, and Health / EffectiveMaxHealth.
+///
+/// This does no candidate sorting: EnvironmentSlotEncoder already owns
+/// reusable scratch and sorts by distance to the collider bounds, exactly
+/// as Unity does. Filtering here makes it impossible for undiscovered
+/// obstacles to leak into observations.
+pub fn collect_learned_collision_asteroids(
+    world: &CombatWorld,
+    observing_side: i32,
+    output: &mut Vec<CollisionAsteroid>,
+) -> Result<usize, CombatPerceptionError> {
+    if observing_side <= 0 ||
+        world.obstacles().len() != world.physics().obstacles().len() {
+        return Err(CombatPerceptionError::InvalidObstacleStorage);
+    }
+    output.clear();
+    for (obstacle, body) in world.obstacles().iter()
+        .zip(world.physics().obstacles()) {
+        if obstacle.entity_id != body.id {
+            output.clear();
+            return Err(CombatPerceptionError::InvalidObstacleStorage);
+        }
+        if obstacle.kind != ObstacleKind::CollisionAsteroid ||
+            !body.active || !obstacle.live() ||
+            !world.discovery().has(
+                observing_side,
+                crate::level_discovery::DiscoveryKind::Obstacle,
+                obstacle.entity_id,
+            ) {
+            continue;
+        }
+        let vitals = obstacle.vitals
+            .ok_or(CombatPerceptionError::MissingAsteroidVitals(
+                obstacle.entity_id,
+            ))?;
+        if vitals.effective_max_health <= 0 {
+            output.clear();
+            return Err(CombatPerceptionError::MissingAsteroidVitals(
+                obstacle.entity_id,
+            ));
+        }
+        let bounds = body.navigation_bounds()
+            .ok_or(CombatPerceptionError::MissingNavigationBounds(
+                obstacle.entity_id,
+            ))?;
+        let position = Vec2::new(
+            (bounds.min.x + bounds.max.x) * 0.5,
+            (bounds.min.y + bounds.max.y) * 0.5,
+        );
+        let half_extents = Vec2::new(
+            (bounds.max.x - bounds.min.x).abs() * 0.5,
+            (bounds.max.y - bounds.min.y).abs() * 0.5,
+        );
+        if !position.is_finite() || !half_extents.is_finite() ||
+            !body.linear_velocity.is_finite() ||
+            !body.pose.rotation_degrees.is_finite() {
+            output.clear();
+            return Err(CombatPerceptionError::InvalidAuthoredMetadata);
+        }
+        output.push(CollisionAsteroid {
+            id: obstacle.entity_id,
+            position,
+            half_extents,
+            rotation_degrees: body.pose.rotation_degrees,
+            level_velocity: body.linear_velocity,
+            health_fraction: (vitals.health as f32 /
+                vitals.effective_max_health as f32).clamp(0.0, 1.0),
+            alive: true,
+        });
+    }
+    Ok(output.len())
 }
 
 /// Read-only Level ship candidate staging. Sorting real live ships BEFORE
