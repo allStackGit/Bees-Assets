@@ -1431,6 +1431,43 @@ class ExperimentHub {
         next.jobs.push(job);
         return job;
     }
+    // A stopped Ants predecessor never advances its pipeline automatically.
+    // Operator approval only unblocks coordination: it neither claims
+    // capacity nor bypasses the trusted adapter's checkpoint verification.
+    approveStoppedContinuation(value) {
+        if(!object(value)||value.confirm_stopped_checkpoint_risk!==true||
+            typeof value.job_id!=='string')
+            throw Error('Explicitly approve the stopped predecessor and possible checkpoint rollback.');
+        const next=copy(this.state);
+        const child=next.jobs.find(j=>j.id===value.job_id);
+        if(!child||child.project_id!=='ants'||
+            child.status!=='waiting_predecessor'||
+            !UUID.test(String(child.continuation_of_job_id||'')))
+            throw Error('Only blocked Ants continuation stages may be approved.');
+        const parent=next.jobs.find(j=>j.id===child.continuation_of_job_id);
+        const lease=next.reservations.find(l=>l.id===parent?.lease_id&&
+            l.job_id===parent.id&&l.project_id==='ants'&&
+            l.machine_id===parent.assigned_machine_id&&
+            l.issued_by==='experiment-hub'&&l.status==='released'&&
+            Boolean(l.released_at));
+        if(!parent||parent.project_id!=='ants'||
+            parent.status!=='stopped'||!parent.capacity_released_at||
+            !parent.dispatch_id||!parent.execution_updated_at||
+            !parent.assigned_machine_id||!lease||
+            child.artifact_lineage_root_id!==
+                (parent.artifact_lineage_root_id||parent.id)||
+            (parent.continuation_machine_id&&
+                parent.continuation_machine_id!==parent.assigned_machine_id)||
+            (child.continuation_machine_id&&
+                child.continuation_machine_id!==parent.assigned_machine_id))
+            throw Error('Stopped predecessor lacks verified terminal ownership, released capacity, or matching artifact lineage.');
+        child.continuation_machine_id=parent.assigned_machine_id;
+        child.status='waiting_adapter';
+        child.predecessor_approved_at=now();
+        child.status_reason='Operator approved continuation after stopped predecessor; trusted adapter must still validate the latest durable checkpoint at launch.';
+        this.commit(next);
+        return copy(child);
+    }
     cancelJob(value) {
         if (!object(value) || typeof value.job_id!=='string' ||
             value.confirm_cancel!==true)
