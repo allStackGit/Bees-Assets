@@ -176,7 +176,10 @@ The CLI creates real authored Wasp/Gunship collider worlds, warms both
 configurations, then compares the serial execution path against CPU-parallel
 rollout windows. It emits CSV with observed wall seconds, world-steps/s and
 the physics workload counters, so runs from different machines/configurations
-can be compared. Try larger `--ships` counts to measure arena-size scaling,
+can be compared. After each timed window, it compares the exact final
+ship state, per-world RNG state, and physics-workload totals between
+serial and parallel execution. This parity check is not included in the
+reported elapsed time. Try larger `--ships` counts to measure arena-size scaling,
 and adjust `--worlds` and `--workers` independently.
 
 **Scope:** this is a movement/physics *baseline*, not a completed Bees game,
