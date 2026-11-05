@@ -194,10 +194,17 @@ not the simulation's cumulative totals. Wall-clock timings are collected
 log2-nanosecond histogram provides bounded-memory approximate latency
 percentiles via `sampled_step_percentile_upper_nanos`. Failed updates
 track sampled elapsed time separately so they cannot bias successful-step
-throughput. Successful batched gameplay steps also measure host time
-separately for observation assembly, inference/validation and world stepping;
-asynchronous GPU time is included only if the model backend synchronizes.
-Snapshots can be
+throughput. When `Simulation::set_timing_sample_period` is enabled, selected
+successful batched gameplay steps also measure host time separately for
+observation assembly, inference/validation and world stepping.
+`NativeBatchedStepCounts.phase_timing_sampled` distinguishes genuine
+samples from zero-valued unmeasured calls. Rollout model-forward timing
+uses the same sampling cadence, and
+`NativeInferenceMeasurements.model_forward_timed_calls` and
+`model_forward_timed_rows` provide denominators for sampled wall times.
+Standalone `NativeLevelInferenceBatch::infer` continues to time every
+model call. Accelerator work is included only when the backend
+synchronizes. Snapshots can be
 subtracted for experiment windows; the histogram can be aggregated without
 storing every frame. Sampled timing does not yet include an attached native
 HiveMind command update or an end-to-end PPO training pass.
