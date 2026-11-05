@@ -11,7 +11,8 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use bees_hivemind::session::{HiveMindSession, SquadLifetime};
 use bees_sim::combat_world::{CombatEvent, CombatWorld};
 use bees_sim::episode_terminal::{
-    EpisodeTerminalError, EpisodeTerminalResult, NativeEpisodeTerminal,
+    EpisodeDeathAttribution, EpisodeTerminalError, EpisodeTerminalResult,
+    EpisodeTerminalRewards, NativeEpisodeTerminal,
 };
 
 use crate::commands::{
@@ -437,4 +438,41 @@ pub fn observe_terminal_after_roster(
         matches!(change, SquadRosterChange::SquadRetired { .. })
     );
     episode.observe_after_step(world, dt_seconds, squad_was_retired)
+}
+
+/// The native Level's complete, source-order terminal handoff. The combat
+/// event store is read once here by the episode death-attribution tracker,
+/// then the already-reconciled squad transitions decide whether the last
+/// squad was killed. A stationary-only side never ends on its own merely
+/// from having zero mobile ships; timeout is a draw for both sides.
+///
+/// Rendering, reward delivery, GroupEpisode end, reset and persistent TSV
+/// accounting remain host responsibilities, not hidden side effects.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FinalizedNativeEpisode {
+    pub outcome: EpisodeTerminalResult,
+    pub rewards: EpisodeTerminalRewards,
+}
+
+pub fn observe_terminal_rewards_after_roster(
+    episode: &mut NativeEpisodeTerminal,
+    attribution: &mut EpisodeDeathAttribution,
+    world: &mut CombatWorld,
+    dt_seconds: f32,
+    changes: &[SquadRosterChange],
+) -> Result<Option<FinalizedNativeEpisode>, EpisodeTerminalError> {
+    // Do not consume or mutate attribution for an invalid timestep.
+    if !dt_seconds.is_finite() || dt_seconds <= 0.0 {
+        return Err(EpisodeTerminalError::InvalidStep);
+    }
+    if episode.result().is_some() {
+        return Ok(None);
+    }
+    attribution.record_combat_events(world, world.events());
+    let Some(outcome) = observe_terminal_after_roster(
+        episode, world, dt_seconds, changes,
+    )? else { return Ok(None) };
+    let rewards = episode.terminal_rewards_from_attribution(attribution)
+        .ok_or(EpisodeTerminalError::InvalidSides)?;
+    Ok(Some(FinalizedNativeEpisode { outcome, rewards }))
 }
