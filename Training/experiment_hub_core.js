@@ -1698,6 +1698,57 @@ class ExperimentHub {
         this.commit(next);
         return copy(child);
     }
+    // Cancel only future, never-dispatched jobs in one durable update.
+    // The selected predecessor is untouched; its native supervisor remains
+    // the sole execution owner.
+    cancelFutureJobs(value) {
+        if(!object(value)||value.confirm_cancel!==true||
+            !UUID.test(String(value.after_job_id||'')))
+            throw Error('Explicitly confirm the predecessor whose queued successors should be cancelled.');
+        const next=copy(this.state);
+        let parent=next.jobs.find(j=>j.id===value.after_job_id);
+        if(!parent)throw Error('Selected predecessor job not found.');
+        const visited=new Set([parent.id]),future=[];
+        while(true) {
+            const children=next.jobs.filter(j=>j.status!=='cancelled'&&
+                (j.after_job_id===parent.id||
+                 j.continuation_of_job_id===parent.id));
+            if(children.length>1)
+                throw Error('Predecessor has conflicting successor branches; inspect registry.');
+            if(!children.length)break;
+            const child=children[0];
+            if(visited.has(child.id)||future.length>=1000)
+                throw Error('Invalid or cyclic queued dependency chain.');
+            if(!['waiting_adapter','waiting_predecessor'].includes(
+                    child.status)||child.dispatch_id||
+                (child.status==='waiting_predecessor'&&child.lease_id))
+                throw Error('A downstream job was dispatched or has uncertain state; cancel future jobs only after native review.');
+            visited.add(child.id);
+            future.push(child);
+            parent=child;
+        }
+        if(!future.length)throw Error('No queued successor jobs to cancel.');
+        const cancelledIds=future.map(job=>job.id);
+        const cancellationTime=now();
+        // Descendants first. Reuse existing unstarted lease release and
+        // GPU-qualification cancellation, then commit every state together.
+        for(const job of future.reverse()) {
+            if(job.lease_id) {
+                const lease=next.reservations.find(l=>l.id===job.lease_id&&
+                    l.job_id===job.id&&
+                    ['offered','acknowledged'].includes(l.status));
+                if(!lease)
+                    throw Error('Queued job lease ownership changed; no cancellation committed.');
+                this.releaseIn(next,lease);
+            }
+            job.status='cancelled';
+            job.status_reason='Future queued job cancelled by confirmed operator action.';
+            job.cancelled_at=cancellationTime;
+        }
+        this.commit(next);
+        return {cancelled_job_ids:cancelledIds,
+            cancelled_count:cancelledIds.length,starts_stopped:0};
+    }
     cancelJob(value) {
         if (!object(value) || typeof value.job_id!=='string' ||
             value.confirm_cancel!==true)
