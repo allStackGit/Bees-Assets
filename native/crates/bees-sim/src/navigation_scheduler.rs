@@ -214,6 +214,9 @@ impl NavigationScheduler {
             worker.alive && worker.running.is_none());
         if !has_idle || !world.has_waiting_path_jobs() {
             step.busy_workers = self.busy_workers();
+            if step.busy_workers == 0 && world.has_waiting_path_jobs() {
+                return Err(NavigationSchedulerError::WorkerUnavailable);
+            }
             return Ok(step);
         }
 
@@ -288,16 +291,20 @@ fn solve_job(
 
 impl Drop for NavigationScheduler {
     fn drop(&mut self) {
-        for worker in &self.workers {
-            // Workers own their own scratch; a bounded running query will
-            // complete before processing the shutdown command. Never
-            // forcibly cancel a task whose buffers are in use.
+        let mut joins = Vec::with_capacity(self.workers.len());
+        for mut worker in self.workers.drain(..) {
+            // The channel can still be full if a submitted task has not
+            // been received yet. Dropping the last sender *before* joining
+            // ensures recv() eventually sees disconnection even when the
+            // nonblocking shutdown message could not be queued.
             let _ = worker.sender.try_send(Command::Shutdown);
-        }
-        for worker in &mut self.workers {
+            drop(worker.sender);
             if let Some(handle) = worker.thread.take() {
-                let _ = handle.join();
+                joins.push(handle);
             }
+        }
+        for handle in joins {
+            let _ = handle.join();
         }
     }
 }
