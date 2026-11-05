@@ -693,10 +693,23 @@ document.addEventListener('DOMContentLoaded', () => {
                         ' unique samples/s')+
                 ' · Summary written '+new Date(p.source_modified_at).toLocaleString();
         }
+        if(p?.source==='hub-metrics-v1') {
+            const values=Object.entries(p.metrics).slice(0,5).map(
+                ([key,measurement])=>key+' '+
+                    (measurement.unit==='ratio'
+                        ?(measurement.value*100).toFixed(1)+'%'
+                        :measurement.value.toLocaleString()+' '+measurement.unit));
+            const remaining=Math.max(0,Object.keys(p.metrics).length-values.length);
+            return 'Steps '+p.steps_completed.toLocaleString()+
+                ' · '+values.join(' · ')+
+                (remaining?' · +'+remaining+' more':'')+
+                ' · Summary written '+new Date(p.source_modified_at).toLocaleString();
+        }
         if(live?.progress_issue)
             return 'Local progress unavailable: '+live.progress_issue;
-        return job.project_id==='ants'&&job.dispatch_id
-            ?'Awaiting production summary':'—';
+        return job.dispatch_id
+            ?job.project_id==='ants'?'Awaiting production summary'
+                :'Awaiting trusted project summary':'—';
     }
     function display() {
         if(!state)return;
