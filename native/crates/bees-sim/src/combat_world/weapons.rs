@@ -527,6 +527,124 @@ mod tests {
     use crate::simulation::{World, WorldId};
 
     #[test]
+    fn leafcutter_charge_queues_then_fires_only_at_the_authored_animation_event() {
+        let projectiles = Arc::new(ProjectileAssetCatalog::embedded().unwrap());
+        let hulls = ShipAssetCatalog::embedded().unwrap();
+        let mut world = CombatWorld::new(
+            Aabb {
+                min: Vec2::new(-200.0, -200.0),
+                max: Vec2::new(200.0, 200.0),
+            }, 8.0, projectiles,
+        ).unwrap();
+        world.spawn_ship(
+            hulls.by_type(16).unwrap(), 1, 1,
+            ShipVitals::new(100, 100, 1000, 0).unwrap(),
+            ShipMotion::new(Vec2::ZERO, 0.0, 0.0, 0.0, 3.0),
+        ).unwrap();
+        world.bind_policy_ship(1, PolicyFrame::new(0), false).unwrap();
+        world.configure_policy_turret(1, 0, NativeTurretSpec {
+            weapon_type: 9, projectile_type: 9,
+            mount_offset: Vec2::ZERO,
+            initial_rotation_degrees: 0.0,
+            rotation_rate: 90.0,
+            range: 80.0, power: 15, rate_of_fire: 0.3,
+            projectile_value: 1.0, projectile_speed: 100.0,
+            fire_pattern: NativeFirePattern::LaserBuilder,
+        }).unwrap();
+        let mut action = Action::ZERO;
+        action.continuous[3] = 1.0;
+        action.discrete[0] = 1;
+        world.apply_policy_decisions(&[Decision { agent_id: 1, action }])
+            .unwrap();
+        // Targeting completes after three source-defined passes, but the
+        // real Leaf Cutter Shot Form animation fires only at 0.8 seconds.
+        for _ in 0..45 {
+            world.advance_policy_turrets(0.02).unwrap();
+        }
+        assert_eq!(world.projectile_storage_metrics().active_projectiles, 0);
+        assert!(world.policy_ship_runtime.get(&1).unwrap()
+            .turrets[0].as_ref().unwrap().charge_elapsed_seconds.is_some());
+        for _ in 0..30 {
+            world.advance_policy_turrets(0.02).unwrap();
+        }
+        let fired: Vec<i64> = world.events().iter().filter_map(|event| {
+            if let CombatEvent::PolicyWeaponFired {
+                ship_id: 1, slot: 0, projectile_id,
+            } = event {
+                Some(*projectile_id)
+            } else { None }
+        }).collect();
+        assert_eq!(fired.len(), 1);
+        let index = *world.projectile_by_id.get(&fired[0]).unwrap();
+        assert_eq!(world.projectiles()[index].projectile_type, 9);
+        assert_eq!(world.projectiles()[index].power, 15);
+        assert_eq!(world.physics().projectiles()[index]
+            .motion.attribution.root_shot_id, fired[0]);
+    }
+
+    #[test]
+    fn flagship_charges_then_uses_its_current_hull_heading_after_policy_reaim() {
+        let projectiles = Arc::new(ProjectileAssetCatalog::embedded().unwrap());
+        let hulls = ShipAssetCatalog::embedded().unwrap();
+        let mut world = CombatWorld::new(
+            Aabb {
+                min: Vec2::new(-200.0, -200.0),
+                max: Vec2::new(200.0, 200.0),
+            }, 8.0, projectiles,
+        ).unwrap();
+        world.spawn_ship(
+            hulls.by_type(11).unwrap(), 1, 1,
+            ShipVitals::new(100, 100, 1000, 0).unwrap(),
+            ShipMotion::new(Vec2::ZERO, 0.0, 0.0, 0.0, 3.0),
+        ).unwrap();
+        world.bind_policy_ship(1, PolicyFrame::new(0), false).unwrap();
+        world.configure_policy_turret(1, 0, NativeTurretSpec {
+            weapon_type: 4, projectile_type: 4,
+            mount_offset: Vec2::ZERO,
+            initial_rotation_degrees: 0.0, rotation_rate: 90.0,
+            range: 100.0, power: 30, rate_of_fire: 0.3,
+            projectile_value: 1.0, projectile_speed: 100.0,
+            fire_pattern: NativeFirePattern::FullShipTurret,
+        }).unwrap();
+        let mut action = Action::ZERO;
+        action.continuous[2] = 1.0; // policy aims +X, cannon initially +Y
+        action.discrete[0] = 1;
+        world.apply_policy_decisions(&[Decision { agent_id: 1, action }])
+            .unwrap();
+        for _ in 0..20 {
+            world.advance_policy_turrets(0.02).unwrap();
+        }
+        assert_eq!(world.projectile_storage_metrics().active_projectiles, 0);
+        assert!(world.policy_ship_runtime.get(&1).unwrap()
+            .turrets[0].as_ref().unwrap().charge_elapsed_seconds.is_some());
+
+        // The Unity animation event retains the queued shot even after
+        // a subsequent policy decision drops fire_requested.
+        action.discrete[0] = 0;
+        world.apply_policy_decisions(&[Decision { agent_id: 1, action }])
+            .unwrap();
+        world.physics.ships_mut()[0].motion.rotation_degrees = 90.0;
+        for _ in 0..155 {
+            world.advance_policy_turrets(0.02).unwrap();
+        }
+        let fired: Vec<i64> = world.events().iter().filter_map(|event| {
+            if let CombatEvent::PolicyWeaponFired {
+                ship_id: 1, slot: 0, projectile_id,
+            } = event {
+                Some(*projectile_id)
+            } else { None }
+        }).collect();
+        assert_eq!(fired.len(), 1);
+        let index = *world.projectile_by_id.get(&fired[0]).unwrap();
+        let shot = &world.physics().projectiles()[index];
+        assert_eq!(world.projectiles()[index].projectile_type, 4);
+        assert_eq!(world.projectiles()[index].power, 30);
+        assert!(shot.motion.velocity.x < -99.0);
+        assert!(shot.motion.velocity.y.abs() < 0.001);
+        assert_eq!(shot.motion.attribution.root_shot_id, fired[0]);
+    }
+
+    #[test]
     fn dual_cannon_launches_two_half_power_shots_from_rotated_ship_pivot_muzzles() {
         let projectiles = Arc::new(ProjectileAssetCatalog::embedded().unwrap());
         let hulls = ShipAssetCatalog::embedded().unwrap();
