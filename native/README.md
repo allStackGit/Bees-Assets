@@ -194,9 +194,13 @@ missing mounts and unported subclasses/specials fail the full decision
 batch before any motion or communications are applied.
 `PolicyAgentKey::is_current_for` is still required at the inference host.
 
-**Supported:** source-based simple rotating turrets (LightCannon, Turret,
-RocketTurret, Eye, QueenEye) using the existing compatible projectile
-types. **Not yet implemented:** DualCannon, BeamCannon,
+**Supported:** source-based rotating turrets (LightCannon, Turret,
+RocketTurret, Eye, QueenEye) and DualCannon using compatible projectile
+types. `NativeFirePattern::DualCannon` requires the two authored barrel
+offsets; each targeting pass launches two HumanSmall shots with integer
+`Power / 2`, rotating both muzzle positions around the ship's pivot.
+Both shots use the ship-center aim angle, retain independent shot-root
+IDs, and emit one firing event each. **Not yet implemented:** BeamCannon,
 LaserBuilder/SplitShot, FullShipTurret and Bomb firing continuations;
 real Level-to-perception snapshot collection, special abilities, GPU
 inference, and an ML-Agents-compatible learner. Unity targeting timers
