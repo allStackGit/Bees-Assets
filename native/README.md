@@ -39,8 +39,16 @@ may be exported from a failed step. A native Beehive healing capability
 now accepts the actual Beehive child HealCollider and authored ship-size
 eligibility; a touching eligible Bee can restore up to 50 health per
 successful action with a one-second cooldown. That action emits its
-real TSV improvement through the same episode shaping budget. Mining and
-WarpGate physical capability actions remain unported and masked.
+real TSV improvement through the same episode shaping budget. WarpGate
+returns now require the real WarpGate child collider supplied through
+`configure_warp_gate_zone` and a living non-WarpGate Human policy
+controller registered with `configure_policy_warp` using the authored
+HumanSide ID. A successful overlapping return emits `ShipWarped` before
+`ShipDied`, credits preserved live ShipVitals TSV to the same bounded
+shaping stream, and lets the separate economic ledger retain mined cargo.
+Policy masks reject warp actions without an authored active gate contact;
+the rendered Level still owns any WarpGate sound/presentation.
+Mining physical capability actions remain unported and masked.
 
 `NativeGroupRewardDelivery` is an optional per-episode MA-POCA delivery
 adapter. The runner registers participating agents, consumes side-wide
