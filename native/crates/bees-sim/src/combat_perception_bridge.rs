@@ -269,6 +269,9 @@ pub fn capability_source_from_world(
     world: &CombatWorld, entity_id: i64,
     mut capability: CapabilitySource,
 ) -> CapabilitySource {
+    if let Some(can_heal) = world.policy_healing_capability(entity_id) {
+        capability.healing_possible = can_heal;
+    }
     if let Some(special) = world.policy_special_observations(entity_id) {
         capability.special_resource_fraction = special.resource_fraction;
         capability.special_cooldown_fraction = special.cooldown_fraction;

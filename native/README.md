@@ -35,7 +35,12 @@ stepping. Each successful fixed step runs one policy/combat transaction,
 reconciles ordered ship deaths and Scout minions, computes hit/mining/shot
 rewards and termination, then advances any surviving timed commands.
 The world remains failed on partial event/metadata errors; no sample
-may be exported from a failed step.
+may be exported from a failed step. A native Beehive healing capability
+now accepts the actual Beehive child HealCollider and authored ship-size
+eligibility; a touching eligible Bee can restore up to 50 health per
+successful action with a one-second cooldown. That action emits its
+real TSV improvement through the same episode shaping budget. Mining and
+WarpGate physical capability actions remain unported and masked.
 
 `NativeGroupRewardDelivery` is an optional per-episode MA-POCA delivery
 adapter. The runner registers participating agents, consumes side-wide

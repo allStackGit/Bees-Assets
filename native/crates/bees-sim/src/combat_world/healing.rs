@@ -93,6 +93,14 @@ impl CombatWorld {
         selected
     }
 
+    /// Source CanUseHealingAction eligibility, independent of whether
+    /// the ship is currently injured or touching an available Beehive.
+    /// None means the ship is not bound to a native policy controller.
+    pub fn policy_healing_capability(&self, ship_id: i64) -> Option<bool> {
+        self.policy_ship_runtime.get(&ship_id)
+            .map(|runtime| runtime.healing.is_some())
+    }
+
     pub(super) fn policy_healing_ready(&self, ship_id: i64) -> bool {
         let Some(runtime) = self.policy_ship_runtime.get(&ship_id)
             .and_then(|runtime| runtime.healing) else {
