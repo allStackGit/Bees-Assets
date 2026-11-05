@@ -267,7 +267,7 @@ mod tests {
                 } if *projectile_id == shot_id));
             hit |= world.state.events().iter().any(|event|
                 matches!(event, CombatEvent::Hit(h)
-                    if h.projectile_id == shot_id && h.shooter_id == 1));
+                    if h.projectile_id == shot_id && h.attacker_id == 1));
         }
         assert!(detonated);
         assert!(hit);
@@ -279,8 +279,8 @@ mod tests {
     #[test]
     fn bomb_reloads_on_carrier_timer_not_on_elapsed_bomb_fuse() {
         let mut state = actual_striker_world();
-        state.physics.ships_mut()[0].motion.position =
-            state.physics.ships()[2].motion.position;
+        let target_pos = state.physics.ships()[2].motion.position;
+        state.physics.ships_mut()[0].motion.position = target_pos;
         let mut action = Action::ZERO;
         action.discrete[5] = 1;
         state.apply_policy_decisions(&[Decision { agent_id: 1, action }])
@@ -295,8 +295,8 @@ mod tests {
 
         // Reapproach the actual carrier; the next recurring one-second
         // check makes another policy special legal.
-        state.physics.ships_mut()[0].motion.position =
-            state.physics.ships()[1].motion.position;
+        let carrier_pos = state.physics.ships()[1].motion.position;
+        state.physics.ships_mut()[0].motion.position = carrier_pos;
         state.advance_policy_striker_reloads(1.02);
         assert_eq!(state.policy_striker_bomb_ready(1), Some(true));
         assert!(state.policy_action_mask(1).unwrap().special[1]);
@@ -307,8 +307,7 @@ mod tests {
 
         // Physically touching the target again creates a SECOND distinct
         // fuse without replacing the first, which is still in flight.
-        state.physics.ships_mut()[0].motion.position =
-            state.physics.ships()[2].motion.position;
+        state.physics.ships_mut()[0].motion.position = target_pos;
         state.apply_policy_decisions(&[Decision { agent_id: 1, action }])
             .unwrap();
         assert_eq!(state.projectile_storage_metrics().active_projectiles, 2);
