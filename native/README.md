@@ -126,7 +126,9 @@ current episode; `reset_episode` clears only that world's measurements,
 not the simulation's cumulative totals. Wall-clock timings are collected
 **only** when the caller enables a nonzero sample period; the fixed-size
 log2-nanosecond histogram provides bounded-memory approximate latency
-percentiles via `sampled_step_percentile_upper_nanos`. Snapshots can be
+percentiles via `sampled_step_percentile_upper_nanos`. Failed updates
+track sampled elapsed time separately so they cannot bias successful-step
+throughput. Snapshots can be
 subtracted for experiment windows; the histogram can be aggregated without
 storing every frame. Sampled timing does not yet include an attached native
 HiveMind command update or an end-to-end PPO training pass.
