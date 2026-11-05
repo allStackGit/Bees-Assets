@@ -2121,6 +2121,20 @@ impl CombatWorld {
 
         for ship in self.physics.ships_mut() {
             if !ship.active { continue; }
+            // A switch to neural-policy ownership must drop stale gameplay
+            // waypoints before the RL turn-suppression check reads
+            // HasTargetCoordinates. Do not stop the ship or clear its
+            // policy direction: game and training share this same motion.
+            if ship.motion.is_policy_controlled && !ship.motion.user_controlled {
+                if self.navigation_requests.is_pathfinding(ship.id) {
+                    self.navigation_requests.invalidate(ship.id)?;
+                }
+                if let Some(steering) = self.game_ship_steering.get_mut(&ship.id) {
+                    if steering.has_game_order() {
+                        steering.await_path(&mut ship.motion);
+                    }
+                }
+            }
             let policy_step = ship.motion.fixed_step_rl(dt);
             if matches!(policy_step, MotionUpdate::NotPolicyControlled) {
                 if let Some(steering) = self.game_ship_steering.get_mut(&ship.id) {
