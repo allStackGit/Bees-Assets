@@ -761,7 +761,19 @@ impl CombatWorld {
             self.navigation_requests.retire_ship(job.ship_id);
             return Ok(NavigationCompletion::Discarded);
         }
-        let position = self.physics.ships()[index].motion.position;
+        let motion = &self.physics.ships()[index].motion;
+        if motion.is_policy_controlled && !motion.user_controlled {
+            // A mode switch can arrive between two fixed steps. Do not
+            // report a path as accepted when the RL controller owns motion.
+            self.navigation_requests.invalidate(job.ship_id)?;
+            if let Some(steering) = self.game_ship_steering.get_mut(&job.ship_id) {
+                if steering.has_game_order() {
+                    steering.await_path(&mut self.physics.ships_mut()[index].motion);
+                }
+            }
+            return Ok(NavigationCompletion::Discarded);
+        }
+        let position = motion.position;
         let completion = self.navigation_requests.complete(job, path, position)?;
         if let NavigationCompletion::Accepted { path, .. } = &completion {
             if let Some(steering) = self.game_ship_steering.get_mut(&job.ship_id) {
