@@ -95,6 +95,10 @@ document.addEventListener('DOMContentLoaded', () => {
         simulation_steps_per_second:{label:'Last-episode simulation steps/s',rate:false},
         ppo_unique_samples_per_second:{label:'Last-episode PPO unique samples/s',rate:false},
     };
+    const chartAxes={
+        episodes_completed:{label:'Cumulative training episodes'},
+        total_environment_steps:{label:'Cumulative environment steps'},
+    };
     async function loadComparison() {
         if(!state||project==='bees')return;
         const requested=project,serial=++comparisonRequest;
@@ -165,7 +169,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const related=knownRoots.size<runs.length;
         feedback('hub-compare-chart-note',
             (related?'Some selected jobs share a checkpoint/artifact lineage; they are not independent replicates. ':'')+
-            'Comparison uses cumulative episodes, not wall-clock time. '+
+            'Horizontal axis: '+(chartAxes[$('hub-compare-x-axis').value]?.label||
+                chartAxes.episodes_completed.label)+'. Not wall-clock time. '+
             'Source timestamps show when Ants last published a summary. No training decisions use chart data.');
         const table=$('hub-compare-rows');
         table.replaceChildren();
@@ -195,12 +200,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 'No reported learning progress for this project.').colSpan=7;
             table.append(tr);
         }
-        drawComparisonChart(runs,$('hub-compare-metric').value);
+        drawComparisonChart(runs,$('hub-compare-metric').value,
+            $('hub-compare-x-axis').value);
     }
-    function drawComparisonChart(runs,key) {
-        const svg=$('hub-compare-svg'),metric=chartMetrics[key];
+    function drawComparisonChart(runs,key,xKey) {
+        const svg=$('hub-compare-svg'),metric=chartMetrics[key],
+            axis=chartAxes[xKey];
         svg.replaceChildren();
-        if(!metric)return;
+        if(!metric||!axis)return;
         const ns='http://www.w3.org/2000/svg';
         const node=(tag,attrs={},content=null)=>{
             const item=document.createElementNS(ns,tag);
@@ -211,8 +218,8 @@ document.addEventListener('DOMContentLoaded', () => {
             return item;
         };
         svg.setAttribute('aria-label',metric.label+
-            ' by cumulative Ants experiment episodes for selected runs');
-        const usable=p=>Number.isFinite(p.episodes_completed)&&
+            ' by '+axis.label.toLowerCase()+' for selected runs');
+        const usable=p=>Number.isSafeInteger(p[xKey])&&p[xKey]>=0&&
             Number.isFinite(p[key])&&
             !(key==='ppo_unique_samples_per_second'&&
                 p.latest_episode_policy_updated===false);
@@ -220,12 +227,11 @@ document.addEventListener('DOMContentLoaded', () => {
             const points=run.points.length?run.points:
                 [run.job.live_execution?.progress||run.job.final_progress]
                     .filter(Boolean);
-            return {...run,valid:points.filter(p=>
-                Number.isFinite(p.episodes_completed))};
+            return {...run,valid:points};
         });
         const values=series.flatMap(r=>r.valid
             .filter(usable)
-            .map(p=>({x:p.episodes_completed,y:p[key]})));
+            .map(p=>({x:p[xKey],y:p[key]})));
         if(!values.length) {
             node('text',{x:450,y:160,'text-anchor':'middle'},
                 'No recorded samples for the selected runs and metric');
@@ -256,7 +262,7 @@ document.addEventListener('DOMContentLoaded', () => {
         node('line',{x1:bounds.left,y1:bounds.top,
             x2:bounds.left,y2:bounds.bottom,class:'plot-axis'});
         node('text',{x:450,y:313,'text-anchor':'middle'},
-            'Cumulative training episodes');
+            axis.label);
         for(const run of series) {
             // Run slots provide stable colors even as selections change.
             const i=runs.findIndex(r=>r.job.id===run.job.id);
@@ -268,7 +274,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const flush=()=>{
                 if(part.length>1)
                     node('path',{d:part.map((p,i)=>(i?'L':'M')+
-                        x(p.episodes_completed).toFixed(1)+' '+
+                        x(p[xKey]).toFixed(1)+' '+
                         y(p[key]).toFixed(1)).join(' '),
                         stroke:run.color,class:'plot-line'});
                 part=[];
@@ -277,7 +283,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if(point.break_before||!usable(point))flush();
                 if(!usable(point))continue;
                 part.push(point);
-                node('circle',{cx:x(point.episodes_completed),cy:y(point[key]),
+                node('circle',{cx:x(point[xKey]),cy:y(point[key]),
                     r:3.5,fill:run.color,class:'plot-point'});
             }
             flush();
@@ -782,6 +788,7 @@ document.addEventListener('DOMContentLoaded', () => {
     for(const slot of compareSlots)
         $('hub-compare-'+slot).addEventListener('change',renderComparison);
     $('hub-compare-metric').addEventListener('change',renderComparison);
+    $('hub-compare-x-axis').addEventListener('change',renderComparison);
     $('hub-project').addEventListener('change',()=>{
         project=$('hub-project').value;resetEditor();display();selectTab(tab);
     });
