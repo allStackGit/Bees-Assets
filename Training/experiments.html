@@ -1604,6 +1604,24 @@ function render(data) {
             details.append(Object.assign(txt('p', 'Evaluation failure: ' +
                 item.stage_evaluation_error), { className: 'error' }));
         }
+        if (item.benchmark_target) {
+            const checkpoints=(item.checkpoint_history||[])
+                .filter(record=>record.benchmark_target_result);
+            const latest=checkpoints[checkpoints.length-1];
+            const result=latest?.benchmark_target_result;
+            details.append(txt('p','Development benchmark completion target: '+
+                item.benchmark_target.min_win_rate_pct+'% minimum win, '+
+                item.benchmark_target.max_timeout_rate_pct+'% maximum timeouts, '+
+                item.benchmark_target.min_matches+' matches per scenario, '+
+                item.benchmark_target.consecutive_passes+' consecutive checkpoint passes. '+
+                (item.benchmark_target_met
+                    ?'Met at checkpoint '+item.benchmark_target_met.checkpoint_ordinal+
+                        ' (learner step '+item.benchmark_target_met.actual_step+').'
+                    :result?'Latest verified checkpoint '+latest.ordinal+': '+
+                        (result.passed?'all scenarios passed':'one or more scenarios did not pass')+
+                        ', current consecutive passes '+result.consecutive_passes+'.'
+                        :'No completed target evaluation yet.')));
+        }
         if (item.benchmark_status) {
             const evaluation = txt('p', 'Checkpoint evaluation: ' + item.benchmark_status +
                 (item.benchmark_report ? ' · ' + item.benchmark_report : '') +
@@ -2504,6 +2522,11 @@ async function openQueuedEditor(id) {
         for (const stage of def.stages || []) addCurriculumStage(stage);
         $('prefix-stages').value = 1 + (def.stages || []).length;
         $('evaluation-mode').value = def.evaluation_mode || 'none';
+        $('benchmark-target-enabled').checked = Boolean(def.benchmark_target);
+        $('benchmark-target-wins').value = def.benchmark_target?.min_win_rate_pct ?? 70;
+        $('benchmark-target-timeouts').value = def.benchmark_target?.max_timeout_rate_pct ?? 5;
+        $('benchmark-target-matches').value = def.benchmark_target?.min_matches ?? 100;
+        $('benchmark-target-passes').value = def.benchmark_target?.consecutive_passes ?? 2;
         $('reserve-heldout').checked = def.reserve_heldout === true;
         updateStageLabels();
         for (const [key, value] of Object.entries(trainer.hyperparameters)) {
