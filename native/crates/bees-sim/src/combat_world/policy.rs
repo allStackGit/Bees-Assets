@@ -353,6 +353,14 @@ impl CombatWorld {
             return Err(CombatWorldError::InvalidPolicyWarp);
         }
         self.physics.ships_mut()[index].set_warp_zone(child_shape)?;
+        // Register only after the authored collider has been accepted.
+        // Sorted IDs preserve Unity's lowest-ID selection without scanning
+        // non-gate ships or allocating in the per-agent action-mask path.
+        let side = self.ships[index].side;
+        let gates = self.warp_gate_ids_by_side.entry(side).or_default();
+        if let Err(position) = gates.binary_search(&gate_id) {
+            gates.insert(position, gate_id);
+        }
         Ok(())
     }
 
@@ -375,9 +383,11 @@ impl CombatWorld {
         Ok(())
     }
 
-    /// Source FindTouchingWarpGate: inspect only living same-side WarpGate
-    /// child WarpCollider contacts, breaking ties by lowest entity ID.
-    /// The physics core keeps each child trigger attached to its real pose.
+    /// Source FindTouchingWarpGate. The index contains only live gates
+    /// with authored child colliders, sorted by ID. Most battles have no
+    /// registered gate, making the mask check a single failed map lookup.
+    /// For nonempty sets, inspect the exact current collision geometry and
+    /// stop at the first contact: the lowest ID always wins.
     fn touching_warp_gate(&self, ship_id: i64) -> Option<i64> {
         let &index = self.ship_by_id.get(&ship_id)?;
         let ship = &self.ships[index];
@@ -385,19 +395,20 @@ impl CombatWorld {
         if ship.vitals.is_dead() || !body.active {
             return None;
         }
-        let mut selected: Option<i64> = None;
-        for (gate, gate_body) in self.ships.iter().zip(self.physics.ships()) {
-            if gate.ship_type != WARP_GATE_TYPE ||
-                gate.side != ship.side || gate.entity_id == ship_id ||
-                gate.vitals.is_dead() || !gate_body.active ||
-                !gate_body.warp_zone_touches(body) {
+        for &gate_id in self.warp_gate_ids_by_side.get(&ship.side)? {
+            let Some(&gate_index) = self.ship_by_id.get(&gate_id) else {
                 continue;
-            }
-            if selected.map_or(true, |previous| gate.entity_id < previous) {
-                selected = Some(gate.entity_id);
+            };
+            let gate = &self.ships[gate_index];
+            let gate_body = &self.physics.ships()[gate_index];
+            if gate.ship_type == WARP_GATE_TYPE &&
+                gate.entity_id != ship_id && gate.side == ship.side &&
+                !gate.vitals.is_dead() && gate_body.active &&
+                gate_body.warp_zone_touches(body) {
+                return Some(gate_id);
             }
         }
-        selected
+        None
     }
 
     pub(super) fn policy_warp_ready(&self, ship_id: i64) -> bool {
