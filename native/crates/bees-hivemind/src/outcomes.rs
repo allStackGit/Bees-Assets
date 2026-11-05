@@ -219,6 +219,10 @@ pub enum StoreAcknowledgement {
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct PendingStoreCommands {
     submissions: HashMap<i64, StoreCommandsRequest>,
+    /// Terminal 409 responses may contain stale reservations even though
+    /// every other outcome has already committed. Persist these IDs across
+    /// restarts until the host explicitly records reconciliation.
+    reconciliation: HashMap<i64, Vec<i64>>,
 }
 
 impl PendingStoreCommands {
@@ -230,7 +234,8 @@ impl PendingStoreCommands {
     ) -> Result<(), HiveMindProtocolError> {
         if request.hash <= 0 ||
             request.message_type != crate::protocol::STORE_COMMANDS_TYPE ||
-            self.submissions.contains_key(&request.hash) {
+            (self.submissions.contains_key(&request.hash) ||
+             self.reconciliation.contains_key(&request.hash)) {
             return Err(HiveMindProtocolError::InvalidRequest);
         }
         self.submissions.insert(request.hash, request);
@@ -238,6 +243,23 @@ impl PendingStoreCommands {
     }
 
     pub fn pending_count(&self) -> usize { self.submissions.len() }
+
+    pub fn reconciliation_count(&self) -> usize {
+        self.reconciliation.len()
+    }
+
+    /// The caller can persist the ledger and recover unresolved 409 IDs on
+    /// restart without resending the already partially committed batch.
+    pub fn stale_reconciliation_ids(&self, hash: i64) -> Option<&[i64]> {
+        self.reconciliation.get(&hash).map(Vec::as_slice)
+    }
+
+    /// Only after the host has durably recorded that each stale ID is
+    /// settled, invalidated or requires operator intervention may this
+    /// retained reconciliation record be released.
+    pub fn finish_reconciliation(&mut self, hash: i64) -> bool {
+        self.reconciliation.remove(&hash).is_some()
+    }
 
     pub fn retry_payload(&self, hash: i64) -> Option<&StoreCommandsRequest> {
         self.submissions.get(&hash)
@@ -283,6 +305,9 @@ impl PendingStoreCommands {
             }
             let committed_outcome_ids = credited.difference(&stale)
                 .copied().collect();
+            self.reconciliation.insert(
+                response.hash, response.stale_outcome_ids.clone(),
+            );
             self.submissions.remove(&response.hash);
             return Ok(StoreAcknowledgement::PartiallyCommitted {
                 committed_outcome_ids,
