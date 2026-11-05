@@ -122,6 +122,12 @@ async function main(argv=process.argv.slice(2),env=process.env) {
                     throw Error('Agent received multiple native execution orders.');
                 if(reply.execution_orders?.length)
                     reports=[await executor.handle(reply.execution_orders[0])];
+                if(hub.automation.enabled) {
+                    const status=hub.tickAutomation();
+                    if(!status.enabled)
+                        console.error('[qualification automation] Disarmed: '+
+                            status.last_error);
+                }
                 if(lastError)console.log('[qualification agent] reconnected');
                 lastError=null;
             }catch(error) {
@@ -179,6 +185,15 @@ async function main(argv=process.argv.slice(2),env=process.env) {
                     route.startsWith('/api/hub/bees/'))
                     return respond(res,404,{error:'Unavailable in isolated qualification.'});
                 const value=req.method==='POST'?await readJson(req):null;
+                // The live fixed worker token belongs to this disposable
+                // session. Rotating/revoking it mid-flight would strand the
+                // agent and turn this qualification into a recovery test.
+                if(req.method==='POST'&&
+                    ['/api/hub/machines/enroll','/api/hub/machines/revoke']
+                        .includes(route)&&value?.machine_id==='smoke')
+                    return respond(res,409,{
+                        error:'Qualification worker enrollment is managed by this isolated session.',
+                    });
                 const result=hubRoute(hub,req.method,route,url.searchParams,value);
                 if(!result)return respond(res,404,{error:'Unknown Hub route.'});
                 return respond(res,result.status,result.data);
@@ -205,7 +220,7 @@ async function main(argv=process.argv.slice(2),env=process.env) {
         console.log('The normal Bees dashboard on port 7148 is not used.');
         console.log('Create a draft, queue one CPU-only job, claim it, then Start/Stop');
         console.log('using the browser. Stop/release all claims before Ctrl+C.');
-        console.log('Native execution is never automatically armed.');
+        console.log('Native execution is disarmed by default; browser arming is explicit.');
         const stop=()=>{
             if(closing)return;
             closing=true;
