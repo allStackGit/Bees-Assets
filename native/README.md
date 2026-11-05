@@ -309,7 +309,9 @@ increments the live-side count, inherits the parent's persistent fleet
 identity, and records its Scout parent for the Level/game adapter.
 Special masks use an O(1) side count even in large battles; sorted policy
 requests recheck the cap at execution so concurrent Scout requests
-cannot exceed it. Beacon spawning and cap denial have separate counters.
+cannot exceed it. The same spawn/death boundary also maintains total
+living-ship counts, eliminating the previous full-ship-array scan per
+agent's v26 self-observation in large battles. Beacon spawning and cap denial have separate counters.
 The graphical Level must still instantiate and register the Beacon's
 minion Squad, presentation and autonomous orders using the spawn event;
 these are not represented as magically complete in the native world.

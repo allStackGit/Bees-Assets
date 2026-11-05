@@ -586,6 +586,9 @@ pub struct CombatWorld {
     /// Updated only at canonical spawn/death boundaries. Scout RL action
     /// masks can enforce a team cap in O(1), even in large battles.
     live_ships_by_side: HashMap<i32, usize>,
+    /// Updated at the exact same registration/retirement boundary.
+    /// Eliminates another full roster scan per agent self-observation.
+    live_ship_total: usize,
     /// Each temporary Beacon has its own runtime ID and records the source
     /// Scout. The physical squad formation remains a Level adapter concern.
     beacon_parent_by_id: HashMap<i64, i64>,
@@ -677,6 +680,7 @@ impl CombatWorld {
             obstacle_slot_reuses: 0,
             ship_by_id: HashMap::new(),
             live_ships_by_side: HashMap::new(),
+            live_ship_total: 0,
             beacon_parent_by_id: HashMap::new(),
             scout_beacon_specs: HashMap::new(),
             navigation_requests: NavigationRequests::new(),
@@ -781,6 +785,8 @@ impl CombatWorld {
             debug_assert!(*live > 0, "side roster decrement underflow");
             *live = live.saturating_sub(1);
         }
+        debug_assert!(self.live_ship_total > 0);
+        self.live_ship_total = self.live_ship_total.saturating_sub(1);
         self.beacon_parent_by_id.remove(&victim_id);
         self.scout_beacon_specs.remove(&victim_id);
         self.discovery.retire(DiscoveryKind::Ship, victim_id);
@@ -882,6 +888,10 @@ impl CombatWorld {
     /// training-team cap requires; dead wrappers never occupy a slot.
     pub fn living_ships_on_side(&self, side: i32) -> usize {
         self.live_ships_by_side.get(&side).copied().unwrap_or(0)
+    }
+
+    pub fn total_living_ships(&self) -> usize {
+        self.live_ship_total
     }
 
     pub fn scout_beacon_parent(&self, beacon_id: i64) -> Option<i64> {
@@ -1692,6 +1702,7 @@ impl CombatWorld {
         debug_assert_eq!(index, self.ships.len());
         self.ship_by_id.insert(ship.entity_id, index);
         *self.live_ships_by_side.entry(ship.side).or_insert(0) += 1;
+        self.live_ship_total += 1;
         self.ships.push(ship);
         Ok(())
     }

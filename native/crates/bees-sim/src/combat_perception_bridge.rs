@@ -135,21 +135,19 @@ pub fn live_ship_counts(
     if observer_side <= 0 || world.ships().len() != world.physics().ships().len() {
         return Err(CombatPerceptionError::MismatchedWorldStorage);
     }
-    let mut counts = LiveShipCounts::default();
-    for (ship, body) in world.ships().iter().zip(world.physics().ships()) {
-        if ship.entity_id != body.id {
-            return Err(CombatPerceptionError::MismatchedWorldStorage);
-        }
-        if !body.active || ship.vitals.is_dead() { continue; }
-        let count = if ship.side == observer_side {
-            &mut counts.same_side
-        } else {
-            &mut counts.opponents
-        };
-        *count = count.checked_add(1)
-            .ok_or(CombatPerceptionError::CountOverflow)?;
-    }
-    Ok(counts)
+    // CombatWorld's only ship registration and death boundary maintains
+    // these counts. No agent's observation scans the entire live roster.
+    // The physical and metadata slot arrays are still verified for size.
+    let own = world.living_ships_on_side(observer_side);
+    let all = world.total_living_ships();
+    let others = all.checked_sub(own)
+        .ok_or(CombatPerceptionError::MismatchedWorldStorage)?;
+    Ok(LiveShipCounts {
+        same_side: u32::try_from(own)
+            .map_err(|_| CombatPerceptionError::CountOverflow)?,
+        opponents: u32::try_from(others)
+            .map_err(|_| CombatPerceptionError::CountOverflow)?,
+    })
 }
 
 /// Project one actual live world ship into an entity observation. Call this
