@@ -148,6 +148,42 @@ function hubComparisonCsv(exported) {
             .join(crlf)+crlf;
 }
 
+// A read-only cross-project view. No dependency record is ever mutated
+// by rendering, and observed native completion is not benchmark success.
+function independentSequenceRows(jobs) {
+    const byId=new Map(jobs.map(job=>[job.id,job]));
+    const successor=new Map();
+    for(const job of jobs)if(job.after_job_id&&job.status!=='cancelled') {
+        if(!successor.has(job.after_job_id))successor.set(job.after_job_id,[]);
+        successor.get(job.after_job_id).push(job);
+    }
+    return jobs.filter(job=>!job.after_job_id&&successor.has(job.id))
+        .sort((a,b)=>String(b.created_at||'').localeCompare(
+            String(a.created_at||'')))
+        .slice(0,20).map(root=>{
+            const chain=[root],visited=new Set([root.id]);
+            let conflict=false;
+            for(let i=0;i<16;i++) {
+                const candidates=successor.get(chain[chain.length-1].id)||[];
+                if(candidates.length>1){conflict=true;break;}
+                const child=candidates[0];
+                if(!child)break;
+                if(visited.has(child.id)){conflict=true;break;}
+                visited.add(child.id);
+                chain.push(child);
+            }
+            const current=chain.find(job=>job.status!=='finished'||
+                !job.capacity_released_at)||chain[chain.length-1];
+            const blocked=chain.find(job=>job.status==='waiting_predecessor');
+            return {root,chain,current,
+                completed:chain.filter(job=>job.status==='finished'&&
+                    job.capacity_released_at).length,
+                reason:conflict?'Conflicting or cyclic successor records; inspect the registry.'
+                    :blocked?.predecessor_wait?.reason||
+                        current?.status_reason||'—'};
+        });
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     const $ = id => document.getElementById(id);
     let project = document.documentElement.dataset.hubDefaultProject || 'bees';
@@ -807,6 +843,28 @@ document.addEventListener('DOMContentLoaded', () => {
                 ' · '+j.id.slice(-8),j.id)));
         if(availableParents.some(j=>j.id===previousParent))
             predecessorSelect.value=previousParent;
+        const sequenceRows=independentSequenceRows(state.jobs||[]);
+        $('hub-sequence-overview-panel').hidden=project==='bees'||
+            !sequenceRows.length;
+        const sequenceTable=$('hub-sequence-overview-rows');
+        sequenceTable.replaceChildren();
+        for(const summary of sequenceRows) {
+            const tr=document.createElement('tr');
+            cell(tr,summary.root.project_id+' · '+
+                summary.root.configuration_name+' · '+
+                summary.root.id.slice(-8));
+            cell(tr,summary.chain.map(job=>
+                job.project_id+' / '+job.configuration_name.slice(0,28))
+                .join(' → '));
+            const position=summary.chain.indexOf(summary.current)+1;
+            cell(tr,position+' of '+summary.chain.length+
+                ' · '+summary.current.project_id+
+                ' · '+summary.current.status);
+            cell(tr,summary.completed+' of '+summary.chain.length+
+                ' jobs finished and capacity released');
+            cell(tr,summary.reason);
+            sequenceTable.append(tr);
+        }
         const pipeline=$('hub-pipeline-panel');
         pipeline.hidden=project==='bees';
         const kind=$('hub-pipeline-kind'),oldKind=kind.value;
