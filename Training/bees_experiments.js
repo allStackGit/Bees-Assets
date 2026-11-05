@@ -13,7 +13,8 @@ const { freezePlan: freezeEvaluator, supportsPurpose: evaluatorSupportsPurpose }
     require('./bees_experiment_evaluator_versions');
 const { selectedRoot, copyAndSelect } = require('./bees_experiment_storage');
 const { ExperimentHub } = require('./experiment_hub_core');
-const { createAgentServer } = require('./experiment_hub_agent_listener');
+const { createAgentServer, AGENT_PORT, AGENT_HOST } =
+    require('./experiment_hub_agent_listener');
 const { placements: hubPlacements, plan: hubPlan } = require('./experiment_hub_resources');
 const { append: appendMetricSample, plot: archivedMetricsChart,
     filename: metricArchivePath } = require('./bees_experiment_metrics');
@@ -28,7 +29,6 @@ const { paths, readJson, writeJsonAtomic, ensureDir, loadConfig, resolvePython, 
 const HOST = '127.0.0.1';
 // A fixed port also prevents two coordinators from writing the same state file.
 const PORT = 7148;
-const AGENT_PORT = 7149;
 const DATA_ROOT = selectedRoot(paths.trainingRoot);
 const DB = path.join(DATA_ROOT, 'experiments-v1.json');
 const HTML = path.join(__dirname, 'experiments.html');
@@ -2848,8 +2848,9 @@ if (require.main === module) {
     agentServer.on('error', error => {
         console.error('[hub] agent heartbeat listener unavailable:', error.message);
     });
-    agentServer.listen(AGENT_PORT, HOST, () => {
-        console.log('Experiment Hub machine heartbeat port: ' + HOST+':'+AGENT_PORT);
+    agentServer.listen(AGENT_PORT, AGENT_HOST, () => {
+        console.log('Experiment Hub machine heartbeat port: '+
+            AGENT_HOST+':'+AGENT_PORT);
     });
 }
 module.exports = { server, agentServer, definition, measure, workerSnapshot, benchmarkReports, benchmarkPlan, verifyBenchmarkPlan };
