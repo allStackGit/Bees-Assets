@@ -383,7 +383,7 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
     </table></div>
     <p id="hub-live-bees-note" class="hub-notice"></p>
   </div>
-  <p class="muted">Register capacities and preview concurrent CPU, RAM, and GPU placement. Agents authenticate their own process, but do not establish exclusive host ownership. Detected native OS facilities are shown for planning only; no process supervisor or CPU/RAM/GPU limits are installed. GPU compute percentages are estimated budgets, not enforceable performance guarantees.</p>
+  <p class="muted">Register capacities and preview concurrent CPU, RAM, and GPU placement. Linux agents may report a locally passed CPU/RAM service preflight after explicit native opt-in; each managed service is then verified against kernel cgroup limits. This does not establish exclusive physical host ownership or GPU isolation. GPU percentages are advisory budgets, not enforceable performance guarantees. Windows native execution is not installed.</p>
   <div class="hub-standalone">
     <h3>Register machine</h3>
     <form id="hub-machine-form">
