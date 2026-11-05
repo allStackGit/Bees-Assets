@@ -67,8 +67,15 @@ function resolveRocmDevices(bindings,options={}) {
             if(reported!==device.major+':'+device.minor||
                 device.major!==226)
                 continue;
+            const memoryBytes=readBounded(fsApi,pathApi.join(
+                classPath,'device','mem_info_vram_total'));
+            if(!/^[0-9]{1,16}$/.test(memoryBytes)||
+                !Number.isSafeInteger(Number(memoryBytes)))
+                continue;
+            const actualVramMb=Math.floor(Number(memoryBytes)/1048576);
+            if(actualVramMb<1||actualVramMb>1000000)continue;
             claim={pci_address:pci,node:renderPath,major:device.major,
-                minor:device.minor};
+                minor:device.minor,observed_vram_mb:actualVramMb};
         }catch{continue;}
         if(matches.has(pci))
             throw Error('Ambiguous multiple AMD render nodes for one PCI GPU.');
@@ -77,8 +84,8 @@ function resolveRocmDevices(bindings,options={}) {
     const selected=[];
     for(const b of bindings) {
         const observed=matches.get(b.pci_address);
-        if(!observed)
-            throw Error('Leased PCI GPU has no uniquely verified local render node.');
+        if(!observed||observed.observed_vram_mb<b.vram_mb)
+            throw Error('Leased PCI GPU has no matching local render node and sufficient physical VRAM.');
         selected.push({id:b.id,pci_address:b.pci_address,
             vram_mb:b.vram_mb,...observed});
     }
