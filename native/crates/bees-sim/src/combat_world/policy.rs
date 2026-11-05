@@ -180,6 +180,22 @@ impl CombatWorld {
             .map(|runtime| runtime.control.communication())
     }
 
+    /// One per-world capability timer pass for both mining and healing.
+    /// Avoid traversing the whole policy roster twice every physics tick,
+    /// including large battles where these capabilities are uncommon.
+    pub(super) fn advance_policy_capability_cooldowns(&mut self, dt: f32) {
+        for runtime in self.policy_ship_runtime.values_mut() {
+            if let Some(mining) = runtime.mining.as_mut() {
+                mining.cooldown_remaining =
+                    (mining.cooldown_remaining - dt).max(0.0);
+            }
+            if let Some(healing) = runtime.healing.as_mut() {
+                healing.cooldown_remaining =
+                    (healing.cooldown_remaining - dt).max(0.0);
+            }
+        }
+    }
+
     /// Expose only actions backed by actual native gameplay. Registered
     /// source-supported turret slots enable their fire branch; missing and
     /// unported weapon slots plus every special remain masked.
