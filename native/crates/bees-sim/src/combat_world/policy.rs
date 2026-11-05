@@ -3,9 +3,10 @@
 //!
 //! Unity: RlOneVsOneAgent.OnActionReceived, ApplyMovementCommand,
 //! SetCommunicationActions and Ship.RlDirectionalMovement.
-//! Ship-specific weapons, firing, healing, mining, warp and specials MUST be
-//! implemented through real weapon/gameplay state before enabling their
-//! branches. No plausible-looking zero-damage shooting is accepted.
+//! Source-authored base rotating turrets can now execute their real
+//! cooldown/aim/shot pipeline in CombatWorld. Weapon subclasses with
+//! different launch/animation rules, healing, mining, warp and specials
+//! remain masked. No plausible-looking no-op firing is accepted.
 
 use super::*;
 use crate::policy_batch::PolicyActionMask;
@@ -59,9 +60,9 @@ impl CombatWorld {
             .map(|runtime| runtime.control.communication())
     }
 
-    /// Expose only actions backed by actual native gameplay, so inference
-    /// can use the same authoritative mask as execution. Fire and special
-    /// actions remain masked while weapon and ability controls are unported.
+    /// Expose only actions backed by actual native gameplay. Registered
+    /// source-supported turret slots enable their fire branch; missing and
+    /// unported weapon slots plus every special remain masked.
     pub fn policy_action_mask(
         &self,
         ship_id: i64,
@@ -81,12 +82,12 @@ impl CombatWorld {
         })
     }
 
-    /// Apply only the subset of v26 semantics currently supported by the
-    /// native gameplay world: ship movement and allied communication.
+    /// Apply v26 movement, allied communication and configured base-turret
+    /// aim/fire through the same native gameplay state.
     ///
     /// Preflight the WHOLE decision batch before mutating any ship. This
-    /// rejects duplicated/missing agents, nonfinite actions and unported
-    /// firing/special branches rather than partially executing a batch.
+    /// rejects duplicated/missing agents, nonfinite outputs, unsupported
+    /// weapon slots and special branches before partially executing a batch.
     /// PolicyAgentKey's world/episode/tick freshness must be checked by the
     /// inference host before converting to these ship-ID decisions.
     pub fn apply_policy_decisions(
@@ -114,8 +115,8 @@ impl CombatWorld {
                 return Err(CombatWorldError::UnknownPolicyAgent(decision.agent_id));
             }
             // Validate against the same world-owned mask supplied to
-            // inference. Future weapon implementations must update BOTH
-            // the mask and the actual firing path before enabling a branch.
+            // inference. A slot is enabled only after real mount registration;
+            // future subclasses must connect their actual firing path.
             let mask = self.policy_action_mask(id)?;
             if decision.action.discrete[..5].iter().enumerate()
                 .any(|(slot, &choice)| choice == 1 && !mask.fire[slot]) ||
