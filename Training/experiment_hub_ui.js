@@ -719,7 +719,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const live=j.live_execution;
             const usage=live && j.status==='running' ?
                 ' · '+(live.memory_current_mb==null?'RAM ?':live.memory_current_mb+' MiB RAM')+
-                (live.cpu_time_ns==null?'':' · '+Math.round(live.cpu_time_ns/1e9)+' CPU seconds')
+                (live.cpu_time_ns==null?'':' · '+Math.round(live.cpu_time_ns/1e9)+' CPU seconds')+
+                (Number.isFinite(live.cpu_cores_used)
+                    ?' · '+live.cpu_cores_used.toFixed(2)+' average CPU cores':'')
                 :'';
             const lineage=j.continuation_of_job_id
                 ?' · Resumes '+(state.jobs.find(p=>
@@ -925,10 +927,15 @@ document.addEventListener('DOMContentLoaded', () => {
             cell(tr,learningSummary(j));
             cell(tr,progress?.source_modified_at
                 ?new Date(progress.source_modified_at).toLocaleString():'—');
-            cell(tr,live?.memory_current_mb==null?'—':
-                live.memory_current_mb.toLocaleString()+' MiB RAM'+
-                (live.cpu_time_ns==null?'':' · '+Math.round(
-                    live.cpu_time_ns/1e9).toLocaleString()+' CPU seconds'));
+            const measured=live?[
+                live.memory_current_mb==null?null:
+                    live.memory_current_mb.toLocaleString()+' MiB RAM',
+                live.cpu_time_ns==null?null:
+                    Math.round(live.cpu_time_ns/1e9).toLocaleString()+' CPU seconds',
+                Number.isFinite(live.cpu_cores_used)
+                    ?live.cpu_cores_used.toFixed(2)+' average CPU cores':null,
+            ].filter(Boolean).join(' · '):'';
+            cell(tr,measured||'—');
             $('hub-monitor-rows').append(tr);
         }
         if(!records.length) {
