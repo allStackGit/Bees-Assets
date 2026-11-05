@@ -71,6 +71,7 @@ pub enum CombatWorldError {
     MissingGameMovementProfile,
     InvalidGameMovementProfile,
     InvalidGameMovementOrder,
+    InvalidGameSpeed,
     UnknownProjectile,
     UnknownShip,
     UnknownObstacle,
@@ -703,6 +704,26 @@ impl CombatWorld {
         if motion.is_policy_controlled && !motion.user_controlled {
             return Err(CombatWorldError::UnsupportedPolicyActions);
         }
+        Ok(())
+    }
+
+    /// Unity Ship.SetCurrentSpeed(speed) applies the squad's requested speed
+    /// but caps it at the ship's immutable authored Speed. Only the live
+    /// game-controlled world may change ship movement speed; the RL policy
+    /// and ordinary pathfinding continue to use the same ShipMotion.
+    pub fn set_ship_game_speed(
+        &mut self,
+        ship_id: i64,
+        requested_speed: f32,
+    ) -> Result<(), CombatWorldError> {
+        if !requested_speed.is_finite() || requested_speed < 0.0 {
+            return Err(CombatWorldError::InvalidGameSpeed);
+        }
+        self.validate_ship_game_order(ship_id)?;
+        let &index = self.ship_by_id.get(&ship_id)
+            .ok_or(CombatWorldError::UnknownShip)?;
+        let motion = &mut self.physics.ships_mut()[index].motion;
+        motion.current_speed = requested_speed.min(motion.base_speed);
         Ok(())
     }
 
