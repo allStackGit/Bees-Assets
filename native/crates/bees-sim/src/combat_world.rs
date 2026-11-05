@@ -2665,10 +2665,20 @@ impl CombatWorld {
             self.spawn_pending_asteroid_fragments(random)?;
         }
 
+        let physics_counts = self.physics.counts();
         Ok(StepCounts {
             active_ships: self.physics.ships().iter().filter(|ship| ship.active).count() as u32,
             active_projectiles: self.physics.projectiles().iter().filter(|shot| shot.active).count() as u32,
             events: self.events.len() as u64,
+            integrated_bodies: physics_counts.integrated_bodies,
+            broadphase_candidates: physics_counts.broadphase_candidates,
+            narrowphase_tests: physics_counts.narrowphase_tests,
+            trigger_enters: physics_counts.trigger_enters +
+                physics_counts.obstacle_trigger_enters +
+                physics_counts.ship_obstacle_enters +
+                physics_counts.obstacle_pair_enters +
+                physics_counts.proximity_ship_enters +
+                physics_counts.proximity_obstacle_enters,
             ..StepCounts::default()
         })
     }
