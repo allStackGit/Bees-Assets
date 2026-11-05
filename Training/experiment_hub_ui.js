@@ -102,8 +102,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 (p.simulation_steps_per_second==null?''
                     :' · Last-episode simulation '+Math.round(
                         p.simulation_steps_per_second).toLocaleString()+' steps/s')+
-                (p.ppo_unique_samples_per_second==null?''
-                    :' · Last-update PPO '+Math.round(
+                (p.total_environment_steps==null?''
+                    :' · Env steps '+p.total_environment_steps.toLocaleString())+
+                (p.total_optimization_steps==null?''
+                    :' · Optimizer steps '+p.total_optimization_steps.toLocaleString())+
+                (p.latest_episode_policy_updated===false
+                    ?' · No PPO update in last episode'
+                    :p.ppo_unique_samples_per_second==null?''
+                    :' · Last-episode PPO '+Math.round(
                         p.ppo_unique_samples_per_second).toLocaleString()+
                         ' unique samples/s')+
                 ' · Summary written '+new Date(p.source_modified_at).toLocaleString();
