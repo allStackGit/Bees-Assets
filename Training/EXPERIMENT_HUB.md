@@ -251,6 +251,35 @@ training are still unverified**; real Linux services and GPU isolation remain
 unqualified. The scheduler does not implement benchmark-based completion
 criteria, dynamic live rebalancing, or measured CPU/GPU performance shares.
 
+### Shared-host scheduling budgets for existing Bees and new projects
+
+In **Machines → Adjust Hub scheduling budget**, select a registered machine
+and choose how many CPU slots and MiB of RAM the Hub may admit. A connected
+agent's reported host CPU/RAM caps still apply; the effective Hub budget
+is the smaller of the operator's configured number and the fresh host
+observation. For example, a host reporting 8 logical CPUs and 32 GiB RAM
+could be configured with only **2 CPU slots and 4096 MiB** for Hub jobs,
+leaving the remainder outside Hub admission for an independently owned
+Bees learner, workers, the OS, or interactive programs.
+
+Budget changes require an explicit confirmation, the original displayed
+CPU/RAM values, and **disarmed native queue automation**. Stale updates are
+rejected. A reduction below outstanding Hub claims is refused; the
+change neither resizes nor stops any running native process. Claims
+remain durable across agent disconnects and coordinator restarts. This
+feature does not map Bees trainer IDs to physical machines, measure
+their host usage, or automatically adjust when Bees/Ants activity changes.
+It is a conservative *operator-chosen admission budget*, not isolation,
+a reserved CPU core set, or a throughput guarantee. For uncertain
+coexistence, use a dedicated host or a much smaller Hub budget instead
+of assuming Bees workers consume only what their status metrics suggest.
+
+The shared loopback route is `POST /api/hub/machines/budget`, using
+`{machine_id,cpus,ram_mb,expected_cpus,expected_ram_mb,confirm_budget:true}`.
+Existing Hub machine identity, enrollment, GPU bindings, leases and jobs
+remain unchanged; the same capacity planner serves manual allocation,
+automatic CPU-only admission and placement preview.
+
 ## Coordinated resource leases (not process isolation)
 
 The Machines tab can issue a **standalone coordination lease** for a selected
