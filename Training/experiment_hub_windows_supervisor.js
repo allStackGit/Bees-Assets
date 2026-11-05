@@ -248,6 +248,27 @@ class WindowsSupervisor {
             cpu_time_ns:observation.cpu_time_ns??null,
             process_tasks:observation.process_tasks??null};
     }
+    async quarantineLaunch(jobId,reason) {
+        const record=this.state.records.find(r=>r.job_id===jobId);
+        if(!record)throw Error('No Windows job ownership ledger to quarantine.');
+        if(record.quarantined_at)return;
+        // Persist the intent before contacting an owner whose previous
+        // response could be missing or invalid. Never send this command
+        // again automatically after an ambiguous result.
+        const updated={...record,state:'unverified',
+            quarantined_at:new Date().toISOString(),
+            stop_requested_at:new Date().toISOString(),
+            diagnostic:String(reason||'Native owner not verified').slice(0,220)};
+        this.commit(this.state.records.map(r=>r.job_id===jobId?updated:r));
+        try {
+            // Only this same-user, locally token-authorized helper can
+            // receive the request. No PID guessing or unrelated process kill.
+            await this.send(updated,'stop');
+        }catch {
+            // An inaccessible owner may still hold the kernel job handle.
+            // Keep the claimed capacity and require manual inspection.
+        }
+    }
     async start(job,lease) {
         if(!this.qualifiedAt)
             throw Error('Windows Job Object preflight must pass before start.');
@@ -301,12 +322,10 @@ class WindowsSupervisor {
             });
             owner.unref();
         }catch(error){
-            // Ownership is ambiguous after spawn failure. Do not delete the
-            // journal or automatically retry, even when no pipe was reached.
+            // A failed spawn does not prove that the independent owner
+            // process was never created. Keep durable ownership evidence.
             const message=String(error.message||error).slice(0,150);
-            const updated={...record,state:'unverified',diagnostic:message,
-                quarantined_at:new Date().toISOString()};
-            this.commit(this.state.records.map(r=>r.job_id===job.id?updated:r));
+            await this.quarantineLaunch(job.id,message);
             throw Error('Windows owner launch unverified: '+message);
         }
         for(let attempt=0;attempt<6;attempt++) {
@@ -315,7 +334,8 @@ class WindowsSupervisor {
                 return result;
             await new Promise(resolve=>setTimeout(resolve,200));
         }
-        throw Error('Windows owner has not confirmed native job limits; inspect local journal and helper.');
+        await this.quarantineLaunch(job.id,'Native owner limits or status not verified.');
+        throw Error('Windows owner has not confirmed native job limits; quarantined local job requires inspection.');
     }
     async stop(jobId) {
         const record=this.state.records.find(r=>r.job_id===jobId);
