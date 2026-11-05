@@ -23,9 +23,10 @@ created from the current `feat/experiment-queue-ui` branch.
 
 The native workspace now also contains `bees-hivemind`, a separate,
 network-independent protocol and outcome-ownership crate. It preserves the
-deployed `get-strategy` and `store-commands` JSON fields, server command
-strategy IDs **1–15**, shooting IDs **1–40**, 53-bit request hashes, and exact
-unsigned matchup identities. Request hashes are allocated once by the client
+deployed `get-matchup-strategy`, `get-strategy` and
+`store-commands` JSON fields, server command IDs **1–15**, shooting
+IDs **1–40** and distinct targeting IDs **1–40**, exact 53-bit request
+hashes, and unsigned matchup identities. Request hashes are allocated once by the client
 transport for **all** message types; multiple Levels may share one WebSocket
 and one server Hive Mind Game. Each strategy request captures its squad
 lifecycle, so a late response for a retired squad becomes an explicit
