@@ -8,6 +8,9 @@
 //! vision, map and weapon state before this is a usable training path.
 
 use crate::control::PolicyFrame;
+use crate::policy_batch::{
+    PolicyBatch, PolicyBatchError, PolicyAgentKey, PolicyActionMask,
+};
 use crate::perception::{
     CapabilitySource, PerceptionError, SelfSource, write_self,
     write_capability, write_reserved_objectives, write_navigation,
@@ -77,6 +80,21 @@ impl NativePerceptionWriter {
         self.measurements
     }
 
+    /// Direct zero-copy integration with the inference batch. A failed
+    /// source snapshot leaves the batch length and keys unchanged.
+    pub fn push_to_batch(
+        &mut self,
+        batch: &mut PolicyBatch,
+        key: PolicyAgentKey,
+        mask: PolicyActionMask,
+        source: &PolicyPerceptionSnapshot<'_>,
+        frame: PolicyFrame,
+    ) -> Result<(), PolicyBatchError> {
+        batch.push_encoded_result(key, mask, |row|
+            self.write(row, source, frame).map_err(PolicyBatchError::Perception)
+        )
+    }
+
     /// Writes the entire ABI row. The caller must pass a fresh PolicyBatch
     /// destination prefilled with NaN, and propagate any error. This method
     /// does not apply actions or create rewards.
@@ -131,5 +149,86 @@ impl NativePerceptionWriter {
         self.measurements.map_objects_encoded += objects as u64;
         self.measurements.collision_asteroids_encoded += asteroids as u64;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::collision::Aabb;
+    use crate::geometry::Vec2;
+    use crate::perception::{NAV_LEN, EXPLORATION_LEN};
+    use crate::policy::{CONTINUOUS_ACTIONS, DISCRETE_BRANCHES};
+    use crate::simulation::{World, WorldId};
+
+    #[test]
+    fn complete_v26_row_passes_batch_validation_and_keeps_identity() {
+        let mut writer = NativePerceptionWriter::new();
+        let mut batch = PolicyBatch::new();
+        let physical_ship = SelfSource {
+            identity: 0.25, ship_type: 1, position: Vec2::ZERO,
+            level_bounds: Aabb {
+                min: Vec2::new(-64.0, -64.0),
+                max: Vec2::new(64.0, 64.0),
+            },
+            rotation_degrees: 0.0,
+            health: 100, max_health: 100,
+            speed: 10.0, current_speed: 10.0,
+            linear_velocity: Vec2::ZERO,
+            rotation_speed: 90.0, longest_side: 4.0,
+            effective_vision_range: 40.0,
+            max_range: 80.0, firepower: 20.0,
+            can_move: true, is_bomber: false, is_carrier: false,
+            has_weapons: false, has_turrets: false,
+            has_special: false, special_ready: false,
+            live_allies_including_self: 1, live_enemies: 0,
+        };
+        let capabilities = CapabilitySource {
+            special_resource_fraction: 0.0,
+            special_cooldown_fraction: 0.0,
+            special_phase: 0.0, mining_possible: false,
+            healing_possible: false, warp_possible: false,
+            is_carrier_child: false, has_living_parent_carrier: false,
+            ship_mined_tsv: 0, team_retainable_mined_tsv: 0,
+            side_starting_tsv: 1000,
+        };
+        let weapons = [None; 5];
+        let navigation = [0.0f32; NAV_LEN];
+        let exploration = [-1.0f32; EXPLORATION_LEN];
+        let source = PolicyPerceptionSnapshot {
+            ship: physical_ship, capability: capabilities,
+            side: 1, bee_side: true,
+            normalized_episode_progress: 0.25,
+            parent_carrier: None, same_side_ships: &[],
+            vision_cache_enemies: &[], own_weapons: &weapons,
+            visible_mining: &[], visible_map_objects: &[],
+            visible_collision_asteroids: &[],
+            navigation_world_grid: &navigation,
+            exploration_last_seen: Some(&exploration),
+            self_entity_id: 5,
+        };
+        let world = World::new(WorldId(9), 123, ());
+        let key = PolicyAgentKey::from_world(&world, 5);
+        let mask = PolicyActionMask {
+            fire: [false; 5],
+            special: [true, false, false, false, false],
+        };
+        writer.push_to_batch(
+            &mut batch, key, mask, &source, PolicyFrame::new(0),
+        ).unwrap();
+        assert_eq!(batch.len(), 1);
+        assert_eq!(batch.observations().len(), OBSERVATION_FLOATS);
+        assert!(batch.observations().iter().all(|value| value.is_finite()));
+        assert_eq!(writer.measurements().observations, 1);
+        assert_eq!(writer.measurements().enemies_encoded, 0);
+        let (continuous, discrete) = batch.output_buffers_mut();
+        assert_eq!(continuous.len(), CONTINUOUS_ACTIONS);
+        assert_eq!(discrete.len(), DISCRETE_BRANCHES.len());
+        continuous.fill(0.0);
+        discrete.fill(0);
+        let mut decisions = Vec::new();
+        batch.collect_decisions(&mut decisions).unwrap();
+        assert_eq!(decisions.len(), 1);
+        assert_eq!(decisions[0].0, key);
     }
 }
