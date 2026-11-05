@@ -508,10 +508,10 @@ mod tests {
         assert_eq!(live_ship_position(&world, 1).unwrap(),
             own.position);
 
-        assert_eq!(
-            world.discovery_mut().record(1, crate::level_discovery::DiscoveryKind::Ship, 2),
-            Ok(true),
-        );
+        assert!(!world.record_hivemind_ship_sighting(1, 2, false, false));
+        assert!(!world.record_hivemind_ship_sighting(1, 2, true, true));
+        assert!(world.record_hivemind_ship_sighting(1, 2, true, false));
+        assert!(!world.record_hivemind_ship_sighting(1, 2, true, false));
         let mut collector = LiveShipCandidateCollector::new();
         let mut known_enemies = Vec::new();
         let count = collector.collect_learned_enemies(
