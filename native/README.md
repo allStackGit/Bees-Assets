@@ -177,20 +177,32 @@ also ports the source-defined episode progress, signed faction indicator
 and 19 reserved observation features; inactive trajectories use zeros
 except for the faction discriminator.
 
-The perception encoder below now covers the 7,722 source-defined
-perception features, but still requires authoritative Level data on every
-decision. CombatWorld also applies **movement and allied communication**
-from validated policy decisions through its normal fixed-step physics.
-`bind_policy_ship` establishes an explicit per-episode frame; the
-world-owned `policy_action_mask` disables firing and all specials until
-real weapon/ability execution exists. Nonzero fire/special requests fail
-the complete batch before any movement or communication state changes.
-The inference host must check `PolicyAgentKey::is_current_for` before
-submitting actions; raw decisions identify bound ships by entity ID.
+The perception encoder below covers all 7,722 source-defined
+perception features but still requires real Level data. `CombatWorld`
+applies policy movement, allied communication, and **registered rotating
+turret** aim/fire through its normal gameplay and physics update.
+`bind_policy_ship` establishes the episode frame; then
+`configure_policy_turret` registers each source-authored weapon slot
+(`NativeTurretSpec`: mount pose, weapon/projectile type, power, range,
+rate, rotation, projectile speed). The real `TurretState` and
+`ScaledTimer` implement latched firing readiness at three targeting
+passes per shot, and fired shots enter the canonical projectile collision,
+damage, attribution and event pipeline. `policy_self_weapons` and
+observed-ship summaries read those same physical mounts.
+`policy_action_mask` enables firing only for registered supported slots;
+missing mounts and unported subclasses/specials fail the full decision
+batch before any motion or communications are applied.
+`PolicyAgentKey::is_current_for` is still required at the inference host.
 
-**Not yet implemented:** native turret/fire/special execution, full
-Level-to-perception snapshot collection, GPU model inference, and an
-ML-Agents-compatible learner/rollout loop.
+**Supported:** source-based simple rotating turrets (LightCannon, Turret,
+RocketTurret, Eye, QueenEye) using the existing compatible projectile
+types. **Not yet implemented:** DualCannon, BeamCannon,
+LaserBuilder/SplitShot, FullShipTurret and Bomb firing continuations;
+real Level-to-perception snapshot collection, special abilities, GPU
+inference, and an ML-Agents-compatible learner. Unity targeting timers
+run on the Level's scaled update clock; this native implementation
+currently advances the same timer semantics on the game fixed-step delta,
+so live frame-scheduling parity still needs validation.
 
 ## Source-matched v26 perception encoder
 
@@ -259,10 +271,10 @@ and sight ranges are synthetic; it is not a training benchmark.
 **Integration boundary:** the native game/Level adapter must supply
 the actual MapObject prefab geometry/layer on registration and the real
 observer/weapon/special data, mining and other authored metadata, and
-episode reward state. Native policy movement and allied communications
-are connected, but weapon firing, specials, GPU inference and the learner
-are not. These interfaces are **not yet a working or parity-certified
-training loop**.
+episode reward state. Native movement, allied communications and
+source-supported rotating turret firing are connected; the remaining
+weapon classes, specials, GPU inference and learner are not. This is
+**not yet a working or parity-certified training loop**.
 Rust tests and benchmarks have not been executed in this environment.
 
 ## Independent CPU rollout windows
