@@ -225,6 +225,18 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
 .hub-standalone { border: 2px solid var(--ink); padding: 12px; margin: 14px 0; }
 .hub-standalone h3 { margin: 0 0 8px; font-size: 17px; }
 .hub-table td { white-space: normal; }
+.hub-pipeline-stage {
+    display: grid;
+    grid-template-columns: minmax(160px, 1fr) minmax(220px, 1fr) auto;
+    gap: 8px;
+    align-items: end;
+    margin: 9px 0;
+}
+.hub-pipeline-stage label { min-width: 0; }
+.hub-pipeline-stage select, .hub-pipeline-stage input { width: 100%; }
+@media (max-width: 720px) {
+    .hub-pipeline-stage { grid-template-columns: 1fr; }
+}
 .hub-notice { font-size: 12px; font-weight: 700; border-bottom: 2px solid var(--ink); padding: 6px 0; }
 .hub-controls { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 10px; }
 .hub-controls button { flex: 0 1 auto; }
@@ -332,6 +344,19 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
     <button type="button" id="hub-job-queue">Queue job</button>
     <button type="button" id="hub-job-preview">Preview queued placements</button>
     <p id="hub-job-message" class="hub-notice" role="status">No work scheduled or executing.</p>
+    <div class="hub-standalone" id="hub-pipeline-panel" hidden>
+      <h3>Prequeue a complete Ants stage pipeline</h3>
+      <p class="muted">Choose two or more saved configurations in order. The first must be a new run unless continuing an existing Ants job; subsequent stages must be resume configurations. Each stage has its own CPU/RAM request. All stages are frozen together, or none are queued. Stages wait for their predecessor to finish and release capacity before becoming eligible. The pipeline does not start training or authorize native execution.</p>
+      <label>Continue an existing Ants job (optional)
+        <select id="hub-pipeline-predecessor"><option value="">Start new experiment</option></select>
+      </label>
+      <div id="hub-pipeline-rows"></div>
+      <div class="hub-controls">
+        <button type="button" id="hub-pipeline-add">Add stage</button>
+        <button type="button" id="hub-pipeline-queue">Queue entire pipeline</button>
+      </div>
+      <p id="hub-pipeline-message" class="hub-notice" role="status">No pipeline queued.</p>
+    </div>
     <div class="hub-standalone">
       <h3>Coordinate queued workload capacity</h3>
       <p class="muted">These operations only claim capacity within the Hub ledger. They do not isolate CPU/RAM/GPUs, launch a process, or guarantee unused resources on the host. Only presently connected machines are eligible for new claims. Claims survive disconnects and restarts.</p>
