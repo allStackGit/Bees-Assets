@@ -177,10 +177,20 @@ also ports the source-defined episode progress, signed faction indicator
 and 19 reserved observation features; inactive trajectories use zeros
 except for the faction discriminator.
 
-**Not yet implemented:** the remaining 7,722 perception features,
-full ship/weapon/special-action execution, GPU model loading/inference,
-and the ML-Agents-compatible learner/rollout loop. The new batch interface
-is not a substitute for those gameplay or training contracts.
+The perception encoder below now covers the 7,722 source-defined
+perception features, but still requires authoritative Level data on every
+decision. CombatWorld also applies **movement and allied communication**
+from validated policy decisions through its normal fixed-step physics.
+`bind_policy_ship` establishes an explicit per-episode frame; the
+world-owned `policy_action_mask` disables firing and all specials until
+real weapon/ability execution exists. Nonzero fire/special requests fail
+the complete batch before any movement or communication state changes.
+The inference host must check `PolicyAgentKey::is_current_for` before
+submitting actions; raw decisions identify bound ships by entity ID.
+
+**Not yet implemented:** native turret/fire/special execution, full
+Level-to-perception snapshot collection, GPU model inference, and an
+ML-Agents-compatible learner/rollout loop.
 
 ## Source-matched v26 perception encoder
 
@@ -249,9 +259,10 @@ and sight ranges are synthetic; it is not a training benchmark.
 **Integration boundary:** the native game/Level adapter must supply
 the actual MapObject prefab geometry/layer on registration and the real
 observer/weapon/special data, mining and other authored metadata, and
-episode reward state. GPU inference,
-policy-action execution and the learner remain unconnected. These
-interfaces are **not yet a working or parity-certified training loop**.
+episode reward state. Native policy movement and allied communications
+are connected, but weapon firing, specials, GPU inference and the learner
+are not. These interfaces are **not yet a working or parity-certified
+training loop**.
 Rust tests and benchmarks have not been executed in this environment.
 
 ## Independent CPU rollout windows
