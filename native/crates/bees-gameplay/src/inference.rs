@@ -7,6 +7,7 @@
 //! The model backend is external; no guessed action or network here.
 
 use bees_sim::combat_world::CombatWorldError;
+use bees_sim::combat_perception_bridge::live_ship_counts;
 use bees_sim::control::PolicyFrame;
 use bees_sim::full_perception::{
     NativePerceptionWriter, PerceptionWork, PolicyPerceptionSnapshot,
@@ -23,6 +24,7 @@ use crate::level_rules::NativeLevelState;
 pub enum NativeInferenceError {
     InvalidAgent,
     SnapshotIdentityMismatch,
+    SnapshotStateMismatch,
     WorldUnavailable,
     AlreadyFinalized,
     NotFinalized,
@@ -123,7 +125,39 @@ impl NativeLevelInferenceBatch {
             snapshot.side != ship.side {
             return Err(NativeInferenceError::SnapshotIdentityMismatch);
         }
-        let mask = world.state.combat.policy_action_mask(ship_id)?;
+        // The snapshot's identity/order-dependent observations remain the
+        // authored Level's responsibility. But physical self-features,
+        // live side counts and bound special readiness MUST be projected
+        // from THIS world at THIS decision boundary, not cached from a
+        // previous tick or an externally fabricated training roster.
+        let combat = &world.state.combat;
+        let body = combat.ship_body(ship_id)
+            .ok_or(NativeInferenceError::SnapshotStateMismatch)?;
+        let counts = live_ship_counts(combat, ship.side)
+            .map_err(|_| NativeInferenceError::SnapshotStateMismatch)?;
+        let special = combat.policy_special_observations(ship_id)
+            .ok_or(NativeInferenceError::SnapshotStateMismatch)?;
+        let obs = snapshot.ship;
+        if !body.active || ship.vitals.is_dead() ||
+            obs.ship_type != ship.ship_type ||
+            obs.position != body.motion.position ||
+            obs.rotation_degrees != body.motion.rotation_degrees ||
+            obs.health != ship.vitals.health() ||
+            obs.max_health != ship.vitals.max_health() ||
+            obs.speed != body.motion.base_speed ||
+            obs.current_speed != body.motion.current_speed ||
+            obs.rotation_speed != body.motion.rotation_speed_degrees_per_second ||
+            obs.linear_velocity != body.motion.body_velocity ||
+            obs.live_allies_including_self != counts.same_side ||
+            obs.live_enemies != counts.opponents ||
+            obs.has_special != special.has_special ||
+            obs.special_ready != special.ready ||
+            snapshot.capability.special_resource_fraction != special.resource_fraction ||
+            snapshot.capability.special_cooldown_fraction != special.cooldown_fraction ||
+            snapshot.capability.special_phase != special.phase {
+            return Err(NativeInferenceError::SnapshotStateMismatch);
+        }
+        let mask = combat.policy_action_mask(ship_id)?;
         let key = PolicyAgentKey::from_world(world, agent);
         self.writer.push_to_batch(&mut self.batch, key, mask, snapshot, frame)?;
         Ok(())
