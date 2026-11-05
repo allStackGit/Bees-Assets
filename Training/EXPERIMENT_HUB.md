@@ -172,6 +172,11 @@ memory consumption, measure GPU availability, or start a workload.
 Acknowledgement means **received and accounted for**, not *resources enforced*.
 `receipt_fresh` is true only when an acknowledgement has been seen recently
 during the current coordinator process and that machine's heartbeat is fresh.
+Each successful heartbeat replaces that machine's fresh receipt set. The
+coordinator independently checks that **all outstanding leases** still fit
+the newly reported CPU/RAM capacity, even if an agent retransmits IDs from
+a prior, larger capacity report. Missing IDs or an invalid physical GPU
+binding immediately lose freshness, without releasing the durable claim.
 
 A fresh receipt is mandatory for a new native **Start** or GPU device probe.
 If reported host capacity falls below existing claims, the agent may stop
