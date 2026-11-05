@@ -309,8 +309,13 @@ native Job Object CPU/RAM enforcement, concurrent automatic scheduling,
 terminal receipt/release, dashboard controls, and heartbeat-loss disarming
 on a real host. **Production Bees/Ants coexistence and unattended project
 training are still unverified**; real Linux services and GPU isolation remain
-unqualified. The scheduler does not implement benchmark-based completion
-criteria, dynamic live rebalancing, or measured CPU/GPU performance shares.
+unqualified. The **generic non-Bees scheduler** does not implement
+benchmark-based completion, dynamic live rebalancing, or enforced
+performance shares. The existing Bees experiment manager separately
+supports an opt-in periodic, frozen development-benchmark completion
+target, documented in `EXPERIMENTS.md`. It stops only after verified
+checkpoint evaluation and safe training shutdown; actual Unity
+qualification of this new option remains outstanding.
 
 ### Shared-host scheduling budgets for existing Bees and new projects
 
@@ -1236,8 +1241,9 @@ status. **No real Ants training or Linux service qualification has run here.**
 Production installation and qualification of project-specific adapters,
 real-machine Linux systemd qualification, GPU isolation and runtime
 device-selection enforcement, production coexistence qualification of the
-CPU-only scheduler, benchmark- and capability-driven stop criteria, metrics
-ingestion for additional projects, safe live rebalancing, and comprehensive
+CPU-only scheduler, **generic non-Bees** benchmark- and capability-driven
+stop criteria, metrics ingestion for additional projects, safe live
+rebalancing, and comprehensive
 CLI parity for all runtime configuration controls remain future work.
 Isolated Windows Job Object and browser-controlled CPU-only queue/disconnect
 qualifications have passed on real hardware; these do not establish
