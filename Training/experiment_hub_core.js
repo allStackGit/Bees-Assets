@@ -353,7 +353,8 @@ class ExperimentHub {
                 !['finished','stopped'].includes(parent.status)||
                 !parent.capacity_released_at||
                 parent.assigned_machine_id!==job.assigned_machine_id||
-                parent.artifact_lineage_root_id!==job.artifact_lineage_root_id||
+                (parent.artifact_lineage_root_id||parent.id)!==
+                    job.artifact_lineage_root_id||
                 job.continuation_machine_id!==job.assigned_machine_id)
                 throw Error('Continuation lineage or original machine can no longer be verified.');
         }
