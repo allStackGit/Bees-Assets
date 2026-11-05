@@ -10,6 +10,9 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use bees_hivemind::session::{HiveMindSession, SquadLifetime};
 use bees_sim::combat_world::{CombatEvent, CombatWorld};
+use bees_sim::episode_terminal::{
+    EpisodeTerminalError, EpisodeTerminalResult, NativeEpisodeTerminal,
+};
 
 use crate::commands::{
     FinishedNativeCommand, GameCommandError, NativeSquadCommandDirector,
@@ -28,6 +31,8 @@ pub enum SquadRosterError {
     MissingScout(i64),
     MissingBeacon(i64),
     InvalidBeaconEvent,
+    MissingShipOwner(i64),
+    UnregisteredLiveShips,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -101,6 +106,13 @@ impl NativeSquadRoster {
 
     pub fn owning_squad(&self, ship_id: i64) -> Option<SquadLifetime> {
         self.owner_by_ship.get(&ship_id).copied()
+    }
+
+    /// A full native Level cannot emit valid rollout samples when ships
+    /// are missing from the squad registry. Both counts are maintained
+    /// at the real spawn/death boundaries, so this check is constant time.
+    pub fn covers_live_roster(&self, world: &CombatWorld) -> bool {
+        self.owner_by_ship.len() == world.total_living_ships()
     }
 
     pub fn get(&self, owner: SquadLifetime) -> Option<&NativeSquadEntry> {
@@ -259,9 +271,9 @@ impl NativeSquadRoster {
         &mut self,
         ship_id: i64,
         changes: &mut Vec<SquadRosterChange>,
-    ) {
+    ) -> bool {
         let Some(owner) = self.owner_by_ship.remove(&ship_id) else {
-            return;
+            return false;
         };
         let Some(squad) = self.active.get_mut(&owner) else {
             unreachable!("ship mapping and owning squad updated atomically");
@@ -281,6 +293,7 @@ impl NativeSquadRoster {
                 squad: owner, ship_id, remaining: squad.members.len(),
             });
         }
+        true
     }
 
     /// Feed this from the one authoritative world event queue, not from
@@ -293,7 +306,7 @@ impl NativeSquadRoster {
         changes: &mut Vec<SquadRosterChange>,
     ) {
         if let CombatEvent::ShipDied { victim_id, .. } = event {
-            self.on_ship_death(*victim_id, changes);
+            let _ = self.on_ship_death(*victim_id, changes);
         }
     }
 }
@@ -378,10 +391,18 @@ impl NativeSquadRoster {
                         world, event, owner,
                     )?);
                 }
-                CombatEvent::ShipDied { victim_id, .. } =>
-                    self.on_ship_death(*victim_id, changes),
+                CombatEvent::ShipDied { victim_id, .. } => {
+                    if !self.on_ship_death(*victim_id, changes) {
+                        return Err(SquadRosterError::MissingShipOwner(
+                            *victim_id,
+                        ).into());
+                    }
+                },
                 _ => {}
             }
+        }
+        if !self.covers_live_roster(world) {
+            return Err(SquadRosterError::UnregisteredLiveShips.into());
         }
         // Only whole dead squads retire in-flight strategies. Surviving
         // squads keep their lifecycle: their Level adapter may refresh or
@@ -397,4 +418,23 @@ impl NativeSquadRoster {
         }
         Ok(())
     }
+}
+
+/// Episode termination is a consumer of the same validated squad-retirement
+/// changes, not a second gameplay rule. An immobile Beacon or stationary
+/// target can remain alive after its side is eliminated; the terminal
+/// controller reads the world's authored mobile-roster counts.
+///
+/// Call only after reconcile_combat_tick completes. Attributed terminal
+/// reward delivery and MA-POCA group ending belong to the episode adapter.
+pub fn observe_terminal_after_roster(
+    episode: &mut NativeEpisodeTerminal,
+    world: &mut CombatWorld,
+    dt_seconds: f32,
+    changes: &[SquadRosterChange],
+) -> Result<Option<EpisodeTerminalResult>, EpisodeTerminalError> {
+    let squad_was_retired = changes.iter().any(|change|
+        matches!(change, SquadRosterChange::SquadRetired { .. })
+    );
+    episode.observe_after_step(world, dt_seconds, squad_was_retired)
 }
