@@ -208,6 +208,32 @@ function nativeStartReadiness(snapshot, job) {
     }
     return {eligible:true,reason:'Eligible for explicit CPU-only native Start authorization.'};
 }
+// Match the operator's cross-project FIFO fairness in both the read-only
+// preview and the actual advisory claim pass.
+function fairPending(jobs) {
+    const buckets=new Map();
+    for(const job of jobs) {
+        if(!buckets.has(job.project_id))buckets.set(job.project_id,[]);
+        buckets.get(job.project_id).push(job);
+    }
+    const ordered=[];
+    while([...buckets.values()].some(bucket=>bucket.length)) {
+        for(const bucket of buckets.values()) {
+            if(bucket.length)ordered.push(bucket.shift());
+        }
+    }
+    return ordered;
+}
+function allocationChoice(machines,reservations,job,preferredMachineId=null) {
+    return resourcePlacements(machines,reservations,job.resources)
+        .filter(p=>p.capacity_fits&&
+            (!preferredMachineId||p.machine_id===preferredMachineId)&&
+            (!job.continuation_machine_id||
+                p.machine_id===job.continuation_machine_id))
+        .sort((a,b)=>a.available.cpus-b.available.cpus||
+            a.available.ram_mb-b.available.ram_mb||
+            a.machine_id.localeCompare(b.machine_id))[0]||null;
+}
 function writeAtomic(file, value) {
     fs.mkdirSync(path.dirname(file), {recursive:true});
     const pending = file + '.' + process.pid + '.' + crypto.randomBytes(6).toString('hex') + '.tmp';
@@ -465,17 +491,7 @@ class ExperimentHub {
             (requested===undefined || requested.includes(j.id)));
         // Fair interleaving across project queues, preserving FIFO within
         // each project. This is only a claim planner, not job execution.
-        const buckets=new Map();
-        for(const job of candidates) {
-            if(!buckets.has(job.project_id))buckets.set(job.project_id,[]);
-            buckets.get(job.project_id).push(job);
-        }
-        const jobs=[];
-        while([...buckets.values()].some(bucket=>bucket.length)) {
-            for(const bucket of buckets.values()) {
-                if(bucket.length)jobs.push(bucket.shift());
-            }
-        }
+        const jobs=fairPending(candidates);
         if(requested && jobs.length!==requested.length)
             throw Error('One or more selected jobs are unavailable or no longer pending.');
         if(!jobs.length)throw Error('No pending jobs to allocate.');
@@ -494,15 +510,8 @@ class ExperimentHub {
                     lease_id:lease.id,status:'already_claimed'});
                 continue;
             }
-            const eligible=resourcePlacements(machines,next.reservations,job.resources)
-                .filter(p=>p.capacity_fits &&
-                    (!value.machine_id||p.machine_id===value.machine_id) &&
-                    (!job.continuation_machine_id||
-                        p.machine_id===job.continuation_machine_id))
-                .sort((a,b)=>a.available.cpus-b.available.cpus||
-                    a.available.ram_mb-b.available.ram_mb||
-                    a.machine_id.localeCompare(b.machine_id));
-            const chosen=eligible[0];
+            const chosen=allocationChoice(machines,next.reservations,job,
+                value.machine_id||null);
             if(!chosen) {
                 results.push({job_id:job.id,machine_id:null,lease_id:null,
                     status:'insufficient_capacity'});
@@ -1126,25 +1135,39 @@ class ExperimentHub {
         return copy(job);
     }
     plannedJobs() {
-        const {plan}=require('./experiment_hub_resources');
         const jobs=this.state.jobs.filter(j=>j.status==='waiting_adapter');
         const snapshot=this.snapshot();
-        // This does not run a scheduler: the planner may place an unconfigured
-        // job purely hypothetically, and even connected hosts are not executable.
-        // Use bounded planner labels, then restore durable UUID identities
-        // using the planner's original-input-order result contract.
-        const pending=jobs.filter(j=>!j.lease_id);
-        const proposed=plan(snapshot.machines,snapshot.reservations,
-            pending.map((job,index)=>({
-                id:'job_'+index,resources:job.resources,
-                machine_id:job.continuation_machine_id||null,
-            })))
-            .map((row,index)=>{
-                const job=pending[index];
-                return {...row,id:job.id,project_id:job.project_id,
-                    configuration_name:job.configuration_name,
-                    status:job.status,claimed:false,executable:false};
+        // Rehearse the same per-project FIFO interleave and best-fit
+        // decisions as allocateJobs, but do not mint leases or mutate state.
+        // The separate POST /api/hub/plan remains a general GPU-first
+        // what-if optimizer and is not a prediction of the queue pass.
+        const pending=fairPending(jobs.filter(j=>!j.lease_id));
+        const reservations=copy(snapshot.reservations);
+        const machines=snapshot.machines.filter(m=>m.status==='connected');
+        const proposed=[];
+        for(const job of pending) {
+            const claimCount=reservations.filter(r=>
+                ['active','offered','acknowledged'].includes(r.status)).length;
+            const chosen=claimCount<100
+                ?allocationChoice(machines,reservations,job):null;
+            if(chosen)reservations.push({
+                machine_id:chosen.machine_id,status:'offered',
+                resources:{...resourceRequest(job.resources),
+                    gpus:chosen.suggested_gpus},
             });
+            proposed.push({id:job.id,project_id:job.project_id,
+                configuration_name:job.configuration_name,
+                status:job.status,claimed:false,executable:false,
+                machine_id:chosen?.machine_id||null,
+                machine_name:chosen?.machine_name||null,
+                suggested_gpus:chosen?.suggested_gpus||[],
+                capacity_fits:Boolean(chosen),online:Boolean(chosen?.online),
+                reason:claimCount>=100
+                    ?'Hub claim limit reached'
+                    :chosen?'Would receive advisory capacity on this agent'
+                    :'No currently connected machine has remaining budget',
+            });
+        }
         const claimed=jobs.filter(j=>j.lease_id).map(job=>{
             const lease=snapshot.reservations.find(l=>l.id===job.lease_id &&
                 l.job_id===job.id && ['offered','acknowledged'].includes(l.status));
@@ -1164,7 +1187,7 @@ class ExperimentHub {
         });
         const byId=new Map([...claimed,...proposed].map(j=>[j.id,j]));
         return {jobs:jobs.map(j=>byId.get(j.id)),note:
-            'Advisory only: Hub budget claims are not OS resource isolation or permission to execute.'};
+            'Read-only preview of the fair allocation pass, not a persistent claim, OS isolation or execution permission.'};
     }
     addMachine(value) {
         if (!object(value) || !ID.test(String(value.id||''))) throw Error('Use a lowercase machine ID.');
