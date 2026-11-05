@@ -298,15 +298,40 @@ struct ActiveNativeCommand {
     member_ids: Vec<i64>,
 }
 
+/// Cheap, cumulative command metrics for an experiment dashboard. Counts
+/// never contain per-tick histories, allocations, or wall-clock reads.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct CommandMeasurements {
+    pub updates: u64,
+    pub commands_examined: u64,
+    pub command_timer_callbacks: u64,
+    pub timeout_callbacks: u64,
+    pub activated: u64,
+    pub completed: u64,
+    pub superseded: u64,
+    pub retired: u64,
+    pub peak_active: usize,
+}
+
 #[derive(Default)]
 pub struct NativeSquadCommandDirector {
     active: HashMap<SquadLifetime, ActiveNativeCommand>,
+    /// Reused per-update ordering scratch: deterministic without allocating
+    /// a new list for every fixed step in every simulated arena.
+    ordered_owners: Vec<SquadLifetime>,
+    measurements: CommandMeasurements,
 }
 
 impl NativeSquadCommandDirector {
     pub fn new() -> Self { Self::default() }
 
     pub fn active_count(&self) -> usize { self.active.len() }
+
+    /// Snapshot measurements without resetting totals. Consumers can
+    /// calculate experiment/window deltas by subtracting earlier snapshots.
+    pub fn measurements(&self) -> CommandMeasurements {
+        self.measurements
+    }
 
     pub fn has_active(&self, owner: SquadLifetime) -> bool {
         self.active.contains_key(&owner)
@@ -646,6 +671,10 @@ impl NativeSquadCommandDirector {
                 cause: CommandFinishCause::Superseded,
             }
         });
+        self.measurements.activated += 1;
+        self.measurements.superseded += u64::from(superseded.is_some());
+        self.measurements.peak_active =
+            self.measurements.peak_active.max(self.active.len());
         Ok(Activation::Applied {
             command: self.active[&squad.owner].selection.local_command,
             issued_move, superseded,
@@ -665,20 +694,28 @@ impl NativeSquadCommandDirector {
         if !dt.is_finite() || dt < 0.0 {
             return Err(GameCommandError::InvalidDelta);
         }
+        self.measurements.updates += 1;
+        if self.active.is_empty() {
+            // The common idle world has no keys to sort or allocations to make.
+            return Ok(Vec::new());
+        }
         let mut completed = Vec::new();
         // Stable order matters when several squads issue movement on the
-        // same fixed frame. HashMap iteration is intentionally not used.
-        let mut owners: Vec<_> = self.active.keys().copied().collect();
-        owners.sort_unstable_by_key(|owner| (
+        // same fixed frame. Reuse scratch capacity across every step.
+        self.ordered_owners.clear();
+        self.ordered_owners.extend(self.active.keys().copied());
+        self.ordered_owners.sort_unstable_by_key(|owner| (
             owner.level_id, owner.squad_id, owner.lifecycle_id,
         ));
-        for owner in owners {
+        self.measurements.commands_examined += self.ordered_owners.len() as u64;
+        for &owner in &self.ordered_owners {
             let command = self.active.get_mut(&owner).expect("active owner");
             let mut finished_by_poll = false;
             // Unity registers the recurring command timer before its
             // timeout: on a shared due frame, command completion wins.
             if let Some(timer) = command.command_poll.as_mut() {
                 if let Some(due) = timer.begin_update(dt) {
+                    self.measurements.command_timer_callbacks += 1;
                     if let Some(follow) = command.following.as_ref() {
                         let target = lookup_friendly(friendlies, follow.target)?;
                         if let Some(friend) = target.filter(|candidate|
@@ -764,6 +801,7 @@ impl NativeSquadCommandDirector {
             if !finished_by_poll {
                 if let Some(timeout) = command.timeout.as_mut() {
                     if let Some(due) = timeout.begin_update(dt) {
+                        self.measurements.timeout_callbacks += 1;
                         timeout.finish_update(due);
                         let cause = match command.selection.local_command {
                             LocalCommandKind::Retreat => CommandFinishCause::AlreadySafe,
@@ -793,6 +831,7 @@ impl NativeSquadCommandDirector {
                 });
             }
         }
+        self.measurements.completed += finished.len() as u64;
         Ok(finished)
     }
 
@@ -811,10 +850,12 @@ impl NativeSquadCommandDirector {
             .filter(|follow| follow.guard_slot.is_some()) {
             restore_guard_speed(world, guard)?;
         }
-        Ok(self.active.remove(&owner).map(|active| FinishedNativeCommand {
+        let retired = self.active.remove(&owner).map(|active| FinishedNativeCommand {
             owner, selection: active.selection,
             cause: CommandFinishCause::SquadRetired,
-        }))
+        });
+        self.measurements.retired += u64::from(retired.is_some());
+        Ok(retired)
     }
 }
 
