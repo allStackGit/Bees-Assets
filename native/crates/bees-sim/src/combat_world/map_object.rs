@@ -158,10 +158,26 @@ impl CombatWorld {
                     }
                 }
             }
-            let origin = self.physics.obstacles()[obstacle_index].pose.position;
-            self.spawn_fire_tank_explosion(object_id, origin, shot_index, config)?;
+            // Complete source validation before mutating MapObject health.
+            // Type 15's collider and animation must exist in the authored
+            // projectile catalog; fail closed if it does not.
+            if self.projectile_assets.by_type(FIRE_TANK_EXPLOSION_TYPE).is_none() {
+                return Err(CombatWorldError::InvalidProjectileType(
+                    FIRE_TANK_EXPLOSION_TYPE,
+                ));
+            }
+            if self.next_entity_id == i64::MAX {
+                return Err(CombatWorldError::EntityIdExhausted);
+            }
+            if config.explosion_power < 0 {
+                return Err(CombatWorldError::MapObject(
+                    MapObjectError::InvalidFireTankPower,
+                ));
+            }
         }
 
+        // Unity subtracts Health and invokes OnHealthChanged before
+        // CanisterBomb.Kill creates the explosion and breaks its obstacle.
         let damage = self.map_objects.get_mut(&object_id)
             .expect("validated object").apply_projectile_damage(power)
             .expect("validated live object and power");
@@ -171,9 +187,12 @@ impl CombatWorld {
             damage,
         });
         if damage.destroyed {
-            if let Some(linked_id) = fire_tank.and_then(|config|
-                config.target_obstacle_id) {
-                self.break_fire_tank_obstacle(object_id, linked_id)?;
+            if let Some(config) = fire_tank {
+                let origin = self.physics.obstacles()[obstacle_index].pose.position;
+                self.spawn_fire_tank_explosion(object_id, origin, shot_index, config)?;
+                if let Some(linked_id) = config.target_obstacle_id {
+                    self.break_fire_tank_obstacle(object_id, linked_id)?;
+                }
             }
             self.retire_map_object(object_id);
             self.events.push(CombatEvent::MapObjectDestroyed {
