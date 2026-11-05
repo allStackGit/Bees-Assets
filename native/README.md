@@ -201,15 +201,24 @@ allocations. A few cumulative encoder counters describe how many source
 entities actually occupied the policy slots. Failures are returned rather
 than silently making a partial row usable for inference.
 
-**Integration boundary:** the native Level/episode adapter must still
-collect the *real* faction-wide discovery caches, ship identity/lifetime,
-weapon readiness, authored ship properties, and local collider geometry.
-These source snapshots are accepted explicitly rather than reconstructed
-from guessed proximity or placeholder objects. Without the native Level
-adapter, complete action execution, and GPU learner/inference integration,
-this is an **encoder implementation**, not a working or parity-certified
-training loop. Its new Rust feature tests have not been executed in this
-environment.
+The `combat_perception_bridge` now reads live ship health, motion, side,
+type and fleet identity directly from `CombatWorld`. It uses the world's
+learned `LevelDiscovery` to select previously discovered enemies (including
+those outside current sight), and real active static-collider bounds to
+rasterize discovered obstacles. Team exploration reads living allied ship
+positions and requires actual effective sight ranges. First-use ship
+identity order is preserved by sorting live candidates before assigning
+permuted episode IDs. Memory survives observer exit/death; target removal
+and episode reset are explicit lifecycle boundaries.
+
+**Integration boundary:** the game/Level adapter must still report actual
+Hive Mind sighting events, supply authored weapon/role/special metadata,
+calculate effective sight ranges and collect real mining/map/asteroid
+objects and reward state. The bridge rejects missing required metadata
+rather than guessing. Native action execution, GPU inference and the
+learner remain unconnected, so this is **not yet a working or
+parity-certified training loop**. Rust feature tests have not been
+executed in this environment.
 
 ## Independent CPU rollout windows
 
