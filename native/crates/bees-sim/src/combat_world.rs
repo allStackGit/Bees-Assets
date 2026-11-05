@@ -127,6 +127,7 @@ pub enum CombatWorldError {
     InvalidPolicyBarge,
     InvalidPolicyScout,
     InvalidPolicyHealing,
+    InvalidPolicyMining,
     InvalidPolicyWarp,
     UnsupportedPolicyTurret { weapon_type: u8, projectile_type: u8 },
     DuplicatePolicyTurret { ship_id: i64, slot: usize },
@@ -264,6 +265,15 @@ pub enum CombatEvent {
         ship_id: i64, beehive_id: i64, side: i32,
         healed_health: i32, tsv_gain: i32,
     },
+    /// A real Factory/CarpenterBee mined this amount from a physical
+    /// MiningAsteroid. The owning Level commits the delta to its persistent
+    /// FleetShip before reconciling economic rewards or observations.
+    CapabilityMined {
+        ship_id: i64, obstacle_id: i64, side: i32, amount_mined: i32,
+    },
+    /// MiningAsteroid.Kill(false) retires this obstacle and releases its
+    /// command/renderer ownership. No collision-asteroid fragmentation.
+    MiningAsteroidDepleted { obstacle_id: i64 },
     /// A safe EndKill via actual WarpGate child collider. Must precede
     /// ShipDied to preserve mined TSV at the economic event consumer.
     ShipWarped {
@@ -509,6 +519,9 @@ pub struct PolicySpecialMeasurements {
     pub barge_charges_stopped: u64,
     pub scout_beacons_spawned: u64,
     pub scout_spawns_blocked_by_cap: u64,
+    pub mining_requests: u64,
+    pub mining_actions_completed: u64,
+    pub mining_obstacles_depleted: u64,
     pub healing_requests: u64,
     pub healing_touch_checks: u64,
     pub healing_actions_completed: u64,
@@ -640,12 +653,16 @@ pub struct CombatWorld {
     policy_pending_ship_specials: Vec<i64>,
     /// v26 SpecialAction.Healing (branch choice 3) is distinct from
     /// ship-class specials (choice 1); both remain in the one world.
+    policy_pending_mining: Vec<i64>,
     policy_pending_healing: Vec<i64>,
     policy_pending_warp: Vec<i64>,
     /// Sorted IDs of living ships with imported child support colliders.
     /// Indexed by (authored ship type, side); the ship and physics arrays
     /// remain authoritative. Used by WarpGate and Beehive action masks.
     support_zone_ids: HashMap<(u8, i32), Vec<i64>>,
+    /// Monotonic IDs of living authored mining obstacles; no full scan
+    /// of static geometry for each eligible policy agent.
+    mining_obstacle_ids: Vec<i64>,
     policy_special_measurements: PolicySpecialMeasurements,
     /// One hit per victim for each active charge; cleared when the
     /// owning Barge starts another charge or is removed from the world.
@@ -734,9 +751,11 @@ impl CombatWorld {
             policy_decision_seen: HashSet::new(),
             policy_pending_shots: Vec::new(),
             policy_pending_ship_specials: Vec::new(),
+            policy_pending_mining: Vec::new(),
             policy_pending_healing: Vec::new(),
             policy_pending_warp: Vec::new(),
             support_zone_ids: HashMap::new(),
+            mining_obstacle_ids: Vec::new(),
             policy_special_measurements: PolicySpecialMeasurements::default(),
             barge_charge_hits: HashSet::new(),
             barge_contact_candidates: Vec::new(),
@@ -1906,11 +1925,15 @@ impl CombatWorld {
         {
             return Err(CombatWorldError::DuplicateEntity);
         }
-        if obstacle.kind == ObstacleKind::CollisionAsteroid && obstacle.vitals.is_none() {
+        if matches!(obstacle.kind,
+            ObstacleKind::CollisionAsteroid | ObstacleKind::MiningAsteroid) &&
+            !obstacle.vitals.is_some_and(|v| !v.is_dead && v.health > 0)
+        {
             return Err(CombatWorldError::InvalidObstacle);
         }
         let next_id = body.id.checked_add(1).ok_or(CombatWorldError::EntityIdExhausted)?;
         let is_asteroid = obstacle.kind == ObstacleKind::CollisionAsteroid;
+        let obstacle_kind = obstacle.kind;
         let entity_id = obstacle.entity_id;
         body.tracks_body_contacts = is_asteroid;
         if let Some(&index) = self.free_obstacle_slots.last() {
@@ -1929,6 +1952,11 @@ impl CombatWorld {
         self.next_entity_id = next_id;
         if is_asteroid {
             self.asteroid_border_states.insert(entity_id, AsteroidBorderState::default());
+        }
+        if obstacle_kind == ObstacleKind::MiningAsteroid {
+            // Entity IDs are monotonic in the shared world, even with
+            // recycled dense obstacle slots.
+            self.mining_obstacle_ids.push(entity_id);
         }
         Ok(())
     }
@@ -3121,6 +3149,8 @@ impl CombatWorld {
             });
         }
         self.advance_policy_healing_cooldowns(dt);
+        self.advance_policy_mining_cooldowns(dt);
+        self.apply_pending_policy_mining()?;
         self.apply_pending_policy_ship_specials(collision_matrix)?;
         self.apply_pending_policy_healing()?;
         self.apply_pending_policy_warp()?;
