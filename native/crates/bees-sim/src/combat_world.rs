@@ -2997,12 +2997,14 @@ mod tests {
         ];
         let skipped = world.refresh_hivemind_vision(&seen, true).unwrap();
         assert_eq!(skipped.first_ship_discoveries, 0);
+        assert!(!world.has_live_enemy_visible_to_hivemind(1));
         assert!(world.discovery().ship_ids(1).is_none());
 
         let first = world.refresh_hivemind_vision(&seen, false).unwrap();
         assert_eq!(first.active_observers, 2);
         assert_eq!(first.first_ship_discoveries, 1);
         assert_eq!(first.first_obstacle_discoveries, 1);
+        assert!(world.has_live_enemy_visible_to_hivemind(1));
         assert!(first.visible_enemy_pairs >= 1);
         assert!(first.aabb_rejections >= 1);
         assert!(world.discovery().has(1, DiscoveryKind::Obstacle, 4));
@@ -3016,6 +3018,7 @@ mod tests {
         }];
         let second = world.refresh_hivemind_vision(&disabled, false).unwrap();
         assert_eq!(second.first_ship_discoveries, 0);
+        assert!(!world.has_live_enemy_visible_to_hivemind(1));
         assert!(world.discovery().has(1, DiscoveryKind::Ship, 2));
 
         let duplicates = [seen[0], seen[0]];
