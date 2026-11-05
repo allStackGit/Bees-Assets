@@ -729,9 +729,11 @@ document.addEventListener('DOMContentLoaded', () => {
             const waitingOnParent=j.status==='waiting_predecessor'
                 ?'Prequeued · No capacity claim · Awaiting predecessor '+
                     (parent?.status||'unknown')+
-                    (['failed','stopped','unverified','cancelled'].includes(parent?.status)
-                        ?' · Requires review or cancellation; will not auto-advance'
-                        :' · Advances only after finished + capacity released')
+                    (parent?.status==='stopped'&&parent.capacity_released_at
+                        ?' · Operator may explicitly approve a checkpoint continuation'
+                        :['failed','stopped','unverified','cancelled'].includes(parent?.status)
+                            ?' · Requires review or cancellation; will not auto-advance'
+                            :' · Advances only after finished + capacity released')
                 :null;
             const status=waitingOnParent||(
                 j.status==='waiting_adapter'
@@ -859,6 +861,26 @@ document.addEventListener('DOMContentLoaded', () => {
                         feedback('hub-job-allocate-message','Claim released; job remains queued.');
                         await reload();
                     }catch(e){feedback('hub-job-allocate-message',e.message);}
+                }));
+            if(j.status==='waiting_predecessor'&&j.project_id==='ants'&&
+                parent?.status==='stopped'&&parent.capacity_released_at&&
+                parent.execution_updated_at)
+                actions.append(button('Approve stopped predecessor',async()=>{
+                    if(!confirm('Explicitly allow continuation after the predecessor STOPPED, '+
+                        'rather than finished? The latest durable Ants checkpoint may predate the stop, '+
+                        'so unsaved progress may be lost. This only unblocks resource scheduling; '+
+                        'the trusted adapter must still validate checkpoint lineage and qualification. '+
+                        'If native queue automation is armed, it may subsequently start the approved stage.'))return;
+                    try{
+                        await action('hub/jobs/approve-stopped',{
+                            job_id:j.id,confirm_stopped_checkpoint_risk:true,
+                        });
+                        feedback('hub-job-message',
+                            'Stopped predecessor approved. The stage is eligible for ordinary capacity coordination; no process was started by this action.');
+                        await reload();
+                    }catch(error){
+                        feedback('hub-job-message',String(error.message||error));
+                    }
                 }));
             if(['waiting_adapter','waiting_predecessor'].includes(j.status)&&
                 !hasSuccessor)actions.append(button('Cancel',async()=>{
