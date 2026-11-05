@@ -258,26 +258,38 @@ geometry changes.
 coalesce, changed destinations invalidate existing work, and old search
 results are rejected by request and ship-lifecycle identity. A superseded
 running job requeues only the most recent destination, using the ship's
-current position once its prior worker completes. The synchronous
-`solve_next_path_job` entrypoint uses the shared `NavigationSearch`; a
-future threaded scheduler can use `claim_next_path_job` and
+current position once its prior worker completes. Invalidating an active
+result preserves its occupied worker slot until it actually finishes.
+The reusable `NavigationRuntime` owns the Level map's full affine transform,
+static/dynamic clearance maps and A* arrays. It refreshes directly from
+`CombatWorld`'s live obstacles; `refresh_world_navigation` and
+`solve_next_world_navigation_job` provide the shared integration boundary.
+A future threaded scheduler may use `claim_next_path_job` and
 `complete_path_job` without changing these rules.
 
 For normal gameplay, callers supply a `GameMovementProfile` with the
 actual configured `ShipTurningRadius` and rendered ship half-extents.
-Then `move_ship_direct`, `move_ship_in_direction`, and accepted paths
-use `GameShipSteering` in the *same* pre-physics fixed step as RL-controlled
-`ShipMotion`. Path followers use Unity waypoint skipping, egress counts,
-turning dead band, variable speed and StopMoving semantics. No guess from
-sprite size or a new RL-only movement core is introduced.
+Then `move_ship_to_point` applies the Level's explicit bounds
+and collision-asteroid activation settings, sweeps the source-sized rotated
+BoxCast against real layer-19 polygon/circle colliders, and chooses direct
+movement or A*. Movement locks preserve the latest order and reevaluate
+the actual obstacle geometry on unlock. `move_ship_direct`,
+`move_ship_in_direction`, and accepted routes use `GameShipSteering`
+in the same pre-physics step as RL-controlled `ShipMotion`. Failed routes
+use Unity's five attempts separated by two-second timers; asteroid proximity
+entries trigger replanning and recurring one-second nearby-asteroid checks
+do not invalidate active workers. Route waypoints, egress counts, turning
+dead bands, variable speed and StopMoving share the existing physics core.
 
-**Integration still incomplete:** the game/squad command system must
-issue destinations, choose direct movement vs obstruction-triggered
-path searches, supply authored movement profiles and level/map transforms,
-orchestrate static/dynamic navigation-map refreshes and job scheduling,
-and port failed-path retry timers and the native equivalent of Unity's
-five-second wall-clock worker limit. Gameplay and rendering parity are
-not established; the above functionality has not been compiled or run.
+**Integration still incomplete:** squad/Hive Mind/user command
+dispatch must supply real game movement profiles and Level orders, then
+schedule per-fixed-frame navigation refreshes and CPU worker execution.
+Unity's five-second wall-clock search cap and threaded dispatch have not
+been ported. The native sweep implements continuous authored-shape geometry,
+not Box2D's exact hit-ordering or the 16-hit Unity non-alloc buffer.
+Proximity callback ordering, multi-map placement and gameplay/rendering
+parity remain unverified. As requested, these changes have not been
+compiled or executed.
 
 The catalog stores normal `SizeClass × CollisionAsteroidHealthIncrement` durability;
 training must still pass its effective-health override when spawning, while
