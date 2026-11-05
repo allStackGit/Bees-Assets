@@ -717,6 +717,49 @@ browser's explicit **Arm** control can separately exercise isolated
 automatic scheduling; it is disabled by default. Do not rotate or
 revoke `smoke`'s session-managed credential.
 
+#### Automated browser queue and disconnect qualification
+
+Use a **fresh isolated dashboard session** for each scenario:
+
+1. **Automatic CPU/RAM scheduling:** Save a fixed inert configuration,
+   queue **three** jobs with resources
+   `{"cpus":1,"ram_mb":256,"gpu_count":0}` each, and in **Train**
+   select `smoke` under native queue automation and confirm **Arm**.
+   Do not click Start manually. The qualification panel should show
+   at most **2 simultaneously running jobs**, with claims no higher
+   than **2 CPUs and 512 MiB**; the third waits. When the first jobs
+   finish, the scheduler must release signed terminal capacity and start
+   the third. Wait for all three to finish with released claims, then
+   explicitly **Disarm** and exit. The PowerShell shutdown summary
+   reports peak concurrency, peak claimed resources, completed jobs,
+   and outstanding claims. Neither observed memory usage nor physical
+   host-exclusive reservation is asserted by these figures.
+2. **Missing heartbeats while jobs are running:** Start a new isolated
+   session and queue three more fixed inert CPU-only jobs. Arm the
+   scheduler and wait until **two** jobs report running. Immediately
+   click **Pause agent heartbeats** in the isolated qualification panel.
+   Leave them paused for **at least 50 seconds**, past the normal
+   45-second heartbeat expiry. The agent should show **offline** and
+   automation should **disarm for lost qualified continuity**. The native
+   owners may finish their 30-second children while heartbeats are
+   absent; this does not release Hub claims automatically. Select
+   **Resume agent heartbeats**. The *same* agent session should reconnect
+   and inspect its existing native ownership without a duplicate Start,
+   report the two terminal services, and leave automation disarmed.
+   Release their held terminal claims manually, and cancel any remaining
+   unstarted job. Confirm zero active claims before exiting.
+
+The heartbeat controls are **qualification-only**; they suspend the
+in-process agent's authenticated HTTP updates without closing the
+coordinator, killing its native children, or replacing its credentials.
+The safety scheduler continues running independently while heartbeats
+are paused. Live numbers distinguish Hub CPU/RAM **claims** from native
+CPU time/process counts. Windows Job Object memory *usage* is currently
+not measured; the enforced per-job limit is not a usage measurement.
+An offline test does not establish resilience to an actual machine power
+failure or network partition. Never re-arm automation during an
+unverified, disconnected or unreleased native lifecycle.
+
 Press **Ctrl+C** in the launching PowerShell window once claims are
 released. The temporary private registry is intentionally preserved for
 inspection. If native status becomes `unverified` or a listener fails,
