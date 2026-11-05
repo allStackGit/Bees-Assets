@@ -767,11 +767,18 @@ class ExperimentHub {
         }
         for(const job of ordered) {
             const lease=snapshot.reservations.find(l=>l.id===job.lease_id &&
-                l.job_id===job.id&&l.status==='acknowledged'&&l.receipt_fresh);
+                l.job_id===job.id&&l.project_id===job.project_id&&
+                l.machine_id===machineId&&l.status==='acknowledged');
             if(!lease||!machine.installed_projects.includes(job.project_id))continue;
             const action=job.status==='stop_requested'?'stop':
                 job.status==='start_requested'?'start':
                 job.gpu_qualification?.status==='requested'?'qualify_gpu':'inspect';
+            // A stale capacity receipt forbids creating a new workload or
+            // probing a GPU, but must not strand an already owned process.
+            // Authenticated Stop/Inspect only reconcile the local ownership
+            // journal and cannot authorize a new launch.
+            if((action==='start'||action==='qualify_gpu')&&!lease.receipt_fresh)
+                continue;
             if(action==='start'&&machine.native_preflight_passed!==true)
                 continue;
             if(action==='qualify_gpu'&&(
@@ -801,7 +808,7 @@ class ExperimentHub {
                 lease:{
                     id:lease.id,job_id:job.id,project_id:lease.project_id,
                     machine_id:lease.machine_id,issued_by:lease.issued_by,
-                    status:lease.status,receipt_fresh:true,
+                    status:lease.status,receipt_fresh:lease.receipt_fresh,
                     resources:copy(lease.resources),
                     gpu_bindings:copy(lease.gpu_bindings||[]),
                 },
