@@ -562,6 +562,13 @@ impl CombatWorld {
         self.physics.ships().get(index)
     }
 
+    /// Canonical gameplay fleet identity, if this runtime ship belongs to
+    /// an authored fleet ship. Used for source-matched RL entity ordering;
+    /// never infer it from the runtime ID or dense storage index.
+    pub fn ship_fleet_identity(&self, entity_id: i64) -> Option<i64> {
+        self.fleet_id_by_ship.get(&entity_id).copied()
+    }
+
     pub fn projectiles(&self) -> &[CombatProjectile] { &self.projectiles }
     pub fn reservations(&self) -> &DamageReservations { &self.reservations }
     pub fn obstacles(&self) -> &[CombatObstacle] { &self.obstacles }
