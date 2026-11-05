@@ -820,6 +820,21 @@ impl KinematicPhysics {
         })
     }
 
+    /// Test the actual authored ship colliders at their current poses.
+    /// Striker.TryToDropBombs requires Ship.Collider.IsTouching rather than
+    /// proximity or center distance. This on-demand query avoids paying
+    /// for every ship/ship pair when no loaded Striker requests its special.
+    /// It refreshes each cached collider, including newly spawned ships.
+    pub fn ship_hulls_overlap(&mut self, a: usize, b: usize) -> bool {
+        if a == b || a >= self.ships.len() || b >= self.ships.len() ||
+            !self.ships[a].active || !self.ships[b].active {
+            return false;
+        }
+        self.ships[a].update_hull();
+        self.ships[b].update_hull();
+        self.ships[a].collider.overlaps(&self.ships[b].collider)
+    }
+
     pub fn ships(&self) -> &[ShipBody] { &self.ships }
     pub fn ships_mut(&mut self) -> &mut [ShipBody] { &mut self.ships }
     pub fn projectiles(&self) -> &[ProjectileBody] { &self.projectiles }
