@@ -485,6 +485,9 @@ document.addEventListener('DOMContentLoaded', () => {
             (automation.enabled?'Armed for '+automation.machine_ids.join(', ')
                 :'Disarmed')+
             (automation.last_action?' · '+automation.last_action:'')+
+            (automation.last_transition_at?' · Last change '+
+                new Date(automation.last_transition_at).toLocaleString():'')+
+            (automation.waiting_reason?' · '+automation.waiting_reason:'')+
             (automation.last_error?' · REQUIRES REVIEW: '+automation.last_error:''));
         $('hub-job-rows').replaceChildren();
         for(const j of records.slice(-50).reverse()) {
