@@ -40,6 +40,8 @@ function trainingFormPayload() {
 document.addEventListener('DOMContentLoaded', () => {
     const $ = id => document.getElementById(id);
     let project = 'bees', tab = 'monitor', state = null, editing = null;
+    let comparisonData = null,comparisonProject = null;
+    let comparisonRequest = 0,selectionProject = null;
     let envArgsTouched = false;
     const action = async (route, payload) => {
         const r = await fetch('/api/'+route,{
@@ -78,7 +80,199 @@ document.addEventListener('DOMContentLoaded', () => {
         $('bees-controls').hidden=project!=='bees' || !['train','monitor'].includes(tab);
         if(tab==='train'&&project==='bees') loadBeesControl();
         if(tab==='monitor'&&project==='bees') loadMonitorBees();
+        if(tab==='compare'&&project!=='bees')loadComparison();
         if(tab==='machines') loadLiveBeesWorkers();
+    }
+    const compareSlots=['a','b','c','d'];
+    const chartPalette=['#1769aa','#ce5a18','#23834b','#8647a8'];
+    const chartMetrics={
+        curriculum_window_success_rate:{label:'Current curriculum-window success',rate:true},
+        segment_success_rate:{label:'Segment success rate',rate:true},
+        curriculum_level:{label:'Curriculum level',rate:false},
+        policy_version:{label:'Policy version',rate:false},
+        simulation_steps_per_second:{label:'Last-episode simulation steps/s',rate:false},
+        ppo_unique_samples_per_second:{label:'Last-episode PPO unique samples/s',rate:false},
+    };
+    async function loadComparison() {
+        if(!state||project==='bees')return;
+        const requested=project,serial=++comparisonRequest;
+        try {
+            const response=await fetch('/api/hub/progress?project_id='+
+                encodeURIComponent(requested),{cache:'no-store'});
+            const body=await response.json();
+            if(!response.ok)throw Error(body.error||'Progress series unavailable');
+            if(serial!==comparisonRequest||requested!==project)return;
+            comparisonData=body;
+            comparisonProject=requested;
+            renderComparison();
+        }catch(error){
+            if(serial!==comparisonRequest||requested!==project)return;
+            comparisonData=null;
+            comparisonProject=requested;
+            feedback('hub-compare-notice',error.message);
+            renderComparison();
+        }
+    }
+    function renderComparison() {
+        if(!state||project==='bees')return;
+        const jobs=state.jobs.filter(j=>j.project_id===project);
+        const samples=comparisonProject===project&&comparisonData?.samples||[];
+        const history=new Map(samples.map(s=>[s.job_id,s.points||[]]));
+        const chartable=jobs.filter(j=>j.live_execution?.progress||
+            j.final_progress||history.get(j.id)?.length).slice(-80).reverse();
+        const previous=compareSlots.map(slot=>$('hub-compare-'+slot).value);
+        const changedProject=selectionProject!==project;
+        selectionProject=project;
+        const selected=new Set();
+        for(let i=0;i<compareSlots.length;i++) {
+            const select=$('hub-compare-'+compareSlots[i]);
+            select.replaceChildren(new Option('No run',''),
+                ...chartable.map(j=>new Option(
+                    j.configuration_name+
+                    (j.continuation_of_job_id?' · continuation':' · initial run')+
+                    ' · '+j.status+
+                    ' · '+new Date(j.created_at).toLocaleDateString(),j.id)));
+            const desired=!changedProject?previous[i]:
+                (i<2?chartable[i]?.id:null);
+            if(desired&&chartable.some(j=>j.id===desired)&&
+                !selected.has(desired)){
+                select.value=desired;
+                selected.add(desired);
+            }
+        }
+        const runs=compareSlots.map((slot,i)=>{
+            const id=$('hub-compare-'+slot).value;
+            const job=jobs.find(j=>j.id===id);
+            return job?{job,color:chartPalette[i],slot:slot.toUpperCase(),
+                points:history.get(id)||[]}:null;
+        }).filter(Boolean);
+        const note=project!=='ants'
+            ?'This project has no supported learning-curve adapter yet. Native job state and terminal records are still available.'
+            :comparisonProject!==project
+                ?'Loading bounded, in-memory progress history...'
+                :comparisonData?.ephemeral
+                    ?'Live chart samples are held in memory only (up to 96 per job). Coordinator restarts clear curves; final job summaries remain available.'
+                    :'Only current/final snapshots are available.';
+        feedback('hub-compare-notice',note);
+        const knownRoots=new Set(runs.map(r=>
+            r.job.artifact_lineage_root_id||r.job.id));
+        const related=knownRoots.size<runs.length;
+        feedback('hub-compare-chart-note',
+            (related?'Some selected jobs share a checkpoint/artifact lineage; they are not independent replicates. ':'')+
+            'Comparison uses cumulative episodes, not wall-clock time. '+
+            'Source timestamps show when Ants last published a summary. No training decisions use chart data.');
+        const table=$('hub-compare-rows');
+        table.replaceChildren();
+        for(const run of runs) {
+            const j=run.job,p=j.live_execution?.progress||j.final_progress||
+                run.points[run.points.length-1]||null;
+            const tr=document.createElement('tr');
+            cell(tr,run.slot+' · '+j.configuration_name+
+                (j.continuation_of_job_id?' (continuation)':''));
+            cell(tr,j.status+' · '+(j.assigned_machine_id||'unassigned'));
+            cell(tr,p?p.episodes_completed.toLocaleString()+
+                ' / level '+p.curriculum_level:'—');
+            cell(tr,p?.curriculum_window_success_rate==null?'—':
+                (p.curriculum_window_success_rate*100).toFixed(1)+'%'+
+                (p.curriculum_window_episodes==null?'':' ('+
+                    p.curriculum_window_episodes+' episodes)'));
+            cell(tr,p?.segment_success_rate==null?'—':
+                (p.segment_success_rate*100).toFixed(1)+'%');
+            cell(tr,p?.policy_version?.toLocaleString()||'—');
+            cell(tr,p?.source_modified_at?
+                new Date(p.source_modified_at).toLocaleString():'—');
+            table.append(tr);
+        }
+        if(!runs.length) {
+            const tr=document.createElement('tr');
+            cell(tr,chartable.length?'Select a run above to compare.':
+                'No reported learning progress for this project.').colSpan=7;
+            table.append(tr);
+        }
+        drawComparisonChart(runs,$('hub-compare-metric').value);
+    }
+    function drawComparisonChart(runs,key) {
+        const svg=$('hub-compare-svg'),metric=chartMetrics[key];
+        svg.replaceChildren();
+        if(!metric)return;
+        const ns='http://www.w3.org/2000/svg';
+        const node=(tag,attrs={},content=null)=>{
+            const item=document.createElementNS(ns,tag);
+            for(const [name,value] of Object.entries(attrs))
+                item.setAttribute(name,String(value));
+            if(content!=null)item.textContent=String(content);
+            svg.append(item);
+            return item;
+        };
+        svg.setAttribute('aria-label',metric.label+
+            ' by cumulative Ants experiment episodes for selected runs');
+        const series=runs.map(run=>{
+            const points=run.points.length?run.points:
+                [run.job.live_execution?.progress||run.job.final_progress]
+                    .filter(Boolean);
+            return {...run,valid:points.filter(p=>
+                Number.isFinite(p.episodes_completed))};
+        });
+        const values=series.flatMap(r=>r.valid
+            .filter(p=>Number.isFinite(p[key]))
+            .map(p=>({x:p.episodes_completed,y:p[key]})));
+        if(!values.length) {
+            node('text',{x:450,y:160,'text-anchor':'middle'},
+                'No recorded samples for the selected runs and metric');
+            return;
+        }
+        const bounds={left:85,right:865,top:64,bottom:265};
+        const xmin=Math.min(...values.map(v=>v.x)),
+            xmax=Math.max(...values.map(v=>v.x));
+        const ymax=metric.rate?1:Math.max(1,...values.map(v=>v.y))*1.05;
+        const x=v=>bounds.left+(v-xmin)/Math.max(1,xmax-xmin)*
+            (bounds.right-bounds.left);
+        const y=v=>bounds.bottom-(v/ymax)*(bounds.bottom-bounds.top);
+        for(let i=0;i<=4;i++) {
+            const value=ymax*i/4,yp=y(value);
+            node('line',{x1:bounds.left,y1:yp,x2:bounds.right,y2:yp,
+                class:'plot-grid'});
+            node('text',{x:75,y:yp+4,'text-anchor':'end'},
+                metric.rate?(value*100).toFixed(0)+'%':
+                    Number(value.toPrecision(3)).toLocaleString());
+        }
+        for(let i=0;i<=4;i++) {
+            const value=xmin+(xmax-xmin)*i/4,xp=x(value);
+            node('text',{x:xp,y:288,'text-anchor':'middle'},
+                Math.round(value).toLocaleString());
+        }
+        node('line',{x1:bounds.left,y1:bounds.bottom,
+            x2:bounds.right,y2:bounds.bottom,class:'plot-axis'});
+        node('line',{x1:bounds.left,y1:bounds.top,
+            x2:bounds.left,y2:bounds.bottom,class:'plot-axis'});
+        node('text',{x:450,y:313,'text-anchor':'middle'},
+            'Cumulative training episodes');
+        for(const run of series) {
+            const legendIndex=runs.indexOf(run);
+            // run objects are cloned into series; color/slot remain stable.
+            const i=runs.findIndex(r=>r.job.id===run.job.id);
+            node('line',{x1:100+i*195,y1:29,x2:128+i*195,y2:29,
+                stroke:run.color,'stroke-width':4});
+            node('text',{x:133+i*195,y:33},
+                run.slot+' · '+run.job.configuration_name.slice(0,18));
+            let part=[];
+            const flush=()=>{
+                if(part.length>1)
+                    node('path',{d:part.map((p,i)=>(i?'L':'M')+
+                        x(p.episodes_completed).toFixed(1)+' '+
+                        y(p[key]).toFixed(1)).join(' '),
+                        stroke:run.color,class:'plot-line'});
+                part=[];
+            };
+            for(const point of run.valid) {
+                if(point.break_before||!Number.isFinite(point[key]))flush();
+                if(!Number.isFinite(point[key]))continue;
+                part.push(point);
+                node('circle',{cx:x(point.episodes_completed),cy:y(point[key]),
+                    r:3.5,fill:run.color,class:'plot-point'});
+            }
+            flush();
+        }
     }
     function resetEditor() {
         editing=null;
@@ -482,6 +676,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     for(const b of document.querySelectorAll('[data-hub-go]'))
         b.addEventListener('click',()=>selectTab(b.dataset.hubGo));
+    for(const slot of compareSlots)
+        $('hub-compare-'+slot).addEventListener('change',renderComparison);
+    $('hub-compare-metric').addEventListener('change',renderComparison);
     $('hub-project').addEventListener('change',()=>{
         project=$('hub-project').value;resetEditor();display();selectTab(tab);
     });
