@@ -44,6 +44,55 @@ impl NavigationClearance {
     pub fn static_signed_clearance(&self) -> &[i32] { &self.signed_static }
     pub fn dynamic_clearance(&self) -> &[i32] { &self.dynamic }
 
+    /// Unity CanOccupyDestination's clearance criterion, after the owning
+    /// Level has enforced ForceBounds and HasObstacles. The caller must still
+    /// reject destinations that were outside the Level's configured bounds.
+    pub fn can_occupy_cell(&self, level_position: Vec2, ship_clearance: i32) -> bool {
+        if !level_position.is_finite() { return false; }
+        let (x, y) = self.grid.to_cell(level_position);
+        self.dynamic[y * self.grid.width + x] >= ship_clearance.max(2)
+    }
+
+    /// Unity TryFindNearestValidDestination's ring search, including the
+    /// x-then-y edge scanning order and closest Euclidean candidate within
+    /// the first radius with any walkable cell. The Level must first apply
+    /// ForceBounds; callers skip this when Level.HasObstacles is false.
+    pub fn nearest_walkable_destination(
+        &self,
+        bounded_destination: Vec2,
+        ship_clearance: i32,
+    ) -> Option<Vec2> {
+        if !bounded_destination.is_finite() { return None; }
+        let (cx, cy) = self.grid.to_cell(bounded_destination);
+        let clearance = ship_clearance.max(2);
+        let max_radius = self.grid.width.max(self.grid.height);
+        for radius in 0..=max_radius {
+            let min_x = cx.saturating_sub(radius);
+            let max_x = cx.saturating_add(radius).min(self.grid.width - 1);
+            let min_y = cy.saturating_sub(radius);
+            let max_y = cy.saturating_add(radius).min(self.grid.height - 1);
+            let mut best: Option<(Vec2, f32)> = None;
+            let mut consider = |x: usize, y: usize| {
+                if self.dynamic[y * self.grid.width + x] < clearance { return; }
+                let candidate = self.grid.cell_center(x, y);
+                let distance = (candidate - bounded_destination).length_squared();
+                if best.as_ref().is_none_or(|(_, value)| distance < *value) {
+                    best = Some((candidate, distance));
+                }
+            };
+            for x in min_x..=max_x {
+                consider(x, min_y);
+                if max_y != min_y { consider(x, max_y); }
+            }
+            for y in min_y.saturating_add(1)..max_y {
+                consider(min_x, y);
+                if max_x != min_x { consider(max_x, y); }
+            }
+            if let Some((point, _)) = best { return Some(point); }
+        }
+        None
+    }
+
     /// Called when the map's *static* obstacles change; it replaces both
     /// base and signed-static layers. Static changes invalidate the old
     /// dynamic map, so the owning Level should refresh dynamic occupancy.
