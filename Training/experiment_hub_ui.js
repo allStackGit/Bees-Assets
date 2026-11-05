@@ -446,7 +446,9 @@ document.addEventListener('DOMContentLoaded', () => {
                             :' · GPU device probe previously passed, now stale'
                         :proof.status==='cancelled'
                             ?' · GPU device probe cancelled when claim released'
-                            :' · GPU device access probe rejected'
+                            :proof.status==='stale'
+                                ?' · GPU device access proof invalidated by hardware change'
+                                :' · GPU device access probe rejected'
                 :'';
             const detail=j.execution_diagnostic?' · '+j.execution_diagnostic:'';
             const statusCell=cell(tr,status+lineage+gpuProof);
