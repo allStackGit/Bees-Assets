@@ -67,6 +67,13 @@ document.addEventListener('DOMContentLoaded', () => {
         b.type='button';b.textContent=label;b.addEventListener('click',onClick);
         return b;
     }
+    // Only a fresh, authenticated native report can distinguish a Stop
+    // still awaiting delivery from a service already shutting down.
+    function nativeJobLabel(job, fallback) {
+        return job.status==='stop_requested'&&
+            job.live_execution?.state==='stop_requested'
+            ?'Stop acknowledged; awaiting exit':fallback;
+    }
     function selectTab(next) {
         if (!['design','train','monitor','compare','machines'].includes(next)) return;
         tab=next;
@@ -473,7 +480,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     (linked.receipt_fresh?'Receipt fresh':linked.status)+
                     ' · Not started')
                     :'Waiting for trusted adapter · No claim'
-                :(labels[j.status]||j.status)+usage+
+                :nativeJobLabel(j,labels[j.status]||j.status)+usage+
                     (j.capacity_released_at?' · Capacity released':'')+
                     (machine?.status==='offline'?' · Agent offline':'');
             const proof=j.gpu_qualification;
@@ -624,7 +631,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const progress=live?.progress||j.final_progress;
             cell(tr,j.configuration_name+
                 (j.continuation_of_job_id?' · continuation':''));
-            cell(tr,j.status+
+            cell(tr,nativeJobLabel(j,j.status)+
                 (j.capacity_released_at?' · capacity released':''));
             cell(tr,learningSummary(j));
             cell(tr,progress?.source_modified_at
