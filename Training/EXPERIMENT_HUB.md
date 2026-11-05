@@ -685,7 +685,7 @@ perform the isolated **Windows-native preflight** on a host with the reviewed
 and locally built helper:
 
 ```powershell
-$env:EXPERIMENT_HUB_WINDOWS_HELPER = 'C:\\Approved\\ExperimentHubWindowsOwner.exe'
+$env:EXPERIMENT_HUB_WINDOWS_HELPER = 'C:\Approved\ExperimentHubWindowsOwner.exe'
 $env:EXPERIMENT_HUB_WINDOWS_HELPER_SHA256 = (Get-FileHash $env:EXPERIMENT_HUB_WINDOWS_HELPER -Algorithm SHA256).Hash.ToLowerInvariant()
 node Training/experiment_hub_native_smoke_windows.js --preflight
 ```
