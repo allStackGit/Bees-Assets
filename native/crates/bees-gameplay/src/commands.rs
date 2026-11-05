@@ -4,7 +4,8 @@
 //! invokes the same shared physics world and formation navigation used by
 //! user orders, the render client, and headless evaluation.
 //!
-//! Hold, MoveToRandom, Patrol and Retreat have source-matched movement/timer phases.
+//! Hold, MoveToRandom, Patrol, Retreat and ClosestFriendly have source-matched
+//! movement/timer phases.
 //! Every other server strategy is explicitly unsupported until its Unity
 //! gameplay mechanics and reward effects are implemented. Caller-owned
 //! targeting/shooting and command reward accumulation are not fabricated.
@@ -29,7 +30,8 @@ use bees_sim::geometry::Vec2;
 use bees_sim::navigation_runtime::NavigationRuntime;
 use bees_sim::simulation::RandomStream;
 use bees_sim::squad_movement::{
-    issue_squad_move, stop_squad_game_movement, SquadFormationMember,
+    issue_squad_move, issue_squad_tracked_move, stop_squad_game_movement,
+    SquadFormationMember,
     SquadFormationOptions, SquadOrderError,
 };
 use bees_sim::timer::ScaledTimer;
@@ -67,6 +69,24 @@ impl NativeEnemySquad {
     }
 }
 
+/// Current Level.State.Squads entry. The owner contains the full lifecycle,
+/// so a pooled squad reusing an ItemId is never the previous follow target.
+/// Callers provide entries in actual Level.State.Squads iteration order.
+#[derive(Clone, Copy, Debug)]
+pub struct NativeFriendlySquad {
+    pub owner: SquadLifetime,
+    pub side: i32,
+    pub position: Vec2,
+    pub is_alive: bool,
+    pub is_following_friend: bool,
+}
+
+impl NativeFriendlySquad {
+    pub fn valid(self) -> bool {
+        self.owner.valid() && self.position.is_finite()
+    }
+}
+
 impl NativeSquadOrder<'_> {
     pub fn valid(self) -> bool {
         self.owner.valid() && self.squad_center.is_finite() &&
@@ -84,6 +104,8 @@ pub struct HiveMindCommandSettings {
     pub ai_patrol_max_size: f32,
     /// From ConfigData.Configuration.AISquadPatrolTime.
     pub ai_squad_patrol_seconds: f32,
+    /// From ConfigData.Configuration.AISquadFollowingTime.
+    pub ai_squad_following_seconds: f32,
 }
 
 impl HiveMindCommandSettings {
@@ -95,7 +117,9 @@ impl HiveMindCommandSettings {
         self.ai_patrol_max_size.is_finite() &&
         self.ai_patrol_max_size >= 0.0 &&
         self.ai_squad_patrol_seconds.is_finite() &&
-        self.ai_squad_patrol_seconds > 0.0
+        self.ai_squad_patrol_seconds > 0.0 &&
+        self.ai_squad_following_seconds.is_finite() &&
+        self.ai_squad_following_seconds > 0.0
     }
 }
 
@@ -105,6 +129,7 @@ pub enum GameCommandError {
     InvalidSettings,
     InvalidDelta,
     InvalidEnemy,
+    InvalidFriendlies,
     Squad(SquadOrderError),
 }
 
@@ -142,6 +167,7 @@ pub enum CommandFinishCause {
     ReachedRandomDestination,
     ReachedRetreatDestination,
     AlreadySafe,
+    FriendlyGone,
     Superseded,
     SquadRetired,
 }
@@ -200,6 +226,9 @@ pub enum Activation {
     /// No side effects. The native caller MUST discard or otherwise
     /// reconcile this validated server selection's reservations.
     Unsupported(ResolvedHiveMindCommand),
+    /// Unity ClosestFriendly.Execute cannot install a command without an
+    /// eligible target. No server reservation has earned learning credit.
+    Unavailable(ResolvedHiveMindCommand),
 }
 
 struct PatrolRoute {
@@ -212,6 +241,13 @@ struct PatrolRoute {
     formation: SquadFormationOptions,
 }
 
+struct FollowingFriendly {
+    target: SquadLifetime,
+    side: i32,
+    members: Vec<SquadFormationMember>,
+    formation: SquadFormationOptions,
+}
+
 struct ActiveNativeCommand {
     selection: ResolvedHiveMindCommand,
     // Retreat has no time limit while moving; other commands may have
@@ -219,6 +255,7 @@ struct ActiveNativeCommand {
     timeout: Option<ScaledTimer>,
     command_poll: Option<ScaledTimer>,
     patrol: Option<PatrolRoute>,
+    following: Option<FollowingFriendly>,
     /// Authoritative game-owned member snapshot at command issue.
     /// The Level must retire/reissue on squad composition changes.
     member_ids: Vec<i64>,
@@ -248,6 +285,7 @@ impl NativeSquadCommandDirector {
         navigation: &NavigationRuntime,
         random: &mut RandomStream,
         squad: NativeSquadOrder<'_>,
+        friendlies: &[NativeFriendlySquad],
         settings: HiveMindCommandSettings,
         receipt: StrategyReceipt,
     ) -> Result<StrategyReceiptAction, StrategyReceiptFailure> {
@@ -294,13 +332,20 @@ impl NativeSquadCommandDirector {
                 selection.shooting_outcome_id,
             ]));
         }
-        self.activate_hivemind(
-            world, navigation, random, squad, settings, resolved,
-        ).map(StrategyReceiptAction::Applied)
-            .map_err(|cause| StrategyReceiptFailure {
+        match self.activate_hivemind(
+            world, navigation, random, squad, friendlies, settings, resolved,
+        ) {
+            Ok(Activation::Unavailable(unavailable)) =>
+                Ok(StrategyReceiptAction::DiscardReservations(vec![
+                    unavailable.command_outcome_id,
+                    unavailable.shooting_outcome_id,
+                ])),
+            Ok(activation) => Ok(StrategyReceiptAction::Applied(activation)),
+            Err(cause) => Err(StrategyReceiptFailure {
                 selection,
                 cause: StrategyReceiptFailureCause::InvalidSquad(cause),
-            })
+            }),
+        }
     }
 
     pub fn activate_hivemind(
@@ -309,6 +354,7 @@ impl NativeSquadCommandDirector {
         navigation: &NavigationRuntime,
         random: &mut RandomStream,
         squad: NativeSquadOrder<'_>,
+        friendlies: &[NativeFriendlySquad],
         settings: HiveMindCommandSettings,
         selection: ResolvedHiveMindCommand,
     ) -> Result<Activation, GameCommandError> {
@@ -320,6 +366,7 @@ impl NativeSquadCommandDirector {
         }
 
         let mut patrol = None;
+        let mut following = None;
         let mut retreat_already_safe = false;
         let issued_move = match selection.local_command {
             LocalCommandKind::Hold => {
@@ -360,6 +407,48 @@ impl NativeSquadCommandDirector {
                 // on its immediate callback, not during Execute itself.
                 false
             }
+            LocalCommandKind::ClosestFriendly => {
+                let mut side = None;
+                for member in squad.members {
+                    let ship = world.ships().iter().find(
+                        |ship| ship.entity_id == member.ship_id,
+                    ).ok_or(GameCommandError::InvalidSquad)?;
+                    if side.is_some_and(|existing| existing != ship.side) {
+                        return Err(GameCommandError::InvalidSquad);
+                    }
+                    side = Some(ship.side);
+                }
+                let side = side.ok_or(GameCommandError::InvalidSquad)?;
+                let mut nearest = None;
+                let mut best_squared = f32::MAX;
+                for &candidate in friendlies {
+                    if !candidate.valid() {
+                        return Err(GameCommandError::InvalidFriendlies);
+                    }
+                    if candidate.owner.level_id != squad.owner.level_id ||
+                        candidate.owner == squad.owner || candidate.side != side ||
+                        !candidate.is_alive || candidate.is_following_friend {
+                        continue;
+                    }
+                    let squared = (candidate.position - squad.squad_center)
+                        .length_squared();
+                    if squared < best_squared {
+                        best_squared = squared;
+                        nearest = Some(candidate);
+                    }
+                }
+                let Some(nearest) = nearest else {
+                    return Ok(Activation::Unavailable(selection));
+                };
+                following = Some(FollowingFriendly {
+                    target: nearest.owner, side,
+                    members: squad.members.to_vec(),
+                    formation: squad.formation,
+                });
+                // Unity ClosestFriendly.Execute schedules its first
+                // MoveTracked callback after the first three-second delay.
+                false
+            }
             LocalCommandKind::Retreat => {
                 let enemy = squad.enemy.filter(|enemy| enemy.valid() && enemy.is_alive)
                     .ok_or(GameCommandError::InvalidEnemy)?;
@@ -396,6 +485,8 @@ impl NativeSquadCommandDirector {
         // existing HiveMind command and its reserved IDs intact.
         let timeout_seconds = match selection.local_command {
             LocalCommandKind::Patrol => Some(settings.ai_squad_patrol_seconds),
+            LocalCommandKind::ClosestFriendly =>
+                Some(settings.ai_squad_following_seconds),
             LocalCommandKind::Retreat if retreat_already_safe => Some(3.0),
             LocalCommandKind::Retreat => None,
             _ => Some(settings.max_command_seconds),
@@ -405,12 +496,17 @@ impl NativeSquadCommandDirector {
                 ScaledTimer::new(seconds, false, false)),
             command_poll: if matches!(
                 selection.local_command,
-                LocalCommandKind::MoveToRandom | LocalCommandKind::Patrol
+                LocalCommandKind::MoveToRandom | LocalCommandKind::Patrol |
+                LocalCommandKind::ClosestFriendly
             ) || (selection.local_command == LocalCommandKind::Retreat &&
                 !retreat_already_safe) {
-                Some(ScaledTimer::new(COMMAND_FREQUENCY_SECONDS, true, true))
+                Some(ScaledTimer::new(
+                    COMMAND_FREQUENCY_SECONDS, true,
+                    selection.local_command != LocalCommandKind::ClosestFriendly,
+                ))
             } else { None },
             patrol,
+            following,
             member_ids: squad.members.iter().map(|m| m.ship_id).collect(),
             selection,
         };
@@ -433,6 +529,7 @@ impl NativeSquadCommandDirector {
         &mut self,
         world: &mut CombatWorld,
         navigation: &NavigationRuntime,
+        friendlies: &[NativeFriendlySquad],
         dt: f32,
     ) -> Result<Vec<FinishedNativeCommand>, GameCommandError> {
         if !dt.is_finite() || dt < 0.0 {
@@ -452,16 +549,36 @@ impl NativeSquadCommandDirector {
             // timeout: on a shared due frame, command completion wins.
             if let Some(timer) = command.command_poll.as_mut() {
                 if let Some(due) = timer.begin_update(dt) {
-                    // Unity Ship.HasReachedDestination means exactly
-                    // !HasTargetCoordinates (not "velocity nearly zero").
-                    let all_arrived = command.member_ids.iter().all(|id| {
-                        world.physics().ships().iter()
-                            .find(|ship| ship.id == *id)
-                            .is_some_and(|ship| ship.active &&
-                                !ship.motion.has_target_coordinates)
-                    });
-                    if all_arrived {
-                        if let Some(route) = command.patrol.as_mut() {
+                    if let Some(follow) = command.following.as_ref() {
+                        let mut matching = friendlies.iter()
+                            .filter(|candidate| candidate.owner == follow.target);
+                        let target = matching.next();
+                        if matching.next().is_some() {
+                            return Err(GameCommandError::InvalidFriendlies);
+                        }
+                        if let Some(friend) = target.filter(|candidate|
+                            candidate.valid() && candidate.is_alive &&
+                            candidate.side == follow.side
+                        ) {
+                            issue_squad_tracked_move(
+                                world, navigation, &follow.members,
+                                friend.position, follow.formation,
+                            )?;
+                        } else {
+                            completed.push((owner, CommandFinishCause::FriendlyGone));
+                            finished_by_poll = true;
+                        }
+                    } else {
+                        // Unity Ship.HasReachedDestination means exactly
+                        // !HasTargetCoordinates (not "velocity nearly zero").
+                        let all_arrived = command.member_ids.iter().all(|id| {
+                            world.physics().ships().iter()
+                                .find(|ship| ship.id == *id)
+                                .is_some_and(|ship| ship.active &&
+                                    !ship.motion.has_target_coordinates)
+                        });
+                        if all_arrived {
+                            if let Some(route) = command.patrol.as_mut() {
                             // Patrol rotates the queue before calling Move;
                             // a blocked move still advances the queue.
                             let next = (route.current + 1) % route.corners.len();
@@ -479,6 +596,7 @@ impl NativeSquadCommandDirector {
                             };
                             completed.push((owner, cause));
                             finished_by_poll = true;
+                            }
                         }
                     }
                     timer.finish_update(due);
