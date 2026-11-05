@@ -68,15 +68,6 @@ impl CombatWorld {
             self.touching_mining_asteroid(ship_id).is_some()
     }
 
-    pub(super) fn advance_policy_mining_cooldowns(&mut self, dt: f32) {
-        for runtime in self.policy_ship_runtime.values_mut() {
-            if let Some(mining) = runtime.mining.as_mut() {
-                mining.cooldown_remaining =
-                    (mining.cooldown_remaining - dt).max(0.0);
-            }
-        }
-    }
-
     /// MiningAsteroid.Kill(false) removes both authored gameplay and
     /// physics membership. No CollisionAsteroid breakup or extra RNG is
     /// generated; the Level owns command-finalization and presentation.
