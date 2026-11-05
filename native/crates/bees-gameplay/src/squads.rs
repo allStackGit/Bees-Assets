@@ -34,6 +34,7 @@ pub enum SquadRosterError {
     InvalidBeaconEvent,
     MissingShipOwner(i64),
     UnregisteredLiveShips,
+    FailedRoster,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -92,6 +93,8 @@ pub struct NativeSquadRoster {
     active: BTreeMap<SquadLifetime, NativeSquadEntry>,
     owner_by_ship: HashMap<i64, SquadLifetime>,
     measurements: SquadRosterMeasurements,
+    /// A partial source-order event pass must never be replayed.
+    failed: bool,
 }
 
 impl NativeSquadRoster {
@@ -99,6 +102,10 @@ impl NativeSquadRoster {
 
     pub fn measurements(&self) -> SquadRosterMeasurements {
         self.measurements
+    }
+
+    pub fn is_failed(&self) -> bool {
+        self.failed
     }
 
     pub fn active_squad_count(&self) -> usize {
@@ -131,6 +138,7 @@ impl NativeSquadRoster {
         side: i32,
         members: &[i64],
     ) -> Result<(), SquadRosterError> {
+        if self.failed { return Err(SquadRosterError::FailedRoster); }
         if !owner.valid() || side <= 0 || members.is_empty() {
             return Err(SquadRosterError::InvalidOwner);
         }
@@ -176,6 +184,7 @@ impl NativeSquadRoster {
         owner: SquadLifetime,
         ship_id: i64,
     ) -> Result<SquadRosterChange, SquadRosterError> {
+        if self.failed { return Err(SquadRosterError::FailedRoster); }
         let side = self.active.get(&owner)
             .ok_or(SquadRosterError::MissingSquad)?.side;
         if self.owner_by_ship.contains_key(&ship_id) {
@@ -211,6 +220,7 @@ impl NativeSquadRoster {
         event: &CombatEvent,
         minion_owner: SquadLifetime,
     ) -> Result<SquadRosterChange, SquadRosterError> {
+        if self.failed { return Err(SquadRosterError::FailedRoster); }
         let CombatEvent::ScoutBeaconDropped {
             scout_id, beacon_id, parent_fleet_id,
         } = event else {
@@ -345,6 +355,7 @@ pub fn reconcile_retired_squad(
 pub enum SquadEventBridgeError {
     Roster(SquadRosterError),
     Commands(GameCommandError),
+    FailedRoster,
 }
 
 impl From<SquadRosterError> for SquadEventBridgeError {
@@ -366,6 +377,30 @@ impl NativeSquadRoster {
     /// requires registering the graphical squad and its presentation in the
     /// ordinary Level adapter.
     pub fn reconcile_combat_tick(
+        &mut self,
+        world: &mut CombatWorld,
+        commands: &mut NativeSquadCommandDirector,
+        session: &mut HiveMindSession,
+        allocate_minion: impl FnMut(SquadLifetime, i64)
+            -> Result<SquadLifetime, SquadRosterError>,
+        changes: &mut Vec<SquadRosterChange>,
+        finished: &mut Vec<FinishedNativeCommand>,
+    ) -> Result<(), SquadEventBridgeError> {
+        if self.failed {
+            return Err(SquadEventBridgeError::FailedRoster);
+        }
+        let result = self.reconcile_combat_tick_inner(
+            world, commands, session, allocate_minion, changes, finished,
+        );
+        if result.is_err() {
+            // The event pass may have already registered a minion or
+            // retired a command. Replaying would duplicate mutations.
+            self.failed = true;
+        }
+        result
+    }
+
+    fn reconcile_combat_tick_inner(
         &mut self,
         world: &mut CombatWorld,
         commands: &mut NativeSquadCommandDirector,
