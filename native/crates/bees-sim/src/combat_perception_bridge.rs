@@ -516,6 +516,12 @@ mod tests {
             ShipMotion::new(Vec2::new(15.0, 0.0), 0.0,
                 100.0, 8.0, 3.0),
         ).unwrap();
+        world.spawn_ship(
+            hulls.by_type(21).unwrap(), 3, 2,
+            ShipVitals::new(100, 100, 1000, 0).unwrap(),
+            ShipMotion::new(Vec2::new(0.0, 0.0), 0.0,
+                100.0, 8.0, 3.0),
+        ).unwrap();
         let metadata = AuthoredShipPerception {
             longest_side: 7.0, max_weapon_range: 80.0,
             firepower: 45.0, is_bomber: false,
@@ -545,7 +551,7 @@ mod tests {
         assert_eq!(own.position, Vec2::new(4.0, -2.0));
         assert_eq!(own.current_speed, 10.0);
         assert_eq!(own.live_allies_including_self, 1);
-        assert_eq!(own.live_enemies, 1);
+        assert_eq!(own.live_enemies, 2);
         assert_eq!(observed.fleet_ship_id, Some(87));
         assert_eq!(observed.mined_tsv, 75);
         assert_eq!(observed.linear_velocity, Vec2::new(3.0, 0.0));
@@ -556,14 +562,16 @@ mod tests {
         assert!(!world.record_hivemind_ship_sighting(1, 2, true, true));
         assert!(world.record_hivemind_ship_sighting(1, 2, true, false));
         assert!(!world.record_hivemind_ship_sighting(1, 2, true, false));
+        assert!(world.record_hivemind_ship_sighting(1, 3, true, false));
         let mut collector = LiveShipCandidateCollector::new();
         let mut known_enemies = Vec::new();
         let count = collector.collect_learned_enemies(
             &world, 1, &mut identities,
             |_| Some(metadata), &mut known_enemies,
         ).unwrap();
-        assert_eq!(count, 1);
-        assert_eq!(known_enemies[0].entity_id, 2);
+        assert_eq!(count, 2);
+        assert_eq!(known_enemies[0].entity_id, 3);
+        assert_eq!(known_enemies[1].entity_id, 2);
         assert_eq!(known_enemies[0].side, 2);
 
         let mut nav = LocalNavigationOccupancy::new();
