@@ -148,6 +148,9 @@ class LinuxSupervisor {
             throw Error('Native Linux supervisor unavailable on this operating system.');
         this.root=root;this.file=path.join(root,'supervisor-v1.json');
         this.lock=path.join(root,'supervisor.lock');
+        // A GPU preflight may outlive the agent after a timeout or crash.
+        // Persist its exact service identity before dispatching systemd.
+        this.gpuProbePending=path.join(root,'gpu-preflight-pending.json');
         this.machineId=machineId;this.adapters=adapters;this.runner=runner;
         this.fs=fsApi;this.hostOs=hostOs;this.hostInspector=hostInspector;
         // Qualification is process-local. No persisted historical probe
@@ -260,8 +263,9 @@ class LinuxSupervisor {
     async qualifyGpuDeviceAccess(bindings) {
         if(!this.qualifiedAt)
             throw Error('CPU/RAM preflight must pass before GPU device checks.');
-        if(this.gpuPreflightCleanupUnconfirmed===true)
-            throw Error('Previous GPU access probe cleanup unconfirmed; inspect the local service before retry.');
+        if(this.gpuPreflightCleanupUnconfirmed===true||
+            this.fs.existsSync(this.gpuProbePending))
+            throw Error('Previous GPU access probe cleanup unconfirmed; inspect the recorded local service before retry.');
         const plan=resolveRocmDevices(bindings,{fsApi:this.fs});
         // A proof of denial requires a second GPU render node that the same
         // unconfined account can open. Do not mistake a UNIX ACL failure for
@@ -279,6 +283,18 @@ class LinuxSupervisor {
         const nonce=crypto.randomUUID(),unit=
             'experiment-hub-gpu-preflight-'+nonce.replace(/-/g,'')+'.service';
         const description='Experiment Hub GPU device preflight '+nonce;
+        // Acquire an exclusive, crash-persistent intent before a native
+        // service can be created. Never overwrite another probe's record.
+        // A crash or uncertain cleanup deliberately requires an operator to
+        // inspect the recorded systemd unit before clearing this file.
+        let pendingFd;
+        try {
+            pendingFd=this.fs.openSync(this.gpuProbePending,'wx',0o600);
+            this.fs.writeFileSync(pendingFd,
+                JSON.stringify({unit,description})+'\n');
+        }finally {
+            if(pendingFd!==undefined)this.fs.closeSync(pendingFd);
+        }
         const args=['--user','--quiet','--pipe','--collect',
             '--service-type=exec','--unit='+unit,
             '--description='+description,
@@ -333,6 +349,14 @@ class LinuxSupervisor {
             this.gpuPreflightCleanupUnconfirmed=true;
             throw Error('GPU device access preflight cleanup not verified: '+
                 String(cleanup.message||cleanup).slice(0,160));
+        }
+        // An unambiguous stopped/missing unit is the only condition that
+        // allows a future probe, including after an agent restart.
+        try{this.fs.unlinkSync(this.gpuProbePending);}
+        catch(error){
+            this.gpuPreflightCleanupUnconfirmed=true;
+            throw Error('GPU preflight record cleanup not verified: '+
+                String(error.message||error).slice(0,160));
         }
         if(failure)
             throw Error('GPU device access preflight failed: '+
