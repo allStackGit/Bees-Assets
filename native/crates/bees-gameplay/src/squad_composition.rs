@@ -7,6 +7,7 @@
 //! independent gameplay/campaign bans when using this snapshot.
 
 use bees_hivemind::dispatch::{LocalCommandKind, SquadCommandComposition};
+use bees_hivemind::protocol::COMMAND_STRATEGIES;
 use bees_sim::combat_world::CombatWorld;
 
 use crate::squads::NativeSquadEntry;
@@ -78,4 +79,30 @@ pub fn composition_command_bans(
         only_bombers: composition.only_bombers,
         only_barges: composition.only_barges,
     })
+}
+
+/// Build the deployed BeesServer `BannedStrats` names for one strategy
+/// request. The Level keeps its other bans (campaign conditions, temporary
+/// command failure, etc.). This function adds or removes nothing from those:
+/// it only appends the six source composition restrictions.
+///
+/// Use COMMAND_STRATEGIES, not Rust enum names, so CircleSquad is sent as
+/// "Circle", MoveToRandom as "Random", and other wire names stay compatible
+/// with the deployed Node backend. No additional allocation is needed in a
+/// physics tick; this is called only when issuing a strategy request.
+pub fn banned_strategy_names(
+    bans: CompositionCommandBans,
+    existing: impl IntoIterator<Item = String>,
+) -> Vec<String> {
+    let mut result: Vec<String> = existing.into_iter().collect();
+    for (index, &name) in COMMAND_STRATEGIES.iter().enumerate() {
+        let kind = LocalCommandKind::from_server_strategy_id(
+            (index + 1) as u8,
+        ).expect("fixed server strategy table has 15 supported IDs");
+        if bans.disallows(kind) &&
+            !result.iter().any(|existing| existing == name) {
+            result.push(name.to_owned());
+        }
+    }
+    result
 }
