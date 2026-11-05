@@ -2132,6 +2132,10 @@ const server = http.createServer(async (req, res) => {
         if (req.method === 'GET' && route === '/api/hub/jobs/plan') {
             return json(res, 200, requireHub().plannedJobs());
         }
+        if (req.method === 'GET' && route === '/api/hub/progress') {
+            const projectId=url.searchParams.get('project_id');
+            return json(res, 200, requireHub().progressComparison(projectId));
+        }
         if (req.method === 'GET' && route === '/api/hub/state') {
             const data = requireHub().snapshot();
             // Existing Bees state is exposed, not imported or rewritten. The Hub
