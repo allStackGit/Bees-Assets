@@ -452,6 +452,7 @@ pub struct CombatWorld {
     navigation_requests: NavigationRequests,
     game_ship_steering: HashMap<i64, GameShipSteering>,
     pending_game_point_orders: HashMap<i64, GamePointOrder>,
+    latest_game_point_orders: HashMap<i64, GamePointOrder>,
     ship_collision_profiles: HashMap<i64, ShipCollisionProfile>,
     nearby_asteroid_ships: HashSet<(i64, i64)>,
     obstacle_by_id: HashMap<i64, usize>,
@@ -507,6 +508,7 @@ impl CombatWorld {
             navigation_requests: NavigationRequests::new(),
             game_ship_steering: HashMap::new(),
             pending_game_point_orders: HashMap::new(),
+            latest_game_point_orders: HashMap::new(),
             ship_collision_profiles: HashMap::new(),
             nearby_asteroid_ships: HashSet::new(),
             obstacle_by_id: HashMap::new(),
@@ -760,6 +762,7 @@ impl CombatWorld {
                 ship_id, destination, order.ship_clearance,
                 order.newly_found_obstacle,
             )?;
+            self.latest_game_point_orders.insert(ship_id, order);
             return Ok(GamePointOrderResult::Searching(disposition));
         }
 
@@ -776,11 +779,13 @@ impl CombatWorld {
                     ship_id, destination, order.ship_clearance,
                     order.newly_found_obstacle,
                 )?;
+                self.latest_game_point_orders.insert(ship_id, order);
                 return Ok(GamePointOrderResult::Searching(disposition));
             }
         }
 
         if self.move_ship_direct(ship_id, destination)? {
+            self.latest_game_point_orders.insert(ship_id, order);
             Ok(GamePointOrderResult::Direct)
         } else {
             Ok(GamePointOrderResult::Unchanged)
