@@ -13,6 +13,10 @@ pub enum ObstacleKind {
     CollisionAsteroid = 2,
     MiningAsteroid = 3,
     AsteroidPiece = 4,
+    /// Native-only collider participant for Unity MapObject (which is not
+    /// part of ConfigData.ObstacleTypes). Never serialize this value as a
+    /// Unity obstacle enum; native gameplay owns a separate MapObject record.
+    MapObject = 5,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
