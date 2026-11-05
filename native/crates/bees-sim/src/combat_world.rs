@@ -548,6 +548,20 @@ impl CombatWorld {
     pub fn physics(&self) -> &KinematicPhysics { &self.physics }
     pub fn events(&self) -> &[CombatEvent] { &self.events }
     pub fn ships(&self) -> &[CombatShip] { &self.ships }
+    /// O(1) live ship lookup through the world's canonical entity index.
+    /// Squad commands must not scan all world ships for every formation
+    /// member on each scaled tick.
+    pub fn ship(&self, entity_id: i64) -> Option<&CombatShip> {
+        let &index = self.ship_by_id.get(&entity_id)?;
+        self.ships.get(index)
+    }
+
+    /// Physics bodies and gameplay ships share the identical dense slot.
+    pub fn ship_body(&self, entity_id: i64) -> Option<&ShipBody> {
+        let &index = self.ship_by_id.get(&entity_id)?;
+        self.physics.ships().get(index)
+    }
+
     pub fn projectiles(&self) -> &[CombatProjectile] { &self.projectiles }
     pub fn reservations(&self) -> &DamageReservations { &self.reservations }
     pub fn obstacles(&self) -> &[CombatObstacle] { &self.obstacles }
@@ -723,6 +737,9 @@ impl CombatWorld {
         let &index = self.ship_by_id.get(&ship_id)
             .ok_or(CombatWorldError::UnknownShip)?;
         let motion = &mut self.physics.ships_mut()[index].motion;
+        if !motion.base_speed.is_finite() || motion.base_speed < 0.0 {
+            return Err(CombatWorldError::InvalidGameSpeed);
+        }
         motion.current_speed = requested_speed.min(motion.base_speed);
         Ok(())
     }
