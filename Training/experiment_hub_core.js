@@ -744,6 +744,15 @@ class ExperimentHub {
         this.agentReports.set(machine.id,{
             ...report,instance_id:instance||null,received_ms:received,
         });
+        // A GPU disappearing or moving PCI slots invalidates its lease
+        // receipt immediately, not only after the general heartbeat TTL.
+        for(const lease of this.state.reservations) {
+            if(lease.machine_id===machine.id&&
+                lease.status==='acknowledged'&&
+                lease.resources?.gpu_count>0&&
+                physicalGpuBindings(machine,report,lease.resources)===null)
+                this.leaseReceipts.delete(lease.id);
+        }
         for (const id of ids) {
             const lease=this.state.reservations.find(x=>x.id===id &&
                 x.machine_id===machine.id && x.status==='acknowledged' &&
