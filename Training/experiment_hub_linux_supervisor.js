@@ -309,8 +309,8 @@ class LinuxSupervisor {
         try{result=await this.inspectUnit(record);}
         catch(error){result={state:'unverified',active:false,
             diagnostic:String(error.message||error).slice(0,220)};}
-        const state=record.stop_requested_at&&result.active
-            ?'stop_requested'
+        const state=record.quarantined_at?'unverified'
+            :record.stop_requested_at&&result.active?'stop_requested'
             :record.stop_requested_at&&!result.active&&
                 result.state==='finished'?'stopped':result.state;
         const updated={...record,state,
@@ -324,6 +324,37 @@ class LinuxSupervisor {
             memory_current_mb:result.memory_current_mb??null,
             cpu_time_ns:result.cpu_time_ns??null,
             process_tasks:result.process_tasks??null};
+    }
+    async quarantineUnverified(jobId,reason) {
+        const record=this.state.records.find(r=>r.job_id===jobId);
+        if(!record)throw Error('Unknown launch record; no native cleanup authority.');
+        // This narrow operation is allowed to stop a service whose limits
+        // are wrong, but only after independent deterministic identity
+        // verification. Never stop an unrelated unit by guessed PID.
+        const output=await this.runner(SYSTEMCTL,
+            ['--user','show',record.unit,'--no-pager',
+                '--property=Id,Description,LoadState,ActiveState'],
+            {timeout:12000,maxBuffer:16384,windowsHide:true});
+        const status=parseShow(output.stdout);
+        if(status.LoadState!=='not-found'&&
+            (status.Id!==record.unit||
+                status.Description!==descriptionFor(record.job_id)))
+            throw Error('Unverified native unit has unexpected identity; manual recovery required.');
+        if(!record.quarantined_at) {
+            const updated={...record,state:'unverified',
+                quarantined_at:new Date().toISOString(),
+                stop_requested_at:record.stop_requested_at||
+                    new Date().toISOString(),
+                diagnostic:String(reason||'Kernel verification failed.').slice(0,220)};
+            this.commit(this.state.records.map(x=>x.job_id===jobId?updated:x));
+        }
+        if(status.LoadState==='loaded'&&
+            ['active','activating','deactivating'].includes(status.ActiveState)) {
+            await this.runner(SYSTEMCTL,
+                ['--user','stop','--no-block',record.unit],
+                {timeout:12000,maxBuffer:16384,windowsHide:true});
+        }
+        return {state:'unverified',quarantined:true};
     }
     async start(job,lease) {
         if(!this.qualifiedAt)
@@ -376,15 +407,28 @@ class LinuxSupervisor {
             await this.runner(SYSTEMD_RUN,launchArguments(record,invocation),
                 {timeout:30000,maxBuffer:16384,windowsHide:true});
         }catch(error){
-            // A systemd command timeout is ambiguous: the service could have
-            // been created. Never delete the launch intent or auto-retry.
-            const observed=await this.reconcile(job.id);
-            throw Error('Service launch not confirmed ('+observed.state+
-                '): '+String(error.message||error).slice(0,180));
+            // A systemd-run timeout can mean that a process already started.
+            // Keep the durable ownership record and attempt a narrow stop
+            // only for this unit's exact verified identity; never re-launch.
+            const reason=String(error.message||error).slice(0,180);
+            let cleanup=null;
+            try{await this.quarantineUnverified(job.id,reason);}
+            catch(e){cleanup=String(e.message||e).slice(0,150);}
+            throw Error('Service launch not confirmed; native job quarantined.'+
+                (cleanup?' Cleanup requires inspection: '+cleanup:'')+
+                ' Cause: '+reason);
         }
         const observed=await this.reconcile(job.id);
-        if(observed.state!=='running'&&observed.state!=='finished')
-            throw Error('Service dispatched but native controls not verified; inspect '+record.unit);
+        if(observed.state!=='running'&&observed.state!=='finished') {
+            let cleanup=null;
+            try{
+                await this.quarantineUnverified(job.id,
+                    observed.diagnostic||'Native CPU/RAM limits not verified.');
+            }catch(e){cleanup=String(e.message||e).slice(0,150);}
+            throw Error('Service dispatched but native controls not verified.'+
+                (cleanup?' Cleanup requires inspection: '+cleanup:'')+
+                ' Inspect '+record.unit);
+        }
         return observed;
     }
     async stop(jobId) {
