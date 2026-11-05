@@ -283,8 +283,14 @@ function evaluatePeriodicTarget(item, checkpoint) {
             scenario,candidate,plan,identity,'development'))
             throw Error('Benchmark target report provenance changed.');
         const recipe=readJson(scenario.recipe);
-        if(report.benchmark?.matches!==recipe.matches)
-            throw Error('Benchmark target match count differs from frozen recipe.');
+        if(report.benchmark?.matches!==recipe.matches||
+            report.benchmark?.seed!==recipe.seed||
+            report.benchmark?.behavior_name!==recipe.behavior_name||
+            JSON.stringify(report.benchmark?.env_args)!==
+                JSON.stringify(recipe.env_args)||
+            (report.benchmark?.time_scale??null)!==
+                (recipe.time_scale??null))
+            throw Error('Benchmark target report settings differ from frozen recipe.');
         return {id:scenario.id,expected_matches:recipe.matches,report};
     }));
     const reportHashes=Object.fromEntries(plan.scenarios.map(scenario=>[
