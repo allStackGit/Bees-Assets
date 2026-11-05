@@ -145,7 +145,8 @@ where
                 )
             )?;
             state.events.advance_timed_commands(
-                &mut state.combat, state.metadata.navigation(),
+                completed_tick, &mut state.combat,
+                state.metadata.navigation(),
                 &state.command_friendlies, dt_seconds,
             )?;
         }

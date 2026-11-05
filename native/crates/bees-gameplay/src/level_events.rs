@@ -61,6 +61,7 @@ pub struct NativeLevelEventProcessor {
     hive_mind: HiveMindSession,
     episode: NativeEpisodeRewardCoordinator,
     next_tick: u64,
+    last_advanced_command_tick: Option<u64>,
     failed: bool,
     last_finalized: Option<NativeEpisodeFinal>,
     changes: Vec<SquadRosterChange>,
@@ -77,6 +78,7 @@ impl NativeLevelEventProcessor {
             hive_mind: HiveMindSession::new(),
             episode,
             next_tick: 1,
+            last_advanced_command_tick: None,
             failed: false,
             last_finalized: None,
             changes: Vec::new(),
@@ -147,6 +149,7 @@ impl NativeLevelEventProcessor {
     /// A terminal match does not execute further gameplay commands.
     pub fn advance_timed_commands(
         &mut self,
+        completed_tick: u64,
         world: &mut CombatWorld,
         navigation: &NavigationRuntime,
         friendlies: &[NativeFriendlySquad],
@@ -154,6 +157,17 @@ impl NativeLevelEventProcessor {
     ) -> Result<(), NativeLevelEventError> {
         if self.is_failed() {
             return Err(NativeLevelEventError::FailedLevel);
+        }
+        // This method is a separate Level callback boundary; enforce
+        // once-per-step ordering here too, not only in the caller's
+        // Simulation/GameRules integration.
+        if completed_tick.checked_add(1) != Some(self.next_tick) ||
+            self.last_advanced_command_tick == Some(completed_tick) {
+            self.failed = true;
+            return Err(NativeLevelEventError::MissingOrRepeatedTick {
+                expected: self.next_tick.saturating_sub(1),
+                got: completed_tick,
+            });
         }
         if self.completed() || self.commands.active_count() == 0 {
             return Ok(());
@@ -165,6 +179,7 @@ impl NativeLevelEventProcessor {
             return Err(NativeLevelEventError::Commands(error));
         }
         self.finished.append(&mut self.timed_finished);
+        self.last_advanced_command_tick = Some(completed_tick);
         Ok(())
     }
 
