@@ -112,6 +112,8 @@ class LocalExecution {
         }
         const state=['launch_requested','running','stop_requested','finished','failed','stopped']
             .includes(observed.state)?observed.state:'unverified';
+        if(!diagnostic && typeof observed.diagnostic==='string')
+            diagnostic=observed.diagnostic.slice(0,220);
         const report={
             job_id:job.id,lease_id:lease.id,
             dispatch_id:order.dispatch_id,state,
