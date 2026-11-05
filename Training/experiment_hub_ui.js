@@ -45,7 +45,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let comparisonRequest = 0,selectionProject = null;
     let comparisonDefaultsApplied = false;
     let envArgsTouched = false;
-    let lastGpuBindingMachine = null;
+    let lastGpuBindingMachine = null, budgetDraft = null;
     const action = async (route, payload) => {
         const r = await fetch('/api/'+route,{
             method:'POST',
@@ -711,6 +711,23 @@ document.addEventListener('DOMContentLoaded', () => {
             $('hub-gpu-bind-json').value=JSON.stringify(inventory,null,2);
             lastGpuBindingMachine=physical.value;
         }
+        const budgetMachine=$('hub-budget-machine');
+        const selectedBudgetId=budgetMachine.value;
+        budgetMachine.replaceChildren(new Option('Select machine',''),
+            ...state.machines.map(m=>new Option(m.name+' ('+m.id+')',m.id)));
+        const preferred=state.machines.some(m=>m.id===selectedBudgetId)
+            ?selectedBudgetId:state.machines[0]?.id||'';
+        budgetMachine.value=preferred;
+        const budgetSelected=state.machines.find(m=>m.id===preferred);
+        if(!budgetDraft||budgetDraft.machine_id!==preferred) {
+            budgetDraft=budgetSelected?{
+                machine_id:preferred,cpus:budgetSelected.cpus,
+                ram_mb:budgetSelected.ram_mb,
+            }:null;
+            $('hub-budget-cpus').value=budgetSelected?.cpus??'';
+            $('hub-budget-ram').value=budgetSelected?.ram_mb??'';
+        }
+        $('hub-budget-save').disabled=!budgetSelected;
         $('hub-machine-rows').replaceChildren();
         for(const m of state.machines) {
             const tr=document.createElement('tr');
@@ -960,6 +977,40 @@ document.addEventListener('DOMContentLoaded', () => {
             feedback('hub-placements','Machine registered as unverified. An agent must establish resource ownership before execution.');
             await reload();
         }catch(err){feedback('hub-placements',err.message);}
+    });
+    $('hub-budget-machine').addEventListener('change',()=>{
+        budgetDraft=null;
+        display();
+    });
+    $('hub-budget-form').addEventListener('submit',async e=>{
+        e.preventDefault();
+        const machine=state?.machines.find(m=>
+            m.id===$('hub-budget-machine').value);
+        if(!machine||!budgetDraft||machine.id!==budgetDraft.machine_id) {
+            feedback('hub-budget-message','Select a registered machine.');
+            return;
+        }
+        const cpus=Number($('hub-budget-cpus').value);
+        const ram=Number($('hub-budget-ram').value);
+        if(!confirm('Set the Hub scheduling budget for '+machine.name+
+            ' to '+cpus+' CPU slots and '+ram+' MiB RAM? '+
+            'This does not measure or reserve capacity for existing Bees, Ants, or other workloads. '+
+            'Disarm automation first; active native jobs are not stopped or resized.'))return;
+        try{
+            const result=await action('hub/machines/budget',{
+                machine_id:machine.id,cpus,ram_mb:ram,
+                expected_cpus:budgetDraft.cpus,
+                expected_ram_mb:budgetDraft.ram_mb,
+                confirm_budget:true,
+            });
+            budgetDraft={machine_id:machine.id,cpus:result.cpus,
+                ram_mb:result.ram_mb};
+            feedback('hub-budget-message',
+                'Hub budget '+result.cpus+' CPUs / '+result.ram_mb+
+                ' MiB · Existing claims '+result.claimed_cpus+' CPUs / '+
+                result.claimed_ram_mb+' MiB. No processes changed.');
+            await reload();
+        }catch(error){feedback('hub-budget-message',error.message);}
     });
     $('hub-gpu-bind-machine').addEventListener('change',()=>{
         lastGpuBindingMachine=null;
