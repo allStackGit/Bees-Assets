@@ -330,7 +330,8 @@ impl CombatWorld {
         // Every projectile uses the SAME catalog, entity allocator and
         // collision/damage path as ordinary native gameplay.
         let catalog = Arc::clone(&self.projectile_assets);
-        for &shot in &self.policy_pending_shots {
+        for index in 0..self.policy_pending_shots.len() {
+            let shot = self.policy_pending_shots[index];
             let asset = catalog.by_type(shot.spec.projectile_type)
                 .ok_or(CombatWorldError::InvalidProjectileType(
                     shot.spec.projectile_type,
