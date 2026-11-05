@@ -32,6 +32,30 @@ function configuredGpus(input,requirePci=false) {
         ...(g.pci_address?{pci_address:g.pci_address}:{}),
     }));
 }
+function physicalGpuBindings(machine,report,resources) {
+    if(!resources||resources.gpu_count===0)return [];
+    const ids=resources.gpus;
+    if(!Number.isSafeInteger(resources.gpu_count)||resources.gpu_count<1||
+        !Array.isArray(ids)||ids.length!==resources.gpu_count||
+        report.gpu_inventory_source!=='amdgpu-sysfs-v1')
+        return null;
+    const bindings=[];
+    for(const id of ids) {
+        const config=machine.gpus.find(g=>g.id===id);
+        if(!config?.pci_address)return null;
+        const physical=report.gpu_devices.find(g=>
+            g.pci_address===config.pci_address);
+        if(!physical)return null;
+        const total=Math.min(config.vram_mb,physical.vram_mb);
+        if(total<(resources.min_gpu_vram_mb||0)||
+            (resources.gpu_mode==='shared'&&
+                total<(resources.gpu_vram_mb||0)))
+            return null;
+        bindings.push({id,pci_address:config.pci_address,
+            vram_mb:total});
+    }
+    return bindings;
+}
 function boundedReport(value) {
     if (!object(value) ||
         !Number.isSafeInteger(value.cpus) || value.cpus < 1 || value.cpus > 4096 ||
@@ -700,6 +724,8 @@ class ExperimentHub {
             const lease=next.reservations.find(x=>x.id===id &&
                 x.machine_id===machine.id && x.issued_by==='experiment-hub');
             if (!lease || !['offered','acknowledged'].includes(lease.status)) continue;
+            if(physicalGpuBindings(machine,report,lease.resources)===null)
+                continue;
             if (lease.status==='offered') {
                 lease.status='acknowledged';
                 lease.acknowledged_at=new Date(received).toISOString();
@@ -722,7 +748,8 @@ class ExperimentHub {
             const lease=this.state.reservations.find(x=>x.id===id &&
                 x.machine_id===machine.id && x.status==='acknowledged' &&
                 x.issued_by==='experiment-hub');
-            if (lease) this.leaseReceipts.set(id,received);
+            if (lease&&physicalGpuBindings(machine,report,lease.resources)!==null)
+                this.leaseReceipts.set(id,received);
         }
         for(const item of reports) {
             this.executionTelemetry.set(item.job_id,{
@@ -746,7 +773,12 @@ class ExperimentHub {
             lease_offers:this.state.reservations.filter(x=>
                 x.machine_id===machine.id && x.issued_by==='experiment-hub' &&
                 ['offered','acknowledged'].includes(x.status)
-            ).map(x=>({id:x.id,status:x.status,resources:copy(x.resources)})),
+            ).map(x=>({
+                id:x.id,status:x.status,resources:copy(x.resources),
+                // This is an expected PCI binding, not GPU isolation or
+                // a process launch token. The agent checks it against sysfs.
+                gpu_bindings:physicalGpuBindings(machine,report,x.resources)||[],
+            })),
             execution_orders:this.executionOrders(machine.id)};
     }
     project(id) {
