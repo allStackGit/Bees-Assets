@@ -2,9 +2,9 @@
 //!
 //! Source: Turret.Create/Setup/TargetingSequence, Turret.Aiming,
 //! RlOneVsOneAgent.ApplyWeaponCommand, Level.AddProjectile and Projectile.Setup.
-//! Only simple Turret, LightCannon, RocketTurret, Eye and QueenEye mounts are
-//! accepted here: DualCannon, BeamCannon, LaserBuilder/SplitShot,
-//! FullShipTurret and Bomb have materially different firing continuations.
+//! Simple rotating turrets and DualCannon are handled here. BeamCannon,
+//! LaserBuilder/SplitShot, FullShipTurret and Bomb have materially different
+//! firing or animation continuations and remain unsupported.
 //! Missing prefab and live Level fields are errors, not guessed defaults.
 
 use super::*;
@@ -13,6 +13,18 @@ use crate::geometry::Vec2;
 use crate::perception_weapons::{SelfWeapon, TurretObservation};
 use crate::perception_entities::ObservedWeapon;
 use crate::turret::TurretState;
+
+/// One ordinary shot, or the two exact DualCannon muzzle offsets from its
+/// authored Unity weapon instance. Never approximate the two barrels from
+/// ship hull geometry.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum NativeFirePattern {
+    Single,
+    DualCannon {
+        left_offset: Vec2,
+        right_offset: Vec2,
+    },
+}
 
 /// Supplied from the REAL authored weapon and turret piece, not a collider
 /// guess, a training recipe, or an observation copied from another ship.
@@ -37,11 +49,14 @@ pub struct NativeTurretSpec {
     /// serialized in the current native catalog; other types MUST have a
     /// value supplied by the authored Level/Stage adapter.
     pub projectile_speed: f64,
+    /// DualCannon fires precisely two HumanSmall shots, with C# integer
+    /// division of Power by two, both aimed from Ship.GetPosition().
+    pub fire_pattern: NativeFirePattern,
 }
 
 impl NativeTurretSpec {
     fn valid(self, catalog: &ProjectileAssetCatalog) -> Result<(), CombatWorldError> {
-        let supported_weapon = matches!(self.weapon_type, 2 | 3 | 5 | 7 | 8);
+        let supported_weapon = matches!(self.weapon_type, 2 | 3 | 5 | 6 | 7 | 8);
         // These cases use the same projectile setup and collision rules as
         // base Turret.SendProjectile; subclasses with bespoke launch paths
         // are deliberately not accepted.
@@ -54,11 +69,21 @@ impl NativeTurretSpec {
                 projectile_type: self.projectile_type,
             });
         }
-        if (self.weapon_type == 5) != (self.projectile_type == 5) {
+        if (self.weapon_type == 5) != (self.projectile_type == 5) ||
+            (self.weapon_type == 6) !=
+                matches!(self.fire_pattern, NativeFirePattern::DualCannon { .. }) ||
+            (self.weapon_type == 6 && self.projectile_type != 6) {
             return Err(CombatWorldError::UnsupportedPolicyTurret {
                 weapon_type: self.weapon_type,
                 projectile_type: self.projectile_type,
             });
+        }
+        if let NativeFirePattern::DualCannon {
+            left_offset, right_offset,
+        } = self.fire_pattern {
+            if !left_offset.is_finite() || !right_offset.is_finite() {
+                return Err(CombatWorldError::InvalidPolicyTurret);
+            }
         }
         if !self.mount_offset.is_finite() ||
             !self.initial_rotation_degrees.is_finite() ||
@@ -153,6 +178,8 @@ pub(super) struct PendingPolicyShot {
     shooter_side: i32,
     shooter_is_fire_barge: bool,
     turret_position: Vec2,
+    ship_position: Vec2,
+    turret_rotation: f32,
     target_world: Vec2,
     spec: NativeTurretSpec,
 }
@@ -267,6 +294,8 @@ impl CombatWorld {
                             shooter_side: ship.side,
                             shooter_is_fire_barge: ship.ship_type == 10,
                             turret_position: position,
+                            ship_position: pose,
+                            turret_rotation: mount.state.rotation_degrees,
                             target_world: mount.state.target_world,
                             spec: mount.spec,
                         });
@@ -394,6 +423,7 @@ mod tests {
             rate_of_fire: 0.3,
             projectile_value: 1.0,
             projectile_speed: speed,
+            fire_pattern: NativeFirePattern::Single,
         };
         combat.configure_policy_turret(1, 0, spec).unwrap();
         assert_eq!(
@@ -479,6 +509,7 @@ mod tests {
             rotation_rate: 90.0,
             range: 70.0, power: 12, rate_of_fire: 0.5,
             projectile_value: 1.0, projectile_speed: speed,
+            fire_pattern: NativeFirePattern::Single,
         };
         world.configure_policy_turret(1, 3, spec).unwrap();
         let muzzle = world.policy_self_weapons(1).unwrap()[3]
