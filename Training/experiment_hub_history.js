@@ -2,6 +2,10 @@
 
 // Ephemeral visualization samples only. This is not training evidence,
 // a checkpoint history or a durable replacement for project-owned metrics.
+const fs=require('node:fs');
+const crypto=require('node:crypto');
+const {validateProgress}=require('./experiment_hub_progress');
+const MAX_FILE_BYTES=4*1024*1024;
 const MAX_JOBS=24;
 const MAX_POINTS=96;
 const MIN_SAMPLE_INTERVAL_MS=60000;
@@ -25,7 +29,70 @@ function compact(progress,receivedMs) {
     };
 }
 class ProgressHistory {
-    constructor(){this.byJob=new Map();}
+    constructor(file=null) {
+        this.byJob=new Map();
+        this.file=file;
+        this.dirty=false;
+        this.persistError=null;
+        this.storageBlocked=false;
+        this.last_saved_ms=0;
+        if(!file||!fs.existsSync(file))return;
+        try {
+            if(fs.statSync(file).size>MAX_FILE_BYTES)
+                throw Error('Chart archive is too large.');
+            const saved=JSON.parse(fs.readFileSync(file,'utf8'));
+            if(saved.version!==1||!Array.isArray(saved.samples)||
+                saved.samples.length>MAX_JOBS)
+                throw Error('Invalid chart archive format.');
+            const seen=new Set();
+            for(const entry of saved.samples) {
+                if(!entry||!UUID.test(String(entry.job_id))||
+                    entry.project_id!=='ants'||seen.has(entry.job_id)||
+                    !Array.isArray(entry.points)||!entry.points.length||
+                    entry.points.length>MAX_POINTS||
+                    !Number.isSafeInteger(entry.last_received_ms)||
+                    !Number.isSafeInteger(entry.bucket_started_ms)||
+                    entry.bucket_started_ms>entry.last_received_ms)
+                    throw Error('Invalid chart archive entry.');
+                seen.add(entry.job_id);
+                const points=entry.points.map((point,i)=>{
+                    if(!point||typeof point.observed_at!=='string'||
+                        !Number.isFinite(Date.parse(point.observed_at))||
+                        new Date(point.observed_at).toISOString()!==point.observed_at||
+                        typeof point.break_before!=='boolean'||
+                        (i===0&&point.break_before))
+                        throw Error('Invalid chart archive sample.');
+                    const {observed_at,break_before,...values}=point;
+                    const verified=validateProgress({
+                        ...values,schema_version:1,source:'ants-summary-v1',
+                    },'ants');
+                    if(verified.experiment_id!==entry.experiment_id||
+                        (i>0&&Date.parse(verified.source_modified_at)<=
+                            Date.parse(entry.points[i-1].source_modified_at))||
+                        (i>0&&Date.parse(observed_at)<
+                            Date.parse(entry.points[i-1].observed_at)))
+                        throw Error('Chart archive lineage or order invalid.');
+                    return {...compact(verified,Date.parse(observed_at)),
+                        break_before};
+                });
+                if(Date.parse(points[points.length-1].observed_at)>
+                    entry.last_received_ms)
+                    throw Error('Chart archive receipt order invalid.');
+                this.byJob.set(entry.job_id,{
+                    project_id:'ants',experiment_id:entry.experiment_id,
+                    points,last_received_ms:entry.last_received_ms,
+                    bucket_started_ms:entry.bucket_started_ms,
+                });
+            }
+            this.last_saved_ms=Date.now();
+        }catch(error) {
+            // A damaged visualization archive must not block native work or
+            // be overwritten without operator inspection.
+            this.byJob.clear();
+            this.storageBlocked=true;
+            this.persistError='Stored comparison history is invalid; file retained for inspection.';
+        }
+    }
     record(jobId,projectId,progress,receivedMs=Date.now()) {
         if(projectId!=='ants'||!UUID.test(String(jobId))||!progress||
             progress.source!=='ants-summary-v1'||
@@ -89,13 +156,51 @@ class ProgressHistory {
             entry.points=retained;
         }
         entry.last_received_ms=receivedMs;
+        this.dirty=true;
         return true;
+    }
+    persist(receivedMs=Date.now(),force=false) {
+        if(!this.file||!this.dirty||this.storageBlocked)return;
+        if(!force&&this.last_saved_ms&&
+            receivedMs-this.last_saved_ms<MIN_SAMPLE_INTERVAL_MS)return;
+        this.last_saved_ms=receivedMs;
+        const pending=this.file+'.'+crypto.randomBytes(8).toString('hex')+'.tmp';
+        try {
+            const saved={version:1,samples:[...this.byJob].map(([jobId,e])=>({
+                job_id:jobId,project_id:e.project_id,
+                experiment_id:e.experiment_id,
+                last_received_ms:e.last_received_ms,
+                bucket_started_ms:e.bucket_started_ms,
+                points:e.points,
+            }))};
+            const body=JSON.stringify(saved)+String.fromCharCode(10);
+            if(Buffer.byteLength(body,'utf8')>MAX_FILE_BYTES)
+                throw Error('Chart archive exceeds size cap.');
+            fs.writeFileSync(pending,body,{flag:'wx',mode:0o600});
+            fs.renameSync(pending,this.file);
+            this.dirty=false;
+            this.persistError=null;
+        }catch(error) {
+            // The chart archive is non-authoritative. A storage failure
+            // cannot fail an acknowledged native heartbeat or restart work.
+            this.persistError='Comparison history was not saved: '+
+                String(error.message||error).slice(0,120);
+        }finally {
+            try {
+                if(fs.existsSync(pending))fs.unlinkSync(pending);
+            }catch(error) {
+                this.persistError='Chart-history temporary file cleanup failed: '+
+                    String(error.message||error).slice(0,100);
+            }
+        }
     }
     snapshot(projectId,knownJobs) {
         const known=new Set(knownJobs.filter(j=>j.project_id===projectId)
             .map(j=>j.id));
         return {
-            project_id:projectId,ephemeral:true,
+            project_id:projectId,
+            ephemeral:!this.file||Boolean(this.persistError),
+            storage_warning:this.persistError,
             max_tracked_jobs:MAX_JOBS,max_samples_per_job:MAX_POINTS,
             samples:[...this.byJob].filter(([id,e])=>
                 e.project_id===projectId&&known.has(id))
