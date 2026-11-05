@@ -1238,7 +1238,8 @@ class ExperimentHub {
                 progress_issue:item.progress_issue||null,
             });
         }
-        if(changedHistory)this.progressHistory.persist(received,terminalHistory);
+        if(changedHistory||terminalHistory)
+            this.progressHistory.persist(received,terminalHistory);
         return {machine_id:machine.id,status:'connected',
             heartbeat_ttl_seconds:Math.floor(AGENT_HEARTBEAT_TTL_MS/1000),
             lease_offers:this.state.reservations.filter(x=>
