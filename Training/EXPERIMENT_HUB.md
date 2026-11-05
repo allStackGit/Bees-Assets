@@ -417,6 +417,9 @@ current memory use, CPU time and task count without per-poll history
 duplication. Only lifecycle reports accepted by the coordinator update live
 telemetry or Ants comparison samples; late state regressions and duplicate
 terminal reports cannot overwrite a completed job's last valid metrics.
+Ants live learning progress retains its latest accepted source snapshot when
+a report repeats or predates it, is for another experiment, or temporarily
+omits progress. Fresh native CPU/RAM usage still updates independently.
 
 If the coordinator commits a terminal native report but its HTTP response
 is lost, the agent retries that same report. An operator may have already
