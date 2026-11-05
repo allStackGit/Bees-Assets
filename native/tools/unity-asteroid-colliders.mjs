@@ -1,8 +1,8 @@
 // Pure, auditable Unity Asteroid prefab-variant decoder.
 //
-// Read the primary and proximity colliders explicitly from the
-// CollisionAsteroid component. The separate clearance-mapping sensor is not
-// a gameplay collision or proximity trigger and must remain excluded.
+// Read all three authored colliders explicitly from CollisionAsteroid:
+// primary hull, gameplay proximity and navigation clearance. Clearance
+// mapping is NEVER a gameplay collision or proximity trigger.
 // Unity can retain serialized overrides for array elements that are OUTSIDE
 // the declared Array.size. Those must never become runtime collider vertices.
 //
@@ -82,6 +82,7 @@ function baseAsteroid(name, content) {
     const entity = entities[0][1];
     const colliderId = fileId(field(entity.body, 'Collider'), name);
     const proximityId = fileId(field(entity.body, 'ProximityCollider'), name);
+    const clearanceId = fileId(field(entity.body, 'ClearanceMappingCollider'), name);
     const collider = docs.get(colliderId);
     if (!collider || collider.kind !== 'PolygonCollider2D' ||
         field(collider.body, 'm_IsTrigger') !== '1') {
@@ -117,12 +118,31 @@ function baseAsteroid(name, content) {
             field(proximityTransform[1].body, 'm_LocalRotation') ?? '')) {
         fail(name, 'unsupported proximity child transform or parent');
     }
+    const clearance = docs.get(clearanceId);
+    if (!clearance || clearance.kind !== 'PolygonCollider2D' ||
+        field(clearance.body, 'm_IsTrigger') !== '1') {
+        fail(name, 'ClearanceMappingCollider must be a trigger PolygonCollider2D');
+    }
+    const clearanceGameId = fileId(field(clearance.body, 'm_GameObject'), name);
+    const clearanceGame = docs.get(clearanceGameId);
+    const clearanceTransform = [...docs.entries()].find(([, doc]) =>
+        doc.kind === 'Transform' &&
+        fileId(field(doc.body, 'm_GameObject'), name) === clearanceGameId);
+    if (!clearanceGame || clearanceGame.kind !== 'GameObject' ||
+        !clearanceTransform ||
+        fileId(field(clearanceTransform[1].body, 'm_Father'), name) !== transformEntry[0] ||
+        !/\{x: -?0, y: -?0, z: -?0, w: 1\}/.test(
+            field(clearanceTransform[1].body, 'm_LocalRotation') ?? '')) {
+        fail(name, 'unsupported clearance child transform or parent');
+    }
     return {
         ids: {
             entity: entities[0][0], game: gameId, collider: colliderId,
             transform: transformEntry[0],
             proximity: proximityId, proximityGame: proximityGameId,
             proximityTransform: proximityTransform[0],
+            clearance: clearanceId, clearanceGame: clearanceGameId,
+            clearanceTransform: clearanceTransform[0],
         },
         size_class: finiteNumber(field(entity.body, 'SizeClass'), name),
         layer: finiteNumber(field(game.body, 'm_Layer'), name),
@@ -133,6 +153,13 @@ function baseAsteroid(name, content) {
             position: xy(field(proximityTransform[1].body, 'm_LocalPosition'), name),
             offset: xy(field(proximity.body, 'm_Offset'), name),
             paths: polygonPaths(name, proximity.body),
+        },
+        clearance: {
+            layer: finiteNumber(field(clearanceGame.body, 'm_Layer'), name),
+            scale: xy(field(clearanceTransform[1].body, 'm_LocalScale'), name),
+            position: xy(field(clearanceTransform[1].body, 'm_LocalPosition'), name),
+            offset: xy(field(clearance.body, 'm_Offset'), name),
+            paths: polygonPaths(name, clearance.body),
         },
     };
 }
