@@ -15,6 +15,10 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 pub const STRATEGY_REQUEST_TYPE: &str = "get-strategy";
 pub const STORE_COMMANDS_TYPE: &str = "store-commands";
 pub const LOCAL_MOVE_TO_POINT_NAME: &str = "Move To Point";
+/// Valid Unity command names that have no independent server strategy ID.
+pub const LOCAL_ONLY_COMMAND_NAMES: [&str; 3] = [
+    "Bombing Run", "Charge", LOCAL_MOVE_TO_POINT_NAME,
+];
 
 /// Persistent BeesServer Game.possibleStratTypes order, IDs 1-15.
 pub const COMMAND_STRATEGIES: [&str; 15] = [
@@ -48,8 +52,9 @@ impl StrategyIdentity {
         name: &str,
         registry: &'static [&'static str],
     ) -> Result<Self, HiveMindProtocolError> {
-        let index = usize::try_from(id - 1)
-            .map_err(|_| HiveMindProtocolError::UnknownStrategy)?;
+        let index = id.checked_sub(1)
+            .and_then(|value| usize::try_from(value).ok())
+            .ok_or(HiveMindProtocolError::UnknownStrategy)?;
         let expected = registry.get(index).copied()
             .ok_or(HiveMindProtocolError::UnknownStrategy)?;
         if name != expected {
@@ -152,7 +157,7 @@ impl GetStrategyRequest {
         let mut bans = Vec::new();
         let mut seen = HashSet::new();
         for name in banned_strats {
-            if name != LOCAL_MOVE_TO_POINT_NAME &&
+            if !LOCAL_ONLY_COMMAND_NAMES.contains(&name.as_str()) &&
                 !COMMAND_STRATEGIES.contains(&name.as_str()) {
                 return Err(HiveMindProtocolError::UnknownStrategy);
             }
@@ -225,6 +230,10 @@ impl GetStrategyResponse {
     pub fn validate_for(
         &self, request: &GetStrategyRequest,
     ) -> Result<ValidatedStrategySelection, HiveMindProtocolError> {
+        if self.status.is_some_and(|status|
+                status != 1 && !(200..300).contains(&status)) {
+            return Err(HiveMindProtocolError::InvalidResponse);
+        }
         if self.message_type != STRATEGY_REQUEST_TYPE ||
             request.message_type != STRATEGY_REQUEST_TYPE ||
             self.hash != request.hash ||
