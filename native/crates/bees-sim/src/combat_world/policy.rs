@@ -354,13 +354,10 @@ impl CombatWorld {
         }
         self.physics.ships_mut()[index].set_warp_zone(child_shape)?;
         // Register only after the authored collider has been accepted.
-        // Sorted IDs preserve Unity's lowest-ID selection without scanning
-        // non-gate ships or allocating in the per-agent action-mask path.
+        // The common index preserves lowest-ID selection without copying
+        // geometry or scanning every ship on an action-mask query.
         let side = self.ships[index].side;
-        let gates = self.warp_gate_ids_by_side.entry(side).or_default();
-        if let Err(position) = gates.binary_search(&gate_id) {
-            gates.insert(position, gate_id);
-        }
+        self.register_support_zone(WARP_GATE_TYPE, side, gate_id);
         Ok(())
     }
 
@@ -395,7 +392,7 @@ impl CombatWorld {
         if ship.vitals.is_dead() || !body.active {
             return None;
         }
-        for &gate_id in self.warp_gate_ids_by_side.get(&ship.side)? {
+        for &gate_id in self.support_zone_ids.get(&(WARP_GATE_TYPE, ship.side))? {
             let Some(&gate_index) = self.ship_by_id.get(&gate_id) else {
                 continue;
             };
