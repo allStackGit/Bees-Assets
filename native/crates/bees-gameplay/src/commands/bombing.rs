@@ -8,8 +8,9 @@ use std::collections::HashSet;
 
 use bees_hivemind::dispatch::{LocalCommandKind, ResolvedHiveMindCommand};
 use bees_hivemind::session::SquadLifetime;
-use bees_sim::combat_world::CombatWorld;
+use bees_sim::combat_world::{CombatWorld, GamePointOrder};
 use bees_sim::simulation::RandomStream;
+use bees_sim::squad_movement::{SquadFormationMember, SquadFormationOptions};
 
 use crate::squads::NativeSquadRoster;
 use super::{GameCommandError, NativeEnemyTargetStats, NativeSquadOrder};
@@ -117,4 +118,67 @@ pub fn assign_initial_bombing_run_targets(
         }
     }
     Ok(true)
+}
+
+/// Fire Barge-only portion of Unity BombingRun.Timer. Its special is
+/// command-triggered when the ORIGINAL selected ship is present in the
+/// authored ProximityCollider.NearbyEnemyShips cache (not merely near the
+/// bomber's center or touching its primary hull).
+///
+/// Called on the owning command's timer, after targets were assigned.
+/// Mixed squads additionally require the separate Striker/YellowJacket
+/// state machine; this method does not masquerade as its replacement.
+/// Actual bomb death/explosion is queued for the next fixed combat step,
+/// preserving the Level's one-pass episode and squad lifecycle boundary.
+///
+/// Returns the count of newly queued, source-authorized detonations.
+pub fn advance_fire_barge_bombing_run(
+    world: &mut CombatWorld,
+    members: &[SquadFormationMember],
+    formation: SquadFormationOptions,
+    command_outcome_id: i64,
+    mut target_in_proximity: impl FnMut(i64, i64)
+        -> Result<bool, GameCommandError>,
+) -> Result<u64, GameCommandError> {
+    if command_outcome_id < 0 || !formation.valid() {
+        return Err(GameCommandError::InvalidSettings);
+    }
+    let mut queued = 0;
+    for &member in members {
+        let Some(ship) = world.ship(member.ship_id) else {
+            return Err(GameCommandError::InvalidSquad);
+        };
+        // The source executes each live squad member in GetShips order.
+        // Other bomber classes must use their own authored state machines.
+        if ship.ship_type != 10 || ship.vitals.is_dead() {
+            continue;
+        }
+        let Some(target_id) = world.game_bomb_current_target(member.ship_id)
+        else { continue; };
+        let Some(target) = world.ship(target_id) else { continue; };
+        if target.vitals.is_dead() || target.side == ship.side {
+            continue;
+        }
+        let destination = world.ship_body(target_id)
+            .ok_or(GameCommandError::InvalidCombatSnapshot)?
+            .motion.position;
+        world.validate_ship_game_order(member.ship_id)?;
+        world.move_ship_to_tracked_point(member.ship_id, GamePointOrder {
+            destination,
+            ship_clearance: member.clearance,
+            map_bounds: formation.map_bounds,
+            has_obstacles: formation.has_obstacles,
+            can_override_bounds: formation.can_override_bounds,
+            newly_found_obstacle: false,
+        })?;
+        if target_in_proximity(member.ship_id, target_id)? &&
+            !world.frozen_after_elimination {
+            // The caller has already checked the real Level's cached
+            // trigger membership. Do not replace that with radial math.
+            queued += u64::from(world.queue_game_fire_barge_detonation(
+                member.ship_id, command_outcome_id,
+            )?);
+        }
+    }
+    Ok(queued)
 }
