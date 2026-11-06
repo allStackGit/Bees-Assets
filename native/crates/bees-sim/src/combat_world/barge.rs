@@ -245,9 +245,15 @@ impl CombatWorld {
         if charge.phase != 2 { return Ok(()) }
         charge.phase = 3;
         charge.elapsed = 0.0;
+        let steering = self.game_ship_steering.get_mut(&ship_id)
+            .ok_or(CombatWorldError::MissingGameMovementProfile)?;
         let motion = &mut self.physics.ships_mut()[index].motion;
         motion.current_speed = 0.0;
-        motion.stop_moving();
+        // Unity StopCharge calls StopMoving, clearing TargetDirection
+        // as well as velocity. Otherwise fixed_step would continue
+        // turning the stationary Barge throughout cooldown.
+        // The separate WaitingTargetCoordinates must survive.
+        steering.stop(motion);
         motion.cannot_change_movement_orders = true;
         self.barge_charge_hits.retain(|&(attacker, _)|
             attacker != ship_id,
