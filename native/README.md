@@ -65,9 +65,14 @@ adapter. The runner registers participating agents, consumes side-wide
 immediate and per-step group events once, sends the separate ELO marker
 as transport-only metadata (not PPO reward), then ends both participating
 side groups on terminal completion. `pending_notifications()` retains
-sparse, tick-stamped rewards, group events, completed commands and
-squad changes across many fixed steps. The host durably consumes and
-`acknowledge_notifications` only for the delivered prefix. Drain promptly
+sparse, tick-stamped rewards, group events, completed commands, squad
+changes, and `Gameplay(CombatEvent)` capability outcomes across many
+fixed steps. Only mining, depletion, Beehive healing and WarpGate returns
+are forwarded through this gameplay channel; high-volume shot events
+are not duplicated. The Level adapter must apply depletion cleanup,
+healing presentation and warp sounds before acknowledging those events;
+it must not credit capability rewards twice. The host durably consumes
+and `acknowledge_notifications` only for the delivered prefix. Drain promptly
 after `record_verified_discovery` to preserve Unity's immediate timing.
 Do **not** separately deliver an event returned by another path.
 
