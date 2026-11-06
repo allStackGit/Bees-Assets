@@ -7,7 +7,7 @@
 //! episode revision, seeded RNG, aggregate measurements and failure state.
 //! The caller must reset completed episodes before asking for a new step.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::num::NonZeroU32;
 
 use bees_hivemind::session::SquadLifetime;
@@ -120,6 +120,10 @@ pub struct NativeLevelState<M, A> {
     pub decisions: NativeDecisionCadence,
     /// Reused source Level.State.Squads snapshot; no per-frame allocation.
     command_friendlies: Vec<NativeFriendlySquad>,
+    /// Reused sparse per-ship mining credit transaction. Events may contain
+    /// multiple extractions for the same ship during one combat phase.
+    mining_credit_totals: HashMap<i64, i32>,
+    mining_credit_order: Vec<i64>,
 }
 
 impl<M, A> NativeLevelState<M, A> {
@@ -147,23 +151,41 @@ impl<M, A> NativeLevelState<M, A> {
             combat, events, metadata, allocate_minion,
             decisions: NativeDecisionCadence::new(period),
             command_friendlies: Vec::new(),
+            mining_credit_totals: HashMap::new(),
+            mining_credit_order: Vec::new(),
         }
     }
 }
 
 impl<M: NativeLevelRewardMetadata, A> NativeLevelState<M, A> {
-    /// Persist actual mining yields in the source event order, whether
-    /// generated during policy combat or by timed HiveMind commands.
+    /// Reconcile one combat-event phase to authoritative FleetShip state.
+    /// Multiple legitimate mining actions can credit the same ship before
+    /// the Level callback, so compare against its final physical cargo
+    /// once per ship—not against each intermediate event. Preserve first
+    /// event order and reuse both buffers across quiet and busy ticks.
     fn credit_mining_since(&mut self, start: usize)
         -> Result<(), NativeLevelStepError>
     {
-        for row in start..self.combat.events().len() {
-            let extracted = match &self.combat.events()[row] {
-                CombatEvent::CapabilityMined { ship_id, amount_mined, .. } =>
-                    Some((*ship_id, *amount_mined)),
-                _ => None,
-            };
-            let Some((ship_id, amount)) = extracted else { continue; };
+        self.mining_credit_totals.clear();
+        self.mining_credit_order.clear();
+        for event in &self.combat.events()[start..] {
+            let CombatEvent::CapabilityMined {
+                ship_id, amount_mined, ..
+            } = event else { continue; };
+            if *amount_mined <= 0 {
+                return Err(NativeLevelStepError::InvalidMiningFleetValue(*ship_id));
+            }
+            if let Some(total) = self.mining_credit_totals.get_mut(ship_id) {
+                *total = total.checked_add(*amount_mined).ok_or(
+                    NativeLevelStepError::InvalidMiningFleetValue(*ship_id)
+                )?;
+            } else {
+                self.mining_credit_order.push(*ship_id);
+                self.mining_credit_totals.insert(*ship_id, *amount_mined);
+            }
+        }
+        for &ship_id in &self.mining_credit_order {
+            let amount = self.mining_credit_totals[&ship_id];
             let expected = self.combat.ship(ship_id)
                 .ok_or(NativeLevelStepError::InvalidMiningFleetValue(ship_id))?
                 .vitals.mined_cargo();
@@ -174,9 +196,7 @@ impl<M: NativeLevelRewardMetadata, A> NativeLevelState<M, A> {
             }
             if self.combat.ship(ship_id)
                 .is_some_and(|ship| !ship.vitals.is_dead()) {
-                self.events.record_mined_value(
-                    &self.combat, ship_id, actual,
-                )?;
+                self.events.record_mined_value(&self.combat, ship_id, actual)?;
             }
         }
         Ok(())
