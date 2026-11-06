@@ -9,7 +9,7 @@
 //! Owners are stable entity/weapon IDs, never pooled object pointers. A dead
 //! target's record remains while holders exist so delayed release stays safe.
 
-use std::collections::HashMap;
+use std::collections::{hash_map::Entry, HashMap};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ReservationError {
@@ -41,10 +41,22 @@ pub struct Reservation {
     pub amount: i32,
 }
 
+/// Cumulative per-world work for syncing target health after real hits.
+/// A caller can compare snapshots without retaining per-hit history.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct DamageReservationMeasurements {
+    pub target_health_changes: u64,
+    pub status_rows_refreshed: u64,
+}
+
 #[derive(Clone, Default)]
 pub struct DamageReservations {
     statuses: HashMap<(i32, i64), DamageStatus>,
+    // A hit only changes one target's health. Index its registered sides
+    // rather than sweeping every target ever considered by a command.
+    status_sides_by_target: HashMap<i64, Vec<i32>>,
     holders: HashMap<i64, Reservation>,
+    measurements: DamageReservationMeasurements,
 }
 
 impl DamageReservations {
@@ -56,11 +68,20 @@ impl DamageReservations {
     /// Repeated target lookups update health without affecting in-flight
     /// reservations.
     pub fn status(&mut self, side: i32, target_id: i64, health: i32) -> DamageStatus {
-        let entry = self.statuses.entry((side, target_id)).or_insert(DamageStatus {
-            health, total_reserved: 0,
-        });
+        let entry = match self.statuses.entry((side, target_id)) {
+            Entry::Occupied(entry) => entry.into_mut(),
+            Entry::Vacant(entry) => {
+                self.status_sides_by_target.entry(target_id)
+                    .or_default().push(side);
+                entry.insert(DamageStatus { health, total_reserved: 0 })
+            }
+        };
         entry.health = health;
         *entry
+    }
+
+    pub fn measurements(&self) -> DamageReservationMeasurements {
+        self.measurements
     }
 
     pub fn held_by(&self, owner_id: i64) -> Option<Reservation> {
@@ -97,7 +118,10 @@ impl DamageReservations {
         let new_total = old.total_reserved.checked_add(amount)
             .ok_or(ReservationError::TotalOverflow)?;
         let updated = DamageStatus { health, total_reserved: new_total };
-        self.statuses.insert(key, updated);
+        if self.statuses.insert(key, updated).is_none() {
+            self.status_sides_by_target.entry(target_id)
+                .or_default().push(side);
+        }
         self.holders.insert(owner_id, Reservation { side, target_id, amount });
         Ok(updated)
     }
@@ -149,7 +173,10 @@ impl DamageReservations {
             }
         }
         let updated = DamageStatus { health, total_reserved: new_total };
-        self.statuses.insert(key, updated);
+        if self.statuses.insert(key, updated).is_none() {
+            self.status_sides_by_target.entry(target_id)
+                .or_default().push(side);
+        }
         self.holders.insert(owner_id, Reservation {
             side, target_id, amount,
         });
@@ -183,11 +210,18 @@ impl DamageReservations {
     }
 
     /// Damage from any side updates the health seen by all target selectors.
-    /// Retaining records until reset is intentional for delayed shots.
+    /// Each registered (side,target) status stays until reset for delayed
+    /// shots, but a hit need not visit unrelated ships' status records.
     pub fn target_health_changed(&mut self, target_id: i64, health: i32) {
-        for ((_, id), status) in &mut self.statuses {
-            if *id == target_id {
-                status.health = health;
+        self.measurements.target_health_changes =
+            self.measurements.target_health_changes.saturating_add(1);
+        if let Some(sides) = self.status_sides_by_target.get(&target_id) {
+            for &side in sides {
+                if let Some(status) = self.statuses.get_mut(&(side, target_id)) {
+                    status.health = health;
+                    self.measurements.status_rows_refreshed =
+                        self.measurements.status_rows_refreshed.saturating_add(1);
+                }
             }
         }
     }
@@ -195,6 +229,8 @@ impl DamageReservations {
     pub fn reset(&mut self) {
         self.holders.clear();
         self.statuses.clear();
+        self.status_sides_by_target.clear();
+        self.measurements = DamageReservationMeasurements::default();
     }
 }
 
