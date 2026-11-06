@@ -158,6 +158,34 @@ impl CombatWorld {
             scout.remaining_cooldown > 0.0 {
             return Ok(false);
         }
+        if !self.spawn_registered_scout_beacon(scout_id)? {
+            return Ok(false);
+        }
+
+        let Some(PolicyShipSpecial::Scout(scout)) =
+            self.policy_ship_runtime.get_mut(&scout_id)
+                .and_then(|r| r.special.as_mut()) else {
+            unreachable!("prevalidated live Scout");
+        };
+        scout.dropped += 1;
+        scout.remaining_cooldown = COOLDOWN_SECONDS;
+        if scout.dropped >= MAX_BEACONS { scout.enabled = false; }
+        Ok(true)
+    }
+
+    /// Authoritative physical Scout DropBeacon transaction shared by game
+    /// commands and RL policy; neither caller owns an independent prefab
+    /// spawn, fleet credit, side-cap decision or discovery event.
+    fn spawn_registered_scout_beacon(
+        &mut self, scout_id: i64,
+    ) -> Result<bool, CombatWorldError> {
+        let &index = self.ship_by_id.get(&scout_id)
+            .ok_or(CombatWorldError::UnknownShip)?;
+        if self.ships[index].ship_type != SCOUT_TYPE ||
+            self.ships[index].vitals.is_dead() ||
+            !self.physics.ships()[index].active {
+            return Ok(false);
+        }
         let Some(spec) = self.scout_beacon_specs.get(&scout_id) else {
             return Err(CombatWorldError::InvalidPolicyScout);
         };
@@ -186,14 +214,6 @@ impl CombatWorld {
         self.set_ship_fleet_identity(beacon_id, parent_fleet_id)?;
         self.beacon_parent_by_id.insert(beacon_id, scout_id);
 
-        let Some(PolicyShipSpecial::Scout(scout)) =
-            self.policy_ship_runtime.get_mut(&scout_id)
-                .and_then(|r| r.special.as_mut()) else {
-            unreachable!("prevalidated live Scout");
-        };
-        scout.dropped += 1;
-        scout.remaining_cooldown = COOLDOWN_SECONDS;
-        if scout.dropped >= MAX_BEACONS { scout.enabled = false; }
         self.policy_special_measurements.scout_beacons_spawned += 1;
         self.events.push(CombatEvent::ScoutBeaconDropped {
             scout_id, beacon_id, parent_fleet_id,
