@@ -924,11 +924,8 @@ class ExperimentHub {
                 throw Error('Cannot release an unknown, active, or unverified managed job.');
             if(job.status==='waiting_adapter') {
                 if(job.dispatch_id)throw Error('Cannot release a claim after native dispatch.');
-                const proof=job.gpu_qualification;
                 if(gpuProbeHoldsClaim(job))
                     throw Error('Wait for the offered GPU probe and verified cleanup before releasing its claim.');
-                if(proof?.lease_id===lease.id)
-                    lease.gpu_qualification_request_id=proof.request_id;
                 if(job.gpu_qualification?.status==='requested') {
                     job.gpu_qualification.status='cancelled';
                     job.gpu_qualification.diagnostic=
@@ -1214,25 +1211,20 @@ class ExperimentHub {
             const job=next.jobs.find(j=>j.id===report.job_id);
             const lease=next.reservations.find(l=>l.id===report.lease_id);
             const request=job?.gpu_qualification;
-            // Consume late receipts for exact released requests, including
-            // claims released by a coordinator that predates the probe hold.
-            if(job&&lease?.status==='released'&&lease.job_id===job.id&&
-                lease.project_id===job.project_id&&lease.machine_id===machine.id&&
-                lease.gpu_qualification_request_id===report.dispatch_id)
-                continue;
-            if(job&&lease&&request?.status==='cancelled'&&
-                request.request_id===report.dispatch_id&&
-                request.lease_id===lease.id&&
-                request.machine_id===machine.id&&
-                lease.status==='released')
-                continue;
-            if(!job||!lease||!request||request.request_id!==report.dispatch_id||
-                request.lease_id!==lease.id||request.machine_id!==machine.id||
-                job.lease_id!==lease.id||job.assigned_machine_id!==machine.id||
-                lease.job_id!==job.id||
-                lease.machine_id!==machine.id||lease.project_id!==job.project_id||
-                lease.status!=='acknowledged')
+            if(!job||!lease||lease.issued_by!=='experiment-hub'||
+                lease.job_id!==job.id||lease.machine_id!==machine.id||
+                lease.project_id!==job.project_id)
                 throw Error('GPU proof does not belong to this job and machine.');
+            // An acknowledged report may be retried after the response is
+            // lost, even if the operator has since replaced the request or
+            // released the lease. A stale receipt has no authority.
+            if(lease.status==='released')continue;
+            if(lease.status!=='acknowledged'||job.lease_id!==lease.id||
+                job.assigned_machine_id!==machine.id)
+                throw Error('GPU proof does not belong to this job and machine.');
+            if(request?.lease_id!==lease.id||request.machine_id!==machine.id||
+                request.request_id!==report.dispatch_id)
+                continue;
             if(request.status!=='requested')continue;
             if(request.first_offered_at===null)
                 throw Error('GPU access report arrived before its probe was offered.');
