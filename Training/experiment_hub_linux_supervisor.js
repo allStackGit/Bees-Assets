@@ -344,6 +344,11 @@ class LinuxSupervisor {
             '--description='+description,
             '--property=CPUQuota=100%',
             '--property=MemoryMax=268435456',
+            // Bound the native service even if the agent or systemd-run exits.
+            '--property=TimeoutStartSec=5s',
+            '--property=RuntimeMaxSec=10s',
+            '--property=TimeoutStopSec=3s',
+            '--property=KillMode=control-group',
             ...plan.device_properties.map(p=>'--property='+p),
             '--',process.execPath,
             path.join(__dirname,'experiment_hub_linux_gpu_probe.js'),

@@ -844,8 +844,11 @@ device files but does not submit GPU work or run training. Every
 explicit job request runs a **fresh** device-access proof, not a
 cached pass from a different job. Before launching a probe, the local
 supervisor records its unique systemd unit and description in
-`<EXPERIMENT_HUB_LOCAL_ROOT>/gpu-preflight-pending.json`. A confirmed
-stopped or absent unit clears this record; ambiguous cleanup or an agent
+`<EXPERIMENT_HUB_LOCAL_ROOT>/gpu-preflight-pending.json`. The systemd
+service has a 5-second start timeout, a 10-second runtime
+limit, and a 3-second stop timeout. The agent still requires cleanup
+evidence before releasing the probe record. A confirmed stopped or absent
+unit clears this record; ambiguous cleanup or an agent
 crash leaves it in place and blocks further probes **across agent restarts**.
 To recover, inspect the recorded unit with `systemctl --user show <unit>`
 from the same Linux account, verify its exact identity and that it is
