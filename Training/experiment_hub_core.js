@@ -815,9 +815,12 @@ class ExperimentHub {
                 return transitioned('Released verified capacity: '+complete.project_id+
                     ' / '+(complete.configuration_name||complete.id.slice(-8))+'.');
             }
+            const retiredParents=new Set(snapshot.jobs.filter(j=>
+                j.project_id==='ants').map(j=>j.id));
             const pending=snapshot.jobs.filter(j=>
                 j.adapter==='unconfigured'&&j.status==='waiting_adapter'&&
-                !['bees','ants'].includes(j.project_id));
+                !['bees','ants'].includes(j.project_id)&&
+                !retiredParents.has(j.after_job_id));
             // Claims and starts can become eligible at different times,
             // so fairness needs an independent cursor for each operation.
             const pendingStarts=fairPending(pending,session.last_started_project_id);
