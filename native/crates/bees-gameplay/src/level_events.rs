@@ -5,7 +5,7 @@
 //! scheduler, reward model or a substitute for the Unity/MA-POCA adapter.
 //! All mutable scratch is reused per Level, never process-global.
 
-use bees_hivemind::session::{HiveMindSession, SquadLifetime};
+use bees_hivemind::session::{HiveMindSession, SquadLifetime, StrategyReceipt};
 use bees_sim::combat_world::{CombatEvent, CombatWorld};
 use bees_sim::navigation_runtime::NavigationRuntime;
 use bees_sim::simulation::RandomStream;
@@ -16,7 +16,10 @@ use crate::commands::{
     CommandFinishCause, CommandMeasurements, FinishedNativeCommand,
     GameCommandError, NativeAggressiveCommandSnapshot,
     NativeCircleCommandSnapshot, NativeFireBargeTimerSnapshot,
-    NativeFriendlySquad, NativeSquadCommandDirector, NativeSwipeCommandSnapshot,
+    NativeBombWeapon, NativeBombingActivation, NativeEnemyTargetStats,
+    NativeFriendlySquad, NativeSquadOrder, NativeSquadCommandDirector,
+    NativeSwipeCommandSnapshot, HiveMindCommandSettings,
+    StrategyReceiptAction, StrategyReceiptFailure,
 };
 use bees_hivemind::dispatch::ResolvedHiveMindCommand;
 use crate::episode::{
@@ -288,6 +291,43 @@ impl NativeLevelEventProcessor {
 
     pub fn commands_mut(&mut self) -> &mut NativeSquadCommandDirector {
         &mut self.commands
+    }
+
+    /// Apply a HiveMind receipt using this Level's SAME live roster,
+    /// command director and CombatWorld. The network/Level adapter must
+    /// supply the real, ordered Bomb weapons and enemy target metadata.
+    /// No separate squad roster or reservation ledger is created.
+    pub fn apply_strategy_receipt_with_bombing(
+        &mut self,
+        world: &mut CombatWorld,
+        navigation: &NavigationRuntime,
+        random: &mut RandomStream,
+        squad: NativeSquadOrder<'_>,
+        friendlies: &[NativeFriendlySquad],
+        settings: HiveMindCommandSettings,
+        receipt: StrategyReceipt,
+        enemy_owner: SquadLifetime,
+        weapons: &[NativeBombWeapon],
+        enemies: &[NativeEnemyTargetStats],
+    ) -> Result<StrategyReceiptAction, StrategyReceiptFailure> {
+        // A late server reply after a terminal/aborted match may only
+        // discard its reservations. Never rearm ship commands or bombs.
+        if self.is_failed() || self.completed() {
+            let ids = match receipt {
+                StrategyReceipt::Retired { reservation_ids, .. } =>
+                    reservation_ids,
+                StrategyReceipt::Accepted { selection, .. } =>
+                    vec![selection.command_outcome_id, selection.shooting_outcome_id],
+            };
+            return Ok(StrategyReceiptAction::DiscardReservations(ids));
+        }
+        let bombing = NativeBombingActivation {
+            roster: &self.roster, enemy_owner, weapons, enemies,
+        };
+        self.commands.apply_strategy_receipt_with_bombing(
+            world, navigation, random, squad, friendlies,
+            settings, receipt, Some(bombing),
+        )
     }
 
     /// All pending retirements, including ones from earlier ticks. The
