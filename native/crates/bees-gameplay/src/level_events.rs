@@ -71,10 +71,10 @@ pub struct NativeLevelNotification {
 #[derive(Clone, Debug)]
 pub enum NativeLevelNotificationKind {
     SquadChange(SquadRosterChange),
-    /// Source MiningAsteroid.Kill(false): the Level's game adapter must
-    /// remove the visual entity and finalize commands targeting this rock.
-    /// Kept across rollout windows until the adapter acknowledges it.
-    MiningAsteroidDepleted { obstacle_id: i64 },
+    /// Sparse, source-authored capability outcomes for the native game's
+    /// presentation/command adapter, kept across rollout windows until
+    /// acknowledged. The Level never re-simulates these physical actions.
+    Gameplay(CombatEvent),
     FinishedCommand(FinishedNativeCommand),
     /// Only emitted when group delivery is not configured. Never also
     /// apply this raw reward to a group-enabled PPO trajectory.
@@ -88,6 +88,19 @@ pub enum NativeLevelNotificationKind {
 /// At 1M sparse events this is far beyond a normal rollout window, but
 /// still fails the episode before any events are silently dropped.
 const MAX_PENDING_NOTIFICATIONS: usize = 1_048_576;
+
+/// Preserve only events with a real Level-side capability consequence.
+/// Projectile/impact/ship events are already consumed by the appropriate
+/// combat, squad, and reward paths; copying them all here would make
+/// high-throughput RL rollouts allocate on every busy physics tick.
+fn requires_level_capability_delivery(event: &CombatEvent) -> bool {
+    matches!(event,
+        CombatEvent::CapabilityMined { .. } |
+        CombatEvent::MiningAsteroidDepleted { .. } |
+        CombatEvent::CapabilityHealed { .. } |
+        CombatEvent::ShipWarped { .. }
+    )
+}
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct NativeLevelEventMeasurements {
@@ -589,12 +602,12 @@ impl NativeLevelEventProcessor {
         let reward_count = group_events.map_or(
             reward.emissions.len(), |events| events.len(),
         );
-        let mining_depletions = world.events().iter().filter(|event|
-            matches!(event, CombatEvent::MiningAsteroidDepleted { .. })
-        ).count();
+        let capability_notifications = world.events().iter()
+            .filter(|event| requires_level_capability_delivery(event))
+            .count();
         let new_count = self.changes.len()
             .saturating_add(self.finished.len())
-            .saturating_add(mining_depletions)
+            .saturating_add(capability_notifications)
             .saturating_add(reward_count)
             .saturating_add(usize::from(reward.finalized.is_some()));
         // Only the notification outbox is mutated here: the reward and
@@ -616,16 +629,14 @@ impl NativeLevelEventProcessor {
                 ),
             });
         }
-        // Physical asteroid retirement already happened in CombatWorld.
-        // Forward only its sparse lifecycle event; do not maintain a
-        // second Level asteroid registry or guess a mining command owner.
+        // Keep source event details for UI effects, resource diagnostics
+        // and mining-target cleanup. The owning Level determines which
+        // live command needs finalization; no synthetic command is created.
         for event in world.events() {
-            if let CombatEvent::MiningAsteroidDepleted { obstacle_id } = event {
+            if requires_level_capability_delivery(event) {
                 self.pending_notifications.push(NativeLevelNotification {
                     tick: completed_tick,
-                    kind: NativeLevelNotificationKind::MiningAsteroidDepleted {
-                        obstacle_id: *obstacle_id,
-                    },
+                    kind: NativeLevelNotificationKind::Gameplay(event.clone()),
                 });
             }
         }
