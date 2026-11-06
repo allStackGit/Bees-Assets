@@ -150,7 +150,7 @@ function hubComparisonCsv(exported) {
 
 // A read-only cross-project view. No dependency record is ever mutated
 // by rendering, and observed native completion is not benchmark success.
-function independentSequenceRows(jobs) {
+function sequenceRowsForJobs(jobs) {
     const successor=new Map();
     for(const job of jobs) {
         const parent=job.after_job_id||job.continuation_of_job_id;
@@ -158,19 +158,18 @@ function independentSequenceRows(jobs) {
         if(!successor.has(parent))successor.set(parent,[]);
         successor.get(parent).push(job);
     }
-    return jobs.filter(job=>!job.after_job_id&&
-        successor.get(job.id)?.some(child=>child.after_job_id))
+    return jobs.filter(job=>!job.after_job_id&&!job.continuation_of_job_id&&
+        successor.has(job.id))
         .sort((a,b)=>String(b.created_at||'').localeCompare(
             String(a.created_at||'')))
         .slice(0,20).map(root=>{
             const chain=[root],visited=new Set([root.id]);
-            let conflict=false,continuesCheckpoint=false;
+            let conflict=false;
             while(true) {
                 const candidates=successor.get(chain[chain.length-1].id)||[];
                 if(candidates.length>1){conflict=true;break;}
                 const child=candidates[0];
                 if(!child)break;
-                if(child.continuation_of_job_id){continuesCheckpoint=true;break;}
                 if(visited.has(child.id)){conflict=true;break;}
                 visited.add(child.id);
                 chain.push(child);
@@ -178,11 +177,10 @@ function independentSequenceRows(jobs) {
             const current=chain.find(job=>job.status!=='finished'||
                 !job.capacity_released_at)||chain[chain.length-1];
             const blocked=chain.find(job=>job.status==='waiting_predecessor');
-            return {root,chain,current,canCancel:!conflict&&!continuesCheckpoint,
+            return {root,chain,current,canCancel:!conflict,
                 completed:chain.filter(job=>job.status==='finished'&&
                     job.capacity_released_at).length,
                 reason:conflict?'Conflicting or cyclic successor records; inspect the registry.'
-                    :continuesCheckpoint?'An Ants checkpoint continuation follows this sequence.'
                     :blocked?.predecessor_wait?.reason||
                         current?.status_reason||'—'};
         });
@@ -958,7 +956,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 ' · '+j.id.slice(-8),j.id)));
         if(availableParents.some(j=>j.id===previousParent))
             predecessorSelect.value=previousParent;
-        const sequenceRows=independentSequenceRows(state.jobs||[]);
+        const sequenceRows=sequenceRowsForJobs(state.jobs||[]);
         $('hub-sequence-overview-panel').hidden=project==='bees'||
             !sequenceRows.length;
         $('hub-sequence-message').hidden=project==='bees';
@@ -970,6 +968,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 summary.root.configuration_name+' · '+
                 summary.root.id.slice(-8));
             cell(tr,summary.chain.map(job=>
+                (job.continuation_of_job_id?'Resume ':job.after_job_id?'Fresh ':'')+
                 job.project_id+' / '+job.configuration_name.slice(0,28))
                 .join(' → '));
             const position=summary.chain.indexOf(summary.current)+1;
