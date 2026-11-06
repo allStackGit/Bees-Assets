@@ -105,15 +105,21 @@ def passed_receipt(path: Path, dispatch: str, suite: dict, job: dict) -> bool:
         return False
 
 
-def flush_receipt(args, suite: dict, pending: dict, live: dict) -> None:
+def flush_receipt(args, suite: dict, pending: dict) -> None:
     receipt = pending["receipt"]
     dispatch = receipt["dispatch_id"]
-    if not UUID.fullmatch(dispatch) or receipt["suite_id"] != suite["suite_id"]:
+    job = pending["target"]
+    if (
+        not isinstance(dispatch, str) or not UUID.fullmatch(dispatch)
+        or receipt["suite_id"] != suite["suite_id"]
+        or job["dispatch_id"] != dispatch or not UUID.fullmatch(job["job_id"])
+        or receipt["trials"] != suite["trials"]
+    ):
         raise ValueError("invalid pending evaluation receipt identity")
-    job = live.get(dispatch)
-    if job != pending["target"]:
-        print(f"Evaluation dispatch {dispatch} changed before publication.", file=sys.stderr)
-        return
+    # The dispatch was eligible before evaluation began. A result is inert
+    # without the matching currently running native dispatch, which the
+    # worker and Hub verify independently. Do not discard completed work
+    # because a heartbeat expires during a long independent evaluation.
     destination = args.receipt_root / f"{dispatch}.{suite['suite_id']}.json"
     if not passed_receipt(destination, dispatch, suite, job):
         print(publish(args.receipt_root, receipt))
@@ -124,7 +130,6 @@ def poll(args, suite: dict) -> None:
     state = args.scratch / f"ants-evaluation-{args.machine}.{suite_id}.json"
     suite_digest = hashlib.sha256(json.dumps(suite, sort_keys=True).encode()).hexdigest()
     with exclusive(state.with_suffix(".lock")):
-        live = targets(args.port, args.machine, suite_id)
         try:
             prior = json.loads(read_bounded(state, 131072))
             if prior["suite_sha256"] != suite_digest:
@@ -135,9 +140,10 @@ def poll(args, suite: dict) -> None:
             previous = {}
         pending = prior.get("pending_receipt")
         if pending is not None:
-            flush_receipt(args, suite, pending, live)
+            flush_receipt(args, suite, pending)
             save_cursor(state, {"suite_sha256": suite_digest, "dispatches": previous})
             return
+        live = targets(args.port, args.machine, suite_id)
         cursor = {dispatch: episode for dispatch, episode in previous.items() if dispatch in live}
         candidates = {}
         for dispatch, job in live.items():
@@ -197,7 +203,7 @@ def poll(args, suite: dict) -> None:
         }
         saved = {"suite_sha256": suite_digest, "dispatches": cursor}
         save_cursor(state, {**saved, "pending_receipt": pending})
-        flush_receipt(args, suite, pending, targets(args.port, args.machine, suite_id))
+        flush_receipt(args, suite, pending)
         save_cursor(state, saved)
 
 
