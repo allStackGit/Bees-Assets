@@ -74,6 +74,21 @@ def latest(artifacts: Path, lineage: str):
     return checkpoint, episode
 
 
+def retain_dispatch_cursors(previous: dict, live: dict) -> dict:
+    # Dispatch IDs are immutable across native restarts. Keep watermarks
+    # when a worker is temporarily absent, but bound the scratch archive
+    # by the Hub's maximum of 1,000 stored jobs.
+    cursor = previous.copy()
+    for dispatch in live:
+        if dispatch in cursor or len(cursor) < 1000:
+            continue
+        expired = next((key for key in cursor if key not in live), None)
+        if expired is None:
+            raise ValueError("Too many simultaneous evaluation dispatches.")
+        del cursor[expired]
+    return cursor
+
+
 def save_cursor(path: Path, cursor: dict):
     # The fixed pending file is private to this machine/suite kernel lock.
     pending = path.with_suffix(".pending")
@@ -144,7 +159,7 @@ def poll(args, suite: dict) -> None:
             save_cursor(state, {"suite_sha256": suite_digest, "dispatches": previous})
             return
         live = targets(args.port, args.machine, suite_id)
-        cursor = {dispatch: episode for dispatch, episode in previous.items() if dispatch in live}
+        cursor = retain_dispatch_cursors(previous, live)
         candidates = {}
         for dispatch, job in live.items():
             try:
