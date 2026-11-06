@@ -2214,6 +2214,46 @@ impl CombatWorld {
         ))
     }
 
+    /// Unity Bomb.SetTargetShip reserves its actual weapon's Bomb.Power
+    /// immediately. The Level picks the target using the already-exposed
+    /// target_damage_status; even the source's over-reserved random
+    /// fallback is legal here. The weapon ID is the stable, unique authored
+    /// Level weapon identity, not a substitute ship or projectile ID.
+    /// A retarget releases the previous weapon lease exactly once.
+    pub fn assign_game_bomb_target(
+        &mut self, bomber_id: i64, bomb_weapon_id: i64,
+        target_id: i64, power: i32,
+    ) -> Result<DamageStatus, CombatWorldError> {
+        let &bomber_index = self.ship_by_id.get(&bomber_id)
+            .ok_or(CombatWorldError::UnknownShip)?;
+        let &target_index = self.ship_by_id.get(&target_id)
+            .ok_or(CombatWorldError::UnknownShip)?;
+        let bomber = &self.ships[bomber_index];
+        let target = &self.ships[target_index];
+        if bomb_weapon_id <= 0 || power < 0 ||
+            !matches!(bomber.ship_type, 10 | 19 | 22) ||
+            bomber.vitals.is_dead() || target.vitals.is_dead() ||
+            bomber.side == target.side ||
+            !self.physics.ships()[bomber_index].active ||
+            !self.physics.ships()[target_index].active {
+            return Err(CombatWorldError::InvalidBombTarget);
+        }
+        let side = bomber.side;
+        let health = target.vitals.health();
+        // Match Bomb.SetTargetShip's ReleaseTargetReservation first.
+        self.reservations.release(bomb_weapon_id);
+        Ok(self.reservations.reserve(
+            bomb_weapon_id, side, target_id, health, power,
+        )?)
+    }
+
+    /// Unity Bomb.ReleaseTargetReservation. Command cancellation,
+    /// retargeting and a consumed self-detonation all release this
+    /// weapon-owned lease. An already transferred/released lease is inert.
+    pub fn release_game_bomb_target(&mut self, bomb_weapon_id: i64) -> bool {
+        self.reservations.release(bomb_weapon_id).is_some()
+    }
+
     /// Bomb.SetTargetShip reserves at weapon selection time. When its
     /// delivery object is created, transfer that existing lease, not a new
     /// reservation. Cancellation of an unused weapon target calls release
