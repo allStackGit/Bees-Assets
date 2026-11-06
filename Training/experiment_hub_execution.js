@@ -34,6 +34,7 @@ class LocalExecution {
     advertisement(){
         return {local_executor:true,installed_projects:this.projects.slice(),
             evaluation_suites:structuredClone(this.evaluationSuites),
+            tinybrains_profiles:{...this.supervisor.adapters?.tinybrains?.tinybrains_profiles},
             gpu_projects:this.projects.filter(project=>
                 this.supervisor.gpuEnabled===true&&
                 typeof this.supervisor.adapters?.[project]?.gpu_verify_args==='function')};
