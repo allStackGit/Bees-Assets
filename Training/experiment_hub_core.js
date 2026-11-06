@@ -245,6 +245,39 @@ function independentSequenceComplete(job) {
         return false;
     }
 }
+// One prerequisite for all stages of scheduling: plan, capacity claim,
+// automation and native Start. An unclaimed continuation has no assigned
+// machine yet, but its original worker must already be pinned.
+function predecessorBlock(snapshot,job) {
+    if(job.continuation_of_job_id&&job.after_job_id)
+        return 'A job cannot both continue a checkpoint and follow an independent predecessor.';
+    if(job.continuation_of_job_id) {
+        const parent=snapshot.jobs.find(j=>j.id===job.continuation_of_job_id);
+        if(!parent||parent.project_id!==job.project_id||
+            parent.status!=='finished'||!parent.capacity_released_at||
+            !parent.assigned_machine_id||
+            (parent.artifact_lineage_root_id||parent.id)!==
+                job.artifact_lineage_root_id||
+            job.continuation_machine_id!==parent.assigned_machine_id||
+            (job.assigned_machine_id&&
+                job.assigned_machine_id!==parent.assigned_machine_id))
+            return 'Continuation lineage, completed parent, or original machine is not verified.';
+    }
+    if(job.after_job_id) {
+        const parent=snapshot.jobs.find(j=>j.id===job.after_job_id);
+        // The release records readiness atomically. A prior lease can later
+        // be archived, so do not require the historical lease for each claim.
+        if(!independentSequenceComplete(parent)||
+            !parent.capacity_released_at||!parent.dispatch_id||
+            !parent.execution_updated_at||
+            typeof job.predecessor_ready_at!=='string'||
+            !Number.isFinite(Date.parse(job.predecessor_ready_at))||
+            job.artifact_lineage_root_id!==job.id||
+            job.continuation_machine_id)
+            return 'Independent predecessor has not completed and released verified native capacity.';
+    }
+    return null;
+}
 // Pure, non-authorizing readiness projection. The dashboard and the actual
 // start authorization share one eligibility contract; displaying readiness
 // does not claim a reservation or dispatch any native process.
@@ -253,6 +286,8 @@ function nativeStartReadiness(snapshot, job) {
     if(!job||job.status!=='waiting_adapter'||
         job.adapter!=='unconfigured'||['bees','ants'].includes(job.project_id))
         return block('Only queued non-Bees jobs support Hub native starts.');
+    const predecessor=predecessorBlock(snapshot,job);
+    if(predecessor)return block(predecessor);
     if(!job.lease_id)
         return block('Coordinate machine capacity before requesting Start.');
     const lease=snapshot.reservations.find(l=>l.id===job.lease_id &&
@@ -287,32 +322,6 @@ function nativeStartReadiness(snapshot, job) {
     if(gpuBlock)return block(gpuBlock);
     if(r.cpus>machine.reported_cpus||r.ram_mb>machine.reported_ram_mb)
         return block('Requested CPU/RAM exceeds the machine\'s fresh reported capacity.');
-    if(job.continuation_of_job_id) {
-        const parent=snapshot.jobs.find(j=>j.id===job.continuation_of_job_id);
-        if(!parent||parent.project_id!==job.project_id||
-            parent.status!=='finished'||
-            !parent.capacity_released_at||
-            parent.assigned_machine_id!==job.assigned_machine_id||
-            (parent.artifact_lineage_root_id||parent.id)!==
-                job.artifact_lineage_root_id||
-            job.continuation_machine_id!==job.assigned_machine_id)
-            return block('Continuation lineage, completed parent, or original machine is not verified.');
-    }
-    if(job.after_job_id) {
-        const parent=snapshot.jobs.find(j=>j.id===job.after_job_id);
-        // Written by the same atomic commit that releases the finished
-        // predecessor, or after verifying an already-released lease at
-        // queue creation. Lease history is bounded and may later be pruned.
-        if(!independentSequenceComplete(parent)||
-            !parent.capacity_released_at||!parent.dispatch_id||
-            !parent.execution_updated_at||
-            typeof job.predecessor_ready_at!=='string'||
-            !Number.isFinite(Date.parse(job.predecessor_ready_at))||
-            job.continuation_of_job_id||
-            job.artifact_lineage_root_id!==job.id||
-            job.continuation_machine_id)
-            return block('Independent predecessor has not completed and released verified native capacity.');
-    }
     return {eligible:true,reason:r.gpu_count
         ?'Eligible for explicit exclusive GPU Start with in-service verification.'
         :'Eligible for explicit CPU-only native Start authorization.'};
@@ -815,12 +824,10 @@ class ExperimentHub {
                 return transitioned('Released verified capacity: '+complete.project_id+
                     ' / '+(complete.configuration_name||complete.id.slice(-8))+'.');
             }
-            const retiredParents=new Set(snapshot.jobs.filter(j=>
-                j.project_id==='ants').map(j=>j.id));
             const pending=snapshot.jobs.filter(j=>
                 j.adapter==='unconfigured'&&j.status==='waiting_adapter'&&
                 !['bees','ants'].includes(j.project_id)&&
-                !retiredParents.has(j.after_job_id));
+                !predecessorBlock(snapshot,j));
             // Claims and starts can become eligible at different times,
             // so fairness needs an independent cursor for each operation.
             const pendingStarts=fairPending(pending,session.last_started_project_id);
@@ -1159,12 +1166,10 @@ class ExperimentHub {
             requested.some(id=>typeof id!=='string')))
             throw Error('Select 1–100 distinct pending job IDs.');
         const next=copy(this.state);
-        const retiredParents=new Set(next.jobs.filter(j=>j.project_id==='ants')
-            .map(j=>j.id));
         const candidates=next.jobs.filter(j=>
             (allProjects||j.project_id===project.id) &&
-            j.project_id!=='ants'&&!retiredParents.has(j.after_job_id)&&
-            j.adapter==='unconfigured'&&j.status==='waiting_adapter'&&
+            j.project_id!=='ants'&&j.adapter==='unconfigured'&&
+            j.status==='waiting_adapter'&&!predecessorBlock(next,j)&&
             (requested===undefined || requested.includes(j.id)));
         // Fair interleaving across project queues, preserving FIFO within
         // each project. This is only a claim planner, not job execution.
@@ -2277,11 +2282,9 @@ class ExperimentHub {
         return copy(job);
     }
     plannedJobs() {
-        const retiredParents=new Set(this.state.jobs.filter(j=>
-            j.project_id==='ants').map(j=>j.id));
         const jobs=this.state.jobs.filter(j=>
             j.status==='waiting_adapter'&&j.project_id!=='ants'&&
-            !retiredParents.has(j.after_job_id));
+            !predecessorBlock(this.state,j));
         const snapshot=this.snapshot();
         // Rehearse the same per-project FIFO interleave and best-fit
         // decisions as allocateJobs, but do not mint leases or mutate state.
