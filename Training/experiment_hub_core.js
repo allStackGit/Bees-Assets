@@ -185,6 +185,8 @@ function gpuStartBlock(job,lease,machine) {
         return 'Native GPU Start requires one exclusively leased GPU.';
     if(machine.agent_platform!=='linux'||!machine.gpu_projects?.includes(job.project_id))
         return 'The Linux host and local adapter have not opted into native GPU execution.';
+    if(!(machine.observed_gpus?.length>=2))
+        return 'Native GPU Start requires a second observed GPU to verify access denial.';
     if(job.gpu_qualification?.current!==true)
         return 'A current device access probe for this exact GPU lease is required.';
     return null;
@@ -345,7 +347,8 @@ function allocationChoice(machines,reservations,job,preferredMachineId=null,
                 machine.execution_capabilities?.cgroup_v2_detected===true&&
                 ['cpu','memory'].every(controller=>
                     machine.execution_capabilities.cgroup_controllers.includes(controller)))&&
-            (cpuOnly||machine.gpu_projects?.includes(selected.project_id))
+            (cpuOnly||machine.gpu_projects?.includes(selected.project_id)&&
+                machine.observed_gpus?.length>=2)
         ).map(machine=>machine.id));
         const runnable=fits.filter(p=>ready.has(p.machine_id));
         if(runnable.length)return runnable;
@@ -1151,6 +1154,8 @@ class ExperimentHub {
                 gpu_devices:machine.observed_gpus,
             },lease.resources,lease.gpu_bindings)?.length!==1)
             throw Error('GPU access probe needs a fresh exclusive single-GPU lease on a qualified Linux agent.');
+        if(!(machine.observed_gpus?.length>=2))
+            throw Error('GPU access probe requires a second observed GPU to verify access denial.');
         const session=this.automation;
         if(origin==='automation'&&(!session.probe_exclusive_gpu||
             !session.claimed_lease_ids.includes(lease.id)||
