@@ -4,7 +4,7 @@
 //! fixed-step event/reward/retirement path, never in command callbacks.
 
 use super::*;
-use bees_sim::combat_world::{CombatEvent, GamePointOrder};
+use bees_sim::combat_world::{CombatEvent, GamePointOrder, WARP_GATE_TYPE};
 use std::collections::HashSet;
 
 const WAIT_FOR_WARP_SECONDS: f32 = 2.0;
@@ -49,7 +49,7 @@ impl FullRetreatRun {
                 return Err(GameCommandError::InvalidSquad);
             }
             side = Some(ship.side);
-            if ship.ship_type == 20 { continue; }
+            if ship.ship_type == WARP_GATE_TYPE { continue; }
             if member.mobile {
                 world.validate_ship_game_order(member.ship_id)?;
             }
@@ -127,7 +127,7 @@ impl FullRetreatRun {
         let offset = (next_unit(random) * 6.0).floor().min(5.0);
         let destination = position + Vec2::new(offset, offset);
         for member in &self.members {
-            if !self.participants.contains(&member.ship_id) ||
+            if world.game_warp_participant_gate(member.ship_id) != Some(self.gate_id) ||
                 !member.mobile || !world.ship(member.ship_id)
                     .is_some_and(|ship| !ship.vitals.is_dead()) {
                 continue;
