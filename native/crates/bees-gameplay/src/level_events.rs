@@ -205,6 +205,12 @@ impl NativeLevelEventProcessor {
         self.last_finalized.is_some()
     }
 
+    /// Deliberately canceled or failed Level whose incomplete trajectory
+    /// has been marked for discard. Its combat state is never stepped again.
+    pub fn was_aborted(&self) -> bool {
+        self.failed_commands_drained
+    }
+
     /// Even if all squads have died, a started failed episode must be
     /// explicitly aborted so the learner observes EpisodeAborted. The
     /// unstarted, empty world may be replaced without a fake episode.

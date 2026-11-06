@@ -26,6 +26,8 @@ use crate::squads::SquadRosterError;
 pub struct NativeBatchedStepCounts {
     pub worlds_stepped: usize,
     pub worlds_complete_or_failed: usize,
+    /// Subset of skipped worlds with explicit EpisodeAborted delivery.
+    pub worlds_aborted: usize,
     pub policy_agents_inferred: usize,
     /// Live worlds advanced without invoking a pointless observation
     /// builder because no policy controller is due on this physics tick.
@@ -116,8 +118,11 @@ where
         }
         let world = simulation.world(index)
             .ok_or(NativeBatchedStepError::MissingWorld { index })?;
-        if world.is_failed() || world.state.events.completed() {
+        if world.is_failed() || world.state.events.completed() ||
+            world.state.events.was_aborted() {
             counts.worlds_complete_or_failed += 1;
+            counts.worlds_aborted +=
+                usize::from(world.state.events.was_aborted());
             continue;
         }
         if world.state.events.is_failed() {
@@ -190,7 +195,8 @@ where
     for index in 0..simulation.world_count() {
         let world = simulation.world(index)
             .ok_or(NativeBatchedStepError::MissingWorld { index })?;
-        if world.is_failed() || world.state.events.completed() {
+        if world.is_failed() || world.state.events.completed() ||
+            world.state.events.was_aborted() {
             continue;
         }
         batch.decisions_for_world(world, decisions)
