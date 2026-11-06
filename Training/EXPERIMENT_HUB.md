@@ -634,7 +634,12 @@ manual probe or move. Withdrawal does not requeue an automatic probe for
 the same lease. The first offer is durable and blocks withdrawal even
 if the reply was lost. Older pending requests lack that delivery
 evidence and require operator review. A rejected or stale proof also
-requires operator review. The normal native Start gates still apply, including
+requires operator review. The Hub retains the claim after an offer until
+the worker reports the result. If a rejection leaves cleanup unconfirmed,
+inspect the worker and retry the probe on the same lease. A valid proof
+or a rejection that confirms cleanup clears the hold. Deploy the coordinator
+before the workers so it can retain claims for older rejection receipts
+that omit cleanup evidence. The normal native Start gates still apply, including
 the current proof for the exact lease and agent instance and the
 in-service device and runtime checks. Verified jobs started by the
 session use its existing completion release path.
