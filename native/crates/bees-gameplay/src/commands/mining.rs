@@ -143,7 +143,7 @@ impl MiningRun {
                     self.target_id, &self.currently_mining,
                 )?;
                 self.mined_tsv = self.mined_tsv.checked_add(i64::from(amount))
-                    .ok_or(GameCommandError::InvalidMiningAccounting)?;
+                    .ok_or(GameCommandError::InvalidCapabilityAccounting)?;
                 timer.finish_update(due);
                 if world.mining_asteroid_position(self.target_id).is_none() {
                     return Ok((Some(CommandFinishCause::MiningAsteroidDestroyed), 0));
