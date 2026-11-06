@@ -217,7 +217,10 @@ The replacement requires a fresh agent receipt and any GPU access proof must
 be rerun against the new lease. The source stays claimed if the destination
 cannot fit the job or the claim changed before confirmation. A dispatched
 job, pinned continuation or claim with an in-flight GPU access probe cannot
-be moved to another host.
+be moved to another host. Stage several moves in Train to exchange capacity
+between full hosts. `POST /api/hub/jobs/move-claims` accepts up to 100 distinct
+`{job_id, expected_lease_id, machine_id}` entries in `moves` with
+`confirm_move:true`. A stale or infeasible move leaves the entire batch unchanged.
 
 A currently connected machine can be allocated to a pending job using
 `{project_id,job_ids:[...],machine_id,confirm_allocate:true}` (one job

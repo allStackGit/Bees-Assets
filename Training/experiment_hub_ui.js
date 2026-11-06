@@ -200,6 +200,8 @@ document.addEventListener('DOMContentLoaded', () => {
     let pipelineStageKind = null;
     let envArgsTouched = false;
     let lastGpuBindingMachine = null, budgetDraft = null;
+    const stagedMoves=new Map();
+    let applyingMoves=false;
     const action = async (route, payload) => {
         const r = await fetch('/api/'+route,{
             method:'POST',
@@ -221,6 +223,23 @@ document.addEventListener('DOMContentLoaded', () => {
         const b=document.createElement('button');
         b.type='button';b.textContent=label;b.addEventListener('click',onClick);
         return b;
+    }
+    function selectedMoveDestination(job) {
+        const destination=state.machines.find(m=>m.id===$('hub-job-machine').value);
+        if(destination&&destination.id!==job.assigned_machine_id)return destination;
+        feedback('hub-job-allocate-message','Choose a different preferred machine above.');
+        return null;
+    }
+    function renderStagedMoves() {
+        const list=$('hub-claim-moves');
+        list.replaceChildren();
+        for(const [id,move] of stagedMoves) {
+            const row=document.createElement('li');
+            row.append(document.createTextNode(move.label+' '),
+                button('Remove',()=>{stagedMoves.delete(id);renderStagedMoves();}));
+            list.append(row);
+        }
+        $('hub-apply-claim-moves').disabled=applyingMoves||!stagedMoves.size;
     }
     // The visual pipeline editor only selects saved configurations. It
     // cannot supply executable paths or authorize a native process.
@@ -1168,13 +1187,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     }catch(e){feedback('hub-job-message',e.message);}
                 }));
             if(j.status==='waiting_adapter'&&j.lease_id&&!j.dispatch_id&&
-                !j.continuation_machine_id&&proof?.status!=='requested')
+                !j.continuation_machine_id&&proof?.status!=='requested') {
                 actions.append(button('Move claim',async()=>{
-                    const destination=state.machines.find(m=>m.id===$('hub-job-machine').value);
-                    if(!destination||destination.id===j.assigned_machine_id) {
-                        feedback('hub-job-allocate-message','Choose a different preferred machine above.');
-                        return;
-                    }
+                    const destination=selectedMoveDestination(j);
+                    if(!destination)return;
                     if(!confirm('Move the queued claim for '+j.configuration_name+' to '+
                         destination.name+'? The new worker must acknowledge the claim. '+
                         'An armed scheduler can then start an eligible CPU job.'))return;
@@ -1189,6 +1205,15 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                     await reload();
                 }));
+                actions.append(button('Stage move',()=>{
+                    const destination=selectedMoveDestination(j);
+                    if(!destination)return;
+                    stagedMoves.set(j.id,{job_id:j.id,expected_lease_id:j.lease_id,
+                        machine_id:destination.id,label:j.project_id+' / '+j.configuration_name+
+                            ' · '+j.assigned_machine_id+' → '+destination.id});
+                    renderStagedMoves();
+                }));
+            }
             if(j.status==='waiting_adapter'&&j.lease_id&&!j.dispatch_id)
                 actions.append(button('Release claim',async()=>{
                     if(!confirm('Release this advisory budget claim? No process is stopped.'))return;
@@ -1758,6 +1783,29 @@ document.addEventListener('DOMContentLoaded', () => {
             await action('hub/automation',{enabled:false,confirm_disarm:true});
             await reload();
         }catch(error){feedback('hub-automation-status',error.message);}
+    });
+    $('hub-apply-claim-moves').addEventListener('click',async()=>{
+        const moves=[...stagedMoves.values()];
+        if(applyingMoves||!moves.length||!confirm('Apply these '+moves.length+' queued claim moves together?\n'+
+            moves.map(move=>move.label).join('\n')+
+            '\nNew claims need fresh worker receipts. An armed scheduler can then start eligible CPU jobs.'))return;
+        applyingMoves=true;
+        renderStagedMoves();
+        try {
+            const result=await action('hub/jobs/move-claims',{
+                moves:moves.map(({job_id,expected_lease_id,machine_id})=>
+                    ({job_id,expected_lease_id,machine_id})),confirm_move:true,
+            });
+            for(const move of moves)
+                if(stagedMoves.get(move.job_id)===move)stagedMoves.delete(move.job_id);
+            feedback('hub-job-allocate-message','Moved '+result.moves.length+' claims together. Awaiting fresh worker receipts.');
+        }catch(error){
+            feedback('hub-job-allocate-message',error.message);
+        }finally{
+            applyingMoves=false;
+            renderStagedMoves();
+            await reload();
+        }
     });
     $('hub-global-allocate').addEventListener('click',async()=>{
         const projects=new Set((state.jobs||[]).filter(j=>

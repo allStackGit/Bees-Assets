@@ -744,10 +744,10 @@ class ExperimentHub {
     // isolation or an authorization to execute a workload.
     // Build an offer in a caller-owned registry copy. A batch of job claims
     // can then be durably committed together or not at all.
-    offerIn(next, projectId, machineId, wanted, jobId = null) {
+    offerIn(next, projectId, machineId, wanted, jobId = null,
+        machine=this.snapshot().machines.find(m=>m.id===machineId)) {
         const project=this.project(projectId);
-        const machine=this.snapshot().machines.find(m=>m.id===machineId);
-        if(!machine || machine.status!=='connected')
+        if(!machine || machine.id!==machineId || machine.status!=='connected')
             throw Error('Machine must have a currently authenticated agent.');
         const place=resourcePlacements([machine],next.reservations,wanted)[0];
         if(!place.online || !place.capacity_fits)
@@ -935,9 +935,9 @@ class ExperimentHub {
         return {results,executable:false,
             note:'Coordination only: no process started or hardware limits enforced.'};
     }
-    claimJobIn(next,job,machineId) {
+    claimJobIn(next,job,machineId,machine) {
         const lease=this.offerIn(next,job.project_id,machineId,
-            resourceRequest(job.resources),job.id);
+            resourceRequest(job.resources),job.id,machine);
         job.lease_id=lease.id;
         job.assigned_machine_id=lease.machine_id;
         job.assigned_at=now();
@@ -945,34 +945,59 @@ class ExperimentHub {
         return lease;
     }
     moveJobClaim(value) {
-        if(!object(value)||value.confirm_move!==true||
-            !UUID.test(String(value.job_id||''))||
-            !UUID.test(String(value.expected_lease_id||''))||
-            !ID.test(String(value.machine_id||'')))
-            throw Error('Select a queued claim and explicitly confirm the destination machine.');
+        const result=this.moveJobClaims({moves:[value],confirm_move:value?.confirm_move});
+        return result.moves[0];
+    }
+    moveJobClaims(value) {
+        const moves=value?.moves;
+        if(!object(value)||value.confirm_move!==true||!Array.isArray(moves)||
+            moves.length<1||moves.length>100||moves.some(move=>!object(move)||
+                !UUID.test(String(move.job_id||''))||
+                !UUID.test(String(move.expected_lease_id||''))||
+                !ID.test(String(move.machine_id||'')))||
+            new Set(moves.map(move=>move.job_id)).size!==moves.length)
+            throw Error('Select distinct queued claims and explicitly confirm their destinations.');
         const next=copy(this.state);
-        const job=next.jobs.find(j=>j.id===value.job_id);
-        if(!job||job.adapter!=='unconfigured'||job.status!=='waiting_adapter'||job.dispatch_id)
-            throw Error('Only an unstarted non-Bees job claim can move.');
-        if(job.lease_id!==value.expected_lease_id)
-            throw Error('The job claim changed. Refresh Train before moving it.');
-        const source=next.reservations.find(l=>l.id===job.lease_id&&l.job_id===job.id&&
-            l.project_id===job.project_id&&l.machine_id===job.assigned_machine_id);
-        if(!source||source.machine_id===value.machine_id)
-            throw Error('Select a different destination for the current job claim.');
-        if(job.continuation_machine_id&&job.continuation_machine_id!==value.machine_id)
-            throw Error('Checkpoint continuation must stay on the original machine.');
-        if(job.gpu_qualification?.status==='requested')
-            throw Error('Wait for the in-flight GPU device probe to finish before moving its claim.');
-        const machine=this.snapshot().machines.find(m=>m.id===value.machine_id);
-        if(machine?.status!=='connected'||!machine.installed_projects?.includes(job.project_id)||
-            !supportsEvaluation(machine.evaluation_suites,job))
-            throw Error('Destination requires a connected adapter for the project and its evaluation suite.');
-        this.releaseIn(next,source);
-        const replacement=this.claimJobIn(next,job,machine.id);
+        const machines=new Map(this.snapshot().machines.map(machine=>[machine.id,machine]));
+        const transfers=moves.map(move=>{
+            const job=next.jobs.find(j=>j.id===move.job_id);
+            if(!job||job.adapter!=='unconfigured'||job.status!=='waiting_adapter'||job.dispatch_id)
+                throw Error('Only an unstarted non-Bees job claim can move.');
+            if(job.lease_id!==move.expected_lease_id)
+                throw Error('A job claim changed. Refresh Train before moving it.');
+            const source=next.reservations.find(l=>l.id===job.lease_id&&l.job_id===job.id&&
+                l.project_id===job.project_id&&l.machine_id===job.assigned_machine_id);
+            if(!source||source.machine_id===move.machine_id)
+                throw Error('Select a different destination for the current job claim.');
+            if(job.continuation_machine_id&&job.continuation_machine_id!==move.machine_id)
+                throw Error('Checkpoint continuation must stay on the original machine.');
+            if(job.gpu_qualification?.status==='requested')
+                throw Error('Wait for the in-flight GPU device probe to finish before moving its claim.');
+            const machine=machines.get(move.machine_id);
+            if(machine?.status!=='connected'||!machine.installed_projects?.includes(job.project_id)||
+                !supportsEvaluation(machine.evaluation_suites,job))
+                throw Error('Destination requires a connected adapter for the project and its evaluation suite.');
+            return {job,source,machine};
+        });
+        // Release all sources only in the draft ledger so full hosts can swap.
+        for(const {source} of transfers)this.releaseIn(next,source);
+        // Reserve exact device requests before flexible ones at each destination.
+        const ordered=transfers.slice().sort((a,b)=>
+            Number(Boolean(b.job.resources.gpus?.length))-Number(Boolean(a.job.resources.gpus?.length))||
+            (b.job.resources.min_gpu_vram_mb||0)-(a.job.resources.min_gpu_vram_mb||0)||
+            (b.job.resources.gpu_count||0)-(a.job.resources.gpu_count||0));
+        const replacements=new Map();
+        for(const {job,machine} of ordered) {
+            try{replacements.set(job.id,this.claimJobIn(next,job,machine.id,machine));}
+            catch(error){
+                throw Error('Cannot move '+job.configuration_name+' to '+machine.id+': '+error.message);
+            }
+        }
         this.commit(next);
-        return {job_id:job.id,machine_id:machine.id,
-            released_lease_id:source.id,lease_id:replacement.id};
+        return {moves:transfers.map(({job,source,machine})=>({
+            job_id:job.id,machine_id:machine.id,
+            released_lease_id:source.id,lease_id:replacements.get(job.id).id,
+        }))};
     }
     // Explicitly request an inert GPU device-filter proof, not a launch.
     requestGpuQualification(value) {
