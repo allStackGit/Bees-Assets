@@ -96,6 +96,7 @@ class LocalExecution {
                     job_id:job.id,lease_id:lease.id,
                     dispatch_id:order.dispatch_id,
                     result:'rejected',selected_pci_addresses:[],
+                    cleanup_verified:this.supervisor.gpuProbeCleanupPending?.()===false,
                     diagnostic:String(error.message||error).slice(0,160)};
             }
         }

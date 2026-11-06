@@ -306,11 +306,15 @@ class LinuxSupervisor {
 
     // This is an on-demand, inert device-cgroup qualification API.
     // This request verifies device access without starting a workload.
+    gpuProbeCleanupPending() {
+        return this.gpuPreflightCleanupUnconfirmed===true||
+            this.fs.existsSync(this.gpuProbePending);
+    }
+
     async qualifyGpuDeviceAccess(bindings) {
         if(!this.qualifiedAt)
             throw Error('CPU/RAM preflight must pass before GPU device checks.');
-        if(this.gpuPreflightCleanupUnconfirmed===true||
-            this.fs.existsSync(this.gpuProbePending))
+        if(this.gpuProbeCleanupPending())
             throw Error('Previous GPU access probe cleanup unconfirmed; inspect the recorded local service before retry.');
         const plan=resolveRocmDevices(bindings,{fsApi:this.fs});
         // A proof of denial requires a second GPU render node that the same

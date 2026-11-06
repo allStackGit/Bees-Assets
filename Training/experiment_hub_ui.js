@@ -1081,8 +1081,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     (j.capacity_released_at?' · Capacity released':'')+
                     (machine?.status==='offline'?' · Agent offline':'');
             const proof=j.gpu_qualification;
+            const probeHoldsClaim=proof?.lease_id===j.lease_id&&Boolean(
+                proof?.cleanup_required||proof?.status==='requested'&&proof.first_offered_at!==null);
             const gpuProof=proof
-                ?proof.status==='requested'
+                ?proof.cleanup_required?' · GPU probe cleanup needs verification'
+                :proof.status==='requested'
                     ?proof.automation_paused?' · Automatic GPU access probe suspended'
                         :' · GPU access probe requested (no training)'
                     :proof.status==='verified'
@@ -1257,7 +1260,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     renderStagedMoves();
                 }));
             }
-            if(j.status==='waiting_adapter'&&j.lease_id&&!j.dispatch_id)
+            if(j.status==='waiting_adapter'&&j.lease_id&&!j.dispatch_id&&!probeHoldsClaim)
                 actions.append(button('Release claim',async()=>{
                     if(!confirm('Release this advisory budget claim? No process is stopped.'))return;
                     try{

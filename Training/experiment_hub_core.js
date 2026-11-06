@@ -916,8 +916,13 @@ class ExperimentHub {
                 throw Error('Cannot release an unknown, active, or unverified managed job.');
             if(job.status==='waiting_adapter') {
                 if(job.dispatch_id)throw Error('Cannot release a claim after native dispatch.');
-                if(job.gpu_qualification?.lease_id===lease.id)
-                    lease.gpu_qualification_request_id=job.gpu_qualification.request_id;
+                const proof=job.gpu_qualification;
+                if(proof?.lease_id===lease.id) {
+                    if(proof.cleanup_required||
+                        (proof.status==='requested'&&proof.first_offered_at!==null))
+                        throw Error('Wait for the offered GPU probe and verified cleanup before releasing its claim.');
+                    lease.gpu_qualification_request_id=proof.request_id;
+                }
                 if(job.gpu_qualification?.status==='requested') {
                     job.gpu_qualification.status='cancelled';
                     job.gpu_qualification.diagnostic=
@@ -1156,6 +1161,8 @@ class ExperimentHub {
             request_id:crypto.randomUUID(),lease_id:lease.id,
             machine_id:machine.id,status:'requested',
             requested_at:now(),first_offered_at:null,
+            ...(job.gpu_qualification?.lease_id===lease.id&&job.gpu_qualification.cleanup_required
+                ?{cleanup_required:true}:{}),
             ...(origin==='automation'?{automation_session_id:session.session_id}:{}),
         };
         this.commit(next);
@@ -1190,6 +1197,8 @@ class ExperimentHub {
                 !UUID.test(String(report.lease_id||''))||
                 !UUID.test(String(report.dispatch_id||''))||
                 !['verified','rejected'].includes(report.result)||
+                (report.cleanup_verified!==undefined&&typeof report.cleanup_verified!=='boolean')||
+                (report.result==='verified'&&report.cleanup_verified===false)||
                 seen.has(report.job_id)||
                 !Array.isArray(report.selected_pci_addresses)||
                 report.selected_pci_addresses.length>1||
@@ -1234,6 +1243,7 @@ class ExperimentHub {
             if(report.result==='verified'&&!verified)
                 throw Error('GPU proof does not match the frozen physical PCI allocation.');
             request.status=report.result;
+            request.cleanup_required=!verified&&report.cleanup_verified!==true;
             request.diagnostic=report.diagnostic||null;
             request.observed_at=now();
             request.agent_instance_id=instanceId;
