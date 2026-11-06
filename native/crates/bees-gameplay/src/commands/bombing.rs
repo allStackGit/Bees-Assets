@@ -135,86 +135,93 @@ pub fn assign_initial_bombing_run_targets(
     Ok(assigned.is_some())
 }
 
-/// Non-carrier BombingRun.Timer. Fire Barge's special is command-triggered
-/// when its ORIGINAL selected ship appears in the authored proximity cache.
-/// Yellow Jacket instead detonates on exact physical hull contact at the
-/// Level's combat-event boundary, never on proximity alone.
-///
-/// Called on the owning command's timer, after targets were assigned.
-/// Striker additionally requires the separate carrier-return state machine;
-/// this method does not masquerade as its replacement.
-/// Actual bomb death/explosion is queued for the next fixed combat step,
-/// preserving the Level's one-pass episode and squad lifecycle boundary.
-///
-/// Returns the count of newly queued, source-authorized detonations.
-pub fn advance_noncarrier_bombing_run(
-    world: &mut CombatWorld,
-    members: &[SquadFormationMember],
-    formation: SquadFormationOptions,
-    command_outcome_id: i64,
-    mut target_in_proximity: impl FnMut(i64, i64)
-        -> Result<bool, GameCommandError>,
-) -> Result<u64, GameCommandError> {
-    // Only accepted HiveMind commands may auto-detonate Fire Barges.
-    // The server protocol requires positive command OutcomeIds.
-    if command_outcome_id <= 0 || !formation.valid() {
-        return Err(GameCommandError::InvalidSettings);
-    }
-    // Fail closed before issuing any partial orders if the caller passes
-    // a bomber composition needing Striker's carrier-return/delivery path.
-    for member in members {
-        let ship = world.ship(member.ship_id)
-            .ok_or(GameCommandError::InvalidSquad)?;
-        if !ship.vitals.is_dead() && !matches!(ship.ship_type, 10 | 22) {
-            return Err(GameCommandError::MissingCombatSnapshot);
-        }
-    }
-    let mut queued = 0;
-    for &member in members {
-        let Some(ship) = world.ship(member.ship_id) else {
-            return Err(GameCommandError::InvalidSquad);
-        };
-        // The source executes each live squad member in GetShips order.
-        if ship.vitals.is_dead() {
-            continue;
-        }
-        let is_fire_barge = ship.ship_type == 10;
-        let Some(target_id) = world.game_bomb_current_target(member.ship_id)
-        else { continue; };
-        let Some(target) = world.ship(target_id) else { continue; };
-        if target.vitals.is_dead() || target.side == ship.side {
-            continue;
-        }
-        let destination = world.ship_body(target_id)
-            .ok_or(GameCommandError::InvalidCombatSnapshot)?
-            .motion.position;
-        world.validate_ship_game_order(member.ship_id)?;
-        world.move_ship_to_tracked_point(member.ship_id, GamePointOrder {
-            destination,
-            ship_clearance: member.clearance,
-            map_bounds: formation.map_bounds,
-            has_obstacles: formation.has_obstacles,
-            can_override_bounds: formation.can_override_bounds,
-            newly_found_obstacle: false,
-        })?;
-        // Only Fire Barges auto-detonate from the command timer.
-        // Yellow Jacket waits for its own real OnTriggerEnter2D contact.
-        let near = target_in_proximity(member.ship_id, target_id)?;
-        if is_fire_barge && near && !world.frozen_after_elimination {
-            // The caller has already checked the real Level's cached
-            // trigger membership. Do not replace that with radial math.
-            queued += u64::from(world.queue_game_fire_barge_detonation(
-                member.ship_id, command_outcome_id,
-            )?);
-        }
-    }
-    Ok(queued)
+/// Source GetSquad().GetShips order is retained throughout the run.
+/// The Level owns command state, while actual weapon leases, reload
+/// readiness, hulls, and movement remain in the single combat world.
+#[derive(Clone, Copy, Debug)]
+struct StrikerRunState {
+    ship_id: i64,
+    completed: bool,
+    returned: bool,
 }
 
+fn send_bomber_to_selected_target(
+    world: &mut CombatWorld,
+    member: SquadFormationMember,
+    formation: SquadFormationOptions,
+) -> Result<Option<i64>, GameCommandError> {
+    let Some(target_id) = world.game_bomb_current_target(member.ship_id)
+    else { return Ok(None) };
+    let Some(ship) = world.ship(member.ship_id) else {
+        return Err(GameCommandError::InvalidSquad);
+    };
+    let Some(target) = world.ship(target_id) else {
+        return Ok(None);
+    };
+    if target.vitals.is_dead() || target.side == ship.side {
+        return Ok(None);
+    }
+    let destination = world.ship_body(target_id)
+        .ok_or(GameCommandError::InvalidCombatSnapshot)?
+        .motion.position;
+    world.move_ship_to_tracked_point(member.ship_id, GamePointOrder {
+        destination, ship_clearance: member.clearance,
+        map_bounds: formation.map_bounds,
+        has_obstacles: formation.has_obstacles,
+        can_override_bounds: formation.can_override_bounds,
+        newly_found_obstacle: false,
+    })?;
+    Ok(Some(target_id))
+}
 
-/// Timed non-carrier BombingRun for Fire Barges, Yellow Jackets or a
-/// mixture of those types. Striker still requires independent carrier
-/// return and reload handling. No separate projectile or damage model.
+/// Unity Striker.ReturnToCarrierIfNecessary: the source returns to the
+/// carrier's current location plus its authored formation offset. Arrival
+/// may rearm immediately; the independent 1s reload timer also continues.
+fn return_game_striker(
+    world: &mut CombatWorld,
+    member: SquadFormationMember,
+    formation: SquadFormationOptions,
+) -> Result<bool, GameCommandError> {
+    let carrier = world.game_striker_carrier(member.ship_id)
+        .ok_or(GameCommandError::MissingCombatSnapshot)?;
+    let Some(carrier_id) = carrier.carrier_id else { return Ok(false) };
+    let Some(ship) = world.ship(carrier_id) else { return Ok(false) };
+    if ship.vitals.is_dead() { return Ok(false) }
+    let Some(body) = world.ship_body(carrier_id) else { return Ok(false) };
+    if !body.active { return Ok(false) }
+    let destination = body.motion.position + carrier.offset_from_center;
+    if world.rearm_game_striker_near_carrier(member.ship_id)? {
+        return Ok(true);
+    }
+    world.move_ship_to_tracked_point(member.ship_id, GamePointOrder {
+        destination, ship_clearance: member.clearance,
+        map_bounds: formation.map_bounds,
+        has_obstacles: formation.has_obstacles,
+        can_override_bounds: formation.can_override_bounds,
+        newly_found_obstacle: false,
+    })?;
+    Ok(false)
+}
+
+/// Return guard from BombingRun.HaveAllShipsFinished: a Striker with a
+/// living carrier must complete its actual return, while a Striker whose
+/// carrier died does not block command finalization indefinitely.
+fn has_living_game_striker_carrier(
+    world: &CombatWorld, striker_id: i64,
+) -> bool {
+    world.game_striker_carrier(striker_id)
+        .and_then(|c| c.carrier_id)
+        .and_then(|id| world.ship(id).map(|ship| (id, ship)))
+        .is_some_and(|(id, ship)|
+            !ship.vitals.is_dead() &&
+            world.ship_body(id).is_some_and(|body| body.active)
+        )
+}
+
+/// Unity's one BombingRun command state for mixed authored bombers.
+/// Striker's ship-owned bomb readiness is separate from the command's
+/// per-run completed/returned flags. Physical damage and fuses stay in
+/// CombatWorld; this controller does not duplicate combat mechanics.
 pub struct NativeBombingRun {
     target: NativeAttackTarget,
     members: Vec<SquadFormationMember>,
@@ -222,6 +229,8 @@ pub struct NativeBombingRun {
     fast_poll: bool,
     timer_loops: u64,
     has_contact_bombers: bool,
+    only_strikers: bool,
+    strikers: Vec<StrikerRunState>,
 }
 
 impl NativeBombingRun {
@@ -238,19 +247,28 @@ impl NativeBombingRun {
         weapons: &[NativeBombWeapon],
         enemies: &[NativeEnemyTargetStats],
     ) -> Result<Option<Self>, GameCommandError> {
-        // Striker's reload/return path is not yet ported; do not report
-        // a mixed squad containing one as a successfully activated run.
         let mut has_contact_bombers = false;
+        let mut only_strikers = true;
+        let mut strikers = Vec::new();
         if weapons.len() != squad.members.len() {
             return Err(GameCommandError::InvalidSquad);
         }
         for (member, weapon) in squad.members.iter().zip(weapons) {
             let ship = world.ship(member.ship_id)
                 .ok_or(GameCommandError::InvalidSquad)?;
-            if !matches!(ship.ship_type, 10 | 22) {
+            if !matches!(ship.ship_type, 10 | 19 | 22) {
                 return Err(GameCommandError::MissingCombatSnapshot);
             }
-            has_contact_bombers |= ship.ship_type == 22;
+            only_strikers &= ship.ship_type == 19;
+            has_contact_bombers |= matches!(ship.ship_type, 19 | 22);
+            if ship.ship_type == 19 {
+                if world.game_striker_bomb_ready(member.ship_id).is_none() {
+                    return Err(GameCommandError::MissingCombatSnapshot);
+                }
+                strikers.push(StrikerRunState {
+                    ship_id: member.ship_id, completed: false, returned: false,
+                });
+            }
             if weapon.ship_id != member.ship_id ||
                 (ship.ship_type == 10 &&
                     world.configured_fire_barge_bomb_power(member.ship_id) !=
@@ -259,6 +277,7 @@ impl NativeBombingRun {
                 return Err(GameCommandError::MissingCombatSnapshot);
             }
         }
+        strikers.sort_unstable_by_key(|s| s.ship_id);
         let mut target = NativeAttackTarget::new(enemy_owner.squad_id);
         target.validate(squad.owner, enemy_owner)?;
         if !assign_initial_bombing_run_targets(
@@ -274,6 +293,8 @@ impl NativeBombingRun {
             fast_poll: false,
             timer_loops: 0,
             has_contact_bombers,
+            only_strikers,
+            strikers,
         }))
     }
 
@@ -283,6 +304,40 @@ impl NativeBombingRun {
 
     pub fn needs_contact_events(&self) -> bool {
         self.has_contact_bombers
+    }
+
+    /// Striker.DropBomb calls CompleteRun synchronously after creating the
+    /// real fuse. Mark only that original command's owned ship, after the
+    /// combat world has confirmed delivery and transferred the Bomb lease.
+    pub fn record_striker_drop(&mut self, ship_id: i64) -> bool {
+        let Ok(index) = self.strikers.binary_search_by_key(
+            &ship_id, |state| state.ship_id,
+        ) else { return false };
+        let state = &mut self.strikers[index];
+        if state.completed { return false }
+        state.completed = true;
+        state.returned = false;
+        true
+    }
+
+    fn all_live_ships_finished(&self, world: &CombatWorld) -> bool {
+        self.members.iter().all(|member| {
+            let Some(ship) = world.ship(member.ship_id) else { return true };
+            if ship.vitals.is_dead() { return true }
+            match ship.ship_type {
+                10 | 22 => false,
+                19 => self.strikers.binary_search_by_key(
+                    &member.ship_id, |state| state.ship_id,
+                ).ok().is_some_and(|index| {
+                    let state = &self.strikers[index];
+                    state.completed && (state.returned ||
+                        !has_living_game_striker_carrier(
+                            world, member.ship_id,
+                        ))
+                }),
+                _ => false,
+            }
+        })
     }
 
     /// Unity BombingRun.Timer for Fire Barge / Yellow Jacket squads.
@@ -303,54 +358,107 @@ impl NativeBombingRun {
         mut target_in_proximity: impl FnMut(i64, i64)
             -> Result<bool, GameCommandError>,
     ) -> Result<Option<CommandFinishCause>, GameCommandError> {
-        // A recycled enemy squad number cannot make an unrelated
-        // dead squad appear to finish the original BombingRun.
+        // A recycled enemy squad number cannot complete an unrelated run.
         self.target.validate(owner, enemy_owner)?;
-        if !enemy_alive {
+        if !enemy_alive && !self.only_strikers {
             return Ok(Some(CommandFinishCause::BombingRunCompleted));
         }
         self.timer_loops = self.timer_loops.saturating_add(1);
-        let mut tested = 0_usize;
+        if !enemy_alive {
+            for state in &mut self.strikers {
+                state.completed = true;
+            }
+        }
         let mut any_near = false;
-        advance_noncarrier_bombing_run(
-            world, &self.members, self.formation,
-            command_outcome_id,
-            |ship_id, target_id| {
-                let near = target_in_proximity(ship_id, target_id)?;
-                tested += 1;
-                any_near |= near;
-                Ok(near)
-            },
-        )?;
-        // Unity AreBombersCloseToEnemyTargets returns true only if at
-        // least one bomber is near AND every live bomber is near. Without
-        // a live selected target the corresponding entry fails that check.
-        // The usual case is no proximity yet. Skip a second pass over
-        // the live squad unless at least one bomber actually found its
-        // selected target. Queued detonations do not retire ships until
-        // the next fixed step, so the count is identical here.
-        let all_near = any_near && tested == self.members.iter().filter(|member|
-            world.ship(member.ship_id).is_some_and(|ship|
-                !ship.vitals.is_dead()
-            ),
-        ).count();
-        if !self.fast_poll && all_near {
+        let mut all_near = true;
+        // Match Unity's GetShips order, including mixed bomber squads.
+        // A finished Striker is excluded from subsequent pursuit orders.
+        for &member in &self.members {
+            let ship = world.ship(member.ship_id)
+                .ok_or(GameCommandError::InvalidSquad)?;
+            if ship.vitals.is_dead() { continue; }
+            match ship.ship_type {
+                19 => {
+                    let index = self.strikers.binary_search_by_key(
+                        &member.ship_id, |state| state.ship_id,
+                    ).map_err(|_| GameCommandError::MissingCombatSnapshot)?;
+                    if self.strikers[index].returned { continue; }
+                    let completed = self.strikers[index].completed;
+                    let ready = world.game_striker_bomb_ready(member.ship_id)
+                        .ok_or(GameCommandError::MissingCombatSnapshot)?;
+                    if completed || !ready {
+                        let arrived = return_game_striker(
+                            world, member, self.formation,
+                        )?;
+                        if arrived {
+                            if completed {
+                                self.strikers[index].returned = true;
+                            } else {
+                                send_bomber_to_selected_target(
+                                    world, member, self.formation,
+                                )?;
+                            }
+                        }
+                        // HasCompletedRun permits no-proximity completion
+                        // of AreBombersCloseToEnemyTargets.
+                        if !completed { all_near = false; }
+                    } else if let Some(target_id) =
+                        send_bomber_to_selected_target(
+                            world, member, self.formation,
+                        )? {
+                        let near = target_in_proximity(
+                            member.ship_id, target_id,
+                        )?;
+                        any_near |= near;
+                        all_near &= near;
+                    } else {
+                        // Unity requests a fresh GetTarget here; without
+                        // the live target roster this command cannot
+                        // fabricate a replacement. Its normal timeout
+                        // remains the safe terminal fallback.
+                        all_near = false;
+                    }
+                }
+                10 | 22 => {
+                    if let Some(target_id) = send_bomber_to_selected_target(
+                        world, member, self.formation,
+                    )? {
+                        let near = target_in_proximity(
+                            member.ship_id, target_id,
+                        )?;
+                        any_near |= near;
+                        all_near &= near;
+                        if ship.ship_type == 10 && near &&
+                            !world.frozen_after_elimination {
+                            world.queue_game_fire_barge_detonation(
+                                member.ship_id, command_outcome_id,
+                            )?;
+                        }
+                    } else {
+                        all_near = false;
+                    }
+                }
+                _ => return Err(GameCommandError::MissingCombatSnapshot),
+            }
+        }
+        if self.all_live_ships_finished(world) {
+            return Ok(Some(CommandFinishCause::BombingRunCompleted));
+        }
+        let close_to_targets = any_near && all_near;
+        if !self.fast_poll && close_to_targets {
             timer.reuse(0.25, true, false);
             self.fast_poll = true;
         } else if self.fast_poll && self.timer_loops % 4 == 0 {
-            // Fire Barges are considered bombed immediately, while living
-            // Yellow Jackets are not. In a Yellow Jacket squad, leave fast
-            // polling active unless every bomber has completed or lost
-            // proximity. Carrier Strikers remain unsupported here.
-            if self.members.iter().any(|member|
-                world.ship(member.ship_id).is_some_and(|ship|
-                    !ship.vitals.is_dead() && ship.ship_type == 22
-                )
-            ) && all_near {
-                return Ok(None);
+            let all_bombed = self.strikers.iter().all(|s| s.completed) &&
+                self.members.iter().all(|member|
+                    world.ship(member.ship_id).is_none_or(|ship|
+                        ship.vitals.is_dead() || ship.ship_type != 22
+                    )
+                );
+            if all_bombed || !close_to_targets || !enemy_alive {
+                timer.reuse(2.0, true, false);
+                self.fast_poll = false;
             }
-            timer.reuse(2.0, true, false);
-            self.fast_poll = false;
         }
         Ok(None)
     }

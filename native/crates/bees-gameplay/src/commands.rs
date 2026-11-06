@@ -50,7 +50,6 @@ mod bombing;
 pub use self::bombing::{
     NativeBombWeapon, NativeBombingActivation, NativeBombingTimerSnapshot,
     NativeBombingRun, assign_initial_bombing_run_targets,
-    advance_noncarrier_bombing_run,
 };
 pub use self::aggressive::{
     NativeAggressiveCommandSnapshot, assemble_aggressive_snapshot_from_live_weapons,
@@ -499,6 +498,16 @@ impl NativeSquadCommandDirector {
         }
     }
 
+    /// Consume a successful game Striker drop against the original
+    /// active command after the world has created the real bomb.
+    pub fn record_bombing_striker_drop(
+        &mut self, owner: SquadLifetime, ship_id: i64,
+    ) -> bool {
+        self.active.get_mut(&owner)
+            .and_then(|active| active.bombing.as_mut())
+            .is_some_and(|run| run.record_striker_drop(ship_id))
+    }
+
     /// Only ClosestFriendly and Guard timer callbacks consult the Level's
     /// refreshed friendly squad geometry. Other commands use their own
     /// world-owned state and must not force a full Level roster projection.
@@ -817,14 +826,13 @@ impl NativeSquadCommandDirector {
                     self.measurements.unsupported += 1;
                     return Ok(Activation::Unsupported(selection));
                 };
-                // Fire Barge and Yellow Jacket share the implemented
-                // non-carrier pursuit/impact path. Striker additionally
-                // needs carrier return/reload and stays unsupported.
-                // Discard its reservations rather than claim execution.
+                // All three bomber classes use one movement/command
+                // owner. A Striker must already have its live Carrier
+                // configuration installed in CombatWorld before issue.
                 for member in squad.members {
                     let ship = world.ship(member.ship_id)
                         .ok_or(GameCommandError::InvalidSquad)?;
-                    if !matches!(ship.ship_type, 10 | 22) {
+                    if !matches!(ship.ship_type, 10 | 19 | 22) {
                         self.measurements.unsupported += 1;
                         return Ok(Activation::Unsupported(selection));
                     }

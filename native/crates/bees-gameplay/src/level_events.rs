@@ -374,7 +374,17 @@ impl NativeLevelEventProcessor {
             _ => return Ok(false),
         };
         match outcome {
-            Ok(delivered) => Ok(delivered),
+            Ok(delivered) => {
+                if delivered && world.ship(bomber_id).is_some_and(|ship|
+                    ship.ship_type == 19,
+                ) {
+                    let recorded = self.commands.record_bombing_striker_drop(
+                        owner, bomber_id,
+                    );
+                    debug_assert!(recorded, "delivered Striker must belong to active run");
+                }
+                Ok(delivered)
+            },
             Err(error) => {
                 self.failed = true;
                 Err(NativeLevelEventError::Commands(
