@@ -196,16 +196,17 @@ function gpuStartBlock(job,lease,machine) {
         return 'A current device access probe for this exact GPU lease is required.';
     return null;
 }
+function gpuProbeWorkerReady(job,lease,machine) {
+    return Boolean(job&&job.project_id!=='bees'&&job.adapter==='unconfigured'&&
+        job.status==='waiting_adapter'&&!job.dispatch_id&&
+        lease&&lease.job_id===job.id&&lease.project_id===job.project_id&&
+        lease.machine_id===job.assigned_machine_id&&lease.issued_by==='experiment-hub'&&
+        lease.status==='acknowledged'&&machine?.status==='connected'&&
+        machine.agent_platform==='linux'&&machine.local_executor_enabled===true&&
+        machine.native_preflight_passed===true);
+}
 function gpuProbeBlock(job,lease,machine) {
-    if(!job||job.project_id==='bees'||job.adapter!=='unconfigured'||
-        job.status!=='waiting_adapter'||job.dispatch_id||
-        !lease||lease.job_id!==job.id||lease.project_id!==job.project_id||
-        lease.machine_id!==job.assigned_machine_id||
-        lease.issued_by!=='experiment-hub'||
-        lease.status!=='acknowledged'||!lease.receipt_fresh||
-        !machine||machine.status!=='connected'||
-        machine.agent_platform!=='linux'||machine.local_executor_enabled!==true||
-        machine.native_preflight_passed!==true||
+    if(!gpuProbeWorkerReady(job,lease,machine)||!lease.receipt_fresh||
         !machine.installed_projects?.includes(job.project_id)||
         job.resources.gpu_mode!=='exclusive'||
         job.resources.gpu_count!==1||
@@ -640,6 +641,9 @@ class ExperimentHub {
                 const lease=snapshot.reservations.find(l=>l.id===job.lease_id);
                 const machine=snapshot.machines.find(m=>m.id===job.assigned_machine_id);
                 job.gpu_probe_block=gpuProbeBlock(job,lease,machine);
+                job.gpu_probe_cleanup_ready=Boolean(gpuProbeWorkerReady(job,lease,machine)&&
+                    job.gpu_qualification?.lease_id===lease.id&&
+                    job.gpu_qualification.cleanup_required&&job.gpu_qualification.status!=='requested');
             }
             if(job.status==='start_requested'&&job.automation_start_session_id)
                 job.automation_start_paused=!(
@@ -1213,8 +1217,14 @@ class ExperimentHub {
         const job=snapshot.jobs.find(j=>j.id===value.job_id);
         const lease=snapshot.reservations.find(l=>l.id===job?.lease_id);
         const machine=snapshot.machines.find(m=>m.id===job?.assigned_machine_id);
-        const block=gpuProbeBlock(job,lease,machine);
-        if(block)throw Error(block);
+        const cleanupOnly=value.confirm_cleanup===true;
+        if(cleanupOnly) {
+            if(origin!=='operator'||job?.gpu_probe_cleanup_ready!==true)
+                throw Error('Cleanup recheck requires a held probe and its connected qualified worker.');
+        }else {
+            const block=gpuProbeBlock(job,lease,machine);
+            if(block)throw Error(block);
+        }
         const session=this.automation;
         if(origin==='automation'&&(!session.probe_exclusive_gpu||
             !session.claimed_lease_ids.includes(lease.id)||
@@ -1231,6 +1241,7 @@ class ExperimentHub {
             request_id:crypto.randomUUID(),lease_id:lease.id,
             machine_id:machine.id,status:'requested',
             requested_at:now(),first_offered_at:null,
+            ...(cleanupOnly?{cleanup_only:true}:{}),
             ...(job.gpu_qualification?.lease_id===lease.id&&job.gpu_qualification.cleanup_required
                 ?{cleanup_required:true}:{}),
             ...(origin==='automation'?{automation_session_id:session.session_id}:{}),
@@ -1299,6 +1310,8 @@ class ExperimentHub {
                 throw Error('GPU access report arrived before its probe was offered.');
             if(job.status!=='waiting_adapter')
                 throw Error('GPU access probe no longer belongs to a queued job.');
+            if(request.cleanup_only&&report.result!=='rejected')
+                throw Error('A cleanup recheck cannot qualify GPU access.');
             const pinned=lease.gpu_bindings;
             const verified=report.result==='verified'&&
                 report.selected_pci_addresses.length===1&&
@@ -1583,14 +1596,14 @@ class ExperimentHub {
             if(action==='qualify_gpu') {
                 const proof=job.gpu_qualification;
                 if(proof.lease_id!==lease.id||proof.automation_paused||
-                    machine.agent_platform!=='linux'||machine.native_preflight_passed!==true)
+                    !gpuProbeWorkerReady(job,lease,machine))
                     continue;
                 const blocked=gpuProbeBlock(job,lease,machine);
-                if(blocked&&proof.first_offered_at===null)continue;
+                if(blocked&&proof.first_offered_at===null&&!proof.cleanup_only)continue;
                 // An offered probe can still owe a result when its lease
                 // loses eligibility. The worker rejects an order without
                 // a fresh receipt and reports whether cleanup is verified.
-                probeRecoveryOnly=Boolean(blocked);
+                probeRecoveryOnly=Boolean(blocked||proof.cleanup_only);
             }
             if(action==='start'&&job.start_first_offered_at==null) {
                 // Persist the point of no return before the order can leave
