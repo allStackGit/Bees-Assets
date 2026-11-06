@@ -334,12 +334,28 @@ function allocationChoice(machines,reservations,job,preferredMachineId=null,
             (!selected.continuation_machine_id||selected.continuation_machine_id===machine.id));
         const fits=resourcePlacements(eligible,reservations,selected.resources)
             .filter(p=>p.capacity_fits);
-        if(selected.resources.gpu_count!==1||selected.resources.gpu_mode!=='exclusive')
-            return fits;
-        const optedIn=new Set(eligible.filter(machine=>
-            machine.gpu_projects?.includes(selected.project_id)).map(machine=>machine.id));
-        const runnable=fits.filter(p=>optedIn.has(p.machine_id));
-        return runnable.length?runnable:fits;
+        const r=selected.resources;
+        const cpuOnly=r.gpu_count===0&&!(r.gpus||[]).length;
+        const exclusiveGpu=r.gpu_count===1&&r.gpu_mode==='exclusive';
+        if(r.ram_mb<128||(!cpuOnly&&!exclusiveGpu))return fits;
+        const ready=new Set(eligible.filter(machine=>
+            machine.local_executor_enabled===true&&machine.native_preflight_passed===true&&
+            machine.installed_projects?.includes(selected.project_id)&&
+            (machine.agent_platform==='win32'||machine.agent_platform==='linux'&&
+                machine.execution_capabilities?.cgroup_v2_detected===true&&
+                ['cpu','memory'].every(controller=>
+                    machine.execution_capabilities.cgroup_controllers.includes(controller)))&&
+            (cpuOnly||machine.gpu_projects?.includes(selected.project_id))
+        ).map(machine=>machine.id));
+        const runnable=fits.filter(p=>ready.has(p.machine_id));
+        if(runnable.length)return runnable;
+        if(exclusiveGpu) {
+            const optedIn=new Set(eligible.filter(machine=>
+                machine.gpu_projects?.includes(selected.project_id)).map(machine=>machine.id));
+            const optedInFits=fits.filter(p=>optedIn.has(p.machine_id));
+            if(optedInFits.length)return optedInFits;
+        }
+        return fits;
     };
     const options=eligibleOptions(job,machines,preferredMachineId)
         .sort((a,b)=>a.available.cpus-b.available.cpus||

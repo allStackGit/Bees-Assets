@@ -145,8 +145,10 @@ execution ownership or automatically recovers failed work.
 The read-only queued-job placement preview now rehearses the **same
 round-robin project fairness, FIFO ordering, connected-agent requirement,
 continuation host affinity and best-fit resource selection** as the actual
-Hub lease allocator. It accounts for simulated earlier claims in the pass,
-but creates no leases, changes no job state and launches no programs.
+Hub lease allocator. When a fitting host has the project's adapter and a
+passing native preflight, placement prefers it over advisory-only hosts.
+An explicit machine selection can still create an advisory claim. The
+preview accounts for simulated earlier claims and creates no leases.
 A later live allocation can differ when machine health or capacity has
 changed. The separate general what-if planner at POST /api/hub/plan
 continues to use a GPU-first greedy ordering, which is useful for capacity
