@@ -4,7 +4,7 @@
 // Deliberately separate from bees_experiments.js. Uses the real Hub API,
 // existing dashboard markup/client, real worker-only HTTP listener and real
 // Linux systemd or Windows Job Object owner. No Bees operator,
-// live registry, Unity build, Ants runner, or production listener is imported.
+// live registry, Unity build, project runner, or production listener is imported.
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const http=require('node:http');
@@ -52,7 +52,7 @@ function renderQualificationPage(platform='win32') {
         .replace('<body>','<body>\n<div class="hub-standalone" role="status">'+
             '<strong>ISOLATED '+(platform==='win32'?'WINDOWS':'LINUX')+' QUALIFICATION</strong> — '+
             'Only a locally fixed 30-second inert native program is executable. '+
-            'No Bees or Ants workloads, production experiments, or training controls are connected. '+
+            'No production workloads, experiments, or training controls are connected. '+
             'This session uses a temporary Hub registry and local agent.</div>'+
             '<section id="hub-qual-panel"><h2>Isolated worker and resource qualification</h2>'+
             '<p>Pause worker heartbeats to simulate a disconnected agent without terminating'+

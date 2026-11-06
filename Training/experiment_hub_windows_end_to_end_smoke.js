@@ -220,7 +220,7 @@ async function main(argv=process.argv.slice(2),env=process.env) {
             await qualifyQueue({hub,executor,url,token,advertisement,
                 firstJob:job,localRoot,localOptions});
             clean=true;
-            console.log('No Bees or Ants training was started.');
+            console.log('No production training was started.');
             return;
         }
         const placement=hub.allocateJobs({
@@ -311,7 +311,7 @@ async function main(argv=process.argv.slice(2),env=process.env) {
         console.log('      capacity release and coordinator restart.');
         durations.total_ms=Date.now()-began;
         console.log('Qualification timings: '+JSON.stringify(durations));
-        console.log('No Bees or Ants training was started.');
+        console.log('No production training was started.');
     }catch(error) {
         console.error('Isolated Windows lifecycle not qualified: '+
             String(error.message||error));
