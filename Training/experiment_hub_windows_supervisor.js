@@ -209,7 +209,7 @@ class WindowsSupervisor {
         if(!this.crypto.timingSafeEqual(Buffer.from(expected,'hex'),
             Buffer.from(reply.receipt_hmac,'hex')))
             throw Error('Windows owner terminal receipt authentication failed.');
-        return {state:reply.state,active:false,owner_verified:true,...counters};
+        return {state:reply.state,active:false,owner_verified:true,exit_code:reply.exit_code,...counters};
     }
     verifyReply(record,report) {
         const expected=Math.max(1,Math.min(10000,
@@ -226,7 +226,9 @@ class WindowsSupervisor {
             throw Error('Native Windows owner identity or hard limits not verified.');
         const integer=k=>Number.isSafeInteger(report[k])&&report[k]>=0
             ?report[k]:null;
+        const exitCode=integer('exit_code');
         return {state:report.state,active:report.active,
+            exit_code:terminal.has(report.state)&&exitCode!==null&&exitCode<=4294967295?exitCode:null,
             cpu_time_ns:integer('cpu_time_ns'),
             peak_job_memory_bytes:integer('peak_job_memory_bytes'),
             process_tasks:integer('process_tasks')};
@@ -266,6 +268,8 @@ class WindowsSupervisor {
                 (record.stop_requested_at?'stopped':observation.state):
             record.stop_requested_at&&observation.active?
                 'stop_requested':observation.state;
+        if(state==='failed'&&observation.exit_code!=null)
+            issue='Windows workload exited with code '+observation.exit_code+'.';
         const updated={...record,state,diagnostic:issue};
         if(updated.state!==record.state||updated.diagnostic!==record.diagnostic)
             this.commit(this.state.records.map(x=>
