@@ -196,7 +196,7 @@ function gpuStartBlock(job,lease,machine) {
         return 'A current device access probe for this exact GPU lease is required.';
     return null;
 }
-function gpuProbeBlock(job,lease,machine) {
+function gpuProbeBlock(job,lease,machine,requireSecondDevice=true) {
     if(!job||job.project_id==='bees'||job.adapter!=='unconfigured'||
         job.status!=='waiting_adapter'||job.dispatch_id||
         !lease||lease.job_id!==job.id||lease.project_id!==job.project_id||
@@ -218,7 +218,7 @@ function gpuProbeBlock(job,lease,machine) {
             gpu_devices:machine.observed_gpus,
         },lease.resources,lease.gpu_bindings)?.length!==1)
         return 'GPU access probe needs a fresh exclusive single-GPU lease on a qualified Linux agent.';
-    if(!(machine.observed_gpus?.length>=2))
+    if(requireSecondDevice&&!(machine.observed_gpus?.length>=2))
         return 'GPU access probe requires a second observed GPU to verify access denial.';
     return null;
 }
@@ -1580,15 +1580,9 @@ class ExperimentHub {
                 }
             }
             if(action==='qualify_gpu'&&(
-                !adapterInstalled||!lease.receipt_fresh||machine.agent_platform!=='linux'||
-                machine.native_preflight_passed!==true||
-                job.resources.gpu_mode!=='exclusive'||
-                job.resources.gpu_count!==1||
-                job.gpu_qualification.lease_id!==lease.id||job.gpu_qualification.automation_paused||
-                physicalGpuBindings(machine,{
-                    gpu_inventory_source:machine.gpu_inventory_source,
-                    gpu_devices:machine.observed_gpus,
-                },lease.resources,lease.gpu_bindings)?.length!==1))
+                job.gpu_qualification.lease_id!==lease.id||
+                job.gpu_qualification.automation_paused||
+                gpuProbeBlock(job,lease,machine,job.gpu_qualification.first_offered_at===null)))
                 continue;
             if(action==='start'&&job.start_first_offered_at==null) {
                 // Persist the point of no return before the order can leave
