@@ -3,6 +3,7 @@
 
 use super::*;
 use crate::movement::STOP_MOVEMENT;
+use crate::geometry::heading_towards;
 
 const WINDUP: f32 = 2.0;
 const CHARGING: f32 = 1.0;
@@ -166,9 +167,7 @@ impl CombatWorld {
                         .and_then(|body| self.ship(target_id)
                             .filter(|target| !target.vitals.is_dead())
                             .map(|_| body.motion.position - origin))
-                        .map_or(rotation, |delta|
-                            delta.x.atan2(delta.y).to_degrees()
-                        );
+                        .map_or(rotation, heading_towards);
                     self.physics.ships_mut()[index].motion
                         .cannot_change_movement_orders = false;
                     if !self.move_ship_in_direction(ship_id, heading)? {
