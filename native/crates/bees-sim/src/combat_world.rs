@@ -577,6 +577,8 @@ pub struct GameBombMeasurements {
 pub struct GameBargeMeasurements {
     pub starts: u64,
     pub stops: u64,
+    /// Source MapBorder.OnTriggerEnter2D stopped an active game Charge.
+    pub border_stops: u64,
     pub completions: u64,
     pub grid_rebuilds: u64,
     pub candidates: u64,

@@ -291,6 +291,7 @@ impl CombatWorld {
                     charge.phase == 2 && !charge.can_override_bounds
                 ) {
                 self.stop_game_barge_charge(contact.ship_id)?;
+                self.game_barge_measurements.border_stops += 1;
             }
         }
         Ok(())
