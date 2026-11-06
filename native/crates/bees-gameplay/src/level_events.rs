@@ -329,10 +329,28 @@ impl NativeLevelEventProcessor {
         &mut self, side: i32, observed_ship_id: i64,
         authored_value: i32, reward_squad: SquadLifetime,
     ) -> Result<bool, NativeLevelEventError> {
-        self.record_verified_discovery(
-            side, DiscoveryKind::Ship, observed_ship_id, authored_value,
+        if self.is_failed() || self.completed() {
+            return Err(NativeLevelEventError::FailedLevel);
+        }
+        Self::reserve_output_records(
+            &mut self.pending_notifications, &mut self.failed, 1,
         )?;
-        Ok(self.commands.record_first_ship_sighting(reward_squad))
+        let (first, emission) = match self.episode
+            .record_verified_discovery_with_freshness(
+                side, DiscoveryKind::EnemyShip,
+                observed_ship_id, authored_value,
+            ) {
+            Ok(value) => value,
+            Err(error) => {
+                self.failed = true;
+                return Err(NativeLevelEventError::Rewards(error));
+            }
+        };
+        self.queue_immediate_emission(emission)?;
+        // Scouting.FoundNewShips is a side-wide first-sighting callback,
+        // not a tactical-reward callback. A valid first with no reward
+        // must still start its five-second completion clock.
+        Ok(first && self.commands.record_first_ship_sighting(reward_squad))
     }
 
     /// Called after the authoritative FleetShip.MineralsMinedThisLevel
