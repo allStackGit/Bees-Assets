@@ -138,6 +138,11 @@ function terminalResult(record,result,exitStatus) {
     return {state:'failed',
         diagnostic:'Linux workload failed (systemd result: '+reason+', main status: '+status+').'};
 }
+function checkpointStopVerified(record,receipt) {
+    return Boolean(record.project_id==='courier'&&record.stop_requested_at&&
+        record.stop_policy==='interrupt-main'&&receipt?.result==='success'&&
+        receipt.exit_code==='exited'&&receipt.exit_status==='0');
+}
 function launchArguments(record,invocation,gpuPlan) {
     const args=['--user','--quiet','--service-type=exec',
         '--unit='+record.unit,'--description='+descriptionFor(record.job_id),
@@ -434,8 +439,14 @@ class LinuxSupervisor {
         if(record.native_terminal_at&&terminalStates.has(record.state))
             return {...absent,state:record.state,cpu_time_ns:record.terminal_cpu_time_ns??null,
                 diagnostic:record.diagnostic||null};
+        const receipt=this.readTerminalReceipt(record);
+        if(!receipt)return absent;
+        return {...absent,...terminalResult(record,receipt.result,receipt.exit_status),
+            checkpoint_stop_verified:checkpointStopVerified(record,receipt)};
+    }
+    readTerminalReceipt(record) {
         if(!record.native_verified_at||!record.receipt_path||record.quarantined_at)
-            return absent;
+            return null;
         let fd;
         try {
             fd=this.fs.openSync(record.receipt_path,
@@ -453,9 +464,9 @@ class LinuxSupervisor {
                 !['exited','killed','dumped'].includes(receipt.exit_code)||
                 !/^[0-9A-Z]{1,32}$/.test(receipt.exit_status))
                 throw Error('Linux terminal receipt does not match its native job.');
-            return {...absent,...terminalResult(record,receipt.result,receipt.exit_status)};
+            return receipt;
         }catch(error){
-            if(error.code==='ENOENT'&&fd===undefined)return absent;
+            if(error.code==='ENOENT'&&fd===undefined)return null;
             throw error;
         }finally{
             if(fd!==undefined)this.fs.closeSync(fd);
@@ -495,7 +506,10 @@ class LinuxSupervisor {
                 process_tasks:numeric(p.TasksCurrent)};
         }
         if(p.ActiveState==='inactive'||p.ActiveState==='failed') {
-            return {...terminalResult(record,p.Result,p.ExecMainStatus),
+            const result=terminalResult(record,p.Result,p.ExecMainStatus);
+            const receipt=record.project_id==='courier'&&record.stop_requested_at&&
+                result.state==='finished'?this.readTerminalReceipt(record):null;
+            return {...result,checkpoint_stop_verified:checkpointStopVerified(record,receipt),
                 active:false,unit_exists:true,pid:null,cpu_time_ns:numeric(p.CPUUsageNSec)};
         }
         return {state:'unverified',active:false,unit_exists:true};
@@ -516,6 +530,8 @@ class LinuxSupervisor {
         const updated={...record,state,
             observed_at:new Date().toISOString(),
             diagnostic:result.diagnostic||null};
+        if(state==='stopped'&&result.checkpoint_stop_verified===true)
+            updated.checkpoint_stop_verified=true;
         if(!record.native_verified_at&&result.active&&result.kernel_limits_verified)
             updated.native_verified_at=updated.observed_at;
         if(!record.native_terminal_at&&terminalStates.has(state)) {
@@ -525,6 +541,7 @@ class LinuxSupervisor {
         if(record.state!==updated.state||
             record.native_verified_at!==updated.native_verified_at||
             record.native_terminal_at!==updated.native_terminal_at||
+            record.checkpoint_stop_verified!==updated.checkpoint_stop_verified||
             (record.diagnostic||null)!==updated.diagnostic)
             this.commit(this.state.records.map(r=>r.job_id===jobId?updated:r));
         return {...updated,active:result.active,
@@ -580,7 +597,8 @@ class LinuxSupervisor {
             const parent=this.state.records.find(r=>
                 r.job_id===job.continuation_of_job_id);
             if(!parent||parent.project_id!==job.project_id||
-                !['finished','stopped'].includes(parent.state)||
+                (parent.state!=='finished'&&!(parent.state==='stopped'&&
+                    parent.project_id==='courier'&&parent.checkpoint_stop_verified===true))||
                 (parent.artifact_lineage_root_id||parent.job_id)!==
                     job.artifact_lineage_root_id)
                 throw Error('Local predecessor is missing, unverified or not terminal.');
