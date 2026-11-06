@@ -752,7 +752,7 @@ pub struct CombatWorld {
     game_bomb_weapon_by_ship: HashMap<i64, (i64, i32)>,
     /// Command-timer self-detonations are settled inside the NEXT normal
     /// physics step so roster, rewards, deaths and outbox see them once.
-    pending_game_fire_barges: Vec<i64>,
+    pending_game_fire_barges: Vec<(i64, i64)>,
     projectile_by_id: HashMap<i64, usize>,
     /// Per-world RL root-shot lifetime, not per-projectile hit telemetry.
     shot_outcomes: ProjectileOutcomeTracker,
@@ -949,7 +949,7 @@ impl CombatWorld {
         // Explicit self-detonations consume their bomb first, so this is
         // strictly once even when both paths reach this retirement.
         if !end_kill && self.ships[index].ship_type == 10 {
-            self.spawn_fire_barge_explosion(index, false)?;
+            self.spawn_fire_barge_explosion(index, false, 0)?;
         }
         let victim_id = self.ships[index].entity_id;
         // Bomb.ReleaseTargetReservation is part of every authored bomber

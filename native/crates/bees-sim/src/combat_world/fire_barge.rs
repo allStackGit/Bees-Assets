@@ -53,6 +53,7 @@ impl CombatWorld {
     /// launch leaves it intact, so the Level can diagnose the failure.
     pub(super) fn spawn_fire_barge_explosion(
         &mut self, index: usize, self_detonation: bool,
+        command_outcome_id: i64,
     ) -> Result<bool, CombatWorldError> {
         let ship_id = self.ships[index].entity_id;
         let Some(&power) = self.fire_barge_bomb_powers.get(&ship_id) else {
@@ -72,7 +73,9 @@ impl CombatWorld {
                 shooter_id: ship_id, shooter_side: side,
                 shooter_is_fire_barge: true, self_detonation,
             },
-            power, ProjectileMotion::new(position, 0.0, 0.0, 0.0, shot_id, 0),
+            power, ProjectileMotion::new(
+                position, 0.0, 0.0, 0.0, shot_id, command_outcome_id,
+            ),
             0.0,
         )?;
         self.fire_barge_bomb_powers.remove(&ship_id);
@@ -93,8 +96,11 @@ impl CombatWorld {
     /// current tick's economic, roster, reward and terminal events.
     /// Proximity and actual Bomb targeting are checked by the owning Level.
     pub fn queue_game_fire_barge_detonation(
-        &mut self, ship_id: i64,
+        &mut self, ship_id: i64, command_outcome_id: i64,
     ) -> Result<bool, CombatWorldError> {
+        if command_outcome_id < 0 {
+            return Err(CombatWorldError::InvalidPolicyFireBarge);
+        }
         let &index = self.ship_by_id.get(&ship_id)
             .ok_or(CombatWorldError::UnknownShip)?;
         if self.ships[index].ship_type != 10 {
@@ -111,10 +117,11 @@ impl CombatWorld {
         if !self.fire_barge_bomb_powers.contains_key(&ship_id) {
             return Err(CombatWorldError::InvalidPolicyFireBarge);
         }
-        if self.pending_game_fire_barges.contains(&ship_id) {
+        if self.pending_game_fire_barges.iter()
+            .any(|&(id, _)| id == ship_id) {
             return Ok(false);
         }
-        self.pending_game_fire_barges.push(ship_id);
+        self.pending_game_fire_barges.push((ship_id, command_outcome_id));
         Ok(true)
     }
 
@@ -124,7 +131,8 @@ impl CombatWorld {
         &mut self,
     ) -> Result<(), CombatWorldError> {
         for i in 0..self.pending_game_fire_barges.len() {
-            let ship_id = self.pending_game_fire_barges[i];
+            let (ship_id, command_outcome_id) =
+                self.pending_game_fire_barges[i];
             let Some(&index) = self.ship_by_id.get(&ship_id) else {
                 return Err(CombatWorldError::UnknownShip);
             };
@@ -132,7 +140,7 @@ impl CombatWorld {
                 !self.physics.ships()[index].active {
                 continue;
             }
-            self.complete_fire_barge_detonation(index)?;
+            self.complete_fire_barge_detonation(index, command_outcome_id)?;
         }
         self.pending_game_fire_barges.clear();
         Ok(())
@@ -156,17 +164,21 @@ impl CombatWorld {
         ) {
             return Err(CombatWorldError::InvalidPolicyFireBarge);
         }
-        self.complete_fire_barge_detonation(index)
+        self.complete_fire_barge_detonation(index, 0)
     }
 
     /// Shared one-shot self-detonation transaction for every controller.
     fn complete_fire_barge_detonation(
-        &mut self, index: usize,
+        &mut self, index: usize, command_outcome_id: i64,
     ) -> Result<bool, CombatWorldError> {
         let ship_id = self.ships[index].entity_id;
         // The bomb registration is consumed at projectile spawn, before
         // retiring the ship, so the death path cannot launch it twice.
-        if !self.spawn_fire_barge_explosion(index, true)? {
+        // The projectile snapshots its command identity now; later damage
+        // does not depend on whatever command the squad executes next.
+        if !self.spawn_fire_barge_explosion(
+            index, true, command_outcome_id,
+        )? {
             return Err(CombatWorldError::InvalidPolicyFireBarge);
         }
         let remaining_health = self.ships[index].vitals.health();
