@@ -302,7 +302,7 @@ where
             state.events.advance_timed_commands(
                 completed_tick, &mut state.combat,
                 state.metadata.navigation(),
-                &state.command_friendlies, dt_seconds,
+                &state.command_friendlies, &mut world.random, dt_seconds,
             )?;
             if state.combat.events().len() > previous_event_count {
                 // Timed Mining callbacks occur after the normal reward
