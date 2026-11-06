@@ -406,14 +406,16 @@ impl NativeSquadCommandDirector {
     /// credited to its real squad (or a Beacon's MotherSquad).
     /// The Level adapter verifies that fact; this method does not
     /// mistake every temporary line-of-sight contact for discovery.
-    pub fn record_first_ship_sighting(&mut self, owner: SquadLifetime) -> bool {
+    pub fn record_first_ship_sighting(
+        &mut self, owner: SquadLifetime, side: i32,
+    ) -> bool {
         let Some(command) = self.active.get_mut(&owner) else {
             return false;
         };
         let Some(scouting) = command.scouting.as_mut() else {
             return false;
         };
-        if !scouting.found_first_ships() { return false; }
+        if !scouting.found_first_ships(side) { return false; }
         command.timeout = None;
         self.measurements.scouting_first_sightings += 1;
         true
