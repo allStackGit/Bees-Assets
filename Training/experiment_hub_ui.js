@@ -297,14 +297,14 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     function renderPipelineStages() {
         const rows=[...$('hub-pipeline-rows').children];
-        const antsPipeline=project==='ants'&&
+        const checkpointPipeline=['ants','tinybrains'].includes(project)&&
             $('hub-pipeline-kind').value==='continuation';
         const configs=(state?.configurations||[]).filter(c=>
-            antsPipeline?c.project_id==='ants':
+            checkpointPipeline?c.project_id===project:
                 c.project_id!=='bees'&&
                 (c.project_id!=='ants'||c.parameters?.mode==='new'));
         const hasPredecessor=Boolean($('hub-pipeline-predecessor').value);
-        const relationship=antsPipeline?'continuation':'independent';
+        const relationship=checkpointPipeline?'continuation':'independent';
         const sameSelection=pipelineStageProject===project&&
             pipelineStageKind===relationship;
         for(const [i,row] of rows.entries()) {
@@ -314,10 +314,10 @@ document.addEventListener('DOMContentLoaded', () => {
             label.append(select);
             const old=select.value;
             select.replaceChildren(...configs.map(c=>new Option(
-                (antsPipeline?'':c.project_id+' · ')+
+                (checkpointPipeline?'':c.project_id+' · ')+
                     c.name+' · revision '+c.revision,c.id)));
             const expectedResume=i>0||hasPredecessor;
-            const suggested=configs.find(c=>antsPipeline
+            const suggested=configs.find(c=>checkpointPipeline&&project==='ants'
                 ?(c.parameters?.mode==='resume')===expectedResume
                 :c.project_id===project);
             if(sameSelection&&configs.some(c=>c.id===old))
@@ -941,10 +941,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 j.assigned_machine_id&&j.dispatch_id&&(
                     (j.status==='finished'||j.status==='stopped'&&project!=='tinybrains')&&
                         j.capacity_released_at||
-                    project==='ants'&&(
+                    ['ants','tinybrains'].includes(project)&&(
                         ['start_requested','launch_requested','running'].includes(j.status)||
                         j.status==='finished'&&!j.capacity_released_at))||
-                project==='ants'&&
+                ['ants','tinybrains'].includes(project)&&
                     ['waiting_adapter','waiting_predecessor'].includes(j.status)));
         predecessorSelect.replaceChildren(
             new Option('New experiment (no predecessor)',''),
@@ -1016,28 +1016,30 @@ document.addEventListener('DOMContentLoaded', () => {
         const kind=$('hub-pipeline-kind'),oldKind=kind.value;
         kind.replaceChildren(
             new Option('Independent fresh jobs (no shared checkpoint)','independent'),
-            ...(project==='ants'
-                ?[new Option('Ants checkpoint-continuation stages','continuation')]
+            ...(['ants','tinybrains'].includes(project)
+                ?[new Option('Checkpoint-continuation stages','continuation')]
                 :[]));
         if(pipelineKindProject===project&&
             ['independent','continuation'].includes(oldKind)&&
-            (oldKind!=='continuation'||project==='ants'))
+            (oldKind!=='continuation'||['ants','tinybrains'].includes(project)))
             kind.value=oldKind;
         else kind.value=project==='ants'?'continuation':'independent';
         pipelineKindProject=project;
-        const antsPipeline=project==='ants'&&kind.value==='continuation';
-        $('hub-pipeline-title').textContent=antsPipeline
-            ?'Prequeue Ants checkpoint-continuation stages'
+        const checkpointPipeline=['ants','tinybrains'].includes(project)&&kind.value==='continuation';
+        $('hub-pipeline-title').textContent=checkpointPipeline
+            ?'Prequeue checkpoint-continuation stages'
             :'Queue independent project jobs in sequence';
-        $('hub-pipeline-description').textContent=antsPipeline
-            ?'Two to sixteen saved Ants configurations; new first stage and resume-only successors. One frozen checkpoint lineage and original machine. A verified finished predecessor and capacity release unlock each next stage. Stopped predecessors need explicit review. Queueing never starts training.'
+        $('hub-pipeline-description').textContent=checkpointPipeline
+            ?project==='ants'
+                ?'Two to sixteen saved Ants configurations. Use a new first stage and resume-only successors. Each stage waits for its predecessor to finish and release capacity.'
+                :'Two to sixteen TinyBrains stages with the same approved profile digest. Each stage waits for its predecessor to finish and release capacity, then stays on the original worker.'
             :'Two to sixteen fresh, independent jobs from any non-Bees project. Each job gets its own artifact lineage and may use a different machine. No checkpoint, optimizer or qualification result is inherited. A verified finished predecessor and capacity release unlock the next job. Stopped and failed jobs do not advance. Queueing never starts training.';
-        $('hub-pipeline-predecessor-label').textContent=antsPipeline
-            ?'Continue an existing Ants job (optional)'
+        $('hub-pipeline-predecessor-label').textContent=checkpointPipeline
+            ?'Continue an existing job (optional)'
             :'Run after an existing native job (optional)';
         const pipelinePredecessor=$('hub-pipeline-predecessor');
         const formerPipelineParent=pipelinePredecessor.value;
-        const sequenceParents=antsPipeline?availableParents:
+        const sequenceParents=checkpointPipeline?availableParents:
             (state.jobs||[]).filter(j=>j.project_id!=='bees'&&
                 !successors.has(j.id)&&
                 ['waiting_adapter','waiting_predecessor','start_requested',
@@ -1045,10 +1047,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 (j.status!=='finished'||Boolean(j.dispatch_id&&
                     j.assigned_machine_id&&j.execution_updated_at)));
         pipelinePredecessor.replaceChildren(
-            new Option(antsPipeline?'New experiment (no predecessor)':
+            new Option(checkpointPipeline?'New experiment (no predecessor)':
                 'New independent sequence (no predecessor)',''),
             ...sequenceParents.map(j=>new Option(
-                (antsPipeline?'':j.project_id+' · ')+
+                (checkpointPipeline?'':j.project_id+' · ')+
                     j.configuration_name+' · '+j.status+' · '+j.id.slice(-8),
                 j.id)));
         if(sequenceParents.some(j=>j.id===formerPipelineParent))
@@ -2015,10 +2017,10 @@ document.addEventListener('DOMContentLoaded', () => {
     $('hub-pipeline-queue').addEventListener('click',async()=>{
         if(project==='bees'||!state)return;
         try {
-            const antsPipeline=project==='ants'&&
+            const checkpointPipeline=['ants','tinybrains'].includes(project)&&
                 $('hub-pipeline-kind').value==='continuation';
-            const configs=state.configurations.filter(c=>antsPipeline
-                ?c.project_id==='ants'
+            const configs=state.configurations.filter(c=>checkpointPipeline
+                ?c.project_id===project
                 :c.project_id!=='bees'&&
                     (c.project_id!=='ants'||c.parameters?.mode==='new'));
             const rows=[...$('hub-pipeline-rows').children];
@@ -2033,7 +2035,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     resources:JSON.parse(row.querySelector('input').value)};
             });
             const predecessor=$('hub-pipeline-predecessor').value;
-            if(antsPipeline)for(let i=0;i<stages.length;i++) {
+            if(checkpointPipeline&&project==='ants')for(let i=0;i<stages.length;i++) {
                 const selected=configs.find(c=>c.id===stages[i].configuration_id);
                 const requiresResume=i>0||Boolean(predecessor);
                 if((selected.parameters?.mode==='resume')!==requiresResume)
@@ -2041,14 +2043,14 @@ document.addEventListener('DOMContentLoaded', () => {
                         (requiresResume?'a resume':'a new-run')+
                         ' Ants configuration.');
             }
-            const question=antsPipeline
-                ?'Queue '+stages.length+' frozen Ants checkpoint-continuation stages? They share verified checkpoint lineage and original machine.'
+            const question=checkpointPipeline
+                ?'Queue '+stages.length+' frozen checkpoint-continuation stages? They share verified checkpoint lineage and original machine.'
                 :'Queue '+stages.length+' independent jobs as a frozen sequence? No job inherits any previous checkpoint, machine affinity, optimizer state or evaluation evidence.';
             if(!confirm(question+
                 ' Each successor remains blocked until its predecessor FINISHES and releases capacity. No work starts without the separate native authorization gates.'))return;
-            const result=await action(antsPipeline?'hub/pipelines':'hub/sequences',{
+            const result=await action(checkpointPipeline?'hub/pipelines':'hub/sequences',{
                 confirm_queue:true,stages,
-                ...(predecessor?(antsPipeline
+                ...(predecessor?(checkpointPipeline
                     ?{continuation_of_job_id:predecessor}
                     :{after_job_id:predecessor}):{}),
             });
