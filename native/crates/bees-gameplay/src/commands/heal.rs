@@ -255,6 +255,19 @@ impl HealRun {
     ) -> Result<(Option<CommandFinishCause>, u64), GameCommandError> {
         self.register_arrivals(world);
         let mut callbacks = 0;
+        if let Some(due) = command_poll.as_mut()
+            .and_then(|timer| timer.begin_update(dt)) {
+            callbacks += 1;
+            self.release_unavailable(world);
+            self.hives.retain(|&id| world.ship(id).is_some_and(|s|
+                !s.vitals.is_dead()));
+            if self.hives.is_empty() {
+                return Ok((Some(CommandFinishCause::HealingBeehivesDestroyed), callbacks));
+            }
+            self.assign_slots(world)?;
+            self.move_waiting(world)?;
+            command_poll.as_mut().expect("poll timer exists").finish_update(due);
+        }
         if let Some(due) = self.healing_timer.as_mut()
             .and_then(|timer| timer.begin_update(dt)) {
             callbacks += 1;
@@ -283,19 +296,6 @@ impl HealRun {
             self.assign_slots(world)?;
             self.healing_timer.as_mut()
                 .expect("healing timer remains installed").finish_update(due);
-        }
-        if let Some(due) = command_poll.as_mut()
-            .and_then(|timer| timer.begin_update(dt)) {
-            callbacks += 1;
-            self.release_unavailable(world);
-            self.hives.retain(|&id| world.ship(id).is_some_and(|s|
-                !s.vitals.is_dead()));
-            if self.hives.is_empty() {
-                return Ok((Some(CommandFinishCause::HealingBeehivesDestroyed), callbacks));
-            }
-            self.assign_slots(world)?;
-            self.move_waiting(world)?;
-            command_poll.as_mut().expect("poll timer exists").finish_update(due);
         }
         if self.pending.is_empty() && self.waiting.is_empty() &&
             self.healing.is_empty() {
