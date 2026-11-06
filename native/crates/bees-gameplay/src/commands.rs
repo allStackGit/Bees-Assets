@@ -321,18 +321,10 @@ struct MiningRun {
 }
 
 impl MiningRun {
-    fn advance(
-        &mut self,
-        world: &mut CombatWorld,
-        navigation: &NavigationRuntime,
-        command_poll: &mut Option<ScaledTimer>,
-        dt: f32,
-    ) -> Result<(Option<CommandFinishCause>, u64), GameCommandError> {
-        if world.mining_asteroid_position(self.target_id).is_none() {
-            return Ok((Some(CommandFinishCause::MiningAsteroidDestroyed), 0));
-        }
-
-        // Contact is checked on the actual freshly stepped physical hull,
+    /// Register initial overlap at Execute as well as subsequent
+    /// collision entries, preserving the source command's encounter order.
+    fn update_contacts(&mut self, world: &CombatWorld) {
+        // Contact is checked on the actual cached physical hull,
         // not an extra "close enough" radius or guessed collision grid.
         if !self.has_found_all {
             for (slot, &id) in self.eligible.iter().enumerate() {
@@ -365,6 +357,21 @@ impl MiningRun {
                 ));
             }
         }
+
+    }
+
+    fn advance(
+        &mut self,
+        world: &mut CombatWorld,
+        navigation: &NavigationRuntime,
+        command_poll: &mut Option<ScaledTimer>,
+        dt: f32,
+    ) -> Result<(Option<CommandFinishCause>, u64), GameCommandError> {
+        if world.mining_asteroid_position(self.target_id).is_none() {
+            return Ok((Some(CommandFinishCause::MiningAsteroidDestroyed), 0));
+        }
+
+        self.update_contacts(world);
 
         if let Some(timer) = self.mining_timer.as_mut() {
             if let Some(due) = timer.begin_update(dt) {
@@ -617,7 +624,7 @@ impl NativeSquadCommandDirector {
                 // a per-process global random stream.
                 let angle = next_unit(random) * std::f32::consts::TAU;
                 let radius = next_unit(random).sqrt() * spread;
-                mining = Some(MiningRun {
+                let mut run = MiningRun {
                     target_id,
                     destination_offset: Vec2::new(
                         angle.cos() * radius, angle.sin() * radius,
@@ -631,7 +638,9 @@ impl NativeSquadCommandDirector {
                     stop_moving_timer: None,
                     has_found_all: false,
                     mined_tsv: 0,
-                });
+                };
+                run.update_contacts(world);
+                mining = Some(run);
                 // The source begins with an immediate 3-second command
                 // timer callback, not an Execute-time movement command.
                 false
