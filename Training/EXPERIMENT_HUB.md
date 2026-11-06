@@ -1302,17 +1302,19 @@ forward to the coordinator. Use private persistent scratch and share the
 receipt directory with the training agent's adapter. The scheduler owns
 the cadence, CPU budget, and lifetime of each invocation.
 
-Each invocation evaluates at most one newer checkpoint and rechecks the
-matching running dispatch before publication. Fresh jobs can use their first
-visible checkpoint. For continuations, the first visible checkpoint sets a
-watermark because it may belong to the predecessor. The evaluator rotates among eligible dispatches,
-retains the last attempted episode across invocations, and leaves an
-already-passing receipt available for the worker. Once an evaluation
-result is recorded in scratch, a failed Hub recheck or publication can
-be retried on the next invocation without repeating the evaluation.
-The retry drops results for dispatches that are no longer eligible.
-A failed evaluation itself waits for a newer checkpoint. Keep a stable suite ID and scratch directory for
-the lifetime of the schedule.
+Each invocation selects an eligible running dispatch and evaluates at most
+one newer checkpoint. Fresh jobs can use their first visible checkpoint.
+For continuations, the first visible checkpoint sets a watermark because
+it may belong to the predecessor. The evaluator rotates among eligible
+dispatches, retains the last attempted episode across invocations and
+leaves an already-passing receipt available for the worker. Once an
+evaluation result is durably recorded in scratch, it can be published or
+retried without a second Hub availability check: the unique dispatch and
+suite are validated again by the trusted running adapter and coordinator
+before they can authorize Stop. A heartbeat gap during evaluation must not
+discard a completed result. Publication to an already-terminal dispatch is
+inert. A failed evaluation itself waits for a newer checkpoint. Keep a
+stable suite ID and scratch directory for the lifetime of the schedule.
 
 The adapter accepts `mode:"new"` (or omitted mode) for a fresh run
 and `mode:"resume"` for an explicitly linked, completed predecessor.
@@ -1664,7 +1666,9 @@ numbered checkpoint for an eligible running dispatch, and evaluates at most
 one per invocation. Set the profile's `training.checkpoint_every` so a
 numbered checkpoint appears while the job is still running. The poller
 leaves the changing `latest.pt` alone. Use persistent scratch to retain
-attempts and retry receipt publication after a failed coordinator recheck.
+attempts and retry publication independently of coordinator availability
+once a completed evaluation is recorded. The trusted adapter and Hub
+accept the receipt only for the exact running dispatch and suite.
 A separate host needs a trusted loopback forward and read access to the
 training artifacts.
 
