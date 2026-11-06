@@ -360,6 +360,17 @@ function waitingStageReason(job,byId) {
     return {status:'broken_lineage',depth:1000,
         reason:'Prequeued pipeline depth exceeds the job-history bound; operator review required.'};
 }
+function allocationBlockReason(machines,job,preferredMachineId=null) {
+    const candidates=preferredMachineId
+        ?machines.filter(machine=>machine.id===preferredMachineId):machines;
+    if(!candidates.length)
+        return preferredMachineId?'The selected worker is offline or unavailable.'
+            :'No worker is connected.';
+    if(job.project_id==='tinybrains'&&
+        !candidates.some(machine=>supportsTinyBrainsProfile(machine,job)))
+        return 'No eligible Windows worker advertises this TinyBrains CPU profile and digest, or the update count is invalid.';
+    return 'No eligible connected worker has enough remaining capacity.';
+}
 function allocationChoice(machines,reservations,job,preferredMachineId=null,
     following=[],futureMachinesFor=()=>machines) {
     const eligibleOptions=(selected,hosts,preferred=null)=>{
@@ -1092,7 +1103,8 @@ class ExperimentHub {
                 value.machine_id||null,jobs.slice(index+1));
             if(!chosen) {
                 results.push({job_id:job.id,machine_id:null,lease_id:null,
-                    status:'insufficient_capacity'});
+                    status:'insufficient_capacity',
+                    reason:allocationBlockReason(machines,job,value.machine_id)});
                 continue;
             }
             const lease=this.claimJobIn(next,job,chosen.machine_id);
@@ -2207,7 +2219,7 @@ class ExperimentHub {
                 reason:claimCount>=100
                     ?'Hub claim limit reached'
                     :chosen?'Would receive advisory capacity on this agent'
-                    :'No currently connected machine has remaining budget',
+                    :allocationBlockReason(machines,job),
             });
         }
         const claimed=jobs.filter(j=>j.lease_id).map(job=>{
