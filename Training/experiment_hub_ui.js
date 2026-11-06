@@ -45,38 +45,9 @@ function trainingFormPayload() {
 
 // Compare exports remain observational, not benchmark or qualification
 // evidence. Keep transformations independent of browser state.
-function hubComparisonPoints(run,level='') {
-    const points=run.points.length?run.points:
-        [run.job.live_execution?.progress||run.job.final_progress]
-            .filter(Boolean);
-    if(level==='')return points;
-    const wanted=Number(level);
-    let last=-1;
-    return points.flatMap((point,i)=>{
-        if(point.curriculum_level!==wanted)return [];
-        const item={...point,
-            break_before:Boolean(point.break_before||(last>=0&&i>last+1))};
-        last=i;
-        return [item];
-    });
-}
-// Descriptive screening only. Bounded, decimated observations cannot
-// establish the true first crossing or a held-out benchmark outcome.
-function hubObservedThreshold(run,level,threshold,minWindow) {
-    if(level===''||!Number.isSafeInteger(Number(level))||
-        !Number.isFinite(threshold)||threshold<0||threshold>1||
-        !Number.isSafeInteger(minWindow)||minWindow<1)
-        return null;
-    const points=hubComparisonPoints(run,level).filter(p=>
-        Number.isFinite(p.curriculum_window_success_rate)&&
-        p.curriculum_window_success_rate>=0&&
-        p.curriculum_window_success_rate<=1&&
-        Number.isSafeInteger(p.curriculum_window_episodes)&&
-        p.curriculum_window_episodes>=minWindow&&
-        Number.isSafeInteger(p.episodes_completed)&&p.episodes_completed>=0);
-    return {observations:points.length,
-        first:points.find(p=>p.curriculum_window_success_rate>=threshold)||null,
-        last:points[points.length-1]||null};
+function hubComparisonPoints(run) {
+    return run.points.length?run.points:
+        [run.job.live_execution?.progress||run.job.final_progress].filter(Boolean);
 }
 function hubGenericMetricCatalog(runs) {
     const types=new Map();
@@ -89,30 +60,20 @@ function hubGenericMetricCatalog(runs) {
         .map(([key,units])=>({key,units:[...units]}));
 }
 function hubMetricValue(point,key) {
-    return key.startsWith('metric:')
-        ?point.metrics?.[key.slice(7)]?.value
-        :point[key];
+    return point.metrics?.[key.slice(7)]?.value;
 }
 function hubComparisonCsv(exported) {
     const fields=[
-        'slot','job_id','configuration_name','configuration_sha256',
-        'selected_x_axis','selected_metric','selected_curriculum_level',
-        'assigned_machine_id','artifact_lineage_root_id',
-        'continuation_of_job_id','status','observed_at','source_modified_at',
-        'experiment_id','segment_id','break_before','episodes_completed',
-        'total_environment_steps','policy_version','curriculum_level',
-        'curriculum_window_episodes','curriculum_window_success_rate',
-        'segment_success_rate','simulation_steps_per_second',
-        'ppo_unique_samples_per_second','latest_episode_policy_updated',
+        'slot','job_id','project_id','configuration_name','configuration_sha256',
+        'selected_x_axis','selected_metric','assigned_machine_id',
+        'artifact_lineage_root_id','continuation_of_job_id','status',
+        'observed_at','source_modified_at','experiment_id','segment_id',
+        'break_before','steps_completed',
     ];
-    if(exported.project_id!=='ants') {
-        fields.push('project_id','steps_completed');
-        const metrics=new Set(exported.runs.flatMap(run=>
-            run.points.flatMap(point=>Object.keys(point.metrics||{}))));
-        for(const key of [...metrics].sort()) {
-            fields.push('metric_'+key,'unit_'+key);
-        }
-    }
+    const metrics=new Set(exported.runs.flatMap(run=>
+        run.points.flatMap(point=>Object.keys(point.metrics||{}))));
+    for(const key of [...metrics].sort())
+        fields.push('metric_'+key,'unit_'+key);
     const encode=value=>{
         if(value==null)return '';
         let str=String(value);
@@ -131,7 +92,6 @@ function hubComparisonCsv(exported) {
         configuration_sha256:run.configuration_sha256,
         selected_x_axis:exported.x_axis,
         selected_metric:exported.metric,
-        selected_curriculum_level:exported.curriculum_level,
         assigned_machine_id:run.assigned_machine_id,
         artifact_lineage_root_id:run.artifact_lineage_root_id,
         continuation_of_job_id:run.continuation_of_job_id,
@@ -365,19 +325,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     const compareSlots=['a','b','c','d'];
     const chartPalette=['#1769aa','#ce5a18','#23834b','#8647a8'];
-    const chartMetrics={
-        curriculum_window_success_rate:{label:'Current curriculum-window success',rate:true},
-        segment_success_rate:{label:'Segment success rate',rate:true},
-        curriculum_level:{label:'Curriculum level',rate:false},
-        policy_version:{label:'Policy version',rate:false},
-        simulation_steps_per_second:{label:'Last-episode simulation steps/s',rate:false},
-        ppo_unique_samples_per_second:{label:'Last-episode PPO unique samples/s',rate:false},
-    };
-    const chartAxes={
-        episodes_completed:{label:'Cumulative training episodes'},
-        total_environment_steps:{label:'Cumulative environment steps'},
-        steps_completed:{label:'Cumulative project steps'},
-    };
+    const chartAxes={steps_completed:{label:'Cumulative project steps'}};
     async function loadComparison() {
         if(!state||project==='bees')return;
         const requested=project,serial=++comparisonRequest;
@@ -441,38 +389,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 points:history.get(id)||[]}:null;
         }).filter(Boolean);
         const metricSelect=$('hub-compare-metric'),oldMetric=metricSelect.value;
-        const metricOptions=project==='ants'
-            ?Object.entries(chartMetrics).map(([key,meta])=>({
-                key,label:meta.label,
-            }))
-            :hubGenericMetricCatalog(chartable.map(job=>({
-                job,points:history.get(job.id)||[],
-            }))).map(metric=>({
-                key:'metric:'+metric.key,
-                label:metric.key+' ('+metric.units.join('/')+')',
-            }));
+        const metricOptions=hubGenericMetricCatalog(chartable.map(job=>({
+            job,points:history.get(job.id)||[],
+        }))).map(metric=>({
+            key:'metric:'+metric.key,
+            label:metric.key+' ('+metric.units.join('/')+')',
+        }));
         metricSelect.replaceChildren(...metricOptions.map(m=>
             new Option(m.label,m.key)));
         if(metricOptions.some(m=>m.key===oldMetric))metricSelect.value=oldMetric;
         const axisSelect=$('hub-compare-x-axis'),oldAxis=axisSelect.value;
-        const axes=project==='ants'
-            ?['episodes_completed','total_environment_steps']
-            :['steps_completed'];
-        axisSelect.replaceChildren(...axes.map(key=>
-            new Option(comparisonAxisLabel(key),key)));
-        if(axes.includes(oldAxis))axisSelect.value=oldAxis;
-        const levelSelect=$('hub-compare-level');
-        const oldLevel=levelSelect.value;
-        const levels=[...new Set(runs.flatMap(run=>
-            hubComparisonPoints(run).map(p=>p.curriculum_level)
-                .filter(Number.isSafeInteger)))].sort((a,b)=>a-b);
-        levelSelect.replaceChildren(
-            new Option(project==='ants'?'All curriculum levels':'All phases',''),
-            ...levels.map(level=>new Option('Level '+level,String(level))));
-        if(levels.some(level=>String(level)===oldLevel))
-            levelSelect.value=oldLevel;
-        const level=levelSelect.value;
-        const hasExportData=runs.some(run=>hubComparisonPoints(run,level).length);
+        axisSelect.replaceChildren(
+            new Option(comparisonAxisLabel('steps_completed'),'steps_completed'));
+        axisSelect.value='steps_completed';
+        const hasExportData=runs.some(run=>hubComparisonPoints(run).length);
         $('hub-compare-export-csv').disabled=!hasExportData;
         $('hub-compare-export-json').disabled=!hasExportData;
         const note=comparisonError&&comparisonProject===project
@@ -514,29 +444,17 @@ document.addEventListener('DOMContentLoaded', () => {
             const hostIds=runs.map(r=>r.job.assigned_machine_id).filter(Boolean);
             if(new Set(hostIds).size>1)
                 warnings.push('Runs used different assigned machines; performance measurements may not be comparable.');
-            const levels=runs.map(r=>{
-                const p=r.job.live_execution?.progress||r.job.final_progress||
-                    r.points[r.points.length-1];
-                return p?.curriculum_level;
-            }).filter(Number.isSafeInteger);
-            if(new Set(levels).size>1)
-                warnings.push('Runs are at different curriculum levels; success rates describe different training conditions.');
         }
         feedback('hub-compare-chart-note',
             warnings.join(' ')+(warnings.length?' ':'')+
             'Horizontal axis: '+(comparisonAxisLabel($('hub-compare-x-axis').value)||
-                chartAxes.episodes_completed.label)+'. Not wall-clock time. '+
-            (level!==''?'Showing curriculum level '+level+
-                ' only; axes remain cumulative, not stage-relative. ':'')+
+                chartAxes.steps_completed.label)+'. Not wall-clock time. '+
             'Source timestamps show when a trusted adapter published a summary. No training decisions use chart data.');
         const table=$('hub-compare-rows');
         table.replaceChildren();
         const headings=[...table.closest('table').querySelectorAll('thead th')];
-        const labels=project==='ants'
-            ?['Run','Status / host','Episodes / level','Window success',
-                'Segment success','Policy','Latest summary']
-            :['Run','Status / host','Project steps','Selected metric',
-                'Reported metrics','Segment','Latest summary'];
+        const labels=['Run','Status / host','Project steps','Selected metric',
+            'Reported metrics','Segment','Latest summary'];
         labels.forEach((label,i)=>{if(headings[i])headings[i].textContent=label;});
         for(const run of runs) {
             const j=run.job,p=j.live_execution?.progress||j.final_progress||
@@ -545,28 +463,13 @@ document.addEventListener('DOMContentLoaded', () => {
             cell(tr,run.slot+' · '+j.configuration_name+
                 (j.continuation_of_job_id?' (continuation)':''));
             cell(tr,j.status+' · '+(j.assigned_machine_id||'unassigned'));
-            if(project!=='ants') {
-                const metric=p?.metrics?.[metricSelect.value.slice(7)];
-                cell(tr,p?.steps_completed?.toLocaleString()||'—');
-                cell(tr,metric?metric.value.toLocaleString()+' '+metric.unit:'—');
-                cell(tr,Object.keys(p?.metrics||{}).join(', ')||'—');
-                cell(tr,p?.segment_id||'—');
-                cell(tr,p?.source_modified_at
-                    ?new Date(p.source_modified_at).toLocaleString():'—');
-                table.append(tr);
-                continue;
-            }
-            cell(tr,p?p.episodes_completed.toLocaleString()+
-                ' / level '+p.curriculum_level:'—');
-            cell(tr,p?.curriculum_window_success_rate==null?'—':
-                (p.curriculum_window_success_rate*100).toFixed(1)+'%'+
-                (p.curriculum_window_episodes==null?'':' ('+
-                    p.curriculum_window_episodes+' episodes)'));
-            cell(tr,p?.segment_success_rate==null?'—':
-                (p.segment_success_rate*100).toFixed(1)+'%');
-            cell(tr,p?.policy_version?.toLocaleString()||'—');
-            cell(tr,p?.source_modified_at?
-                new Date(p.source_modified_at).toLocaleString():'—');
+            const metric=p?.metrics?.[metricSelect.value.slice(7)];
+            cell(tr,p?.steps_completed?.toLocaleString()||'—');
+            cell(tr,metric?metric.value.toLocaleString()+' '+metric.unit:'—');
+            cell(tr,Object.keys(p?.metrics||{}).join(', ')||'—');
+            cell(tr,p?.segment_id||'—');
+            cell(tr,p?.source_modified_at
+                ?new Date(p.source_modified_at).toLocaleString():'—');
             table.append(tr);
         }
         if(!runs.length) {
@@ -575,55 +478,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 'No reported learning progress for this project.').colSpan=7;
             table.append(tr);
         }
-        $('hub-compare-threshold-panel').hidden=project!=='ants';
-        const thresholdRows=$('hub-compare-threshold-rows');
-        thresholdRows.replaceChildren();
-        const rateInput=$('hub-compare-threshold-rate').value.trim();
-        const windowInput=$('hub-compare-threshold-window').value.trim();
-        const targetPct=Number(rateInput),minWindow=Number(windowInput);
-        const validTarget=rateInput!==''&&windowInput!==''&&
-            Number.isFinite(targetPct)&&targetPct>=0&&
-            targetPct<=100&&Number.isSafeInteger(minWindow)&&
-            minWindow>=1&&minWindow<=1000000;
-        feedback('hub-compare-threshold-note',project!=='ants'
-            ?'Observed Ants rolling-window screening is unavailable for this project.'
-            :level===''
-                ?'Select one curriculum level to compare the same training phase. All-level success rates are not comparable.'
-                :!validTarget
-                    ?'Enter a 0–100% target and a minimum observed rolling-window size between 1 and 1,000,000.'
-                    :'First observed qualifying sample only, not the true first crossing. This bounded history may omit earlier or intermediate measurements. Not observed means censored, never failure. No evaluation or training decisions use this table.');
-        if(project==='ants'&&level!==''&&validTarget) {
-            for(const run of runs) {
-                const result=hubObservedThreshold(run,level,targetPct/100,minWindow);
-                const tr=document.createElement('tr');
-                cell(tr,run.slot+' · '+run.job.configuration_name+
-                    (run.job.continuation_of_job_id?' (continuation)':''));
-                cell(tr,result?.observations??0);
-                const first=result?.first;
-                cell(tr,first
-                    ?'Observed at '+(first.curriculum_window_success_rate*100).toFixed(1)+'%'
-                    :result?.observations?'Not observed (censored)':'No qualifying window samples');
-                cell(tr,first?first.episodes_completed.toLocaleString():'—');
-                cell(tr,first?.total_environment_steps==null?'—':
-                    first.total_environment_steps.toLocaleString());
-                cell(tr,result?.last?.episodes_completed==null?'—':
-                    result.last.episodes_completed.toLocaleString());
-                thresholdRows.append(tr);
-            }
-        }
         drawComparisonChart(runs,$('hub-compare-metric').value,
             $('hub-compare-x-axis').value);
     }
     function drawComparisonChart(runs,key,xKey) {
         const svg=$('hub-compare-svg'),axisLabel=comparisonAxisLabel(xKey);
         const genericKey=key.startsWith('metric:')?key.slice(7):null;
-        const units=project==='ants'||!genericKey?[]:
-            [...new Set(runs.flatMap(run=>
-                hubComparisonPoints(run).map(point=>
-                    point.metrics?.[genericKey]?.unit).filter(Boolean)))];
-        const metric=project==='ants'?chartMetrics[key]:
-            genericKey?{label:genericKey+' ('+(units.join('/')||'unknown')+')',
-                rate:units.length===1&&units[0]==='ratio'}:null;
+        const units=genericKey?[...new Set(runs.flatMap(run=>
+            hubComparisonPoints(run).map(point=>
+                point.metrics?.[genericKey]?.unit).filter(Boolean)))]:[];
+        const metric=genericKey?{
+            label:genericKey+' ('+(units.join('/')||'unknown')+')',
+            rate:units.length===1&&units[0]==='ratio',
+        }:null;
         svg.replaceChildren();
         if(!metric||!axisLabel)return;
         const ns='http://www.w3.org/2000/svg';
@@ -643,11 +510,9 @@ document.addEventListener('DOMContentLoaded', () => {
         svg.setAttribute('aria-label',metric.label+
             ' by '+axisLabel.toLowerCase()+' for selected runs');
         const usable=p=>Number.isSafeInteger(p[xKey])&&p[xKey]>=0&&
-            Number.isFinite(hubMetricValue(p,key))&&
-            !(key==='ppo_unique_samples_per_second'&&
-                p.latest_episode_policy_updated===false);
+            Number.isFinite(hubMetricValue(p,key));
         const series=runs.map(run=>({
-            ...run,valid:hubComparisonPoints(run,$('hub-compare-level').value),
+            ...run,valid:hubComparisonPoints(run),
         }));
         const values=series.flatMap(r=>r.valid
             .filter(usable)
@@ -660,11 +525,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const bounds={left:85,right:865,top:64,bottom:265};
         const xmin=Math.min(...values.map(v=>v.x)),
             xmax=Math.max(...values.map(v=>v.x));
-        const ymin=project==='ants'||metric.rate?0:
-            Math.min(0,...values.map(v=>v.y))*1.05;
-        const ymax=metric.rate?1:project==='ants'
-            ?Math.max(1,...values.map(v=>v.y))*1.05
-            :Math.max(0.001,...values.map(v=>v.y))*1.05;
+        const ymin=metric.rate?0:Math.min(0,...values.map(v=>v.y))*1.05;
+        const ymax=metric.rate?1:Math.max(0.001,...values.map(v=>v.y))*1.05;
         const x=v=>bounds.left+(v-xmin)/Math.max(1,xmax-xmin)*
             (bounds.right-bounds.left);
         const y=v=>bounds.bottom-(v-ymin)/Math.max(1e-9,ymax-ymin)*
@@ -721,7 +583,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const samples=comparisonProject===project&&comparisonData?.samples||[];
         const byJob=new Map(samples.map(sample=>
             [sample.job_id,sample.points||[]]));
-        const level=$('hub-compare-level').value;
         const runs=compareSlots.map(slot=>{
             const id=$('hub-compare-'+slot).value;
             const job=jobs.find(item=>item.id===id);
@@ -741,19 +602,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 last_evaluation:job.last_evaluation||null,
                 evaluation_stop_evidence:job.evaluation_stop_evidence||null,
                 stop_requested_at:job.stop_requested_at||null,
-                points:hubComparisonPoints({job,points:byJob.get(id)||[]},level),
+                points:hubComparisonPoints({job,points:byJob.get(id)||[]}),
             };
         }).filter(Boolean);
         if(!runs.some(run=>run.points.length))
-            throw Error('No recorded samples for the selected runs and level.');
+            throw Error('No recorded samples for the selected runs.');
         const exported={
             schema_version:1,project_id:project,
             exported_at:new Date().toISOString(),
             x_axis:$('hub-compare-x-axis').value,
             metric:$('hub-compare-metric').value,
-            curriculum_level:level===''?null:Number(level),
-            source:project==='ants'?'Experiment Hub validated Ants training summaries':
-                'Experiment Hub validated project metrics',
+            source:'Experiment Hub validated project metrics',
             interpretation:'Observational curves, not benchmark or qualification evidence; cumulative X axes are not stage-normalized.',
             runs,
         };
@@ -829,30 +688,6 @@ document.addEventListener('DOMContentLoaded', () => {
     function learningSummary(job) {
         const live=job.live_execution;
         const p=live?.progress||job.final_progress;
-        if(p?.source==='ants-summary-v1') {
-            const pct=x=>x==null?'—':(x*100).toFixed(1)+'%';
-            return 'Episodes '+p.episodes_completed.toLocaleString()+
-                ' · Policy '+p.policy_version.toLocaleString()+
-                ' · Level '+p.curriculum_level+
-                ' · Current curriculum window '+pct(p.curriculum_window_success_rate)+
-                (p.curriculum_window_episodes==null?''
-                    :' ('+p.curriculum_window_episodes+' episodes)')+
-                ' · Segment success '+pct(p.segment_success_rate)+
-                (p.simulation_steps_per_second==null?''
-                    :' · Last-episode simulation '+Math.round(
-                        p.simulation_steps_per_second).toLocaleString()+' steps/s')+
-                (p.total_environment_steps==null?''
-                    :' · Env steps '+p.total_environment_steps.toLocaleString())+
-                (p.total_optimization_steps==null?''
-                    :' · Optimizer steps '+p.total_optimization_steps.toLocaleString())+
-                (p.latest_episode_policy_updated===false
-                    ?' · No PPO update in last episode'
-                    :p.ppo_unique_samples_per_second==null?''
-                    :' · Last-episode PPO '+Math.round(
-                        p.ppo_unique_samples_per_second).toLocaleString()+
-                        ' unique samples/s')+
-                ' · Summary written '+new Date(p.source_modified_at).toLocaleString();
-        }
         if(p?.source==='hub-metrics-v1') {
             const values=Object.entries(p.metrics).slice(0,5).map(
                 ([key,measurement])=>key+' '+
@@ -867,9 +702,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         if(live?.progress_issue)
             return 'Local progress unavailable: '+live.progress_issue;
-        return job.dispatch_id
-            ?job.project_id==='ants'?'Awaiting production summary'
-                :'Awaiting trusted project summary':'—';
+        return job.dispatch_id?'Awaiting trusted project summary':'—';
     }
     function display() {
         if(!state)return;
@@ -1682,9 +1515,6 @@ document.addEventListener('DOMContentLoaded', () => {
         $('hub-compare-'+slot).addEventListener('change',renderComparison);
     $('hub-compare-metric').addEventListener('change',renderComparison);
     $('hub-compare-x-axis').addEventListener('change',renderComparison);
-    $('hub-compare-level').addEventListener('change',renderComparison);
-    $('hub-compare-threshold-rate').addEventListener('change',renderComparison);
-    $('hub-compare-threshold-window').addEventListener('change',renderComparison);
     for(const format of ['csv','json'])
         $('hub-compare-export-'+format).addEventListener('click',()=>{
             try{exportComparison(format);}
