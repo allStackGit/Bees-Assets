@@ -494,17 +494,11 @@ impl NativeLevelEventProcessor {
         Ok(())
     }
 
-    /// Timed command outputs remain staged until fleet credits are
-    /// persisted by NativeLevelRules. This prevents a completed command
-    /// from being published before its mining yield and physical effects.
-    /// Timed HiveMind Mining callbacks run after the combat reward pass
-    /// for this tick, matching the Level's post-roster command update.
-    /// The normal process_completed_tick already delivered the prefix
-    /// of world events. Append ONLY newly generated sparse capability
-    /// events, after the Level persisted their FleetShip values.
-    ///
-    /// The source events themselves will be cleared at the next physics
-    /// tick; the outbox persists until durably acknowledged by the host.
+    /// Publish one post-combat timed-command phase after the Level has
+    /// durably credited any mined minerals. Only newly generated sparse
+    /// gameplay events are forwarded, followed by command completions.
+    /// The bounded outbox retains them across rollout windows until
+    /// acknowledged. Reject duplicate publication of the same tick.
     pub fn publish_timed_command_events(
         &mut self, completed_tick: u64, events: &[CombatEvent],
     ) -> Result<(), NativeLevelEventError> {
