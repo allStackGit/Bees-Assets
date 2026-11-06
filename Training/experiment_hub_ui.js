@@ -48,6 +48,9 @@ function trainingFormPayload() {
 function hubComparisonTerminal(job) {
     return ['finished','failed','stopped'].includes(job.status);
 }
+function hubComparisonEvaluation(job) {
+    return job.evaluation_stop_evidence||job.last_evaluation||null;
+}
 function hubComparisonPoints(run) {
     return run.points.length?run.points:
         [run.job.live_execution?.progress||run.job.final_progress].filter(Boolean);
@@ -360,9 +363,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const samples=comparisonProject===project&&comparisonData?.samples||[];
         const history=new Map(samples.map(s=>[s.job_id,s.points||[]]));
         const hasSamples=j=>j.live_execution?.progress||j.final_progress||history.get(j.id)?.length;
-        const selectable=jobs.filter(j=>hasSamples(j)||hubComparisonTerminal(j)).slice(-80).reverse();
+        const selectable=jobs.filter(j=>hasSamples(j)||hubComparisonEvaluation(j)||
+            hubComparisonTerminal(j)).slice(-80).reverse();
         const chartable=selectable.filter(hasSamples);
-        const defaults=chartable.length?chartable:selectable;
+        const defaults=[...chartable,...selectable.filter(j=>!hasSamples(j))];
         const previous=compareSlots.map(slot=>$('hub-compare-'+slot).value);
         const changedProject=selectionProject!==project;
         if(changedProject)comparisonDefaultsApplied=false;
@@ -409,7 +413,8 @@ document.addEventListener('DOMContentLoaded', () => {
         axisSelect.value='steps_completed';
         const hasExportData=runs.some(run=>hubComparisonPoints(run).length);
         $('hub-compare-export-csv').disabled=!hasExportData;
-        $('hub-compare-export-json').disabled=!hasExportData&&!runs.some(run=>hubComparisonTerminal(run.job));
+        $('hub-compare-export-json').disabled=!hasExportData&&!runs.some(run=>
+            hubComparisonTerminal(run.job)||hubComparisonEvaluation(run.job));
         const note=comparisonError&&comparisonProject===project
             ?'Unable to load comparison history: '+comparisonError
             :comparisonProject!==project
@@ -481,11 +486,45 @@ document.addEventListener('DOMContentLoaded', () => {
         if(!runs.length) {
             const tr=document.createElement('tr');
             cell(tr,selectable.length?'Select a run above to compare or export.':
-                'No recorded training samples or terminal jobs for this project.').colSpan=7;
+                'No training samples, evaluation receipts or terminal jobs for this project.').colSpan=7;
             table.append(tr);
         }
+        renderComparisonEvaluations(runs);
         drawComparisonChart(runs,$('hub-compare-metric').value,
             $('hub-compare-x-axis').value);
+    }
+    function renderComparisonEvaluations(runs) {
+        const table=$('hub-compare-evaluation-rows');
+        table.replaceChildren();
+        const suites=new Set(),counts=new Set();
+        for(const {job,slot} of runs) {
+            const evidence=hubComparisonEvaluation(job);
+            const row=document.createElement('tr');
+            cell(row,slot+' · '+job.configuration_name);
+            cell(row,evidence?.suite_id||job.evaluation_stop?.suite_id||'—');
+            cell(row,evidence?evidence.successes.toLocaleString()+' / '+evidence.trials.toLocaleString():'—');
+            cell(row,evidence?(evidence.successes/evidence.trials).toLocaleString(undefined,
+                {style:'percent',maximumFractionDigits:2}):'—');
+            const checkpoint=cell(row,evidence?.checkpoint_sha256||'—');
+            checkpoint.classList.add('hub-checkpoint-digest');
+            cell(row,job.evaluation_stop_evidence?'Stop target met':evidence?'Stop target not met':
+                job.evaluation_stop?'Awaiting receipt':'No evaluation configured');
+            table.append(row);
+            if(evidence) {
+                suites.add(evidence.suite_id);
+                counts.add(evidence.trials);
+            }
+        }
+        if(!runs.length) {
+            const row=document.createElement('tr');
+            cell(row,'Select runs to inspect their evaluation receipts.').colSpan=6;
+            table.append(row);
+        }
+        feedback('hub-compare-evaluation-note',[
+            suites.size>1?'Selected receipts use different suites. Compare rates within the same suite.':'',
+            counts.size>1?'Selected receipts have different trial counts.':'',
+            'Matching suite IDs require the same approved scenario definition and seeds across workers.',
+        ].filter(Boolean).join(' '));
     }
     function drawComparisonChart(runs,key,xKey) {
         const svg=$('hub-compare-svg'),axisLabel=comparisonAxisLabel(xKey);
@@ -611,16 +650,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 points:hubComparisonPoints({job,points:byJob.get(id)||[]}),
             };
         }).filter(Boolean);
-        if(!runs.some(run=>run.points.length||(format==='json'&&hubComparisonTerminal(run))))
+        if(!runs.some(run=>run.points.length||(format==='json'&&
+            (hubComparisonTerminal(run)||hubComparisonEvaluation(run)))))
             throw Error(format==='csv'?'No recorded samples for the selected runs.':
-                'Select a job with recorded samples or a terminal outcome.');
+                'Select a job with recorded samples, an evaluation receipt or a terminal outcome.');
         const exported={
             schema_version:1,project_id:project,
             exported_at:new Date().toISOString(),
             x_axis:$('hub-compare-x-axis').value,
             metric:$('hub-compare-metric').value,
             source:'Experiment Hub validated project metrics',
-            interpretation:'Observational curves, not benchmark or qualification evidence; cumulative X axes are not stage-normalized.',
+            interpretation:'Training curves are observational and use cumulative steps. Compare independent evaluation receipts only across matched suite definitions and scenarios.',
             runs,
         };
         const content=format==='csv'?hubComparisonCsv(exported):

@@ -219,6 +219,7 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
 }
 
 [hidden] { display: none !important; }
+.hub-checkpoint-digest { font-family: monospace; overflow-wrap: anywhere; }
 .hub-tabs { display: flex; flex-wrap: wrap; gap: 7px; padding: 8px 0 14px; border-bottom: 4px solid var(--ink); align-items: flex-end; }
 .hub-tabs button[aria-selected="true"] { background: var(--ink); color: var(--paper); }
 .hub-tabs label { margin-left: auto; min-width: 160px; }
@@ -459,7 +460,13 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
     <thead><tr><th>Run</th><th>Status / host</th><th>Project steps</th><th>Selected metric</th><th>Reported metrics</th><th>Segment</th><th>Latest summary</th></tr></thead>
     <tbody id="hub-compare-rows"></tbody>
   </table></div>
-  <p class="muted">Compare project-neutral training measurements against cumulative project steps. Exports include selected observed samples and job provenance, not checkpoints or independent evaluation evidence. Metrics with incompatible units are never drawn together. Continuation jobs share checkpoint lineage and are not independent replicates. Comparisons are descriptive; matching configurations, seeds, scenarios, hardware and evaluation cohorts is necessary before drawing conclusions.</p>
+  <p class="muted">CSV and charts show observed training samples. JSON also includes job provenance and available evaluation receipts.</p>
+  <h3>Independent evaluation receipts</h3>
+  <p id="hub-compare-evaluation-note" class="muted"></p>
+  <div class="tablewrap hub-table"><table>
+    <thead><tr><th>Run</th><th>Suite</th><th>Successes / trials</th><th>Success rate</th><th>Checkpoint SHA-256</th><th>Outcome</th></tr></thead>
+    <tbody id="hub-compare-evaluation-rows"></tbody>
+  </table></div>
 </section>
 <section data-hub-tab="machines">
   <h2>Machine inventory and resource admission</h2>
