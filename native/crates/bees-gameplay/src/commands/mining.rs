@@ -1,5 +1,6 @@
 //! One state machine for timed HiveMind mining commands.
 use super::*;
+use bees_sim::combat_world::is_mining_ship_type;
 
 pub(super) struct MiningRun {
     target_id: i64,
@@ -38,7 +39,7 @@ impl MiningRun {
             let ship = world.ship(member.ship_id)
                 .ok_or(GameCommandError::InvalidSquad)?;
             if !ship.vitals.is_dead() &&
-                matches!(ship.ship_type, 4 | 9) {
+                is_mining_ship_type(ship.ship_type) {
                 if world.ship_fleet_identity(member.ship_id).is_none() {
                     return Err(GameCommandError::InvalidSquad);
                 }
@@ -132,7 +133,7 @@ impl MiningRun {
                 self.currently_mining.retain(|id|
                     world.ship(*id).is_some_and(|ship|
                         !ship.vitals.is_dead() &&
-                        matches!(ship.ship_type, 4 | 9)
+                        is_mining_ship_type(ship.ship_type)
                     )
                 );
                 if self.currently_mining.is_empty() {
