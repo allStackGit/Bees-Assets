@@ -2,11 +2,14 @@
 //!
 //! Sources: Striker.TryToDropBombs / DropBomb / CheckCarrierReload,
 //! StrikerBomb.Setup/KillSequence, RlOneVsOneAgent.ApplySpecialAction.
-//! This owns only policy Striker readiness and its carrier relation. The
-//! existing world StrikerBombFuse owns delayed damage, original target and
-//! original shooter-fleet attribution, even after the Striker is destroyed.
+//! Game and policy Strikers share one world-owned carrier relation and
+//! reload lifecycle. The existing StrikerBombFuse retains delayed damage,
+//! original target and shooter-fleet credit after a Striker is destroyed.
 
 use super::*;
+
+// ConfigData.ShipTypes.Carrier, verified against ship-colliders.json.
+const CARRIER_SHIP_TYPE: u8 = 5;
 
 /// The source-authored game Striker's persistent Carrier relationship.
 /// Caller supplies the actual Level spawn offset and configured return
@@ -59,7 +62,7 @@ impl CombatWorld {
     pub(super) fn reassign_striker_carriers_after_death(
         &mut self, carrier_index: usize,
     ) {
-        if self.ships[carrier_index].ship_type != 5 {
+        if self.ships[carrier_index].ship_type != CARRIER_SHIP_TYPE {
             return;
         }
         let dead_id = self.ships[carrier_index].entity_id;
@@ -67,7 +70,7 @@ impl CombatWorld {
         // CombatWorld.ships retains Level spawn order; inactive historical
         // rows are deliberately skipped, just like Unity's IsDead filter.
         let replacement = self.ships.iter().enumerate().find_map(|(index, ship)| {
-            (index != carrier_index && ship.ship_type == 5 &&
+            (index != carrier_index && ship.ship_type == CARRIER_SHIP_TYPE &&
                 ship.side == side && !ship.vitals.is_dead() &&
                 self.physics.ships()[index].active
             ).then_some(ship.entity_id)
@@ -114,7 +117,7 @@ impl CombatWorld {
             let &carrier_index = self.ship_by_id.get(&carrier_id)
                 .ok_or(CombatWorldError::UnknownShip)?;
             if carrier_id == striker_id ||
-                self.ships[carrier_index].ship_type != 5 ||
+                self.ships[carrier_index].ship_type != CARRIER_SHIP_TYPE ||
                 self.ships[carrier_index].side != self.ships[index].side ||
                 self.ships[carrier_index].vitals.is_dead() ||
                 !self.physics.ships()[carrier_index].active {
@@ -235,7 +238,7 @@ impl CombatWorld {
             .ok_or(CombatWorldError::UnknownShip)?;
         let ship = &self.ships[ship_index];
         let carrier = &self.ships[carrier_index];
-        if ship.ship_type != 19 || carrier.ship_type != 5 ||
+        if ship.ship_type != 19 || carrier.ship_type != CARRIER_SHIP_TYPE ||
             ship.entity_id == carrier.entity_id ||
             ship.side != carrier.side || ship.vitals.is_dead() ||
             carrier.vitals.is_dead() || !self.physics.ships()[ship_index].active ||
