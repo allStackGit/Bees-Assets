@@ -52,7 +52,8 @@ pub use self::aggressive::{
 use self::aggressive::AggressiveRun;
 pub use self::targeting::{
     NativeCommandTargetQueue, NativeEnemyTargetStats,
-    sort_native_command_targets,
+    sort_native_command_targets, sort_native_game_bomb_targets,
+    select_native_game_bomb_target,
 };
 pub use self::circle::{
     NativeCircleCommandSnapshot, assemble_circle_snapshot_from_live_weapons,
