@@ -192,11 +192,12 @@ impl FullRetreatRun {
             return Ok((Some(CommandFinishCause::WarpGateDestroyed), 0));
         }
         let mut callbacks = 0;
+        let gate_id = self.gate_id;
         self.participants.retain(|&id| {
             let alive = world.ship(id)
                 .is_some_and(|ship| !ship.vitals.is_dead());
             if !alive { world.release_game_warp_participant(id); }
-            alive && world.game_warp_participant_gate(id) == Some(self.gate_id)
+            alive && world.game_warp_participant_gate(id) == Some(gate_id)
         });
         if self.participants.is_empty() {
             return Ok((Some(CommandFinishCause::AllWarpParticipantsGone), 0));
