@@ -2061,16 +2061,22 @@ function json(res, status, obj) {
     res.end(body);
 }
 async function body(req, limitBytes = 5_000_000) {
-    if (!String(req.headers['content-type'] || '').startsWith('application/json'))
+    if (!/^application\/json(?:\s*;\s*charset\s*=\s*(?:"utf-8"|utf-8))?\s*$/i
+        .test(String(req.headers['content-type'] || '')))
         throw Error('JSON requests only.');
-    let raw = '', received = 0;
+    const chunks=[];
+    let received=0;
     for await (const chunk of req) {
         received += chunk.length;
-        if (received > limitBytes)
-            throw Error('JSON request exceeds allowed byte limit.');
-        raw += chunk.toString('utf8');
+        if (received > limitBytes) {
+            const error=Error('JSON request exceeds allowed byte limit.');
+            error.status=413;
+            throw error;
+        }
+        chunks.push(chunk);
     }
-    return JSON.parse(raw || '{}');
+    return JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(
+        Buffer.concat(chunks,received))||'{}');
 }
 
 
@@ -2917,7 +2923,7 @@ const server = http.createServer(async (req, res) => {
         }
         return json(res, 404, { error: 'Not found.' });
     } catch (err) {
-        return json(res, err.status === 401 ? 401 : 400, { error: err.message });
+        return json(res, [401,413].includes(err.status) ? err.status : 400, { error: err.message });
     }
 });
 // The dedicated worker-only HTTP boundary is shared with the isolated
