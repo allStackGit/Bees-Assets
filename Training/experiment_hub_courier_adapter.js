@@ -20,6 +20,40 @@ function inside(parent,child) {
     return !path.isAbsolute(relative)&&relative!=='..'&&!relative.startsWith('..'+path.sep);
 }
 
+function liveWindowsProgress(root) {
+    // Reading the durable checkpoint can block Python's replacement on Windows.
+    // The append-only event is emitted after all checkpoint files are published.
+    const file=path.join(root,'events.jsonl');
+    let fd;
+    try {
+        if(fs.realpathSync(file)!==file)throw Error('Courier event path is redirected.');
+        fd=fs.openSync(file,'r');
+        const stat=fs.fstatSync(fd);
+        if(!stat.isFile())throw Error('Invalid Courier event stream.');
+        const size=Math.min(stat.size,64*1024);
+        const buffer=Buffer.alloc(size);
+        const length=fs.readSync(fd,buffer,0,size,stat.size-size);
+        const lines=buffer.toString('utf8',0,length).split('\n');
+        lines.pop(); // The final line may still be in flight.
+        if(size<stat.size)lines.shift();
+        for(let i=lines.length-1;i>=0;i--) {
+            if(!lines[i].includes('"checkpoint_saved"'))continue;
+            const event=JSON.parse(lines[i]);
+            if(event.event==='checkpoint_saved')return {
+                steps_completed:event.round,
+                source_modified_at:new Date(event.utc).toISOString(),
+                metrics:{checkpoint_write_time:{value:event.seconds,unit:'seconds'}},
+            };
+        }
+        return null;
+    }catch(error) {
+        if(error.code==='ENOENT'&&fd===undefined)return null;
+        throw error;
+    }finally {
+        if(fd!==undefined)fs.closeSync(fd);
+    }
+}
+
 function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath}) {
     for(const target of [projectRoot,pythonPath,artifactRoot,configPath]) {
         if(typeof target!=='string'||!path.isAbsolute(target))
@@ -98,7 +132,14 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath}) 
                 ...(predecessor?['--resume']:[])];
         },
         readProgress(context) {
-            const checkpoint=path.join(jobRoot(context),'checkpoint.json');
+            const root=jobRoot(context);
+            const identity={schema_version:1,source:'hub-metrics-v1',
+                experiment_id:context.job_id,segment_id:'training'};
+            if(windows&&['running','stop_requested'].includes(context.state)) {
+                const progress=liveWindowsProgress(root);
+                return progress&&validateProgress({...identity,...progress},context.project_id);
+            }
+            const checkpoint=path.join(root,'checkpoint.json');
             let fd;
             try {
                 if(fs.realpathSync(checkpoint)!==checkpoint)
@@ -112,8 +153,7 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath}) 
                     throw Error('Courier checkpoint summary changed while reading.');
                 const summary=JSON.parse(buffer.toString('utf8'));
                 return validateProgress({
-                    schema_version:1,source:'hub-metrics-v1',experiment_id:context.job_id,
-                    segment_id:'training',source_modified_at:stat.mtime.toISOString(),
+                    ...identity,source_modified_at:stat.mtime.toISOString(),
                     steps_completed:summary.round,
                     metrics:{
                         generation:{value:summary.generation,unit:'count'},
