@@ -4,6 +4,7 @@ const fs=require('node:fs');
 const path=require('node:path');
 const crypto=require('node:crypto');
 const {validateProgress}=require('./experiment_hub_progress');
+const {evaluationReader}=require('./experiment_hub_evaluation');
 
 const UUID=/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
 const WINDOWS_ENTRY=[
@@ -54,7 +55,7 @@ function liveWindowsProgress(root) {
     }
 }
 
-function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath}) {
+function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,evaluationRoot,evaluationSuites}) {
     for(const target of [projectRoot,pythonPath,artifactRoot,configPath]) {
         if(typeof target!=='string'||!path.isAbsolute(target))
             throw Error('Courier requires absolute local project, Python, artifact and configuration paths.');
@@ -88,6 +89,7 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath}) 
 
     return {
         executable,cwd:project,stop_policy:windows?'terminate-group':'interrupt-main',
+        ...evaluationReader('courier',evaluationRoot,evaluationSuites,[project,artifacts]),
         args(parameters,context) {
             const {config_sha256,seed,workers,max_rounds,checkpoint_rounds}=parameters;
             const within=(value,min,max)=>Number.isSafeInteger(value)&&value>=min&&value<=max;

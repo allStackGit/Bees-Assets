@@ -1392,7 +1392,18 @@ with released capacity, or queue a checkpoint pipeline in Train. Keep
 the same environment digest. Each stage runs on the original worker
 and copies the completed population into its own directory before
 resuming. A positive round limit is additional for continuations.
-Independent Courier evaluation remains outside this adapter's contract.
+
+For evaluation-driven stopping, set `evaluationRoot` to a separate trusted
+receipt directory and `evaluationSuites` to the approved suite IDs. Use
+`experiment_hub_courier_evaluate.py --help` with the Basic Training Python
+environment. Run it on a trusted, immutable copy of the policy from the
+same dispatch and pass that policy's SHA-256 and the job's
+`hub-environment.json`. The suite JSON contains `suite_id`, `config_sha256`,
+`seed`, `trials`, and `horizon`. Use a dedicated seed and a new suite ID when
+changing the scenario definition. The success count is the number of
+trials alive at the fixed horizon. Configure the matching suite and
+thresholds in Design. Checkpoint selection and evaluator invocation are
+currently operator-managed.
 
 ## Not yet implemented
 
