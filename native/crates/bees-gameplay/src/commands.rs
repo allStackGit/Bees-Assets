@@ -680,6 +680,11 @@ impl NativeSquadCommandDirector {
         if resolved.local_command == LocalCommandKind::BombingRun &&
             bombing.is_some_and(|input|
                 input.weapons.len() == squad.members.len() &&
+                input.roster.get(squad.owner).is_some_and(|entry|
+                    entry.members.len() == squad.members.len() &&
+                    entry.members.iter().zip(squad.members)
+                        .all(|(&id, member)| id == member.ship_id)
+                ) &&
                 defenseless_carrier_strikers(
                     world, squad, input.is_carrier_squad,
                 )
