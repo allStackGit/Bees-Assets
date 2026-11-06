@@ -10,7 +10,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from experiment_hub_ants_eval_poll import exclusive, flush_receipt, passed_receipt, save_cursor, targets
+from experiment_hub_ants_eval_poll import exclusive, flush_receipt, passed_receipt, retain_dispatch_cursors, save_cursor, targets
 from experiment_hub_tinybrains_evaluate import SUITE_ID, UUID, evaluate, read_bounded, read_suite
 
 CHECKPOINT = re.compile(r"update-([0-9]{6,8})\.pt")
@@ -57,13 +57,15 @@ def poll(args, suite):
             save_cursor(state, {"suite_sha256": digest, "dispatches": prior["dispatches"]})
             return
         live = current_targets()
-        cursor = {dispatch: update for dispatch, update in prior["dispatches"].items() if dispatch in live}
+        cursor = retain_dispatch_cursors(prior["dispatches"], live)
         saved = {"suite_sha256": digest, "dispatches": cursor}
         # Persist a rotation order across calls; a newer checkpoint on one
         # busy job should not crowd out another eligible dispatch.
         for dispatch in live:
             cursor.setdefault(dispatch, 0)
         for dispatch in list(cursor):
+            if dispatch not in live:
+                continue
             job = live[dispatch]
             try:
                 if not UUID.fullmatch(dispatch) or receipt_suite["trials"] < job["min_trials"]:
