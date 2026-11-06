@@ -481,9 +481,15 @@ command timer would bypass the completed tick's roster and rewards pass.
 `CombatWorld` damage-reservation ledger; its Closest/Furthest strategies
 measure the imported target collider, not its center. A killed bomber's
 weapon lease is released by the normal ship-retirement path.
-The game Level still must supply weapon IDs/power, live bomber proximity,
-Striker/YellowJacket behavior and finished-command settlement before
-BombingRun can run. No measured throughput claim follows from this path.
+The reusable `assign_initial_bombing_run_targets` operation now assigns
+all squad Bomb targets in Unity member order. `NativeFireBargeBombingRun`
+implements the Fire Barge-only 2s/0.25s timer phase, pursued tracked moves,
+authoritative proximity-gated blast request, and reservation cleanup.
+It is **not yet installed by the standard HiveMind receipt/director path**:
+the Level must still supply actual weapon IDs/power and proximity data,
+integrate this controller with command lifecycle/settlement, and port the
+Striker/YellowJacket branches. Mixed bomber squads fail closed. No measured
+throughput claim follows from this path.
 
 `policy_special_measurements()` exposes bounded per-world counts of
 validated special requests, Striker exact hull checks/contact misses,
