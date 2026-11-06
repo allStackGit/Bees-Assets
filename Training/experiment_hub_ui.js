@@ -1235,7 +1235,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     }catch(e){feedback('hub-job-message',e.message);}
                 }));
             if(j.gpu_probe_block&&
-                (proof?.status!=='requested'||proof.automation_paused))
+                (proof?.status!=='requested'||proof.first_offered_at===null||proof.automation_paused))
                 actions.append(document.createTextNode(j.gpu_probe_block+' '));
             if(j.status==='waiting_adapter'&&proof?.status==='requested'&&proof.first_offered_at===null)
                 actions.append(button('Withdraw GPU probe',async()=>{
