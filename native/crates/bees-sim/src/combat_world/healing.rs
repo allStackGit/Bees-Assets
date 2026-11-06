@@ -136,7 +136,6 @@ impl CombatWorld {
             !self.physics.ships()[ship_index].active ||
             !self.physics.ships()[hive_index].active ||
             ship.vitals.health() >= ship.vitals.max_health() ||
-            self.ship_fleet_identity(ship_id).is_none() ||
             !self.support_zone_ids
                 .get(&(BEEHIVE_TYPE, ship.side))
                 .is_some_and(|ids| ids.binary_search(&beehive_id).is_ok()) {
@@ -219,8 +218,7 @@ impl CombatWorld {
             ship.side != hive.side || hive.ship_type != BEEHIVE_TYPE ||
             ship.vitals.is_dead() || hive.vitals.is_dead() ||
             !self.physics.ships()[ship_index].active ||
-            !self.physics.ships()[hive_index].active ||
-            self.ship_fleet_identity(ship_id).is_none() {
+            !self.physics.ships()[hive_index].active {
             return Err(CombatWorldError::InvalidPolicyHealing);
         }
         if ship.vitals.health() >= ship.vitals.max_health() {
