@@ -456,17 +456,10 @@ impl CombatWorld {
             let Some(gate_id) = self.touching_warp_gate(ship_id) else {
                 continue;
             };
-            let &index = self.ship_by_id.get(&ship_id)
-                .ok_or(CombatWorldError::UnknownShip)?;
-            let side = self.ships[index].side;
-            // ShipVitals holds the authoritative live health/cargo TSV.
-            // Capture before EndKill zeros the value.
-            let preserved_tsv = self.ships[index].vitals.tsv().max(0);
-            self.ships[index].vitals.kill_without_hit();
-            self.events.push(CombatEvent::ShipWarped {
-                ship_id, gate_id, side, preserved_tsv,
-            });
-            self.retire_dead_ship_with_mode(index, 0, 0, true)?;
+            // Policy training's immediate contact warp retains its
+            // source timing; game FullRetreat uses the same EndKill
+            // transaction only after the authored gate opening event.
+            self.end_kill_warp_ship(ship_id, gate_id)?;
             self.policy_special_measurements.warp_actions_completed += 1;
         }
         self.policy_pending_warp.clear();
