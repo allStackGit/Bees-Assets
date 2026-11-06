@@ -400,12 +400,16 @@ impl NativeLevelInferenceBatch {
         world: &World<NativeLevelState<M, A>>,
         row: usize,
     ) -> bool {
-        self.batch.keys().get(row).is_some_and(|key|
-            key.is_current_for(world) &&
+        let (Some(key), Some(&expected)) = (
+            self.batch.keys().get(row),
+            self.binding_revisions.get(row),
+        ) else {
+            return false;
+        };
+        key.is_current_for(world) &&
             i64::try_from(key.agent).ok().and_then(|ship_id|
                 world.state.combat.policy_binding_revision(ship_id)
-            ) == self.binding_revisions.get(row).copied()
-        )
+            ) == Some(expected)
     }
 
     /// Dispatch only this world's indexed rows. Check all keys against
