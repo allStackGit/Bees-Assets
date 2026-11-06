@@ -341,7 +341,9 @@ impl NativeLevelEventProcessor {
             side, DiscoveryKind::EnemyShip,
             observed_ship_id, authored_value,
         )?;
-        Ok(first && self.commands.record_first_ship_sighting(reward_squad))
+        Ok(first && self.commands.record_first_ship_sighting(
+            reward_squad, side,
+        ))
     }
 
     /// Called after the authoritative FleetShip.MineralsMinedThisLevel
