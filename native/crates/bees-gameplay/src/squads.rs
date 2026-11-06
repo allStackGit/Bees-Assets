@@ -112,6 +112,16 @@ impl NativeSquadRoster {
         self.active.len()
     }
 
+    /// A pooled squad number cannot be reused while its prior lifecycle
+    /// remains active. The BTreeMap already orders by
+    /// (level_id, squad_id, lifecycle_id), so only that number's range
+    /// needs inspection instead of every squad in a large battle.
+    fn has_live_squad_number(&self, owner: SquadLifetime) -> bool {
+        let first = SquadLifetime { lifecycle_id: 0, ..owner };
+        let last = SquadLifetime { lifecycle_id: u64::MAX, ..owner };
+        self.active.range(first..=last).next().is_some()
+    }
+
     /// Stable live lifetimes for terminal HiveMind session retirement.
     /// Level completion does not imply that every ship physically died.
     pub fn active_lifetimes(&self) -> impl Iterator<Item = SquadLifetime> + '_ {
@@ -148,10 +158,7 @@ impl NativeSquadRoster {
         if !owner.valid() || side <= 0 || members.is_empty() {
             return Err(SquadRosterError::InvalidOwner);
         }
-        if self.active.keys().any(|other|
-            other.level_id == owner.level_id &&
-            other.squad_id == owner.squad_id
-        ) {
+        if self.has_live_squad_number(owner) {
             return Err(SquadRosterError::DuplicateSquad);
         }
         let mut distinct = HashSet::with_capacity(members.len());
@@ -237,10 +244,7 @@ impl NativeSquadRoster {
         };
         if !minion_owner.valid() ||
             minion_owner.level_id != mother_squad.level_id ||
-            self.active.keys().any(|other|
-                other.level_id == minion_owner.level_id &&
-                other.squad_id == minion_owner.squad_id
-            ) {
+            self.has_live_squad_number(minion_owner) {
             return Err(SquadRosterError::InvalidOwner);
         }
         let parent = world.ship(*scout_id)
