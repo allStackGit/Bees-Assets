@@ -115,6 +115,78 @@ impl CombatWorld {
         self.touching_beehive(ship_id).is_some()
     }
 
+    /// Shared Beehive healing transaction for policy decisions and
+    /// gameplay Heal command timers. Contact and one-second cooldown
+    /// belong to their respective callers; the real health, TSV, damage
+    /// reservations and event are authored in this one physical world.
+    /// A timed command may keep healing an enrolled ship even when its
+    /// collider drifts outside the trigger, matching Unity HealShips.
+    pub fn heal_ship_at_beehive(
+        &mut self, ship_id: i64, beehive_id: i64,
+    ) -> Result<Option<i32>, CombatWorldError> {
+        let &ship_index = self.ship_by_id.get(&ship_id)
+            .ok_or(CombatWorldError::UnknownShip)?;
+        let &hive_index = self.ship_by_id.get(&beehive_id)
+            .ok_or(CombatWorldError::UnknownShip)?;
+        let ship = &self.ships[ship_index];
+        let hive = &self.ships[hive_index];
+        if ship_id == beehive_id ||
+            ship.side != hive.side || hive.ship_type != BEEHIVE_TYPE ||
+            ship.vitals.is_dead() || hive.vitals.is_dead() ||
+            !self.physics.ships()[ship_index].active ||
+            !self.physics.ships()[hive_index].active ||
+            self.ship_fleet_identity(ship_id).is_none() {
+            return Err(CombatWorldError::InvalidPolicyHealing);
+        }
+        if ship.vitals.health() >= ship.vitals.max_health() {
+            return Ok(None);
+        }
+        let before = self.ships[ship_index].vitals.health();
+        let tsv_gain = self.ships[ship_index].vitals.heal(HEAL_HEALTH)?;
+        let healed_health = self.ships[ship_index].vitals.health() - before;
+        if healed_health <= 0 { return Ok(None); }
+        self.reservations.target_health_changed(
+            ship_id, self.ships[ship_index].vitals.health(),
+        );
+        self.events.push(CombatEvent::CapabilityHealed {
+            ship_id, beehive_id, side: self.ships[ship_index].side,
+            healed_health, tsv_gain,
+        });
+        Ok(Some(tsv_gain))
+    }
+
+    /// The public command interface queries only configured, live
+    /// same-side Beehives. Returning a sorted borrowed slice avoids a
+    /// whole-ship scan or allocations on three-second movement polls.
+    pub fn live_beehive_ids_for_side(&self, side: i32) -> impl Iterator<Item = i64> + '_ {
+        self.support_zone_ids.get(&(BEEHIVE_TYPE, side))
+            .into_iter().flat_map(|ids| ids.iter().copied())
+            .filter(move |id| self.ship(*id).is_some_and(|ship|
+                !ship.vitals.is_dead() && ship.ship_type == BEEHIVE_TYPE
+            ))
+    }
+
+    /// Source Beehive.OnTriggerEnter2D requires the separate authored
+    /// HealCollider, not the Beehive ship hull or a guessed radius.
+    pub fn ship_touches_beehive_healing_zone(
+        &self, ship_id: i64, beehive_id: i64,
+    ) -> bool {
+        let Some(&ship_index) = self.ship_by_id.get(&ship_id) else {
+            return false;
+        };
+        let Some(&hive_index) = self.ship_by_id.get(&beehive_id) else {
+            return false;
+        };
+        let ship = &self.ships[ship_index];
+        let hive = &self.ships[hive_index];
+        hive.ship_type == BEEHIVE_TYPE && ship.side == hive.side &&
+            ship_id != beehive_id && !ship.vitals.is_dead() &&
+            !hive.vitals.is_dead() &&
+            self.physics.ships()[hive_index].healing_zone_touches(
+                &self.physics.ships()[ship_index],
+            )
+    }
+
     /// Called once during the authoritative fixed step, after
     /// cooldown advancement and before projectile physics. All
     /// requests and event IDs remain in stable ship-ID order.
@@ -132,25 +204,14 @@ impl CombatWorld {
                 continue;
             };
             self.policy_special_measurements.healing_touch_checks += 1;
-            let &ship_index = self.ship_by_id.get(&ship_id)
-                .ok_or(CombatWorldError::UnknownShip)?;
-            let prior = self.ships[ship_index].vitals.health();
-            let tsv_gain = self.ships[ship_index].vitals
-                .heal(HEAL_HEALTH)?;
-            let healed_health = self.ships[ship_index].vitals.health() - prior;
-            if healed_health <= 0 { continue; }
+            if self.heal_ship_at_beehive(ship_id, beehive_id)?.is_none() {
+                continue;
+            }
             if let Some(runtime) = self.policy_ship_runtime.get_mut(&ship_id)
                 .and_then(|runtime| runtime.healing.as_mut()) {
                 runtime.cooldown_remaining = HEAL_COOLDOWN_SECONDS;
             }
-            self.reservations.target_health_changed(
-                ship_id, self.ships[ship_index].vitals.health(),
-            );
             self.policy_special_measurements.healing_actions_completed += 1;
-            self.events.push(CombatEvent::CapabilityHealed {
-                ship_id, beehive_id, side: self.ships[ship_index].side,
-                healed_health, tsv_gain,
-            });
         }
         self.policy_pending_healing.clear();
         Ok(())
