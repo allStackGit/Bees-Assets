@@ -44,11 +44,17 @@ game-command healing now share the physical health/TSV mutation and
 capability event. Four-slot Beehive reservations are globally owned by
 CombatWorld, released on ship/Beehive retirement and queried through the
 authored healing-zone index. The game-command entry
-`heal_reserved_command_ship` enforces reservation ownership; the command
-must still release slots when healed, canceled or superseded. The separate
-HiveMind Heal command remains disabled until its original-health priority
-queue, movement/arrival, timer callbacks and slot-reassignment lifecycle
-are implemented; policy healing does not substitute for that command. WarpGate
+`heal_reserved_command_ship` enforces reservation ownership. HiveMind
+Heal now selects live same-side Beehives in source distance order, sorts
+damaged ships by the original (not training-adjusted maximum) health,
+reserves shared slots, moves each waiting ship to its assigned hive,
+starts 1-second healing on exact authored HealCollider contact, and
+reassigns waiting ships when slots open. Command completion, timeout,
+replacement and squad retirement release their reservations. The Level
+adapter **must** call `configure_game_ship_original_health` with each
+ship's true `Ship.OriginalHealth` before Heal is requested; missing
+metadata fails command activation rather than guessing from MaxHealth.
+Render/Level integration and native runtime qualification remain pending. WarpGate
 returns now require the real WarpGate child collider supplied through
 `configure_warp_gate_zone` and a living non-WarpGate Human policy
 controller registered with `configure_policy_warp` using the authored
