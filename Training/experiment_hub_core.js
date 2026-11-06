@@ -722,6 +722,20 @@ class ExperimentHub {
             return this.automationStatus();
         }
     }
+    evaluationTargets(projectId,machineId,suiteId) {
+        this.project(projectId);
+        if(!ID.test(machineId||'')||!ID.test(suiteId||'')||
+            !this.state.machines.some(machine=>machine.id===machineId))
+            throw Error('Select a registered machine and evaluation suite.');
+        return this.state.jobs.filter(job=>
+            job.project_id===projectId&&job.assigned_machine_id===machineId&&
+            job.status==='running'&&job.evaluation_stop?.suite_id===suiteId&&
+            UUID.test(job.dispatch_id||'')&&UUID.test(job.artifact_lineage_root_id||job.id))
+            .map(job=>({job_id:job.id,dispatch_id:job.dispatch_id,
+                artifact_lineage_root_id:job.artifact_lineage_root_id||job.id,
+                min_trials:job.evaluation_stop.min_trials,
+                min_success_rate:job.evaluation_stop.min_success_rate}));
+    }
     progressComparison(projectId) {
         this.project(projectId);
         return this.progressHistory.snapshot(projectId,this.state.jobs);

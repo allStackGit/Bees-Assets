@@ -1185,9 +1185,26 @@ python Training/experiment_hub_ants_evaluate.py \
 The producer uses a separate held-out seed namespace, the checkpoint's
 production model and environment, a fixed curriculum level, and stochastic
 Ants outcomes. It writes only to scratch and the receipt directory. The
-evaluator operator supplies the dispatch and checkpoint association, and
-the worker must be able to read the private receipt. The command runs one
-evaluation on demand. The Hub does not schedule evaluator workloads.
+evaluator operator supplies the dispatch and checkpoint association for
+this on-demand command. The worker must be able to read the private receipt.
+
+For automatic handoff, run `experiment_hub_ants_eval_poll.py` periodically
+from a separately budgeted CPU service. Provide `--machine` (the Ants training
+host's Hub ID), `--artifact-root` (its mounted read-only artifact parent),
+`--suite`, `--scratch` and `--receipt-root`. The default Hub port is 7148
+on loopback. An evaluator on another machine needs a trusted loopback
+forward to the coordinator. Use private persistent scratch and share the
+receipt directory with the training agent's adapter. The scheduler owns
+the cadence, CPU budget, and lifetime of each invocation.
+
+Each invocation evaluates at most one newer checkpoint and rechecks the
+matching running dispatch before publication. The first visible checkpoint
+sets a watermark because a continuation may initially reference the
+predecessor's checkpoint. The evaluator rotates among eligible dispatches,
+retains the last attempted episode across invocations, and leaves an
+already-passing receipt available for the worker. A failed attempt waits
+for a newer checkpoint. Keep a stable suite ID and scratch directory for
+the lifetime of the schedule.
 
 The adapter accepts `mode:"new"` (or omitted mode) for a fresh run
 and `mode:"resume"` for an explicitly linked, completed predecessor.
