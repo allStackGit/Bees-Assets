@@ -30,7 +30,7 @@ const POST_ACTIONS={
 };
 const GET_PATHS=new Set([
     '/api/hub/jobs/plan','/api/hub/automation','/api/hub/progress',
-    '/api/hub/state','/api/hub/placements',
+    '/api/hub/state','/api/hub/placements','/api/hub/evaluation/targets',
 ]);
 function isHubAdminPath(method,pathname) {
     return method==='GET'?GET_PATHS.has(pathname):
@@ -44,6 +44,9 @@ function route(hub,method,pathname,query,value,bees) {
             return {status:200,data:hub.plannedJobs()};
         if(pathname==='/api/hub/automation')
             return {status:200,data:hub.automationStatus()};
+        if(pathname==='/api/hub/evaluation/targets')
+            return {status:200,data:{targets:hub.evaluationTargets(
+                query.get('project_id'),query.get('machine_id'),query.get('suite_id'))}};
         if(pathname==='/api/hub/progress')
             return {status:200,data:hub.progressComparison(query.get('project_id'))};
         if(pathname==='/api/hub/state')
