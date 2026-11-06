@@ -1089,7 +1089,9 @@ class ExperimentHub {
                     }
                     if(child) {
                         child.status='waiting_adapter';
-                        child.status_reason='Predecessor completed and released verified capacity; job is eligible for separate allocation and native authorization.';
+                        child.status_reason=job.status==='stopped'
+                            ?'Independent evaluation target met; native Stop verified and capacity released. Separate allocation and Start remain required.'
+                            :'Predecessor finished and released verified capacity; separate allocation and Start remain required.';
                         child.predecessor_ready_at=now();
                     }
                 }
