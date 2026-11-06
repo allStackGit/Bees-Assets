@@ -1166,13 +1166,15 @@ must explicitly acknowledge that behavior. CPU-only jobs mask
 common CUDA/HIP/ROCm selector environment variables, but do not
 provide enforceable GPU isolation; GPU requests remain blocked.
 
-**Not yet qualified on actual Windows hardware.** The .NET helper
-has not been compiled or executed on a Windows host in this work.
-The Node bridge and manager were exercised with simulated Windows
-status pipes and filesystem ownership. Build, process containment,
-OS-level quota enforcement, session lifecycle, reconnection,
-production adapter compatibility and real stop semantics remain
-unverified and must not be inferred from the simulations.
+The .NET owner and browser-controlled CPU-only lifecycle have passed
+isolated Windows qualifications, including signed terminal recovery.
+Those earlier runs do not qualify the **current** owner/agent version,
+which now also requires a system-wide processor-count match. Rebuild the
+locally pinned helper and rerun the inert native and browser workflows
+before installing production adapters. Production mixed-project CPU
+contention, forced-stop effects on real checkpoints, and unattended
+evaluation handoff are still unqualified; simulated or isolated passes
+do not establish production readiness.
 
 ## Project-neutral training measurements
 
