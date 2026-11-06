@@ -11,7 +11,7 @@ use crate::combat::ShipVitals;
 /// independent of rendering or Unity's wall clock.
 const COOLDOWN_SECONDS: f32 = 10.0;
 const MAX_BEACONS: u8 = 5;
-const SCOUT_TYPE: u8 = 18;
+pub const SCOUT_TYPE: u8 = 18;
 const BEACON_TYPE: u8 = 14;
 
 /// Level-supplied real prefab metadata. ship-colliders.json intentionally
