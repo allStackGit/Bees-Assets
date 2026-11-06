@@ -119,6 +119,9 @@ pub struct NativeLevelInferenceBatch {
     /// in the multi-world model batch at every dispatch.
     world_rows: HashMap<WorldId, Vec<usize>>,
     routes: Vec<NativePolicyRoute>,
+    /// Actual controller instance at the moment each observation row was
+    /// encoded; an agent ID can outlive a controller rebind on the same tick.
+    binding_revisions: Vec<u64>,
     finalized: bool,
     failed: bool,
     measurements: NativeInferenceMeasurements,
@@ -136,6 +139,7 @@ impl NativeLevelInferenceBatch {
             rows.clear();
         }
         self.routes.clear();
+        self.binding_revisions.clear();
         self.finalized = false;
         self.failed = false;
     }
@@ -151,6 +155,11 @@ impl NativeLevelInferenceBatch {
         ))?;
         self.routes.try_reserve(
             count.saturating_sub(self.routes.len()),
+        ).map_err(|_| NativeInferenceError::Batch(
+            PolicyBatchError::AllocationFailed,
+        ))?;
+        self.binding_revisions.try_reserve(
+            count.saturating_sub(self.binding_revisions.len()),
         ).map_err(|_| NativeInferenceError::Batch(
             PolicyBatchError::AllocationFailed,
         ))?;
@@ -277,11 +286,14 @@ impl NativeLevelInferenceBatch {
         let mask = combat.policy_action_mask(ship_id)?;
         let frame = combat.policy_frame(ship_id)
             .ok_or(NativeInferenceError::InvalidAgent)?;
+        let bind_revision = combat.policy_binding_revision(ship_id)
+            .ok_or(NativeInferenceError::InvalidAgent)?;
         let key = PolicyAgentKey::from_world(world, agent);
         self.writer.push_to_batch(&mut self.batch, key, mask, snapshot, frame)?;
         let row = self.batch.keys().len() - 1;
         self.world_rows.entry(world.id).or_default().push(row);
         self.routes.push(route);
+        self.binding_revisions.push(bind_revision);
         Ok(())
     }
 
@@ -381,6 +393,21 @@ impl NativeLevelInferenceBatch {
             .map_err(NativePocaExportError::Activity)
     }
 
+    /// World and controller instance must both still match the row's
+    /// original observation. Rebinding can occur without advancing a tick.
+    pub fn is_row_current_for<M, A>(
+        &self,
+        world: &World<NativeLevelState<M, A>>,
+        row: usize,
+    ) -> bool {
+        self.batch.keys().get(row).is_some_and(|key|
+            key.is_current_for(world) &&
+            i64::try_from(key.agent).ok().and_then(|ship_id|
+                world.state.combat.policy_binding_revision(ship_id)
+            ) == self.binding_revisions.get(row).copied()
+        )
+    }
+
     /// Dispatch only this world's indexed rows. Check all keys against
     /// current episode/tick BEFORE changing the caller's output.
     /// Interleaved world rows retain their insertion order.
@@ -400,7 +427,7 @@ impl NativeLevelInferenceBatch {
         if let Some(rows) = rows {
             for &row in rows {
                 let key = self.keyed_decisions[row].0;
-                if !key.is_current_for(world) {
+                if !self.is_row_current_for(world, row) {
                     return Err(NativeInferenceError::StaleAction(key));
                 }
             }

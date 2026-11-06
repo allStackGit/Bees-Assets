@@ -146,7 +146,9 @@ where
                 index, expected, actual: added.len(),
             });
         }
-        if added.iter().any(|key| !key.is_current_for(world)) {
+        if (start..batch.keys().len()).any(|row|
+            !batch.is_row_current_for(world, row)
+        ) {
             return Err(NativeBatchedStepError::WrongObservationWorld { index });
         }
         for key in added {

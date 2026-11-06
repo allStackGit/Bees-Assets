@@ -106,6 +106,13 @@ impl CombatWorld {
             .map(|(&id, runtime)| (id, runtime.bind_revision))
     }
 
+    /// Same-tick inference must not apply an action to a controller that
+    /// was rebound after its observation was encoded.
+    pub fn policy_binding_revision(&self, ship_id: i64) -> Option<u64> {
+        self.policy_ship_runtime.get(&ship_id)
+            .map(|runtime| runtime.bind_revision)
+    }
+
     /// Use the controller's actual episode frame for both observation
     /// encoding and action execution. External callers must never
     /// supply a second independently stored frame.
