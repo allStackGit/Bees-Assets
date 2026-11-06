@@ -115,6 +115,32 @@ impl CombatWorld {
         nearest
     }
 
+    /// Current live mining target geometry. Moving asteroids may drift
+    /// between command polls; the target is always followed at its current
+    /// world position, but the random destination offset stays fixed.
+    pub fn mining_asteroid_position(&self, id: i64) -> Option<Vec2> {
+        let &index = self.obstacle_by_id.get(&id)?;
+        let obstacle = &self.obstacles[index];
+        if obstacle.kind != ObstacleKind::MiningAsteroid ||
+            !obstacle.vitals.is_some_and(|v| !v.is_dead && v.health > 0) ||
+            !self.physics.obstacles()[index].active {
+            return None;
+        }
+        Some(self.physics.obstacles()[index].pose.position)
+    }
+
+    /// Source Mining.Execute draws a random point within a disk whose
+    /// radius is 30% of the smaller world collider AABB half-extent,
+    /// clamped to 3..12. No heuristic shape replacement or extra scan.
+    pub fn mining_asteroid_spread_radius(&self, id: i64) -> Option<f32> {
+        let &index = self.obstacle_by_id.get(&id)?;
+        if self.mining_asteroid_position(id).is_none() { return None; }
+        let bounds = self.physics.obstacles()[index].primary_bounds()?;
+        let half_x = (bounds.max.x - bounds.min.x) * 0.5;
+        let half_y = (bounds.max.y - bounds.min.y) * 0.5;
+        Some((half_x.min(half_y) * 0.3).clamp(3.0, 12.0))
+    }
+
     /// Exact primary-collider contact for a source Mining command's
     /// FoundAsteroid membership. This is a pure, indexed read: it does
     /// not trigger an extraction or create an independent contact cache.
