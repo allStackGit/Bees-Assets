@@ -43,7 +43,7 @@ pub struct NativeBombingActivation<'a> {
 /// which the current bomb target is in the ship's real Unity
 /// ProximityCollider.NearbyEnemyShips set. This is not collider-center
 /// distance or a second physics contact registry.
-pub struct NativeFireBargeTimerSnapshot {
+pub struct NativeBombingTimerSnapshot {
     pub enemy_owner: SquadLifetime,
     pub enemy_alive: bool,
     pub nearby_targets: Vec<(i64, i64)>,
@@ -147,7 +147,7 @@ pub fn assign_initial_bombing_run_targets(
 /// preserving the Level's one-pass episode and squad lifecycle boundary.
 ///
 /// Returns the count of newly queued, source-authorized detonations.
-pub fn advance_fire_barge_bombing_run(
+pub fn advance_noncarrier_bombing_run(
     world: &mut CombatWorld,
     members: &[SquadFormationMember],
     formation: SquadFormationOptions,
@@ -215,7 +215,7 @@ pub fn advance_fire_barge_bombing_run(
 /// Timed non-carrier BombingRun for Fire Barges, Yellow Jackets or a
 /// mixture of those types. Striker still requires independent carrier
 /// return and reload handling. No separate projectile or damage model.
-pub struct NativeFireBargeBombingRun {
+pub struct NativeBombingRun {
     target: NativeAttackTarget,
     members: Vec<SquadFormationMember>,
     formation: SquadFormationOptions,
@@ -224,7 +224,7 @@ pub struct NativeFireBargeBombingRun {
     has_contact_bombers: bool,
 }
 
-impl NativeFireBargeBombingRun {
+impl NativeBombingRun {
     /// Source Execute assigns all live bombs before installing its
     /// two-second immediate recurring command timer. Caller owns both
     /// ScaledTimer and the normal HiveMind timeout/outcome settlement.
@@ -311,7 +311,7 @@ impl NativeFireBargeBombingRun {
         self.timer_loops = self.timer_loops.saturating_add(1);
         let mut tested = 0_usize;
         let mut any_near = false;
-        advance_fire_barge_bombing_run(
+        advance_noncarrier_bombing_run(
             world, &self.members, self.formation,
             command_outcome_id,
             |ship_id, target_id| {

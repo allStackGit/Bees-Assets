@@ -16,7 +16,7 @@ use bees_sim::rl_discovery::DiscoveryKind;
 use crate::commands::{
     CommandFinishCause, CommandMeasurements, FinishedNativeCommand,
     GameCommandError, NativeAggressiveCommandSnapshot,
-    NativeCircleCommandSnapshot, NativeFireBargeTimerSnapshot,
+    NativeCircleCommandSnapshot, NativeBombingTimerSnapshot,
     NativeBombWeapon, NativeBombingActivation, NativeEnemyTargetStats,
     NativeFriendlySquad, NativeSquadOrder, NativeSquadCommandDirector,
     NativeSwipeCommandSnapshot, HiveMindCommandSettings,
@@ -756,7 +756,7 @@ impl NativeLevelEventProcessor {
         ) -> Result<NativeAggressiveCommandSnapshot, GameCommandError>,
         bombing_snapshot: impl FnMut(
             SquadLifetime, i64, &CombatWorld,
-        ) -> Result<NativeFireBargeTimerSnapshot, GameCommandError>,
+        ) -> Result<NativeBombingTimerSnapshot, GameCommandError>,
     ) -> Result<(), NativeLevelEventError> {
         if self.is_failed() {
             return Err(NativeLevelEventError::FailedLevel);

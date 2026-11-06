@@ -48,9 +48,9 @@ mod in_and_out;
 mod aggressive;
 mod bombing;
 pub use self::bombing::{
-    NativeBombWeapon, NativeBombingActivation, NativeFireBargeTimerSnapshot,
-    NativeFireBargeBombingRun, assign_initial_bombing_run_targets,
-    advance_fire_barge_bombing_run,
+    NativeBombWeapon, NativeBombingActivation, NativeBombingTimerSnapshot,
+    NativeBombingRun, assign_initial_bombing_run_targets,
+    advance_noncarrier_bombing_run,
 };
 pub use self::aggressive::{
     NativeAggressiveCommandSnapshot, assemble_aggressive_snapshot_from_live_weapons,
@@ -392,7 +392,7 @@ struct ActiveNativeCommand {
     swipe: Option<SwipeRun>,
     in_and_out: Option<InAndOutRun>,
     aggressive: Option<AggressiveRun>,
-    bombing: Option<NativeFireBargeBombingRun>,
+    bombing: Option<NativeBombingRun>,
     mining: Option<MiningRun>,
     heal: Option<HealRun>,
     scouting: Option<ScoutingRun>,
@@ -829,7 +829,7 @@ impl NativeSquadCommandDirector {
                         return Ok(Activation::Unsupported(selection));
                     }
                 }
-                let Some(run) = NativeFireBargeBombingRun::start(
+                let Some(run) = NativeBombingRun::start(
                     world, input.roster, random, squad, input.enemy_owner,
                     &selection, input.weapons, input.enemies,
                 )? else {
@@ -1228,7 +1228,7 @@ impl NativeSquadCommandDirector {
         ) -> Result<NativeAggressiveCommandSnapshot, GameCommandError>,
         mut bombing_snapshot: impl FnMut(
             SquadLifetime, i64, &CombatWorld,
-        ) -> Result<NativeFireBargeTimerSnapshot, GameCommandError>,
+        ) -> Result<NativeBombingTimerSnapshot, GameCommandError>,
         finished: &mut Vec<FinishedNativeCommand>,
     ) -> Result<(), GameCommandError> {
         if !dt.is_finite() || dt < 0.0 {

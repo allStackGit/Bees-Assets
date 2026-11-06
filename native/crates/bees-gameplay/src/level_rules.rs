@@ -21,7 +21,7 @@ use bees_sim::telemetry::StepCounts;
 
 use crate::commands::{
     GameCommandError, NativeAggressiveCommandSnapshot,
-    NativeCircleCommandSnapshot, NativeFireBargeTimerSnapshot,
+    NativeCircleCommandSnapshot, NativeBombingTimerSnapshot,
     NativeFriendlySquad, NativeSwipeCommandSnapshot,
 };
 use crate::level_events::{
@@ -124,10 +124,10 @@ pub trait NativeLevelCommandContext {
     /// membership for the currently reserved Fire Barge Bomb targets.
     /// This is called ONLY on a BombingRun timer callback. There is no
     /// substitute based on hull distance or training observations.
-    fn fire_barge_bombing_snapshot(
+    fn bombing_command_snapshot(
         &self, _world: &CombatWorld, _owner: SquadLifetime,
         _enemy_squad_id: i64,
-    ) -> Result<NativeFireBargeTimerSnapshot, GameCommandError> {
+    ) -> Result<NativeBombingTimerSnapshot, GameCommandError> {
         Err(GameCommandError::MissingCombatSnapshot)
     }
 
@@ -524,7 +524,7 @@ where
                     )
                 },
                 |owner, enemy_id, combat| {
-                    metadata.fire_barge_bombing_snapshot(
+                    metadata.bombing_command_snapshot(
                         combat, owner, enemy_id,
                     )
                 },
