@@ -255,7 +255,8 @@ class WindowsSupervisor {
             // both requested Stops and natural child completion. The pipe
             // can confirm exit before the receipt is published, so a
             // reopened supervisor may already have a terminal record.
-            if(!terminal.has(record.state)&&!['running','stop_requested'].includes(record.state))
+            if(!terminal.has(record.state)&&
+                !['launch_requested','running','stop_requested'].includes(record.state))
                 throw error;
             for(let attempt=0;attempt<20;attempt++) {
                 const completed=this.verifyReceipt(record);
