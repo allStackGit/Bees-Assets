@@ -8,6 +8,7 @@
 use bees_hivemind::session::{HiveMindSession, SquadLifetime};
 use bees_sim::combat_world::{CombatEvent, CombatWorld};
 use bees_sim::navigation_runtime::NavigationRuntime;
+use bees_sim::simulation::RandomStream;
 use bees_sim::rl_shaping::{DamageRewardMetadata, RewardEmission};
 use bees_sim::rl_discovery::DiscoveryKind;
 
@@ -466,6 +467,7 @@ impl NativeLevelEventProcessor {
         world: &mut CombatWorld,
         navigation: &NavigationRuntime,
         friendlies: &[NativeFriendlySquad],
+        random: &mut RandomStream,
         dt: f32,
     ) -> Result<(), NativeLevelEventError> {
         if self.is_failed() {
@@ -486,7 +488,8 @@ impl NativeLevelEventProcessor {
             return Ok(());
         }
         if let Err(error) = self.commands.advance_into(
-            world, navigation, friendlies, dt, &mut self.timed_finished,
+            world, navigation, friendlies, random, dt,
+            &mut self.timed_finished,
         ) {
             self.failed = true;
             return Err(NativeLevelEventError::Commands(error));
