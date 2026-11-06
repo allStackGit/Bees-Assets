@@ -213,7 +213,7 @@ impl CombatWorld {
     /// reservations and event are authored in this one physical world.
     /// A timed command may keep healing an enrolled ship even when its
     /// collider drifts outside the trigger, matching Unity HealShips.
-    pub fn heal_ship_at_beehive(
+    fn heal_ship_at_beehive(
         &mut self, ship_id: i64, beehive_id: i64,
     ) -> Result<Option<i32>, CombatWorldError> {
         let &ship_index = self.ship_by_id.get(&ship_id)
@@ -244,6 +244,19 @@ impl CombatWorld {
             healed_health, tsv_gain,
         });
         Ok(Some(tsv_gain))
+    }
+
+    /// Unity HealShips continues healing after first collider entry
+    /// while a Beehive reservation is held. Unlike the private policy
+    /// transaction, the game command entry must prove ownership of one of
+    /// that Beehive's four globally shared slots.
+    pub fn heal_reserved_command_ship(
+        &mut self, ship_id: i64, beehive_id: i64,
+    ) -> Result<Option<i32>, CombatWorldError> {
+        if self.reserved_healing_beehive(ship_id) != Some(beehive_id) {
+            return Err(CombatWorldError::InvalidPolicyHealing);
+        }
+        self.heal_ship_at_beehive(ship_id, beehive_id)
     }
 
     /// The public command interface queries only configured, live
