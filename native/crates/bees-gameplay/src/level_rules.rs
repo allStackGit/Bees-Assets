@@ -87,7 +87,7 @@ pub trait NativeLevelCommandContext {
     /// and ship composition data fails closed.
     fn aggressive_command_snapshot(
         &self, _world: &CombatWorld, _owner: SquadLifetime,
-        _enemy_squad_id: i64,
+        _enemy_squad_id: i64, _need_all_target_range: bool,
     ) -> Result<NativeAggressiveCommandSnapshot, GameCommandError> {
         Err(GameCommandError::MissingCombatSnapshot)
     }
@@ -449,8 +449,10 @@ where
                 |owner, enemy_id, combat| {
                     metadata.swipe_command_snapshot(combat, owner, enemy_id)
                 },
-                |owner, enemy_id, combat| {
-                    metadata.aggressive_command_snapshot(combat, owner, enemy_id)
+                |owner, enemy_id, combat, need_all| {
+                    metadata.aggressive_command_snapshot(
+                        combat, owner, enemy_id, need_all,
+                    )
                 },
             )?;
             if state.combat.events().len() > previous_event_count {

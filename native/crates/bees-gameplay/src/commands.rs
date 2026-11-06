@@ -1043,7 +1043,7 @@ impl NativeSquadCommandDirector {
             world, navigation, None, friendlies, random, dt,
             |_, _, _| Err(GameCommandError::MissingCombatSnapshot),
             |_, _, _| Err(GameCommandError::MissingCombatSnapshot),
-            |_, _, _| Err(GameCommandError::MissingCombatSnapshot),
+            |_, _, _, _| Err(GameCommandError::MissingCombatSnapshot),
             finished,
         )
     }
@@ -1066,7 +1066,7 @@ impl NativeSquadCommandDirector {
             SquadLifetime, i64, &CombatWorld,
         ) -> Result<NativeSwipeCommandSnapshot, GameCommandError>,
         mut aggressive_snapshot: impl FnMut(
-            SquadLifetime, i64, &CombatWorld,
+            SquadLifetime, i64, &CombatWorld, bool,
         ) -> Result<NativeAggressiveCommandSnapshot, GameCommandError>,
         finished: &mut Vec<FinishedNativeCommand>,
     ) -> Result<(), GameCommandError> {
@@ -1249,6 +1249,7 @@ impl NativeSquadCommandDirector {
                         self.measurements.command_timer_callbacks += 1;
                         let snapshot = aggressive_snapshot(
                             owner, aggressive.enemy_squad_id(), world,
+                            aggressive.needs_all_target_range(),
                         )?;
                         completed = aggressive.on_poll(
                             world, navigation, timer, owner, &snapshot,
@@ -1262,7 +1263,7 @@ impl NativeSquadCommandDirector {
                     let snapshot = match due_snapshot {
                         Some(snapshot) => snapshot,
                         None => aggressive_snapshot(
-                            owner, aggressive.enemy_squad_id(), world,
+                            owner, aggressive.enemy_squad_id(), world, false,
                         )?,
                     };
                     completed = aggressive.resume_coroutine_one_ship(

@@ -253,7 +253,10 @@ and timeout behavior are implemented in the same command director.
 The `aggressive_command_snapshot` adapter must supply actual weapon
 validity, both some/all enemy-target range predicates, real live enemy
 defenselessness, and current GetShips-ordered target metadata while an
-approach coroutine is active. The helper
+approach coroutine is active. Its `need_all_target_range` argument
+permits skipping the expensive all-target/defenseless checks until a
+due timer enters the position-hold phase; the snapshot uses `None`
+for unrequested values, never invented `false` results. The helper
 `assemble_aggressive_snapshot_from_live_weapons` computes the stronger
 all-target range predicate using the original Level roster and authoritative
 per-weapon validity. The Level still needs that adapter. Unity's coroutine

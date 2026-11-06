@@ -610,7 +610,7 @@ impl NativeLevelEventProcessor {
             completed_tick, world, navigation, friendlies, random, dt,
             |_, _, _| Err(GameCommandError::MissingCombatSnapshot),
             |_, _, _| Err(GameCommandError::MissingCombatSnapshot),
-            |_, _, _| Err(GameCommandError::MissingCombatSnapshot),
+            |_, _, _, _| Err(GameCommandError::MissingCombatSnapshot),
         )
     }
 
@@ -631,7 +631,7 @@ impl NativeLevelEventProcessor {
             SquadLifetime, i64, &CombatWorld,
         ) -> Result<NativeSwipeCommandSnapshot, GameCommandError>,
         aggressive_snapshot: impl FnMut(
-            SquadLifetime, i64, &CombatWorld,
+            SquadLifetime, i64, &CombatWorld, bool,
         ) -> Result<NativeAggressiveCommandSnapshot, GameCommandError>,
     ) -> Result<(), NativeLevelEventError> {
         if self.is_failed() {
