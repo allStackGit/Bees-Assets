@@ -704,6 +704,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 continuation_of_job_id:job.continuation_of_job_id||null,
                 status:job.status,
                 final_resource_usage:job.final_resource_usage||null,
+                evaluation_stop:job.evaluation_stop||null,
+                last_evaluation:job.last_evaluation||null,
+                evaluation_stop_evidence:job.evaluation_stop_evidence||null,
                 points:hubComparisonPoints({job,points:byJob.get(id)||[]},level),
             };
         }).filter(Boolean);
@@ -1119,12 +1122,13 @@ document.addEventListener('DOMContentLoaded', () => {
             cell(tr,j.resources.cpus+' CPU / '+j.resources.ram_mb+' MiB / '+
                 j.resources.gpu_count+' GPUs');
             const policy=j.evaluation_stop;
-            const evidence=j.evaluation_stop_evidence||j.live_execution?.evaluation;
+            const evidence=j.evaluation_stop_evidence||j.last_evaluation;
             const evaluation=policy
                 ?' · Evaluation '+policy.suite_id+': '+(evidence
                     ?evidence.successes+'/'+evidence.trials+' successes'+
-                        (j.evaluation_stop_evidence?' · stop target met':'')
-                    :j.live_execution?.evaluation_issue||'awaiting evidence')
+                        (j.evaluation_stop_evidence?' · stop target met':' · target not met')
+                    :'awaiting evidence')+
+                    (j.live_execution?.evaluation_issue?' · '+j.live_execution.evaluation_issue:'')
                 :'';
             cell(tr,learningSummary(j)+evaluation);
             const actions=cell(tr,'');
