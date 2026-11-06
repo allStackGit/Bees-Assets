@@ -114,6 +114,7 @@ function createTinyBrainsAdapter({projectRoot,pythonPath,artifactRoot,profiles,
 
     return {
         executable,cwd:project,stop_policy:'terminate-group',
+        checkpoint_stop_file:context=>path.join(jobRoot(context),'STOP'),
         ...evaluationReader('tinybrains',evaluationRoot,evaluationSuites,[project,artifacts]),
         tinybrains_profiles:Object.fromEntries([...configs].map(([id,item])=>[id,item.sha256])),
         args(parameters,context) {

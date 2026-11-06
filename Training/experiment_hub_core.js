@@ -246,7 +246,7 @@ function independentSequenceComplete(job) {
     }
 }
 function checkpointContinuationComplete(job) {
-    return job?.status==='finished'||(job?.project_id==='courier'&&job.status==='stopped'&&
+    return job?.status==='finished'||(['courier','tinybrains'].includes(job?.project_id)&&job.status==='stopped'&&
         job.checkpoint_stop_verified===true);
 }
 // Shared by planning, capacity claims, automation and native Start.
@@ -1532,7 +1532,7 @@ class ExperimentHub {
                 ?'stop_requested':report.state;
             if(state==='launch_requested'&&job.status!=='start_requested')continue;
             if(job.status==='stop_requested'&&report.state==='launch_requested')continue;
-            if(state==='stopped'&&job.project_id==='courier'&&job.stop_requested_at&&
+            if(state==='stopped'&&['courier','tinybrains'].includes(job.project_id)&&job.stop_requested_at&&
                 report.checkpoint_stop_verified===true) {
                 job.checkpoint_stop_verified=true;
                 changed=true;

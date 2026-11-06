@@ -348,7 +348,7 @@ class WindowsSupervisor {
         if(invocation.predecessor) {
             const parent=this.state.records.find(r=>
                 r.job_id===invocation.predecessor);
-            const checkpointStopped=parent?.project_id==='courier'&&parent.state==='stopped'&&
+            const checkpointStopped=['courier','tinybrains'].includes(parent?.project_id)&&parent.state==='stopped'&&
                 parent.checkpoint_stop_file&&parent.stop_requested_at;
             if(!parent||parent.project_id!==job.project_id||
                 (parent.state!=='finished'&&!checkpointStopped)||
