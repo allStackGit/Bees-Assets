@@ -900,6 +900,25 @@ impl NativeSquadCommandDirector {
         // and stable; completion storage is retained between ticks.
         self.measurements.commands_examined += self.active.len() as u64;
         for (&owner, command) in self.active.iter_mut() {
+            if let Some(mining) = command.mining.as_mut() {
+                let (mut finished, polls) = mining.advance(
+                    world, navigation, &mut command.command_poll, dt,
+                )?;
+                self.measurements.command_timer_callbacks += polls;
+                if finished.is_none() {
+                    if let Some(timeout) = command.timeout.as_mut() {
+                        if let Some(due) = timeout.begin_update(dt) {
+                            self.measurements.timeout_callbacks += 1;
+                            timeout.finish_update(due);
+                            finished = Some(CommandFinishCause::Timeout);
+                        }
+                    }
+                }
+                if let Some(cause) = finished {
+                    self.completed_scratch.push((owner, cause));
+                }
+                continue;
+            }
             let mut finished_by_poll = false;
             // Unity registers the recurring command timer before its
             // timeout: on a shared due frame, command completion wins.
@@ -1017,6 +1036,8 @@ impl NativeSquadCommandDirector {
             if let Some(active) = self.active.remove(&owner) {
                 finished.push(FinishedNativeCommand {
                     owner, selection: active.selection, cause,
+                    mined_command_tsv: active.mining.as_ref()
+                        .map(|mining| mining.mined_tsv),
                 });
             }
         }
@@ -1042,6 +1063,8 @@ impl NativeSquadCommandDirector {
         let retired = self.active.remove(&owner).map(|active| FinishedNativeCommand {
             owner, selection: active.selection,
             cause: CommandFinishCause::SquadRetired,
+            mined_command_tsv: active.mining.as_ref()
+                .map(|mining| mining.mined_tsv),
         });
         self.measurements.retired += u64::from(retired.is_some());
         Ok(retired)
