@@ -23,7 +23,7 @@ Windows browser qualification; the existing Bees-specific routes remain separate
   manager owns a run or has an armed queue. Ordinary runs are observed via the
   existing control plane, not inserted into the experiment database.
   Non-Bees projects can queue immutable jobs, cancel unstarted jobs,
-  explicitly authorize locally approved CPU-only Linux or Windows execution,
+  explicitly authorize locally approved native Linux or Windows execution,
   request native stops, and inspect native lifecycle reports. Real-host
   qualification is still required before treating either backend as deployable.
 - **Monitor and Compare:** Existing Bees live status, performance, benchmark
@@ -519,8 +519,7 @@ Older agents without the installed execution bridge remain observation-only.
 A heartbeat, detected cgroup or coordination lease alone **never**
 permits execution. A locally opted-in installed project adapter, explicit
 administrator start authorization, and successful native service/limit
-verification are all required. Native GPU execution remains blocked on
-all platforms. Windows CPU-only execution is implemented but has not
+verification are all required. Native Windows execution is CPU-only and has not
 been compiled or qualified on a real Windows machine.
 
 ## Linux native supervisor and authenticated dispatch (CPU-only)
@@ -588,7 +587,7 @@ secrets are stored in that ledger. The trusted adapter must not put
 secrets in command-line arguments because systemd unit metadata and
 process listings can expose them.
 
-### Operator-initiated CPU-only execution
+### Operator-initiated native execution
 
 The manager accepts `POST /api/hub/jobs/start` with
 `{job_id,confirm_start:true}` only for a frozen non-Bees job holding a
@@ -739,7 +738,7 @@ missing, moved or mismatched device invalidates the coordinator's
 existing fresh receipt immediately. Reappearance alone does not
 restore receipt freshness; another matching acknowledgement is needed.
 
-### Linux GPU device-filter qualification (GPU execution still disabled)
+### Linux GPU device-filter qualification and opt-in launch
 
 The local AMDGPU device resolver maps the frozen PCI identity to
 a kernel DRM render character node under /dev/dri. It verifies the
@@ -799,24 +798,31 @@ reappears and the lease is reacknowledged.
 A fresh explicit probe is required to obtain current evidence for a
 different job; a result for one job never qualifies another.
 
-**These controls are not yet connected to native GPU launching.**
-The Hub still refuses GPU-bearing Start requests, even for an
-acknowledged exclusive lease. Before enabling them, Halifax must
-prove the device filter in its actual systemd user session and
-demonstrate ROCm cannot reach excluded hardware through another
-interface. Access filtering is not a per-process VRAM limit, a
-compute-share guarantee or isolation from unrelated host jobs.
+#### Opt-in native Linux GPU launch
 
-**Identity is not isolation.** The physical VRAM-used counter may
-include unrelated host workloads, while the planner's reserved VRAM
-and GPU compute percentages represent only the Hub's own advisory
-budget ledger. No kernel-enforced per-process GPU VRAM limit,
-exclusive device node restriction, guaranteed GPU compute partition,
-or ROCm execution device selection has been qualified. The Hub
-therefore still **refuses to start GPU-bearing jobs**, even when both
-PCI identity and advisory capacity match. These observations make
-future scheduling safer; they do not demonstrate that Bees, Ants and
-LLM jobs can share a GPU without slowdown.
+After deployment qualification, a Linux agent can set
+`EXPERIMENT_HUB_ENABLE_ROCM=1` and advertise a locally installed adapter that
+implements `gpu_verify_args(parameters, context)`. The verifier runs the
+adapter executable with these arguments and must return exactly one ROCm
+runtime device PCI address in `{"pci_addresses":["0000:03:00.0"]}`. The
+adapter must inspect actual runtime devices and use the same runtime and
+device selection in its workload. Both adapter hooks receive the leased
+`context.gpu_pci_address`. The agent removes inherited accelerator selectors
+so the runtime probe and workload start with the same device visibility.
+
+Queue placement prefers fitting hosts advertising the adapter's GPU capability.
+Train requires explicit Start and a current access probe for the same
+acknowledged exclusive single-GPU lease. The native service resolves the PCI
+mapping again and runs the device access and runtime checks in its own
+systemd cgroup before the training executable can start. The local journal
+also rejects unresolved ownership of the same PCI GPU. CPU-only automation
+continues to manage CPU jobs only. A GPU authorization that loses its proof
+before delivery holds its claim for operator inspection.
+
+Halifax still needs real qualification of the systemd device policy and
+the adapter's ROCm visibility, execution and stop behavior. The planner
+accounts for Hub claims. The device policy provides no per-process VRAM
+quota, compute share, or exclusivity from unrelated host workloads.
 
 ## Windows native Job Object owner (opt-in, CPU/RAM only)
 
@@ -1355,8 +1361,8 @@ automatically advances a sequence. Training progress has no stopping authority.
 ## Not yet implemented
 
 Production installation and qualification of project-specific adapters,
-real-machine Linux systemd qualification, GPU isolation and runtime
-device-selection enforcement, production coexistence qualification of the
+real-machine Linux systemd and ROCm qualification, GPU compute and VRAM
+quotas, production coexistence qualification of the
 CPU-only scheduler, production independent evaluators for non-Bees adapters,
 trusted production-source metrics adapters for additional
 projects, safe live rebalancing, and comprehensive

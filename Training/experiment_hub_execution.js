@@ -33,7 +33,10 @@ class LocalExecution {
     }
     advertisement(){
         return {local_executor:true,installed_projects:this.projects.slice(),
-            evaluation_suites:structuredClone(this.evaluationSuites)};
+            evaluation_suites:structuredClone(this.evaluationSuites),
+            gpu_projects:this.projects.filter(project=>
+                this.supervisor.gpuEnabled===true&&
+                typeof this.supervisor.adapters?.[project]?.gpu_verify_args==='function')};
     }
     async handle(order) {
         if(!order||!['start','stop','inspect','qualify_gpu'].includes(order.action)||
@@ -53,7 +56,7 @@ class LocalExecution {
             throw Error('Local adapter does not support the requested evaluation suite.');
         if(order.action==='qualify_gpu') {
             // This is not a job launch. Linux device access is tested using
-            // a fixed inert helper; the native Start gate remains CPU-only.
+            // a fixed inert helper before an operator can authorize GPU Start.
             if(typeof this.supervisor.qualifyGpuDeviceAccess!=='function'||
                 !this.supervisor.qualifiedAt||
                 job.status!=='waiting_adapter'||
@@ -215,9 +218,11 @@ function fromEnvironment(env=process.env,options={}) {
         if(!capabilities.cgroup_v2_detected||
             !['cpu','memory'].every(c=>capabilities.cgroup_controllers.includes(c)))
             throw Error('Required Linux CPU and memory controllers are not available.');
+        const local={root,machineId,adapters,
+            gpuEnabled:env.EXPERIMENT_HUB_ENABLE_ROCM==='1'};
         supervisor=options.createSupervisor
-            ?options.createSupervisor({root,machineId,adapters})
-            :new LinuxSupervisor({root,machineId,adapters});
+            ?options.createSupervisor(local)
+            :new LinuxSupervisor(local);
     }else {
         const helperPath=env.EXPERIMENT_HUB_WINDOWS_HELPER;
         const helperSha256=env.EXPERIMENT_HUB_WINDOWS_HELPER_SHA256;

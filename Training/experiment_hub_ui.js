@@ -1054,7 +1054,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     ?' · GPU access probe requested (no training)'
                     :proof.status==='verified'
                         ?proof.current
-                            ?' · GPU device allow/deny probe passed this agent session (no GPU Start)'
+                            ?' · GPU device access probe passed this agent session'
                             :' · GPU device probe previously passed, now stale'
                         :proof.status==='cancelled'
                             ?' · GPU device probe cancelled when claim released'
@@ -1066,7 +1066,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const readiness=j.native_start_readiness;
             const readinessText=readiness
                 ?readiness.eligible
-                    ?' · Ready for explicit CPU-only Start'
+                    ?' · '+readiness.reason
                     :' · Start blocked: '+readiness.reason
                 :'';
             const hasSuccessor=(state.jobs||[]).some(x=>
@@ -1120,9 +1120,12 @@ document.addEventListener('DOMContentLoaded', () => {
             if(j.status==='waiting_adapter'&&readiness?.eligible===true)
                 actions.append(button('Start native job',async()=>{
                     const windows=machine.agent_platform==='win32';
-                    if(!confirm('Authorize native CPU/RAM-limited execution of '+
+                    const gpu=j.resources.gpu_count===1;
+                    if(!confirm((gpu?'Authorize native execution on the exclusively leased GPU for ':
+                        'Authorize native CPU/RAM-limited execution of ')+
                         j.configuration_name+' on '+machine.name+
                         '? Only locally installed adapter code selects the executable. '+
+                        (gpu?'The service will verify device access and ROCm visibility before training. ':'')+
                         (windows?'Windows Stop FORCE-TERMINATES the entire process tree without checkpoint-aware interruption. ':
                             'Linux uses the locally selected service stop policy. ')+
                         'This starts a real process; verify host capacity and experimental validity.'))return;

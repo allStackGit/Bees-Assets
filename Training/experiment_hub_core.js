@@ -138,6 +138,12 @@ function boundedReport(value) {
     if(!object(evaluators)||Object.keys(evaluators).length>installed.length||
         Object.keys(evaluators).some(project=>!installed.includes(project)))
         throw Error('Evaluation capability requires a corresponding installed adapter.');
+    const gpuProjects=value.gpu_projects??[];
+    if(!Array.isArray(gpuProjects)||new Set(gpuProjects).size!==gpuProjects.length||
+        gpuProjects.length>installed.length||
+        gpuProjects.some(project=>!installed.includes(project))||
+        (gpuProjects.length&&value.platform!=='linux'))
+        throw Error('GPU execution capability requires installed Linux adapters.');
     const evaluationSuites=Object.fromEntries(Object.entries(evaluators)
         .map(([project,ids])=>[project,suiteIds(ids)]));
     return {cpus:value.cpus,ram_mb:value.ram_mb,
@@ -148,6 +154,7 @@ function boundedReport(value) {
             ['linux','win32'].includes(value.platform)&&preflight,
         native_preflight_reason:reason||null,
         evaluation_suites:localExecutor?evaluationSuites:{},
+        gpu_projects:gpuProjects.slice(),
         installed_projects:['linux','win32'].includes(value.platform)&&
             localExecutor?installed.slice():[]};
 }
@@ -166,6 +173,21 @@ function config(value) {
     const serialized = JSON.stringify(value);
     if (serialized.length > 65536) throw Error('Configuration exceeds 64 KiB.');
     return JSON.parse(serialized);
+}
+function gpuStartBlock(job,lease,machine) {
+    const r=job.resources,allocated=lease.resources;
+    if(r.gpu_count===0&&allocated.gpu_count===0&&
+        !(r.gpus||[]).length&&!(allocated.gpus||[]).length)return null;
+    if(r.gpu_count!==1||allocated.gpu_count!==1||
+        r.gpu_mode!=='exclusive'||allocated.gpu_mode!=='exclusive'||
+        allocated.gpus?.length!==1||
+        (r.gpus?.length&&r.gpus[0]!==allocated.gpus[0]))
+        return 'Native GPU Start requires one exclusively leased GPU.';
+    if(machine.agent_platform!=='linux'||!machine.gpu_projects?.includes(job.project_id))
+        return 'The Linux host and local adapter have not opted into native GPU execution.';
+    if(job.gpu_qualification?.current!==true)
+        return 'A current device access probe for this exact GPU lease is required.';
+    return null;
 }
 // Pure, non-authorizing readiness projection. The dashboard and the actual
 // start authorization share one eligibility contract; displaying readiness
@@ -201,9 +223,10 @@ function nativeStartReadiness(snapshot, job) {
     if(!supportsEvaluation(machine.evaluation_suites,job))
         return block('The assigned adapter does not advertise evaluation suite '+job.evaluation_stop.suite_id+'.');
     const r=job.resources;
-    if(!r||r.ram_mb<128||r.gpu_count!==0||
-        (r.gpus||[]).length||lease.resources.gpu_count!==0)
-        return block('Native GPU execution remains disabled; only CPU/RAM jobs may start.');
+    if(!r||r.ram_mb<128)
+        return block('Native Start requires at least 128 MiB RAM.');
+    const gpuBlock=gpuStartBlock(job,lease,machine);
+    if(gpuBlock)return block(gpuBlock);
     if(r.cpus>machine.reported_cpus||r.ram_mb>machine.reported_ram_mb)
         return block('Requested CPU/RAM exceeds the machine\'s fresh reported capacity.');
     if(job.continuation_of_job_id) {
@@ -232,7 +255,9 @@ function nativeStartReadiness(snapshot, job) {
             job.continuation_machine_id)
             return block('Independent dependency has not finished and released verified native capacity.');
     }
-    return {eligible:true,reason:'Eligible for explicit CPU-only native Start authorization.'};
+    return {eligible:true,reason:r.gpu_count
+        ?'Eligible for explicit exclusive GPU Start with in-service verification.'
+        :'Eligible for explicit CPU-only native Start authorization.'};
 }
 // Match the operator's cross-project FIFO fairness in both the read-only
 // preview and the actual advisory claim pass.
@@ -302,13 +327,21 @@ function waitingStageReason(job,byId) {
 }
 function allocationChoice(machines,reservations,job,preferredMachineId=null,
     following=[],futureMachinesFor=()=>machines) {
-    const options=resourcePlacements(
-        machines.filter(machine=>supportsEvaluation(machine.evaluation_suites,job)),
-        reservations,job.resources)
-        .filter(p=>p.capacity_fits&&
-            (!preferredMachineId||p.machine_id===preferredMachineId)&&
-            (!job.continuation_machine_id||
-                p.machine_id===job.continuation_machine_id))
+    const eligibleOptions=(selected,hosts,preferred=null)=>{
+        const eligible=hosts.filter(machine=>
+            supportsEvaluation(machine.evaluation_suites,selected)&&
+            (!preferred||preferred===machine.id)&&
+            (!selected.continuation_machine_id||selected.continuation_machine_id===machine.id));
+        const fits=resourcePlacements(eligible,reservations,selected.resources)
+            .filter(p=>p.capacity_fits);
+        if(selected.resources.gpu_count!==1||selected.resources.gpu_mode!=='exclusive')
+            return fits;
+        const optedIn=new Set(eligible.filter(machine=>
+            machine.gpu_projects?.includes(selected.project_id)).map(machine=>machine.id));
+        const runnable=fits.filter(p=>optedIn.has(p.machine_id));
+        return runnable.length?runnable:fits;
+    };
+    const options=eligibleOptions(job,machines,preferredMachineId)
         .sort((a,b)=>a.available.cpus-b.available.cpus||
             a.available.ram_mb-b.available.ram_mb||
             a.machine_id.localeCompare(b.machine_id));
@@ -318,12 +351,7 @@ function allocationChoice(machines,reservations,job,preferredMachineId=null,
     // no lease, execution permission or native ownership is conferred.
     const soleOptions=following.filter(next=>!next.lease_id)
         .map(next=>{
-            const places=resourcePlacements(
-                futureMachinesFor(next).filter(machine=>supportsEvaluation(machine.evaluation_suites,next)),
-                reservations,next.resources)
-                .filter(p=>p.capacity_fits&&
-                    (!next.continuation_machine_id||
-                        p.machine_id===next.continuation_machine_id));
+            const places=eligibleOptions(next,futureMachinesFor(next));
             return places.length===1
                 ?{job:next,machine_id:places[0].machine_id}:null;
         }).filter(Boolean);
@@ -449,6 +477,7 @@ class ExperimentHub {
                 machine.native_preflight_reason = report.native_preflight_reason;
                 machine.installed_projects = report.installed_projects.slice();
                 machine.evaluation_suites = copy(report.evaluation_suites);
+                machine.gpu_projects = report.gpu_projects.slice();
             }
             return machine;
         });
@@ -484,7 +513,7 @@ class ExperimentHub {
                     g.pci_address===pinned[0].pci_address&&
                     g.vram_mb>=pinned[0].vram_mb));
             proof.current=Boolean(proof.status==='verified'&&
-                job.status==='waiting_adapter'&&
+                ['waiting_adapter','start_requested'].includes(job.status)&&
                 job.lease_id===proof.lease_id&&lease?.receipt_fresh&&
                 machine?.status==='connected'&&
                 machine.native_preflight_passed===true&&
@@ -631,7 +660,8 @@ class ExperimentHub {
                 ['start_requested','launch_requested'].includes(j.status)&&
                 !j.capacity_released_at).map(j=>j.assigned_machine_id));
             for(const job of pendingStarts) {
-                if(!job.lease_id||!session.machine_ids.includes(job.assigned_machine_id)||
+                if(job.resources.gpu_count!==0||!job.lease_id||
+                    !session.machine_ids.includes(job.assigned_machine_id)||
                     blockedMachines.has(job.assigned_machine_id)||
                     startingMachines.has(job.assigned_machine_id)||
                     job.native_start_readiness?.eligible!==true)continue;
@@ -973,11 +1003,13 @@ class ExperimentHub {
             if(!job||!lease||!request||request.request_id!==report.dispatch_id||
                 request.lease_id!==lease.id||request.machine_id!==machine.id||
                 job.lease_id!==lease.id||job.assigned_machine_id!==machine.id||
-                job.status!=='waiting_adapter'||lease.job_id!==job.id||
+                lease.job_id!==job.id||
                 lease.machine_id!==machine.id||lease.project_id!==job.project_id||
                 lease.status!=='acknowledged')
                 throw Error('GPU proof does not belong to this job and machine.');
             if(request.status!=='requested')continue;
+            if(job.status!=='waiting_adapter')
+                throw Error('GPU access probe no longer belongs to a queued job.');
             const pinned=lease.gpu_bindings;
             const verified=report.result==='verified'&&
                 report.selected_pci_addresses.length===1&&
@@ -1007,7 +1039,7 @@ class ExperimentHub {
         const readiness=nativeStartReadiness(snapshot,job);
         if(!readiness.eligible)
             throw Error(readiness.reason);
-        if(origin==='automation'&&(!this.automation.enabled||
+        if(origin==='automation'&&(job.resources.gpu_count!==0||!this.automation.enabled||
             !this.automation.machine_ids.includes(job.assigned_machine_id)||
             !UUID.test(String(this.automation.session_id||''))))
             throw Error('Native automation session no longer authorizes this Start.');
@@ -1215,7 +1247,8 @@ class ExperimentHub {
             if((action==='start'||action==='qualify_gpu')&&!lease.receipt_fresh)
                 continue;
             if(action==='start'&&(machine.native_preflight_passed!==true||
-                !supportsEvaluation(machine.evaluation_suites,job)))
+                !supportsEvaluation(machine.evaluation_suites,job)||
+                gpuStartBlock(job,lease,machine)))
                 continue;
             if(action==='qualify_gpu'&&(
                 machine.agent_platform!=='linux'||
