@@ -34,7 +34,8 @@ async function readBody(req) {
         }
         chunks.push(chunk);
     }
-    return JSON.parse(Buffer.concat(chunks,received).toString('utf8')||'{}');
+    return JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(
+        Buffer.concat(chunks,received))||'{}');
 }
 
 function createAgentServer(getHub) {
