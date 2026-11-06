@@ -316,16 +316,21 @@ where
             |id| metadata.current_mined_tsv(id),
         )?;
         if state.events.has_active_commands() && !state.events.completed() {
-            // Snapshot from the actual current ship/squad positions after
-            // casualty removal; no stale formation or Guard target.
-            state.metadata.collect_live_friendlies(
-                &state.combat, state.events.roster(),
-                &mut state.command_friendlies,
-            ).map_err(|err|
-                NativeLevelStepError::Events(
-                    NativeLevelEventError::Commands(err)
-                )
-            )?;
+            // Only tracked-friendly commands read this geometry; collecting
+            // every squad on each fixed step for Mining, Heal, Scouting,
+            // FullRetreat or idle Hold would waste large-battle work.
+            if state.events.needs_live_command_friendlies() {
+                state.metadata.collect_live_friendlies(
+                    &state.combat, state.events.roster(),
+                    &mut state.command_friendlies,
+                ).map_err(|err|
+                    NativeLevelStepError::Events(
+                        NativeLevelEventError::Commands(err)
+                    )
+                )?;
+            } else {
+                state.command_friendlies.clear();
+            }
             let previous_event_count = state.combat.events().len();
             state.events.advance_timed_commands(
                 completed_tick, &mut state.combat,

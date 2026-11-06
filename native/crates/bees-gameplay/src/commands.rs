@@ -411,6 +411,13 @@ impl NativeSquadCommandDirector {
         self.active.contains_key(&owner)
     }
 
+    /// Only ClosestFriendly and Guard timer callbacks consult the Level's
+    /// refreshed friendly squad geometry. Other commands use their own
+    /// world-owned state and must not force a full Level roster projection.
+    pub fn needs_live_friendlies(&self) -> bool {
+        self.active.values().any(|command| command.following.is_some())
+    }
+
     /// Invoke before the Level's squad-death event pass. FullRetreat's
     /// source Striker/Drone TSV adjustment is earned only when the physical
     /// warp actually occurs, not when a timer queues the attempt.
