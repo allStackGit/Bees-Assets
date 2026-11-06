@@ -473,6 +473,21 @@ impl NativeSquadCommandDirector {
         self.active.contains_key(&owner)
     }
 
+    /// A real source hull-contact callback may deliver a commanded bomb
+    /// only for the original, still-live BombingRun owning that member.
+    /// Never accept a transport-supplied command OutcomeId for damage.
+    pub fn bombing_contact_outcome(
+        &self, owner: SquadLifetime, ship_id: i64,
+    ) -> Option<i64> {
+        let active = self.active.get(&owner)?;
+        if active.bombing.is_some() &&
+            active.member_ids.contains(&ship_id) {
+            Some(active.selection.command_outcome_id)
+        } else {
+            None
+        }
+    }
+
     /// Only ClosestFriendly and Guard timer callbacks consult the Level's
     /// refreshed friendly squad geometry. Other commands use their own
     /// world-owned state and must not force a full Level roster projection.

@@ -7,6 +7,7 @@
 
 use bees_hivemind::session::{HiveMindSession, SquadLifetime, StrategyReceipt};
 use bees_sim::combat_world::{CombatEvent, CombatWorld};
+use bees_sim::collision::CollisionMatrix;
 use bees_sim::navigation_runtime::NavigationRuntime;
 use bees_sim::simulation::RandomStream;
 use bees_sim::rl_shaping::{DamageRewardMetadata, RewardEmission};
@@ -328,6 +329,55 @@ impl NativeLevelEventProcessor {
             world, navigation, random, squad, friendlies,
             settings, receipt, Some(bombing),
         )
+    }
+
+    /// Called after the owning world's fixed step but before
+    /// process_completed_tick consumes that tick's combat events. Match
+    /// Unity's Striker/YellowJacket.OnTriggerEnter2D without synthesizing
+    /// a second contact cache, command ID or training-only bomb model.
+    ///
+    /// The Level supplies only the source Striker's two live drop guards.
+    /// The world rechecks its exact selected Bomb target and hull overlap.
+    /// Unsupported command compositions remain inert, not successful.
+    pub fn deliver_commanded_bomber_contact(
+        &mut self,
+        completed_tick: u64, world: &mut CombatWorld,
+        bomber_id: i64, contacted_target_id: i64,
+        striker_may_drop: bool, collisions: &CollisionMatrix,
+    ) -> Result<bool, NativeLevelEventError> {
+        if self.is_failed() || self.completed() {
+            return Err(NativeLevelEventError::FailedLevel);
+        }
+        if completed_tick != self.next_tick {
+            self.failed = true;
+            return Err(NativeLevelEventError::MissingOrRepeatedTick {
+                expected: self.next_tick, got: completed_tick,
+            });
+        }
+        let Some(owner) = self.roster.owning_squad(bomber_id)
+        else { return Ok(false) };
+        let Some(command_outcome_id) = self.commands
+            .bombing_contact_outcome(owner, bomber_id)
+        else { return Ok(false) };
+        let outcome = match world.ship(bomber_id).map(|ship| ship.ship_type) {
+            Some(19) => world.drop_game_striker_bomb_on_contact(
+                bomber_id, contacted_target_id, striker_may_drop,
+                command_outcome_id, collisions,
+            ),
+            Some(22) => world.detonate_game_yellow_jacket_on_contact(
+                bomber_id, contacted_target_id, command_outcome_id, collisions,
+            ),
+            _ => return Ok(false),
+        };
+        match outcome {
+            Ok(delivered) => Ok(delivered),
+            Err(error) => {
+                self.failed = true;
+                Err(NativeLevelEventError::Commands(
+                    GameCommandError::World(error),
+                ))
+            }
+        }
     }
 
     /// All pending retirements, including ones from earlier ticks. The
