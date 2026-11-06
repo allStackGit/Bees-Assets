@@ -1090,7 +1090,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             ?' · GPU device access probe passed this agent session'
                             :' · GPU device probe previously passed, now stale'
                         :proof.status==='cancelled'
-                            ?' · GPU device probe cancelled when claim released'
+                            ?' · GPU device probe cancelled'
                             :proof.status==='stale'
                                 ?' · GPU device access proof invalidated by hardware change'
                                 :' · GPU device access probe rejected'
@@ -1149,6 +1149,19 @@ document.addEventListener('DOMContentLoaded', () => {
                             'Inert GPU device probe requested. No training started.');
                         await reload();
                     }catch(e){feedback('hub-job-message',e.message);}
+                }));
+            if(j.status==='waiting_adapter'&&proof?.status==='requested'&&proof.first_offered_at===null)
+                actions.append(button('Withdraw GPU probe',async()=>{
+                    if(!confirm('Withdraw the undelivered GPU access probe for '+j.configuration_name+
+                        '? The job keeps its current claim.'))return;
+                    try{
+                        await action('hub/jobs/withdraw-gpu-probe',{job_id:j.id,
+                            expected_request_id:proof.request_id,confirm_withdraw:true});
+                        feedback('hub-job-message','Undelivered GPU access probe withdrawn.');
+                    }catch(error){
+                        feedback('hub-job-message',error.message);
+                    }
+                    await reload();
                 }));
             if(j.status==='waiting_adapter'&&readiness?.eligible===true)
                 actions.append(button('Start native job',async()=>{

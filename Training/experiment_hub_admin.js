@@ -26,6 +26,7 @@ const POST_ACTIONS={
     '/api/hub/jobs/move-claims':[200,'moveJobClaims'],
     '/api/hub/automation':[200,'configureAutomation'],
     '/api/hub/jobs/qualify-gpu':[200,'requestGpuQualification'],
+    '/api/hub/jobs/withdraw-gpu-probe':[200,'withdrawGpuQualification'],
     '/api/hub/jobs/start':[200,'authorizeStart'],
     '/api/hub/jobs/withdraw-start':[200,'withdrawStart'],
     '/api/hub/jobs/stop':[200,'authorizeStop'],
