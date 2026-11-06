@@ -1168,6 +1168,17 @@ absolute path in its private job directory. The workload watches that
 file and exits after saving. The supervisor persists the request,
 reconciles marker delivery, and requires a signed successful exit for
 automatic release. Job Object cleanup still protects the process tree.
+
+On Windows and Linux, a successful native checkpoint Stop alone does
+**not** prove that the files required to resume are present. Before
+advertising `checkpoint_stop_verified`, the machine-local bridge
+requires the trusted adapter's `checkpoint_ready(context)` to return
+`true` after checking the saved artifacts and pinned configuration.
+TinyBrains checks `latest.pt` and its profile; Courier checks the
+checkpoint summary, approved environment and population archives.
+If verification fails, the Stop remains terminal and its diagnostic is
+reported, but any prequeued checkpoint successor stays blocked. These
+structural checks do not replace a real trainer resume qualification.
 CPU-only jobs mask
 common CUDA/HIP/ROCm selector environment variables, but do not
 provide enforceable GPU isolation; GPU requests remain blocked.
