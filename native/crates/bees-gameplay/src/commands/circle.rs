@@ -46,8 +46,11 @@ impl NativeCircleCommandSnapshot {
 /// roster. Unity's AreSomeSquadShipsWithinRangeOfAllOfOurSquadShips
 /// requires EACH own ship to have ANY enemy ship which passes its real
 /// Weapon.IsShipValidTarget check. This is NOT distance-to-center testing.
-/// The callback must use the authored weapon rules, including special
-/// targeting exclusions. No allocation or extra physics view is created.
+/// The callback must use the authored Weapon.IsShipValidTarget behavior:
+/// RangeCollider's live ShipsWithinRange contact registry and unobstructed
+/// linecast to the target collider (including subclass overrides). It must
+/// NOT substitute a center-distance/radius comparison. No allocation or
+/// extra physics view is created.
 ///
 /// The enemy lifetime must be the original command target, not a new
 /// squad which reused its numeric ID. Callers supply actual GetPosition

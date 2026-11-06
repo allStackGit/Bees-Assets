@@ -215,9 +215,16 @@ Its Level adapter must implement `NativeLevelCommandContext::circle_command_snap
 with actual squad bounds centers, MaxRange and the exact
 `Ship.IsShipWithinRange` / per-weapon target-validity result. The default
 deliberately fails the episode rather than treating center distance as weapon
-eligibility. Authored live adapter and end-to-end parity qualification remain
-pending. Random
-finishes at arrival or command timeout; Patrol samples Unity's four-corner
+eligibility. Unity's `Weapon.IsShipValidTarget` specifically checks the
+RangeCollider-maintained `ShipsWithinRange` contacts and line of fire
+(Physics2D.Linecast to the enemy collider's closest point), plus any subclass
+override. A center-distance test would change command behavior.
+`assemble_circle_snapshot_from_live_weapons` implements the source's
+per-ship/target-squad predicate over the authoritative live roster, while
+the host supplies actual authored weapon validity and squad geometry.
+The live adapter and executable parity qualification remain pending.
+
+Random finishes at arrival or command timeout; Patrol samples Unity's four-corner
 route, rotates waypoints on its 3-second scaled callback, and uses the
 separate configured patrol timeout. Retreat uses the Level's live target
 squad position and weapon range to move directly away from a nearby enemy;
