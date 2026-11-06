@@ -157,16 +157,19 @@ def poll_checkpoint(args, project, suite, receipt_suite, find_checkpoint, evalua
             except (OSError, ValueError, TypeError, KeyError) as exc:
                 print(f"{project} evaluation target {dispatch} skipped: {exc}", file=sys.stderr)
                 continue
-            cursor.pop(dispatch)
-            cursor[dispatch] = update
-            # Record a handled failure once, but leave the checkpoint
-            # eligible if the evaluator is interrupted before a result.
+            # Do not consume a checkpoint before its evaluation has
+            # produced a durable pending receipt. An interrupted evaluator
+            # must be able to retry the same immutable checkpoint.
             try:
                 with tempfile.TemporaryDirectory(prefix=f"{project}-eval-", dir=args.scratch) as temp:
                     successes = evaluate_checkpoint(job, file, checkpoint_digest, Path(temp))
             except (OSError, RuntimeError, ValueError, TypeError, KeyError):
                 save_cursor(state, saved)
                 raise
+            if type(successes) is not int or not 0 <= successes <= receipt_suite["trials"]:
+                raise ValueError("Invalid evaluation success count.")
+            cursor.pop(dispatch)
+            cursor[dispatch] = update
             pending = {"target": job, "receipt": {
                 "schema_version": 1, "suite_id": suite_id, "suite_sha256": digest, "dispatch_id": dispatch,
                 "checkpoint_sha256": checkpoint_digest, "trials": receipt_suite["trials"], "successes": successes,
