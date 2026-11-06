@@ -238,6 +238,19 @@ Squad.IsMatchingSpeed behavior still need end-to-end parity work when the
 full native Level update loop is implemented; the command's speed-setting
 and restoration paths alone do not prove full Guard parity.
 
+FullRetreat now selects the nearest live same-side WarpGate, registers
+all non-gate squad members in the shared world-owned WarpGate session,
+follows the gate every three seconds, queues physical WarpCollider
+contacts and waits for the authored 2.375-second opening readiness.
+Its two-second wait callbacks only authorize a warp; the next canonical
+fixed step performs ShipWarped/EndKill and normal roster, economic and
+terminal accounting. Actual Striker/Drone warp outcomes subtract their
+preserved TSV from command credit before squad death can finalize the
+command. Replacement, timeout and squad retirement release only the
+command's participants, retaining same-gate registrations transferred
+to a replacement. FullRetreat is source-integrated but still requires
+runtime parity and transport qualification.
+
 Commands update squads in stable lifecycle-ID order so independent worlds
 do not depend on randomized hash-table traversal.
 The game must supply real squad bounds, membership, configured speeds,
