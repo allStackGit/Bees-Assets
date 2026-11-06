@@ -135,7 +135,7 @@ impl SwipeRun {
         random: &mut RandomStream,
         owner: SquadLifetime,
         selection: &ResolvedHiveMindCommand,
-        mut snapshot: NativeSwipeCommandSnapshot,
+        snapshot: NativeSwipeCommandSnapshot,
     ) -> Result<Option<CommandFinishCause>, GameCommandError> {
         if !snapshot.enemy_alive {
             return Ok(Some(CommandFinishCause::EnemySquadGone));

@@ -233,6 +233,17 @@ per-weapon range predicate. This port deliberately rejects missing adapter
 data rather than fabricating a shooting target. The real Level adapter,
 weapon/squad targeting integration and executable qualification remain pending.
 
+**InAndOut** uses the same source-backed target FIFO and tracked approach as
+Swipe, with no duplicate targeting algorithm. It chooses Unity's random
+return point at activation, using the near-enemy conditional range. After
+every living squad member has a valid weapon target, it issues one ordinary
+formation Move back to that requested point and completes when all squad
+members have reached their destination. It shares the existing
+`swipe_command_snapshot` Level adapter because both commands require
+identical live enemy membership, weapon validity and targeting metadata.
+The missing authored Level adapter still fails closed rather than treating
+distance as weapon eligibility.
+
 Random finishes at arrival or command timeout; Patrol samples Unity's four-corner
 route, rotates waypoints on its 3-second scaled callback, and uses the
 separate configured patrol timeout. Retreat uses the Level's live target
