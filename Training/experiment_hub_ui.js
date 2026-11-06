@@ -280,8 +280,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         pipelineStageProject=project;
         pipelineStageKind=relationship;
-        $('hub-pipeline-add').disabled=project==='bees'||rows.length>=16;
-        $('hub-pipeline-queue').disabled=project==='bees'||
+        $('hub-pipeline-add').disabled=['bees','ants'].includes(project)||rows.length>=16;
+        $('hub-pipeline-queue').disabled=['bees','ants'].includes(project)||
             rows.length<2||!configs.length;
     }
     // Only a fresh, authenticated native report can distinguish a Stop
@@ -842,7 +842,7 @@ document.addEventListener('DOMContentLoaded', () => {
             sequenceTable.append(tr);
         }
         const pipeline=$('hub-pipeline-panel');
-        pipeline.hidden=project==='bees';
+        pipeline.hidden=['bees','ants'].includes(project);
         const kind=$('hub-pipeline-kind'),oldKind=kind.value;
         kind.replaceChildren(
             new Option('Independent fresh jobs (no shared checkpoint)','independent'),
@@ -900,7 +900,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if(state.machines.some(m=>m.id===previousMachine&&m.status==='connected'))
             $('hub-job-machine').value=previousMachine;
         const records=(state.jobs||[]).filter(j=>j.project_id===project);
-        $('hub-job-allocate-all').disabled=project==='bees'||
+        $('hub-job-allocate-all').disabled=['bees','ants'].includes(project)||
             !records.some(j=>j.status==='waiting_adapter'&&!j.lease_id);
         $('hub-global-allocate').disabled=!(state.jobs||[]).some(j=>
             j.adapter==='unconfigured'&&j.status==='waiting_adapter'&&!j.lease_id);

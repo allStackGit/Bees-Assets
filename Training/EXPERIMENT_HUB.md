@@ -228,7 +228,7 @@ A disk-write failure likewise publishes neither half of the update.
 
 **This operation does not launch, isolate, pause or stop a process.**
 Even an agent-acknowledged assignment is not a binding on independently
-running Bees/Ants/LLM software. The Hub does not yet know how much GPU
+running Bees, TinyBrains, or other software. The Hub does not yet know how much GPU
 time is being consumed by untracked workloads, and cannot enforce
 a minimum performance share.
 
@@ -356,7 +356,7 @@ uncertain native launch or freeing uncertain capacity. Stop/recovery of
 failed jobs remains manual. Isolated Windows qualifications have verified
 native Job Object CPU/RAM enforcement, concurrent automatic scheduling,
 terminal receipt/release, dashboard controls, and heartbeat-loss disarming
-on a real host. **Production Bees/Ants coexistence and unattended project
+on a real host. **Production Bees/TinyBrains coexistence and unattended project
 training are still unverified**; real Linux services and GPU isolation remain
 unqualified. The **generic non-Bees scheduler** supports frozen independent-evaluation
 stop thresholds, but not Bees-style multi-stage benchmark promotion,
@@ -383,7 +383,7 @@ rejected. A reduction below outstanding Hub claims is refused; the
 change neither resizes nor stops any running native process. Claims
 remain durable across agent disconnects and coordinator restarts. This
 feature does not map Bees trainer IDs to physical machines, measure
-their host usage, or automatically adjust when Bees/Ants activity changes.
+their host usage, or automatically adjust when Bees or other training activity changes.
 It is a conservative *operator-chosen admission budget*, not isolation,
 a reserved CPU core set, or a throughput guarantee. For uncertain
 coexistence, use a dedicated host or a much smaller Hub budget instead
@@ -691,7 +691,7 @@ On starting the opted-in agent, the local supervisor first runs an
 service with a 100% CPU quota and 256-MiB memory cap, reads the
 corresponding kernel cgroup limits and process membership, and
 requests a blocking systemd stop before reporting readiness.
-It uses **no training process**, does not touch Bees or Ants artifacts,
+It uses **no training process**, does not touch Bees or user training artifacts,
 and never runs until the host administrator explicitly enables native
 execution. A failure leaves native starts blocked; the agent still
 reports machine status and may stop or inspect previously owned jobs.
@@ -707,7 +707,7 @@ absolute `cwd`, and an `args(frozenParameters)` function producing
 validated arguments. The machine administrator reviews and installs
 this executable separately. Saved experiment configurations never
 supply a program path or shell command. **This PR does not install
-working Ants, LLM, or other project runners on a machine.** Local
+working TinyBrains, LLM, or other project runners on a machine.** Local
 adapter configuration and authentication secrets must not be committed.
 
 The agent generates a fresh process-instance identity when it starts.
@@ -741,9 +741,9 @@ a nondecreasing counter, and an interval of 1–120 seconds. It is
 ephemeral and observational, not a capacity claim or scheduler input.
 Windows may provide CPU time without a separate RAM measurement,
 and those observations are displayed independently. Only lifecycle reports accepted by the coordinator update live
-telemetry or Ants comparison samples; late state regressions and duplicate
+telemetry or project comparison samples; late state regressions and duplicate
 terminal reports cannot overwrite a completed job's last valid metrics.
-Ants live learning progress retains its latest accepted source snapshot when
+Live learning progress retains its latest accepted source snapshot when
 a report repeats or predates it, is for another experiment, or temporarily
 omits progress. Fresh native CPU/RAM usage still updates independently.
 
@@ -944,7 +944,7 @@ Bees browser script or any Bees operator routes. It uses a disposable
 registry, a pre-enrolled Windows agent `smoke`, the real worker-only
 loopback heartbeat listener, and a locally pinned native helper.
 The only approved adapter executes the fixed 30-second
-`--smoke-child`; it never runs Bees, Ants or user-supplied commands.
+`--smoke-child`; it never runs production training or user-supplied commands.
 The registered coordination budget is **2 CPUs / 512 MiB RAM**.
 
 In the **Windows qualification** project, use **Machines** to confirm
@@ -1030,7 +1030,7 @@ Open the printed **ephemeral loopback URL**, not port 7148. The
 qualification dashboard/worker use the real Linux supervisor and the
 checked-in fixed `smoke` adapter, which only launches
 `/usr/bin/sleep 30` under a transient user-systemd service; there
-is no arbitrary command or production Bees/Ants adapter installed.
+is no arbitrary command or production training adapter installed.
 The temporary coordinator registry and supervisor journal remain
 separate from production. The browser's project/machine names say
 **Linux qualification** and **Isolated local Linux agent**.
