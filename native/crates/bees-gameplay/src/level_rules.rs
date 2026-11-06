@@ -19,7 +19,9 @@ use bees_sim::rl_shaping::DamageRewardMetadata;
 use bees_sim::simulation::{GameRules, World};
 use bees_sim::telemetry::StepCounts;
 
-use crate::commands::{GameCommandError, NativeFriendlySquad};
+use crate::commands::{
+    GameCommandError, NativeCircleCommandSnapshot, NativeFriendlySquad,
+};
 use crate::level_events::{
     NativeLevelEventError, NativeLevelEventProcessor,
 };
@@ -52,6 +54,18 @@ pub trait NativeLevelCommandContext {
         roster: &NativeSquadRoster,
         output: &mut Vec<NativeFriendlySquad>,
     ) -> Result<(), GameCommandError>;
+
+    /// Exact Unity CircleSquad.Timer values from the current Level and
+    /// Ship.IsShipWithinRange weapon-validity checks. Called only when a
+    /// CircleSquad poll fires. Implementers must inspect true live weapons
+    /// and squad membership; no geometric or fabricated fallback exists.
+    /// The default fails closed for Levels without this command adapter.
+    fn circle_command_snapshot(
+        &self, _world: &CombatWorld, _owner: SquadLifetime,
+        _enemy_squad_id: i64,
+    ) -> Result<NativeCircleCommandSnapshot, GameCommandError> {
+        Err(GameCommandError::MissingCombatSnapshot)
+    }
 
     fn navigation(&self) -> &NavigationRuntime;
 }
@@ -399,10 +413,15 @@ where
                 state.command_friendlies.clear();
             }
             let previous_event_count = state.combat.events().len();
-            state.events.advance_timed_commands(
+            state.events.advance_timed_commands_with_circle(
                 completed_tick, &mut state.combat,
                 state.metadata.navigation(),
                 &state.command_friendlies, &mut world.random, dt_seconds,
+                |owner, enemy_id, combat| {
+                    state.metadata.circle_command_snapshot(
+                        combat, owner, enemy_id,
+                    )
+                },
             )?;
             if state.combat.events().len() > previous_event_count {
                 // Timed Mining callbacks occur after the normal reward
