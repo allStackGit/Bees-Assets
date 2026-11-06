@@ -490,8 +490,10 @@ impl NativeSquadCommandDirector {
         &self, owner: SquadLifetime, ship_id: i64,
     ) -> Option<i64> {
         let active = self.active.get(&owner)?;
-        if active.bombing.is_some() &&
-            active.member_ids.contains(&ship_id) {
+        if active.member_ids.contains(&ship_id) &&
+            active.bombing.as_ref().is_some_and(|run|
+                run.may_deliver_contact(ship_id)
+            ) {
             Some(active.selection.command_outcome_id)
         } else {
             None

@@ -340,14 +340,14 @@ impl NativeLevelEventProcessor {
     /// Unity's Striker/YellowJacket.OnTriggerEnter2D without synthesizing
     /// a second contact cache, command ID or training-only bomb model.
     ///
-    /// The Level supplies only the source Striker's two live drop guards.
-    /// The world rechecks its exact selected Bomb target and hull overlap.
+    /// The command authorizes HasDroppedBomb, while CombatWorld owns
+    /// IsBombReady, selected Bomb target and the exact hull overlap.
     /// Unsupported command compositions remain inert, not successful.
     pub fn deliver_commanded_bomber_contact(
         &mut self,
         completed_tick: u64, world: &mut CombatWorld,
         bomber_id: i64, contacted_target_id: i64,
-        striker_may_drop: bool, collisions: &CollisionMatrix,
+        collisions: &CollisionMatrix,
     ) -> Result<bool, NativeLevelEventError> {
         if self.is_failed() || self.completed() {
             return Err(NativeLevelEventError::FailedLevel);
@@ -365,7 +365,7 @@ impl NativeLevelEventProcessor {
         else { return Ok(false) };
         let outcome = match world.ship(bomber_id).map(|ship| ship.ship_type) {
             Some(19) => world.drop_game_striker_bomb_on_contact(
-                bomber_id, contacted_target_id, striker_may_drop,
+                bomber_id, contacted_target_id,
                 command_outcome_id, collisions,
             ),
             Some(22) => world.detonate_game_yellow_jacket_on_contact(

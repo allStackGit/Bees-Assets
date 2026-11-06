@@ -355,6 +355,16 @@ impl NativeBombingRun {
     /// Striker.DropBomb calls CompleteRun synchronously after creating the
     /// real fuse. Mark only that original command's owned ship, after the
     /// combat world has confirmed delivery and transferred the Bomb lease.
+    pub fn may_deliver_contact(&self, ship_id: i64) -> bool {
+        match self.strikers.binary_search_by_key(
+            &ship_id, |state| state.ship_id,
+        ) {
+            Ok(index) => !self.strikers[index].completed,
+            // Yellow Jackets and Fire Barges have no per-run drop flag.
+            Err(_) => true,
+        }
+    }
+
     pub fn record_striker_drop(&mut self, ship_id: i64) -> bool {
         let Ok(index) = self.strikers.binary_search_by_key(
             &ship_id, |state| state.ship_id,

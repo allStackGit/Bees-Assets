@@ -54,7 +54,7 @@ impl CombatWorld {
         &mut self, striker_id: i64, carrier: GameStrikerCarrier,
     ) -> Result<(), CombatWorldError> {
         if !carrier.valid() {
-            return Err(CombatWorldError::InvalidPolicyStriker);
+            return Err(CombatWorldError::InvalidGameStriker);
         }
         let &index = self.ship_by_id.get(&striker_id)
             .ok_or(CombatWorldError::UnknownShip)?;
@@ -62,9 +62,11 @@ impl CombatWorld {
             self.ships[index].vitals.is_dead() ||
             !self.physics.ships()[index].active ||
             self.game_strikers.contains_key(&striker_id) ||
+            (self.physics.ships()[index].motion.is_policy_controlled &&
+                !self.physics.ships()[index].motion.user_controlled) ||
             !self.fleet_id_by_ship.get(&striker_id)
                 .is_some_and(|&id| id > 0) {
-            return Err(CombatWorldError::InvalidPolicyStriker);
+            return Err(CombatWorldError::InvalidGameStriker);
         }
         if let Some(carrier_id) = carrier.carrier_id {
             let &carrier_index = self.ship_by_id.get(&carrier_id)
@@ -73,7 +75,7 @@ impl CombatWorld {
                 self.ships[carrier_index].side != self.ships[index].side ||
                 self.ships[carrier_index].vitals.is_dead() ||
                 !self.physics.ships()[carrier_index].active {
-                return Err(CombatWorldError::InvalidPolicyStriker);
+                return Err(CombatWorldError::InvalidGameStriker);
             }
         }
         self.game_strikers.insert(striker_id, GameStrikerRuntime {
@@ -100,7 +102,7 @@ impl CombatWorld {
         &mut self, striker_id: i64,
     ) -> Result<bool, CombatWorldError> {
         let runtime = self.game_strikers.get(&striker_id)
-            .ok_or(CombatWorldError::InvalidPolicyStriker)?;
+            .ok_or(CombatWorldError::InvalidGameStriker)?;
         let Some(carrier_id) = runtime.carrier.carrier_id else {
             return Ok(false);
         };
@@ -231,7 +233,7 @@ impl CombatWorld {
     pub fn drop_game_striker_bomb_on_contact(
         &mut self,
         striker_id: i64, contacted_target_id: i64,
-        may_drop: bool, command_outcome_id: i64,
+        command_outcome_id: i64,
         collisions: &CollisionMatrix,
     ) -> Result<bool, CombatWorldError> {
         if command_outcome_id <= 0 {
@@ -246,7 +248,7 @@ impl CombatWorld {
         if body.motion.is_policy_controlled && !body.motion.user_controlled {
             return Err(CombatWorldError::UnsupportedPolicyActions);
         }
-        if !may_drop || self.frozen_after_elimination ||
+        if self.frozen_after_elimination ||
             !self.game_strikers.get(&striker_id).is_some_and(|s| s.ready) ||
             self.ships[ship_index].vitals.is_dead() || !body.active {
             return Ok(false);

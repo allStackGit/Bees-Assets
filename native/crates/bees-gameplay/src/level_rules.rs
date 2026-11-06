@@ -51,9 +51,6 @@ pub trait NativeLevelRewardMetadata {
 pub struct NativeBomberContact {
     pub bomber_id: i64,
     pub contacted_target_id: i64,
-    /// IsBombReady && !HasDroppedBomb for an authored game Striker.
-    /// Ignored for a Yellow Jacket.
-    pub striker_may_drop: bool,
 }
 
 /// Source-facing gameplay inputs for timed Hive Mind commands.
@@ -472,7 +469,7 @@ where
                 state.events.deliver_commanded_bomber_contact(
                     completed_tick, &mut state.combat,
                     contact.bomber_id, contact.contacted_target_id,
-                    contact.striker_may_drop, &self.collision_matrix,
+                    &self.collision_matrix,
                 )?;
             }
         }

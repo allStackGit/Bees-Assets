@@ -131,6 +131,7 @@ pub enum CombatWorldError {
     DuplicatePolicyAgent(u64),
     InvalidPolicyTurret,
     InvalidPolicyStriker,
+    InvalidGameStriker,
     InvalidPolicyFireBarge,
     InvalidPolicyYellowJacket,
     InvalidPolicyBarge,
