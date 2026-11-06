@@ -319,15 +319,16 @@ function fairPending(jobs,lastProjectId=null) {
 // Read-only pipeline diagnosis, never an execution authorization.
 function waitingStageReason(job,byId) {
     const visited=new Set([job.id]);
-    let parentId=job.continuation_of_job_id||job.after_job_id;
+    let dependent=job;
     for(let depth=1;depth<=1000;depth++) {
+        const parentId=dependent.continuation_of_job_id||dependent.after_job_id;
         const parent=byId.get(parentId);
         if(!parent||visited.has(parentId))
             return {status:'broken_lineage',depth,
                 reason:'Prequeued stage has missing or cyclic predecessor lineage; operator review required.'};
         visited.add(parentId);
         if(parent.status==='waiting_predecessor') {
-            parentId=parent.continuation_of_job_id||parent.after_job_id;
+            dependent=parent;
             continue;
         }
         const label=parent.configuration_name||parent.id.slice(-8);
@@ -343,12 +344,18 @@ function waitingStageReason(job,byId) {
         }else if(parent.status==='finished'&&!parent.capacity_released_at) {
             status='release_pending';explanation='finished; capacity release is required';
         }else if(parent.status==='stopped') {
-            status=job.after_job_id?'needs_review':'operator_approval';
-            explanation=job.after_job_id
-                ?'stopped without finishing; independent dependent jobs will not auto-advance'
-                :parent.capacity_released_at
+            if(dependent.after_job_id) {
+                status='needs_review';
+                explanation='stopped without finishing; independent dependent jobs will not auto-advance';
+            }else if(parent.project_id==='tinybrains') {
+                status='needs_review';
+                explanation='stopped without finishing; cancel the queued TinyBrains continuation stages';
+            }else {
+                status='operator_approval';
+                explanation=parent.capacity_released_at
                     ?'stopped; explicit checkpoint-risk approval is required'
                     :'stopped; capacity release and explicit checkpoint-risk approval are required';
+            }
         }else {
             status='needs_review';explanation=
                 'is '+parent.status+'; pipeline will not auto-advance without operator review';
