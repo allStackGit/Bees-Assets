@@ -27,6 +27,28 @@ pub struct NativeBombWeapon {
     pub power: i32,
 }
 
+/// Activation-only authored Level inputs. The live source roster is
+/// borrowed, not copied. The command director accepts this payload only
+/// for a composition that can execute the Fire Barge-only behavior.
+#[derive(Clone, Copy)]
+pub struct NativeBombingActivation<'a> {
+    pub roster: &'a NativeSquadRoster,
+    pub enemy_owner: SquadLifetime,
+    pub weapons: &'a [NativeBombWeapon],
+    pub enemies: &'a [NativeEnemyTargetStats],
+}
+
+/// The one authoritative Level projection needed when a Fire Barge
+/// BombingRun command's timer fires. Nearby pairs are ONLY those for
+/// which the current bomb target is in the ship's real Unity
+/// ProximityCollider.NearbyEnemyShips set. This is not collider-center
+/// distance or a second physics contact registry.
+pub struct NativeFireBargeTimerSnapshot {
+    pub enemy_owner: SquadLifetime,
+    pub enemy_alive: bool,
+    pub nearby_targets: Vec<(i64, i64)>,
+}
+
 /// Unity BombingRun.Execute calls GetTarget on every current bomber in
 /// squad order before starting its recurring two-second command timer.
 /// A failure invokes SetFinalize and releases all surviving Bomb targets.
