@@ -1145,6 +1145,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 actions.append(button('Start native job',async()=>{
                     const windows=machine.agent_platform==='win32';
                     const gpu=j.resources.gpu_count===1;
+                    const autoRelease=$('hub-native-release-on-terminal').checked;
                     if(!confirm((gpu?'Authorize native execution on the exclusively leased GPU for ':
                         'Authorize native CPU/RAM-limited execution of ')+
                         j.configuration_name+' on '+machine.name+
@@ -1152,11 +1153,13 @@ document.addEventListener('DOMContentLoaded', () => {
                         (gpu?'The service will verify device access and ROCm visibility before training. ':'')+
                         (windows?'Windows Stop FORCE-TERMINATES the entire process tree without checkpoint-aware interruption. ':
                             'Linux uses the locally selected service stop policy. ')+
+                        (autoRelease?'The Hub will release this claim after verified finish or Stop. ':'')+
                         'This starts a real process; verify host capacity and experimental validity.'))return;
                     try{
                         await action('hub/jobs/start',{
-                            job_id:j.id,confirm_start:true,
+                            job_id:j.id,confirm_start:true,release_on_terminal:autoRelease,
                         });
+                        $('hub-native-release-on-terminal').checked=false;
                         feedback('hub-job-message',
                             'Native start authorized. Awaiting local OS enforcement verification.');
                         await reload();

@@ -1200,6 +1200,8 @@ class ExperimentHub {
         selected.dispatch_id=crypto.randomUUID();
         selected.start_requested_at=now();
         selected.start_first_offered_at=null;
+        if(origin==='operator'&&value.release_on_terminal===true)
+            selected.release_on_terminal=true;
         selected.status_reason='Start authorized; waiting for machine-local OS resource enforcement verification.';
         this.commit(next);
         return {id:selected.id,status:selected.status,dispatch_id:selected.dispatch_id};
@@ -1219,6 +1221,7 @@ class ExperimentHub {
         delete job.dispatch_id;
         delete job.start_requested_at;
         delete job.start_first_offered_at;
+        delete job.release_on_terminal;
         delete job.automation_start_session_id;
         job.status_reason='Undelivered Start withdrawn. The queued job retains its existing claim.';
         this.commit(next);
@@ -1365,6 +1368,8 @@ class ExperimentHub {
                     job.final_progress=selected;
                     changed=true;
                 }
+                if(job.release_on_terminal&&['finished','stopped'].includes(job.status))
+                    this.releaseIn(next,lease);
             }
         }
         return changed;

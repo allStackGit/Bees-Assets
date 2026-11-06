@@ -619,6 +619,13 @@ Disarming or restarting ends ownership of earlier claims.
 
 ### Operator-initiated native execution
 
+Train can opt an individual Start into automatic release on verified
+finish or Stop (`release_on_terminal:true` in the Start request). The Hub
+records completion and releases the job's lease in the same update, so
+an eligible successor can advance after a verified finish. The setting
+survives coordinator restart. Failed or unverified jobs retain their
+claims for review. This applies to explicitly started CPU and GPU jobs.
+
 To retire a project adapter while a job is still owned, keep the same
 machine enrollment, supervisor directory, and Windows helper pin where
 applicable. Restart the agent with the adapter removed from its local
