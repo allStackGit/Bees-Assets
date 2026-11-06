@@ -88,6 +88,106 @@ impl CombatWorld {
         self.policy_special_measurements.mining_obstacles_depleted += 1;
     }
 
+    /// Source Squad.GetNearestMiningAsteroid uses the live squad bounds
+    /// center and the Level's living mining-asteroid registry. Stable
+    /// increasing entity IDs preserve registry order for exact-distance ties.
+    /// Return the selected physical obstacle's current position as well.
+    pub fn nearest_mining_asteroid(&self, squad_center: Vec2) -> Option<(i64, Vec2)> {
+        if !squad_center.is_finite() { return None; }
+        let mut nearest = None;
+        let mut distance_squared = f32::INFINITY;
+        for &id in &self.mining_obstacle_ids {
+            let Some(&index) = self.obstacle_by_id.get(&id) else {
+                continue;
+            };
+            if !self.physics.obstacles()[index].active ||
+                self.obstacles[index].kind != ObstacleKind::MiningAsteroid ||
+                !self.obstacles[index].live() {
+                continue;
+            }
+            let position = self.physics.obstacles()[index].pose.position;
+            let distance = (position - squad_center).length_squared();
+            if distance < distance_squared {
+                nearest = Some((id, position));
+                distance_squared = distance;
+            }
+        }
+        nearest
+    }
+
+    /// Shared world-authoritative extraction for policy actions and the
+    /// source timed Mining squad command. The caller supplies its distinct
+    /// live miners in source squad-registration order. For commands these
+    /// are ships that previously entered the target's authored collider;
+    /// Unity continues their five-second timer without retesting contact.
+    ///
+    /// A single rate of five minerals per miner is capped by live asteroid
+    /// health. Integer division distributes the entire yield, with earlier
+    /// registered ships receiving the remainder, exactly like Mining.Mine.
+    /// Preflight all recipients before modifying any physical resource.
+    /// FleetShip persistence is committed by the native Level event handoff.
+    pub fn mine_asteroid_for_ships(
+        &mut self, obstacle_id: i64, ship_ids: &[i64],
+    ) -> Result<i32, CombatWorldError> {
+        let &index = self.obstacle_by_id.get(&obstacle_id)
+            .ok_or(CombatWorldError::UnknownObstacle)?;
+        if !self.physics.obstacles()[index].active ||
+            self.obstacles[index].kind != ObstacleKind::MiningAsteroid {
+            return Err(CombatWorldError::InvalidPolicyMining);
+        }
+        let health = self.obstacles[index].vitals
+            .filter(|v| !v.is_dead && v.health > 0)
+            .ok_or(CombatWorldError::InvalidPolicyMining)?.health;
+        let count = i32::try_from(ship_ids.len())
+            .map_err(|_| CombatWorldError::InvalidPolicyMining)?;
+        let rate = count.checked_mul(MINING_ACTION_RATE)
+            .filter(|&value| value > 0)
+            .ok_or(CombatWorldError::InvalidPolicyMining)?;
+        let amount = rate.min(health);
+        let base = amount / count;
+        let remainder = amount % count;
+        let mut side = None;
+        for (i, &ship_id) in ship_ids.iter().enumerate() {
+            if ship_ids[..i].contains(&ship_id) {
+                return Err(CombatWorldError::InvalidPolicyMining);
+            }
+            let &ship_index = self.ship_by_id.get(&ship_id)
+                .ok_or(CombatWorldError::UnknownShip)?;
+            let ship = &self.ships[ship_index];
+            if !matches!(ship.ship_type, MINING_FACTORY_TYPE | MINING_CARPENTER_BEE_TYPE) ||
+                ship.vitals.is_dead() || !self.physics.ships()[ship_index].active ||
+                self.ship_fleet_identity(ship_id).is_none() ||
+                side.is_some_and(|same_side| same_side != ship.side) {
+                return Err(CombatWorldError::InvalidPolicyMining);
+            }
+            side = Some(ship.side);
+            let share = base + i32::from(i < remainder as usize);
+            ship.vitals.mined_cargo().checked_add(share)
+                .ok_or(CombatWorldError::InvalidPolicyMining)?;
+        }
+
+        // Source Mining.Mine deducts the whole interval once, regardless
+        // of how many ships each earn their integer share.
+        self.obstacles[index].vitals.as_mut()
+            .expect("prevalidated live mining asteroid").health -= amount;
+        for (i, &ship_id) in ship_ids.iter().enumerate() {
+            let share = base + i32::from(i < remainder as usize);
+            if share == 0 { continue; }
+            let ship_index = self.ship_by_id[&ship_id];
+            let ship = &mut self.ships[ship_index];
+            let new_cargo = ship.vitals.mined_cargo() + share;
+            ship.vitals.set_mined_cargo(new_cargo)?;
+            self.events.push(CombatEvent::CapabilityMined {
+                ship_id, obstacle_id, side: ship.side, amount_mined: share,
+            });
+        }
+        if self.obstacles[index].vitals
+            .expect("prevalidated live mining asteroid").health == 0 {
+            self.retire_mining_asteroid(index);
+        }
+        Ok(amount)
+    }
+
     /// A successful policy mining request consumes exactly min(5, Health)
     /// and starts a five-second cooldown. The real fleet value is applied
     /// by NativeLevelRules before the shared episode/economic consumer.
@@ -107,38 +207,14 @@ impl CombatWorld {
             }
             let Some(obstacle_id) = self.touching_mining_asteroid(ship_id)
             else { continue; };
-            let &index = self.obstacle_by_id.get(&obstacle_id)
-                .ok_or(CombatWorldError::InvalidPolicyMining)?;
-            let health = self.obstacles[index].vitals
-                .ok_or(CombatWorldError::InvalidPolicyMining)?.health;
-            let amount_mined = MINING_ACTION_RATE.min(health);
-            if amount_mined <= 0 { continue; }
-            let &ship_index = self.ship_by_id.get(&ship_id)
-                .ok_or(CombatWorldError::UnknownShip)?;
-            let new_cargo = self.ships[ship_index].vitals.mined_cargo()
-                .checked_add(amount_mined)
-                .ok_or(CombatWorldError::InvalidPolicyMining)?;
-            let depleted = {
-                let vitals = self.obstacles[index].vitals.as_mut()
-                    .ok_or(CombatWorldError::InvalidPolicyMining)?;
-                vitals.health -= amount_mined;
-                vitals.health <= 0
-            };
-            // Source TryApplyMiningAction immediately updates
-            // FleetShip.MineralsMinedThisLevel and Ship.Tsv before any
-            // subsequent same-tick weapon hits or safe warp. Advance
-            // the world-local value now; the Level commits and reconciles
-            // the persistent FleetShip value before reward consumption.
-            self.ships[ship_index].vitals.set_mined_cargo(new_cargo)?;
+            let mined = self.mine_asteroid_for_ships(
+                obstacle_id, std::slice::from_ref(&ship_id),
+            )?;
+            if mined == 0 { continue; }
             if let Some(mining) = self.policy_ship_runtime.get_mut(&ship_id)
                 .and_then(|runtime| runtime.mining.as_mut()) {
                 mining.cooldown_remaining = MINING_COOLDOWN_SECONDS;
             }
-            let side = self.ship(ship_id)
-                .ok_or(CombatWorldError::UnknownShip)?.side;
-            self.events.push(CombatEvent::CapabilityMined {
-                ship_id, obstacle_id, side, amount_mined,
-            });
             self.policy_special_measurements.mining_actions_completed += 1;
             if depleted {
                 self.retire_mining_asteroid(index);
