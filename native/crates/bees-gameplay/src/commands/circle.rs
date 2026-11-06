@@ -26,6 +26,8 @@ const MIN_DESTINATION_SEPARATION: f32 = 1.25;
 /// Squad center and MaxRange are the actual Unity Squad values.
 #[derive(Clone, Copy, Debug)]
 pub struct NativeCircleCommandSnapshot {
+    /// Exact target lifetime, not a pooled squad's reused numeric ID.
+    pub enemy_owner: SquadLifetime,
     pub enemy_alive: bool,
     pub squad_center: Vec2,
     pub enemy_center: Vec2,
@@ -35,7 +37,8 @@ pub struct NativeCircleCommandSnapshot {
 
 impl NativeCircleCommandSnapshot {
     pub fn valid(self) -> bool {
-        self.squad_center.is_finite() &&
+        self.enemy_owner.valid() &&
+            self.squad_center.is_finite() &&
             self.enemy_center.is_finite() &&
             self.own_max_range.is_finite() &&
             self.own_max_range >= 0.0
@@ -72,6 +75,7 @@ pub fn assemble_circle_snapshot_from_live_weapons(
     }
     let Some(enemy) = roster.get(enemy_owner) else {
         return Ok(NativeCircleCommandSnapshot {
+            enemy_owner,
             enemy_alive: false,
             squad_center,
             enemy_center,
@@ -122,6 +126,7 @@ pub fn assemble_circle_snapshot_from_live_weapons(
         }
     }
     Ok(NativeCircleCommandSnapshot {
+        enemy_owner,
         enemy_alive: true,
         squad_center,
         enemy_center,
@@ -132,6 +137,7 @@ pub fn assemble_circle_snapshot_from_live_weapons(
 
 pub(super) struct CircleRun {
     enemy_squad_id: i64,
+    enemy_lifetime: Option<SquadLifetime>,
     members: Vec<SquadFormationMember>,
     formation: SquadFormationOptions,
     reached_enemy: bool,
@@ -158,6 +164,7 @@ impl CircleRun {
         }
         Ok(Some(Self {
             enemy_squad_id: enemy.squad_id,
+            enemy_lifetime: None,
             members: squad.members.to_vec(),
             formation: squad.formation,
             reached_enemy: false,
@@ -178,14 +185,24 @@ impl CircleRun {
         world: &mut CombatWorld,
         navigation: &NavigationRuntime,
         timer: &mut ScaledTimer,
+        owner: SquadLifetime,
         snapshot: NativeCircleCommandSnapshot,
     ) -> Result<Option<CommandFinishCause>, GameCommandError> {
         // Unity checks EnemySquad.IsDead before reading position/range.
         if !snapshot.enemy_alive {
             return Ok(Some(CommandFinishCause::EnemySquadGone));
         }
-        if !snapshot.valid() {
+        if !snapshot.valid() ||
+            snapshot.enemy_owner.level_id != owner.level_id ||
+            snapshot.enemy_owner.squad_id != self.enemy_squad_id {
             return Err(GameCommandError::InvalidCombatSnapshot);
+        }
+        if let Some(original) = self.enemy_lifetime {
+            if original != snapshot.enemy_owner {
+                return Err(GameCommandError::InvalidEnemy);
+            }
+        } else {
+            self.enemy_lifetime = Some(snapshot.enemy_owner);
         }
         if !self.reached_enemy && !snapshot.every_member_has_target_in_range {
             issue_squad_tracked_move(

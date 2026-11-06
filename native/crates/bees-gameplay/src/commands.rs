@@ -1220,7 +1220,7 @@ impl NativeSquadCommandDirector {
                             owner, circle.enemy_squad_id(), world,
                         )?;
                         completed = circle.on_poll(
-                            world, navigation, timer, snapshot,
+                            world, navigation, timer, owner, snapshot,
                         )?;
                         // A 3s -> 0.25s timer reuse is generation-guarded.
                         timer.finish_update(due);
