@@ -270,7 +270,7 @@ impl NativeFireBargeBombingRun {
             -> Result<bool, GameCommandError>,
     ) -> Result<Option<CommandFinishCause>, GameCommandError> {
         if !enemy_alive {
-            return Ok(Some(CommandFinishCause::EnemySquadGone));
+            return Ok(Some(CommandFinishCause::BombingRunCompleted));
         }
         self.target.validate(owner, enemy_owner)?;
         self.timer_loops = self.timer_loops.saturating_add(1);

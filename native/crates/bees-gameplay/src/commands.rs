@@ -273,6 +273,9 @@ pub enum CommandFinishCause {
     GuardTargetGone,
     GuardFinished,
     EnemySquadGone,
+    /// Unity BombingRun.EndBombingRun reports a completed run when its
+    /// current enemy is gone; it is not a failed attack-target selection.
+    BombingRunCompleted,
     NoEnemyTargets,
     SwipeFinished,
     ReturnedToStart,
