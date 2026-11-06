@@ -26,6 +26,9 @@ pub struct NativeBatchedStepCounts {
     pub worlds_stepped: usize,
     pub worlds_complete_or_failed: usize,
     pub policy_agents_inferred: usize,
+    /// Live worlds advanced without invoking a pointless observation
+    /// builder because no policy controller is due on this physics tick.
+    pub worlds_without_due_agents: usize,
     /// False when Simulation timing sampling is disabled or this call
     /// was not selected. The three durations are then exactly zero.
     pub phase_timing_sampled: bool,
@@ -121,16 +124,22 @@ where
                 index, error: NativeInferenceError::WorldUnavailable,
             });
         }
-        let start = batch.keys().len();
-        build_observations(world, batch).map_err(|error|
-            NativeBatchedStepError::Source { index, error }
-        )?;
-        let added = &batch.keys()[start..];
         let next_tick = world.tick().checked_add(1)
             .ok_or(NativeBatchedStepError::Dispatch {
                 index, error: NativeInferenceError::WorldUnavailable,
             })?;
         let expected = world.state.decisions.due_count(next_tick);
+        let start = batch.keys().len();
+        if expected == 0 {
+            // The Level still advances physics, rewards and command timers
+            // below; only policy perception has no consumer on this tick.
+            counts.worlds_without_due_agents += 1;
+        } else {
+            build_observations(world, batch).map_err(|error|
+                NativeBatchedStepError::Source { index, error }
+            )?;
+        }
+        let added = &batch.keys()[start..];
         if added.len() != expected {
             return Err(NativeBatchedStepError::IncompleteObservations {
                 index, expected, actual: added.len(),
