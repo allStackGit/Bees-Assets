@@ -13,6 +13,9 @@ pub(super) struct HealRun {
     pending: VecDeque<i64>,
     /// Exactly the ships holding CombatWorld reservations.
     assigned: HashMap<i64, i64>,
+    /// Previously owned by the same squad command during replacement.
+    /// Failed activation may not steal that command's Beehive slots.
+    borrowed_at_start: HashSet<i64>,
     waiting: Vec<i64>,
     /// Source ShipReachedBeehive order, used for HealShips callbacks.
     healing: Vec<i64>,
@@ -73,6 +76,7 @@ impl HealRun {
             hives: hives.into_iter().map(|(id, _)| id).collect(),
             pending: candidates.into_iter().map(|(id, _)| id).collect(),
             assigned: HashMap::new(),
+            borrowed_at_start: HashSet::new(),
             waiting: Vec::new(),
             healing: Vec::new(),
             members,
@@ -82,13 +86,13 @@ impl HealRun {
             earned_tsv: 0,
         };
         if let Err(err) = run.assign_slots(world) {
-            run.release_all(world);
+            run.release_startup_claims(world);
             return Err(err);
         }
         if run.assigned.is_empty() { return Ok(None); }
         run.register_arrivals(world);
         if let Err(err) = run.move_waiting(world) {
-            run.release_all(world);
+            run.release_startup_claims(world);
             return Err(err);
         }
         Ok(Some(run))
@@ -108,8 +112,13 @@ impl HealRun {
                     ship.vitals.health() >= ship.vitals.max_health() {
                     continue;
                 }
+                let already_reserved =
+                    world.reserved_healing_beehive(id) == Some(hive);
                 if world.try_reserve_beehive_healing_slot(id, hive)? {
                     self.assigned.insert(id, hive);
+                    if already_reserved {
+                        self.borrowed_at_start.insert(id);
+                    }
                     self.waiting.push(id);
                 } else {
                     // A competing command already reserved this ship;
@@ -192,6 +201,20 @@ impl HealRun {
             ))?;
         }
         Ok(())
+    }
+
+    /// Roll back a failed activation without stealing slots from an
+    /// existing command. Successful replacement transfers ownership.
+    fn release_startup_claims(&mut self, world: &mut CombatWorld) {
+        for &id in self.assigned.keys() {
+            if !self.borrowed_at_start.contains(&id) {
+                world.release_beehive_healing_slot(id);
+            }
+        }
+        self.assigned.clear();
+        self.waiting.clear();
+        self.healing.clear();
+        self.pending.clear();
     }
 
     /// Superseding Heal transfers any identical reservations to the
