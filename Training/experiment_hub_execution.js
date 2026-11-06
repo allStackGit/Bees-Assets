@@ -52,34 +52,36 @@ class LocalExecution {
             order.lease.issued_by!=='experiment-hub'||order.lease.status!=='acknowledged')
             throw Error('Rejected invalid or unauthorized local dispatch instruction.');
         const {job,lease}=order;
-        if(['start','qualify_gpu'].includes(order.action)&&
-            !this.projects.includes(job.project_id))
-            throw Error('A locally installed project adapter is required for Start or GPU qualification.');
+        if(order.action==='start'&&!this.projects.includes(job.project_id))
+            throw Error('A locally installed project adapter is required for Start.');
         const localAdapter=this.supervisor.adapters?.[job.project_id];
         if(order.action==='start'&&!supportsEvaluation(this.evaluationSuites,job))
             throw Error('Local adapter does not support the requested evaluation suite.');
         if(order.action==='qualify_gpu') {
-            // This is not a job launch. Linux device access is tested using
-            // a fixed inert helper before an operator can authorize GPU Start.
-            if(typeof this.supervisor.qualifyGpuDeviceAccess!=='function'||
-                !this.supervisor.qualifiedAt||
-                job.status!=='waiting_adapter'||
-                job.resources?.gpu_mode!=='exclusive'||
-                job.resources?.gpu_count!==1||
-                lease.resources?.gpu_mode!=='exclusive'||
-                lease.resources?.gpu_count!==1||
-                lease.status!=='acknowledged'||lease.receipt_fresh!==true||
-                !Array.isArray(lease.gpu_bindings)||
-                lease.gpu_bindings.length!==1||
-                (job.resources.gpus?.length>0&&
-                    lease.gpu_bindings[0].id!==job.resources.gpus[0])||
-                lease.gpu_bindings[0].id!==lease.resources.gpus?.[0])
-                throw Error('GPU access probe requires a locally qualified, frozen exclusive Linux lease.');
-            // A previously launched process cannot be silently converted
-            // into a device policy inspection.
-            if(this.supervisor.snapshot().some(r=>r.job_id===job.id))
-                throw Error('GPU access probe refused for an already owned native service.');
+            // Report local eligibility failures for authenticated orders.
+            // Native ownership must be ruled out before a rejection can
+            // confirm that the coordinator may release the claim.
+            let jobUnowned=false;
             try {
+                jobUnowned=!this.supervisor.snapshot().some(r=>r.job_id===job.id);
+                if(!jobUnowned)
+                    throw Error('GPU access probe refused for an already owned native service.');
+                if(!this.projects.includes(job.project_id))
+                    throw Error('A locally installed project adapter is required for GPU qualification.');
+                if(typeof this.supervisor.qualifyGpuDeviceAccess!=='function'||
+                    !this.supervisor.qualifiedAt||
+                    job.status!=='waiting_adapter'||
+                    job.resources?.gpu_mode!=='exclusive'||
+                    job.resources?.gpu_count!==1||
+                    lease.resources?.gpu_mode!=='exclusive'||
+                    lease.resources?.gpu_count!==1||
+                    lease.status!=='acknowledged'||lease.receipt_fresh!==true||
+                    !Array.isArray(lease.gpu_bindings)||
+                    lease.gpu_bindings.length!==1||
+                    (job.resources.gpus?.length>0&&
+                        lease.gpu_bindings[0].id!==job.resources.gpus[0])||
+                    lease.gpu_bindings[0].id!==lease.resources.gpus?.[0])
+                    throw Error('GPU access probe requires a locally qualified, frozen exclusive Linux lease.');
                 const result=await this.supervisor.qualifyGpuDeviceAccess(
                     lease.gpu_bindings);
                 if(!Array.isArray(result?.selected)||
@@ -96,7 +98,7 @@ class LocalExecution {
                     job_id:job.id,lease_id:lease.id,
                     dispatch_id:order.dispatch_id,
                     result:'rejected',selected_pci_addresses:[],
-                    cleanup_verified:this.supervisor.gpuProbeCleanupPending?.()===false,
+                    cleanup_verified:jobUnowned&&this.supervisor.gpuProbeCleanupPending?.()===false,
                     diagnostic:String(error.message||error).slice(0,160)};
             }
         }
