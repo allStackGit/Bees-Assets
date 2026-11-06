@@ -1421,6 +1421,9 @@ class ExperimentHub {
                 job.status_reason='Independent evaluation target met; awaiting native Stop.';
                 job.evaluation_stop_evidence=evaluation;
                 changed=true;
+            }else if(evaluation&&JSON.stringify(evaluation)!==JSON.stringify(job.last_evaluation)) {
+                job.last_evaluation=evaluation;
+                changed=true;
             }
             // Keep the last accepted source version if the terminal report
             // omitted progress or supplied an older/unrelated summary.
