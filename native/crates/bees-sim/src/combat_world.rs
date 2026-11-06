@@ -83,6 +83,7 @@ pub use self::mining::{is_mining_ship_type, MINING_FACTORY_TYPE, MINING_CARPENTE
 pub use self::shot_outcomes::{ProjectileRootOutcome, ProjectileOutcomeMeasurements};
 use self::shot_outcomes::{ProjectileOutcomeTracker, NEAR_MISS_DISTANCE};
 pub use self::scout::{ScoutBeaconSpec, ScoutBeaconStatus};
+use self::scout::PolicyScoutRuntime;
 use self::policy::{PolicyShipRuntime, PolicyShipSpecial};
 pub use self::policy::PolicySpecialObservations;
 use self::weapons::PendingPolicyShot;
@@ -642,6 +643,9 @@ pub struct CombatWorld {
     /// Prefab-derived Beacon health, motion and collider, supplied at setup.
     /// An RL Scout never invents missing authored prefab data at runtime.
     scout_beacon_specs: HashMap<i64, ScoutBeaconSpec>,
+    /// Non-policy gameplay Scouts retain charges/cooldown across HiveMind
+    /// command replacement, rather than each Scouting command resetting it.
+    game_scout_runtime: HashMap<i64, PolicyScoutRuntime>,
     navigation_requests: NavigationRequests,
     game_ship_steering: HashMap<i64, GameShipSteering>,
     /// The Level-owned policy controller stores actual ongoing action
@@ -757,6 +761,7 @@ impl CombatWorld {
             live_mobile_ships_by_side: HashMap::new(),
             beacon_parent_by_id: HashMap::new(),
             scout_beacon_specs: HashMap::new(),
+            game_scout_runtime: HashMap::new(),
             navigation_requests: NavigationRequests::new(),
             game_ship_steering: HashMap::new(),
             policy_ship_runtime: BTreeMap::new(),
@@ -919,6 +924,7 @@ impl CombatWorld {
         self.live_ship_total = self.live_ship_total.saturating_sub(1);
         self.beacon_parent_by_id.remove(&victim_id);
         self.scout_beacon_specs.remove(&victim_id);
+        self.game_scout_runtime.remove(&victim_id);
         self.discovery.retire(DiscoveryKind::Ship, victim_id);
         self.policy_ship_runtime.remove(&victim_id);
         self.retire_support_zone(self.ships[index].ship_type, side, victim_id);
