@@ -48,7 +48,8 @@ mod in_and_out;
 mod aggressive;
 mod bombing;
 pub use self::bombing::{
-    NativeBombWeapon, assign_initial_bombing_run_targets,
+    NativeBombWeapon, NativeFireBargeBombingRun,
+    assign_initial_bombing_run_targets,
     advance_fire_barge_bombing_run,
 };
 pub use self::aggressive::{
