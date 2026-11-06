@@ -1315,8 +1315,10 @@ retried without a second Hub availability check: the unique dispatch and
 suite are validated again by the trusted running adapter and coordinator
 before they can authorize Stop. A heartbeat gap during evaluation must not
 discard a completed result. Publication to an already-terminal dispatch is
-inert. A failed evaluation itself waits for a newer checkpoint. Keep a
-stable suite ID and scratch directory for the lifetime of the schedule.
+inert. A handled evaluation failure waits for a newer checkpoint.
+If an evaluator is interrupted before producing a result, the current
+checkpoint remains eligible on its next invocation. Keep a stable suite ID
+and scratch directory for the lifetime of the schedule.
 
 The adapter accepts `mode:"new"` (or omitted mode) for a fresh run
 and `mode:"resume"` for an explicitly linked, completed predecessor.
