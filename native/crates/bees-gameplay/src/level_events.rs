@@ -315,6 +315,26 @@ impl NativeLevelEventProcessor {
         self.queue_immediate_emission(emission)
     }
 
+    /// Atomic gameplay handoff for Unity HivemindVision's first
+    /// *side-wide* enemy ship sighting. The caller supplies the verified
+    /// reward Squad lifetime (the MotherSquad for a minion Beacon), the
+    /// exact observed ship and authored vision-reward value. The Level
+    /// publishes the normal discovery reward once, then notifies only the
+    /// still-live Scouting command to finish five seconds later.
+    ///
+    /// This is not a polling shortcut: non-first sightings must never
+    /// invoke it, and command TSV attribution remains with the owning
+    /// Level's real shooting/vision outcome accumulator.
+    pub fn record_verified_scouting_sighting(
+        &mut self, side: i32, observed_ship_id: i64,
+        authored_value: i32, reward_squad: SquadLifetime,
+    ) -> Result<bool, NativeLevelEventError> {
+        self.record_verified_discovery(
+            side, DiscoveryKind::Ship, observed_ship_id, authored_value,
+        )?;
+        Ok(self.commands.record_first_ship_sighting(reward_squad))
+    }
+
     /// Called after the authoritative FleetShip.MineralsMinedThisLevel
     /// update and before the episode consumes combat events this tick.
     /// Only the real persistent value may enter the economic ledger;
