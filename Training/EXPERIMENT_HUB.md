@@ -1383,6 +1383,13 @@ accept the receipt only for the exact running dispatch and suite.
 A separate host needs a trusted loopback forward and read access to the
 training artifacts.
 
+In an isolated Windows run, the scheduled evaluator played both seats
+against Nano from a numbered TinyBrains checkpoint. The Hub retained
+the pinned suite receipt and kept training when the result was below
+the stop threshold. A subsequent manual Stop produced a signed terminal
+receipt, and the released claim survived a registry reopen. Qualifying
+TinyBrains evaluation-triggered Stop and remote evaluation remain open.
+
 ## Courier Ants (Basic Training)
 
 Register the project as `courier`. Add a `courier` entry to the worker's
