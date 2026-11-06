@@ -664,7 +664,7 @@ impl NativeSquadCommandDirector {
             LocalCommandKind::Retreat | LocalCommandKind::Aggressive |
             LocalCommandKind::CircleSquad | LocalCommandKind::RightSwipe |
             LocalCommandKind::LeftSwipe | LocalCommandKind::InAndOut |
-            LocalCommandKind::BombingRun
+            LocalCommandKind::BombingRun | LocalCommandKind::Charge
         ) && (enemy_squad_id.is_none() ||
             squad.enemy.map(|enemy| enemy.squad_id) != enemy_squad_id)
         {
