@@ -157,6 +157,15 @@ impl AggressiveRun {
         self.next_coroutine_member.is_some()
     }
 
+    /// After its final yielded ship order, Unity's IEnumerator resumes
+    /// just to clear its scratch list and coroutine handle. No target
+    /// lookup or live weapon snapshot occurs on that last frame.
+    pub(super) fn coroutine_needs_target(&self) -> bool {
+        self.next_coroutine_member.is_some_and(|index|
+            index < self.members.len()
+        )
+    }
+
     pub(super) fn needs_all_target_range(&self) -> bool {
         self.comfortably_in_range
     }
@@ -240,11 +249,18 @@ impl AggressiveRun {
         random: &mut RandomStream,
         owner: SquadLifetime,
         selection: &ResolvedHiveMindCommand,
-        snapshot: &NativeAggressiveCommandSnapshot,
+        snapshot: Option<&NativeAggressiveCommandSnapshot>,
     ) -> Result<Option<CommandFinishCause>, GameCommandError> {
         let Some(index) = self.next_coroutine_member else {
             return Ok(None);
         };
+        if index == self.members.len() {
+            // The final post-yield resume does not access EnemySquad,
+            // current targets, or weapon data in Unity.
+            self.next_coroutine_member = None;
+            return Ok(None);
+        }
+        let snapshot = snapshot.ok_or(GameCommandError::MissingCombatSnapshot)?;
         if !snapshot.attack.enemy_alive {
             self.next_coroutine_member = None;
             return Ok(None);
@@ -253,12 +269,6 @@ impl AggressiveRun {
             return Err(GameCommandError::InvalidCombatSnapshot);
         }
         self.target.validate(owner, snapshot.attack.enemy_owner)?;
-        if index == self.members.len() {
-            // The coroutine resumes once more after its final yield before
-            // allowing the next command timer to start another pass.
-            self.next_coroutine_member = None;
-            return Ok(None);
-        }
         let member = self.members[index];
         if !self.approach.issue_one_tracked_approach(
             world, roster, random, member, self.formation, selection,

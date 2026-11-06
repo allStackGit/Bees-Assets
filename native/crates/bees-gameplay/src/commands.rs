@@ -1260,15 +1260,19 @@ impl NativeSquadCommandDirector {
                 }
                 if completed.is_none() && aggressive.has_pending_coroutine() {
                     let roster = roster.ok_or(GameCommandError::MissingCombatSnapshot)?;
-                    let snapshot = match due_snapshot {
-                        Some(snapshot) => snapshot,
-                        None => aggressive_snapshot(
-                            owner, aggressive.enemy_squad_id(), world, false,
-                        )?,
+                    let snapshot = if aggressive.coroutine_needs_target() {
+                        Some(match due_snapshot {
+                            Some(snapshot) => snapshot,
+                            None => aggressive_snapshot(
+                                owner, aggressive.enemy_squad_id(), world, false,
+                            )?,
+                        })
+                    } else {
+                        None
                     };
                     completed = aggressive.resume_coroutine_one_ship(
                         world, roster, random, owner,
-                        &command.selection, &snapshot,
+                        &command.selection, snapshot.as_ref(),
                     )?;
                 }
                 if completed.is_none() {
