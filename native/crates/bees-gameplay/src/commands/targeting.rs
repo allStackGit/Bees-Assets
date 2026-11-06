@@ -61,6 +61,31 @@ pub fn sort_native_command_targets(
     random: &mut RandomStream,
     targets: &mut [NativeEnemyTargetStats],
 ) -> Result<(), GameCommandError> {
+    sort_native_target_list(
+        world, roster, enemy_owner, squad_center, strategy, random,
+        targets,
+        |id| {
+            let position = world.ship_body(id)
+                .expect("validated living command target body")
+                .motion.position;
+            (position - squad_center).length_squared().sqrt()
+        },
+    )
+}
+
+/// Single source implementation of all 40 shooting-strategy rankings.
+/// Command sorting measures ship centers; Bomb sorting supplies the
+/// existing physics collider's closest-point distance instead.
+fn sort_native_target_list(
+    world: &CombatWorld,
+    roster: &NativeSquadRoster,
+    enemy_owner: SquadLifetime,
+    squad_center: Vec2,
+    strategy: StrategyIdentity,
+    random: &mut RandomStream,
+    targets: &mut [NativeEnemyTargetStats],
+    distance_to_target: impl Fn(i64) -> f32,
+) -> Result<(), GameCommandError> {
     let index = usize::from(strategy.id).checked_sub(1)
         .ok_or(GameCommandError::InvalidCombatSnapshot)?;
     if SHOOTING_STRATEGIES.get(index).copied() != Some(strategy.name) ||
@@ -116,14 +141,8 @@ pub fn sort_native_command_targets(
             8 => a.firepower.partial_cmp(&b.firepower)
                 .expect("validated finite firepower"),
             9 | 10 => {
-                let a_position = world.ship_body(a.ship_id)
-                    .expect("preflight validated target body").motion.position;
-                let b_position = world.ship_body(b.ship_id)
-                    .expect("preflight validated target body").motion.position;
-                let distance_a = (a_position - squad_center)
-                    .length_squared().sqrt();
-                let distance_b = (b_position - squad_center)
-                    .length_squared().sqrt();
+                let distance_a = distance_to_target(a.ship_id);
+                let distance_b = distance_to_target(b.ship_id);
                 if strategy.id == 9 {
                     distance_a.total_cmp(&distance_b)
                 } else {
@@ -162,6 +181,89 @@ pub fn sort_native_command_targets(
         }
     });
     Ok(())
+}
+
+/// Bomb.MakeSortedTargetingList uses the same shooting strategies as
+/// Command.MakeTargetingQueue, but Weapon.DistanceTo measures the exact
+/// closest point on the enemy ship's authored Collider2D. Only the two
+/// distance strategies need this one-time geometry projection.
+pub fn sort_native_game_bomb_targets(
+    world: &mut CombatWorld,
+    roster: &NativeSquadRoster,
+    enemy_owner: SquadLifetime,
+    weapon_origin: Vec2,
+    strategy: StrategyIdentity,
+    random: &mut RandomStream,
+    targets: &mut [NativeEnemyTargetStats],
+) -> Result<(), GameCommandError> {
+    if !weapon_origin.is_finite() {
+        return Err(GameCommandError::InvalidCombatSnapshot);
+    }
+    if !matches!(strategy.id, 9 | 10) {
+        return sort_native_command_targets(
+            world, roster, enemy_owner, weapon_origin, strategy, random, targets,
+        );
+    }
+    let mut distances = HashMap::with_capacity(targets.len());
+    for target in targets.iter() {
+        let point = world.ship_hull_closest_point(target.ship_id, weapon_origin)
+            .ok_or(GameCommandError::InvalidCombatSnapshot)?;
+        let distance = (point - weapon_origin).length_squared().sqrt();
+        if !distance.is_finite() {
+            return Err(GameCommandError::InvalidCombatSnapshot);
+        }
+        distances.insert(target.ship_id, distance);
+    }
+    sort_native_target_list(
+        world, roster, enemy_owner, weapon_origin, strategy, random,
+        targets, |id| distances[&id],
+    )
+}
+
+/// Unity BombingRun.GetTarget: all living opponents are eligible Bomb
+/// targets regardless of weapon range. Prefer the first ordered ship
+/// whose outgoing damage is not fully reserved; otherwise select a
+/// uniformly random ship from that same list. Bomb.SetTargetShip owns
+/// the reservation in CombatWorld, not a second gameplay ledger.
+/// Caller supplies live GetShips-ordered candidate metadata and an
+/// authored, globally unique Bomb weapon ID.
+pub fn select_native_game_bomb_target(
+    world: &mut CombatWorld,
+    roster: &NativeSquadRoster,
+    bomber_id: i64,
+    bomb_weapon_id: i64,
+    bomb_power: i32,
+    enemy_owner: SquadLifetime,
+    strategy: StrategyIdentity,
+    random: &mut RandomStream,
+    candidates: &mut [NativeEnemyTargetStats],
+) -> Result<Option<i64>, GameCommandError> {
+    if candidates.is_empty() { return Ok(None); }
+    let bomber = world.ship(bomber_id).ok_or(GameCommandError::InvalidSquad)?;
+    if bomber.vitals.is_dead() || !matches!(bomber.ship_type, 10 | 19 | 22) {
+        return Err(GameCommandError::InvalidSquad);
+    }
+    let origin = world.ship_body(bomber_id)
+        .ok_or(GameCommandError::InvalidSquad)?.motion.position;
+    sort_native_game_bomb_targets(
+        world, roster, enemy_owner, origin, strategy, random, candidates,
+    )?;
+    let side = world.ship(bomber_id)
+        .ok_or(GameCommandError::InvalidSquad)?.side;
+    let mut chosen = None;
+    for target in candidates.iter() {
+        if world.target_damage_status(side, target.ship_id)?
+            .can_select_target() {
+            chosen = Some(target.ship_id);
+            break;
+        }
+    }
+    let chosen = chosen.unwrap_or_else(|| {
+        let index = random.next_below(candidates.len() as u64) as usize;
+        candidates[index].ship_id
+    });
+    world.assign_game_bomb_target(bomber_id, bomb_weapon_id, chosen, bomb_power)?;
+    Ok(Some(chosen))
 }
 
 /// Unity Command.OriginalQueue/TargetingQueue and each ship's retained
