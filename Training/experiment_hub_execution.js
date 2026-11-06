@@ -144,6 +144,9 @@ class LocalExecution {
             ...(Number.isSafeInteger(observed.cpu_time_ns)&&
                 observed.cpu_time_ns>=0
                 ?{cpu_time_ns:observed.cpu_time_ns}:{}),
+            ...(Number.isSafeInteger(observed.peak_job_memory_bytes)&&
+                observed.peak_job_memory_bytes>=0
+                ?{peak_job_memory_bytes:observed.peak_job_memory_bytes}:{}),
             ...(Number.isSafeInteger(observed.process_tasks)&&
                 observed.process_tasks>=0
                 ?{process_tasks:observed.process_tasks}:{}),

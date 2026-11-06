@@ -1307,12 +1307,17 @@ document.addEventListener('DOMContentLoaded', () => {
             cell(tr,progress?.source_modified_at
                 ?new Date(progress.source_modified_at).toLocaleString():'—');
             const final=j.final_resource_usage;
+            const peakJobMemory=final?.peak_job_memory_bytes??live?.peak_job_memory_bytes;
+            const nativePeak=peakJobMemory==null?null:
+                (peakJobMemory/1048576).toFixed(2)+' MiB peak Job Object memory';
             const measured=final?[
+                nativePeak,
                 final.peak_observed_memory_mb==null?null:
                     final.peak_observed_memory_mb.toLocaleString()+' MiB highest sampled RAM',
                 final.cpu_time_ns_high_water==null?null:
                     (final.cpu_time_ns_high_water/1e9).toFixed(2)+' highest reported CPU seconds',
             ].filter(Boolean).join(' · '):live?[
+                nativePeak,
                 live.memory_current_mb==null?null:
                     live.memory_current_mb.toLocaleString()+' MiB RAM',
                 live.cpu_time_ns==null?null:

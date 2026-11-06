@@ -192,13 +192,24 @@ class WindowsSupervisor {
             !Number.isSafeInteger(reply.exit_code)||reply.exit_code<0||
             reply.exit_code>4294967295||!SHA.test(String(reply.receipt_hmac)))
             throw Error('Malformed Windows owner terminal receipt.');
-        const signed=record.job_id+'\n'+reply.state+'\n'+reply.exit_code;
+        let signed=record.job_id+'\n'+reply.state+'\n'+reply.exit_code;
+        const counters={};
+        if(reply.receipt_version!==undefined) {
+            if(reply.receipt_version!==2)throw Error('Unsupported Windows owner terminal receipt version.');
+            for(const key of ['cpu_time_ns','peak_job_memory_bytes']) {
+                const value=reply[key];
+                if(value!==null&&(!Number.isSafeInteger(value)||value<0))
+                    throw Error('Invalid Windows owner terminal counters.');
+                counters[key]=value;
+            }
+            signed+='\n2\n'+(counters.cpu_time_ns??'')+'\n'+(counters.peak_job_memory_bytes??'');
+        }
         const expected=this.crypto.createHmac('sha256',
             Buffer.from(record.token,'hex')).update(signed).digest('hex');
         if(!this.crypto.timingSafeEqual(Buffer.from(expected,'hex'),
             Buffer.from(reply.receipt_hmac,'hex')))
             throw Error('Windows owner terminal receipt authentication failed.');
-        return {state:reply.state,active:false,owner_verified:true};
+        return {state:reply.state,active:false,owner_verified:true,...counters};
     }
     verifyReply(record,report) {
         const expected=Math.max(1,Math.min(10000,
@@ -217,6 +228,7 @@ class WindowsSupervisor {
             ?report[k]:null;
         return {state:report.state,active:report.active,
             cpu_time_ns:integer('cpu_time_ns'),
+            peak_job_memory_bytes:integer('peak_job_memory_bytes'),
             process_tasks:integer('process_tasks')};
     }
     async observe(record) {
@@ -261,6 +273,7 @@ class WindowsSupervisor {
         return {state,active:observation.active,
             diagnostic:issue,
             cpu_time_ns:observation.cpu_time_ns??null,
+            peak_job_memory_bytes:observation.peak_job_memory_bytes??null,
             process_tasks:observation.process_tasks??null};
     }
     async quarantineLaunch(jobId,reason) {

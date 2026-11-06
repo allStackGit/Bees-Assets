@@ -405,7 +405,8 @@ function writeAtomic(file, value) {
 }
 function summarizeResourceSample(previous,report,observedAt) {
     if(!['running','stop_requested','finished','failed','stopped'].includes(report.state)||
-        (report.cpu_time_ns==null&&report.memory_current_mb==null))
+        (report.cpu_time_ns==null&&report.memory_current_mb==null&&
+         report.peak_job_memory_bytes==null))
         return previous;
     const highest=(a,b)=>a==null?b??null:b==null?a:Math.max(a,b);
     return {
@@ -413,6 +414,7 @@ function summarizeResourceSample(previous,report,observedAt) {
         last_observed_at:observedAt,
         cpu_time_ns_high_water:highest(previous?.cpu_time_ns_high_water,report.cpu_time_ns),
         peak_observed_memory_mb:highest(previous?.peak_observed_memory_mb,report.memory_current_mb),
+        peak_job_memory_bytes:highest(previous?.peak_job_memory_bytes,report.peak_job_memory_bytes),
     };
 }
 
@@ -1224,7 +1226,7 @@ class ExperimentHub {
                 (report.progress_issue!=null&&
                     (typeof report.progress_issue!=='string'||
                         report.progress_issue.length>160))||
-                ['memory_current_mb','cpu_time_ns','process_tasks'].some(k=>
+                ['memory_current_mb','cpu_time_ns','peak_job_memory_bytes','process_tasks'].some(k=>
                     report[k]!=null&&
                     (!Number.isSafeInteger(report[k])||report[k]<0)))
                 throw Error('Invalid native execution report.');
@@ -1638,6 +1640,7 @@ class ExperimentHub {
                 at:new Date(received).toISOString(),state:item.state,
                 dispatch_id:item.dispatch_id,agent_instance_id:instance||null,
                 memory_current_mb:item.memory_current_mb??null,
+                peak_job_memory_bytes:item.peak_job_memory_bytes??null,
                 cpu_time_ns:cpuAfter??null,
                 cpu_cores_used:cpuCores,
                 resource_usage:resources,

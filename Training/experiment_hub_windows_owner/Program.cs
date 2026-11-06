@@ -197,7 +197,7 @@ internal sealed class OwnedJob : IDisposable
         }
         catch{Dispose();throw;}
     }
-    internal void VerifyLimits()
+    internal ulong VerifyLimits()
     {
         var ext=new Native.ExtendedLimits();
         if(!Native.QueryInformationJobObject(job,
@@ -218,6 +218,7 @@ internal sealed class OwnedJob : IDisposable
         if(cpu.ControlFlags!=(Native.CPU_RATE_CONTROL_ENABLE|
             Native.CPU_RATE_CONTROL_HARD_CAP)||cpu.CpuRate!=cpuRate)
             throw new InvalidOperationException("Job Object CPU quota mismatch");
+        return ext.PeakJobMemoryUsed.ToUInt64();
     }
     private static string Quote(string value)
     {
@@ -296,9 +297,9 @@ internal sealed class OwnedJob : IDisposable
             Marshal.FreeHGlobal(environment);
         }
     }
-    private Native.Accounting ReadAccounting()
+    private Native.Accounting ReadAccounting(out ulong peakJobMemory)
     {
-        VerifyLimits();
+        peakJobMemory=VerifyLimits();
         var accounting=new Native.Accounting();
         if(!Native.QueryInformationJobObject(job,
             Native.JobObjectBasicAccountingInformation,ref accounting,
@@ -306,7 +307,7 @@ internal sealed class OwnedJob : IDisposable
             throw Native.Error("Job Object accounting unavailable");
         return accounting;
     }
-    internal bool IsActive()=>ReadAccounting().ActiveProcesses>0;
+    internal bool IsActive()=>ReadAccounting(out _).ActiveProcesses>0;
     internal bool SuccessfulExit()
     {
         if(IsActive())return false;
@@ -316,7 +317,7 @@ internal sealed class OwnedJob : IDisposable
     }
     internal object Status()
     {
-        var accounting=ReadAccounting();
+        var accounting=ReadAccounting(out ulong peakJobMemory);
         var active=accounting.ActiveProcesses>0;
         uint code=uint.MaxValue;
         if(!active&&process!=IntPtr.Zero&&!Native.GetExitCodeProcess(process,out code))
@@ -330,6 +331,8 @@ internal sealed class OwnedJob : IDisposable
             cpu_time_ns=cpuTime>=0&&cpuTime<=90071992547409L?
                 (long?)cpuTime*100:null,
             memory_current_mb=(long?)null,
+            peak_job_memory_bytes=peakJobMemory<=9007199254740991UL?
+                (long?)peakJobMemory:null,
             cpu_rate_units=cpuRate,ram_limit_mb=spec.RamMb,
             owner_verified=true,
             exit_code=active?(uint?)null:code
@@ -352,12 +355,17 @@ internal sealed class OwnedJob : IDisposable
         var code=result.GetProperty("exit_code").GetUInt32();
         if(!new[]{"finished","failed","stopped"}.Contains(state))
             throw new InvalidOperationException("Cannot certify a nonterminal Job Object state");
-        var payload=spec.JobId+"\n"+state+"\n"+code.ToString();
+        var cpu=result.GetProperty("cpu_time_ns");
+        var memory=result.GetProperty("peak_job_memory_bytes");
+        long? cpuTime=cpu.ValueKind==JsonValueKind.Null?null:cpu.GetInt64();
+        long? peakMemory=memory.ValueKind==JsonValueKind.Null?null:memory.GetInt64();
+        var payload=FormattableString.Invariant($"{spec.JobId}\n{state}\n{code}\n2\n{cpuTime}\n{peakMemory}");
         var mac=Convert.ToHexString(HMACSHA256.HashData(
             Convert.FromHexString(spec.Token),Encoding.UTF8.GetBytes(payload)))
             .ToLowerInvariant();
         var raw=JsonSerializer.Serialize(new {
-            job_id=spec.JobId,state,exit_code=code,receipt_hmac=mac
+            job_id=spec.JobId,state,exit_code=code,receipt_version=2,
+            cpu_time_ns=cpuTime,peak_job_memory_bytes=peakMemory,receipt_hmac=mac
         });
         var temp=spec.ReceiptPath+"."+Guid.NewGuid().ToString("N")+".tmp";
         try
