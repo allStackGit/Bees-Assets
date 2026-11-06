@@ -272,6 +272,12 @@ impl CombatWorld {
     pub(super) fn resolve_game_barge_border_contacts(
         &mut self,
     ) -> Result<(), CombatWorldError> {
+        // Most training worlds never run scripted Barge commands. Keep
+        // their extra border-event processing constant-time and empty.
+        if self.game_barge_charges.is_empty() ||
+            self.physics.ship_obstacle_entries().is_empty() {
+            return Ok(());
+        }
         for i in 0..self.physics.ship_obstacle_entries().len() {
             let contact = self.physics.ship_obstacle_entries()[i];
             let Some(&obstacle_index) =
