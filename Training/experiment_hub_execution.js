@@ -16,7 +16,7 @@ const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 class LocalExecution {
     constructor({machineId,supervisor,projects}) {
         if(!ID.test(String(machineId||''))||!supervisor||
-            !Array.isArray(projects)||!projects.length||
+            !Array.isArray(projects)||
             projects.some(p=>!ID.test(p)||p==='bees')||
             new Set(projects).size!==projects.length)
             throw Error('Invalid machine-local execution adapter configuration.');
@@ -48,9 +48,13 @@ class LocalExecution {
             order.lease.job_id!==order.job.id||
             order.lease.machine_id!==this.machineId||
             order.lease.project_id!==order.job.project_id||
-            !this.projects.includes(order.job.project_id))
+            !ID.test(String(order.job.project_id||''))||order.job.project_id==='bees'||
+            order.lease.issued_by!=='experiment-hub'||order.lease.status!=='acknowledged')
             throw Error('Rejected invalid or unauthorized local dispatch instruction.');
         const {job,lease}=order;
+        if(['start','qualify_gpu'].includes(order.action)&&
+            !this.projects.includes(job.project_id))
+            throw Error('A locally installed project adapter is required for Start or GPU qualification.');
         const localAdapter=this.supervisor.adapters?.[job.project_id];
         if(order.action==='start'&&!supportsEvaluation(this.evaluationSuites,job))
             throw Error('Local adapter does not support the requested evaluation suite.');
@@ -111,7 +115,7 @@ class LocalExecution {
                 // No journal is not proof that no process exists. The
                 // operator must inspect the deterministic native service.
                 observed={state:'unverified'};
-                diagnostic='Missing local ownership record; inspect systemd before recovery.';
+                diagnostic='Missing local ownership record; inspect the native supervisor before recovery.';
             }else if(order.action==='stop') {
                 observed=await this.supervisor.stop(job.id);
             }else {
@@ -120,7 +124,7 @@ class LocalExecution {
         }catch(error) {
             diagnostic=String(error.message||error).slice(0,220);
             const record=this.supervisor.snapshot().find(r=>r.job_id===job.id);
-            if(record&&record.lease_id===lease.id) {
+            if(record&&record.lease_id===lease.id&&record.project_id===job.project_id) {
                 try{observed=await this.supervisor.reconcile(job.id);}
                 catch{observed=null;}
             }
@@ -148,7 +152,7 @@ class LocalExecution {
         // unavailable summary must never turn verified service state into
         // an unverified start/stop or influence the policy/checkpoint.
         const owned=this.supervisor.snapshot().find(r=>r.job_id===job.id);
-        const ownsArtifacts=owned&&owned.lease_id===lease.id&&
+        const ownsArtifacts=owned&&owned.lease_id===lease.id&&owned.project_id===job.project_id&&
             (owned.artifact_lineage_root_id||owned.job_id)===
                 (job.artifact_lineage_root_id||job.id);
         if(ownsArtifacts&&typeof localAdapter?.readProgress==='function'&&
@@ -197,7 +201,6 @@ function fromEnvironment(env=process.env,options={}) {
     // environment configuration, never by the Hub, a job or a heartbeat.
     const adapters=(options.loadAdapters||require)(adapterFile);
     if(!adapters||typeof adapters!=='object'||Array.isArray(adapters)||
-        !Object.keys(adapters).length||
         Object.entries(adapters).some(([project,adapter])=>
             !ID.test(project)||project==='bees'||
             !adapter||typeof adapter!=='object'||
@@ -206,7 +209,7 @@ function fromEnvironment(env=process.env,options={}) {
             typeof adapter.args!=='function'||
             (adapter.cwd!=null&&
                 (typeof adapter.cwd!=='string'||!path.isAbsolute(adapter.cwd)))))
-        throw Error('Install one or more valid locally trusted, non-Bees project adapters.');
+        throw Error('Supply a valid locally trusted non-Bees adapter map, or an empty map for native recovery.');
     if(hostOs.platform()==='win32'&&Object.entries(adapters).some(
         ([,adapter])=>adapter.stop_policy!=='terminate-group'))
         throw Error('Windows adapters must explicitly opt into force-terminating Job Object stop semantics.');
@@ -214,10 +217,12 @@ function fromEnvironment(env=process.env,options={}) {
     if(!ID.test(String(machineId||'')))throw Error('Invalid local machine identity.');
     let supervisor;
     if(hostOs.platform()==='linux') {
-        const capabilities=(options.inspectHost||inspectHost)();
-        if(!capabilities.cgroup_v2_detected||
-            !['cpu','memory'].every(c=>capabilities.cgroup_controllers.includes(c)))
-            throw Error('Required Linux CPU and memory controllers are not available.');
+        if(Object.keys(adapters).length) {
+            const capabilities=(options.inspectHost||inspectHost)();
+            if(!capabilities.cgroup_v2_detected||
+                !['cpu','memory'].every(c=>capabilities.cgroup_controllers.includes(c)))
+                throw Error('Required Linux CPU and memory controllers are not available.');
+        }
         const local={root,machineId,adapters,
             gpuEnabled:env.EXPERIMENT_HUB_ENABLE_ROCM==='1'};
         supervisor=options.createSupervisor

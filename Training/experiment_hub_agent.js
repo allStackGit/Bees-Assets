@@ -189,7 +189,7 @@ async function main() {
     // a private supervisor ledger and the opt-in execution environment flag.
     const executor=fromEnvironment(process.env);
     let nativePreflightReason=null;
-    if(executor) {
+    if(executor?.projects.length) {
         try {
             await executor.supervisor.qualify();
         }catch(error) {
@@ -231,9 +231,11 @@ async function main() {
             if(last!=='connected')
                 console.log('[experiment-hub-agent] connected ('+id+
                     (executor
-                        ?advertisement.native_preflight_passed
-                            ?'; native CPU/memory preflight passed'
-                            :'; native starts blocked (preflight failed)'
+                        ?!executor.projects.length
+                            ?'; native recovery only'
+                            :advertisement.native_preflight_passed
+                                ?'; native CPU/memory preflight passed'
+                                :'; native starts blocked (preflight failed)'
                         :'; observation only, no job execution')+').');
             last='connected';
         }catch(error){
