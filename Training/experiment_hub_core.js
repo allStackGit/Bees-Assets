@@ -1842,6 +1842,18 @@ class ExperimentHub {
             try{this.assertAutomationContinuity(received);}
             catch(error){this.disarmUnsafeAutomation(error);}
         }
+        // A disconnected or replaced agent must re-observe its native
+        // services before evaluator worklists or resource-rate samples
+        // can use their prior execution state. Clear only ephemeral data;
+        // retained job ownership and native leases are unchanged.
+        if(previous&&(received<previous.received_ms||
+            received-previous.received_ms>=AGENT_HEARTBEAT_TTL_MS||
+            previous.instance_id!==(instance||null)||
+            previous.local_executor!==report.local_executor)) {
+            for(const job of this.state.jobs)
+                if(job.assigned_machine_id===machine.id)
+                    this.executionTelemetry.delete(job.id);
+        }
         this.agentReports.set(machine.id,{
             ...report,instance_id:instance||null,received_ms:received,
         });
