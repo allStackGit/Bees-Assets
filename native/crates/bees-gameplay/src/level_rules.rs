@@ -135,6 +135,16 @@ impl NativeDecisionCadence {
     }
 }
 
+/// Actual Level-provided friendly command input work. Counts remain cheap
+/// even when timing samples are disabled for maximum training throughput.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct NativeCommandInputMeasurements {
+    /// Successful, timer-gated live friendly squad snapshots.
+    pub friendly_snapshots: u64,
+    /// Number of friendly squad entries returned in those snapshots.
+    pub friendly_entries_supplied: u64,
+}
+
 pub struct NativeLevelState<M, A> {
     pub combat: CombatWorld,
     pub events: NativeLevelEventProcessor,
@@ -148,6 +158,7 @@ pub struct NativeLevelState<M, A> {
     pub decisions: NativeDecisionCadence,
     /// Reused source Level.State.Squads snapshot; no per-frame allocation.
     command_friendlies: Vec<NativeFriendlySquad>,
+    command_input_measurements: NativeCommandInputMeasurements,
     /// Reused sparse per-ship mining credit transaction. Events may contain
     /// multiple extractions for the same ship during one combat phase.
     mining_credit_totals: HashMap<i64, i32>,
@@ -155,6 +166,10 @@ pub struct NativeLevelState<M, A> {
 }
 
 impl<M, A> NativeLevelState<M, A> {
+    pub fn command_input_measurements(&self) -> NativeCommandInputMeasurements {
+        self.command_input_measurements
+    }
+
     pub fn new(
         combat: CombatWorld,
         events: NativeLevelEventProcessor,
@@ -179,6 +194,7 @@ impl<M, A> NativeLevelState<M, A> {
             combat, events, metadata, allocate_minion,
             decisions: NativeDecisionCadence::new(period),
             command_friendlies: Vec::new(),
+            command_input_measurements: NativeCommandInputMeasurements::default(),
             mining_credit_totals: HashMap::new(),
             mining_credit_order: Vec::new(),
         }
@@ -328,6 +344,9 @@ where
                         NativeLevelEventError::Commands(err)
                     )
                 )?;
+                state.command_input_measurements.friendly_snapshots += 1;
+                state.command_input_measurements.friendly_entries_supplied +=
+                    state.command_friendlies.len() as u64;
             } else {
                 state.command_friendlies.clear();
             }
