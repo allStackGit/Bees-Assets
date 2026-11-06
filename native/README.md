@@ -472,9 +472,18 @@ bomb, contact bomber or asteroid). The one-shot registration is
 consumed only after successful launch, preventing duplicate explosions;
 the existing collider/timeline owns growth, friendly fire and expiry.
 The two causes have separate counters, and the immutable projectile
-owner preserves their correct RL source attribution. Non-policy
-graphical-level squad and persistent-game accounting still require
-integration. No measured throughput claim follows from this path.
+owner preserves their correct RL source attribution. For gameplay
+BombingRun, `queue_game_fire_barge_detonation(ship_id, command_outcome_id)`
+records the actual command identity and applies the same explosion/death
+transaction at the **next fixed combat step**; executing it inside the
+command timer would bypass the completed tick's roster and rewards pass.
+`select_native_game_bomb_target` now uses the real Bomb weapon ID and
+`CombatWorld` damage-reservation ledger; its Closest/Furthest strategies
+measure the imported target collider, not its center. A killed bomber's
+weapon lease is released by the normal ship-retirement path.
+The game Level still must supply weapon IDs/power, live bomber proximity,
+Striker/YellowJacket behavior and finished-command settlement before
+BombingRun can run. No measured throughput claim follows from this path.
 
 `policy_special_measurements()` exposes bounded per-world counts of
 validated special requests, Striker exact hull checks/contact misses,
