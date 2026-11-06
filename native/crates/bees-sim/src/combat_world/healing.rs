@@ -7,6 +7,7 @@
 use super::*;
 
 const BEEHIVE_TYPE: u8 = 2;
+const BEEHIVE_COMMAND_HEALING_SLOTS: u8 = 4;
 const HEAL_HEALTH: i32 = 50;
 const HEAL_COOLDOWN_SECONDS: f32 = 1.0;
 
@@ -113,6 +114,90 @@ impl CombatWorld {
             return false;
         }
         self.touching_beehive(ship_id).is_some()
+    }
+
+    /// Source Beehive.ShipsHealingHere: a shared four-slot budget for
+    /// all timed Heal commands, independent of policy HealCollider actions.
+    /// This authoritative world-owned map prevents two squads from
+    /// reserving the same Beehive slots independently. Repeated acquisition
+    /// by the same ship/hive is idempotent, but a ship cannot hold two slots.
+    pub fn try_reserve_beehive_healing_slot(
+        &mut self, ship_id: i64, beehive_id: i64,
+    ) -> Result<bool, CombatWorldError> {
+        let &ship_index = self.ship_by_id.get(&ship_id)
+            .ok_or(CombatWorldError::UnknownShip)?;
+        let &hive_index = self.ship_by_id.get(&beehive_id)
+            .ok_or(CombatWorldError::UnknownShip)?;
+        let ship = &self.ships[ship_index];
+        let hive = &self.ships[hive_index];
+        if ship_id == beehive_id || ship.side != hive.side ||
+            hive.ship_type != BEEHIVE_TYPE ||
+            ship.vitals.is_dead() || hive.vitals.is_dead() ||
+            !self.physics.ships()[ship_index].active ||
+            !self.physics.ships()[hive_index].active ||
+            ship.vitals.health() >= ship.vitals.max_health() ||
+            self.ship_fleet_identity(ship_id).is_none() ||
+            !self.support_zone_ids
+                .get(&(BEEHIVE_TYPE, ship.side))
+                .is_some_and(|ids| ids.binary_search(&beehive_id).is_ok()) {
+            return Err(CombatWorldError::InvalidPolicyHealing);
+        }
+        if let Some(&existing) = self.healing_hive_by_ship.get(&ship_id) {
+            return Ok(existing == beehive_id);
+        }
+        let used = self.healing_slots_used_by_hive
+            .entry(beehive_id).or_insert(0);
+        if *used >= BEEHIVE_COMMAND_HEALING_SLOTS {
+            return Ok(false);
+        }
+        *used += 1;
+        self.healing_hive_by_ship.insert(ship_id, beehive_id);
+        Ok(true)
+    }
+
+    /// Release on healing completion, cancellation, supersession, or death.
+    /// No scans of unrelated squads are needed for an ordinary release.
+    pub fn release_beehive_healing_slot(&mut self, ship_id: i64) -> bool {
+        let Some(hive_id) = self.healing_hive_by_ship.remove(&ship_id)
+        else { return false; };
+        if let Some(used) = self.healing_slots_used_by_hive.get_mut(&hive_id) {
+            debug_assert!(*used > 0);
+            *used = used.saturating_sub(1);
+            if *used == 0 {
+                self.healing_slots_used_by_hive.remove(&hive_id);
+            }
+        }
+        true
+    }
+
+    /// A dead Beehive loses all its reservations in one rare O(reserved)
+    /// pass. Ordinary fixed ticks never traverse the reservation registry.
+    pub(super) fn release_beehive_healing_slots_for_hive(
+        &mut self, beehive_id: i64,
+    ) {
+        self.healing_hive_by_ship.retain(|_, hive_id|
+            *hive_id != beehive_id,
+        );
+        self.healing_slots_used_by_hive.remove(&beehive_id);
+    }
+
+    pub fn beehive_healing_slots_available(&self, beehive_id: i64) -> u8 {
+        let Some(hive) = self.ship(beehive_id) else { return 0 };
+        if hive.ship_type != BEEHIVE_TYPE || hive.vitals.is_dead() {
+            return 0;
+        }
+        let registered = self.support_zone_ids
+            .get(&(BEEHIVE_TYPE, hive.side))
+            .is_some_and(|ids| ids.binary_search(&beehive_id).is_ok());
+        if !registered { return 0; }
+        BEEHIVE_COMMAND_HEALING_SLOTS.saturating_sub(
+            self.healing_slots_used_by_hive
+                .get(&beehive_id).copied().unwrap_or(0),
+        )
+    }
+
+    pub fn reserved_healing_beehive(&self, ship_id: i64) -> Option<i64> {
+        self.healing_hive_by_ship.get(&ship_id).copied()
     }
 
     /// Shared Beehive healing transaction for policy decisions and
