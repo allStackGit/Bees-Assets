@@ -4,6 +4,7 @@
 const fs=require('node:fs');
 const path=require('node:path');
 const crypto=require('node:crypto');
+const {spawnSync}=require('node:child_process');
 const {validateProgress}=require('./experiment_hub_progress');
 const {evaluationEvidence,suiteIds}=require('./experiment_hub_evaluation');
 
@@ -85,6 +86,30 @@ function evaluationReader(evaluationRoot,evaluationSuites,project,artifacts) {
     };
 }
 
+function validateApprovedProfiles(executable,project,configs) {
+    const input=JSON.stringify([...configs].map(([id,item])=>[id,item.content]));
+    if(Buffer.byteLength(input)>2*1024*1024)
+        throw Error('TinyBrains profile definitions exceed the worker size limit.');
+    const script=[
+        'import json, sys',
+        'from ants_mapoca.config import validate',
+        'for profile, content in json.load(sys.stdin):',
+        '    try:',
+        '        validate(json.loads(content))',
+        '    except (ValueError, KeyError, TypeError, AttributeError) as exc:',
+        '        print(f"{profile}: {exc}")',
+        '        sys.exit(1)',
+    ].join('\n');
+    const result=spawnSync(executable,['-B','-X','utf8','-c',script],{
+        cwd:project,input,encoding:'utf8',windowsHide:true,timeout:15000,maxBuffer:8192,
+    });
+    if(result.status!==0) {
+        const detail=(result.error?.message||result.stdout?.trim()||
+            result.stderr?.trim().split(/\r?\n/).at(-1)||'validator did not complete').slice(0,180);
+        throw Error('TinyBrains profile validation failed: '+detail);
+    }
+}
+
 function createTinyBrainsAdapter({projectRoot,pythonPath,artifactRoot,profiles,
     evaluationRoot,evaluationSuites}) {
     for(const target of [projectRoot,pythonPath,artifactRoot]) {
@@ -110,6 +135,8 @@ function createTinyBrainsAdapter({projectRoot,pythonPath,artifactRoot,profiles,
         const sha256=crypto.createHash('sha256').update(content).digest('hex');
         return [id,{content,sha256}];
     }));
+
+    validateApprovedProfiles(executable,project,configs);
 
     function jobRoot(context) {
         if(context.project_id!=='tinybrains'||!UUID.test(context.job_id)||
