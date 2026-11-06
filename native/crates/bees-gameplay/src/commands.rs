@@ -38,7 +38,9 @@ use bees_sim::squad_movement::{
 use bees_sim::timer::ScaledTimer;
 
 mod mining;
+mod heal;
 use self::mining::MiningRun;
+use self::heal::HealRun;
 
 const COMMAND_FREQUENCY_SECONDS: f32 = 3.0;
 const RANDOM_POSITION_ATTEMPTS: usize = 35;
@@ -164,6 +166,7 @@ pub enum GameCommandError {
     InvalidFriendlies,
     InvalidMiningTarget,
     InvalidMiningAccounting,
+    MissingOriginalShipHealth(i64),
     Squad(SquadOrderError),
     Mining(CombatWorldError),
 }
@@ -219,6 +222,8 @@ pub enum CommandFinishCause {
     SquadRetired,
     MiningAsteroidDestroyed,
     NoMiningShipsRemain,
+    HealingBeehivesDestroyed,
+    HealingCompleted,
 }
 
 #[derive(Clone, Debug)]
@@ -228,7 +233,7 @@ pub struct FinishedNativeCommand {
     pub cause: CommandFinishCause,
     /// Unity Mining.Mine accumulates the actual extraction as Command.Tsv.
     /// This value cannot be reconstructed from ship health or final cargo.
-    pub mined_command_tsv: Option<i64>,
+    pub capability_command_tsv: Option<i64>,
 }
 
 impl FinishedNativeCommand {
@@ -247,7 +252,7 @@ impl FinishedNativeCommand {
             command: OutcomeSettlement::Credit {
                 outcome_id: self.selection.command_outcome_id,
                 tsv: command_tsv.saturating_add(
-                    self.mined_command_tsv.unwrap_or(0),
+                    self.capability_command_tsv.unwrap_or(0),
                 ),
             },
             shooting: match shooting_tsv {
@@ -318,6 +323,7 @@ struct ActiveNativeCommand {
     patrol: Option<PatrolRoute>,
     following: Option<FollowingFriendly>,
     mining: Option<MiningRun>,
+    heal: Option<HealRun>,
     /// Authoritative game-owned member snapshot at command issue.
     /// The Level must retire/reissue on squad composition changes.
     member_ids: Vec<i64>,
@@ -334,6 +340,8 @@ pub struct CommandMeasurements {
     /// Sparse cumulative counters; no per-step logging or history.
     pub mining_extractions: u64,
     pub minerals_mined: u64,
+    pub healing_intervals: u64,
+    pub healing_tsv: u64,
     pub activated: u64,
     pub completed: u64,
     pub superseded: u64,
@@ -431,7 +439,8 @@ impl NativeSquadCommandDirector {
                     unavailable.shooting_outcome_id,
                 ];
                 if matches!(unavailable.local_command,
-                    LocalCommandKind::Guard | LocalCommandKind::Mining) {
+                    LocalCommandKind::Guard | LocalCommandKind::Mining |
+                    LocalCommandKind::Heal) {
                     Ok(StrategyReceiptAction::BanAndDiscardReservations {
                         reservation_ids, command: unavailable.local_command,
                     })
@@ -467,6 +476,7 @@ impl NativeSquadCommandDirector {
         let mut patrol = None;
         let mut following = None;
         let mut mining = None;
+        let mut heal = None;
         let mut retreat_already_safe = false;
         let issued_move = match selection.local_command {
             LocalCommandKind::Hold => {
@@ -478,6 +488,12 @@ impl NativeSquadCommandDirector {
                 else { return Ok(Activation::Unavailable(selection)); };
                 mining = Some(run);
                 false
+            }
+            LocalCommandKind::Heal => {
+                let Some(run) = HealRun::start(world, squad)?
+                else { return Ok(Activation::Unavailable(selection)); };
+                heal = Some(run);
+                true
             }
             LocalCommandKind::MoveToRandom => {
                 let requested = choose_random_coordinate(
@@ -681,7 +697,8 @@ impl NativeSquadCommandDirector {
             command_poll: if matches!(
                 selection.local_command,
                 LocalCommandKind::MoveToRandom | LocalCommandKind::Patrol |
-                LocalCommandKind::Mining | LocalCommandKind::ClosestFriendly |
+                LocalCommandKind::Mining | LocalCommandKind::Heal |
+                LocalCommandKind::ClosestFriendly |
                 LocalCommandKind::Guard
             ) || (selection.local_command == LocalCommandKind::Retreat &&
                 !retreat_already_safe) {
@@ -693,6 +710,7 @@ impl NativeSquadCommandDirector {
             patrol,
             following,
             mining,
+            heal,
             member_ids: squad.members.iter().map(|m| m.ship_id).collect(),
             selection,
         };
@@ -704,11 +722,20 @@ impl NativeSquadCommandDirector {
             .filter(|follow| follow.guard_slot.is_some()) {
             restore_guard_speed(world, previous_guard)?;
         }
+        // Unity SetFinalize releases old Heal reservations on command
+        // replacement. Preserve shared slots already claimed by a new
+        // Heal command for the same ship and same Beehive.
+        if let Some(previous) = self.active.get_mut(&squad.owner)
+            .and_then(|old| old.heal.as_mut()) {
+            previous.release_superseded(world, active.heal.as_ref());
+        }
         let superseded = self.active.insert(squad.owner, active).map(|old| {
             FinishedNativeCommand {
                 owner: squad.owner, selection: old.selection,
                 cause: CommandFinishCause::Superseded,
-                mined_command_tsv: old.mining.as_ref().map(|mining| mining.mined_tsv),
+                capability_command_tsv: old.mining.as_ref()
+                    .map(|mining| mining.mined_tsv)
+                    .or_else(|| old.heal.as_ref().map(|heal| heal.earned_tsv)),
             }
         });
         self.measurements.activated += 1;
@@ -760,6 +787,31 @@ impl NativeSquadCommandDirector {
         // and stable; completion storage is retained between ticks.
         self.measurements.commands_examined += self.active.len() as u64;
         for (&owner, command) in self.active.iter_mut() {
+            if let Some(heal) = command.heal.as_mut() {
+                let before = heal.earned_tsv;
+                let (mut finished, callbacks) = heal.advance(
+                    world, &mut command.command_poll, dt,
+                )?;
+                self.measurements.command_timer_callbacks += callbacks;
+                let healed = heal.earned_tsv.saturating_sub(before);
+                if healed > 0 {
+                    self.measurements.healing_intervals += 1;
+                    self.measurements.healing_tsv += healed as u64;
+                }
+                if finished.is_none() {
+                    if let Some(timeout) = command.timeout.as_mut() {
+                        if let Some(due) = timeout.begin_update(dt) {
+                            self.measurements.timeout_callbacks += 1;
+                            timeout.finish_update(due);
+                            finished = Some(CommandFinishCause::Timeout);
+                        }
+                    }
+                }
+                if let Some(cause) = finished {
+                    self.completed_scratch.push((owner, cause));
+                }
+                continue;
+            }
             if let Some(mining) = command.mining.as_mut() {
                 let before_mined = mining.mined_tsv;
                 let (mut finished, polls) = mining.advance(
@@ -899,11 +951,15 @@ impl NativeSquadCommandDirector {
                 .filter(|follow| follow.guard_slot.is_some()) {
                 restore_guard_speed(world, guard)?;
             }
-            if let Some(active) = self.active.remove(&owner) {
+            if let Some(mut active) = self.active.remove(&owner) {
+                if let Some(heal) = active.heal.as_mut() {
+                    heal.release_all(world);
+                }
                 finished.push(FinishedNativeCommand {
                     owner, selection: active.selection, cause,
-                    mined_command_tsv: active.mining.as_ref()
-                        .map(|mining| mining.mined_tsv),
+                    capability_command_tsv: active.mining.as_ref()
+                        .map(|mining| mining.mined_tsv)
+                        .or_else(|| active.heal.as_ref().map(|heal| heal.earned_tsv)),
                 });
             }
         }
@@ -926,11 +982,17 @@ impl NativeSquadCommandDirector {
             .filter(|follow| follow.guard_slot.is_some()) {
             restore_guard_speed(world, guard)?;
         }
-        let retired = self.active.remove(&owner).map(|active| FinishedNativeCommand {
-            owner, selection: active.selection,
-            cause: CommandFinishCause::SquadRetired,
-            mined_command_tsv: active.mining.as_ref()
-                .map(|mining| mining.mined_tsv),
+        let retired = self.active.remove(&owner).map(|mut active| {
+            if let Some(heal) = active.heal.as_mut() {
+                heal.release_all(world);
+            }
+            FinishedNativeCommand {
+                owner, selection: active.selection,
+                cause: CommandFinishCause::SquadRetired,
+                capability_command_tsv: active.mining.as_ref()
+                    .map(|mining| mining.mined_tsv)
+                    .or_else(|| active.heal.as_ref().map(|heal| heal.earned_tsv)),
+            }
         });
         self.measurements.retired += u64::from(retired.is_some());
         Ok(retired)
