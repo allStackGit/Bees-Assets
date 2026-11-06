@@ -2,12 +2,11 @@
 //! Per-weapon shooting remains CombatWorld-owned; target ranking and squad
 //! movement use shared native gameplay rather than a training-only model.
 
-use std::collections::VecDeque;
 use std::f32::consts::{FRAC_PI_4, FRAC_PI_2, PI};
 
 use bees_hivemind::dispatch::{LocalCommandKind, ResolvedHiveMindCommand};
 use bees_hivemind::session::SquadLifetime;
-use bees_sim::combat_world::{CombatWorld, GamePointOrder};
+use bees_sim::combat_world::CombatWorld;
 use bees_sim::geometry::Vec2;
 use bees_sim::navigation_runtime::NavigationRuntime;
 use bees_sim::simulation::RandomStream;
@@ -16,9 +15,10 @@ use bees_sim::squad_movement::{
 };
 
 use crate::squads::NativeSquadRoster;
+use super::targeting::NativeTargetApproach;
 use super::{
-    assemble_circle_snapshot_from_live_weapons, sort_native_command_targets,
-    CommandFinishCause, GameCommandError, NativeCommandTargetQueue,
+    assemble_circle_snapshot_from_live_weapons,
+    CommandFinishCause, GameCommandError,
     NativeEnemyTargetStats, NativeSquadOrder,
 };
 
@@ -92,11 +92,7 @@ pub(super) struct SwipeRun {
     formation: SquadFormationOptions,
     reached_enemy: bool,
     swipe_destination: Vec2,
-    target_queue: Option<NativeCommandTargetQueue>,
-    /// Only callback scratch. No additional permanent ship/physics state.
-    ranked_ids: Vec<i64>,
-    ranked_candidates: Vec<NativeEnemyTargetStats>,
-    pending_moves: Vec<(i64, GamePointOrder)>,
+    approach: NativeTargetApproach,
 }
 
 impl SwipeRun {
@@ -123,10 +119,7 @@ impl SwipeRun {
             formation: squad.formation,
             reached_enemy: false,
             swipe_destination: Vec2::ZERO,
-            target_queue: None,
-            ranked_ids: Vec::new(),
-            ranked_candidates: Vec::new(),
-            pending_moves: Vec::new(),
+            approach: NativeTargetApproach::default(),
         }))
     }
 
@@ -161,70 +154,12 @@ impl SwipeRun {
         }
 
         if !self.reached_enemy && !snapshot.every_member_has_target_in_range {
-            if self.target_queue.is_none() {
-                // Command.Setup builds the first queue once. Do not consume
-                // a Random shuffle on every later timed approach callback.
-                self.ranked_candidates.clear();
-                self.ranked_candidates.extend_from_slice(&snapshot.candidates);
-                sort_native_command_targets(
-                    world, roster, snapshot.enemy_owner, snapshot.squad_center,
-                    selection.effective_shooting, random, &mut self.ranked_candidates,
-                )?;
-                self.ranked_ids.clear();
-                self.ranked_ids.extend(
-                    self.ranked_candidates.iter().map(|candidate| candidate.ship_id)
-                );
-                self.target_queue = Some(NativeCommandTargetQueue::new(
-                    &self.ranked_ids,
-                ));
-            }
-            let queue = self.target_queue.as_mut()
-                .expect("initialized above");
-            let ranked_candidates = &mut self.ranked_candidates;
-            self.pending_moves.clear();
-            for member in &self.members {
-                let target_id = queue.select_for_ship(
-                    member.ship_id, snapshot.candidates.len(),
-                    |output: &mut VecDeque<i64>| {
-                        ranked_candidates.clear();
-                        ranked_candidates.extend_from_slice(&snapshot.candidates);
-                        sort_native_command_targets(
-                            world, roster, snapshot.enemy_owner,
-                            snapshot.squad_center, selection.effective_shooting,
-                            random, ranked_candidates,
-                        )?;
-                        output.extend(
-                            ranked_candidates.iter().map(|candidate| candidate.ship_id)
-                        );
-                        Ok(())
-                    },
-                    |id| world.ship(id).is_some_and(|ship|
-                        !ship.vitals.is_dead() &&
-                        roster.owning_squad(id) == Some(snapshot.enemy_owner)
-                    ),
-                )?;
-                let Some(target_id) = target_id else {
-                    return Ok(Some(CommandFinishCause::NoEnemyTargets));
-                };
-                // The canonical physical body owns live target coordinates.
-                // Avoid copying a second position map from Level metadata.
-                let destination = world.ship_body(target_id)
-                    .ok_or(GameCommandError::InvalidCombatSnapshot)?
-                    .motion.position;
-                world.validate_ship_game_order(member.ship_id)?;
-                self.pending_moves.push((member.ship_id, GamePointOrder {
-                    destination,
-                    ship_clearance: member.clearance,
-                    map_bounds: self.formation.map_bounds,
-                    has_obstacles: self.formation.has_obstacles,
-                    can_override_bounds: self.formation.can_override_bounds,
-                    newly_found_obstacle: false,
-                }));
-            }
-            // All target reservations and movement profiles preflight before
-            // issuing the first command; no half-issued formation on failure.
-            for &(ship_id, order) in &self.pending_moves {
-                world.move_ship_to_tracked_point(ship_id, order)?;
+            if !self.approach.issue_tracked_approach(
+                world, roster, random, &self.members, self.formation,
+                selection, snapshot.enemy_owner, snapshot.squad_center,
+                &snapshot.candidates,
+            )? {
+                return Ok(Some(CommandFinishCause::NoEnemyTargets));
             }
             return Ok(None);
         }

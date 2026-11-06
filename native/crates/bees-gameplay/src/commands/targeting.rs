@@ -7,11 +7,13 @@
 use std::cmp::Ordering;
 use std::collections::{HashMap, VecDeque};
 
+use bees_hivemind::dispatch::ResolvedHiveMindCommand;
 use bees_hivemind::protocol::{StrategyIdentity, SHOOTING_STRATEGIES};
 use bees_hivemind::session::SquadLifetime;
-use bees_sim::combat_world::CombatWorld;
+use bees_sim::combat_world::{CombatWorld, GamePointOrder};
 use bees_sim::geometry::Vec2;
 use bees_sim::simulation::RandomStream;
+use bees_sim::squad_movement::{SquadFormationMember, SquadFormationOptions};
 
 use crate::squads::NativeSquadRoster;
 use super::GameCommandError;
@@ -210,5 +212,91 @@ impl NativeCommandTargetQueue {
             rebuild_original(&mut self.original)?;
         }
         Ok(None)
+    }
+}
+
+/// Shared Unity Ship.SetAndGetTargetEnemy approach for SwipeSquad and
+/// InAndOut. A single source-owned queue and retained ship targets;
+/// no duplicate target ranking or movement implementation.
+#[derive(Default)]
+pub(super) struct NativeTargetApproach {
+    target_queue: Option<NativeCommandTargetQueue>,
+    ranked_ids: Vec<i64>,
+    ranked_candidates: Vec<NativeEnemyTargetStats>,
+    pending_moves: Vec<(i64, GamePointOrder)>,
+}
+
+impl NativeTargetApproach {
+    /// Apply each member's current tracked target from the canonical world.
+    /// False means Unity's "no more enemy ships to target" completion.
+    pub(super) fn issue_tracked_approach(
+        &mut self,
+        world: &mut CombatWorld,
+        roster: &NativeSquadRoster,
+        random: &mut RandomStream,
+        members: &[SquadFormationMember],
+        formation: SquadFormationOptions,
+        selection: &ResolvedHiveMindCommand,
+        enemy_owner: SquadLifetime,
+        squad_center: Vec2,
+        candidates: &[NativeEnemyTargetStats],
+    ) -> Result<bool, GameCommandError> {
+        if self.target_queue.is_none() {
+            self.ranked_candidates.clear();
+            self.ranked_candidates.extend_from_slice(candidates);
+            sort_native_command_targets(
+                world, roster, enemy_owner, squad_center,
+                selection.effective_shooting, random, &mut self.ranked_candidates,
+            )?;
+            self.ranked_ids.clear();
+            self.ranked_ids.extend(
+                self.ranked_candidates.iter().map(|candidate| candidate.ship_id),
+            );
+            self.target_queue = Some(NativeCommandTargetQueue::new(&self.ranked_ids));
+        }
+        let queue = self.target_queue.as_mut()
+            .expect("created above");
+        let ranked_candidates = &mut self.ranked_candidates;
+        self.pending_moves.clear();
+        for member in members {
+            let target_id = queue.select_for_ship(
+                member.ship_id, candidates.len(),
+                |output: &mut VecDeque<i64>| {
+                    ranked_candidates.clear();
+                    ranked_candidates.extend_from_slice(candidates);
+                    sort_native_command_targets(
+                        world, roster, enemy_owner, squad_center,
+                        selection.effective_shooting, random, ranked_candidates,
+                    )?;
+                    output.extend(
+                        ranked_candidates.iter().map(|candidate| candidate.ship_id),
+                    );
+                    Ok(())
+                },
+                |id| world.ship(id).is_some_and(|ship|
+                    !ship.vitals.is_dead() &&
+                    roster.owning_squad(id) == Some(enemy_owner)
+                ),
+            )?;
+            let Some(target_id) = target_id else {
+                return Ok(false);
+            };
+            let destination = world.ship_body(target_id)
+                .ok_or(GameCommandError::InvalidCombatSnapshot)?
+                .motion.position;
+            world.validate_ship_game_order(member.ship_id)?;
+            self.pending_moves.push((member.ship_id, GamePointOrder {
+                destination,
+                ship_clearance: member.clearance,
+                map_bounds: formation.map_bounds,
+                has_obstacles: formation.has_obstacles,
+                can_override_bounds: formation.can_override_bounds,
+                newly_found_obstacle: false,
+            }));
+        }
+        for &(ship_id, order) in &self.pending_moves {
+            world.move_ship_to_tracked_point(ship_id, order)?;
+        }
+        Ok(true)
     }
 }
