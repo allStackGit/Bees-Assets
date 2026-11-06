@@ -8,6 +8,34 @@
 
 use super::*;
 
+/// The source-authored game Striker's persistent Carrier relationship.
+/// Caller supplies the actual Level spawn offset and configured return
+/// radius; neither comes from a training heuristic or collider dimensions.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct GameStrikerCarrier {
+    pub carrier_id: Option<i64>,
+    pub offset_from_center: Vec2,
+    pub refill_distance: f32,
+}
+
+impl GameStrikerCarrier {
+    fn valid(self) -> bool {
+        self.carrier_id.is_none_or(|id| id > 0) &&
+            self.offset_from_center.is_finite() &&
+            self.refill_distance.is_finite() && self.refill_distance > 0.0
+    }
+}
+
+/// Ship-owned IsBombReady and one-second CheckCarrierReload timer.
+/// Command-owned HasDroppedBomb/HasCompletedRun/HasReturnedToCarrier
+/// remain separate because they reset with each BombingRun.
+#[derive(Clone, Copy, Debug)]
+pub(super) struct GameStrikerRuntime {
+    pub(super) carrier: GameStrikerCarrier,
+    pub(super) ready: bool,
+    pub(super) reload_timer: ScaledTimer,
+}
+
 /// The RL special repeatedly attempts an actual contact drop. There is no
 /// BombingRun command in native policy control, just as in Unity's RL path.
 #[derive(Clone, Copy, Debug)]
@@ -19,6 +47,130 @@ pub(super) struct PolicyStrikerRuntime {
 }
 
 impl CombatWorld {
+    /// Bind the source game Striker once after its fleet identity and
+    /// physical ship are installed, before activating a BombingRun.
+    /// The same persistent readiness survives command supersession.
+    pub fn configure_game_striker(
+        &mut self, striker_id: i64, carrier: GameStrikerCarrier,
+    ) -> Result<(), CombatWorldError> {
+        if !carrier.valid() {
+            return Err(CombatWorldError::InvalidPolicyStriker);
+        }
+        let &index = self.ship_by_id.get(&striker_id)
+            .ok_or(CombatWorldError::UnknownShip)?;
+        if self.ships[index].ship_type != 19 ||
+            self.ships[index].vitals.is_dead() ||
+            !self.physics.ships()[index].active ||
+            self.game_strikers.contains_key(&striker_id) ||
+            !self.fleet_id_by_ship.get(&striker_id)
+                .is_some_and(|&id| id > 0) {
+            return Err(CombatWorldError::InvalidPolicyStriker);
+        }
+        if let Some(carrier_id) = carrier.carrier_id {
+            let &carrier_index = self.ship_by_id.get(&carrier_id)
+                .ok_or(CombatWorldError::UnknownShip)?;
+            if carrier_id == striker_id ||
+                self.ships[carrier_index].side != self.ships[index].side ||
+                self.ships[carrier_index].vitals.is_dead() ||
+                !self.physics.ships()[carrier_index].active {
+                return Err(CombatWorldError::InvalidPolicyStriker);
+            }
+        }
+        self.game_strikers.insert(striker_id, GameStrikerRuntime {
+            carrier, ready: true,
+            reload_timer: ScaledTimer::new(1.0, true, false),
+        });
+        Ok(())
+    }
+
+    pub fn game_striker_bomb_ready(&self, striker_id: i64) -> Option<bool> {
+        self.game_strikers.get(&striker_id).map(|state| state.ready)
+    }
+
+    pub fn game_striker_carrier(&self, striker_id: i64)
+        -> Option<GameStrikerCarrier>
+    {
+        Some(self.game_strikers.get(&striker_id)?.carrier)
+    }
+
+    /// Source ReturnToCarrierIfNecessary can replenish immediately at
+    /// the configured return radius, independent of the 1s reload timer.
+    /// The caller checks its game command's return/completion conditions.
+    pub fn rearm_game_striker_near_carrier(
+        &mut self, striker_id: i64,
+    ) -> Result<bool, CombatWorldError> {
+        let runtime = self.game_strikers.get(&striker_id)
+            .ok_or(CombatWorldError::InvalidPolicyStriker)?;
+        let Some(carrier_id) = runtime.carrier.carrier_id else {
+            return Ok(false);
+        };
+        let Some(&striker_index) = self.ship_by_id.get(&striker_id) else {
+            return Ok(false);
+        };
+        let Some(&carrier_index) = self.ship_by_id.get(&carrier_id) else {
+            return Ok(false);
+        };
+        if self.ships[striker_index].vitals.is_dead() ||
+            self.ships[carrier_index].vitals.is_dead() ||
+            !self.physics.ships()[striker_index].active ||
+            !self.physics.ships()[carrier_index].active {
+            return Ok(false);
+        }
+        let striker = self.physics.ships()[striker_index].motion.position;
+        let carrier_pos = self.physics.ships()[carrier_index].motion.position;
+        let distance_sq = runtime.carrier.refill_distance.powi(2);
+        if (striker - carrier_pos).length_squared() >= distance_sq &&
+            (striker - carrier_pos - runtime.carrier.offset_from_center)
+                .length_squared() >= distance_sq {
+            return Ok(false);
+        }
+        if let Some(runtime) = self.game_strikers.get_mut(&striker_id) {
+            if !runtime.ready {
+                runtime.ready = true;
+                self.game_bomb_measurements.striker_reloads += 1;
+                self.events.push(CombatEvent::StrikerBombReloaded {
+                    ship_id: striker_id, carrier_id,
+                });
+            }
+        }
+        Ok(true)
+    }
+
+    /// Every live game Striker runs CheckCarrierReload every scaled second
+    /// regardless of its current command. In particular, a completed
+    /// BombingRun must not own or cancel a ship's reload clock.
+    pub(super) fn advance_game_striker_reloads(&mut self, dt: f32) {
+        for (&ship_id, runtime) in &mut self.game_strikers {
+            let Some(due) = runtime.reload_timer.begin_update(dt) else {
+                continue;
+            };
+            if !runtime.ready {
+                if let Some(carrier_id) = runtime.carrier.carrier_id {
+                    if let (Some(&ship_index), Some(&carrier_index)) = (
+                        self.ship_by_id.get(&ship_id),
+                        self.ship_by_id.get(&carrier_id),
+                    ) {
+                        if !self.ships[ship_index].vitals.is_dead() &&
+                            !self.ships[carrier_index].vitals.is_dead() &&
+                            self.physics.ships()[ship_index].active &&
+                            self.physics.ships()[carrier_index].active {
+                            let a = self.physics.ships()[ship_index].motion.position;
+                            let b = self.physics.ships()[carrier_index].motion.position;
+                            if (a - b).length_squared() < 15.0 * 15.0 {
+                                runtime.ready = true;
+                                self.game_bomb_measurements.striker_reloads += 1;
+                                self.events.push(CombatEvent::StrikerBombReloaded {
+                                    ship_id, carrier_id,
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+            runtime.reload_timer.finish_update(due);
+        }
+    }
+
     /// Bind the current Striker's real Carrier and authored Bomb.Power.
     /// The fleet identity must already be bound for delayed damage credit.
     /// Unity Striker is ShipTypes.Striker=19, WeaponTypes.Bomb=0.
@@ -95,6 +247,7 @@ impl CombatWorld {
             return Err(CombatWorldError::UnsupportedPolicyActions);
         }
         if !may_drop || self.frozen_after_elimination ||
+            !self.game_strikers.get(&striker_id).is_some_and(|s| s.ready) ||
             self.ships[ship_index].vitals.is_dead() || !body.active {
             return Ok(false);
         }
@@ -151,6 +304,8 @@ impl CombatWorld {
         // Death/command cleanup may now release the old weapon harmlessly.
         let transferred = self.reservations.transfer(weapon_id, shot_id)?;
         debug_assert!(transferred, "validated Bomb lease must transfer");
+        self.game_strikers.get_mut(&striker_id)
+            .expect("preflighted game Striker").ready = false;
         self.events.push(CombatEvent::StrikerBombDropped {
             ship_id: striker_id,
             target_id: contacted_target_id,

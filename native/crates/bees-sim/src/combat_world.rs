@@ -81,6 +81,8 @@ mod mining;
 mod warp;
 mod shot_outcomes;
 use self::warp::GameWarpGateSession;
+use self::striker::GameStrikerRuntime;
+pub use self::striker::GameStrikerCarrier;
 pub use self::warp::WARP_GATE_OPENING_SECONDS;
 pub use self::mining::{is_mining_ship_type, MINING_FACTORY_TYPE, MINING_CARPENTER_BEE_TYPE};
 pub use self::shot_outcomes::{ProjectileRootOutcome, ProjectileOutcomeMeasurements};
@@ -563,6 +565,7 @@ pub struct GameBombMeasurements {
     pub striker_contact_checks: u64,
     pub striker_contact_misses: u64,
     pub striker_bombs_dropped: u64,
+    pub striker_reloads: u64,
     pub yellow_jacket_contact_checks: u64,
     pub yellow_jacket_contact_misses: u64,
     pub yellow_jacket_detonations: u64,
@@ -728,6 +731,9 @@ pub struct CombatWorld {
     mining_seen_ship_ids: HashSet<i64>,
     policy_special_measurements: PolicySpecialMeasurements,
     game_bomb_measurements: GameBombMeasurements,
+    /// Persistent game Striker readiness is ship-owned, not reset when
+    /// a HiveMind BombingRun command is superseded or timed out.
+    game_strikers: BTreeMap<i64, GameStrikerRuntime>,
     tracked_order_measurements: TrackedOrderMeasurements,
     /// One hit per victim for each active charge; cleared when the
     /// owning Barge starts another charge or is removed from the world.
@@ -841,6 +847,7 @@ impl CombatWorld {
             mining_seen_ship_ids: HashSet::new(),
             policy_special_measurements: PolicySpecialMeasurements::default(),
             game_bomb_measurements: GameBombMeasurements::default(),
+            game_strikers: BTreeMap::new(),
             tracked_order_measurements: TrackedOrderMeasurements::default(),
             barge_charge_hits: HashSet::new(),
             barge_contact_candidates: Vec::new(),
@@ -1005,6 +1012,7 @@ impl CombatWorld {
             self.spawn_fire_barge_explosion(index, false, 0)?;
         }
         let victim_id = self.ships[index].entity_id;
+        self.game_strikers.remove(&victim_id);
         // Bomb.ReleaseTargetReservation is part of every authored bomber
         // Kill, not only successful BombingRun command finalization.
         if let Some(weapon_id) =
@@ -3564,6 +3572,7 @@ impl CombatWorld {
         // A policy can request another bomb only after a real carrier
         // proximity check has rearmed its authored bomb state.
         self.advance_policy_striker_reloads(dt);
+        self.advance_game_striker_reloads(dt);
         self.pending_obstacle_contacts
             .extend_from_slice(self.physics.obstacle_trigger_entries());
         self.process_map_border_contacts();
