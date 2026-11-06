@@ -233,8 +233,10 @@ pub struct FinishedNativeCommand {
 
 impl FinishedNativeCommand {
     /// The actual gameplay and damage-accounting layer decides whether
-    /// shooting/targeting influenced the outcome. Inactive reservations
-    /// are explicitly discarded; they must not gain synthetic zero TSV.
+    /// shooting/targeting influenced the outcome. The supplied command_tsv
+    /// excludes mining (but includes any real damage or other command TSV);
+    /// Unity Mining.Mine adds the extracted amount to that value. Inactive
+    /// reservations are explicitly discarded, not given synthetic credit.
     pub fn settle(
         self,
         command_tsv: i64,
@@ -244,7 +246,9 @@ impl FinishedNativeCommand {
         FinalizedCommand {
             command: OutcomeSettlement::Credit {
                 outcome_id: self.selection.command_outcome_id,
-                tsv: self.mined_command_tsv.unwrap_or(command_tsv),
+                tsv: command_tsv.saturating_add(
+                    self.mined_command_tsv.unwrap_or(0),
+                ),
             },
             shooting: match shooting_tsv {
                 Some(tsv) => OutcomeSettlement::Credit {
