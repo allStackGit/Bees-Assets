@@ -70,9 +70,10 @@ pub struct NativeDecisionCadenceMeasurements {
 pub struct NativeDecisionCadence {
     period: NonZeroU32,
     bound_at_tick: BTreeMap<i64, u64>,
-    /// Group-size counts by binding tick modulo the decision period.
-    /// Rebuilt only when the authoritative policy roster changes.
-    due_by_phase: BTreeMap<u64, usize>,
+    /// Live controller IDs and their original binding ticks grouped by
+    /// decision phase, in stable ship-ID order. Rebuilt only on roster
+    /// changes; observation iteration visits only the due phase.
+    due_by_phase: BTreeMap<u64, Vec<(i64, u64)>>,
     latest_binding_tick: u64,
     observed_roster_revision: Option<u64>,
     measurements: NativeDecisionCadenceMeasurements,
@@ -119,8 +120,9 @@ impl NativeDecisionCadence {
         self.due_by_phase.clear();
         self.latest_binding_tick = 0;
         let period = u64::from(self.period.get());
-        for &bound_at in self.bound_at_tick.values() {
-            *self.due_by_phase.entry(bound_at % period).or_default() += 1;
+        for (&ship_id, &bound_at) in &self.bound_at_tick {
+            self.due_by_phase.entry(bound_at % period)
+                .or_default().push((ship_id, bound_at));
             self.latest_binding_tick = self.latest_binding_tick.max(bound_at);
         }
         self.observed_roster_revision = Some(revision);
@@ -139,21 +141,26 @@ impl NativeDecisionCadence {
     }
 
     /// Sorted, allocation-free per-agent selection for the Level's
-    /// v26 observation builder.
+    /// v26 observation builder. Phase vectors are populated in BTreeMap
+    /// ship-ID order; even historical tick queries retain strict bind
+    /// gating without traversing unrelated controllers.
     pub fn due_agent_ids(&self, next_tick: u64) -> impl Iterator<Item=i64> + '_ {
-        self.bound_at_tick.iter().filter_map(move |(&id, &at)|
-            self.due_from_binding(at, next_tick).then_some(id),
-        )
+        let fully_bound = next_tick > self.latest_binding_tick;
+        let phase = next_tick % u64::from(self.period.get());
+        self.due_by_phase.get(&phase).into_iter()
+            .flat_map(|members| members.iter())
+            .filter_map(move |&(id, bound_at)| {
+                (fully_bound || self.due_from_binding(bound_at, next_tick))
+                    .then_some(id)
+            })
     }
 
     pub fn due_count(&self, next_tick: u64) -> usize {
         if next_tick > self.latest_binding_tick {
             return self.due_by_phase.get(
                 &(next_tick % u64::from(self.period.get()))
-            ).copied().unwrap_or(0);
+            ).map_or(0, Vec::len);
         }
-        // Preserve the public query's semantics for past/current ticks:
-        // newly bound controllers must not be due at their bind tick.
         self.due_agent_ids(next_tick).count()
     }
 }
