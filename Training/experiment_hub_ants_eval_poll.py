@@ -79,9 +79,8 @@ def retain_dispatch_cursors(previous: dict, live: dict) -> dict:
     # when a worker is temporarily absent, but bound the scratch archive
     # by the Hub's maximum of 1,000 stored jobs.
     cursor = previous.copy()
-    for dispatch in live:
-        if dispatch in cursor or len(cursor) < 1000:
-            continue
+    incoming = sum(dispatch not in cursor for dispatch in live)
+    while len(cursor) + incoming > 1000:
         expired = next((key for key in cursor if key not in live), None)
         if expired is None:
             raise ValueError("Too many simultaneous evaluation dispatches.")
