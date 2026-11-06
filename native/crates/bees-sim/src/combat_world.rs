@@ -500,6 +500,21 @@ impl CombatProjectile {
     }
 }
 
+/// Cumulative, allocation-free tracked-order workload counters. A renderer
+/// or training dashboard can compare successive snapshots to measure actual
+/// A* suppression rather than infer it from total simulation throughput.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct TrackedOrderMeasurements {
+    pub requests: u64,
+    pub movement_lock_deferrals: u64,
+    pub active_path_suppressed: u64,
+    pub failed_path_retry_suppressed: u64,
+    pub small_target_change_suppressed: u64,
+    pub one_second_gate_suppressed: u64,
+    /// Reached the canonical MoveToPoint branch (not necessarily pathfound).
+    pub forwarded_orders: u64,
+}
+
 /// Per-world, allocation-free special-action workload counters. Snapshot
 /// and subtract values to measure experiment windows without per-step logs.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -695,6 +710,7 @@ pub struct CombatWorld {
     /// pay a quadratic cost to detect repeated ship references.
     mining_seen_ship_ids: HashSet<i64>,
     policy_special_measurements: PolicySpecialMeasurements,
+    tracked_order_measurements: TrackedOrderMeasurements,
     /// One hit per victim for each active charge; cleared when the
     /// owning Barge starts another charge or is removed from the world.
     barge_charge_hits: HashSet<(i64, i64)>,
@@ -797,6 +813,7 @@ impl CombatWorld {
             mining_obstacle_ids: Vec::new(),
             mining_seen_ship_ids: HashSet::new(),
             policy_special_measurements: PolicySpecialMeasurements::default(),
+            tracked_order_measurements: TrackedOrderMeasurements::default(),
             barge_charge_hits: HashSet::new(),
             barge_contact_candidates: Vec::new(),
             pending_game_point_orders: HashMap::new(),
@@ -974,6 +991,10 @@ impl CombatWorld {
 
     pub fn policy_special_measurements(&self) -> PolicySpecialMeasurements {
         self.policy_special_measurements
+    }
+
+    pub fn tracked_order_measurements(&self) -> TrackedOrderMeasurements {
+        self.tracked_order_measurements
     }
 
     pub fn physics(&self) -> &KinematicPhysics { &self.physics }
@@ -1409,19 +1430,23 @@ impl CombatWorld {
             return Err(CombatWorldError::InvalidGameMovementOrder);
         }
         self.validate_ship_game_order(ship_id)?;
+        self.tracked_order_measurements.requests += 1;
         let &index = self.ship_by_id.get(&ship_id)
             .ok_or(CombatWorldError::UnknownShip)?;
         let motion = &self.physics.ships()[index].motion;
         if motion.cannot_change_movement_orders {
+            self.tracked_order_measurements.movement_lock_deferrals += 1;
             // Match Unity: movement locks preserve the latest requested point.
             return self.move_ship_to_point(ship_id, order);
         }
         if self.navigation_requests.is_pathfinding(ship_id) {
+            self.tracked_order_measurements.active_path_suppressed += 1;
             return Ok(GamePointOrderResult::Unchanged);
         }
         let steering = self.game_ship_steering.get(&ship_id)
             .ok_or(CombatWorldError::MissingGameMovementProfile)?;
         if steering.has_pending_path_retry() {
+            self.tracked_order_measurements.failed_path_retry_suppressed += 1;
             return Ok(GamePointOrderResult::Unchanged);
         }
         let destination = order.bounded_destination();
@@ -1434,13 +1459,16 @@ impl CombatWorld {
         if (steering.is_following_path || motion.has_target_coordinates) &&
             (destination - endpoint).length_squared() <
                 TRACKED_REPLAN_DISTANCE_SQUARED {
+            self.tracked_order_measurements.small_target_change_suppressed += 1;
             return Ok(GamePointOrderResult::Unchanged);
         }
         if steering.is_following_path && !steering.tracked_replan_ready() {
+            self.tracked_order_measurements.one_second_gate_suppressed += 1;
             return Ok(GamePointOrderResult::Unchanged);
         }
         let was_following_path = steering.is_following_path;
         let result = self.move_ship_to_point(ship_id, order)?;
+        self.tracked_order_measurements.forwarded_orders += 1;
         if was_following_path {
             self.game_ship_steering.get_mut(&ship_id)
                 .expect("validated steering").arm_tracked_replan();
