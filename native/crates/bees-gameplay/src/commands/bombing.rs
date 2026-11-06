@@ -29,7 +29,7 @@ pub struct NativeBombWeapon {
 
 /// Activation-only authored Level inputs. The live source roster is
 /// borrowed, not copied. The command director accepts this payload only
-/// for a composition that can execute the Fire Barge-only behavior.
+/// for a composition with a complete native BombingRun executor.
 #[derive(Clone, Copy)]
 pub struct NativeBombingActivation<'a> {
     pub roster: &'a NativeSquadRoster,
@@ -288,8 +288,9 @@ impl NativeBombingRun {
     /// Unity BombingRun.Timer for Fire Barge / Yellow Jacket squads.
     /// Caller must invoke after the existing command timer reports due.
     /// The Level validates live enemy lifetime and supplies the real
-    /// ProximityCollider.NearbyEnemyShips membership for each current
-    /// Fire Barge target. The game world executes physical detonations on
+    /// ProximityCollider.NearbyEnemyShips membership for the current
+    /// Fire Barge/Yellow Jacket targets. The game world executes physical
+    /// Fire Barge detonations on
     /// the next fixed step, before that step's ordinary event consumers.
     pub fn on_poll(
         &mut self,

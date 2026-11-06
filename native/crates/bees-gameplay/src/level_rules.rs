@@ -121,7 +121,7 @@ pub trait NativeLevelCommandContext {
     }
 
     /// The owning Level's original ProximityCollider.NearbyEnemyShips
-    /// membership for the currently reserved Fire Barge Bomb targets.
+    /// membership for current Fire Barge and Yellow Jacket Bomb targets.
     /// This is called ONLY on a BombingRun timer callback. There is no
     /// substitute based on hull distance or training observations.
     fn bombing_command_snapshot(
