@@ -6,8 +6,8 @@
 //!
 //! The authored movement and timer phases share one CombatWorld across
 //! ordinary squad orders, resource commands and attacking strategies.
-//! BombingRun and Charge still require their own special-capability ports;
-//! no unsupported strategy is silently treated as executed.
+//! Striker BombingRun and Barge Charge still require their separate
+//! carrier/collision state machines. Unsupported commands are not credited.
 //! Fleet credits remain Level-owned, and source shooting/targeting rewards
 //! are never fabricated by the command director.
 
@@ -806,15 +806,14 @@ impl NativeSquadCommandDirector {
                     self.measurements.unsupported += 1;
                     return Ok(Activation::Unsupported(selection));
                 };
-                // Unity also redirects mixed Striker/Yellow Jacket squads
-                // to BombingRun, but their return-to-carrier and bomb
-                // mechanics are not yet ported as a command. An unsupported
-                // composition discards reservations; it is not a corrupt
-                // physics world or a successfully executed command.
+                // Fire Barge and Yellow Jacket share the implemented
+                // non-carrier pursuit/impact path. Striker additionally
+                // needs carrier return/reload and stays unsupported.
+                // Discard its reservations rather than claim execution.
                 for member in squad.members {
                     let ship = world.ship(member.ship_id)
                         .ok_or(GameCommandError::InvalidSquad)?;
-                    if ship.ship_type != 10 {
+                    if !matches!(ship.ship_type, 10 | 22) {
                         self.measurements.unsupported += 1;
                         return Ok(Activation::Unsupported(selection));
                     }

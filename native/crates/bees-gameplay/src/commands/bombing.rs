@@ -1,8 +1,8 @@
 //! Source BombingRun.Execute's initial per-bomber targeting transaction.
 //! The Level owns authored Bomb.Weapon.Id/Power and GetShips order; the
 //! canonical combat world owns damage reservations and physical targeting.
-//! This is a reusable activation operation, NOT a completed BombingRun
-//! timer/Striker/YellowJacket executor.
+//! The active timer supports Fire Barges and Yellow Jackets. Striker's
+//! carrier-return state machine is separate and is not yet executable.
 
 use std::collections::HashSet;
 
@@ -38,8 +38,8 @@ pub struct NativeBombingActivation<'a> {
     pub enemies: &'a [NativeEnemyTargetStats],
 }
 
-/// The one authoritative Level projection needed when a Fire Barge
-/// BombingRun command's timer fires. Nearby pairs are ONLY those for
+/// The one authoritative Level projection needed when a Fire Barge /
+/// Yellow Jacket BombingRun command's timer fires. Nearby pairs are ONLY those for
 /// which the current bomb target is in the ship's real Unity
 /// ProximityCollider.NearbyEnemyShips set. This is not collider-center
 /// distance or a second physics contact registry.
@@ -135,14 +135,14 @@ pub fn assign_initial_bombing_run_targets(
     Ok(assigned.is_some())
 }
 
-/// Fire Barge-only portion of Unity BombingRun.Timer. Its special is
-/// command-triggered when the ORIGINAL selected ship is present in the
-/// authored ProximityCollider.NearbyEnemyShips cache (not merely near the
-/// bomber's center or touching its primary hull).
+/// Non-carrier BombingRun.Timer. Fire Barge's special is command-triggered
+/// when its ORIGINAL selected ship appears in the authored proximity cache.
+/// Yellow Jacket instead detonates on exact physical hull contact at the
+/// Level's combat-event boundary, never on proximity alone.
 ///
 /// Called on the owning command's timer, after targets were assigned.
-/// Mixed squads additionally require the separate Striker/YellowJacket
-/// state machine; this method does not masquerade as its replacement.
+/// Striker additionally requires the separate carrier-return state machine;
+/// this method does not masquerade as its replacement.
 /// Actual bomb death/explosion is queued for the next fixed combat step,
 /// preserving the Level's one-pass episode and squad lifecycle boundary.
 ///
@@ -161,12 +161,11 @@ pub fn advance_fire_barge_bombing_run(
         return Err(GameCommandError::InvalidSettings);
     }
     // Fail closed before issuing any partial orders if the caller passes
-    // a mixed bomber squad without its necessary Striker/Yellow Jacket
-    // handling. Full BombingRun coordination must choose that path.
+    // a bomber composition needing Striker's carrier-return/delivery path.
     for member in members {
         let ship = world.ship(member.ship_id)
             .ok_or(GameCommandError::InvalidSquad)?;
-        if !ship.vitals.is_dead() && ship.ship_type != 10 {
+        if !ship.vitals.is_dead() && !matches!(ship.ship_type, 10 | 22) {
             return Err(GameCommandError::MissingCombatSnapshot);
         }
     }
@@ -179,6 +178,7 @@ pub fn advance_fire_barge_bombing_run(
         if ship.vitals.is_dead() {
             continue;
         }
+        let is_fire_barge = ship.ship_type == 10;
         let Some(target_id) = world.game_bomb_current_target(member.ship_id)
         else { continue; };
         let Some(target) = world.ship(target_id) else { continue; };
@@ -197,8 +197,10 @@ pub fn advance_fire_barge_bombing_run(
             can_override_bounds: formation.can_override_bounds,
             newly_found_obstacle: false,
         })?;
-        if target_in_proximity(member.ship_id, target_id)? &&
-            !world.frozen_after_elimination {
+        // Only Fire Barges auto-detonate from the command timer.
+        // Yellow Jacket waits for its own real OnTriggerEnter2D contact.
+        let near = target_in_proximity(member.ship_id, target_id)?;
+        if is_fire_barge && near && !world.frozen_after_elimination {
             // The caller has already checked the real Level's cached
             // trigger membership. Do not replace that with radial math.
             queued += u64::from(world.queue_game_fire_barge_detonation(
@@ -210,9 +212,9 @@ pub fn advance_fire_barge_bombing_run(
 }
 
 
-/// Source-compatible timed behavior for a squad consisting ONLY of Fire
-/// Barges. This is not a replacement for the Striker/Yellow Jacket states,
-/// nor does it create any separate projectile or damage implementation.
+/// Timed non-carrier BombingRun for Fire Barges, Yellow Jackets or a
+/// mixture of those types. Striker still requires independent carrier
+/// return and reload handling. No separate projectile or damage model.
 pub struct NativeFireBargeBombingRun {
     target: NativeAttackTarget,
     members: Vec<SquadFormationMember>,
@@ -235,20 +237,21 @@ impl NativeFireBargeBombingRun {
         weapons: &[NativeBombWeapon],
         enemies: &[NativeEnemyTargetStats],
     ) -> Result<Option<Self>, GameCommandError> {
-        // Do not partially initialize mixed bomber squads and later
-        // pretend their Striker/Yellow Jacket bombs have executed.
+        // Striker's reload/return path is not yet ported; do not report
+        // a mixed squad containing one as a successfully activated run.
         if weapons.len() != squad.members.len() {
             return Err(GameCommandError::InvalidSquad);
         }
         for (member, weapon) in squad.members.iter().zip(weapons) {
             let ship = world.ship(member.ship_id)
                 .ok_or(GameCommandError::InvalidSquad)?;
-            if ship.ship_type != 10 {
+            if !matches!(ship.ship_type, 10 | 22) {
                 return Err(GameCommandError::MissingCombatSnapshot);
             }
             if weapon.ship_id != member.ship_id ||
-                world.configured_fire_barge_bomb_power(member.ship_id) !=
-                    Some(weapon.power)
+                (ship.ship_type == 10 &&
+                    world.configured_fire_barge_bomb_power(member.ship_id) !=
+                        Some(weapon.power))
             {
                 return Err(GameCommandError::MissingCombatSnapshot);
             }
@@ -274,7 +277,7 @@ impl NativeFireBargeBombingRun {
         self.target.squad_id()
     }
 
-    /// Unity BombingRun.Timer, Fire Barge-only execution.
+    /// Unity BombingRun.Timer for Fire Barge / Yellow Jacket squads.
     /// Caller must invoke after the existing command timer reports due.
     /// The Level validates live enemy lifetime and supplies the real
     /// ProximityCollider.NearbyEnemyShips membership for each current
@@ -326,9 +329,17 @@ impl NativeFireBargeBombingRun {
             timer.reuse(0.25, true, false);
             self.fast_poll = true;
         } else if self.fast_poll && self.timer_loops % 4 == 0 {
-            // HaveAllShipsBombed returns true for a Fire Barge-only squad
-            // (it checks only Strikers and Yellow Jackets). Every fourth
-            // quarter-second callback therefore returns to the 2s poll.
+            // Fire Barges are considered bombed immediately, while living
+            // Yellow Jackets are not. In a Yellow Jacket squad, leave fast
+            // polling active unless every bomber has completed or lost
+            // proximity. Carrier Strikers remain unsupported here.
+            if self.members.iter().any(|member|
+                world.ship(member.ship_id).is_some_and(|ship|
+                    !ship.vitals.is_dead() && ship.ship_type == 22
+                )
+            ) && all_near {
+                return Ok(None);
+            }
             timer.reuse(2.0, true, false);
             self.fast_poll = false;
         }
