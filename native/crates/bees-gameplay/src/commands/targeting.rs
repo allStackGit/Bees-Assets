@@ -92,15 +92,23 @@ pub fn sort_native_command_targets(
     }
 
     targets.sort_unstable_by(|a, b| {
-        let ship_a = world.ship(a.ship_id)
-            .expect("preflight validated target identity");
-        let ship_b = world.ship(b.ship_id)
-            .expect("preflight validated target identity");
+        // The authored Level already supplied most ranking fields. Avoid
+        // two CombatWorld ID lookups on every comparator call for strategies
+        // that need only this existing per-target metadata.
         match strategy.id {
             3 => b.last_killed.cmp(&a.last_killed),
             4 => b.fleet_damage_done.cmp(&a.fleet_damage_done),
-            5 => ship_b.vitals.health().cmp(&ship_a.vitals.health()),
-            6 => ship_a.vitals.health().cmp(&ship_b.vitals.health()),
+            5 | 6 => {
+                let health_a = world.ship(a.ship_id)
+                    .expect("preflight validated target identity").vitals.health();
+                let health_b = world.ship(b.ship_id)
+                    .expect("preflight validated target identity").vitals.health();
+                if strategy.id == 5 {
+                    health_b.cmp(&health_a)
+                } else {
+                    health_a.cmp(&health_b)
+                }
+            }
             7 => b.firepower.total_cmp(&a.firepower),
             8 => a.firepower.total_cmp(&b.firepower),
             9 | 10 => {
@@ -122,8 +130,17 @@ pub fn sort_native_command_targets(
             12 => a.max_range.cmp(&b.max_range),
             13 => b.speed.total_cmp(&a.speed),
             14 => a.speed.total_cmp(&b.speed),
-            15 => ship_b.vitals.tsv().cmp(&ship_a.vitals.tsv()),
-            16 => ship_a.vitals.tsv().cmp(&ship_b.vitals.tsv()),
+            15 | 16 => {
+                let tsv_a = world.ship(a.ship_id)
+                    .expect("preflight validated target identity").vitals.tsv();
+                let tsv_b = world.ship(b.ship_id)
+                    .expect("preflight validated target identity").vitals.tsv();
+                if strategy.id == 15 {
+                    tsv_b.cmp(&tsv_a)
+                } else {
+                    tsv_a.cmp(&tsv_b)
+                }
+            }
             17..=40 => {
                 let preferred = strategy.id - 17;
                 match (
