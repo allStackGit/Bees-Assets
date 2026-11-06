@@ -1242,8 +1242,11 @@ matching running dispatch before publication. The first visible checkpoint
 sets a watermark because a continuation may initially reference the
 predecessor's checkpoint. The evaluator rotates among eligible dispatches,
 retains the last attempted episode across invocations, and leaves an
-already-passing receipt available for the worker. A failed attempt waits
-for a newer checkpoint. Keep a stable suite ID and scratch directory for
+already-passing receipt available for the worker. Once an evaluation
+result is recorded in scratch, a failed Hub recheck or publication can
+be retried on the next invocation without repeating the evaluation.
+The retry drops results for dispatches that are no longer eligible.
+A failed evaluation itself waits for a newer checkpoint. Keep a stable suite ID and scratch directory for
 the lifetime of the schedule.
 
 The adapter accepts `mode:"new"` (or omitted mode) for a fresh run

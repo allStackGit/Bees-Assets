@@ -105,6 +105,20 @@ def passed_receipt(path: Path, dispatch: str, suite: dict, job: dict) -> bool:
         return False
 
 
+def flush_receipt(args, suite: dict, pending: dict, live: dict) -> None:
+    receipt = pending["receipt"]
+    dispatch = receipt["dispatch_id"]
+    if not UUID.fullmatch(dispatch) or receipt["suite_id"] != suite["suite_id"]:
+        raise ValueError("invalid pending evaluation receipt identity")
+    job = live.get(dispatch)
+    if job != pending["target"]:
+        print(f"Ants evaluation dispatch {dispatch} changed before publication.", file=sys.stderr)
+        return
+    destination = args.receipt_root / f"{dispatch}.{suite['suite_id']}.json"
+    if not passed_receipt(destination, dispatch, suite, job):
+        print(publish(args.receipt_root, receipt))
+
+
 def poll(args, suite: dict) -> None:
     suite_id = suite["suite_id"]
     state = args.scratch / f"ants-evaluation-{args.machine}.{suite_id}.json"
@@ -117,7 +131,13 @@ def poll(args, suite: dict) -> None:
                 raise ValueError("suite definition changed; use a new suite ID")
             previous = prior["dispatches"]
         except FileNotFoundError:
+            prior = {}
             previous = {}
+        pending = prior.get("pending_receipt")
+        if pending is not None:
+            flush_receipt(args, suite, pending, live)
+            save_cursor(state, {"suite_sha256": suite_digest, "dispatches": previous})
+            return
         cursor = {dispatch: episode for dispatch, episode in previous.items() if dispatch in live}
         candidates = {}
         for dispatch, job in live.items():
@@ -153,17 +173,21 @@ def poll(args, suite: dict) -> None:
             return
         digest = hashlib.sha256(read_bounded(checkpoint / "manifest.json", 65536)).hexdigest()
         successes = evaluate(checkpoint, digest, suite, args.scratch)
-        if targets(args.port, args.machine, suite_id).get(dispatch) != live[dispatch]:
-            print(f"Ants evaluation dispatch {dispatch} changed before publication.", file=sys.stderr)
-            return
-        print(publish(args.receipt_root, {
-            "schema_version": 1,
-            "suite_id": suite_id,
-            "dispatch_id": dispatch,
-            "checkpoint_sha256": digest,
-            "trials": suite["trials"],
-            "successes": successes,
-        }))
+        pending = {
+            "target": live[dispatch],
+            "receipt": {
+                "schema_version": 1,
+                "suite_id": suite_id,
+                "dispatch_id": dispatch,
+                "checkpoint_sha256": digest,
+                "trials": suite["trials"],
+                "successes": successes,
+            },
+        }
+        saved = {"suite_sha256": suite_digest, "dispatches": cursor}
+        save_cursor(state, {**saved, "pending_receipt": pending})
+        flush_receipt(args, suite, pending, targets(args.port, args.machine, suite_id))
+        save_cursor(state, saved)
 
 
 def main() -> int:
