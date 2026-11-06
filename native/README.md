@@ -139,6 +139,12 @@ For a failed world, call `abort_failed_level` before reset: it publishes
 shooting reservations for explicit discard/reconciliation, not TSV credit,
 and queues all surviving session lifetimes. Persist/acknowledge those
 notifications and flush the connection retirements before resetting.
+The same `cancel_level` boundary deliberately stops a live episode;
+both paths emit one `EpisodeAborted` marker even with no active commands.
+The learner must reject the partial PPO trajectory on that marker, not
+treat the canceled episode as a normal terminal outcome. A live world
+with unretired squad lifetimes cannot be reset just because it has no
+active command: cancel it first and flush the shared session.
 Normal terminal episodes are reported as completed, not failed steps.
 
 `NativeLevelInferenceBatch` shares the full v26

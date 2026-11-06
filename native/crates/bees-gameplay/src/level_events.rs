@@ -90,6 +90,10 @@ pub enum NativeLevelNotificationKind {
     /// A ready-to-send group command, including terminal/ELO markers.
     GroupReward(GroupRewardEvent),
     EpisodeFinal(NativeEpisodeFinal),
+    /// An unfinished, canceled or irrecoverably failed episode. The
+    /// transport/learner must discard its partial PPO trajectory and
+    /// preserve earlier reward records only as diagnostics.
+    EpisodeAborted,
 }
 
 /// Prevent unbounded RAM growth when a host neglects the output queue.
@@ -229,8 +233,11 @@ impl NativeLevelEventProcessor {
             return Ok(0);
         }
         let active = self.commands.active_count();
+        // An abort must be visible even when no HiveMind command exists:
+        // otherwise an empty outbox could be mistaken for a valid rollout.
         Self::reserve_output_records(
-            &mut self.pending_notifications, &mut self.failed, active,
+            &mut self.pending_notifications, &mut self.failed,
+            active.saturating_add(1),
         )?;
         for owner in self.roster.active_lifetimes() {
             self.pending_session_retirements.push(owner);
@@ -243,6 +250,10 @@ impl NativeLevelEventProcessor {
                 },
             });
         }
+        self.pending_notifications.push(NativeLevelNotification {
+            tick: self.next_tick.saturating_sub(1),
+            kind: NativeLevelNotificationKind::EpisodeAborted,
+        });
         Self::update_output_peak(
             &mut self.peak_pending_notifications,
             self.pending_notifications.len(),
