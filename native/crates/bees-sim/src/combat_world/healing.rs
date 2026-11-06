@@ -195,6 +195,14 @@ impl CombatWorld {
         )
     }
 
+    /// Source Squad command eligibility bans Heal when every live
+    /// same-side Beehive has all four shared slots occupied. This uses
+    /// the authored-zone index rather than scanning every world ship.
+    pub fn has_available_beehive_healing_slot(&self, side: i32) -> bool {
+        self.live_beehive_ids_for_side(side)
+            .any(|id| self.beehive_healing_slots_available(id) > 0)
+    }
+
     pub fn reserved_healing_beehive(&self, ship_id: i64) -> Option<i64> {
         self.healing_hive_by_ship.get(&ship_id).copied()
     }
