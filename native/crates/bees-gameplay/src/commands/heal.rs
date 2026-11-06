@@ -70,7 +70,7 @@ impl HealRun {
             let original = world.game_ship_original_health(*id)
                 .ok_or(GameCommandError::MissingOriginalShipHealth(*id))?;
             *deficit -= original;
-            if members[id].mobile {
+            if members[&*id].mobile {
                 world.validate_ship_game_order(*id)?;
             }
         }
