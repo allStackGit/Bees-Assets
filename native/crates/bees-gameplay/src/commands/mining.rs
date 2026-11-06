@@ -20,6 +20,55 @@ pub(super) struct MiningRun {
 }
 
 impl MiningRun {
+    pub(super) fn start(world: &CombatWorld, random: &mut RandomStream, squad: NativeSquadOrder<'_>) -> Result<Option<Self>, GameCommandError> {
+                // Unity Squad.GetNearestMiningAsteroid selects by distance
+                // from the current live squad bounds center. An absent
+                // target or no mining ships bans Mining for this strategy
+                // response rather than installing a nonfunctional command.
+                let Some((target_id, _)) =
+                    world.nearest_mining_asteroid(squad.squad_center)
+                else { return Ok(None); };
+                let spread = world.mining_asteroid_spread_radius(target_id)
+                    .ok_or(GameCommandError::InvalidMiningTarget)?;
+                let mut eligible = Vec::new();
+                for member in squad.members {
+                    let ship = world.ship(member.ship_id)
+                        .ok_or(GameCommandError::InvalidSquad)?;
+                    if !ship.vitals.is_dead() &&
+                        matches!(ship.ship_type, 4 | 9) {
+                        if world.ship_fleet_identity(member.ship_id).is_none() {
+                            return Err(GameCommandError::InvalidSquad);
+                        }
+                        eligible.push(member.ship_id);
+                    }
+                }
+                if eligible.is_empty() {
+                    return Ok(None);
+                }
+                // Unity Random.insideUnitCircle uses a uniform disk. Use
+                // world-local seeded RNG for comparable statistics, not
+                // a per-process global random stream.
+                let angle = next_unit(random) * std::f32::consts::TAU;
+                let radius = next_unit(random).sqrt() * spread;
+                let mut run = Self {
+                    target_id,
+                    destination_offset: Vec2::new(
+                        angle.cos() * radius, angle.sin() * radius,
+                    ),
+                    formation: squad.formation,
+                    members: squad.members.to_vec(),
+                    registered: vec![false; eligible.len()],
+                    eligible,
+                    currently_mining: Vec::new(),
+                    mining_timer: None,
+                    stop_moving_timer: None,
+                    has_found_all: false,
+                    mined_tsv: 0,
+                };
+                run.update_contacts(world);
+                Ok(Some(run))
+    }
+
     /// Register initial overlap at Execute as well as subsequent
     /// collision entries, preserving the source command's encounter order.
     pub(super) fn update_contacts(&mut self, world: &CombatWorld) {
