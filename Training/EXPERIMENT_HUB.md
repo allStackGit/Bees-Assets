@@ -1603,9 +1603,18 @@ seeds and a stable suite ID for a fixed map, seed, and turn-limit set.
 python -B Training/experiment_hub_tinybrains_evaluate.py --checkpoint $checkpoint --checkpoint-sha256 $digest --dispatch-id $dispatch --suite $suite --scratch $scratch --receipt-root $receipts
 ```
 
-Use pre-created private scratch and receipt directories. The evaluator
-runs one explicit checkpoint per invocation. Automatic checkpoint
-selection and dispatch association are separate deployment work.
+Use pre-created private scratch and receipt directories. The command above
+evaluates one explicit checkpoint. For scheduled evaluation, run
+`Training/experiment_hub_tinybrains_eval_poll.py` with `--machine`,
+`--artifact-root`, `--suite`, `--scratch`, and `--receipt-root`. The poller
+queries the local coordinator (port 7148 by default), selects a completed
+numbered checkpoint for an eligible running dispatch, and evaluates at most
+one per invocation. Set the profile's `training.checkpoint_every` so a
+numbered checkpoint appears while the job is still running. The poller
+leaves the changing `latest.pt` alone. Use persistent scratch to retain
+attempts and retry receipt publication after a failed coordinator recheck.
+A separate host needs a trusted loopback forward and read access to the
+training artifacts.
 
 ## Not yet implemented
 
