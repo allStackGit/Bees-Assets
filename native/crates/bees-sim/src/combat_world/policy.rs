@@ -16,7 +16,7 @@ use super::scout::PolicyScoutRuntime;
 use super::healing::PolicyHealingRuntime;
 use super::mining::PolicyMiningRuntime;
 
-pub(super) const WARP_GATE_TYPE: u8 = 20;
+pub const WARP_GATE_TYPE: u8 = 20;
 
 /// One source of truth for v26's readiness, resource, cooldown and
 /// phase observation channels. A missing special yields all zeros.
