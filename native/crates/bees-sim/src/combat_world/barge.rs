@@ -100,9 +100,9 @@ impl CombatWorld {
     /// movement lock. All in-flight game charges have one owner, the
     /// authoritative Barge ship; no orphan timer can fire after reset.
     pub fn reset_game_barge_charge(&mut self, ship_id: i64) {
-        if self.game_barge_charges.remove(&ship_id).is_none() {
+        let Some(charge) = self.game_barge_charges.remove(&ship_id) else {
             return;
-        }
+        };
         self.barge_charge_hits.retain(|&(attacker, _)|
             attacker != ship_id,
         );
@@ -114,10 +114,19 @@ impl CombatWorld {
             let motion = &mut self.physics.ships_mut()[index].motion;
             motion.cannot_change_movement_orders = false;
             motion.current_speed = motion.base_speed;
-            // Charge cleanup owns the movement lock, not the replacement
-            // command's steering or navigation request. Charge.SetFinalize
-            // separately stops surviving ships; supersession deliberately
-            // leaves any newly installed movement order intact.
+            if charge.phase != 4 {
+                // The old charge's direction is still in steering. While
+                // the movement lock was held, the replacement's point
+                // orders were stored independently in pending_game_point_orders.
+                // Stop only old steering; retain those pending orders for
+                // the normal next-tick unlocked-order handoff. After phase 4
+                // a replacement could already have installed new steering.
+                if let Some(controller) = self.game_ship_steering.get_mut(&ship_id) {
+                    controller.stop(motion);
+                } else {
+                    motion.stop_moving();
+                }
+            }
         }
     }
 
