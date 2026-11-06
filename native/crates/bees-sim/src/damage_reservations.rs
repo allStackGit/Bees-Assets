@@ -102,6 +102,60 @@ impl DamageReservations {
         Ok(updated)
     }
 
+    /// Bomb.SetTargetShip replaces a weapon's prior reservation. Check
+    /// the complete new total BEFORE releasing the old lease, so failure
+    /// cannot erase an existing target while the outgoing command is live.
+    /// Successful replacement has the same release-then-add totals as
+    /// Unity, including source's saturating release behavior.
+    pub fn retarget(
+        &mut self, owner_id: i64, side: i32,
+        target_id: i64, health: i32, amount: i32,
+    ) -> Result<DamageStatus, ReservationError> {
+        if side <= 0 {
+            return Err(ReservationError::InvalidSide);
+        }
+        if amount < 0 {
+            return Err(ReservationError::InvalidAmount);
+        }
+        if health <= 0 {
+            return Err(ReservationError::TargetUnavailable);
+        }
+        let prior = self.holders.get(&owner_id).copied();
+        let key = (side, target_id);
+        let old_status = self.statuses.get(&key).copied()
+            .unwrap_or(DamageStatus { health, total_reserved: 0 });
+        let same_target = prior.is_some_and(|held|
+            (held.side, held.target_id) == key
+        );
+        let existing_total = if same_target {
+            old_status.total_reserved.saturating_sub(
+                prior.expect("same_target implies a held lease").amount,
+            ).max(0)
+        } else {
+            old_status.total_reserved
+        };
+        let new_total = existing_total.checked_add(amount)
+            .ok_or(ReservationError::TotalOverflow)?;
+        // From here onward every operation is infallible. Unrelated
+        // projectile and bomb holders remain in this one global ledger.
+        if let Some(old) = prior {
+            if !same_target {
+                if let Some(status) = self.statuses.get_mut(&(
+                    old.side, old.target_id,
+                )) {
+                    status.total_reserved =
+                        status.total_reserved.saturating_sub(old.amount).max(0);
+                }
+            }
+        }
+        let updated = DamageStatus { health, total_reserved: new_total };
+        self.statuses.insert(key, updated);
+        self.holders.insert(owner_id, Reservation {
+            side, target_id, amount,
+        });
+        Ok(updated)
+    }
+
     /// Rocket explosion or a delayed bomb assumes ownership of precisely
     /// the same existing reservation. Transfer never changes total_reserved.
     pub fn transfer(&mut self, from_id: i64, recipient_id: i64) -> Result<bool, ReservationError> {

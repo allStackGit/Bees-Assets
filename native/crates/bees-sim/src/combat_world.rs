@@ -2284,9 +2284,10 @@ impl CombatWorld {
         }
         let side = bomber.side;
         let health = target.vitals.health();
-        // Match Bomb.SetTargetShip's ReleaseTargetReservation first.
-        self.reservations.release(bomb_weapon_id);
-        let status = self.reservations.reserve(
+        // Bomb.SetTargetShip is a single world-owned reservation update.
+        // Validate the new total before retiring the existing weapon lease,
+        // so a refused retarget cannot leave the old command unreserved.
+        let status = self.reservations.retarget(
             bomb_weapon_id, side, target_id, health, power,
         )?;
         self.game_bomb_weapon_by_ship
