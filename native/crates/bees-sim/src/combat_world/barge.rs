@@ -210,46 +210,74 @@ impl CombatWorld {
                 ) { continue; }
                 self.barge_charge_hits.insert((ship_id, target_id));
                 self.policy_special_measurements.barge_contact_hits += 1;
-                self.events.push(CombatEvent::BargeChargeHit {
-                    ship_id, target_id,
-                });
-                // Unity Ship.LogAttackingDamage respects MakeShotsHarmless
-                // even for Barge charge contact and reciprocal recoil.
-                let enemy_delta = self.ships[target_index].vitals
-                    .apply_damage(barge.power, self.shots_harmless)?
-                    .expect("validated living Barge target");
-                let recoil_power = ((enemy_delta.applied_damage as f32) * 0.75) as i32;
-                let self_delta = self.ships[ship_index].vitals
-                    .apply_damage(recoil_power, self.shots_harmless)?
-                    .expect("validated living charging Barge");
-                self.reservations.target_health_changed(
-                    target_id, self.ships[target_index].vitals.health(),
-                );
-                self.reservations.target_health_changed(
-                    ship_id, self.ships[ship_index].vitals.health(),
-                );
-                self.events.push(CombatEvent::Hit(HitEvent::new(
-                    0, 0, ship_id, target_id, side, self.ships[target_index].side,
-                    0, DamageSource::Charge, enemy_delta, false,
-                )));
-                self.events.push(CombatEvent::Hit(HitEvent::new(
-                    0, 0, target_id, ship_id, self.ships[target_index].side, side,
-                    0, DamageSource::Charge, self_delta, true,
-                )));
-                if enemy_delta.killed {
-                    self.retire_dead_ship(target_index, ship_id, 0)?;
-                }
-                if self_delta.killed {
-                    self.retire_dead_ship(ship_index, target_id, 0)?;
+                let (enemy_killed, barge_killed) =
+                    self.apply_barge_charge_hit(
+                        ship_index, target_index, barge.power, 0,
+                    )?;
+                if barge_killed {
                     break;
                 }
-                if !enemy_delta.killed {
+                if !enemy_killed {
                     self.finish_policy_barge_charge(ship_id)?;
                     break;
                 }
             }
         }
         Ok(())
+    }
+
+    /// One authoritative physical Barge charge contact transaction for
+    /// policy and game commands. Call only after the real authored hull
+    /// overlap and one-hit-per-charge lease have been validated. The
+    /// caller owns wind-up/cooldown transitions; this method alone owns
+    /// target damage, reciprocal recoil, death and combat attribution.
+    ///
+    /// Returns (enemy_killed, barge_killed). The source keeps charging
+    /// through killed enemies and stops on a surviving enemy.
+    fn apply_barge_charge_hit(
+        &mut self, ship_index: usize, target_index: usize,
+        power: i32, command_outcome_id: i64,
+    ) -> Result<(bool, bool), CombatWorldError> {
+        let ship_id = self.ships[ship_index].entity_id;
+        let target_id = self.ships[target_index].entity_id;
+        let side = self.ships[ship_index].side;
+        let target_side = self.ships[target_index].side;
+        self.events.push(CombatEvent::BargeChargeHit {
+            ship_id, target_id,
+        });
+        // Unity Ship.LogAttackingDamage respects MakeShotsHarmless for
+        // both direct Charge damage and its own reciprocal recoil.
+        let enemy_delta = self.ships[target_index].vitals
+            .apply_damage(power, self.shots_harmless)?
+            .expect("validated living Barge target");
+        let recoil_power = ((enemy_delta.applied_damage as f32) * 0.75) as i32;
+        let self_delta = self.ships[ship_index].vitals
+            .apply_damage(recoil_power, self.shots_harmless)?
+            .expect("validated living charging Barge");
+        self.reservations.target_health_changed(
+            target_id, self.ships[target_index].vitals.health(),
+        );
+        self.reservations.target_health_changed(
+            ship_id, self.ships[ship_index].vitals.health(),
+        );
+        self.events.push(CombatEvent::Hit(HitEvent::new(
+            0, 0, ship_id, target_id, side, target_side,
+            command_outcome_id, DamageSource::Charge, enemy_delta, false,
+        )));
+        self.events.push(CombatEvent::Hit(HitEvent::new(
+            0, 0, target_id, ship_id, target_side, side,
+            0, DamageSource::Charge, self_delta, true,
+        )));
+        if enemy_delta.killed {
+            self.retire_dead_ship(
+                target_index, ship_id, command_outcome_id,
+            )?;
+        }
+        if self_delta.killed {
+            // The reciprocal hit is not a second credited command attack.
+            self.retire_dead_ship(ship_index, target_id, 0)?;
+        }
+        Ok((enemy_delta.killed, self_delta.killed))
     }
 
     /// Source RlCombatPerception.GetSpecialCooldownFraction: remaining
