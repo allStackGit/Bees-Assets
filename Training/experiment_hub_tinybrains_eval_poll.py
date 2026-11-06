@@ -18,8 +18,9 @@ CHECKPOINT = re.compile(r"update-([0-9]{6,8})\.pt")
 
 def latest_numbered_checkpoint(artifact_root, job):
     identity = job["job_id"]
-    if not UUID.fullmatch(identity) or job["artifact_lineage_root_id"] != identity:
-        raise ValueError("Expected a fresh TinyBrains artifact lineage.")
+    # A continuation writes new checkpoints in its own job directory.
+    if not UUID.fullmatch(identity) or not UUID.fullmatch(job["artifact_lineage_root_id"]):
+        raise ValueError("Invalid TinyBrains artifact lineage.")
     directory = artifact_root / identity
     if directory.resolve() != directory:
         raise ValueError("TinyBrains artifact directory is redirected.")
