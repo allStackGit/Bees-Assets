@@ -131,7 +131,11 @@ const numeric=value=>/^[0-9]+$/.test(value||'')&&
 function terminalResult(record,result,exitStatus) {
     const expectedInterrupt=record.stop_requested_at&&
         record.stop_policy==='interrupt-main'&&result==='exit-code'&&exitStatus==='130';
-    return result==='success'||expectedInterrupt?'finished':'failed';
+    if(result==='success'||expectedInterrupt)return {state:'finished'};
+    const reason=/^[a-z][a-z-]{0,31}$/.test(result||'')?result:'unknown';
+    const status=/^[0-9A-Z]{1,32}$/.test(exitStatus||'')?exitStatus:'unknown';
+    return {state:'failed',
+        diagnostic:'Linux workload failed (systemd result: '+reason+', main status: '+status+').'};
 }
 function launchArguments(record,invocation,gpuPlan) {
     const args=['--user','--quiet','--service-type=exec',
@@ -427,7 +431,8 @@ class LinuxSupervisor {
     terminalAfterUnload(record) {
         const absent={state:'unverified',active:false,unit_exists:false};
         if(record.native_terminal_at&&terminalStates.has(record.state))
-            return {...absent,state:record.state,cpu_time_ns:record.terminal_cpu_time_ns??null};
+            return {...absent,state:record.state,cpu_time_ns:record.terminal_cpu_time_ns??null,
+                diagnostic:record.diagnostic||null};
         if(!record.native_verified_at||!record.receipt_path||record.quarantined_at)
             return absent;
         let fd;
@@ -447,7 +452,7 @@ class LinuxSupervisor {
                 !['exited','killed','dumped'].includes(receipt.exit_code)||
                 !/^[0-9A-Z]{1,32}$/.test(receipt.exit_status))
                 throw Error('Linux terminal receipt does not match its native job.');
-            return {...absent,state:terminalResult(record,receipt.result,receipt.exit_status)};
+            return {...absent,...terminalResult(record,receipt.result,receipt.exit_status)};
         }catch(error){
             if(error.code==='ENOENT'&&fd===undefined)return absent;
             throw error;
@@ -489,7 +494,7 @@ class LinuxSupervisor {
                 process_tasks:numeric(p.TasksCurrent)};
         }
         if(p.ActiveState==='inactive'||p.ActiveState==='failed') {
-            return {state:terminalResult(record,p.Result,p.ExecMainStatus),
+            return {...terminalResult(record,p.Result,p.ExecMainStatus),
                 active:false,unit_exists:true,pid:null,cpu_time_ns:numeric(p.CPUUsageNSec)};
         }
         return {state:'unverified',active:false,unit_exists:true};
