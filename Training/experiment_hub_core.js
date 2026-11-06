@@ -245,16 +245,18 @@ function independentSequenceComplete(job) {
         return false;
     }
 }
-// One prerequisite for all stages of scheduling: plan, capacity claim,
-// automation and native Start. An unclaimed continuation has no assigned
-// machine yet, but its original worker must already be pinned.
+function checkpointContinuationComplete(job) {
+    return job?.status==='finished'||(job?.project_id==='courier'&&job.status==='stopped'&&
+        job.checkpoint_stop_verified===true);
+}
+// Shared by planning, capacity claims, automation and native Start.
 function predecessorBlock(snapshot,job) {
     if(job.continuation_of_job_id&&job.after_job_id)
         return 'A job cannot both continue a checkpoint and follow an independent predecessor.';
     if(job.continuation_of_job_id) {
         const parent=snapshot.jobs.find(j=>j.id===job.continuation_of_job_id);
         if(!parent||parent.project_id!==job.project_id||
-            parent.status!=='finished'||!parent.capacity_released_at||
+            !checkpointContinuationComplete(parent)||!parent.capacity_released_at||
             !parent.assigned_machine_id||
             (parent.artifact_lineage_root_id||parent.id)!==
                 job.artifact_lineage_root_id||
@@ -386,7 +388,9 @@ function waitingStageReason(job,byId) {
                 }
             }else {
                 status='needs_review';
-                explanation='stopped without finishing; checkpoint continuation requires a finished predecessor';
+                explanation=checkpointContinuationComplete(parent)
+                    ?'saved a checkpoint on Stop; cancel the pending stage before queuing an explicit continuation'
+                    :'stopped without a verified resumable checkpoint';
             }
         }else {
             status='needs_review';explanation=
@@ -1527,6 +1531,11 @@ class ExperimentHub {
                 ?'stop_requested':report.state;
             if(state==='launch_requested'&&job.status!=='start_requested')continue;
             if(job.status==='stop_requested'&&report.state==='launch_requested')continue;
+            if(state==='stopped'&&job.project_id==='courier'&&job.stop_requested_at&&
+                report.checkpoint_stop_verified===true) {
+                job.checkpoint_stop_verified=true;
+                changed=true;
+            }
             // Only reports accepted into the lifecycle may update live
             // telemetry and comparison samples. A delayed older report
             // must not make a terminal job appear to be running again.
@@ -2121,8 +2130,8 @@ class ExperimentHub {
                 (parent.status==='finished'&&!parent.capacity_released_at)||
                 futureStage);
             if(!waitingPredecessor&&
-                (parent.status!=='finished'||!parent.capacity_released_at))
-                throw Error('Continuation requires a finished, capacity-released predecessor (or an eligible active or prequeued predecessor).');
+                (!checkpointContinuationComplete(parent)||!parent.capacity_released_at))
+                throw Error('Continuation requires a finished or verified checkpoint-stopped predecessor with released capacity (or an eligible active or prequeued predecessor).');
             if(next.jobs.some(j=>
                 (j.continuation_of_job_id===parent.id||
                  j.after_job_id===parent.id)&&j.status!=='cancelled'))
