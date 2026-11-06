@@ -196,8 +196,9 @@ impl CombatWorld {
         let base = amount / count;
         let remainder = amount % count;
         let mut side = None;
+        self.mining_seen_ship_ids.clear();
         for (i, &ship_id) in ship_ids.iter().enumerate() {
-            if ship_ids[..i].contains(&ship_id) {
+            if !self.mining_seen_ship_ids.insert(ship_id) {
                 return Err(CombatWorldError::InvalidPolicyMining);
             }
             let &ship_index = self.ship_by_id.get(&ship_id)
