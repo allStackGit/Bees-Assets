@@ -108,40 +108,30 @@ pub fn assign_initial_bombing_run_targets(
         return Err(GameCommandError::InvalidEnemy);
     }
     if enemies.is_empty() {
-        for weapon in weapons {
-            world.release_game_bomb_target_for_ship(weapon.ship_id);
-        }
         return Ok(false);
     }
-    // Each Bomb.GetTarget rebuilds its own sorted copy of EnemySquad.GetShips.
-    // Reusing the preceding bomber's reordered list would change FirstSeen,
-    // Random and all tie-sensitive strategies. Reuse one scratch allocation.
-    let mut ranked = Vec::with_capacity(enemies.len());
-    for weapon in weapons {
-        ranked.clear();
-        ranked.extend_from_slice(enemies);
-        match select_native_game_bomb_target(
-            world, roster, weapon.ship_id, weapon.weapon_id, weapon.power,
-            enemy_owner, selection.effective_shooting, random, &mut ranked,
-        ) {
-            Ok(Some(_)) => {}
-            Ok(None) => {
-                for member in weapons {
-                    world.release_game_bomb_target_for_ship(member.ship_id);
-                }
-                return Ok(false);
-            }
-            Err(err) => {
-                // Unity SetFinalize releases the entire squad's Bomb
-                // reservations when GetTarget cannot complete activation.
-                for member in weapons {
-                    world.release_game_bomb_target_for_ship(member.ship_id);
-                }
-                return Err(err);
+    // Do not release an outgoing command's reservations on failed
+    // activation. The Level retains its old command and old OutcomeIds
+    // until the replacement is fully installed. This is one short-lived
+    // transaction over the canonical world ledger, not another ledger.
+    let assigned = world.with_atomic_game_bomb_assignments(|world| {
+        // Each Bomb.GetTarget rebuilds its own sorted GetShips copy.
+        // Reusing the preceding bomber's ranking changes FirstSeen,
+        // Random and all tie-sensitive strategies. Reuse one scratch vec.
+        let mut ranked = Vec::with_capacity(enemies.len());
+        for weapon in weapons {
+            ranked.clear();
+            ranked.extend_from_slice(enemies);
+            if select_native_game_bomb_target(
+                world, roster, weapon.ship_id, weapon.weapon_id, weapon.power,
+                enemy_owner, selection.effective_shooting, random, &mut ranked,
+            )?.is_none() {
+                return Ok(None);
             }
         }
-    }
-    Ok(true)
+        Ok(Some(()))
+    })?;
+    Ok(assigned.is_some())
 }
 
 /// Fire Barge-only portion of Unity BombingRun.Timer. Its special is

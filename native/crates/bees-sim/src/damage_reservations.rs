@@ -41,7 +41,7 @@ pub struct Reservation {
     pub amount: i32,
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct DamageReservations {
     statuses: HashMap<(i32, i64), DamageStatus>,
     holders: HashMap<i64, Reservation>,

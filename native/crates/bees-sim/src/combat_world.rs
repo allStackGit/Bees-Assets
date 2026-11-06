@@ -2226,6 +2226,26 @@ impl CombatWorld {
         ))
     }
 
+    /// Source BombingRun.Execute assigns every squad Bomb before declaring
+    /// activation successful. If a later target fails, the old HiveMind
+    /// command is still active and MUST retain its original reservations.
+    /// Snapshot only at this rare command-activation boundary, not on
+    /// per-frame physics/weapon updates. Both the shared damage totals and
+    /// weapon-owner bindings commit or roll back together.
+    pub fn with_atomic_game_bomb_assignments<T, E>(
+        &mut self,
+        operation: impl FnOnce(&mut Self) -> Result<Option<T>, E>,
+    ) -> Result<Option<T>, E> {
+        let original_reservations = self.reservations.clone();
+        let original_bindings = self.game_bomb_weapon_by_ship.clone();
+        let result = operation(self);
+        if !matches!(result, Ok(Some(_))) {
+            self.reservations = original_reservations;
+            self.game_bomb_weapon_by_ship = original_bindings;
+        }
+        result
+    }
+
     /// Unity Bomb.SetTargetShip reserves its actual weapon's Bomb.Power
     /// immediately. The Level picks the target using the already-exposed
     /// target_damage_status; even the source's over-reserved random
