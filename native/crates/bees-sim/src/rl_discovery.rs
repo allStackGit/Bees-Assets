@@ -84,6 +84,18 @@ impl EpisodeDiscoveryLedger {
         &mut self, shaping: &mut EpisodeShaping,
         side: i32, kind: DiscoveryKind, entity_id: i64, value: i32,
     ) -> Result<Option<RewardEmission>, DiscoveryError> {
+        self.first_sighting_with_freshness(
+            shaping, side, kind, entity_id, value,
+        ).map(|(_, reward)| reward)
+    }
+
+    /// Return the first-side-wide-sighting fact separately from reward
+    /// delivery. A real first sighting can have no reward when the shaping
+    /// budget is exhausted; a duplicate must never complete Scouting.
+    pub fn first_sighting_with_freshness(
+        &mut self, shaping: &mut EpisodeShaping,
+        side: i32, kind: DiscoveryKind, entity_id: i64, value: i32,
+    ) -> Result<(bool, Option<RewardEmission>), DiscoveryError> {
         let Some(index) = self.sides.iter().position(|&s| s == side)
         else { return Err(DiscoveryError::InvalidSide) };
         if entity_id <= 0 || value < 0 {
@@ -91,7 +103,7 @@ impl EpisodeDiscoveryLedger {
         }
         if !self.seen[index].insert((kind, entity_id)) {
             self.measurements.duplicate += 1;
-            return Ok(None);
+            return Ok((false, None));
         }
         self.measurements.first += 1;
         let raw = if kind == DiscoveryKind::CollisionAsteroid {
@@ -121,6 +133,6 @@ impl EpisodeDiscoveryLedger {
         if result.as_ref().is_some_and(|r| r.amount != 0.0) {
             self.measurements.rewarded += 1;
         }
-        Ok(result)
+        Ok((true, result))
     }
 }
