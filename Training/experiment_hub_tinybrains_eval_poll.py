@@ -10,7 +10,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from experiment_hub_ants_eval_poll import exclusive, flush_receipt, passed_receipt, retain_dispatch_cursors, save_cursor, targets
+from experiment_hub_eval_poll import exclusive, flush_receipt, passed_receipt, retain_dispatch_cursors, save_cursor, targets
 from experiment_hub_tinybrains_evaluate import SUITE_ID, UUID, evaluate, read_bounded, read_suite
 
 CHECKPOINT = re.compile(r"update-([0-9]{6,8})\.pt")

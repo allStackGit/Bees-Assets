@@ -10,7 +10,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from experiment_hub_ants_evaluate import SHA256, SUITE_ID, UUID, publish, read_bounded
+from experiment_hub_eval_io import SHA256, SUITE_ID, UUID, publish, read_bounded
 
 MAP = re.compile(r"[a-zA-Z0-9_-]{1,80}")
 
