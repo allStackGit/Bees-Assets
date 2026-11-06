@@ -662,6 +662,11 @@ impl NativeLevelEventProcessor {
                 expected: self.next_tick, got: completed_tick,
             });
         }
+        // A queued game WarpGate return now became a real ShipWarped
+        // followed by ShipDied. Capture FullRetreat's Striker/Drone TSV
+        // adjustment BEFORE roster death retirement removes the command.
+        // This is the same authoritative event store used by rewards.
+        self.commands.record_warp_events(world);
         // The roster may create/destroy minions and retire completed
         // commands; the episode consumer sees the same authoritative
         // physical world and the source-order immutable event buffer.
