@@ -60,10 +60,18 @@ contributes to economic accounting, not an additional immediate tactical
 capability reward. The same world-owned extraction routine can
 distribute a five-mineral-per-ship command yield with the exact integer
 remainder order, and indexed nearest-target/contact reads expose the live
-asteroids. The timed HiveMind Mining command is not yet connected to this
-routine; its movement, timers and command TSV settlement remain separate
-development work. The rendered fleet/command adapter and physical
-Windows/Linux qualification still require integration.
+asteroids. The native HiveMind Mining command now uses that same extraction
+routine. It selects the nearest live asteroid, samples a seeded approach
+point from the authored collider bounds, registers miners on real contact,
+uses three-second movement and five-second mining timers, stops moving
+five seconds after all miners arrive, and uses the source 600-second
+HiveMind timeout. Actual mined minerals are preserved in the finished
+command's TSV and in fleet economic accounting. Mining events created
+after the combat reward pass are persisted and queued through the same
+Level outbox; no separate mining simulation or tactical double-credit.
+Cumulative mining workload counters require no per-step logging.
+The rendered fleet/command adapter and physical Windows/Linux
+qualification still require integration.
 
 `NativeGroupRewardDelivery` is an optional per-episode MA-POCA delivery
 adapter. The runner registers participating agents, consumes side-wide
