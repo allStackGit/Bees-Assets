@@ -1113,8 +1113,7 @@ authorization. That authorization independently requires the exact
 current source, configuration and resolved runtime/device lineage
 used by the passing qualification report. This adapter cannot authorize
 training on its own. A clean and properly qualified **CPU runtime**
-is necessary because the Hub's current execution backend does not
-allocate GPU resources.
+is required for this adapter. The adapter does not advertise GPU execution.
 
 Example local module at `/etc/experiment-hub/approved-adapters.js`
 (paths are illustrative and must be changed to installed locations):
@@ -1144,6 +1143,16 @@ environment variables described above, including
 `{"mode":"new","episodes":1000}`. Request CPU/RAM capacity with
 `gpu_count:0`, coordinate a connected Linux machine, wait for the
 fresh lease receipt and explicitly authorize **Start on Linux**.
+
+An Ants adapter can optionally receive independent evaluation receipts from
+a separate trusted evaluator. Set `evaluationRoot` to a pre-created directory
+separate from the source and training artifact trees, and set
+`evaluationSuites` to the suite IDs that the evaluator serves. The evaluator
+atomically publishes a bounded version-1 Hub evaluation report to
+`<evaluationRoot>/<dispatch_id>.<suite_id>.json`. Keep this directory under
+the evaluator operator's control. The adapter only reads the current
+dispatch's receipt. Ants' training summaries and default checkpoint
+evaluation CLI do not publish these held-out receipts.
 
 The adapter accepts `mode:"new"` (or omitted mode) for a fresh run
 and `mode:"resume"` for an explicitly linked, completed predecessor.
