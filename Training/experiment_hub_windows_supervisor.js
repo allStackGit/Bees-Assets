@@ -239,10 +239,10 @@ class WindowsSupervisor {
         }catch(error) {
             // An owner closing its control pipe and atomically publishing
             // a signed terminal receipt are separate events. This affects
-            // both requested Stops and natural child completion. Only a
-            // previously verified running owner can enter this handoff;
-            // an unverified launch must not be mistaken for a clean exit.
-            if(!['running','stop_requested'].includes(record.state))
+            // both requested Stops and natural child completion. The pipe
+            // can confirm exit before the receipt is published, so a
+            // reopened supervisor may already have a terminal record.
+            if(!terminal.has(record.state)&&!['running','stop_requested'].includes(record.state))
                 throw error;
             for(let attempt=0;attempt<20;attempt++) {
                 const completed=this.verifyReceipt(record);
