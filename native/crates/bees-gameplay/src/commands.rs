@@ -42,6 +42,11 @@ mod heal;
 mod scouting;
 mod full_retreat;
 mod circle;
+mod targeting;
+pub use self::targeting::{
+    NativeCommandTargetQueue, NativeEnemyTargetStats,
+    sort_native_command_targets,
+};
 pub use self::circle::{
     NativeCircleCommandSnapshot, assemble_circle_snapshot_from_live_weapons,
 };

@@ -5,6 +5,7 @@
 //! This is distinct from targeting/shooting OutcomeIds and damage reservations.
 
 use std::cmp::Ordering;
+use std::collections::{HashMap, VecDeque};
 
 use bees_hivemind::protocol::{StrategyIdentity, SHOOTING_STRATEGIES};
 use bees_hivemind::session::SquadLifetime;
@@ -131,4 +132,74 @@ pub fn sort_native_command_targets(
         }
     });
     Ok(())
+}
+
+/// Unity Command.OriginalQueue/TargetingQueue and each ship's retained
+/// TargetEnemyShipToFollow. Only IDs are cached; positions, vitals and
+/// target eligibility always come from the live gameplay world.
+#[derive(Default)]
+pub struct NativeCommandTargetQueue {
+    original: VecDeque<i64>,
+    pending: VecDeque<i64>,
+    retained_by_ship: HashMap<i64, i64>,
+}
+
+impl NativeCommandTargetQueue {
+    /// Initialize from MakeTargetingQueue's exact first order. The caller
+    /// supplies IDs from sort_native_command_targets, not numeric ID order.
+    pub fn new(sorted_enemy_ids: &[i64]) -> Self {
+        let original: VecDeque<_> = sorted_enemy_ids.iter().copied().collect();
+        Self {
+            pending: original.clone(),
+            original,
+            retained_by_ship: HashMap::new(),
+        }
+    }
+
+    pub fn clear(&mut self) {
+        self.original.clear();
+        self.pending.clear();
+        self.retained_by_ship.clear();
+    }
+
+    /// One Ship.SetAndGetTargetEnemy call. If the ship's prior target still
+    /// lives, it remains locked. Otherwise commands consume a shared FIFO,
+    /// rebuilding it from the current authored order only when exhausted.
+    /// Unity rebuilds OriginalQueue on a dead dequeue but leaves the current
+    /// TargetingQueue intact; preserve that distinction.
+    pub fn select_for_ship(
+        &mut self,
+        ship_id: i64,
+        latest_sorted_enemy_ids: &[i64],
+        mut is_live_enemy: impl FnMut(i64) -> bool,
+    ) -> Option<i64> {
+        if let Some(&retained) = self.retained_by_ship.get(&ship_id) {
+            if is_live_enemy(retained) {
+                return Some(retained);
+            }
+            self.retained_by_ship.remove(&ship_id);
+        }
+        // Unity uses max(EnemySquad.GetShips().Count, 10). Never spin
+        // indefinitely when all candidates have just died.
+        for _ in 0..latest_sorted_enemy_ids.len().max(10) {
+            if self.pending.is_empty() {
+                self.original.clear();
+                self.original.extend(latest_sorted_enemy_ids.iter().copied());
+                self.pending.extend(self.original.iter().copied());
+                if self.pending.is_empty() {
+                    return None;
+                }
+            }
+            let candidate = self.pending.pop_front()
+                .expect("nonempty after refill");
+            if is_live_enemy(candidate) {
+                self.retained_by_ship.insert(ship_id, candidate);
+                return Some(candidate);
+            }
+            // C# RebuildOriginalTargetingQueue, not RebuildTargetingQueues.
+            self.original.clear();
+            self.original.extend(latest_sorted_enemy_ids.iter().copied());
+        }
+        None
+    }
 }
