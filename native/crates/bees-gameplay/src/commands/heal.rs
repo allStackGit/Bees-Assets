@@ -266,7 +266,7 @@ impl HealRun {
                     Some(gain) => {
                         self.earned_tsv = self.earned_tsv
                             .checked_add(i64::from(gain))
-                            .ok_or(GameCommandError::InvalidMiningAccounting)?;
+                            .ok_or(GameCommandError::InvalidCapabilityAccounting)?;
                     }
                     None => {}
                 }
