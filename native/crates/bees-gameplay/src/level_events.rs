@@ -15,7 +15,7 @@ use bees_sim::rl_discovery::DiscoveryKind;
 use crate::commands::{
     CommandFinishCause, CommandMeasurements, FinishedNativeCommand,
     GameCommandError, NativeCircleCommandSnapshot, NativeFriendlySquad,
-    NativeSquadCommandDirector,
+    NativeSquadCommandDirector, NativeSwipeCommandSnapshot,
 };
 use bees_hivemind::dispatch::ResolvedHiveMindCommand;
 use crate::episode::{
@@ -626,6 +626,30 @@ impl NativeLevelEventProcessor {
             SquadLifetime, i64, &CombatWorld,
         ) -> Result<NativeCircleCommandSnapshot, GameCommandError>,
     ) -> Result<(), NativeLevelEventError> {
+        self.advance_timed_commands_with_combat(
+            completed_tick, world, navigation, friendlies, random, dt,
+            circle_snapshot,
+            |_, _, _| Err(GameCommandError::MissingCombatSnapshot),
+        )
+    }
+
+    /// All movement-attack timers share this same Level-owned roster,
+    /// combat world, navigation, and retained delivery outbox.
+    pub fn advance_timed_commands_with_combat(
+        &mut self,
+        completed_tick: u64,
+        world: &mut CombatWorld,
+        navigation: &NavigationRuntime,
+        friendlies: &[NativeFriendlySquad],
+        random: &mut RandomStream,
+        dt: f32,
+        circle_snapshot: impl FnMut(
+            SquadLifetime, i64, &CombatWorld,
+        ) -> Result<NativeCircleCommandSnapshot, GameCommandError>,
+        swipe_snapshot: impl FnMut(
+            SquadLifetime, i64, &CombatWorld,
+        ) -> Result<NativeSwipeCommandSnapshot, GameCommandError>,
+    ) -> Result<(), NativeLevelEventError> {
         if self.is_failed() {
             return Err(NativeLevelEventError::FailedLevel);
         }
@@ -643,9 +667,9 @@ impl NativeLevelEventProcessor {
         if self.completed() || self.commands.active_count() == 0 {
             return Ok(());
         }
-        if let Err(error) = self.commands.advance_into_with_circle(
-            world, navigation, friendlies, random, dt,
-            circle_snapshot, &mut self.timed_finished,
+        if let Err(error) = self.commands.advance_into_with_combat(
+            world, navigation, Some(&self.roster), friendlies, random, dt,
+            circle_snapshot, swipe_snapshot, &mut self.timed_finished,
         ) {
             self.failed = true;
             return Err(NativeLevelEventError::Commands(error));

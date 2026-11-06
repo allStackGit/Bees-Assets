@@ -21,6 +21,7 @@ use bees_sim::telemetry::StepCounts;
 
 use crate::commands::{
     GameCommandError, NativeCircleCommandSnapshot, NativeFriendlySquad,
+    NativeSwipeCommandSnapshot,
 };
 use crate::level_events::{
     NativeLevelEventError, NativeLevelEventProcessor,
@@ -64,6 +65,16 @@ pub trait NativeLevelCommandContext {
         &self, _world: &CombatWorld, _owner: SquadLifetime,
         _enemy_squad_id: i64,
     ) -> Result<NativeCircleCommandSnapshot, GameCommandError> {
+        Err(GameCommandError::MissingCombatSnapshot)
+    }
+
+    /// Unity SwipeSquad.Timer requires the original enemy lifetime, live
+    /// squad ranges and bounds, exact weapon validity, and GetShips-ordered
+    /// candidate metadata. Required only on due Right/Left Swipe callbacks.
+    fn swipe_command_snapshot(
+        &self, _world: &CombatWorld, _owner: SquadLifetime,
+        _enemy_squad_id: i64,
+    ) -> Result<NativeSwipeCommandSnapshot, GameCommandError> {
         Err(GameCommandError::MissingCombatSnapshot)
     }
 
@@ -414,12 +425,15 @@ where
             }
             let previous_event_count = state.combat.events().len();
             let metadata = &state.metadata;
-            state.events.advance_timed_commands_with_circle(
+            state.events.advance_timed_commands_with_combat(
                 completed_tick, &mut state.combat,
                 metadata.navigation(),
                 &state.command_friendlies, &mut world.random, dt_seconds,
                 |owner, enemy_id, combat| {
                     metadata.circle_command_snapshot(combat, owner, enemy_id)
+                },
+                |owner, enemy_id, combat| {
+                    metadata.swipe_command_snapshot(combat, owner, enemy_id)
                 },
             )?;
             if state.combat.events().len() > previous_event_count {
