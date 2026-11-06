@@ -2,7 +2,7 @@
 
 // Opt-in Windows supervisor. One independently installed, pinned .NET helper
 // owns each Windows Job Object for the entire workload lifetime. The agent
-// talks only to that helper's same-user, token-authenticated status pipe.
+// uses the helper's authenticated pipe and optional adapter stop marker.
 // No PowerShell, shell, PID guessing, arbitrary command API or Bees ownership.
 const fs=require('node:fs');
 const path=require('node:path');
@@ -72,17 +72,21 @@ function validateInvocation(job,lease,machineId,adapters,hostOs,pathApi,cryptoAp
             predecessor===job.id||root===job.id))||
         (predecessor===null&&root!==job.id))
         throw Error('Invalid Windows continuation ancestry.');
-    const argv=adapter.args(JSON.parse(JSON.stringify(frozen)),Object.freeze({
+    const context=Object.freeze({
         job_id:job.id,project_id:job.project_id,
         dispatch_id:job.dispatch_id||null,evaluation_suite_id:job.evaluation_stop?.suite_id||null,
         artifact_lineage_root_id:root,continuation_of_job_id:predecessor,
-    }));
+    });
+    const stopFile=adapter.checkpoint_stop_file?.(context)??null;
+    if(stopFile!==null&&(!noControls(stopFile)||!pathApi.isAbsolute(stopFile)))
+        throw Error('Windows checkpoint Stop requires an absolute local request path.');
+    const argv=adapter.args(JSON.parse(JSON.stringify(frozen)),context);
     if(!Array.isArray(argv)||argv.length>64||argv.some(x=>
         typeof x!=='string'||x.length>1024||/[\0\r\n]/.test(x)))
         throw Error('Windows adapter returned unsafe native arguments.');
     return {executable:adapter.executable,args:argv,cwd:adapter.cwd||'',
         cpus:r.cpus,hostCpus:cores,ramMb:r.ram_mb,
-        root,predecessor};
+        root,predecessor,stopFile};
 }
 class WindowsSupervisor {
     constructor({root,machineId,adapters,helperPath,helperSha256,
@@ -108,7 +112,9 @@ class WindowsSupervisor {
             !Array.isArray(this.state.records)||
             this.state.records.length>1000||
             this.state.records.some(r=>!r||!UUID.test(String(r.job_id))||
-                !UUID.test(String(r.lease_id))||!SHA.test(String(r.token)))||
+                !UUID.test(String(r.lease_id))||!SHA.test(String(r.token))||
+                (r.checkpoint_stop_file!=null&&(!noControls(r.checkpoint_stop_file)||
+                    !this.path.isAbsolute(r.checkpoint_stop_file))))||
             new Set(this.state.records.map(r=>r.job_id)).size!==
                 this.state.records.length)
             throw Error('Invalid Windows local ownership journal.');
@@ -276,11 +282,26 @@ class WindowsSupervisor {
             observation={state:'unverified',active:false};
             issue=String(error.message||error).slice(0,220);
         }
-        const state=record.quarantined_at?'unverified':
-            terminal.has(observation.state)?
-                (record.stop_requested_at?'stopped':observation.state):
-            record.stop_requested_at&&observation.active?
-                'stop_requested':observation.state;
+        const checkpointStop=Boolean(record.stop_requested_at&&record.checkpoint_stop_file);
+        if(observation.active&&checkpointStop&&
+            !record.quarantined_at) {
+            try {
+                this.fs.writeFileSync(record.checkpoint_stop_file,'',{flag:'wx',mode:0o600});
+            }catch(error) {
+                if(error.code!=='EEXIST')issue='Checkpoint Stop delivery pending: '+
+                    String(error.message||error).slice(0,180);
+            }
+        }
+        let state=observation.state;
+        if(record.quarantined_at)state='unverified';
+        else if(record.stop_requested_at) {
+            if(observation.active)state='stop_requested';
+            else if(terminal.has(state)) {
+                if(!checkpointStop)state='stopped';
+                else if(!observation.owner_verified)state='stop_requested';
+                else state=state==='finished'?'stopped':'failed';
+            }
+        }
         if(state==='failed'&&observation.exit_code!=null)
             issue='Windows workload exited with code '+observation.exit_code+'.';
         const updated={...record,state,diagnostic:issue};
@@ -353,6 +374,7 @@ class WindowsSupervisor {
             project_id:job.project_id,
             continuation_of_job_id:invocation.predecessor,
             artifact_lineage_root_id:invocation.root,
+            ...(invocation.stopFile?{checkpoint_stop_file:invocation.stopFile}:{}),
             token,cpus:invocation.cpus,host_cpus:invocation.hostCpus,
             ram_mb:invocation.ramMb,state:'launch_requested',
             requested_at:new Date().toISOString(),diagnostic:null};
@@ -388,12 +410,11 @@ class WindowsSupervisor {
         const inspected=await this.reconcile(jobId);
         if(!inspected.active)return inspected;
         if(record.stop_requested_at)return inspected;
-        // For Windows, terminate-group forcibly ends the entire Job Object.
-        // Checkpoint-aware SIGINT does not exist in this backend.
         const updated={...record,stop_requested_at:new Date().toISOString(),
             state:'stop_requested'};
         this.commit(this.state.records.map(r=>
             r.job_id===jobId?updated:r));
+        if(updated.checkpoint_stop_file)return this.reconcile(jobId);
         try{
             this.verifyReply(updated,await this.send(updated,'stop'));
         }catch{

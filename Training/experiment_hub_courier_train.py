@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
 """Run Courier with optional policy export at its checkpoint cache boundary."""
 
+import _thread
 import json
 import os
 from pathlib import Path
 import runpy
 import shutil
+import signal
 import sys
 import tempfile
+import threading
 
 from experiment_hub_eval_io import UUID, read_bounded
 
@@ -37,18 +40,15 @@ def publish_policy(cache, inbox):
         Path(pending).unlink(missing_ok=True)
 
 
-def main():
-    script, root, dispatch = sys.argv[1:4]
+def install_snapshot_publisher(root, dispatch):
     if not UUID.fullmatch(dispatch):
         raise ValueError("Invalid Courier snapshot dispatch ID.")
-    script = Path(script).resolve(strict=True)
     root = Path(root)
     if root.resolve(strict=True) != root:
         raise ValueError("Courier snapshot root was redirected.")
     inbox = root / dispatch
     inbox.mkdir()
 
-    sys.path.insert(0, str(script.parent))
     import checkpoint_cache
 
     # The standalone trainer imports this cache class before starting its
@@ -62,8 +62,32 @@ def main():
                 print(f"Courier evaluation snapshot skipped: {error}", file=sys.stderr)
 
     checkpoint_cache.CheckpointCache = EvaluationCheckpointCache
-    sys.argv = [str(script), *sys.argv[4:]]
-    runpy.run_path(str(script), run_name="__main__")
+
+
+def watch_stop(path, done):
+    while not done.wait(0.25):
+        handler = signal.getsignal(signal.SIGINT)
+        if callable(handler) and handler is not signal.default_int_handler and path.is_file():
+            # An OS SIGINT interrupts Windows multiprocessing pipe waits.
+            # Queue the Python handler without signaling the kernel wait.
+            _thread.interrupt_main(signal.SIGINT)
+            return
+
+
+def main():
+    source, root, dispatch, stop = sys.argv[1:5]
+    script = Path(source).resolve(strict=True)
+    sys.path.insert(0, str(script.parent))
+    if root != '-':
+        install_snapshot_publisher(root, dispatch)
+    done = threading.Event()
+    if stop != '-':
+        threading.Thread(target=watch_stop, args=(Path(stop), done), daemon=True).start()
+    sys.argv = [str(script), *sys.argv[5:]]
+    try:
+        runpy.run_path(str(script), run_name="__main__")
+    finally:
+        done.set()
 
 
 if __name__ == "__main__":

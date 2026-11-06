@@ -99,6 +99,7 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
 
     return {
         executable,cwd:project,stop_policy:windows?'terminate-group':'interrupt-main',
+        ...(windows?{checkpoint_stop_file:context=>path.join(jobRoot(context),'hub-stop.request')}:{}),
         ...evaluator,
         args(parameters,context) {
             const {config_sha256,seed,workers,max_rounds,checkpoint_rounds}=parameters;
@@ -141,8 +142,9 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
                 fs.copyFileSync(file,path.join(out,path.basename(file)),fs.constants.COPYFILE_EXCL);
             const configFile=path.join(out,'hub-environment.json');
             fs.writeFileSync(configFile,config,{flag:'wx',mode:0o600});
-            const launch=publish?[path.join(__dirname,'experiment_hub_courier_train.py'),
-                script,snapshots,context.dispatch_id]:[script];
+            const launch=publish||windows?[path.join(__dirname,'experiment_hub_courier_train.py'),
+                script,publish?snapshots:'-',publish?context.dispatch_id:'-',
+                windows?path.join(out,'hub-stop.request'):'-']:[script];
             const entry=windows?['-c',WINDOWS_ENTRY,path.join(out,'trainer.stderr.txt'),...launch]:launch;
             return ['-B',...entry,'--config',configFile,'--run-dir',out,'--port','0',
                 '--seed',String(seed),'--workers',String(workers),
