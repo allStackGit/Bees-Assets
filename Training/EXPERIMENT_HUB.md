@@ -1325,10 +1325,11 @@ managed Stop with the isolated Windows smoke profile. A 1 GiB claim
 failed during PyTorch initialization on that worker. Size production
 claims for the selected profile and environment. Compare uses completed trainer updates
 as project steps and shows update wall time and engine steps per second.
-Windows Stop terminates the Job Object process tree. A forced stop does
-not establish that a checkpoint was saved at the stop boundary.
-TinyBrains can continue a naturally finished job after its claim is
-released. In Train, choose that predecessor and a draft with the same
+New Windows TinyBrains launches use the trainer's `STOP` marker to exit
+at an update boundary. The Hub waits for the signed successful exit and
+released capacity before allowing an explicit continuation. Older
+force-stopped jobs have no checkpoint proof. In Train, choose an eligible
+predecessor and a draft with the same
 profile digest. The continuation runs on the original worker and its
 update count is additional. It reads the predecessor's checkpoint and
 writes into its own job directory, leaving earlier checkpoints intact.
@@ -1339,7 +1340,7 @@ the Hub can allocate, start, and release each stage without a separate
 operator action. In an isolated Windows run, two one-update stages
 finished at cumulative updates 1 and 2. Peak outstanding claims was
 one and both signed exits survived a coordinator restart with no
-capacity held. Stopped jobs are ineligible for continuation. GPU
+capacity held. Stop holds prequeued stages for review. GPU
 execution remains outside this adapter's contract.
 
 For evaluation-driven stopping, set the adapter's `evaluationRoot` to a
