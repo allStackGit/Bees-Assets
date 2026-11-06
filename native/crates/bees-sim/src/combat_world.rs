@@ -662,6 +662,10 @@ pub struct CombatWorld {
     /// Indexed by (authored ship type, side); the ship and physics arrays
     /// remain authoritative. Used by WarpGate and Beehive action masks.
     support_zone_ids: HashMap<(u8, i32), Vec<i64>>,
+    /// Unity Beehive.ShipsHealingHere is a shared four-ship resource across
+    /// every squad's Heal command, not one reservation set per command.
+    healing_hive_by_ship: HashMap<i64, i64>,
+    healing_slots_used_by_hive: HashMap<i64, u8>,
     /// Monotonic IDs of living authored mining obstacles; no full scan
     /// of static geometry for each eligible policy agent.
     mining_obstacle_ids: Vec<i64>,
@@ -760,6 +764,8 @@ impl CombatWorld {
             policy_pending_healing: Vec::new(),
             policy_pending_warp: Vec::new(),
             support_zone_ids: HashMap::new(),
+            healing_hive_by_ship: HashMap::new(),
+            healing_slots_used_by_hive: HashMap::new(),
             mining_obstacle_ids: Vec::new(),
             mining_seen_ship_ids: HashSet::new(),
             policy_special_measurements: PolicySpecialMeasurements::default(),
@@ -912,6 +918,10 @@ impl CombatWorld {
         self.discovery.retire(DiscoveryKind::Ship, victim_id);
         self.policy_ship_runtime.remove(&victim_id);
         self.retire_support_zone(self.ships[index].ship_type, side, victim_id);
+        self.release_beehive_healing_slot(victim_id);
+        if self.ships[index].ship_type == 2 {
+            self.release_beehive_healing_slots_for_hive(victim_id);
+        }
         self.barge_charge_hits.retain(|&(attacker, victim)|
             attacker != victim_id && victim != victim_id);
         self.navigation_requests.retire_ship(victim_id);
