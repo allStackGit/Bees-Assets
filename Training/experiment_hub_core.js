@@ -821,20 +821,38 @@ class ExperimentHub {
             const queuedLeases=new Set(pending.map(job=>job.lease_id));
             session.claimed_lease_ids=session.claimed_lease_ids.filter(id=>queuedLeases.has(id));
             const owned=new Set(session.claimed_lease_ids);
+            const canHostJob=(machine,job)=>
+                machine.installed_projects?.includes(job.project_id)&&
+                (job.resources.gpu_count===0||
+                    machine.agent_platform==='linux'&&
+                    machine.gpu_projects?.includes(job.project_id)&&
+                    machine.observed_gpus?.length>=2);
+            const eligibleHosts=job=>capable.filter(machine=>canHostJob(machine,job));
             if(session.rebalance_queued) {
                 for(const job of pendingClaims) {
-                    if(!owned.has(job.lease_id)||!overcommitted.has(job.assigned_machine_id)||
-                        job.dispatch_id||job.continuation_machine_id||job.resources.gpu_count!==0)
+                    if(!owned.has(job.lease_id)||job.dispatch_id||job.continuation_machine_id)
                         continue;
-                    const eligible=capable.filter(m=>!overcommitted.has(m.id)&&
-                        m.installed_projects?.includes(job.project_id));
+                    const gpu=job.resources.gpu_count!==0;
+                    // Keep any already requested or observed probe with its claim.
+                    if(gpu&&job.gpu_qualification?.lease_id===job.lease_id)continue;
+                    const source=selected.find(m=>m.id===job.assigned_machine_id);
+                    const lease=snapshot.reservations.find(l=>l.id===job.lease_id);
+                    if(!source||!lease)continue;
+                    const gpuUnavailable=gpu&&(!canHostJob(source,job)||
+                        physicalGpuBindings(source,{
+                            gpu_inventory_source:source.gpu_inventory_source,
+                            gpu_devices:source.observed_gpus,
+                        },lease.resources,lease.gpu_bindings)===null);
+                    if(!overcommitted.has(source.id)&&!gpuUnavailable)continue;
+                    const eligible=eligibleHosts(job).filter(m=>
+                        m.id!==source.id&&!overcommitted.has(m.id));
                     const chosen=allocationChoice(eligible,snapshot.reservations,job);
                     if(!chosen)continue;
                     const moved=this.moveJobClaim({job_id:job.id,expected_lease_id:job.lease_id,
                         machine_id:chosen.machine_id,confirm_move:true});
                     session.claimed_lease_ids=session.claimed_lease_ids
                         .filter(id=>id!==moved.released_lease_id).concat(moved.lease_id);
-                    return transitioned('Moved queued CPU claim from '+job.assigned_machine_id+
+                    return transitioned('Moved queued '+(gpu?'GPU':'CPU')+' claim from '+job.assigned_machine_id+
                         ' to '+moved.machine_id+'; awaiting a new receipt.');
                 }
             }
@@ -860,12 +878,6 @@ class ExperimentHub {
                     r.gpu_count===0&&!(r.gpus||[]).length||
                     session.claim_exclusive_gpu&&r.gpu_count===1&&r.gpu_mode==='exclusive');
             };
-            const eligibleHosts=job=>capable.filter(machine=>
-                machine.installed_projects?.includes(job.project_id)&&
-                (job.resources.gpu_count===0||
-                    machine.agent_platform==='linux'&&
-                    machine.gpu_projects?.includes(job.project_id)&&
-                    machine.observed_gpus?.length>=2));
             for(const [index,job] of pendingClaims.entries()) {
                 if(!claimable(job))continue;
                 // Keep the fair project order while preserving sole fitting
@@ -880,7 +892,7 @@ class ExperimentHub {
                 });
                 if(result.results[0]?.status!=='claimed')
                     throw Error('Selected placement did not produce an atomic claim.');
-                if(job.resources.gpu_count===0?session.rebalance_queued:session.probe_exclusive_gpu)
+                if(session.rebalance_queued||job.resources.gpu_count!==0&&session.probe_exclusive_gpu)
                     session.claimed_lease_ids.push(result.results[0].lease_id);
                 session.last_claimed_project_id=job.project_id;
                 return transitioned((job.resources.gpu_count?'Claimed exclusive GPU: ':'Claimed CPU/RAM: ')+
