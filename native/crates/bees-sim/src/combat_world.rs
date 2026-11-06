@@ -78,7 +78,10 @@ mod barge;
 mod scout;
 mod healing;
 mod mining;
+mod warp;
 mod shot_outcomes;
+use self::warp::GameWarpGateSession;
+pub use self::warp::WARP_GATE_OPENING_SECONDS;
 pub use self::mining::{is_mining_ship_type, MINING_FACTORY_TYPE, MINING_CARPENTER_BEE_TYPE};
 pub use self::shot_outcomes::{ProjectileRootOutcome, ProjectileOutcomeMeasurements};
 use self::shot_outcomes::{ProjectileOutcomeTracker, NEAR_MISS_DISTANCE};
@@ -670,6 +673,10 @@ pub struct CombatWorld {
     /// every squad's Heal command, not one reservation set per command.
     healing_hive_by_ship: HashMap<i64, i64>,
     healing_slots_used_by_hive: HashMap<i64, u8>,
+    /// Shared FullRetreat/live-game WarpGate opening sessions. Inactive
+    /// gates have no timer or per-step cost.
+    game_warp_gate_sessions: HashMap<i64, GameWarpGateSession>,
+    game_warp_gate_by_ship: HashMap<i64, i64>,
     /// Unity Ship.OriginalHealth remains fixed when training overrides
     /// MaxHealth; the gameplay Heal priority must use the original value.
     authored_original_ship_health: HashMap<i64, i32>,
@@ -774,6 +781,8 @@ impl CombatWorld {
             support_zone_ids: HashMap::new(),
             healing_hive_by_ship: HashMap::new(),
             healing_slots_used_by_hive: HashMap::new(),
+            game_warp_gate_sessions: HashMap::new(),
+            game_warp_gate_by_ship: HashMap::new(),
             authored_original_ship_health: HashMap::new(),
             mining_obstacle_ids: Vec::new(),
             mining_seen_ship_ids: HashSet::new(),
@@ -929,7 +938,11 @@ impl CombatWorld {
         self.policy_ship_runtime.remove(&victim_id);
         self.retire_support_zone(self.ships[index].ship_type, side, victim_id);
         self.release_beehive_healing_slot(victim_id);
+        self.release_game_warp_participant(victim_id);
         self.authored_original_ship_health.remove(&victim_id);
+        if self.ships[index].ship_type == policy::WARP_GATE_TYPE {
+            self.retire_game_warp_gate(victim_id);
+        }
         if self.ships[index].ship_type == 2 {
             self.release_beehive_healing_slots_for_hive(victim_id);
         }
@@ -3200,6 +3213,7 @@ impl CombatWorld {
         self.apply_pending_policy_healing()?;
         self.apply_pending_policy_warp()?;
         self.advance_scout_beacon_cooldowns(dt);
+        self.advance_game_warp_gate_animations(dt);
         self.advance_policy_barge_phases(dt)?;
         self.advance_asteroid_deaths(dt);
         self.advance_asteroid_pieces(dt);
