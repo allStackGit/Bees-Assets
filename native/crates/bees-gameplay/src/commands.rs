@@ -341,7 +341,8 @@ pub struct CommandMeasurements {
     /// Sparse cumulative counters; no per-step logging or history.
     pub mining_extractions: u64,
     pub minerals_mined: u64,
-    pub healing_intervals: u64,
+    /// Actual per-ship healing actions (not elapsed timer callbacks).
+    pub healing_actions: u64,
     pub healing_tsv: u64,
     pub activated: u64,
     pub completed: u64,
@@ -789,16 +790,18 @@ impl NativeSquadCommandDirector {
         self.measurements.commands_examined += self.active.len() as u64;
         for (&owner, command) in self.active.iter_mut() {
             if let Some(heal) = command.heal.as_mut() {
-                let before = heal.earned_tsv;
+                let before_tsv = heal.earned_tsv;
+                let before_events = world.events().len();
                 let (mut finished, callbacks) = heal.advance(
                     world, &mut command.command_poll, dt,
                 )?;
                 self.measurements.command_timer_callbacks += callbacks;
-                let healed = heal.earned_tsv.saturating_sub(before);
-                if healed > 0 {
-                    self.measurements.healing_intervals += 1;
-                    self.measurements.healing_tsv += healed as u64;
-                }
+                let healed = heal.earned_tsv.saturating_sub(before_tsv);
+                self.measurements.healing_tsv += healed as u64;
+                self.measurements.healing_actions += world.events()[before_events..]
+                    .iter().filter(|event| matches!(
+                        event, bees_sim::combat_world::CombatEvent::CapabilityHealed { .. }
+                    )).count() as u64;
                 if finished.is_none() {
                     if let Some(timeout) = command.timeout.as_mut() {
                         if let Some(due) = timeout.begin_update(dt) {
