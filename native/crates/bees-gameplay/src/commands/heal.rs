@@ -194,6 +194,27 @@ impl HealRun {
         Ok(())
     }
 
+    /// Superseding Heal transfers any identical reservations to the
+    /// already-validated replacement command. Old-only slots are released
+    /// immediately; neither command can duplicate a shared Beehive slot.
+    pub(super) fn release_superseded(
+        &mut self, world: &mut CombatWorld, successor: Option<&HealRun>,
+    ) {
+        for (&id, &hive) in &self.assigned {
+            let transferred = successor
+                .and_then(|next| next.assigned.get(&id))
+                == Some(&hive);
+            if !transferred {
+                world.release_beehive_healing_slot(id);
+            }
+        }
+        self.assigned.clear();
+        self.waiting.clear();
+        self.healing.clear();
+        self.pending.clear();
+        self.healing_timer = None;
+    }
+
     pub(super) fn release_all(&mut self, world: &mut CombatWorld) {
         for &id in self.assigned.keys() {
             world.release_beehive_healing_slot(id);
