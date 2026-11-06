@@ -7,6 +7,7 @@ const crypto = require('node:crypto');
 const {request: resourceRequest,placements: resourcePlacements} =
     require('./experiment_hub_resources');
 const {validateProgress}=require('./experiment_hub_progress');
+const {tinyBrainsProfiles,supportsTinyBrainsProfile}=require('./experiment_hub_tinybrains_adapter');
 const {evaluationPolicy,evaluationEvidence,suiteIds,supportsEvaluation}=
     require('./experiment_hub_evaluation');
 const {ProgressHistory}=require('./experiment_hub_history');
@@ -138,6 +139,9 @@ function boundedReport(value) {
     if(!object(evaluators)||Object.keys(evaluators).length>installed.length||
         Object.keys(evaluators).some(project=>!installed.includes(project)))
         throw Error('Evaluation capability requires a corresponding installed adapter.');
+    const profiles=tinyBrainsProfiles(value.tinybrains_profiles??{});
+    if(Object.keys(profiles).length&&(!installed.includes('tinybrains')||value.platform!=='win32'))
+        throw Error('TinyBrains profiles require an installed Windows adapter.');
     const gpuProjects=value.gpu_projects??[];
     if(!Array.isArray(gpuProjects)||new Set(gpuProjects).size!==gpuProjects.length||
         gpuProjects.length>installed.length||
@@ -154,6 +158,7 @@ function boundedReport(value) {
             ['linux','win32'].includes(value.platform)&&preflight,
         native_preflight_reason:reason||null,
         evaluation_suites:localExecutor?evaluationSuites:{},
+        tinybrains_profiles:profiles,
         gpu_projects:gpuProjects.slice(),
         installed_projects:['linux','win32'].includes(value.platform)&&
             localExecutor?installed.slice():[]};
@@ -248,6 +253,8 @@ function nativeStartReadiness(snapshot, job) {
             !['cpu','memory'].every(c=>
                 machine.execution_capabilities?.cgroup_controllers.includes(c))))
         return block('Linux cgroup v2 CPU and memory controllers are unavailable.');
+    if(!supportsTinyBrainsProfile(machine,job))
+        return block('The assigned worker does not approve this TinyBrains CPU profile and update count.');
     if(!supportsEvaluation(machine.evaluation_suites,job))
         return block('The assigned adapter does not advertise evaluation suite '+job.evaluation_stop.suite_id+'.');
     const r=job.resources;
@@ -358,6 +365,7 @@ function allocationChoice(machines,reservations,job,preferredMachineId=null,
     const eligibleOptions=(selected,hosts,preferred=null)=>{
         const eligible=hosts.filter(machine=>
             supportsEvaluation(machine.evaluation_suites,selected)&&
+            supportsTinyBrainsProfile(machine,selected)&&
             (!preferred||preferred===machine.id)&&
             (!selected.continuation_machine_id||selected.continuation_machine_id===machine.id));
         const fits=resourcePlacements(eligible,reservations,selected.resources)
@@ -556,6 +564,7 @@ class ExperimentHub {
                 machine.native_preflight_reason = report.native_preflight_reason;
                 machine.installed_projects = report.installed_projects.slice();
                 machine.evaluation_suites = copy(report.evaluation_suites);
+                machine.tinybrains_profiles = copy(report.tinybrains_profiles||{});
                 machine.gpu_projects = report.gpu_projects.slice();
             }
             return machine;
@@ -1132,8 +1141,8 @@ class ExperimentHub {
                 throw Error('Checkpoint continuation must stay on the original machine.');
             const machine=machines.get(move.machine_id);
             if(machine?.status!=='connected'||!machine.installed_projects?.includes(job.project_id)||
-                !supportsEvaluation(machine.evaluation_suites,job))
-                throw Error('Destination requires a connected adapter for the project and its evaluation suite.');
+                !supportsEvaluation(machine.evaluation_suites,job)||!supportsTinyBrainsProfile(machine,job))
+                throw Error('Destination requires a connected adapter supporting the project, configuration and evaluation suite.');
             return {job,source,machine};
         });
         // Release all sources only in the draft ledger so full hosts can swap.
@@ -1523,6 +1532,7 @@ class ExperimentHub {
                 if(!adapterInstalled||!automationValid||!lease.receipt_fresh||
                     machine.native_preflight_passed!==true||
                     !supportsEvaluation(machine.evaluation_suites,job)||
+                    !supportsTinyBrainsProfile(machine,job)||
                     gpuStartBlock(job,lease,machine)) {
                     // A previously offered Start may already own a process.
                     // Recover observation without re-authorizing a launch.
