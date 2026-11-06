@@ -666,6 +666,22 @@ class ExperimentHub {
         };
         return this.automationStatus();
     }
+    assertAutomationContinuity(observedAt) {
+        for(const id of this.automation.machine_ids) {
+            const report=this.agentReports.get(id);
+            if(!report||observedAt<report.received_ms||
+                observedAt-report.received_ms>=AGENT_HEARTBEAT_TTL_MS||
+                report.instance_id!==this.automation.agent_instances[id]||
+                report.native_preflight_passed!==true||report.local_executor!==true)
+                throw Error('Machine '+id+' lost qualified agent continuity; operator must re-arm.');
+        }
+    }
+    disarmUnsafeAutomation(error) {
+        this.automation.enabled=false;
+        this.automation.last_error=String(error.message||error).slice(0,240);
+        this.automation.last_action='Automation disarmed; operator review required.';
+        this.automation.waiting_reason=null;
+    }
     // At most one durable transition per pass. Existing lifecycle methods
     // remain the only admission, start and release authorities. Stop/failed
     // recovery is deliberately manual; this never retries an uncertain job.
@@ -683,15 +699,7 @@ class ExperimentHub {
             const snapshot=this.snapshot();
             const selected=snapshot.machines.filter(m=>
                 session.machine_ids.includes(m.id));
-            for(const id of session.machine_ids) {
-                const machine=selected.find(m=>m.id===id);
-                if(!machine||machine.status!=='connected'||
-                    this.agentReports.get(id)?.instance_id!==
-                        session.agent_instances[id]||
-                    machine.native_preflight_passed!==true||
-                    machine.local_executor_enabled!==true)
-                    throw Error('Machine '+id+' lost qualified agent continuity; operator must re-arm.');
-            }
+            this.assertAutomationContinuity(Date.now());
             const unsafe=snapshot.jobs.find(j=>
                 session.machine_ids.includes(j.assigned_machine_id)&&
                 !j.capacity_released_at&&
@@ -834,10 +842,7 @@ class ExperimentHub {
         }catch(error) {
             // An ambiguous state must never provoke repeated automatic
             // dispatches. Native services and claims remain untouched.
-            session.enabled=false;
-            session.last_error=String(error.message||error).slice(0,240);
-            session.last_action='Automation disarmed; operator review required.';
-            session.waiting_reason=null;
+            this.disarmUnsafeAutomation(error);
             return this.automationStatus();
         }
     }
@@ -1712,6 +1717,12 @@ class ExperimentHub {
         if (changed) this.commit(next);
         // Do not mark receipt or liveness until the durable acknowledgement
         // succeeds. A disk failure leaves the previous lease available.
+        // Check the previous heartbeat before replacing it. A reconnect
+        // must not erase an expired gap before the scheduler observes it.
+        if(this.automation.enabled) {
+            try{this.assertAutomationContinuity(received);}
+            catch(error){this.disarmUnsafeAutomation(error);}
+        }
         this.agentReports.set(machine.id,{
             ...report,instance_id:instance||null,received_ms:received,
         });
