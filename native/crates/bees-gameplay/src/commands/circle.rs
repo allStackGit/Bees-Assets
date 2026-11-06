@@ -54,11 +54,15 @@ impl CircleRun {
         world: &CombatWorld,
         squad: NativeSquadOrder<'_>,
     ) -> Result<Option<Self>, GameCommandError> {
-        let Some(enemy) = squad.enemy.filter(|enemy|
-            enemy.valid() && enemy.is_alive
-        ) else {
+        let Some(enemy) = squad.enemy else {
             return Ok(None);
         };
+        if !enemy.valid() {
+            return Err(GameCommandError::InvalidEnemy);
+        }
+        if !enemy.is_alive {
+            return Ok(None);
+        }
         for member in squad.members {
             world.validate_ship_game_order(member.ship_id)?;
         }
@@ -86,11 +90,12 @@ impl CircleRun {
         timer: &mut ScaledTimer,
         snapshot: NativeCircleCommandSnapshot,
     ) -> Result<Option<CommandFinishCause>, GameCommandError> {
-        if !snapshot.valid() {
-            return Err(GameCommandError::InvalidCombatSnapshot);
-        }
+        // Unity checks EnemySquad.IsDead before reading position/range.
         if !snapshot.enemy_alive {
             return Ok(Some(CommandFinishCause::EnemySquadGone));
+        }
+        if !snapshot.valid() {
+            return Err(GameCommandError::InvalidCombatSnapshot);
         }
         if !self.reached_enemy && !snapshot.every_member_has_target_in_range {
             issue_squad_tracked_move(

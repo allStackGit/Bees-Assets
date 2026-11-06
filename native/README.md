@@ -207,7 +207,16 @@ Move and Stop use authored ship offsets, 20-step formation compression,
 nearest walkable-center fallback and each ship's shared A* path queue.
 
 The source-matched movement phases of HiveMind **Hold**, **Random**,
-**Patrol**, **Retreat**, **Closest Friendly**, and **Guard** are now wired. Random
+**Patrol**, **Retreat**, **Closest Friendly**, and **Guard** are now wired.
+**CircleSquad** now shares the same director and canonical movement engine:
+the Unity initial three-second immediate poll, tracked approach, quarter-second
+circling after contact and authored angle/destination-spacing rules are ported.
+Its Level adapter must implement `NativeLevelCommandContext::circle_command_snapshot`
+with actual squad bounds centers, MaxRange and the exact
+`Ship.IsShipWithinRange` / per-weapon target-validity result. The default
+deliberately fails the episode rather than treating center distance as weapon
+eligibility. Authored live adapter and end-to-end parity qualification remain
+pending. Random
 finishes at arrival or command timeout; Patrol samples Unity's four-corner
 route, rotates waypoints on its 3-second scaled callback, and uses the
 separate configured patrol timeout. Retreat uses the Level's live target

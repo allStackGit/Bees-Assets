@@ -413,14 +413,13 @@ where
                 state.command_friendlies.clear();
             }
             let previous_event_count = state.combat.events().len();
+            let metadata = &state.metadata;
             state.events.advance_timed_commands_with_circle(
                 completed_tick, &mut state.combat,
-                state.metadata.navigation(),
+                metadata.navigation(),
                 &state.command_friendlies, &mut world.random, dt_seconds,
                 |owner, enemy_id, combat| {
-                    state.metadata.circle_command_snapshot(
-                        combat, owner, enemy_id,
-                    )
+                    metadata.circle_command_snapshot(combat, owner, enemy_id)
                 },
             )?;
             if state.combat.events().len() > previous_event_count {
