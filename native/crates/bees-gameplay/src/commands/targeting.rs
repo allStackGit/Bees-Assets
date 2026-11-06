@@ -220,8 +220,8 @@ pub fn sort_native_game_bomb_targets(
     )
 }
 
-/// Unity BombingRun.GetTarget: all living opponents are eligible Bomb
-/// targets regardless of weapon range. Prefer the first ordered ship
+/// Unity BombingRun.GetTarget and Charge.GetTargetShip: all living
+/// opponents are eligible Bomb targets regardless of weapon range. Prefer the first ordered ship
 /// whose outgoing damage is not fully reserved; otherwise select a
 /// uniformly random ship from that same list. Bomb.SetTargetShip owns
 /// the reservation in CombatWorld, not a second gameplay ledger.
@@ -240,7 +240,7 @@ pub fn select_native_game_bomb_target(
 ) -> Result<Option<i64>, GameCommandError> {
     if candidates.is_empty() { return Ok(None); }
     let bomber = world.ship(bomber_id).ok_or(GameCommandError::InvalidSquad)?;
-    if bomber.vitals.is_dead() || !matches!(bomber.ship_type, 10 | 19 | 22) {
+    if bomber.vitals.is_dead() || !matches!(bomber.ship_type, 0 | 10 | 19 | 22) {
         return Err(GameCommandError::InvalidSquad);
     }
     let origin = world.ship_body(bomber_id)

@@ -2292,8 +2292,9 @@ impl CombatWorld {
         ))
     }
 
-    /// Source BombingRun.Execute assigns every squad Bomb before declaring
-    /// activation successful. If a later target fails, the old HiveMind
+    /// Source BombingRun.Execute and Charge.Execute both select targets
+    /// through their real Bomb weapons. A squad assigns every target before
+    /// activation succeeds. If a later target fails, the old HiveMind
     /// command is still active and MUST retain its original reservations.
     /// Snapshot only at this rare command-activation boundary, not on
     /// per-frame physics/weapon updates. Both the shared damage totals and
@@ -2329,7 +2330,7 @@ impl CombatWorld {
         let bomber = &self.ships[bomber_index];
         let target = &self.ships[target_index];
         if bomb_weapon_id <= 0 || power < 0 ||
-            !matches!(bomber.ship_type, 10 | 19 | 22) ||
+            !matches!(bomber.ship_type, 0 | 10 | 19 | 22) ||
             bomber.vitals.is_dead() || target.vitals.is_dead() ||
             bomber.side == target.side ||
             !self.physics.ships()[bomber_index].active ||
