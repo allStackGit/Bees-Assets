@@ -1582,8 +1582,13 @@ update count is additional. It reads the predecessor's checkpoint and
 writes into its own job directory, leaving earlier checkpoints intact.
 Train can also queue 2–16 TinyBrains continuation stages atomically.
 A successor stays unclaimed until its predecessor finishes and releases
-capacity. Stopped jobs are ineligible for continuation. GPU execution
-remains outside this adapter's contract.
+capacity. With native queue automation armed for the original worker,
+the Hub can allocate, start, and release each stage without a separate
+operator action. In an isolated Windows run, two one-update stages
+finished at cumulative updates 1 and 2. Peak outstanding claims was
+one and both signed exits survived a coordinator restart with no
+capacity held. Stopped jobs are ineligible for continuation. GPU
+execution remains outside this adapter's contract.
 
 For evaluation-driven stopping, set the adapter's `evaluationRoot` to a
 trusted evaluator-owned directory separate from the checkout and training
