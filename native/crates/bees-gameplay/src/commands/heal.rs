@@ -51,22 +51,11 @@ impl HealRun {
             if ship.vitals.health() >= ship.vitals.max_health() {
                 continue;
             }
-            let original = world.game_ship_original_health(member.ship_id)
-                .ok_or(GameCommandError::MissingOriginalShipHealth(member.ship_id))?;
-            // Tracked point orders belong to the existing game movement
-            // controller. Do not issue any reservation before preflight.
-            if member.mobile {
-                world.validate_ship_game_order(member.ship_id)?;
-            }
-            candidates.push((
-                member.ship_id, ship.vitals.health() - original,
-            ));
+            candidates.push((member.ship_id, ship.vitals.health()));
             members.insert(member.ship_id, member);
         }
         if candidates.is_empty() { return Ok(None); }
         let Some(side) = side else { return Ok(None); };
-        // Stable sort leaves original squad member order for equal injuries.
-        candidates.sort_by_key(|&(_, deficit)| deficit);
         let mut hives: Vec<(i64, f32)> = world.live_beehive_ids_for_side(side)
             .filter(|id| world.beehive_healing_slots_available(*id) > 0)
             .filter_map(|id| {
@@ -75,6 +64,18 @@ impl HealRun {
             }).collect();
         hives.sort_by(|a, b| a.1.total_cmp(&b.1));
         if hives.is_empty() { return Ok(None); }
+        // A command that cannot find a live heal slot is simply
+        // unavailable; it does not require gameplay-only metadata.
+        for (id, deficit) in &mut candidates {
+            let original = world.game_ship_original_health(*id)
+                .ok_or(GameCommandError::MissingOriginalShipHealth(*id))?;
+            *deficit -= original;
+            if members[id].mobile {
+                world.validate_ship_game_order(*id)?;
+            }
+        }
+        // Stable sort retains source squad order for equal injury gaps.
+        candidates.sort_by_key(|&(_, deficit)| deficit);
         let mut run = Self {
             hives: hives.into_iter().map(|(id, _)| id).collect(),
             pending: candidates.into_iter().map(|(id, _)| id).collect(),
