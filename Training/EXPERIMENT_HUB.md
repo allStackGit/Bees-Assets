@@ -637,13 +637,35 @@ if the reply was lost. Older pending requests lack that delivery
 evidence and require operator review. A rejected or stale proof also
 requires operator review. The Hub retains the claim after an offer until
 the worker reports the result. If a rejection leaves cleanup unconfirmed,
-inspect the worker and retry the probe on the same lease. A valid proof
-or a rejection that confirms cleanup clears the hold. Deploy the coordinator
+inspect the worker, then select **Recheck GPU probe cleanup** in Train.
+The recheck can run while the leased GPU is missing. It checks only
+cleanup and cannot authorize GPU access. A worker report confirming
+cleanup clears the hold and allows a separate release or move. If the
+worker still has a pending probe record, resolve it locally before
+rechecking. A new GPU access probe remains a separate action. Deploy the coordinator
 before the workers so it can retain claims for older rejection receipts
 that omit cleanup evidence. The normal native Start gates still apply, including
 the current proof for the exact lease and agent instance and the
 in-service device and runtime checks. Verified jobs started by the
 session use its existing completion release path.
+
+The loopback CLI accepts the same operations. For an undelivered probe,
+write `{"job_id":"<job UUID>","expected_request_id":"<probe UUID>","confirm_withdraw":true}`
+to `withdraw.json` and run:
+
+```powershell
+node Training/experiment_hub_cli.js post jobs/withdraw-gpu-probe --data withdraw.json
+```
+
+For a held claim after an uncertain rejection, write
+`{"job_id":"<job UUID>","confirm_qualify":true,"confirm_cleanup":true}`
+to `cleanup.json` and run:
+
+```powershell
+node Training/experiment_hub_cli.js post jobs/qualify-gpu --data cleanup.json
+```
+
+Use `get state` to inspect the worker result before releasing the claim.
 
 ### Operator-initiated native execution
 
