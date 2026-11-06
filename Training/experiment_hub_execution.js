@@ -168,6 +168,7 @@ class LocalExecution {
             try {
                 const result=await localAdapter.readProgress(Object.freeze({
                     job_id:job.id,project_id:job.project_id,
+                    state,
                     continuation_of_job_id:job.continuation_of_job_id||null,
                     artifact_lineage_root_id:job.artifact_lineage_root_id||job.id,
                 }));
