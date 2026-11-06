@@ -746,6 +746,10 @@ pub struct CombatWorld {
     /// Authoritative per-ship Bomb.Power, also for non-policy Fire Barges.
     /// Consumed once at Kill; no second explosion can be spawned.
     fire_barge_bomb_powers: HashMap<i64, i32>,
+    /// Actual Bomb weapon identity/power per game-owned bomber. Register
+    /// lazily on its first source target assignment and retain until ship
+    /// retirement. This does not copy the live target or damage status.
+    game_bomb_weapon_by_ship: HashMap<i64, (i64, i32)>,
     /// Command-timer self-detonations are settled inside the NEXT normal
     /// physics step so roster, rewards, deaths and outbox see them once.
     pending_game_fire_barges: Vec<i64>,
@@ -839,6 +843,7 @@ impl CombatWorld {
             expired_asteroid_ids: Vec::new(),
             fleet_id_by_ship: HashMap::new(),
             fire_barge_bomb_powers: HashMap::new(),
+            game_bomb_weapon_by_ship: HashMap::new(),
             pending_game_fire_barges: Vec::new(),
             projectile_by_id: HashMap::new(),
             shot_outcomes: ProjectileOutcomeTracker::default(),
@@ -947,6 +952,13 @@ impl CombatWorld {
             self.spawn_fire_barge_explosion(index, false)?;
         }
         let victim_id = self.ships[index].entity_id;
+        // Bomb.ReleaseTargetReservation is part of every authored bomber
+        // Kill, not only successful BombingRun command finalization.
+        if let Some((weapon_id, _)) =
+            self.game_bomb_weapon_by_ship.remove(&victim_id)
+        {
+            self.reservations.release(weapon_id);
+        }
         let side = self.ships[index].side;
         let was_mobile = self.physics.ships()[index].motion.mobile;
         self.physics.ships_mut()[index].active = false;
@@ -2238,13 +2250,28 @@ impl CombatWorld {
             !self.physics.ships()[target_index].active {
             return Err(CombatWorldError::InvalidBombTarget);
         }
+        // The authored Weapon.Id and Power remain constant while one
+        // living ship owns this Bomb. Reject a changed binding rather
+        // than releasing another bomber's target lease.
+        match self.game_bomb_weapon_by_ship.get(&bomber_id) {
+            Some(&(id, previous_power)) if id != bomb_weapon_id ||
+                previous_power != power =>
+                return Err(CombatWorldError::InvalidBombTarget),
+            None if self.game_bomb_weapon_by_ship.values()
+                .any(|&(id, _)| id == bomb_weapon_id) =>
+                return Err(CombatWorldError::InvalidBombTarget),
+            _ => {}
+        }
         let side = bomber.side;
         let health = target.vitals.health();
         // Match Bomb.SetTargetShip's ReleaseTargetReservation first.
         self.reservations.release(bomb_weapon_id);
-        Ok(self.reservations.reserve(
+        let status = self.reservations.reserve(
             bomb_weapon_id, side, target_id, health, power,
-        )?)
+        )?;
+        self.game_bomb_weapon_by_ship
+            .entry(bomber_id).or_insert((bomb_weapon_id, power));
+        Ok(status)
     }
 
     /// Unity Bomb.ReleaseTargetReservation. Command cancellation,
