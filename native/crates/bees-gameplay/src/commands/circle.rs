@@ -14,6 +14,7 @@ use bees_sim::timer::ScaledTimer;
 
 use bees_hivemind::session::SquadLifetime;
 use crate::squads::NativeSquadRoster;
+use super::targeting::NativeAttackTarget;
 use super::{CommandFinishCause, GameCommandError, NativeSquadOrder};
 
 const CIRCLE_POLL_SECONDS: f32 = 0.25;
@@ -136,8 +137,7 @@ pub fn assemble_circle_snapshot_from_live_weapons(
 }
 
 pub(super) struct CircleRun {
-    enemy_squad_id: i64,
-    enemy_lifetime: Option<SquadLifetime>,
+    target: NativeAttackTarget,
     members: Vec<SquadFormationMember>,
     formation: SquadFormationOptions,
     reached_enemy: bool,
@@ -163,8 +163,7 @@ impl CircleRun {
             world.validate_ship_game_order(member.ship_id)?;
         }
         Ok(Some(Self {
-            enemy_squad_id: enemy.squad_id,
-            enemy_lifetime: None,
+            target: NativeAttackTarget::new(enemy.squad_id),
             members: squad.members.to_vec(),
             formation: squad.formation,
             reached_enemy: false,
@@ -174,7 +173,7 @@ impl CircleRun {
     }
 
     pub(super) fn enemy_squad_id(&self) -> i64 {
-        self.enemy_squad_id
+        self.target.squad_id()
     }
 
     /// Exactly one Unity CircleSquad.Timer callback. The caller owns the
@@ -192,18 +191,10 @@ impl CircleRun {
         if !snapshot.enemy_alive {
             return Ok(Some(CommandFinishCause::EnemySquadGone));
         }
-        if !snapshot.valid() ||
-            snapshot.enemy_owner.level_id != owner.level_id ||
-            snapshot.enemy_owner.squad_id != self.enemy_squad_id {
+        if !snapshot.valid() {
             return Err(GameCommandError::InvalidCombatSnapshot);
         }
-        if let Some(original) = self.enemy_lifetime {
-            if original != snapshot.enemy_owner {
-                return Err(GameCommandError::InvalidEnemy);
-            }
-        } else {
-            self.enemy_lifetime = Some(snapshot.enemy_owner);
-        }
+        self.target.validate(owner, snapshot.enemy_owner)?;
         if !self.reached_enemy && !snapshot.every_member_has_target_in_range {
             issue_squad_tracked_move(
                 world, navigation, &self.members,

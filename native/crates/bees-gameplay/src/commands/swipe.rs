@@ -15,7 +15,7 @@ use bees_sim::squad_movement::{
 };
 
 use crate::squads::NativeSquadRoster;
-use super::targeting::NativeTargetApproach;
+use super::targeting::{NativeAttackTarget, NativeTargetApproach};
 use super::{
     assemble_circle_snapshot_from_live_weapons,
     CommandFinishCause, GameCommandError,
@@ -86,8 +86,7 @@ pub fn assemble_swipe_snapshot_from_live_weapons(
 }
 
 pub(super) struct SwipeRun {
-    enemy_squad_id: i64,
-    enemy_lifetime: Option<SquadLifetime>,
+    target: NativeAttackTarget,
     kind: LocalCommandKind,
     members: Vec<SquadFormationMember>,
     formation: SquadFormationOptions,
@@ -113,8 +112,7 @@ impl SwipeRun {
             world.validate_ship_game_order(member.ship_id)?;
         }
         Ok(Some(Self {
-            enemy_squad_id: enemy.squad_id,
-            enemy_lifetime: None,
+            target: NativeAttackTarget::new(enemy.squad_id),
             kind,
             members: squad.members.to_vec(),
             formation: squad.formation,
@@ -125,7 +123,7 @@ impl SwipeRun {
     }
 
     pub(super) fn enemy_squad_id(&self) -> i64 {
-        self.enemy_squad_id
+        self.target.squad_id()
     }
 
     pub(super) fn on_poll(
@@ -141,18 +139,10 @@ impl SwipeRun {
         if !snapshot.enemy_alive {
             return Ok(Some(CommandFinishCause::EnemySquadGone));
         }
-        if !snapshot.valid_for_combat() ||
-            snapshot.enemy_owner.level_id != owner.level_id ||
-            snapshot.enemy_owner.squad_id != self.enemy_squad_id {
+        if !snapshot.valid_for_combat() {
             return Err(GameCommandError::InvalidCombatSnapshot);
         }
-        if let Some(original) = self.enemy_lifetime {
-            if original != snapshot.enemy_owner {
-                return Err(GameCommandError::InvalidEnemy);
-            }
-        } else {
-            self.enemy_lifetime = Some(snapshot.enemy_owner);
-        }
+        self.target.validate(owner, snapshot.enemy_owner)?;
 
         if !self.reached_enemy && !snapshot.every_member_has_target_in_range {
             if !self.approach.issue_tracked_approach(

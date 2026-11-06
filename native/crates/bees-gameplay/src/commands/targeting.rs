@@ -303,3 +303,39 @@ impl NativeTargetApproach {
         Ok(true)
     }
 }
+
+/// Retain the real targeted enemy squad lifecycle on its first authoritative
+/// callback. Every attack command shares this check: a pooled squad number
+/// cannot silently retarget a different squad when the Level recycles IDs.
+pub(super) struct NativeAttackTarget {
+    squad_id: i64,
+    lifetime: Option<SquadLifetime>,
+}
+
+impl NativeAttackTarget {
+    pub(super) fn new(squad_id: i64) -> Self {
+        Self { squad_id, lifetime: None }
+    }
+
+    pub(super) fn squad_id(&self) -> i64 {
+        self.squad_id
+    }
+
+    pub(super) fn validate(
+        &mut self, owner: SquadLifetime, enemy_owner: SquadLifetime,
+    ) -> Result<(), GameCommandError> {
+        if !enemy_owner.valid() || enemy_owner.level_id != owner.level_id ||
+            enemy_owner.squad_id != self.squad_id
+        {
+            return Err(GameCommandError::InvalidCombatSnapshot);
+        }
+        if let Some(original) = self.lifetime {
+            if original != enemy_owner {
+                return Err(GameCommandError::InvalidEnemy);
+            }
+        } else {
+            self.lifetime = Some(enemy_owner);
+        }
+        Ok(())
+    }
+}

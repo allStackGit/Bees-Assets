@@ -13,15 +13,14 @@ use bees_sim::squad_movement::{
 };
 
 use crate::squads::NativeSquadRoster;
-use super::targeting::NativeTargetApproach;
+use super::targeting::{NativeAttackTarget, NativeTargetApproach};
 use super::{
     choose_random_coordinate, CommandFinishCause, GameCommandError,
     NativeSquadOrder, NativeSwipeCommandSnapshot,
 };
 
 pub(super) struct InAndOutRun {
-    enemy_squad_id: i64,
-    enemy_lifetime: Option<SquadLifetime>,
+    target: NativeAttackTarget,
     members: Vec<SquadFormationMember>,
     formation: SquadFormationOptions,
     return_point: Vec2,
@@ -58,8 +57,7 @@ impl InAndOutRun {
             max_distance, min_distance,
         );
         Ok(Some(Self {
-            enemy_squad_id: enemy.squad_id,
-            enemy_lifetime: None,
+            target: NativeAttackTarget::new(enemy.squad_id),
             members: squad.members.to_vec(),
             formation: squad.formation,
             return_point,
@@ -69,7 +67,7 @@ impl InAndOutRun {
     }
 
     pub(super) fn enemy_squad_id(&self) -> i64 {
-        self.enemy_squad_id
+        self.target.squad_id()
     }
 
     pub(super) fn on_poll(
@@ -85,18 +83,10 @@ impl InAndOutRun {
         if !snapshot.enemy_alive {
             return Ok(Some(CommandFinishCause::EnemySquadGone));
         }
-        if !snapshot.valid_for_combat() ||
-            snapshot.enemy_owner.level_id != owner.level_id ||
-            snapshot.enemy_owner.squad_id != self.enemy_squad_id {
+        if !snapshot.valid_for_combat() {
             return Err(GameCommandError::InvalidCombatSnapshot);
         }
-        if let Some(original) = self.enemy_lifetime {
-            if original != snapshot.enemy_owner {
-                return Err(GameCommandError::InvalidEnemy);
-            }
-        } else {
-            self.enemy_lifetime = Some(snapshot.enemy_owner);
-        }
+        self.target.validate(owner, snapshot.enemy_owner)?;
 
         if !self.reached_enemy {
             if !snapshot.every_member_has_target_in_range {
