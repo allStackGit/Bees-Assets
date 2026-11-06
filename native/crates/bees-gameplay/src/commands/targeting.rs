@@ -109,8 +109,12 @@ pub fn sort_native_command_targets(
                     health_a.cmp(&health_b)
                 }
             }
-            7 => b.firepower.total_cmp(&a.firepower),
-            8 => a.firepower.total_cmp(&b.firepower),
+            // C# float.CompareTo treats -0.0 and +0.0 as equal.
+            // Preflight has already excluded NaN and infinities.
+            7 => b.firepower.partial_cmp(&a.firepower)
+                .expect("validated finite firepower"),
+            8 => a.firepower.partial_cmp(&b.firepower)
+                .expect("validated finite firepower"),
             9 | 10 => {
                 let a_position = world.ship_body(a.ship_id)
                     .expect("preflight validated target body").motion.position;
@@ -128,8 +132,10 @@ pub fn sort_native_command_targets(
             }
             11 => b.max_range.cmp(&a.max_range),
             12 => a.max_range.cmp(&b.max_range),
-            13 => b.speed.total_cmp(&a.speed),
-            14 => a.speed.total_cmp(&b.speed),
+            13 => b.speed.partial_cmp(&a.speed)
+                .expect("validated finite speed"),
+            14 => a.speed.partial_cmp(&b.speed)
+                .expect("validated finite speed"),
             15 | 16 => {
                 let tsv_a = world.ship(a.ship_id)
                     .expect("preflight validated target identity").vitals.tsv();
