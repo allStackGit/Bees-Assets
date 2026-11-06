@@ -377,7 +377,8 @@ impl NativeBombingRun {
             let ship = world.ship(member.ship_id)
                 .ok_or(GameCommandError::InvalidSquad)?;
             if ship.vitals.is_dead() { continue; }
-            match ship.ship_type {
+            let ship_type = ship.ship_type;
+            match ship_type {
                 19 => {
                     let index = self.strikers.binary_search_by_key(
                         &member.ship_id, |state| state.ship_id,
@@ -428,7 +429,7 @@ impl NativeBombingRun {
                         )?;
                         any_near |= near;
                         all_near &= near;
-                        if ship.ship_type == 10 && near &&
+                        if ship_type == 10 && near &&
                             !world.frozen_after_elimination {
                             world.queue_game_fire_barge_detonation(
                                 member.ship_id, command_outcome_id,
