@@ -133,6 +133,9 @@ pub struct NativeLevelEventProcessor {
     group_delivery: Option<NativeGroupRewardDelivery>,
     next_tick: u64,
     last_advanced_command_tick: Option<u64>,
+    /// Timed callbacks and their sparse notifications form one delivery
+    /// boundary; never publish a phase twice after an acknowledgement.
+    last_published_timed_tick: Option<u64>,
     failed: bool,
     last_finalized: Option<NativeEpisodeFinal>,
     changes: Vec<SquadRosterChange>,
@@ -153,6 +156,7 @@ impl NativeLevelEventProcessor {
             group_delivery: None,
             next_tick: 1,
             last_advanced_command_tick: None,
+            last_published_timed_tick: None,
             failed: false,
             last_finalized: None,
             changes: Vec::new(),
@@ -486,10 +490,54 @@ impl NativeLevelEventProcessor {
             self.failed = true;
             return Err(NativeLevelEventError::Commands(error));
         }
+        self.last_advanced_command_tick = Some(completed_tick);
+        Ok(())
+    }
+
+    /// Timed command outputs remain staged until fleet credits are
+    /// persisted by NativeLevelRules. This prevents a completed command
+    /// from being published before its mining yield and physical effects.
+    /// Timed HiveMind Mining callbacks run after the combat reward pass
+    /// for this tick, matching the Level's post-roster command update.
+    /// The normal process_completed_tick already delivered the prefix
+    /// of world events. Append ONLY newly generated sparse capability
+    /// events, after the Level persisted their FleetShip values.
+    ///
+    /// The source events themselves will be cleared at the next physics
+    /// tick; the outbox persists until durably acknowledged by the host.
+    pub fn publish_timed_command_events(
+        &mut self, completed_tick: u64, events: &[CombatEvent],
+    ) -> Result<(), NativeLevelEventError> {
+        if self.is_failed() || self.completed() {
+            return Err(NativeLevelEventError::FailedLevel);
+        }
+        if completed_tick.checked_add(1) != Some(self.next_tick) ||
+            self.last_advanced_command_tick != Some(completed_tick) ||
+            self.last_published_timed_tick == Some(completed_tick) {
+            self.failed = true;
+            return Err(NativeLevelEventError::MissingOrRepeatedTick {
+                expected: self.next_tick.saturating_sub(1),
+                got: completed_tick,
+            });
+        }
+        let capability_count = events.iter()
+            .filter(|event| requires_level_capability_delivery(event))
+            .count();
         Self::reserve_output_records(
             &mut self.pending_notifications, &mut self.failed,
-            self.timed_finished.len(),
+            capability_count.saturating_add(self.timed_finished.len()),
         )?;
+        // Source Mining.Mine mutates the actual rock and fleet before
+        // SetFinalize publishes its command outcome. Preserve that
+        // relative order even across large asynchronous rollout windows.
+        for event in events {
+            if requires_level_capability_delivery(event) {
+                self.pending_notifications.push(NativeLevelNotification {
+                    tick: completed_tick,
+                    kind: NativeLevelNotificationKind::Gameplay(event.clone()),
+                });
+            }
+        }
         for finished in &self.timed_finished {
             self.pending_notifications.push(NativeLevelNotification {
                 tick: completed_tick,
@@ -503,50 +551,7 @@ impl NativeLevelEventProcessor {
             self.pending_notifications.len(),
         );
         self.finished.append(&mut self.timed_finished);
-        self.last_advanced_command_tick = Some(completed_tick);
-        Ok(())
-    }
-
-    /// Timed HiveMind Mining callbacks run after the combat reward pass
-    /// for this tick, matching the Level's post-roster command update.
-    /// The normal process_completed_tick already delivered the prefix
-    /// of world events. Append ONLY newly generated sparse capability
-    /// events, after the Level persisted their FleetShip values.
-    ///
-    /// The source events themselves will be cleared at the next physics
-    /// tick; the outbox persists until durably acknowledged by the host.
-    pub fn record_late_gameplay_events(
-        &mut self, completed_tick: u64, events: &[CombatEvent],
-    ) -> Result<(), NativeLevelEventError> {
-        if self.is_failed() || self.completed() {
-            return Err(NativeLevelEventError::FailedLevel);
-        }
-        if completed_tick.checked_add(1) != Some(self.next_tick) ||
-            self.last_advanced_command_tick != Some(completed_tick) {
-            self.failed = true;
-            return Err(NativeLevelEventError::MissingOrRepeatedTick {
-                expected: self.next_tick.saturating_sub(1),
-                got: completed_tick,
-            });
-        }
-        let count = events.iter()
-            .filter(|event| requires_level_capability_delivery(event))
-            .count();
-        Self::reserve_output_records(
-            &mut self.pending_notifications, &mut self.failed, count,
-        )?;
-        for event in events {
-            if requires_level_capability_delivery(event) {
-                self.pending_notifications.push(NativeLevelNotification {
-                    tick: completed_tick,
-                    kind: NativeLevelNotificationKind::Gameplay(event.clone()),
-                });
-            }
-        }
-        Self::update_output_peak(
-            &mut self.peak_pending_notifications,
-            self.pending_notifications.len(),
-        );
+        self.last_published_timed_tick = Some(completed_tick);
         Ok(())
     }
 
