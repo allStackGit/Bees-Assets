@@ -1418,8 +1418,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 (discovered.length?' · Detected AMD GPUs: '+
                     discovered.join(', '):''));
             const capability=m.execution_capabilities;
+            const recoveryOnly=m.local_executor_enabled&&!m.installed_projects?.length;
             const control=cell(tr,m.status==='connected'
-                ?m.local_executor_enabled
+                ?recoveryOnly?'Native recovery only · no installed adapters'
+                :m.local_executor_enabled
                     ?m.native_preflight_passed
                         ?(m.agent_platform==='win32'
                             ?'Windows Job Object CPU/RAM preflight passed · GPU not isolated'
@@ -1428,7 +1430,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     :'Observation only'+(capability?.cgroup_v2_detected
                         ?' · Linux cgroup v2 detected':'')
                 :'Offline or not verified');
-            control.title=m.native_preflight_passed
+            control.title=recoveryOnly
+                ?'The native journal can inspect and stop owned jobs.'
+                :m.native_preflight_passed
                 ?'Authenticated local native preflight passed; verify limits for each launched job. GPU not isolated.'
                 :m.native_preflight_reason||
                     capability?.reason||'No authenticated native capability report.';

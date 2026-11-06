@@ -211,6 +211,8 @@ function nativeStartReadiness(snapshot, job) {
     if(!['linux','win32'].includes(machine.agent_platform)||
         machine.local_executor_enabled!==true)
         return block('A supported locally installed native executor is required.');
+    if(!machine.installed_projects?.includes(job.project_id))
+        return block('The assigned machine has no trusted adapter for this project.');
     if(machine.native_preflight_passed!==true)
         return block('The local CPU/RAM supervisor preflight has not passed.');
     if(machine.agent_platform==='linux'&&
@@ -218,8 +220,6 @@ function nativeStartReadiness(snapshot, job) {
             !['cpu','memory'].every(c=>
                 machine.execution_capabilities?.cgroup_controllers.includes(c))))
         return block('Linux cgroup v2 CPU and memory controllers are unavailable.');
-    if(!machine.installed_projects?.includes(job.project_id))
-        return block('The assigned machine has no trusted adapter for this project.');
     if(!supportsEvaluation(machine.evaluation_suites,job))
         return block('The assigned adapter does not advertise evaluation suite '+job.evaluation_stop.suite_id+'.');
     const r=job.resources;
@@ -1176,8 +1176,7 @@ class ExperimentHub {
     }
     // The report is authenticated by the machine-token heartbeat. A second
     // machine, retired dispatch ID or unrelated lease cannot update the job.
-    recordExecution(next,machine,items,installedProjects=[],accepted=new Map(),
-        evaluationSuites={}) {
+    recordExecution(next,machine,items,accepted=new Map(),evaluationSuites={}) {
         if(!Array.isArray(items)||items.length>50)
             throw Error('Invalid execution reports.');
         const seen=new Set();
@@ -1201,7 +1200,7 @@ class ExperimentHub {
             seen.add(report.job_id);
             const job=next.jobs.find(j=>j.id===report.job_id);
             const lease=next.reservations.find(l=>l.id===report.lease_id);
-            if(!job||job.start_first_offered_at===null||!lease||!installedProjects.includes(job.project_id)||
+            if(!job||job.start_first_offered_at===null||!lease||
                 job.dispatch_id!==report.dispatch_id||
                 job.lease_id!==lease.id||lease.job_id!==job.id||
                 lease.machine_id!==machine.id||job.assigned_machine_id!==machine.id||
@@ -1331,7 +1330,8 @@ class ExperimentHub {
             const lease=snapshot.reservations.find(l=>l.id===job.lease_id &&
                 l.job_id===job.id&&l.project_id===job.project_id&&
                 l.machine_id===machineId&&l.status==='acknowledged');
-            if(!lease||!machine.installed_projects.includes(job.project_id))continue;
+            if(!lease)continue;
+            const adapterInstalled=machine.installed_projects.includes(job.project_id);
             let action=actionFor(job);
             if(action==='start') {
                 const automationValid=!job.automation_start_session_id||
@@ -1339,7 +1339,7 @@ class ExperimentHub {
                      this.automation.session_id===job.automation_start_session_id&&
                      this.automation.agent_instances[machineId]===
                         this.agentReports.get(machineId)?.instance_id);
-                if(!automationValid||!lease.receipt_fresh||
+                if(!adapterInstalled||!automationValid||!lease.receipt_fresh||
                     machine.native_preflight_passed!==true||
                     !supportsEvaluation(machine.evaluation_suites,job)||
                     gpuStartBlock(job,lease,machine)) {
@@ -1349,9 +1349,8 @@ class ExperimentHub {
                     action='inspect';
                 }
             }
-            if(action==='qualify_gpu'&&!lease.receipt_fresh)continue;
             if(action==='qualify_gpu'&&(
-                machine.agent_platform!=='linux'||
+                !adapterInstalled||!lease.receipt_fresh||machine.agent_platform!=='linux'||
                 machine.native_preflight_passed!==true||
                 job.resources.gpu_mode!=='exclusive'||
                 job.resources.gpu_count!==1||
@@ -1527,8 +1526,7 @@ class ExperimentHub {
             !['linux','win32'].includes(report.platform)))
             throw Error('Native lifecycle reports require a locally enabled supported executor.');
         const acceptedReports=new Map();
-        if(this.recordExecution(next,machine,reports,
-            report.installed_projects,acceptedReports,report.evaluation_suites))
+        if(this.recordExecution(next,machine,reports,acceptedReports,report.evaluation_suites))
             changed=true;
         const gpuReports=value.gpu_qualification_reports==null
             ?[]:value.gpu_qualification_reports;

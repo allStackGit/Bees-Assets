@@ -610,6 +610,14 @@ process listings can expose them.
 
 ### Operator-initiated native execution
 
+To retire a project adapter while a job is still owned, keep the same
+machine enrollment, supervisor directory, and Windows helper pin where
+applicable. Restart the agent with the adapter removed from its local
+module. An empty module export (`module.exports = {};`) enables native
+recovery only when local execution is explicitly enabled. Inspection and
+Stop still require the original job and lease in the native ownership
+journal. New Starts and GPU probes require an installed adapter.
+
 Train can withdraw a Start while it is still awaiting its first worker
 delivery. The Hub records the first offer before returning the worker
 order. A lost reply therefore leaves ownership uncertain and requires
