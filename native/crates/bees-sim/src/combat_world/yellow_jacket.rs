@@ -162,7 +162,12 @@ impl CombatWorld {
             0, DamageSource::Bomb, self_delta, true,
         )));
         if enemy_delta.killed {
-            self.retire_dead_ship(target_index, ship_id, 0)?;
+            // Preserve the same BombingRun outcome on the lethal death as
+            // on the preceding hit. Policy detonations pass zero; the
+            // Yellow Jacket's own death remains self-inflicted/unattributed.
+            self.retire_dead_ship(
+                target_index, ship_id, command_outcome_id,
+            )?;
         }
         // Source YellowJacket.Detonate always calls Kill after both
         // direct hits. It is NOT conditional on Bomb.Power exceeding
