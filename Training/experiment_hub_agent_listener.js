@@ -27,8 +27,11 @@ async function readBody(req) {
     let received=0;
     for await(const chunk of req) {
         received+=chunk.length;
-        if(received>MAX_BODY_BYTES)
-            throw Error('JSON request exceeds allowed byte limit.');
+        if(received>MAX_BODY_BYTES) {
+            const error=Error('JSON request exceeds allowed byte limit.');
+            error.status=413;
+            throw error;
+        }
         chunks.push(chunk);
     }
     return JSON.parse(Buffer.concat(chunks,received).toString('utf8')||'{}');
@@ -53,7 +56,7 @@ function createAgentServer(getHub) {
             return respond(res,200,getHub().heartbeat(value,
                 req.headers['x-hub-agent-token']));
         }catch(error) {
-            return respond(res,error.status===401?401:400,{
+            return respond(res,[401,413].includes(error.status)?error.status:400,{
                 error:String(error.message||error),
             });
         }
