@@ -12,31 +12,13 @@ const PROJECT=/^[a-z][a-z0-9_-]{0,47}$/;
 const MIN_SAMPLE_INTERVAL_MS=60000;
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 function compact(progress,receivedMs) {
-    if(progress.source==='hub-metrics-v1') {
-        return {
-            observed_at:new Date(receivedMs).toISOString(),
-            source_modified_at:progress.source_modified_at,
-            experiment_id:progress.experiment_id,
-            segment_id:progress.segment_id,
-            steps_completed:progress.steps_completed,
-            metrics:progress.metrics,
-        };
-    }
     return {
         observed_at:new Date(receivedMs).toISOString(),
         source_modified_at:progress.source_modified_at,
         experiment_id:progress.experiment_id,
         segment_id:progress.segment_id,
-        episodes_completed:progress.episodes_completed,
-        total_environment_steps:progress.total_environment_steps,
-        policy_version:progress.policy_version,
-        curriculum_level:progress.curriculum_level,
-        curriculum_window_success_rate:progress.curriculum_window_success_rate,
-        curriculum_window_episodes:progress.curriculum_window_episodes,
-        segment_success_rate:progress.segment_success_rate,
-        simulation_steps_per_second:progress.simulation_steps_per_second,
-        ppo_unique_samples_per_second:progress.ppo_unique_samples_per_second,
-        latest_episode_policy_updated:progress.latest_episode_policy_updated,
+        steps_completed:progress.steps_completed,
+        metrics:progress.metrics,
     };
 }
 class ProgressHistory {
@@ -57,6 +39,8 @@ class ProgressHistory {
                 throw Error('Invalid chart archive format.');
             const seen=new Set();
             for(const entry of saved.samples) {
+                // Retired Ants-v2 chart entries are historical only.
+                if(entry?.project_id==='ants')continue;
                 if(!entry||!UUID.test(String(entry.job_id))||
                     !PROJECT.test(String(entry.project_id))||
                     entry.project_id==='bees'||seen.has(entry.job_id)||
@@ -77,8 +61,7 @@ class ProgressHistory {
                     const {observed_at,break_before,...values}=point;
                     const verified=validateProgress({
                         ...values,schema_version:1,
-                        source:entry.project_id==='ants'
-                            ?'ants-summary-v1':'hub-metrics-v1',
+                        source:'hub-metrics-v1',
                     },entry.project_id);
                     if(verified.experiment_id!==entry.experiment_id||
                         (i>0&&Date.parse(verified.source_modified_at)<=
@@ -109,10 +92,9 @@ class ProgressHistory {
         }
     }
     record(jobId,projectId,progress,receivedMs=Date.now()) {
-        if(!PROJECT.test(String(projectId))||projectId==='bees'||
+        if(!PROJECT.test(String(projectId))||['bees','ants'].includes(projectId)||
             !UUID.test(String(jobId))||!progress||
-            progress.source!==(projectId==='ants'
-                ?'ants-summary-v1':'hub-metrics-v1')||
+            progress.source!=='hub-metrics-v1'||
             !Number.isFinite(receivedMs))
             return false;
         const point=compact(progress,receivedMs);
@@ -143,11 +125,6 @@ class ProgressHistory {
                 Date.parse(previous.source_modified_at))return false;
         point.break_before=Boolean(previous&&(
             point.segment_id!==previous.segment_id||
-            point.episodes_completed<previous.episodes_completed||
-            point.policy_version<previous.policy_version||
-            (Number.isSafeInteger(point.total_environment_steps)&&
-                Number.isSafeInteger(previous.total_environment_steps)&&
-                point.total_environment_steps<previous.total_environment_steps)||
             (Number.isSafeInteger(point.steps_completed)&&
                 Number.isSafeInteger(previous.steps_completed)&&
                 point.steps_completed<previous.steps_completed)||
