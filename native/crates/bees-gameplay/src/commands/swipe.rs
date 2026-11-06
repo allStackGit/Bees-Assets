@@ -2,7 +2,7 @@
 //! Per-weapon shooting remains CombatWorld-owned; target ranking and squad
 //! movement use shared native gameplay rather than a training-only model.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::f32::consts::{FRAC_PI_4, FRAC_PI_2, PI};
 
 use bees_hivemind::dispatch::{LocalCommandKind, ResolvedHiveMindCommand};
@@ -58,6 +58,7 @@ pub(super) struct SwipeRun {
     /// Only callback scratch. No additional permanent ship/physics state.
     candidate_positions: HashMap<i64, Vec2>,
     ranked_ids: Vec<i64>,
+    ranked_candidates: Vec<NativeEnemyTargetStats>,
     pending_moves: Vec<(i64, GamePointOrder)>,
 }
 
@@ -88,6 +89,7 @@ impl SwipeRun {
             target_queue: None,
             candidate_positions: HashMap::new(),
             ranked_ids: Vec::new(),
+            ranked_candidates: Vec::new(),
             pending_moves: Vec::new(),
         }))
     }
@@ -123,28 +125,52 @@ impl SwipeRun {
         }
 
         if !self.reached_enemy && !snapshot.every_member_has_target_in_range {
-            sort_native_command_targets(
-                world, roster, snapshot.enemy_owner, snapshot.squad_center,
-                selection.effective_shooting, random, &mut snapshot.candidates,
-            )?;
             self.candidate_positions.clear();
-            self.ranked_ids.clear();
             for candidate in &snapshot.candidates {
                 self.candidate_positions.insert(candidate.ship_id, candidate.position);
-                self.ranked_ids.push(candidate.ship_id);
             }
-            let queue = self.target_queue.get_or_insert_with(||
-                NativeCommandTargetQueue::new(&self.ranked_ids)
-            );
+            if self.target_queue.is_none() {
+                // Command.Setup builds the first queue once. Do not consume
+                // a Random shuffle on every later timed approach callback.
+                self.ranked_candidates.clear();
+                self.ranked_candidates.extend_from_slice(&snapshot.candidates);
+                sort_native_command_targets(
+                    world, roster, snapshot.enemy_owner, snapshot.squad_center,
+                    selection.effective_shooting, random, &mut self.ranked_candidates,
+                )?;
+                self.ranked_ids.clear();
+                self.ranked_ids.extend(
+                    self.ranked_candidates.iter().map(|candidate| candidate.ship_id)
+                );
+                self.target_queue = Some(NativeCommandTargetQueue::new(
+                    &self.ranked_ids,
+                ));
+            }
+            let queue = self.target_queue.as_mut()
+                .expect("initialized above");
+            let ranked_candidates = &mut self.ranked_candidates;
             self.pending_moves.clear();
             for member in &self.members {
                 let target_id = queue.select_for_ship(
-                    member.ship_id, &self.ranked_ids,
+                    member.ship_id, snapshot.candidates.len(),
+                    |output: &mut VecDeque<i64>| {
+                        ranked_candidates.clear();
+                        ranked_candidates.extend_from_slice(&snapshot.candidates);
+                        sort_native_command_targets(
+                            world, roster, snapshot.enemy_owner,
+                            snapshot.squad_center, selection.effective_shooting,
+                            random, ranked_candidates,
+                        )?;
+                        output.extend(
+                            ranked_candidates.iter().map(|candidate| candidate.ship_id)
+                        );
+                        Ok(())
+                    },
                     |id| world.ship(id).is_some_and(|ship|
                         !ship.vitals.is_dead() &&
                         roster.owning_squad(id) == Some(snapshot.enemy_owner)
                     ),
-                );
+                )?;
                 let Some(target_id) = target_id else {
                     return Ok(Some(CommandFinishCause::NoEnemyTargets));
                 };

@@ -166,40 +166,44 @@ impl NativeCommandTargetQueue {
     /// lives, it remains locked. Otherwise commands consume a shared FIFO,
     /// rebuilding it from the current authored order only when exhausted.
     /// Unity rebuilds OriginalQueue on a dead dequeue but leaves the current
-    /// TargetingQueue intact; preserve that distinction.
+    /// TargetingQueue intact; preserve that distinction. Rebuild is lazy:
+    /// Random consumes no RNG when a live ship already retains its target
+    /// or the queue has further valid entries.
     pub fn select_for_ship(
         &mut self,
         ship_id: i64,
-        latest_sorted_enemy_ids: &[i64],
+        live_enemy_count: usize,
+        mut rebuild_original: impl FnMut(&mut VecDeque<i64>)
+            -> Result<(), GameCommandError>,
         mut is_live_enemy: impl FnMut(i64) -> bool,
-    ) -> Option<i64> {
+    ) -> Result<Option<i64>, GameCommandError> {
         if let Some(&retained) = self.retained_by_ship.get(&ship_id) {
             if is_live_enemy(retained) {
-                return Some(retained);
+                return Ok(Some(retained));
             }
             self.retained_by_ship.remove(&ship_id);
         }
         // Unity uses max(EnemySquad.GetShips().Count, 10). Never spin
         // indefinitely when all candidates have just died.
-        for _ in 0..latest_sorted_enemy_ids.len().max(10) {
+        for _ in 0..live_enemy_count.max(10) {
             if self.pending.is_empty() {
                 self.original.clear();
-                self.original.extend(latest_sorted_enemy_ids.iter().copied());
+                rebuild_original(&mut self.original)?;
                 self.pending.extend(self.original.iter().copied());
                 if self.pending.is_empty() {
-                    return None;
+                    return Ok(None);
                 }
             }
             let candidate = self.pending.pop_front()
                 .expect("nonempty after refill");
             if is_live_enemy(candidate) {
                 self.retained_by_ship.insert(ship_id, candidate);
-                return Some(candidate);
+                return Ok(Some(candidate));
             }
             // C# RebuildOriginalTargetingQueue, not RebuildTargetingQueues.
             self.original.clear();
-            self.original.extend(latest_sorted_enemy_ids.iter().copied());
+            rebuild_original(&mut self.original)?;
         }
-        None
+        Ok(None)
     }
 }
