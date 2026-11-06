@@ -1402,8 +1402,18 @@ same dispatch and pass that policy's SHA-256 and the job's
 `seed`, `trials`, and `horizon`. Use a dedicated seed and a new suite ID when
 changing the scenario definition. The success count is the number of
 trials alive at the fixed horizon. Configure the matching suite and
-thresholds in Design. Checkpoint selection and evaluator invocation are
-currently operator-managed.
+thresholds in Design.
+
+For scheduled evaluation, run `experiment_hub_courier_eval_poll.py` with
+the same Python environment on a separately budgeted CPU schedule. Its
+`--snapshot-root` must be separate from the live artifacts. A trusted
+producer publishes a complete policy to `<snapshot-root>/<dispatch-id>/round-<n>.zip`
+by renaming a staged file into place. Published policies must be immutable,
+and round numbers must increase within a dispatch. The poller picks the
+latest unseen round from a live eligible dispatch and persists its cursor
+and pending receipt in `--scratch`. Keep a bounded number of published
+snapshots. The existing Courier trainer still needs a producer at its
+checkpoint boundary to supply this inbox unattended.
 
 ## Not yet implemented
 

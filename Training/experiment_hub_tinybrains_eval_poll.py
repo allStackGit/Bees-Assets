@@ -2,16 +2,13 @@
 """Evaluate one running TinyBrains dispatch on a separately scheduled CPU worker."""
 
 import argparse
-import hashlib
 import http.client
-import json
 import re
 import sys
-import tempfile
 from pathlib import Path
 
-from experiment_hub_eval_poll import exclusive, flush_receipt, passed_receipt, retain_dispatch_cursors, save_cursor, targets
-from experiment_hub_tinybrains_evaluate import SUITE_ID, UUID, evaluate, read_bounded, read_suite
+from experiment_hub_eval_poll import poll_checkpoint
+from experiment_hub_tinybrains_evaluate import SUITE_ID, UUID, evaluate, read_suite
 
 CHECKPOINT = re.compile(r"update-([0-9]{6,8})\.pt")
 
@@ -37,71 +34,17 @@ def latest_numbered_checkpoint(artifact_root, job):
 
 
 def poll(args, suite):
-    suite_id = suite["suite_id"]
-    receipt_suite = {**suite, "trials": 2 * len(suite["maps"]) * len(suite["seeds"])}
-    state = args.scratch / f"tinybrains-evaluation-{args.machine}.{suite_id}.json"
-    digest = hashlib.sha256(json.dumps(suite, sort_keys=True).encode()).hexdigest()
+    trials = 2 * len(suite["maps"]) * len(suite["seeds"])
 
-    def current_targets():
-        return targets(args.port, args.machine, suite_id, "tinybrains")
+    def evaluate_checkpoint(job, file, digest, work):
+        wins, observed = evaluate(file, digest, suite, work)
+        if observed != trials:
+            raise ValueError("Unexpected TinyBrains evaluation trial count.")
+        return wins
 
-    with exclusive(state.with_suffix(".lock")):
-        try:
-            prior = json.loads(read_bounded(state, 131072))
-            if prior["suite_sha256"] != digest:
-                raise ValueError("Suite definition changed; use a new suite ID.")
-        except FileNotFoundError:
-            prior = {"suite_sha256": digest, "dispatches": {}}
-        if (pending := prior.get("pending_receipt")) is not None:
-            flush_receipt(args, receipt_suite, pending)
-            save_cursor(state, {"suite_sha256": digest, "dispatches": prior["dispatches"]})
-            return
-        live = current_targets()
-        cursor = retain_dispatch_cursors(prior["dispatches"], live)
-        saved = {"suite_sha256": digest, "dispatches": cursor}
-        # Persist a rotation order across calls; a newer checkpoint on one
-        # busy job should not crowd out another eligible dispatch.
-        for dispatch in live:
-            cursor.setdefault(dispatch, 0)
-        for dispatch in list(cursor):
-            if dispatch not in live:
-                continue
-            job = live[dispatch]
-            try:
-                if not UUID.fullmatch(dispatch) or receipt_suite["trials"] < job["min_trials"]:
-                    continue
-                receipt = args.receipt_root / f"{dispatch}.{suite_id}.json"
-                if passed_receipt(receipt, dispatch, receipt_suite, job):
-                    continue
-                checkpoint = latest_numbered_checkpoint(args.artifact_root, job)
-                if not checkpoint or checkpoint[0] <= cursor[dispatch]:
-                    continue
-                update, file = checkpoint
-                with file.open("rb") as stream:
-                    checkpoint_digest = hashlib.file_digest(stream, "sha256").hexdigest()
-            except (OSError, ValueError, TypeError, KeyError) as exc:
-                print(f"TinyBrains evaluation target {dispatch} skipped: {exc}", file=sys.stderr)
-                continue
-            cursor.pop(dispatch)
-            cursor[dispatch] = update
-            # Record a handled failure once, but leave the checkpoint
-            # eligible if the evaluator is interrupted before a result.
-            try:
-                with tempfile.TemporaryDirectory(prefix="tinybrains-eval-", dir=args.scratch) as temp:
-                    wins, trials = evaluate(file, checkpoint_digest, suite, Path(temp))
-            except (OSError, RuntimeError, ValueError, TypeError, KeyError):
-                save_cursor(state, saved)
-                raise
-            pending = {"target": job, "receipt": {
-                "schema_version": 1, "suite_id": suite_id, "dispatch_id": dispatch,
-                "checkpoint_sha256": checkpoint_digest, "trials": trials, "successes": wins,
-            }}
-            save_cursor(state, {**saved, "pending_receipt": pending})
-            flush_receipt(args, receipt_suite, pending)
-            save_cursor(state, saved)
-            return
-        if saved != prior:
-            save_cursor(state, saved)
+    poll_checkpoint(args, "tinybrains", suite, {**suite, "trials": trials},
+                    lambda job: latest_numbered_checkpoint(args.artifact_root, job),
+                    evaluate_checkpoint)
 
 
 def main():
