@@ -11,6 +11,7 @@ const FINISH_AFTER_SIGHTING_SECONDS: f32 = 5.0;
 const RANDOM_STEP_MIN_DISTANCE: f32 = 10.0;
 
 pub(super) struct ScoutingRun {
+    side: i32,
     members: Vec<SquadFormationMember>,
     formation: SquadFormationOptions,
     max_random_distance: f32,
@@ -52,6 +53,7 @@ impl ScoutingRun {
                 scout_ids.push(member.ship_id);
             }
         }
+        let side = side.ok_or(GameCommandError::InvalidSquad)?;
         // Unity initial RandomCoordinate uses Squad.MaxSight as the
         // per-axis minimum displacement, not a fixed average or radius.
         let destination = choose_random_coordinate(
@@ -65,7 +67,8 @@ impl ScoutingRun {
             Some(ScaledTimer::new(BEACON_POLL_SECONDS, true, false))
         };
         Ok(Self {
-            members: squad.members.to_vec(), formation: squad.formation,
+            side, members: squad.members.to_vec(),
+            formation: squad.formation,
             max_random_distance: settings.ai_random_max_distance,
             scout_ids, beacon_timer, after_sighting: None,
         })
@@ -74,8 +77,10 @@ impl ScoutingRun {
     /// Only invoke for Unity HivemindVision.RecordShipSighting's first
     /// side-wide enemy sighting, credited to the real reward Squad. A
     /// Beacon minion sighting must reference its MotherSquad lifetime.
-    pub(super) fn found_first_ships(&mut self) -> bool {
-        if self.after_sighting.is_some() { return false; }
+    pub(super) fn found_first_ships(&mut self, side: i32) -> bool {
+        if side != self.side || self.after_sighting.is_some() {
+            return false;
+        }
         self.after_sighting = Some(ScaledTimer::new(
             FINISH_AFTER_SIGHTING_SECONDS, false, false,
         ));
