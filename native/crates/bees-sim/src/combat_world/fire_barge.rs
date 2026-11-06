@@ -87,6 +87,28 @@ impl CombatWorld {
         Ok(true)
     }
 
+    /// Game-owned BombingRun uses the same physical explosion and death
+    /// transaction as the RL special. Do not accept a command that would
+    /// overwrite an autonomous policy controller.
+    pub fn trigger_game_fire_barge(
+        &mut self, ship_id: i64,
+    ) -> Result<bool, CombatWorldError> {
+        let &index = self.ship_by_id.get(&ship_id)
+            .ok_or(CombatWorldError::UnknownShip)?;
+        if self.ships[index].ship_type != 10 {
+            return Err(CombatWorldError::InvalidPolicyFireBarge);
+        }
+        if self.ships[index].vitals.is_dead() ||
+            !self.physics.ships()[index].active {
+            return Ok(false);
+        }
+        let motion = &self.physics.ships()[index].motion;
+        if motion.is_policy_controlled && !motion.user_controlled {
+            return Err(CombatWorldError::UnsupportedPolicyActions);
+        }
+        self.complete_fire_barge_detonation(index)
+    }
+
     /// A Fire Barge's special does not require proximity to an enemy. Unity
     /// records a self-detonation, calls Kill, launches type 14 at its actual
     /// center and attributes its own death to no opposing shooter.
@@ -105,8 +127,16 @@ impl CombatWorld {
         ) {
             return Err(CombatWorldError::InvalidPolicyFireBarge);
         }
-        // Exactly one explosion regardless of whether the Fire Barge dies
-        // through its special or an external damage path.
+        self.complete_fire_barge_detonation(index)
+    }
+
+    /// Shared one-shot self-detonation transaction for every controller.
+    fn complete_fire_barge_detonation(
+        &mut self, index: usize,
+    ) -> Result<bool, CombatWorldError> {
+        let ship_id = self.ships[index].entity_id;
+        // The bomb registration is consumed at projectile spawn, before
+        // retiring the ship, so the death path cannot launch it twice.
         if !self.spawn_fire_barge_explosion(index, true)? {
             return Err(CombatWorldError::InvalidPolicyFireBarge);
         }
