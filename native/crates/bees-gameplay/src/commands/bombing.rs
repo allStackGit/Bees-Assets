@@ -308,6 +308,26 @@ impl NativeFireBargeBombingRun {
         Ok(None)
     }
 
+    /// On command supersession, a newer BombingRun may already have
+    /// reassigned the SAME world-owned Bomb weapon. Never release that
+    /// newly acquired reservation through the outgoing command's cleanup.
+    /// Ordinary replacement with another strategy releases every old lease.
+    pub(crate) fn release_superseded(
+        &self, world: &mut CombatWorld,
+        replacement: Option<&Self>,
+    ) {
+        for member in &self.members {
+            if replacement.is_some_and(|next|
+                next.members.iter().any(|new_member|
+                    new_member.ship_id == member.ship_id
+                )
+            ) {
+                continue;
+            }
+            world.release_game_bomb_target_for_ship(member.ship_id);
+        }
+    }
+
     /// Unity BombingRun.SetFinalize releases current squad-member Bomb
     /// targets on timeout, replacement, enemy disappearance or retirement.
     /// World death already releases these same leases, so repeats are inert.
