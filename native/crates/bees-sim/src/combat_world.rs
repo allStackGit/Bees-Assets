@@ -677,6 +677,9 @@ pub struct CombatWorld {
     /// gates have no timer or per-step cost.
     game_warp_gate_sessions: HashMap<i64, GameWarpGateSession>,
     game_warp_gate_by_ship: HashMap<i64, i64>,
+    /// WarpGate callback completions execute at the next normal fixed
+    /// combat event boundary, never after that tick's reward pass.
+    pending_game_warps: Vec<(i64, i64)>,
     /// Unity Ship.OriginalHealth remains fixed when training overrides
     /// MaxHealth; the gameplay Heal priority must use the original value.
     authored_original_ship_health: HashMap<i64, i32>,
@@ -783,6 +786,7 @@ impl CombatWorld {
             healing_slots_used_by_hive: HashMap::new(),
             game_warp_gate_sessions: HashMap::new(),
             game_warp_gate_by_ship: HashMap::new(),
+            pending_game_warps: Vec::new(),
             authored_original_ship_health: HashMap::new(),
             mining_obstacle_ids: Vec::new(),
             mining_seen_ship_ids: HashSet::new(),
@@ -3207,6 +3211,7 @@ impl CombatWorld {
                 ..StepCounts::default()
             });
         }
+        self.apply_pending_game_warps()?;
         self.advance_policy_capability_cooldowns(dt);
         self.apply_pending_policy_mining()?;
         self.apply_pending_policy_ship_specials(collision_matrix)?;
