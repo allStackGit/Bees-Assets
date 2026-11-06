@@ -347,7 +347,8 @@ impl MiningRun {
             // Dead ships no longer block the source "all miners reached"
             // transition. It cancels movement polling after five seconds,
             // not the ongoing mining timer.
-            if self.eligible.iter().enumerate().all(|(i, id)|
+            if self.mining_timer.is_some() &&
+                self.eligible.iter().enumerate().all(|(i, id)|
                 !world.ship(*id).is_some_and(|ship| !ship.vitals.is_dead()) ||
                 self.registered[i]
             ) {
