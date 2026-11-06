@@ -8,6 +8,7 @@ const fs=require('node:fs');
 const path=require('node:path');
 const crypto=require('node:crypto');
 const {readAntsProgress}=require('./experiment_hub_ants_metrics');
+const {suiteIds}=require('./experiment_hub_evaluation');
 
 const SAFE_PATH=/^[A-Za-z0-9_./:@=+\-,]+$/;
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -65,6 +66,54 @@ function resolveOwnedCheckpoint(artifactRoot,rootId,fsApi=fs) {
     // compatible runtime device identity, curriculum and optimizer state.
     return directory;
 }
+function evaluationReader(options,fsApi,sourceRoot,artifactRoot) {
+    if(options.evaluationRoot==null&&options.evaluationSuites==null)return {};
+    if(typeof options.evaluationRoot!=='string'||!path.isAbsolute(options.evaluationRoot)||
+        !SAFE_PATH.test(options.evaluationRoot)||options.evaluationRoot.length>512)
+        throw Error('Ants evaluation root must be a safe absolute Linux-local directory.');
+    const suites=Object.freeze(suiteIds(options.evaluationSuites));
+    const root=fsApi.realpathSync(options.evaluationRoot);
+    const inside=(dir,parent)=>{
+        const relative=path.relative(parent,dir);
+        return relative===''||(!path.isAbsolute(relative)&&relative!=='..'&&
+            !relative.startsWith('..'+path.sep));
+    };
+    const trainingRoot=fsApi.realpathSync(artifactRoot);
+    const checkout=fsApi.realpathSync(sourceRoot);
+    if(root===path.parse(root).root||!fsApi.statSync(root).isDirectory()||
+        inside(root,checkout)||inside(checkout,root)||
+        inside(root,trainingRoot)||inside(trainingRoot,root))
+        throw Error('Ants evaluation receipts need a directory separate from source and training artifacts.');
+    return {
+        evaluation_suites:suites,
+        readEvaluation(context) {
+            if(context?.project_id!=='ants'||!UUID.test(String(context.job_id||''))||
+                !UUID.test(String(context.dispatch_id||''))||!suites.includes(context.suite_id))
+                throw Error('Invalid Ants independent evaluation identity.');
+            const file=path.join(root,context.dispatch_id+'.'+context.suite_id+'.json');
+            let fd;
+            try {
+                if(fsApi.realpathSync(root)!==root)
+                    throw Error('Ants evaluation directory identity changed.');
+                fd=fsApi.openSync(file,fs.constants.O_RDONLY|
+                    fs.constants.O_NOFOLLOW|fs.constants.O_NONBLOCK);
+                const stat=fsApi.fstatSync(fd);
+                if(!stat.isFile()||stat.size<1||stat.size>4096)
+                    throw Error('Invalid Ants evaluation receipt file.');
+                const buffer=Buffer.alloc(4097);
+                const length=fsApi.readSync(fd,buffer,0,buffer.length,0);
+                if(length!==stat.size)throw Error('Ants evaluation receipt changed during read.');
+                return JSON.parse(buffer.toString('utf8',0,length));
+            }catch(error){
+                if(error.code==='ENOENT'&&fd===undefined)return null;
+                throw error;
+            }finally{
+                if(fd!==undefined)fsApi.closeSync(fd);
+            }
+        },
+    };
+}
+
 function createAntsProductionAdapter(options={}) {
     const {python,projectRoot,configPath,qualificationReport,
         artifactRoot,configSha256,qualificationSha256}=options;
@@ -93,6 +142,7 @@ function createAntsProductionAdapter(options={}) {
         executable:python,
         cwd:projectRoot,
         stop_policy:'interrupt-main',
+        ...evaluationReader(options,fsApi,sourceRoot,artifactRoot),
         readProgress(context) {
             // This is a filesystem read only. Job context is native,
             // validated by the local bridge; no Hub-supplied path is used.
