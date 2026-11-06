@@ -665,6 +665,9 @@ pub struct CombatWorld {
     /// Monotonic IDs of living authored mining obstacles; no full scan
     /// of static geometry for each eligible policy agent.
     mining_obstacle_ids: Vec<i64>,
+    /// Reused extraction validation set: large mining squads must not
+    /// pay a quadratic cost to detect repeated ship references.
+    mining_seen_ship_ids: HashSet<i64>,
     policy_special_measurements: PolicySpecialMeasurements,
     /// One hit per victim for each active charge; cleared when the
     /// owning Barge starts another charge or is removed from the world.
@@ -758,6 +761,7 @@ impl CombatWorld {
             policy_pending_warp: Vec::new(),
             support_zone_ids: HashMap::new(),
             mining_obstacle_ids: Vec::new(),
+            mining_seen_ship_ids: HashSet::new(),
             policy_special_measurements: PolicySpecialMeasurements::default(),
             barge_charge_hits: HashSet::new(),
             barge_contact_candidates: Vec::new(),
