@@ -177,10 +177,12 @@ from checkpoint `continuation_of_job_id`: each stage has its own
 artifact lineage, with **no inherited weights, optimizer, checkpoint,
 machine affinity or evaluation result**. Ants configurations in an
 independent sequence must use `mode:"new"`. Jobs may run on different
-qualified hosts. Only a verified native `finished` predecessor plus
-durable capacity release unblocks the next job; stopped, failed and
-unverified predecessors never advance. Native success is not an
-independent benchmark pass. Every stage still needs separate CPU/RAM
+qualified hosts. A verified native `finished` predecessor unblocks the next job after
+durable capacity release. A `stopped` predecessor also unblocks its
+independent successor only if its own independently evaluated stop target
+was met and the native Stop and capacity release were verified. Manual
+Stops without that evidence, failures, and unverified predecessors never
+advance. Native success is not an independent benchmark pass. Every stage still needs separate CPU/RAM
 capacity admission and authorized native execution, and the automation
 session must be explicitly armed for unattended CPU-only starts.
 Each parent permits one non-cancelled successor across both sequence
@@ -1529,8 +1531,13 @@ and dispatch and returns either null or a version 1 report with `suite_id`,
 `schema_version:1`. The adapter owns evaluator provenance and held-out data
 selection. The Hub verifies ownership and the frozen threshold, records the
 triggering report, and requests Stop through the existing native supervisor.
-The job retains capacity until terminal handling, and a stopped stage never
-automatically advances a sequence. Training progress has no stopping authority.
+The job retains capacity until terminal handling. After a verified native
+Stop and capacity release, a qualifying evaluation can advance an independent
+`after_job_id` sequence, with fresh allocation and Start authorization for
+its successor. It cannot automatically advance a checkpoint continuation:
+the last durable checkpoint may predate the Stop, and the existing manual
+approval/cancellation rules still apply. Training progress has no stopping
+authority.
 
 ### Linux terminal recovery
 
