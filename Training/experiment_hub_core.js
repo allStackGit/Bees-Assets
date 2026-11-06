@@ -969,7 +969,13 @@ class ExperimentHub {
         return this.state.jobs.filter(job=>
             job.project_id===projectId&&job.assigned_machine_id===machineId&&
             job.status==='running'&&job.evaluation_stop?.suite_id===suiteId&&
-            UUID.test(job.dispatch_id||'')&&UUID.test(job.artifact_lineage_root_id||job.id))
+            UUID.test(job.dispatch_id||'')&&UUID.test(job.artifact_lineage_root_id||job.id)&&
+            // The current agent instance must have actually inspected this
+            // dispatch. A restarted agent can advertise an adapter before
+            // it has reconciled an old service's native ownership.
+            this.executionTelemetry.get(job.id)?.dispatch_id===job.dispatch_id&&
+            this.executionTelemetry.get(job.id)?.agent_instance_id===report.instance_id&&
+            this.executionTelemetry.get(job.id)?.state==='running')
             .map(job=>({job_id:job.id,dispatch_id:job.dispatch_id,
                 artifact_lineage_root_id:job.artifact_lineage_root_id||job.id,
                 min_trials:job.evaluation_stop.min_trials,
