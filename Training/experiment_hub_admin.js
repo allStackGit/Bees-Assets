@@ -23,6 +23,7 @@ const POST_ACTIONS={
     '/api/hub/jobs/cancel-future':[200,'cancelFutureJobs'],
     '/api/hub/jobs/allocate':[200,'allocateJobs'],
     '/api/hub/jobs/move-claim':[200,'moveJobClaim'],
+    '/api/hub/jobs/move-claims':[200,'moveJobClaims'],
     '/api/hub/automation':[200,'configureAutomation'],
     '/api/hub/jobs/qualify-gpu':[200,'requestGpuQualification'],
     '/api/hub/jobs/start':[200,'authorizeStart'],
