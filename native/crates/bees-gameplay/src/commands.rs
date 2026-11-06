@@ -42,6 +42,7 @@ mod heal;
 mod scouting;
 mod full_retreat;
 mod circle;
+mod swipe;
 mod targeting;
 pub use self::targeting::{
     NativeCommandTargetQueue, NativeEnemyTargetStats,
@@ -50,6 +51,8 @@ pub use self::targeting::{
 pub use self::circle::{
     NativeCircleCommandSnapshot, assemble_circle_snapshot_from_live_weapons,
 };
+pub use self::swipe::NativeSwipeCommandSnapshot;
+use self::swipe::SwipeRun;
 use self::circle::CircleRun;
 use self::full_retreat::FullRetreatRun;
 use self::mining::MiningRun;
@@ -254,6 +257,8 @@ pub enum CommandFinishCause {
     GuardTargetGone,
     GuardFinished,
     EnemySquadGone,
+    NoEnemyTargets,
+    SwipeFinished,
     LevelEnded,
     Superseded,
     SquadRetired,
@@ -364,6 +369,7 @@ struct ActiveNativeCommand {
     patrol: Option<PatrolRoute>,
     following: Option<FollowingFriendly>,
     circle: Option<CircleRun>,
+    swipe: Option<SwipeRun>,
     mining: Option<MiningRun>,
     heal: Option<HealRun>,
     scouting: Option<ScoutingRun>,
@@ -607,6 +613,7 @@ impl NativeSquadCommandDirector {
         let mut patrol = None;
         let mut following = None;
         let mut circle = None;
+        let mut swipe = None;
         let mut mining = None;
         let mut heal = None;
         let mut scouting = None;
@@ -662,6 +669,17 @@ impl NativeSquadCommandDirector {
                 circle = Some(run);
                 // Unity Execute schedules its first 3s timer immediately;
                 // the first formation move occurs during that callback.
+                false
+            }
+            LocalCommandKind::RightSwipe | LocalCommandKind::LeftSwipe => {
+                let Some(run) = SwipeRun::start(
+                    world, squad, selection.local_command,
+                )? else {
+                    self.measurements.unavailable += 1;
+                    return Ok(Activation::Unavailable(selection));
+                };
+                swipe = Some(run);
+                // SwipeSquad.Execute schedules a 3s immediate timer.
                 false
             }
             LocalCommandKind::MoveToRandom => {
@@ -875,7 +893,8 @@ impl NativeSquadCommandDirector {
                 LocalCommandKind::Mining | LocalCommandKind::Heal |
                 LocalCommandKind::Scouting | LocalCommandKind::FullRetreat |
                 LocalCommandKind::ClosestFriendly |
-                LocalCommandKind::Guard | LocalCommandKind::CircleSquad
+                LocalCommandKind::Guard | LocalCommandKind::CircleSquad |
+                LocalCommandKind::RightSwipe | LocalCommandKind::LeftSwipe
             ) || (selection.local_command == LocalCommandKind::Retreat &&
                 !retreat_already_safe) {
                 Some(ScaledTimer::new(
@@ -889,6 +908,7 @@ impl NativeSquadCommandDirector {
             patrol,
             following,
             circle,
+            swipe,
             mining,
             heal,
             scouting,
@@ -999,6 +1019,33 @@ impl NativeSquadCommandDirector {
         ) -> Result<NativeCircleCommandSnapshot, GameCommandError>,
         finished: &mut Vec<FinishedNativeCommand>,
     ) -> Result<(), GameCommandError> {
+        self.advance_into_with_combat(
+            world, navigation, None, friendlies, random, dt,
+            circle_snapshot,
+            |_, _, _| Err(GameCommandError::MissingCombatSnapshot),
+            finished,
+        )
+    }
+
+    /// Shared fast Level path for all movement-attack timers. The same
+    /// authoritative roster and physics world drive target selection,
+    /// pathfinding, and combat; no alternate training-only implementation.
+    pub fn advance_into_with_combat(
+        &mut self,
+        world: &mut CombatWorld,
+        navigation: &NavigationRuntime,
+        roster: Option<&NativeSquadRoster>,
+        friendlies: &[NativeFriendlySquad],
+        random: &mut RandomStream,
+        dt: f32,
+        mut circle_snapshot: impl FnMut(
+            SquadLifetime, i64, &CombatWorld,
+        ) -> Result<NativeCircleCommandSnapshot, GameCommandError>,
+        mut swipe_snapshot: impl FnMut(
+            SquadLifetime, i64, &CombatWorld,
+        ) -> Result<NativeSwipeCommandSnapshot, GameCommandError>,
+        finished: &mut Vec<FinishedNativeCommand>,
+    ) -> Result<(), GameCommandError> {
         if !dt.is_finite() || dt < 0.0 {
             return Err(GameCommandError::InvalidDelta);
         }
@@ -1104,6 +1151,36 @@ impl NativeSquadCommandDirector {
                     }
                 }
                 if let Some(cause) = finished {
+                    self.completed_scratch.push((owner, cause));
+                }
+                continue;
+            }
+            if let Some(swipe) = command.swipe.as_mut() {
+                let mut completed = None;
+                if let Some(timer) = command.command_poll.as_mut() {
+                    if let Some(due) = timer.begin_update(dt) {
+                        self.measurements.command_timer_callbacks += 1;
+                        let roster = roster.ok_or(GameCommandError::MissingCombatSnapshot)?;
+                        let snapshot = swipe_snapshot(
+                            owner, swipe.enemy_squad_id(), world,
+                        )?;
+                        completed = swipe.on_poll(
+                            world, navigation, roster, random, owner,
+                            &command.selection, snapshot,
+                        )?;
+                        timer.finish_update(due);
+                    }
+                }
+                if completed.is_none() {
+                    if let Some(timeout) = command.timeout.as_mut() {
+                        if let Some(due) = timeout.begin_update(dt) {
+                            self.measurements.timeout_callbacks += 1;
+                            timeout.finish_update(due);
+                            completed = Some(CommandFinishCause::Timeout);
+                        }
+                    }
+                }
+                if let Some(cause) = completed {
                     self.completed_scratch.push((owner, cause));
                 }
                 continue;
