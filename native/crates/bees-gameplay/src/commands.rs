@@ -559,11 +559,18 @@ impl NativeSquadCommandDirector {
                 selection: selection.clone(),
                 cause: StrategyReceiptFailureCause::InvalidStrategy(cause),
             })?;
-        // A strategy response may arrive after the originally targeted
-        // enemy was replaced. Retreat cannot silently use a new opponent.
-        if resolved.local_command == LocalCommandKind::Retreat &&
-            (enemy_squad_id.is_none() ||
-             squad.enemy.map(|enemy| enemy.squad_id) != enemy_squad_id) {
+        // A delayed response must not silently adopt the current squad's
+        // different enemy. All commands with an explicit source enemy target
+        // use this same request identity boundary, not only Retreat.
+        // Exact pooled lifetimes are checked by the attack command on
+        // later callbacks.
+        if matches!(resolved.local_command,
+            LocalCommandKind::Retreat | LocalCommandKind::Aggressive |
+            LocalCommandKind::CircleSquad | LocalCommandKind::RightSwipe |
+            LocalCommandKind::LeftSwipe | LocalCommandKind::InAndOut
+        ) && (enemy_squad_id.is_none() ||
+            squad.enemy.map(|enemy| enemy.squad_id) != enemy_squad_id)
+        {
             return Ok(StrategyReceiptAction::DiscardReservations(vec![
                 selection.command_outcome_id,
                 selection.shooting_outcome_id,
