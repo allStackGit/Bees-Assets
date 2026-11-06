@@ -109,14 +109,13 @@ impl InAndOutRun {
                 }
             } else {
                 self.reached_enemy = true;
-                // Source SetAndMove clamps the requested return point
-                // through Squad.Move and stores the actual destination.
-                let plan = issue_squad_move(
+                // Command.SetAndMove records the requested ReturnPoint.
+                // Squad.Move may adjust individual navigation destinations,
+                // but does not rewrite Command.GetDestination.
+                issue_squad_move(
                     world, navigation, &self.members,
                     self.return_point, self.formation,
                 )?;
-                self.return_point = plan.map(|result| result.center)
-                    .unwrap_or_else(|| self.formation.force_bounds(self.return_point));
             }
             return Ok(None);
         }
