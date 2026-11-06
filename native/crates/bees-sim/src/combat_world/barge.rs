@@ -132,24 +132,34 @@ impl CombatWorld {
     pub(super) fn advance_game_barge_phases(
         &mut self, dt: f32,
     ) -> Result<(), CombatWorldError> {
-        let mut transitions = Vec::new();
-        for (&ship_id, charge) in &mut self.game_barge_charges {
-            if charge.phase == 4 { continue }
-            charge.elapsed += dt;
-            match charge.phase {
-                1 if charge.elapsed >= WINDUP => {
-                    charge.phase = 2;
-                    charge.elapsed -= WINDUP;
-                    transitions.push((ship_id, 2));
+        // Charge phase transitions are rare, and the ordered state map
+        // already supplies stable ship IDs. Avoid allocating a transient
+        // transition vector on every fixed step of every training world.
+        use std::ops::Bound::{Excluded, Unbounded};
+        let mut after_id = 0_i64;
+        loop {
+            let next = self.game_barge_charges
+                .range((Excluded(after_id), Unbounded))
+                .next().map(|(&ship_id, _)| ship_id);
+            let Some(ship_id) = next else { break };
+            after_id = ship_id;
+            let next_phase = {
+                let charge = self.game_barge_charges.get_mut(&ship_id)
+                    .expect("iterated game Barge");
+                if charge.phase == 4 { continue }
+                charge.elapsed += dt;
+                match charge.phase {
+                    1 if charge.elapsed >= WINDUP => {
+                        charge.phase = 2;
+                        charge.elapsed -= WINDUP;
+                        Some(2_u8)
+                    }
+                    2 if charge.elapsed >= CHARGING => Some(3),
+                    3 if charge.elapsed >= COOLDOWN => Some(4),
+                    _ => None,
                 }
-                2 if charge.elapsed >= CHARGING =>
-                    transitions.push((ship_id, 3)),
-                3 if charge.elapsed >= COOLDOWN =>
-                    transitions.push((ship_id, 4)),
-                _ => {}
-            }
-        }
-        for (ship_id, next_phase) in transitions {
+            };
+            let Some(next_phase) = next_phase else { continue };
             let Some(&index) = self.ship_by_id.get(&ship_id) else {
                 self.game_barge_charges.remove(&ship_id);
                 continue;
