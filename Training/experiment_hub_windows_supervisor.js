@@ -325,13 +325,13 @@ class WindowsSupervisor {
             const parent=this.state.records.find(r=>
                 r.job_id===invocation.predecessor);
             if(!parent||parent.project_id!==job.project_id||
-                !terminal.has(parent.state)||
+                parent.state!=='finished'||
                 (parent.artifact_lineage_root_id||parent.job_id)!==
                     invocation.root)
-                throw Error('Windows continuation predecessor is not completed in this local journal.');
+                throw Error('Windows continuation requires a naturally finished predecessor in the local journal.');
             const observed=await this.observe(parent);
-            if(observed.active||!terminal.has(observed.state))
-                throw Error('Windows predecessor native owner has not terminated.');
+            if(observed.active||observed.state!=='finished')
+                throw Error('Windows predecessor native owner has not verified natural completion.');
         }
         if(this.state.records.length>=1000)
             throw Error('Windows native ownership journal full.');
