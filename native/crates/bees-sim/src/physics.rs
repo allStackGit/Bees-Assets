@@ -429,6 +429,13 @@ impl ShipBody {
         &self.collider.shape
     }
 
+    /// Cached authored primary collider bounds of a live ship.
+    /// Source Squad.GetCenterPoint uses the union of member bounds,
+    /// not the average of ship positions. No new geometry or allocation.
+    pub fn primary_bounds(&self) -> Option<Aabb> {
+        if self.active { self.collider.bounds } else { None }
+    }
+
     /// Beehive.HealCollider must be provided by the real ship asset.
     /// The child trigger follows the same transform as its owner.
     pub fn set_healing_zone(
