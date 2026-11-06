@@ -1092,15 +1092,16 @@ class ExperimentHub {
                 // Retain historical machine and lease IDs for provenance after
                 // a native terminal report has been received and reviewed.
                 job.capacity_released_at=now();
-                // Native finish, or a stopped job with verified independent
-                // evaluation evidence, can advance an independent sequence
-                // after durable capacity release. Only a native finish may
-                // advance checkpoint continuations.
+                // Independent successors advance after a verified finish or
+                // successful evaluation Stop. A checkpoint continuation may
+                // also advance after evaluation Stop, but only if the native
+                // supervisor verifies a checkpoint-preserving shutdown.
+                // Manual Stops do not automatically advance any stage.
                 if(independentSequenceComplete(job)) {
                     const children=next.jobs.filter(j=>
                         j.status==='waiting_predecessor'&&
                         (j.after_job_id===job.id||
-                         (job.status==='finished'&&
+                         (checkpointContinuationComplete(job)&&
                           j.continuation_of_job_id===job.id)));
                     if(children.length>1)throw Error(
                         'Multiple successor jobs claim one predecessor; refusing release.');
@@ -1125,7 +1126,9 @@ class ExperimentHub {
                     if(child) {
                         child.status='waiting_adapter';
                         child.status_reason=job.status==='stopped'
-                            ?'Independent evaluation target met; native Stop verified and capacity released. Separate allocation and Start remain required.'
+                            ?child.continuation_of_job_id
+                                ?'Evaluation target met; checkpoint-preserving Stop and capacity release verified. The next stage can now be allocated and started.'
+                                :'Independent evaluation target met; native Stop verified and capacity released. Separate allocation and Start remain required.'
                             :'Predecessor finished and released verified capacity; separate allocation and Start remain required.';
                         child.predecessor_ready_at=now();
                     }

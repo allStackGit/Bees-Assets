@@ -930,7 +930,7 @@ document.addEventListener('DOMContentLoaded', () => {
             ?'Prequeue checkpoint-continuation stages'
             :'Queue independent project jobs in sequence';
         $('hub-pipeline-description').textContent=checkpointPipeline
-            ?'Two to sixteen stages with the same approved configuration digest. Each stage waits for its predecessor to finish and release capacity, then stays on the original worker.'
+            ?'Two to sixteen stages with the same approved configuration digest, on the original worker. Natural completion advances the next stage; a successful independent evaluation Stop also advances it only when the native supervisor verifies a saved checkpoint. Manual Stops and failures hold later stages for review.'
             :'Two to sixteen fresh, independent jobs from any non-Bees project. Each job gets its own artifact lineage and may use a different machine. No checkpoint, optimizer or qualification result is inherited. A verified finish or an evaluation-driven Stop can advance the next job after capacity release. Manual Stops and failures do not advance. Queueing never starts training.';
         $('hub-pipeline-predecessor-label').textContent=checkpointPipeline
             ?'Continue an existing job (optional)'
