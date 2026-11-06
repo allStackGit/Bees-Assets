@@ -636,7 +636,7 @@ impl NativeLevelEventProcessor {
             if requires_level_capability_delivery(event) {
                 self.pending_notifications.push(NativeLevelNotification {
                     tick: completed_tick,
-                    kind: NativeLevelNotificationKind::Gameplay(event.clone()),
+                    kind: NativeLevelNotificationKind::Gameplay((*event).clone()),
                 });
             }
         }
