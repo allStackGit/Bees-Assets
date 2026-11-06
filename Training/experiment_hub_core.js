@@ -1238,6 +1238,8 @@ class ExperimentHub {
                 throw Error('Only an unstarted non-Bees job claim can move.');
             if(job.lease_id!==move.expected_lease_id)
                 throw Error('A job claim changed. Refresh Train before moving it.');
+            const predecessor=predecessorBlock(next,job);
+            if(predecessor)throw Error(predecessor);
             const source=next.reservations.find(l=>l.id===job.lease_id&&l.job_id===job.id&&
                 l.project_id===job.project_id&&l.machine_id===job.assigned_machine_id);
             if(!source||source.machine_id===move.machine_id)
