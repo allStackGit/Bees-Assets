@@ -4,8 +4,14 @@
 
 use super::*;
 
-const MINING_FACTORY_TYPE: u8 = 9;
-const MINING_CARPENTER_BEE_TYPE: u8 = 4;
+/// Unity ConfigData.ShipTypes (authored enum IDs).
+pub const MINING_FACTORY_TYPE: u8 = 9;
+pub const MINING_CARPENTER_BEE_TYPE: u8 = 4;
+
+#[inline]
+pub fn is_mining_ship_type(ship_type: u8) -> bool {
+    matches!(ship_type, MINING_FACTORY_TYPE | MINING_CARPENTER_BEE_TYPE)
+}
 const MINING_ACTION_RATE: i32 = 5;
 const MINING_COOLDOWN_SECONDS: f32 = 5.0;
 
@@ -24,7 +30,7 @@ impl CombatWorld {
         let &index = self.ship_by_id.get(&ship_id)
             .ok_or(CombatWorldError::UnknownShip)?;
         let ship = &self.ships[index];
-        if !matches!(ship.ship_type, MINING_FACTORY_TYPE | MINING_CARPENTER_BEE_TYPE) ||
+        if !is_mining_ship_type(ship.ship_type) ||
             ship.vitals.is_dead() || !self.physics.ships()[index].active ||
             self.ship_fleet_identity(ship_id).is_none() {
             return Err(CombatWorldError::InvalidPolicyMining);
@@ -197,7 +203,7 @@ impl CombatWorld {
             let &ship_index = self.ship_by_id.get(&ship_id)
                 .ok_or(CombatWorldError::UnknownShip)?;
             let ship = &self.ships[ship_index];
-            if !matches!(ship.ship_type, MINING_FACTORY_TYPE | MINING_CARPENTER_BEE_TYPE) ||
+            if !is_mining_ship_type(ship.ship_type) ||
                 ship.vitals.is_dead() || !self.physics.ships()[ship_index].active ||
                 self.ship_fleet_identity(ship_id).is_none() ||
                 side.is_some_and(|same_side| same_side != ship.side) {
