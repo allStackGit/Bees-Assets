@@ -526,6 +526,11 @@ pub struct PolicySpecialMeasurements {
     pub striker_contact_misses: u64,
     pub striker_bombs_dropped: u64,
     pub striker_reloads: u64,
+    /// Shared exact-contact acceleration for large Striker/Yellow Jacket
+    /// battles. Small worlds use the direct scan and incur no grid rebuild.
+    pub special_contact_grid_queries: u64,
+    pub special_contact_grid_rebuilds: u64,
+    pub special_contact_grid_candidates: u64,
     pub fire_barge_detonations: u64,
     pub fire_barge_death_explosions: u64,
     pub yellow_jacket_contact_misses: u64,
@@ -717,6 +722,8 @@ pub struct CombatWorld {
     /// Reused current-grid candidate buffer. No per-charge per-tick Vec
     /// allocation even in battles with many active Barges.
     barge_contact_candidates: Vec<usize>,
+    /// Reused broadphase scratch for scripted and policy bomb contacts.
+    special_contact_candidates: Vec<usize>,
     pending_game_point_orders: HashMap<i64, GamePointOrder>,
     latest_game_point_orders: HashMap<i64, GamePointOrder>,
     ship_collision_profiles: HashMap<i64, ShipCollisionProfile>,
@@ -823,6 +830,7 @@ impl CombatWorld {
             tracked_order_measurements: TrackedOrderMeasurements::default(),
             barge_charge_hits: HashSet::new(),
             barge_contact_candidates: Vec::new(),
+            special_contact_candidates: Vec::new(),
             pending_game_point_orders: HashMap::new(),
             latest_game_point_orders: HashMap::new(),
             ship_collision_profiles: HashMap::new(),
@@ -862,37 +870,68 @@ impl CombatWorld {
     }
 
     /// One source-defined contact query for both Striker and Yellow Jacket.
-    /// Match only real, collision-layer-permitted authored hull intersections.
+    /// Small battles keep the direct scan; large battles reuse the same
+    /// physical ship grid as projectiles and Barge charges. The actual
+    /// contact predicate always uses authored hulls and collision layers.
     /// Lowest living enemy ID breaks otherwise unspecified contact ties.
     fn find_touching_enemy_ship(
         &mut self, ship_index: usize, collisions: &CollisionMatrix,
     ) -> EnemyShipContact {
         let side = self.ships[ship_index].side;
         let mut result = EnemyShipContact::default();
-        for index in 0..self.ships.len() {
-            if index == ship_index || self.ships[index].side == side ||
-                self.ships[index].vitals.is_dead() ||
-                !self.physics.ships()[index].active {
-                continue;
+        // The direct loop avoids rebuilding an entire grid for 1v1 and
+        // small-squad encounters. Dead slots are still cheap to skip.
+        if self.ships.len() <= 32 {
+            for index in 0..self.ships.len() {
+                self.check_touching_enemy_candidate(
+                    ship_index, index, side, collisions, &mut result,
+                );
             }
-            result.candidates += 1;
-            match self.physics.ship_hulls_overlap_detailed(
-                ship_index, index, collisions,
-            ) {
-                ShipHullOverlap::Ineligible => {}
-                ShipHullOverlap::RejectedByDistance =>
-                    result.distance_rejections += 1,
-                ShipHullOverlap::ExactMiss => result.exact_tests += 1,
-                ShipHullOverlap::Contact => {
-                    result.exact_tests += 1;
-                    let id = self.ships[index].entity_id;
-                    if result.target_id.map_or(true, |previous| id < previous) {
-                        result.target_id = Some(id);
-                    }
-                }
+        } else {
+            let rebuilt = self.physics.current_ship_contact_candidates(
+                ship_index, &mut self.special_contact_candidates,
+            );
+            self.policy_special_measurements.special_contact_grid_queries += 1;
+            self.policy_special_measurements.special_contact_grid_rebuilds +=
+                u64::from(rebuilt);
+            self.policy_special_measurements.special_contact_grid_candidates +=
+                self.special_contact_candidates.len() as u64;
+            for i in 0..self.special_contact_candidates.len() {
+                let index = self.special_contact_candidates[i];
+                self.check_touching_enemy_candidate(
+                    ship_index, index, side, collisions, &mut result,
+                );
             }
         }
         result
+    }
+
+    #[inline]
+    fn check_touching_enemy_candidate(
+        &mut self, source: usize, index: usize, side: i32,
+        collisions: &CollisionMatrix, result: &mut EnemyShipContact,
+    ) {
+        if index == source || self.ships[index].side == side ||
+            self.ships[index].vitals.is_dead() ||
+            !self.physics.ships()[index].active {
+            return;
+        }
+        result.candidates += 1;
+        match self.physics.ship_hulls_overlap_detailed(
+            source, index, collisions,
+        ) {
+            ShipHullOverlap::Ineligible => {}
+            ShipHullOverlap::RejectedByDistance =>
+                result.distance_rejections += 1,
+            ShipHullOverlap::ExactMiss => result.exact_tests += 1,
+            ShipHullOverlap::Contact => {
+                result.exact_tests += 1;
+                let id = self.ships[index].entity_id;
+                if result.target_id.map_or(true, |previous| id < previous) {
+                    result.target_id = Some(id);
+                }
+            }
+        }
     }
 
     /// Add one successful authored child-collider registration to the

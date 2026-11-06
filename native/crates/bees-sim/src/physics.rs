@@ -1058,6 +1058,24 @@ impl KinematicPhysics {
         rebuilt
     }
 
+    /// On-demand contact queries can run before physics.step(), including
+    /// a ship whose position was changed after the previous fixed tick.
+    /// Refresh the real authored hull poses before the one shared grid
+    /// rebuild, then reuse that grid for the remaining contact queries.
+    /// The narrowphase still checks actual hulls and collision layers.
+    pub fn current_ship_contact_candidates(
+        &mut self, index: usize, output: &mut Vec<usize>,
+    ) -> bool {
+        if !self.grid_contains_ships {
+            for ship in &mut self.ships {
+                if ship.active {
+                    ship.update_hull();
+                }
+            }
+        }
+        self.ship_contact_candidates(index, output)
+    }
+
     /// Source RlProjectileNearMissTelemetry.Travel broadphase:
     /// sweep the real projectile's collider bounds from its last pose
     /// to its present pose, padded by the authored 2-unit near distance.
