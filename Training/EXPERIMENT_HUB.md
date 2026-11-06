@@ -1556,9 +1556,11 @@ module.exports = {
 The operator prepares each approved profile as a JSON equivalent of a
 TinyBrains YAML configuration with `runtime.device` set to `cpu`. Compute
 the SHA-256 of the UTF-8 bytes of `JSON.stringify(profile, null, 2) + '\n'`
-after parsing that JSON. In Design, supply `profile` (for example `mini`),
-`profile_sha256` (the 64-digit digest), and `updates` (a positive integer
-up to 10,000,000). Use a CPU/RAM claim on the configured Windows worker.
+after parsing that JSON. In Design, choose an approved profile from a
+connected Windows worker, enter the update count, and select **Use profile
+and update count**. The picker fills the draft without saving or starting it.
+For API callers, set `profile`, `profile_sha256`, and `updates` (a positive
+integer up to 10,000,000). Use a CPU/RAM claim on the configured Windows worker.
 The worker advertises approved profile names and digests. The Hub matches
 them before claiming capacity and checks again before dispatch. Install
 the updated worker before enabling placement on the updated coordinator.
