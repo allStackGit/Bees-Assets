@@ -199,6 +199,17 @@ impl NativeEpisodeRewardCoordinator {
         &mut self, side: i32, kind: DiscoveryKind,
         entity_id: i64, authored_value: i32,
     ) -> Result<Option<RewardEmission>, NativeEpisodeRewardError> {
+        self.record_verified_discovery_with_freshness(
+            side, kind, entity_id, authored_value,
+        ).map(|(_, reward)| reward)
+    }
+
+    /// Keep first-contact causality distinct from shaping reward amount:
+    /// the reward may be None when the tactical budget is exhausted.
+    pub fn record_verified_discovery_with_freshness(
+        &mut self, side: i32, kind: DiscoveryKind,
+        entity_id: i64, authored_value: i32,
+    ) -> Result<(bool, Option<RewardEmission>), NativeEpisodeRewardError> {
         if self.terminal.result().is_some() {
             return Err(NativeEpisodeRewardError::AlreadyComplete);
         }
@@ -209,7 +220,7 @@ impl NativeEpisodeRewardCoordinator {
             self.failed = true;
             return Err(NativeEpisodeRewardError::DiscoveryNotConfigured);
         };
-        match ledger.first_sighting(
+        match ledger.first_sighting_with_freshness(
             &mut self.shaping, side, kind, entity_id, authored_value,
         ) {
             Ok(emission) => Ok(emission),
