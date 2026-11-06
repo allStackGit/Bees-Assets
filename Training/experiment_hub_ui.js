@@ -45,6 +45,9 @@ function trainingFormPayload() {
 
 // Compare exports remain observational, not benchmark or qualification
 // evidence. Keep transformations independent of browser state.
+function hubComparisonTerminal(job) {
+    return ['finished','failed','stopped'].includes(job.status);
+}
 function hubComparisonPoints(run) {
     return run.points.length?run.points:
         [run.job.live_execution?.progress||run.job.final_progress].filter(Boolean);
@@ -356,26 +359,28 @@ document.addEventListener('DOMContentLoaded', () => {
         const jobs=state.jobs.filter(j=>j.project_id===project);
         const samples=comparisonProject===project&&comparisonData?.samples||[];
         const history=new Map(samples.map(s=>[s.job_id,s.points||[]]));
-        const chartable=jobs.filter(j=>j.live_execution?.progress||
-            j.final_progress||history.get(j.id)?.length).slice(-80).reverse();
+        const hasSamples=j=>j.live_execution?.progress||j.final_progress||history.get(j.id)?.length;
+        const selectable=jobs.filter(j=>hasSamples(j)||hubComparisonTerminal(j)).slice(-80).reverse();
+        const chartable=selectable.filter(hasSamples);
+        const defaults=chartable.length?chartable:selectable;
         const previous=compareSlots.map(slot=>$('hub-compare-'+slot).value);
         const changedProject=selectionProject!==project;
         if(changedProject)comparisonDefaultsApplied=false;
         selectionProject=project;
-        const chooseDefaults=!comparisonDefaultsApplied&&chartable.length>0;
+        const chooseDefaults=!comparisonDefaultsApplied&&defaults.length>0;
         const selected=new Set();
         for(let i=0;i<compareSlots.length;i++) {
             const select=$('hub-compare-'+compareSlots[i]);
             select.replaceChildren(new Option('No run',''),
-                ...chartable.map(j=>new Option(
+                ...selectable.map(j=>new Option(
                     j.configuration_name+
                     ' · job '+(jobs.indexOf(j)+1)+
                     (j.continuation_of_job_id?' · continuation':' · initial run')+
                     ' · '+j.status+
                     ' · '+new Date(j.created_at).toLocaleDateString(),j.id)));
             const desired=chooseDefaults&&i<2
-                ?chartable[i]?.id:(!changedProject?previous[i]:null);
-            if(desired&&chartable.some(j=>j.id===desired)&&
+                ?defaults[i]?.id:(!changedProject?previous[i]:null);
+            if(desired&&selectable.some(j=>j.id===desired)&&
                 !selected.has(desired)){
                 select.value=desired;
                 selected.add(desired);
@@ -404,7 +409,7 @@ document.addEventListener('DOMContentLoaded', () => {
         axisSelect.value='steps_completed';
         const hasExportData=runs.some(run=>hubComparisonPoints(run).length);
         $('hub-compare-export-csv').disabled=!hasExportData;
-        $('hub-compare-export-json').disabled=!hasExportData;
+        $('hub-compare-export-json').disabled=!hasExportData&&!runs.some(run=>hubComparisonTerminal(run.job));
         const note=comparisonError&&comparisonProject===project
             ?'Unable to load comparison history: '+comparisonError
             :comparisonProject!==project
@@ -462,7 +467,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const tr=document.createElement('tr');
             cell(tr,run.slot+' · '+j.configuration_name+
                 (j.continuation_of_job_id?' (continuation)':''));
-            cell(tr,j.status+' · '+(j.assigned_machine_id||'unassigned'));
+            cell(tr,j.status+' · '+(j.assigned_machine_id||'unassigned')+
+                (j.execution_diagnostic?' · '+j.execution_diagnostic:''));
             const metric=p?.metrics?.[metricSelect.value.slice(7)];
             cell(tr,p?.steps_completed?.toLocaleString()||'—');
             cell(tr,metric?metric.value.toLocaleString()+' '+metric.unit:'—');
@@ -474,8 +480,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         if(!runs.length) {
             const tr=document.createElement('tr');
-            cell(tr,chartable.length?'Select a run above to compare.':
-                'No reported learning progress for this project.').colSpan=7;
+            cell(tr,selectable.length?'Select a run above to compare or export.':
+                'No recorded training samples or terminal jobs for this project.').colSpan=7;
             table.append(tr);
         }
         drawComparisonChart(runs,$('hub-compare-metric').value,
@@ -605,8 +611,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 points:hubComparisonPoints({job,points:byJob.get(id)||[]}),
             };
         }).filter(Boolean);
-        if(!runs.some(run=>run.points.length))
-            throw Error('No recorded samples for the selected runs.');
+        if(!runs.some(run=>run.points.length||(format==='json'&&hubComparisonTerminal(run))))
+            throw Error(format==='csv'?'No recorded samples for the selected runs.':
+                'Select a job with recorded samples or a terminal outcome.');
         const exported={
             schema_version:1,project_id:project,
             exported_at:new Date().toISOString(),
