@@ -1099,9 +1099,9 @@ impl NativeSquadCommandDirector {
                 }
             }
         }
-        self.completed_scratch.sort_unstable_by_key(|(owner, _)| (
-            owner.level_id, owner.squad_id, owner.lifecycle_id,
-        ));
+        // Iteration above already follows SquadLifetime's derived Ord,
+        // i.e. (level_id, squad_id, lifecycle_id). Each owner is pushed
+        // at most once, so completions remain ordered without a second sort.
         for (owner, cause) in self.completed_scratch.drain(..) {
             // Source Guard.SetFinalize must release its speed override,
             // regardless of whether it ended normally or its target died.
