@@ -13,6 +13,7 @@ const {suiteIds}=require('./experiment_hub_evaluation');
 const SAFE_PATH=/^[A-Za-z0-9_./:@=+\-,]+$/;
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const HASH=/^[0-9a-f]{64}$/;
+const PCI=/^[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]$/;
 const MAX_EPISODES=100000000;
 
 function verifiedFile(file,expectedSha256,fsApi=fs) {
@@ -131,6 +132,26 @@ function evaluationReader(options,fsApi,sourceRoot,artifactRoot) {
     };
 }
 
+function rocmVerifier(options,fsApi,check) {
+    const {gpuVerifierPath,gpuVerifierSha256,configPath,qualificationReport}=options;
+    if(gpuVerifierPath==null&&gpuVerifierSha256==null)return {};
+    if(typeof gpuVerifierPath!=='string'||!path.isAbsolute(gpuVerifierPath)||
+        !SAFE_PATH.test(gpuVerifierPath)||gpuVerifierPath.length>512)
+        throw Error('Ants ROCm verifier requires a safe absolute local path.');
+    const checkVerifier=()=>verifiedFile(gpuVerifierPath,gpuVerifierSha256,fsApi);
+    checkVerifier();
+    return {
+        gpu_verify_args(_frozen,context) {
+            if(context?.project_id!=='ants'||!UUID.test(String(context.job_id||''))||
+                !PCI.test(String(context.gpu_pci_address||'')))
+                throw Error('Ants ROCm verification requires the leased PCI identity.');
+            check();
+            checkVerifier();
+            return ['-B',gpuVerifierPath,configPath,qualificationReport,context.gpu_pci_address];
+        },
+    };
+}
+
 function createAntsProductionAdapter(options={}) {
     const {python,projectRoot,configPath,qualificationReport,
         artifactRoot,configSha256,qualificationSha256}=options;
@@ -159,6 +180,7 @@ function createAntsProductionAdapter(options={}) {
         executable:python,
         cwd:projectRoot,
         stop_policy:'interrupt-main',
+        ...rocmVerifier(options,fsApi,check),
         ...evaluationReader(options,fsApi,sourceRoot,artifactRoot),
         readProgress(context) {
             // This is a filesystem read only. Job context is native,

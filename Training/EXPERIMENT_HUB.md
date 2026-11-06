@@ -1107,7 +1107,7 @@ OS-level quota enforcement, session lifecycle, reconnection,
 production adapter compatibility and real stop semantics remain
 unverified and must not be inferred from the simulations.
 
-## Ants-v2 production adapter (locally installed, CPU-only)
+## Ants-v2 production adapter (locally installed)
 
 `Training/experiment_hub_ants_adapter.js` exports
 `createAntsProductionAdapter(...)`, a locally configured trusted adapter
@@ -1128,8 +1128,17 @@ reuse their existing directory and reject redirected checkpoint paths. It passes
 authorization. That authorization independently requires the exact
 current source, configuration and resolved runtime/device lineage
 used by the passing qualification report. This adapter cannot authorize
-training on its own. A clean and properly qualified **CPU runtime**
-is required for this adapter. The adapter does not advertise GPU execution.
+training on its own. By default the adapter advertises CPU execution.
+
+For a qualified ROCm installation, set the local adapter options
+`gpuVerifierPath` to the absolute path of
+`experiment_hub_ants_rocm_verify.py` and `gpuVerifierSha256` to its pinned
+digest. Enable the Linux agent's ROCm opt-in and use a qualification
+report from the exact Ants source, YAML, and ROCm runtime. The verifier
+runs under the training service's device policy, validates the standard
+Ants authorization, checks the leased PCI device in PyTorch's loaded HIP
+runtime, and completes a small tensor operation before training starts.
+Real systemd and ROCm verification on Halifax is still required.
 
 Example local module at `/etc/experiment-hub/approved-adapters.js`
 (paths are illustrative and must be changed to installed locations):
