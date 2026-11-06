@@ -454,7 +454,7 @@ class ExperimentHub {
         // start unattended workloads, even though claims/jobs persist.
         this.automation = {
             enabled:false,machine_ids:[],agent_instances:{},managed_job_ids:[],
-            rebalance_queued:false,start_qualified_gpu:false,claimed_lease_ids:[],
+            rebalance_queued:false,start_qualified_gpu:false,claim_exclusive_gpu:false,claimed_lease_ids:[],
             session_id:null,
             armed_at:null,last_tick_at:null,last_action:null,last_error:null,
             last_transition_at:null,waiting_reason:null,
@@ -593,7 +593,7 @@ class ExperimentHub {
                 throw Error('Explicitly confirm disarming native automation.');
             this.automation={
                 enabled:false,machine_ids:[],agent_instances:{},managed_job_ids:[],
-                rebalance_queued:false,start_qualified_gpu:false,claimed_lease_ids:[],
+                rebalance_queued:false,start_qualified_gpu:false,claim_exclusive_gpu:false,claimed_lease_ids:[],
                 session_id:null,armed_at:null,last_tick_at:this.automation.last_tick_at,
                 last_action:'Disarmed by operator.',last_error:null,
                 last_transition_at:this.automation.last_transition_at,
@@ -636,10 +636,13 @@ class ExperimentHub {
             managed_job_ids:[],session_id:crypto.randomUUID(),
             rebalance_queued:value.rebalance_queued===true,claimed_lease_ids:[],
             start_qualified_gpu:value.start_qualified_gpu===true,
+            claim_exclusive_gpu:value.claim_exclusive_gpu===true,
             armed_at:now(),last_tick_at:null,
             last_action:value.start_qualified_gpu===true
                 ?'Armed for CPU jobs and explicitly qualified GPU claims; no job dispatched yet.'
-                :'Armed for qualified CPU-only jobs; no job dispatched yet.',
+                :value.claim_exclusive_gpu===true
+                    ?'Armed for CPU jobs and exclusive GPU claims; GPU Starts require operator approval.'
+                    :'Armed for qualified CPU-only jobs; no job dispatched yet.',
             last_error:null,last_transition_at:null,waiting_reason:null,
             last_claimed_project_id:null,last_started_project_id:null,
         };
@@ -747,21 +750,25 @@ class ExperimentHub {
                         ' to '+moved.machine_id+'; awaiting a new receipt.');
                 }
             }
+            const claimable=job=>{
+                const r=job.resources;
+                return !job.lease_id&&r.ram_mb>=128&&(
+                    r.gpu_count===0&&!(r.gpus||[]).length||
+                    session.claim_exclusive_gpu&&r.gpu_count===1&&r.gpu_mode==='exclusive');
+            };
+            const eligibleHosts=job=>capable.filter(machine=>
+                machine.installed_projects?.includes(job.project_id)&&
+                (job.resources.gpu_count===0||
+                    machine.agent_platform==='linux'&&
+                    machine.gpu_projects?.includes(job.project_id)&&
+                    machine.observed_gpus?.length>=2));
             for(const [index,job] of pendingClaims.entries()) {
-                if(job.lease_id||job.resources.gpu_count!==0||
-                    (job.resources.gpus||[]).length||job.resources.ram_mb<128)
-                    continue;
-                const eligible=capable.filter(m=>
-                    m.installed_projects?.includes(job.project_id));
-                // Keep project round-robin order, but do not place this
-                // flexible CPU job on the sole adapter-capable host for
-                // another pending CPU-only job.
-                const following=pendingClaims.slice(index+1).filter(next=>
-                    !next.lease_id&&next.resources.gpu_count===0&&
-                    !(next.resources.gpus||[]).length&&next.resources.ram_mb>=128);
-                const chosen=allocationChoice(eligible,snapshot.reservations,
-                    job,null,following,next=>capable.filter(m=>
-                        m.installed_projects?.includes(next.project_id)));
+                if(!claimable(job))continue;
+                // Keep the fair project order while preserving sole fitting
+                // hosts for later CPU or exclusive GPU jobs.
+                const following=pendingClaims.slice(index+1).filter(claimable);
+                const chosen=allocationChoice(eligibleHosts(job),snapshot.reservations,
+                    job,null,following,eligibleHosts);
                 if(!chosen)continue;
                 const result=this.allocateJobs({
                     all_projects:true,job_ids:[job.id],
@@ -769,10 +776,11 @@ class ExperimentHub {
                 });
                 if(result.results[0]?.status!=='claimed')
                     throw Error('Selected placement did not produce an atomic claim.');
-                if(session.rebalance_queued)
+                if(session.rebalance_queued&&job.resources.gpu_count===0)
                     session.claimed_lease_ids.push(result.results[0].lease_id);
                 session.last_claimed_project_id=job.project_id;
-                return transitioned('Claimed CPU/RAM: '+job.project_id+' / '+
+                return transitioned((job.resources.gpu_count?'Claimed exclusive GPU: ':'Claimed CPU/RAM: ')+
+                    job.project_id+' / '+
                     (job.configuration_name||job.id.slice(-8))+
                     ' on '+chosen.machine_id+'; awaiting agent receipt.');
             }
@@ -785,8 +793,8 @@ class ExperimentHub {
                 :overcommitted.size
                     ?'Outstanding claims exceed CPU/RAM capacity on '+[...overcommitted].join(', ')+
                         '; move idle claims or release verified capacity.'
-                    :session.start_qualified_gpu
-                        ?'Awaiting capacity, agent receipts or a current GPU access proof.'
+                    :session.start_qualified_gpu||session.claim_exclusive_gpu
+                        ?'Awaiting capacity, agent receipts or an operator GPU access probe.'
                         :'No eligible CPU-only transition; awaiting agent receipts or available capacity.';
             return this.automationStatus();
         }catch(error) {

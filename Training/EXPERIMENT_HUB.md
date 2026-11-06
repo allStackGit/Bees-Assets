@@ -350,7 +350,8 @@ durable transition**: release capacity only for a job started in the
 or `stopped` report (activating an eligible prequeued successor in the
 same write after `finished`), authorize one eligible Start that passes
 the same live readiness gate as the manual Start button, or claim available
-CPU/RAM budget for an unassigned CPU-only non-Bees job. Jobs completed under
+CPU/RAM budget for an unassigned CPU-only non-Bees job or, when opted in,
+an exclusive single-GPU job. Jobs completed under
 older sessions require explicit capacity release unless their manual Start
 opted into terminal release. A machine cannot
 receive a second automatic Start authorization while another Start is
@@ -619,8 +620,12 @@ lease replacement as Train and requires a fresh destination receipt.
 Disarming or restarting ends ownership of earlier claims.
 
 An armed session can also opt into starting qualified GPU claims
-(`start_qualified_gpu:true`). GPU claims and access probes remain explicit
-operator actions. The normal native Start gates still apply, including
+(`start_qualified_gpu:true`). A separate option, `claim_exclusive_gpu:true`,
+lets the session claim for queued single-GPU jobs on armed Linux hosts with
+the required adapter, current PCI inventory and at least two observed AMD
+GPUs. The access-denial check needs a second device. Shared
+and multi-GPU requests stay outside automation. An operator must still
+request the GPU access probe for each lease. The normal native Start gates still apply, including
 the current proof for the exact lease and agent instance and the
 in-service device and runtime checks. Verified jobs started by the
 session use its existing completion release path.
