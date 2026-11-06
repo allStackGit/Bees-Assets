@@ -81,17 +81,23 @@ def poll(args, suite):
                 continue
             cursor.pop(dispatch)
             cursor[dispatch] = update
-            save_cursor(state, saved)
-            with tempfile.TemporaryDirectory(prefix="tinybrains-eval-", dir=args.scratch) as temp:
-                wins, trials = evaluate(file, checkpoint_digest, suite, Path(temp))
+            # Record a handled failure once, but leave the checkpoint
+            # eligible if the evaluator is interrupted before a result.
+            try:
+                with tempfile.TemporaryDirectory(prefix="tinybrains-eval-", dir=args.scratch) as temp:
+                    wins, trials = evaluate(file, checkpoint_digest, suite, Path(temp))
+            except (OSError, RuntimeError, ValueError, TypeError, KeyError):
+                save_cursor(state, saved)
+                raise
             pending = {"target": job, "receipt": {
                 "schema_version": 1, "suite_id": suite_id, "dispatch_id": dispatch,
                 "checkpoint_sha256": checkpoint_digest, "trials": trials, "successes": wins,
             }}
             save_cursor(state, {**saved, "pending_receipt": pending})
             flush_receipt(args, receipt_suite, pending, current_targets())
-            break
-        if saved != prior or pending is not None:
+            save_cursor(state, saved)
+            return
+        if saved != prior:
             save_cursor(state, saved)
 
 
