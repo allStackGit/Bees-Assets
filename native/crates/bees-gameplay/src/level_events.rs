@@ -6,7 +6,7 @@
 //! All mutable scratch is reused per Level, never process-global.
 
 use bees_hivemind::session::{HiveMindSession, SquadLifetime};
-use bees_sim::combat_world::CombatWorld;
+use bees_sim::combat_world::{CombatEvent, CombatWorld};
 use bees_sim::navigation_runtime::NavigationRuntime;
 use bees_sim::rl_shaping::{DamageRewardMetadata, RewardEmission};
 use bees_sim::rl_discovery::DiscoveryKind;
@@ -71,6 +71,10 @@ pub struct NativeLevelNotification {
 #[derive(Clone, Debug)]
 pub enum NativeLevelNotificationKind {
     SquadChange(SquadRosterChange),
+    /// Source MiningAsteroid.Kill(false): the Level's game adapter must
+    /// remove the visual entity and finalize commands targeting this rock.
+    /// Kept across rollout windows until the adapter acknowledges it.
+    MiningAsteroidDepleted { obstacle_id: i64 },
     FinishedCommand(FinishedNativeCommand),
     /// Only emitted when group delivery is not configured. Never also
     /// apply this raw reward to a group-enabled PPO trajectory.
@@ -585,8 +589,12 @@ impl NativeLevelEventProcessor {
         let reward_count = group_events.map_or(
             reward.emissions.len(), |events| events.len(),
         );
+        let mining_depletions = world.events().iter().filter(|event|
+            matches!(event, CombatEvent::MiningAsteroidDepleted { .. })
+        ).count();
         let new_count = self.changes.len()
             .saturating_add(self.finished.len())
+            .saturating_add(mining_depletions)
             .saturating_add(reward_count)
             .saturating_add(usize::from(reward.finalized.is_some()));
         // Only the notification outbox is mutated here: the reward and
@@ -607,6 +615,19 @@ impl NativeLevelEventProcessor {
                     finished.clone(),
                 ),
             });
+        }
+        // Physical asteroid retirement already happened in CombatWorld.
+        // Forward only its sparse lifecycle event; do not maintain a
+        // second Level asteroid registry or guess a mining command owner.
+        for event in world.events() {
+            if let CombatEvent::MiningAsteroidDepleted { obstacle_id } = event {
+                self.pending_notifications.push(NativeLevelNotification {
+                    tick: completed_tick,
+                    kind: NativeLevelNotificationKind::MiningAsteroidDepleted {
+                        obstacle_id: *obstacle_id,
+                    },
+                });
+            }
         }
         if let Some(group) = group_events {
             for &event in group {
