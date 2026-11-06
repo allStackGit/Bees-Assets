@@ -183,8 +183,8 @@ impl From<CombatWorldError> for GameCommandError {
 pub enum StrategyReceiptAction {
     Applied(Activation),
     DiscardReservations(Vec<i64>),
-    /// Unity Guard bans the strategy until the next eligibility reset when
-    /// there is no squad to protect. The host must update live banned strats.
+    /// Unity Guard and Mining ban unavailable strategies until the next
+    /// eligibility reset; the host must update the live banned-strat set.
     BanAndDiscardReservations {
         reservation_ids: Vec<i64>,
         command: LocalCommandKind,
