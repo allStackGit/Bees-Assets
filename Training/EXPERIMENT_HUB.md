@@ -610,6 +610,15 @@ process listings can expose them.
 
 ### Operator-initiated native execution
 
+Train can withdraw a Start while it is still awaiting its first worker
+delivery. The Hub records the first offer before returning the worker
+order. A lost reply therefore leaves ownership uncertain and requires
+native inspection. Pending Starts written before the first-offer marker
+also require inspection. A withdrawn job keeps its lease and returns to the
+queue. Disarm automation on that host before withdrawing. If an offered
+Start loses a launch prerequisite, the Hub sends Inspect while the
+prerequisite is unavailable.
+
 The manager accepts `POST /api/hub/jobs/start` with
 `{job_id,confirm_start:true}` only for a frozen non-Bees job holding a
 fresh acknowledged lease on a connected Linux agent that has explicitly

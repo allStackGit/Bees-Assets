@@ -1128,9 +1128,30 @@ class ExperimentHub {
             selected.automation_start_session_id=this.automation.session_id;
         selected.dispatch_id=crypto.randomUUID();
         selected.start_requested_at=now();
+        selected.start_first_offered_at=null;
         selected.status_reason='Start authorized; waiting for machine-local OS resource enforcement verification.';
         this.commit(next);
         return {id:selected.id,status:selected.status,dispatch_id:selected.dispatch_id};
+    }
+    withdrawStart(value) {
+        if(!object(value)||value.confirm_withdraw!==true||
+            !UUID.test(String(value.expected_dispatch_id||'')))
+            throw Error('Explicitly confirm which Start authorization to withdraw.');
+        const next=copy(this.state);
+        const job=next.jobs.find(j=>j.id===value.job_id);
+        if(!job||job.status!=='start_requested'||job.dispatch_id!==value.expected_dispatch_id||
+            job.start_first_offered_at!==null)
+            throw Error('Only a matching Start that has never been offered to a worker can be withdrawn.');
+        if(this.automation.enabled&&this.automation.machine_ids.includes(job.assigned_machine_id))
+            throw Error('Disarm automation for this machine before withdrawing Start.');
+        job.status='waiting_adapter';
+        delete job.dispatch_id;
+        delete job.start_requested_at;
+        delete job.start_first_offered_at;
+        delete job.automation_start_session_id;
+        job.status_reason='Undelivered Start withdrawn. The queued job retains its existing claim.';
+        this.commit(next);
+        return {id:job.id,status:job.status,lease_id:job.lease_id};
     }
     authorizeStop(value) {
         if(!object(value)||value.confirm_stop!==true||
@@ -1143,6 +1164,9 @@ class ExperimentHub {
             throw Error('Only a dispatched, nonterminal job may request a native stop.');
         const lease=next.reservations.find(l=>l.id===job.lease_id &&
             l.job_id===job.id&&l.status==='acknowledged');
+        if(job.status==='start_requested'&&job.start_first_offered_at===null)
+            return this.withdrawStart({job_id:job.id,expected_dispatch_id:job.dispatch_id,
+                confirm_withdraw:true});
         if(!lease)throw Error('Job/lease ownership cannot be verified.');
         job.status='stop_requested';
         job.stop_requested_at=now();
@@ -1177,7 +1201,7 @@ class ExperimentHub {
             seen.add(report.job_id);
             const job=next.jobs.find(j=>j.id===report.job_id);
             const lease=next.reservations.find(l=>l.id===report.lease_id);
-            if(!job||!lease||!installedProjects.includes(job.project_id)||
+            if(!job||job.start_first_offered_at===null||!lease||!installedProjects.includes(job.project_id)||
                 job.dispatch_id!==report.dispatch_id||
                 job.lease_id!==lease.id||lease.job_id!==job.id||
                 lease.machine_id!==machine.id||job.assigned_machine_id!==machine.id||
@@ -1308,26 +1332,24 @@ class ExperimentHub {
                 l.job_id===job.id&&l.project_id===job.project_id&&
                 l.machine_id===machineId&&l.status==='acknowledged');
             if(!lease||!machine.installed_projects.includes(job.project_id))continue;
-            const action=actionFor(job);
-            // An automatic Start belongs only to its live arm session.
-            // Restart/disarm may leave the request pending but cannot issue
-            // another native launch. Stop/Inspect still reconcile it safely.
-            if(action==='start'&&job.automation_start_session_id&&
-                (!this.automation.enabled||
-                 this.automation.session_id!==job.automation_start_session_id||
-                 this.automation.agent_instances[machineId]!==
-                    this.agentReports.get(machineId)?.instance_id))
-                continue;
-            // A stale capacity receipt forbids creating a new workload or
-            // probing a GPU, but must not strand an already owned process.
-            // Authenticated Stop/Inspect only reconcile the local ownership
-            // journal and cannot authorize a new launch.
-            if((action==='start'||action==='qualify_gpu')&&!lease.receipt_fresh)
-                continue;
-            if(action==='start'&&(machine.native_preflight_passed!==true||
-                !supportsEvaluation(machine.evaluation_suites,job)||
-                gpuStartBlock(job,lease,machine)))
-                continue;
+            let action=actionFor(job);
+            if(action==='start') {
+                const automationValid=!job.automation_start_session_id||
+                    (this.automation.enabled&&
+                     this.automation.session_id===job.automation_start_session_id&&
+                     this.automation.agent_instances[machineId]===
+                        this.agentReports.get(machineId)?.instance_id);
+                if(!automationValid||!lease.receipt_fresh||
+                    machine.native_preflight_passed!==true||
+                    !supportsEvaluation(machine.evaluation_suites,job)||
+                    gpuStartBlock(job,lease,machine)) {
+                    // A previously offered Start may already own a process.
+                    // Recover observation without re-authorizing a launch.
+                    if(typeof job.start_first_offered_at!=='string')continue;
+                    action='inspect';
+                }
+            }
+            if(action==='qualify_gpu'&&!lease.receipt_fresh)continue;
             if(action==='qualify_gpu'&&(
                 machine.agent_platform!=='linux'||
                 machine.native_preflight_passed!==true||
@@ -1339,6 +1361,13 @@ class ExperimentHub {
                     gpu_devices:machine.observed_gpus,
                 },lease.resources,lease.gpu_bindings)?.length!==1))
                 continue;
+            if(action==='start'&&job.start_first_offered_at==null) {
+                // Persist the point of no return before the order can leave
+                // the coordinator, including when the HTTP reply is lost.
+                const next=copy(this.state);
+                next.jobs.find(j=>j.id===job.id).start_first_offered_at=now();
+                this.commit(next);
+            }
             this.executionOrderCursor.set(machineId+':'+priority(job),job.id);
             return [{
                 action,dispatch_id:action==='qualify_gpu'
