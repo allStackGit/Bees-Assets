@@ -1959,7 +1959,7 @@ class ExperimentHub {
         }
         this.commit(next);
         return {jobs,executable:false,
-            note:'Independent jobs frozen together; each native Start still needs separately authorized CPU-only execution.'};
+            note:'Independent jobs frozen together; native Start needs explicit authorization or a qualified armed automation session.'};
     }
     // One durable write for the full linear checkpoint-continuation
     // pipeline: either all stages have validated lineage, or none do.
