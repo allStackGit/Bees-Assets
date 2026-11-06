@@ -428,6 +428,13 @@ function summarizeResourceSample(previous,report,observedAt) {
     };
 }
 
+function gpuProbeHoldsClaim(job) {
+    const proof=job.gpu_qualification;
+    return Boolean(job.lease_id&&proof?.lease_id===job.lease_id&&
+        (proof.cleanup_required||
+            (proof.status==='requested'&&proof.first_offered_at!==null)));
+}
+
 class ExperimentHub {
     constructor(root) {
         this.file = path.join(root, 'hub-v1.json');
@@ -544,6 +551,7 @@ class ExperimentHub {
         snapshot.jobs=snapshot.jobs.map(job=>{
             const proof=job.gpu_qualification;
             if(!proof)return job;
+            proof.holds_claim=gpuProbeHoldsClaim(job);
             const machine=snapshot.machines.find(m=>m.id===proof.machine_id);
             const lease=snapshot.reservations.find(l=>l.id===proof.lease_id);
             const report=this.agentReports.get(proof.machine_id);
@@ -917,12 +925,10 @@ class ExperimentHub {
             if(job.status==='waiting_adapter') {
                 if(job.dispatch_id)throw Error('Cannot release a claim after native dispatch.');
                 const proof=job.gpu_qualification;
-                if(proof?.lease_id===lease.id) {
-                    if(proof.cleanup_required||
-                        (proof.status==='requested'&&proof.first_offered_at!==null))
-                        throw Error('Wait for the offered GPU probe and verified cleanup before releasing its claim.');
+                if(gpuProbeHoldsClaim(job))
+                    throw Error('Wait for the offered GPU probe and verified cleanup before releasing its claim.');
+                if(proof?.lease_id===lease.id)
                     lease.gpu_qualification_request_id=proof.request_id;
-                }
                 if(job.gpu_qualification?.status==='requested') {
                     job.gpu_qualification.status='cancelled';
                     job.gpu_qualification.diagnostic=
@@ -1210,9 +1216,8 @@ class ExperimentHub {
             const job=next.jobs.find(j=>j.id===report.job_id);
             const lease=next.reservations.find(l=>l.id===report.lease_id);
             const request=job?.gpu_qualification;
-            // The operator may cancel an unstarted job or release the
-            // advisory lease while a short probe is finishing. Consume
-            // that exact old proof without restoring authority.
+            // Consume late receipts for exact released requests, including
+            // claims released by a coordinator that predates the probe hold.
             if(job&&lease?.status==='released'&&lease.job_id===job.id&&
                 lease.project_id===job.project_id&&lease.machine_id===machine.id&&
                 lease.gpu_qualification_request_id===report.dispatch_id)
