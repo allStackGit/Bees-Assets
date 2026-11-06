@@ -124,6 +124,15 @@ function verifyUnconfinedDeviceAccess(plan,fsApi) {
         finally{if(fd!==undefined)fsApi.closeSync(fd);}
     }
 }
+const terminalStates=new Set(['finished','stopped','failed']);
+const numeric=value=>/^[0-9]+$/.test(value||'')&&
+    Number.isSafeInteger(Number(value))?Number(value):null;
+
+function terminalResult(record,result,exitStatus) {
+    const expectedInterrupt=record.stop_requested_at&&
+        record.stop_policy==='interrupt-main'&&result==='exit-code'&&exitStatus==='130';
+    return result==='success'||expectedInterrupt?'finished':'failed';
+}
 function launchArguments(record,invocation,gpuPlan) {
     const args=['--user','--quiet','--service-type=exec',
         '--unit='+record.unit,'--description='+descriptionFor(record.job_id),
@@ -153,6 +162,13 @@ function launchArguments(record,invocation,gpuPlan) {
         // CPU adapter masks preserve existing selector behavior.
         args.push('--setenv=CUDA_VISIBLE_DEVICES=','--setenv=HIP_VISIBLE_DEVICES=',
             '--setenv=ROCR_VISIBLE_DEVICES=','--setenv=GPU_DEVICE_ORDINAL=');
+    }
+    if(record.receipt_path) {
+        const command=[process.execPath,path.join(__dirname,'experiment_hub_linux_terminal.js'),
+            record.receipt_path,record.job_id,record.lease_id];
+        if(command.some(arg=>/["\\%$\x00-\x1f]/.test(arg)))
+            throw Error('Linux terminal receipt requires unambiguous local paths.');
+        args.push('--property=ExecStopPost='+command.map(arg=>'"'+arg+'"').join(' '));
     }
     if(invocation.cwd)args.push('--working-directory='+invocation.cwd);
     // This is a systemd-run option boundary, not a shell.
@@ -399,6 +415,37 @@ class LinuxSupervisor {
             selected:plan.selected.map(g=>g.pci_address)};
     }
 
+    terminalAfterUnload(record) {
+        const absent={state:'unverified',active:false,unit_exists:false};
+        if(record.native_terminal_at&&terminalStates.has(record.state))
+            return {...absent,state:record.state,cpu_time_ns:record.terminal_cpu_time_ns??null};
+        if(!record.native_verified_at||!record.receipt_path||record.quarantined_at)
+            return absent;
+        let fd;
+        try {
+            fd=this.fs.openSync(record.receipt_path,
+                fs.constants.O_RDONLY|fs.constants.O_NONBLOCK|fs.constants.O_NOFOLLOW);
+            const stat=this.fs.fstatSync(fd);
+            if(!stat.isFile()||stat.size<1||stat.size>2048)
+                throw Error('Invalid Linux terminal receipt file.');
+            const bytes=Buffer.alloc(2049);
+            const count=this.fs.readSync(fd,bytes,0,bytes.length,0);
+            if(count!==stat.size)throw Error('Linux terminal receipt changed during read.');
+            const receipt=JSON.parse(bytes.toString('utf8',0,count));
+            if(receipt.version!==1||receipt.job_id!==record.job_id||
+                receipt.lease_id!==record.lease_id||
+                typeof receipt.result!=='string'||!/^[a-z][a-z-]{0,31}$/.test(receipt.result)||
+                !['exited','killed','dumped'].includes(receipt.exit_code)||
+                !/^[0-9A-Z]{1,32}$/.test(receipt.exit_status))
+                throw Error('Linux terminal receipt does not match its native job.');
+            return {...absent,state:terminalResult(record,receipt.result,receipt.exit_status)};
+        }catch(error){
+            if(error.code==='ENOENT'&&fd===undefined)return absent;
+            throw error;
+        }finally{
+            if(fd!==undefined)this.fs.closeSync(fd);
+        }
+    }
     async inspectUnit(record,{requireKernel=true}={}) {
         const out=await this.runner(SYSTEMCTL,
             ['--user','show',record.unit,'--no-pager',
@@ -406,7 +453,7 @@ class LinuxSupervisor {
             {timeout:12000,maxBuffer:16384,windowsHide:true});
         const p=parseShow(out.stdout);
         if(p.LoadState==='not-found')
-            return {state:'unverified',active:false,unit_exists:false};
+            return this.terminalAfterUnload(record);
         if(p.LoadState!=='loaded')
             return {state:'unverified',active:false,unit_exists:true};
         if(p.Id!==record.unit||p.Description!==descriptionFor(record.job_id))
@@ -423,8 +470,6 @@ class LinuxSupervisor {
         if(p.ActiveState==='active'||p.ActiveState==='deactivating') {
             const kernel=requireKernel
                 ?verifyKernelLimits(p,record.cpus,record.ram_mb,this.fs):null;
-            const numeric=value=>/^[0-9]+$/.test(value||'')&&
-                Number.isSafeInteger(Number(value))?Number(value):null;
             const memoryBytes=numeric(p.MemoryCurrent);
             return {state:'running',active:true,unit_exists:true,
                 kernel_limits_verified:kernel?.verified===true,
@@ -435,14 +480,8 @@ class LinuxSupervisor {
                 process_tasks:numeric(p.TasksCurrent)};
         }
         if(p.ActiveState==='inactive'||p.ActiveState==='failed') {
-            // Ants' reviewed CLI returns 130 after a handled SIGINT, even
-            // when it deliberately preserved the previous durable checkpoint.
-            const expectedInterrupt=record.stop_requested_at&&
-                record.stop_policy==='interrupt-main'&&
-                p.Result==='exit-code'&&p.ExecMainStatus==='130';
-            return {state:p.Result==='success'||expectedInterrupt
-                ?'finished':'failed',
-                active:false,unit_exists:true,pid:null};
+            return {state:terminalResult(record,p.Result,p.ExecMainStatus),
+                active:false,unit_exists:true,pid:null,cpu_time_ns:numeric(p.CPUUsageNSec)};
         }
         return {state:'unverified',active:false,unit_exists:true};
     }
@@ -462,13 +501,22 @@ class LinuxSupervisor {
         const updated={...record,state,
             observed_at:new Date().toISOString(),
             diagnostic:result.diagnostic||null};
-        if(record.state!==updated.state ||
+        if(!record.native_verified_at&&result.active&&result.kernel_limits_verified)
+            updated.native_verified_at=updated.observed_at;
+        if(!record.native_terminal_at&&terminalStates.has(state)) {
+            updated.native_terminal_at=updated.observed_at;
+            updated.terminal_cpu_time_ns=result.cpu_time_ns??null;
+        }
+        if(record.state!==updated.state||
+            record.native_verified_at!==updated.native_verified_at||
+            record.native_terminal_at!==updated.native_terminal_at||
             (record.diagnostic||null)!==updated.diagnostic)
             this.commit(this.state.records.map(r=>r.job_id===jobId?updated:r));
         return {...updated,active:result.active,
             pid:result.pid??null,
             memory_current_mb:result.memory_current_mb??null,
-            cpu_time_ns:result.cpu_time_ns??null,
+            cpu_time_ns:result.cpu_time_ns??
+                (terminalStates.has(state)?updated.terminal_cpu_time_ns??null:null),
             process_tasks:result.process_tasks??null};
     }
     async quarantineUnverified(jobId,reason) {
@@ -556,6 +604,9 @@ class LinuxSupervisor {
             stop_policy:invocation.stop_policy,
             requested_at:new Date().toISOString(),observed_at:null,diagnostic:null,
         };
+        record.receipt_path=path.resolve(this.root,'job-'+job.id+'.linux-receipt.json');
+        if(this.fs.existsSync(record.receipt_path))
+            throw Error('A terminal receipt already exists for this job identity.');
         const args=launchArguments(record,invocation,gpuPlan);
         this.commit(this.state.records.concat(record));
         try{
