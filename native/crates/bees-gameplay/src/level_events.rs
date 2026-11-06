@@ -7,7 +7,7 @@
 
 use bees_hivemind::session::{HiveMindSession, SquadLifetime, StrategyReceipt};
 use bees_sim::combat_world::{CombatEvent, CombatWorld};
-use bees_sim::collision::CollisionMatrix;
+use bees_sim::physics::CollisionMatrix;
 use bees_sim::navigation_runtime::NavigationRuntime;
 use bees_sim::simulation::RandomStream;
 use bees_sim::rl_shaping::{DamageRewardMetadata, RewardEmission};
