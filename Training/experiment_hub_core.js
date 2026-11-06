@@ -563,6 +563,10 @@ class ExperimentHub {
     }
     snapshot() {
         const snapshot = copy(this.state);
+        // Preserve existing Ants-v2 registry provenance without presenting
+        // it as a supported executable project.
+        snapshot.projects=snapshot.projects.map(project=>project.id==='ants'
+            ?{...project,name:'Ants-v2 (retired)',retired:true}:project);
         const observedAt = Date.now();
         snapshot.machines = snapshot.machines.map(machine => {
             const report = this.agentReports.get(machine.id);
