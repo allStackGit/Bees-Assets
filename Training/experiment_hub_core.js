@@ -454,7 +454,7 @@ class ExperimentHub {
         // start unattended workloads, even though claims/jobs persist.
         this.automation = {
             enabled:false,machine_ids:[],agent_instances:{},managed_job_ids:[],
-            rebalance_queued:false,start_qualified_gpu:false,claim_exclusive_gpu:false,claimed_lease_ids:[],
+            rebalance_queued:false,start_qualified_gpu:false,claim_exclusive_gpu:false,probe_exclusive_gpu:false,claimed_lease_ids:[],
             session_id:null,
             armed_at:null,last_tick_at:null,last_action:null,last_error:null,
             last_transition_at:null,waiting_reason:null,
@@ -555,6 +555,8 @@ class ExperimentHub {
                 machine.verified_gpus?.some(g=>
                     g.pci_address===pinned[0].pci_address&&
                     g.vram_mb>=pinned[0].vram_mb));
+            proof.automation_paused=Boolean(proof.status==='requested'&&proof.automation_session_id&&
+                !this.automationSessionCurrent(proof.automation_session_id,proof.machine_id));
             proof.current=Boolean(proof.status==='verified'&&
                 ['waiting_adapter','start_requested'].includes(job.status)&&
                 job.lease_id===proof.lease_id&&lease?.receipt_fresh&&
@@ -581,6 +583,11 @@ class ExperimentHub {
         snapshot.automation=this.automationStatus();
         return snapshot;
     }
+    automationSessionCurrent(sessionId,machineId) {
+        const instance=this.automation.agent_instances[machineId];
+        return Boolean(instance&&this.automation.enabled&&this.automation.session_id===sessionId&&
+            instance===this.agentReports.get(machineId)?.instance_id);
+    }
     automationStatus() {
         const {agent_instances,managed_job_ids,claimed_lease_ids,session_id,...publicState}=this.automation;
         return {...copy(publicState),managed_jobs:managed_job_ids.length};
@@ -593,7 +600,7 @@ class ExperimentHub {
                 throw Error('Explicitly confirm disarming native automation.');
             this.automation={
                 enabled:false,machine_ids:[],agent_instances:{},managed_job_ids:[],
-                rebalance_queued:false,start_qualified_gpu:false,claim_exclusive_gpu:false,claimed_lease_ids:[],
+                rebalance_queued:false,start_qualified_gpu:false,claim_exclusive_gpu:false,probe_exclusive_gpu:false,claimed_lease_ids:[],
                 session_id:null,armed_at:null,last_tick_at:this.automation.last_tick_at,
                 last_action:'Disarmed by operator.',last_error:null,
                 last_transition_at:this.automation.last_transition_at,
@@ -604,6 +611,8 @@ class ExperimentHub {
         }
         if(this.automation.enabled)
             throw Error('Native automation is already armed; disarm explicitly before starting another session.');
+        if(value.probe_exclusive_gpu===true&&value.claim_exclusive_gpu!==true)
+            throw Error('Automatic GPU probes require automatic exclusive GPU claims.');
         const ids=value.machine_ids;
         if(value.confirm_arm!==true||value.confirm_untracked_load!==true||
             !Array.isArray(ids)||ids.length<1||ids.length>16||
@@ -637,6 +646,7 @@ class ExperimentHub {
             rebalance_queued:value.rebalance_queued===true,claimed_lease_ids:[],
             start_qualified_gpu:value.start_qualified_gpu===true,
             claim_exclusive_gpu:value.claim_exclusive_gpu===true,
+            probe_exclusive_gpu:value.probe_exclusive_gpu===true,
             armed_at:now(),last_tick_at:null,
             last_action:value.start_qualified_gpu===true
                 ?'Armed for CPU jobs and explicitly qualified GPU claims; no job dispatched yet.'
@@ -730,10 +740,10 @@ class ExperimentHub {
                      ['cpu','memory'].every(c=>
                         m.execution_capabilities?.cgroup_controllers.includes(c)))));
             const overcommitted=new Set(selected.filter(m=>m.capacity_overcommitted).map(m=>m.id));
+            const queuedLeases=new Set(pending.map(job=>job.lease_id));
+            session.claimed_lease_ids=session.claimed_lease_ids.filter(id=>queuedLeases.has(id));
+            const owned=new Set(session.claimed_lease_ids);
             if(session.rebalance_queued) {
-                const queuedLeases=new Set(pending.map(job=>job.lease_id));
-                session.claimed_lease_ids=session.claimed_lease_ids.filter(id=>queuedLeases.has(id));
-                const owned=new Set(session.claimed_lease_ids);
                 for(const job of pendingClaims) {
                     if(!owned.has(job.lease_id)||!overcommitted.has(job.assigned_machine_id)||
                         job.dispatch_id||job.continuation_machine_id||job.resources.gpu_count!==0)
@@ -748,6 +758,22 @@ class ExperimentHub {
                         .filter(id=>id!==moved.released_lease_id).concat(moved.lease_id);
                     return transitioned('Moved queued CPU claim from '+job.assigned_machine_id+
                         ' to '+moved.machine_id+'; awaiting a new receipt.');
+                }
+            }
+            if(session.probe_exclusive_gpu) {
+                for(const job of pendingClaims) {
+                    if(job.resources.gpu_count!==1||!owned.has(job.lease_id)||
+                        job.gpu_qualification?.lease_id===job.lease_id||
+                        startingMachines.has(job.assigned_machine_id))
+                        continue;
+                    const machine=capable.find(m=>m.id===job.assigned_machine_id);
+                    const lease=snapshot.reservations.find(l=>l.id===job.lease_id);
+                    if(!machine?.gpu_projects?.includes(job.project_id)||
+                        (machine.observed_gpus?.length||0)<2||!lease?.receipt_fresh)
+                        continue;
+                    this.requestGpuQualification({job_id:job.id,confirm_qualify:true},'automation');
+                    return transitioned('Requested exclusive GPU access probe on '+machine.id+
+                        ' for '+job.configuration_name+'.');
                 }
             }
             const claimable=job=>{
@@ -776,7 +802,7 @@ class ExperimentHub {
                 });
                 if(result.results[0]?.status!=='claimed')
                     throw Error('Selected placement did not produce an atomic claim.');
-                if(session.rebalance_queued&&job.resources.gpu_count===0)
+                if(job.resources.gpu_count===0?session.rebalance_queued:session.probe_exclusive_gpu)
                     session.claimed_lease_ids.push(result.results[0].lease_id);
                 session.last_claimed_project_id=job.project_id;
                 return transitioned((job.resources.gpu_count?'Claimed exclusive GPU: ':'Claimed CPU/RAM: ')+
@@ -1085,7 +1111,7 @@ class ExperimentHub {
         }))};
     }
     // Explicitly request an inert GPU device-filter proof, not a launch.
-    requestGpuQualification(value) {
+    requestGpuQualification(value,origin='operator') {
         if(!object(value)||value.confirm_qualify!==true||
             !UUID.test(String(value.job_id||'')))
             throw Error('Explicitly confirm the job whose GPU access will be probed.');
@@ -1114,14 +1140,23 @@ class ExperimentHub {
                 gpu_devices:machine.observed_gpus,
             },lease.resources,lease.gpu_bindings)?.length!==1)
             throw Error('GPU access probe needs a fresh exclusive single-GPU lease on a qualified Linux agent.');
-        if(job.gpu_qualification?.status==='requested')
-            throw Error('GPU access probe is already requested for this job.');
+        const session=this.automation;
+        if(origin==='automation'&&(!session.probe_exclusive_gpu||
+            !session.claimed_lease_ids.includes(lease.id)||
+            !this.automationSessionCurrent(session.session_id,machine.id)))
+            throw Error('This session no longer authorizes an automatic GPU probe.');
         const next=copy(this.state);
         const selected=next.jobs.find(j=>j.id===job.id);
-        selected.gpu_qualification={
+        if(job.gpu_qualification?.status==='requested') {
+            if(origin!=='operator'||!job.gpu_qualification.automation_paused||
+                job.gpu_qualification.lease_id!==lease.id)
+                throw Error('GPU access probe is already requested for this job.');
+            delete selected.gpu_qualification.automation_session_id;
+        }else selected.gpu_qualification={
             request_id:crypto.randomUUID(),lease_id:lease.id,
             machine_id:machine.id,status:'requested',
             requested_at:now(),
+            ...(origin==='automation'?{automation_session_id:session.session_id}:{}),
         };
         this.commit(next);
         return {job_id:job.id,lease_id:lease.id,
@@ -1450,7 +1485,7 @@ class ExperimentHub {
                 machine.native_preflight_passed!==true||
                 job.resources.gpu_mode!=='exclusive'||
                 job.resources.gpu_count!==1||
-                job.gpu_qualification.lease_id!==lease.id||
+                job.gpu_qualification.lease_id!==lease.id||job.gpu_qualification.automation_paused||
                 physicalGpuBindings(machine,{
                     gpu_inventory_source:machine.gpu_inventory_source,
                     gpu_devices:machine.observed_gpus,
