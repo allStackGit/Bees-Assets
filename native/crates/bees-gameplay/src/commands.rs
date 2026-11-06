@@ -308,6 +308,9 @@ struct MiningRun {
     formation: SquadFormationOptions,
     members: Vec<SquadFormationMember>,
     eligible: Vec<i64>,
+    /// Enrollment bits parallel to eligible avoid O(squad size squared)
+    /// repeated contains() checks on every physics step.
+    registered: Vec<bool>,
     /// Encounter order, not ID order: Unity assigns mining remainders to
     /// ShipsCurrentlyMining in the order FoundAsteroid registered them.
     currently_mining: Vec<i64>,
@@ -332,12 +335,13 @@ impl MiningRun {
         // Contact is checked on the actual freshly stepped physical hull,
         // not an extra "close enough" radius or guessed collision grid.
         if !self.has_found_all {
-            for &id in &self.eligible {
-                if self.currently_mining.contains(&id) {
+            for (slot, &id) in self.eligible.iter().enumerate() {
+                if self.registered[slot] {
                     continue;
                 }
                 if world.ship(id).is_some_and(|ship| !ship.vitals.is_dead()) &&
                     world.ship_touches_mining_asteroid(id, self.target_id) {
+                    self.registered[slot] = true;
                     self.currently_mining.push(id);
                     if self.mining_timer.is_none() {
                         // Source FoundAsteroid starts the five-second
@@ -351,9 +355,9 @@ impl MiningRun {
             // Dead ships no longer block the source "all miners reached"
             // transition. It cancels movement polling after five seconds,
             // not the ongoing mining timer.
-            if self.eligible.iter().all(|id|
+            if self.eligible.iter().enumerate().all(|(i, id)|
                 !world.ship(*id).is_some_and(|ship| !ship.vitals.is_dead()) ||
-                self.currently_mining.contains(id)
+                self.registered[i]
             ) {
                 self.has_found_all = true;
                 self.stop_moving_timer = Some(ScaledTimer::new(
@@ -612,6 +616,7 @@ impl NativeSquadCommandDirector {
                     ),
                     formation: squad.formation,
                     members: squad.members.to_vec(),
+                    registered: vec![false; eligible.len()],
                     eligible,
                     currently_mining: Vec::new(),
                     mining_timer: None,
