@@ -370,8 +370,11 @@ round-robin order, and checks the installed adapter inventory before
 treating a future host as capable. The manual allocation pass and read-only queue preview
 keep their stable per-project interleave rather than guessing what a
 future armed scheduler session will choose. An agent must first
-acknowledge each fresh claim. Jobs requesting any GPU remain outside
-this automation; existing Bees training remains under its own operator.
+acknowledge each fresh claim. CPU-only is the default. Exclusive
+single-GPU jobs can enter this automation only with the explicit claim,
+probe and Start options described in the Linux native supervisor section.
+Shared and multi-GPU requests remain excluded. Existing Bees training
+remains under its own operator.
 
 A failed or unverified managed job, disappearing/replaced agent, or
 failed coordinator operation disarms the session without retrying an
