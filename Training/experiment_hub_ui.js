@@ -792,13 +792,15 @@ document.addEventListener('DOMContentLoaded', () => {
         const availableParents=(state.jobs||[]).filter(j=>
             ['tinybrains','courier'].includes(project)&&j.project_id===project&&!successors.has(j.id)&&(
                 j.assigned_machine_id&&j.dispatch_id&&(
-                    j.status==='finished'||
+                    j.status==='finished'||(j.project_id==='courier'&&j.status==='stopped'&&
+                        j.checkpoint_stop_verified===true&&j.capacity_released_at)||
                     ['start_requested','launch_requested','running'].includes(j.status))||
                 ['waiting_adapter','waiting_predecessor'].includes(j.status)));
         predecessorSelect.replaceChildren(
             new Option('New experiment (no predecessor)',''),
             ...availableParents.map(j=>new Option(
                 j.configuration_name+' · '+j.status+
+                (j.checkpoint_stop_verified===true?' · checkpoint saved':'')+
                 (!j.capacity_released_at?' · stage will wait':'')+' on '+
                 (state.machines.find(m=>m.id===(j.assigned_machine_id||
                     j.continuation_machine_id))?.name||

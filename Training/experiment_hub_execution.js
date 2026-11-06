@@ -141,6 +141,8 @@ class LocalExecution {
         const report={
             job_id:job.id,lease_id:lease.id,
             dispatch_id:order.dispatch_id,state,
+            ...(state==='stopped'&&observed.checkpoint_stop_verified===true
+                ?{checkpoint_stop_verified:true}:{}),
             ...(diagnostic?{diagnostic}:{}),
             ...(Number.isSafeInteger(observed.memory_current_mb)&&
                 observed.memory_current_mb>=0

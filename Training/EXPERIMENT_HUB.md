@@ -1395,7 +1395,10 @@ checkpoint and exits, and the Hub waits for the signed Job Object receipt
 before releasing capacity. A pending request holds capacity while the
 trainer is still active. Older Windows launches use Job Object termination.
 For checkpoint continuation, select a naturally finished predecessor
-with released capacity, or queue a checkpoint pipeline in Train. Keep
+with released capacity, or queue a checkpoint pipeline in Train. On
+Windows, you can also select a Courier job that the Hub verified saved
+on Stop and released. Stop holds prequeued checkpoint stages for review.
+Cancel any pending successor before queuing an explicit continuation. Keep
 the same environment digest. Each stage runs on the original worker
 and copies the completed population into its own directory before
 resuming. A positive round limit is additional for continuations.

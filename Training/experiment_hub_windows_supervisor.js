@@ -309,6 +309,8 @@ class WindowsSupervisor {
             this.commit(this.state.records.map(x=>
                 x.job_id===jobId?updated:x));
         return {state,active:observation.active,
+            checkpoint_stop_verified:checkpointStop&&state==='stopped'&&
+                observation.owner_verified===true&&observation.exit_code===0,
             diagnostic:issue,
             cpu_time_ns:observation.cpu_time_ns??null,
             peak_job_memory_bytes:observation.peak_job_memory_bytes??null,
@@ -346,14 +348,17 @@ class WindowsSupervisor {
         if(invocation.predecessor) {
             const parent=this.state.records.find(r=>
                 r.job_id===invocation.predecessor);
+            const checkpointStopped=parent?.project_id==='courier'&&parent.state==='stopped'&&
+                parent.checkpoint_stop_file&&parent.stop_requested_at;
             if(!parent||parent.project_id!==job.project_id||
-                parent.state!=='finished'||
+                (parent.state!=='finished'&&!checkpointStopped)||
                 (parent.artifact_lineage_root_id||parent.job_id)!==
                     invocation.root)
-                throw Error('Windows continuation requires a naturally finished predecessor in the local journal.');
+                throw Error('Windows continuation requires a finished or checkpoint-stopped predecessor in the local journal.');
             const observed=await this.observe(parent);
-            if(observed.active||observed.state!=='finished')
-                throw Error('Windows predecessor native owner has not verified natural completion.');
+            if(observed.active||observed.state!=='finished'||(checkpointStopped&&
+                (!observed.owner_verified||observed.exit_code!==0)))
+                throw Error('Windows predecessor native owner has not verified successful checkpoint completion.');
         }
         if(this.state.records.length>=1000)
             throw Error('Windows native ownership journal full.');
