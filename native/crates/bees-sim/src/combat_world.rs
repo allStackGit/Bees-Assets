@@ -746,10 +746,10 @@ pub struct CombatWorld {
     /// Authoritative per-ship Bomb.Power, also for non-policy Fire Barges.
     /// Consumed once at Kill; no second explosion can be spawned.
     fire_barge_bomb_powers: HashMap<i64, i32>,
-    /// Actual Bomb weapon identity/power per game-owned bomber. Register
-    /// lazily on its first source target assignment and retain until ship
-    /// retirement. This does not copy the live target or damage status.
-    game_bomb_weapon_by_ship: HashMap<i64, (i64, i32)>,
+    /// Actual authored Bomb.Weapon.Id per game-controlled bomber. Power
+    /// and target damage remain live authoritative data, not cached copies.
+    /// This identity is retained solely for death-time lease release.
+    game_bomb_weapon_by_ship: HashMap<i64, i64>,
     /// Command-timer self-detonations are settled inside the NEXT normal
     /// physics step so roster, rewards, deaths and outbox see them once.
     pending_game_fire_barges: Vec<(i64, i64)>,
@@ -954,7 +954,7 @@ impl CombatWorld {
         let victim_id = self.ships[index].entity_id;
         // Bomb.ReleaseTargetReservation is part of every authored bomber
         // Kill, not only successful BombingRun command finalization.
-        if let Some((weapon_id, _)) =
+        if let Some(weapon_id) =
             self.game_bomb_weapon_by_ship.remove(&victim_id)
         {
             self.reservations.release(weapon_id);
@@ -2250,15 +2250,15 @@ impl CombatWorld {
             !self.physics.ships()[target_index].active {
             return Err(CombatWorldError::InvalidBombTarget);
         }
-        // The authored Weapon.Id and Power remain constant while one
-        // living ship owns this Bomb. Reject a changed binding rather
-        // than releasing another bomber's target lease.
+        // The authored Weapon.Id identifies the owner of its lease.
+        // The live weapon Power can change independently and must not
+        // be frozen by this bookkeeping. Distinct bombers never reuse
+        // one authored Level weapon identity.
         match self.game_bomb_weapon_by_ship.get(&bomber_id) {
-            Some(&(id, previous_power)) if id != bomb_weapon_id ||
-                previous_power != power =>
+            Some(&id) if id != bomb_weapon_id =>
                 return Err(CombatWorldError::InvalidBombTarget),
             None if self.game_bomb_weapon_by_ship.values()
-                .any(|&(id, _)| id == bomb_weapon_id) =>
+                .any(|&id| id == bomb_weapon_id) =>
                 return Err(CombatWorldError::InvalidBombTarget),
             _ => {}
         }
@@ -2270,7 +2270,7 @@ impl CombatWorld {
             bomb_weapon_id, side, target_id, health, power,
         )?;
         self.game_bomb_weapon_by_ship
-            .entry(bomber_id).or_insert((bomb_weapon_id, power));
+            .entry(bomber_id).or_insert(bomb_weapon_id);
         Ok(status)
     }
 
