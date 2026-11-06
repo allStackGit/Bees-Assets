@@ -1578,7 +1578,10 @@ module.exports = {
 ```
 
 The operator prepares each approved profile as a JSON equivalent of a
-TinyBrains YAML configuration with `runtime.device` set to `cpu`. Compute
+TinyBrains YAML configuration with `runtime.device` set to `cpu`. The
+adapter runs TinyBrains' own validator before advertising profiles. An
+invalid profile prevents adapter startup and names the rejected profile.
+Compute
 the SHA-256 of the UTF-8 bytes of `JSON.stringify(profile, null, 2) + '\n'`
 after parsing that JSON. In Design, choose an approved profile from a
 connected Windows worker, enter the update count, and select **Use profile
