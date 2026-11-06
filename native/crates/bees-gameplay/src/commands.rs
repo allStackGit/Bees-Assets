@@ -1143,12 +1143,17 @@ impl NativeSquadCommandDirector {
             if let Some(heal) = active.heal.as_mut() {
                 heal.release_all(world);
             }
+            if let Some(retreat) = active.full_retreat.as_ref() {
+                retreat.release_all(world, None);
+            }
             FinishedNativeCommand {
                 owner, selection: active.selection,
                 cause: CommandFinishCause::SquadRetired,
                 capability_command_tsv: active.mining.as_ref()
                     .map(|mining| mining.mined_tsv)
-                    .or_else(|| active.heal.as_ref().map(|heal| heal.earned_tsv)),
+                    .or_else(|| active.heal.as_ref().map(|heal| heal.earned_tsv))
+                    .or_else(|| active.full_retreat.as_ref()
+                        .map(|retreat| retreat.earned_tsv)),
             }
         });
         self.measurements.retired += u64::from(retired.is_some());
