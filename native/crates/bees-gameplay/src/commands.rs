@@ -428,6 +428,9 @@ pub struct CommandMeasurements {
     pub bombing_retarget_snapshots: u64,
     pub bombing_retarget_enemies_supplied: u64,
     pub bombing_retarget_weapons_supplied: u64,
+    pub charge_snapshot_requests: u64,
+    pub charge_eligible_barges_supplied: u64,
+    pub charge_retarget_snapshots: u64,
     /// Sparse cumulative counters; no per-step logging or history.
     pub mining_extractions: u64,
     pub minerals_mined: u64,
@@ -1247,6 +1250,7 @@ impl NativeSquadCommandDirector {
             world, navigation, roster, friendlies, random, dt,
             circle_snapshot, swipe_snapshot, aggressive_snapshot,
             |_, _, _, _| Err(GameCommandError::MissingCombatSnapshot),
+            |_, _, _, _| Err(GameCommandError::MissingCombatSnapshot),
             finished,
         )
     }
@@ -1274,6 +1278,9 @@ impl NativeSquadCommandDirector {
         mut bombing_snapshot: impl FnMut(
             SquadLifetime, i64, &CombatWorld, bool,
         ) -> Result<NativeBombingTimerSnapshot, GameCommandError>,
+        mut charge_snapshot: impl FnMut(
+            SquadLifetime, i64, &CombatWorld, bool,
+        ) -> Result<NativeChargeTimerSnapshot, GameCommandError>,
         finished: &mut Vec<FinishedNativeCommand>,
     ) -> Result<(), GameCommandError> {
         if !dt.is_finite() || dt < 0.0 {
@@ -1503,6 +1510,45 @@ impl NativeSquadCommandDirector {
                 }
                 continue;
             }
+            if let Some(charge) = command.charge.as_mut() {
+                let mut completed = None;
+                if let Some(timer) = command.command_poll.as_mut() {
+                    if let Some(due) = timer.begin_update(dt) {
+                        self.measurements.command_timer_callbacks += 1;
+                        let need_retarget = charge.needs_retarget(world);
+                        let mut snapshot = charge_snapshot(
+                            owner, charge.enemy_squad_id(), world,
+                            need_retarget,
+                        )?;
+                        self.measurements.charge_snapshot_requests += 1;
+                        self.measurements.charge_eligible_barges_supplied +=
+                            snapshot.eligible_barges.len() as u64;
+                        self.measurements.charge_retarget_snapshots +=
+                            u64::from(need_retarget);
+                        snapshot.eligible_barges.sort_unstable();
+                        snapshot.eligible_barges.dedup();
+                        completed = charge.on_poll(
+                            world, owner, &snapshot, &command.selection,
+                            roster.ok_or(GameCommandError::MissingCombatSnapshot)?,
+                            random,
+                        )?;
+                        timer.finish_update(due);
+                    }
+                }
+                if completed.is_none() {
+                    if let Some(timeout) = command.timeout.as_mut() {
+                        if let Some(due) = timeout.begin_update(dt) {
+                            self.measurements.timeout_callbacks += 1;
+                            timeout.finish_update(due);
+                            completed = Some(CommandFinishCause::Timeout);
+                        }
+                    }
+                }
+                if let Some(cause) = completed {
+                    self.completed_scratch.push((owner, cause));
+                }
+                continue;
+            }
             if let Some(bombing) = command.bombing.as_mut() {
                 let mut completed = None;
                 if let Some(timer) = command.command_poll.as_mut() {
@@ -1711,6 +1757,9 @@ impl NativeSquadCommandDirector {
                 if let Some(bombing) = active.bombing.as_ref() {
                     bombing.release_all(world);
                 }
+                if let Some(charge) = active.charge.as_ref() {
+                    charge.release_all(world)?;
+                }
                 if let Some(retreat) = active.full_retreat.as_ref() {
                     retreat.release_all(world, None);
                 }
@@ -1757,7 +1806,8 @@ impl NativeSquadCommandDirector {
             .filter(|follow| follow.guard_slot.is_some()) {
             restore_guard_speed(world, guard)?;
         }
-        let retired = self.active.remove(&owner).map(|mut active| {
+        let retired = self.active.remove(&owner).map(|mut active|
+            -> Result<FinishedNativeCommand, GameCommandError> {
             self.measurements.active_following -=
                 usize::from(active.following.is_some());
             self.measurements.active_full_retreat -=
@@ -1768,10 +1818,13 @@ impl NativeSquadCommandDirector {
             if let Some(bombing) = active.bombing.as_ref() {
                 bombing.release_all(world);
             }
+            if let Some(charge) = active.charge.as_ref() {
+                charge.release_all(world)?;
+            }
             if let Some(retreat) = active.full_retreat.as_ref() {
                 retreat.release_all(world, None);
             }
-            FinishedNativeCommand {
+            Ok(FinishedNativeCommand {
                 owner, selection: active.selection,
                 cause: CommandFinishCause::SquadRetired,
                 capability_command_tsv: active.mining.as_ref()
@@ -1779,8 +1832,8 @@ impl NativeSquadCommandDirector {
                     .or_else(|| active.heal.as_ref().map(|heal| heal.earned_tsv))
                     .or_else(|| active.full_retreat.as_ref()
                         .map(|retreat| retreat.earned_tsv)),
-            }
-        });
+            })
+        }).transpose()?;
         self.measurements.retired += u64::from(retired.is_some());
         Ok(retired)
     }

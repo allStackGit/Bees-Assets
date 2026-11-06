@@ -22,6 +22,7 @@ use bees_sim::telemetry::StepCounts;
 use crate::commands::{
     GameCommandError, NativeAggressiveCommandSnapshot,
     NativeCircleCommandSnapshot, NativeBombingTimerSnapshot,
+    NativeChargeTimerSnapshot,
     NativeFriendlySquad, NativeSwipeCommandSnapshot,
 };
 use crate::level_events::{
@@ -127,6 +128,17 @@ pub trait NativeLevelCommandContext {
         &self, _world: &CombatWorld, _owner: SquadLifetime,
         _enemy_squad_id: i64, _need_retarget: bool,
     ) -> Result<NativeBombingTimerSnapshot, GameCommandError> {
+        Err(GameCommandError::MissingCombatSnapshot)
+    }
+
+    /// Unity Charge.HasTargetsWithinChargingRange requires the selected
+    /// Bomb target, actual rotation, unobstructed sight, and Charge
+    /// weapon ShipsWithinRange membership. The Level supplies this exact
+    /// predicate and optionally the live lost-target data.
+    fn charge_command_snapshot(
+        &self, _world: &CombatWorld, _owner: SquadLifetime,
+        _enemy_squad_id: i64, _need_retarget: bool,
+    ) -> Result<NativeChargeTimerSnapshot, GameCommandError> {
         Err(GameCommandError::MissingCombatSnapshot)
     }
 
@@ -524,6 +536,11 @@ where
                 },
                 |owner, enemy_id, combat, need_retarget| {
                     metadata.bombing_command_snapshot(
+                        combat, owner, enemy_id, need_retarget,
+                    )
+                },
+                |owner, enemy_id, combat, need_retarget| {
+                    metadata.charge_command_snapshot(
                         combat, owner, enemy_id, need_retarget,
                     )
                 },

@@ -17,6 +17,7 @@ use crate::commands::{
     CommandFinishCause, CommandMeasurements, FinishedNativeCommand,
     GameCommandError, NativeAggressiveCommandSnapshot,
     NativeCircleCommandSnapshot, NativeBombingTimerSnapshot,
+    NativeChargeTimerSnapshot,
     NativeBombWeapon, NativeBombingActivation, NativeEnemyTargetStats,
     NativeFriendlySquad, NativeSquadOrder, NativeSquadCommandDirector,
     NativeSwipeCommandSnapshot, HiveMindCommandSettings,
@@ -742,6 +743,7 @@ impl NativeLevelEventProcessor {
             completed_tick, world, navigation, friendlies, random, dt,
             circle_snapshot, swipe_snapshot, aggressive_snapshot,
             |_, _, _, _| Err(GameCommandError::MissingCombatSnapshot),
+            |_, _, _, _| Err(GameCommandError::MissingCombatSnapshot),
         )
     }
 
@@ -767,6 +769,9 @@ impl NativeLevelEventProcessor {
         bombing_snapshot: impl FnMut(
             SquadLifetime, i64, &CombatWorld, bool,
         ) -> Result<NativeBombingTimerSnapshot, GameCommandError>,
+        charge_snapshot: impl FnMut(
+            SquadLifetime, i64, &CombatWorld, bool,
+        ) -> Result<NativeChargeTimerSnapshot, GameCommandError>,
     ) -> Result<(), NativeLevelEventError> {
         if self.is_failed() {
             return Err(NativeLevelEventError::FailedLevel);
@@ -788,7 +793,7 @@ impl NativeLevelEventProcessor {
         if let Err(error) = self.commands.advance_into_with_bombing(
             world, navigation, Some(&self.roster), friendlies, random, dt,
             circle_snapshot, swipe_snapshot, aggressive_snapshot,
-            bombing_snapshot, &mut self.timed_finished,
+            bombing_snapshot, charge_snapshot, &mut self.timed_finished,
         ) {
             self.failed = true;
             return Err(NativeLevelEventError::Commands(error));
