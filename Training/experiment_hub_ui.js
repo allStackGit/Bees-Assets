@@ -1039,7 +1039,7 @@ document.addEventListener('DOMContentLoaded', () => {
             ?project==='ants'
                 ?'Two to sixteen saved Ants configurations. Use a new first stage and resume-only successors. Each stage waits for its predecessor to finish and release capacity.'
                 :'Two to sixteen TinyBrains stages with the same approved profile digest. Each stage waits for its predecessor to finish and release capacity, then stays on the original worker.'
-            :'Two to sixteen fresh, independent jobs from any non-Bees project. Each job gets its own artifact lineage and may use a different machine. No checkpoint, optimizer or qualification result is inherited. A verified finished predecessor and capacity release unlock the next job. Stopped and failed jobs do not advance. Queueing never starts training.';
+            :'Two to sixteen fresh, independent jobs from any non-Bees project. Each job gets its own artifact lineage and may use a different machine. No checkpoint, optimizer or qualification result is inherited. A verified finish or a stopped job that met its independent evaluation target can advance the next job after capacity release. Other Stops and failures do not advance. Queueing never starts training.';
         $('hub-pipeline-predecessor-label').textContent=checkpointPipeline
             ?'Continue an existing job (optional)'
             :'Run after an existing native job (optional)';
@@ -1048,10 +1048,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const sequenceParents=checkpointPipeline?availableParents:
             (state.jobs||[]).filter(j=>j.project_id!=='bees'&&
                 !successors.has(j.id)&&
-                ['waiting_adapter','waiting_predecessor','start_requested',
-                    'launch_requested','running','finished'].includes(j.status)&&
-                (j.status!=='finished'||Boolean(j.dispatch_id&&
-                    j.assigned_machine_id&&j.execution_updated_at)));
+                (['waiting_adapter','waiting_predecessor','start_requested',
+                    'launch_requested','running'].includes(j.status)||
+                 j.independent_sequence_complete===true&&Boolean(
+                     j.dispatch_id&&j.assigned_machine_id&&j.execution_updated_at)) );
         pipelinePredecessor.replaceChildren(
             new Option(checkpointPipeline?'New experiment (no predecessor)':
                 'New independent sequence (no predecessor)',''),
@@ -2065,7 +2065,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 ?'Queue '+stages.length+' frozen checkpoint-continuation stages? They share verified checkpoint lineage and original machine.'
                 :'Queue '+stages.length+' independent jobs as a frozen sequence? No job inherits any previous checkpoint, machine affinity, optimizer state or evaluation evidence.';
             if(!confirm(question+
-                ' Each successor remains blocked until its predecessor FINISHES and releases capacity. No work starts without the separate native authorization gates.'))return;
+                (checkpointPipeline
+                    ?' Each stage waits for its predecessor to finish and release capacity.'
+                    :' Each stage waits for a verified finish or evaluation-driven Stop and capacity release.')+
+                ' No work starts without the separate native authorization gates.'))return;
             const result=await action(checkpointPipeline?'hub/pipelines':'hub/sequences',{
                 confirm_queue:true,stages,
                 ...(predecessor?(checkpointPipeline
