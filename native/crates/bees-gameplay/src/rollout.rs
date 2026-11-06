@@ -212,6 +212,9 @@ pub enum NativeLevelResetError {
     MissingWorld { index: usize },
     PendingNotifications { count: usize },
     PendingSessionRetirements { count: usize },
+    /// A failed episode must still explicitly settle any live commands;
+    /// replacing the world would silently lose their OutcomeIds.
+    ActiveCommands { count: usize },
 }
 
 /// A successful or failed episode must not be discarded while group
@@ -243,6 +246,12 @@ where
     if retirements > 0 {
         return Err(NativeLevelResetError::PendingSessionRetirements {
             count: retirements,
+        });
+    }
+    let active = world.state.events.active_command_count();
+    if active > 0 {
+        return Err(NativeLevelResetError::ActiveCommands {
+            count: active,
         });
     }
     // Indices are validated above, and this call preserves the

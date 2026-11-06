@@ -112,6 +112,12 @@ impl NativeSquadRoster {
         self.active.len()
     }
 
+    /// Stable live lifetimes for terminal HiveMind session retirement.
+    /// Level completion does not imply that every ship physically died.
+    pub fn active_lifetimes(&self) -> impl Iterator<Item = SquadLifetime> + '_ {
+        self.active.keys().copied()
+    }
+
     pub fn owning_squad(&self, ship_id: i64) -> Option<SquadLifetime> {
         self.owner_by_ship.get(&ship_id).copied()
     }

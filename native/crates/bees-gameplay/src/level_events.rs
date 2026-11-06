@@ -13,8 +13,8 @@ use bees_sim::rl_shaping::{DamageRewardMetadata, RewardEmission};
 use bees_sim::rl_discovery::DiscoveryKind;
 
 use crate::commands::{
-    CommandMeasurements, FinishedNativeCommand, GameCommandError,
-    NativeFriendlySquad, NativeSquadCommandDirector,
+    CommandFinishCause, CommandMeasurements, FinishedNativeCommand,
+    GameCommandError, NativeFriendlySquad, NativeSquadCommandDirector,
 };
 use crate::episode::{
     NativeEpisodeFinal, NativeEpisodeRewardCoordinator,
@@ -179,6 +179,10 @@ impl NativeLevelEventProcessor {
 
     pub fn has_active_commands(&self) -> bool {
         self.commands.active_count() > 0
+    }
+
+    pub fn active_command_count(&self) -> usize {
+        self.commands.active_count()
     }
 
     pub fn needs_live_command_friendlies(&self) -> bool {
@@ -722,6 +726,27 @@ impl NativeLevelEventProcessor {
         } else {
             None
         };
+        if reward.finalized.is_some() {
+            // Unity LevelOver finalizes all surviving HiveMind orders.
+            // Elimination/timeout does not necessarily kill every squad:
+            // leave real outcomes in the ordered notification outbox and
+            // retire every remaining session lifetime before episode reset.
+            // Never synthesize a physical SquadRetired or ship death.
+            for owner in self.roster.active_lifetimes() {
+                self.pending_session_retirements.push(owner);
+                match self.commands.retire_squad(world, owner) {
+                    Ok(Some(mut command)) => {
+                        command.cause = CommandFinishCause::LevelEnded;
+                        self.finished.push(command);
+                    }
+                    Ok(None) => {}
+                    Err(error) => {
+                        self.failed = true;
+                        return Err(NativeLevelEventError::Commands(error));
+                    }
+                }
+            }
+        }
         // Copy only sparse, meaningful notifications into a persistent
         // per-Level outbox. Quiet steps allocate and record nothing.
         // Group-enabled runners receive ONLY GroupReward wire events,

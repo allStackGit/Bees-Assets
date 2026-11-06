@@ -241,6 +241,7 @@ pub enum CommandFinishCause {
     FriendlyGone,
     GuardTargetGone,
     GuardFinished,
+    LevelEnded,
     Superseded,
     SquadRetired,
     MiningAsteroidDestroyed,
