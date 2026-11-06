@@ -399,6 +399,12 @@ pub struct CommandMeasurements {
     pub commands_examined: u64,
     pub command_timer_callbacks: u64,
     pub timeout_callbacks: u64,
+    /// Authoritative Aggressive Level snapshots requested, including
+    /// per-ship coroutine resumes. A reused due-timer snapshot counts once.
+    pub aggressive_snapshot_requests: u64,
+    /// Subset requiring Unity's all-own/all-enemy weapon range predicate.
+    /// This is only requested for due position-hold timer callbacks.
+    pub aggressive_all_target_snapshot_requests: u64,
     /// Sparse cumulative counters; no per-step logging or history.
     pub mining_extractions: u64,
     pub minerals_mined: u64,
@@ -1247,9 +1253,12 @@ impl NativeSquadCommandDirector {
                 if let Some(timer) = command.command_poll.as_mut() {
                     if let Some(due) = timer.begin_update(dt) {
                         self.measurements.command_timer_callbacks += 1;
+                        let need_all = aggressive.needs_all_target_range();
+                        self.measurements.aggressive_snapshot_requests += 1;
+                        self.measurements.aggressive_all_target_snapshot_requests +=
+                            u64::from(need_all);
                         let snapshot = aggressive_snapshot(
-                            owner, aggressive.enemy_squad_id(), world,
-                            aggressive.needs_all_target_range(),
+                            owner, aggressive.enemy_squad_id(), world, need_all,
                         )?;
                         completed = aggressive.on_poll(
                             world, navigation, timer, owner, &snapshot,
@@ -1263,9 +1272,12 @@ impl NativeSquadCommandDirector {
                     let snapshot = if aggressive.coroutine_needs_target() {
                         Some(match due_snapshot {
                             Some(snapshot) => snapshot,
-                            None => aggressive_snapshot(
-                                owner, aggressive.enemy_squad_id(), world, false,
-                            )?,
+                            None => {
+                                self.measurements.aggressive_snapshot_requests += 1;
+                                aggressive_snapshot(
+                                    owner, aggressive.enemy_squad_id(), world, false,
+                                )?
+                            }
                         })
                     } else {
                         None
