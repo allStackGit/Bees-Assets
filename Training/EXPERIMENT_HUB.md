@@ -359,8 +359,10 @@ terminal receipt/release, dashboard controls, and heartbeat-loss disarming
 on a real host. **Production Bees/TinyBrains coexistence and unattended project
 training are still unverified**; real Linux services and GPU isolation remain
 unqualified. The **generic non-Bees scheduler** supports frozen independent-evaluation
-stop thresholds, but not Bees-style multi-stage benchmark promotion,
-dynamic live rebalancing, or enforced performance shares. The existing Bees experiment manager separately
+stop thresholds and verified, checkpoint-preserving transitions to
+prequeued continuation stages. It does not yet support Bees-style
+multi-benchmark promotion, dynamic live rebalancing, or enforced
+performance shares. The existing Bees experiment manager separately
 supports an opt-in periodic, frozen development-benchmark completion
 target, documented in `EXPERIMENTS.md`. It stops only after verified
 checkpoint evaluation and safe training shutdown; actual Unity
