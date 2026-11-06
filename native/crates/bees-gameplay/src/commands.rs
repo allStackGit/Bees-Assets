@@ -391,6 +391,14 @@ impl MiningRun {
             }
         }
 
+        // Unity SetAndMove uses the squad's live members. A fallen
+        // non-miner must not make an otherwise healthy mining command
+        // fail its movement preflight on the next three-second poll.
+        self.members.retain(|member| world.ship(member.ship_id)
+            .is_some_and(|ship| !ship.vitals.is_dead()));
+        if self.members.is_empty() {
+            return Ok((Some(CommandFinishCause::NoMiningShipsRemain), 0));
+        }
         let mut callbacks = 0;
         if let Some(timer) = command_poll.as_mut() {
             if let Some(due) = timer.begin_update(dt) {
