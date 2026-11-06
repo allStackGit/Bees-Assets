@@ -258,39 +258,7 @@ where
             decisions, dt_seconds, &self.collision_matrix,
             &mut world.random,
         )?;
-        // Source TryApplyMiningAction modifies the owning FleetShip before
-        // RecordMiningValueUpdated. Commit each physical mining event to
-        // persistent Level metadata exactly once, before reward processing.
-        // Indexing avoids a temporary Vec on quiet or busy physics ticks.
-        for row in 0..state.combat.events().len() {
-            let mined = match &state.combat.events()[row] {
-                CombatEvent::CapabilityMined {
-                    ship_id, amount_mined, ..
-                } => Some((*ship_id, *amount_mined)),
-                _ => None,
-            };
-            let Some((ship_id, amount)) = mined else { continue; };
-            // Combat already applied this exact yield to live ShipVitals
-            // before subsequent same-tick hits/warps. The persistent
-            // FleetShip total must equal that provisional value, otherwise
-            // damage and TSV rewards may have used a different cargo value.
-            let provisional_total = state.combat.ship(ship_id)
-                .ok_or(NativeLevelStepError::InvalidMiningFleetValue(ship_id))?
-                .vitals.mined_cargo();
-            let total = state.metadata.credit_mined_minerals(ship_id, amount)
-                .ok_or(NativeLevelStepError::MissingMiningFleetValue(ship_id))?;
-            if total != provisional_total {
-                return Err(NativeLevelStepError::InvalidMiningFleetValue(ship_id));
-            }
-            // Already applied in CombatWorld before any subsequent hit;
-            // do not recompute ShipVitals TSV a second time.
-            if state.combat.ship(ship_id)
-                .is_some_and(|ship| !ship.vitals.is_dead()) {
-                state.events.record_mined_value(
-                    &state.combat, ship_id, total,
-                )?;
-            }
-        }
+        state.credit_mining_since(0)?;
         let metadata = &state.metadata;
         let allocate = &mut state.allocate_minion;
         state.events.process_completed_tick(
