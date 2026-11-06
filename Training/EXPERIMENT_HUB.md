@@ -1563,7 +1563,11 @@ The profile digest must match at launch, including when two workers
 advertise the same profile name.
 
 Each launch uses a fresh job directory containing its exact profile,
-training history and checkpoints. Compare uses completed trainer updates
+training history, checkpoints and `trainer.stderr.txt` for startup and
+runtime errors. A one-CPU, 3 GiB claim supported natural completion and
+managed Stop with the isolated Windows smoke profile. A 1 GiB claim
+failed during PyTorch initialization on that worker. Size production
+claims for the selected profile and environment. Compare uses completed trainer updates
 as project steps and shows update wall time and engine steps per second.
 Windows Stop terminates the Job Object process tree. A forced stop does
 not establish that a checkpoint was saved at the stop boundary.
