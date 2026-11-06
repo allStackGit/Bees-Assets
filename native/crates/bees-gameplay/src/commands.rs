@@ -39,8 +39,10 @@ use bees_sim::timer::ScaledTimer;
 
 mod mining;
 mod heal;
+mod scouting;
 use self::mining::MiningRun;
 use self::heal::HealRun;
+use self::scouting::ScoutingRun;
 
 const COMMAND_FREQUENCY_SECONDS: f32 = 3.0;
 const RANDOM_POSITION_ATTEMPTS: usize = 35;
@@ -62,6 +64,22 @@ pub struct NativeSquadOrder<'a> {
     /// Live, command-targeted enemy squad obtained from the same Level.
     /// The native core never invents an opponent from training data.
     pub enemy: Option<NativeEnemySquad>,
+    /// Required only for Scouting: real Squad.MaxSight and the source
+    /// ConfigData.Configuration.HumanSide, supplied by the owning Level.
+    pub scouting: Option<NativeScoutingContext>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct NativeScoutingContext {
+    pub max_sight: f32,
+    pub human_side: i32,
+}
+
+impl NativeScoutingContext {
+    pub fn valid(self) -> bool {
+        self.max_sight.is_finite() && self.max_sight >= 0.0 &&
+            self.human_side > 0
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -120,7 +138,8 @@ impl NativeFriendlySquad {
 impl NativeSquadOrder<'_> {
     pub fn valid(self) -> bool {
         self.owner.valid() && self.squad_center.is_finite() &&
-        self.formation.valid() && !self.members.is_empty()
+        self.formation.valid() && !self.members.is_empty() &&
+            self.scouting.is_none_or(NativeScoutingContext::valid)
     }
 }
 
@@ -167,6 +186,8 @@ pub enum GameCommandError {
     InvalidMiningTarget,
     InvalidCapabilityAccounting,
     MissingOriginalShipHealth(i64),
+    MissingScoutingContext,
+    MissingGameScoutConfiguration(i64),
     Squad(SquadOrderError),
     World(CombatWorldError),
 }
@@ -224,6 +245,7 @@ pub enum CommandFinishCause {
     NoMiningShipsRemain,
     HealingBeehivesDestroyed,
     HealingCompleted,
+    ScoutingFoundShips,
 }
 
 #[derive(Clone, Debug)]
@@ -325,6 +347,7 @@ struct ActiveNativeCommand {
     following: Option<FollowingFriendly>,
     mining: Option<MiningRun>,
     heal: Option<HealRun>,
+    scouting: Option<ScoutingRun>,
     /// Authoritative game-owned member snapshot at command issue.
     /// The Level must retire/reissue on squad composition changes.
     member_ids: Vec<i64>,
@@ -344,6 +367,8 @@ pub struct CommandMeasurements {
     /// Actual per-ship healing actions (not elapsed timer callbacks).
     pub healing_actions: u64,
     pub healing_tsv: u64,
+    pub scouting_beacons_dropped: u64,
+    pub scouting_first_sightings: u64,
     pub activated: u64,
     pub completed: u64,
     pub superseded: u64,
@@ -374,6 +399,24 @@ impl NativeSquadCommandDirector {
 
     pub fn has_active(&self, owner: SquadLifetime) -> bool {
         self.active.contains_key(&owner)
+    }
+
+    /// Source HivemindVision.RecordShipSighting only calls
+    /// Scouting.FoundNewShips on the first side-wide enemy sighting,
+    /// credited to its real squad (or a Beacon's MotherSquad).
+    /// The Level adapter verifies that fact; this method does not
+    /// mistake every temporary line-of-sight contact for discovery.
+    pub fn record_first_ship_sighting(&mut self, owner: SquadLifetime) -> bool {
+        let Some(command) = self.active.get_mut(&owner) else {
+            return false;
+        };
+        let Some(scouting) = command.scouting.as_mut() else {
+            return false;
+        };
+        if !scouting.found_first_ships() { return false; }
+        command.timeout = None;
+        self.measurements.scouting_first_sightings += 1;
+        true
     }
 
     /// Connect a validated HiveMindSession response directly to the
@@ -478,6 +521,7 @@ impl NativeSquadCommandDirector {
         let mut following = None;
         let mut mining = None;
         let mut heal = None;
+        let mut scouting = None;
         let mut retreat_already_safe = false;
         let issued_move = match selection.local_command {
             LocalCommandKind::Hold => {
@@ -494,6 +538,12 @@ impl NativeSquadCommandDirector {
                 let Some(run) = HealRun::start(world, squad)?
                 else { return Ok(Activation::Unavailable(selection)); };
                 heal = Some(run);
+                true
+            }
+            LocalCommandKind::Scouting => {
+                scouting = Some(ScoutingRun::start(
+                    world, navigation, random, squad, settings,
+                )?);
                 true
             }
             LocalCommandKind::MoveToRandom => {
@@ -690,6 +740,7 @@ impl NativeSquadCommandDirector {
             LocalCommandKind::Retreat if retreat_already_safe => Some(3.0),
             LocalCommandKind::Retreat => None,
             LocalCommandKind::Mining => Some(MINING_COMMAND_TIMEOUT_SECONDS),
+            LocalCommandKind::Scouting => Some(300.0),
             _ => Some(settings.max_command_seconds),
         };
         let active = ActiveNativeCommand {
@@ -699,12 +750,15 @@ impl NativeSquadCommandDirector {
                 selection.local_command,
                 LocalCommandKind::MoveToRandom | LocalCommandKind::Patrol |
                 LocalCommandKind::Mining | LocalCommandKind::Heal |
-                LocalCommandKind::ClosestFriendly |
+                LocalCommandKind::Scouting | LocalCommandKind::ClosestFriendly |
                 LocalCommandKind::Guard
             ) || (selection.local_command == LocalCommandKind::Retreat &&
                 !retreat_already_safe) {
                 Some(ScaledTimer::new(
-                    COMMAND_FREQUENCY_SECONDS, true,
+                    if selection.local_command == LocalCommandKind::Scouting {
+                        5.0
+                    } else { COMMAND_FREQUENCY_SECONDS },
+                    true,
                     selection.local_command != LocalCommandKind::ClosestFriendly,
                 ))
             } else { None },
@@ -712,6 +766,7 @@ impl NativeSquadCommandDirector {
             following,
             mining,
             heal,
+            scouting,
             member_ids: squad.members.iter().map(|m| m.ship_id).collect(),
             selection,
         };
@@ -757,10 +812,11 @@ impl NativeSquadCommandDirector {
         world: &mut CombatWorld,
         navigation: &NavigationRuntime,
         friendlies: &[NativeFriendlySquad],
+        random: &mut RandomStream,
         dt: f32,
     ) -> Result<Vec<FinishedNativeCommand>, GameCommandError> {
         let mut out = Vec::new();
-        self.advance_into(world, navigation, friendlies, dt, &mut out)?;
+        self.advance_into(world, navigation, friendlies, random, dt, &mut out)?;
         Ok(out)
     }
 
@@ -772,6 +828,7 @@ impl NativeSquadCommandDirector {
         world: &mut CombatWorld,
         navigation: &NavigationRuntime,
         friendlies: &[NativeFriendlySquad],
+        random: &mut RandomStream,
         dt: f32,
         finished: &mut Vec<FinishedNativeCommand>,
     ) -> Result<(), GameCommandError> {
@@ -788,6 +845,31 @@ impl NativeSquadCommandDirector {
         // and stable; completion storage is retained between ticks.
         self.measurements.commands_examined += self.active.len() as u64;
         for (&owner, command) in self.active.iter_mut() {
+            if let Some(scouting) = command.scouting.as_mut() {
+                let previous_events = world.events().len();
+                let (mut finished, callbacks) = scouting.advance(
+                    world, navigation, random, &mut command.command_poll, dt,
+                )?;
+                self.measurements.command_timer_callbacks += callbacks;
+                self.measurements.scouting_beacons_dropped +=
+                    world.events()[previous_events..].iter()
+                        .filter(|event| matches!(event,
+                            bees_sim::combat_world::CombatEvent::ScoutBeaconDropped { .. }
+                        )).count() as u64;
+                if finished.is_none() {
+                    if let Some(timeout) = command.timeout.as_mut() {
+                        if let Some(due) = timeout.begin_update(dt) {
+                            self.measurements.timeout_callbacks += 1;
+                            timeout.finish_update(due);
+                            finished = Some(CommandFinishCause::Timeout);
+                        }
+                    }
+                }
+                if let Some(cause) = finished {
+                    self.completed_scratch.push((owner, cause));
+                }
+                continue;
+            }
             if let Some(heal) = command.heal.as_mut() {
                 let before_tsv = heal.earned_tsv;
                 let before_events = world.events().len();
