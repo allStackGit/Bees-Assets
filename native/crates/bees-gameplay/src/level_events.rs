@@ -605,30 +605,9 @@ impl NativeLevelEventProcessor {
         random: &mut RandomStream,
         dt: f32,
     ) -> Result<(), NativeLevelEventError> {
-        self.advance_timed_commands_with_circle(
-            completed_tick, world, navigation, friendlies, random, dt,
-            |_, _, _| Err(GameCommandError::MissingCombatSnapshot),
-        )
-    }
-
-    /// Native Level's source-backed CircleSquad timer boundary. The
-    /// callback reads real weapon eligibility and squad geometry only
-    /// for commands with an active due timer.
-    pub fn advance_timed_commands_with_circle(
-        &mut self,
-        completed_tick: u64,
-        world: &mut CombatWorld,
-        navigation: &NavigationRuntime,
-        friendlies: &[NativeFriendlySquad],
-        random: &mut RandomStream,
-        dt: f32,
-        circle_snapshot: impl FnMut(
-            SquadLifetime, i64, &CombatWorld,
-        ) -> Result<NativeCircleCommandSnapshot, GameCommandError>,
-    ) -> Result<(), NativeLevelEventError> {
         self.advance_timed_commands_with_combat(
             completed_tick, world, navigation, friendlies, random, dt,
-            circle_snapshot,
+            |_, _, _| Err(GameCommandError::MissingCombatSnapshot),
             |_, _, _| Err(GameCommandError::MissingCombatSnapshot),
         )
     }

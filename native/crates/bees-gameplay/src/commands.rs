@@ -999,31 +999,9 @@ impl NativeSquadCommandDirector {
         dt: f32,
         finished: &mut Vec<FinishedNativeCommand>,
     ) -> Result<(), GameCommandError> {
-        self.advance_into_with_circle(
-            world, navigation, friendlies, random, dt,
-            |_, _, _| Err(GameCommandError::MissingCombatSnapshot),
-            finished,
-        )
-    }
-
-    /// Preferred Level boundary for live CircleSquad commands. The Level
-    /// supplies actual per-weapon target validity and current squad
-    /// geometry only on due Circle timers, never on unrelated physics ticks.
-    pub fn advance_into_with_circle(
-        &mut self,
-        world: &mut CombatWorld,
-        navigation: &NavigationRuntime,
-        friendlies: &[NativeFriendlySquad],
-        random: &mut RandomStream,
-        dt: f32,
-        mut circle_snapshot: impl FnMut(
-            SquadLifetime, i64, &CombatWorld,
-        ) -> Result<NativeCircleCommandSnapshot, GameCommandError>,
-        finished: &mut Vec<FinishedNativeCommand>,
-    ) -> Result<(), GameCommandError> {
         self.advance_into_with_combat(
             world, navigation, None, friendlies, random, dt,
-            circle_snapshot,
+            |_, _, _| Err(GameCommandError::MissingCombatSnapshot),
             |_, _, _| Err(GameCommandError::MissingCombatSnapshot),
             finished,
         )
