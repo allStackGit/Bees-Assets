@@ -295,9 +295,12 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
       <div class="formgrid">
         <label>Configuration name<input id="hub-config-name" maxlength="100" required placeholder="Aiming baseline — beta 0.001"></label>
         <label class="wide">Parameters (JSON)<textarea id="hub-config-json" rows="9" required>{}</textarea></label>
-        <label class="wide" id="hub-config-evaluation-label" hidden>Independent evaluation stop (optional JSON)
-          <textarea id="hub-config-evaluation" rows="2" placeholder='{"suite_id":"heldout","min_trials":100,"min_success_rate":0.8}'></textarea>
-        </label>
+        <fieldset class="wide" id="hub-config-evaluation" hidden>
+          <legend>Independent evaluation stop (optional)</legend>
+          <label>Approved suite ID <input id="hub-evaluation-suite" maxlength="48" placeholder="heldout"></label>
+          <label>Minimum trials <input id="hub-evaluation-trials" type="number" min="1" max="1000000" step="1" placeholder="100"></label>
+          <label>Minimum success rate (0–1) <input id="hub-evaluation-rate" type="number" min="0" max="1" step="any" placeholder="0.8"></label>
+        </fieldset>
       </div>
       <div class="hub-controls">
         <button class="primary" type="submit" id="hub-config-save">Save draft</button>

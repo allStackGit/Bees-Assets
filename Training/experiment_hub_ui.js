@@ -688,7 +688,7 @@ document.addEventListener('DOMContentLoaded', () => {
         $('hub-config-name').value='';
         $('hub-config-json').value='{}';
         tinyBrainsUpdates.value='1';
-        $('hub-config-evaluation').value='';
+        setEvaluationEditor();
         $('hub-config-save').textContent='Save draft';
         feedback('hub-config-message','');
     }
@@ -711,6 +711,20 @@ document.addEventListener('DOMContentLoaded', () => {
             return 'Local progress unavailable: '+live.progress_issue;
         return job.dispatch_id?'Awaiting trusted project summary':'—';
     }
+    function setEvaluationEditor(policy) {
+        $('hub-evaluation-suite').value=policy?.suite_id??'';
+        $('hub-evaluation-trials').value=policy?.min_trials??'';
+        $('hub-evaluation-rate').value=policy?.min_success_rate??'';
+    }
+    function evaluationFromEditor() {
+        const suite=$('hub-evaluation-suite').value.trim();
+        const trials=$('hub-evaluation-trials').value;
+        const rate=$('hub-evaluation-rate').value;
+        if(!suite&&!trials&&!rate)return null;
+        if(!suite||!trials||!rate||Number(rate)<=0)
+            throw Error('Enter an approved suite ID, minimum trials, and a success rate greater than zero.');
+        return {suite_id:suite,min_trials:Number(trials),min_success_rate:Number(rate)};
+    }
     function display() {
         if(!state)return;
         const current=project;
@@ -718,7 +732,7 @@ document.addEventListener('DOMContentLoaded', () => {
         project=state.projects.some(p=>p.id===current)?current:'bees';
         $('hub-project').value=project;
         $('hub-copy-bees-form').hidden=project!=='bees';
-        $('hub-config-evaluation-label').hidden=project==='bees';
+        $('hub-config-evaluation').hidden=project==='bees';
         displayTinyBrainsProfiles();
         $('hub-config-rows').replaceChildren();
         const configs=state.configurations.filter(c=>c.project_id===project);
@@ -727,12 +741,12 @@ document.addEventListener('DOMContentLoaded', () => {
             cell(tr,c.name);cell(tr,project);cell(tr,c.revision);
             cell(tr,c.updated_at?.replace('T',' ').slice(0,19)||'');
             const actions=cell(tr,'');
+            $('hub-config-rows').append(tr);
             actions.append(button('Edit draft',()=>{
                 editing={id:c.id,revision:c.revision};
                 $('hub-config-name').value=c.name;
                 $('hub-config-json').value=JSON.stringify(c.parameters,null,2);
-                $('hub-config-evaluation').value=c.evaluation_stop
-                    ?JSON.stringify(c.evaluation_stop,null,2):'';
+                setEvaluationEditor(c.evaluation_stop);
                 $('hub-config-save').textContent='Save revision';
                 feedback('hub-config-message','Editing revision '+c.revision);
             }));
@@ -740,8 +754,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 resetEditor();
                 $('hub-config-name').value=(c.name+' copy').slice(0,100);
                 $('hub-config-json').value=JSON.stringify(c.parameters,null,2);
-                $('hub-config-evaluation').value=c.evaluation_stop
-                    ?JSON.stringify(c.evaluation_stop,null,2):'';
+                setEvaluationEditor(c.evaluation_stop);
                 feedback('hub-config-message','Duplicated into a new unsaved draft. Select Save draft to retain it.');
             }));
             if(project==='bees') {
@@ -1550,13 +1563,12 @@ document.addEventListener('DOMContentLoaded', () => {
     $('hub-config-form').addEventListener('submit',async e=>{
         e.preventDefault();
         try {
-            const stop=$('hub-config-evaluation').value.trim();
             const saved=await action('hub/configurations',{
                 ...(editing||{}),
                 project_id:project,
                 name:$('hub-config-name').value,
                 parameters:JSON.parse($('hub-config-json').value),
-                ...(project!=='bees'?{evaluation_stop:stop?JSON.parse(stop):null}:{}),
+                ...(project!=='bees'?{evaluation_stop:evaluationFromEditor()}:{}),
             });
             editing={id:saved.id,revision:saved.revision};
             feedback('hub-config-message','Saved revision '+saved.revision+'. No training scheduled.');
