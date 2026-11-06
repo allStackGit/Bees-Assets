@@ -2001,6 +2001,11 @@ class ExperimentHub {
                  j.after_job_id===parent.id)&&j.status!=='cancelled'))
                 throw Error('This predecessor already has a non-cancelled successor.');
         }
+        if(parent&&project.id==='tinybrains'&&
+            (parent.status!=='finished'||
+                typeof parent.frozen_parameters?.profile_sha256!=='string'||
+                parent.frozen_parameters.profile_sha256!==selected.parameters?.profile_sha256))
+            throw Error('TinyBrains continuation requires a finished predecessor and identical profile digest.');
         if(afterId!==null) {
             if(!UUID.test(String(afterId)))
                 throw Error('Select a valid independent predecessor.');
