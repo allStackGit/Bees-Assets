@@ -244,6 +244,22 @@ identical live enemy membership, weapon validity and targeting metadata.
 The missing authored Level adapter still fails closed rather than treating
 distance as weapon eligibility.
 
+**Aggressive** uses the shared ranked target queue and authoritative
+tracked ship orders, but unlike Swipe or InAndOut advances its attack
+orders one ship per native simulation step, matching the command's
+frame-spread coroutine *order*. Its 3s-to-0.25s scaled timer transition,
+three consecutive per-ship weapon-range confirmations, position hold
+and timeout behavior are implemented in the same command director.
+The `aggressive_command_snapshot` adapter must supply actual weapon
+validity, both some/all enemy-target range predicates, real live enemy
+defenselessness, and current GetShips-ordered target metadata while an
+approach coroutine is active. The helper
+`assemble_aggressive_snapshot_from_live_weapons` computes the stronger
+all-target range predicate using the original Level roster and authoritative
+per-weapon validity. The Level still needs that adapter. Unity's coroutine
+resumes on *render frames* rather than simulation fixed steps; exact timing
+parity across variable render rates is not established by this port.
+
 Random finishes at arrival or command timeout; Patrol samples Unity's four-corner
 route, rotates waypoints on its 3-second scaled callback, and uses the
 separate configured patrol timeout. Retreat uses the Level's live target

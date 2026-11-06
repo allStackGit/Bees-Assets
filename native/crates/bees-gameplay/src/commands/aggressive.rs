@@ -1,7 +1,9 @@
 //! Unity Aggressive: reach enemies, confirm range on three consecutive
 //! command polls, then hold a position if all weapon target checks pass.
-//! StartCoroutine(MoveTowardsEnemiesAcrossFrames) issues one ship order per
-//! simulation step. Only canonical CombatWorld movement and targeting apply.
+//! StartCoroutine(MoveTowardsEnemiesAcrossFrames) is modeled as one ship
+//! order per simulation step. Unity resumes on render frames instead, so
+//! variable-render-rate timing parity still needs runtime qualification.
+//! Only canonical CombatWorld movement and targeting apply.
 
 use bees_hivemind::dispatch::ResolvedHiveMindCommand;
 use bees_hivemind::session::SquadLifetime;

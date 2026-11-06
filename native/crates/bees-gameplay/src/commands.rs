@@ -4,12 +4,12 @@
 //! invokes the same shared physics world and formation navigation used by
 //! user orders, the render client, and headless evaluation.
 //!
-//! Hold, MoveToRandom, Patrol, Retreat, ClosestFriendly, Mining and Heal
-//! have source-defined movement/timer lifecycles. Extraction, healing and
-//! reservations use one shared CombatWorld; fleet credits remain Level-owned.
-//! Other strategies remain explicitly unsupported until their gameplay
-//! mechanics and reward effects are implemented. Caller-owned
-//! targeting/shooting and command reward accumulation are not fabricated.
+//! The authored movement and timer phases share one CombatWorld across
+//! ordinary squad orders, resource commands and attacking strategies.
+//! BombingRun and Charge still require their own special-capability ports;
+//! no unsupported strategy is silently treated as executed.
+//! Fleet credits remain Level-owned, and source shooting/targeting rewards
+//! are never fabricated by the command director.
 
 use std::collections::BTreeMap;
 
