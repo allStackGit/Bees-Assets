@@ -42,7 +42,9 @@ mod heal;
 mod scouting;
 mod full_retreat;
 mod circle;
-pub use self::circle::NativeCircleCommandSnapshot;
+pub use self::circle::{
+    NativeCircleCommandSnapshot, assemble_circle_snapshot_from_live_weapons,
+};
 use self::circle::CircleRun;
 use self::full_retreat::FullRetreatRun;
 use self::mining::MiningRun;

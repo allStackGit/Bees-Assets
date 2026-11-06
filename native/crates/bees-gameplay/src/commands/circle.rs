@@ -12,6 +12,8 @@ use bees_sim::squad_movement::{
 };
 use bees_sim::timer::ScaledTimer;
 
+use bees_hivemind::session::SquadLifetime;
+use crate::squads::NativeSquadRoster;
 use super::{CommandFinishCause, GameCommandError, NativeSquadOrder};
 
 const CIRCLE_POLL_SECONDS: f32 = 0.25;
@@ -38,6 +40,91 @@ impl NativeCircleCommandSnapshot {
             self.own_max_range.is_finite() &&
             self.own_max_range >= 0.0
     }
+}
+
+/// Assemble the exact squad-level range predicate from the existing live
+/// roster. Unity's AreSomeSquadShipsWithinRangeOfAllOfOurSquadShips
+/// requires EACH own ship to have ANY enemy ship which passes its real
+/// Weapon.IsShipValidTarget check. This is NOT distance-to-center testing.
+/// The callback must use the authored weapon rules, including special
+/// targeting exclusions. No allocation or extra physics view is created.
+///
+/// The enemy lifetime must be the original command target, not a new
+/// squad which reused its numeric ID. Callers supply actual GetPosition
+/// bounds centers and original Ship.MaxRange values on each poll.
+pub fn assemble_circle_snapshot_from_live_weapons(
+    world: &CombatWorld,
+    roster: &NativeSquadRoster,
+    owner: SquadLifetime,
+    enemy_owner: SquadLifetime,
+    squad_center: Vec2,
+    enemy_center: Vec2,
+    mut ship_max_range: impl FnMut(i64) -> Result<f32, GameCommandError>,
+    mut weapon_valid_target: impl FnMut(i64, i64)
+        -> Result<bool, GameCommandError>,
+) -> Result<NativeCircleCommandSnapshot, GameCommandError> {
+    let squad = roster.get(owner).ok_or(GameCommandError::InvalidSquad)?;
+    if squad.members.is_empty() || owner.level_id != enemy_owner.level_id {
+        return Err(GameCommandError::InvalidSquad);
+    }
+    let Some(enemy) = roster.get(enemy_owner) else {
+        return Ok(NativeCircleCommandSnapshot {
+            enemy_alive: false,
+            squad_center,
+            enemy_center,
+            own_max_range: 0.0,
+            every_member_has_target_in_range: false,
+        });
+    };
+    if squad.side == enemy.side || enemy.members.is_empty() {
+        return Err(GameCommandError::InvalidEnemy);
+    }
+
+    let mut own_max_range = 0.0_f32;
+    let mut every_member_has_target_in_range = true;
+    for &own_id in &squad.members {
+        let own_ship = world.ship(own_id)
+            .ok_or(GameCommandError::InvalidSquad)?;
+        if own_ship.vitals.is_dead() || own_ship.side != squad.side ||
+            !world.ship_body(own_id).is_some_and(|body| body.active)
+        {
+            return Err(GameCommandError::InvalidSquad);
+        }
+        let range = ship_max_range(own_id)?;
+        if !range.is_finite() || range < 0.0 {
+            return Err(GameCommandError::InvalidCombatSnapshot);
+        }
+        own_max_range = own_max_range.max(range);
+        // Retain the range validation for every member, even if an
+        // earlier member has no target; don't silently accept bad stats.
+        if !every_member_has_target_in_range {
+            continue;
+        }
+        let mut has_target = false;
+        for &enemy_id in &enemy.members {
+            let enemy_ship = world.ship(enemy_id)
+                .ok_or(GameCommandError::InvalidEnemy)?;
+            if enemy_ship.vitals.is_dead() || enemy_ship.side != enemy.side ||
+                !world.ship_body(enemy_id).is_some_and(|body| body.active)
+            {
+                return Err(GameCommandError::InvalidEnemy);
+            }
+            if weapon_valid_target(own_id, enemy_id)? {
+                has_target = true;
+                break;
+            }
+        }
+        if !has_target {
+            every_member_has_target_in_range = false;
+        }
+    }
+    Ok(NativeCircleCommandSnapshot {
+        enemy_alive: true,
+        squad_center,
+        enemy_center,
+        own_max_range,
+        every_member_has_target_in_range,
+    })
 }
 
 pub(super) struct CircleRun {
