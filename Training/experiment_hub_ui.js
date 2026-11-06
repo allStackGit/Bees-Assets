@@ -258,7 +258,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     function renderPipelineStages() {
         const rows=[...$('hub-pipeline-rows').children];
-        const checkpointPipeline=project==='tinybrains'&&
+        const checkpointPipeline=['tinybrains','courier'].includes(project)&&
             $('hub-pipeline-kind').value==='continuation';
         const configs=(state?.configurations||[]).filter(c=>
             checkpointPipeline?c.project_id===project:
@@ -777,7 +777,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 (j.continuation_of_job_id||j.after_job_id))
             .map(j=>j.continuation_of_job_id||j.after_job_id));
         const availableParents=(state.jobs||[]).filter(j=>
-            project==='tinybrains'&&j.project_id===project&&!successors.has(j.id)&&(
+            ['tinybrains','courier'].includes(project)&&j.project_id===project&&!successors.has(j.id)&&(
                 j.assigned_machine_id&&j.dispatch_id&&(
                     j.status==='finished'||
                     ['start_requested','launch_requested','running'].includes(j.status))||
@@ -853,21 +853,21 @@ document.addEventListener('DOMContentLoaded', () => {
         const kind=$('hub-pipeline-kind'),oldKind=kind.value;
         kind.replaceChildren(
             new Option('Independent fresh jobs (no shared checkpoint)','independent'),
-            ...(project==='tinybrains'
+            ...(['tinybrains','courier'].includes(project)
                 ?[new Option('Checkpoint-continuation stages','continuation')]
                 :[]));
         if(pipelineKindProject===project&&
             ['independent','continuation'].includes(oldKind)&&
-            (oldKind!=='continuation'||project==='tinybrains'))
+            (oldKind!=='continuation'||['tinybrains','courier'].includes(project)))
             kind.value=oldKind;
-        else kind.value=project==='tinybrains'?'continuation':'independent';
+        else kind.value=['tinybrains','courier'].includes(project)?'continuation':'independent';
         pipelineKindProject=project;
-        const checkpointPipeline=project==='tinybrains'&&kind.value==='continuation';
+        const checkpointPipeline=['tinybrains','courier'].includes(project)&&kind.value==='continuation';
         $('hub-pipeline-title').textContent=checkpointPipeline
             ?'Prequeue checkpoint-continuation stages'
             :'Queue independent project jobs in sequence';
         $('hub-pipeline-description').textContent=checkpointPipeline
-            ?'Two to sixteen TinyBrains stages with the same approved profile digest. Each stage waits for its predecessor to finish and release capacity, then stays on the original worker.'
+            ?'Two to sixteen stages with the same approved configuration digest. Each stage waits for its predecessor to finish and release capacity, then stays on the original worker.'
             :'Two to sixteen fresh, independent jobs from any non-Bees project. Each job gets its own artifact lineage and may use a different machine. No checkpoint, optimizer or qualification result is inherited. A verified finish or an evaluation-driven Stop can advance the next job after capacity release. Manual Stops and failures do not advance. Queueing never starts training.';
         $('hub-pipeline-predecessor-label').textContent=checkpointPipeline
             ?'Continue an existing job (optional)'
@@ -1847,7 +1847,7 @@ document.addEventListener('DOMContentLoaded', () => {
     $('hub-pipeline-queue').addEventListener('click',async()=>{
         if(project==='bees'||!state)return;
         try {
-            const checkpointPipeline=project==='tinybrains'&&
+            const checkpointPipeline=['tinybrains','courier'].includes(project)&&
                 $('hub-pipeline-kind').value==='continuation';
             const configs=state.configurations.filter(c=>checkpointPipeline
                 ?c.project_id===project:!['bees','ants'].includes(c.project_id));

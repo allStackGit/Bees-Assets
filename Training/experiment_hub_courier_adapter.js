@@ -41,9 +41,14 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath}) 
 
     function jobRoot(context) {
         if(context.project_id!=='courier'||!UUID.test(context.job_id)||
-            context.continuation_of_job_id||context.artifact_lineage_root_id!==context.job_id||
+            !UUID.test(context.artifact_lineage_root_id)||
+            (context.continuation_of_job_id
+                ?!UUID.test(context.continuation_of_job_id)||
+                    context.continuation_of_job_id===context.job_id||
+                    context.artifact_lineage_root_id===context.job_id
+                :context.artifact_lineage_root_id!==context.job_id)||
             context.gpu_pci_address)
-            throw Error('Courier currently supports fresh CPU jobs only.');
+            throw Error('Invalid Courier CPU job or checkpoint lineage.');
         return path.join(artifacts,context.job_id);
     }
 
@@ -59,13 +64,38 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath}) 
                 !within(checkpoint_rounds,1,10000000))
                 throw Error('Courier requires the approved configuration digest and valid seed, worker and round counts.');
             const out=jobRoot(context);
+            const predecessor=context.continuation_of_job_id;
+            let limit=max_rounds, files=[];
+            if(predecessor) {
+                const source=path.join(artifacts,predecessor);
+                const localFile=name=>{
+                    const file=path.join(source,name);
+                    if(fs.realpathSync(file)!==file||!fs.statSync(file).isFile())
+                        throw Error('Courier predecessor file is redirected or unavailable: '+name);
+                    return file;
+                };
+                const checkpoint=JSON.parse(fs.readFileSync(localFile('checkpoint.json'),'utf8'));
+                if(!fs.readFileSync(localFile('hub-environment.json')).equals(config)||
+                    !within(checkpoint.round,1,Number.MAX_SAFE_INTEGER-max_rounds)||
+                    !Array.isArray(checkpoint.lineage)||!within(checkpoint.lineage.length,1,64))
+                    throw Error('Courier continuation requires the same approved environment and a completed population checkpoint.');
+                const names=new Set(fs.readdirSync(source));
+                const required=['checkpoint.json',...checkpoint.lineage.map((_,i)=>'lineage-'+i+'.zip')];
+                const optional=['champion.zip','milestone.json','milestone-policy.zip',
+                    ...checkpoint.lineage.map((_,i)=>'lineage-'+i+'-traits.json')];
+                files=required.concat(optional.filter(name=>names.has(name))).map(localFile);
+                if(max_rounds!==0)limit=checkpoint.round+max_rounds;
+            }
             fs.mkdirSync(out,{mode:0o700});
+            for(const file of files)
+                fs.copyFileSync(file,path.join(out,path.basename(file)),fs.constants.COPYFILE_EXCL);
             const configFile=path.join(out,'hub-environment.json');
             fs.writeFileSync(configFile,config,{flag:'wx',mode:0o600});
             const entry=windows?['-c',WINDOWS_ENTRY,path.join(out,'trainer.stderr.txt'),script]:[script];
             return ['-B',...entry,'--config',configFile,'--run-dir',out,'--port','0',
                 '--seed',String(seed),'--workers',String(workers),
-                '--max-rounds',String(max_rounds),'--checkpoint-rounds',String(checkpoint_rounds)];
+                '--max-rounds',String(limit),'--checkpoint-rounds',String(checkpoint_rounds),
+                ...(predecessor?['--resume']:[])];
         },
         readProgress(context) {
             const checkpoint=path.join(jobRoot(context),'checkpoint.json');
