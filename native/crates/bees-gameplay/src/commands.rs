@@ -6,8 +6,9 @@
 //!
 //! The authored movement and timer phases share one CombatWorld across
 //! ordinary squad orders, resource commands and attacking strategies.
-//! Striker BombingRun and Barge Charge still require their separate
-//! carrier/collision state machines. Unsupported commands are not credited.
+//! Striker BombingRun and Barge Charge use the shared combat world and
+//! require authentic Level-supplied carrier, contact and weapon inputs.
+//! Missing authored inputs fail closed; unsupported commands are not credited.
 //! Fleet credits remain Level-owned, and source shooting/targeting rewards
 //! are never fabricated by the command director.
 

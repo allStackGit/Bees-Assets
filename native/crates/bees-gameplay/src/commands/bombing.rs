@@ -28,8 +28,8 @@ pub struct NativeBombWeapon {
 }
 
 /// Activation-only authored Level inputs. The live source roster is
-/// borrowed, not copied. The command director accepts this payload only
-/// for a composition with a complete native BombingRun executor.
+/// borrowed, not copied. The Level must supply genuine IsCarrierSquad
+/// identity in addition to the live Bomb weapons and target roster.
 #[derive(Clone, Copy)]
 pub struct NativeBombingActivation<'a> {
     pub roster: &'a NativeSquadRoster,

@@ -301,7 +301,9 @@ impl NativeLevelEventProcessor {
 
     /// Apply a HiveMind receipt using this Level's SAME live roster,
     /// command director and CombatWorld. The network/Level adapter must
-    /// supply the real, ordered Bomb weapons and enemy target metadata.
+    /// supply the real, ordered Bomb weapons, enemy target metadata,
+    /// and Unity Squad.IsCarrierSquad. The latter controls the source
+    /// defenseless-Striker ban, never inferred from a ship-type guess.
     /// No separate squad roster or reservation ledger is created.
     pub fn apply_strategy_receipt_with_bombing(
         &mut self,
