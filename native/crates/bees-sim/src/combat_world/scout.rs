@@ -79,7 +79,9 @@ impl CombatWorld {
         }
         let runtime = self.policy_ship_runtime.get_mut(&scout_id)
             .ok_or(CombatWorldError::UnknownShip)?;
-        if runtime.special.is_some() {
+        if runtime.special.is_some() ||
+            self.game_scout_runtime.contains_key(&scout_id) ||
+            self.scout_beacon_specs.contains_key(&scout_id) {
             return Err(CombatWorldError::InvalidPolicyScout);
         }
         self.scout_beacon_specs.insert(scout_id, spec);
@@ -87,6 +89,81 @@ impl CombatWorld {
             dropped: 0, remaining_cooldown: 0.0, enabled: true,
         }));
         Ok(())
+    }
+
+    /// A non-policy gameplay Scout uses exactly the same authored Beacon
+    /// prefab/physical spawn as an RL Scout. Its resource clock belongs
+    /// to the world, not a replaceable HiveMind Scouting command. The Level
+    /// supplies the actual Beacon stats and FleetShip identity at setup.
+    pub fn configure_game_scout(
+        &mut self, scout_id: i64, spec: ScoutBeaconSpec,
+    ) -> Result<(), CombatWorldError> {
+        let &index = self.ship_by_id.get(&scout_id)
+            .ok_or(CombatWorldError::UnknownShip)?;
+        if self.ships[index].ship_type != SCOUT_TYPE ||
+            self.ships[index].vitals.is_dead() ||
+            !self.physics.ships()[index].active ||
+            !self.fleet_id_by_ship.get(&scout_id).is_some_and(|&id| id > 0) ||
+            !spec.valid() ||
+            self.scout_beacon_specs.contains_key(&scout_id) ||
+            self.policy_ship_runtime.contains_key(&scout_id) {
+            return Err(CombatWorldError::InvalidPolicyScout);
+        }
+        self.scout_beacon_specs.insert(scout_id, spec);
+        self.game_scout_runtime.insert(scout_id, PolicyScoutRuntime {
+            dropped: 0, remaining_cooldown: 0.0, enabled: true,
+        });
+        Ok(())
+    }
+
+    pub fn set_game_scout_enabled(
+        &mut self, scout_id: i64, enabled: bool,
+    ) -> Result<(), CombatWorldError> {
+        let scout = self.game_scout_runtime.get_mut(&scout_id)
+            .ok_or(CombatWorldError::InvalidPolicyScout)?;
+        scout.enabled = enabled && scout.dropped < MAX_BEACONS;
+        Ok(())
+    }
+
+    /// Read only, suitable for a sparse ten-second Scouting callback.
+    pub fn game_scout_beacon_ready(&self, scout_id: i64) -> bool {
+        let Some(&runtime) = self.game_scout_runtime.get(&scout_id) else {
+            return false;
+        };
+        if !runtime.enabled || runtime.dropped >= MAX_BEACONS ||
+            runtime.remaining_cooldown > 0.0 {
+            return false;
+        }
+        let Some(ship) = self.ship(scout_id) else { return false; };
+        if ship.vitals.is_dead() ||
+            !self.ship_body(scout_id).is_some_and(|body| body.active) {
+            return false;
+        }
+        self.scout_beacon_specs.get(&scout_id).is_some_and(|spec|
+            spec.max_living_ships_per_side.is_none_or(|cap|
+                self.living_ships_on_side(ship.side) < cap
+            )
+        )
+    }
+
+    /// Unity Scout.DropBeacon. A rejected attempt does not consume a
+    /// charge or start cooldown; the shared physical transaction emits the
+    /// same BeaconDropped event used by policy, gameplay and presentation.
+    pub fn try_drop_game_scout_beacon(
+        &mut self, scout_id: i64,
+    ) -> Result<bool, CombatWorldError> {
+        if !self.game_scout_beacon_ready(scout_id) {
+            return Ok(false);
+        }
+        if !self.spawn_registered_scout_beacon(scout_id)? {
+            return Ok(false);
+        }
+        let scout = self.game_scout_runtime.get_mut(&scout_id)
+            .expect("prevalidated game Scout");
+        scout.dropped += 1;
+        scout.remaining_cooldown = COOLDOWN_SECONDS;
+        if scout.dropped >= MAX_BEACONS { scout.enabled = false; }
+        Ok(true)
     }
 
     /// Unity's CanDropBeacons can be disabled independently from a fully
@@ -223,7 +300,11 @@ impl CombatWorld {
 
     /// Scaled game time, not wall time; BTreeMap order is already stable.
     /// The fresh Scout is initially charged exactly as Unity Setup intends.
-    pub(super) fn advance_policy_scout_cooldowns(&mut self, dt: f32) {
+    pub(super) fn advance_scout_beacon_cooldowns(&mut self, dt: f32) {
+        for runtime in self.game_scout_runtime.values_mut() {
+            runtime.remaining_cooldown =
+                (runtime.remaining_cooldown - dt).max(0.0);
+        }
         for runtime in self.policy_ship_runtime.values_mut() {
             let Some(PolicyShipSpecial::Scout(scout)) =
                 runtime.special.as_mut() else { continue };
