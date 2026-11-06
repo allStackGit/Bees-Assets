@@ -358,8 +358,8 @@ struct ActiveNativeCommand {
     member_ids: Vec<i64>,
 }
 
-/// Cheap, cumulative command metrics for an experiment dashboard. Counts
-/// never contain per-tick histories, allocations, or wall-clock reads.
+/// Cheap command metrics for an experiment dashboard. Cumulative counts and
+/// current active-command gauges never retain per-tick histories or timings.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct CommandMeasurements {
     pub updates: u64,
@@ -375,6 +375,10 @@ pub struct CommandMeasurements {
     pub scouting_beacons_dropped: u64,
     pub scouting_first_sightings: u64,
     pub full_retreat_warps: u64,
+    /// Current lifecycle-owned commands requiring fresh friendly geometry.
+    pub active_following: usize,
+    /// Current lifecycle-owned FullRetreat commands needing warp settlement.
+    pub active_full_retreat: usize,
     /// Server selections without an implemented native command executor.
     pub unsupported: u64,
     /// Supported commands with no eligible live target or resource.
@@ -415,7 +419,7 @@ impl NativeSquadCommandDirector {
     /// refreshed friendly squad geometry. Other commands use their own
     /// world-owned state and must not force a full Level roster projection.
     pub fn needs_live_friendlies(&self) -> bool {
-        self.active.values().any(|command| command.following.is_some())
+        self.measurements.active_following != 0
     }
 
     /// Invoke before the Level's squad-death event pass. FullRetreat's
@@ -429,9 +433,9 @@ impl NativeSquadCommandDirector {
         world: &CombatWorld,
         mut owner_of_ship: impl FnMut(i64) -> Option<SquadLifetime>,
     ) {
-        // Most training worlds have no active HiveMind command. Avoid
-        // rescanning potentially large shot/event buffers in that case.
-        if self.active.is_empty() { return; }
+        // Most training worlds have no FullRetreat command. Avoid
+        // rescanning potentially large combat event buffers in that case.
+        if self.measurements.active_full_retreat == 0 { return; }
         for event in world.events() {
             let bees_sim::combat_world::CombatEvent::ShipWarped {
                 ship_id, ..
@@ -864,7 +868,20 @@ impl NativeSquadCommandDirector {
             .and_then(|prior| prior.full_retreat.as_ref()) {
             previous.release_all(world, active.full_retreat.as_ref());
         }
-        let superseded = self.active.insert(squad.owner, active).map(|old| {
+        let new_following = usize::from(active.following.is_some());
+        let new_full_retreat = usize::from(active.full_retreat.is_some());
+        let replaced = self.active.insert(squad.owner, active);
+        // Active gauges change at the same ownership boundary as the map.
+        // A replacement exchanges its old type for the new one atomically.
+        self.measurements.active_following += new_following;
+        self.measurements.active_full_retreat += new_full_retreat;
+        if let Some(previous) = replaced.as_ref() {
+            self.measurements.active_following -=
+                usize::from(previous.following.is_some());
+            self.measurements.active_full_retreat -=
+                usize::from(previous.full_retreat.is_some());
+        }
+        let superseded = replaced.map(|old| {
             FinishedNativeCommand {
                 owner: squad.owner, selection: old.selection,
                 cause: CommandFinishCause::Superseded,
@@ -1137,6 +1154,10 @@ impl NativeSquadCommandDirector {
                 restore_guard_speed(world, guard)?;
             }
             if let Some(mut active) = self.active.remove(&owner) {
+                self.measurements.active_following -=
+                    usize::from(active.following.is_some());
+                self.measurements.active_full_retreat -=
+                    usize::from(active.full_retreat.is_some());
                 if let Some(heal) = active.heal.as_mut() {
                     heal.release_all(world);
                 }
@@ -1173,6 +1194,10 @@ impl NativeSquadCommandDirector {
             restore_guard_speed(world, guard)?;
         }
         let retired = self.active.remove(&owner).map(|mut active| {
+            self.measurements.active_following -=
+                usize::from(active.following.is_some());
+            self.measurements.active_full_retreat -=
+                usize::from(active.full_retreat.is_some());
             if let Some(heal) = active.heal.as_mut() {
                 heal.release_all(world);
             }
