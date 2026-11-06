@@ -322,7 +322,7 @@ multi-workload what-if planner can reorder proposed workloads by
 capacity scarcity; its result is **not** a guarantee of the FIFO live
 claim order.
 
-### Opt-in native CPU-only queue automation
+### Opt-in native queue automation
 
 The non-Bees Train tab can explicitly **arm 1–16 selected, enrolled native
 machines** using the loopback-only `POST /api/hub/automation` endpoint.
@@ -348,10 +348,11 @@ While armed, a coordinator pass every ten seconds performs **at most one
 durable transition**: release capacity only for a job started in the
 **current automation session** after an authenticated native `finished`
 or `stopped` report (activating an eligible prequeued successor in the
-same write after `finished`), authorize one CPU-only Start that passes
+same write after `finished`), authorize one eligible Start that passes
 the same live readiness gate as the manual Start button, or claim available
-CPU/RAM budget for an unassigned non-Bees job. Jobs completed under
-older/manual sessions require explicit capacity release. A machine cannot
+CPU/RAM budget for an unassigned CPU-only non-Bees job. Jobs completed under
+older sessions require explicit capacity release unless their manual Start
+opted into terminal release. A machine cannot
 receive a second automatic Start authorization while another Start is
 awaiting its native running/terminal acknowledgement. Project queues are
 interleaved fairly (FIFO within each project). Because automation makes
@@ -514,7 +515,7 @@ unavailable until the port conflict is resolved.
 
 By default the agent is **observation-only**. With an explicit local
 opt-in and a trusted installed project adapter, it may process bounded
-machine-bound `start`, `inspect` and `stop` directives for CPU-only
+machine-bound `start`, `inspect` and `stop` directives for eligible native
 jobs. It never accepts a server-supplied executable, shell command or
 environment override, and it cannot take over existing Bees training.
 
@@ -616,6 +617,13 @@ after a fresh CPU/RAM capacity drop. Manual claims, checkpoint-pinned
 jobs and dispatched jobs remain in place. Each move uses the same atomic
 lease replacement as Train and requires a fresh destination receipt.
 Disarming or restarting ends ownership of earlier claims.
+
+An armed session can also opt into starting qualified GPU claims
+(`start_qualified_gpu:true`). GPU claims and access probes remain explicit
+operator actions. The normal native Start gates still apply, including
+the current proof for the exact lease and agent instance and the
+in-service device and runtime checks. Verified jobs started by the
+session use its existing completion release path.
 
 ### Operator-initiated native execution
 
@@ -869,8 +877,7 @@ Train requires explicit Start and a current access probe for the same
 acknowledged exclusive single-GPU lease. The native service resolves the PCI
 mapping again and runs the device access and runtime checks in its own
 systemd cgroup before the training executable can start. The local journal
-also rejects unresolved ownership of the same PCI GPU. CPU-only automation
-continues to manage CPU jobs only. A GPU authorization that loses its proof
+also rejects unresolved ownership of the same PCI GPU. CPU-only automation remains the default. A GPU authorization that loses its proof
 before delivery holds its claim for operator inspection.
 
 Halifax still needs real qualification of the systemd device policy and
