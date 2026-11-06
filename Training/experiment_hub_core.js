@@ -827,6 +827,8 @@ class ExperimentHub {
             const owned=new Set(session.claimed_lease_ids);
             const canHostJob=(machine,job)=>
                 machine.installed_projects?.includes(job.project_id)&&
+                supportsEvaluation(machine.evaluation_suites,job)&&
+                supportsTinyBrainsProfile(machine,job)&&
                 (job.resources.gpu_count===0||
                     machine.agent_platform==='linux'&&
                     machine.gpu_projects?.includes(job.project_id)&&
@@ -842,12 +844,12 @@ class ExperimentHub {
                     const source=selected.find(m=>m.id===job.assigned_machine_id);
                     const lease=snapshot.reservations.find(l=>l.id===job.lease_id);
                     if(!source||!lease)continue;
-                    const gpuUnavailable=gpu&&(!canHostJob(source,job)||
-                        physicalGpuBindings(source,{
-                            gpu_inventory_source:source.gpu_inventory_source,
-                            gpu_devices:source.observed_gpus,
-                        },lease.resources,lease.gpu_bindings)===null);
-                    if(!overcommitted.has(source.id)&&!gpuUnavailable)continue;
+                    const gpuUnavailable=gpu&&physicalGpuBindings(source,{
+                        gpu_inventory_source:source.gpu_inventory_source,
+                        gpu_devices:source.observed_gpus,
+                    },lease.resources,lease.gpu_bindings)===null;
+                    if(!overcommitted.has(source.id)&&!gpuUnavailable&&canHostJob(source,job))
+                        continue;
                     const eligible=eligibleHosts(job).filter(m=>
                         m.id!==source.id&&!overcommitted.has(m.id));
                     const chosen=allocationChoice(eligible,snapshot.reservations,job);
