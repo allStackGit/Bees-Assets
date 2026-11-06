@@ -227,7 +227,9 @@ function gpuProbeBlock(job,lease,machine) {
 // target may also complete one after a native Stop, but must never authorize
 // checkpoint continuation or bypass native capacity release.
 function independentSequenceComplete(job) {
-    if(!job)return false;
+    // Retired Ants-v2 records remain inspectable, but cannot unlock
+    // new experiment work or previously queued dependent launches.
+    if(!job||job.project_id==='ants')return false;
     if(job.status==='finished')return true;
     if(job.status!=='stopped'||!job.evaluation_stop||
         !job.evaluation_stop_evidence||!UUID.test(String(job.dispatch_id||''))||
@@ -288,7 +290,7 @@ function nativeStartReadiness(snapshot, job) {
     if(job.continuation_of_job_id) {
         const parent=snapshot.jobs.find(j=>j.id===job.continuation_of_job_id);
         if(!parent||parent.project_id!==job.project_id||
-            !['finished','stopped'].includes(parent.status)||
+            parent.status!=='finished'||
             !parent.capacity_released_at||
             parent.assigned_machine_id!==job.assigned_machine_id||
             (parent.artifact_lineage_root_id||parent.id)!==
@@ -1154,10 +1156,12 @@ class ExperimentHub {
             requested.some(id=>typeof id!=='string')))
             throw Error('Select 1–100 distinct pending job IDs.');
         const next=copy(this.state);
+        const retiredParents=new Set(next.jobs.filter(j=>j.project_id==='ants')
+            .map(j=>j.id));
         const candidates=next.jobs.filter(j=>
             (allProjects||j.project_id===project.id) &&
-            j.project_id!=='ants'&&j.adapter==='unconfigured' &&
-            j.status==='waiting_adapter' &&
+            j.project_id!=='ants'&&!retiredParents.has(j.after_job_id)&&
+            j.adapter==='unconfigured'&&j.status==='waiting_adapter'&&
             (requested===undefined || requested.includes(j.id)));
         // Fair interleaving across project queues, preserving FIFO within
         // each project. This is only a claim planner, not job execution.
@@ -1586,6 +1590,8 @@ class ExperimentHub {
     }
     executionOrders(machineId) {
         const snapshot=this.snapshot();
+        const retiredParents=new Set(snapshot.jobs.filter(j=>
+            j.project_id==='ants').map(j=>j.id));
         const machine=snapshot.machines.find(m=>m.id===machineId);
         if(!machine||machine.status!=='connected'||
             machine.local_executor_enabled!==true)return [];
@@ -1624,14 +1630,16 @@ class ExperimentHub {
             if(!lease)continue;
             const adapterInstalled=machine.installed_projects.includes(job.project_id);
             let action=actionFor(job);
-            // A retired Ants-v2 Start that was never offered must not be
-            // launched after upgrade. Previously offered work can still be
-            // inspected and stopped, but cannot be launched again.
-            if(job.project_id==='ants'&&action==='start') {
+            // Legacy Ants-v2 jobs and dependents must not initiate new
+            // launches after retirement. Preserve Inspect and Stop for
+            // native work that may already have been offered.
+            const retired=job.project_id==='ants'||
+                retiredParents.has(job.after_job_id);
+            if(retired&&action==='start') {
                 if(typeof job.start_first_offered_at!=='string')continue;
                 action='inspect';
             }
-            if(job.project_id==='ants'&&action==='qualify_gpu'&&
+            if(retired&&action==='qualify_gpu'&&
                 !job.gpu_qualification?.first_offered_at)
                 continue;
             if(action==='start') {
@@ -2120,7 +2128,7 @@ class ExperimentHub {
                 throw Error('Select a valid independent predecessor.');
             dependency=next.jobs.find(j=>j.id===afterId);
             const completed=independentSequenceComplete(dependency);
-            if(!dependency||dependency.project_id==='bees'||
+            if(!dependency||['bees','ants'].includes(dependency.project_id)||
                 !(['waiting_adapter','waiting_predecessor',
                     'start_requested','launch_requested','running'].includes(
                         dependency.status)||completed)||
@@ -2266,8 +2274,11 @@ class ExperimentHub {
         return copy(job);
     }
     plannedJobs() {
+        const retiredParents=new Set(this.state.jobs.filter(j=>
+            j.project_id==='ants').map(j=>j.id));
         const jobs=this.state.jobs.filter(j=>
-            j.status==='waiting_adapter'&&j.project_id!=='ants');
+            j.status==='waiting_adapter'&&j.project_id!=='ants'&&
+            !retiredParents.has(j.after_job_id));
         const snapshot=this.snapshot();
         // Rehearse the same per-project FIFO interleave and best-fit
         // decisions as allocateJobs, but do not mint leases or mutate state.
