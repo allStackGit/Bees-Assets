@@ -1580,8 +1580,10 @@ released. In Train, choose that predecessor and a draft with the same
 profile digest. The continuation runs on the original worker and its
 update count is additional. It reads the predecessor's checkpoint and
 writes into its own job directory, leaving earlier checkpoints intact.
-Stopped jobs are ineligible for continuation. GPU execution remains
-outside this adapter's contract.
+Train can also queue 2–16 TinyBrains continuation stages atomically.
+A successor stays unclaimed until its predecessor finishes and releases
+capacity. Stopped jobs are ineligible for continuation. GPU execution
+remains outside this adapter's contract.
 
 For evaluation-driven stopping, set the adapter's `evaluationRoot` to a
 trusted evaluator-owned directory separate from the checkout and training
