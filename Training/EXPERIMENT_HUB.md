@@ -1575,8 +1575,13 @@ claims for the selected profile and environment. Compare uses completed trainer 
 as project steps and shows update wall time and engine steps per second.
 Windows Stop terminates the Job Object process tree. A forced stop does
 not establish that a checkpoint was saved at the stop boundary.
-This adapter supports fresh CPU runs. Checkpoint continuation and GPU
-execution remain outside its current contract.
+TinyBrains can continue a naturally finished job after its claim is
+released. In Train, choose that predecessor and a draft with the same
+profile digest. The continuation runs on the original worker and its
+update count is additional. It reads the predecessor's checkpoint and
+writes into its own job directory, leaving earlier checkpoints intact.
+Stopped jobs are ineligible for continuation. GPU execution remains
+outside this adapter's contract.
 
 For evaluation-driven stopping, set the adapter's `evaluationRoot` to a
 trusted evaluator-owned directory separate from the checkout and training
