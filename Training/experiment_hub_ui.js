@@ -1145,13 +1145,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const actions=cell(tr,'');
             if(j.status==='waiting_adapter'&&!j.lease_id)
                 actions.append(button('Coordinate capacity',()=>allocateJob([j.id])));
-            if(j.status==='waiting_adapter'&&linked?.receipt_fresh&&
-                machine?.status==='connected'&&machine.agent_platform==='linux'&&
-                machine.local_executor_enabled===true&&
-                machine.native_preflight_passed===true&&
-                machine.installed_projects?.includes(j.project_id)&&
-                j.resources.gpu_count===1&&
-                j.resources.gpu_mode==='exclusive'&&
+            if(j.gpu_probe_block===null&&
                 (proof?.status!=='requested'||proof.automation_paused))
                 actions.append(button(proof?.automation_paused?'Resume GPU access probe':
                     proof?.status==='verified'?'Recheck GPU device access':'Check GPU device access',async()=>{
@@ -1170,6 +1164,9 @@ document.addEventListener('DOMContentLoaded', () => {
                         await reload();
                     }catch(e){feedback('hub-job-message',e.message);}
                 }));
+            if(j.gpu_probe_block&&
+                (proof?.status!=='requested'||proof.automation_paused))
+                actions.append(document.createTextNode(j.gpu_probe_block+' '));
             if(j.status==='waiting_adapter'&&proof?.status==='requested'&&proof.first_offered_at===null)
                 actions.append(button('Withdraw GPU probe',async()=>{
                     if(!confirm('Withdraw the undelivered GPU access probe for '+j.configuration_name+
