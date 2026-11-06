@@ -939,7 +939,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const availableParents=(state.jobs||[]).filter(j=>
             j.project_id===project&&!successors.has(j.id)&&(
                 j.assigned_machine_id&&j.dispatch_id&&(
-                    ['finished','stopped'].includes(j.status)&&j.capacity_released_at||
+                    (j.status==='finished'||j.status==='stopped'&&project!=='tinybrains')&&
+                        j.capacity_released_at||
                     project==='ants'&&(
                         ['start_requested','launch_requested','running'].includes(j.status)||
                         j.status==='finished'&&!j.capacity_released_at))||
