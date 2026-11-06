@@ -255,8 +255,12 @@ impl GameShipSteering {
         motion: &mut ShipMotion,
         dt: f32,
     ) -> MotionUpdate {
-        self.tracked_replan_wait_seconds =
-            (self.tracked_replan_wait_seconds - dt).max(0.0);
+        // Most game ships never follow a moving A* target. Keep their
+        // fixed-step hot path free of needless cooldown arithmetic.
+        if self.tracked_replan_wait_seconds > 0.0 {
+            self.tracked_replan_wait_seconds =
+                (self.tracked_replan_wait_seconds - dt).max(0.0);
+        }
         if !motion.mobile ||
             (motion.is_policy_controlled && !motion.user_controlled) {
             return MotionUpdate::NotPolicyControlled;
