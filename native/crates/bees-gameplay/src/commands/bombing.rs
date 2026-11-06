@@ -344,6 +344,10 @@ impl NativeBombingRun {
             if !matches!(ship.ship_type, 10 | 19 | 22) {
                 return Err(GameCommandError::MissingCombatSnapshot);
             }
+            // This command will move every living bomber on its first
+            // timer. Fail before obtaining any Bomb.TargetShip leases if
+            // the authored movement profile or control ownership is absent.
+            world.validate_ship_game_order(member.ship_id)?;
             only_strikers &= ship.ship_type == 19;
             has_contact_bombers |= matches!(ship.ship_type, 19 | 22);
             if ship.ship_type == 19 {

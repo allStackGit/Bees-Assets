@@ -51,10 +51,15 @@ impl NativeChargeRun {
         weapons: &[NativeBombWeapon],
         enemies: &[NativeEnemyTargetStats],
     ) -> Result<Option<Self>, GameCommandError> {
-        if !squad.members.iter().all(|member| world.ship(member.ship_id)
-            .is_some_and(|ship| ship.ship_type == 0)
-        ) {
-            return Err(GameCommandError::InvalidSquad);
+        // Charge.SetFinalize must be able to stop every surviving Barge,
+        // even if the immediate command poll never ran. Reject an
+        // unconfigured/policy-owned ship before Bomb target assignments.
+        for member in squad.members {
+            if !world.ship(member.ship_id)
+                .is_some_and(|ship| ship.ship_type == 0) {
+                return Err(GameCommandError::InvalidSquad);
+            }
+            world.validate_ship_game_order(member.ship_id)?;
         }
         let mut target = NativeAttackTarget::new(enemy_owner.squad_id);
         target.validate(squad.owner, enemy_owner)?;
