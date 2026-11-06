@@ -1624,6 +1624,16 @@ class ExperimentHub {
             if(!lease)continue;
             const adapterInstalled=machine.installed_projects.includes(job.project_id);
             let action=actionFor(job);
+            // A retired Ants-v2 Start that was never offered must not be
+            // launched after upgrade. Previously offered work can still be
+            // inspected and stopped, but cannot be launched again.
+            if(job.project_id==='ants'&&action==='start') {
+                if(typeof job.start_first_offered_at!=='string')continue;
+                action='inspect';
+            }
+            if(job.project_id==='ants'&&action==='qualify_gpu'&&
+                !job.gpu_qualification?.first_offered_at)
+                continue;
             if(action==='start') {
                 const automationValid=!job.automation_start_session_id||
                     (this.automation.enabled&&
