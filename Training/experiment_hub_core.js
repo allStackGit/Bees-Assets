@@ -657,6 +657,9 @@ class ExperimentHub {
         });
         const jobsById=new Map(snapshot.jobs.map(job=>[job.id,job]));
         for(const job of snapshot.jobs) {
+            // Keep independent-sequence eligibility a coordinator-owned
+            // decision. The UI must not reimplement evidence validation.
+            job.independent_sequence_complete=independentSequenceComplete(job);
             if(job.status==='waiting_predecessor')
                 job.predecessor_wait=waitingStageReason(job,jobsById);
             if(job.status==='waiting_adapter'&&job.project_id!=='bees')
