@@ -47,9 +47,10 @@ pub(super) struct PolicyStrikerRuntime {
 }
 
 impl CombatWorld {
-    /// Bind the source game Striker once after its fleet identity and
-    /// physical ship are installed, before activating a BombingRun.
-    /// The same persistent readiness survives command supersession.
+    /// Bind a source game Striker after its FleetShip identity and body
+    /// have been installed. A later call can reassign or clear its Carrier
+    /// without resetting IsBombReady or the independent reload timer.
+    /// BombingRun completion flags remain owned by the live command.
     pub fn configure_game_striker(
         &mut self, striker_id: i64, carrier: GameStrikerCarrier,
     ) -> Result<(), CombatWorldError> {
@@ -61,7 +62,7 @@ impl CombatWorld {
         if self.ships[index].ship_type != 19 ||
             self.ships[index].vitals.is_dead() ||
             !self.physics.ships()[index].active ||
-            self.game_strikers.contains_key(&striker_id) ||
+            self.policy_ship_runtime.contains_key(&striker_id) ||
             (self.physics.ships()[index].motion.is_policy_controlled &&
                 !self.physics.ships()[index].motion.user_controlled) ||
             !self.fleet_id_by_ship.get(&striker_id)
@@ -78,10 +79,14 @@ impl CombatWorld {
                 return Err(CombatWorldError::InvalidGameStriker);
             }
         }
-        self.game_strikers.insert(striker_id, GameStrikerRuntime {
-            carrier, ready: true,
-            reload_timer: ScaledTimer::new(1.0, true, false),
-        });
+        if let Some(runtime) = self.game_strikers.get_mut(&striker_id) {
+            runtime.carrier = carrier;
+        } else {
+            self.game_strikers.insert(striker_id, GameStrikerRuntime {
+                carrier, ready: true,
+                reload_timer: ScaledTimer::new(1.0, true, false),
+            });
+        }
         Ok(())
     }
 
@@ -221,8 +226,8 @@ impl CombatWorld {
     }
 
     /// Source Striker.OnTriggerEnter2D + DropBomb, for a *commanded* game
-    /// Striker. The Level owns IsBombReady/HasDroppedBomb and calls this
-    /// only when its real command and collision callback permit delivery.
+    /// Striker. CombatWorld owns IsBombReady while the live BombingRun
+    /// owns HasDroppedBomb; both must permit the contact delivery.
     /// The world checks the original selected Bomb.TargetShip and the
     /// exact authored hull contact before transferring its one reservation
     /// into the existing two-second StrikerBomb fuse.
