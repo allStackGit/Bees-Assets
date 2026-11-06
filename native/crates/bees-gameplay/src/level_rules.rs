@@ -33,6 +33,9 @@ pub trait NativeLevelRewardMetadata {
 
     /// Add the exact native mining yield to the saved
     /// FleetShip.MineralsMinedThisLevel and return its new absolute value.
+    /// This must equal CombatWorld's already-applied provisional total:
+    /// divergent external mining changes require explicit pre-step sync,
+    /// not an invisible post-damage adjustment to Ship.Tsv.
     /// No default implementation: a Level without persisted fleet state
     /// must not silently acknowledge an action and lose mined resources.
     fn credit_mined_minerals(&mut self, ship_id: i64, amount: i32) -> Option<i32>;
@@ -237,16 +240,18 @@ where
             let Some((ship_id, amount)) = mined else { continue; };
             // Combat already applied this exact yield to live ShipVitals
             // before subsequent same-tick hits/warps. The persistent
-            // FleetShip total must include at least that provisional value.
+            // FleetShip total must equal that provisional value, otherwise
+            // damage and TSV rewards may have used a different cargo value.
             let provisional_total = state.combat.ship(ship_id)
                 .ok_or(NativeLevelStepError::InvalidMiningFleetValue(ship_id))?
                 .vitals.mined_cargo();
             let total = state.metadata.credit_mined_minerals(ship_id, amount)
                 .ok_or(NativeLevelStepError::MissingMiningFleetValue(ship_id))?;
-            if total < provisional_total {
+            if total != provisional_total {
                 return Err(NativeLevelStepError::InvalidMiningFleetValue(ship_id));
             }
-            state.combat.sync_mined_fleet_value(ship_id, total)?;
+            // Already applied in CombatWorld before any subsequent hit;
+            // do not recompute ShipVitals TSV a second time.
             if state.combat.ship(ship_id)
                 .is_some_and(|ship| !ship.vitals.is_dead()) {
                 state.events.record_mined_value(
