@@ -107,12 +107,29 @@ impl CombatWorld {
             }
             let position = self.physics.obstacles()[index].pose.position;
             let distance = (position - squad_center).length_squared();
-            if distance < distance_squared {
+            if nearest.is_none() || distance < distance_squared {
                 nearest = Some((id, position));
                 distance_squared = distance;
             }
         }
         nearest
+    }
+
+    /// Exact primary-collider contact for a source Mining command's
+    /// FoundAsteroid membership. This is a pure, indexed read: it does
+    /// not trigger an extraction or create an independent contact cache.
+    pub fn ship_touches_mining_asteroid(
+        &self, ship_id: i64, obstacle_id: i64,
+    ) -> bool {
+        let Some(&ship_index) = self.ship_by_id.get(&ship_id) else {
+            return false;
+        };
+        let Some(&obstacle_index) = self.obstacle_by_id.get(&obstacle_id) else {
+            return false;
+        };
+        self.obstacles[obstacle_index].kind == ObstacleKind::MiningAsteroid &&
+            self.obstacles[obstacle_index].live() &&
+            self.physics.ship_obstacle_hulls_touch(ship_index, obstacle_index)
     }
 
     /// Shared world-authoritative extraction for policy actions and the
