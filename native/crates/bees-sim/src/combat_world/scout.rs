@@ -242,8 +242,10 @@ impl CombatWorld {
             return Ok(false);
         }
         if !self.spawn_registered_scout_beacon(scout_id)? {
+            self.policy_special_measurements.scout_spawns_blocked_by_cap += 1;
             return Ok(false);
         }
+        self.policy_special_measurements.scout_beacons_spawned += 1;
 
         let Some(PolicyShipSpecial::Scout(scout)) =
             self.policy_ship_runtime.get_mut(&scout_id)
@@ -275,7 +277,6 @@ impl CombatWorld {
         let side = self.ships[index].side;
         if spec.max_living_ships_per_side
             .is_some_and(|cap| self.living_ships_on_side(side) >= cap) {
-            self.policy_special_measurements.scout_spawns_blocked_by_cap += 1;
             return Ok(false);
         }
         let spec = spec.clone(); // Arc-backed hull; only copied on actual drop.
@@ -297,7 +298,6 @@ impl CombatWorld {
         self.set_ship_fleet_identity(beacon_id, parent_fleet_id)?;
         self.beacon_parent_by_id.insert(beacon_id, scout_id);
 
-        self.policy_special_measurements.scout_beacons_spawned += 1;
         self.events.push(CombatEvent::ScoutBeaconDropped {
             scout_id, beacon_id, parent_fleet_id,
         });
