@@ -2066,8 +2066,8 @@ class ExperimentHub {
             const job=this.queueIn(next,{
                 ...stage,continuation_of_job_id:predecessor,
             });
-            if(job.project_id!=='tinybrains')
-                throw Error('Checkpoint pipelines require the TinyBrains adapter.');
+            if(!['tinybrains','courier'].includes(job.project_id))
+                throw Error('Checkpoint pipelines require the TinyBrains or Courier adapter.');
             jobs.push(copy(job));
             predecessor=job.id;
         }
@@ -2102,8 +2102,8 @@ class ExperimentHub {
         let parent=null,dependency=null,waitingPredecessor=false;
         let dependencyReady=false;
         if(ancestorId!==null) {
-            if(project.id!=='tinybrains')
-                throw Error('Checkpoint continuation requires the TinyBrains adapter.');
+            if(!['tinybrains','courier'].includes(project.id))
+                throw Error('Checkpoint continuation requires the TinyBrains or Courier adapter.');
             if(typeof ancestorId!=='string'||!UUID.test(ancestorId))
                 throw Error('Select a valid predecessor job for continuation.');
             parent=next.jobs.find(j=>j.id===ancestorId);
@@ -2128,11 +2128,12 @@ class ExperimentHub {
                  j.after_job_id===parent.id)&&j.status!=='cancelled'))
                 throw Error('This predecessor already has a non-cancelled successor.');
         }
-        if(parent&&
-            ((!waitingPredecessor&&parent.status!=='finished')||
-                typeof parent.frozen_parameters?.profile_sha256!=='string'||
-                parent.frozen_parameters.profile_sha256!==selected.parameters?.profile_sha256))
-            throw Error('TinyBrains continuation requires identical profile digests and a predecessor that is finished or can still finish.');
+        if(parent) {
+            const digestField=project.id==='courier'?'config_sha256':'profile_sha256';
+            const digest=parent.frozen_parameters?.[digestField];
+            if(typeof digest!=='string'||digest!==frozen[digestField])
+                throw Error('Checkpoint continuation requires the same approved configuration digest as the predecessor.');
+        }
         if(afterId!==null) {
             if(!UUID.test(String(afterId)))
                 throw Error('Select a valid independent predecessor.');

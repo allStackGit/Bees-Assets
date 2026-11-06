@@ -1387,8 +1387,12 @@ The trainer's own loopback dashboard uses an OS-assigned port.
 
 Linux requests a checkpoint-aware interrupt. Windows Stop terminates
 the Job Object, so a run may lose work since its last durable checkpoint.
-Courier resume and independent evaluation are outside this adapter's
-current contract.
+For checkpoint continuation, select a naturally finished predecessor
+with released capacity, or queue a checkpoint pipeline in Train. Keep
+the same environment digest. Each stage runs on the original worker
+and copies the completed population into its own directory before
+resuming. A positive round limit is additional for continuations.
+Independent Courier evaluation remains outside this adapter's contract.
 
 ## Not yet implemented
 
