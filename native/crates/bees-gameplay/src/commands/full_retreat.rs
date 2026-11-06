@@ -107,6 +107,14 @@ impl FullRetreatRun {
             }
             return Err(error);
         }
+        // Unity calls WaitToWarp immediately after activating the gate.
+        // An already-open gate shared with another command can therefore
+        // accept registered collider contacts without a two-second wait.
+        if world.game_warp_gate_ready(gate_id) {
+            for &id in &run.participants {
+                world.complete_game_warp(id, gate_id)?;
+            }
+        }
         Ok(Some(run))
     }
 
@@ -143,20 +151,21 @@ impl FullRetreatRun {
     /// TSV of a returned Striker/Drone; queuing an attempt is not enough.
     pub(super) fn record_warp_event(
         &mut self, event: &CombatEvent, world: &CombatWorld,
-    ) {
+    ) -> bool {
         let CombatEvent::ShipWarped {
             ship_id, gate_id, preserved_tsv, ..
-        } = event else { return };
+        } = event else { return false };
         if *gate_id != self.gate_id ||
             !self.participants.contains(ship_id) ||
             !self.accounted_warps.insert(*ship_id) {
-            return;
+            return false;
         }
         if world.ship(*ship_id).is_some_and(|ship|
             matches!(ship.ship_type, DRONE_TYPE | STRIKER_TYPE)) {
             self.earned_tsv = self.earned_tsv
                 .saturating_sub(i64::from(*preserved_tsv));
         }
+        true
     }
 
     /// A replacement inherits only same-gate/same-ship registrations.
