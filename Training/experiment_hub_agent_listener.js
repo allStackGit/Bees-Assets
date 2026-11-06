@@ -23,14 +23,15 @@ async function readBody(req) {
     if(!String(req.headers['content-type']||'')
         .startsWith('application/json'))
         throw Error('JSON requests only.');
-    let raw='',received=0;
+    const chunks=[];
+    let received=0;
     for await(const chunk of req) {
         received+=chunk.length;
         if(received>MAX_BODY_BYTES)
             throw Error('JSON request exceeds allowed byte limit.');
-        raw+=chunk.toString('utf8');
+        chunks.push(chunk);
     }
-    return JSON.parse(raw||'{}');
+    return JSON.parse(Buffer.concat(chunks,received).toString('utf8')||'{}');
 }
 
 function createAgentServer(getHub) {
