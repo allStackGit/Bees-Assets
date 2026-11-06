@@ -1182,7 +1182,8 @@ document.addEventListener('DOMContentLoaded', () => {
                             ?' · GPU device probe cancelled'
                             :proof.status==='stale'
                                 ?' · GPU device access proof invalidated by hardware change'
-                                :' · GPU device access probe rejected'
+                                :proof.cleanup_only?' · GPU probe cleanup verified'
+                                    :' · GPU device access probe rejected'
                 :'';
             const detail=j.execution_diagnostic?' · '+j.execution_diagnostic:'';
             const readiness=j.native_start_readiness;
@@ -1237,6 +1238,15 @@ document.addEventListener('DOMContentLoaded', () => {
             if(j.gpu_probe_block&&
                 (proof?.status!=='requested'||proof.first_offered_at===null||proof.automation_paused))
                 actions.append(document.createTextNode(j.gpu_probe_block+' '));
+            if(j.gpu_probe_cleanup_ready)
+                actions.append(button('Recheck GPU probe cleanup',async()=>{
+                    if(!confirm('Ask the worker to verify GPU probe cleanup for '+j.configuration_name+'?'))return;
+                    try {
+                        await action('hub/jobs/qualify-gpu',{job_id:j.id,confirm_qualify:true,confirm_cleanup:true});
+                        feedback('hub-job-message','GPU probe cleanup recheck requested.');
+                        await reload();
+                    }catch(error){feedback('hub-job-message',error.message);}
+                }));
             if(j.status==='waiting_adapter'&&proof?.status==='requested'&&proof.first_offered_at===null)
                 actions.append(button('Withdraw GPU probe',async()=>{
                     if(!confirm('Withdraw the undelivered GPU access probe for '+j.configuration_name+
