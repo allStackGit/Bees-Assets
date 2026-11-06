@@ -130,8 +130,16 @@ outbox on each world and call `flush_retirements_to_connection` through
 from losing their pending-request invalidations. Pending OutcomeIds
 still require ordinary persistent StoreCommands settlement. Before
 episode reset, use `reset_level_after_delivery` to reject a discarded
-notification or unflushed retirement. Normal terminal episodes are
-reported as completed, not failed simulation steps.
+notification, unflushed retirement or unresolved active command. Normal
+terminal episodes finalize surviving HiveMind commands and queue the
+remaining squad lifetimes for shared-session retirement before emitting
+the final episode notification; this never fabricates physical ship deaths.
+For a failed world, call `abort_failed_level` before reset: it publishes
+`AbortedCommand` notifications carrying the exact unresolved primary and
+shooting reservations for explicit discard/reconciliation, not TSV credit,
+and queues all surviving session lifetimes. Persist/acknowledge those
+notifications and flush the connection retirements before resetting.
+Normal terminal episodes are reported as completed, not failed steps.
 
 `NativeLevelInferenceBatch` shares the full v26
 `PolicyPerceptionSnapshot` encoder and live CombatWorld action masks;

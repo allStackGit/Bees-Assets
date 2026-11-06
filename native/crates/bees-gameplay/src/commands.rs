@@ -388,6 +388,9 @@ pub struct CommandMeasurements {
     pub completed: u64,
     pub superseded: u64,
     pub retired: u64,
+    /// Commands aborted after an irrecoverable world step. These may
+    /// not be credited with a fabricated final TSV.
+    pub aborted: u64,
     pub peak_active: usize,
 }
 
@@ -1199,7 +1202,7 @@ impl NativeSquadCommandDirector {
         &mut self,
     ) -> impl Iterator<Item = (SquadLifetime, ResolvedHiveMindCommand)> {
         let active = std::mem::take(&mut self.active);
-        self.measurements.retired += active.len() as u64;
+        self.measurements.aborted += active.len() as u64;
         self.measurements.active_following = 0;
         self.measurements.active_full_retreat = 0;
         active.into_iter().map(|(owner, command)| (owner, command.selection))
