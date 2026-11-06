@@ -87,10 +87,12 @@ impl CombatWorld {
         Ok(true)
     }
 
-    /// Game-owned BombingRun uses the same physical explosion and death
-    /// transaction as the RL special. Do not accept a command that would
-    /// overwrite an autonomous policy controller.
-    pub fn trigger_game_fire_barge(
+    /// A HiveMind BombingRun timer may request FireBarge.Detonate. The
+    /// authoritative ship death must happen inside the NEXT fixed-step
+    /// combat transaction, not after the Level has already reconciled the
+    /// current tick's economic, roster, reward and terminal events.
+    /// Proximity and actual Bomb targeting are checked by the owning Level.
+    pub fn queue_game_fire_barge_detonation(
         &mut self, ship_id: i64,
     ) -> Result<bool, CombatWorldError> {
         let &index = self.ship_by_id.get(&ship_id)
@@ -106,7 +108,34 @@ impl CombatWorld {
         if motion.is_policy_controlled && !motion.user_controlled {
             return Err(CombatWorldError::UnsupportedPolicyActions);
         }
-        self.complete_fire_barge_detonation(index)
+        if !self.fire_barge_bomb_powers.contains_key(&ship_id) {
+            return Err(CombatWorldError::InvalidPolicyFireBarge);
+        }
+        if self.pending_game_fire_barges.contains(&ship_id) {
+            return Ok(false);
+        }
+        self.pending_game_fire_barges.push(ship_id);
+        Ok(true)
+    }
+
+    /// Consume the short gameplay request queue after combat events have
+    /// been cleared, before physics, to preserve one reward/retirement pass.
+    pub(super) fn apply_pending_game_fire_barges(
+        &mut self,
+    ) -> Result<(), CombatWorldError> {
+        for i in 0..self.pending_game_fire_barges.len() {
+            let ship_id = self.pending_game_fire_barges[i];
+            let Some(&index) = self.ship_by_id.get(&ship_id) else {
+                return Err(CombatWorldError::UnknownShip);
+            };
+            if self.ships[index].vitals.is_dead() ||
+                !self.physics.ships()[index].active {
+                continue;
+            }
+            self.complete_fire_barge_detonation(index)?;
+        }
+        self.pending_game_fire_barges.clear();
+        Ok(())
     }
 
     /// A Fire Barge's special does not require proximity to an enemy. Unity

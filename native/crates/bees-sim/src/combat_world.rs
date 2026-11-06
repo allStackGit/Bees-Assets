@@ -746,6 +746,9 @@ pub struct CombatWorld {
     /// Authoritative per-ship Bomb.Power, also for non-policy Fire Barges.
     /// Consumed once at Kill; no second explosion can be spawned.
     fire_barge_bomb_powers: HashMap<i64, i32>,
+    /// Command-timer self-detonations are settled inside the NEXT normal
+    /// physics step so roster, rewards, deaths and outbox see them once.
+    pending_game_fire_barges: Vec<i64>,
     projectile_by_id: HashMap<i64, usize>,
     /// Per-world RL root-shot lifetime, not per-projectile hit telemetry.
     shot_outcomes: ProjectileOutcomeTracker,
@@ -836,6 +839,7 @@ impl CombatWorld {
             expired_asteroid_ids: Vec::new(),
             fleet_id_by_ship: HashMap::new(),
             fire_barge_bomb_powers: HashMap::new(),
+            pending_game_fire_barges: Vec::new(),
             projectile_by_id: HashMap::new(),
             shot_outcomes: ProjectileOutcomeTracker::default(),
             projectile_near_candidates: Vec::new(),
@@ -3260,6 +3264,7 @@ impl CombatWorld {
             });
         }
         self.apply_pending_game_warps()?;
+        self.apply_pending_game_fire_barges()?;
         self.advance_policy_capability_cooldowns(dt);
         self.apply_pending_policy_mining()?;
         self.apply_pending_policy_ship_specials(collision_matrix)?;
