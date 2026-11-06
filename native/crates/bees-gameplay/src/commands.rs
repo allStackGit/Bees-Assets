@@ -1150,9 +1150,42 @@ impl NativeSquadCommandDirector {
         mut swipe_snapshot: impl FnMut(
             SquadLifetime, i64, &CombatWorld, bool,
         ) -> Result<NativeSwipeCommandSnapshot, GameCommandError>,
+        aggressive_snapshot: impl FnMut(
+            SquadLifetime, i64, &CombatWorld, bool,
+        ) -> Result<NativeAggressiveCommandSnapshot, GameCommandError>,
+        finished: &mut Vec<FinishedNativeCommand>,
+    ) -> Result<(), GameCommandError> {
+        self.advance_into_with_bombing(
+            world, navigation, roster, friendlies, random, dt,
+            circle_snapshot, swipe_snapshot, aggressive_snapshot,
+            |_, _, _| Err(GameCommandError::MissingCombatSnapshot),
+            finished,
+        )
+    }
+
+    /// Shared Level path: all due combat timers, including Fire Barge
+    /// bombing. The Level computes proximity from its real trigger cache;
+    /// the command director never guesses range from ship centers.
+    pub fn advance_into_with_bombing(
+        &mut self,
+        world: &mut CombatWorld,
+        navigation: &NavigationRuntime,
+        roster: Option<&NativeSquadRoster>,
+        friendlies: &[NativeFriendlySquad],
+        random: &mut RandomStream,
+        dt: f32,
+        mut circle_snapshot: impl FnMut(
+            SquadLifetime, i64, &CombatWorld,
+        ) -> Result<NativeCircleCommandSnapshot, GameCommandError>,
+        mut swipe_snapshot: impl FnMut(
+            SquadLifetime, i64, &CombatWorld, bool,
+        ) -> Result<NativeSwipeCommandSnapshot, GameCommandError>,
         mut aggressive_snapshot: impl FnMut(
             SquadLifetime, i64, &CombatWorld, bool,
         ) -> Result<NativeAggressiveCommandSnapshot, GameCommandError>,
+        mut bombing_snapshot: impl FnMut(
+            SquadLifetime, i64, &CombatWorld,
+        ) -> Result<NativeFireBargeTimerSnapshot, GameCommandError>,
         finished: &mut Vec<FinishedNativeCommand>,
     ) -> Result<(), GameCommandError> {
         if !dt.is_finite() || dt < 0.0 {
@@ -1382,6 +1415,38 @@ impl NativeSquadCommandDirector {
                 }
                 continue;
             }
+            if let Some(bombing) = command.bombing.as_mut() {
+                let mut completed = None;
+                if let Some(timer) = command.command_poll.as_mut() {
+                    if let Some(due) = timer.begin_update(dt) {
+                        self.measurements.command_timer_callbacks += 1;
+                        let snapshot = bombing_snapshot(
+                            owner, bombing.enemy_squad_id(), world,
+                        )?;
+                        completed = bombing.on_poll(
+                            world, timer, owner, snapshot.enemy_owner,
+                            snapshot.enemy_alive,
+                            command.selection.command_outcome_id,
+                            |ship_id, target_id| Ok(snapshot.nearby_targets
+                                .contains(&(ship_id, target_id))),
+                        )?;
+                        timer.finish_update(due);
+                    }
+                }
+                if completed.is_none() {
+                    if let Some(timeout) = command.timeout.as_mut() {
+                        if let Some(due) = timeout.begin_update(dt) {
+                            self.measurements.timeout_callbacks += 1;
+                            timeout.finish_update(due);
+                            completed = Some(CommandFinishCause::Timeout);
+                        }
+                    }
+                }
+                if let Some(cause) = completed {
+                    self.completed_scratch.push((owner, cause));
+                }
+                continue;
+            }
             if let Some(circle) = command.circle.as_mut() {
                 let mut completed = None;
                 if let Some(timer) = command.command_poll.as_mut() {
@@ -1533,6 +1598,9 @@ impl NativeSquadCommandDirector {
                 if let Some(heal) = active.heal.as_mut() {
                     heal.release_all(world);
                 }
+                if let Some(bombing) = active.bombing.as_ref() {
+                    bombing.release_all(world);
+                }
                 if let Some(retreat) = active.full_retreat.as_ref() {
                     retreat.release_all(world, None);
                 }
@@ -1586,6 +1654,9 @@ impl NativeSquadCommandDirector {
                 usize::from(active.full_retreat.is_some());
             if let Some(heal) = active.heal.as_mut() {
                 heal.release_all(world);
+            }
+            if let Some(bombing) = active.bombing.as_ref() {
+                bombing.release_all(world);
             }
             if let Some(retreat) = active.full_retreat.as_ref() {
                 retreat.release_all(world, None);
