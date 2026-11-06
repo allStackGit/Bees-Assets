@@ -40,6 +40,8 @@ use bees_sim::timer::ScaledTimer;
 mod mining;
 mod heal;
 mod scouting;
+mod full_retreat;
+use self::full_retreat::FullRetreatRun;
 use self::mining::MiningRun;
 use self::heal::HealRun;
 use self::scouting::ScoutingRun;
@@ -246,6 +248,8 @@ pub enum CommandFinishCause {
     HealingBeehivesDestroyed,
     HealingCompleted,
     ScoutingFoundShips,
+    WarpGateDestroyed,
+    AllWarpParticipantsGone,
 }
 
 #[derive(Clone, Debug)]
@@ -348,6 +352,7 @@ struct ActiveNativeCommand {
     mining: Option<MiningRun>,
     heal: Option<HealRun>,
     scouting: Option<ScoutingRun>,
+    full_retreat: Option<FullRetreatRun>,
     /// Authoritative game-owned member snapshot at command issue.
     /// The Level must retire/reissue on squad composition changes.
     member_ids: Vec<i64>,
@@ -369,6 +374,7 @@ pub struct CommandMeasurements {
     pub healing_tsv: u64,
     pub scouting_beacons_dropped: u64,
     pub scouting_first_sightings: u64,
+    pub full_retreat_warps: u64,
     pub activated: u64,
     pub completed: u64,
     pub superseded: u64,
@@ -399,6 +405,25 @@ impl NativeSquadCommandDirector {
 
     pub fn has_active(&self, owner: SquadLifetime) -> bool {
         self.active.contains_key(&owner)
+    }
+
+    /// Invoke before the Level's squad-death event pass. FullRetreat's
+    /// source Striker/Drone TSV adjustment is earned only when the physical
+    /// warp actually occurs, not when a timer queues the attempt.
+    pub fn record_warp_events(&mut self, world: &CombatWorld) {
+        for event in world.events() {
+            if let bees_sim::combat_world::CombatEvent::ShipWarped { .. } = event {
+                for active in self.active.values_mut() {
+                    if let Some(retreat) = active.full_retreat.as_mut() {
+                        let before = retreat.earned_tsv;
+                        retreat.record_warp_event(event, world);
+                        if retreat.earned_tsv != before {
+                            self.measurements.full_retreat_warps += 1;
+                        }
+                    }
+                }
+            }
+        }
     }
 
     /// Source HivemindVision.RecordShipSighting only calls
@@ -524,6 +549,7 @@ impl NativeSquadCommandDirector {
         let mut mining = None;
         let mut heal = None;
         let mut scouting = None;
+        let mut full_retreat = None;
         let mut retreat_already_safe = false;
         let issued_move = match selection.local_command {
             LocalCommandKind::Hold => {
@@ -546,6 +572,18 @@ impl NativeSquadCommandDirector {
                 scouting = Some(ScoutingRun::start(
                     world, navigation, random, squad, settings,
                 )?);
+                true
+            }
+            LocalCommandKind::FullRetreat => {
+                let previous_gate = self.active.get(&squad.owner)
+                    .and_then(|prior| prior.full_retreat.as_ref())
+                    .map(FullRetreatRun::gate_id);
+                let Some(run) = FullRetreatRun::start(
+                    world, random, squad, previous_gate,
+                )? else {
+                    return Ok(Activation::Unavailable(selection));
+                };
+                full_retreat = Some(run);
                 true
             }
             LocalCommandKind::MoveToRandom => {
@@ -752,7 +790,8 @@ impl NativeSquadCommandDirector {
                 selection.local_command,
                 LocalCommandKind::MoveToRandom | LocalCommandKind::Patrol |
                 LocalCommandKind::Mining | LocalCommandKind::Heal |
-                LocalCommandKind::Scouting | LocalCommandKind::ClosestFriendly |
+                LocalCommandKind::Scouting | LocalCommandKind::FullRetreat |
+                LocalCommandKind::ClosestFriendly |
                 LocalCommandKind::Guard
             ) || (selection.local_command == LocalCommandKind::Retreat &&
                 !retreat_already_safe) {
@@ -769,6 +808,7 @@ impl NativeSquadCommandDirector {
             mining,
             heal,
             scouting,
+            full_retreat,
             member_ids: squad.members.iter().map(|m| m.ship_id).collect(),
             selection,
         };
@@ -787,13 +827,19 @@ impl NativeSquadCommandDirector {
             .and_then(|old| old.heal.as_mut()) {
             previous.release_superseded(world, active.heal.as_ref());
         }
+        if let Some(previous) = self.active.get(&squad.owner)
+            .and_then(|prior| prior.full_retreat.as_ref()) {
+            previous.release_all(world, active.full_retreat.as_ref());
+        }
         let superseded = self.active.insert(squad.owner, active).map(|old| {
             FinishedNativeCommand {
                 owner: squad.owner, selection: old.selection,
                 cause: CommandFinishCause::Superseded,
                 capability_command_tsv: old.mining.as_ref()
                     .map(|mining| mining.mined_tsv)
-                    .or_else(|| old.heal.as_ref().map(|heal| heal.earned_tsv)),
+                    .or_else(|| old.heal.as_ref().map(|heal| heal.earned_tsv))
+                    .or_else(|| old.full_retreat.as_ref()
+                        .map(|retreat| retreat.earned_tsv)),
             }
         });
         self.measurements.activated += 1;
@@ -847,6 +893,25 @@ impl NativeSquadCommandDirector {
         // and stable; completion storage is retained between ticks.
         self.measurements.commands_examined += self.active.len() as u64;
         for (&owner, command) in self.active.iter_mut() {
+            if let Some(retreat) = command.full_retreat.as_mut() {
+                let (mut finished, callbacks) = retreat.advance(
+                    world, random, &mut command.command_poll, dt,
+                )?;
+                self.measurements.command_timer_callbacks += callbacks;
+                if finished.is_none() {
+                    if let Some(timeout) = command.timeout.as_mut() {
+                        if let Some(due) = timeout.begin_update(dt) {
+                            self.measurements.timeout_callbacks += 1;
+                            timeout.finish_update(due);
+                            finished = Some(CommandFinishCause::Timeout);
+                        }
+                    }
+                }
+                if let Some(cause) = finished {
+                    self.completed_scratch.push((owner, cause));
+                }
+                continue;
+            }
             if let Some(scouting) = command.scouting.as_mut() {
                 let previous_events = world.events().len();
                 let (mut finished, callbacks) = scouting.advance(
@@ -1042,11 +1107,16 @@ impl NativeSquadCommandDirector {
                 if let Some(heal) = active.heal.as_mut() {
                     heal.release_all(world);
                 }
+                if let Some(retreat) = active.full_retreat.as_ref() {
+                    retreat.release_all(world, None);
+                }
                 finished.push(FinishedNativeCommand {
                     owner, selection: active.selection, cause,
                     capability_command_tsv: active.mining.as_ref()
                         .map(|mining| mining.mined_tsv)
-                        .or_else(|| active.heal.as_ref().map(|heal| heal.earned_tsv)),
+                        .or_else(|| active.heal.as_ref().map(|heal| heal.earned_tsv))
+                        .or_else(|| active.full_retreat.as_ref()
+                            .map(|retreat| retreat.earned_tsv)),
                 });
             }
         }
