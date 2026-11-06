@@ -51,7 +51,9 @@ pub use self::targeting::{
 pub use self::circle::{
     NativeCircleCommandSnapshot, assemble_circle_snapshot_from_live_weapons,
 };
-pub use self::swipe::NativeSwipeCommandSnapshot;
+pub use self::swipe::{
+    NativeSwipeCommandSnapshot, assemble_swipe_snapshot_from_live_weapons,
+};
 use self::swipe::SwipeRun;
 use self::circle::CircleRun;
 use self::full_retreat::FullRetreatRun;

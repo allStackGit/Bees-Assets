@@ -224,6 +224,15 @@ per-ship/target-squad predicate over the authoritative live roster, while
 the host supplies actual authored weapon validity and squad geometry.
 The live adapter and executable parity qualification remain pending.
 
+**RightSwipe** and **LeftSwipe** also use the canonical command timer, shared
+tracked movement and the source command's ranked target FIFO. The Level's
+`swipe_command_snapshot` provides authored enemy-squad range, live squad
+bounds, and GetShips-ordered targeting metadata only when a swipe timer fires.
+`assemble_swipe_snapshot_from_live_weapons` reuses CircleSquad's exact
+per-weapon range predicate. This port deliberately rejects missing adapter
+data rather than fabricating a shooting target. The real Level adapter,
+weapon/squad targeting integration and executable qualification remain pending.
+
 Random finishes at arrival or command timeout; Patrol samples Unity's four-corner
 route, rotates waypoints on its 3-second scaled callback, and uses the
 separate configured patrol timeout. Retreat uses the Level's live target

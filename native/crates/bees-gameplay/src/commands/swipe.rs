@@ -17,8 +17,9 @@ use bees_sim::squad_movement::{
 
 use crate::squads::NativeSquadRoster;
 use super::{
-    sort_native_command_targets, CommandFinishCause, GameCommandError,
-    NativeCommandTargetQueue, NativeEnemyTargetStats, NativeSquadOrder,
+    assemble_circle_snapshot_from_live_weapons, sort_native_command_targets,
+    CommandFinishCause, GameCommandError, NativeCommandTargetQueue,
+    NativeEnemyTargetStats, NativeSquadOrder,
 };
 
 /// Fresh Unity Squad/Ship metrics for one SwipeSquadTimer. Candidate stats
@@ -44,6 +45,43 @@ impl NativeSwipeCommandSnapshot {
         self.own_max_range >= 0.0 && self.enemy_max_range.is_finite() &&
         self.enemy_max_range >= 0.0
     }
+}
+
+/// Assemble SwipeSquad's shared range predicate from the same real
+/// Ship.IsShipWithinRange logic as CircleSquad, without a duplicate
+/// implementation or a center-distance approximation. Remaining metrics
+/// come from the current authored Level and FleetShip, not copied physics.
+pub fn assemble_swipe_snapshot_from_live_weapons(
+    world: &CombatWorld,
+    roster: &NativeSquadRoster,
+    owner: SquadLifetime,
+    enemy_owner: SquadLifetime,
+    squad_center: Vec2,
+    enemy_center: Vec2,
+    enemy_max_range: f32,
+    candidates: Vec<NativeEnemyTargetStats>,
+    ship_max_range: impl FnMut(i64) -> Result<f32, GameCommandError>,
+    weapon_valid_target: impl FnMut(i64, i64)
+        -> Result<bool, GameCommandError>,
+) -> Result<NativeSwipeCommandSnapshot, GameCommandError> {
+    let common = assemble_circle_snapshot_from_live_weapons(
+        world, roster, owner, enemy_owner, squad_center, enemy_center,
+        ship_max_range, weapon_valid_target,
+    )?;
+    if !enemy_max_range.is_finite() || enemy_max_range < 0.0 {
+        return Err(GameCommandError::InvalidCombatSnapshot);
+    }
+    Ok(NativeSwipeCommandSnapshot {
+        enemy_owner,
+        enemy_alive: common.enemy_alive,
+        squad_center: common.squad_center,
+        enemy_center: common.enemy_center,
+        own_max_range: common.own_max_range,
+        enemy_max_range,
+        every_member_has_target_in_range:
+            common.every_member_has_target_in_range,
+        candidates,
+    })
 }
 
 pub(super) struct SwipeRun {
