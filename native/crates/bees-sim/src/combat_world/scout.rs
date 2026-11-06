@@ -125,6 +125,12 @@ impl CombatWorld {
         Ok(())
     }
 
+    /// An enabled gameplay Scout must be configured with its actual
+    /// Beacon prefab at Level setup, independently of command choice.
+    pub fn game_scout_configured(&self, scout_id: i64) -> bool {
+        self.game_scout_runtime.contains_key(&scout_id)
+    }
+
     /// Read only, suitable for a sparse ten-second Scouting callback.
     pub fn game_scout_beacon_ready(&self, scout_id: i64) -> bool {
         let Some(&runtime) = self.game_scout_runtime.get(&scout_id) else {
