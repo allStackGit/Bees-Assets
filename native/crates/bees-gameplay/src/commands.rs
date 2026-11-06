@@ -560,6 +560,11 @@ impl NativeSquadCommandDirector {
                     Ok(StrategyReceiptAction::DiscardReservations(reservation_ids))
                 }
             },
+            Ok(Activation::Unsupported(unimplemented)) =>
+                Ok(StrategyReceiptAction::DiscardReservations(vec![
+                    unimplemented.command_outcome_id,
+                    unimplemented.shooting_outcome_id,
+                ])),
             Ok(activation) => Ok(StrategyReceiptAction::Applied(activation)),
             Err(cause) => Err(StrategyReceiptFailure {
                 selection,
