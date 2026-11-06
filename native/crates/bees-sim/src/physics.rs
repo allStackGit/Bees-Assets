@@ -631,6 +631,12 @@ impl ObstacleBody {
         &self.collider.shape
     }
 
+    /// The exact world AABB of this obstacle's authored primary collider.
+    /// Used for the source Mining command's bounded destination spread.
+    pub fn primary_bounds(&self) -> Option<Aabb> {
+        if self.active { self.collider.bounds } else { None }
+    }
+
     /// Authored proximity is a distinct child trigger, not an enlarged
     /// approximation of the primary collision hull.
     pub fn set_proximity_collider(
