@@ -1046,12 +1046,14 @@ document.addEventListener('DOMContentLoaded', () => {
         const pipelinePredecessor=$('hub-pipeline-predecessor');
         const formerPipelineParent=pipelinePredecessor.value;
         const sequenceParents=checkpointPipeline?availableParents:
-            (state.jobs||[]).filter(j=>j.project_id!=='bees'&&
-                !successors.has(j.id)&&
-                (['waiting_adapter','waiting_predecessor','start_requested',
-                    'launch_requested','running'].includes(j.status)||
-                 j.independent_sequence_complete===true&&Boolean(
-                     j.dispatch_id&&j.assigned_machine_id&&j.execution_updated_at)) );
+            (state.jobs||[]).filter(j=>{
+                if(j.project_id==='bees'||successors.has(j.id))return false;
+                const queued=['waiting_adapter','waiting_predecessor',
+                    'start_requested','launch_requested','running'].includes(j.status);
+                const completed=j.independent_sequence_complete===true&&
+                    Boolean(j.dispatch_id&&j.assigned_machine_id&&j.execution_updated_at);
+                return queued||completed;
+            });
         pipelinePredecessor.replaceChildren(
             new Option(checkpointPipeline?'New experiment (no predecessor)':
                 'New independent sequence (no predecessor)',''),
