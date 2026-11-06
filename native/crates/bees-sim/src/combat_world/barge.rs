@@ -29,7 +29,8 @@ pub(super) struct GameBargeCharge {
     pub(super) elapsed: f32,
     pub(super) target_id: i64,
     /// Barge.ChargeForward aims at Level.ForceBounds(target.GetPosition)
-    /// at wind-up completion, not the unclamped target position at issue.
+    /// at wind-up completion, even when the Barge itself can override
+    /// bounds (Ship.MoveToDirectionOfPoint always calls ForceBounds).
     pub(super) map_bounds: Aabb,
     /// Source Ship.CanOverrideBounds, supplied by the owning Level.
     pub(super) can_override_bounds: bool,
@@ -185,29 +186,32 @@ impl CombatWorld {
                         .and_then(|body| self.ship(charge.target_id)
                             .filter(|target| !target.vitals.is_dead())
                             .map(|_| {
-                                let destination = if charge.can_override_bounds {
-                                    body.motion.position
-                                } else {
-                                    Vec2::new(
-                                        body.motion.position.x.clamp(
-                                            charge.map_bounds.min.x,
-                                            charge.map_bounds.max.x,
-                                        ),
-                                        body.motion.position.y.clamp(
-                                            charge.map_bounds.min.y,
-                                            charge.map_bounds.max.y,
-                                        ),
-                                    )
-                                };
+                                let destination = Vec2::new(
+                                    body.motion.position.x.clamp(
+                                        charge.map_bounds.min.x,
+                                        charge.map_bounds.max.x,
+                                    ),
+                                    body.motion.position.y.clamp(
+                                        charge.map_bounds.min.y,
+                                        charge.map_bounds.max.y,
+                                    ),
+                                );
                                 destination - origin
                             }))
                         .map_or(rotation, heading_towards);
-                    self.physics.ships_mut()[index].motion
-                        .cannot_change_movement_orders = false;
-                    if !self.move_ship_in_direction(ship_id, heading)? {
+                    // ChargeForward briefly releases the movement lock to
+                    // install its heading. Unity's MoveInDirection stops
+                    // *current* movement but does not erase the separately
+                    // stored WaitingTargetCoordinates from the wind-up.
+                    // Public move_ship_in_direction would clear that pending
+                    // order; use the same steering operation directly here.
+                    let steering = self.game_ship_steering.get_mut(&ship_id)
+                        .ok_or(CombatWorldError::MissingGameMovementProfile)?;
+                    let motion = &mut self.physics.ships_mut()[index].motion;
+                    motion.cannot_change_movement_orders = false;
+                    if !steering.set_direction(motion, heading) {
                         return Err(CombatWorldError::InvalidGameMovementOrder);
                     }
-                    let motion = &mut self.physics.ships_mut()[index].motion;
                     motion.current_speed = CHARGE_SPEED;
                     motion.cannot_change_movement_orders = true;
                 }
