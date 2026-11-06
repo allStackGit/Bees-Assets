@@ -15,6 +15,7 @@ use crate::inference::{
     NativeInferenceError, NativeInferenceRunError, NativeLevelInferenceBatch,
     NativePolicyInference,
 };
+use crate::level_events::NativeLevelEventError;
 use crate::level_rules::{
     NativeLevelCommandContext, NativeLevelRewardMetadata, NativeLevelRules,
     NativeLevelState, NativeLevelStepError,
@@ -205,6 +206,39 @@ where
         counts.world_dispatch_and_step_nanos = started.elapsed().as_nanos();
     }
     Ok(counts)
+}
+
+#[derive(Debug)]
+pub enum NativeFailedLevelAbortError {
+    MissingWorld { index: usize },
+    NotFailed { index: usize },
+    AlreadyComplete { index: usize },
+    Events(NativeLevelEventError),
+}
+
+/// Explicitly convert an irrecoverable native episode's remaining HiveMind
+/// command selections into discard obligations. No gameplay callbacks or
+/// reward credit may run after a failed step. The caller must persist and
+/// acknowledge the emitted notifications and flush surviving lifetimes to
+/// its shared HiveMindSession before calling reset_level_after_delivery.
+pub fn abort_failed_level<M, A>(
+    simulation: &mut Simulation<NativeLevelState<M, A>, NativeLevelRules>,
+    index: usize,
+) -> Result<usize, NativeFailedLevelAbortError>
+where
+    M: NativeLevelRewardMetadata + NativeLevelCommandContext,
+    A: FnMut(SquadLifetime, i64) -> Result<SquadLifetime, SquadRosterError>,
+{
+    let world = simulation.world_mut(index)
+        .ok_or(NativeFailedLevelAbortError::MissingWorld { index })?;
+    if !world.is_failed() && !world.state.events.is_failed() {
+        return Err(NativeFailedLevelAbortError::NotFailed { index });
+    }
+    if world.state.events.completed() {
+        return Err(NativeFailedLevelAbortError::AlreadyComplete { index });
+    }
+    world.state.events.drain_failed_level_reservations()
+        .map_err(NativeFailedLevelAbortError::Events)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

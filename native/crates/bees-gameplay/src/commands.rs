@@ -1191,6 +1191,20 @@ impl NativeSquadCommandDirector {
         Ok(())
     }
 
+    /// A failed world cannot safely run more gameplay callbacks or claim
+    /// its accumulated TSV. Move unresolved server reservations out without
+    /// touching potentially half-updated physics. The caller must persist
+    /// explicit discard/reconciliation obligations before reset.
+    pub(crate) fn take_failed_command_reservations(
+        &mut self,
+    ) -> impl Iterator<Item = (SquadLifetime, ResolvedHiveMindCommand)> {
+        let active = std::mem::take(&mut self.active);
+        self.measurements.retired += active.len() as u64;
+        self.measurements.active_following = 0;
+        self.measurements.active_full_retreat = 0;
+        active.into_iter().map(|(owner, command)| (owner, command.selection))
+    }
+
     /// Unity command finalization queues a fresh HiveMind request when the
     /// squad is still eligible; that request scheduling belongs to the
     /// caller, because it is bound to the live authenticated WebSocket.

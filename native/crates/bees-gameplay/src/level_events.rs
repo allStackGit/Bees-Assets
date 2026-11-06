@@ -16,6 +16,7 @@ use crate::commands::{
     CommandFinishCause, CommandMeasurements, FinishedNativeCommand,
     GameCommandError, NativeFriendlySquad, NativeSquadCommandDirector,
 };
+use bees_hivemind::dispatch::ResolvedHiveMindCommand;
 use crate::episode::{
     NativeEpisodeFinal, NativeEpisodeRewardCoordinator,
     NativeEpisodeRewardError, NativeEpisodeRewardMeasurements,
@@ -77,6 +78,12 @@ pub enum NativeLevelNotificationKind {
     /// acknowledged. The Level never re-simulates these physical actions.
     Gameplay(CombatEvent),
     FinishedCommand(FinishedNativeCommand),
+    /// A failed world has no trustworthy final TSV. Both command/shooting
+    /// OutcomeIds must be explicitly discarded or reconciled, never credited.
+    AbortedCommand {
+        owner: SquadLifetime,
+        selection: ResolvedHiveMindCommand,
+    },
     /// Only emitted when group delivery is not configured. Never also
     /// apply this raw reward to a group-enabled PPO trajectory.
     Reward(RewardEmission),
@@ -139,6 +146,7 @@ pub struct NativeLevelEventProcessor {
     /// boundary; never publish a phase twice after an acknowledgement.
     last_published_timed_tick: Option<u64>,
     failed: bool,
+    failed_commands_drained: bool,
     last_finalized: Option<NativeEpisodeFinal>,
     changes: Vec<SquadRosterChange>,
     finished: Vec<FinishedNativeCommand>,
@@ -160,6 +168,7 @@ impl NativeLevelEventProcessor {
             last_advanced_command_tick: None,
             last_published_timed_tick: None,
             failed: false,
+            failed_commands_drained: false,
             last_finalized: None,
             changes: Vec::new(),
             finished: Vec::new(),
@@ -183,6 +192,39 @@ impl NativeLevelEventProcessor {
 
     pub fn active_command_count(&self) -> usize {
         self.commands.active_count()
+    }
+
+    /// Called only after the owning World has been marked failed. This
+    /// cannot recover partial physics: it preserves server reservations
+    /// as explicit abort notifications and queues every still-live squad
+    /// lifecycle for connection retirement. A second call is inert.
+    pub(crate) fn drain_failed_level_reservations(
+        &mut self,
+    ) -> Result<usize, NativeLevelEventError> {
+        if self.failed_commands_drained {
+            return Ok(0);
+        }
+        let active = self.commands.active_count();
+        Self::reserve_output_records(
+            &mut self.pending_notifications, &mut self.failed, active,
+        )?;
+        for owner in self.roster.active_lifetimes() {
+            self.pending_session_retirements.push(owner);
+        }
+        for (owner, selection) in self.commands.take_failed_command_reservations() {
+            self.pending_notifications.push(NativeLevelNotification {
+                tick: self.next_tick.saturating_sub(1),
+                kind: NativeLevelNotificationKind::AbortedCommand {
+                    owner, selection,
+                },
+            });
+        }
+        Self::update_output_peak(
+            &mut self.peak_pending_notifications,
+            self.pending_notifications.len(),
+        );
+        self.failed_commands_drained = true;
+        Ok(active)
     }
 
     pub fn needs_live_command_friendlies(&self) -> bool {
