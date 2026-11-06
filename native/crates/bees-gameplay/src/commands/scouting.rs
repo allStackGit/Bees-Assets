@@ -5,7 +5,7 @@
 use super::*;
 use bees_sim::combat_world::SCOUT_TYPE;
 
-const SCOUT_MOVE_SECONDS: f32 = 5.0;
+pub(super) const SCOUT_MOVE_SECONDS: f32 = 5.0;
 const BEACON_POLL_SECONDS: f32 = 10.0;
 const FINISH_AFTER_SIGHTING_SECONDS: f32 = 5.0;
 const RANDOM_STEP_MIN_DISTANCE: f32 = 10.0;
