@@ -1530,6 +1530,46 @@ CPU time even if the coordinator missed all live samples. Legacy signed
 receipts remain valid and leave those terminal counters unavailable.
 Deploy the updated supervisor before updating the pinned Windows owner.
 
+## TinyBrains Ants-MAPOCA adapter
+
+`Training/experiment_hub_tinybrains_adapter.js` provides
+`createTinyBrainsAdapter` for fresh Windows CPU training jobs. Prepare a
+TinyBrains Ants-MAPOCA checkout with its Windows engine and cartridge,
+and install the package into the Python environment the worker will use.
+Use a dedicated, existing artifact directory outside the checkout.
+Register a Hub project with ID `tinybrains` and include this entry in the
+Windows agent's locally approved adapter module:
+
+```js
+const {createTinyBrainsAdapter} = require('D:/Hub/experiment_hub_tinybrains_adapter.js');
+const fs = require('node:fs');
+module.exports = {
+    tinybrains: createTinyBrainsAdapter({
+        projectRoot: 'D:/TinyBrains/Ants-MAPOCA',
+        pythonPath: 'D:/TinyBrains/Ants-MAPOCA/.venv/Scripts/python.exe',
+        artifactRoot: 'D:/Hub/tinybrains-jobs',
+        profiles: {mini: JSON.parse(fs.readFileSync('D:/Hub/mini-cpu.json', 'utf8'))},
+    }),
+};
+```
+
+The operator prepares each approved profile as a JSON equivalent of a
+TinyBrains YAML configuration with `runtime.device` set to `cpu`. Compute
+the SHA-256 of the UTF-8 bytes of `JSON.stringify(profile, null, 2) + '\n'`
+after parsing that JSON. In Design, supply `profile` (for example `mini`),
+`profile_sha256` (the 64-digit digest), and `updates` (a positive integer
+up to 10,000,000). Use a CPU/RAM claim on the configured Windows worker.
+The profile digest must match at launch, including when two workers
+advertise the same profile name.
+
+Each launch uses a fresh job directory containing its exact profile,
+training history and checkpoints. Compare uses completed trainer updates
+as project steps and shows update wall time and engine steps per second.
+Windows Stop terminates the Job Object process tree. A forced stop does
+not establish that a checkpoint was saved at the stop boundary.
+This adapter supports fresh runs. Checkpoint continuation, GPU execution,
+and independent evaluation are outside its current contract.
+
 ## Not yet implemented
 
 Production installation and qualification of project-specific adapters,
