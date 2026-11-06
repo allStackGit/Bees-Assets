@@ -310,6 +310,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // Only a fresh, authenticated native report can distinguish a Stop
     // still awaiting delivery from a service already shutting down.
     function nativeJobLabel(job, fallback) {
+        if(job.status==='start_requested'&&job.start_first_offered_at===null)
+            return 'Start authorized; awaiting first worker delivery';
         if(job.status==='start_requested'&&job.automation_start_paused)
             return 'Automatic Start suspended; inspect or request Stop';
         return job.status==='stop_requested'&&
@@ -1157,7 +1159,20 @@ document.addEventListener('DOMContentLoaded', () => {
                         await reload();
                     }catch(e){feedback('hub-job-message',e.message);}
                 }));
-            if(['start_requested','launch_requested','running','unverified']
+            if(j.status==='start_requested'&&j.start_first_offered_at===null)
+                actions.append(button('Withdraw Start',async()=>{
+                    if(!confirm('Withdraw the undelivered Start for '+j.configuration_name+
+                        '? The job returns to the queue and keeps its claim.'))return;
+                    try{
+                        await action('hub/jobs/withdraw-start',{job_id:j.id,
+                            expected_dispatch_id:j.dispatch_id,confirm_withdraw:true});
+                        feedback('hub-job-message','Start withdrawn. The job is queued with its existing claim.');
+                    }catch(error){
+                        feedback('hub-job-message',error.message);
+                    }
+                    await reload();
+                }));
+            else if(['start_requested','launch_requested','running','unverified']
                 .includes(j.status))
                 actions.append(button('Stop managed job',async()=>{
                     const windows=machine?.agent_platform==='win32';
