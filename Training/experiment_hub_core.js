@@ -196,7 +196,7 @@ function gpuStartBlock(job,lease,machine) {
         return 'A current device access probe for this exact GPU lease is required.';
     return null;
 }
-function gpuProbeBlock(job,lease,machine,requireSecondDevice=true) {
+function gpuProbeBlock(job,lease,machine) {
     if(!job||job.project_id==='bees'||job.adapter!=='unconfigured'||
         job.status!=='waiting_adapter'||job.dispatch_id||
         !lease||lease.job_id!==job.id||lease.project_id!==job.project_id||
@@ -218,7 +218,7 @@ function gpuProbeBlock(job,lease,machine,requireSecondDevice=true) {
             gpu_devices:machine.observed_gpus,
         },lease.resources,lease.gpu_bindings)?.length!==1)
         return 'GPU access probe needs a fresh exclusive single-GPU lease on a qualified Linux agent.';
-    if(requireSecondDevice&&!(machine.observed_gpus?.length>=2))
+    if(!(machine.observed_gpus?.length>=2))
         return 'GPU access probe requires a second observed GPU to verify access denial.';
     return null;
 }
@@ -1579,11 +1579,19 @@ class ExperimentHub {
                     action='inspect';
                 }
             }
-            if(action==='qualify_gpu'&&(
-                job.gpu_qualification.lease_id!==lease.id||
-                job.gpu_qualification.automation_paused||
-                gpuProbeBlock(job,lease,machine,job.gpu_qualification.first_offered_at===null)))
-                continue;
+            let probeRecoveryOnly=false;
+            if(action==='qualify_gpu') {
+                const proof=job.gpu_qualification;
+                if(proof.lease_id!==lease.id||proof.automation_paused||
+                    machine.agent_platform!=='linux'||machine.native_preflight_passed!==true)
+                    continue;
+                const blocked=gpuProbeBlock(job,lease,machine);
+                if(blocked&&proof.first_offered_at===null)continue;
+                // An offered probe can still owe a result when its lease
+                // loses eligibility. The worker rejects an order without
+                // a fresh receipt and reports whether cleanup is verified.
+                probeRecoveryOnly=Boolean(blocked);
+            }
             if(action==='start'&&job.start_first_offered_at==null) {
                 // Persist the point of no return before the order can leave
                 // the coordinator, including when the HTTP reply is lost.
@@ -1613,7 +1621,7 @@ class ExperimentHub {
                 lease:{
                     id:lease.id,job_id:job.id,project_id:lease.project_id,
                     machine_id:lease.machine_id,issued_by:lease.issued_by,
-                    status:lease.status,receipt_fresh:lease.receipt_fresh,
+                    status:lease.status,receipt_fresh:lease.receipt_fresh&&!probeRecoveryOnly,
                     resources:copy(lease.resources),
                     gpu_bindings:copy(lease.gpu_bindings||[]),
                 },
