@@ -163,11 +163,14 @@ def poll_checkpoint(args, project, suite, receipt_suite, find_checkpoint, evalua
             try:
                 with tempfile.TemporaryDirectory(prefix=f"{project}-eval-", dir=args.scratch) as temp:
                     successes = evaluate_checkpoint(job, file, checkpoint_digest, Path(temp))
+                if type(successes) is not int or not 0 <= successes <= receipt_suite["trials"]:
+                    raise ValueError("Invalid evaluation success count.")
             except (OSError, RuntimeError, ValueError, TypeError, KeyError):
+                # Keep this checkpoint eligible, but rotate a failing dispatch
+                # behind other workers so it cannot starve their evaluations.
+                cursor[dispatch] = cursor.pop(dispatch)
                 save_cursor(state, saved)
                 raise
-            if type(successes) is not int or not 0 <= successes <= receipt_suite["trials"]:
-                raise ValueError("Invalid evaluation success count.")
             cursor.pop(dispatch)
             cursor[dispatch] = update
             pending = {"target": job, "receipt": {
