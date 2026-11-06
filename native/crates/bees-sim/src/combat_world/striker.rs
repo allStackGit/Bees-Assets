@@ -114,6 +114,7 @@ impl CombatWorld {
             let &carrier_index = self.ship_by_id.get(&carrier_id)
                 .ok_or(CombatWorldError::UnknownShip)?;
             if carrier_id == striker_id ||
+                self.ships[carrier_index].ship_type != 5 ||
                 self.ships[carrier_index].side != self.ships[index].side ||
                 self.ships[carrier_index].vitals.is_dead() ||
                 !self.physics.ships()[carrier_index].active {
@@ -234,7 +235,8 @@ impl CombatWorld {
             .ok_or(CombatWorldError::UnknownShip)?;
         let ship = &self.ships[ship_index];
         let carrier = &self.ships[carrier_index];
-        if ship.ship_type != 19 || ship.entity_id == carrier.entity_id ||
+        if ship.ship_type != 19 || carrier.ship_type != 5 ||
+            ship.entity_id == carrier.entity_id ||
             ship.side != carrier.side || ship.vitals.is_dead() ||
             carrier.vitals.is_dead() || !self.physics.ships()[ship_index].active ||
             !self.physics.ships()[carrier_index].active || bomb_power < 0 {
