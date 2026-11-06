@@ -49,6 +49,9 @@ pub(super) enum PolicyShipSpecial {
 #[derive(Clone, Debug)]
 pub(super) struct PolicyShipRuntime {
     pub(super) frame: PolicyFrame,
+    /// Unique controller bind generation from this CombatWorld's roster
+    /// revision; rebinding the same ship is a fresh decision clock.
+    pub(super) bind_revision: u64,
     pub(super) movement_disabled: bool,
     pub(super) control: PolicyControl,
     /// Real physical turret mounts, in the exact five authored weapon slots.
@@ -93,6 +96,16 @@ impl CombatWorld {
         self.policy_ship_runtime.keys().copied()
     }
 
+    /// Stable registry IDs with their authoritative controller instance
+    /// revisions. Rebinding a living ship changes its instance revision
+    /// without creating a second policy roster.
+    pub fn bound_policy_agent_bindings(&self)
+        -> impl Iterator<Item = (i64, u64)> + '_
+    {
+        self.policy_ship_runtime.iter()
+            .map(|(&id, runtime)| (id, runtime.bind_revision))
+    }
+
     /// Use the controller's actual episode frame for both observation
     /// encoding and action execution. External callers must never
     /// supply a second independently stored frame.
@@ -117,8 +130,10 @@ impl CombatWorld {
             return Err(CombatWorldError::UnknownShip);
         }
         let rotation = self.physics.ships()[index].motion.rotation_degrees;
+        self.bump_policy_roster_revision();
         self.policy_ship_runtime.insert(ship_id, PolicyShipRuntime {
-            frame, movement_disabled, control: PolicyControl::new(),
+            frame, bind_revision: self.policy_roster_revision,
+            movement_disabled, control: PolicyControl::new(),
             turrets: [None; 5],
             last_hull_rotation: rotation,
             cease_fire: false,
@@ -127,7 +142,6 @@ impl CombatWorld {
             mining: None,
             warp_enabled: false,
         });
-        self.bump_policy_roster_revision();
         Ok(())
     }
 

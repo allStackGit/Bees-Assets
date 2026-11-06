@@ -67,9 +67,15 @@ pub struct NativeDecisionCadenceMeasurements {
     pub roster_reconciliations: u64,
 }
 
+#[derive(Clone, Copy)]
+struct PolicyBindingClock {
+    tick: u64,
+    revision: u64,
+}
+
 pub struct NativeDecisionCadence {
     period: NonZeroU32,
-    bound_at_tick: BTreeMap<i64, u64>,
+    bound_at_tick: BTreeMap<i64, PolicyBindingClock>,
     /// Live controller IDs and their original binding ticks grouped by
     /// decision phase, in stable ship-ID order. Rebuilt only on roster
     /// changes; observation iteration visits only the due phase.
@@ -111,8 +117,20 @@ impl NativeDecisionCadence {
         self.bound_at_tick.retain(|&id, _|
             combat.policy_frame(id).is_some(),
         );
-        for ship_id in combat.bound_policy_agent_ids() {
-            self.bound_at_tick.entry(ship_id).or_insert(completed_ticks);
+        for (ship_id, bind_revision) in combat.bound_policy_agent_bindings() {
+            let clock = self.bound_at_tick.entry(ship_id).or_insert(
+                PolicyBindingClock {
+                    tick: completed_ticks,
+                    revision: bind_revision,
+                }
+            );
+            // The ship might still be alive while its policy controller
+            // was replaced. A new controller begins its own decision
+            // period at this completed simulation tick.
+            if clock.revision != bind_revision {
+                clock.tick = completed_ticks;
+                clock.revision = bind_revision;
+            }
         }
         // For any future tick beyond the newest binding, the strict
         // next_tick > bound_at condition is automatically satisfied.
@@ -120,10 +138,10 @@ impl NativeDecisionCadence {
         self.due_by_phase.clear();
         self.latest_binding_tick = 0;
         let period = u64::from(self.period.get());
-        for (&ship_id, &bound_at) in &self.bound_at_tick {
-            self.due_by_phase.entry(bound_at % period)
-                .or_default().push((ship_id, bound_at));
-            self.latest_binding_tick = self.latest_binding_tick.max(bound_at);
+        for (&ship_id, &clock) in &self.bound_at_tick {
+            self.due_by_phase.entry(clock.tick % period)
+                .or_default().push((ship_id, clock.tick));
+            self.latest_binding_tick = self.latest_binding_tick.max(clock.tick);
         }
         self.observed_roster_revision = Some(revision);
         self.measurements.roster_reconciliations += 1;
@@ -135,8 +153,8 @@ impl NativeDecisionCadence {
     }
 
     pub fn is_due(&self, ship_id: i64, next_tick: u64) -> bool {
-        self.bound_at_tick.get(&ship_id).is_some_and(|&at|
-            self.due_from_binding(at, next_tick),
+        self.bound_at_tick.get(&ship_id).is_some_and(|clock|
+            self.due_from_binding(clock.tick, next_tick),
         )
     }
 
