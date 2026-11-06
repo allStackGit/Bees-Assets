@@ -254,6 +254,28 @@ impl AggressiveRun {
         let Some(index) = self.next_coroutine_member else {
             return Ok(None);
         };
+        if index == 0 {
+            // Source MoveTowardsEnemiesAcrossFrames re-reads GetShips()
+            // whenever BeginMoveTowardsEnemies starts a NEW coroutine.
+            // The roster owns live membership and preserves GetShips order;
+            // the activation-time member list would otherwise still issue
+            // tracked orders to ships that died in an earlier run.
+            let live = roster.get(owner).ok_or(GameCommandError::InvalidSquad)?;
+            self.members.retain(|member|
+                roster.owning_squad(member.ship_id) == Some(owner) &&
+                world.ship(member.ship_id)
+                    .is_some_and(|ship| !ship.vitals.is_dead())
+            );
+            // A newly added ship needs its authored formation/clearance
+            // refreshed by the Level; do not silently omit it.
+            if live.members.len() != self.members.len() ||
+                !live.members.iter().zip(&self.members).all(|(&id, member)|
+                    id == member.ship_id
+                )
+            {
+                return Err(GameCommandError::InvalidSquad);
+            }
+        }
         if index == self.members.len() {
             // The final post-yield resume does not access EnemySquad,
             // current targets, or weapon data in Unity.
