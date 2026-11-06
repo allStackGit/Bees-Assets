@@ -44,6 +44,65 @@ impl NativeAggressiveCommandSnapshot {
     }
 }
 
+/// Compute Unity's stronger all-targets predicate from the same live
+/// Weapon.IsShipValidTarget callback used by Swipe and Circle. The Level
+/// must supply enemy_defenseless from real authored ship composition.
+/// Returning false on a missing target is legitimate; substituting
+/// estimated center-distance or an assumed defenseless flag is not.
+pub fn assemble_aggressive_snapshot_from_live_weapons(
+    world: &CombatWorld,
+    roster: &NativeSquadRoster,
+    owner: SquadLifetime,
+    attack: NativeSwipeCommandSnapshot,
+    all_enemies_defenseless: bool,
+    mut weapon_valid_target: impl FnMut(i64, i64)
+        -> Result<bool, GameCommandError>,
+) -> Result<NativeAggressiveCommandSnapshot, GameCommandError> {
+    if !attack.valid_for_combat() || owner.level_id != attack.enemy_owner.level_id {
+        return Err(GameCommandError::InvalidCombatSnapshot);
+    }
+    if !attack.enemy_alive {
+        return Ok(NativeAggressiveCommandSnapshot {
+            attack,
+            every_member_has_all_targets_in_range: false,
+            all_enemies_defenseless,
+        });
+    }
+    let own = roster.get(owner).ok_or(GameCommandError::InvalidSquad)?;
+    let enemy = roster.get(attack.enemy_owner)
+        .ok_or(GameCommandError::InvalidEnemy)?;
+    if own.side == enemy.side || own.members.is_empty() ||
+        enemy.members.is_empty() {
+        return Err(GameCommandError::InvalidEnemy);
+    }
+    let mut every_member_has_all_targets_in_range = true;
+    'own_ships: for &own_id in &own.members {
+        let own_ship = world.ship(own_id).ok_or(GameCommandError::InvalidSquad)?;
+        if own_ship.vitals.is_dead() || own_ship.side != own.side ||
+            !world.ship_body(own_id).is_some_and(|body| body.active)
+        {
+            return Err(GameCommandError::InvalidSquad);
+        }
+        for &enemy_id in &enemy.members {
+            let target = world.ship(enemy_id).ok_or(GameCommandError::InvalidEnemy)?;
+            if target.vitals.is_dead() || target.side != enemy.side ||
+                !world.ship_body(enemy_id).is_some_and(|body| body.active)
+            {
+                return Err(GameCommandError::InvalidEnemy);
+            }
+            if !weapon_valid_target(own_id, enemy_id)? {
+                every_member_has_all_targets_in_range = false;
+                break 'own_ships;
+            }
+        }
+    }
+    Ok(NativeAggressiveCommandSnapshot {
+        attack,
+        every_member_has_all_targets_in_range,
+        all_enemies_defenseless,
+    })
+}
+
 pub(super) struct AggressiveRun {
     target: NativeAttackTarget,
     members: Vec<SquadFormationMember>,

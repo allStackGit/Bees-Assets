@@ -46,7 +46,9 @@ mod swipe;
 mod targeting;
 mod in_and_out;
 mod aggressive;
-pub use self::aggressive::NativeAggressiveCommandSnapshot;
+pub use self::aggressive::{
+    NativeAggressiveCommandSnapshot, assemble_aggressive_snapshot_from_live_weapons,
+};
 use self::aggressive::AggressiveRun;
 pub use self::targeting::{
     NativeCommandTargetQueue, NativeEnemyTargetStats,
