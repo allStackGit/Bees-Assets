@@ -1348,6 +1348,10 @@ impl CombatWorld {
             self.pending_game_point_orders.insert(ship_id, order);
             return Ok(GamePointOrderResult::DeferredByMovementLock);
         }
+        // Ordinary point orders replace the tracked-replan interval.
+        // A tracked caller arms its own interval after dispatch.
+        self.game_ship_steering.get_mut(&ship_id)
+            .expect("validated steering").clear_tracked_replan();
         self.pending_game_point_orders.remove(&ship_id);
         let destination = order.bounded_destination();
         if !self.physics.ships()[index].motion.mobile {
@@ -1392,11 +1396,10 @@ impl CombatWorld {
 
     /// Unity Ship.MoveToTrackedPoint for following another moving entity.
     /// A moving target does not invalidate an active A* worker or a failed
-    /// path's two-second retry lease. The recurring ClosestFriendly command
-    /// calls this no faster than once every three scaled seconds, so Unity's
-    /// additional one-second path replan gate cannot elapse between calls.
-    /// This is distinct from ordinary MoveToPoint, which may replace a
-    /// superseded path request while a worker is running.
+    /// path's two-second retry lease. CircleSquad can poll every 0.25s:
+    /// Unity additionally rate-limits significant changes to an active
+    /// A* path to one replan per second. Direct movement remains ungated.
+    /// Ordinary MoveToPoint can still replace a superseded search.
     pub fn move_ship_to_tracked_point(
         &mut self,
         ship_id: i64,
@@ -1433,7 +1436,16 @@ impl CombatWorld {
                 TRACKED_REPLAN_DISTANCE_SQUARED {
             return Ok(GamePointOrderResult::Unchanged);
         }
-        self.move_ship_to_point(ship_id, order)
+        if steering.is_following_path && !steering.tracked_replan_ready() {
+            return Ok(GamePointOrderResult::Unchanged);
+        }
+        let was_following_path = steering.is_following_path;
+        let result = self.move_ship_to_point(ship_id, order)?;
+        if was_following_path {
+            self.game_ship_steering.get_mut(&ship_id)
+                .expect("validated steering").arm_tracked_replan();
+        }
+        Ok(result)
     }
 
     /// Tick source ScaledTimer path retries before the ship's ordinary

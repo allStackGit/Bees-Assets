@@ -50,6 +50,8 @@ pub struct GameShipSteering {
     deferred_direct_destination: Option<Vec2>,
     path_failures: u8,
     failed_path_retry_timer: Option<ScaledTimer>,
+    /// One-second tracked A* repath gate, using the same scaled fixed step.
+    tracked_replan_wait_seconds: f32,
 }
 
 impl GameShipSteering {
@@ -61,7 +63,22 @@ impl GameShipSteering {
             next_waypoints: VecDeque::new(), target_direction: None,
             deferred_direct_destination: None,
             path_failures: 0, failed_path_retry_timer: None,
+            tracked_replan_wait_seconds: 0.0,
         })
+    }
+
+    /// Unity's tracked target orders replan a still-followed A* route at
+    /// most once per second. Direct movement updates are not rate-limited.
+    pub fn tracked_replan_ready(&self) -> bool {
+        self.tracked_replan_wait_seconds <= 0.0
+    }
+
+    pub fn arm_tracked_replan(&mut self) {
+        self.tracked_replan_wait_seconds = 1.0;
+    }
+
+    pub fn clear_tracked_replan(&mut self) {
+        self.tracked_replan_wait_seconds = 0.0;
     }
 
     /// Direct movement order after the game controller has applied the
@@ -116,6 +133,7 @@ impl GameShipSteering {
         self.failed_path_retry_timer = None;
         self.remaining_egress_waypoints = 0;
         self.is_following_path = false;
+        self.clear_tracked_replan();
         motion.has_target_coordinates = false;
         motion.target_coordinates = Vec2::ZERO;
         motion.stop_moving();
@@ -237,6 +255,8 @@ impl GameShipSteering {
         motion: &mut ShipMotion,
         dt: f32,
     ) -> MotionUpdate {
+        self.tracked_replan_wait_seconds =
+            (self.tracked_replan_wait_seconds - dt).max(0.0);
         if !motion.mobile ||
             (motion.is_policy_controlled && !motion.user_controlled) {
             return MotionUpdate::NotPolicyControlled;
