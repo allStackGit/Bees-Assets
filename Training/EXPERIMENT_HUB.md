@@ -1559,8 +1559,10 @@ the SHA-256 of the UTF-8 bytes of `JSON.stringify(profile, null, 2) + '\n'`
 after parsing that JSON. In Design, supply `profile` (for example `mini`),
 `profile_sha256` (the 64-digit digest), and `updates` (a positive integer
 up to 10,000,000). Use a CPU/RAM claim on the configured Windows worker.
-The profile digest must match at launch, including when two workers
-advertise the same profile name.
+The worker advertises approved profile names and digests. The Hub matches
+them before claiming capacity and checks again before dispatch. Install
+the updated worker before enabling placement on the updated coordinator.
+The adapter independently verifies the digest at launch.
 
 Each launch uses a fresh job directory containing its exact profile,
 training history, checkpoints and `trainer.stderr.txt` for startup and
