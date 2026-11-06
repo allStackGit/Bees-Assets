@@ -151,6 +151,38 @@ impl<M, A> NativeLevelState<M, A> {
     }
 }
 
+impl<M: NativeLevelRewardMetadata, A> NativeLevelState<M, A> {
+    /// Persist actual mining yields in the source event order, whether
+    /// generated during policy combat or by timed HiveMind commands.
+    fn credit_mining_since(&mut self, start: usize)
+        -> Result<(), NativeLevelStepError>
+    {
+        for row in start..self.combat.events().len() {
+            let extracted = match &self.combat.events()[row] {
+                CombatEvent::CapabilityMined { ship_id, amount_mined, .. } =>
+                    Some((*ship_id, *amount_mined)),
+                _ => None,
+            };
+            let Some((ship_id, amount)) = extracted else { continue; };
+            let expected = self.combat.ship(ship_id)
+                .ok_or(NativeLevelStepError::InvalidMiningFleetValue(ship_id))?
+                .vitals.mined_cargo();
+            let actual = self.metadata.credit_mined_minerals(ship_id, amount)
+                .ok_or(NativeLevelStepError::MissingMiningFleetValue(ship_id))?;
+            if expected != actual {
+                return Err(NativeLevelStepError::InvalidMiningFleetValue(ship_id));
+            }
+            if self.combat.ship(ship_id)
+                .is_some_and(|ship| !ship.vitals.is_dead()) {
+                self.events.record_mined_value(
+                    &self.combat, ship_id, actual,
+                )?;
+            }
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug)]
 pub enum NativeLevelStepError {
     Combat(CombatWorldError),
