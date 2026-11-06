@@ -141,8 +141,6 @@ class LocalExecution {
         const report={
             job_id:job.id,lease_id:lease.id,
             dispatch_id:order.dispatch_id,state,
-            ...(state==='stopped'&&observed.checkpoint_stop_verified===true
-                ?{checkpoint_stop_verified:true}:{}),
             ...(diagnostic?{diagnostic}:{}),
             ...(Number.isSafeInteger(observed.memory_current_mb)&&
                 observed.memory_current_mb>=0
@@ -164,6 +162,25 @@ class LocalExecution {
         const ownsArtifacts=owned&&owned.lease_id===lease.id&&owned.project_id===job.project_id&&
             (owned.artifact_lineage_root_id||owned.job_id)===
                 (job.artifact_lineage_root_id||job.id);
+        if(state==='stopped'&&observed.checkpoint_stop_verified===true) {
+            // A successful native exit does not establish that a resumable
+            // checkpoint exists. Only the pinned local adapter can verify
+            // the exact artifacts a continuation will consume.
+            try {
+                if(!ownsArtifacts||typeof localAdapter?.checkpoint_ready!=='function'||
+                    await localAdapter.checkpoint_ready(Object.freeze({
+                        job_id:job.id,project_id:job.project_id,
+                        artifact_lineage_root_id:job.artifact_lineage_root_id||job.id,
+                        continuation_of_job_id:job.continuation_of_job_id||null,
+                        frozen_parameters:job.frozen_parameters,
+                    }))!==true)
+                    throw Error('Local adapter did not verify resumable checkpoint artifacts.');
+                report.checkpoint_stop_verified=true;
+            }catch(error) {
+                report.diagnostic=('Checkpoint Stop completed but checkpoint not verified: '+
+                    String(error.message||error)).slice(0,220);
+            }
+        }
         if(ownsArtifacts&&typeof localAdapter?.readProgress==='function'&&
             ['running','stop_requested','finished','failed','stopped']
                 .includes(state)) {

@@ -97,13 +97,43 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
         return path.join(artifacts,context.job_id);
     }
 
+    const within=(value,min,max)=>Number.isSafeInteger(value)&&value>=min&&value<=max;
+    function completedCheckpoint(source,maxRounds) {
+        const localFile=name=>{
+            const file=path.join(source,name);
+            if(fs.realpathSync(file)!==file)throw Error('Courier checkpoint file is redirected: '+name);
+            const stat=fs.statSync(file);
+            if(!stat.isFile()||stat.size<1)
+                throw Error('Courier checkpoint file is missing or empty: '+name);
+            return file;
+        };
+        const summaryFile=localFile('checkpoint.json');
+        if(fs.statSync(summaryFile).size>256*1024)
+            throw Error('Courier checkpoint summary exceeds 256 KiB.');
+        const checkpoint=JSON.parse(fs.readFileSync(summaryFile,'utf8'));
+        if(!fs.readFileSync(localFile('hub-environment.json')).equals(config)||
+            !within(checkpoint.round,1,Number.MAX_SAFE_INTEGER-maxRounds)||
+            !Array.isArray(checkpoint.lineage)||!within(checkpoint.lineage.length,1,64))
+            throw Error('Courier checkpoint environment or population is invalid.');
+        const names=new Set(fs.readdirSync(source));
+        const required=['checkpoint.json',...checkpoint.lineage.map((_,i)=>'lineage-'+i+'.zip')];
+        const optional=['champion.zip','milestone.json','milestone-policy.zip',
+            ...checkpoint.lineage.map((_,i)=>'lineage-'+i+'-traits.json')];
+        return {checkpoint,files:required.concat(optional.filter(name=>names.has(name))).map(localFile)};
+    }
+
     return {
         executable,cwd:project,stop_policy:windows?'terminate-group':'interrupt-main',
+        checkpoint_ready(context) {
+            if(context.frozen_parameters?.config_sha256!==configSha256)
+                throw Error('Courier checkpoint environment pin changed.');
+            completedCheckpoint(jobRoot(context),10000000);
+            return true;
+        },
         ...(windows?{checkpoint_stop_file:context=>path.join(jobRoot(context),'hub-stop.request')}:{}),
         ...evaluator,
         args(parameters,context) {
             const {config_sha256,seed,workers,max_rounds,checkpoint_rounds}=parameters;
-            const within=(value,min,max)=>Number.isSafeInteger(value)&&value>=min&&value<=max;
             if(Object.keys(parameters).some(key=>
                 !['config_sha256','seed','workers','max_rounds','checkpoint_rounds'].includes(key))||
                 config_sha256!==configSha256||!within(seed,0,4294967295)||
@@ -119,23 +149,9 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
             let limit=max_rounds, files=[];
             if(predecessor) {
                 const source=path.join(artifacts,predecessor);
-                const localFile=name=>{
-                    const file=path.join(source,name);
-                    if(fs.realpathSync(file)!==file||!fs.statSync(file).isFile())
-                        throw Error('Courier predecessor file is redirected or unavailable: '+name);
-                    return file;
-                };
-                const checkpoint=JSON.parse(fs.readFileSync(localFile('checkpoint.json'),'utf8'));
-                if(!fs.readFileSync(localFile('hub-environment.json')).equals(config)||
-                    !within(checkpoint.round,1,Number.MAX_SAFE_INTEGER-max_rounds)||
-                    !Array.isArray(checkpoint.lineage)||!within(checkpoint.lineage.length,1,64))
-                    throw Error('Courier continuation requires the same approved environment and a completed population checkpoint.');
-                const names=new Set(fs.readdirSync(source));
-                const required=['checkpoint.json',...checkpoint.lineage.map((_,i)=>'lineage-'+i+'.zip')];
-                const optional=['champion.zip','milestone.json','milestone-policy.zip',
-                    ...checkpoint.lineage.map((_,i)=>'lineage-'+i+'-traits.json')];
-                files=required.concat(optional.filter(name=>names.has(name))).map(localFile);
-                if(max_rounds!==0)limit=checkpoint.round+max_rounds;
+                const saved=completedCheckpoint(source,max_rounds);
+                files=saved.files;
+                if(max_rounds!==0)limit=saved.checkpoint.round+max_rounds;
             }
             fs.mkdirSync(out,{mode:0o700});
             for(const file of files)
