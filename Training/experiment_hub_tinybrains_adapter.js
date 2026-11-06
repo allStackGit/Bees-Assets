@@ -112,9 +112,29 @@ function createTinyBrainsAdapter({projectRoot,pythonPath,artifactRoot,profiles,
         return path.join(artifacts,context.job_id);
     }
 
+    function completedCheckpoint(source,profileContent) {
+        const checkpoint=path.join(source,'latest.pt');
+        const profile=path.join(source,'hub-profile.json');
+        if([checkpoint,profile].some(file=>{
+            if(fs.realpathSync(file)!==file)return true;
+            const stat=fs.statSync(file);
+            return !stat.isFile()||stat.size<1;
+        })||fs.readFileSync(profile,'utf8')!==profileContent)
+            throw Error('TinyBrains checkpoint or approved profile is missing or invalid.');
+        return checkpoint;
+    }
+
     return {
         executable,cwd:project,stop_policy:'terminate-group',
         checkpoint_stop_file:context=>path.join(jobRoot(context),'STOP'),
+        checkpoint_ready(context) {
+            const pinned=context.frozen_parameters||{};
+            const approved=configs.get(pinned.profile);
+            if(!approved||approved.sha256!==pinned.profile_sha256)
+                throw Error('TinyBrains checkpoint profile is not approved.');
+            completedCheckpoint(jobRoot(context),approved.content);
+            return true;
+        },
         ...evaluationReader('tinybrains',evaluationRoot,evaluationSuites,[project,artifacts]),
         tinybrains_profiles:Object.fromEntries([...configs].map(([id,item])=>[id,item.sha256])),
         args(parameters,context) {
@@ -128,13 +148,7 @@ function createTinyBrainsAdapter({projectRoot,pythonPath,artifactRoot,profiles,
             let resume=[];
             if(context.continuation_of_job_id) {
                 const parent=path.join(artifacts,context.continuation_of_job_id);
-                const checkpoint=path.join(parent,'latest.pt');
-                const parentConfig=path.join(parent,'hub-profile.json');
-                if([checkpoint,parentConfig].some(file=>
-                    fs.realpathSync(file)!==file||!fs.statSync(file).isFile())||
-                    fs.readFileSync(parentConfig,'utf8')!==approved.content)
-                    throw Error('TinyBrains continuation requires the completed predecessor checkpoint and identical profile.');
-                resume=['--resume',checkpoint];
+                resume=['--resume',completedCheckpoint(parent,approved.content)];
             }
             // An existing directory may belong to a prior launch. Never reuse it.
             fs.mkdirSync(out,{mode:0o700});
