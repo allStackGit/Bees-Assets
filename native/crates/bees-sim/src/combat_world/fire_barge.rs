@@ -94,11 +94,13 @@ impl CombatWorld {
     /// authoritative ship death must happen inside the NEXT fixed-step
     /// combat transaction, not after the Level has already reconciled the
     /// current tick's economic, roster, reward and terminal events.
-    /// Proximity and actual Bomb targeting are checked by the owning Level.
+    /// Proximity is checked by the owning Level's authored trigger.
+    /// The world additionally authenticates the ship's live Bomb target
+    /// reservation before admitting the irreversible request.
     pub fn queue_game_fire_barge_detonation(
         &mut self, ship_id: i64, command_outcome_id: i64,
     ) -> Result<bool, CombatWorldError> {
-        if command_outcome_id < 0 {
+        if command_outcome_id <= 0 {
             return Err(CombatWorldError::InvalidPolicyFireBarge);
         }
         let &index = self.ship_by_id.get(&ship_id)
@@ -116,6 +118,16 @@ impl CombatWorld {
         }
         if !self.fire_barge_bomb_powers.contains_key(&ship_id) {
             return Err(CombatWorldError::InvalidPolicyFireBarge);
+        }
+        let Some(target_id) = self.game_bomb_current_target(ship_id) else {
+            return Err(CombatWorldError::InvalidBombTarget);
+        };
+        let target = self.ship(target_id)
+            .ok_or(CombatWorldError::InvalidBombTarget)?;
+        if target.vitals.is_dead() ||
+            target.side == self.ships[index].side ||
+            !self.ship_body(target_id).is_some_and(|body| body.active) {
+            return Err(CombatWorldError::InvalidBombTarget);
         }
         if self.pending_game_fire_barges.iter()
             .any(|&(id, _)| id == ship_id) {
