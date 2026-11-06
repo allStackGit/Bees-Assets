@@ -33,15 +33,17 @@ pub struct NativeAggressiveCommandSnapshot {
     pub attack: NativeSwipeCommandSnapshot,
     /// Squad.AreAllSquadShipsWithinRangeOfAllOfOurSquadShips, evaluated by
     /// actual per-weapon target eligibility for every own/enemy pair.
-    pub every_member_has_all_targets_in_range: bool,
-    /// EnemySquad.AreAllShipsDefenseless, from live authored ship weapons.
-    pub all_enemies_defenseless: bool,
+    /// None until the hold-position phase actually needs the expensive
+    /// all-own/all-enemy weapon eligibility cross-product.
+    pub every_member_has_all_targets_in_range: Option<bool>,
+    /// Required only when all targets are eligible and own range <45.
+    pub all_enemies_defenseless: Option<bool>,
 }
 
 impl NativeAggressiveCommandSnapshot {
     fn valid(&self) -> bool {
         self.attack.valid_for_combat() &&
-            (!self.every_member_has_all_targets_in_range ||
+            (!self.every_member_has_all_targets_in_range.unwrap_or(false) ||
                 self.attack.every_member_has_target_in_range)
     }
 }
@@ -56,18 +58,21 @@ pub fn assemble_aggressive_snapshot_from_live_weapons(
     roster: &NativeSquadRoster,
     owner: SquadLifetime,
     attack: NativeSwipeCommandSnapshot,
-    all_enemies_defenseless: bool,
+    evaluate_all_targets: bool,
+    all_enemies_defenseless: Option<bool>,
     mut weapon_valid_target: impl FnMut(i64, i64)
         -> Result<bool, GameCommandError>,
 ) -> Result<NativeAggressiveCommandSnapshot, GameCommandError> {
     if !attack.valid_for_combat() || owner.level_id != attack.enemy_owner.level_id {
         return Err(GameCommandError::InvalidCombatSnapshot);
     }
-    if !attack.enemy_alive {
+    if !attack.enemy_alive || !evaluate_all_targets {
+        // The initial approach and every yielded coroutine step need only
+        // the shared Swipe-style predicate. Do not scan all weapon pairs.
         return Ok(NativeAggressiveCommandSnapshot {
             attack,
-            every_member_has_all_targets_in_range: false,
-            all_enemies_defenseless,
+            every_member_has_all_targets_in_range: None,
+            all_enemies_defenseless: None,
         });
     }
     let own = roster.get(owner).ok_or(GameCommandError::InvalidSquad)?;
@@ -100,7 +105,8 @@ pub fn assemble_aggressive_snapshot_from_live_weapons(
     }
     Ok(NativeAggressiveCommandSnapshot {
         attack,
-        every_member_has_all_targets_in_range,
+        every_member_has_all_targets_in_range:
+            Some(every_member_has_all_targets_in_range),
         all_enemies_defenseless,
     })
 }
@@ -151,6 +157,10 @@ impl AggressiveRun {
         self.next_coroutine_member.is_some()
     }
 
+    pub(super) fn needs_all_target_range(&self) -> bool {
+        self.comfortably_in_range
+    }
+
     /// Unity Aggressive.Timer, including the strict transition from a
     /// 3-second recurring command timer to a quarter-second poll.
     pub(super) fn on_poll(
@@ -192,9 +202,18 @@ impl AggressiveRun {
             return Ok(None);
         }
 
-        if snapshot.every_member_has_all_targets_in_range &&
-            (snapshot.attack.own_max_range >= HOLD_RANGE_THRESHOLD ||
-             snapshot.all_enemies_defenseless)
+        let all_targets = snapshot.every_member_has_all_targets_in_range
+            .ok_or(GameCommandError::MissingCombatSnapshot)?;
+        let defenseless = if all_targets &&
+            snapshot.attack.own_max_range < HOLD_RANGE_THRESHOLD
+        {
+            snapshot.all_enemies_defenseless
+                .ok_or(GameCommandError::MissingCombatSnapshot)?
+        } else {
+            false
+        };
+        if all_targets &&
+            (snapshot.attack.own_max_range >= HOLD_RANGE_THRESHOLD || defenseless)
         {
             if !self.has_taken_position {
                 issue_squad_move(
