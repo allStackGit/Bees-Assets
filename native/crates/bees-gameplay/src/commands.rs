@@ -186,7 +186,7 @@ impl From<CombatWorldError> for GameCommandError {
 pub enum StrategyReceiptAction {
     Applied(Activation),
     DiscardReservations(Vec<i64>),
-    /// Unity Guard, Mining and Heal ban unavailable strategies until the next
+    /// Unity Guard and Mining ban unavailable strategies until the next
     /// eligibility reset; the host must update the live banned-strat set.
     BanAndDiscardReservations {
         reservation_ids: Vec<i64>,
@@ -441,8 +441,7 @@ impl NativeSquadCommandDirector {
                     unavailable.shooting_outcome_id,
                 ];
                 if matches!(unavailable.local_command,
-                    LocalCommandKind::Guard | LocalCommandKind::Mining |
-                    LocalCommandKind::Heal) {
+                    LocalCommandKind::Guard | LocalCommandKind::Mining) {
                     Ok(StrategyReceiptAction::BanAndDiscardReservations {
                         reservation_ids, command: unavailable.local_command,
                     })
