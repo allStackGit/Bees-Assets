@@ -756,7 +756,7 @@ impl NativeSquadCommandDirector {
                 !retreat_already_safe) {
                 Some(ScaledTimer::new(
                     if selection.local_command == LocalCommandKind::Scouting {
-                        5.0
+                        scouting::SCOUT_MOVE_SECONDS
                     } else { COMMAND_FREQUENCY_SECONDS },
                     true,
                     selection.local_command != LocalCommandKind::ClosestFriendly,
