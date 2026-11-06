@@ -1746,6 +1746,13 @@ impl NativeSquadCommandDirector {
                 .filter(|follow| follow.guard_slot.is_some()) {
                 restore_guard_speed(world, guard)?;
             }
+            // A navigation cleanup failure must not orphan the original
+            // command OutcomeIds. Keep it active until all fallible
+            // scripted Charge cleanup has succeeded.
+            if let Some(charge) = self.active.get(&owner)
+                .and_then(|active| active.charge.as_ref()) {
+                charge.release_all(world)?;
+            }
             if let Some(mut active) = self.active.remove(&owner) {
                 self.measurements.active_following -=
                     usize::from(active.following.is_some());
@@ -1756,9 +1763,6 @@ impl NativeSquadCommandDirector {
                 }
                 if let Some(bombing) = active.bombing.as_ref() {
                     bombing.release_all(world);
-                }
-                if let Some(charge) = active.charge.as_ref() {
-                    charge.release_all(world)?;
                 }
                 if let Some(retreat) = active.full_retreat.as_ref() {
                     retreat.release_all(world, None);
@@ -1806,8 +1810,11 @@ impl NativeSquadCommandDirector {
             .filter(|follow| follow.guard_slot.is_some()) {
             restore_guard_speed(world, guard)?;
         }
-        let retired = self.active.remove(&owner).map(|mut active|
-            -> Result<FinishedNativeCommand, GameCommandError> {
+        if let Some(charge) = self.active.get(&owner)
+            .and_then(|active| active.charge.as_ref()) {
+            charge.release_all(world)?;
+        }
+        let retired = self.active.remove(&owner).map(|mut active| {
             self.measurements.active_following -=
                 usize::from(active.following.is_some());
             self.measurements.active_full_retreat -=
@@ -1818,13 +1825,10 @@ impl NativeSquadCommandDirector {
             if let Some(bombing) = active.bombing.as_ref() {
                 bombing.release_all(world);
             }
-            if let Some(charge) = active.charge.as_ref() {
-                charge.release_all(world)?;
-            }
             if let Some(retreat) = active.full_retreat.as_ref() {
                 retreat.release_all(world, None);
             }
-            Ok(FinishedNativeCommand {
+            FinishedNativeCommand {
                 owner, selection: active.selection,
                 cause: CommandFinishCause::SquadRetired,
                 capability_command_tsv: active.mining.as_ref()
@@ -1832,8 +1836,8 @@ impl NativeSquadCommandDirector {
                     .or_else(|| active.heal.as_ref().map(|heal| heal.earned_tsv))
                     .or_else(|| active.full_retreat.as_ref()
                         .map(|retreat| retreat.earned_tsv)),
-            })
-        }).transpose()?;
+            }
+        });
         self.measurements.retired += u64::from(retired.is_some());
         Ok(retired)
     }
