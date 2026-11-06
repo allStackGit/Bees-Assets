@@ -656,6 +656,10 @@ pub struct CombatWorld {
     /// state for each bound ship; no secondary training-only movement world.
     // Stable ship-ID iteration is necessary for reproducible shot IDs.
     policy_ship_runtime: BTreeMap<i64, PolicyShipRuntime>,
+    /// Updated only when a policy controller is bound or retired.
+    /// Decision cadence checks this revision instead of rescanning the
+    /// entire controller roster on every fixed physics step.
+    policy_roster_revision: u64,
     policy_decision_seen: HashSet<u64>,
     policy_pending_shots: Vec<PendingPolicyShot>,
     /// Validated ship specials use one queue across different authored ships.
@@ -776,6 +780,7 @@ impl CombatWorld {
             navigation_requests: NavigationRequests::new(),
             game_ship_steering: HashMap::new(),
             policy_ship_runtime: BTreeMap::new(),
+            policy_roster_revision: 0,
             policy_decision_seen: HashSet::new(),
             policy_pending_shots: Vec::new(),
             policy_pending_ship_specials: Vec::new(),
@@ -940,7 +945,9 @@ impl CombatWorld {
         self.scout_beacon_specs.remove(&victim_id);
         self.game_scout_runtime.remove(&victim_id);
         self.discovery.retire(DiscoveryKind::Ship, victim_id);
-        self.policy_ship_runtime.remove(&victim_id);
+        if self.policy_ship_runtime.remove(&victim_id).is_some() {
+            self.bump_policy_roster_revision();
+        }
         self.retire_support_zone(self.ships[index].ship_type, side, victim_id);
         self.release_beehive_healing_slot(victim_id);
         self.release_game_warp_participant(victim_id);

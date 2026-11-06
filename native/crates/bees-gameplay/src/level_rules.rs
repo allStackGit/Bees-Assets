@@ -59,14 +59,33 @@ pub trait NativeLevelCommandContext {
 /// Unity Agent.FixedUpdate requests a decision after each controller's
 /// own DecisionPeriod successful fixed steps, not every simulation tick.
 /// One clock is enough: the owning World tick plus each ship's bind tick.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct NativeDecisionCadenceMeasurements {
+    /// Fixed-step synchronization requests, including unchanged rosters.
+    pub sync_calls: u64,
+    /// Requests that needed to reconcile controller membership.
+    pub roster_reconciliations: u64,
+}
+
 pub struct NativeDecisionCadence {
     period: NonZeroU32,
     bound_at_tick: BTreeMap<i64, u64>,
+    observed_roster_revision: Option<u64>,
+    measurements: NativeDecisionCadenceMeasurements,
 }
 
 impl NativeDecisionCadence {
     pub fn new(period: NonZeroU32) -> Self {
-        Self { period, bound_at_tick: BTreeMap::new() }
+        Self {
+            period,
+            bound_at_tick: BTreeMap::new(),
+            observed_roster_revision: None,
+            measurements: NativeDecisionCadenceMeasurements::default(),
+        }
+    }
+
+    pub fn measurements(&self) -> NativeDecisionCadenceMeasurements {
+        self.measurements
     }
 
     /// Reconcile the single authoritative policy roster at a decision
@@ -75,12 +94,21 @@ impl NativeDecisionCadence {
     pub fn synchronize(
         &mut self, combat: &CombatWorld, completed_ticks: u64,
     ) {
+        self.measurements.sync_calls += 1;
+        let revision = combat.policy_roster_revision();
+        if self.observed_roster_revision == Some(revision) {
+            return;
+        }
+        // A stable controller roster changes no decision clock. Reconcile
+        // only after authoritative bind/death transitions.
         self.bound_at_tick.retain(|&id, _|
             combat.policy_frame(id).is_some(),
         );
         for ship_id in combat.bound_policy_agent_ids() {
             self.bound_at_tick.entry(ship_id).or_insert(completed_ticks);
         }
+        self.observed_roster_revision = Some(revision);
+        self.measurements.roster_reconciliations += 1;
     }
 
     fn due_from_binding(&self, bound_at: u64, next_tick: u64) -> bool {

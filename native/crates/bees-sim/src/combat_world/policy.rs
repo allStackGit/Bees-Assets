@@ -76,6 +76,17 @@ impl CombatWorld {
         self.policy_ship_runtime.len()
     }
 
+    /// Monotonic per-world controller membership revision. Rebinding a
+    /// controller invalidates cached roster checks as well.
+    pub fn policy_roster_revision(&self) -> u64 {
+        self.policy_roster_revision
+    }
+
+    pub(super) fn bump_policy_roster_revision(&mut self) {
+        self.policy_roster_revision = self.policy_roster_revision.checked_add(1)
+            .expect("native policy roster revision exhausted");
+    }
+
     /// Stable live policy roster: registration and ship death update this
     /// one BTreeMap, without creating a second training ship inventory.
     pub fn bound_policy_agent_ids(&self) -> impl Iterator<Item = i64> + '_ {
@@ -116,6 +127,7 @@ impl CombatWorld {
             mining: None,
             warp_enabled: false,
         });
+        self.bump_policy_roster_revision();
         Ok(())
     }
 
