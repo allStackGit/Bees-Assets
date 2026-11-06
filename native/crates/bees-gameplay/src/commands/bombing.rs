@@ -140,8 +140,20 @@ pub fn advance_fire_barge_bombing_run(
     mut target_in_proximity: impl FnMut(i64, i64)
         -> Result<bool, GameCommandError>,
 ) -> Result<u64, GameCommandError> {
-    if command_outcome_id < 0 || !formation.valid() {
+    // Only accepted HiveMind commands may auto-detonate Fire Barges.
+    // The server protocol requires positive command OutcomeIds.
+    if command_outcome_id <= 0 || !formation.valid() {
         return Err(GameCommandError::InvalidSettings);
+    }
+    // Fail closed before issuing any partial orders if the caller passes
+    // a mixed bomber squad without its necessary Striker/Yellow Jacket
+    // handling. Full BombingRun coordination must choose that path.
+    for member in members {
+        let ship = world.ship(member.ship_id)
+            .ok_or(GameCommandError::InvalidSquad)?;
+        if !ship.vitals.is_dead() && ship.ship_type != 10 {
+            return Err(GameCommandError::MissingCombatSnapshot);
+        }
     }
     let mut queued = 0;
     for &member in members {
@@ -149,8 +161,7 @@ pub fn advance_fire_barge_bombing_run(
             return Err(GameCommandError::InvalidSquad);
         };
         // The source executes each live squad member in GetShips order.
-        // Other bomber classes must use their own authored state machines.
-        if ship.ship_type != 10 || ship.vitals.is_dead() {
+        if ship.vitals.is_dead() {
             continue;
         }
         let Some(target_id) = world.game_bomb_current_target(member.ship_id)
