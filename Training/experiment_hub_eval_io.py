@@ -20,6 +20,7 @@ def read_bounded(path: Path, limit: int) -> bytes:
         raise ValueError(f"unexpected file size: {path}")
     return data
 
+
 def publish(directory: Path, receipt: dict) -> Path:
     destination = directory / f'{receipt["dispatch_id"]}.{receipt["suite_id"]}.json'
     fd, pending = tempfile.mkstemp(prefix=".hub-evaluation-receipt-", dir=directory)

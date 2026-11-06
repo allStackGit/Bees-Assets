@@ -28,7 +28,7 @@ def exclusive(path: Path):
         yield
 
 
-def targets(port: int, machine: str, suite: str, project: str = "ants") -> dict:
+def targets(port: int, machine: str, suite: str, project: str) -> dict:
     query = urlencode({"project_id": project, "machine_id": machine, "suite_id": suite})
     connection = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
     try:
@@ -41,6 +41,7 @@ def targets(port: int, machine: str, suite: str, project: str = "ants") -> dict:
         return {job["dispatch_id"]: job for job in jobs}
     finally:
         connection.close()
+
 
 def retain_dispatch_cursors(previous: dict, live: dict) -> dict:
     # Dispatch IDs are immutable across native restarts. Keep watermarks
