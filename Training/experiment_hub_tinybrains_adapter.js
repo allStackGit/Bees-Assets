@@ -9,6 +9,13 @@ const {validateProgress}=require('./experiment_hub_progress');
 const UUID=/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
 const PROFILE=/^[a-z][a-z0-9_-]{0,47}$/;
 const TAIL_BYTES=256*1024;
+// The Windows owner starts workloads without a console or inherited streams.
+const TRAIN_ENTRY=[
+    'import os, runpy, sys',
+    "sys.stdout = open(os.devnull, 'w', encoding='utf-8')",
+    "sys.stderr = open(sys.argv.pop(1), 'x', encoding='utf-8', buffering=1)",
+    "runpy.run_module('ants_mapoca.cli', run_name='__main__', alter_sys=True)",
+].join('; ');
 
 function isWithin(parent,child) {
     const relative=path.relative(parent,child);
@@ -61,7 +68,8 @@ function createTinyBrainsAdapter({projectRoot,pythonPath,artifactRoot,profiles})
             fs.mkdirSync(out,{mode:0o700});
             const config=path.join(out,'hub-profile.json');
             fs.writeFileSync(config,approved.content,{flag:'wx',mode:0o600});
-            return ['-B','-m','ants_mapoca.cli','train','--config',config,'--out',out,
+            return ['-B','-c',TRAIN_ENTRY,path.join(out,'trainer.stderr.txt'),
+                'train','--config',config,'--out',out,
                 '--updates',String(updates)];
         },
         readProgress(context) {
