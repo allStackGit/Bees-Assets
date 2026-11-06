@@ -1167,7 +1167,29 @@ document.addEventListener('DOMContentLoaded', () => {
                         await reload();
                     }catch(e){feedback('hub-job-message',e.message);}
                 }));
-            if(j.status==='waiting_adapter'&&j.lease_id)
+            if(j.status==='waiting_adapter'&&j.lease_id&&!j.dispatch_id&&
+                !j.continuation_machine_id&&proof?.status!=='requested')
+                actions.append(button('Move claim',async()=>{
+                    const destination=state.machines.find(m=>m.id===$('hub-job-machine').value);
+                    if(!destination||destination.id===j.assigned_machine_id) {
+                        feedback('hub-job-allocate-message','Choose a different preferred machine above.');
+                        return;
+                    }
+                    if(!confirm('Move the queued claim for '+j.configuration_name+' to '+
+                        destination.name+'? The new worker must acknowledge the claim. '+
+                        'An armed scheduler can then start an eligible CPU job.'))return;
+                    try {
+                        const moved=await action('hub/jobs/move-claim',{job_id:j.id,
+                            expected_lease_id:j.lease_id,machine_id:destination.id,
+                            confirm_move:true});
+                        feedback('hub-job-allocate-message','Claim moved to '+moved.machine_id+
+                            ' and awaits a fresh worker receipt.');
+                    }catch(error){
+                        feedback('hub-job-allocate-message',error.message);
+                    }
+                    await reload();
+                }));
+            if(j.status==='waiting_adapter'&&j.lease_id&&!j.dispatch_id)
                 actions.append(button('Release claim',async()=>{
                     if(!confirm('Release this advisory budget claim? No process is stopped.'))return;
                     try{

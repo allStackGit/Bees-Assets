@@ -385,7 +385,7 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
     <div class="hub-standalone">
       <h3>Coordinate queued workload capacity</h3>
       <p class="muted">These operations only claim capacity within the Hub ledger. They do not isolate CPU/RAM/GPUs, launch a process, or guarantee unused resources on the host. Only presently connected machines are eligible for new claims. Claims survive disconnects and restarts.</p>
-      <label>Preferred machine for one job (optional)<select id="hub-job-machine"></select></label>
+      <label>Preferred machine for a new or moved claim<select id="hub-job-machine"></select></label>
       <button type="button" id="hub-job-allocate-all">Coordinate all eligible queued jobs</button>
       <p id="hub-job-allocate-message" class="hub-notice" role="status">No capacity claims made.</p>
     </div>

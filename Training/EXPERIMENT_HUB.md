@@ -201,6 +201,13 @@ experiment definitions.
 
 ### Atomic advisory job allocation
 
+Train can move an unstarted claim to the selected machine in one update.
+The replacement requires a fresh agent receipt and any GPU access proof must
+be rerun against the new lease. The source stays claimed if the destination
+cannot fit the job or the claim changed before confirmation. A dispatched
+job, pinned continuation or claim with an in-flight GPU access probe cannot
+be moved to another host.
+
 A currently connected machine can be allocated to a pending job using
 `{project_id,job_ids:[...],machine_id,confirm_allocate:true}` (one job
 when specifying a machine). Omitting `job_ids` considers all pending

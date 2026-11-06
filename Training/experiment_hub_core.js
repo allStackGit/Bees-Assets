@@ -790,6 +790,9 @@ class ExperimentHub {
                 !['waiting_adapter','finished','failed','stopped'].includes(job.status))
                 throw Error('Cannot release an unknown, active, or unverified managed job.');
             if(job.status==='waiting_adapter') {
+                if(job.dispatch_id)throw Error('Cannot release a claim after native dispatch.');
+                if(job.gpu_qualification?.lease_id===lease.id)
+                    lease.gpu_qualification_request_id=job.gpu_qualification.request_id;
                 if(job.gpu_qualification?.status==='requested') {
                     job.gpu_qualification.status='cancelled';
                     job.gpu_qualification.diagnostic=
@@ -910,12 +913,7 @@ class ExperimentHub {
                     status:'insufficient_capacity'});
                 continue;
             }
-            const lease=this.offerIn(next,job.project_id,chosen.machine_id,
-                resourceRequest(job.resources),job.id);
-            job.lease_id=lease.id;
-            job.assigned_machine_id=lease.machine_id;
-            job.assigned_at=now();
-            job.status_reason='Hub coordination capacity claimed; execution still blocked.';
+            const lease=this.claimJobIn(next,job,chosen.machine_id);
             results.push({job_id:job.id,machine_id:lease.machine_id,
                 lease_id:lease.id,status:'claimed'});
         }
@@ -923,8 +921,45 @@ class ExperimentHub {
         return {results,executable:false,
             note:'Coordination only: no process started or hardware limits enforced.'};
     }
-    // The administrative endpoint never supplies an executable. It persists
-    // a single authorization for one already frozen, explicitly leased job.
+    claimJobIn(next,job,machineId) {
+        const lease=this.offerIn(next,job.project_id,machineId,
+            resourceRequest(job.resources),job.id);
+        job.lease_id=lease.id;
+        job.assigned_machine_id=lease.machine_id;
+        job.assigned_at=now();
+        job.status_reason='Hub coordination capacity claimed; execution still blocked.';
+        return lease;
+    }
+    moveJobClaim(value) {
+        if(!object(value)||value.confirm_move!==true||
+            !UUID.test(String(value.job_id||''))||
+            !UUID.test(String(value.expected_lease_id||''))||
+            !ID.test(String(value.machine_id||'')))
+            throw Error('Select a queued claim and explicitly confirm the destination machine.');
+        const next=copy(this.state);
+        const job=next.jobs.find(j=>j.id===value.job_id);
+        if(!job||job.adapter!=='unconfigured'||job.status!=='waiting_adapter'||job.dispatch_id)
+            throw Error('Only an unstarted non-Bees job claim can move.');
+        if(job.lease_id!==value.expected_lease_id)
+            throw Error('The job claim changed. Refresh Train before moving it.');
+        const source=next.reservations.find(l=>l.id===job.lease_id&&l.job_id===job.id&&
+            l.project_id===job.project_id&&l.machine_id===job.assigned_machine_id);
+        if(!source||source.machine_id===value.machine_id)
+            throw Error('Select a different destination for the current job claim.');
+        if(job.continuation_machine_id&&job.continuation_machine_id!==value.machine_id)
+            throw Error('Checkpoint continuation must stay on the original machine.');
+        if(job.gpu_qualification?.status==='requested')
+            throw Error('Wait for the in-flight GPU device probe to finish before moving its claim.');
+        const machine=this.snapshot().machines.find(m=>m.id===value.machine_id);
+        if(machine?.status!=='connected'||!machine.installed_projects?.includes(job.project_id)||
+            !supportsEvaluation(machine.evaluation_suites,job))
+            throw Error('Destination requires a connected adapter for the project and its evaluation suite.');
+        this.releaseIn(next,source);
+        const replacement=this.claimJobIn(next,job,machine.id);
+        this.commit(next);
+        return {job_id:job.id,machine_id:machine.id,
+            released_lease_id:source.id,lease_id:replacement.id};
+    }
     // Explicitly request an inert GPU device-filter proof, not a launch.
     requestGpuQualification(value) {
         if(!object(value)||value.confirm_qualify!==true||
@@ -994,6 +1029,10 @@ class ExperimentHub {
             // The operator may cancel an unstarted job or release the
             // advisory lease while a short probe is finishing. Consume
             // that exact old proof without restoring authority.
+            if(job&&lease?.status==='released'&&lease.job_id===job.id&&
+                lease.project_id===job.project_id&&lease.machine_id===machine.id&&
+                lease.gpu_qualification_request_id===report.dispatch_id)
+                continue;
             if(job&&lease&&request?.status==='cancelled'&&
                 request.request_id===report.dispatch_id&&
                 request.lease_id===lease.id&&
@@ -1851,7 +1890,7 @@ class ExperimentHub {
         const job=next.jobs.find(j=>j.id===value.job_id);
         if (!job) throw Error('Job not found.');
         if (job.status==='cancelled') return copy(job);
-        if (!['waiting_adapter','waiting_predecessor'].includes(job.status))
+        if (job.dispatch_id||!['waiting_adapter','waiting_predecessor'].includes(job.status))
             throw Error('Only unstarted jobs can be cancelled without an execution adapter.');
         if(next.jobs.some(j=>
             (j.continuation_of_job_id===job.id||j.after_job_id===job.id)&&
