@@ -2281,6 +2281,17 @@ impl CombatWorld {
         self.reservations.release(bomb_weapon_id).is_some()
     }
 
+    /// Read the canonical Bomb.TargetShip while the weapon itself owns
+    /// its reservation. No second target cache is maintained in gameplay.
+    /// A transferred Striker bomb's independent projectile reservation is
+    /// intentionally NOT a live Bomb.TargetShip; the source weapon clears
+    /// its target at transfer. The ship's separate TargetEnemyShipToFollow
+    /// lifecycle belongs to the forthcoming BombingRun command adapter.
+    pub fn game_bomb_current_target(&self, bomber_id: i64) -> Option<i64> {
+        let weapon_id = *self.game_bomb_weapon_by_ship.get(&bomber_id)?;
+        self.reservations.held_by(weapon_id).map(|held| held.target_id)
+    }
+
     /// Unity Weapon.DistanceTo uses Collider2D.ClosestPoint, not distance
     /// to the target ship center. This reads the SAME authoritative hull
     /// the physics and vision systems use, updating the cached pose only
