@@ -1420,15 +1420,21 @@ impl NativeSquadCommandDirector {
                 if let Some(timer) = command.command_poll.as_mut() {
                     if let Some(due) = timer.begin_update(dt) {
                         self.measurements.command_timer_callbacks += 1;
-                        let snapshot = bombing_snapshot(
+                        let mut snapshot = bombing_snapshot(
                             owner, bombing.enemy_squad_id(), world,
                         )?;
+                        // The Level's proximity input is ephemeral. Sort
+                        // its one-time per-callback projection in place,
+                        // then check every barge in logarithmic time rather
+                        // than scanning all other barges' contacts.
+                        snapshot.nearby_targets.sort_unstable();
+                        snapshot.nearby_targets.dedup();
                         completed = bombing.on_poll(
                             world, timer, owner, snapshot.enemy_owner,
                             snapshot.enemy_alive,
                             command.selection.command_outcome_id,
                             |ship_id, target_id| Ok(snapshot.nearby_targets
-                                .contains(&(ship_id, target_id))),
+                                .binary_search(&(ship_id, target_id)).is_ok()),
                         )?;
                         timer.finish_update(due);
                     }
