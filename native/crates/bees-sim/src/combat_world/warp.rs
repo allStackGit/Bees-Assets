@@ -15,6 +15,9 @@ pub(super) struct GameWarpGateSession {
     /// The actual authored WarpCollider has been touched at least once.
     /// Unity FullRetreat retains a ship in ShipsWaitingToWarp after contact.
     waiting: HashSet<i64>,
+    /// Authenticated warp completions are queued for the next fixed step,
+    /// so the ordinary death/economic/terminal consumers see them once.
+    committed: HashSet<i64>,
 }
 
 impl GameWarpGateSession {
@@ -23,6 +26,7 @@ impl GameWarpGateSession {
             elapsed: 0.0,
             participants: HashSet::new(),
             waiting: HashSet::new(),
+            committed: HashSet::new(),
         }
     }
 
@@ -149,9 +153,11 @@ impl CombatWorld {
         }
     }
 
-    /// True only for physically queued participants once the shared gate
-    /// is ready. This is a command-specific precondition; the actual
-    /// EndKill/ShipWarped transaction is shared with policy actions.
+    /// A ready, physically queued participant is committed for the NEXT
+    /// fixed combat step. Unity's command timer executes between physics
+    /// ticks; retirement in the next fixed step preserves the existing
+    /// roster, economic, terminal and policy attribution sequence.
+    /// Never retire a gameplay ship after that sequence has already run.
     pub fn complete_game_warp(
         &mut self, ship_id: i64, gate_id: i64,
     ) -> Result<bool, CombatWorldError> {
@@ -163,8 +169,36 @@ impl CombatWorld {
         }
         let Some(ship) = self.ship(ship_id) else { return Ok(false) };
         if ship.vitals.is_dead() { return Ok(false); }
-        self.end_kill_warp_ship(ship_id, gate_id)?;
+        let Some(session) = self.game_warp_gate_sessions.get_mut(&gate_id)
+        else { return Ok(false) };
+        if !session.committed.insert(ship_id) {
+            return Ok(false);
+        }
+        self.pending_game_warps.push((ship_id, gate_id));
         Ok(true)
+    }
+
+    /// Applies only source-authorized returns at the earliest ordinary
+    /// fixed-step event boundary. Stable IDs make simultaneous gate
+    /// callbacks deterministic across parallel headless worlds.
+    pub(super) fn apply_pending_game_warps(
+        &mut self,
+    ) -> Result<(), CombatWorldError> {
+        self.pending_game_warps.sort_unstable();
+        for i in 0..self.pending_game_warps.len() {
+            let (ship_id, gate_id) = self.pending_game_warps[i];
+            if self.game_warp_participant_gate(ship_id) != Some(gate_id) ||
+                !self.game_warp_gate_ready(gate_id) ||
+                !self.game_warp_gate_sessions.get(&gate_id)
+                    .is_some_and(|session| session.committed.contains(&ship_id)) {
+                continue;
+            }
+            let Some(ship) = self.ship(ship_id) else { continue };
+            if ship.vitals.is_dead() { continue; }
+            self.end_kill_warp_ship(ship_id, gate_id)?;
+        }
+        self.pending_game_warps.clear();
+        Ok(())
     }
 
     /// Source FullRetreat.SetFinalize removes only its own participants.
@@ -177,6 +211,7 @@ impl CombatWorld {
             self.game_warp_gate_sessions.get_mut(&gate_id) {
             session.participants.remove(&ship_id);
             session.waiting.remove(&ship_id);
+            session.committed.remove(&ship_id);
             session.participants.is_empty()
         } else { false };
         if empty {
