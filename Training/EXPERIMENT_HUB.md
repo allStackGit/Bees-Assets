@@ -1584,8 +1584,28 @@ artifacts, and set `evaluationSuites` to the approved suite IDs. A separate
 evaluator must publish the version-1 Hub result atomically to
 `<evaluationRoot>/<dispatch_id>.<suite_id>.json`. Configure the job's
 evaluation stop policy for that suite in Design. Training history is
-observational. A TinyBrains evaluator that generates these receipts is
-still required for production use.
+observational.
+
+Run `Training/experiment_hub_tinybrains_evaluate.py` from a separately
+budgeted CPU evaluator with a matching TinyBrains checkout and Python
+environment. Pass an operator-approved checkpoint, its SHA-256, and
+the Hub dispatch it belongs to. The evaluator copies and verifies the
+checkpoint before loading it, exports the candidate with TinyBrains'
+native checks, and plays Nano on both seats for each map/seed pair.
+A win counts as a success. Draws count toward trials. Use held-out
+seeds and a stable suite ID for a fixed map, seed, and turn-limit set.
+
+```json
+{"suite_id":"nano_heldout","maps":["basic-tiny-2p"],"seeds":[419033,419039],"max_turns":150}
+```
+
+```powershell
+python -B Training/experiment_hub_tinybrains_evaluate.py --checkpoint $checkpoint --checkpoint-sha256 $digest --dispatch-id $dispatch --suite $suite --scratch $scratch --receipt-root $receipts
+```
+
+Use pre-created private scratch and receipt directories. The evaluator
+runs one explicit checkpoint per invocation. Automatic checkpoint
+selection and dispatch association are separate deployment work.
 
 ## Not yet implemented
 
