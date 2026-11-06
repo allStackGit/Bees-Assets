@@ -359,7 +359,7 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
       <label>Relationship between jobs
         <select id="hub-pipeline-kind">
           <option value="independent">Independent fresh jobs (no shared checkpoint)</option>
-          <option value="continuation">Ants checkpoint-continuation stages</option>
+          <option value="continuation">TinyBrains checkpoint-continuation stages</option>
         </select>
       </label>
       <p class="muted" id="hub-pipeline-description">Choose two or more saved configurations. Queueing is atomic and does not authorize execution.</p>
@@ -428,23 +428,12 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
   <div class="formgrid">
     <label>Metric
       <select id="hub-compare-metric">
-        <option value="curriculum_window_success_rate">Current curriculum-window success</option>
-        <option value="segment_success_rate">Segment success rate</option>
-        <option value="curriculum_level">Curriculum level</option>
-        <option value="policy_version">Policy version</option>
-        <option value="simulation_steps_per_second">Last-episode simulation steps/s</option>
-        <option value="ppo_unique_samples_per_second">Last-episode PPO unique samples/s</option>
+        <option value="">Select a reported metric</option>
       </select>
     </label>
     <label>Horizontal axis
       <select id="hub-compare-x-axis">
-        <option value="episodes_completed">Cumulative training episodes</option>
-        <option value="total_environment_steps">Cumulative environment steps</option>
-      </select>
-    </label>
-    <label>Curriculum level
-      <select id="hub-compare-level">
-        <option value="">All curriculum levels</option>
+        <option value="steps_completed">Cumulative project steps</option>
       </select>
     </label>
     <label>Run A<select id="hub-compare-a"></select></label>
@@ -459,27 +448,15 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
   <p id="hub-compare-export-message" class="muted" role="status"></p>
   <div class="hub-progress-plot">
     <svg id="hub-compare-svg" xmlns="http://www.w3.org/2000/svg"
-      role="img" aria-label="Run progress by cumulative training episodes"
+      role="img" aria-label="Run progress by cumulative project steps"
       viewBox="0 0 900 320" preserveAspectRatio="xMidYMid meet"></svg>
   </div>
   <p id="hub-compare-chart-note" class="muted">Bounded comparison curves are saved separately from training records. Comparisons are observational, not independent evaluations.</p>
   <div class="tablewrap hub-table"><table>
-    <thead><tr><th>Run</th><th>Status / host</th><th>Episodes / level</th><th>Window success</th><th>Segment success</th><th>Policy</th><th>Latest summary</th></tr></thead>
+    <thead><tr><th>Run</th><th>Status / host</th><th>Project steps</th><th>Selected metric</th><th>Reported metrics</th><th>Segment</th><th>Latest summary</th></tr></thead>
     <tbody id="hub-compare-rows"></tbody>
   </table></div>
-  <div class="hub-standalone" id="hub-compare-threshold-panel">
-    <h3>Observed curriculum-window threshold</h3>
-    <div class="formgrid">
-      <label>Target rolling-window success %<input id="hub-compare-threshold-rate" type="number" min="0" max="100" step="any" value="90"></label>
-      <label>Minimum reported window episodes<input id="hub-compare-threshold-window" type="number" min="1" max="1000000" step="1" value="100"></label>
-    </div>
-    <p id="hub-compare-threshold-note" class="muted">Select one curriculum level for descriptive training-sample screening.</p>
-    <div class="tablewrap hub-table"><table>
-      <thead><tr><th>Run</th><th>Eligible samples</th><th>Target status</th><th>First observed episodes</th><th>First observed environment steps</th><th>Last eligible episodes</th></tr></thead>
-      <tbody id="hub-compare-threshold-rows"></tbody>
-    </table></div>
-  </div>
-  <p class="muted">Filter to one curriculum level to inspect comparable phases without joining interrupted segments. Exported CSV/JSON includes selected observed samples and job provenance, not full training artifacts or independent evaluation evidence. Ants uses cumulative episodes or environment steps on the horizontal axis; other trusted projects use cumulative project steps and can chart up to twelve unit-typed numeric measurements. Mixed units are not drawn together. Environment steps account for different episode lengths, but do not normalize curriculum, scenarios, hardware or experimental conditions. Runs without published environment-step counts cannot be plotted on that axis. Window success and segment success have different denominators. Continuation jobs share a checkpoint, experiment ID, and episode history with their predecessor, so they are not independent replicates. Comparisons are descriptive; matching configurations, seeds, scenarios, hardware and evaluation cohorts are required before drawing learning-quality conclusions.</p>
+  <p class="muted">Compare project-neutral training measurements against cumulative project steps. Exports include selected observed samples and job provenance, not checkpoints or independent evaluation evidence. Metrics with incompatible units are never drawn together. Continuation jobs share checkpoint lineage and are not independent replicates. Comparisons are descriptive; matching configurations, seeds, scenarios, hardware and evaluation cohorts is necessary before drawing conclusions.</p>
 </section>
 <section data-hub-tab="machines">
   <h2>Machine inventory and resource admission</h2>
@@ -509,7 +486,7 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
   </div>
   <div class="hub-standalone">
     <h3>Adjust Hub scheduling budget</h3>
-    <p class="muted">Use a smaller CPU/RAM budget than the machine's physical capacity to leave room for existing Bees training, Ants, or other workloads. These are scheduling admission limits, not measured utilization, CPU pinning, or a guarantee that unmanaged workloads will stay within their share. Disarm native automation before changing them. Existing native jobs are not stopped or resized, and claimed capacity cannot be reduced away.</p>
+    <p class="muted">Use a smaller CPU/RAM budget than the machine's physical capacity to leave room for existing Bees training or other workloads. These are scheduling admission limits, not measured utilization, CPU pinning, or a guarantee that unmanaged workloads will stay within their share. Disarm native automation before changing them. Existing native jobs are not stopped or resized, and claimed capacity cannot be reduced away.</p>
     <form id="hub-budget-form">
       <div class="formgrid">
         <label>Registered machine<select id="hub-budget-machine"></select></label>
