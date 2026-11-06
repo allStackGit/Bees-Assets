@@ -158,6 +158,8 @@ pub enum GameCommandError {
     InvalidDelta,
     InvalidEnemy,
     InvalidFriendlies,
+    InvalidMiningTarget,
+    InvalidMiningAccounting,
     Squad(SquadOrderError),
     Mining(CombatWorldError),
 }
@@ -295,6 +297,117 @@ struct FollowingFriendly {
     /// None = ClosestFriendly; Some(slot) = Guard. Guard's slot is assigned
     /// only once, by the number of existing guards of this specific target.
     guard_slot: Option<usize>,
+}
+
+/// One server Mining command's source state. Physics and cargo belong
+/// exclusively to CombatWorld, not to this timer/movement controller.
+struct MiningRun {
+    target_id: i64,
+    destination_offset: Vec2,
+    formation: SquadFormationOptions,
+    members: Vec<SquadFormationMember>,
+    eligible: Vec<i64>,
+    /// Encounter order, not ID order: Unity assigns mining remainders to
+    /// ShipsCurrentlyMining in the order FoundAsteroid registered them.
+    currently_mining: Vec<i64>,
+    mining_timer: Option<ScaledTimer>,
+    stop_moving_timer: Option<ScaledTimer>,
+    has_found_all: bool,
+    mined_tsv: i64,
+}
+
+impl MiningRun {
+    fn advance(
+        &mut self,
+        world: &mut CombatWorld,
+        navigation: &NavigationRuntime,
+        command_poll: &mut Option<ScaledTimer>,
+        dt: f32,
+    ) -> Result<(Option<CommandFinishCause>, u64), GameCommandError> {
+        if world.mining_asteroid_position(self.target_id).is_none() {
+            return Ok((Some(CommandFinishCause::MiningAsteroidDestroyed), 0));
+        }
+
+        // Contact is checked on the actual freshly stepped physical hull,
+        // not an extra "close enough" radius or guessed collision grid.
+        if !self.has_found_all {
+            for &id in &self.eligible {
+                if self.currently_mining.contains(&id) {
+                    continue;
+                }
+                if world.ship(id).is_some_and(|ship| !ship.vitals.is_dead()) &&
+                    world.ship_touches_mining_asteroid(id, self.target_id) {
+                    self.currently_mining.push(id);
+                    if self.mining_timer.is_none() {
+                        // Source FoundAsteroid starts the five-second
+                        // recurring Mine timer on first actual contact.
+                        self.mining_timer = Some(ScaledTimer::new(
+                            MINING_RATE_SECONDS, true, true,
+                        ));
+                    }
+                }
+            }
+            // Dead ships no longer block the source "all miners reached"
+            // transition. It cancels movement polling after five seconds,
+            // not the ongoing mining timer.
+            if self.eligible.iter().all(|id|
+                !world.ship(*id).is_some_and(|ship| !ship.vitals.is_dead()) ||
+                self.currently_mining.contains(id)
+            ) {
+                self.has_found_all = true;
+                self.stop_moving_timer = Some(ScaledTimer::new(
+                    MINING_RATE_SECONDS, false, false,
+                ));
+            }
+        }
+
+        if let Some(timer) = self.mining_timer.as_mut() {
+            if let Some(due) = timer.begin_update(dt) {
+                // Source Mine drops dead miners but keeps miners that
+                // drift outside the asteroid after first touch.
+                self.currently_mining.retain(|id|
+                    world.ship(*id).is_some_and(|ship|
+                        !ship.vitals.is_dead() &&
+                        matches!(ship.ship_type, 4 | 9)
+                    )
+                );
+                if self.currently_mining.is_empty() {
+                    return Ok((Some(CommandFinishCause::NoMiningShipsRemain), 0));
+                }
+                let amount = world.mine_asteroid_for_ships(
+                    self.target_id, &self.currently_mining,
+                )?;
+                self.mined_tsv = self.mined_tsv.checked_add(i64::from(amount))
+                    .ok_or(GameCommandError::InvalidMiningAccounting)?;
+                timer.finish_update(due);
+                if world.mining_asteroid_position(self.target_id).is_none() {
+                    return Ok((Some(CommandFinishCause::MiningAsteroidDestroyed), 0));
+                }
+            }
+        }
+
+        let mut callbacks = 0;
+        if let Some(timer) = command_poll.as_mut() {
+            if let Some(due) = timer.begin_update(dt) {
+                let position = world.mining_asteroid_position(self.target_id)
+                    .ok_or(GameCommandError::InvalidMiningTarget)?;
+                issue_squad_move(
+                    world, navigation, &self.members,
+                    position + self.destination_offset, self.formation,
+                )?;
+                timer.finish_update(due);
+                callbacks += 1;
+            }
+        }
+        if let Some(timer) = self.stop_moving_timer.as_mut() {
+            if let Some(due) = timer.begin_update(dt) {
+                timer.finish_update(due);
+                *command_poll = None;
+                self.stop_moving_timer = None;
+            }
+        }
+        Ok((None, callbacks))
+    }
 }
 
 struct ActiveNativeCommand {
