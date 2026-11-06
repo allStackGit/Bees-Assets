@@ -106,7 +106,7 @@ function hubComparisonCsv(exported) {
         'ppo_unique_samples_per_second','latest_episode_policy_updated',
     ];
     if(exported.project_id!=='ants') {
-        fields.push('steps_completed');
+        fields.push('project_id','steps_completed');
         const metrics=new Set(exported.runs.flatMap(run=>
             run.points.flatMap(point=>Object.keys(point.metrics||{}))));
         for(const key of [...metrics].sort()) {
@@ -126,7 +126,7 @@ function hubComparisonCsv(exported) {
         return quote?'"'+str.replaceAll('"','""')+'"':str;
     };
     const rows=exported.runs.flatMap(run=>run.points.map(point=>({
-        slot:run.slot,job_id:run.job_id,
+        slot:run.slot,job_id:run.job_id,project_id:exported.project_id,
         configuration_name:run.configuration_name,
         configuration_sha256:run.configuration_sha256,
         selected_x_axis:exported.x_axis,
@@ -404,6 +404,10 @@ document.addEventListener('DOMContentLoaded', () => {
             renderComparison();
         }
     }
+    function comparisonAxisLabel(key) {
+        return key==='steps_completed'&&project==='tinybrains'
+            ?'Cumulative TinyBrains updates':chartAxes[key]?.label;
+    }
     function renderComparison() {
         if(!state||project==='bees')return;
         const jobs=state.jobs.filter(j=>j.project_id===project);
@@ -460,7 +464,7 @@ document.addEventListener('DOMContentLoaded', () => {
             ?['episodes_completed','total_environment_steps']
             :['steps_completed'];
         axisSelect.replaceChildren(...axes.map(key=>
-            new Option(chartAxes[key].label,key)));
+            new Option(comparisonAxisLabel(key),key)));
         if(axes.includes(oldAxis))axisSelect.value=oldAxis;
         const levelSelect=$('hub-compare-level');
         const oldLevel=levelSelect.value;
@@ -525,7 +529,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         feedback('hub-compare-chart-note',
             warnings.join(' ')+(warnings.length?' ':'')+
-            'Horizontal axis: '+(chartAxes[$('hub-compare-x-axis').value]?.label||
+            'Horizontal axis: '+(comparisonAxisLabel($('hub-compare-x-axis').value)||
                 chartAxes.episodes_completed.label)+'. Not wall-clock time. '+
             (level!==''?'Showing curriculum level '+level+
                 ' only; axes remain cumulative, not stage-relative. ':'')+
@@ -616,7 +620,7 @@ document.addEventListener('DOMContentLoaded', () => {
             $('hub-compare-x-axis').value);
     }
     function drawComparisonChart(runs,key,xKey) {
-        const svg=$('hub-compare-svg'),axis=chartAxes[xKey];
+        const svg=$('hub-compare-svg'),axisLabel=comparisonAxisLabel(xKey);
         const genericKey=key.startsWith('metric:')?key.slice(7):null;
         const units=project==='ants'||!genericKey?[]:
             [...new Set(runs.flatMap(run=>
@@ -626,7 +630,7 @@ document.addEventListener('DOMContentLoaded', () => {
             genericKey?{label:genericKey+' ('+(units.join('/')||'unknown')+')',
                 rate:units.length===1&&units[0]==='ratio'}:null;
         svg.replaceChildren();
-        if(!metric||!axis)return;
+        if(!metric||!axisLabel)return;
         const ns='http://www.w3.org/2000/svg';
         const node=(tag,attrs={},content=null)=>{
             const item=document.createElementNS(ns,tag);
@@ -642,7 +646,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         svg.setAttribute('aria-label',metric.label+
-            ' by '+axis.label.toLowerCase()+' for selected runs');
+            ' by '+axisLabel.toLowerCase()+' for selected runs');
         const usable=p=>Number.isSafeInteger(p[xKey])&&p[xKey]>=0&&
             Number.isFinite(hubMetricValue(p,key))&&
             !(key==='ppo_unique_samples_per_second'&&
@@ -688,7 +692,7 @@ document.addEventListener('DOMContentLoaded', () => {
         node('line',{x1:bounds.left,y1:bounds.top,
             x2:bounds.left,y2:bounds.bottom,class:'plot-axis'});
         node('text',{x:450,y:313,'text-anchor':'middle'},
-            axis.label);
+            axisLabel);
         for(const run of series) {
             // Run slots provide stable colors even as selections change.
             const i=runs.findIndex(r=>r.job.id===run.job.id);
@@ -735,6 +739,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 artifact_lineage_root_id:job.artifact_lineage_root_id||job.id,
                 continuation_of_job_id:job.continuation_of_job_id||null,
                 status:job.status,
+                execution_diagnostic:job.execution_diagnostic||null,
+                ...(project==='tinybrains'?{profile_sha256:job.frozen_parameters?.profile_sha256||null}:{}),
                 final_resource_usage:job.final_resource_usage||null,
                 evaluation_stop:job.evaluation_stop||null,
                 last_evaluation:job.last_evaluation||null,
@@ -751,7 +757,8 @@ document.addEventListener('DOMContentLoaded', () => {
             x_axis:$('hub-compare-x-axis').value,
             metric:$('hub-compare-metric').value,
             curriculum_level:level===''?null:Number(level),
-            source:'Experiment Hub validated Ants training summaries',
+            source:project==='ants'?'Experiment Hub validated Ants training summaries':
+                'Experiment Hub validated project metrics',
             interpretation:'Observational curves, not benchmark or qualification evidence; cumulative X axes are not stage-normalized.',
             runs,
         };
@@ -762,7 +769,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const url=URL.createObjectURL(blob);
         const link=document.createElement('a');
         link.href=url;
-        link.download='ants-comparison-'+
+        link.download=project+'-comparison-'+
             exported.exported_at.replace(/[:.]/g,'-')+'.'+format;
         document.body.append(link);
         try{link.click();}finally{
