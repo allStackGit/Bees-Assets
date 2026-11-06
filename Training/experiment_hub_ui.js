@@ -314,9 +314,19 @@ document.addEventListener('DOMContentLoaded', () => {
             return 'Start authorized; awaiting first worker delivery';
         if(job.status==='start_requested'&&job.automation_start_paused)
             return 'Automatic Start suspended; inspect or request Stop';
-        return job.status==='stop_requested'&&
-            job.live_execution?.state==='stop_requested'
-            ?'Stop acknowledged; awaiting exit':fallback;
+        const source=job.evaluation_stop_evidence?'Evaluation':
+            job.stop_requested_at?'Operator':null;
+        if(job.status==='stop_requested') {
+            const prefix=source?source+' Stop':'Stop';
+            return job.live_execution?.state==='stop_requested'
+                ?prefix+' acknowledged; awaiting exit'
+                :prefix+' requested; awaiting worker confirmation';
+        }
+        if(job.status==='unverified'&&source)
+            return source+' Stop pending; native service state unverified';
+        if(source&&['finished','failed','stopped'].includes(job.status))
+            return fallback+' · '+source+' Stop was requested';
+        return fallback;
     }
     function selectTab(next) {
         if (!['design','train','monitor','compare','machines'].includes(next)) return;
@@ -707,6 +717,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 evaluation_stop:job.evaluation_stop||null,
                 last_evaluation:job.last_evaluation||null,
                 evaluation_stop_evidence:job.evaluation_stop_evidence||null,
+                stop_requested_at:job.stop_requested_at||null,
                 points:hubComparisonPoints({job,points:byJob.get(id)||[]},level),
             };
         }).filter(Boolean);
