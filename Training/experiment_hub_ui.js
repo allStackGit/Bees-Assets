@@ -496,12 +496,14 @@ document.addEventListener('DOMContentLoaded', () => {
     function renderComparisonEvaluations(runs) {
         const table=$('hub-compare-evaluation-rows');
         table.replaceChildren();
-        const suites=new Set(),counts=new Set();
+        const suites=new Set(),digests=new Set(),counts=new Set();
+        let missingDigest=false;
         for(const {job,slot} of runs) {
             const evidence=hubComparisonEvaluation(job);
             const row=document.createElement('tr');
             cell(row,slot+' · '+job.configuration_name);
             cell(row,evidence?.suite_id||job.evaluation_stop?.suite_id||'—');
+            cell(row,evidence?.suite_sha256||'—').classList.add('hub-checkpoint-digest');
             cell(row,evidence?evidence.successes.toLocaleString()+' / '+evidence.trials.toLocaleString():'—');
             cell(row,evidence?(evidence.successes/evidence.trials).toLocaleString(undefined,
                 {style:'percent',maximumFractionDigits:2}):'—');
@@ -513,17 +515,20 @@ document.addEventListener('DOMContentLoaded', () => {
             if(evidence) {
                 suites.add(evidence.suite_id);
                 counts.add(evidence.trials);
+                if(evidence.suite_sha256)digests.add(evidence.suite_sha256);
+                else missingDigest=true;
             }
         }
         if(!runs.length) {
             const row=document.createElement('tr');
-            cell(row,'Select runs to inspect their evaluation receipts.').colSpan=6;
+            cell(row,'Select runs to inspect their evaluation receipts.').colSpan=7;
             table.append(row);
         }
         feedback('hub-compare-evaluation-note',[
             suites.size>1?'Selected receipts use different suites. Compare rates within the same suite.':'',
+            digests.size>1?'Selected receipts use different suite definitions.':'',
             counts.size>1?'Selected receipts have different trial counts.':'',
-            'Matching suite IDs require the same approved scenario definition and seeds across workers.',
+            missingDigest?'Some receipts lack a suite fingerprint. A shared suite ID cannot verify matching scenarios.':'',
         ].filter(Boolean).join(' '));
     }
     function drawComparisonChart(runs,key,xKey) {
@@ -753,17 +758,20 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     function setEvaluationEditor(policy) {
         $('hub-evaluation-suite').value=policy?.suite_id??'';
+        $('hub-evaluation-digest').value=policy?.suite_sha256??'';
         $('hub-evaluation-trials').value=policy?.min_trials??'';
         $('hub-evaluation-rate').value=policy?.min_success_rate??'';
     }
     function evaluationFromEditor() {
         const suite=$('hub-evaluation-suite').value.trim();
+        const digest=$('hub-evaluation-digest').value.trim();
         const trials=$('hub-evaluation-trials').value;
         const rate=$('hub-evaluation-rate').value;
-        if(!suite&&!trials&&!rate)return null;
+        if(!suite&&!digest&&!trials&&!rate)return null;
         if(!suite||!trials||!rate||Number(rate)<=0)
             throw Error('Enter an approved suite ID, minimum trials, and a success rate greater than zero.');
-        return {suite_id:suite,min_trials:Number(trials),min_success_rate:Number(rate)};
+        return {suite_id:suite,min_trials:Number(trials),min_success_rate:Number(rate),
+            ...(digest?{suite_sha256:digest}:{})};
     }
     function display() {
         if(!state)return;

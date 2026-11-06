@@ -9,7 +9,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from experiment_hub_eval_io import SHA256, SUITE_ID, UUID, publish, read_bounded
+from experiment_hub_eval_io import SHA256, SUITE_ID, UUID, publish, read_bounded, suite_digest
 
 
 def read_suite(file):
@@ -78,7 +78,7 @@ def main():
         with tempfile.TemporaryDirectory(prefix="courier-eval-", dir=scratch) as work:
             alive = evaluate(project, checkpoint, args.checkpoint_sha256, args.config, suite, Path(work))
         receipt = {
-            "schema_version": 1, "suite_id": suite["suite_id"],
+            "schema_version": 1, "suite_id": suite["suite_id"], "suite_sha256": suite_digest(suite),
             "dispatch_id": args.dispatch_id, "checkpoint_sha256": args.checkpoint_sha256,
             "trials": suite["trials"], "successes": alive,
         }

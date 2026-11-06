@@ -13,25 +13,32 @@ const record=value=>value&&typeof value==='object'&&!Array.isArray(value);
 function evaluationPolicy(value) {
     if(value==null)return null;
     if(!record(value)||Object.keys(value).some(key=>
-        !['suite_id','min_trials','min_success_rate'].includes(key))||
+        !['suite_id','suite_sha256','min_trials','min_success_rate'].includes(key))||
         typeof value.suite_id!=='string'||!SUITE.test(value.suite_id)||
+        (Object.hasOwn(value,'suite_sha256')&&
+            (typeof value.suite_sha256!=='string'||!SHA256.test(value.suite_sha256)))||
         !trials(value.min_trials)||typeof value.min_success_rate!=='number'||
         !(value.min_success_rate>0&&value.min_success_rate<=1))
         throw Error('Evaluation stop needs a suite ID, minimum trials and a success rate in (0, 1].');
     return {suite_id:value.suite_id,min_trials:value.min_trials,
-        min_success_rate:value.min_success_rate};
+        min_success_rate:value.min_success_rate,
+        ...(value.suite_sha256?{suite_sha256:value.suite_sha256}:{})};
 }
 
 function evaluationEvidence(value,policy,dispatchId) {
     if(!record(value)||value.schema_version!==1||
         value.suite_id!==policy.suite_id||value.dispatch_id!==dispatchId||
+        (Object.hasOwn(value,'suite_sha256')&&
+            (typeof value.suite_sha256!=='string'||!SHA256.test(value.suite_sha256)))||
+        (policy.suite_sha256&&value.suite_sha256!==policy.suite_sha256)||
         typeof value.checkpoint_sha256!=='string'||!SHA256.test(value.checkpoint_sha256)||
         !trials(value.trials)||!Number.isSafeInteger(value.successes)||
         value.successes<0||value.successes>value.trials)
         throw Error('Invalid independent evaluation evidence for this suite and dispatch.');
     return {schema_version:1,suite_id:value.suite_id,dispatch_id:dispatchId,
         checkpoint_sha256:value.checkpoint_sha256,trials:value.trials,
-        successes:value.successes};
+        successes:value.successes,
+        ...(value.suite_sha256?{suite_sha256:value.suite_sha256}:{})};
 }
 function suiteIds(value) {
     if(!Array.isArray(value)||value.length<1||value.length>8||

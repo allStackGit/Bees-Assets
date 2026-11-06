@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Project-neutral bounded evaluation receipt file utilities."""
 
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -11,6 +12,10 @@ import tempfile
 UUID = re.compile(r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}")
 SUITE_ID = re.compile(r"[a-z][a-z0-9_-]{0,47}")
 SHA256 = re.compile(r"[a-f0-9]{64}")
+
+
+def suite_digest(suite: dict) -> str:
+    return hashlib.sha256(json.dumps(suite, sort_keys=True).encode()).hexdigest()
 
 
 def read_bounded(path: Path, limit: int) -> bytes:

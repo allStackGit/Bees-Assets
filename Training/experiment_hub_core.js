@@ -1002,6 +1002,7 @@ class ExperimentHub {
                 age>=0&&age<AGENT_HEARTBEAT_TTL_MS;
         }).map(job=>({job_id:job.id,dispatch_id:job.dispatch_id,
             artifact_lineage_root_id:job.artifact_lineage_root_id||job.id,
+            ...(job.evaluation_stop.suite_sha256?{suite_sha256:job.evaluation_stop.suite_sha256}:{}),
             min_trials:job.evaluation_stop.min_trials,
             min_success_rate:job.evaluation_stop.min_success_rate}));
     }
