@@ -8,7 +8,30 @@ const {validateProgress}=require('./experiment_hub_progress');
 
 const UUID=/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
 const PROFILE=/^[a-z][a-z0-9_-]{0,47}$/;
+const SHA256=/^[0-9a-f]{64}$/;
+const MAX_PROFILES=32;
 const TAIL_BYTES=256*1024;
+
+function tinyBrainsProfiles(value) {
+    if(!value||typeof value!=='object'||Array.isArray(value)||
+        Object.keys(value).length>MAX_PROFILES||
+        Object.entries(value).some(([id,sha])=>!PROFILE.test(id)||
+            typeof sha!=='string'||!SHA256.test(sha)))
+        throw Error('Invalid TinyBrains worker profile advertisement.');
+    return Object.fromEntries(Object.entries(value));
+}
+
+function supportsTinyBrainsProfile(machine,job) {
+    if(job.project_id!=='tinybrains')return true;
+    const p=job.frozen_parameters;
+    const profiles=machine.tinybrains_profiles;
+    return machine.agent_platform==='win32'&&job.resources?.gpu_count===0&&
+        p&&Object.keys(p).every(key=>['profile','profile_sha256','updates'].includes(key))&&
+        Number.isSafeInteger(p.updates)&&p.updates>=1&&p.updates<=10000000&&
+        typeof p.profile==='string'&&profiles&&Object.hasOwn(profiles,p.profile)&&
+        profiles[p.profile]===p.profile_sha256;
+}
+
 // The Windows owner starts workloads without a console or inherited streams.
 const TRAIN_ENTRY=[
     'import os, runpy, sys',
@@ -35,7 +58,8 @@ function createTinyBrainsAdapter({projectRoot,pythonPath,artifactRoot,profiles})
         !fs.statSync(path.join(project,'tools','tinybrains-0.5.0','tinybrains.exe')).isFile()||
         isWithin(project,artifacts)||isWithin(artifacts,project))
         throw Error('TinyBrains needs the Windows engine and a dedicated artifact directory outside the project.');
-    if(!profiles||typeof profiles!=='object'||Array.isArray(profiles)||!Object.keys(profiles).length)
+    if(!profiles||typeof profiles!=='object'||Array.isArray(profiles)||!Object.keys(profiles).length||
+        Object.keys(profiles).length>MAX_PROFILES)
         throw Error('Configure at least one locally approved TinyBrains CPU profile.');
     const configs=new Map(Object.entries(profiles).map(([id,config])=>{
         if(!PROFILE.test(id)||config?.runtime?.device!=='cpu'||
@@ -56,6 +80,7 @@ function createTinyBrainsAdapter({projectRoot,pythonPath,artifactRoot,profiles})
 
     return {
         executable,cwd:project,stop_policy:'terminate-group',
+        tinybrains_profiles:Object.fromEntries([...configs].map(([id,item])=>[id,item.sha256])),
         args(parameters,context) {
             const {profile,profile_sha256,updates}=parameters;
             const approved=configs.get(profile);
@@ -113,4 +138,4 @@ function createTinyBrainsAdapter({projectRoot,pythonPath,artifactRoot,profiles})
         },
     };
 }
-module.exports={createTinyBrainsAdapter};
+module.exports={createTinyBrainsAdapter,tinyBrainsProfiles,supportsTinyBrainsProfile};
