@@ -70,6 +70,10 @@ pub struct NativeDecisionCadenceMeasurements {
 pub struct NativeDecisionCadence {
     period: NonZeroU32,
     bound_at_tick: BTreeMap<i64, u64>,
+    /// Group-size counts by binding tick modulo the decision period.
+    /// Rebuilt only when the authoritative policy roster changes.
+    due_by_phase: BTreeMap<u64, usize>,
+    latest_binding_tick: u64,
     observed_roster_revision: Option<u64>,
     measurements: NativeDecisionCadenceMeasurements,
 }
@@ -79,6 +83,8 @@ impl NativeDecisionCadence {
         Self {
             period,
             bound_at_tick: BTreeMap::new(),
+            due_by_phase: BTreeMap::new(),
+            latest_binding_tick: 0,
             observed_roster_revision: None,
             measurements: NativeDecisionCadenceMeasurements::default(),
         }
@@ -107,6 +113,16 @@ impl NativeDecisionCadence {
         for ship_id in combat.bound_policy_agent_ids() {
             self.bound_at_tick.entry(ship_id).or_insert(completed_ticks);
         }
+        // For any future tick beyond the newest binding, the strict
+        // next_tick > bound_at condition is automatically satisfied.
+        // Equal modulo-period phases are therefore exactly the due group.
+        self.due_by_phase.clear();
+        self.latest_binding_tick = 0;
+        let period = u64::from(self.period.get());
+        for &bound_at in self.bound_at_tick.values() {
+            *self.due_by_phase.entry(bound_at % period).or_default() += 1;
+            self.latest_binding_tick = self.latest_binding_tick.max(bound_at);
+        }
         self.observed_roster_revision = Some(revision);
         self.measurements.roster_reconciliations += 1;
     }
@@ -131,6 +147,13 @@ impl NativeDecisionCadence {
     }
 
     pub fn due_count(&self, next_tick: u64) -> usize {
+        if next_tick > self.latest_binding_tick {
+            return self.due_by_phase.get(
+                &(next_tick % u64::from(self.period.get()))
+            ).copied().unwrap_or(0);
+        }
+        // Preserve the public query's semantics for past/current ticks:
+        // newly bound controllers must not be due at their bind tick.
         self.due_agent_ids(next_tick).count()
     }
 }
