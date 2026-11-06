@@ -23,6 +23,9 @@ pub(super) struct HealRun {
     formation: SquadFormationOptions,
     healing_timer: Option<ScaledTimer>,
     cleanup_scratch: Vec<(i64, bool)>,
+    /// Reused removal membership avoids quadratic Vec::retain calls
+    /// when a large group completes healing or loses its Beehive.
+    released_scratch: HashSet<i64>,
     pub(super) earned_tsv: i64,
 }
 
@@ -83,6 +86,7 @@ impl HealRun {
             formation: squad.formation,
             healing_timer: None,
             cleanup_scratch: Vec::new(),
+            released_scratch: HashSet::new(),
             earned_tsv: 0,
         };
         if let Err(err) = run.assign_slots(world) {
@@ -168,12 +172,16 @@ impl HealRun {
                 self.cleanup_scratch.push((id, false));
             }
         }
+        self.released_scratch.clear();
         for &(id, requeue) in &self.cleanup_scratch {
             world.release_beehive_healing_slot(id);
             self.assigned.remove(&id);
-            self.waiting.retain(|&x| x != id);
-            self.healing.retain(|&x| x != id);
+            self.released_scratch.insert(id);
             if requeue { self.pending.push_back(id); }
+        }
+        if !self.released_scratch.is_empty() {
+            self.waiting.retain(|id| !self.released_scratch.contains(id));
+            self.healing.retain(|id| !self.released_scratch.contains(id));
         }
     }
 
@@ -288,10 +296,14 @@ impl HealRun {
                     self.cleanup_scratch.push((id, false));
                 }
             }
+            self.released_scratch.clear();
             for &(id, _) in &self.cleanup_scratch {
                 world.release_beehive_healing_slot(id);
                 self.assigned.remove(&id);
-                self.healing.retain(|&x| x != id);
+                self.released_scratch.insert(id);
+            }
+            if !self.released_scratch.is_empty() {
+                self.healing.retain(|id| !self.released_scratch.contains(id));
             }
             self.assign_slots(world)?;
             self.healing_timer.as_mut()
