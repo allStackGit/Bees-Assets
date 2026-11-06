@@ -315,6 +315,7 @@ impl NativeLevelEventProcessor {
         enemy_owner: SquadLifetime,
         weapons: &[NativeBombWeapon],
         enemies: &[NativeEnemyTargetStats],
+        is_carrier_squad: bool,
     ) -> Result<StrategyReceiptAction, StrategyReceiptFailure> {
         // A late server reply after a terminal/aborted match may only
         // discard its reservations. Never rearm ship commands or bombs.
@@ -328,7 +329,8 @@ impl NativeLevelEventProcessor {
             return Ok(StrategyReceiptAction::DiscardReservations(ids));
         }
         let bombing = NativeBombingActivation {
-            roster: &self.roster, enemy_owner, weapons, enemies,
+            roster: &self.roster, enemy_owner, is_carrier_squad,
+            weapons, enemies,
         };
         self.commands.apply_strategy_receipt_with_bombing(
             world, navigation, random, squad, friendlies,

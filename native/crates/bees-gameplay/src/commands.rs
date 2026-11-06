@@ -54,6 +54,7 @@ pub use self::bombing::{
     NativeBombWeapon, NativeBombingActivation, NativeBombingTimerSnapshot,
     NativeBombingRun, assign_initial_bombing_run_targets,
 };
+use self::bombing::defenseless_carrier_strikers;
 pub use self::aggressive::{
     NativeAggressiveCommandSnapshot, assemble_aggressive_snapshot_from_live_weapons,
 };
@@ -242,11 +243,11 @@ impl From<CombatWorldError> for GameCommandError {
 pub enum StrategyReceiptAction {
     Applied(Activation),
     DiscardReservations(Vec<i64>),
-    /// Unity Guard and Mining ban unavailable strategies until the next
-    /// eligibility reset; the host must update the live banned-strat set.
+    /// Host applies each authored ban to its current Squad.BannedStrats
+    /// and discards both unearned server reservations.
     BanAndDiscardReservations {
         reservation_ids: Vec<i64>,
-        command: LocalCommandKind,
+        strategies: Vec<LocalCommandKind>,
     },
 }
 
@@ -673,6 +674,30 @@ impl NativeSquadCommandDirector {
                 selection.shooting_outcome_id,
             ]));
         }
+        // Unity checks a CarrierSquad's defenseless Strikers before
+        // Command.Execute. Returning the source five bans here preserves
+        // unused outcome identities without starting an ineffective run.
+        if resolved.local_command == LocalCommandKind::BombingRun &&
+            bombing.is_some_and(|input|
+                input.weapons.len() == squad.members.len() &&
+                defenseless_carrier_strikers(
+                    world, squad, input.is_carrier_squad,
+                )
+            ) {
+            return Ok(StrategyReceiptAction::BanAndDiscardReservations {
+                reservation_ids: vec![
+                    resolved.command_outcome_id,
+                    resolved.shooting_outcome_id,
+                ],
+                strategies: vec![
+                    LocalCommandKind::Aggressive,
+                    LocalCommandKind::CircleSquad,
+                    LocalCommandKind::RightSwipe,
+                    LocalCommandKind::LeftSwipe,
+                    LocalCommandKind::InAndOut,
+                ],
+            });
+        }
         match self.activate_hivemind_with_bombing(
             world, navigation, random, squad, friendlies, settings, resolved,
             bombing,
@@ -685,7 +710,8 @@ impl NativeSquadCommandDirector {
                 if matches!(unavailable.local_command,
                     LocalCommandKind::Guard | LocalCommandKind::Mining) {
                     Ok(StrategyReceiptAction::BanAndDiscardReservations {
-                        reservation_ids, command: unavailable.local_command,
+                        reservation_ids,
+                        strategies: vec![unavailable.local_command],
                     })
                 } else {
                     Ok(StrategyReceiptAction::DiscardReservations(reservation_ids))
@@ -854,6 +880,7 @@ impl NativeSquadCommandDirector {
                 let Some(run) = NativeBombingRun::start(
                     world, input.roster, random, squad, input.enemy_owner,
                     &selection, input.weapons, input.enemies,
+                    input.is_carrier_squad,
                 )? else {
                     self.measurements.unavailable += 1;
                     return Ok(Activation::Unavailable(selection));

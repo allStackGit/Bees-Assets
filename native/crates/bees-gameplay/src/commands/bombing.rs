@@ -1,8 +1,8 @@
 //! Source BombingRun.Execute's initial per-bomber targeting transaction.
 //! The Level owns authored Bomb.Weapon.Id/Power and GetShips order; the
 //! canonical combat world owns damage reservations and physical targeting.
-//! The active timer supports Fire Barges and Yellow Jackets. Striker's
-//! carrier-return state machine is separate and is not yet executable.
+//! One BombingRun timer drives Fire Barges, Yellow Jackets and Strikers;
+//! the Striker's persistent readiness/reload remains CombatWorld-owned.
 
 use std::collections::HashSet;
 
@@ -34,6 +34,8 @@ pub struct NativeBombWeapon {
 pub struct NativeBombingActivation<'a> {
     pub roster: &'a NativeSquadRoster,
     pub enemy_owner: SquadLifetime,
+    /// Authored Unity Squad.IsCarrierSquad; never infer from ship types.
+    pub is_carrier_squad: bool,
     pub weapons: &'a [NativeBombWeapon],
     pub enemies: &'a [NativeEnemyTargetStats],
 }
@@ -301,6 +303,24 @@ fn has_living_game_striker_carrier(
         )
 }
 
+/// Source CheckIfStrikersAreDefenseless is an Execute-time test ONLY for
+/// a CarrierSquad. A non-null Carrier counts even if the ship is dead.
+/// Do not reserve Bombs or install a timer for this unavailable command.
+pub(super) fn defenseless_carrier_strikers(
+    world: &CombatWorld, squad: NativeSquadOrder<'_>,
+    is_carrier_squad: bool,
+) -> bool {
+    is_carrier_squad && !squad.members.is_empty() &&
+        squad.members.iter().all(|member|
+            world.ship(member.ship_id).is_some_and(|ship|
+                ship.ship_type == 19 && !ship.vitals.is_dead()
+            ) &&
+            world.game_striker_bomb_ready(member.ship_id) == Some(false) &&
+            world.game_striker_carrier(member.ship_id)
+                .is_some_and(|carrier| carrier.carrier_id.is_none())
+        )
+}
+
 /// Unity's one BombingRun command state for mixed authored bombers.
 /// Striker's ship-owned bomb readiness is separate from the command's
 /// per-run completed/returned flags. Physical damage and fuses stay in
@@ -331,6 +351,7 @@ impl NativeBombingRun {
         selection: &ResolvedHiveMindCommand,
         weapons: &[NativeBombWeapon],
         enemies: &[NativeEnemyTargetStats],
+        is_carrier_squad: bool,
     ) -> Result<Option<Self>, GameCommandError> {
         let mut has_contact_bombers = false;
         let mut only_strikers = true;
@@ -367,6 +388,9 @@ impl NativeBombingRun {
             }
         }
         strikers.sort_unstable_by_key(|s| s.ship_id);
+        if defenseless_carrier_strikers(world, squad, is_carrier_squad) {
+            return Ok(None);
+        }
         let mut target = NativeAttackTarget::new(enemy_owner.squad_id);
         target.validate(squad.owner, enemy_owner)?;
         if !assign_initial_bombing_run_targets(
