@@ -1426,7 +1426,9 @@ document.addEventListener('DOMContentLoaded', () => {
             cell(tr,(j.status==='waiting_predecessor'
                     ?j.predecessor_wait?.reason||'Waiting for predecessor'
                     :nativeJobLabel(j,j.status))+
-                (j.capacity_released_at?' · capacity released':''));
+                (j.capacity_released_at?' · capacity released':'')+
+                (['failed','unverified'].includes(j.status)&&j.execution_diagnostic
+                    ?' · '+j.execution_diagnostic:''));
             cell(tr,learningSummary(j));
             cell(tr,progress?.source_modified_at
                 ?new Date(progress.source_modified_at).toLocaleString():'—');
