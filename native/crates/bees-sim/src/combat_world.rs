@@ -563,6 +563,9 @@ pub struct GameBombMeasurements {
     pub striker_contact_checks: u64,
     pub striker_contact_misses: u64,
     pub striker_bombs_dropped: u64,
+    pub yellow_jacket_contact_checks: u64,
+    pub yellow_jacket_contact_misses: u64,
+    pub yellow_jacket_detonations: u64,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

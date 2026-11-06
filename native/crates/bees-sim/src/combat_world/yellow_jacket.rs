@@ -1,4 +1,4 @@
-//! Policy-driven YellowJacket.TryToDetonate and Detonate.
+//! YellowJacket contact detonation shared by policy and game commands.
 //! Source: Scripts/Entities/Ships/YellowJacket.cs.
 //! These are direct simultaneous health hits, not physical projectiles.
 
@@ -55,6 +55,81 @@ impl CombatWorld {
         };
         let target_index = *self.ship_by_id.get(&target_id)
             .ok_or(CombatWorldError::UnknownShip)?;
+        let detonated = self.resolve_yellow_jacket_detonation(
+            ship_index, target_index, power, 0,
+        )?;
+        self.policy_special_measurements.yellow_jacket_detonations +=
+            u64::from(detonated);
+        Ok(detonated)
+    }
+
+    /// Source YellowJacket.OnTriggerEnter2D, for an active game BombingRun.
+    /// The Level supplies the real currently commanded contact and outcome
+    /// identity; the world authenticates its selected Bomb.TargetShip and
+    /// checks authored hulls before applying the shared reciprocal hits.
+    /// The resulting events belong to the current combat tick and must be
+    /// reconciled by the owning Level before clearing them.
+    pub fn detonate_game_yellow_jacket_on_contact(
+        &mut self, ship_id: i64, contacted_target_id: i64,
+        command_outcome_id: i64, collisions: &CollisionMatrix,
+    ) -> Result<bool, CombatWorldError> {
+        if command_outcome_id <= 0 {
+            return Err(CombatWorldError::InvalidBombTarget);
+        }
+        let &ship_index = self.ship_by_id.get(&ship_id)
+            .ok_or(CombatWorldError::UnknownShip)?;
+        if self.ships[ship_index].ship_type != 22 {
+            return Err(CombatWorldError::InvalidBombTarget);
+        }
+        let body = &self.physics.ships()[ship_index];
+        if body.motion.is_policy_controlled && !body.motion.user_controlled {
+            return Err(CombatWorldError::UnsupportedPolicyActions);
+        }
+        if self.frozen_after_elimination ||
+            self.ships[ship_index].vitals.is_dead() || !body.active {
+            return Ok(false);
+        }
+        let Some(&target_index) = self.ship_by_id.get(&contacted_target_id)
+        else { return Ok(false) };
+        if self.ships[target_index].vitals.is_dead() ||
+            !self.physics.ships()[target_index].active ||
+            self.ships[target_index].side == self.ships[ship_index].side {
+            return Ok(false);
+        }
+        let Some(&weapon_id) = self.game_bomb_weapon_by_ship.get(&ship_id)
+        else { return Ok(false) };
+        let Some(held) = self.reservations.held_by(weapon_id)
+        else { return Ok(false) };
+        if held.target_id != contacted_target_id ||
+            held.side != self.ships[ship_index].side {
+            return Ok(false);
+        }
+        self.game_bomb_measurements.yellow_jacket_contact_checks += 1;
+        if !self.physics.ship_hulls_overlap(
+            ship_index, target_index, collisions,
+        ) {
+            self.game_bomb_measurements.yellow_jacket_contact_misses += 1;
+            return Ok(false);
+        }
+        // Unity releases Bomb.TargetShip before synchronously applying
+        // both hits. No projectile or independent damage ledger is created.
+        self.reservations.release(weapon_id);
+        let detonated = self.resolve_yellow_jacket_detonation(
+            ship_index, target_index, held.amount, command_outcome_id,
+        )?;
+        self.game_bomb_measurements.yellow_jacket_detonations +=
+            u64::from(detonated);
+        Ok(detonated)
+    }
+
+    /// Both controller types use the same physical simultaneous-damage
+    /// transaction, death path, combat events and TSV accounting.
+    fn resolve_yellow_jacket_detonation(
+        &mut self, ship_index: usize, target_index: usize,
+        power: i32, command_outcome_id: i64,
+    ) -> Result<bool, CombatWorldError> {
+        let ship_id = self.ships[ship_index].entity_id;
+        let target_id = self.ships[target_index].entity_id;
         let ship_side = self.ships[ship_index].side;
         let target_side = self.ships[target_index].side;
 
@@ -73,11 +148,12 @@ impl CombatWorld {
         self.events.push(CombatEvent::YellowJacketDetonated {
             ship_id, target_id,
         });
-        self.policy_special_measurements.yellow_jacket_detonations += 1;
-        // Direct hits carry no invented shot or command identity.
+        // Policy contacts carry no command ID. Game contacts retain the
+        // originating BombingRun for outgoing damage. Reciprocal damage is
+        // physically real but does not invent a command for the opponent.
         self.events.push(CombatEvent::Hit(HitEvent::new(
             0, 0, ship_id, target_id, ship_side, target_side,
-            0, DamageSource::Bomb, enemy_delta, false,
+            command_outcome_id, DamageSource::Bomb, enemy_delta, false,
         )));
         // Unity's historical LogHitStats credits the contacted ship, but
         // RL RecordUnattributedTsvLoss suppresses its attacker reward.
