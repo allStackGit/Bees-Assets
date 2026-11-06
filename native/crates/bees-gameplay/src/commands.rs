@@ -4,9 +4,9 @@
 //! invokes the same shared physics world and formation navigation used by
 //! user orders, the render client, and headless evaluation.
 //!
-//! Hold, MoveToRandom, Patrol, Retreat, ClosestFriendly and Mining have
-//! source-defined movement/timer lifecycles. All mining extraction uses the
-//! shared physical CombatWorld, with Level-owned persistent fleet credits.
+//! Hold, MoveToRandom, Patrol, Retreat, ClosestFriendly, Mining and Heal
+//! have source-defined movement/timer lifecycles. Extraction, healing and
+//! reservations use one shared CombatWorld; fleet credits remain Level-owned.
 //! Other strategies remain explicitly unsupported until their gameplay
 //! mechanics and reward effects are implemented. Caller-owned
 //! targeting/shooting and command reward accumulation are not fabricated.
@@ -165,10 +165,10 @@ pub enum GameCommandError {
     InvalidEnemy,
     InvalidFriendlies,
     InvalidMiningTarget,
-    InvalidMiningAccounting,
+    InvalidCapabilityAccounting,
     MissingOriginalShipHealth(i64),
     Squad(SquadOrderError),
-    Mining(CombatWorldError),
+    World(CombatWorldError),
 }
 
 impl From<SquadOrderError> for GameCommandError {
@@ -176,7 +176,7 @@ impl From<SquadOrderError> for GameCommandError {
 }
 
 impl From<CombatWorldError> for GameCommandError {
-    fn from(value: CombatWorldError) -> Self { Self::Mining(value) }
+    fn from(value: CombatWorldError) -> Self { Self::World(value) }
 }
 
 /// The only safe outcome of receiving a strategy for a dead/superseded
@@ -186,7 +186,7 @@ impl From<CombatWorldError> for GameCommandError {
 pub enum StrategyReceiptAction {
     Applied(Activation),
     DiscardReservations(Vec<i64>),
-    /// Unity Guard and Mining ban unavailable strategies until the next
+    /// Unity Guard, Mining and Heal ban unavailable strategies until the next
     /// eligibility reset; the host must update the live banned-strat set.
     BanAndDiscardReservations {
         reservation_ids: Vec<i64>,
@@ -231,16 +231,17 @@ pub struct FinishedNativeCommand {
     pub owner: SquadLifetime,
     pub selection: ResolvedHiveMindCommand,
     pub cause: CommandFinishCause,
-    /// Unity Mining.Mine accumulates the actual extraction as Command.Tsv.
-    /// This value cannot be reconstructed from ship health or final cargo.
+    /// Unity Mining.Mine and Heal.HealShips add their actual minerals or
+    /// recovered TSV to Command.Tsv. Physical outcomes are not inferable
+    /// from the final ship state at command settlement.
     pub capability_command_tsv: Option<i64>,
 }
 
 impl FinishedNativeCommand {
     /// The actual gameplay and damage-accounting layer decides whether
     /// shooting/targeting influenced the outcome. The supplied command_tsv
-    /// excludes mining (but includes any real damage or other command TSV);
-    /// Unity Mining.Mine adds the extracted amount to that value. Inactive
+    /// excludes authored capability TSV (but includes real damage or
+    /// other command TSV). Mining.Mine and Heal.HealShips add earned value. Inactive
     /// reservations are explicitly discarded, not given synthetic credit.
     pub fn settle(
         self,
