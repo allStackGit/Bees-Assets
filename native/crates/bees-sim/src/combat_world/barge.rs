@@ -253,6 +253,29 @@ impl CombatWorld {
         Ok(())
     }
 
+    /// Unity MapBorder.OnTriggerEnter2D calls StopCharge when a game Barge
+    /// is still in its forward-charge phase. This consumes the existing
+    /// primary-hull entry stream, not another all-ship border scan.
+    /// Charge stops only on ENTER, not while resting inside the border.
+    pub(super) fn resolve_game_barge_border_contacts(
+        &mut self,
+    ) -> Result<(), CombatWorldError> {
+        for i in 0..self.physics.ship_obstacle_entries().len() {
+            let contact = self.physics.ship_obstacle_entries()[i];
+            let Some(&obstacle_index) =
+                self.obstacle_by_id.get(&contact.obstacle_id)
+            else { continue };
+            if self.obstacles[obstacle_index].kind != ObstacleKind::MapBorder {
+                continue;
+            }
+            if self.game_barge_charges.get(&contact.ship_id)
+                .is_some_and(|charge| charge.phase == 2) {
+                self.stop_game_barge_charge(contact.ship_id)?;
+            }
+        }
+        Ok(())
+    }
+
     /// Shared real hull-contact broadphase and identical Barge recoil
     /// transaction used by policy charges. No guessed contact radius.
     pub(super) fn resolve_game_barge_contacts(

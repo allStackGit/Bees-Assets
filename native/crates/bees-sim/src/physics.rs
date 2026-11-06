@@ -602,10 +602,13 @@ pub struct ObstacleBody {
     pub angular_velocity_degrees: f32,
     pub layer: u8,
     pub active: bool,
-    /// Enable ship/obstacle and obstacle/obstacle hull contact reporting.
-    /// Gameplay selects the participants; static decorations do not initiate
-    /// expensive pair searches.
+    /// Participants that initiate obstacle/obstacle pair and authored
+    /// proximity searches (collision asteroids, not map borders).
     pub tracks_body_contacts: bool,
+    /// Participants in the existing ship/obstacle entry stream. Map
+    /// borders need ship enter events without initiating obstacle pair
+    /// searches over every border segment.
+    pub tracks_ship_contacts: bool,
     collider: WorldCollider,
     proximity_layer: Option<u8>,
     proximity_collider: Option<WorldCollider>,
@@ -634,6 +637,7 @@ impl ObstacleBody {
         let mut body = Self {
             id, pose, linear_velocity, angular_velocity_degrees, layer,
             active: true, tracks_body_contacts: false,
+            tracks_ship_contacts: false,
             collider: WorldCollider::new(shape)?,
             proximity_layer: None, proximity_collider: None,
             clearance_layer: None, clearance_collider: None,
@@ -1499,7 +1503,7 @@ impl KinematicPhysics {
             self.counts.broadphase_candidates += self.candidates.len() as u64;
             for &index in &self.candidates {
                 let obstacle = &self.obstacles[index];
-                if !obstacle.active || !obstacle.tracks_body_contacts ||
+                if !obstacle.active || !obstacle.tracks_ship_contacts ||
                     !collision_matrix.allows(ship.layer, obstacle.layer) {
                     continue;
                 }

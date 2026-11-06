@@ -2152,6 +2152,10 @@ impl CombatWorld {
         let obstacle_kind = obstacle.kind;
         let entity_id = obstacle.entity_id;
         body.tracks_body_contacts = is_asteroid;
+        // MapBorder.OnTriggerEnter2D needs only ship entries. Keep the
+        // old asteroid-only obstacle-pair and proximity search cost.
+        body.tracks_ship_contacts =
+            is_asteroid || obstacle_kind == ObstacleKind::MapBorder;
         if let Some(&index) = self.free_obstacle_slots.last() {
             self.physics.replace_ended_obstacle(index, body)?;
             self.free_obstacle_slots.pop();
@@ -3593,6 +3597,10 @@ impl CombatWorld {
         let new_contacts = self.physics.step(dt, collision_matrix)?;
         self.pending_contacts.extend_from_slice(new_contacts);
         self.update_policy_projectile_near_passes(dt);
+        // Source MapBorder.OnTriggerEnter2D can end Barge.ChargeForward
+        // immediately. Reuse the physics ship/obstacle entry stream before
+        // accepting any later enemy-hull contacts in this fixed step.
+        self.resolve_game_barge_border_contacts()?;
         self.resolve_policy_barge_contacts(collision_matrix)?;
         self.resolve_game_barge_contacts(collision_matrix)?;
         // Striker.CheckCarrierReload runs on the same Level timer clock.
