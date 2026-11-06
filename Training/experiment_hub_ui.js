@@ -703,6 +703,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 artifact_lineage_root_id:job.artifact_lineage_root_id||job.id,
                 continuation_of_job_id:job.continuation_of_job_id||null,
                 status:job.status,
+                final_resource_usage:job.final_resource_usage||null,
                 points:hubComparisonPoints({job,points:byJob.get(id)||[]},level),
             };
         }).filter(Boolean);
@@ -1305,7 +1306,13 @@ document.addEventListener('DOMContentLoaded', () => {
             cell(tr,learningSummary(j));
             cell(tr,progress?.source_modified_at
                 ?new Date(progress.source_modified_at).toLocaleString():'—');
-            const measured=live?[
+            const final=j.final_resource_usage;
+            const measured=final?[
+                final.peak_observed_memory_mb==null?null:
+                    final.peak_observed_memory_mb.toLocaleString()+' MiB highest sampled RAM',
+                final.cpu_time_ns_high_water==null?null:
+                    (final.cpu_time_ns_high_water/1e9).toFixed(2)+' highest reported CPU seconds',
+            ].filter(Boolean).join(' · '):live?[
                 live.memory_current_mb==null?null:
                     live.memory_current_mb.toLocaleString()+' MiB RAM',
                 live.cpu_time_ns==null?null:
@@ -1313,7 +1320,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 Number.isFinite(live.cpu_cores_used)
                     ?live.cpu_cores_used.toFixed(2)+' average CPU cores':null,
             ].filter(Boolean).join(' · '):'';
-            cell(tr,measured||'—');
+            const resourceCell=cell(tr,measured||'—');
+            if(final)resourceCell.title='Retained samples from '+final.first_observed_at+
+                ' to '+final.last_observed_at+'. Earlier samples may have been lost on coordinator restart.';
             $('hub-monitor-rows').append(tr);
         }
         if(!records.length) {

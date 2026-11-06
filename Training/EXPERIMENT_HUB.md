@@ -1459,6 +1459,16 @@ triggering report, and requests Stop through the existing native supervisor.
 The job retains capacity until terminal handling, and a stopped stage never
 automatically advances a sequence. Training progress has no stopping authority.
 
+### Completed-job resource observations
+
+When a native job reaches a verified terminal state, the Hub retains the
+highest reported CPU time, the highest sampled RAM, and the observed
+time window. Monitor, the JSON comparison export and `get state` expose
+the retained summary after restart. Missing counters remain null. The
+summary covers the observations still in memory when the job ends, plus
+any terminal counters. A coordinator restart before completion can
+shorten that window. Sampled RAM does not measure the OS lifetime peak.
+
 ## Not yet implemented
 
 Production installation and qualification of project-specific adapters,
