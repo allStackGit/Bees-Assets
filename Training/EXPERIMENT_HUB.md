@@ -1466,6 +1466,16 @@ triggering report, and requests Stop through the existing native supervisor.
 The job retains capacity until terminal handling, and a stopped stage never
 automatically advances a sequence. Training progress has no stopping authority.
 
+### Linux terminal recovery
+
+New Linux units write a private `ExecStopPost` receipt before systemd
+can unload them. A missing unit can be recovered from the receipt only
+after the local supervisor previously verified that job's live kernel
+limits. The receipt must match its job and lease. A missing unit without
+that evidence remains unverified. The supervisor retains terminal CPU
+time when systemd still exposes the counter. Real systemd qualification
+must exercise both a natural exit and an explicit Stop.
+
 ### Completed-job resource observations
 
 When a native job reaches a verified terminal state, the Hub retains the
