@@ -249,7 +249,7 @@ function independentSequenceComplete(job) {
 function nativeStartReadiness(snapshot, job) {
     const block=reason=>({eligible:false,reason});
     if(!job||job.status!=='waiting_adapter'||
-        job.adapter!=='unconfigured'||job.project_id==='bees')
+        job.adapter!=='unconfigured'||['bees','ants'].includes(job.project_id))
         return block('Only queued non-Bees jobs support Hub native starts.');
     if(!job.lease_id)
         return block('Coordinate machine capacity before requesting Start.');
@@ -373,14 +373,9 @@ function waitingStageReason(job,byId) {
                     status='needs_review';
                     explanation='stopped without an eligible released evaluation result; dependent jobs remain blocked';
                 }
-            }else if(parent.project_id==='tinybrains') {
-                status='needs_review';
-                explanation='stopped without finishing; cancel the queued TinyBrains continuation stages';
             }else {
-                status='operator_approval';
-                explanation=parent.capacity_released_at
-                    ?'stopped; explicit checkpoint-risk approval is required'
-                    :'stopped; capacity release and explicit checkpoint-risk approval are required';
+                status='needs_review';
+                explanation='stopped without finishing; checkpoint continuation requires a finished predecessor';
             }
         }else {
             status='needs_review';explanation=
@@ -816,7 +811,7 @@ class ExperimentHub {
             }
             const pending=snapshot.jobs.filter(j=>
                 j.adapter==='unconfigured'&&j.status==='waiting_adapter'&&
-                j.project_id!=='bees');
+                !['bees','ants'].includes(j.project_id));
             // Claims and starts can become eligible at different times,
             // so fairness needs an independent cursor for each operation.
             const pendingStarts=fairPending(pending,session.last_started_project_id);
@@ -956,6 +951,7 @@ class ExperimentHub {
     }
     evaluationTargets(projectId,machineId,suiteId) {
         this.project(projectId);
+        if(projectId==='ants')return [];
         if(!ID.test(machineId||'')||!ID.test(suiteId||'')||
             !this.state.machines.some(machine=>machine.id===machineId))
             throw Error('Select a registered machine and evaluation suite.');
@@ -1000,6 +996,8 @@ class ExperimentHub {
     offerIn(next, projectId, machineId, wanted, jobId = null,
         machine=this.snapshot().machines.find(m=>m.id===machineId)) {
         const project=this.project(projectId);
+        if(project.id==='ants')
+            throw Error('Ants-v2 Hub integration is retired; no new capacity claims.');
         if(!machine || machine.id!==machineId || machine.status!=='connected')
             throw Error('Machine must have a currently authenticated agent.');
         const place=resourcePlacements([machine],next.reservations,wanted)[0];
@@ -1143,6 +1141,8 @@ class ExperimentHub {
         const project=allProjects?null:this.project(value.project_id);
         if(project?.adapter==='bees')
             throw Error('Bees uses its existing coordinator, not Hub allocation.');
+        if(project?.id==='ants')
+            throw Error('Ants-v2 Hub integration is retired.');
         const requested=value.job_ids;
         if(requested!==undefined && (!Array.isArray(requested) ||
             requested.length<1 || requested.length>100 ||
@@ -1152,7 +1152,7 @@ class ExperimentHub {
         const next=copy(this.state);
         const candidates=next.jobs.filter(j=>
             (allProjects||j.project_id===project.id) &&
-            j.adapter==='unconfigured' &&
+            j.project_id!=='ants'&&j.adapter==='unconfigured' &&
             j.status==='waiting_adapter' &&
             (requested===undefined || requested.includes(j.id)));
         // Fair interleaving across project queues, preserving FIFO within
@@ -1496,8 +1496,8 @@ class ExperimentHub {
                 throw Error('Native execution report requires an acknowledged lease.');
             // Metrics cannot grant authority or change status: they are
             // validated only after machine/job/dispatch ownership checks.
-            const progress=report.progress==null?null:
-                validateProgress(report.progress,job.project_id);
+            const progress=report.progress==null||job.project_id==='ants'
+                ?null:validateProgress(report.progress,job.project_id);
             if(['finished','failed','stopped'].includes(job.status))continue;
             if(!['start_requested','launch_requested','running',
                     'stop_requested','unverified'].includes(job.status))
@@ -1513,7 +1513,7 @@ class ExperimentHub {
             // telemetry and comparison samples. A delayed older report
             // must not make a terminal job appear to be running again.
             let evaluation=null,evaluationIssue=null;
-            if(state==='running'&&job.evaluation_stop&&
+            if(state==='running'&&job.project_id!=='ants'&&job.evaluation_stop&&
                 supportsEvaluation(evaluationSuites,job)) {
                 evaluationIssue=typeof report.evaluation_issue==='string'
                     ?report.evaluation_issue.slice(0,160):null;
@@ -1561,8 +1561,7 @@ class ExperimentHub {
             // This observation never authorizes an execution transition.
             if(['finished','failed','stopped'].includes(job.status)) {
                 if(resources)job.final_resource_usage=resources;
-                const source=job.project_id==='ants'
-                    ?'ants-summary-v1':'hub-metrics-v1';
+                const source='hub-metrics-v1';
                 const latest=previous?.dispatch_id===job.dispatch_id&&
                     previous.progress?.source===source
                     ?previous.progress:null;
@@ -1944,6 +1943,7 @@ class ExperimentHub {
     }
     addProject(value) {
         if (!object(value) || !ID.test(String(value.id||''))) throw Error('Use a lowercase project ID.');
+        if(value.id==='ants')throw Error('Ants-v2 Hub integration is retired; use a distinct project ID.');
         if (this.state.projects.some(p=>p.id===value.id)) throw Error('Project already exists.');
         // New projects are definitions only until a trusted server-side adapter is installed.
         const project = {
@@ -1958,6 +1958,7 @@ class ExperimentHub {
     saveConfiguration(value) {
         if (!object(value)) throw Error('Missing configuration.');
         const project = this.project(value.project_id);
+        if(project.id==='ants')throw Error('Ants-v2 Hub integration is retired.');
         const params = config(value.parameters);
         const stop=evaluationPolicy(value.evaluation_stop);
         if(stop&&project.adapter==='bees')
@@ -2033,8 +2034,8 @@ class ExperimentHub {
             const job=this.queueIn(next,{
                 ...stage,continuation_of_job_id:predecessor,
             });
-            if(!['ants','tinybrains'].includes(job.project_id))
-                throw Error('Checkpoint pipelines require the Ants or TinyBrains adapter.');
+            if(job.project_id!=='tinybrains')
+                throw Error('Checkpoint pipelines require the TinyBrains adapter.');
             jobs.push(copy(job));
             predecessor=job.id;
         }
@@ -2049,6 +2050,8 @@ class ExperimentHub {
         if (!selected) throw Error('Saved configuration not found.');
         const project=next.projects.find(p=>p.id===selected.project_id);
         if(!project)throw Error('Unknown project.');
+        if(project.id==='ants')
+            throw Error('Ants-v2 Hub integration is retired.');
         if (project.adapter === 'bees')
             throw Error('Bees jobs use the existing validated Bees experiment queue.');
         if (project.adapter !== 'unconfigured')
@@ -2067,13 +2070,13 @@ class ExperimentHub {
         let parent=null,dependency=null,waitingPredecessor=false;
         let dependencyReady=false;
         if(ancestorId!==null) {
+            if(project.id!=='tinybrains')
+                throw Error('Checkpoint continuation requires the TinyBrains adapter.');
             if(typeof ancestorId!=='string'||!UUID.test(ancestorId))
                 throw Error('Select a valid predecessor job for continuation.');
             parent=next.jobs.find(j=>j.id===ancestorId);
             const pinnedRoot=parent?.artifact_lineage_root_id||parent?.id;
-            const supportsPrequeue=['ants','tinybrains'].includes(project.id);
-            const futureStage=supportsPrequeue&&
-                ['waiting_adapter','waiting_predecessor'].includes(parent?.status);
+            const futureStage=['waiting_adapter','waiting_predecessor'].includes(parent?.status);
             if(!parent||parent.project_id!==project.id||
                 !UUID.test(String(pinnedRoot||''))||
                 !(parent.dispatch_id&&parent.assigned_machine_id||futureStage))
@@ -2081,20 +2084,19 @@ class ExperimentHub {
             // Supported adapters can prequeue a bounded, linear sequence.
             // Future stages inherit the original host and artifact root
             // without claiming capacity or launching any process.
-            waitingPredecessor=supportsPrequeue&&(
+            waitingPredecessor=(
                 ['start_requested','launch_requested','running'].includes(parent.status)||
                 (parent.status==='finished'&&!parent.capacity_released_at)||
                 futureStage);
             if(!waitingPredecessor&&
-                (!['finished','stopped'].includes(parent.status)||
-                 !parent.capacity_released_at))
+                (parent.status!=='finished'||!parent.capacity_released_at))
                 throw Error('Continuation requires a finished, capacity-released predecessor (or an eligible active or prequeued predecessor).');
             if(next.jobs.some(j=>
                 (j.continuation_of_job_id===parent.id||
                  j.after_job_id===parent.id)&&j.status!=='cancelled'))
                 throw Error('This predecessor already has a non-cancelled successor.');
         }
-        if(parent&&project.id==='tinybrains'&&
+        if(parent&&
             ((!waitingPredecessor&&parent.status!=='finished')||
                 typeof parent.frozen_parameters?.profile_sha256!=='string'||
                 parent.frozen_parameters.profile_sha256!==selected.parameters?.profile_sha256))
@@ -2133,10 +2135,7 @@ class ExperimentHub {
                 dependencyReady=true;
             }
         }
-        if(project.id==='ants'&&
-            (frozen.mode==='resume')!==Boolean(parent))
-            throw Error('Ants resume mode requires a linked, completed predecessor job.');
-        if (next.jobs.filter(j=>['waiting_adapter',
+         if (next.jobs.filter(j=>['waiting_adapter',
             'waiting_predecessor'].includes(j.status)).length >= 100)
             throw Error('Too many pending jobs; cancel unused jobs first.');
         if (next.jobs.length >= 1000)
@@ -2169,43 +2168,6 @@ class ExperimentHub {
         };
         next.jobs.push(job);
         return job;
-    }
-    // A stopped Ants predecessor never advances its pipeline automatically.
-    // Operator approval only unblocks coordination: it neither claims
-    // capacity nor bypasses the trusted adapter's checkpoint verification.
-    approveStoppedContinuation(value) {
-        if(!object(value)||value.confirm_stopped_checkpoint_risk!==true||
-            typeof value.job_id!=='string')
-            throw Error('Explicitly approve the stopped predecessor and possible checkpoint rollback.');
-        const next=copy(this.state);
-        const child=next.jobs.find(j=>j.id===value.job_id);
-        if(!child||child.project_id!=='ants'||
-            child.status!=='waiting_predecessor'||
-            !UUID.test(String(child.continuation_of_job_id||'')))
-            throw Error('Only blocked Ants continuation stages may be approved.');
-        const parent=next.jobs.find(j=>j.id===child.continuation_of_job_id);
-        const lease=next.reservations.find(l=>l.id===parent?.lease_id&&
-            l.job_id===parent.id&&l.project_id==='ants'&&
-            l.machine_id===parent.assigned_machine_id&&
-            l.issued_by==='experiment-hub'&&l.status==='released'&&
-            Boolean(l.released_at));
-        if(!parent||parent.project_id!=='ants'||
-            parent.status!=='stopped'||!parent.capacity_released_at||
-            !parent.dispatch_id||!parent.execution_updated_at||
-            !parent.assigned_machine_id||!lease||
-            child.artifact_lineage_root_id!==
-                (parent.artifact_lineage_root_id||parent.id)||
-            (parent.continuation_machine_id&&
-                parent.continuation_machine_id!==parent.assigned_machine_id)||
-            (child.continuation_machine_id&&
-                child.continuation_machine_id!==parent.assigned_machine_id))
-            throw Error('Stopped predecessor lacks verified terminal ownership, released capacity, or matching artifact lineage.');
-        child.continuation_machine_id=parent.assigned_machine_id;
-        child.status='waiting_adapter';
-        child.predecessor_approved_at=now();
-        child.status_reason='Operator approved continuation after stopped predecessor; trusted adapter must still validate the latest durable checkpoint at launch.';
-        this.commit(next);
-        return copy(child);
     }
     // Cancel only future, never-dispatched jobs in one durable update.
     // The selected predecessor is untouched; its native supervisor remains
@@ -2290,7 +2252,8 @@ class ExperimentHub {
         return copy(job);
     }
     plannedJobs() {
-        const jobs=this.state.jobs.filter(j=>j.status==='waiting_adapter');
+        const jobs=this.state.jobs.filter(j=>
+            j.status==='waiting_adapter'&&j.project_id!=='ants');
         const snapshot=this.snapshot();
         // Rehearse the same per-project FIFO interleave and best-fit
         // decisions as allocateJobs, but do not mint leases or mutate state.
