@@ -11,9 +11,11 @@ use bees_hivemind::session::SquadLifetime;
 use bees_sim::combat_world::{CombatWorld, GamePointOrder};
 use bees_sim::simulation::RandomStream;
 use bees_sim::squad_movement::{SquadFormationMember, SquadFormationOptions};
+use bees_sim::timer::ScaledTimer;
 
 use crate::squads::NativeSquadRoster;
-use super::{GameCommandError, NativeEnemyTargetStats, NativeSquadOrder};
+use super::{CommandFinishCause, GameCommandError, NativeEnemyTargetStats, NativeSquadOrder};
+use super::targeting::NativeAttackTarget;
 use super::targeting::select_native_game_bomb_target;
 
 /// The real Bomb weapon bound to one living ship, supplied in the owning
@@ -192,4 +194,126 @@ pub fn advance_fire_barge_bombing_run(
         }
     }
     Ok(queued)
+}
+
+
+/// Source-compatible timed behavior for a squad consisting ONLY of Fire
+/// Barges. This is not a replacement for the Striker/Yellow Jacket states,
+/// nor does it create any separate projectile or damage implementation.
+pub struct NativeFireBargeBombingRun {
+    target: NativeAttackTarget,
+    members: Vec<SquadFormationMember>,
+    formation: SquadFormationOptions,
+    fast_poll: bool,
+    timer_loops: u64,
+}
+
+impl NativeFireBargeBombingRun {
+    /// Source Execute assigns all live bombs before installing its
+    /// two-second immediate recurring command timer. Caller owns both
+    /// ScaledTimer and the normal HiveMind timeout/outcome settlement.
+    pub fn start(
+        world: &mut CombatWorld,
+        roster: &NativeSquadRoster,
+        random: &mut RandomStream,
+        squad: NativeSquadOrder<'_>,
+        enemy_owner: SquadLifetime,
+        selection: &ResolvedHiveMindCommand,
+        weapons: &[NativeBombWeapon],
+        enemies: &[NativeEnemyTargetStats],
+    ) -> Result<Option<Self>, GameCommandError> {
+        // Do not partially initialize mixed bomber squads and later
+        // pretend their Striker/Yellow Jacket bombs have executed.
+        for member in squad.members {
+            let ship = world.ship(member.ship_id)
+                .ok_or(GameCommandError::InvalidSquad)?;
+            if ship.ship_type != 10 {
+                return Err(GameCommandError::MissingCombatSnapshot);
+            }
+        }
+        let mut target = NativeAttackTarget::new(enemy_owner.squad_id);
+        target.validate(squad.owner, enemy_owner)?;
+        if !assign_initial_bombing_run_targets(
+            world, roster, random, squad, enemy_owner,
+            selection, weapons, enemies,
+        )? {
+            return Ok(None);
+        }
+        Ok(Some(Self {
+            target,
+            members: squad.members.to_vec(),
+            formation: squad.formation,
+            fast_poll: false,
+            timer_loops: 0,
+        }))
+    }
+
+    pub fn enemy_squad_id(&self) -> i64 {
+        self.target.squad_id()
+    }
+
+    /// Unity BombingRun.Timer, Fire Barge-only execution.
+    /// Caller must invoke after the existing command timer reports due.
+    /// The Level validates live enemy lifetime and supplies the real
+    /// ProximityCollider.NearbyEnemyShips membership for each current
+    /// Fire Barge target. The game world executes physical detonations on
+    /// the next fixed step, before that step's ordinary event consumers.
+    pub fn on_poll(
+        &mut self,
+        world: &mut CombatWorld,
+        timer: &mut ScaledTimer,
+        owner: SquadLifetime,
+        enemy_owner: SquadLifetime,
+        enemy_alive: bool,
+        command_outcome_id: i64,
+        mut target_in_proximity: impl FnMut(i64, i64)
+            -> Result<bool, GameCommandError>,
+    ) -> Result<Option<CommandFinishCause>, GameCommandError> {
+        if !enemy_alive {
+            return Ok(Some(CommandFinishCause::EnemySquadGone));
+        }
+        self.target.validate(owner, enemy_owner)?;
+        self.timer_loops = self.timer_loops.saturating_add(1);
+        let living_count = self.members.iter().filter(|member|
+            world.ship(member.ship_id).is_some_and(|ship|
+                !ship.vitals.is_dead()
+            ),
+        ).count();
+        let mut tested = 0_usize;
+        let mut any_near = false;
+        advance_fire_barge_bombing_run(
+            world, &self.members, self.formation,
+            command_outcome_id,
+            |ship_id, target_id| {
+                let near = target_in_proximity(ship_id, target_id)?;
+                tested += 1;
+                any_near |= near;
+                Ok(near)
+            },
+        )?;
+        // Unity AreBombersCloseToEnemyTargets returns true only if at
+        // least one bomber is near AND every live bomber is near. Without
+        // a live selected target the corresponding entry fails that check.
+        let all_near = any_near && tested == living_count;
+        if !self.fast_poll && all_near {
+            timer.reuse(0.25, true, false);
+            self.fast_poll = true;
+        } else if self.fast_poll && self.timer_loops % 4 == 0 {
+            // HaveAllShipsBombed returns true for a Fire Barge-only squad
+            // (it checks only Strikers and Yellow Jackets). Every fourth
+            // quarter-second callback therefore returns to the 2s poll.
+            timer.reuse(2.0, true, false);
+            self.fast_poll = false;
+        }
+        Ok(None)
+    }
+
+    /// Unity BombingRun.SetFinalize releases current squad-member Bomb
+    /// targets on timeout, replacement, enemy disappearance or retirement.
+    /// World death already releases these same leases, so repeats are inert.
+    pub fn release_all(&self, world: &mut CombatWorld) {
+        for member in &self.members {
+            world.release_game_bomb_target_for_ship(member.ship_id);
+        }
+    }
 }
