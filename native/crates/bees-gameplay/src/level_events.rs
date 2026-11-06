@@ -524,7 +524,10 @@ impl NativeLevelEventProcessor {
     /// The bounded outbox retains them across rollout windows until
     /// acknowledged. Reject duplicate publication of the same tick.
     pub fn publish_timed_command_events(
-        &mut self, completed_tick: u64, events: &[CombatEvent],
+        &mut self, completed_tick: u64, world: &CombatWorld,
+        events: &[CombatEvent],
+        mut allocate_minion: impl FnMut(SquadLifetime, i64)
+            -> Result<SquadLifetime, SquadRosterError>,
     ) -> Result<(), NativeLevelEventError> {
         if self.is_failed() || self.completed() {
             return Err(NativeLevelEventError::FailedLevel);
@@ -541,14 +544,46 @@ impl NativeLevelEventProcessor {
         let capability_count = events.iter()
             .filter(|event| requires_level_capability_delivery(event))
             .count();
+        let minion_count = events.iter().filter(|event|
+            matches!(event, CombatEvent::ScoutBeaconDropped { .. })
+        ).count();
         Self::reserve_output_records(
             &mut self.pending_notifications, &mut self.failed,
-            capability_count.saturating_add(self.timed_finished.len()),
+            capability_count.saturating_add(minion_count)
+                .saturating_add(self.timed_finished.len()),
         )?;
         // Source Mining.Mine mutates the actual rock and fleet before
         // SetFinalize publishes its command outcome. Preserve that
         // relative order even across large asynchronous rollout windows.
         for event in events {
+            if let CombatEvent::ScoutBeaconDropped {
+                scout_id, beacon_id, ..
+            } = event {
+                // Source Scout.DropBeacon creates the minion Squad in
+                // the same callback, before the next fixed tick. Without
+                // immediate registration the next roster coverage check
+                // would fail after CombatWorld clears the event buffer.
+                let change = (|| -> Result<SquadRosterChange, SquadRosterError> {
+                    let mother = self.roster.owning_squad(*scout_id)
+                        .ok_or(SquadRosterError::MissingScout(*scout_id))?;
+                    let owner = allocate_minion(mother, *beacon_id)?;
+                    self.roster.register_scout_beacon(world, event, owner)
+                })();
+                let change = match change {
+                    Ok(value) => value,
+                    Err(err) => {
+                        self.failed = true;
+                        return Err(NativeLevelEventError::Roster(
+                            SquadEventBridgeError::Roster(err),
+                        ));
+                    }
+                };
+                self.pending_notifications.push(NativeLevelNotification {
+                    tick: completed_tick,
+                    kind: NativeLevelNotificationKind::SquadChange(change),
+                });
+                self.changes.push(change);
+            }
             if requires_level_capability_delivery(event) {
                 self.pending_notifications.push(NativeLevelNotification {
                     tick: completed_tick,
