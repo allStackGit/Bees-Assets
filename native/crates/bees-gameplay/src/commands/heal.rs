@@ -81,7 +81,10 @@ impl HealRun {
             cleanup_scratch: Vec::new(),
             earned_tsv: 0,
         };
-        run.assign_slots(world)?;
+        if let Err(err) = run.assign_slots(world) {
+            run.release_all(world);
+            return Err(err);
+        }
         if run.assigned.is_empty() { return Ok(None); }
         run.register_arrivals(world);
         if let Err(err) = run.move_waiting(world) {
@@ -146,12 +149,14 @@ impl HealRun {
                     !s.vitals.is_dead() &&
                         s.vitals.health() < s.vitals.max_health())
             );
-            if !live || !damaged ||
-                hive.is_none_or(|h| world.reserved_healing_beehive(id) != Some(h)) {
-                self.cleanup_scratch.push((id, false));
-            } else if world.ship(hive.expect("validated hive")).is_none_or(|s|
-                s.vitals.is_dead()) {
+            let hive_dead = hive.is_some_and(|h| world.ship(h).is_none_or(|s|
+                s.vitals.is_dead()));
+            if hive_dead {
                 self.cleanup_scratch.push((id, damaged));
+            } else if !live || !damaged ||
+                hive.is_none_or(|h|
+                    world.reserved_healing_beehive(id) != Some(h)) {
+                self.cleanup_scratch.push((id, false));
             }
         }
         for &(id, requeue) in &self.cleanup_scratch {
@@ -182,7 +187,9 @@ impl HealRun {
                 has_obstacles: self.formation.has_obstacles,
                 can_override_bounds: self.formation.can_override_bounds,
                 newly_found_obstacle: false,
-            })?;
+            }).map_err(|error| GameCommandError::Squad(
+                SquadOrderError::Ship(error),
+            ))?;
         }
         Ok(())
     }
