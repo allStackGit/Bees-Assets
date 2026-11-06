@@ -1017,9 +1017,11 @@ document.addEventListener('DOMContentLoaded', () => {
         $('hub-automation-disarm').disabled=!automation.enabled;
         $('hub-automation-rebalance').disabled=automation.enabled;
         $('hub-automation-gpu').disabled=automation.enabled;
+        $('hub-automation-gpu-claim').disabled=automation.enabled;
         if(automation.enabled) {
             $('hub-automation-rebalance').checked=automation.rebalance_queued===true;
             $('hub-automation-gpu').checked=automation.start_qualified_gpu===true;
+            $('hub-automation-gpu-claim').checked=automation.claim_exclusive_gpu===true;
         }
         feedback('hub-automation-status',
             (automation.enabled?'Armed for '+automation.machine_ids.join(', ')
@@ -1809,13 +1811,16 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         const rebalance=$('hub-automation-rebalance').checked;
         const gpu=$('hub-automation-gpu').checked;
+        const gpuClaim=$('hub-automation-gpu-claim').checked;
         if(!confirm('Arm native queue automation on '+ids.join(', ')+
             '? This will start eligible CPU jobs and release verified completed capacity. You confirm that unmanaged host workloads have been accounted for. Restart disarms automation.'+
-            (gpu?' This session will also start jobs with an explicitly leased, currently qualified exclusive GPU. GPU claims and access probes remain manual.':'')+
+            (gpu?' This session will also start jobs with a currently qualified exclusive GPU.':'')+
+            (gpuClaim?' This session may claim exclusive GPU capacity on armed Linux hosts. Access probes still require an operator.':'')+
             (rebalance?' This session may move its own unstarted claims between armed hosts after a capacity drop.':'')))return;
         try {
             await action('hub/automation',{
-                enabled:true,machine_ids:ids,rebalance_queued:rebalance,start_qualified_gpu:gpu,
+                enabled:true,machine_ids:ids,rebalance_queued:rebalance,
+                start_qualified_gpu:gpu,claim_exclusive_gpu:gpuClaim,
                 confirm_arm:true,confirm_untracked_load:true,
             });
             await reload();
