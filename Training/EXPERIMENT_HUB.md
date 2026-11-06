@@ -1368,6 +1368,28 @@ accept the receipt only for the exact running dispatch and suite.
 A separate host needs a trusted loopback forward and read access to the
 training artifacts.
 
+## Courier Ants (Basic Training)
+
+Register the project as `courier`. Add a `courier` entry to the worker's
+trusted adapter module using `createCourierAdapter` from
+`experiment_hub_courier_adapter.js`. Supply absolute `projectRoot`,
+`pythonPath`, `artifactRoot`, and `configPath`. Use the installed Basic
+Training Python environment and a dedicated artifact directory outside
+the checkout. Linux paths must meet the supervisor's path restrictions.
+
+Set the draft's `config_sha256` to the approved environment file's SHA-256,
+and set `seed`, `workers`, `max_rounds`, and `checkpoint_rounds`. A
+`max_rounds` of zero enables continuous training. The adapter copies the
+approved environment into a fresh per-job directory, and the Hub reports
+durable checkpoint rounds, generation, and active training time. Set a
+CPU/RAM claim appropriate for the worker count and checkpoint workload.
+The trainer's own loopback dashboard uses an OS-assigned port.
+
+Linux requests a checkpoint-aware interrupt. Windows Stop terminates
+the Job Object, so a run may lose work since its last durable checkpoint.
+Courier resume and independent evaluation are outside this adapter's
+current contract.
+
 ## Not yet implemented
 
 Production installation and qualification of project-specific adapters,
