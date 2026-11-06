@@ -26,13 +26,36 @@ function verifiedFile(file,expectedSha256,fsApi=fs) {
     if(digest!==expectedSha256)
         throw Error('Pinned Ants config/report content changed; revalidate qualification and adapter.');
 }
-function resolveOwnedCheckpoint(artifactRoot,rootId,fsApi=fs) {
-    if(!UUID.test(String(rootId||'')))
-        throw Error('Resume requires a valid Hub artifact lineage root.');
-    const checkpoints=path.join(artifactRoot,rootId,'checkpoints');
+function inside(dir,parent) {
+    const relative=path.relative(parent,dir);
+    return relative===''||(!path.isAbsolute(relative)&&relative!=='..'&&
+        !relative.startsWith('..'+path.sep));
+}
+
+function ownedArtifactRoot(artifactRoot,rootId,sourceRoot,resume,fsApi) {
+    const parent=fsApi.realpathSync(artifactRoot);
+    if(!SAFE_PATH.test(parent.split(path.sep).join('/'))||
+        parent===path.parse(parent).root||inside(parent,fsApi.realpathSync(sourceRoot))||
+        !fsApi.statSync(parent).isDirectory())
+        throw Error('Ants artifact parent must be a dedicated directory outside the source checkout.');
+    const root=path.join(parent,rootId);
+    if(!resume) {
+        try{fsApi.mkdirSync(root,{mode:0o700});}
+        catch(error){if(error.code!=='EEXIST')throw error;}
+    }
+    if(fsApi.realpathSync(root)!==root||!fsApi.statSync(root).isDirectory()||
+        (!resume&&fsApi.readdirSync(root).length!==0))
+        throw Error('Ants artifact lineage must be an owned directory, empty for a new job.');
+    return root;
+}
+
+function resolveOwnedCheckpoint(root,fsApi) {
+    const checkpoints=path.join(root,'checkpoints');
     const pointer=path.join(checkpoints,'latest.json');
     let name;
     try {
+        if(fsApi.realpathSync(checkpoints)!==checkpoints||fsApi.realpathSync(pointer)!==pointer)
+            throw Error('Checkpoint pointer path is redirected.');
         const raw=fsApi.readFileSync(pointer,'utf8');
         if(typeof raw!=='string'||raw.length>4096)
             throw Error('Unexpected durable checkpoint pointer size.');
@@ -48,9 +71,8 @@ function resolveOwnedCheckpoint(artifactRoot,rootId,fsApi=fs) {
     const candidate=path.join(checkpoints,name);
     let directory;
     try {
-        const root=fsApi.realpathSync(checkpoints);
         directory=fsApi.realpathSync(candidate);
-        if(!directory.startsWith(root+path.sep)||
+        if(directory!==candidate||
             !fsApi.statSync(directory).isDirectory())
             throw Error('Checkpoint directory is outside the approved artifact root.');
         const metadata=JSON.parse(fsApi.readFileSync(
@@ -73,11 +95,6 @@ function evaluationReader(options,fsApi,sourceRoot,artifactRoot) {
         throw Error('Ants evaluation root must be a safe absolute Linux-local directory.');
     const suites=Object.freeze(suiteIds(options.evaluationSuites));
     const root=fsApi.realpathSync(options.evaluationRoot);
-    const inside=(dir,parent)=>{
-        const relative=path.relative(parent,dir);
-        return relative===''||(!path.isAbsolute(relative)&&relative!=='..'&&
-            !relative.startsWith('..'+path.sep));
-    };
     const trainingRoot=fsApi.realpathSync(artifactRoot);
     const checkout=fsApi.realpathSync(sourceRoot);
     if(root===path.parse(root).root||!fsApi.statSync(root).isDirectory()||
@@ -174,7 +191,7 @@ function createAntsProductionAdapter(options={}) {
                     prior===context.job_id||rootId===context.job_id))||
                 (!resume&&(prior!==null||rootId!==context.job_id)))
                 throw Error('Ants new/resume job ancestry is inconsistent.');
-            const root=path.join(artifactRoot,rootId);
+            const root=ownedArtifactRoot(artifactRoot,rootId,sourceRoot,resume,fsApi);
             const args=['-m','antsim','train',
                 '--config',configPath,
                 '--artifact-root',root,
@@ -182,7 +199,7 @@ function createAntsProductionAdapter(options={}) {
                 '--checkpoint-on-exit',
                 '--episodes',String(frozen.episodes)];
             if(resume)args.push('--resume-from-checkpoint',
-                resolveOwnedCheckpoint(artifactRoot,rootId,fsApi));
+                resolveOwnedCheckpoint(root,fsApi));
             return args;
         },
     });

@@ -1118,8 +1118,10 @@ Ants checkout, Python 3.12 environment, production YAML, schema-5 final
 qualification report, and a dedicated artifact parent directory. The
 adapter requires pinned SHA-256 digests of both the YAML and report at
 startup **and again before each launch**; it refuses changed files.
-The per-job artifact parent **must be outside the Ants source checkout**
-to preserve its clean source identity. It passes the report unchanged into Ants' own production training
+Pre-create the artifact parent outside the Ants source checkout. The adapter
+creates a private per-lineage directory for a fresh job before calling the
+Ants CLI. It requires that directory to be empty for a new job. Continuations
+reuse their existing directory and reject redirected checkpoint paths. It passes the report unchanged into Ants' own production training
 authorization. That authorization independently requires the exact
 current source, configuration and resolved runtime/device lineage
 used by the passing qualification report. This adapter cannot authorize
