@@ -199,11 +199,19 @@ def poll(args, suite: dict) -> None:
             # Rotate after each attempt and skip this checkpoint on later invocations.
             cursor.pop(dispatch)
             cursor[dispatch] = episode
-        if cursor != previous or dispatch is not None or not state.exists():
-            save_cursor(state, {"suite_sha256": suite_digest, "dispatches": cursor})
         if dispatch is None:
+            if cursor != previous or not state.exists():
+                save_cursor(state, {"suite_sha256": suite_digest, "dispatches": cursor})
             return
-        successes = evaluate(checkpoint, digest, suite, args.scratch)
+        # Do not advance a checkpoint until evaluation completes. An abrupt
+        # evaluator interruption must leave the same checkpoint eligible.
+        # A handled evaluation failure still advances once, avoiding repeated
+        # evaluation of a known-failed checkpoint on every scheduled poll.
+        try:
+            successes = evaluate(checkpoint, digest, suite, args.scratch)
+        except (OSError, RuntimeError, ValueError, TypeError, KeyError):
+            save_cursor(state, {"suite_sha256": suite_digest, "dispatches": cursor})
+            raise
         pending = {
             "target": live[dispatch],
             "receipt": {
