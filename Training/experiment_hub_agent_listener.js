@@ -20,7 +20,7 @@ function respond(res,status,value) {
 }
 
 async function readBody(req) {
-    if(!/^application\/json(?:\s*;\s*charset\s*=\s*utf-8)?\s*$/i
+    if(!/^application\/json(?:\s*;\s*charset\s*=\s*(?:"utf-8"|utf-8))?\s*$/i
         .test(String(req.headers['content-type']||'')))
         throw Error('JSON requests only.');
     const chunks=[];
