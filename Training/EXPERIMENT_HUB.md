@@ -1151,8 +1151,32 @@ separate from the source and training artifact trees, and set
 atomically publishes a bounded version-1 Hub evaluation report to
 `<evaluationRoot>/<dispatch_id>.<suite_id>.json`. Keep this directory under
 the evaluator operator's control. The adapter only reads the current
-dispatch's receipt. Ants' training summaries and default checkpoint
-evaluation CLI do not publish these held-out receipts.
+dispatch's receipt. Ants' training summaries remain observational.
+
+`Training/experiment_hub_ants_evaluate.py` can produce this receipt on a
+separately budgeted CPU evaluator using the matching Ants Python checkout.
+Give it a trusted, immutable checkpoint from the selected dispatch and the
+SHA-256 of its `manifest.json`. Keep the suite definition stable and choose
+a new suite ID when changing the level, trial count, or seed. For example:
+
+```json
+{"suite_id":"level_1_heldout","level":1,"trials":100,"seed":9048534}
+```
+
+```sh
+python Training/experiment_hub_ants_evaluate.py \
+  --checkpoint /srv/evaluator/inbox/checkpoints/checkpoint_00000100_manual \
+  --checkpoint-sha256 "$MANIFEST_SHA256" --dispatch-id "$DISPATCH_ID" \
+  --suite /etc/experiment-hub/level_1_heldout.json \
+  --scratch /srv/evaluator/scratch --receipt-root /srv/evaluator/receipts
+```
+
+The producer uses a separate held-out seed namespace, the checkpoint's
+production model and environment, a fixed curriculum level, and stochastic
+Ants outcomes. It writes only to scratch and the receipt directory. The
+evaluator operator supplies the dispatch and checkpoint association, and
+the worker must be able to read the private receipt. The command runs one
+evaluation on demand. The Hub does not schedule evaluator workloads.
 
 The adapter accepts `mode:"new"` (or omitted mode) for a fresh run
 and `mode:"resume"` for an explicitly linked, completed predecessor.
