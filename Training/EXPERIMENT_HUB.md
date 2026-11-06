@@ -6,6 +6,12 @@ operator, queue, checkpoint history, release compatibility checks, and evaluatio
 remain authoritative. Project-neutral HTTP administration uses the same
 `experiment_hub_admin.js` router in the Bees manager and the disposable
 Windows browser qualification; the existing Bees-specific routes remain separate.
+The supported research scope is Bees, Courier Ants under Basic Training
+(pending its own locally approved adapter), and TinyBrains Ants-MAPOCA.
+The unrelated Ants-v2 adapter has been retired and removed. Previously
+stored Ants-v2 jobs and leases remain in the private registry for safe
+operator inspection and terminal cleanup, but no new Ants-v2 jobs,
+capacity claims or native starts are authorized.
 
 ## Currently available
 
@@ -28,11 +34,10 @@ Windows browser qualification; the existing Bees-specific routes remain separate
   qualification is still required before treating either backend as deployable.
 - **Monitor and Compare:** Existing Bees live status, performance, benchmark
   reports and research charts remain intact. Non-experiment training is shown
-  as distinct from experiment-owned training. For Ants, Compare can plot up to
-  four selected Hub jobs against cumulative experiment episodes or environment
-  steps. Other trusted project adapters can publish unit-typed metrics for a
-  cumulative project-step chart. Train, Monitor and Compare show these
-  summaries without treating them as independent evaluations or stopping criteria.
+  as distinct from experiment-owned training. Trusted non-Bees adapters
+  can publish unit-typed metrics for cumulative project-step comparisons
+  across up to four jobs. These observations are never treated as
+  independent evaluations or stopping criteria.
 - **Machines:** Show read-only Bees worker reports from the existing control
   plane. Manually register project-independent machines (CPU, RAM, GPU capacity)
   and preview CPU/RAM, GPU count, and per-GPU VRAM requirements. A machine
@@ -99,49 +104,17 @@ revision rather than silently freezing a newer draft.
 The UI can explicitly cancel a waiting job, including a stage blocked on
 its predecessor; its status and cancellation time are retained. It cannot
 cancel running or unknown jobs through this route.
-To continue an experiment, save a resume-mode configuration, select its
-eligible predecessor in Train, and queue with `continuation_of_job_id` in
-`POST /api/hub/jobs`. The Hub retains the original artifact lineage, and pins subsequent
-execution to the first successfully dispatched machine. For Ants, the
-predecessor can be waiting, dispatched, running, or finished pending
-capacity release. The
-frozen continuation then has `status: "waiting_predecessor"` and **cannot
-claim CPU/RAM, be started manually, or be started by automation**.
-When a verified `finished` predecessor's Hub capacity is released, the
-same atomic registry update moves its waiting successor to
-`waiting_adapter`. Automatic allocation and Start still require the
-separately armed, qualified CPU-only scheduler; manual Start retains its
-normal authorization gate. A `stopped`, `failed`, or `unverified`
-predecessor never triggers automatic advancement. The operator can
-cancel the blocked continuation. For a verified `stopped` Ants
-predecessor whose capacity has already been released, Train also offers
-an explicit **Approve stopped predecessor** action. Its API
-`POST /api/hub/jobs/approve-stopped` requires
-`{"job_id":"...","confirm_stopped_checkpoint_risk":true}`,
-a matching released lease and durable native terminal report. Approval
-only changes the blocked stage to `waiting_adapter` and pins its
-original machine; it does not start or allocate a process. The next
-trusted Ants adapter launch independently validates checkpoint integrity,
-qualification and source lineage. Since the most recent durable
-checkpoint may predate an interrupted training run, approval warns
-that progress after that checkpoint could be lost. Failed, unverified
-or still-running predecessors cannot use this path. The Ants adapter independently checks checkpoint viability
-and qualification on every launch. This is completion-based stage
-readiness, **not benchmark-driven early stopping**. Further continuation
-stages can be prequeued against an already blocked Ants continuation
-while its artifact lineage stays frozen. A complete Ants pipeline
-can also be queued before the first stage is assigned to any machine:
-the original host is pinned only when that initial stage actually runs,
-and its identity propagates to the next eligible stage at successful
-terminal capacity release. This supports a linear chain, not an arbitrary DAG;
-only one non-cancelled successor is allowed per parent. Blocked stages
-carry no capacity claims, and a parent with a non-cancelled child must
-be cancelled from the end of the chain backward. Train and Monitor
-trace the earliest non-waiting ancestor of a blocked pipeline, showing
-the stage responsible for the delay and whether it is still running,
-waiting for a release, needs checkpoint-risk approval, or requires
-operator review. This is a read-only projection and never alters
-execution ownership or automatically recovers failed work.
+For TinyBrains, a saved configuration can continue an eligible predecessor
+through `continuation_of_job_id`. The Hub freezes the artifact lineage
+and initial machine affinity. Waiting successors have no capacity claims
+and cannot start until a verified `finished` predecessor releases native
+capacity; stopped, failed and unverified predecessors cannot advance a
+checkpoint continuation. Multiple TinyBrains stages can be queued as
+a single linear pipeline and the worker is pinned when the first stage
+dispatches. A prequeued child is never a second execution owner.
+The operator can cancel unstarted blocked stages, and the Monitor view
+shows the blocking ancestor without automatically retrying uncertain work.
+
 The read-only queued-job placement preview now rehearses the **same
 round-robin project fairness, FIFO ordering, connected-agent requirement,
 continuation host affinity and best-fit resource selection** as the actual
@@ -160,23 +133,22 @@ The API is `POST /api/hub/jobs` with
 `{configuration_id, expected_revision, resources}`, and
 `POST /api/hub/pipelines` with
 `{"confirm_queue":true,"stages":[{"configuration_id":"...","expected_revision":1,"resources":{"cpus":2,"ram_mb":2048,"gpu_count":0}},...]}`.
-The latter freezes **2–16 Ants stages in one atomic registry write**,
+The latter freezes **2–16 TinyBrains stages in one atomic registry write**,
 accepts an optional `continuation_of_job_id` for the initial stage,
-and rejects the entire pipeline if any configuration, revision, mode,
-resource request, or predecessor is invalid. Stage one must use new
-mode unless resuming an eligible predecessor; later stages must use
-resume mode. The Train tab provides a visual pipeline builder.
+and rejects the entire pipeline if any configuration, profile digest,
+revision, resource request or predecessor is invalid. Later stages
+inherit the original machine and checkpoint lineage. The Train tab
+provides a visual pipeline builder.
 
-For **independent experiments**, including mixed Ants and other
-non-Bees projects, the same Train editor offers
+For **independent experiments**, including mixed approved non-Bees
+projects, the same Train editor offers
 `POST /api/hub/sequences` with
 `{"confirm_queue":true,"stages":[...],"after_job_id":"optional-existing-job-id"}`.
 All 2–16 stages freeze their saved-configuration revisions and requested
 resources atomically. Their `after_job_id` dependencies are separate
 from checkpoint `continuation_of_job_id`: each stage has its own
 artifact lineage, with **no inherited weights, optimizer, checkpoint,
-machine affinity or evaluation result**. Ants configurations in an
-independent sequence must use `mode:"new"`. Jobs may run on different
+machine affinity or evaluation result**. Jobs may run on different
 qualified hosts. A verified native `finished` predecessor unblocks the next job after
 durable capacity release. A `stopped` predecessor also unblocks its
 independent successor only if its own independently evaluated stop target
@@ -206,7 +178,7 @@ experiment definitions.
 ### Loopback operator CLI
 
 `node Training/experiment_hub_cli.js get state` returns the same Hub state
-as the dashboard. Use `get 'progress?project_id=ants'` for project history
+as the dashboard. Use `get 'progress?project_id=tinybrains'` for project history
 or `get jobs/plan` to preview capacity. POST commands take an explicit JSON
 file, for example `post jobs/move-claim --data move.json`. Use the same
 fields and confirmation values as the dashboard API. The CLI also accepts
@@ -1134,7 +1106,7 @@ checks that a reauthenticated agent **inspects** the already-owned process
 instead of relaunching it. Then it explicitly stops the service, verifies
 the terminal receipt and releases the claim. All modes run on randomly
 selected ephemeral loopback ports and private temporary registries.
-**No Bees/Ants training or production registry is touched.**
+**No production training or production registry is touched.**
 
 These are controlled local tests, not production deployment. A failing
 native smoke retains its private journal and prints the location; do
@@ -1146,8 +1118,6 @@ production projects.
 A Windows-local project adapter must return a reviewed executable,
 bounded argv, and explicitly specify \`stop_policy:'terminate-group'\`.
 The Hub never accepts a path or shell command from configuration JSON.
-The Ants-v2 production adapter currently uses Linux-only checkpoint-aware
-SIGINT and is **not** approved for this Windows force-stop backend.
 Bees training stays under its existing operator, not this helper.
 
 On the explicitly opted-in worker, the helper's inert \`--probe\`
@@ -1198,277 +1168,9 @@ OS-level quota enforcement, session lifecycle, reconnection,
 production adapter compatibility and real stop semantics remain
 unverified and must not be inferred from the simulations.
 
-## Ants-v2 production adapter (locally installed)
+## Project-neutral training measurements
 
-`Training/experiment_hub_ants_adapter.js` exports
-`createAntsProductionAdapter(...)`, a locally configured trusted adapter
-for the real `python -m antsim train` entry point. It is a factory, **not**
-an automatically installed runner. No Ants-v2 source, qualification
-gate, reward, observation, PPO, checkpoint, or production curriculum
-semantics are modified.
-
-The machine administrator must supply absolute paths for the qualified
-Ants checkout, Python 3.12 environment, production YAML, schema-5 final
-qualification report, and a dedicated artifact parent directory. The
-adapter requires pinned SHA-256 digests of both the YAML and report at
-startup **and again before each launch**; it refuses changed files.
-Pre-create the artifact parent outside the Ants source checkout. The adapter
-creates a private per-lineage directory for a fresh job before calling the
-Ants CLI. It requires that directory to be empty for a new job. Continuations
-reuse their existing directory and reject redirected checkpoint paths. It passes the report unchanged into Ants' own production training
-authorization. That authorization independently requires the exact
-current source, configuration and resolved runtime/device lineage
-used by the passing qualification report. This adapter cannot authorize
-training on its own. By default the adapter advertises CPU execution.
-
-For a qualified ROCm installation, set the local adapter options
-`gpuVerifierPath` to the absolute path of
-`experiment_hub_ants_rocm_verify.py` and `gpuVerifierSha256` to its pinned
-digest. Enable the Linux agent's ROCm opt-in and use a qualification
-report from the exact Ants source, YAML, and ROCm runtime. The verifier
-runs under the training service's device policy, validates the standard
-Ants authorization, checks the leased PCI device in PyTorch's loaded HIP
-runtime, and completes a small tensor operation before training starts.
-Real systemd and ROCm verification on Halifax is still required.
-
-Example local module at `/etc/experiment-hub/approved-adapters.js`
-(paths are illustrative and must be changed to installed locations):
-
-```javascript
-const {createAntsProductionAdapter} =
-    require('/opt/bees/Training/experiment_hub_ants_adapter');
-module.exports = {
-    ants: createAntsProductionAdapter({
-        python:'/opt/ants/.venv/bin/python',
-        projectRoot:'/opt/ants',
-        configPath:'/opt/ants/configs/qualified-cpu.yaml',
-        qualificationReport:'/opt/ants/analysis/qualification-final.json',
-        artifactRoot:'/srv/ants/hub-runs',
-        configSha256:'<64-hex-digit SHA-256 of the YAML>',
-        qualificationSha256:'<64-hex-digit SHA-256 of the final report>',
-    }),
-};
-```
-
-Compute pins locally with `sha256sum` after qualification. The example
-placeholder digests intentionally cannot start any work. Save this
-module outside the checkout and set the three local execution opt-in
-environment variables described above, including
-`EXPERIMENT_HUB_LOCAL_ADAPTERS` pointing to it. Register project ID
-`ants` in the Hub, then save an immutable non-Bees configuration with
-`{"mode":"new","episodes":1000}`. Request CPU/RAM capacity with
-`gpu_count:0`, coordinate a connected Linux machine, wait for the
-fresh lease receipt and explicitly authorize **Start on Linux**.
-
-An Ants adapter can optionally receive independent evaluation receipts from
-a separate trusted evaluator. Set `evaluationRoot` to a pre-created directory
-separate from the source and training artifact trees, and set
-`evaluationSuites` to the suite IDs that the evaluator serves. The evaluator
-atomically publishes a bounded version-1 Hub evaluation report to
-`<evaluationRoot>/<dispatch_id>.<suite_id>.json`. Keep this directory under
-the evaluator operator's control. The adapter only reads the current
-dispatch's receipt. Ants' training summaries remain observational.
-
-`Training/experiment_hub_ants_evaluate.py` can produce this receipt on a
-separately budgeted CPU evaluator using the matching Ants Python checkout.
-Give it a trusted, immutable checkpoint from the selected dispatch and the
-SHA-256 of its `manifest.json`. Keep the suite definition stable and choose
-a new suite ID when changing the level, trial count, or seed. For example:
-
-```json
-{"suite_id":"level_1_heldout","level":1,"trials":100,"seed":9048534}
-```
-
-```sh
-python Training/experiment_hub_ants_evaluate.py \
-  --checkpoint /srv/evaluator/inbox/checkpoints/checkpoint_00000100_manual \
-  --checkpoint-sha256 "$MANIFEST_SHA256" --dispatch-id "$DISPATCH_ID" \
-  --suite /etc/experiment-hub/level_1_heldout.json \
-  --scratch /srv/evaluator/scratch --receipt-root /srv/evaluator/receipts
-```
-
-The producer uses a separate held-out seed namespace, the checkpoint's
-production model and environment, a fixed curriculum level, and stochastic
-Ants outcomes. It writes only to scratch and the receipt directory. The
-evaluator operator supplies the dispatch and checkpoint association for
-this on-demand command. The worker must be able to read the private receipt.
-
-For automatic handoff, run `experiment_hub_ants_eval_poll.py` periodically
-from a separately budgeted CPU service. Provide `--machine` (the Ants training
-host's Hub ID), `--artifact-root` (its mounted read-only artifact parent),
-`--suite`, `--scratch` and `--receipt-root`. The default Hub port is 7148
-on loopback. An evaluator on another machine needs a trusted loopback
-forward to the coordinator. Use private persistent scratch and share the
-receipt directory with the training agent's adapter. The scheduler owns
-the cadence, CPU budget, and lifetime of each invocation.
-
-Each invocation selects an eligible running dispatch and evaluates at most
-one newer checkpoint. Fresh jobs can use their first visible checkpoint.
-For continuations, the first visible checkpoint sets a watermark because
-it may belong to the predecessor. The evaluator rotates among eligible
-dispatches, retains the last attempted episode across invocations and
-temporary worker disconnects, and leaves an already-passing receipt available
-for the worker. Old inactive dispatch watermarks are evicted only when the
-bounded 1,000-entry scratch limit is reached. Once an
-evaluation result is durably recorded in scratch, it can be published or
-retried without a second Hub availability check: the unique dispatch and
-suite are validated again by the trusted running adapter and coordinator
-before they can authorize Stop. A heartbeat gap during evaluation must not
-discard a completed result. Publication to an already-terminal dispatch is
-inert. A handled evaluation failure waits for a newer checkpoint.
-If an evaluator is interrupted before producing a result, the current
-checkpoint remains eligible on its next invocation. Keep a stable suite ID
-and scratch directory for the lifetime of the schedule.
-
-The adapter accepts `mode:"new"` (or omitted mode) for a fresh run
-and `mode:"resume"` for an explicitly linked, completed predecessor.
-Both require an integer `episodes` between 1 and 100,000,000.
-For resume, this number is the *additional* number of episodes that
-Ants' own production CLI permits, subject to its lifetime limit;
-it is not an alternative curriculum or a replacement qualification.
-
-The Hub stores `continuation_of_job_id`,
-`artifact_lineage_root_id`, and an immutable original-machine
-affinity. The parent must be terminal (`finished` or `stopped`),
-have a verified native dispatch, and have its Hub capacity explicitly
-released. Only one non-cancelled continuation may descend from a
-parent, and the continuation must run on the original machine.
-The local supervisor independently checks its own durable parent
-service journal for an inactive, completed predecessor.
-
-The trusted adapter resolves `checkpoints/latest.json` beneath the
-original job's artifact root, rejects an invalid or external pointer
-and `REGRESSION` forensic checkpoints, and passes the resolved
-checkpoint directory to `--resume-from-checkpoint`. Ants then checks
-the complete checkpoint manifest, persisted policy/optimizer/curriculum
-state, writer/source lineage, qualification report and resolved runtime
-device compatibility. A missing, stale or incompatible checkpoint
-fails closed; the Hub does **not** manufacture a resume checkpoint,
-automatically retry, or downgrade to policy-only initialization.
-
-For a fresh run, artifacts live at
-`<configured-parent>/<job-uuid>`. All subsequent generations use
-the **same original artifact root**, preserving rollback references
-and metrics lineage rather than copying partial checkpoints into a
-new experiment. Each generation has a distinct Hub job ID and
-systemd unit for process ownership and history. The CLI always uses
-the pinned configuration/report and `--checkpoint-on-exit`.
-
-Policy-only initialization and optimizer-regime continuation remain
-unsupported: they intentionally have different learning, optimizer,
-curriculum and rollback semantics and must never be confused with
-full-state resume.
-
-For Ants the trusted adapter selects `stop_policy:'interrupt-main'`:
-the Linux supervisor configures `KillSignal=SIGINT`,
-`KillMode=mixed`, and a 600-second stop grace window. A requested
-stop is persisted before systemd is asked to stop the service
-asynchronously. The supervisor does not send repeated interrupts after
-an ambiguous stop request. This lets Ants' existing `KeyboardInterrupt`
-path make its own checkpoint decision. A handled interrupt returns
-exit code 130; the supervisor recognizes that as a requested stop, not
-an unexplained training failure. **An interruption during an active
-mutation cycle may deliberately skip an exit checkpoint to protect
-integrity**, retaining the previous durable checkpoint; if the grace
-period expires, systemd may forcibly end the process.
-
-CPU-budgeted services mask CUDA/HIP/ROCm GPU selection environment
-variables, but this is not kernel-enforced GPU device isolation.
-Other GPU-aware code may ignore those variables. Ants' runtime/device
-qualification must match what actually launches; a GPU-qualified
-runtime should fail Ants' own authorization when the actual execution
-environment resolves to CPU. CPU quotas do not grant dedicated cores
-or automatically adjust Ants' rollout/evaluation worker counts.
-Size the CPU/RAM request for the qualified production configuration
-to avoid oversubscribed on-policy training and throughput collapse.
-
-### Read-only production progress
-
-The Ants adapter now reads the exact production
-`<artifact-lineage>/experiments/<experiment-id>/summary.json` generated
-atomically by Ants. A job lineage must contain one unambiguous experiment
-directory; canonical filesystem paths must remain inside its approved
-artifact root. Missing summaries are shown as awaiting progress;
-ambiguous roots, malformed summaries and invalid metrics are rejected
-without changing native job lifecycle status.
-
-The agent sends a bounded, validated projection of Ants' own
-`episodes_completed`, `latest_policy_version`, current curriculum
-level, **current curriculum rolling-window success rate** and its
-episode count, **segment success rate**, cumulative environment and
-optimization steps, and last-episode simulation/PPO throughput. The
-success rates have deliberately different denominators and must not
-be treated as interchangeable, qualification evidence, or promotion
-decisions. The source summary modification timestamp is displayed to
-distinguish fresh observations from data last written before a long
-episode. Continuations report the same experiment's cumulative
-episodes, not episodes begun since the latest Hub job.
-
-Live observations remain in coordinator memory and expire with the
-authenticated agent's heartbeat. **Only one bounded final progress
-snapshot** is retained in the durable Hub job ledger after a native
-terminal report; no Ants CSV/JSONL, grouped histories, checkpoint data
-or event logs are copied over the agent transport. The Train and
-Monitor tabs use the same formatting. This integration has no
-authority to start/stop work, release capacity, alter Ants PPO/
-curriculum, or modify its source files.
-
-### Bounded learning curves and run comparisons
-
-The coordinator samples the already-validated Ants production progress
-projection or a project-neutral summary from a locally installed trusted
-adapter into `experiment_hub_history.js`, with a fixed
-one-minute sampling bucket, a maximum of **96 points per job**, and a
-maximum of **24 jobs** in memory and in a separately bounded
-`hub-chart-v1.json` visualization archive. Accepted new samples are saved
-at most once per minute, or when a job finishes; a sudden stop can lose
-recent unsaved chart points. The archive is atomic, capped at 4 MiB,
-validated on restore and never used for training or scheduling decisions.
-An invalid archive is preserved for inspection rather than overwritten;
-storage failures leave agent heartbeats and training lifecycle unaffected
-and are reported in Compare. Repeated reads of an unchanged
-source summary do not create artificial points. On saturation, older
-points are decimated to preserve a useful overview; when the episode
-clock or policy version decreases, or a segment changes, the graph
-breaks the line rather than fabricating uninterrupted learning.
-
-`GET /api/hub/progress?project_id=<project>` is a loopback-only,
-**read-only** chart endpoint. It transmits bounded visualization samples
-only when the Compare tab requests them, instead of copying series into
-every ten-second Hub status response. No chart series is written to
-`hub-v1.json`. The separately bounded chart archive survives coordinator
-restarts, while unsaved samples remain ephemeral.
-The latest job metrics and one final persisted snapshot remain usable
-after restart; saved bounded visualization curves are restored from the
-separate chart archive, not reconstructed from unrelated metrics files.
-
-The Compare tab supports up to four manually selected jobs, an
-X-axis choice of cumulative experiment episodes or environment steps,
-and a Y-axis choice of curriculum-window success, segment success,
-curriculum level, policy version, last-episode simulation rate, or PPO
-unique samples/s. A curriculum-level filter excludes observations from
-other levels and preserves line breaks across omitted intervals; the
-horizontal axis remains cumulative, not normalized to level start.
-The selected runs and samples can be exported as UTF-8 CSV or JSON for
-external analysis, with configuration fingerprints, machine identity,
-checkpoint lineage, source timestamps and plot-selection metadata.
-Configuration bodies, checkpoints and private artifacts are not exported.
-CSV escapes untrusted labels to prevent spreadsheet formula execution.
-These are **observed training measurements, not benchmark results**. Environment steps account for unequal episode lengths
-when reported by Ants; missing step counts are not replaced by guessed
-values. Source segment changes, policy/episode rollback and decreases
-in reported cumulative environment steps break chart lines, including
-after one-minute sample coalescing and bounded decimation. The PPO chart does not treat a non-updating episode as a
-measured zero-throughput optimizer update. Jobs sharing the original
-Ants artifact lineage are labeled as continuations, not independent
-replicates. The chart calls out differences in frozen configuration
-fingerprints (with a short list of differing top-level fields), assigned
-machine identity, and currently reported curriculum level. Matching
-fingerprints do not prove equal seeds, evaluation scenarios or
-environment/runtime identity. **The curves do not normalize differing
-level, seed, scenario, hardware, or configuration conditions** and are
-not qualification, promotion, benchmark or superiority evidence.
-For a non-Bees, non-Ants project, a trusted local adapter may return a
+For a non-Bees project, a trusted local adapter may return a
 `hub-metrics-v1` observation through its existing `readProgress` method.
 The wire contract is strictly bounded: one project-owned experiment ID,
 segment ID, ISO source modification time, cumulative nonnegative
@@ -1500,25 +1202,6 @@ negative scalar values, and exports selected numeric measurements with
 their units in CSV/JSON. Generic metric names do not grant stopping,
 model promotion or benchmark authority. A concrete project adapter must
 still be installed and independently qualified to produce real metrics.
-
-The Ants Compare tab also provides a read-only, curriculum-level
-**first-observed rolling-window target** screening table. The operator
-chooses a success percentage and minimum number of episodes represented
-by each source rolling window. Per selected run, the table identifies
-the first retained observation meeting the target, cumulative training
-episodes and environment steps at that observation, and the latest
-eligible episode count. Runs without a retained qualifying observation
-are explicitly censored, not marked as failures. This is bounded and
-possibly decimated training history, **not** an independently evaluated
-first success, benchmark qualification, or automatic stopping rule.
-The table requires a single curriculum level to avoid comparing
-unrelated training phases.
-
-No new Ants metric meaning or production behavior is introduced.
-
-The adapter/native lifecycle has been exercised only with bounded
-simulations of filesystem, qualification pinning, metrics and systemd
-status. **No real Ants training or Linux service qualification has run here.**
 
 ### Independent evaluation stops for non-Bees jobs
 
@@ -1670,8 +1353,8 @@ numbered checkpoint for an eligible running dispatch, and evaluates at most
 one per invocation. Set the profile's `training.checkpoint_every` so a
 numbered checkpoint appears while the job is still running. The poller
 leaves the changing `latest.pt` alone. Use persistent scratch to retain
-checkpoint watermarks across temporary worker disconnects (with the same
-1,000-entry limit as Ants), and retry publication independently of coordinator availability
+checkpoint watermarks across temporary worker disconnects (up to
+1,000 dispatches), and retry publication independently of coordinator availability
 once a completed evaluation is recorded. The trusted adapter and Hub
 accept the receipt only for the exact running dispatch and suite.
 A separate host needs a trusted loopback forward and read access to the
@@ -1688,7 +1371,7 @@ projects, safe live rebalancing, and comprehensive
 CLI parity for all runtime configuration controls remain future work.
 Isolated Windows Job Object and browser-controlled CPU-only queue/disconnect
 qualifications have passed on real hardware; these do not establish
-production Bees/Ants execution safety. These
+production Bees and TinyBrains execution safety. These
 must not create a second owner of the Bees training lifecycle or treat
 reporting a worker as proof of exclusive host ownership.
 
