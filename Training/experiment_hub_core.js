@@ -191,6 +191,32 @@ function gpuStartBlock(job,lease,machine) {
         return 'A current device access probe for this exact GPU lease is required.';
     return null;
 }
+function gpuProbeBlock(job,lease,machine) {
+    if(!job||job.project_id==='bees'||job.adapter!=='unconfigured'||
+        job.status!=='waiting_adapter'||job.dispatch_id||
+        !lease||lease.job_id!==job.id||lease.project_id!==job.project_id||
+        lease.machine_id!==job.assigned_machine_id||
+        lease.issued_by!=='experiment-hub'||
+        lease.status!=='acknowledged'||!lease.receipt_fresh||
+        !machine||machine.status!=='connected'||
+        machine.agent_platform!=='linux'||machine.local_executor_enabled!==true||
+        machine.native_preflight_passed!==true||
+        !machine.installed_projects?.includes(job.project_id)||
+        job.resources.gpu_mode!=='exclusive'||
+        job.resources.gpu_count!==1||
+        (job.resources.gpus?.length>0&&
+            job.resources.gpus[0]!==lease?.resources.gpus?.[0])||
+        lease.resources.gpu_mode!=='exclusive'||
+        lease.resources.gpu_count!==1||lease.resources.gpus?.length!==1||
+        physicalGpuBindings(machine,{
+            gpu_inventory_source:machine.gpu_inventory_source,
+            gpu_devices:machine.observed_gpus,
+        },lease.resources,lease.gpu_bindings)?.length!==1)
+        return 'GPU access probe needs a fresh exclusive single-GPU lease on a qualified Linux agent.';
+    if(!(machine.observed_gpus?.length>=2))
+        return 'GPU access probe requires a second observed GPU to verify access denial.';
+    return null;
+}
 // Pure, non-authorizing readiness projection. The dashboard and the actual
 // start authorization share one eligibility contract; displaying readiness
 // does not claim a reservation or dispatch any native process.
@@ -582,6 +608,12 @@ class ExperimentHub {
                 job.predecessor_wait=waitingStageReason(job,jobsById);
             if(job.status==='waiting_adapter'&&job.project_id!=='bees')
                 job.native_start_readiness=nativeStartReadiness(snapshot,job);
+            if(job.status==='waiting_adapter'&&job.lease_id&&job.resources?.gpu_count===1&&
+                job.resources.gpu_mode==='exclusive') {
+                const lease=snapshot.reservations.find(l=>l.id===job.lease_id);
+                const machine=snapshot.machines.find(m=>m.id===job.assigned_machine_id);
+                job.gpu_probe_block=gpuProbeBlock(job,lease,machine);
+            }
             if(job.status==='start_requested'&&job.automation_start_session_id)
                 job.automation_start_paused=!(
                     this.automation.enabled&&
@@ -1133,29 +1165,8 @@ class ExperimentHub {
         const job=snapshot.jobs.find(j=>j.id===value.job_id);
         const lease=snapshot.reservations.find(l=>l.id===job?.lease_id);
         const machine=snapshot.machines.find(m=>m.id===job?.assigned_machine_id);
-        if(!job||job.project_id==='bees'||job.adapter!=='unconfigured'||
-            job.status!=='waiting_adapter'||job.dispatch_id||
-            !lease||lease.job_id!==job.id||lease.project_id!==job.project_id||
-            lease.machine_id!==job.assigned_machine_id||
-            lease.issued_by!=='experiment-hub'||
-            lease.status!=='acknowledged'||!lease.receipt_fresh||
-            !machine||machine.status!=='connected'||
-            machine.agent_platform!=='linux'||machine.local_executor_enabled!==true||
-            machine.native_preflight_passed!==true||
-            !machine.installed_projects?.includes(job.project_id)||
-            job.resources.gpu_mode!=='exclusive'||
-            job.resources.gpu_count!==1||
-            (job.resources.gpus?.length>0&&
-                job.resources.gpus[0]!==lease?.resources.gpus?.[0])||
-            lease.resources.gpu_mode!=='exclusive'||
-            lease.resources.gpu_count!==1||lease.resources.gpus?.length!==1||
-            physicalGpuBindings(machine,{
-                gpu_inventory_source:machine.gpu_inventory_source,
-                gpu_devices:machine.observed_gpus,
-            },lease.resources,lease.gpu_bindings)?.length!==1)
-            throw Error('GPU access probe needs a fresh exclusive single-GPU lease on a qualified Linux agent.');
-        if(!(machine.observed_gpus?.length>=2))
-            throw Error('GPU access probe requires a second observed GPU to verify access denial.');
+        const block=gpuProbeBlock(job,lease,machine);
+        if(block)throw Error(block);
         const session=this.automation;
         if(origin==='automation'&&(!session.probe_exclusive_gpu||
             !session.claimed_lease_ids.includes(lease.id)||
