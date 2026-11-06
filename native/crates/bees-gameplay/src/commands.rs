@@ -4,10 +4,11 @@
 //! invokes the same shared physics world and formation navigation used by
 //! user orders, the render client, and headless evaluation.
 //!
-//! Hold, MoveToRandom, Patrol, Retreat and ClosestFriendly have source-matched
-//! movement/timer phases.
-//! Every other server strategy is explicitly unsupported until its Unity
-//! gameplay mechanics and reward effects are implemented. Caller-owned
+//! Hold, MoveToRandom, Patrol, Retreat, ClosestFriendly and Mining have
+//! source-defined movement/timer lifecycles. All mining extraction uses the
+//! shared physical CombatWorld, with Level-owned persistent fleet credits.
+//! Other strategies remain explicitly unsupported until their gameplay
+//! mechanics and reward effects are implemented. Caller-owned
 //! targeting/shooting and command reward accumulation are not fabricated.
 
 use std::collections::BTreeMap;
@@ -432,6 +433,9 @@ pub struct CommandMeasurements {
     pub commands_examined: u64,
     pub command_timer_callbacks: u64,
     pub timeout_callbacks: u64,
+    /// Sparse cumulative counters; no per-step logging or history.
+    pub mining_extractions: u64,
+    pub minerals_mined: u64,
     pub activated: u64,
     pub completed: u64,
     pub superseded: u64,
@@ -901,10 +905,16 @@ impl NativeSquadCommandDirector {
         self.measurements.commands_examined += self.active.len() as u64;
         for (&owner, command) in self.active.iter_mut() {
             if let Some(mining) = command.mining.as_mut() {
+                let before_mined = mining.mined_tsv;
                 let (mut finished, polls) = mining.advance(
                     world, navigation, &mut command.command_poll, dt,
                 )?;
                 self.measurements.command_timer_callbacks += polls;
+                let extracted = mining.mined_tsv.saturating_sub(before_mined);
+                if extracted > 0 {
+                    self.measurements.mining_extractions += 1;
+                    self.measurements.minerals_mined += extracted as u64;
+                }
                 if finished.is_none() {
                     if let Some(timeout) = command.timeout.as_mut() {
                         if let Some(due) = timeout.begin_update(dt) {
