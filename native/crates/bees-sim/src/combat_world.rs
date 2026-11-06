@@ -81,6 +81,7 @@ mod mining;
 mod warp;
 mod shot_outcomes;
 use self::warp::GameWarpGateSession;
+use self::barge::GameBargeCharge;
 use self::striker::GameStrikerRuntime;
 pub use self::striker::GameStrikerCarrier;
 pub use self::warp::WARP_GATE_OPENING_SECONDS;
@@ -573,6 +574,17 @@ pub struct GameBombMeasurements {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct GameBargeMeasurements {
+    pub starts: u64,
+    pub stops: u64,
+    pub completions: u64,
+    pub grid_rebuilds: u64,
+    pub candidates: u64,
+    pub contact_checks: u64,
+    pub hits: u64,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct ProjectileStorageMetrics {
     pub allocated_slots: usize,
     pub active_projectiles: usize,
@@ -735,6 +747,10 @@ pub struct CombatWorld {
     /// Persistent game Striker readiness is ship-owned, not reset when
     /// a HiveMind BombingRun command is superseded or timed out.
     game_strikers: BTreeMap<i64, GameStrikerRuntime>,
+    /// Scripted Barge coroutine phase lives in the shared combat world;
+    /// the HiveMind command owns only its target choice and finalization.
+    game_barge_charges: BTreeMap<i64, GameBargeCharge>,
+    game_barge_measurements: GameBargeMeasurements,
     tracked_order_measurements: TrackedOrderMeasurements,
     /// One hit per victim for each active charge; cleared when the
     /// owning Barge starts another charge or is removed from the world.
@@ -849,6 +865,8 @@ impl CombatWorld {
             policy_special_measurements: PolicySpecialMeasurements::default(),
             game_bomb_measurements: GameBombMeasurements::default(),
             game_strikers: BTreeMap::new(),
+            game_barge_charges: BTreeMap::new(),
+            game_barge_measurements: GameBargeMeasurements::default(),
             tracked_order_measurements: TrackedOrderMeasurements::default(),
             barge_charge_hits: HashSet::new(),
             barge_contact_candidates: Vec::new(),
@@ -1014,6 +1032,7 @@ impl CombatWorld {
         }
         let victim_id = self.ships[index].entity_id;
         self.game_strikers.remove(&victim_id);
+        self.game_barge_charges.remove(&victim_id);
         // Bomb.ReleaseTargetReservation is part of every authored bomber
         // Kill, not only successful BombingRun command finalization.
         if let Some(weapon_id) =
@@ -1073,6 +1092,10 @@ impl CombatWorld {
 
     pub fn game_bomb_measurements(&self) -> GameBombMeasurements {
         self.game_bomb_measurements
+    }
+
+    pub fn game_barge_measurements(&self) -> GameBargeMeasurements {
+        self.game_barge_measurements
     }
 
     pub fn tracked_order_measurements(&self) -> TrackedOrderMeasurements {
@@ -3466,6 +3489,7 @@ impl CombatWorld {
         self.advance_scout_beacon_cooldowns(dt);
         self.advance_game_warp_gate_animations(dt);
         self.advance_policy_barge_phases(dt)?;
+        self.advance_game_barge_phases(dt)?;
         self.advance_asteroid_deaths(dt);
         self.advance_asteroid_pieces(dt);
         // Swap buffers instead of allocating a queue for every frame.
@@ -3570,6 +3594,7 @@ impl CombatWorld {
         self.pending_contacts.extend_from_slice(new_contacts);
         self.update_policy_projectile_near_passes(dt);
         self.resolve_policy_barge_contacts(collision_matrix)?;
+        self.resolve_game_barge_contacts(collision_matrix)?;
         // Striker.CheckCarrierReload runs on the same Level timer clock.
         // A policy can request another bomb only after a real carrier
         // proximity check has rearmed its authored bomb state.
