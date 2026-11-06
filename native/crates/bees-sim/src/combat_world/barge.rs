@@ -28,6 +28,9 @@ pub(super) struct GameBargeCharge {
     pub(super) phase: u8, // 1 wind-up, 2 charge, 3 cooldown, 4 completed
     pub(super) elapsed: f32,
     pub(super) target_id: i64,
+    /// Barge.ChargeForward aims at Level.ForceBounds(target.GetPosition)
+    /// at wind-up completion, not the unclamped target position at issue.
+    pub(super) map_bounds: Aabb,
     pub(super) power: i32,
     pub(super) command_outcome_id: i64,
 }
@@ -40,7 +43,13 @@ impl CombatWorld {
     /// profile before accepting the command.
     pub fn try_start_game_barge_charge(
         &mut self, ship_id: i64, command_outcome_id: i64,
+        map_bounds: Aabb,
     ) -> Result<bool, CombatWorldError> {
+        if !map_bounds.min.is_finite() || !map_bounds.max.is_finite() ||
+            map_bounds.min.x > map_bounds.max.x ||
+            map_bounds.min.y > map_bounds.max.y {
+            return Err(CombatWorldError::InvalidGameMovementOrder);
+        }
         if command_outcome_id <= 0 {
             return Err(CombatWorldError::InvalidBombTarget);
         }
@@ -84,7 +93,7 @@ impl CombatWorld {
         );
         self.game_barge_charges.insert(ship_id, GameBargeCharge {
             phase: 1, elapsed: 0.0, target_id: held.target_id,
-            power: held.amount, command_outcome_id,
+            map_bounds, power: held.amount, command_outcome_id,
         });
         self.game_barge_measurements.starts += 1;
         self.events.push(CombatEvent::BargeChargeStarted { ship_id });
@@ -164,15 +173,22 @@ impl CombatWorld {
             }
             match next_phase {
                 2 => {
-                    let target_id = self.game_barge_charges[&ship_id].target_id;
+                    let charge = self.game_barge_charges[&ship_id];
                     let origin = self.physics.ships()[index].motion.position;
                     let rotation = self.physics.ships()[index].motion
                         .rotation_degrees;
-                    let heading = self.ship_body(target_id)
+                    let heading = self.ship_body(charge.target_id)
                         .filter(|body| body.active)
-                        .and_then(|body| self.ship(target_id)
+                        .and_then(|body| self.ship(charge.target_id)
                             .filter(|target| !target.vitals.is_dead())
-                            .map(|_| body.motion.position - origin))
+                            .map(|_| Vec2::new(
+                                body.motion.position.x.clamp(
+                                    charge.map_bounds.min.x, charge.map_bounds.max.x,
+                                ),
+                                body.motion.position.y.clamp(
+                                    charge.map_bounds.min.y, charge.map_bounds.max.y,
+                                ),
+                            ) - origin))
                         .map_or(rotation, heading_towards);
                     self.physics.ships_mut()[index].motion
                         .cannot_change_movement_orders = false;
