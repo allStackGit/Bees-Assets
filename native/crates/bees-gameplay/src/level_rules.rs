@@ -310,8 +310,9 @@ where
                 state.credit_mining_since(previous_event_count)?;
             }
             state.events.publish_timed_command_events(
-                completed_tick,
+                completed_tick, &state.combat,
                 &state.combat.events()[previous_event_count..],
+                |mother, beacon| (state.allocate_minion)(mother, beacon),
             )?;
         }
         Ok(counts)
