@@ -57,7 +57,12 @@ must implement `NativeLevelRewardMetadata::credit_mined_minerals` to
 update its persistent FleetShip value. Missing or inconsistent metadata
 fails the Level step rather than crediting fictitious minerals. Mining
 contributes to economic accounting, not an additional immediate tactical
-capability reward. The rendered command/fleet adapter and physical
+capability reward. The same world-owned extraction routine can
+distribute a five-mineral-per-ship command yield with the exact integer
+remainder order, and indexed nearest-target/contact reads expose the live
+asteroids. The timed HiveMind Mining command is not yet connected to this
+routine; its movement, timers and command TSV settlement remain separate
+development work. The rendered fleet/command adapter and physical
 Windows/Linux qualification still require integration.
 
 `NativeGroupRewardDelivery` is an optional per-episode MA-POCA delivery
