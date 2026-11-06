@@ -2,76 +2,79 @@
 use super::*;
 
 pub(super) struct MiningRun {
-    pub(super) target_id: i64,
-    pub(super) destination_offset: Vec2,
-    pub(super) formation: SquadFormationOptions,
-    pub(super) members: Vec<SquadFormationMember>,
-    pub(super) eligible: Vec<i64>,
+    target_id: i64,
+    destination_offset: Vec2,
+    formation: SquadFormationOptions,
+    members: Vec<SquadFormationMember>,
+    eligible: Vec<i64>,
     /// Enrollment bits parallel to eligible avoid O(squad size squared)
     /// repeated contains() checks on every physics step.
-    pub(super) registered: Vec<bool>,
+    registered: Vec<bool>,
     /// Encounter order, not ID order: Unity assigns mining remainders to
     /// ShipsCurrentlyMining in the order FoundAsteroid registered them.
-    pub(super) currently_mining: Vec<i64>,
-    pub(super) mining_timer: Option<ScaledTimer>,
-    pub(super) stop_moving_timer: Option<ScaledTimer>,
-    pub(super) has_found_all: bool,
+    currently_mining: Vec<i64>,
+    mining_timer: Option<ScaledTimer>,
+    stop_moving_timer: Option<ScaledTimer>,
+    has_found_all: bool,
     pub(super) mined_tsv: i64,
 }
 
 impl MiningRun {
-    pub(super) fn start(world: &CombatWorld, random: &mut RandomStream, squad: NativeSquadOrder<'_>) -> Result<Option<Self>, GameCommandError> {
-                // Unity Squad.GetNearestMiningAsteroid selects by distance
-                // from the current live squad bounds center. An absent
-                // target or no mining ships bans Mining for this strategy
-                // response rather than installing a nonfunctional command.
-                let Some((target_id, _)) =
-                    world.nearest_mining_asteroid(squad.squad_center)
-                else { return Ok(None); };
-                let spread = world.mining_asteroid_spread_radius(target_id)
-                    .ok_or(GameCommandError::InvalidMiningTarget)?;
-                let mut eligible = Vec::new();
-                for member in squad.members {
-                    let ship = world.ship(member.ship_id)
-                        .ok_or(GameCommandError::InvalidSquad)?;
-                    if !ship.vitals.is_dead() &&
-                        matches!(ship.ship_type, 4 | 9) {
-                        if world.ship_fleet_identity(member.ship_id).is_none() {
-                            return Err(GameCommandError::InvalidSquad);
-                        }
-                        eligible.push(member.ship_id);
-                    }
+    pub(super) fn start(
+        world: &CombatWorld, random: &mut RandomStream,
+        squad: NativeSquadOrder<'_>,
+    ) -> Result<Option<Self>, GameCommandError> {
+        // Unity Squad.GetNearestMiningAsteroid selects by distance
+        // from the current live squad bounds center. An absent
+        // target or no mining ships bans Mining for this strategy
+        // response rather than installing a nonfunctional command.
+        let Some((target_id, _)) =
+            world.nearest_mining_asteroid(squad.squad_center)
+        else { return Ok(None); };
+        let spread = world.mining_asteroid_spread_radius(target_id)
+            .ok_or(GameCommandError::InvalidMiningTarget)?;
+        let mut eligible = Vec::new();
+        for member in squad.members {
+            let ship = world.ship(member.ship_id)
+                .ok_or(GameCommandError::InvalidSquad)?;
+            if !ship.vitals.is_dead() &&
+                matches!(ship.ship_type, 4 | 9) {
+                if world.ship_fleet_identity(member.ship_id).is_none() {
+                    return Err(GameCommandError::InvalidSquad);
                 }
-                if eligible.is_empty() {
-                    return Ok(None);
-                }
-                // Unity Random.insideUnitCircle uses a uniform disk. Use
-                // world-local seeded RNG for comparable statistics, not
-                // a per-process global random stream.
-                let angle = next_unit(random) * std::f32::consts::TAU;
-                let radius = next_unit(random).sqrt() * spread;
-                let mut run = Self {
-                    target_id,
-                    destination_offset: Vec2::new(
-                        angle.cos() * radius, angle.sin() * radius,
-                    ),
-                    formation: squad.formation,
-                    members: squad.members.to_vec(),
-                    registered: vec![false; eligible.len()],
-                    eligible,
-                    currently_mining: Vec::new(),
-                    mining_timer: None,
-                    stop_moving_timer: None,
-                    has_found_all: false,
-                    mined_tsv: 0,
-                };
-                run.update_contacts(world);
-                Ok(Some(run))
+                eligible.push(member.ship_id);
+            }
+        }
+        if eligible.is_empty() {
+            return Ok(None);
+        }
+        // Unity Random.insideUnitCircle uses a uniform disk. Use
+        // world-local seeded RNG for comparable statistics, not
+        // a per-process global random stream.
+        let angle = next_unit(random) * std::f32::consts::TAU;
+        let radius = next_unit(random).sqrt() * spread;
+        let mut run = Self {
+            target_id,
+            destination_offset: Vec2::new(
+                angle.cos() * radius, angle.sin() * radius,
+            ),
+            formation: squad.formation,
+            members: squad.members.to_vec(),
+            registered: vec![false; eligible.len()],
+            eligible,
+            currently_mining: Vec::new(),
+            mining_timer: None,
+            stop_moving_timer: None,
+            has_found_all: false,
+            mined_tsv: 0,
+        };
+        run.update_contacts(world);
+        Ok(Some(run))
     }
 
     /// Register initial overlap at Execute as well as subsequent
     /// collision entries, preserving the source command's encounter order.
-    pub(super) fn update_contacts(&mut self, world: &CombatWorld) {
+    fn update_contacts(&mut self, world: &CombatWorld) {
         // Contact is checked on the actual cached physical hull,
         // not an extra "close enough" radius or guessed collision grid.
         if !self.has_found_all {
