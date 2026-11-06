@@ -25,7 +25,7 @@ use bees_hivemind::protocol::{
 use bees_hivemind::session::StrategyReceipt;
 use bees_hivemind::session::SquadLifetime;
 use bees_sim::collision::Aabb;
-use bees_sim::combat_world::CombatWorld;
+use bees_sim::combat_world::{CombatWorld, CombatWorldError};
 use bees_sim::geometry::Vec2;
 use bees_sim::navigation_runtime::NavigationRuntime;
 use bees_sim::simulation::RandomStream;
@@ -40,6 +40,8 @@ const COMMAND_FREQUENCY_SECONDS: f32 = 3.0;
 const RANDOM_POSITION_ATTEMPTS: usize = 35;
 const RANDOM_MIN_DISTANCE: f32 = 32.0;
 const GUARD_PADDING: f32 = 4.0;
+const MINING_RATE_SECONDS: f32 = 5.0;
+const MINING_COMMAND_TIMEOUT_SECONDS: f32 = 600.0;
 const GUARD_SPEED_MATCH_DISTANCE_SQUARED: f32 = 1.5 * 1.5;
 
 #[derive(Clone, Copy, Debug)]
@@ -157,10 +159,15 @@ pub enum GameCommandError {
     InvalidEnemy,
     InvalidFriendlies,
     Squad(SquadOrderError),
+    Mining(CombatWorldError),
 }
 
 impl From<SquadOrderError> for GameCommandError {
     fn from(value: SquadOrderError) -> Self { Self::Squad(value) }
+}
+
+impl From<CombatWorldError> for GameCommandError {
+    fn from(value: CombatWorldError) -> Self { Self::Mining(value) }
 }
 
 /// The only safe outcome of receiving a strategy for a dead/superseded
@@ -204,6 +211,8 @@ pub enum CommandFinishCause {
     GuardFinished,
     Superseded,
     SquadRetired,
+    MiningAsteroidDestroyed,
+    NoMiningShipsRemain,
 }
 
 #[derive(Clone, Debug)]
@@ -211,6 +220,9 @@ pub struct FinishedNativeCommand {
     pub owner: SquadLifetime,
     pub selection: ResolvedHiveMindCommand,
     pub cause: CommandFinishCause,
+    /// Unity Mining.Mine accumulates the actual extraction as Command.Tsv.
+    /// This value cannot be reconstructed from ship health or final cargo.
+    pub mined_command_tsv: Option<i64>,
 }
 
 impl FinishedNativeCommand {
@@ -226,7 +238,7 @@ impl FinishedNativeCommand {
         FinalizedCommand {
             command: OutcomeSettlement::Credit {
                 outcome_id: self.selection.command_outcome_id,
-                tsv: command_tsv,
+                tsv: self.mined_command_tsv.unwrap_or(command_tsv),
             },
             shooting: match shooting_tsv {
                 Some(tsv) => OutcomeSettlement::Credit {
@@ -293,6 +305,7 @@ struct ActiveNativeCommand {
     command_poll: Option<ScaledTimer>,
     patrol: Option<PatrolRoute>,
     following: Option<FollowingFriendly>,
+    mining: Option<MiningRun>,
     /// Authoritative game-owned member snapshot at command issue.
     /// The Level must retire/reissue on squad composition changes.
     member_ids: Vec<i64>,
