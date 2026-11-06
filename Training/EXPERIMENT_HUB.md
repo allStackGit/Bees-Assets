@@ -1160,9 +1160,13 @@ the local supervisor to distinguish durable completion from an
 unknown or lost helper. Ambiguous starts remain unverified with
 one bounded local stop attempt and **no automatic relaunch**.
 
-**Windows Stop force-terminates the process tree** via Job Objects.
-It cannot promise checkpoint-safe interruption, so Windows adapters
-must explicitly acknowledge that behavior. CPU-only jobs mask
+Windows Stop defaults to terminating the process tree via Job Objects.
+A trusted adapter can supply a `checkpoint_stop_file` callback for an
+absolute path in its private job directory. The workload watches that
+file and exits after saving. The supervisor persists the request,
+reconciles marker delivery, and requires a signed successful exit for
+automatic release. Job Object cleanup still protects the process tree.
+CPU-only jobs mask
 common CUDA/HIP/ROCm selector environment variables, but do not
 provide enforceable GPU isolation; GPU requests remain blocked.
 
@@ -1385,8 +1389,11 @@ durable checkpoint rounds, generation, and active training time. Set a
 CPU/RAM claim appropriate for the worker count and checkpoint workload.
 The trainer's own loopback dashboard uses an OS-assigned port.
 
-Linux requests a checkpoint-aware interrupt. Windows Stop terminates
-the Job Object, so a run may lose work since its last durable checkpoint.
+Linux requests a checkpoint-aware interrupt. Newly launched Courier jobs on
+Windows use a local checkpoint Stop request. The trainer saves its final
+checkpoint and exits, and the Hub waits for the signed Job Object receipt
+before releasing capacity. A pending request holds capacity while the
+trainer is still active. Older Windows launches use Job Object termination.
 For checkpoint continuation, select a naturally finished predecessor
 with released capacity, or queue a checkpoint pipeline in Train. Keep
 the same environment digest. Each stage runs on the original worker
