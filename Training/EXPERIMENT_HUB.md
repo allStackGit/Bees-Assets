@@ -1468,6 +1468,11 @@ the retained summary after restart. Missing counters remain null. The
 summary covers the observations still in memory when the job ends, plus
 any terminal counters. A coordinator restart before completion can
 shorten that window. Sampled RAM does not measure the OS lifetime peak.
+Windows owners also report their OS Job Object peak-memory counter
+separately. Version-2 signed terminal receipts carry that counter and final
+CPU time even if the coordinator missed all live samples. Legacy signed
+receipts remain valid and leave those terminal counters unavailable.
+Deploy the updated supervisor before updating the pinned Windows owner.
 
 ## Not yet implemented
 
