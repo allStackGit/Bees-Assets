@@ -163,9 +163,24 @@ impl NativeChargeRun {
         Ok(())
     }
 
+    /// Charge.SetFinalize stops every surviving Barge, including those
+    /// still pursuing and those that never qualified to start a charge.
+    /// This is distinct from supersession: that path must preserve the
+    /// replacement command's newly installed movement order.
     pub fn release_all(
         &self, world: &mut CombatWorld,
     ) -> Result<(), GameCommandError> {
-        self.release_superseded(world, &[])
+        for member in &self.members {
+            world.reset_game_barge_charge(member.ship_id)?;
+            if world.ship(member.ship_id).is_some_and(|ship|
+                !ship.vitals.is_dead()
+            ) && world.ship_body(member.ship_id).is_some_and(|body|
+                body.active
+            ) {
+                world.stop_ship_game_movement(member.ship_id)?;
+            }
+            world.release_game_bomb_target_for_ship(member.ship_id);
+        }
+        Ok(())
     }
 }
