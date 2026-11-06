@@ -1015,6 +1015,8 @@ document.addEventListener('DOMContentLoaded', () => {
             automationOptions.textContent='No connected native-capable machines with a passing preflight.';
         $('hub-automation-arm').disabled=automation.enabled||!automationCandidates.length;
         $('hub-automation-disarm').disabled=!automation.enabled;
+        $('hub-automation-rebalance').disabled=automation.enabled;
+        if(automation.enabled)$('hub-automation-rebalance').checked=automation.rebalance_queued===true;
         feedback('hub-automation-status',
             (automation.enabled?'Armed for '+automation.machine_ids.join(', ')
                 :'Disarmed')+
@@ -1396,9 +1398,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 sum+j.live_execution.cpu_cores_used,0);
             const observedRam=sampledRam.reduce((sum,j)=>
                 sum+j.live_execution.memory_current_mb,0);
-            const overClaimed=m.status==='connected'&&(
-                claimedCpus>(m.reported_cpus??m.cpus)||
-                claimedRam>(m.reported_ram_mb??m.ram_mb));
+            const overClaimed=m.capacity_overcommitted===true;
             cell(tr,m.name+' ('+m.id+')');
             const status=cell(tr,m.status+
                 (overClaimed?' · Claims exceed reported capacity':''));
@@ -1800,11 +1800,13 @@ document.addEventListener('DOMContentLoaded', () => {
             feedback('hub-automation-status','Select at least one native-capable machine.');
             return;
         }
+        const rebalance=$('hub-automation-rebalance').checked;
         if(!confirm('Arm native CPU-only queue automation on '+ids.join(', ')+
-            '? This WILL automatically launch locally installed, qualified non-Bees adapters without asking again for each job, and automatically release verified completed capacity. You confirm that CPU/RAM used by Bees and other unmanaged workloads on these machines has been accounted for. GPU jobs and unverified native jobs remain blocked. Restart disarms automation.'))return;
+            '? This WILL automatically launch locally installed, qualified non-Bees adapters without asking again for each job, and automatically release verified completed capacity. You confirm that CPU/RAM used by Bees and other unmanaged workloads on these machines has been accounted for. GPU jobs and unverified native jobs remain blocked. Restart disarms automation.'+
+            (rebalance?' This session may move its own unstarted claims between armed hosts after a capacity drop.':'')))return;
         try {
             await action('hub/automation',{
-                enabled:true,machine_ids:ids,
+                enabled:true,machine_ids:ids,rebalance_queued:rebalance,
                 confirm_arm:true,confirm_untracked_load:true,
             });
             await reload();

@@ -610,6 +610,13 @@ secrets are stored in that ledger. The trusted adapter must not put
 secrets in command-line arguments because systemd unit metadata and
 process listings can expose them.
 
+When arming CPU-only automation, operators can optionally let the
+session move its own undelivered queued claims between armed machines
+after a fresh CPU/RAM capacity drop. Manual claims, checkpoint-pinned
+jobs and dispatched jobs remain in place. Each move uses the same atomic
+lease replacement as Train and requires a fresh destination receipt.
+Disarming or restarting ends ownership of earlier claims.
+
 ### Operator-initiated native execution
 
 To retire a project adapter while a job is still owned, keep the same

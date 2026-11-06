@@ -403,6 +403,16 @@ function writeAtomic(file, value) {
         if (fs.existsSync(pending)) fs.unlinkSync(pending);
     }
 }
+function claimsFitCpuRam(reservations,machine,reportedCpus,reportedRam) {
+    const outstanding=reservations.filter(lease=>lease.machine_id===machine.id&&
+        ['active','offered','acknowledged'].includes(lease.status));
+    return outstanding.every(lease=>
+        Number.isSafeInteger(lease.resources?.cpus)&&lease.resources.cpus>0&&
+        Number.isSafeInteger(lease.resources?.ram_mb)&&lease.resources.ram_mb>0)&&
+        outstanding.reduce((sum,lease)=>sum+lease.resources.cpus,0)<=Math.min(machine.cpus,reportedCpus)&&
+        outstanding.reduce((sum,lease)=>sum+lease.resources.ram_mb,0)<=Math.min(machine.ram_mb,reportedRam);
+}
+
 function summarizeResourceSample(previous,report,observedAt) {
     if(!['running','stop_requested','finished','failed','stopped'].includes(report.state)||
         (report.cpu_time_ns==null&&report.memory_current_mb==null&&
@@ -444,6 +454,7 @@ class ExperimentHub {
         // start unattended workloads, even though claims/jobs persist.
         this.automation = {
             enabled:false,machine_ids:[],agent_instances:{},managed_job_ids:[],
+            rebalance_queued:false,claimed_lease_ids:[],
             session_id:null,
             armed_at:null,last_tick_at:null,last_action:null,last_error:null,
             last_transition_at:null,waiting_reason:null,
@@ -501,6 +512,7 @@ class ExperimentHub {
             if (fresh) {
                 machine.reported_cpus = report.cpus;
                 machine.reported_ram_mb = report.ram_mb;
+                machine.capacity_overcommitted=!claimsFitCpuRam(snapshot.reservations,machine,report.cpus,report.ram_mb);
                 machine.agent_platform = report.platform;
                 machine.execution_capabilities = copy(report.execution);
                 machine.local_executor_enabled = report.local_executor;
@@ -570,7 +582,7 @@ class ExperimentHub {
         return snapshot;
     }
     automationStatus() {
-        const {agent_instances,managed_job_ids,session_id,...publicState}=this.automation;
+        const {agent_instances,managed_job_ids,claimed_lease_ids,session_id,...publicState}=this.automation;
         return {...copy(publicState),managed_jobs:managed_job_ids.length};
     }
     configureAutomation(value) {
@@ -581,6 +593,7 @@ class ExperimentHub {
                 throw Error('Explicitly confirm disarming native automation.');
             this.automation={
                 enabled:false,machine_ids:[],agent_instances:{},managed_job_ids:[],
+                rebalance_queued:false,claimed_lease_ids:[],
                 session_id:null,armed_at:null,last_tick_at:this.automation.last_tick_at,
                 last_action:'Disarmed by operator.',last_error:null,
                 last_transition_at:this.automation.last_transition_at,
@@ -621,6 +634,7 @@ class ExperimentHub {
         this.automation={
             enabled:true,machine_ids:ids.slice(),agent_instances:agentInstances,
             managed_job_ids:[],session_id:crypto.randomUUID(),
+            rebalance_queued:value.rebalance_queued===true,claimed_lease_ids:[],
             armed_at:now(),last_tick_at:null,
             last_action:'Armed for qualified CPU-only jobs; no job dispatched yet.',
             last_error:null,last_transition_at:null,waiting_reason:null,
@@ -708,6 +722,27 @@ class ExperimentHub {
                     (m.execution_capabilities?.cgroup_v2_detected===true&&
                      ['cpu','memory'].every(c=>
                         m.execution_capabilities?.cgroup_controllers.includes(c)))));
+            const overcommitted=new Set(selected.filter(m=>m.capacity_overcommitted).map(m=>m.id));
+            if(session.rebalance_queued) {
+                const queuedLeases=new Set(pending.map(job=>job.lease_id));
+                session.claimed_lease_ids=session.claimed_lease_ids.filter(id=>queuedLeases.has(id));
+                const owned=new Set(session.claimed_lease_ids);
+                for(const job of pendingClaims) {
+                    if(!owned.has(job.lease_id)||!overcommitted.has(job.assigned_machine_id)||
+                        job.dispatch_id||job.continuation_machine_id||job.resources.gpu_count!==0)
+                        continue;
+                    const eligible=capable.filter(m=>!overcommitted.has(m.id)&&
+                        m.installed_projects?.includes(job.project_id));
+                    const chosen=allocationChoice(eligible,snapshot.reservations,job);
+                    if(!chosen)continue;
+                    const moved=this.moveJobClaim({job_id:job.id,expected_lease_id:job.lease_id,
+                        machine_id:chosen.machine_id,confirm_move:true});
+                    session.claimed_lease_ids=session.claimed_lease_ids
+                        .filter(id=>id!==moved.released_lease_id).concat(moved.lease_id);
+                    return transitioned('Moved queued CPU claim from '+job.assigned_machine_id+
+                        ' to '+moved.machine_id+'; awaiting a new receipt.');
+                }
+            }
             for(const [index,job] of pendingClaims.entries()) {
                 if(job.lease_id||job.resources.gpu_count!==0||
                     (job.resources.gpus||[]).length||job.resources.ram_mb<128)
@@ -730,6 +765,8 @@ class ExperimentHub {
                 });
                 if(result.results[0]?.status!=='claimed')
                     throw Error('Selected placement did not produce an atomic claim.');
+                if(session.rebalance_queued)
+                    session.claimed_lease_ids.push(result.results[0].lease_id);
                 session.last_claimed_project_id=job.project_id;
                 return transitioned('Claimed CPU/RAM: '+job.project_id+' / '+
                     (job.configuration_name||job.id.slice(-8))+
@@ -741,7 +778,10 @@ class ExperimentHub {
                 ['finished','stopped'].includes(j.status)&&j.lease_id);
             session.waiting_reason=manualComplete
                 ?'Completed jobs outside this automation session retain capacity until manually released.'
-                :'No eligible CPU-only transition; awaiting agent receipts or available capacity.';
+                :overcommitted.size
+                    ?'Outstanding claims exceed CPU/RAM capacity on '+[...overcommitted].join(', ')+
+                        '; move idle claims or release verified capacity.'
+                    :'No eligible CPU-only transition; awaiting agent receipts or available capacity.';
             return this.automationStatus();
         }catch(error) {
             // An ambiguous state must never provoke repeated automatic
@@ -1533,14 +1573,7 @@ class ExperimentHub {
         // Receipt IDs are based on the agent's previous offer response,
         // while this heartbeat reports the current host capacity. Reject
         // carried-over IDs if *all* outstanding claims no longer fit.
-        const outstanding=next.reservations.filter(l=>
-            l.machine_id===machine.id&&
-            ['active','offered','acknowledged'].includes(l.status));
-        const withinCapacity=outstanding.every(l=>
-            Number.isSafeInteger(l.resources?.cpus)&&l.resources.cpus>0&&
-            Number.isSafeInteger(l.resources?.ram_mb)&&l.resources.ram_mb>0)&&
-            outstanding.reduce((sum,l)=>sum+l.resources.cpus,0)<=report.cpus&&
-            outstanding.reduce((sum,l)=>sum+l.resources.ram_mb,0)<=report.ram_mb;
+        const withinCapacity=claimsFitCpuRam(next.reservations,machine,report.cpus,report.ram_mb);
         const acknowledgedIds=new Set();
         let changed=false;
         for (const id of ids) {
