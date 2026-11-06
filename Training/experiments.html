@@ -299,6 +299,7 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
         <fieldset class="wide" id="hub-config-evaluation" hidden>
           <legend>Independent evaluation stop (optional)</legend>
           <label>Approved suite ID <input id="hub-evaluation-suite" maxlength="48" placeholder="heldout"></label>
+          <label>Suite SHA-256 (optional) <input id="hub-evaluation-digest" maxlength="64" pattern="[0-9a-f]{64}"></label>
           <label>Minimum trials <input id="hub-evaluation-trials" type="number" min="1" max="1000000" step="1" placeholder="100"></label>
           <label>Minimum success rate (0–1) <input id="hub-evaluation-rate" type="number" min="0" max="1" step="any" placeholder="0.8"></label>
         </fieldset>
@@ -464,7 +465,7 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
   <h3>Independent evaluation receipts</h3>
   <p id="hub-compare-evaluation-note" class="muted"></p>
   <div class="tablewrap hub-table"><table>
-    <thead><tr><th>Run</th><th>Suite</th><th>Successes / trials</th><th>Success rate</th><th>Checkpoint SHA-256</th><th>Outcome</th></tr></thead>
+    <thead><tr><th>Run</th><th>Suite</th><th>Suite SHA-256</th><th>Successes / trials</th><th>Success rate</th><th>Checkpoint SHA-256</th><th>Outcome</th></tr></thead>
     <tbody id="hub-compare-evaluation-rows"></tbody>
   </table></div>
 </section>

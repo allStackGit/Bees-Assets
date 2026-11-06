@@ -1218,6 +1218,17 @@ still be installed and independently qualified to produce real metrics.
 ### Independent evaluation stops for non-Bees jobs
 
 A draft can set an optional `evaluation_stop` alongside its adapter parameters.
+Set its optional `suite_sha256` in Design to require a specific suite
+definition. Courier and TinyBrains receipts include the hash of the
+parsed suite JSON serialized with Python `json.dumps(suite, sort_keys=True)`.
+Run this from the Hub's Training directory to compute it before queuing:
+
+```text
+python -B -c "import json,sys; from experiment_hub_eval_io import suite_digest; print(suite_digest(json.load(open(sys.argv[1], encoding='utf-8'))))" path/to/suite.json
+```
+
+Older receipts can still satisfy unpinned policies. Compare identifies
+missing fingerprints and differing definitions, even when the IDs match.
 Design accepts a suite ID, minimum trial count and minimum success rate, for
 example `{"suite_id":"heldout","min_trials":100,"min_success_rate":0.8}`.
 Queueing freezes the rule. Only hosts advertising the requested suite for

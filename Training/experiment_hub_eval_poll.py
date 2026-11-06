@@ -11,7 +11,7 @@ import sys
 import tempfile
 from urllib.parse import urlencode
 
-from experiment_hub_eval_io import SHA256, UUID, publish, read_bounded
+from experiment_hub_eval_io import SHA256, UUID, publish, read_bounded, suite_digest
 
 
 @contextmanager
@@ -78,6 +78,7 @@ def passed_receipt(path: Path, dispatch: str, suite: dict, job: dict) -> bool:
             receipt["schema_version"] == 1
             and receipt["dispatch_id"] == dispatch
             and receipt["suite_id"] == suite["suite_id"]
+            and (not job.get("suite_sha256") or receipt.get("suite_sha256") == job["suite_sha256"])
             and SHA256.fullmatch(receipt.get("checkpoint_sha256", ""))
             and type(trials) is int
             and trials == suite["trials"]
@@ -99,6 +100,7 @@ def flush_receipt(args, suite: dict, pending: dict) -> None:
         or receipt["suite_id"] != suite["suite_id"]
         or job["dispatch_id"] != dispatch or not UUID.fullmatch(job["job_id"])
         or receipt["trials"] != suite["trials"]
+        or (job.get("suite_sha256") and receipt.get("suite_sha256") != job["suite_sha256"])
     ):
         raise ValueError("invalid pending evaluation receipt identity")
     # The dispatch was eligible before evaluation began. A result is inert
@@ -113,7 +115,7 @@ def flush_receipt(args, suite: dict, pending: dict) -> None:
 def poll_checkpoint(args, project, suite, receipt_suite, find_checkpoint, evaluate_checkpoint):
     suite_id = suite["suite_id"]
     state = args.scratch / f"{project}-evaluation-{args.machine}.{suite_id}.json"
-    digest = hashlib.sha256(json.dumps(suite, sort_keys=True).encode()).hexdigest()
+    digest = suite_digest(suite)
 
     with exclusive(state.with_suffix(".lock")):
         try:
@@ -140,6 +142,9 @@ def poll_checkpoint(args, project, suite, receipt_suite, find_checkpoint, evalua
             try:
                 if not UUID.fullmatch(dispatch) or receipt_suite["trials"] < job["min_trials"]:
                     continue
+                if job.get("suite_sha256", digest) != digest:
+                    print(f"{project} evaluation target {dispatch} requires a different suite definition.", file=sys.stderr)
+                    continue
                 receipt = args.receipt_root / f"{dispatch}.{suite_id}.json"
                 if passed_receipt(receipt, dispatch, receipt_suite, job):
                     continue
@@ -163,7 +168,7 @@ def poll_checkpoint(args, project, suite, receipt_suite, find_checkpoint, evalua
                 save_cursor(state, saved)
                 raise
             pending = {"target": job, "receipt": {
-                "schema_version": 1, "suite_id": suite_id, "dispatch_id": dispatch,
+                "schema_version": 1, "suite_id": suite_id, "suite_sha256": digest, "dispatch_id": dispatch,
                 "checkpoint_sha256": checkpoint_digest, "trials": receipt_suite["trials"], "successes": successes,
             }}
             save_cursor(state, {**saved, "pending_receipt": pending})

@@ -10,7 +10,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from experiment_hub_eval_io import SHA256, SUITE_ID, UUID, publish, read_bounded
+from experiment_hub_eval_io import SHA256, SUITE_ID, UUID, publish, read_bounded, suite_digest
 
 MAP = re.compile(r"[a-zA-Z0-9_-]{1,80}")
 
@@ -101,7 +101,7 @@ def main():
         with tempfile.TemporaryDirectory(prefix="tinybrains-eval-", dir=scratch) as work:
             wins, trials = evaluate(checkpoint, args.checkpoint_sha256, suite, Path(work))
         result = {
-            "schema_version": 1, "suite_id": suite["suite_id"],
+            "schema_version": 1, "suite_id": suite["suite_id"], "suite_sha256": suite_digest(suite),
             "dispatch_id": args.dispatch_id, "checkpoint_sha256": args.checkpoint_sha256,
             "trials": trials, "successes": wins,
         }
