@@ -66,6 +66,100 @@ impl CombatWorld {
         }
     }
 
+    /// Source Striker.OnTriggerEnter2D + DropBomb, for a *commanded* game
+    /// Striker. The Level owns IsBombReady/HasDroppedBomb and calls this
+    /// only when its real command and collision callback permit delivery.
+    /// The world checks the original selected Bomb.TargetShip and the
+    /// exact authored hull contact before transferring its one reservation
+    /// into the existing two-second StrikerBomb fuse.
+    ///
+    /// Call at the owning Level's combat event boundary, so the emitted
+    /// StrikerBombDropped event is reconciled with the same episode tick.
+    /// This does not implement return-to-carrier or command completion.
+    pub fn drop_game_striker_bomb_on_contact(
+        &mut self,
+        striker_id: i64, contacted_target_id: i64,
+        may_drop: bool, command_outcome_id: i64,
+        collisions: &CollisionMatrix,
+    ) -> Result<bool, CombatWorldError> {
+        if command_outcome_id <= 0 {
+            return Err(CombatWorldError::InvalidBombTarget);
+        }
+        let &ship_index = self.ship_by_id.get(&striker_id)
+            .ok_or(CombatWorldError::UnknownShip)?;
+        if self.ships[ship_index].ship_type != 19 {
+            return Err(CombatWorldError::InvalidBombTarget);
+        }
+        let body = &self.physics.ships()[ship_index];
+        if body.motion.is_policy_controlled && !body.motion.user_controlled {
+            return Err(CombatWorldError::UnsupportedPolicyActions);
+        }
+        if !may_drop || self.frozen_after_elimination ||
+            self.ships[ship_index].vitals.is_dead() || !body.active {
+            return Ok(false);
+        }
+        let Some(&target_index) = self.ship_by_id.get(&contacted_target_id) else {
+            return Ok(false);
+        };
+        let target = &self.ships[target_index];
+        if target.vitals.is_dead() || !self.physics.ships()[target_index].active ||
+            target.side == self.ships[ship_index].side {
+            return Ok(false);
+        }
+        let Some(&weapon_id) = self.game_bomb_weapon_by_ship.get(&striker_id)
+        else { return Ok(false) };
+        let Some(held) = self.reservations.held_by(weapon_id)
+        else { return Ok(false) };
+        if held.target_id != contacted_target_id ||
+            held.side != self.ships[ship_index].side {
+            return Ok(false);
+        }
+        self.game_bomb_measurements.striker_contact_checks += 1;
+        if !self.physics.ship_hulls_overlap(
+            ship_index, target_index, collisions,
+        ) {
+            self.game_bomb_measurements.striker_contact_misses += 1;
+            return Ok(false);
+        }
+        let fleet_id = *self.fleet_id_by_ship.get(&striker_id)
+            .ok_or(CombatWorldError::InvalidFleetIdentity)?;
+        let shot_id = self.next_entity_id;
+        if shot_id == i64::MAX {
+            return Err(CombatWorldError::EntityIdExhausted);
+        }
+        // Unique projectile ownership must be available before the spawn.
+        // No reservation changes between this check and the transfer.
+        if self.reservations.held_by(shot_id).is_some() {
+            return Err(CombatWorldError::InvalidBombTarget);
+        }
+        let position = self.physics.ships()[target_index].motion.position;
+        self.spawn_striker_bomb(
+            shot_id,
+            ShotOwner {
+                shooter_id: striker_id,
+                shooter_side: self.ships[ship_index].side,
+                shooter_is_fire_barge: false,
+                self_detonation: false,
+            },
+            contacted_target_id, fleet_id, held.amount,
+            ProjectileMotion::new(
+                position, 0.0, 0.0, 0.0, shot_id, command_outcome_id,
+            ),
+        )?;
+        // This transfer is infallible after preflight: the original weapon
+        // still holds the lease and the new projectile ID has no holder.
+        // Death/command cleanup may now release the old weapon harmlessly.
+        let transferred = self.reservations.transfer(weapon_id, shot_id)?;
+        debug_assert!(transferred, "validated Bomb lease must transfer");
+        self.events.push(CombatEvent::StrikerBombDropped {
+            ship_id: striker_id,
+            target_id: contacted_target_id,
+            projectile_id: shot_id,
+        });
+        self.game_bomb_measurements.striker_bombs_dropped += 1;
+        Ok(true)
+    }
+
     /// Striker.TryToDropBombs is a contact-triggered ship special. Find an
     /// enemy physically touching the *real* collider, never one merely
     /// within an invented radius. Unity caches its most recent TouchingShip;

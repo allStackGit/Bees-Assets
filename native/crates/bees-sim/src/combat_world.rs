@@ -556,6 +556,15 @@ pub struct PolicySpecialMeasurements {
     pub warp_actions_completed: u64,
 }
 
+/// Cumulative work and delivered bomb count for authored game commands.
+/// This is separate from policy special-action request measurements.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct GameBombMeasurements {
+    pub striker_contact_checks: u64,
+    pub striker_contact_misses: u64,
+    pub striker_bombs_dropped: u64,
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct ProjectileStorageMetrics {
     pub allocated_slots: usize,
@@ -715,6 +724,7 @@ pub struct CombatWorld {
     /// pay a quadratic cost to detect repeated ship references.
     mining_seen_ship_ids: HashSet<i64>,
     policy_special_measurements: PolicySpecialMeasurements,
+    game_bomb_measurements: GameBombMeasurements,
     tracked_order_measurements: TrackedOrderMeasurements,
     /// One hit per victim for each active charge; cleared when the
     /// owning Barge starts another charge or is removed from the world.
@@ -827,6 +837,7 @@ impl CombatWorld {
             mining_obstacle_ids: Vec::new(),
             mining_seen_ship_ids: HashSet::new(),
             policy_special_measurements: PolicySpecialMeasurements::default(),
+            game_bomb_measurements: GameBombMeasurements::default(),
             tracked_order_measurements: TrackedOrderMeasurements::default(),
             barge_charge_hits: HashSet::new(),
             barge_contact_candidates: Vec::new(),
@@ -1046,6 +1057,10 @@ impl CombatWorld {
 
     pub fn policy_special_measurements(&self) -> PolicySpecialMeasurements {
         self.policy_special_measurements
+    }
+
+    pub fn game_bomb_measurements(&self) -> GameBombMeasurements {
+        self.game_bomb_measurements
     }
 
     pub fn tracked_order_measurements(&self) -> TrackedOrderMeasurements {
