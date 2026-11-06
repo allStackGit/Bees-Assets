@@ -39,7 +39,14 @@ may be exported from a failed step. A native Beehive healing capability
 now accepts the actual Beehive child HealCollider and authored ship-size
 eligibility; a touching eligible Bee can restore up to 50 health per
 successful action with a one-second cooldown. That action emits its
-real TSV improvement through the same episode shaping budget. WarpGate
+real TSV improvement through the same episode shaping budget. Policy and
+game-command healing now share the physical health/TSV mutation and
+capability event. Four-slot Beehive reservations are globally owned by
+CombatWorld, released on ship/Beehive retirement and queried through the
+authored healing-zone index. The separate HiveMind Heal command remains
+disabled until its original-health priority queue, movement/arrival,
+timer callbacks and slot-reassignment lifecycle are implemented; policy
+healing does not substitute for that command. WarpGate
 returns now require the real WarpGate child collider supplied through
 `configure_warp_gate_zone` and a living non-WarpGate Human policy
 controller registered with `configure_policy_warp` using the authored
