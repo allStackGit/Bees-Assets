@@ -1529,7 +1529,10 @@ It reads completed, independently generated evidence for the requested suite
 and dispatch and returns either null or a version 1 report with `suite_id`,
 `dispatch_id`, `checkpoint_sha256`, `trials` and `successes` alongside
 `schema_version:1`. The adapter owns evaluator provenance and held-out data
-selection. The Hub verifies ownership and the frozen threshold, records the
+selection. The evaluator-target API lists a job only after a fresh authenticated
+heartbeat and a running native observation from the current worker instance;
+persisted `running` status alone is not sufficient after a disconnect or
+restart. The Hub verifies ownership and the frozen threshold, records the
 triggering report, and requests Stop through the existing native supervisor.
 The job retains capacity until terminal handling. After a verified native
 Stop and capacity release, a qualifying evaluation can advance an independent
