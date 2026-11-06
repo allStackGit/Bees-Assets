@@ -118,9 +118,11 @@ pub trait NativeLevelCommandContext {
     }
 
     /// The owning Level's original ProximityCollider.NearbyEnemyShips
-    /// membership for current Fire Barge and Yellow Jacket Bomb targets.
-    /// This is called ONLY on a BombingRun timer callback. There is no
-    /// substitute based on hull distance or training observations.
+    /// membership for current BombingRun target pairs. Called ONLY on
+    /// a BombingRun timer callback. When need_retarget is true, also
+    /// supply real current GetShips-ordered enemy metadata and live Bomb
+    /// weapons for replacement target selection. There is no fabricated
+    /// collider-center proximity or stale activation-time weapon power.
     fn bombing_command_snapshot(
         &self, _world: &CombatWorld, _owner: SquadLifetime,
         _enemy_squad_id: i64, _need_retarget: bool,

@@ -38,8 +38,8 @@ pub struct NativeBombingActivation<'a> {
     pub enemies: &'a [NativeEnemyTargetStats],
 }
 
-/// The one authoritative Level projection needed when a Fire Barge /
-/// Yellow Jacket BombingRun command's timer fires. Nearby pairs are ONLY those for
+/// The one authoritative Level projection needed whenever an authored
+/// BombingRun command's timer fires. Nearby pairs are ONLY those for
 /// which the current bomb target is in the ship's real Unity
 /// ProximityCollider.NearbyEnemyShips set. This is not collider-center
 /// distance or a second physics contact registry.
@@ -141,7 +141,7 @@ pub fn assign_initial_bombing_run_targets(
 }
 
 /// Reuse the existing Bomb.SetTargetShip strategy and world lease.
- /// Healthy, still-selected targets do not consume RNG or metadata work.
+/// Healthy, still-selected targets do not consume RNG or metadata work.
 fn retarget_selected_game_bomb(
     world: &mut CombatWorld,
     roster: &NativeSquadRoster,
@@ -501,9 +501,9 @@ impl NativeBombingRun {
                             send_bomber_to_selected_target(
                                 world, member, self.formation,
                             )? {
-                        let near = target_in_proximity(
-                            member.ship_id, target_id,
-                        )?;
+                            let near = target_in_proximity(
+                                member.ship_id, target_id,
+                            )?;
                             any_near |= near;
                             all_near &= near;
                         } else {

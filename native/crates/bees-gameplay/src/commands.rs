@@ -420,6 +420,9 @@ pub struct CommandMeasurements {
     /// Total (ship,target) trigger pairs supplied by those snapshots.
     /// No raw per-tick contacts or additional histories are retained.
     pub bombing_proximity_pairs: u64,
+    pub bombing_retarget_snapshots: u64,
+    pub bombing_retarget_enemies_supplied: u64,
+    pub bombing_retarget_weapons_supplied: u64,
     /// Sparse cumulative counters; no per-step logging or history.
     pub mining_extractions: u64,
     pub minerals_mined: u64,
@@ -1481,6 +1484,13 @@ impl NativeSquadCommandDirector {
                         self.measurements.bombing_snapshot_requests += 1;
                         self.measurements.bombing_proximity_pairs +=
                             snapshot.nearby_targets.len() as u64;
+                        if need_retarget {
+                            self.measurements.bombing_retarget_snapshots += 1;
+                            self.measurements.bombing_retarget_enemies_supplied +=
+                                snapshot.retarget_enemies.len() as u64;
+                            self.measurements.bombing_retarget_weapons_supplied +=
+                                snapshot.retarget_weapons.len() as u64;
+                        }
                         // The Level's proximity input is ephemeral. Sort
                         // its one-time per-callback projection in place,
                         // then check every barge in logarithmic time rather
