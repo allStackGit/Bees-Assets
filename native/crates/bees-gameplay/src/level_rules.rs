@@ -278,11 +278,22 @@ where
                     NativeLevelEventError::Commands(err)
                 )
             )?;
+            let previous_event_count = state.combat.events().len();
             state.events.advance_timed_commands(
                 completed_tick, &mut state.combat,
                 state.metadata.navigation(),
                 &state.command_friendlies, dt_seconds,
             )?;
+            if state.combat.events().len() > previous_event_count {
+                // Timed Mining callbacks occur after the normal reward
+                // pass. Their physical cargo is already correct; commit
+                // persistent resources and deliver only new events now.
+                state.credit_mining_since(previous_event_count)?;
+                state.events.record_late_gameplay_events(
+                    completed_tick,
+                    &state.combat.events()[previous_event_count..],
+                )?;
+            }
         }
         Ok(counts)
     }
