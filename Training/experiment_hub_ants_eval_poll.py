@@ -163,9 +163,19 @@ def poll(args, suite: dict) -> None:
             except (OSError, ValueError, TypeError, KeyError) as exc:
                 print(f"Ants evaluation target {dispatch} skipped: {exc}", file=sys.stderr)
 
-        dispatch = next((key for key in cursor if key in candidates), None)
-        if dispatch is not None:
+        for dispatch in cursor:
+            if dispatch not in candidates:
+                continue
             checkpoint, episode = candidates[dispatch]
+            try:
+                digest = hashlib.sha256(read_bounded(checkpoint / "manifest.json", 65536)).hexdigest()
+            except (OSError, ValueError) as exc:
+                print(f"Ants evaluation target {dispatch} manifest unavailable: {exc}", file=sys.stderr)
+                continue
+            break
+        else:
+            dispatch = None
+        if dispatch is not None:
             # Rotate after each attempt and skip this checkpoint on later invocations.
             cursor.pop(dispatch)
             cursor[dispatch] = episode
@@ -173,7 +183,6 @@ def poll(args, suite: dict) -> None:
             save_cursor(state, {"suite_sha256": suite_digest, "dispatches": cursor})
         if dispatch is None:
             return
-        digest = hashlib.sha256(read_bounded(checkpoint / "manifest.json", 65536)).hexdigest()
         successes = evaluate(checkpoint, digest, suite, args.scratch)
         pending = {
             "target": live[dispatch],
