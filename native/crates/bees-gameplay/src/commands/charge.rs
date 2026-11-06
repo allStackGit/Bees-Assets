@@ -138,6 +138,7 @@ impl NativeChargeRun {
                 world.try_start_game_barge_charge(
                     member.ship_id, selection.command_outcome_id,
                     self.formation.map_bounds,
+                    self.formation.can_override_bounds,
                 )?;
             } else {
                 send_bomber_to_selected_target(

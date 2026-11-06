@@ -31,6 +31,8 @@ pub(super) struct GameBargeCharge {
     /// Barge.ChargeForward aims at Level.ForceBounds(target.GetPosition)
     /// at wind-up completion, not the unclamped target position at issue.
     pub(super) map_bounds: Aabb,
+    /// Source Ship.CanOverrideBounds, supplied by the owning Level.
+    pub(super) can_override_bounds: bool,
     pub(super) power: i32,
     pub(super) command_outcome_id: i64,
 }
@@ -43,7 +45,7 @@ impl CombatWorld {
     /// profile before accepting the command.
     pub fn try_start_game_barge_charge(
         &mut self, ship_id: i64, command_outcome_id: i64,
-        map_bounds: Aabb,
+        map_bounds: Aabb, can_override_bounds: bool,
     ) -> Result<bool, CombatWorldError> {
         if !map_bounds.min.is_finite() || !map_bounds.max.is_finite() ||
             map_bounds.min.x > map_bounds.max.x ||
@@ -93,7 +95,8 @@ impl CombatWorld {
         );
         self.game_barge_charges.insert(ship_id, GameBargeCharge {
             phase: 1, elapsed: 0.0, target_id: held.target_id,
-            map_bounds, power: held.amount, command_outcome_id,
+            map_bounds, can_override_bounds,
+            power: held.amount, command_outcome_id,
         });
         self.game_barge_measurements.starts += 1;
         self.events.push(CombatEvent::BargeChargeStarted { ship_id });
@@ -181,14 +184,23 @@ impl CombatWorld {
                         .filter(|body| body.active)
                         .and_then(|body| self.ship(charge.target_id)
                             .filter(|target| !target.vitals.is_dead())
-                            .map(|_| Vec2::new(
-                                body.motion.position.x.clamp(
-                                    charge.map_bounds.min.x, charge.map_bounds.max.x,
-                                ),
-                                body.motion.position.y.clamp(
-                                    charge.map_bounds.min.y, charge.map_bounds.max.y,
-                                ),
-                            ) - origin))
+                            .map(|_| {
+                                let destination = if charge.can_override_bounds {
+                                    body.motion.position
+                                } else {
+                                    Vec2::new(
+                                        body.motion.position.x.clamp(
+                                            charge.map_bounds.min.x,
+                                            charge.map_bounds.max.x,
+                                        ),
+                                        body.motion.position.y.clamp(
+                                            charge.map_bounds.min.y,
+                                            charge.map_bounds.max.y,
+                                        ),
+                                    )
+                                };
+                                destination - origin
+                            }))
                         .map_or(rotation, heading_towards);
                     self.physics.ships_mut()[index].motion
                         .cannot_change_movement_orders = false;
@@ -269,7 +281,9 @@ impl CombatWorld {
                 continue;
             }
             if self.game_barge_charges.get(&contact.ship_id)
-                .is_some_and(|charge| charge.phase == 2) {
+                .is_some_and(|charge|
+                    charge.phase == 2 && !charge.can_override_bounds
+                ) {
                 self.stop_game_barge_charge(contact.ship_id)?;
             }
         }
