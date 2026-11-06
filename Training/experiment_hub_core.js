@@ -1093,8 +1093,6 @@ class ExperimentHub {
                 throw Error('Select a different destination for the current job claim.');
             if(job.continuation_machine_id&&job.continuation_machine_id!==move.machine_id)
                 throw Error('Checkpoint continuation must stay on the original machine.');
-            if(job.gpu_qualification?.status==='requested')
-                throw Error('Wait for the in-flight GPU device probe to finish before moving its claim.');
             const machine=machines.get(move.machine_id);
             if(machine?.status!=='connected'||!machine.installed_projects?.includes(job.project_id)||
                 !supportsEvaluation(machine.evaluation_suites,job))
