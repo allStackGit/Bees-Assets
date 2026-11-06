@@ -45,6 +45,9 @@ mod circle;
 mod swipe;
 mod targeting;
 mod in_and_out;
+mod aggressive;
+pub use self::aggressive::NativeAggressiveCommandSnapshot;
+use self::aggressive::AggressiveRun;
 pub use self::targeting::{
     NativeCommandTargetQueue, NativeEnemyTargetStats,
     sort_native_command_targets,
@@ -376,6 +379,7 @@ struct ActiveNativeCommand {
     circle: Option<CircleRun>,
     swipe: Option<SwipeRun>,
     in_and_out: Option<InAndOutRun>,
+    aggressive: Option<AggressiveRun>,
     mining: Option<MiningRun>,
     heal: Option<HealRun>,
     scouting: Option<ScoutingRun>,
@@ -628,6 +632,7 @@ impl NativeSquadCommandDirector {
         let mut circle = None;
         let mut swipe = None;
         let mut in_and_out = None;
+        let mut aggressive = None;
         let mut mining = None;
         let mut heal = None;
         let mut scouting = None;
@@ -703,6 +708,15 @@ impl NativeSquadCommandDirector {
                 };
                 in_and_out = Some(run);
                 // Execute picks a return point; timer owns the first move.
+                false
+            }
+            LocalCommandKind::Aggressive => {
+                let Some(run) = AggressiveRun::start(world, squad)? else {
+                    self.measurements.unavailable += 1;
+                    return Ok(Activation::Unavailable(selection));
+                };
+                aggressive = Some(run);
+                // Source begins its first coroutine on the immediate timer.
                 false
             }
             LocalCommandKind::MoveToRandom => {
@@ -918,7 +932,7 @@ impl NativeSquadCommandDirector {
                 LocalCommandKind::ClosestFriendly |
                 LocalCommandKind::Guard | LocalCommandKind::CircleSquad |
                 LocalCommandKind::RightSwipe | LocalCommandKind::LeftSwipe |
-                LocalCommandKind::InAndOut
+                LocalCommandKind::InAndOut | LocalCommandKind::Aggressive
             ) || (selection.local_command == LocalCommandKind::Retreat &&
                 !retreat_already_safe) {
                 Some(ScaledTimer::new(
@@ -934,6 +948,7 @@ impl NativeSquadCommandDirector {
             circle,
             swipe,
             in_and_out,
+            aggressive,
             mining,
             heal,
             scouting,
@@ -1026,6 +1041,7 @@ impl NativeSquadCommandDirector {
             world, navigation, None, friendlies, random, dt,
             |_, _, _| Err(GameCommandError::MissingCombatSnapshot),
             |_, _, _| Err(GameCommandError::MissingCombatSnapshot),
+            |_, _, _| Err(GameCommandError::MissingCombatSnapshot),
             finished,
         )
     }
@@ -1047,6 +1063,9 @@ impl NativeSquadCommandDirector {
         mut swipe_snapshot: impl FnMut(
             SquadLifetime, i64, &CombatWorld,
         ) -> Result<NativeSwipeCommandSnapshot, GameCommandError>,
+        mut aggressive_snapshot: impl FnMut(
+            SquadLifetime, i64, &CombatWorld,
+        ) -> Result<NativeAggressiveCommandSnapshot, GameCommandError>,
         finished: &mut Vec<FinishedNativeCommand>,
     ) -> Result<(), GameCommandError> {
         if !dt.is_finite() || dt < 0.0 {
@@ -1203,6 +1222,51 @@ impl NativeSquadCommandDirector {
                         )?;
                         timer.finish_update(due);
                     }
+                }
+                if completed.is_none() {
+                    if let Some(timeout) = command.timeout.as_mut() {
+                        if let Some(due) = timeout.begin_update(dt) {
+                            self.measurements.timeout_callbacks += 1;
+                            timeout.finish_update(due);
+                            completed = Some(CommandFinishCause::Timeout);
+                        }
+                    }
+                }
+                if let Some(cause) = completed {
+                    self.completed_scratch.push((owner, cause));
+                }
+                continue;
+            }
+            if let Some(aggressive) = command.aggressive.as_mut() {
+                let mut completed = None;
+                // When StartCoroutine begins during a timer callback the
+                // first ship order executes before yielding on this frame.
+                let mut due_snapshot = None;
+                if let Some(timer) = command.command_poll.as_mut() {
+                    if let Some(due) = timer.begin_update(dt) {
+                        self.measurements.command_timer_callbacks += 1;
+                        let snapshot = aggressive_snapshot(
+                            owner, aggressive.enemy_squad_id(), world,
+                        )?;
+                        completed = aggressive.on_poll(
+                            world, navigation, timer, owner, &snapshot,
+                        )?;
+                        timer.finish_update(due);
+                        due_snapshot = Some(snapshot);
+                    }
+                }
+                if completed.is_none() && aggressive.has_pending_coroutine() {
+                    let roster = roster.ok_or(GameCommandError::MissingCombatSnapshot)?;
+                    let snapshot = match due_snapshot {
+                        Some(snapshot) => snapshot,
+                        None => aggressive_snapshot(
+                            owner, aggressive.enemy_squad_id(), world,
+                        )?,
+                    };
+                    completed = aggressive.resume_coroutine_one_ship(
+                        world, roster, random, owner,
+                        &command.selection, &snapshot,
+                    )?;
                 }
                 if completed.is_none() {
                     if let Some(timeout) = command.timeout.as_mut() {
