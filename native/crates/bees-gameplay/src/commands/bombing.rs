@@ -51,7 +51,8 @@ pub struct NativeFireBargeTimerSnapshot {
 
 /// Unity BombingRun.Execute calls GetTarget on every current bomber in
 /// squad order before starting its recurring two-second command timer.
-/// A failure invokes SetFinalize and releases all surviving Bomb targets.
+/// A rejected native replacement preserves the prior command's
+/// reservations; a brand-new rejected command leaves no Bomb leases.
 /// This function performs ONLY that initial assignment; the Level must
 /// still issue pursuit orders and implement the subsequent bomber states.
 /// It does not generate a separate target/damage cache or synthetic ship.

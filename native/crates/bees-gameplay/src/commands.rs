@@ -416,6 +416,11 @@ pub struct CommandMeasurements {
     /// Subset requiring Unity's all-own/all-enemy weapon range predicate.
     /// This is only requested for due position-hold timer callbacks.
     pub aggressive_all_target_snapshot_requests: u64,
+    /// Successful authored Fire Barge proximity snapshots on due timers.
+    pub bombing_snapshot_requests: u64,
+    /// Total (ship,target) trigger pairs supplied by those snapshots.
+    /// No raw per-tick contacts or additional histories are retained.
+    pub bombing_proximity_pairs: u64,
     /// Sparse cumulative counters; no per-step logging or history.
     pub mining_extractions: u64,
     pub minerals_mined: u64,
@@ -1436,6 +1441,9 @@ impl NativeSquadCommandDirector {
                         let mut snapshot = bombing_snapshot(
                             owner, bombing.enemy_squad_id(), world,
                         )?;
+                        self.measurements.bombing_snapshot_requests += 1;
+                        self.measurements.bombing_proximity_pairs +=
+                            snapshot.nearby_targets.len() as u64;
                         // The Level's proximity input is ephemeral. Sort
                         // its one-time per-callback projection in place,
                         // then check every barge in logarithmic time rather
