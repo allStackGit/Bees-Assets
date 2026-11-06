@@ -36,8 +36,8 @@ def exclusive(path: Path):
         yield
 
 
-def targets(port: int, machine: str, suite: str) -> dict:
-    query = urlencode({"project_id": "ants", "machine_id": machine, "suite_id": suite})
+def targets(port: int, machine: str, suite: str, project: str = "ants") -> dict:
+    query = urlencode({"project_id": project, "machine_id": machine, "suite_id": suite})
     connection = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
     try:
         connection.request("GET", f"/api/hub/evaluation/targets?{query}")
@@ -112,7 +112,7 @@ def flush_receipt(args, suite: dict, pending: dict, live: dict) -> None:
         raise ValueError("invalid pending evaluation receipt identity")
     job = live.get(dispatch)
     if job != pending["target"]:
-        print(f"Ants evaluation dispatch {dispatch} changed before publication.", file=sys.stderr)
+        print(f"Evaluation dispatch {dispatch} changed before publication.", file=sys.stderr)
         return
     destination = args.receipt_root / f"{dispatch}.{suite['suite_id']}.json"
     if not passed_receipt(destination, dispatch, suite, job):
