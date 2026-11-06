@@ -867,9 +867,13 @@ document.addEventListener('DOMContentLoaded', () => {
             :'Run after an existing native job (optional)';
         const pipelinePredecessor=$('hub-pipeline-predecessor');
         const formerPipelineParent=pipelinePredecessor.value;
+        const retiredParents=new Set((state.jobs||[]).filter(j=>
+            j.project_id==='ants').map(j=>j.id));
         const sequenceParents=checkpointPipeline?availableParents:
             (state.jobs||[]).filter(j=>{
-                if(j.project_id==='bees'||successors.has(j.id))return false;
+                if(['bees','ants'].includes(j.project_id)||
+                    retiredParents.has(j.after_job_id)||successors.has(j.id))
+                    return false;
                 const queued=['waiting_adapter','waiting_predecessor',
                     'start_requested','launch_requested','running'].includes(j.status);
                 const completed=j.independent_sequence_complete===true&&
