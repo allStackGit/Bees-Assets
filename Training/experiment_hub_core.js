@@ -223,6 +223,26 @@ function gpuProbeBlock(job,lease,machine) {
         return 'GPU access probe requires a second observed GPU to verify access denial.';
     return null;
 }
+// Native finish can complete an independent sequence. A verified evaluator
+// target may also complete one after a native Stop, but must never authorize
+// checkpoint continuation or bypass native capacity release.
+function independentSequenceComplete(job) {
+    if(!job)return false;
+    if(job.status==='finished')return true;
+    if(job.status!=='stopped'||!job.evaluation_stop||
+        !job.evaluation_stop_evidence||!UUID.test(String(job.dispatch_id||''))||
+        !job.stop_requested_at||!job.execution_updated_at)
+        return false;
+    try {
+        const rule=evaluationPolicy(job.evaluation_stop);
+        const evidence=evaluationEvidence(job.evaluation_stop_evidence,
+            rule,job.dispatch_id);
+        return evidence.trials>=rule.min_trials&&
+            evidence.successes/evidence.trials>=rule.min_success_rate;
+    }catch {
+        return false;
+    }
+}
 // Pure, non-authorizing readiness projection. The dashboard and the actual
 // start authorization share one eligibility contract; displaying readiness
 // does not claim a reservation or dispatch any native process.
@@ -281,7 +301,7 @@ function nativeStartReadiness(snapshot, job) {
         // Written by the same atomic commit that releases the finished
         // predecessor, or after verifying an already-released lease at
         // queue creation. Lease history is bounded and may later be pruned.
-        if(!parent||parent.status!=='finished'||
+        if(!independentSequenceComplete(parent)||
             !parent.capacity_released_at||!parent.dispatch_id||
             !parent.execution_updated_at||
             typeof job.predecessor_ready_at!=='string'||
@@ -289,7 +309,7 @@ function nativeStartReadiness(snapshot, job) {
             job.continuation_of_job_id||
             job.artifact_lineage_root_id!==job.id||
             job.continuation_machine_id)
-            return block('Independent dependency has not finished and released verified native capacity.');
+            return block('Independent predecessor has not completed and released verified native capacity.');
     }
     return {eligible:true,reason:r.gpu_count
         ?'Eligible for explicit exclusive GPU Start with in-service verification.'
@@ -346,8 +366,13 @@ function waitingStageReason(job,byId) {
             status='release_pending';explanation='finished; capacity release is required';
         }else if(parent.status==='stopped') {
             if(dependent.after_job_id) {
-                status='needs_review';
-                explanation='stopped without finishing; independent dependent jobs will not auto-advance';
+                if(independentSequenceComplete(parent)&&!parent.capacity_released_at) {
+                    status='release_pending';
+                    explanation='met its evaluation stop target; verified capacity release is required';
+                }else {
+                    status='needs_review';
+                    explanation='stopped without an eligible released evaluation result; dependent jobs remain blocked';
+                }
             }else if(parent.project_id==='tinybrains') {
                 status='needs_review';
                 explanation='stopped without finishing; cancel the queued TinyBrains continuation stages';
@@ -1032,15 +1057,16 @@ class ExperimentHub {
                 // Retain historical machine and lease IDs for provenance after
                 // a native terminal report has been received and reviewed.
                 job.capacity_released_at=now();
-                // Successful native completion and capacity release are
-                // the only automatic dependency advancement authorities.
-                // Checkpoint-continuations preserve lineage and host;
-                // independent sequences preserve neither.
-                if(job.status==='finished') {
+                // Native finish, or a stopped job with verified independent
+                // evaluation evidence, can advance an independent sequence
+                // after durable capacity release. Only a native finish may
+                // advance checkpoint continuations.
+                if(independentSequenceComplete(job)) {
                     const children=next.jobs.filter(j=>
                         j.status==='waiting_predecessor'&&
-                        (j.continuation_of_job_id===job.id||
-                         j.after_job_id===job.id));
+                        (j.after_job_id===job.id||
+                         (job.status==='finished'&&
+                          j.continuation_of_job_id===job.id)));
                     if(children.length>1)throw Error(
                         'Multiple successor jobs claim one predecessor; refusing release.');
                     const child=children[0];
@@ -1063,7 +1089,7 @@ class ExperimentHub {
                     }
                     if(child) {
                         child.status='waiting_adapter';
-                        child.status_reason='Predecessor finished and released capacity; job is eligible for separate allocation and native authorization.';
+                        child.status_reason='Predecessor completed and released verified capacity; job is eligible for separate allocation and native authorization.';
                         child.predecessor_ready_at=now();
                     }
                 }
@@ -2047,11 +2073,12 @@ class ExperimentHub {
             if(!UUID.test(String(afterId)))
                 throw Error('Select a valid independent predecessor.');
             dependency=next.jobs.find(j=>j.id===afterId);
+            const completed=independentSequenceComplete(dependency);
             if(!dependency||dependency.project_id==='bees'||
-                !['waiting_adapter','waiting_predecessor',
-                  'start_requested','launch_requested','running',
-                  'finished'].includes(dependency.status)||
-                (dependency.status==='finished'&&
+                !(['waiting_adapter','waiting_predecessor',
+                    'start_requested','launch_requested','running'].includes(
+                        dependency.status)||completed)||
+                (completed&&
                     (!dependency.dispatch_id||!dependency.execution_updated_at||
                      !dependency.assigned_machine_id)))
                 throw Error('Independent dependency needs an eligible non-Bees predecessor.');
@@ -2059,8 +2086,7 @@ class ExperimentHub {
                 (j.continuation_of_job_id===afterId||
                  j.after_job_id===afterId)&&j.status!=='cancelled'))
                 throw Error('This predecessor already has a non-cancelled successor.');
-            waitingPredecessor=dependency.status!=='finished'||
-                !dependency.capacity_released_at;
+            waitingPredecessor=!completed||!dependency.capacity_released_at;
             if(!waitingPredecessor) {
                 // A dependency selected after its parent was released must
                 // still prove terminal lease ownership before freezing an
@@ -2073,7 +2099,7 @@ class ExperimentHub {
                     l.issued_by==='experiment-hub'&&
                     l.status==='released'&&Boolean(l.released_at));
                 if(!released)
-                    throw Error('Cannot queue against a finished dependency whose released native lease is no longer verifiable.');
+                    throw Error('Cannot queue against a completed dependency whose released native lease is no longer verifiable.');
                 dependencyReady=true;
             }
         }
