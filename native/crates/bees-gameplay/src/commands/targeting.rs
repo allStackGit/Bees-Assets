@@ -325,9 +325,13 @@ impl NativeTargetApproach {
                 );
                 Ok(())
             },
+            // Unity Ship.HasTargetEnemyShipToFollow checks only
+            // whether the retained target is non-null and still alive.
+            // It does NOT revoke a ship target when that ship changes
+            // squads. The freshly rebuilt queue is independently
+            // restricted to the actual current enemy squad above.
             |id| world.ship(id).is_some_and(|ship|
-                !ship.vitals.is_dead() &&
-                roster.owning_squad(id) == Some(enemy_owner)
+                !ship.vitals.is_dead()
             ),
         )?;
         let Some(target_id) = target_id else { return Ok(None); };
