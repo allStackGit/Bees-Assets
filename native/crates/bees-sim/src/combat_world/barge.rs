@@ -101,7 +101,7 @@ impl CombatWorld {
     pub fn reset_game_barge_charge(
         &mut self, ship_id: i64,
     ) -> Result<(), CombatWorldError> {
-        let Some(_) = self.game_barge_charges.remove(&ship_id) else {
+        let Some(charge) = self.game_barge_charges.remove(&ship_id) else {
             return Ok(());
         };
         self.barge_charge_hits.retain(|&(attacker, _)|
@@ -115,7 +115,14 @@ impl CombatWorld {
             let motion = &mut self.physics.ships_mut()[index].motion;
             motion.cannot_change_movement_orders = false;
             motion.current_speed = motion.base_speed;
-            self.stop_ship_game_movement(ship_id)?;
+            if charge.phase != 4 {
+                // Replacement commands can queue movement while the old
+                // charge lock is held. Preserve that pending new order.
+                let steering = self.game_ship_steering.get_mut(&ship_id)
+                    .ok_or(CombatWorldError::MissingGameMovementProfile)?;
+                steering.stop(motion);
+                self.navigation_requests.invalidate(ship_id)?;
+            }
         }
         Ok(())
     }

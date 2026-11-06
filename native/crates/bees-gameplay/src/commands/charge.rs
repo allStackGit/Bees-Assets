@@ -1,8 +1,8 @@
 //! Scripted Barge Charge command, using one shared physical Barge engine.
- //!
- //! Unity sources: Commands/Charge.Execute/Timer and Barge.ChargeForward.
- //! The Level supplies the original Charge.ShipsWithinRange, rotation,
- //! and unobstructed-sight eligibility; this module does not invent range.
+//!
+//! Unity sources: Commands/Charge.Execute/Timer and Barge.ChargeForward.
+//! The Level supplies the original Charge.ShipsWithinRange, rotation,
+//! and unobstructed-sight eligibility; this module does not invent range.
 
 use bees_hivemind::dispatch::ResolvedHiveMindCommand;
 use bees_hivemind::session::SquadLifetime;
@@ -118,6 +118,10 @@ impl NativeChargeRun {
                 Some(false) => continue,
                 None => {}
             }
+            let prior_target_live = world.game_bomb_current_target(
+                member.ship_id,
+            ).and_then(|id| world.ship(id))
+                .is_some_and(|target| !target.vitals.is_dead());
             if !retarget_selected_game_bomb(
                 world, roster, random, member.ship_id,
                 snapshot.enemy_owner, selection,
@@ -126,7 +130,9 @@ impl NativeChargeRun {
             )? {
                 return Ok(Some(CommandFinishCause::NoEnemyTargets));
             }
-            if snapshot.eligible_barges.binary_search(
+            // Eligibility was captured before retargeting. Do not charge
+            // a new enemy using the previous target's angle/range/LOS.
+            if prior_target_live && snapshot.eligible_barges.binary_search(
                 &member.ship_id,
             ).is_ok() {
                 world.try_start_game_barge_charge(
