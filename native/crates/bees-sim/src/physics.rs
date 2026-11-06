@@ -489,6 +489,14 @@ impl ShipBody {
         self.collider.vision_proximity(observer, range_squared)
     }
 
+    /// Unity Collider2D.ClosestPoint on the *actual* current primary hull,
+    /// including rotated box and concave polygon assets. The collider
+    /// cache is updated only if the ship's pose changed.
+    pub fn primary_closest_point(&mut self, point: Vec2) -> Vec2 {
+        self.update_hull();
+        self.collider.closest_point(point)
+    }
+
     /// Invalidates cached geometry before the next fixed step.
     pub fn replace_shape(&mut self, shape: ShipShape) -> Result<(), PhysicsError> {
         let radius = shape.maximum_extent();

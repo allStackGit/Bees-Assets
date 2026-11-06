@@ -2254,6 +2254,22 @@ impl CombatWorld {
         self.reservations.release(bomb_weapon_id).is_some()
     }
 
+    /// Unity Weapon.DistanceTo uses Collider2D.ClosestPoint, not distance
+    /// to the target ship center. This reads the SAME authoritative hull
+    /// the physics and vision systems use, updating the cached pose only
+    /// if necessary. Required by BombingRun Closest/Furthest target ranks.
+    pub fn ship_hull_closest_point(
+        &mut self, target_id: i64, origin: Vec2,
+    ) -> Option<Vec2> {
+        if !origin.is_finite() { return None; }
+        let &index = self.ship_by_id.get(&target_id)?;
+        if self.ships[index].vitals.is_dead() ||
+            !self.physics.ships()[index].active {
+            return None;
+        }
+        Some(self.physics.ships_mut()[index].primary_closest_point(origin))
+    }
+
     /// Bomb.SetTargetShip reserves at weapon selection time. When its
     /// delivery object is created, transfer that existing lease, not a new
     /// reservation. Cancellation of an unused weapon target calls release
