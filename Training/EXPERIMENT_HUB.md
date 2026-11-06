@@ -1274,9 +1274,9 @@ receipt directory with the training agent's adapter. The scheduler owns
 the cadence, CPU budget, and lifetime of each invocation.
 
 Each invocation evaluates at most one newer checkpoint and rechecks the
-matching running dispatch before publication. The first visible checkpoint
-sets a watermark because a continuation may initially reference the
-predecessor's checkpoint. The evaluator rotates among eligible dispatches,
+matching running dispatch before publication. Fresh jobs can use their first
+visible checkpoint. For continuations, the first visible checkpoint sets a
+watermark because it may belong to the predecessor. The evaluator rotates among eligible dispatches,
 retains the last attempted episode across invocations, and leaves an
 already-passing receipt available for the worker. Once an evaluation
 result is recorded in scratch, a failed Hub recheck or publication can
