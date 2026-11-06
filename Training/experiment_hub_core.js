@@ -1155,13 +1155,29 @@ class ExperimentHub {
         }else selected.gpu_qualification={
             request_id:crypto.randomUUID(),lease_id:lease.id,
             machine_id:machine.id,status:'requested',
-            requested_at:now(),
+            requested_at:now(),first_offered_at:null,
             ...(origin==='automation'?{automation_session_id:session.session_id}:{}),
         };
         this.commit(next);
         return {job_id:job.id,lease_id:lease.id,
             request_id:selected.gpu_qualification.request_id,
             status:'requested',starts_training:false};
+    }
+    withdrawGpuQualification(value) {
+        if(!object(value)||value.confirm_withdraw!==true||
+            !UUID.test(String(value.expected_request_id||'')))
+            throw Error('Explicitly confirm which GPU access probe to withdraw.');
+        const next=copy(this.state);
+        const job=next.jobs.find(j=>j.id===value.job_id);
+        const proof=job?.gpu_qualification;
+        if(job?.status!=='waiting_adapter'||!job.lease_id||job.dispatch_id||
+            proof?.lease_id!==job.lease_id||proof.request_id!==value.expected_request_id||
+            proof.status!=='requested'||proof.first_offered_at!==null)
+            throw Error('Only a matching GPU probe that has never been offered can be withdrawn.');
+        proof.status='cancelled';
+        proof.diagnostic='Operator withdrew this undelivered GPU access probe.';
+        this.commit(next);
+        return {job_id:job.id,request_id:proof.request_id,status:proof.status};
     }
     // A GPU preflight report never changes the job's execution state.
     recordGpuQualifications(next,machine,reports,instanceId) {
@@ -1206,6 +1222,8 @@ class ExperimentHub {
                 lease.status!=='acknowledged')
                 throw Error('GPU proof does not belong to this job and machine.');
             if(request.status!=='requested')continue;
+            if(request.first_offered_at===null)
+                throw Error('GPU access report arrived before its probe was offered.');
             if(job.status!=='waiting_adapter')
                 throw Error('GPU access probe no longer belongs to a queued job.');
             const pinned=lease.gpu_bindings;
@@ -1496,6 +1514,11 @@ class ExperimentHub {
                 // the coordinator, including when the HTTP reply is lost.
                 const next=copy(this.state);
                 next.jobs.find(j=>j.id===job.id).start_first_offered_at=now();
+                this.commit(next);
+            }
+            if(action==='qualify_gpu'&&job.gpu_qualification.first_offered_at==null) {
+                const next=copy(this.state);
+                next.jobs.find(j=>j.id===job.id).gpu_qualification.first_offered_at=now();
                 this.commit(next);
             }
             this.executionOrderCursor.set(machineId+':'+priority(job),job.id);

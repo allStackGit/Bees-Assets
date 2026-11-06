@@ -628,8 +628,13 @@ and multi-GPU requests stay outside automation. With
 `probe_exclusive_gpu:true`, the session can request one inert access probe
 for each exclusive GPU lease it creates, after a fresh worker receipt.
 Disarm or restart suspends delivery of pending automatic probes. Train can
-explicitly resume the same request. A rejected or stale proof requires
-operator review. The normal native Start gates still apply, including
+explicitly resume the same request. Train can also withdraw a probe
+before its first worker offer, keeping the claim available for a later
+manual probe or move. Withdrawal does not requeue an automatic probe for
+the same lease. The first offer is durable and blocks withdrawal even
+if the reply was lost. Older pending requests lack that delivery
+evidence and require operator review. A rejected or stale proof also
+requires operator review. The normal native Start gates still apply, including
 the current proof for the exact lease and agent instance and the
 in-service device and runtime checks. Verified jobs started by the
 session use its existing completion release path.
