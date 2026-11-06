@@ -46,19 +46,19 @@ def poll(args, suite):
         return targets(args.port, args.machine, suite_id, "tinybrains")
 
     with exclusive(state.with_suffix(".lock")):
-        live = current_targets()
         try:
             prior = json.loads(read_bounded(state, 131072))
             if prior["suite_sha256"] != digest:
                 raise ValueError("Suite definition changed; use a new suite ID.")
         except FileNotFoundError:
             prior = {"suite_sha256": digest, "dispatches": {}}
+        if (pending := prior.get("pending_receipt")) is not None:
+            flush_receipt(args, receipt_suite, pending)
+            save_cursor(state, {"suite_sha256": digest, "dispatches": prior["dispatches"]})
+            return
+        live = current_targets()
         cursor = {dispatch: update for dispatch, update in prior["dispatches"].items() if dispatch in live}
         saved = {"suite_sha256": digest, "dispatches": cursor}
-        if (pending := prior.get("pending_receipt")) is not None:
-            flush_receipt(args, receipt_suite, pending, live)
-            save_cursor(state, saved)
-            return
         # Persist a rotation order across calls; a newer checkpoint on one
         # busy job should not crowd out another eligible dispatch.
         for dispatch in live:
@@ -95,7 +95,7 @@ def poll(args, suite):
                 "checkpoint_sha256": checkpoint_digest, "trials": trials, "successes": wins,
             }}
             save_cursor(state, {**saved, "pending_receipt": pending})
-            flush_receipt(args, receipt_suite, pending, current_targets())
+            flush_receipt(args, receipt_suite, pending)
             save_cursor(state, saved)
             return
         if saved != prior:
