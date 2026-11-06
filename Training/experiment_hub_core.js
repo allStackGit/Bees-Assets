@@ -1374,7 +1374,10 @@ class ExperimentHub {
             if(!['start_requested','launch_requested','running',
                     'stop_requested','unverified'].includes(job.status))
                 throw Error('Job is not awaiting a native execution report.');
-            const state=report.state==='running'&&job.status==='stop_requested'
+            // Inspect an unverified service before retrying Stop. Once the
+            // worker confirms it is running, restore the durable Stop intent.
+            const state=report.state==='running'&&
+                (job.status==='stop_requested'||job.stop_requested_at)
                 ?'stop_requested':report.state;
             if(state==='launch_requested'&&job.status!=='start_requested')continue;
             if(job.status==='stop_requested'&&report.state==='launch_requested')continue;
