@@ -470,54 +470,9 @@ impl NativeSquadCommandDirector {
                 true
             }
             LocalCommandKind::Mining => {
-                // Unity Squad.GetNearestMiningAsteroid selects by distance
-                // from the current live squad bounds center. An absent
-                // target or no mining ships bans Mining for this strategy
-                // response rather than installing a nonfunctional command.
-                let Some((target_id, _)) =
-                    world.nearest_mining_asteroid(squad.squad_center)
+                let Some(run) = MiningRun::start(world, random, squad)?
                 else { return Ok(Activation::Unavailable(selection)); };
-                let spread = world.mining_asteroid_spread_radius(target_id)
-                    .ok_or(GameCommandError::InvalidMiningTarget)?;
-                let mut eligible = Vec::new();
-                for member in squad.members {
-                    let ship = world.ship(member.ship_id)
-                        .ok_or(GameCommandError::InvalidSquad)?;
-                    if !ship.vitals.is_dead() &&
-                        matches!(ship.ship_type, 4 | 9) {
-                        if world.ship_fleet_identity(member.ship_id).is_none() {
-                            return Err(GameCommandError::InvalidSquad);
-                        }
-                        eligible.push(member.ship_id);
-                    }
-                }
-                if eligible.is_empty() {
-                    return Ok(Activation::Unavailable(selection));
-                }
-                // Unity Random.insideUnitCircle uses a uniform disk. Use
-                // world-local seeded RNG for comparable statistics, not
-                // a per-process global random stream.
-                let angle = next_unit(random) * std::f32::consts::TAU;
-                let radius = next_unit(random).sqrt() * spread;
-                let mut run = MiningRun {
-                    target_id,
-                    destination_offset: Vec2::new(
-                        angle.cos() * radius, angle.sin() * radius,
-                    ),
-                    formation: squad.formation,
-                    members: squad.members.to_vec(),
-                    registered: vec![false; eligible.len()],
-                    eligible,
-                    currently_mining: Vec::new(),
-                    mining_timer: None,
-                    stop_moving_timer: None,
-                    has_found_all: false,
-                    mined_tsv: 0,
-                };
-                run.update_contacts(world);
                 mining = Some(run);
-                // The source begins with an immediate 3-second command
-                // timer callback, not an Execute-time movement command.
                 false
             }
             LocalCommandKind::MoveToRandom => {
