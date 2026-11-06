@@ -2239,7 +2239,7 @@ impl CombatWorld {
         let original_reservations = self.reservations.clone();
         let original_bindings = self.game_bomb_weapon_by_ship.clone();
         let result = operation(self);
-        if !matches!(result, Ok(Some(_))) {
+        if !matches!(result.as_ref(), Ok(Some(_))) {
             self.reservations = original_reservations;
             self.game_bomb_weapon_by_ship = original_bindings;
         }

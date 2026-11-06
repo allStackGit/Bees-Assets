@@ -786,6 +786,19 @@ impl NativeSquadCommandDirector {
                     self.measurements.unsupported += 1;
                     return Ok(Activation::Unsupported(selection));
                 };
+                // Unity also redirects mixed Striker/Yellow Jacket squads
+                // to BombingRun, but their return-to-carrier and bomb
+                // mechanics are not yet ported as a command. An unsupported
+                // composition discards reservations; it is not a corrupt
+                // physics world or a successfully executed command.
+                for member in squad.members {
+                    let ship = world.ship(member.ship_id)
+                        .ok_or(GameCommandError::InvalidSquad)?;
+                    if ship.ship_type != 10 {
+                        self.measurements.unsupported += 1;
+                        return Ok(Activation::Unsupported(selection));
+                    }
+                }
                 let Some(run) = NativeFireBargeBombingRun::start(
                     world, input.roster, random, squad, input.enemy_owner,
                     &selection, input.weapons, input.enemies,

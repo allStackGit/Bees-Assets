@@ -281,10 +281,12 @@ impl NativeFireBargeBombingRun {
         mut target_in_proximity: impl FnMut(i64, i64)
             -> Result<bool, GameCommandError>,
     ) -> Result<Option<CommandFinishCause>, GameCommandError> {
+        // A recycled enemy squad number cannot make an unrelated
+        // dead squad appear to finish the original BombingRun.
+        self.target.validate(owner, enemy_owner)?;
         if !enemy_alive {
             return Ok(Some(CommandFinishCause::BombingRunCompleted));
         }
-        self.target.validate(owner, enemy_owner)?;
         self.timer_loops = self.timer_loops.saturating_add(1);
         let living_count = self.members.iter().filter(|member|
             world.ship(member.ship_id).is_some_and(|ship|
