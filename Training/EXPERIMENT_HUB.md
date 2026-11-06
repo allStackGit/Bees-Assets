@@ -624,8 +624,12 @@ An armed session can also opt into starting qualified GPU claims
 lets the session claim for queued single-GPU jobs on armed Linux hosts with
 the required adapter, current PCI inventory and at least two observed AMD
 GPUs. The access-denial check needs a second device. Shared
-and multi-GPU requests stay outside automation. An operator must still
-request the GPU access probe for each lease. The normal native Start gates still apply, including
+and multi-GPU requests stay outside automation. With
+`probe_exclusive_gpu:true`, the session can request one inert access probe
+for each exclusive GPU lease it creates, after a fresh worker receipt.
+Disarm or restart suspends delivery of pending automatic probes. Train can
+explicitly resume the same request. A rejected or stale proof requires
+operator review. The normal native Start gates still apply, including
 the current proof for the exact lease and agent instance and the
 in-service device and runtime checks. Verified jobs started by the
 session use its existing completion release path.

@@ -1018,10 +1018,12 @@ document.addEventListener('DOMContentLoaded', () => {
         $('hub-automation-rebalance').disabled=automation.enabled;
         $('hub-automation-gpu').disabled=automation.enabled;
         $('hub-automation-gpu-claim').disabled=automation.enabled;
+        $('hub-automation-gpu-probe').disabled=automation.enabled;
         if(automation.enabled) {
             $('hub-automation-rebalance').checked=automation.rebalance_queued===true;
             $('hub-automation-gpu').checked=automation.start_qualified_gpu===true;
             $('hub-automation-gpu-claim').checked=automation.claim_exclusive_gpu===true;
+            $('hub-automation-gpu-probe').checked=automation.probe_exclusive_gpu===true;
         }
         feedback('hub-automation-status',
             (automation.enabled?'Armed for '+automation.machine_ids.join(', ')
@@ -1081,7 +1083,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const proof=j.gpu_qualification;
             const gpuProof=proof
                 ?proof.status==='requested'
-                    ?' · GPU access probe requested (no training)'
+                    ?proof.automation_paused?' · Automatic GPU access probe suspended'
+                        :' · GPU access probe requested (no training)'
                     :proof.status==='verified'
                         ?proof.current
                             ?' · GPU device access probe passed this agent session'
@@ -1129,9 +1132,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 machine.installed_projects?.includes(j.project_id)&&
                 j.resources.gpu_count===1&&
                 j.resources.gpu_mode==='exclusive'&&
-                proof?.status!=='requested')
-                actions.append(button(proof?.status==='verified'
-                    ?'Recheck GPU device access':'Check GPU device access',async()=>{
+                (proof?.status!=='requested'||proof.automation_paused))
+                actions.append(button(proof?.automation_paused?'Resume GPU access probe':
+                    proof?.status==='verified'?'Recheck GPU device access':'Check GPU device access',async()=>{
                     if(!confirm('Run an inert Linux GPU access probe for '+
                         j.configuration_name+' on '+machine.name+
                         '? It opens the selected and excluded render devices, '+
@@ -1812,15 +1815,21 @@ document.addEventListener('DOMContentLoaded', () => {
         const rebalance=$('hub-automation-rebalance').checked;
         const gpu=$('hub-automation-gpu').checked;
         const gpuClaim=$('hub-automation-gpu-claim').checked;
+        const gpuProbe=$('hub-automation-gpu-probe').checked;
+        if(gpuProbe&&!gpuClaim) {
+            feedback('hub-automation-status','Enable exclusive GPU claims to automate their access probes.');
+            return;
+        }
         if(!confirm('Arm native queue automation on '+ids.join(', ')+
             '? This will start eligible CPU jobs and release verified completed capacity. You confirm that unmanaged host workloads have been accounted for. Restart disarms automation.'+
             (gpu?' This session will also start jobs with a currently qualified exclusive GPU.':'')+
-            (gpuClaim?' This session may claim exclusive GPU capacity on armed Linux hosts. Access probes still require an operator.':'')+
+            (gpuClaim?' This session may claim exclusive GPU capacity on armed Linux hosts.':'')+
+            (gpuProbe?' It may run one inert access probe for each GPU claim it creates.':'')+
             (rebalance?' This session may move its own unstarted claims between armed hosts after a capacity drop.':'')))return;
         try {
             await action('hub/automation',{
                 enabled:true,machine_ids:ids,rebalance_queued:rebalance,
-                start_qualified_gpu:gpu,claim_exclusive_gpu:gpuClaim,
+                start_qualified_gpu:gpu,claim_exclusive_gpu:gpuClaim,probe_exclusive_gpu:gpuProbe,
                 confirm_arm:true,confirm_untracked_load:true,
             });
             await reload();
