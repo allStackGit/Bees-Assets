@@ -113,9 +113,14 @@ function createTinyBrainsAdapter({projectRoot,pythonPath,artifactRoot,profiles,
 
     function jobRoot(context) {
         if(context.project_id!=='tinybrains'||!UUID.test(context.job_id)||
-            context.continuation_of_job_id||context.artifact_lineage_root_id!==context.job_id||
+            !UUID.test(context.artifact_lineage_root_id)||
+            (context.continuation_of_job_id
+                ?!UUID.test(context.continuation_of_job_id)||
+                    context.continuation_of_job_id===context.job_id||
+                    context.artifact_lineage_root_id===context.job_id
+                :context.artifact_lineage_root_id!==context.job_id)||
             context.gpu_pci_address)
-            throw Error('TinyBrains adapter supports fresh CPU jobs only.');
+            throw Error('Invalid TinyBrains CPU job or checkpoint lineage.');
         return path.join(artifacts,context.job_id);
     }
 
@@ -131,13 +136,24 @@ function createTinyBrainsAdapter({projectRoot,pythonPath,artifactRoot,profiles,
                 !Number.isSafeInteger(updates)||updates<1||updates>10000000)
                 throw Error('TinyBrains jobs require an approved profile, its SHA-256 and 1–10,000,000 updates.');
             const out=jobRoot(context);
+            let resume=[];
+            if(context.continuation_of_job_id) {
+                const parent=path.join(artifacts,context.continuation_of_job_id);
+                const checkpoint=path.join(parent,'latest.pt');
+                const parentConfig=path.join(parent,'hub-profile.json');
+                if([checkpoint,parentConfig].some(file=>
+                    fs.realpathSync(file)!==file||!fs.statSync(file).isFile())||
+                    fs.readFileSync(parentConfig,'utf8')!==approved.content)
+                    throw Error('TinyBrains continuation requires the completed predecessor checkpoint and identical profile.');
+                resume=['--resume',checkpoint];
+            }
             // An existing directory may belong to a prior launch. Never reuse it.
             fs.mkdirSync(out,{mode:0o700});
             const config=path.join(out,'hub-profile.json');
             fs.writeFileSync(config,approved.content,{flag:'wx',mode:0o600});
             return ['-B','-c',TRAIN_ENTRY,path.join(out,'trainer.stderr.txt'),
                 'train','--config',config,'--out',out,
-                '--updates',String(updates)];
+                '--updates',String(updates),...resume];
         },
         readProgress(context) {
             const out=jobRoot(context);
