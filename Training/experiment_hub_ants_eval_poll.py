@@ -154,9 +154,11 @@ def poll(args, suite: dict) -> None:
                     continue
                 checkpoint, episode = current
                 if dispatch not in cursor:
-                    # A continuation can initially point at its parent's checkpoint.
-                    cursor[dispatch] = episode
-                elif episode > cursor[dispatch]:
+                    # Fresh jobs own their lineage. A continuation can initially
+                    # point at its parent's checkpoint, so watermark it instead.
+                    fresh = job["job_id"] == job["artifact_lineage_root_id"]
+                    cursor[dispatch] = -1 if fresh else episode
+                if episode > cursor[dispatch]:
                     candidates[dispatch] = (checkpoint, episode)
             except (OSError, ValueError, TypeError, KeyError) as exc:
                 print(f"Ants evaluation target {dispatch} skipped: {exc}", file=sys.stderr)
