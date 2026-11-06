@@ -112,10 +112,9 @@ impl CombatWorld {
         };
         if self.physics.ships()[index].active &&
             !self.ships[index].vitals.is_dead() {
-            self.physics.ships_mut()[index].motion
-                .cannot_change_movement_orders = false;
-            self.physics.ships_mut()[index].motion.current_speed =
-                self.physics.ships()[index].motion.base_speed;
+            let motion = &mut self.physics.ships_mut()[index].motion;
+            motion.cannot_change_movement_orders = false;
+            motion.current_speed = motion.base_speed;
             self.stop_ship_game_movement(ship_id)?;
         }
         Ok(())
@@ -169,7 +168,9 @@ impl CombatWorld {
                         );
                     self.physics.ships_mut()[index].motion
                         .cannot_change_movement_orders = false;
-                    self.move_ship_in_direction(ship_id, heading)?;
+                    if !self.move_ship_in_direction(ship_id, heading)? {
+                        return Err(CombatWorldError::InvalidGameMovementOrder);
+                    }
                     let motion = &mut self.physics.ships_mut()[index].motion;
                     motion.current_speed = CHARGE_SPEED;
                     motion.cannot_change_movement_orders = true;
