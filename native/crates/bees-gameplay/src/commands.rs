@@ -410,16 +410,25 @@ impl NativeSquadCommandDirector {
     /// Invoke before the Level's squad-death event pass. FullRetreat's
     /// source Striker/Drone TSV adjustment is earned only when the physical
     /// warp actually occurs, not when a timer queues the attempt.
-    pub fn record_warp_events(&mut self, world: &CombatWorld) {
+    /// The Level's existing ship-to-squad index is still authoritative
+    /// until death events retire its owners. Route directly to that command
+    /// instead of scanning every active squad for every warped ship.
+    pub fn record_warp_events(
+        &mut self,
+        world: &CombatWorld,
+        mut owner_of_ship: impl FnMut(i64) -> Option<SquadLifetime>,
+    ) {
         for event in world.events() {
-            if let bees_sim::combat_world::CombatEvent::ShipWarped { .. } = event {
-                for active in self.active.values_mut() {
-                    if let Some(retreat) = active.full_retreat.as_mut() {
-                        if retreat.record_warp_event(event, world) {
-                            self.measurements.full_retreat_warps += 1;
-                        }
-                    }
-                }
+            let bees_sim::combat_world::CombatEvent::ShipWarped {
+                ship_id, ..
+            } = event else { continue; };
+            let Some(owner) = owner_of_ship(*ship_id) else { continue; };
+            let Some(retreat) = self.active.get_mut(&owner)
+                .and_then(|active| active.full_retreat.as_mut()) else {
+                    continue;
+                };
+            if retreat.record_warp_event(event, world) {
+                self.measurements.full_retreat_warps += 1;
             }
         }
     }
