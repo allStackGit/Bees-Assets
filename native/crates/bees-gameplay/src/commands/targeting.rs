@@ -228,7 +228,6 @@ impl NativeCommandTargetQueue {
 pub(super) struct NativeTargetApproach {
     target_queue: Option<NativeCommandTargetQueue>,
     ranked_candidates: Vec<NativeEnemyTargetStats>,
-    pending_moves: Vec<(i64, GamePointOrder)>,
 }
 
 impl NativeTargetApproach {
@@ -246,18 +245,18 @@ impl NativeTargetApproach {
         squad_center: Vec2,
         candidates: &[NativeEnemyTargetStats],
     ) -> Result<bool, GameCommandError> {
-        self.pending_moves.clear();
+        // Unity's MoveTowardsEnemiesTracked invokes
+        // Ship.MoveToTrackedPoint immediately after each successful
+        // SetAndGetTargetEnemy. A subsequent ship without a target ends
+        // the command but does not undo preceding ships' move orders.
+        // Preserve that order without a duplicate command-side batch.
         for &member in members {
-            let Some(order) = self.tracked_order_for_member(
+            if !self.issue_one_tracked_approach(
                 world, roster, random, member, formation,
                 selection, enemy_owner, squad_center, candidates,
-            )? else {
+            )? {
                 return Ok(false);
-            };
-            self.pending_moves.push((member.ship_id, order));
-        }
-        for &(ship_id, order) in &self.pending_moves {
-            world.move_ship_to_tracked_point(ship_id, order)?;
+            }
         }
         Ok(true)
     }
