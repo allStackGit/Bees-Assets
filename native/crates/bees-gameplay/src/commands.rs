@@ -375,6 +375,10 @@ pub struct CommandMeasurements {
     pub scouting_beacons_dropped: u64,
     pub scouting_first_sightings: u64,
     pub full_retreat_warps: u64,
+    /// Server selections without an implemented native command executor.
+    pub unsupported: u64,
+    /// Supported commands with no eligible live target or resource.
+    pub unavailable: u64,
     pub activated: u64,
     pub completed: u64,
     pub superseded: u64,
@@ -565,13 +569,19 @@ impl NativeSquadCommandDirector {
             }
             LocalCommandKind::Mining => {
                 let Some(run) = MiningRun::start(world, random, squad)?
-                else { return Ok(Activation::Unavailable(selection)); };
+                else {
+                    self.measurements.unavailable += 1;
+                    return Ok(Activation::Unavailable(selection));
+                };
                 mining = Some(run);
                 false
             }
             LocalCommandKind::Heal => {
                 let Some(run) = HealRun::start(world, squad)?
-                else { return Ok(Activation::Unavailable(selection)); };
+                else {
+                    self.measurements.unavailable += 1;
+                    return Ok(Activation::Unavailable(selection));
+                };
                 heal = Some(run);
                 true
             }
@@ -588,6 +598,7 @@ impl NativeSquadCommandDirector {
                 let Some(run) = FullRetreatRun::start(
                     world, random, squad, previous_gate,
                 )? else {
+                    self.measurements.unavailable += 1;
                     return Ok(Activation::Unavailable(selection));
                 };
                 full_retreat = Some(run);
@@ -664,6 +675,7 @@ impl NativeSquadCommandDirector {
                     }
                 }
                 let Some(nearest) = nearest else {
+                    self.measurements.unavailable += 1;
                     return Ok(Activation::Unavailable(selection));
                 };
                 following = Some(FollowingFriendly {
@@ -719,6 +731,7 @@ impl NativeSquadCommandDirector {
                     }
                 }
                 let Some(nearest) = nearest else {
+                    self.measurements.unavailable += 1;
                     return Ok(Activation::Unavailable(selection));
                 };
                 if !self_entry.valid() {
@@ -773,7 +786,10 @@ impl NativeSquadCommandDirector {
                     true
                 }
             }
-            _ => return Ok(Activation::Unsupported(selection)),
+            _ => {
+                self.measurements.unsupported += 1;
+                return Ok(Activation::Unsupported(selection));
+            },
         };
 
         // Native world action above has succeeded. Only now can this
