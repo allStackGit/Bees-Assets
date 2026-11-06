@@ -241,6 +241,34 @@ where
         .map_err(NativeFailedLevelAbortError::Events)
 }
 
+#[derive(Debug)]
+pub enum NativeLevelCancelError {
+    MissingWorld { index: usize },
+    AlreadyComplete { index: usize },
+    Events(NativeLevelEventError),
+}
+
+/// Stop a live or already-failed native Level without manufacturing an
+/// episode result. Every living HiveMind squad lifetime is queued for
+/// shared-session retirement, including squads with no active command.
+/// Aborted command reservations become durable discard obligations.
+pub fn cancel_level<M, A>(
+    simulation: &mut Simulation<NativeLevelState<M, A>, NativeLevelRules>,
+    index: usize,
+) -> Result<usize, NativeLevelCancelError>
+where
+    M: NativeLevelRewardMetadata + NativeLevelCommandContext,
+    A: FnMut(SquadLifetime, i64) -> Result<SquadLifetime, SquadRosterError>,
+{
+    let world = simulation.world_mut(index)
+        .ok_or(NativeLevelCancelError::MissingWorld { index })?;
+    if world.state.events.completed() {
+        return Err(NativeLevelCancelError::AlreadyComplete { index });
+    }
+    world.state.events.cancel_live_level()
+        .map_err(NativeLevelCancelError::Events)
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NativeLevelResetError {
     MissingWorld { index: usize },
@@ -249,6 +277,9 @@ pub enum NativeLevelResetError {
     /// A failed episode must still explicitly settle any live commands;
     /// replacing the world would silently lose their OutcomeIds.
     ActiveCommands { count: usize },
+    /// A squad can have in-flight strategy requests even without an
+    /// installed command. Cancel it and retire all lifetimes first.
+    UnretiredLiveLifetimes,
 }
 
 /// A successful or failed episode must not be discarded while group
@@ -287,6 +318,9 @@ where
         return Err(NativeLevelResetError::ActiveCommands {
             count: active,
         });
+    }
+    if world.state.events.has_unretired_live_lifetimes() {
+        return Err(NativeLevelResetError::UnretiredLiveLifetimes);
     }
     // Indices are validated above, and this call preserves the
     // Simulation's existing episode-reset and measurement semantics.
