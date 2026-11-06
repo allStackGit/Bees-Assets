@@ -1925,7 +1925,7 @@ class ExperimentHub {
         return {jobs,executable:false,
             note:'Independent jobs frozen together; each native Start still needs separately authorized CPU-only execution.'};
     }
-    // One durable write for the full linear Ants checkpoint-continuation
+    // One durable write for the full linear checkpoint-continuation
     // pipeline: either all stages have validated lineage, or none do.
     queuePipeline(value) {
         if(!object(value)||value.confirm_queue!==true||
@@ -1941,8 +1941,8 @@ class ExperimentHub {
             const job=this.queueIn(next,{
                 ...stage,continuation_of_job_id:predecessor,
             });
-            if(job.project_id!=='ants')
-                throw Error('Linear automatic-stage pipelines currently require the Ants adapter.');
+            if(!['ants','tinybrains'].includes(job.project_id))
+                throw Error('Checkpoint pipelines require the Ants or TinyBrains adapter.');
             jobs.push(copy(job));
             predecessor=job.id;
         }
@@ -1979,33 +1979,34 @@ class ExperimentHub {
                 throw Error('Select a valid predecessor job for continuation.');
             parent=next.jobs.find(j=>j.id===ancestorId);
             const pinnedRoot=parent?.artifact_lineage_root_id||parent?.id;
-            const futureStage=project.id==='ants'&&
+            const supportsPrequeue=['ants','tinybrains'].includes(project.id);
+            const futureStage=supportsPrequeue&&
                 ['waiting_adapter','waiting_predecessor'].includes(parent?.status);
             if(!parent||parent.project_id!==project.id||
                 !UUID.test(String(pinnedRoot||''))||
                 !(parent.dispatch_id&&parent.assigned_machine_id||futureStage))
-                throw Error('Continuation requires a dispatched predecessor or an eligible prequeued Ants stage.');
-            // Ants supports a bounded, linear sequence of prequeued stages.
+                throw Error('Continuation requires a dispatched predecessor or an eligible prequeued stage.');
+            // Supported adapters can prequeue a bounded, linear sequence.
             // Future stages inherit the original host and artifact root
             // without claiming capacity or launching any process.
-            waitingPredecessor=project.id==='ants'&&(
+            waitingPredecessor=supportsPrequeue&&(
                 ['start_requested','launch_requested','running'].includes(parent.status)||
                 (parent.status==='finished'&&!parent.capacity_released_at)||
                 futureStage);
             if(!waitingPredecessor&&
                 (!['finished','stopped'].includes(parent.status)||
                  !parent.capacity_released_at))
-                throw Error('Continuation requires a finished, capacity-released predecessor (or an eligible active or prequeued Ants predecessor).');
+                throw Error('Continuation requires a finished, capacity-released predecessor (or an eligible active or prequeued predecessor).');
             if(next.jobs.some(j=>
                 (j.continuation_of_job_id===parent.id||
                  j.after_job_id===parent.id)&&j.status!=='cancelled'))
                 throw Error('This predecessor already has a non-cancelled successor.');
         }
         if(parent&&project.id==='tinybrains'&&
-            (parent.status!=='finished'||
+            ((!waitingPredecessor&&parent.status!=='finished')||
                 typeof parent.frozen_parameters?.profile_sha256!=='string'||
                 parent.frozen_parameters.profile_sha256!==selected.parameters?.profile_sha256))
-            throw Error('TinyBrains continuation requires a finished predecessor and identical profile digest.');
+            throw Error('TinyBrains continuation requires identical profile digests and a predecessor that is finished or can still finish.');
         if(afterId!==null) {
             if(!UUID.test(String(afterId)))
                 throw Error('Select a valid independent predecessor.');
