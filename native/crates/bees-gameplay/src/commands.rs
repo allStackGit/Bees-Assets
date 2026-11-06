@@ -41,6 +41,9 @@ mod mining;
 mod heal;
 mod scouting;
 mod full_retreat;
+mod circle;
+pub use self::circle::NativeCircleCommandSnapshot;
+use self::circle::CircleRun;
 use self::full_retreat::FullRetreatRun;
 use self::mining::MiningRun;
 use self::heal::HealRun;
@@ -185,6 +188,8 @@ pub enum GameCommandError {
     InvalidDelta,
     InvalidEnemy,
     InvalidFriendlies,
+    MissingCombatSnapshot,
+    InvalidCombatSnapshot,
     InvalidMiningTarget,
     InvalidCapabilityAccounting,
     MissingOriginalShipHealth(i64),
@@ -241,6 +246,7 @@ pub enum CommandFinishCause {
     FriendlyGone,
     GuardTargetGone,
     GuardFinished,
+    EnemySquadGone,
     LevelEnded,
     Superseded,
     SquadRetired,
@@ -350,6 +356,7 @@ struct ActiveNativeCommand {
     command_poll: Option<ScaledTimer>,
     patrol: Option<PatrolRoute>,
     following: Option<FollowingFriendly>,
+    circle: Option<CircleRun>,
     mining: Option<MiningRun>,
     heal: Option<HealRun>,
     scouting: Option<ScoutingRun>,
@@ -592,6 +599,7 @@ impl NativeSquadCommandDirector {
 
         let mut patrol = None;
         let mut following = None;
+        let mut circle = None;
         let mut mining = None;
         let mut heal = None;
         let mut scouting = None;
@@ -638,6 +646,16 @@ impl NativeSquadCommandDirector {
                 };
                 full_retreat = Some(run);
                 true
+            }
+            LocalCommandKind::CircleSquad => {
+                let Some(run) = CircleRun::start(world, squad)? else {
+                    self.measurements.unavailable += 1;
+                    return Ok(Activation::Unavailable(selection));
+                };
+                circle = Some(run);
+                // Unity Execute schedules its first 3s timer immediately;
+                // the first formation move occurs during that callback.
+                false
             }
             LocalCommandKind::MoveToRandom => {
                 let requested = choose_random_coordinate(
@@ -850,7 +868,7 @@ impl NativeSquadCommandDirector {
                 LocalCommandKind::Mining | LocalCommandKind::Heal |
                 LocalCommandKind::Scouting | LocalCommandKind::FullRetreat |
                 LocalCommandKind::ClosestFriendly |
-                LocalCommandKind::Guard
+                LocalCommandKind::Guard | LocalCommandKind::CircleSquad
             ) || (selection.local_command == LocalCommandKind::Retreat &&
                 !retreat_already_safe) {
                 Some(ScaledTimer::new(
@@ -863,6 +881,7 @@ impl NativeSquadCommandDirector {
             } else { None },
             patrol,
             following,
+            circle,
             mining,
             heal,
             scouting,
@@ -949,6 +968,28 @@ impl NativeSquadCommandDirector {
         friendlies: &[NativeFriendlySquad],
         random: &mut RandomStream,
         dt: f32,
+        finished: &mut Vec<FinishedNativeCommand>,
+    ) -> Result<(), GameCommandError> {
+        self.advance_into_with_circle(
+            world, navigation, friendlies, random, dt,
+            |_, _, _| Err(GameCommandError::MissingCombatSnapshot),
+            finished,
+        )
+    }
+
+    /// Preferred Level boundary for live CircleSquad commands. The Level
+    /// supplies actual per-weapon target validity and current squad
+    /// geometry only on due Circle timers, never on unrelated physics ticks.
+    pub fn advance_into_with_circle(
+        &mut self,
+        world: &mut CombatWorld,
+        navigation: &NavigationRuntime,
+        friendlies: &[NativeFriendlySquad],
+        random: &mut RandomStream,
+        dt: f32,
+        mut circle_snapshot: impl FnMut(
+            SquadLifetime, i64, &CombatWorld,
+        ) -> Result<NativeCircleCommandSnapshot, GameCommandError>,
         finished: &mut Vec<FinishedNativeCommand>,
     ) -> Result<(), GameCommandError> {
         if !dt.is_finite() || dt < 0.0 {
@@ -1056,6 +1097,35 @@ impl NativeSquadCommandDirector {
                     }
                 }
                 if let Some(cause) = finished {
+                    self.completed_scratch.push((owner, cause));
+                }
+                continue;
+            }
+            if let Some(circle) = command.circle.as_mut() {
+                let mut completed = None;
+                if let Some(timer) = command.command_poll.as_mut() {
+                    if let Some(due) = timer.begin_update(dt) {
+                        self.measurements.command_timer_callbacks += 1;
+                        let snapshot = circle_snapshot(
+                            owner, circle.enemy_squad_id(), world,
+                        )?;
+                        completed = circle.on_poll(
+                            world, navigation, timer, snapshot,
+                        )?;
+                        // A 3s -> 0.25s timer reuse is generation-guarded.
+                        timer.finish_update(due);
+                    }
+                }
+                if completed.is_none() {
+                    if let Some(timeout) = command.timeout.as_mut() {
+                        if let Some(due) = timeout.begin_update(dt) {
+                            self.measurements.timeout_callbacks += 1;
+                            timeout.finish_update(due);
+                            completed = Some(CommandFinishCause::Timeout);
+                        }
+                    }
+                }
+                if let Some(cause) = completed {
                     self.completed_scratch.push((owner, cause));
                 }
                 continue;
