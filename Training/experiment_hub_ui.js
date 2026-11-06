@@ -188,6 +188,20 @@ function independentSequenceRows(jobs) {
         });
 }
 
+function approvedTinyBrainsProfiles(machines) {
+    const profiles=new Map();
+    for(const machine of machines) {
+        if(machine.status!=='connected'||machine.agent_platform!=='win32')continue;
+        for(const [profile,digest] of Object.entries(machine.tinybrains_profiles||{})) {
+            const key=profile+':'+digest;
+            if(!profiles.has(key))
+                profiles.set(key,{profile,digest,workers:0});
+            profiles.get(key).workers++;
+        }
+    }
+    return [...profiles.entries()].sort(([a],[b])=>a.localeCompare(b));
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     const $ = id => document.getElementById(id);
     let project = document.documentElement.dataset.hubDefaultProject || 'bees';
@@ -761,10 +775,53 @@ document.addEventListener('DOMContentLoaded', () => {
             ' selected runs as '+format.toUpperCase()+
             '. This is observational progress, not independent evaluation.');
     }
+    const tinyBrainsPicker=document.createElement('fieldset');
+    tinyBrainsPicker.hidden=true;
+    const tinyBrainsLegend=document.createElement('legend');
+    tinyBrainsLegend.textContent='TinyBrains Windows CPU job';
+    const tinyBrainsSelect=document.createElement('select');
+    const tinyBrainsUpdates=document.createElement('input');
+    tinyBrainsUpdates.type='number';
+    tinyBrainsUpdates.min='1';
+    tinyBrainsUpdates.max='10000000';
+    tinyBrainsUpdates.step='1';
+    tinyBrainsUpdates.value='1';
+    const tinyBrainsUse=button('Use profile and update count',()=>{
+        const [profile,digest]=tinyBrainsSelect.value.split(':');
+        const updates=tinyBrainsUpdates.valueAsNumber;
+        if(!profile||!digest||!Number.isSafeInteger(updates)||updates<1||updates>10000000) {
+            feedback('hub-config-message','Select an approved profile and enter 1–10,000,000 updates.');
+            return;
+        }
+        $('hub-config-json').value=JSON.stringify({profile,profile_sha256:digest,updates},null,2);
+        feedback('hub-config-message','Profile and update count copied to the draft. Save to retain them.');
+    });
+    for(const [caption,control] of [['Approved profile ',tinyBrainsSelect],
+        ['Updates ',tinyBrainsUpdates]]) {
+        const label=document.createElement('label');
+        label.append(caption,control);
+        tinyBrainsPicker.append(label);
+    }
+    tinyBrainsPicker.prepend(tinyBrainsLegend);
+    tinyBrainsPicker.append(tinyBrainsUse);
+    $('hub-config-form').prepend(tinyBrainsPicker);
+    function displayTinyBrainsProfiles() {
+        tinyBrainsPicker.hidden=project!=='tinybrains';
+        if(tinyBrainsPicker.hidden)return;
+        const prior=tinyBrainsSelect.value;
+        const options=approvedTinyBrainsProfiles(state.machines);
+        tinyBrainsSelect.replaceChildren(...(options.length
+            ?options.map(([key,{profile,digest,workers}])=>new Option(
+                profile+' · '+digest.slice(0,12)+' · '+workers+(workers===1?' worker':' workers'),key))
+            :[new Option('No connected worker advertises a profile','')]));
+        if(options.some(([key])=>key===prior))tinyBrainsSelect.value=prior;
+        tinyBrainsSelect.disabled=tinyBrainsUse.disabled=!options.length;
+    }
     function resetEditor() {
         editing=null;
         $('hub-config-name').value='';
         $('hub-config-json').value='{}';
+        tinyBrainsUpdates.value='1';
         $('hub-config-evaluation').value='';
         $('hub-config-save').textContent='Save draft';
         feedback('hub-config-message','');
@@ -822,6 +879,7 @@ document.addEventListener('DOMContentLoaded', () => {
         $('hub-project').value=project;
         $('hub-copy-bees-form').hidden=project!=='bees';
         $('hub-config-evaluation-label').hidden=project==='bees';
+        displayTinyBrainsProfiles();
         $('hub-config-rows').replaceChildren();
         const configs=state.configurations.filter(c=>c.project_id===project);
         for(const c of configs.slice().reverse()) {
