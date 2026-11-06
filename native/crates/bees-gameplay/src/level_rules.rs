@@ -319,7 +319,7 @@ where
             // Only tracked-friendly commands read this geometry; collecting
             // every squad on each fixed step for Mining, Heal, Scouting,
             // FullRetreat or idle Hold would waste large-battle work.
-            if state.events.needs_live_command_friendlies() {
+            if state.events.needs_live_command_friendlies_on_update(dt_seconds) {
                 state.metadata.collect_live_friendlies(
                     &state.combat, state.events.roster(),
                     &mut state.command_friendlies,

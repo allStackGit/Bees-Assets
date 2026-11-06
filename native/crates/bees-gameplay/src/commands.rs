@@ -422,6 +422,18 @@ impl NativeSquadCommandDirector {
         self.measurements.active_following != 0
     }
 
+    /// A friendly position/Guard bounds snapshot is only read on a
+    /// ClosestFriendly or Guard command callback. Both use ScaledTimer's
+    /// exact due condition, so quiet fixed steps can skip full Level
+    /// geometry collection without delaying source command behavior.
+    pub fn needs_live_friendlies_on_update(&self, dt: f32) -> bool {
+        self.needs_live_friendlies() && self.active.values().any(|command|
+            command.following.is_some() &&
+            command.command_poll.as_ref().is_some_and(|timer|
+                timer.will_fire(dt))
+        )
+    }
+
     /// Invoke before the Level's squad-death event pass. FullRetreat's
     /// source Striker/Drone TSV adjustment is earned only when the physical
     /// warp actually occurs, not when a timer queues the attempt.

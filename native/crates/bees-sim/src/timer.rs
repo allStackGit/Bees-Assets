@@ -57,6 +57,15 @@ impl ScaledTimer {
         self.canceled = true;
     }
 
+    /// Read-only preview of begin_update's callback condition. Callers can
+    /// avoid preparing costly command inputs on frames when a timer will not
+    /// run. This must use exactly the same strict expiry and immediate
+    /// semantics as begin_update, without advancing elapsed time.
+    pub fn will_fire(&self, delta_seconds: f32) -> bool {
+        !self.canceled && (self.start_immediate ||
+            self.elapsed_seconds + delta_seconds > self.length_seconds)
+    }
+
     /// Each caller supplies the same clock delta for gameplay and headless
     /// operation. Unity used Time.deltaTime and strict elapsed > length,
     /// with at most one callback per Update invocation.

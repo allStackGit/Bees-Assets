@@ -185,6 +185,10 @@ impl NativeLevelEventProcessor {
         self.commands.needs_live_friendlies()
     }
 
+    pub fn needs_live_command_friendlies_on_update(&self, dt: f32) -> bool {
+        self.commands.needs_live_friendlies_on_update(dt)
+    }
+
     pub fn commands_mut(&mut self) -> &mut NativeSquadCommandDirector {
         &mut self.commands
     }
