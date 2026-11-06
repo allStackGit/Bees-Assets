@@ -99,8 +99,11 @@ authored Beacon via `configure_game_scout`, and call
 (including a Beacon's MotherSquad). Game Scouts retain Beacon charges and
 cooldowns when commands change; both game and RL Scouts use the same
 world-owned physical Beacon spawn. `ScoutBeaconDropped` is durably
-published for the Level's minion-squad/presentation adapter, which still
-needs runtime integration. Command TSV vision credit must come from the
+published after immediate native minion-squad registration using the
+same `NativeSquadRoster.register_scout_beacon` path as policy spawns.
+The graphical Level must still construct the rendered minion squad from
+that change before acknowledging it; runtime qualification remains pending.
+Command TSV vision credit must come from the
 actual Level observer/outcome, not from guessed sight-range polls.
 
 `NativeGroupRewardDelivery` is an optional per-episode MA-POCA delivery
