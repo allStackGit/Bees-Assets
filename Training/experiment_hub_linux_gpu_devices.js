@@ -101,4 +101,11 @@ function resolveRocmDevices(bindings,options={}) {
         ],
     };
 }
-module.exports={resolveRocmDevices,majorMinor};
+function deviceIdentity(plan) {
+    const identity=device=>[device.pci_address||null,device.node,device.major,device.minor];
+    return require('node:crypto').createHash('sha256').update(JSON.stringify([
+        identity(plan.kfd),plan.selected.map(identity),
+        plan.unselected.map(identity).sort((a,b)=>a[1].localeCompare(b[1])),
+    ])).digest('hex');
+}
+module.exports={resolveRocmDevices,majorMinor,deviceIdentity};

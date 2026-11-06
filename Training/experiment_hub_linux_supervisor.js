@@ -11,7 +11,7 @@ const {promisify}=require('node:util');
 const {execFile}=require('node:child_process');
 const {inspectHost}=require('./experiment_hub_host');
 const {verifyKernelLimits}=require('./experiment_hub_linux_cgroup');
-const {resolveRocmDevices}=require('./experiment_hub_linux_gpu_devices');
+const {resolveRocmDevices,deviceIdentity}=require('./experiment_hub_linux_gpu_devices');
 const runDefault=promisify(execFile);
 // Use known system binaries, not the agent's PATH.
 const SYSTEMD_RUN='/usr/bin/systemd-run';
@@ -46,7 +46,7 @@ function quotaUsec(value) {
     const amount=Number(match[1])*scale;
     return Number.isSafeInteger(amount)?amount:null;
 }
-function validateLocalInput(job,lease,machineId,adapters,hostOs=os) {
+function validateLocalInput(job,lease,machineId,adapters,hostOs=os,gpuEnabled=false) {
     if(!job||!lease||job.status!=='waiting_adapter'||
         job.project_id==='bees'||job.adapter!=='unconfigured'||
         lease.issued_by!=='experiment-hub'||
@@ -68,10 +68,8 @@ function validateLocalInput(job,lease,machineId,adapters,hostOs=os) {
         r.cpus>cpuLimit||
         !Number.isSafeInteger(r.ram_mb)||r.ram_mb<128||
         r.ram_mb>Math.floor(hostOs.totalmem()/1048576)||
-        r.gpu_count!==0||lr.gpu_count!==0||
-        (r.gpus||[]).length||(lr.gpus||[]).length||
         lr.cpus!==r.cpus||lr.ram_mb!==r.ram_mb)
-        throw Error('Only CPU/RAM jobs within the local host limit are supported.');
+        throw Error('Native CPU/RAM request does not match the lease or exceeds the local host limits.');
     const adapter=adapters[job.project_id];
     if(!adapter||typeof adapter.args!=='function'||
         typeof adapter.executable!=='string'||
@@ -81,6 +79,16 @@ function validateLocalInput(job,lease,machineId,adapters,hostOs=os) {
             (typeof adapter.cwd!=='string'||!path.isAbsolute(adapter.cwd)||
              !SAFE_ARG.test(adapter.cwd))))
         throw Error('No valid locally installed trusted adapter for this project.');
+    const binding=lease.gpu_bindings?.[0];
+    const cpuOnly=r.gpu_count===0&&lr.gpu_count===0&&
+        !(r.gpus||[]).length&&!(lr.gpus||[]).length;
+    if(!cpuOnly&&(!gpuEnabled||typeof adapter.gpu_verify_args!=='function'||
+        r.gpu_count!==1||lr.gpu_count!==1||
+        r.gpu_mode!=='exclusive'||lr.gpu_mode!=='exclusive'||
+        lease.gpu_bindings?.length!==1||!binding||
+        lr.gpus?.length!==1||binding.id!==lr.gpus[0]||
+        (r.gpus?.length&&r.gpus[0]!==binding.id)))
+        throw Error('Native GPU launch needs a locally enabled adapter and one exclusive PCI binding.');
     const stopPolicy=adapter.stop_policy||'terminate-group';
     if(!['terminate-group','interrupt-main'].includes(stopPolicy))
         throw Error('Unknown locally installed native stop policy.');
@@ -91,20 +99,32 @@ function validateLocalInput(job,lease,machineId,adapters,hostOs=os) {
             predecessor===job.id||lineageRoot===job.id))||
         (predecessor===null&&lineageRoot!==job.id))
         throw Error('Invalid immutable local continuation ancestry.');
-    const args=adapter.args(JSON.parse(JSON.stringify(job.frozen_parameters)),
-        Object.freeze({
-            job_id:job.id,project_id:job.project_id,
-            continuation_of_job_id:predecessor,
-            artifact_lineage_root_id:lineageRoot,
-        }));
-    if(!Array.isArray(args)||args.length>64||
-        args.some(a=>typeof a!=='string'||a.length>1024||
-            !SAFE_ARG.test(a)))
-        throw Error('Trusted adapter returned an unsafe invocation.');
-    return {executable:adapter.executable,args,cwd:adapter.cwd||null,
-        cpus:r.cpus,ram_mb:r.ram_mb,stop_policy:stopPolicy};
+    const context=Object.freeze({
+        job_id:job.id,project_id:job.project_id,
+        continuation_of_job_id:predecessor,
+        artifact_lineage_root_id:lineageRoot,
+        ...(!cpuOnly?{gpu_pci_address:binding.pci_address}:{}),
+    });
+    const argsFor=fn=>{
+        const args=fn.call(adapter,JSON.parse(JSON.stringify(job.frozen_parameters)),context);
+        if(!Array.isArray(args)||args.length>64||
+            args.some(a=>typeof a!=='string'||a.length>1024||!SAFE_ARG.test(a)))
+            throw Error('Trusted adapter returned an unsafe invocation.');
+        return args;
+    };
+    return {executable:adapter.executable,args:argsFor(adapter.args),cwd:adapter.cwd||null,
+        cpus:r.cpus,ram_mb:r.ram_mb,stop_policy:stopPolicy,
+        gpu:cpuOnly?null:{binding,verifyArgs:argsFor(adapter.gpu_verify_args)}};
 }
-function launchArguments(record,invocation) {
+function verifyUnconfinedDeviceAccess(plan,fsApi) {
+    for(const device of [plan.kfd,...plan.selected,...plan.unselected]) {
+        let fd;
+        try{fd=fsApi.openSync(device.node,'r+');}
+        catch{throw Error('GPU probe baseline cannot open device '+device.node);}
+        finally{if(fd!==undefined)fsApi.closeSync(fd);}
+    }
+}
+function launchArguments(record,invocation,gpuPlan) {
     const args=['--user','--quiet','--service-type=exec',
         '--unit='+record.unit,'--description='+descriptionFor(record.job_id),
         '--property=CPUQuota='+(invocation.cpus*100)+'%',
@@ -117,13 +137,23 @@ function launchArguments(record,invocation) {
             (invocation.stop_policy==='interrupt-main'?'600s':'20s'),
         ...(invocation.stop_policy==='interrupt-main'
             ?['--property=SuccessExitStatus=130']:[]),
-        '--property=CPUAccounting=yes','--property=MemoryAccounting=yes',
-        // These masks keep default CUDA/ROCm selectors from using a GPU
-        // inside CPU-budgeted jobs; they do NOT create GPU device isolation.
-        '--setenv=CUDA_VISIBLE_DEVICES=',
-        '--setenv=HIP_VISIBLE_DEVICES=',
-        '--setenv=ROCR_VISIBLE_DEVICES=',
-        '--setenv=GPU_DEVICE_ORDINAL='];
+        '--property=CPUAccounting=yes','--property=MemoryAccounting=yes'];
+    if(gpuPlan) {
+        const {binding,verifyArgs}=invocation.gpu;
+        const check=path.join(__dirname,'experiment_hub_linux_gpu_launch_check.js');
+        if(!SAFE_ARG.test(process.execPath)||!SAFE_ARG.test(check))
+            throw Error('GPU pre-start verifier requires unambiguous local executable paths.');
+        args.push(...gpuPlan.device_properties.map(p=>'--property='+p),
+            '--property=TimeoutStartSec=25s',
+            '--property=UnsetEnvironment=CUDA_VISIBLE_DEVICES HIP_VISIBLE_DEVICES ROCR_VISIBLE_DEVICES GPU_DEVICE_ORDINAL',
+            '--property=ExecStartPre='+[process.execPath,check,binding.id,
+                binding.pci_address,binding.vram_mb,deviceIdentity(gpuPlan),
+                invocation.executable,...verifyArgs].join(' '));
+    }else {
+        // CPU adapter masks preserve existing selector behavior.
+        args.push('--setenv=CUDA_VISIBLE_DEVICES=','--setenv=HIP_VISIBLE_DEVICES=',
+            '--setenv=ROCR_VISIBLE_DEVICES=','--setenv=GPU_DEVICE_ORDINAL=');
+    }
     if(invocation.cwd)args.push('--working-directory='+invocation.cwd);
     // This is a systemd-run option boundary, not a shell.
     return args.concat('--',invocation.executable,...invocation.args);
@@ -140,7 +170,7 @@ function writeAtomic(file,data,fsApi=fs) {
 }
 class LinuxSupervisor {
     constructor({root,machineId,adapters={},runner=runDefault,fsApi=fs,
-        hostOs=os,hostInspector=inspectHost}={}) {
+        hostOs=os,hostInspector=inspectHost,gpuEnabled=false}={}) {
         if(!root||!path.isAbsolute(root)||!machineId||
             !/^[a-z][a-z0-9_-]{0,47}$/.test(machineId))
             throw Error('A local absolute data directory and machine identity are required.');
@@ -152,6 +182,7 @@ class LinuxSupervisor {
         // Persist its exact service identity before dispatching systemd.
         this.gpuProbePending=path.join(root,'gpu-preflight-pending.json');
         this.machineId=machineId;this.adapters=adapters;this.runner=runner;
+        this.gpuEnabled=gpuEnabled===true;
         this.fs=fsApi;this.hostOs=hostOs;this.hostInspector=hostInspector;
         // Qualification is process-local. No persisted historical probe
         // can authorize a launch after the agent or OS has restarted.
@@ -258,8 +289,7 @@ class LinuxSupervisor {
     }
 
     // This is an on-demand, inert device-cgroup qualification API.
-    // It does NOT authorize or start a GPU workload. Hub GPU starts remain
-    // blocked until deployment-specific ROCm and isolation verification.
+    // This request verifies device access without starting a workload.
     async qualifyGpuDeviceAccess(bindings) {
         if(!this.qualifiedAt)
             throw Error('CPU/RAM preflight must pass before GPU device checks.');
@@ -273,13 +303,7 @@ class LinuxSupervisor {
         if(!plan.unselected.length||plan.selected.length!==1)
             throw Error('GPU access qualification needs one selected and at least one excluded AMD render node.');
         const denied=plan.unselected.map(device=>device.node).sort();
-        const openable=[plan.kfd.node,plan.selected[0].node,...denied];
-        for(const node of openable) {
-            let handle;
-            try{handle=this.fs.openSync(node,'r+');}
-            catch{throw Error('GPU probe baseline cannot open device '+node);}
-            finally{if(handle!==undefined)this.fs.closeSync(handle);}
-        }
+        verifyUnconfinedDeviceAccess(plan,this.fs);
         const nonce=crypto.randomUUID(),unit=
             'experiment-hub-gpu-preflight-'+nonce.replace(/-/g,'')+'.service';
         const description='Experiment Hub GPU device preflight '+nonce;
@@ -369,11 +393,7 @@ class LinuxSupervisor {
             throw Error('GPU device access preflight failed: '+
                 String(failure.message||failure).slice(0,160));
         const observed=resolveRocmDevices(bindings,{fsApi:this.fs});
-        const identities=devices=>devices.map(device=>
-            [device.pci_address||null,device.node,device.major,device.minor].join(':'))
-            .sort().join('\n');
-        if(identities([plan.kfd,...plan.selected,...plan.unselected])!==
-            identities([observed.kfd,...observed.selected,...observed.unselected]))
+        if(deviceIdentity(plan)!==deviceIdentity(observed))
             throw Error('GPU device identity changed during the access probe.');
         return {qualified_at:new Date().toISOString(),
             selected:plan.selected.map(g=>g.pci_address)};
@@ -492,7 +512,7 @@ class LinuxSupervisor {
         if(job&&this.state.records.some(r=>r.job_id===job.id))
             throw Error('Job already has a local launch record; reconcile rather than restart.');
         const invocation=validateLocalInput(job,lease,this.machineId,
-            this.adapters,this.hostOs);
+            this.adapters,this.hostOs,this.gpuEnabled);
         if(job.continuation_of_job_id) {
             const parent=this.state.records.find(r=>
                 r.job_id===job.continuation_of_job_id);
@@ -519,8 +539,16 @@ class LinuxSupervisor {
         });
         if(existing.unit_exists!==false)
             throw Error('A matching systemd unit already exists without a local ownership record.');
+        const gpuPlan=invocation.gpu
+            ?resolveRocmDevices([invocation.gpu.binding],{fsApi:this.fs}):null;
+        if(gpuPlan&&(!gpuPlan.unselected.length||this.fs.existsSync(this.gpuProbePending)||
+            this.state.records.some(r=>r.gpu_pci_address===invocation.gpu.binding.pci_address&&
+                !['finished','stopped','failed'].includes(r.state))))
+            throw Error('GPU launch requires excluded-device evidence and unambiguous local PCI ownership.');
+        if(gpuPlan)verifyUnconfinedDeviceAccess(gpuPlan,this.fs);
         const record={
             job_id:job.id,lease_id:lease.id,project_id:job.project_id,
+            ...(gpuPlan?{gpu_pci_address:invocation.gpu.binding.pci_address}:{}),
             continuation_of_job_id:job.continuation_of_job_id||null,
             artifact_lineage_root_id:job.artifact_lineage_root_id||job.id,
             unit:unitFor(job.id),state:'launch_requested',
@@ -528,9 +556,10 @@ class LinuxSupervisor {
             stop_policy:invocation.stop_policy,
             requested_at:new Date().toISOString(),observed_at:null,diagnostic:null,
         };
+        const args=launchArguments(record,invocation,gpuPlan);
         this.commit(this.state.records.concat(record));
         try{
-            await this.runner(SYSTEMD_RUN,launchArguments(record,invocation),
+            await this.runner(SYSTEMD_RUN,args,
                 {timeout:30000,maxBuffer:16384,windowsHide:true});
         }catch(error){
             // A systemd-run timeout can mean that a process already started.
