@@ -18,13 +18,14 @@ use super::GameCommandError;
 
 /// The source fields that are not available through CombatWorld's physical
 /// ship/vitals. The Level supplies them from current Ship and FleetShip data.
-/// Input is in EnemySquad.GetShips order, before strategy sorting.
+/// Position is read directly from the current physics body; it must not
+/// drift into an independently cached metadata view. Input is in
+/// EnemySquad.GetShips order, before strategy sorting.
 #[derive(Clone, Copy, Debug)]
 pub struct NativeEnemyTargetStats {
     pub ship_id: i64,
     /// ConfigData.ShipTypeLetters A=0 through X=23 (not ShipTypes values).
     pub ship_type_letter: u8,
-    pub position: Vec2,
     pub last_killed: i32,
     pub fleet_damage_done: i64,
     pub firepower: f32,
@@ -35,7 +36,7 @@ pub struct NativeEnemyTargetStats {
 impl NativeEnemyTargetStats {
     fn valid(self) -> bool {
         self.ship_id > 0 && self.ship_type_letter < 24 &&
-        self.position.is_finite() && self.firepower.is_finite() &&
+        self.firepower.is_finite() &&
         self.firepower >= 0.0 && self.max_range >= 0 &&
         self.speed.is_finite() && self.speed >= 0.0
     }
@@ -101,9 +102,13 @@ pub fn sort_native_command_targets(
             7 => b.firepower.total_cmp(&a.firepower),
             8 => a.firepower.total_cmp(&b.firepower),
             9 | 10 => {
-                let distance_a = (a.position - squad_center)
+                let a_position = world.ship_body(a.ship_id)
+                    .expect("preflight validated target body").motion.position;
+                let b_position = world.ship_body(b.ship_id)
+                    .expect("preflight validated target body").motion.position;
+                let distance_a = (a_position - squad_center)
                     .length_squared().sqrt();
-                let distance_b = (b.position - squad_center)
+                let distance_b = (b_position - squad_center)
                     .length_squared().sqrt();
                 if strategy.id == 9 {
                     distance_a.total_cmp(&distance_b)

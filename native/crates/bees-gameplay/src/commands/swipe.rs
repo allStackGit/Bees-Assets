@@ -2,7 +2,7 @@
 //! Per-weapon shooting remains CombatWorld-owned; target ranking and squad
 //! movement use shared native gameplay rather than a training-only model.
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::VecDeque;
 use std::f32::consts::{FRAC_PI_4, FRAC_PI_2, PI};
 
 use bees_hivemind::dispatch::{LocalCommandKind, ResolvedHiveMindCommand};
@@ -56,7 +56,6 @@ pub(super) struct SwipeRun {
     swipe_destination: Vec2,
     target_queue: Option<NativeCommandTargetQueue>,
     /// Only callback scratch. No additional permanent ship/physics state.
-    candidate_positions: HashMap<i64, Vec2>,
     ranked_ids: Vec<i64>,
     ranked_candidates: Vec<NativeEnemyTargetStats>,
     pending_moves: Vec<(i64, GamePointOrder)>,
@@ -87,7 +86,6 @@ impl SwipeRun {
             reached_enemy: false,
             swipe_destination: Vec2::ZERO,
             target_queue: None,
-            candidate_positions: HashMap::new(),
             ranked_ids: Vec::new(),
             ranked_candidates: Vec::new(),
             pending_moves: Vec::new(),
@@ -125,10 +123,6 @@ impl SwipeRun {
         }
 
         if !self.reached_enemy && !snapshot.every_member_has_target_in_range {
-            self.candidate_positions.clear();
-            for candidate in &snapshot.candidates {
-                self.candidate_positions.insert(candidate.ship_id, candidate.position);
-            }
             if self.target_queue.is_none() {
                 // Command.Setup builds the first queue once. Do not consume
                 // a Random shuffle on every later timed approach callback.
@@ -174,9 +168,11 @@ impl SwipeRun {
                 let Some(target_id) = target_id else {
                     return Ok(Some(CommandFinishCause::NoEnemyTargets));
                 };
-                let Some(&destination) = self.candidate_positions.get(&target_id) else {
-                    return Err(GameCommandError::InvalidCombatSnapshot);
-                };
+                // The canonical physical body owns live target coordinates.
+                // Avoid copying a second position map from Level metadata.
+                let destination = world.ship_body(target_id)
+                    .ok_or(GameCommandError::InvalidCombatSnapshot)?
+                    .motion.position;
                 world.validate_ship_game_order(member.ship_id)?;
                 self.pending_moves.push((member.ship_id, GamePointOrder {
                     destination,
