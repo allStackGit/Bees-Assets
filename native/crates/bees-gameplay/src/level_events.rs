@@ -507,6 +507,49 @@ impl NativeLevelEventProcessor {
         Ok(())
     }
 
+    /// Timed HiveMind Mining callbacks run after the combat reward pass
+    /// for this tick, matching the Level's post-roster command update.
+    /// The normal process_completed_tick already delivered the prefix
+    /// of world events. Append ONLY newly generated sparse capability
+    /// events, after the Level persisted their FleetShip values.
+    ///
+    /// The source events themselves will be cleared at the next physics
+    /// tick; the outbox persists until durably acknowledged by the host.
+    pub fn record_late_gameplay_events(
+        &mut self, completed_tick: u64, events: &[CombatEvent],
+    ) -> Result<(), NativeLevelEventError> {
+        if self.is_failed() || self.completed() {
+            return Err(NativeLevelEventError::FailedLevel);
+        }
+        if completed_tick.checked_add(1) != Some(self.next_tick) ||
+            self.last_advanced_command_tick != Some(completed_tick) {
+            self.failed = true;
+            return Err(NativeLevelEventError::MissingOrRepeatedTick {
+                expected: self.next_tick.saturating_sub(1),
+                got: completed_tick,
+            });
+        }
+        let count = events.iter()
+            .filter(|event| requires_level_capability_delivery(event))
+            .count();
+        Self::reserve_output_records(
+            &mut self.pending_notifications, &mut self.failed, count,
+        )?;
+        for event in events {
+            if requires_level_capability_delivery(event) {
+                self.pending_notifications.push(NativeLevelNotification {
+                    tick: completed_tick,
+                    kind: NativeLevelNotificationKind::Gameplay(event.clone()),
+                });
+            }
+        }
+        Self::update_output_peak(
+            &mut self.peak_pending_notifications,
+            self.pending_notifications.len(),
+        );
+        Ok(())
+    }
+
     pub fn measurements(&self) -> NativeLevelEventMeasurements {
         NativeLevelEventMeasurements {
             squads: self.roster.measurements(),
