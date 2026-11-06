@@ -213,6 +213,16 @@ document.addEventListener('DOMContentLoaded', () => {
         return data;
     };
     const feedback=(id,message)=>{ $(id).textContent=message; };
+    function allocationBlocks(results) {
+        const blocked=results.filter(item=>item.status==='insufficient_capacity');
+        const counts=new Map();
+        for(const item of blocked) {
+            const reason=item.reason||'Insufficient capacity.';
+            counts.set(reason,(counts.get(reason)||0)+1);
+        }
+        return [...counts].map(([reason,count])=>count+' blocked: '+reason)
+            .join(' · ');
+    }
     function cell(tr, value) {
         const td=document.createElement('td');
         td.textContent=String(value);
@@ -1917,10 +1927,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 all_projects:true,confirm_allocate:true,
             });
             const allocated=result.results.filter(x=>x.status==='claimed').length;
-            const blocked=result.results.filter(x=>x.status==='insufficient_capacity').length;
+            const blocked=allocationBlocks(result.results);
             feedback('hub-global-allocate-result',
-                allocated+' new advisory claims across projects · '+blocked+
-                ' without available Hub budget · No processes started.');
+                allocated+' new advisory claims across projects'+
+                (blocked?' · '+blocked:'')+' · No processes started.');
             await reload();
         }catch(e){feedback('hub-global-allocate-result',e.message);}
     });
@@ -2044,9 +2054,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 confirm_allocate:true,
             });
             const allocated=result.results.filter(x=>x.status==='claimed').length;
-            const blocked=result.results.filter(x=>x.status==='insufficient_capacity').length;
-            feedback('hub-job-allocate-message',allocated+' coordination claims created · '+
-                blocked+' jobs without capacity · No execution.');
+            const blocked=allocationBlocks(result.results);
+            feedback('hub-job-allocate-message',allocated+' coordination claims created'+
+                (blocked?' · '+blocked:'')+' · No execution.');
             await reload();
         }catch(e){feedback('hub-job-allocate-message',e.message);}
     }
