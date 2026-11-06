@@ -155,7 +155,13 @@ impl NativeCommandTargetQueue {
     /// Initialize from MakeTargetingQueue's exact first order. The caller
     /// supplies IDs from sort_native_command_targets, not numeric ID order.
     pub fn new(sorted_enemy_ids: &[i64]) -> Self {
-        let original: VecDeque<_> = sorted_enemy_ids.iter().copied().collect();
+        Self::from_sorted_ids(sorted_enemy_ids.iter().copied())
+    }
+
+    /// Construct from an already-ranked iterator, avoiding a temporary
+    /// ID vector when a command has just ranked enemy target records.
+    pub fn from_sorted_ids(ids: impl IntoIterator<Item = i64>) -> Self {
+        let original: VecDeque<_> = ids.into_iter().collect();
         Self {
             pending: original.clone(),
             original,
@@ -221,7 +227,6 @@ impl NativeCommandTargetQueue {
 #[derive(Default)]
 pub(super) struct NativeTargetApproach {
     target_queue: Option<NativeCommandTargetQueue>,
-    ranked_ids: Vec<i64>,
     ranked_candidates: Vec<NativeEnemyTargetStats>,
     pending_moves: Vec<(i64, GamePointOrder)>,
 }
@@ -248,11 +253,9 @@ impl NativeTargetApproach {
                 world, roster, enemy_owner, squad_center,
                 selection.effective_shooting, random, &mut self.ranked_candidates,
             )?;
-            self.ranked_ids.clear();
-            self.ranked_ids.extend(
+            self.target_queue = Some(NativeCommandTargetQueue::from_sorted_ids(
                 self.ranked_candidates.iter().map(|candidate| candidate.ship_id),
-            );
-            self.target_queue = Some(NativeCommandTargetQueue::new(&self.ranked_ids));
+            ));
         }
         let queue = self.target_queue.as_mut()
             .expect("created above");

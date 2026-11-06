@@ -22,8 +22,9 @@ use super::{
     NativeEnemyTargetStats, NativeSquadOrder,
 };
 
-/// Fresh Unity Squad/Ship metrics for one SwipeSquadTimer. Candidate stats
-/// must come from the original live EnemySquad in GetShips order. The Level
+/// Fresh Unity Squad/Ship metrics for SwipeSquadTimer and InAndOutTimer.
+/// Candidate stats come from the original live EnemySquad in GetShips order.
+/// The Level
 /// uses each real Weapon.IsShipValidTarget to compute the same squad-level
 /// range condition as CircleSquad. Candidate stats are needed only while
 /// approaching: subsequent swipe/arrival polls can leave them empty.

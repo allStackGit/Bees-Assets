@@ -68,9 +68,10 @@ pub trait NativeLevelCommandContext {
         Err(GameCommandError::MissingCombatSnapshot)
     }
 
-    /// Unity SwipeSquad.Timer requires the original enemy lifetime, live
-    /// squad ranges and bounds, exact weapon validity, and GetShips-ordered
-    /// candidate metadata. Required only on due Right/Left Swipe callbacks.
+    /// Unity SwipeSquad.Timer and InAndOutTimer both require the original
+    /// enemy lifetime, live squad bounds and weapon validity, and the same
+    /// GetShips-ordered target metadata during approach. Called only at
+    /// due Right/Left Swipe or InAndOut command callbacks.
     fn swipe_command_snapshot(
         &self, _world: &CombatWorld, _owner: SquadLifetime,
         _enemy_squad_id: i64,
