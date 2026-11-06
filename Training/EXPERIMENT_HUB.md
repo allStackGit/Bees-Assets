@@ -1406,14 +1406,15 @@ thresholds in Design.
 
 For scheduled evaluation, run `experiment_hub_courier_eval_poll.py` with
 the same Python environment on a separately budgeted CPU schedule. Its
-`--snapshot-root` must be separate from the live artifacts. A trusted
-producer publishes a complete policy to `<snapshot-root>/<dispatch-id>/round-<n>.zip`
-by renaming a staged file into place. Published policies must be immutable,
-and round numbers must increase within a dispatch. The poller picks the
-latest unseen round from a live eligible dispatch and persists its cursor
-and pending receipt in `--scratch`. Keep a bounded number of published
-snapshots. The existing Courier trainer still needs a producer at its
-checkpoint boundary to supply this inbox unattended.
+`--snapshot-root` must match the adapter's optional `snapshotRoot` and be
+separate from source, live artifacts and receipts. For jobs with an
+evaluation stop policy, the Courier launch bridge exports lineage 0 after
+each successful durable checkpoint. It publishes an immutable copy at
+`<snapshot-root>/<dispatch-id>/round-<n>.zip` and keeps at most two published
+policies per dispatch. The poller picks the latest unseen round from a
+live eligible dispatch and persists its cursor and pending receipt in
+`--scratch`. Retain or remove completed dispatch directories under the
+worker's artifact retention policy.
 
 ## Not yet implemented
 

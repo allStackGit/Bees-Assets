@@ -55,7 +55,7 @@ function liveWindowsProgress(root) {
     }
 }
 
-function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,evaluationRoot,evaluationSuites}) {
+function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,evaluationRoot,evaluationSuites,snapshotRoot}) {
     for(const target of [projectRoot,pythonPath,artifactRoot,configPath]) {
         if(typeof target!=='string'||!path.isAbsolute(target))
             throw Error('Courier requires absolute local project, Python, artifact and configuration paths.');
@@ -73,6 +73,16 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
         throw Error('Courier environment configuration must be a JSON object.');
     const configSha256=crypto.createHash('sha256').update(config).digest('hex');
     const windows=process.platform==='win32';
+    const evaluator=evaluationReader('courier',evaluationRoot,evaluationSuites,[project,artifacts]);
+    let snapshots=null;
+    if(snapshotRoot!=null) {
+        if(!evaluator.readEvaluation||typeof snapshotRoot!=='string'||!path.isAbsolute(snapshotRoot))
+            throw Error('Courier snapshots require approved evaluation suites and an absolute snapshot directory.');
+        snapshots=fs.realpathSync(snapshotRoot);
+        if(!fs.statSync(snapshots).isDirectory()||[project,artifacts,fs.realpathSync(evaluationRoot)]
+            .some(root=>inside(root,snapshots)||inside(snapshots,root)))
+            throw Error('Courier snapshot directory must be separate from source, training and receipts.');
+    }
 
     function jobRoot(context) {
         if(context.project_id!=='courier'||!UUID.test(context.job_id)||
@@ -89,7 +99,7 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
 
     return {
         executable,cwd:project,stop_policy:windows?'terminate-group':'interrupt-main',
-        ...evaluationReader('courier',evaluationRoot,evaluationSuites,[project,artifacts]),
+        ...evaluator,
         args(parameters,context) {
             const {config_sha256,seed,workers,max_rounds,checkpoint_rounds}=parameters;
             const within=(value,min,max)=>Number.isSafeInteger(value)&&value>=min&&value<=max;
@@ -100,6 +110,10 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
                 !within(checkpoint_rounds,1,10000000))
                 throw Error('Courier requires the approved configuration digest and valid seed, worker and round counts.');
             const out=jobRoot(context);
+            const publish=Boolean(snapshots&&context.evaluation_suite_id);
+            if(publish&&(!UUID.test(String(context.dispatch_id||''))||
+                !evaluator.evaluation_suites.includes(context.evaluation_suite_id)))
+                throw Error('Courier snapshot publishing requires a matching dispatch and suite.');
             const predecessor=context.continuation_of_job_id;
             let limit=max_rounds, files=[];
             if(predecessor) {
@@ -127,7 +141,9 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
                 fs.copyFileSync(file,path.join(out,path.basename(file)),fs.constants.COPYFILE_EXCL);
             const configFile=path.join(out,'hub-environment.json');
             fs.writeFileSync(configFile,config,{flag:'wx',mode:0o600});
-            const entry=windows?['-c',WINDOWS_ENTRY,path.join(out,'trainer.stderr.txt'),script]:[script];
+            const launch=publish?[path.join(__dirname,'experiment_hub_courier_train.py'),
+                script,snapshots,context.dispatch_id]:[script];
+            const entry=windows?['-c',WINDOWS_ENTRY,path.join(out,'trainer.stderr.txt'),...launch]:launch;
             return ['-B',...entry,'--config',configFile,'--run-dir',out,'--port','0',
                 '--seed',String(seed),'--workers',String(workers),
                 '--max-rounds',String(limit),'--checkpoint-rounds',String(checkpoint_rounds),

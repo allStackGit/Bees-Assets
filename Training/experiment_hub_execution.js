@@ -114,7 +114,7 @@ class LocalExecution {
                 // launched again, including after agent/coordinator restarts.
                 observed=record
                     ?await this.supervisor.reconcile(job.id)
-                    :await this.supervisor.start(job,lease);
+                    :await this.supervisor.start({...job,dispatch_id:order.dispatch_id},lease);
             }else if(!record) {
                 // No journal is not proof that no process exists. The
                 // operator must inspect the deterministic native service.
