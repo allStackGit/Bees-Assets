@@ -1307,7 +1307,9 @@ one newer checkpoint. Fresh jobs can use their first visible checkpoint.
 For continuations, the first visible checkpoint sets a watermark because
 it may belong to the predecessor. The evaluator rotates among eligible
 dispatches, retains the last attempted episode across invocations and
-leaves an already-passing receipt available for the worker. Once an
+temporary worker disconnects, and leaves an already-passing receipt available
+for the worker. Old inactive dispatch watermarks are evicted only when the
+bounded 1,000-entry scratch limit is reached. Once an
 evaluation result is durably recorded in scratch, it can be published or
 retried without a second Hub availability check: the unique dispatch and
 suite are validated again by the trusted running adapter and coordinator
@@ -1666,7 +1668,8 @@ numbered checkpoint for an eligible running dispatch, and evaluates at most
 one per invocation. Set the profile's `training.checkpoint_every` so a
 numbered checkpoint appears while the job is still running. The poller
 leaves the changing `latest.pt` alone. Use persistent scratch to retain
-attempts and retry publication independently of coordinator availability
+checkpoint watermarks across temporary worker disconnects (with the same
+1,000-entry limit as Ants), and retry publication independently of coordinator availability
 once a completed evaluation is recorded. The trusted adapter and Hub
 accept the receipt only for the exact running dispatch and suite.
 A separate host needs a trusted loopback forward and read access to the
