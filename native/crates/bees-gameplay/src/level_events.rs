@@ -15,8 +15,8 @@ use bees_sim::rl_discovery::DiscoveryKind;
 use crate::commands::{
     CommandFinishCause, CommandMeasurements, FinishedNativeCommand,
     GameCommandError, NativeAggressiveCommandSnapshot,
-    NativeCircleCommandSnapshot, NativeFriendlySquad,
-    NativeSquadCommandDirector, NativeSwipeCommandSnapshot,
+    NativeCircleCommandSnapshot, NativeFireBargeTimerSnapshot,
+    NativeFriendlySquad, NativeSquadCommandDirector, NativeSwipeCommandSnapshot,
 };
 use bees_hivemind::dispatch::ResolvedHiveMindCommand;
 use crate::episode::{
@@ -634,6 +634,36 @@ impl NativeLevelEventProcessor {
             SquadLifetime, i64, &CombatWorld, bool,
         ) -> Result<NativeAggressiveCommandSnapshot, GameCommandError>,
     ) -> Result<(), NativeLevelEventError> {
+        self.advance_timed_commands_with_bombing(
+            completed_tick, world, navigation, friendlies, random, dt,
+            circle_snapshot, swipe_snapshot, aggressive_snapshot,
+            |_, _, _| Err(GameCommandError::MissingCombatSnapshot),
+        )
+    }
+
+    /// One Level-owned command update, including authored bomber proximity
+    /// projection. Legacy callers remain fail-closed for BombingRun.
+    pub fn advance_timed_commands_with_bombing(
+        &mut self,
+        completed_tick: u64,
+        world: &mut CombatWorld,
+        navigation: &NavigationRuntime,
+        friendlies: &[NativeFriendlySquad],
+        random: &mut RandomStream,
+        dt: f32,
+        circle_snapshot: impl FnMut(
+            SquadLifetime, i64, &CombatWorld,
+        ) -> Result<NativeCircleCommandSnapshot, GameCommandError>,
+        swipe_snapshot: impl FnMut(
+            SquadLifetime, i64, &CombatWorld, bool,
+        ) -> Result<NativeSwipeCommandSnapshot, GameCommandError>,
+        aggressive_snapshot: impl FnMut(
+            SquadLifetime, i64, &CombatWorld, bool,
+        ) -> Result<NativeAggressiveCommandSnapshot, GameCommandError>,
+        bombing_snapshot: impl FnMut(
+            SquadLifetime, i64, &CombatWorld,
+        ) -> Result<NativeFireBargeTimerSnapshot, GameCommandError>,
+    ) -> Result<(), NativeLevelEventError> {
         if self.is_failed() {
             return Err(NativeLevelEventError::FailedLevel);
         }
@@ -651,10 +681,10 @@ impl NativeLevelEventProcessor {
         if self.completed() || self.commands.active_count() == 0 {
             return Ok(());
         }
-        if let Err(error) = self.commands.advance_into_with_combat(
+        if let Err(error) = self.commands.advance_into_with_bombing(
             world, navigation, Some(&self.roster), friendlies, random, dt,
             circle_snapshot, swipe_snapshot, aggressive_snapshot,
-            &mut self.timed_finished,
+            bombing_snapshot, &mut self.timed_finished,
         ) {
             self.failed = true;
             return Err(NativeLevelEventError::Commands(error));
