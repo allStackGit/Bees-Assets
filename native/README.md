@@ -88,6 +88,21 @@ Cumulative mining workload counters require no per-step logging.
 The rendered fleet/command adapter and physical Windows/Linux
 qualification still require integration.
 
+HiveMind Scouting now uses source five-second movement polls, the
+authoritative squad collider-bounds center, ten-second Scout beacon polls,
+a 300-second timeout, and five-second completion after first verified
+side-wide enemy-ship discovery. The owning Level must supply
+`NativeScoutingContext` with actual `Squad.MaxSight` and
+`ConfigData.Configuration.HumanSide`, configure each game Scout's
+authored Beacon via `configure_game_scout`, and call
+`record_verified_scouting_sighting` with the true reward squad lifecycle
+(including a Beacon's MotherSquad). Game Scouts retain Beacon charges and
+cooldowns when commands change; both game and RL Scouts use the same
+world-owned physical Beacon spawn. `ScoutBeaconDropped` is durably
+published for the Level's minion-squad/presentation adapter, which still
+needs runtime integration. Command TSV vision credit must come from the
+actual Level observer/outcome, not from guessed sight-range polls.
+
 `NativeGroupRewardDelivery` is an optional per-episode MA-POCA delivery
 adapter. The runner registers participating agents, consumes side-wide
 immediate and per-step group events once, sends the separate ELO marker
@@ -95,8 +110,9 @@ as transport-only metadata (not PPO reward), then ends both participating
 side groups on terminal completion. `pending_notifications()` retains
 sparse, tick-stamped rewards, group events, completed commands, squad
 changes, and `Gameplay(CombatEvent)` capability outcomes across many
-fixed steps. Only mining, depletion, Beehive healing and WarpGate returns
-are forwarded through this gameplay channel; high-volume shot events
+fixed steps. Only mining, depletion, Beehive healing, Scout Beacon spawns and
+WarpGate returns are forwarded through this gameplay channel;
+high-volume shot events
 are not duplicated. The Level adapter must apply depletion cleanup,
 healing presentation and warp sounds before acknowledging those events;
 it must not credit capability rewards twice. The host durably consumes
