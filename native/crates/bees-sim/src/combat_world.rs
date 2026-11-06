@@ -89,6 +89,7 @@ pub use self::scout::{ScoutBeaconSpec, ScoutBeaconStatus, SCOUT_TYPE};
 use self::scout::PolicyScoutRuntime;
 use self::policy::{PolicyShipRuntime, PolicyShipSpecial};
 pub use self::policy::PolicySpecialObservations;
+pub use self::policy::WARP_GATE_TYPE;
 use self::weapons::PendingPolicyShot;
 pub use self::weapons::{NativeFirePattern, NativeTurretSpec};
 
