@@ -468,10 +468,10 @@ impl NativeSquadCommandDirector {
     /// Most commands do not require a source ship-to-ship trigger input.
     /// Poll the small active-command map instead of creating another
     /// independent roster or checking every game ship every fixed tick.
-    pub fn needs_bomber_contacts(&self) -> bool {
+    pub fn needs_bomber_contacts(&self, world: &CombatWorld) -> bool {
         self.active.values().any(|command|
             command.bombing.as_ref().is_some_and(|bombing|
-                bombing.needs_contact_events()
+                bombing.needs_contact_events(world)
             )
         )
     }

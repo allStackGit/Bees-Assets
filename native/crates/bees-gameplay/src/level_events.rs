@@ -204,8 +204,8 @@ impl NativeLevelEventProcessor {
         self.commands.active_count()
     }
 
-    pub fn needs_bomber_contacts(&self) -> bool {
-        self.commands.needs_bomber_contacts()
+    pub fn needs_bomber_contacts(&self, world: &CombatWorld) -> bool {
+        self.commands.needs_bomber_contacts(world)
     }
 
     /// A terminal result is not safely delivered until process_completed_tick

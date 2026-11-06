@@ -348,8 +348,27 @@ impl NativeBombingRun {
         self.target.squad_id()
     }
 
-    pub fn needs_contact_events(&self) -> bool {
-        self.has_contact_bombers
+    /// A returning/completed Striker cannot drop twice in one run, and
+    /// a dead Yellow Jacket has no physical contact callback. Avoid
+    /// requesting a full Level contact projection on those quiet ticks.
+    /// The Level still supplies true OnTriggerEnter2D contacts whenever a
+    /// live, ready bomber retains a selected Bomb.TargetShip.
+    pub fn needs_contact_events(&self, world: &CombatWorld) -> bool {
+        self.has_contact_bombers && self.members.iter().any(|member| {
+            let Some(ship) = world.ship(member.ship_id) else { return false };
+            if ship.vitals.is_dead() { return false }
+            let ready = match ship.ship_type {
+                19 => self.strikers.binary_search_by_key(
+                    &member.ship_id, |state| state.ship_id,
+                ).ok().is_some_and(|index| !self.strikers[index].completed) &&
+                    world.game_striker_bomb_ready(member.ship_id) == Some(true),
+                22 => true,
+                _ => false,
+            };
+            ready && world.game_bomb_current_target(member.ship_id)
+                .and_then(|id| world.ship(id))
+                .is_some_and(|target| !target.vitals.is_dead())
+        })
     }
 
     /// Striker.DropBomb calls CompleteRun synchronously after creating the

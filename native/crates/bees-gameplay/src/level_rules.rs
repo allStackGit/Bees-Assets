@@ -456,7 +456,7 @@ where
         // Unity's YellowJacket.OnTriggerEnter2D is independent of the
         // command timer. Consume these source-ordered contacts INSIDE the
         // owning completed tick, before the sole reward/roster event pass.
-        if state.events.needs_bomber_contacts() {
+        if state.events.needs_bomber_contacts(&state.combat) {
             state.command_bomber_contacts.clear();
             state.metadata.collect_bomber_contacts(
                 &state.combat, state.events.roster(),
