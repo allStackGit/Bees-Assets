@@ -270,9 +270,11 @@ impl CombatWorld {
         Ok(())
     }
 
-    /// Commit only the actual post-mining persistent FleetShip value from
-    /// the Level. A dead ship stays dead; the economic consumer still uses
-    /// the Level's saved fleet value for final exit/forfeiture accounting.
+    /// Synchronize externally changed persistent FleetShip minerals
+    /// before starting a fixed tick. During native policy or timed command
+    /// mining, CombatWorld already updates TSV and NativeLevelRules
+    /// requires the Level's credited value to match exactly. Do not use
+    /// this as a second, post-damage mining credit path.
     pub fn sync_mined_fleet_value(
         &mut self, ship_id: i64, mined_total: i32,
     ) -> Result<(), CombatWorldError> {
