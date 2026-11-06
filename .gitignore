@@ -17,3 +17,7 @@ __pycache__.meta
 /Logs/
 /Logs.meta
 /TrainingHistory~/
+
+# Generated Windows Job Object owner build output (build locally; pin installed helper hash).
+/Training/experiment_hub_windows_owner/bin/
+/Training/experiment_hub_windows_owner/obj/
