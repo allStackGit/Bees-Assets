@@ -2281,6 +2281,17 @@ impl CombatWorld {
         self.reservations.release(bomb_weapon_id).is_some()
     }
 
+    /// Unity BombingRun.SetFinalize releases each current squad member's
+    /// Bomb weapon reservation. The weapon's stable identity is already
+    /// owned by this world, so the Level does not need to copy or retain
+    /// weapon IDs merely to finalize or supersede a command.
+    pub fn release_game_bomb_target_for_ship(&mut self, bomber_id: i64) -> bool {
+        let Some(&weapon_id) = self.game_bomb_weapon_by_ship.get(&bomber_id) else {
+            return false;
+        };
+        self.reservations.release(weapon_id).is_some()
+    }
+
     /// Read the canonical Bomb.TargetShip while the weapon itself owns
     /// its reservation. No second target cache is maintained in gameplay.
     /// A transferred Striker bomb's independent projectile reservation is
