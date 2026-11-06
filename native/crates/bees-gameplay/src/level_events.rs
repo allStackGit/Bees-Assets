@@ -609,7 +609,7 @@ impl NativeLevelEventProcessor {
         self.advance_timed_commands_with_combat(
             completed_tick, world, navigation, friendlies, random, dt,
             |_, _, _| Err(GameCommandError::MissingCombatSnapshot),
-            |_, _, _| Err(GameCommandError::MissingCombatSnapshot),
+            |_, _, _, _| Err(GameCommandError::MissingCombatSnapshot),
             |_, _, _, _| Err(GameCommandError::MissingCombatSnapshot),
         )
     }
@@ -628,7 +628,7 @@ impl NativeLevelEventProcessor {
             SquadLifetime, i64, &CombatWorld,
         ) -> Result<NativeCircleCommandSnapshot, GameCommandError>,
         swipe_snapshot: impl FnMut(
-            SquadLifetime, i64, &CombatWorld,
+            SquadLifetime, i64, &CombatWorld, bool,
         ) -> Result<NativeSwipeCommandSnapshot, GameCommandError>,
         aggressive_snapshot: impl FnMut(
             SquadLifetime, i64, &CombatWorld, bool,

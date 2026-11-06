@@ -71,10 +71,13 @@ pub trait NativeLevelCommandContext {
     /// Unity SwipeSquad.Timer and InAndOutTimer both require the original
     /// enemy lifetime, live squad bounds and weapon validity, and the same
     /// GetShips-ordered target metadata during approach. Called only at
-    /// due Right/Left Swipe or InAndOut command callbacks.
+    /// due Right/Left Swipe or InAndOut command callbacks. When
+    /// need_target_candidates is false, the Level need not allocate or
+    /// gather the candidate list; current enemy lifetime/range remains
+    /// authoritative regardless.
     fn swipe_command_snapshot(
         &self, _world: &CombatWorld, _owner: SquadLifetime,
-        _enemy_squad_id: i64,
+        _enemy_squad_id: i64, _need_target_candidates: bool,
     ) -> Result<NativeSwipeCommandSnapshot, GameCommandError> {
         Err(GameCommandError::MissingCombatSnapshot)
     }
@@ -446,8 +449,10 @@ where
                 |owner, enemy_id, combat| {
                     metadata.circle_command_snapshot(combat, owner, enemy_id)
                 },
-                |owner, enemy_id, combat| {
-                    metadata.swipe_command_snapshot(combat, owner, enemy_id)
+                |owner, enemy_id, combat, need_candidates| {
+                    metadata.swipe_command_snapshot(
+                        combat, owner, enemy_id, need_candidates,
+                    )
                 },
                 |owner, enemy_id, combat, need_all| {
                     metadata.aggressive_command_snapshot(

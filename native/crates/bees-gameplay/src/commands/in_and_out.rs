@@ -70,6 +70,10 @@ impl InAndOutRun {
         self.target.squad_id()
     }
 
+    pub(super) fn needs_target_candidates(&self) -> bool {
+        !self.reached_enemy
+    }
+
     pub(super) fn on_poll(
         &mut self,
         world: &mut CombatWorld,

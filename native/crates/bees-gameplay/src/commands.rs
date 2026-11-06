@@ -1048,7 +1048,7 @@ impl NativeSquadCommandDirector {
         self.advance_into_with_combat(
             world, navigation, None, friendlies, random, dt,
             |_, _, _| Err(GameCommandError::MissingCombatSnapshot),
-            |_, _, _| Err(GameCommandError::MissingCombatSnapshot),
+            |_, _, _, _| Err(GameCommandError::MissingCombatSnapshot),
             |_, _, _, _| Err(GameCommandError::MissingCombatSnapshot),
             finished,
         )
@@ -1069,7 +1069,7 @@ impl NativeSquadCommandDirector {
             SquadLifetime, i64, &CombatWorld,
         ) -> Result<NativeCircleCommandSnapshot, GameCommandError>,
         mut swipe_snapshot: impl FnMut(
-            SquadLifetime, i64, &CombatWorld,
+            SquadLifetime, i64, &CombatWorld, bool,
         ) -> Result<NativeSwipeCommandSnapshot, GameCommandError>,
         mut aggressive_snapshot: impl FnMut(
             SquadLifetime, i64, &CombatWorld, bool,
@@ -1193,6 +1193,7 @@ impl NativeSquadCommandDirector {
                         let roster = roster.ok_or(GameCommandError::MissingCombatSnapshot)?;
                         let snapshot = swipe_snapshot(
                             owner, swipe.enemy_squad_id(), world,
+                            swipe.needs_target_candidates(),
                         )?;
                         completed = swipe.on_poll(
                             world, navigation, roster, random, owner,
@@ -1223,6 +1224,7 @@ impl NativeSquadCommandDirector {
                         let roster = roster.ok_or(GameCommandError::MissingCombatSnapshot)?;
                         let snapshot = swipe_snapshot(
                             owner, in_and_out.enemy_squad_id(), world,
+                            in_and_out.needs_target_candidates(),
                         )?;
                         completed = in_and_out.on_poll(
                             world, navigation, roster, random, owner,
