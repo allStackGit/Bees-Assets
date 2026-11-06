@@ -374,8 +374,8 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
       <p id="hub-pipeline-message" class="hub-notice" role="status">No pipeline queued.</p>
     </div>
     <div class="hub-standalone" id="hub-sequence-overview-panel" hidden>
-      <h3>Independent sequences across projects</h3>
-      <p class="muted">Read-only overview of recent independent-job chains. A finished job is native process completion, not benchmark qualification. Stages never inherit checkpoint or machine state.</p>
+      <h3>Queued job sequences</h3>
+      <p class="muted">Review recent job chains and cancel their unstarted successors. Resume stages inherit a checkpoint and worker. Fresh stages run independently.</p>
       <div class="tablewrap hub-table"><table>
         <thead><tr><th>Sequence root</th><th>Projects / jobs</th><th>Current stage</th><th>Progress</th><th>Waiting reason</th><th>Action</th></tr></thead>
         <tbody id="hub-sequence-overview-rows"></tbody>
