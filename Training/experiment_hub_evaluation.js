@@ -1,8 +1,12 @@
 'use strict';
 
+const fs=require('node:fs');
+const path=require('node:path');
+
 // Independent evaluation is a separate adapter contract from training progress.
 const SUITE=/^[a-z][a-z0-9_-]{0,47}$/;
 const SHA256=/^[a-f0-9]{64}$/;
+const UUID=/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
 const trials=n=>Number.isSafeInteger(n)&&n>=1&&n<=1000000;
 const record=value=>value&&typeof value==='object'&&!Array.isArray(value);
 
@@ -41,4 +45,48 @@ function supportsEvaluation(suites,job) {
         (suites&&Object.hasOwn(suites,job.project_id)&&
          suites[job.project_id].includes(job.evaluation_stop.suite_id));
 }
-module.exports={evaluationPolicy,evaluationEvidence,suiteIds,supportsEvaluation};
+function isWithin(parent,child) {
+    const relative=path.relative(parent,child);
+    return !path.isAbsolute(relative)&&relative!=='..'&&!relative.startsWith('..'+path.sep);
+}
+
+function evaluationReader(projectId,evaluationRoot,evaluationSuites,protectedRoots) {
+    if(evaluationRoot==null&&evaluationSuites==null)return {};
+    if(typeof evaluationRoot!=='string'||!path.isAbsolute(evaluationRoot))
+        throw Error('Specify an absolute independent evaluation directory.');
+    const root=fs.realpathSync(evaluationRoot);
+    if(!fs.statSync(root).isDirectory()||protectedRoots.some(dir=>
+        isWithin(dir,root)||isWithin(root,dir)))
+        throw Error('Evaluation receipts must be separate from source and training artifacts.');
+    const suites=Object.freeze(suiteIds(evaluationSuites));
+    return {
+        evaluation_suites:suites,
+        readEvaluation(context) {
+            if(context?.project_id!==projectId||!UUID.test(String(context.job_id||''))||
+                !UUID.test(String(context.dispatch_id||''))||!suites.includes(context.suite_id))
+                throw Error('Invalid independent evaluation identity.');
+            const file=path.join(root,context.dispatch_id+'.'+context.suite_id+'.json');
+            if(fs.realpathSync(root)!==root)
+                throw Error('Evaluation directory identity changed.');
+            let fd;
+            try {
+                if(!fs.lstatSync(file).isFile()||fs.realpathSync(file)!==file)
+                    throw Error('Evaluation receipt must be a regular local file.');
+                fd=fs.openSync(file,'r');
+                const buffer=Buffer.alloc(4097);
+                const bytes=fs.readSync(fd,buffer,0,buffer.length,0);
+                if(bytes<1||bytes>4096)
+                    throw Error('Invalid evaluation receipt size.');
+                return evaluationEvidence(JSON.parse(buffer.toString('utf8',0,bytes)),
+                    {suite_id:context.suite_id},context.dispatch_id);
+            }catch(error) {
+                if(error.code==='ENOENT'&&fd===undefined)return null;
+                throw error;
+            }finally {
+                if(fd!==undefined)fs.closeSync(fd);
+            }
+        },
+    };
+}
+
+module.exports={evaluationPolicy,evaluationEvidence,suiteIds,supportsEvaluation,evaluationReader};

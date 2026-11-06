@@ -6,7 +6,7 @@ const path=require('node:path');
 const crypto=require('node:crypto');
 const {spawnSync}=require('node:child_process');
 const {validateProgress}=require('./experiment_hub_progress');
-const {evaluationEvidence,suiteIds}=require('./experiment_hub_evaluation');
+const {evaluationReader}=require('./experiment_hub_evaluation');
 
 const UUID=/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
 const PROFILE=/^[a-z][a-z0-9_-]{0,47}$/;
@@ -45,45 +45,6 @@ const TRAIN_ENTRY=[
 function isWithin(parent,child) {
     const relative=path.relative(parent,child);
     return !path.isAbsolute(relative)&&relative!=='..'&&!relative.startsWith('..'+path.sep);
-}
-
-function evaluationReader(evaluationRoot,evaluationSuites,project,artifacts) {
-    if(evaluationRoot==null&&evaluationSuites==null)return {};
-    if(typeof evaluationRoot!=='string'||!path.isAbsolute(evaluationRoot))
-        throw Error('TinyBrains requires an absolute independent evaluation directory.');
-    const root=fs.realpathSync(evaluationRoot);
-    if(!fs.statSync(root).isDirectory()||[project,artifacts].some(dir=>
-        isWithin(dir,root)||isWithin(root,dir)))
-        throw Error('TinyBrains evaluation receipts must be separate from source and training artifacts.');
-    const suites=Object.freeze(suiteIds(evaluationSuites));
-    return {
-        evaluation_suites:suites,
-        readEvaluation(context) {
-            if(context?.project_id!=='tinybrains'||!UUID.test(String(context.job_id||''))||
-                !UUID.test(String(context.dispatch_id||''))||!suites.includes(context.suite_id))
-                throw Error('Invalid TinyBrains independent evaluation identity.');
-            const file=path.join(root,context.dispatch_id+'.'+context.suite_id+'.json');
-            if(fs.realpathSync(root)!==root)
-                throw Error('TinyBrains evaluation directory identity changed.');
-            let fd;
-            try {
-                if(!fs.lstatSync(file).isFile()||fs.realpathSync(file)!==file)
-                    throw Error('TinyBrains evaluation receipt must be a regular local file.');
-                fd=fs.openSync(file,'r');
-                const buffer=Buffer.alloc(4097);
-                const bytes=fs.readSync(fd,buffer,0,buffer.length,0);
-                if(bytes<1||bytes>4096)
-                    throw Error('Invalid TinyBrains evaluation receipt size.');
-                return evaluationEvidence(JSON.parse(buffer.toString('utf8',0,bytes)),
-                    {suite_id:context.suite_id},context.dispatch_id);
-            }catch(error) {
-                if(error.code==='ENOENT'&&fd===undefined)return null;
-                throw error;
-            }finally {
-                if(fd!==undefined)fs.closeSync(fd);
-            }
-        },
-    };
 }
 
 function validateApprovedProfiles(executable,project,configs) {
@@ -153,7 +114,7 @@ function createTinyBrainsAdapter({projectRoot,pythonPath,artifactRoot,profiles,
 
     return {
         executable,cwd:project,stop_policy:'terminate-group',
-        ...evaluationReader(evaluationRoot,evaluationSuites,project,artifacts),
+        ...evaluationReader('tinybrains',evaluationRoot,evaluationSuites,[project,artifacts]),
         tinybrains_profiles:Object.fromEntries([...configs].map(([id,item])=>[id,item.sha256])),
         args(parameters,context) {
             const {profile,profile_sha256,updates}=parameters;
