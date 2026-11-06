@@ -403,6 +403,19 @@ function writeAtomic(file, value) {
         if (fs.existsSync(pending)) fs.unlinkSync(pending);
     }
 }
+function summarizeResourceSample(previous,report,observedAt) {
+    if(!['running','stop_requested','finished','failed','stopped'].includes(report.state)||
+        (report.cpu_time_ns==null&&report.memory_current_mb==null))
+        return previous;
+    const highest=(a,b)=>a==null?b??null:b==null?a:Math.max(a,b);
+    return {
+        first_observed_at:previous?.first_observed_at||observedAt,
+        last_observed_at:observedAt,
+        cpu_time_ns_high_water:highest(previous?.cpu_time_ns_high_water,report.cpu_time_ns),
+        peak_observed_memory_mb:highest(previous?.peak_observed_memory_mb,report.memory_current_mb),
+    };
+}
+
 class ExperimentHub {
     constructor(root) {
         this.file = path.join(root, 'hub-v1.json');
@@ -1192,10 +1205,12 @@ class ExperimentHub {
     }
     // The report is authenticated by the machine-token heartbeat. A second
     // machine, retired dispatch ID or unrelated lease cannot update the job.
-    recordExecution(next,machine,items,accepted=new Map(),evaluationSuites={}) {
+    recordExecution(next,machine,items,accepted=new Map(),evaluationSuites={},
+        receivedMs=Date.now()) {
         if(!Array.isArray(items)||items.length>50)
             throw Error('Invalid execution reports.');
         const seen=new Set();
+        const observedAt=new Date(receivedMs).toISOString();
         let changed=false;
         for(const report of items) {
             if(!object(report)||typeof report.job_id!=='string'||
@@ -1262,7 +1277,11 @@ class ExperimentHub {
                     }
                 }
             }
-            accepted.set(report.job_id,{progress,evaluation,evaluationIssue});
+            const previous=this.executionTelemetry.get(job.id);
+            const resources=summarizeResourceSample(
+                previous?.dispatch_id===job.dispatch_id?previous.resource_usage:null,
+                report,observedAt);
+            accepted.set(report.job_id,{progress,evaluation,evaluationIssue,resources});
             if(job.status!==state||
                 (job.execution_diagnostic||null)!==(report.diagnostic||null)) {
                 job.status=state;
@@ -1288,9 +1307,8 @@ class ExperimentHub {
             // Keep the last accepted source version if the terminal report
             // omitted progress or supplied an older/unrelated summary.
             // This observation never authorizes an execution transition.
-            if(['finished','failed','stopped'].includes(job.status)&&
-                !job.final_progress) {
-                const previous=this.executionTelemetry.get(job.id);
+            if(['finished','failed','stopped'].includes(job.status)) {
+                if(resources)job.final_resource_usage=resources;
                 const source=job.project_id==='ants'
                     ?'ants-summary-v1':'hub-metrics-v1';
                 const latest=previous?.dispatch_id===job.dispatch_id&&
@@ -1301,7 +1319,7 @@ class ExperimentHub {
                     Date.parse(progress.source_modified_at)<
                         Date.parse(latest.source_modified_at))
                     ?latest:progress;
-                if(selected) {
+                if(selected&&!job.final_progress) {
                     job.final_progress=selected;
                     changed=true;
                 }
@@ -1542,7 +1560,7 @@ class ExperimentHub {
             !['linux','win32'].includes(report.platform)))
             throw Error('Native lifecycle reports require a locally enabled supported executor.');
         const acceptedReports=new Map();
-        if(this.recordExecution(next,machine,reports,acceptedReports,report.evaluation_suites))
+        if(this.recordExecution(next,machine,reports,acceptedReports,report.evaluation_suites,received))
             changed=true;
         const gpuReports=value.gpu_qualification_reports==null
             ?[]:value.gpu_qualification_reports;
@@ -1587,7 +1605,7 @@ class ExperimentHub {
         let changedHistory=false,terminalHistory=false;
         for(const item of reports) {
             if(!acceptedReports.has(item.job_id))continue;
-            const {progress,evaluation,evaluationIssue}=acceptedReports.get(item.job_id);
+            const {progress,evaluation,evaluationIssue,resources}=acceptedReports.get(item.job_id);
             const previousTelemetry=this.executionTelemetry.get(item.job_id);
             const previousProgress=previousTelemetry?.progress||null;
             const job=this.state.jobs.find(j=>j.id===item.job_id);
@@ -1622,6 +1640,7 @@ class ExperimentHub {
                 memory_current_mb:item.memory_current_mb??null,
                 cpu_time_ns:cpuAfter??null,
                 cpu_cores_used:cpuCores,
+                resource_usage:resources,
                 process_tasks:item.process_tasks??null,
                 progress:progressAccepted?progress:previousProgress,
                 progress_issue:item.progress_issue||null,
