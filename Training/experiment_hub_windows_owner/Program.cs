@@ -41,6 +41,7 @@ internal static class Native
     internal const uint CREATE_UNICODE_ENVIRONMENT=0x00000400;
     internal const uint WAIT_OBJECT_0=0;
     internal const uint WAIT_TIMEOUT=258;
+    internal const ushort ALL_PROCESSOR_GROUPS=0xffff;
     internal const uint JOB_OBJECT_LIMIT_JOB_MEMORY=0x00000200;
     internal const uint JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE=0x00002000;
     internal const uint CPU_RATE_CONTROL_ENABLE=0x1;
@@ -102,6 +103,15 @@ internal static class Native
         internal uint TotalPageFaultCount,TotalProcesses,ActiveProcesses,TotalTerminatedProcesses;
     }
 
+    [DllImport("kernel32.dll",SetLastError=true)]
+    internal static extern uint GetActiveProcessorCount(ushort groupNumber);
+    internal static int SystemLogicalProcessors()
+    {
+        uint count=GetActiveProcessorCount(ALL_PROCESSOR_GROUPS);
+        if(count==0||count>int.MaxValue)
+            throw Error("Unable to determine system logical processor count");
+        return (int)count;
+    }
     [DllImport("kernel32.dll",EntryPoint="CreateJobObjectW",CharSet=CharSet.Unicode,SetLastError=true)]
     internal static extern IntPtr CreateJobObject(IntPtr securityAttributes,string name);
     [DllImport("kernel32.dll",SetLastError=true)]
@@ -405,7 +415,7 @@ internal static class Program
                 !Directory.Exists(spec.Cwd)))||
             spec.Cpus<1||spec.HostCpus<1||
             spec.Cpus>spec.HostCpus||
-            spec.HostCpus>Environment.ProcessorCount||
+            spec.HostCpus!=Native.SystemLogicalProcessors()||
             spec.RamMb<128||spec.RamMb>100000000||
             !Path.IsPathFullyQualified(spec.ReceiptPath)||
             !string.Equals(
@@ -481,7 +491,7 @@ internal static class Program
         var spec=new JobSpec{
             JobId=Guid.NewGuid().ToString("D"),Token=new string('a',64),
             Executable=executable,Args=new[]{"--probe-child"},
-            Cpus=1,HostCpus=Environment.ProcessorCount,
+            Cpus=1,HostCpus=Native.SystemLogicalProcessors(),
             RamMb=256,ReceiptPath=Path.Combine(Path.GetTempPath(),
                 "unused-"+Guid.NewGuid().ToString("N")+".json")};
         using var owned=new OwnedJob(spec);
@@ -492,7 +502,8 @@ internal static class Program
             throw new InvalidOperationException("Native preflight child did not exit successfully");
         Console.WriteLine(JsonSerializer.Serialize(new {
             passed=true,cpu_hard_cap_verified=true,memory_limit_verified=true,
-            job_process_assignment_verified=true
+            job_process_assignment_verified=true,
+            system_logical_processors=spec.HostCpus
         }));
         return 0;
     }

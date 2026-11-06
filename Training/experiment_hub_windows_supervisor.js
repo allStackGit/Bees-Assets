@@ -43,11 +43,15 @@ function validateInvocation(job,lease,machineId,adapters,hostOs,pathApi,cryptoAp
             .digest('hex')!==job.configuration_sha256)
         throw Error('Frozen Windows job configuration fingerprint mismatch.');
     const r=job.resources,lr=lease.resources;
-    const cores=typeof hostOs.availableParallelism==='function'
-        ?hostOs.availableParallelism():hostOs.cpus().length;
+    // Job Object CPU rates are percentages of the *system's* processors,
+    // not the Node process's affinity-limited available parallelism.
+    const cores=hostOs.cpus().length;
+    const available=typeof hostOs.availableParallelism==='function'
+        ?hostOs.availableParallelism():cores;
     if(!Number.isSafeInteger(cores)||cores<1||
+        !Number.isSafeInteger(available)||available<1||
         !r||!lr||!Number.isSafeInteger(r.cpus)||r.cpus<1||
-        r.cpus>cores||r.cpus!==lr.cpus||
+        r.cpus>available||r.cpus>cores||r.cpus!==lr.cpus||
         !Number.isSafeInteger(r.ram_mb)||r.ram_mb<128||
         r.ram_mb>Math.floor(hostOs.totalmem()/1048576)||
         r.ram_mb!==lr.ram_mb||r.gpu_count!==0||lr.gpu_count!==0||
@@ -148,6 +152,13 @@ class WindowsSupervisor {
             reply.memory_limit_verified!==true||
             reply.job_process_assignment_verified!==true)
             throw Error('Windows Job Object CPU/RAM and suspended-assignment preflight failed.');
+        // The quota denominator must match the Windows kernel's active
+        // processors across all groups. A .NET process-affinity count is
+        // not sufficient for a system-wide Job Object CPU percentage.
+        const hostCpus=this.hostOs.cpus().length;
+        if(!Number.isSafeInteger(hostCpus)||hostCpus<1||
+            reply.system_logical_processors!==hostCpus)
+            throw Error('Windows owner and Node disagree on total system logical processors; native Starts blocked.');
         this.qualifiedAt=new Date().toISOString();
         return {qualified_at:this.qualifiedAt};
     }

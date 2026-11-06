@@ -1140,8 +1140,14 @@ creates a Windows Job Object with job-wide committed memory limits,
 a CPU-rate **hard cap**, and kill-on-last-handle-close semantics.
 It creates the locally selected workload **suspended**, assigns it
 to the limited Job Object, verifies the limits and assignment,
-then resumes the workload. CPU slots translate into a share of host
-logical processing capacity; they are **not dedicated cores**.
+then resumes the workload. CPU slots translate into a share of total system logical processing
+capacity; they are **not dedicated cores**. The Node agent and .NET
+owner must agree on the active logical processor count across all
+Windows processor groups before native Start is enabled. A process
+affinity limit can make the available-processor count smaller than
+the system-wide count; this must not inflate Job Object CPU quotas.
+A mismatch blocks native execution until the host configuration is
+qualified.
 Windows' job memory limit applies to job committed memory, which
 is not identical to instantaneous physical RAM usage.
 
