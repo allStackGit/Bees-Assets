@@ -347,13 +347,20 @@ impl NativeFireBargeBombingRun {
             self.release_all(world);
             return;
         };
-        // A replacement can reassign thousands of squad weapons. Do not
-        // scan the entire replacement roster for each outgoing member.
-        // This one-time set does not become a second target/lease ledger.
-        let retained: HashSet<_> = next.members.iter()
-            .map(|member| member.ship_id).collect();
+        // One-to-one/small squads are cheaper without allocating a set.
+        // Larger replacements use a one-time index rather than scanning
+        // the full replacement roster for every outgoing member.
+        let retained = (next.members.len() > 8).then(|| {
+            next.members.iter().map(|member| member.ship_id)
+                .collect::<HashSet<_>>()
+        });
         for member in &self.members {
-            if !retained.contains(&member.ship_id) {
+            let preserved = match &retained {
+                Some(ids) => ids.contains(&member.ship_id),
+                None => next.members.iter().any(|new_member|
+                    new_member.ship_id == member.ship_id),
+            };
+            if !preserved {
                 world.release_game_bomb_target_for_ship(member.ship_id);
             }
         }
