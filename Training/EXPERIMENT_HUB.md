@@ -614,7 +614,8 @@ process listings can expose them.
 
 When arming automation, operators can optionally let the session move
 its own queued claims between armed machines after a CPU/RAM capacity drop
-or loss of GPU eligibility. GPU claims can move only before a probe has
+or loss of a required adapter, evaluation suite, TinyBrains profile, or
+GPU eligibility. GPU claims can move only before a probe has
 been requested. Manual claims, checkpoint-pinned jobs and dispatched jobs
 stay in place. Each move uses the same atomic lease replacement as Train
 and requires a fresh destination receipt.
