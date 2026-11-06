@@ -39,7 +39,7 @@ pub struct NativeSwipeCommandSnapshot {
 }
 
 impl NativeSwipeCommandSnapshot {
-    fn valid(&self) -> bool {
+    pub(super) fn valid_for_combat(&self) -> bool {
         self.enemy_owner.valid() && self.squad_center.is_finite() &&
         self.enemy_center.is_finite() && self.own_max_range.is_finite() &&
         self.own_max_range >= 0.0 && self.enemy_max_range.is_finite() &&
@@ -140,7 +140,7 @@ impl SwipeRun {
         if !snapshot.enemy_alive {
             return Ok(Some(CommandFinishCause::EnemySquadGone));
         }
-        if !snapshot.valid() ||
+        if !snapshot.valid_for_combat() ||
             snapshot.enemy_owner.level_id != owner.level_id ||
             snapshot.enemy_owner.squad_id != self.enemy_squad_id {
             return Err(GameCommandError::InvalidCombatSnapshot);

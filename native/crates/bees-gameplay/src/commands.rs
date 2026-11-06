@@ -44,6 +44,7 @@ mod full_retreat;
 mod circle;
 mod swipe;
 mod targeting;
+mod in_and_out;
 pub use self::targeting::{
     NativeCommandTargetQueue, NativeEnemyTargetStats,
     sort_native_command_targets,
@@ -55,6 +56,7 @@ pub use self::swipe::{
     NativeSwipeCommandSnapshot, assemble_swipe_snapshot_from_live_weapons,
 };
 use self::swipe::SwipeRun;
+use self::in_and_out::InAndOutRun;
 use self::circle::CircleRun;
 use self::full_retreat::FullRetreatRun;
 use self::mining::MiningRun;
@@ -261,6 +263,7 @@ pub enum CommandFinishCause {
     EnemySquadGone,
     NoEnemyTargets,
     SwipeFinished,
+    ReturnedToStart,
     LevelEnded,
     Superseded,
     SquadRetired,
@@ -372,6 +375,7 @@ struct ActiveNativeCommand {
     following: Option<FollowingFriendly>,
     circle: Option<CircleRun>,
     swipe: Option<SwipeRun>,
+    in_and_out: Option<InAndOutRun>,
     mining: Option<MiningRun>,
     heal: Option<HealRun>,
     scouting: Option<ScoutingRun>,
@@ -616,6 +620,7 @@ impl NativeSquadCommandDirector {
         let mut following = None;
         let mut circle = None;
         let mut swipe = None;
+        let mut in_and_out = None;
         let mut mining = None;
         let mut heal = None;
         let mut scouting = None;
@@ -682,6 +687,15 @@ impl NativeSquadCommandDirector {
                 };
                 swipe = Some(run);
                 // SwipeSquad.Execute schedules a 3s immediate timer.
+                false
+            }
+            LocalCommandKind::InAndOut => {
+                let Some(run) = InAndOutRun::start(world, random, squad)? else {
+                    self.measurements.unavailable += 1;
+                    return Ok(Activation::Unavailable(selection));
+                };
+                in_and_out = Some(run);
+                // Execute picks a return point; timer owns the first move.
                 false
             }
             LocalCommandKind::MoveToRandom => {
@@ -896,7 +910,8 @@ impl NativeSquadCommandDirector {
                 LocalCommandKind::Scouting | LocalCommandKind::FullRetreat |
                 LocalCommandKind::ClosestFriendly |
                 LocalCommandKind::Guard | LocalCommandKind::CircleSquad |
-                LocalCommandKind::RightSwipe | LocalCommandKind::LeftSwipe
+                LocalCommandKind::RightSwipe | LocalCommandKind::LeftSwipe |
+                LocalCommandKind::InAndOut
             ) || (selection.local_command == LocalCommandKind::Retreat &&
                 !retreat_already_safe) {
                 Some(ScaledTimer::new(
@@ -911,6 +926,7 @@ impl NativeSquadCommandDirector {
             following,
             circle,
             swipe,
+            in_and_out,
             mining,
             heal,
             scouting,
@@ -1145,6 +1161,36 @@ impl NativeSquadCommandDirector {
                             owner, swipe.enemy_squad_id(), world,
                         )?;
                         completed = swipe.on_poll(
+                            world, navigation, roster, random, owner,
+                            &command.selection, snapshot,
+                        )?;
+                        timer.finish_update(due);
+                    }
+                }
+                if completed.is_none() {
+                    if let Some(timeout) = command.timeout.as_mut() {
+                        if let Some(due) = timeout.begin_update(dt) {
+                            self.measurements.timeout_callbacks += 1;
+                            timeout.finish_update(due);
+                            completed = Some(CommandFinishCause::Timeout);
+                        }
+                    }
+                }
+                if let Some(cause) = completed {
+                    self.completed_scratch.push((owner, cause));
+                }
+                continue;
+            }
+            if let Some(in_and_out) = command.in_and_out.as_mut() {
+                let mut completed = None;
+                if let Some(timer) = command.command_poll.as_mut() {
+                    if let Some(due) = timer.begin_update(dt) {
+                        self.measurements.command_timer_callbacks += 1;
+                        let roster = roster.ok_or(GameCommandError::MissingCombatSnapshot)?;
+                        let snapshot = swipe_snapshot(
+                            owner, in_and_out.enemy_squad_id(), world,
+                        )?;
+                        completed = in_and_out.on_poll(
                             world, navigation, roster, random, owner,
                             &command.selection, snapshot,
                         )?;
