@@ -394,11 +394,12 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
       <p id="hub-job-allocate-message" class="hub-notice" role="status">No capacity claims made.</p>
     </div>
     <div class="hub-standalone">
-      <h3>Native CPU-only queue automation</h3>
-      <p class="muted">Optional, disabled by default. Arm specific enrolled machines to automatically claim CPU/RAM budget, start only jobs with fresh authenticated native readiness, and release capacity after confirmed finished/stopped reports. One durable transition per pass. The scheduler stops on uncertain or failed jobs, agent replacement, disconnect, or coordinator restart. GPU execution, unqualified adapters and Bees training remain excluded. The Hub does not measure or reserve capacity consumed by unmanaged workloads on a host.</p>
+      <h3>Native queue automation</h3>
+      <p class="muted">Optional, disabled by default. Arm specific enrolled machines to automatically claim CPU/RAM budget, start only jobs with fresh authenticated native readiness, and release capacity after confirmed finished/stopped reports. One durable transition per pass. The scheduler stops on uncertain or failed jobs, agent replacement, disconnect, or coordinator restart. GPU Starts require the option below and a current access proof. Bees training stays under its existing operator. The Hub does not measure or reserve capacity consumed by unmanaged workloads on a host.</p>
       <p class="muted">Select only machines where you have accounted for existing Bees workers and other processes. Native service execution requires separately installed and verified adapters, including a completed OS preflight.</p>
       <div id="hub-automation-machines" class="hub-notice">No eligible native machines connected.</div>
       <label><input type="checkbox" id="hub-automation-rebalance"> Move this session’s queued CPU claims when an armed host loses capacity</label>
+      <label><input type="checkbox" id="hub-automation-gpu"> Start explicitly qualified exclusive GPU jobs</label>
       <button type="button" id="hub-automation-arm">Arm selected machines</button>
       <button type="button" id="hub-automation-disarm">Disarm automation</button>
       <p id="hub-automation-status" class="hub-notice" role="status">Automation disarmed.</p>

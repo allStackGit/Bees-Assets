@@ -454,7 +454,7 @@ class ExperimentHub {
         // start unattended workloads, even though claims/jobs persist.
         this.automation = {
             enabled:false,machine_ids:[],agent_instances:{},managed_job_ids:[],
-            rebalance_queued:false,claimed_lease_ids:[],
+            rebalance_queued:false,start_qualified_gpu:false,claimed_lease_ids:[],
             session_id:null,
             armed_at:null,last_tick_at:null,last_action:null,last_error:null,
             last_transition_at:null,waiting_reason:null,
@@ -593,7 +593,7 @@ class ExperimentHub {
                 throw Error('Explicitly confirm disarming native automation.');
             this.automation={
                 enabled:false,machine_ids:[],agent_instances:{},managed_job_ids:[],
-                rebalance_queued:false,claimed_lease_ids:[],
+                rebalance_queued:false,start_qualified_gpu:false,claimed_lease_ids:[],
                 session_id:null,armed_at:null,last_tick_at:this.automation.last_tick_at,
                 last_action:'Disarmed by operator.',last_error:null,
                 last_transition_at:this.automation.last_transition_at,
@@ -635,8 +635,11 @@ class ExperimentHub {
             enabled:true,machine_ids:ids.slice(),agent_instances:agentInstances,
             managed_job_ids:[],session_id:crypto.randomUUID(),
             rebalance_queued:value.rebalance_queued===true,claimed_lease_ids:[],
+            start_qualified_gpu:value.start_qualified_gpu===true,
             armed_at:now(),last_tick_at:null,
-            last_action:'Armed for qualified CPU-only jobs; no job dispatched yet.',
+            last_action:value.start_qualified_gpu===true
+                ?'Armed for CPU jobs and explicitly qualified GPU claims; no job dispatched yet.'
+                :'Armed for qualified CPU-only jobs; no job dispatched yet.',
             last_error:null,last_transition_at:null,waiting_reason:null,
             last_claimed_project_id:null,last_started_project_id:null,
         };
@@ -705,7 +708,7 @@ class ExperimentHub {
                 ['start_requested','launch_requested'].includes(j.status)&&
                 !j.capacity_released_at).map(j=>j.assigned_machine_id));
             for(const job of pendingStarts) {
-                if(job.resources.gpu_count!==0||!job.lease_id||
+                if((job.resources.gpu_count!==0&&!session.start_qualified_gpu)||!job.lease_id||
                     !session.machine_ids.includes(job.assigned_machine_id)||
                     blockedMachines.has(job.assigned_machine_id)||
                     startingMachines.has(job.assigned_machine_id)||
@@ -713,7 +716,8 @@ class ExperimentHub {
                 this.authorizeStart({job_id:job.id,confirm_start:true},'automation');
                 session.managed_job_ids.push(job.id);
                 session.last_started_project_id=job.project_id;
-                return transitioned('Authorized CPU-only Start: '+job.project_id+
+                return transitioned('Authorized '+(job.resources.gpu_count?'qualified GPU':'CPU-only')+
+                    ' Start: '+job.project_id+
                     ' / '+(job.configuration_name||job.id.slice(-8))+'.');
             }
             const capable=selected.filter(m=>!blockedMachines.has(m.id)&&
@@ -781,7 +785,9 @@ class ExperimentHub {
                 :overcommitted.size
                     ?'Outstanding claims exceed CPU/RAM capacity on '+[...overcommitted].join(', ')+
                         '; move idle claims or release verified capacity.'
-                    :'No eligible CPU-only transition; awaiting agent receipts or available capacity.';
+                    :session.start_qualified_gpu
+                        ?'Awaiting capacity, agent receipts or a current GPU access proof.'
+                        :'No eligible CPU-only transition; awaiting agent receipts or available capacity.';
             return this.automationStatus();
         }catch(error) {
             // An ambiguous state must never provoke repeated automatic
@@ -1188,7 +1194,8 @@ class ExperimentHub {
         const readiness=nativeStartReadiness(snapshot,job);
         if(!readiness.eligible)
             throw Error(readiness.reason);
-        if(origin==='automation'&&(job.resources.gpu_count!==0||!this.automation.enabled||
+        if(origin==='automation'&&(
+            (job.resources.gpu_count!==0&&!this.automation.start_qualified_gpu)||!this.automation.enabled||
             !this.automation.machine_ids.includes(job.assigned_machine_id)||
             !UUID.test(String(this.automation.session_id||''))))
             throw Error('Native automation session no longer authorizes this Start.');

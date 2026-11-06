@@ -1016,7 +1016,11 @@ document.addEventListener('DOMContentLoaded', () => {
         $('hub-automation-arm').disabled=automation.enabled||!automationCandidates.length;
         $('hub-automation-disarm').disabled=!automation.enabled;
         $('hub-automation-rebalance').disabled=automation.enabled;
-        if(automation.enabled)$('hub-automation-rebalance').checked=automation.rebalance_queued===true;
+        $('hub-automation-gpu').disabled=automation.enabled;
+        if(automation.enabled) {
+            $('hub-automation-rebalance').checked=automation.rebalance_queued===true;
+            $('hub-automation-gpu').checked=automation.start_qualified_gpu===true;
+        }
         feedback('hub-automation-status',
             (automation.enabled?'Armed for '+automation.machine_ids.join(', ')
                 :'Disarmed')+
@@ -1804,12 +1808,14 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         const rebalance=$('hub-automation-rebalance').checked;
-        if(!confirm('Arm native CPU-only queue automation on '+ids.join(', ')+
-            '? This WILL automatically launch locally installed, qualified non-Bees adapters without asking again for each job, and automatically release verified completed capacity. You confirm that CPU/RAM used by Bees and other unmanaged workloads on these machines has been accounted for. GPU jobs and unverified native jobs remain blocked. Restart disarms automation.'+
+        const gpu=$('hub-automation-gpu').checked;
+        if(!confirm('Arm native queue automation on '+ids.join(', ')+
+            '? This will start eligible CPU jobs and release verified completed capacity. You confirm that unmanaged host workloads have been accounted for. Restart disarms automation.'+
+            (gpu?' This session will also start jobs with an explicitly leased, currently qualified exclusive GPU. GPU claims and access probes remain manual.':'')+
             (rebalance?' This session may move its own unstarted claims between armed hosts after a capacity drop.':'')))return;
         try {
             await action('hub/automation',{
-                enabled:true,machine_ids:ids,rebalance_queued:rebalance,
+                enabled:true,machine_ids:ids,rebalance_queued:rebalance,start_qualified_gpu:gpu,
                 confirm_arm:true,confirm_untracked_load:true,
             });
             await reload();
