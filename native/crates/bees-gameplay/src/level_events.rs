@@ -204,6 +204,10 @@ impl NativeLevelEventProcessor {
         self.commands.active_count()
     }
 
+    pub fn needs_bomber_contacts(&self) -> bool {
+        self.commands.needs_bomber_contacts()
+    }
+
     /// A terminal result is not safely delivered until process_completed_tick
     /// has finished publishing it. A failure after reward computation may
     /// leave episode.result() populated with no durable EpisodeFinal.

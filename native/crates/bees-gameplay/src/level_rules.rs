@@ -45,11 +45,35 @@ pub trait NativeLevelRewardMetadata {
     fn credit_mined_minerals(&mut self, ship_id: i64, amount: i32) -> Option<i32>;
 }
 
+/// One authentic Unity OnTriggerEnter2D ship contact with the currently
+/// selected enemy. Ordered contact callbacks, not a radius approximation.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct NativeBomberContact {
+    pub bomber_id: i64,
+    pub contacted_target_id: i64,
+    /// IsBombReady && !HasDroppedBomb for an authored game Striker.
+    /// Ignored for a Yellow Jacket.
+    pub striker_may_drop: bool,
+}
+
 /// Source-facing gameplay inputs for timed Hive Mind commands.
     /// Must be refreshed after the combat/roster step from live Level
     /// geometry, preserving Level.State.Squads order. Command activation
     /// and timer callbacks use this same authoritative view.
 pub trait NativeLevelCommandContext {
+    /// Deliver source-order, real OnTriggerEnter2D contacts for active
+    /// Yellow Jacket bombing runs. Called only when one such command is
+    /// active, after the physics fixed step and before combat-event
+    /// reconciliation. Do not scan every ship if no new contacts occurred.
+    /// Without the authored trigger adapter a Yellow Jacket command must
+    /// fail rather than appear functional without ever detonating.
+    fn collect_bomber_contacts(
+        &mut self, _combat: &CombatWorld, _roster: &NativeSquadRoster,
+        _output: &mut Vec<NativeBomberContact>,
+    ) -> Result<(), GameCommandError> {
+        Err(GameCommandError::MissingCombatSnapshot)
+    }
+
     fn collect_live_friendlies(
         &mut self,
         combat: &CombatWorld,
@@ -245,6 +269,10 @@ pub struct NativeCommandInputMeasurements {
     pub friendly_snapshots: u64,
     /// Number of friendly squad entries returned in those snapshots.
     pub friendly_entries_supplied: u64,
+    /// Authored contact projections are requested only for active
+    /// non-carrier bombing commands containing Yellow Jackets.
+    pub bomber_contact_snapshots: u64,
+    pub bomber_contacts_supplied: u64,
 }
 
 pub struct NativeLevelState<M, A> {
@@ -260,6 +288,7 @@ pub struct NativeLevelState<M, A> {
     pub decisions: NativeDecisionCadence,
     /// Reused source Level.State.Squads snapshot; no per-frame allocation.
     command_friendlies: Vec<NativeFriendlySquad>,
+    command_bomber_contacts: Vec<NativeBomberContact>,
     command_input_measurements: NativeCommandInputMeasurements,
     /// Reused sparse per-ship mining credit transaction. Events may contain
     /// multiple extractions for the same ship during one combat phase.
@@ -296,6 +325,7 @@ impl<M, A> NativeLevelState<M, A> {
             combat, events, metadata, allocate_minion,
             decisions: NativeDecisionCadence::new(period),
             command_friendlies: Vec::new(),
+            command_bomber_contacts: Vec::new(),
             command_input_measurements: NativeCommandInputMeasurements::default(),
             mining_credit_totals: HashMap::new(),
             mining_credit_order: Vec::new(),
@@ -424,6 +454,28 @@ where
             decisions, dt_seconds, &self.collision_matrix,
             &mut world.random,
         )?;
+        // Unity's YellowJacket.OnTriggerEnter2D is independent of the
+        // command timer. Consume these source-ordered contacts INSIDE the
+        // owning completed tick, before the sole reward/roster event pass.
+        if state.events.needs_bomber_contacts() {
+            state.command_bomber_contacts.clear();
+            state.metadata.collect_bomber_contacts(
+                &state.combat, state.events.roster(),
+                &mut state.command_bomber_contacts,
+            ).map_err(|err| NativeLevelStepError::Events(
+                NativeLevelEventError::Commands(err),
+            ))?;
+            state.command_input_measurements.bomber_contact_snapshots += 1;
+            state.command_input_measurements.bomber_contacts_supplied +=
+                state.command_bomber_contacts.len() as u64;
+            for &contact in &state.command_bomber_contacts {
+                state.events.deliver_commanded_bomber_contact(
+                    completed_tick, &mut state.combat,
+                    contact.bomber_id, contact.contacted_target_id,
+                    contact.striker_may_drop, &self.collision_matrix,
+                )?;
+            }
+        }
         state.credit_mining_since(0)?;
         let metadata = &state.metadata;
         let allocate = &mut state.allocate_minion;

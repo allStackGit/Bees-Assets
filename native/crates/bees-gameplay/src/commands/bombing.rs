@@ -221,6 +221,7 @@ pub struct NativeFireBargeBombingRun {
     formation: SquadFormationOptions,
     fast_poll: bool,
     timer_loops: u64,
+    has_contact_bombers: bool,
 }
 
 impl NativeFireBargeBombingRun {
@@ -239,6 +240,7 @@ impl NativeFireBargeBombingRun {
     ) -> Result<Option<Self>, GameCommandError> {
         // Striker's reload/return path is not yet ported; do not report
         // a mixed squad containing one as a successfully activated run.
+        let mut has_contact_bombers = false;
         if weapons.len() != squad.members.len() {
             return Err(GameCommandError::InvalidSquad);
         }
@@ -248,6 +250,7 @@ impl NativeFireBargeBombingRun {
             if !matches!(ship.ship_type, 10 | 22) {
                 return Err(GameCommandError::MissingCombatSnapshot);
             }
+            has_contact_bombers |= ship.ship_type == 22;
             if weapon.ship_id != member.ship_id ||
                 (ship.ship_type == 10 &&
                     world.configured_fire_barge_bomb_power(member.ship_id) !=
@@ -270,11 +273,16 @@ impl NativeFireBargeBombingRun {
             formation: squad.formation,
             fast_poll: false,
             timer_loops: 0,
+            has_contact_bombers,
         }))
     }
 
     pub fn enemy_squad_id(&self) -> i64 {
         self.target.squad_id()
+    }
+
+    pub fn needs_contact_events(&self) -> bool {
+        self.has_contact_bombers
     }
 
     /// Unity BombingRun.Timer for Fire Barge / Yellow Jacket squads.

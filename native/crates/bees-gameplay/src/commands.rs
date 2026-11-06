@@ -463,6 +463,17 @@ impl NativeSquadCommandDirector {
 
     pub fn active_count(&self) -> usize { self.active.len() }
 
+    /// Most commands do not require a source ship-to-ship trigger input.
+    /// Poll the small active-command map instead of creating another
+    /// independent roster or checking every game ship every fixed tick.
+    pub fn needs_bomber_contacts(&self) -> bool {
+        self.active.values().any(|command|
+            command.bombing.as_ref().is_some_and(|bombing|
+                bombing.needs_contact_events()
+            )
+        )
+    }
+
     /// Snapshot measurements without resetting totals. Consumers can
     /// calculate experiment/window deltas by subtracting earlier snapshots.
     pub fn measurements(&self) -> CommandMeasurements {
