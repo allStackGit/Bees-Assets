@@ -198,13 +198,21 @@ impl NativeLevelEventProcessor {
         self.commands.active_count()
     }
 
-    /// An unfinished Level with living squad lifetimes must first be
-    /// canceled. No active command is necessary for an in-flight HiveMind
-    /// request to exist, so command count alone is not a safe reset gate.
-    pub fn has_unretired_live_lifetimes(&self) -> bool {
-        self.roster.active_squad_count() != 0 &&
-            self.last_finalized.is_none() &&
-            !self.failed_commands_drained
+    /// A terminal result is not safely delivered until process_completed_tick
+    /// has finished publishing it. A failure after reward computation may
+    /// leave episode.result() populated with no durable EpisodeFinal.
+    pub fn terminal_was_published(&self) -> bool {
+        self.last_finalized.is_some()
+    }
+
+    /// Even if all squads have died, a started failed episode must be
+    /// explicitly aborted so the learner observes EpisodeAborted. The
+    /// unstarted, empty world may be replaced without a fake episode.
+    pub fn has_unresolved_episode_lifecycle(&self) -> bool {
+        !self.terminal_was_published() &&
+            !self.failed_commands_drained &&
+            (self.next_tick > 1 ||
+             self.roster.measurements().squads_registered > 0)
     }
 
     /// Deliberately stop an unfinished Level without inventing a terminal
@@ -214,7 +222,7 @@ impl NativeLevelEventProcessor {
     pub(crate) fn cancel_live_level(&mut self)
         -> Result<usize, NativeLevelEventError>
     {
-        if self.completed() {
+        if self.terminal_was_published() {
             return Err(NativeLevelEventError::FailedLevel);
         }
         let aborted = self.drain_failed_level_reservations()?;

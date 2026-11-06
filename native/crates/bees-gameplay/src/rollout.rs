@@ -236,7 +236,7 @@ where
     if !world.is_failed() && !world.state.events.is_failed() {
         return Err(NativeFailedLevelAbortError::NotFailed { index });
     }
-    if world.state.events.completed() {
+    if world.state.events.terminal_was_published() {
         return Err(NativeFailedLevelAbortError::AlreadyComplete { index });
     }
     world.state.events.drain_failed_level_reservations()
@@ -264,7 +264,7 @@ where
 {
     let world = simulation.world_mut(index)
         .ok_or(NativeLevelCancelError::MissingWorld { index })?;
-    if world.state.events.completed() {
+    if world.state.events.terminal_was_published() {
         return Err(NativeLevelCancelError::AlreadyComplete { index });
     }
     world.state.events.cancel_live_level()
@@ -279,9 +279,9 @@ pub enum NativeLevelResetError {
     /// A failed episode must still explicitly settle any live commands;
     /// replacing the world would silently lose their OutcomeIds.
     ActiveCommands { count: usize },
-    /// A squad can have in-flight strategy requests even without an
-    /// installed command. Cancel it and retire all lifetimes first.
-    UnretiredLiveLifetimes,
+    /// A started episode needs a successfully published terminal result
+    /// or a deliberate abort. This holds even when every squad died.
+    UnresolvedEpisodeLifecycle,
 }
 
 /// A successful or failed episode must not be discarded while group
@@ -321,8 +321,8 @@ where
             count: active,
         });
     }
-    if world.state.events.has_unretired_live_lifetimes() {
-        return Err(NativeLevelResetError::UnretiredLiveLifetimes);
+    if world.state.events.has_unresolved_episode_lifecycle() {
+        return Err(NativeLevelResetError::UnresolvedEpisodeLifecycle);
     }
     // Indices are validated above, and this call preserves the
     // Simulation's existing episode-reset and measurement semantics.
