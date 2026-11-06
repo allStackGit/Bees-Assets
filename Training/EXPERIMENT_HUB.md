@@ -1340,8 +1340,12 @@ the Hub can allocate, start, and release each stage without a separate
 operator action. In an isolated Windows run, two one-update stages
 finished at cumulative updates 1 and 2. Peak outstanding claims was
 one and both signed exits survived a coordinator restart with no
-capacity held. Stop holds prequeued stages for review. GPU
-execution remains outside this adapter's contract.
+capacity held. Manual Stops hold prequeued stages for review. A verified
+evaluation-triggered Stop advances the next checkpoint stage only when
+the native supervisor certifies checkpoint-preserving shutdown and
+capacity is released. The continuation loads the last saved checkpoint,
+which can be later than the checkpoint that met the evaluation target.
+GPU execution remains outside this adapter's contract.
 
 For evaluation-driven stopping, set the adapter's `evaluationRoot` to a
 trusted evaluator-owned directory separate from the checkout and training
@@ -1417,7 +1421,11 @@ For checkpoint continuation, select a naturally finished predecessor
 with released capacity, or queue a checkpoint pipeline in Train. You
 can also select a Courier job that saved on Stop and released capacity.
 Linux requires a matching systemd terminal receipt with a successful
-exit code of zero. Stop holds prequeued checkpoint stages for review.
+exit code of zero. Manual Stops hold prequeued checkpoint stages for
+review. A verified evaluation-triggered checkpoint Stop advances the
+next prequeued stage after capacity release; it resumes the final saved
+checkpoint, which can postdate the evaluated policy snapshot. Failed or
+unverified Stops never advance checkpoint continuations.
 Cancel any pending successor before queuing an explicit continuation. Keep
 the same environment digest. Each stage runs on the original worker
 and copies the completed population into its own directory before
