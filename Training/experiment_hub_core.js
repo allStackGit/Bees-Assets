@@ -956,14 +956,16 @@ class ExperimentHub {
         if(!ID.test(machineId||'')||!ID.test(suiteId||'')||
             !this.state.machines.some(machine=>machine.id===machineId))
             throw Error('Select a registered machine and evaluation suite.');
-        if(projectId==='tinybrains') {
-            const report=this.agentReports.get(machineId);
-            const age=Date.now()-(report?.received_ms??0);
-            if(!report?.local_executor||report.platform!=='win32'||
-                age<0||age>=AGENT_HEARTBEAT_TTL_MS||
-                !report.evaluation_suites?.tinybrains?.includes(suiteId))
-                return [];
-        }
+        const report=this.agentReports.get(machineId);
+        const age=Date.now()-(report?.received_ms??0);
+        // A persisted "running" record is not proof the worker is still
+        // present. This is a read-only evaluator worklist, not a native
+        // service or checkpoint authority.
+        if(!report?.local_executor||age<0||age>=AGENT_HEARTBEAT_TTL_MS||
+            !report.installed_projects?.includes(projectId)||
+            !report.evaluation_suites?.[projectId]?.includes(suiteId)||
+            (projectId==='tinybrains'&&report.platform!=='win32'))
+            return [];
         return this.state.jobs.filter(job=>
             job.project_id===projectId&&job.assigned_machine_id===machineId&&
             job.status==='running'&&job.evaluation_stop?.suite_id===suiteId&&
