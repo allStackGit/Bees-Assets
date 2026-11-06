@@ -98,6 +98,7 @@ fn requires_level_capability_delivery(event: &CombatEvent) -> bool {
         CombatEvent::CapabilityMined { .. } |
         CombatEvent::MiningAsteroidDepleted { .. } |
         CombatEvent::CapabilityHealed { .. } |
+        CombatEvent::ScoutBeaconDropped { .. } |
         CombatEvent::ShipWarped { .. }
     )
 }
