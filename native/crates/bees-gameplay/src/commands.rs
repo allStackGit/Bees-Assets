@@ -47,6 +47,9 @@ mod targeting;
 mod in_and_out;
 mod aggressive;
 mod bombing;
+mod charge;
+pub use self::charge::NativeChargeTimerSnapshot;
+use self::charge::NativeChargeRun;
 pub use self::bombing::{
     NativeBombWeapon, NativeBombingActivation, NativeBombingTimerSnapshot,
     NativeBombingRun, assign_initial_bombing_run_targets,
@@ -275,6 +278,7 @@ pub enum CommandFinishCause {
     /// Unity BombingRun.EndBombingRun reports a completed run when its
     /// current enemy is gone; it is not a failed attack-target selection.
     BombingRunCompleted,
+    ChargeCompleted,
     NoEnemyTargets,
     SwipeFinished,
     ReturnedToStart,
@@ -392,6 +396,7 @@ struct ActiveNativeCommand {
     in_and_out: Option<InAndOutRun>,
     aggressive: Option<AggressiveRun>,
     bombing: Option<NativeBombingRun>,
+    charge: Option<NativeChargeRun>,
     mining: Option<MiningRun>,
     heal: Option<HealRun>,
     scouting: Option<ScoutingRun>,
@@ -740,6 +745,7 @@ impl NativeSquadCommandDirector {
         let mut in_and_out = None;
         let mut aggressive = None;
         let mut bombing = None;
+        let mut charge = None;
         let mut mining = None;
         let mut heal = None;
         let mut scouting = None;
@@ -852,6 +858,21 @@ impl NativeSquadCommandDirector {
                 bombing = Some(run);
                 // Unity Execute assigns Bomb targets now but schedules its
                 // first tracked pursuit during the immediate command timer.
+                false
+            }
+            LocalCommandKind::Charge => {
+                let Some(input) = bombing_input else {
+                    self.measurements.unsupported += 1;
+                    return Ok(Activation::Unsupported(selection));
+                };
+                let Some(run) = NativeChargeRun::start(
+                    world, input.roster, random, squad, input.enemy_owner,
+                    &selection, input.weapons, input.enemies,
+                )? else {
+                    self.measurements.unavailable += 1;
+                    return Ok(Activation::Unavailable(selection));
+                };
+                charge = Some(run);
                 false
             }
             LocalCommandKind::MoveToRandom => {
@@ -1068,7 +1089,7 @@ impl NativeSquadCommandDirector {
                 LocalCommandKind::Guard | LocalCommandKind::CircleSquad |
                 LocalCommandKind::RightSwipe | LocalCommandKind::LeftSwipe |
                 LocalCommandKind::InAndOut | LocalCommandKind::Aggressive |
-                LocalCommandKind::BombingRun
+                LocalCommandKind::BombingRun | LocalCommandKind::Charge
             ) || (selection.local_command == LocalCommandKind::Retreat &&
                 !retreat_already_safe) {
                 Some(ScaledTimer::new(
@@ -1088,6 +1109,7 @@ impl NativeSquadCommandDirector {
             in_and_out,
             aggressive,
             bombing,
+            charge,
             mining,
             heal,
             scouting,
@@ -1114,9 +1136,19 @@ impl NativeSquadCommandDirector {
             .and_then(|prior| prior.full_retreat.as_ref()) {
             previous.release_all(world, active.full_retreat.as_ref());
         }
+        // Both special commands select via Bomb weapons. Retain only
+        // members still owning a Bomb command after atomic replacement.
+        let retained_bomb_members: &[i64] =
+            if active.bombing.is_some() || active.charge.is_some() {
+                &active.member_ids
+            } else { &[] };
         if let Some(previous) = self.active.get(&squad.owner)
             .and_then(|prior| prior.bombing.as_ref()) {
-            previous.release_superseded(world, active.bombing.as_ref());
+            previous.release_superseded(world, retained_bomb_members);
+        }
+        if let Some(previous) = self.active.get(&squad.owner)
+            .and_then(|prior| prior.charge.as_ref()) {
+            previous.release_superseded(world, retained_bomb_members)?;
         }
         let new_following = usize::from(active.following.is_some());
         let new_full_retreat = usize::from(active.full_retreat.is_some());

@@ -627,30 +627,11 @@ impl NativeBombingRun {
     /// newly acquired reservation through the outgoing command's cleanup.
     /// Ordinary replacement with another strategy releases every old lease.
     pub(crate) fn release_superseded(
-        &self, world: &mut CombatWorld,
-        replacement: Option<&Self>,
+        &self, world: &mut CombatWorld, retained_ids: &[i64],
     ) {
-        let Some(next) = replacement else {
-            self.release_all(world);
-            return;
-        };
-        // One-to-one/small squads are cheaper without allocating a set.
-        // Larger replacements use a one-time index rather than scanning
-        // the full replacement roster for every outgoing member.
-        let retained = (next.members.len() > 8).then(|| {
-            next.members.iter().map(|member| member.ship_id)
-                .collect::<HashSet<_>>()
-        });
-        for member in &self.members {
-            let preserved = match &retained {
-                Some(ids) => ids.contains(&member.ship_id),
-                None => next.members.iter().any(|new_member|
-                    new_member.ship_id == member.ship_id),
-            };
-            if !preserved {
-                world.release_game_bomb_target_for_ship(member.ship_id);
-            }
-        }
+        release_superseded_bomb_targets(
+            world, &self.members, retained_ids,
+        );
     }
 
     /// Unity BombingRun.SetFinalize releases current squad-member Bomb
@@ -658,6 +639,28 @@ impl NativeBombingRun {
     /// World death already releases these same leases, so repeats are inert.
     pub fn release_all(&self, world: &mut CombatWorld) {
         for member in &self.members {
+            world.release_game_bomb_target_for_ship(member.ship_id);
+        }
+    }
+}
+
+/// Both Charge and BombingRun own the SAME physical Bomb weapon leases.
+/// A new command assigns the replacement lease before superseding the
+/// previous one. Cleanup must never erase that newly selected target.
+pub(super) fn release_superseded_bomb_targets(
+    world: &mut CombatWorld,
+    outgoing: &[SquadFormationMember],
+    retained_ids: &[i64],
+) {
+    let retained = (retained_ids.len() > 8).then(|| {
+        retained_ids.iter().copied().collect::<HashSet<_>>()
+    });
+    for member in outgoing {
+        let preserved = match &retained {
+            Some(ids) => ids.contains(&member.ship_id),
+            None => retained_ids.contains(&member.ship_id),
+        };
+        if !preserved {
             world.release_game_bomb_target_for_ship(member.ship_id);
         }
     }
