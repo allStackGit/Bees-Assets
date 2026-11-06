@@ -26,6 +26,7 @@ pub struct NativeChargeTimerSnapshot {
     pub enemy_alive: bool,
     /// Every ID must be a Barge whose original Charge.TargetShip is
     /// facing, unobstructed and in its source ShipsWithinRange lookup.
+    /// The source GetShips traversal order is not guaranteed to be sorted.
     pub eligible_barges: Vec<i64>,
     /// GetShips-ordered current enemy and weapon metadata, required only
     /// when need_retarget was requested at this command timer boundary.
@@ -137,9 +138,12 @@ impl NativeChargeRun {
             }
             // Eligibility was captured before retargeting. Do not charge
             // a new enemy using the previous target's angle/range/LOS.
-            if prior_target_live && snapshot.eligible_barges.binary_search(
+            // The Level returns authored GetShips-order eligibility, not
+            // sorted IDs. Linear membership avoids a sort/allocation on
+            // each command timer tick and also works for tiny 1v1 squads.
+            if prior_target_live && snapshot.eligible_barges.contains(
                 &member.ship_id,
-            ).is_ok() {
+            ) {
                 world.try_start_game_barge_charge(
                     member.ship_id, selection.command_outcome_id,
                     self.formation.map_bounds,

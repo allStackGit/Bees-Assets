@@ -284,6 +284,12 @@ pub struct NativeCommandInputMeasurements {
     /// non-carrier bombing commands containing Yellow Jackets.
     pub bomber_contact_snapshots: u64,
     pub bomber_contacts_supplied: u64,
+    /// Successful timer-gated Charge snapshots, not physics ticks.
+    pub charge_snapshots: u64,
+    /// Authentically eligible charging Barges returned by the Level.
+    pub charge_eligible_barges_supplied: u64,
+    /// Charge snapshots needing fresh lost-target weapon/enemy metadata.
+    pub charge_retarget_snapshots: u64,
 }
 
 pub struct NativeLevelState<M, A> {
@@ -517,6 +523,7 @@ where
             }
             let previous_event_count = state.combat.events().len();
             let metadata = &state.metadata;
+            let measurements = &mut state.command_input_measurements;
             state.events.advance_timed_commands_with_bombing(
                 completed_tick, &mut state.combat,
                 metadata.navigation(),
@@ -540,9 +547,16 @@ where
                     )
                 },
                 |owner, enemy_id, combat, need_retarget| {
-                    metadata.charge_command_snapshot(
+                    let snapshot = metadata.charge_command_snapshot(
                         combat, owner, enemy_id, need_retarget,
-                    )
+                    )?;
+                    measurements.charge_snapshots += 1;
+                    measurements.charge_eligible_barges_supplied +=
+                        snapshot.eligible_barges.len() as u64;
+                    if need_retarget {
+                        measurements.charge_retarget_snapshots += 1;
+                    }
+                    Ok(snapshot)
                 },
             )?;
             if state.combat.events().len() > previous_event_count {
