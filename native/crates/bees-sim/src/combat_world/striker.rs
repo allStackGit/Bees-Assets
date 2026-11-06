@@ -40,13 +40,54 @@ pub(super) struct GameStrikerRuntime {
 /// BombingRun command in native policy control, just as in Unity's RL path.
 #[derive(Clone, Copy, Debug)]
 pub(super) struct PolicyStrikerRuntime {
-    pub(super) carrier_id: i64,
+    /// The original CarrierShip.Carrier reference can become null when
+    /// the last same-side Carrier dies.
+    pub(super) carrier_id: Option<i64>,
     pub(super) bomb_power: i32,
     pub(super) ready: bool,
     pub(super) reload_timer: ScaledTimer,
 }
 
 impl CombatWorld {
+    /// Unity Carrier.Kill runs before base.Kill and chooses the first
+    /// living same-side Carrier in Level.State.Ships order. Reassign all
+    /// already-owned Striker relations at the one canonical death boundary,
+    /// without resetting reload clocks, bomb readiness or command state.
+    ///
+    /// Source also resets Drone.Carrier; the native world currently owns
+    /// no separate game Drone carrier field, so no surrogate is introduced.
+    pub(super) fn reassign_striker_carriers_after_death(
+        &mut self, carrier_index: usize,
+    ) {
+        if self.ships[carrier_index].ship_type != 5 {
+            return;
+        }
+        let dead_id = self.ships[carrier_index].entity_id;
+        let side = self.ships[carrier_index].side;
+        // CombatWorld.ships retains Level spawn order; inactive historical
+        // rows are deliberately skipped, just like Unity's IsDead filter.
+        let replacement = self.ships.iter().enumerate().find_map(|(index, ship)| {
+            (index != carrier_index && ship.ship_type == 5 &&
+                ship.side == side && !ship.vitals.is_dead() &&
+                self.physics.ships()[index].active
+            ).then_some(ship.entity_id)
+        });
+        for runtime in self.game_strikers.values_mut() {
+            if runtime.carrier.carrier_id == Some(dead_id) {
+                runtime.carrier.carrier_id = replacement;
+            }
+        }
+        for runtime in self.policy_ship_runtime.values_mut() {
+            if let Some(PolicyShipSpecial::Striker(striker)) =
+                runtime.special.as_mut()
+            {
+                if striker.carrier_id == Some(dead_id) {
+                    striker.carrier_id = replacement;
+                }
+            }
+        }
+    }
+
     /// Bind a source game Striker after its FleetShip identity and body
     /// have been installed. A later call can reassign or clear its Carrier
     /// without resetting IsBombReady or the independent reload timer.
@@ -209,7 +250,7 @@ impl CombatWorld {
             return Err(CombatWorldError::InvalidPolicyStriker);
         }
         runtime.special = Some(PolicyShipSpecial::Striker(PolicyStrikerRuntime {
-            carrier_id,
+            carrier_id: Some(carrier_id),
             bomb_power,
             ready: true, // Striker.ClearData: IsBombReady = true
             reload_timer: ScaledTimer::new(1.0, true, false),
@@ -408,7 +449,7 @@ impl CombatWorld {
             if !profile.ready {
                 if let (Some(&striker_index), Some(&carrier_index)) = (
                     self.ship_by_id.get(&ship_id),
-                    self.ship_by_id.get(&profile.carrier_id),
+                    profile.carrier_id.and_then(|id| self.ship_by_id.get(&id)),
                 ) {
                     let striker = &self.ships[striker_index];
                     let carrier = &self.ships[carrier_index];
@@ -428,7 +469,8 @@ impl CombatWorld {
                 self.policy_special_measurements.striker_reloads += 1;
                 self.events.push(CombatEvent::StrikerBombReloaded {
                     ship_id,
-                    carrier_id: profile.carrier_id,
+                    carrier_id: profile.carrier_id
+                        .expect("reloaded Striker must have a living Carrier"),
                 });
             }
         }

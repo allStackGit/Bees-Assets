@@ -1033,6 +1033,10 @@ impl CombatWorld {
             self.spawn_fire_barge_explosion(index, false, 0)?;
         }
         let victim_id = self.ships[index].entity_id;
+        // Unity Carrier.Kill reassigns all surviving CarrierShip children
+        // BEFORE the dying Carrier is retired from Level.State.Ships.
+        // Game and policy Striker reloads share this one death boundary.
+        self.reassign_striker_carriers_after_death(index);
         self.game_strikers.remove(&victim_id);
         self.game_barge_charges.remove(&victim_id);
         // Bomb.ReleaseTargetReservation is part of every authored bomber
