@@ -429,6 +429,9 @@ impl NativeSquadCommandDirector {
         world: &CombatWorld,
         mut owner_of_ship: impl FnMut(i64) -> Option<SquadLifetime>,
     ) {
+        // Most training worlds have no active HiveMind command. Avoid
+        // rescanning potentially large shot/event buffers in that case.
+        if self.active.is_empty() { return; }
         for event in world.events() {
             let bees_sim::combat_world::CombatEvent::ShipWarped {
                 ship_id, ..
