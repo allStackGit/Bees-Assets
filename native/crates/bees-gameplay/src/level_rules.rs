@@ -20,8 +20,8 @@ use bees_sim::simulation::{GameRules, World};
 use bees_sim::telemetry::StepCounts;
 
 use crate::commands::{
-    GameCommandError, NativeCircleCommandSnapshot, NativeFriendlySquad,
-    NativeSwipeCommandSnapshot,
+    GameCommandError, NativeAggressiveCommandSnapshot,
+    NativeCircleCommandSnapshot, NativeFriendlySquad, NativeSwipeCommandSnapshot,
 };
 use crate::level_events::{
     NativeLevelEventError, NativeLevelEventProcessor,
@@ -76,6 +76,19 @@ pub trait NativeLevelCommandContext {
         &self, _world: &CombatWorld, _owner: SquadLifetime,
         _enemy_squad_id: i64,
     ) -> Result<NativeSwipeCommandSnapshot, GameCommandError> {
+        Err(GameCommandError::MissingCombatSnapshot)
+    }
+
+    /// Unity Aggressive.Timer checks a stronger all-targets-in-range
+    /// predicate and enemy defenselessness after three in-range polls.
+    /// The same adapter supplies fresh GetShips-ordered targeting metadata
+    /// while the one-ship-per-frame coroutine is in flight, even when the
+    /// 3s/0.25s command timer itself is not due. Missing authored weapon
+    /// and ship composition data fails closed.
+    fn aggressive_command_snapshot(
+        &self, _world: &CombatWorld, _owner: SquadLifetime,
+        _enemy_squad_id: i64,
+    ) -> Result<NativeAggressiveCommandSnapshot, GameCommandError> {
         Err(GameCommandError::MissingCombatSnapshot)
     }
 
@@ -435,6 +448,9 @@ where
                 },
                 |owner, enemy_id, combat| {
                     metadata.swipe_command_snapshot(combat, owner, enemy_id)
+                },
+                |owner, enemy_id, combat| {
+                    metadata.aggressive_command_snapshot(combat, owner, enemy_id)
                 },
             )?;
             if state.combat.events().len() > previous_event_count {

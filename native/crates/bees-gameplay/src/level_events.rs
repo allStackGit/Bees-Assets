@@ -14,7 +14,8 @@ use bees_sim::rl_discovery::DiscoveryKind;
 
 use crate::commands::{
     CommandFinishCause, CommandMeasurements, FinishedNativeCommand,
-    GameCommandError, NativeCircleCommandSnapshot, NativeFriendlySquad,
+    GameCommandError, NativeAggressiveCommandSnapshot,
+    NativeCircleCommandSnapshot, NativeFriendlySquad,
     NativeSquadCommandDirector, NativeSwipeCommandSnapshot,
 };
 use bees_hivemind::dispatch::ResolvedHiveMindCommand;
@@ -609,6 +610,7 @@ impl NativeLevelEventProcessor {
             completed_tick, world, navigation, friendlies, random, dt,
             |_, _, _| Err(GameCommandError::MissingCombatSnapshot),
             |_, _, _| Err(GameCommandError::MissingCombatSnapshot),
+            |_, _, _| Err(GameCommandError::MissingCombatSnapshot),
         )
     }
 
@@ -628,6 +630,9 @@ impl NativeLevelEventProcessor {
         swipe_snapshot: impl FnMut(
             SquadLifetime, i64, &CombatWorld,
         ) -> Result<NativeSwipeCommandSnapshot, GameCommandError>,
+        aggressive_snapshot: impl FnMut(
+            SquadLifetime, i64, &CombatWorld,
+        ) -> Result<NativeAggressiveCommandSnapshot, GameCommandError>,
     ) -> Result<(), NativeLevelEventError> {
         if self.is_failed() {
             return Err(NativeLevelEventError::FailedLevel);
@@ -648,7 +653,8 @@ impl NativeLevelEventProcessor {
         }
         if let Err(error) = self.commands.advance_into_with_combat(
             world, navigation, Some(&self.roster), friendlies, random, dt,
-            circle_snapshot, swipe_snapshot, &mut self.timed_finished,
+            circle_snapshot, swipe_snapshot, aggressive_snapshot,
+            &mut self.timed_finished,
         ) {
             self.failed = true;
             return Err(NativeLevelEventError::Commands(error));
