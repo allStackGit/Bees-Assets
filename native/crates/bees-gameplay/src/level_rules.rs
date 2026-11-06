@@ -309,10 +309,11 @@ where
                 // pass. Persist before publishing any command completion.
                 state.credit_mining_since(previous_event_count)?;
             }
+            let allocate_late_minion = &mut state.allocate_minion;
             state.events.publish_timed_command_events(
                 completed_tick, &state.combat,
                 &state.combat.events()[previous_event_count..],
-                |mother, beacon| (state.allocate_minion)(mother, beacon),
+                |mother, beacon| allocate_late_minion(mother, beacon),
             )?;
         }
         Ok(counts)
