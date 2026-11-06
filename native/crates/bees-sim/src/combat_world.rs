@@ -666,6 +666,9 @@ pub struct CombatWorld {
     /// every squad's Heal command, not one reservation set per command.
     healing_hive_by_ship: HashMap<i64, i64>,
     healing_slots_used_by_hive: HashMap<i64, u8>,
+    /// Unity Ship.OriginalHealth remains fixed when training overrides
+    /// MaxHealth; the gameplay Heal priority must use the original value.
+    authored_original_ship_health: HashMap<i64, i32>,
     /// Monotonic IDs of living authored mining obstacles; no full scan
     /// of static geometry for each eligible policy agent.
     mining_obstacle_ids: Vec<i64>,
@@ -766,6 +769,7 @@ impl CombatWorld {
             support_zone_ids: HashMap::new(),
             healing_hive_by_ship: HashMap::new(),
             healing_slots_used_by_hive: HashMap::new(),
+            authored_original_ship_health: HashMap::new(),
             mining_obstacle_ids: Vec::new(),
             mining_seen_ship_ids: HashSet::new(),
             policy_special_measurements: PolicySpecialMeasurements::default(),
@@ -919,6 +923,7 @@ impl CombatWorld {
         self.policy_ship_runtime.remove(&victim_id);
         self.retire_support_zone(self.ships[index].ship_type, side, victim_id);
         self.release_beehive_healing_slot(victim_id);
+        self.authored_original_ship_health.remove(&victim_id);
         if self.ships[index].ship_type == 2 {
             self.release_beehive_healing_slots_for_hive(victim_id);
         }
@@ -1007,6 +1012,23 @@ impl CombatWorld {
     pub fn ship(&self, entity_id: i64) -> Option<&CombatShip> {
         let &index = self.ship_by_id.get(&entity_id)?;
         self.ships.get(index)
+    }
+
+    /// The Level supplies source Ship.OriginalHealth at setup. This is
+    /// deliberately not inferred from training-adjusted Ship.MaxHealth.
+    pub fn configure_game_ship_original_health(
+        &mut self, ship_id: i64, original_health: i32,
+    ) -> Result<(), CombatWorldError> {
+        if original_health <= 0 || !self.ship(ship_id)
+            .is_some_and(|ship| !ship.vitals.is_dead()) {
+            return Err(CombatWorldError::InvalidPolicyHealing);
+        }
+        self.authored_original_ship_health.insert(ship_id, original_health);
+        Ok(())
+    }
+
+    pub fn game_ship_original_health(&self, ship_id: i64) -> Option<i32> {
+        self.authored_original_ship_health.get(&ship_id).copied()
     }
 
     /// Physics bodies and gameplay ships share the identical dense slot.
