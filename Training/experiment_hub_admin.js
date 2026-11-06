@@ -5,7 +5,40 @@
 // with the existing operator; this module cannot invoke them or bind a listener.
 const {placements,plan}=require('./experiment_hub_resources');
 
+const POST_ACTIONS={
+    '/api/hub/projects':[201,'addProject'],
+    '/api/hub/configurations':[200,'saveConfiguration'],
+    '/api/hub/machines':[201,'addMachine'],
+    '/api/hub/machines/budget':[200,'updateMachineBudget'],
+    '/api/hub/machines/gpus':[200,'bindMachineGpus'],
+    '/api/hub/machines/enroll':[201,'enrollMachine'],
+    '/api/hub/machines/revoke':[200,'revokeMachine'],
+    '/api/hub/leases':[201,'requestLease'],
+    '/api/hub/leases/release':[200,'releaseLease'],
+    '/api/hub/jobs':[201,'queueConfiguration'],
+    '/api/hub/pipelines':[201,'queuePipeline'],
+    '/api/hub/sequences':[201,'queueSequence'],
+    '/api/hub/jobs/approve-stopped':[200,'approveStoppedContinuation'],
+    '/api/hub/jobs/cancel':[200,'cancelJob'],
+    '/api/hub/jobs/cancel-future':[200,'cancelFutureJobs'],
+    '/api/hub/jobs/allocate':[200,'allocateJobs'],
+    '/api/hub/jobs/move-claim':[200,'moveJobClaim'],
+    '/api/hub/automation':[200,'configureAutomation'],
+    '/api/hub/jobs/qualify-gpu':[200,'requestGpuQualification'],
+    '/api/hub/jobs/start':[200,'authorizeStart'],
+    '/api/hub/jobs/stop':[200,'authorizeStop'],
+};
+const GET_PATHS=new Set([
+    '/api/hub/jobs/plan','/api/hub/automation','/api/hub/progress',
+    '/api/hub/state','/api/hub/placements',
+]);
+function isHubAdminPath(method,pathname) {
+    return method==='GET'?GET_PATHS.has(pathname):
+        method==='POST'&&(pathname==='/api/hub/plan'||Object.hasOwn(POST_ACTIONS,pathname));
+}
+
 function route(hub,method,pathname,query,value,bees) {
+    if(!isHubAdminPath(method,pathname))return null;
     if(method==='GET') {
         if(pathname==='/api/hub/jobs/plan')
             return {status:200,data:hub.plannedJobs()};
@@ -38,7 +71,6 @@ function route(hub,method,pathname,query,value,bees) {
         }
         return null;
     }
-    if(method!=='POST')return null;
     if(pathname==='/api/hub/plan') {
         const snapshot=hub.snapshot();
         return {status:200,data:{
@@ -46,30 +78,7 @@ function route(hub,method,pathname,query,value,bees) {
             note:'Advisory only: neither scheduling nor GPU compute isolation is enforced.',
         }};
     }
-    const actions={
-        '/api/hub/projects':[201,'addProject'],
-        '/api/hub/configurations':[200,'saveConfiguration'],
-        '/api/hub/machines':[201,'addMachine'],
-        '/api/hub/machines/budget':[200,'updateMachineBudget'],
-        '/api/hub/machines/gpus':[200,'bindMachineGpus'],
-        '/api/hub/machines/enroll':[201,'enrollMachine'],
-        '/api/hub/machines/revoke':[200,'revokeMachine'],
-        '/api/hub/leases':[201,'requestLease'],
-        '/api/hub/leases/release':[200,'releaseLease'],
-        '/api/hub/jobs':[201,'queueConfiguration'],
-        '/api/hub/pipelines':[201,'queuePipeline'],
-        '/api/hub/sequences':[201,'queueSequence'],
-        '/api/hub/jobs/approve-stopped':[200,'approveStoppedContinuation'],
-        '/api/hub/jobs/cancel':[200,'cancelJob'],
-        '/api/hub/jobs/cancel-future':[200,'cancelFutureJobs'],
-        '/api/hub/jobs/allocate':[200,'allocateJobs'],
-        '/api/hub/jobs/move-claim':[200,'moveJobClaim'],
-        '/api/hub/automation':[200,'configureAutomation'],
-        '/api/hub/jobs/qualify-gpu':[200,'requestGpuQualification'],
-        '/api/hub/jobs/start':[200,'authorizeStart'],
-        '/api/hub/jobs/stop':[200,'authorizeStop'],
-    };
-    const action=Object.hasOwn(actions,pathname)?actions[pathname]:null;
+    const action=POST_ACTIONS[pathname];
     return action?{status:action[0],data:hub[action[1]](value)}:null;
 }
-module.exports={route};
+module.exports={route,isHubAdminPath};

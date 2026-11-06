@@ -199,6 +199,17 @@ without initial claims. The registry limits outstanding non-Bees jobs to
 100 and stored job records to 1,000; it refuses to silently delete old
 experiment definitions.
 
+### Loopback operator CLI
+
+`node Training/experiment_hub_cli.js get state` returns the same Hub state
+as the dashboard. Use `get 'progress?project_id=ants'` for project history
+or `get jobs/plan` to preview capacity. POST commands take an explicit JSON
+file, for example `post jobs/move-claim --data move.json`. Use the same
+fields and confirmation values as the dashboard API. The CLI also accepts
+the existing `bees/control`, `bees/workers`, `bees/start`, `bees/stop`,
+`bees/build`, and `bees/update-workers` routes on the production manager.
+Requests use loopback only and default to port 7148.
+
 ### Atomic advisory job allocation
 
 Train can move an unstarted claim to the selected machine in one update.
