@@ -5,9 +5,10 @@
 //! different identities. Historical outcome attribution MUST retain
 //! the server-selected ID and reservations after a composition redirect.
 
+use crate::outcomes::{FinalizedCommand, OutcomeSettlement};
 use crate::protocol::{
     HiveMindProtocolError, StrategyIdentity, ValidatedStrategySelection,
-    COMMAND_STRATEGIES, SHOOTING_STRATEGIES,
+    ValidatedTargetingSelection, COMMAND_STRATEGIES, SHOOTING_STRATEGIES,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -106,6 +107,30 @@ pub struct ResolvedHiveMindCommand {
     pub selected_shooting: StrategyIdentity,
     pub command_outcome_id: i64,
     pub shooting_outcome_id: i64,
+}
+
+impl ResolvedHiveMindCommand {
+    /// A failed native world cannot claim command or shooting TSV.
+    /// Use the existing validated OutcomeBatch/StoreCommands transaction
+    /// to discard both reservations. A separately issued targeting
+    /// reservation is only discarded when its real selection is supplied.
+    pub fn discard_unearned(
+        &self,
+        targeting: Option<&ValidatedTargetingSelection>,
+    ) -> FinalizedCommand {
+        FinalizedCommand {
+            command: OutcomeSettlement::Discard {
+                outcome_id: self.command_outcome_id,
+            },
+            shooting: OutcomeSettlement::Discard {
+                outcome_id: self.shooting_outcome_id,
+            },
+            targeting: targeting.map(|selection|
+                OutcomeSettlement::Discard {
+                    outcome_id: selection.outcome_id,
+                }),
+        }
+    }
 }
 
 pub fn resolve_hivemind_command(
