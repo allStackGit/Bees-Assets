@@ -126,9 +126,12 @@ impl HealRun {
                     }
                     self.waiting.push(id);
                 } else {
-                    // A competing command already reserved this ship;
-                    // do not silently transfer ownership of its slot.
-                    continue;
+                    // The previous command may still hold this ship at
+                    // another hive during activation. Retain its FIFO
+                    // priority for the next poll after supersession
+                    // releases that old reservation; never spin here.
+                    self.pending.push_front(id);
+                    break;
                 }
             }
         }
