@@ -612,11 +612,12 @@ secrets are stored in that ledger. The trusted adapter must not put
 secrets in command-line arguments because systemd unit metadata and
 process listings can expose them.
 
-When arming CPU-only automation, operators can optionally let the
-session move its own undelivered queued claims between armed machines
-after a fresh CPU/RAM capacity drop. Manual claims, checkpoint-pinned
-jobs and dispatched jobs remain in place. Each move uses the same atomic
-lease replacement as Train and requires a fresh destination receipt.
+When arming automation, operators can optionally let the session move
+its own queued claims between armed machines after a CPU/RAM capacity drop
+or loss of GPU eligibility. GPU claims can move only before a probe has
+been requested. Manual claims, checkpoint-pinned jobs and dispatched jobs
+stay in place. Each move uses the same atomic lease replacement as Train
+and requires a fresh destination receipt.
 Disarming or restarting ends ownership of earlier claims.
 
 An armed session can also opt into starting qualified GPU claims
