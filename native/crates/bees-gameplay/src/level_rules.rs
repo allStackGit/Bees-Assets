@@ -21,7 +21,8 @@ use bees_sim::telemetry::StepCounts;
 
 use crate::commands::{
     GameCommandError, NativeAggressiveCommandSnapshot,
-    NativeCircleCommandSnapshot, NativeFriendlySquad, NativeSwipeCommandSnapshot,
+    NativeCircleCommandSnapshot, NativeFireBargeTimerSnapshot,
+    NativeFriendlySquad, NativeSwipeCommandSnapshot,
 };
 use crate::level_events::{
     NativeLevelEventError, NativeLevelEventProcessor,
@@ -92,6 +93,17 @@ pub trait NativeLevelCommandContext {
         &self, _world: &CombatWorld, _owner: SquadLifetime,
         _enemy_squad_id: i64, _need_all_target_range: bool,
     ) -> Result<NativeAggressiveCommandSnapshot, GameCommandError> {
+        Err(GameCommandError::MissingCombatSnapshot)
+    }
+
+    /// The owning Level's original ProximityCollider.NearbyEnemyShips
+    /// membership for the currently reserved Fire Barge Bomb targets.
+    /// This is called ONLY on a BombingRun timer callback. There is no
+    /// substitute based on hull distance or training observations.
+    fn fire_barge_bombing_snapshot(
+        &self, _world: &CombatWorld, _owner: SquadLifetime,
+        _enemy_squad_id: i64,
+    ) -> Result<NativeFireBargeTimerSnapshot, GameCommandError> {
         Err(GameCommandError::MissingCombatSnapshot)
     }
 
@@ -442,7 +454,7 @@ where
             }
             let previous_event_count = state.combat.events().len();
             let metadata = &state.metadata;
-            state.events.advance_timed_commands_with_combat(
+            state.events.advance_timed_commands_with_bombing(
                 completed_tick, &mut state.combat,
                 metadata.navigation(),
                 &state.command_friendlies, &mut world.random, dt_seconds,
@@ -457,6 +469,11 @@ where
                 |owner, enemy_id, combat, need_all| {
                     metadata.aggressive_command_snapshot(
                         combat, owner, enemy_id, need_all,
+                    )
+                },
+                |owner, enemy_id, combat| {
+                    metadata.fire_barge_bombing_snapshot(
+                        combat, owner, enemy_id,
                     )
                 },
             )?;
