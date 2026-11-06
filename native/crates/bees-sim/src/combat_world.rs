@@ -3199,7 +3199,7 @@ impl CombatWorld {
         self.apply_pending_policy_ship_specials(collision_matrix)?;
         self.apply_pending_policy_healing()?;
         self.apply_pending_policy_warp()?;
-        self.advance_policy_scout_cooldowns(dt);
+        self.advance_scout_beacon_cooldowns(dt);
         self.advance_policy_barge_phases(dt)?;
         self.advance_asteroid_deaths(dt);
         self.advance_asteroid_pieces(dt);
