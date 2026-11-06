@@ -898,7 +898,8 @@ document.addEventListener('DOMContentLoaded', () => {
             cell(tr,summary.reason);
             const actions=cell(tr,'');
             const future=summary.chain.slice(position);
-            if(summary.canCancel&&future.length&&future.every(job=>
+            const futureProbeHold=future.some(job=>job.gpu_qualification?.holds_claim);
+            if(summary.canCancel&&future.length&&!futureProbeHold&&future.every(job=>
                 !job.dispatch_id&&(job.status==='waiting_adapter'||
                     job.status==='waiting_predecessor'&&!job.lease_id))) {
                 actions.append(button('Cancel future queued jobs',async()=>{
@@ -921,7 +922,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 }));
             }else if(future.length&&summary.canCancel) {
-                actions.textContent='A downstream job has started or needs inspection.';
+                actions.textContent=futureProbeHold
+                    ?'A downstream GPU probe still holds its claim.'
+                    :'A downstream job has started or needs inspection.';
             }
             sequenceTable.append(tr);
         }
@@ -1081,8 +1084,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     (j.capacity_released_at?' · Capacity released':'')+
                     (machine?.status==='offline'?' · Agent offline':'');
             const proof=j.gpu_qualification;
-            const probeHoldsClaim=proof?.lease_id===j.lease_id&&Boolean(
-                proof?.cleanup_required||proof?.status==='requested'&&proof.first_offered_at!==null);
+            const probeHoldsClaim=proof?.holds_claim===true;
             const gpuProof=proof
                 ?proof.cleanup_required?' · GPU probe cleanup needs verification'
                 :proof.status==='requested'
@@ -1233,7 +1235,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     }catch(e){feedback('hub-job-message',e.message);}
                 }));
             if(j.status==='waiting_adapter'&&j.lease_id&&!j.dispatch_id&&
-                !j.continuation_machine_id&&proof?.status!=='requested') {
+                !j.continuation_machine_id&&!probeHoldsClaim) {
                 actions.append(button('Move claim',async()=>{
                     const destination=selectedMoveDestination(j);
                     if(!destination)return;
@@ -1292,7 +1294,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 }));
             if(['waiting_adapter','waiting_predecessor'].includes(j.status)&&
-                !hasSuccessor)actions.append(button('Cancel',async()=>{
+                !j.dispatch_id&&!hasSuccessor&&!probeHoldsClaim)actions.append(button('Cancel',async()=>{
                 if(!confirm('Cancel this unstarted '+j.project_id+' job? No process is running.'))return;
                 try{
                     await action('hub/jobs/cancel',{job_id:j.id,confirm_cancel:true});
@@ -1860,7 +1862,14 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     $('hub-apply-claim-moves').addEventListener('click',async()=>{
         const moves=[...stagedMoves.values()];
-        if(applyingMoves||!moves.length||!confirm('Apply these '+moves.length+' queued claim moves together?\n'+
+        if(applyingMoves||!moves.length)return;
+        if(moves.some(move=>state?.jobs?.find(job=>job.id===move.job_id)
+            ?.gpu_qualification?.holds_claim)) {
+            feedback('hub-job-allocate-message',
+                'A staged claim is held by a GPU probe. Wait for verified cleanup or remove that move.');
+            return;
+        }
+        if(!confirm('Apply these '+moves.length+' queued claim moves together?\n'+
             moves.map(move=>move.label).join('\n')+
             '\nNew claims need fresh worker receipts. An armed scheduler can then start eligible CPU jobs.'))return;
         applyingMoves=true;
