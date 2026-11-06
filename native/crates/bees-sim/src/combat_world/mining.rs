@@ -216,9 +216,6 @@ impl CombatWorld {
                 mining.cooldown_remaining = MINING_COOLDOWN_SECONDS;
             }
             self.policy_special_measurements.mining_actions_completed += 1;
-            if depleted {
-                self.retire_mining_asteroid(index);
-            }
         }
         self.policy_pending_mining.clear();
         Ok(())
