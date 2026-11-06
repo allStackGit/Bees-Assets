@@ -99,17 +99,15 @@ impl CombatWorld {
     /// Charge.SetFinalize cancels wind-up/charge/cooldown and resets its
     /// movement lock. All in-flight game charges have one owner, the
     /// authoritative Barge ship; no orphan timer can fire after reset.
-    pub fn reset_game_barge_charge(
-        &mut self, ship_id: i64,
-    ) -> Result<(), CombatWorldError> {
+    pub fn reset_game_barge_charge(&mut self, ship_id: i64) {
         if self.game_barge_charges.remove(&ship_id).is_none() {
-            return Ok(());
+            return;
         }
         self.barge_charge_hits.retain(|&(attacker, _)|
             attacker != ship_id,
         );
         let Some(&index) = self.ship_by_id.get(&ship_id) else {
-            return Ok(());
+            return;
         };
         if self.physics.ships()[index].active &&
             !self.ships[index].vitals.is_dead() {
@@ -121,7 +119,6 @@ impl CombatWorld {
             // separately stops surviving ships; supersession deliberately
             // leaves any newly installed movement order intact.
         }
-        Ok(())
     }
 
     /// Unity Barge.ChargeForward / StopCharge / FinishCoolDown. These are

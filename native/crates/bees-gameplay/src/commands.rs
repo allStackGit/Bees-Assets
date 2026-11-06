@@ -1151,7 +1151,7 @@ impl NativeSquadCommandDirector {
         }
         if let Some(previous) = self.active.get(&squad.owner)
             .and_then(|prior| prior.charge.as_ref()) {
-            previous.release_superseded(world, retained_bomb_members)?;
+            previous.release_superseded(world, retained_bomb_members);
         }
         let new_following = usize::from(active.following.is_some());
         let new_full_retreat = usize::from(active.full_retreat.is_some());

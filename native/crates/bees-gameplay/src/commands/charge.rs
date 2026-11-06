@@ -153,14 +153,13 @@ impl NativeChargeRun {
     /// weapon, so preserve leases for members retained by that new command.
     pub fn release_superseded(
         &self, world: &mut CombatWorld, retained_ids: &[i64],
-    ) -> Result<(), GameCommandError> {
+    ) {
         for member in &self.members {
-            world.reset_game_barge_charge(member.ship_id)?;
+            world.reset_game_barge_charge(member.ship_id);
         }
         release_superseded_bomb_targets(
             world, &self.members, retained_ids,
         );
-        Ok(())
     }
 
     /// Charge.SetFinalize stops every surviving Barge, including those
@@ -171,7 +170,7 @@ impl NativeChargeRun {
         &self, world: &mut CombatWorld,
     ) -> Result<(), GameCommandError> {
         for member in &self.members {
-            world.reset_game_barge_charge(member.ship_id)?;
+            world.reset_game_barge_charge(member.ship_id);
             if world.ship(member.ship_id).is_some_and(|ship|
                 !ship.vitals.is_dead()
             ) && world.ship_body(member.ship_id).is_some_and(|body|
