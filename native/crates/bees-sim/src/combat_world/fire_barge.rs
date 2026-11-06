@@ -27,6 +27,13 @@ impl CombatWorld {
         Ok(())
     }
 
+    /// Single authoritative Bomb.Power for the Fire Barge's real type-14
+    /// explosion. Command activation must reject a different Level weapon
+    /// power rather than reserving one amount and exploding with another.
+    pub fn configured_fire_barge_bomb_power(&self, ship_id: i64) -> Option<i32> {
+        self.fire_barge_bomb_powers.get(&ship_id).copied()
+    }
+
     /// The policy special uses the same bomb as normal game death handling.
     pub fn configure_policy_fire_barge(
         &mut self, ship_id: i64, bomb_power: i32,

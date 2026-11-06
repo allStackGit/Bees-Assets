@@ -236,10 +236,19 @@ impl NativeFireBargeBombingRun {
     ) -> Result<Option<Self>, GameCommandError> {
         // Do not partially initialize mixed bomber squads and later
         // pretend their Striker/Yellow Jacket bombs have executed.
-        for member in squad.members {
+        if weapons.len() != squad.members.len() {
+            return Err(GameCommandError::InvalidSquad);
+        }
+        for (member, weapon) in squad.members.iter().zip(weapons) {
             let ship = world.ship(member.ship_id)
                 .ok_or(GameCommandError::InvalidSquad)?;
             if ship.ship_type != 10 {
+                return Err(GameCommandError::MissingCombatSnapshot);
+            }
+            if weapon.ship_id != member.ship_id ||
+                world.configured_fire_barge_bomb_power(member.ship_id) !=
+                    Some(weapon.power)
+            {
                 return Err(GameCommandError::MissingCombatSnapshot);
             }
         }
