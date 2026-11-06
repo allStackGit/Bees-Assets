@@ -298,11 +298,6 @@ impl NativeFireBargeBombingRun {
             return Ok(Some(CommandFinishCause::BombingRunCompleted));
         }
         self.timer_loops = self.timer_loops.saturating_add(1);
-        let living_count = self.members.iter().filter(|member|
-            world.ship(member.ship_id).is_some_and(|ship|
-                !ship.vitals.is_dead()
-            ),
-        ).count();
         let mut tested = 0_usize;
         let mut any_near = false;
         advance_fire_barge_bombing_run(
@@ -318,7 +313,15 @@ impl NativeFireBargeBombingRun {
         // Unity AreBombersCloseToEnemyTargets returns true only if at
         // least one bomber is near AND every live bomber is near. Without
         // a live selected target the corresponding entry fails that check.
-        let all_near = any_near && tested == living_count;
+        // The usual case is no proximity yet. Skip a second pass over
+        // the live squad unless at least one bomber actually found its
+        // selected target. Queued detonations do not retire ships until
+        // the next fixed step, so the count is identical here.
+        let all_near = any_near && tested == self.members.iter().filter(|member|
+            world.ship(member.ship_id).is_some_and(|ship|
+                !ship.vitals.is_dead()
+            ),
+        ).count();
         if !self.fast_poll && all_near {
             timer.reuse(0.25, true, false);
             self.fast_poll = true;
@@ -340,15 +343,19 @@ impl NativeFireBargeBombingRun {
         &self, world: &mut CombatWorld,
         replacement: Option<&Self>,
     ) {
+        let Some(next) = replacement else {
+            self.release_all(world);
+            return;
+        };
+        // A replacement can reassign thousands of squad weapons. Do not
+        // scan the entire replacement roster for each outgoing member.
+        // This one-time set does not become a second target/lease ledger.
+        let retained: HashSet<_> = next.members.iter()
+            .map(|member| member.ship_id).collect();
         for member in &self.members {
-            if replacement.is_some_and(|next|
-                next.members.iter().any(|new_member|
-                    new_member.ship_id == member.ship_id
-                )
-            ) {
-                continue;
+            if !retained.contains(&member.ship_id) {
+                world.release_game_bomb_target_for_ship(member.ship_id);
             }
-            world.release_game_bomb_target_for_ship(member.ship_id);
         }
     }
 
