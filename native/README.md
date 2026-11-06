@@ -485,11 +485,18 @@ The reusable `assign_initial_bombing_run_targets` operation now assigns
 all squad Bomb targets in Unity member order. `NativeFireBargeBombingRun`
 implements the Fire Barge-only 2s/0.25s timer phase, pursued tracked moves,
 authoritative proximity-gated blast request, and reservation cleanup.
-It is **not yet installed by the standard HiveMind receipt/director path**:
-the Level must still supply actual weapon IDs/power and proximity data,
-integrate this controller with command lifecycle/settlement, and port the
-Striker/YellowJacket branches. Mixed bomber squads fail closed. No measured
-throughput claim follows from this path.
+The standard HiveMind director now installs this scoped controller via
+`apply_strategy_receipt_with_bombing` when the owning Level supplies its
+current roster, authored Bomb weapon IDs/power and GetShips-ordered enemies.
+`NativeLevelCommandContext::fire_barge_bombing_snapshot` supplies actual
+ProximityCollider contacts only on due timer callbacks. Existing callers
+without this input still explicitly discard unsupported BombingRun
+reservations; no fictional range is substituted. Whole-squad initial
+reservation assignments are atomic: failed replacement preserves the
+outgoing command's leases. Completion, timeout, supersession and squad
+retirement share the ordinary command lifecycle. Mixed Striker/YellowJacket
+squads remain unsupported until their command-specific return/drop/reload
+phases are ported. No measured throughput claim follows from this path.
 
 `policy_special_measurements()` exposes bounded per-world counts of
 validated special requests, Striker exact hull checks/contact misses,
