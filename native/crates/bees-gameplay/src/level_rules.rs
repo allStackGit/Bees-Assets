@@ -126,7 +126,7 @@ pub trait NativeLevelCommandContext {
     /// substitute based on hull distance or training observations.
     fn bombing_command_snapshot(
         &self, _world: &CombatWorld, _owner: SquadLifetime,
-        _enemy_squad_id: i64,
+        _enemy_squad_id: i64, _need_retarget: bool,
     ) -> Result<NativeBombingTimerSnapshot, GameCommandError> {
         Err(GameCommandError::MissingCombatSnapshot)
     }
@@ -523,9 +523,9 @@ where
                         combat, owner, enemy_id, need_all,
                     )
                 },
-                |owner, enemy_id, combat| {
+                |owner, enemy_id, combat, need_retarget| {
                     metadata.bombing_command_snapshot(
-                        combat, owner, enemy_id,
+                        combat, owner, enemy_id, need_retarget,
                     )
                 },
             )?;

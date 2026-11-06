@@ -741,7 +741,7 @@ impl NativeLevelEventProcessor {
         self.advance_timed_commands_with_bombing(
             completed_tick, world, navigation, friendlies, random, dt,
             circle_snapshot, swipe_snapshot, aggressive_snapshot,
-            |_, _, _| Err(GameCommandError::MissingCombatSnapshot),
+            |_, _, _, _| Err(GameCommandError::MissingCombatSnapshot),
         )
     }
 
@@ -765,7 +765,7 @@ impl NativeLevelEventProcessor {
             SquadLifetime, i64, &CombatWorld, bool,
         ) -> Result<NativeAggressiveCommandSnapshot, GameCommandError>,
         bombing_snapshot: impl FnMut(
-            SquadLifetime, i64, &CombatWorld,
+            SquadLifetime, i64, &CombatWorld, bool,
         ) -> Result<NativeBombingTimerSnapshot, GameCommandError>,
     ) -> Result<(), NativeLevelEventError> {
         if self.is_failed() {

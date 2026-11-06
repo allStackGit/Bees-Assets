@@ -1209,7 +1209,7 @@ impl NativeSquadCommandDirector {
         self.advance_into_with_bombing(
             world, navigation, roster, friendlies, random, dt,
             circle_snapshot, swipe_snapshot, aggressive_snapshot,
-            |_, _, _| Err(GameCommandError::MissingCombatSnapshot),
+            |_, _, _, _| Err(GameCommandError::MissingCombatSnapshot),
             finished,
         )
     }
@@ -1235,7 +1235,7 @@ impl NativeSquadCommandDirector {
             SquadLifetime, i64, &CombatWorld, bool,
         ) -> Result<NativeAggressiveCommandSnapshot, GameCommandError>,
         mut bombing_snapshot: impl FnMut(
-            SquadLifetime, i64, &CombatWorld,
+            SquadLifetime, i64, &CombatWorld, bool,
         ) -> Result<NativeBombingTimerSnapshot, GameCommandError>,
         finished: &mut Vec<FinishedNativeCommand>,
     ) -> Result<(), GameCommandError> {
@@ -1471,8 +1471,10 @@ impl NativeSquadCommandDirector {
                 if let Some(timer) = command.command_poll.as_mut() {
                     if let Some(due) = timer.begin_update(dt) {
                         self.measurements.command_timer_callbacks += 1;
+                        let need_retarget = bombing.needs_retarget(world);
                         let mut snapshot = bombing_snapshot(
                             owner, bombing.enemy_squad_id(), world,
+                            need_retarget,
                         )?;
                         self.measurements.bombing_snapshot_requests += 1;
                         self.measurements.bombing_proximity_pairs +=
@@ -1486,7 +1488,11 @@ impl NativeSquadCommandDirector {
                         completed = bombing.on_poll(
                             world, timer, owner, snapshot.enemy_owner,
                             snapshot.enemy_alive,
-                            command.selection.command_outcome_id,
+                            &command.selection, roster.ok_or(
+                                GameCommandError::MissingCombatSnapshot,
+                            )?, random,
+                            &snapshot.retarget_enemies,
+                            &snapshot.retarget_weapons,
                             |ship_id, target_id| Ok(snapshot.nearby_targets
                                 .binary_search(&(ship_id, target_id)).is_ok()),
                         )?;

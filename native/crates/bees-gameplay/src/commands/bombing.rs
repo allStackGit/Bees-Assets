@@ -47,6 +47,11 @@ pub struct NativeBombingTimerSnapshot {
     pub enemy_owner: SquadLifetime,
     pub enemy_alive: bool,
     pub nearby_targets: Vec<(i64, i64)>,
+    /// Populate only when need_retarget was true. This is the original
+    /// enemy GetShips order and the actual live Bomb weapon metadata,
+    /// not a second persistent target registry.
+    pub retarget_enemies: Vec<NativeEnemyTargetStats>,
+    pub retarget_weapons: Vec<NativeBombWeapon>,
 }
 
 /// Unity BombingRun.Execute calls GetTarget on every current bomber in
@@ -133,6 +138,44 @@ pub fn assign_initial_bombing_run_targets(
         Ok(Some(()))
     })?;
     Ok(assigned.is_some())
+}
+
+/// Reuse the existing Bomb.SetTargetShip strategy and world lease.
+ /// Healthy, still-selected targets do not consume RNG or metadata work.
+fn retarget_selected_game_bomb(
+    world: &mut CombatWorld,
+    roster: &NativeSquadRoster,
+    random: &mut RandomStream,
+    ship_id: i64, enemy_owner: SquadLifetime,
+    selection: &ResolvedHiveMindCommand,
+    weapons: &[NativeBombWeapon],
+    enemies: &[NativeEnemyTargetStats],
+    ranked: &mut Vec<NativeEnemyTargetStats>,
+) -> Result<bool, GameCommandError> {
+    if let Some(target_id) = world.game_bomb_current_target(ship_id) {
+        if world.ship(target_id).is_some_and(|ship|
+            !ship.vitals.is_dead(),
+        ) {
+            return Ok(true);
+        }
+    }
+    let weapon = weapons.iter().find(|weapon|
+        weapon.ship_id == ship_id,
+    ).ok_or(GameCommandError::MissingCombatSnapshot)?;
+    if weapon.weapon_id <= 0 || weapon.power < 0 {
+        return Err(GameCommandError::InvalidCombatSnapshot);
+    }
+    let entry = roster.get(enemy_owner)
+        .ok_or(GameCommandError::InvalidEnemy)?;
+    if enemies.len() != entry.members.len() {
+        return Err(GameCommandError::InvalidCombatSnapshot);
+    }
+    ranked.clear();
+    ranked.extend_from_slice(enemies);
+    Ok(select_native_game_bomb_target(
+        world, roster, ship_id, weapon.weapon_id, weapon.power,
+        enemy_owner, selection.effective_shooting, random, ranked,
+    )?.is_some())
 }
 
 /// Source GetSquad().GetShips order is retained throughout the run.
@@ -231,6 +274,8 @@ pub struct NativeBombingRun {
     has_contact_bombers: bool,
     only_strikers: bool,
     strikers: Vec<StrikerRunState>,
+    /// Reused for strategy-specific sorting on rare lost-target polls.
+    ranked_enemies: Vec<NativeEnemyTargetStats>,
 }
 
 impl NativeBombingRun {
@@ -295,6 +340,7 @@ impl NativeBombingRun {
             has_contact_bombers,
             only_strikers,
             strikers,
+            ranked_enemies: Vec::new(),
         }))
     }
 
@@ -340,6 +386,30 @@ impl NativeBombingRun {
         })
     }
 
+    /// Only demand costly authored target metadata when a live, still
+    /// pursuing bomber has lost its original selected enemy. A Striker
+    /// returning to its carrier already dropped its bomb; it does not
+    /// retarget until a new BombingRun command.
+    pub fn needs_retarget(&self, world: &CombatWorld) -> bool {
+        self.members.iter().any(|member| {
+            let Some(ship) = world.ship(member.ship_id) else {
+                return false;
+            };
+            if ship.vitals.is_dead() { return false }
+            if ship.ship_type == 19 {
+                if self.strikers.binary_search_by_key(
+                    &member.ship_id, |state| state.ship_id,
+                ).ok().is_some_and(|index| self.strikers[index].completed) ||
+                    world.game_striker_bomb_ready(member.ship_id) != Some(true) {
+                    return false;
+                }
+            }
+            world.game_bomb_current_target(member.ship_id)
+                .and_then(|id| world.ship(id))
+                .is_none_or(|target| target.vitals.is_dead())
+        })
+    }
+
     /// Unity BombingRun.Timer for Fire Barge / Yellow Jacket squads.
     /// Caller must invoke after the existing command timer reports due.
     /// The Level validates live enemy lifetime and supplies the real
@@ -354,12 +424,17 @@ impl NativeBombingRun {
         owner: SquadLifetime,
         enemy_owner: SquadLifetime,
         enemy_alive: bool,
-        command_outcome_id: i64,
+        selection: &ResolvedHiveMindCommand,
+        roster: &NativeSquadRoster,
+        random: &mut RandomStream,
+        retarget_enemies: &[NativeEnemyTargetStats],
+        retarget_weapons: &[NativeBombWeapon],
         mut target_in_proximity: impl FnMut(i64, i64)
             -> Result<bool, GameCommandError>,
     ) -> Result<Option<CommandFinishCause>, GameCommandError> {
         // A recycled enemy squad number cannot complete an unrelated run.
         self.target.validate(owner, enemy_owner)?;
+        let command_outcome_id = selection.command_outcome_id;
         if !enemy_alive && !self.only_strikers {
             return Ok(Some(CommandFinishCause::BombingRunCompleted));
         }
@@ -403,24 +478,38 @@ impl NativeBombingRun {
                         // HasCompletedRun permits no-proximity completion
                         // of AreBombersCloseToEnemyTargets.
                         if !completed { all_near = false; }
-                    } else if let Some(target_id) =
-                        send_bomber_to_selected_target(
-                            world, member, self.formation,
+                    } else {
+                        if !retarget_selected_game_bomb(
+                            world, roster, random, member.ship_id,
+                            enemy_owner, selection,
+                            retarget_weapons, retarget_enemies,
+                            &mut self.ranked_enemies,
                         )? {
+                            return Ok(Some(CommandFinishCause::NoEnemyTargets));
+                        }
+                        if let Some(target_id) =
+                            send_bomber_to_selected_target(
+                                world, member, self.formation,
+                            )? {
                         let near = target_in_proximity(
                             member.ship_id, target_id,
                         )?;
-                        any_near |= near;
-                        all_near &= near;
-                    } else {
-                        // Unity requests a fresh GetTarget here; without
-                        // the live target roster this command cannot
-                        // fabricate a replacement. Its normal timeout
-                        // remains the safe terminal fallback.
-                        all_near = false;
+                            any_near |= near;
+                            all_near &= near;
+                        } else {
+                            all_near = false;
+                        }
                     }
                 }
                 10 | 22 => {
+                    if !retarget_selected_game_bomb(
+                        world, roster, random, member.ship_id,
+                        enemy_owner, selection,
+                        retarget_weapons, retarget_enemies,
+                        &mut self.ranked_enemies,
+                    )? {
+                        return Ok(Some(CommandFinishCause::NoEnemyTargets));
+                    }
                     if let Some(target_id) = send_bomber_to_selected_target(
                         world, member, self.formation,
                     )? {
