@@ -1020,7 +1020,9 @@ impl CombatWorld {
         &mut self, ship_id: i64, original_health: i32,
     ) -> Result<(), CombatWorldError> {
         if original_health <= 0 || !self.ship(ship_id)
-            .is_some_and(|ship| !ship.vitals.is_dead()) {
+            .is_some_and(|ship| !ship.vitals.is_dead()) ||
+            self.authored_original_ship_health.get(&ship_id)
+                .is_some_and(|&existing| existing != original_health) {
             return Err(CombatWorldError::InvalidPolicyHealing);
         }
         self.authored_original_ship_health.insert(ship_id, original_health);
