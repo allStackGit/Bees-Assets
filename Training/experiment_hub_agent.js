@@ -206,7 +206,8 @@ async function main() {
     };
     let active=false,last='initial',receipts=[],pendingReports=[],
         pendingGpuReports=[];
-    const poll=async()=>{
+    const once=process.argv.includes('--once');
+    const poll=async(expedite=false)=>{
         if(active)return;
         active=true;
         try{
@@ -223,9 +224,14 @@ async function main() {
                     throw Error('Invalid machine execution order batch.');
                 if(orders.length) {
                     const result=await executor.handle(orders[0]);
-                    if(result?.kind==='gpu_qualification')
-                        pendingGpuReports=[result];
+                    const gpuResult=result?.kind==='gpu_qualification';
+                    if(gpuResult)pendingGpuReports=[result];
                     else pendingReports=[result];
+                    // Return consequential results without waiting a full
+                    // heartbeat. Only a regular poll can schedule a follow-up.
+                    if(expedite&&(gpuResult||orders[0].action==='start'||
+                        ['stop_requested','finished','failed','stopped'].includes(result?.state)))
+                        setTimeout(()=>poll(),0);
                 }
             }
             if(last!=='connected')
@@ -244,8 +250,8 @@ async function main() {
             last=message;
         }finally{active=false;}
     };
-    await poll();
-    if(process.argv.includes('--once')) {
+    await poll(!once);
+    if(once) {
         if(last!=='connected')process.exitCode=1;
         else if(receipts.length||pendingReports.length||
             pendingGpuReports.length) {
@@ -259,7 +265,7 @@ async function main() {
         }
         return;
     }
-    setInterval(poll,INTERVAL_MS);
+    setInterval(()=>poll(true),INTERVAL_MS);
 }
 
 if(require.main===module)main().catch(error=>{
