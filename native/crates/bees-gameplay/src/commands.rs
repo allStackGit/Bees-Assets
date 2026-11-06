@@ -528,9 +528,10 @@ impl NativeSquadCommandDirector {
                     unavailable.command_outcome_id,
                     unavailable.shooting_outcome_id,
                 ];
-                if unavailable.local_command == LocalCommandKind::Guard {
+                if matches!(unavailable.local_command,
+                    LocalCommandKind::Guard | LocalCommandKind::Mining) {
                     Ok(StrategyReceiptAction::BanAndDiscardReservations {
-                        reservation_ids, command: LocalCommandKind::Guard,
+                        reservation_ids, command: unavailable.local_command,
                     })
                 } else {
                     Ok(StrategyReceiptAction::DiscardReservations(reservation_ids))
@@ -563,11 +564,60 @@ impl NativeSquadCommandDirector {
 
         let mut patrol = None;
         let mut following = None;
+        let mut mining = None;
         let mut retreat_already_safe = false;
         let issued_move = match selection.local_command {
             LocalCommandKind::Hold => {
                 stop_squad_game_movement(world, squad.members)?;
                 true
+            }
+            LocalCommandKind::Mining => {
+                // Unity Squad.GetNearestMiningAsteroid selects by distance
+                // from the current live squad bounds center. An absent
+                // target or no mining ships bans Mining for this strategy
+                // response rather than installing a nonfunctional command.
+                let Some((target_id, _)) =
+                    world.nearest_mining_asteroid(squad.squad_center)
+                else { return Ok(Activation::Unavailable(selection)); };
+                let spread = world.mining_asteroid_spread_radius(target_id)
+                    .ok_or(GameCommandError::InvalidMiningTarget)?;
+                let mut eligible = Vec::new();
+                for member in squad.members {
+                    let ship = world.ship(member.ship_id)
+                        .ok_or(GameCommandError::InvalidSquad)?;
+                    if !ship.vitals.is_dead() &&
+                        matches!(ship.ship_type, 4 | 9) {
+                        if world.ship_fleet_identity(member.ship_id).is_none() {
+                            return Err(GameCommandError::InvalidSquad);
+                        }
+                        eligible.push(member.ship_id);
+                    }
+                }
+                if eligible.is_empty() {
+                    return Ok(Activation::Unavailable(selection));
+                }
+                // Unity Random.insideUnitCircle uses a uniform disk. Use
+                // world-local seeded RNG for comparable statistics, not
+                // a per-process global random stream.
+                let angle = next_unit(random) * std::f32::consts::TAU;
+                let radius = next_unit(random).sqrt() * spread;
+                mining = Some(MiningRun {
+                    target_id,
+                    destination_offset: Vec2::new(
+                        angle.cos() * radius, angle.sin() * radius,
+                    ),
+                    formation: squad.formation,
+                    members: squad.members.to_vec(),
+                    eligible,
+                    currently_mining: Vec::new(),
+                    mining_timer: None,
+                    stop_moving_timer: None,
+                    has_found_all: false,
+                    mined_tsv: 0,
+                });
+                // The source begins with an immediate 3-second command
+                // timer callback, not an Execute-time movement command.
+                false
             }
             LocalCommandKind::MoveToRandom => {
                 let requested = choose_random_coordinate(
@@ -762,6 +812,7 @@ impl NativeSquadCommandDirector {
             LocalCommandKind::Guard => Some(settings.ai_squad_guard_seconds),
             LocalCommandKind::Retreat if retreat_already_safe => Some(3.0),
             LocalCommandKind::Retreat => None,
+            LocalCommandKind::Mining => Some(MINING_COMMAND_TIMEOUT_SECONDS),
             _ => Some(settings.max_command_seconds),
         };
         let active = ActiveNativeCommand {
@@ -770,7 +821,7 @@ impl NativeSquadCommandDirector {
             command_poll: if matches!(
                 selection.local_command,
                 LocalCommandKind::MoveToRandom | LocalCommandKind::Patrol |
-                LocalCommandKind::ClosestFriendly |
+                LocalCommandKind::Mining | LocalCommandKind::ClosestFriendly |
                 LocalCommandKind::Guard
             ) || (selection.local_command == LocalCommandKind::Retreat &&
                 !retreat_already_safe) {
@@ -781,6 +832,7 @@ impl NativeSquadCommandDirector {
             } else { None },
             patrol,
             following,
+            mining,
             member_ids: squad.members.iter().map(|m| m.ship_id).collect(),
             selection,
         };
@@ -796,6 +848,7 @@ impl NativeSquadCommandDirector {
             FinishedNativeCommand {
                 owner: squad.owner, selection: old.selection,
                 cause: CommandFinishCause::Superseded,
+                mined_command_tsv: old.mining.as_ref().map(|mining| mining.mined_tsv),
             }
         });
         self.measurements.activated += 1;
