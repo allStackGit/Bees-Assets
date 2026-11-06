@@ -79,6 +79,7 @@ mod scout;
 mod healing;
 mod mining;
 mod shot_outcomes;
+pub use self::mining::{is_mining_ship_type, MINING_FACTORY_TYPE, MINING_CARPENTER_BEE_TYPE};
 pub use self::shot_outcomes::{ProjectileRootOutcome, ProjectileOutcomeMeasurements};
 use self::shot_outcomes::{ProjectileOutcomeTracker, NEAR_MISS_DISTANCE};
 pub use self::scout::{ScoutBeaconSpec, ScoutBeaconStatus};
