@@ -48,8 +48,8 @@ mod in_and_out;
 mod aggressive;
 mod bombing;
 pub use self::bombing::{
-    NativeBombWeapon, NativeFireBargeBombingRun,
-    assign_initial_bombing_run_targets,
+    NativeBombWeapon, NativeBombingActivation, NativeFireBargeTimerSnapshot,
+    NativeFireBargeBombingRun, assign_initial_bombing_run_targets,
     advance_fire_barge_bombing_run,
 };
 pub use self::aggressive::{
@@ -392,6 +392,7 @@ struct ActiveNativeCommand {
     swipe: Option<SwipeRun>,
     in_and_out: Option<InAndOutRun>,
     aggressive: Option<AggressiveRun>,
+    bombing: Option<NativeFireBargeBombingRun>,
     mining: Option<MiningRun>,
     heal: Option<HealRun>,
     scouting: Option<ScoutingRun>,
@@ -549,6 +550,26 @@ impl NativeSquadCommandDirector {
         settings: HiveMindCommandSettings,
         receipt: StrategyReceipt,
     ) -> Result<StrategyReceiptAction, StrategyReceiptFailure> {
+        self.apply_strategy_receipt_with_bombing(
+            world, navigation, random, squad, friendlies, settings, receipt,
+            None,
+        )
+    }
+
+    /// Use when the actual Level has authored Bomb weapon identities,
+    /// target metadata and the exact source squad roster at receipt time.
+    /// Without those inputs BombingRun stays explicitly unsupported.
+    pub fn apply_strategy_receipt_with_bombing(
+        &mut self,
+        world: &mut CombatWorld,
+        navigation: &NavigationRuntime,
+        random: &mut RandomStream,
+        squad: NativeSquadOrder<'_>,
+        friendlies: &[NativeFriendlySquad],
+        settings: HiveMindCommandSettings,
+        receipt: StrategyReceipt,
+        bombing: Option<NativeBombingActivation<'_>>,
+    ) -> Result<StrategyReceiptAction, StrategyReceiptFailure> {
         let (owner, enemy_squad_id, selection) = match receipt {
             StrategyReceipt::Retired { reservation_ids, .. } =>
                 return Ok(StrategyReceiptAction::DiscardReservations(
@@ -589,7 +610,8 @@ impl NativeSquadCommandDirector {
         if matches!(resolved.local_command,
             LocalCommandKind::Retreat | LocalCommandKind::Aggressive |
             LocalCommandKind::CircleSquad | LocalCommandKind::RightSwipe |
-            LocalCommandKind::LeftSwipe | LocalCommandKind::InAndOut
+            LocalCommandKind::LeftSwipe | LocalCommandKind::InAndOut |
+            LocalCommandKind::BombingRun
         ) && (enemy_squad_id.is_none() ||
             squad.enemy.map(|enemy| enemy.squad_id) != enemy_squad_id)
         {
@@ -598,8 +620,9 @@ impl NativeSquadCommandDirector {
                 selection.shooting_outcome_id,
             ]));
         }
-        match self.activate_hivemind(
+        match self.activate_hivemind_with_bombing(
             world, navigation, random, squad, friendlies, settings, resolved,
+            bombing,
         ) {
             Ok(Activation::Unavailable(unavailable)) => {
                 let reservation_ids = vec![
@@ -638,6 +661,26 @@ impl NativeSquadCommandDirector {
         settings: HiveMindCommandSettings,
         selection: ResolvedHiveMindCommand,
     ) -> Result<Activation, GameCommandError> {
+        self.activate_hivemind_with_bombing(
+            world, navigation, random, squad, friendlies, settings,
+            selection, None,
+        )
+    }
+
+    /// One canonical activation, including BombingRun when the Level
+    /// supplies the real owned Bomb weapons and original enemy metadata.
+    /// Other strategies use the same path and never pay for Bomb input.
+    pub fn activate_hivemind_with_bombing(
+        &mut self,
+        world: &mut CombatWorld,
+        navigation: &NavigationRuntime,
+        random: &mut RandomStream,
+        squad: NativeSquadOrder<'_>,
+        friendlies: &[NativeFriendlySquad],
+        settings: HiveMindCommandSettings,
+        selection: ResolvedHiveMindCommand,
+        bombing_input: Option<NativeBombingActivation<'_>>,
+    ) -> Result<Activation, GameCommandError> {
         if !squad.valid() {
             return Err(GameCommandError::InvalidSquad);
         }
@@ -651,6 +694,7 @@ impl NativeSquadCommandDirector {
         let mut swipe = None;
         let mut in_and_out = None;
         let mut aggressive = None;
+        let mut bombing = None;
         let mut mining = None;
         let mut heal = None;
         let mut scouting = None;
@@ -735,6 +779,23 @@ impl NativeSquadCommandDirector {
                 };
                 aggressive = Some(run);
                 // Source begins its first coroutine on the immediate timer.
+                false
+            }
+            LocalCommandKind::BombingRun => {
+                let Some(input) = bombing_input else {
+                    self.measurements.unsupported += 1;
+                    return Ok(Activation::Unsupported(selection));
+                };
+                let Some(run) = NativeFireBargeBombingRun::start(
+                    world, input.roster, random, squad, input.enemy_owner,
+                    &selection, input.weapons, input.enemies,
+                )? else {
+                    self.measurements.unavailable += 1;
+                    return Ok(Activation::Unavailable(selection));
+                };
+                bombing = Some(run);
+                // Unity Execute assigns Bomb targets now but schedules its
+                // first tracked pursuit during the immediate command timer.
                 false
             }
             LocalCommandKind::MoveToRandom => {
@@ -950,12 +1011,15 @@ impl NativeSquadCommandDirector {
                 LocalCommandKind::ClosestFriendly |
                 LocalCommandKind::Guard | LocalCommandKind::CircleSquad |
                 LocalCommandKind::RightSwipe | LocalCommandKind::LeftSwipe |
-                LocalCommandKind::InAndOut | LocalCommandKind::Aggressive
+                LocalCommandKind::InAndOut | LocalCommandKind::Aggressive |
+                LocalCommandKind::BombingRun
             ) || (selection.local_command == LocalCommandKind::Retreat &&
                 !retreat_already_safe) {
                 Some(ScaledTimer::new(
                     if selection.local_command == LocalCommandKind::Scouting {
                         scouting::SCOUT_MOVE_SECONDS
+                    } else if selection.local_command == LocalCommandKind::BombingRun {
+                        2.0
                     } else { COMMAND_FREQUENCY_SECONDS },
                     true,
                     selection.local_command != LocalCommandKind::ClosestFriendly,
@@ -967,6 +1031,7 @@ impl NativeSquadCommandDirector {
             swipe,
             in_and_out,
             aggressive,
+            bombing,
             mining,
             heal,
             scouting,
@@ -992,6 +1057,10 @@ impl NativeSquadCommandDirector {
         if let Some(previous) = self.active.get(&squad.owner)
             .and_then(|prior| prior.full_retreat.as_ref()) {
             previous.release_all(world, active.full_retreat.as_ref());
+        }
+        if let Some(previous) = self.active.get(&squad.owner)
+            .and_then(|prior| prior.bombing.as_ref()) {
+            previous.release_superseded(world, active.bombing.as_ref());
         }
         let new_following = usize::from(active.following.is_some());
         let new_full_retreat = usize::from(active.full_retreat.is_some());
