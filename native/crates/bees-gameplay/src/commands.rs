@@ -415,9 +415,7 @@ impl NativeSquadCommandDirector {
             if let bees_sim::combat_world::CombatEvent::ShipWarped { .. } = event {
                 for active in self.active.values_mut() {
                     if let Some(retreat) = active.full_retreat.as_mut() {
-                        let before = retreat.earned_tsv;
-                        retreat.record_warp_event(event, world);
-                        if retreat.earned_tsv != before {
+                        if retreat.record_warp_event(event, world) {
                             self.measurements.full_retreat_warps += 1;
                         }
                     }
