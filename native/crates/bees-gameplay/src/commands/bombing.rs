@@ -75,7 +75,42 @@ pub fn assign_initial_bombing_run_targets(
     weapons: &[NativeBombWeapon],
     enemies: &[NativeEnemyTargetStats],
 ) -> Result<bool, GameCommandError> {
-    if selection.local_command != LocalCommandKind::BombingRun ||
+    assign_initial_special_bomb_targets(
+        world, roster, random, squad, enemy_owner, selection,
+        weapons, enemies, LocalCommandKind::BombingRun,
+    )
+}
+
+/// Charge.GetTargetShip uses the very same Bomb.MakeSortedTargetingList
+/// and Bomb.DetermineTargetShip as BombingRun.GetTarget.
+pub(super) fn assign_initial_charge_targets(
+    world: &mut CombatWorld,
+    roster: &NativeSquadRoster,
+    random: &mut RandomStream,
+    squad: NativeSquadOrder<'_>,
+    enemy_owner: SquadLifetime,
+    selection: &ResolvedHiveMindCommand,
+    weapons: &[NativeBombWeapon],
+    enemies: &[NativeEnemyTargetStats],
+) -> Result<bool, GameCommandError> {
+    assign_initial_special_bomb_targets(
+        world, roster, random, squad, enemy_owner, selection,
+        weapons, enemies, LocalCommandKind::Charge,
+    )
+}
+
+fn assign_initial_special_bomb_targets(
+    world: &mut CombatWorld,
+    roster: &NativeSquadRoster,
+    random: &mut RandomStream,
+    squad: NativeSquadOrder<'_>,
+    enemy_owner: SquadLifetime,
+    selection: &ResolvedHiveMindCommand,
+    weapons: &[NativeBombWeapon],
+    enemies: &[NativeEnemyTargetStats],
+    expected_command: LocalCommandKind,
+) -> Result<bool, GameCommandError> {
+    if selection.local_command != expected_command ||
         !squad.valid() || squad.owner.level_id != enemy_owner.level_id ||
         !enemy_owner.valid() ||
         !squad.enemy.is_some_and(|enemy|
@@ -102,8 +137,13 @@ pub fn assign_initial_bombing_run_targets(
         }
         world.validate_ship_game_order(ship_id)?;
         let ship = world.ship(ship_id).ok_or(GameCommandError::InvalidSquad)?;
+        let eligible = match expected_command {
+            LocalCommandKind::Charge => ship.ship_type == 0,
+            LocalCommandKind::BombingRun => matches!(ship.ship_type, 10 | 19 | 22),
+            _ => false,
+        };
         if ship.vitals.is_dead() || ship.side != own_entry.side ||
-            !matches!(ship.ship_type, 10 | 19 | 22) {
+            !eligible {
             return Err(GameCommandError::InvalidSquad);
         }
     }
@@ -142,7 +182,7 @@ pub fn assign_initial_bombing_run_targets(
 
 /// Reuse the existing Bomb.SetTargetShip strategy and world lease.
 /// Healthy, still-selected targets do not consume RNG or metadata work.
-fn retarget_selected_game_bomb(
+pub(super) fn retarget_selected_game_bomb(
     world: &mut CombatWorld,
     roster: &NativeSquadRoster,
     random: &mut RandomStream,
@@ -188,7 +228,7 @@ struct StrikerRunState {
     returned: bool,
 }
 
-fn send_bomber_to_selected_target(
+pub(super) fn send_bomber_to_selected_target(
     world: &mut CombatWorld,
     member: SquadFormationMember,
     formation: SquadFormationOptions,
