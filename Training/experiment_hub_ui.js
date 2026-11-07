@@ -140,12 +140,15 @@ function sequenceRowsForJobs(jobs) {
                 visited.add(child.id);
                 chain.push(child);
             }
-            const current=chain.find(job=>job.status!=='finished'||
-                !job.capacity_released_at)||chain[chain.length-1];
+            // Evaluation-triggered Stops can complete independent stages.
+            // The coordinator, not the browser, validates their evidence.
+            const completed=job=>Boolean(job.capacity_released_at&&(
+                job.status==='finished'||
+                job.status==='stopped'&&job.independent_sequence_complete===true));
+            const current=chain.find(job=>!completed(job))||chain[chain.length-1];
             const blocked=chain.find(job=>job.status==='waiting_predecessor');
             return {root,chain,current,canCancel:!conflict,
-                completed:chain.filter(job=>job.status==='finished'&&
-                    job.capacity_released_at).length,
+                completed:chain.filter(completed).length,
                 reason:conflict?'Conflicting or cyclic successor records; inspect the registry.'
                     :blocked?.predecessor_wait?.reason||
                         current?.status_reason||'—'};
@@ -883,7 +886,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 ' · '+summary.current.project_id+
                 ' · '+summary.current.status);
             cell(tr,summary.completed+' of '+summary.chain.length+
-                ' jobs finished and capacity released');
+                ' stages completed and capacity released');
             cell(tr,summary.reason);
             const actions=cell(tr,'');
             const future=summary.chain.slice(position);
