@@ -300,6 +300,33 @@ impl NativeLevelEventProcessor {
         &mut self.commands
     }
 
+    /// Apply any non-bomb strategy receipt to the SAME owning Level,
+    /// preserving the same terminal/abort discard behavior as the Bomb
+    /// activation path. The connection still owns all OutcomeIds.
+    pub fn apply_strategy_receipt(
+        &mut self,
+        world: &mut CombatWorld,
+        navigation: &NavigationRuntime,
+        random: &mut RandomStream,
+        squad: NativeSquadOrder<'_>,
+        friendlies: &[NativeFriendlySquad],
+        settings: HiveMindCommandSettings,
+        receipt: StrategyReceipt,
+    ) -> Result<StrategyReceiptAction, StrategyReceiptFailure> {
+        if self.is_failed() || self.completed() {
+            let ids = match receipt {
+                StrategyReceipt::Retired { reservation_ids, .. } =>
+                    reservation_ids,
+                StrategyReceipt::Accepted { selection, .. } =>
+                    vec![selection.command_outcome_id, selection.shooting_outcome_id],
+            };
+            return Ok(StrategyReceiptAction::DiscardReservations(ids));
+        }
+        self.commands.apply_strategy_receipt(
+            world, navigation, random, squad, friendlies, settings, receipt,
+        )
+    }
+
     /// Apply a HiveMind receipt using this Level's SAME live roster,
     /// command director and CombatWorld. The network/Level adapter must
     /// supply the real, ordered Bomb weapons, enemy target metadata,

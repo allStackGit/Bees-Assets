@@ -14,15 +14,29 @@
 //! episode-reset boundary. Stale world indices/revisions are rejected, not
 //! silently allowed to corrupt PPO trajectories.
 
-use bees_hivemind::session::SquadLifetime;
+use bees_hivemind::session::{SquadLifetime, StrategyReceipt};
+use bees_hivemind::dispatch::{
+    LocalCommandKind, SquadCommandComposition, resolve_hivemind_command,
+};
 use bees_sim::combat_perception_bridge::AuthoredShipPerception;
 use bees_sim::combat_world::CombatWorld;
+use bees_sim::geometry::Vec2;
+use bees_sim::squad_movement::{SquadFormationMember, SquadFormationOptions};
+use bees_sim::simulation::World;
 use bees_sim::policy::Decision;
 use bees_sim::simulation::{Simulation, WorldId};
 
 use crate::inference::{
     NativeLevelInferenceBatch, NativePolicyInference, NativePolicyRoute,
 };
+use crate::commands::{
+    GameCommandError, HiveMindCommandSettings, NativeBombWeapon,
+    NativeEnemySquad, NativeEnemyTargetStats, NativeFriendlySquad,
+    NativeScoutingContext, StrategyReceiptAction, StrategyReceiptFailure,
+    StrategyReceiptFailureCause,
+};
+use crate::level_inputs::native_squad_order_from_catalog;
+use crate::squads::NativeSquadRoster;
 use crate::level_events::{
     NativeLevelEventError, NativeLevelNotification,
 };
@@ -62,6 +76,188 @@ pub trait NativeLevelObservationContext {
         -> Option<AuthoredShipPerception>;
 }
 
+
+/// All nonphysical values required to create one real Unity command.
+/// The original enemy lifecycle comes from the connection's accepted
+/// request, never a lookup by the server's reused numeric Squad ID.
+#[derive(Clone, Copy, Debug)]
+pub struct NativeLevelStrategyInputs {
+    pub formation: SquadFormationOptions,
+    pub enemy: Option<NativeEnemySquad>,
+    pub scouting: Option<NativeScoutingContext>,
+    pub settings: HiveMindCommandSettings,
+}
+
+/// Source-owned command activation values absent from CombatWorld.
+/// These are supplied by the real Level's current Squad/FleetShip/weapon
+/// registry; no guessed formation offsets, path clearance, Bomb weapons
+/// or target rankings are introduced by the host.
+pub trait NativeLevelActivationContext: NativeLevelCommandContext {
+    fn strategy_inputs(
+        &self, owner: SquadLifetime, original_enemy: Option<SquadLifetime>,
+    ) -> Result<NativeLevelStrategyInputs, GameCommandError>;
+
+    fn stored_formation_offset(&self, ship_id: i64) -> Option<Vec2>;
+
+    fn current_path_clearance(&self, ship_id: i64) -> Option<i32>;
+
+    /// Called ONLY for a composition-resolved BombingRun or Charge.
+    /// Write current Unity GetShips-ordered enemy targeting stats and live
+    /// bomb weapon identities into the caller's reused output buffers.
+    /// Return the source Squad.IsCarrierSquad value, never a ship-type guess.
+    fn collect_bomb_activation(
+        &self, world: &CombatWorld, roster: &NativeSquadRoster,
+        owner: SquadLifetime, enemy_owner: SquadLifetime,
+        weapons: &mut Vec<NativeBombWeapon>,
+        enemies: &mut Vec<NativeEnemyTargetStats>,
+    ) -> Result<bool, GameCommandError>;
+}
+
+/// Allocation-reusing activation scratch owned by a Level host; it is not
+/// another gameplay registry. All work is preflighted before a command
+/// can replace its predecessor or consume a server reservation.
+#[derive(Default)]
+pub struct NativeLevelActivationScratch {
+    members: Vec<SquadFormationMember>,
+    friendlies: Vec<NativeFriendlySquad>,
+    bomb_weapons: Vec<NativeBombWeapon>,
+    target_stats: Vec<NativeEnemyTargetStats>,
+    ship_types: Vec<i32>,
+}
+
+impl NativeLevelActivationScratch {
+    pub fn new() -> Self { Self::default() }
+}
+
+/// Activate the real server-selected command on one existing native world.
+/// The connection owns the request/response ledger; this function consumes
+/// the exact StrategyReceipt, uses the already-registered squad, and returns
+/// the existing Applied/Discard/Ban obligations for durable settlement.
+///
+/// A source metadata failure returns StrategyReceiptFailure with original
+/// selection and both reservations intact. A retired owner or stale enemy
+/// identity returns explicit DiscardReservations without gameplay mutation.
+pub fn apply_native_level_strategy_receipt<M, A>(
+    world: &mut World<NativeLevelState<M, A>>,
+    receipt: StrategyReceipt,
+    scratch: &mut NativeLevelActivationScratch,
+) -> Result<StrategyReceiptAction, StrategyReceiptFailure>
+where
+    M: NativeLevelRewardMetadata + NativeLevelActivationContext,
+{
+    let (owner, original_enemy, selection) = match &receipt {
+        StrategyReceipt::Retired { reservation_ids, .. } =>
+            return Ok(StrategyReceiptAction::DiscardReservations(
+                reservation_ids.clone(),
+            )),
+        StrategyReceipt::Accepted { owner, enemy_owner, selection } =>
+            (*owner, *enemy_owner, selection.clone()),
+    };
+    let discard = || StrategyReceiptAction::DiscardReservations(vec![
+        selection.command_outcome_id, selection.shooting_outcome_id,
+    ]);
+    if world.is_failed() || world.state.events.is_failed() ||
+        world.state.events.completed() ||
+        world.state.events.roster().get(owner).is_none()
+    {
+        return Ok(discard());
+    }
+    let fail = |error: GameCommandError| StrategyReceiptFailure {
+        selection: selection.clone(),
+        cause: StrategyReceiptFailureCause::InvalidSquad(error),
+    };
+
+    // Resolve the same original HiveMind dispatch rule before collecting
+    // command-specific authored inputs. The actual director still resolves
+    // and validates the selection at mutation time.
+    scratch.ship_types.clear();
+    let squad = world.state.events.roster().get(owner)
+        .expect("prevalidated live source squad");
+    for &id in &squad.members {
+        let ship = world.state.combat.ship(id)
+            .ok_or_else(|| fail(GameCommandError::InvalidSquad))?;
+        if ship.vitals.is_dead() {
+            return Err(fail(GameCommandError::InvalidSquad));
+        }
+        scratch.ship_types.push(i32::from(ship.ship_type));
+    }
+    let composition = SquadCommandComposition::from_unity_ship_types(
+        scratch.ship_types.iter().copied(),
+    );
+    let resolved = resolve_hivemind_command(&selection, composition)
+        .map_err(|error| StrategyReceiptFailure {
+            selection: selection.clone(),
+            cause: StrategyReceiptFailureCause::InvalidStrategy(error),
+        })?;
+    let metadata = &mut world.state.metadata;
+    let details = metadata.strategy_inputs(owner, original_enemy)
+        .map_err(&fail)?;
+    if !details.formation.valid() || !details.settings.valid() {
+        return Err(fail(GameCommandError::InvalidSettings));
+    }
+    let targeted = matches!(resolved.local_command,
+        LocalCommandKind::Retreat | LocalCommandKind::Aggressive |
+        LocalCommandKind::CircleSquad | LocalCommandKind::RightSwipe |
+        LocalCommandKind::LeftSwipe | LocalCommandKind::InAndOut |
+        LocalCommandKind::BombingRun | LocalCommandKind::Charge);
+    if targeted && (original_enemy.is_none() ||
+        details.enemy.map(|enemy| enemy.owner) != original_enemy)
+    {
+        return Ok(discard());
+    }
+
+    scratch.friendlies.clear();
+    if matches!(resolved.local_command,
+        LocalCommandKind::ClosestFriendly | LocalCommandKind::Guard)
+    {
+        metadata.collect_live_friendlies(
+            &world.state.combat, world.state.events.roster(),
+            &mut scratch.friendlies,
+        ).map_err(&fail)?;
+    }
+    scratch.bomb_weapons.clear();
+    scratch.target_stats.clear();
+    let needs_bomb = matches!(resolved.local_command,
+        LocalCommandKind::BombingRun | LocalCommandKind::Charge);
+    let carrier_squad = if needs_bomb {
+        let enemy = original_enemy.ok_or_else(||
+            fail(GameCommandError::InvalidEnemy)
+        )?;
+        metadata.collect_bomb_activation(
+            &world.state.combat, world.state.events.roster(), owner, enemy,
+            &mut scratch.bomb_weapons, &mut scratch.target_stats,
+        ).map_err(&fail)?
+    } else {
+        false
+    };
+
+    let catalog = metadata.ship_asset_catalog()
+        .ok_or_else(|| fail(GameCommandError::MissingScoutingContext))?;
+    let order = native_squad_order_from_catalog(
+        &world.state.combat,
+        world.state.events.roster().get(owner)
+            .expect("prevalidated squad before command activation"),
+        catalog, details.formation, details.enemy, details.scouting,
+        |id| metadata.stored_formation_offset(id),
+        |id| metadata.current_path_clearance(id),
+        &mut scratch.members,
+    ).map_err(&fail)?;
+    let navigation = metadata.navigation();
+    if needs_bomb {
+        world.state.events.apply_strategy_receipt_with_bombing(
+            &mut world.state.combat, navigation, &mut world.random,
+            order, &scratch.friendlies, details.settings, receipt,
+            original_enemy.expect("validated targeted strategy"),
+            &scratch.bomb_weapons, &scratch.target_stats, carrier_squad,
+        )
+    } else {
+        world.state.events.apply_strategy_receipt(
+            &mut world.state.combat, navigation, &mut world.random,
+            order, &scratch.friendlies, details.settings, receipt,
+        )
+    }
+}
+
 #[derive(Debug)]
 pub enum NativeLevelSourceError<E> {
     MissingRegisteredWorld,
@@ -91,6 +287,7 @@ struct NativeWorldAssembly {
     id: WorldId,
     revision: u64,
     perception: NativeWorldPerceptionAssembler,
+    activation: NativeLevelActivationScratch,
 }
 
 /// Runs the REAL v26 observation writer, a genuine supplied model and the
@@ -166,8 +363,48 @@ impl NativeLevelBatchDriver {
             perception: NativeWorldPerceptionAssembler::from_random(
                 &mut world.random,
             ),
+            activation: NativeLevelActivationScratch::new(),
         });
         Ok(())
+    }
+
+    /// Apply a connection-correlated strategy reply to a live native Level.
+    /// Same-world action and persistent reservations are returned through
+    /// the existing command director, not through a training-only path.
+    pub fn apply_strategy_receipt<M, A>(
+        &mut self,
+        simulation: &mut Simulation<NativeLevelState<M, A>, NativeLevelRules>,
+        index: usize,
+        receipt: StrategyReceipt,
+    ) -> Result<StrategyReceiptAction, StrategyReceiptFailure>
+    where
+        M: NativeLevelRewardMetadata + NativeLevelActivationContext,
+        A: FnMut(SquadLifetime, i64) -> Result<SquadLifetime, SquadRosterError>,
+    {
+        let selection = match &receipt {
+            StrategyReceipt::Retired { reservation_ids, .. } =>
+                return Ok(StrategyReceiptAction::DiscardReservations(
+                    reservation_ids.clone(),
+                )),
+            StrategyReceipt::Accepted { selection, .. } =>
+                selection.clone(),
+        };
+        let fail = |error| StrategyReceiptFailure {
+            selection: selection.clone(),
+            cause: StrategyReceiptFailureCause::InvalidSquad(error),
+        };
+        let slot = self.worlds.get_mut(index)
+            .ok_or_else(|| fail(GameCommandError::InvalidSquad))?;
+        let world = simulation.world_mut(index)
+            .ok_or_else(|| fail(GameCommandError::InvalidSquad))?;
+        if slot.id != world.id ||
+            slot.revision != world.episode_revision()
+        {
+            return Err(fail(GameCommandError::InvalidSquad));
+        }
+        apply_native_level_strategy_receipt(
+            world, receipt, &mut slot.activation,
+        )
     }
 
     pub fn registered_world_count(&self) -> usize {
