@@ -16,6 +16,10 @@ const NAMES={
 // Reject systemd specifiers, shell expansion, whitespace and escapes rather
 // than pretending a path containing them is safely quoted in a unit file.
 const UNIT_PATH=/^\/[A-Za-z0-9._/@:+-]+$/;
+const DIRECTORY_KINDS=new Set([
+    'Training directory','Courier project','Courier snapshots',
+    'Training artifacts','Evaluator scratch','Evaluator receipts',
+]);
 function localPath(input,kind) {
     if(typeof input!=='string'||!path.isAbsolute(input))
         throw Error(kind+' must be an absolute path.');
@@ -23,8 +27,9 @@ function localPath(input,kind) {
     if(!UNIT_PATH.test(canonical)||canonical.split('/').includes('..'))
         throw Error(kind+' contains characters that are unsafe in systemd units.');
     const stat=fs.statSync(canonical);
-    if(kind==='Training directory'? !stat.isDirectory():!stat.isFile())
-        throw Error(kind+' is not a '+(kind==='Training directory'?'directory.':'regular file.'));
+    const directory=DIRECTORY_KINDS.has(kind);
+    if(directory?!stat.isDirectory():!stat.isFile())
+        throw Error(kind+' is not a '+(directory?'directory.':'regular file.'));
     return canonical;
 }
 function serviceDefinition(kind,{trainingDir=__dirname,nodePath=process.execPath,
