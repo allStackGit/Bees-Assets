@@ -681,6 +681,7 @@ class ExperimentHub {
             // Keep independent-sequence eligibility a coordinator-owned
             // decision. The UI must not reimplement evidence validation.
             job.independent_sequence_complete=independentSequenceComplete(job);
+            job.checkpoint_continuation_complete=checkpointContinuationComplete(job);
             if(job.status==='waiting_predecessor')
                 job.predecessor_wait=waitingStageReason(job,jobsById);
             if(job.status==='waiting_adapter'&&job.project_id!=='bees')
