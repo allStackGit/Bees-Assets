@@ -185,6 +185,24 @@ class LocalExecution {
                     String(error.message||error)).slice(0,220);
             }
         }
+        if(checkpointProject&&
+            (report.checkpoint_ready_verified||report.checkpoint_stop_verified)&&
+            typeof localAdapter?.model_checkpoint_sha256==='function') {
+            try {
+                const digest=await localAdapter.model_checkpoint_sha256(Object.freeze({
+                    job_id:job.id,project_id:job.project_id,
+                    artifact_lineage_root_id:job.artifact_lineage_root_id||job.id,
+                    continuation_of_job_id:job.continuation_of_job_id||null,
+                    frozen_parameters:job.frozen_parameters,
+                }));
+                if(!/^[a-f0-9]{64}$/.test(String(digest||'')))
+                    throw Error('Invalid resumable model fingerprint.');
+                report.checkpoint_model_sha256=digest;
+            }catch(error) {
+                report.diagnostic=('Cannot prove the exact evaluated model for candidate promotion: '+
+                    String(error.message||error)).slice(0,220);
+            }
+        }
         if(ownsArtifacts&&typeof localAdapter?.readProgress==='function'&&
             ['running','stop_requested','finished','failed','stopped']
                 .includes(state)) {
