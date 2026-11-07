@@ -482,21 +482,25 @@ command timer would bypass the completed tick's roster and rewards pass.
 measure the imported target collider, not its center. A killed bomber's
 weapon lease is released by the normal ship-retirement path.
 The reusable `assign_initial_bombing_run_targets` operation now assigns
-all squad Bomb targets in Unity member order. `NativeFireBargeBombingRun`
-implements the Fire Barge-only 2s/0.25s timer phase, pursued tracked moves,
-authoritative proximity-gated blast request, and reservation cleanup.
+all squad Bomb targets in Unity member order. `NativeBombingRun` now coordinates authored Fire Barge, Yellow Jacket, and
+Striker squads, including mixed squads. It preserves the original 2s/0.25s
+polling, tracked pursuit, proximity-gated Fire Barge detonation, Striker
+bomb drop/return/reload, and one shared Bomb reservation lifecycle.
 The standard HiveMind director now installs this scoped controller via
 `apply_strategy_receipt_with_bombing` when the owning Level supplies its
 current roster, authored Bomb weapon IDs/power and GetShips-ordered enemies.
-`NativeLevelCommandContext::fire_barge_bombing_snapshot` supplies actual
-ProximityCollider contacts only on due timer callbacks. Existing callers
+`NativeLevelCommandContext::bombing_command_snapshot` supplies actual
+ProximityCollider membership only on due timer callbacks; the separate
+`collect_bomber_contacts` callback supplies physical Yellow Jacket
+trigger-enter contacts after the fixed combat step. Existing callers
 without this input still explicitly discard unsupported BombingRun
 reservations; no fictional range is substituted. Whole-squad initial
 reservation assignments are atomic: failed replacement preserves the
 outgoing command's leases. Completion, timeout, supersession and squad
-retirement share the ordinary command lifecycle. Mixed Striker/YellowJacket
-squads remain unsupported until their command-specific return/drop/reload
-phases are ported. No measured throughput claim follows from this path.
+retirement share the ordinary command lifecycle. Mixed squads and Charge are implemented in the command director but still
+require a real Level adapter for authored carrier, weapon, eligibility and
+contact inputs. Missing inputs fail closed. No measured throughput or
+end-to-end gameplay-parity claim follows from these source ports.
 
 `policy_special_measurements()` exposes bounded per-world counts of
 validated special requests, Striker exact hull checks/contact misses,
@@ -521,8 +525,9 @@ Their separate distance-rejection and exact-hull counters expose actual
 collision work. Each agent now owns one tagged ship-special state rather
 than independent optional Striker, Fire Barge and Yellow Jacket fields,
 making unsupported combinations impossible by construction.
-Scripted auto-BombingRun behavior and full command-stat persistence are
-still separate Level integration work.
+Scripted BombingRun shares this world-owned contact transaction; authentic
+Level contact delivery, full command-stat persistence, and executable parity
+qualification remain integration work.
 
 **Barge v26 charge special:** a bound native Barge accepts a special only
 when ready. The shared combat tick advances the authored 2-second windup,
@@ -550,8 +555,9 @@ one world-owned observation snapshot. The self and capability projection
 prefer this live state for native policy-bound agents, while non-policy
 game controllers still supply their own authored fallback data. An
 unconfigured native special remains masked instead of advertising
-fictitious readiness. The rendered Level still needs animation,
-presentation and squad-command integration.
+fictitious readiness. The native scripted Charge director shares these Barge phases, but still
+requires authentic Level charging-range/visibility snapshots. Rendered
+animation, presentation and executable parity qualification remain pending.
 
 **Scout Beacon policy special:** the native policy Scout now supports
 the source's five one-use Beacon drops with a ten-second scaled-game
@@ -569,8 +575,8 @@ The graphical Level must still instantiate and register the Beacon's
 minion Squad, presentation and autonomous orders using the spawn event;
 these are not represented as magically complete in the native world.
 
-**Not yet implemented:** scripted BombingRun command coordination,
-complete Level-to-perception snapshot
+**Not yet implemented:** a production Level adapter for the source command
+snapshots and trigger events, complete Level-to-perception snapshot
 collection, GPU inference, and an ML-Agents-compatible learner. Unity targeting timers
 run on the Level's scaled update clock; this native implementation
 currently advances the same timer semantics on the game fixed-step delta,
