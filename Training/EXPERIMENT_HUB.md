@@ -1169,16 +1169,21 @@ file and exits after saving. The supervisor persists the request,
 reconciles marker delivery, and requires a signed successful exit for
 automatic release. Job Object cleanup still protects the process tree.
 
-On Windows and Linux, a successful native checkpoint Stop alone does
-**not** prove that the files required to resume are present. Before
-advertising `checkpoint_stop_verified`, the machine-local bridge
-requires the trusted adapter's `checkpoint_ready(context)` to return
-`true` after checking the saved artifacts and pinned configuration.
+On Windows and Linux, neither natural completion nor a successful native
+checkpoint Stop alone proves that the files required to resume are present.
+Before advertising `checkpoint_ready_verified` for a finished job or
+`checkpoint_stop_verified` for a checkpoint-preserving Stop, the
+machine-local bridge requires the trusted adapter's
+`checkpoint_ready(context)` to return `true` after checking the saved
+artifacts and pinned configuration.
 TinyBrains checks `latest.pt` and its profile; Courier checks the
 checkpoint summary, approved environment and population archives.
-If verification fails, the Stop remains terminal and its diagnostic is
-reported, but any prequeued checkpoint successor stays blocked. These
-structural checks do not replace a real trainer resume qualification.
+If verification fails, the job remains terminal and its diagnostic is
+reported, but any prequeued checkpoint successor stays blocked while
+independent successors can still advance after a natural finish. Older
+finished jobs without an artifact-verification receipt cannot authorize
+a new checkpoint continuation. These structural checks do not replace
+a real trainer resume qualification.
 CPU-only jobs mask
 common CUDA/HIP/ROCm selector environment variables, but do not
 provide enforceable GPU isolation; GPU requests remain blocked.
@@ -1347,8 +1352,8 @@ profile digest. The continuation runs on the original worker and its
 update count is additional. It reads the predecessor's checkpoint and
 writes into its own job directory, leaving earlier checkpoints intact.
 Train can also queue 2–16 TinyBrains continuation stages atomically.
-A successor stays unclaimed until its predecessor finishes and releases
-capacity. With native queue automation armed for the original worker,
+A successor stays unclaimed until its predecessor finishes with a verified
+resumable checkpoint and releases capacity. With native queue automation armed for the original worker,
 the Hub can allocate, start, and release each stage without a separate
 operator action. In an isolated Windows run, two one-update stages
 finished at cumulative updates 1 and 2. Peak outstanding claims was

@@ -840,7 +840,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const availableParents=(state.jobs||[]).filter(j=>
             ['tinybrains','courier'].includes(project)&&j.project_id===project&&!successors.has(j.id)&&(
                 j.assigned_machine_id&&j.dispatch_id&&(
-                    j.status==='finished'||(j.status==='stopped'&&
+                    (j.status==='finished'&&j.checkpoint_ready_verified===true)||
+                    (j.status==='stopped'&&
                         j.checkpoint_stop_verified===true&&j.capacity_released_at)||
                     ['start_requested','launch_requested','running'].includes(j.status))||
                 ['waiting_adapter','waiting_predecessor'].includes(j.status)));
@@ -848,7 +849,8 @@ document.addEventListener('DOMContentLoaded', () => {
             new Option('New experiment (no predecessor)',''),
             ...availableParents.map(j=>new Option(
                 j.configuration_name+' · '+j.status+
-                (j.checkpoint_stop_verified===true?' · checkpoint saved':'')+
+                (j.checkpoint_ready_verified===true||
+                    j.checkpoint_stop_verified===true?' · checkpoint verified':'')+
                 (!j.capacity_released_at?' · stage will wait':'')+' on '+
                 (state.machines.find(m=>m.id===(j.assigned_machine_id||
                     j.continuation_machine_id))?.name||
@@ -930,7 +932,7 @@ document.addEventListener('DOMContentLoaded', () => {
             ?'Prequeue checkpoint-continuation stages'
             :'Queue independent project jobs in sequence';
         $('hub-pipeline-description').textContent=checkpointPipeline
-            ?'Two to sixteen stages with the same approved configuration digest, on the original worker. Natural completion advances the next stage; a successful independent evaluation Stop also advances it only when the native supervisor verifies a saved checkpoint. Manual Stops and failures hold later stages for review.'
+            ?'Two to sixteen stages with the same approved configuration digest, on the original worker. Natural completion advances only with a verified saved checkpoint; evaluation-triggered Stop additionally requires native checkpoint-preserving shutdown. Manual Stops and failures hold later stages for review.'
             :'Two to sixteen fresh, independent jobs from any non-Bees project. Each job gets its own artifact lineage and may use a different machine. No checkpoint, optimizer or qualification result is inherited. A verified finish or an evaluation-driven Stop can advance the next job after capacity release. Manual Stops and failures do not advance. Queueing never starts training.';
         $('hub-pipeline-predecessor-label').textContent=checkpointPipeline
             ?'Continue an existing job (optional)'
