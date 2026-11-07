@@ -11,6 +11,9 @@
 //! server credentials or claim an in-memory queue is persistent storage.
 
 use serde::{Deserialize, Serialize};
+use std::io::Write;
+
+const CONNECTION_CHECKPOINT_VERSION: u32 = 1;
 
 use crate::outcomes::{
     OutcomeBatch, PendingStoreCommands, StoreAcknowledgement,
@@ -29,9 +32,20 @@ use crate::session::{
 /// retired when the WebSocket disconnects and newly requested after a
 /// new authenticated Level/session is established.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct NativeConnectionCheckpoint {
+    schema_version: u32,
     hashes: RequestHashAllocator,
     stores: PendingStoreCommands,
+}
+
+/// Borrowed serialization view: large StoreCommands queues are streamed
+/// directly instead of deep-cloned for every durable checkpoint write.
+#[derive(Serialize)]
+struct NativeConnectionCheckpointView<'a> {
+    schema_version: u32,
+    hashes: &'a RequestHashAllocator,
+    stores: &'a PendingStoreCommands,
 }
 
 impl NativeConnectionCheckpoint {
@@ -86,6 +100,9 @@ impl NativeHiveMindConnection {
     pub fn restore(
         snapshot: NativeConnectionCheckpoint,
     ) -> Result<Self, HiveMindProtocolError> {
+        if snapshot.schema_version != CONNECTION_CHECKPOINT_VERSION {
+            return Err(HiveMindProtocolError::InvalidRequest);
+        }
         snapshot.hashes.validate()?;
         if !snapshot.stores.owned_request_hashes()
             .all(|hash| snapshot.hashes.has_issued(hash))
@@ -105,9 +122,25 @@ impl NativeHiveMindConnection {
     /// This snapshot contains no authentication secrets.
     pub fn checkpoint(&self) -> NativeConnectionCheckpoint {
         NativeConnectionCheckpoint {
+            schema_version: CONNECTION_CHECKPOINT_VERSION,
             hashes: self.hashes.clone(),
             stores: self.stores.clone(),
         }
+    }
+
+    /// Write the SAME checkpoint format directly to the caller's writer.
+    /// No intermediate JSON Vec and no clone of the pending retry ledger.
+    /// The transport must use a durable, crash-safe file/database commit
+    /// before sending newly allocated requests. This method writes bytes;
+    /// it does not claim to fsync, atomically replace files or persist data.
+    pub fn write_checkpoint<W: Write>(
+        &self, writer: W,
+    ) -> Result<(), serde_json::Error> {
+        serde_json::to_writer(writer, &NativeConnectionCheckpointView {
+            schema_version: CONNECTION_CHECKPOINT_VERSION,
+            hashes: &self.hashes,
+            stores: &self.stores,
+        })
     }
 
     /// Allocate a Hash for setup, reconnect, matchup, settings or other
