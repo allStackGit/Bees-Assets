@@ -295,12 +295,14 @@ function finalEvaluationPending(snapshot,job,observedAt) {
             !['finished','stopped'].includes(candidate.status)||
             !candidate.capacity_released_at);
         if(incomplete.length) {
-            // Preserve final evaluation during an active tournament, not
-            // indefinitely for a selection whose next candidate is merely
-            // queued, failed or awaiting manual recovery.
+            // Only a fresh native observation keeps an old final model
+            // eligible while another contender is training. A persisted
+            // running status cannot prolong work across an agent outage.
             if(incomplete.every(candidate=>candidate?.dispatch_id&&
-                ['start_requested','launch_requested','running','stop_requested']
-                    .includes(candidate.status)))return true;
+                ['running','stop_requested'].includes(candidate.status)&&
+                candidate.live_execution?.dispatch_id===candidate.dispatch_id&&
+                ['running','stop_requested'].includes(
+                    candidate.live_execution.state)))return true;
             continue;
         }
         const lastRelease=Math.max(...candidates.map(candidate=>
@@ -1362,7 +1364,8 @@ class ExperimentHub {
             !report.evaluation_suites?.[projectId]?.includes(suiteId))
             return [];
         const observedAt=Date.now();
-        return this.state.jobs.filter(job=>{
+        const snapshot=this.snapshot();
+        return snapshot.jobs.filter(job=>{
             // Native liveness is per dispatch, not inferred from a fresh
             // agent heartbeat. Use the same 45-second observation window as
             // Monitor so a busy but uninspected service cannot remain
@@ -1372,7 +1375,7 @@ class ExperimentHub {
             return job.project_id===projectId&&job.assigned_machine_id===machineId&&
                 evaluationRules(job.evaluation_stop).some(rule=>rule.suite_id===suiteId)&&
                 UUID.test(job.dispatch_id||'')&&UUID.test(job.artifact_lineage_root_id||job.id)&&
-                (finalEvaluationPending(this.state,job,observedAt)&&this.state.reservations.some(lease=>
+                (finalEvaluationPending(snapshot,job,observedAt)&&snapshot.reservations.some(lease=>
                     lease.id===job.lease_id&&lease.job_id===job.id&&lease.machine_id===machineId&&
                     lease.status==='released'&&lease.released_at)||
                 (job.status==='running'&&observed?.dispatch_id===job.dispatch_id&&
