@@ -1606,7 +1606,15 @@ class ExperimentHub {
             // validated only after machine/job/dispatch ownership checks.
             const progress=report.progress==null||job.project_id==='ants'
                 ?null:validateProgress(report.progress,job.project_id);
-            if(['finished','failed','stopped'].includes(job.status))continue;
+            if(['finished','failed','stopped'].includes(job.status)) {
+                // After a coordinator restart, recheck an unreleased
+                // historical terminal dispatch without changing its
+                // durable terminal state or checkpoint authority.
+                if(report.state===job.status)
+                    accepted.set(report.job_id,{progress:null,evaluation:null,
+                        evaluationIssue:null,resources:null});
+                continue;
+            }
             if(!['start_requested','launch_requested','running',
                     'stop_requested','unverified'].includes(job.status))
                 throw Error('Job is not awaiting a native execution report.');
@@ -1790,6 +1798,9 @@ class ExperimentHub {
         const jobs=snapshot.jobs.filter(j=>j.assigned_machine_id===machineId &&
             (j.dispatch_id&&['start_requested','launch_requested','running',
                 'stop_requested','unverified'].includes(j.status)||
+             j.dispatch_id&&j.automation_start_session_id&&
+                !j.capacity_released_at&&
+                ['finished','stopped'].includes(j.status)||
              j.status==='waiting_adapter'&&
                 j.gpu_qualification?.status==='requested'));
         // A native Stop acknowledgement means the local supervisor has
