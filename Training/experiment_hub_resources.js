@@ -70,7 +70,12 @@ function remaining(machine,reservations) {
         // its original reservation is reconciled or released.
         if(!Array.isArray(ids)||!int(count)||count>32||
             ids.length!==count||new Set(ids).size!==ids.length||
-            ids.some(id=>!indexed.has(id))) {
+            ids.some(id=>!indexed.has(id))||
+            (count===0&&(resources.gpu_mode!=null&&
+                resources.gpu_mode!=='exclusive'||resources.gpu_vram_mb||
+                resources.min_gpu_vram_mb||
+                resources.gpu_compute_pct!=null&&
+                resources.gpu_compute_pct!==100))) {
             for(const gpu of capacity)gpu.exclusive=true;
             continue;
         }
