@@ -1076,9 +1076,11 @@ class ExperimentHub {
         }).map(job=>{
             const rule=evaluationRules(job.evaluation_stop)
                 .find(candidate=>candidate.suite_id===suiteId);
+            const frozenSuite=rule.suite_sha256||
+                job.evaluation_suite_definitions?.[rule.suite_id];
             return {job_id:job.id,dispatch_id:job.dispatch_id,
                 artifact_lineage_root_id:job.artifact_lineage_root_id||job.id,
-                ...(rule.suite_sha256?{suite_sha256:rule.suite_sha256}:{}),
+                ...(frozenSuite?{suite_sha256:frozenSuite}:{}),
                 min_trials:rule.min_trials,
                 min_success_rate:rule.min_success_rate,
                 required_suite_ids:evaluationRules(job.evaluation_stop)
