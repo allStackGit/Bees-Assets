@@ -13,7 +13,7 @@ use bees_gameplay::squads::SquadRosterError;
 use bees_hivemind::session::SquadLifetime;
 use bees_sim::collision::{Aabb, Pose};
 use bees_sim::combat::ShipVitals;
-use bees_sim::combat_world::{CombatWorld, CombatWorldError};
+use bees_sim::combat_world::{CombatWorld, CombatWorldError, NativeTurretSpec};
 use bees_sim::control::PolicyFrame;
 use bees_sim::movement::ShipMotion;
 use bees_sim::simulation::{Simulation, World, WorldId};
@@ -32,10 +32,27 @@ pub struct NativeAuthoredShip {
     pub motion: ShipMotion,
     pub original_health: i32,
     pub fleet_ship_id: Option<i64>,
-    pub policy: Option<(PolicyFrame, bool)>,
+    pub policy: Option<NativeAuthoredPolicy>,
 }
 
 /// Exact source SquadLifetime. A pooled Squad ID alone is not sufficient.
+/// Complete, real native rotating-turret configuration supplied by the
+/// original Unity weapon instances, never guessed from ship class.
+pub struct NativeAuthoredTurret {
+    pub slot: usize,
+    pub spec: NativeTurretSpec,
+}
+
+/// A genuine Level/agent policy binding with its actual physical weapon
+/// slots and source cease-fire state. No implicit policy for non-agent
+/// ships, and no simulated aiming without a registered real turret.
+pub struct NativeAuthoredPolicy {
+    pub frame: PolicyFrame,
+    pub movement_disabled: bool,
+    pub cease_fire: bool,
+    pub turrets: Vec<NativeAuthoredTurret>,
+}
+
 /// The actual Stage/Level spawn order across ship and static obstacle
 /// types. Do not sort by entity ID or type: Unity's source list order
 /// matters for event ordering and source identity allocation.
@@ -177,9 +194,18 @@ impl NativeSceneAssets {
                 combat.set_ship_fleet_identity(ship.entity_id, fleet_id)
                     .map_err(NativeSceneBuildError::Combat)?;
             }
-            if let Some((frame, movement_disabled)) = ship.policy {
-                combat.bind_policy_ship(ship.entity_id, frame, movement_disabled)
-                    .map_err(NativeSceneBuildError::Combat)?;
+            if let Some(policy) = ship.policy {
+                combat.bind_policy_ship(
+                    ship.entity_id, policy.frame, policy.movement_disabled,
+                ).map_err(NativeSceneBuildError::Combat)?;
+                combat.set_policy_ship_cease_fire(
+                    ship.entity_id, policy.cease_fire,
+                ).map_err(NativeSceneBuildError::Combat)?;
+                for turret in policy.turrets {
+                    combat.configure_policy_turret(
+                        ship.entity_id, turret.slot, turret.spec,
+                    ).map_err(NativeSceneBuildError::Combat)?;
+                }
             }
         }
         if combat.total_living_ships() == 0 {
