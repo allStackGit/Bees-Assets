@@ -666,7 +666,53 @@ expose the Hub administrator listener to ordinary remote workers. CPU
 quotas are not exclusive cores and this timer is not a substitute for
 production coexistence qualification.
 
-## Linux native supervisor and authenticated dispatch (CPU-only)
+### Opt-in Windows logon startup
+
+`experiment_hub_windows_task.ps1` previews a disabled current-user Task
+Scheduler definition. `-Install` registers it without enabling or starting it
+and refuses to overwrite an existing task:
+
+```powershell
+# Preview first, then install the disabled coordinator task.
+.\Training\experiment_hub_windows_task.ps1 -Role coordinator
+.\Training\experiment_hub_windows_task.ps1 -Role coordinator -Install
+
+# Agent configuration belongs in a private local environment file.
+.\Training\experiment_hub_windows_task.ps1 -Role agent -EnvironmentFile C:\Private\hub-agent.env
+.\Training\experiment_hub_windows_task.ps1 -Role agent -EnvironmentFile C:\Private\hub-agent.env -Install
+```
+
+In Task Scheduler, show hidden tasks and review
+`Bees-ExperimentHub-coordinator` or `Bees-ExperimentHub-agent` before enabling
+it. Confirm there is a single execution owner before starting a task alongside
+an existing coordinator or agent. The task runs with the installing user's
+normal privileges, 30 seconds after that user's logon, without storing a
+password. It requires that user to remain logged on; this is not a
+before-login Windows service. It ignores overlapping triggers and has no
+runtime limit. Disabling a task prevents subsequent launches; manage an
+active job through the Hub's existing controls.
+
+Use `-TrainingDirectory` and `-NodePath` for pinned absolute local paths.
+An agent requires `-EnvironmentFile`; a coordinator can use one too.
+Environment files require Node 22 or newer. Protect them with NTFS permissions
+for the intended account before installation. Their Hub settings replace
+inherited `EXPERIMENT_HUB_*` settings at launch, so interactive-session
+configuration cannot override the reviewed file. Tokens are not embedded in
+the task definition. Keep the launcher, checkout and Node installation at
+their configured paths.
+
+The definition requests three native task-start retries at one-minute
+intervals. **Application process-failure recovery remains unqualified**:
+isolated checks observed the correct nonzero exit status but did not observe
+an automatic retry after an inert Node failure. Do not rely on this task as
+a crash-recovery service. Inspect Task Scheduler's Last Run Result after a
+failure; the task does not itself capture application output.
+
+Windows qualification exercised disabled registration/removal and an actual
+scheduled launch through Windows PowerShell 5.1, including paths containing
+spaces, an environment file, inherited-setting replacement and child exit
+status propagation. No production task was installed. Reboot/logon recovery,
+logoff behavior and production training coexistence remain unverified.
 
 ## Linux native supervisor and authenticated dispatch (CPU-only)
 
