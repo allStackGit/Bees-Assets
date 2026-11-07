@@ -2649,6 +2649,15 @@ class ExperimentHub {
         if(new Set(roots).size!==roots.length||
             new Set(jobs.map(thresholds)).size!==1)
             throw Error('Candidate models need independent lineages and identical evaluation thresholds.');
+        const suiteDigests=new Map();
+        for(const job of jobs)for(const rule of evaluationRules(job.evaluation_stop)) {
+            const digest=rule.suite_sha256||job.evaluation_suite_definitions?.[rule.suite_id];
+            if(!digest)continue;
+            const previous=suiteDigests.get(rule.suite_id);
+            if(previous&&previous!==digest)
+                throw Error('Candidate jobs have different suite definitions for '+rule.suite_id+'.');
+            suiteDigests.set(rule.suite_id,digest);
+        }
         if(jobs.some(j=>this.state.jobs.some(child=>child.status!=='cancelled'&&
             (child.continuation_of_job_id===j.id||child.after_job_id===j.id))))
             throw Error('A candidate already has a queued successor.');

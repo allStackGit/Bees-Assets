@@ -1320,6 +1320,10 @@ An isolated Windows Courier run evaluated two independently trained final
 checkpoints against two suites each. Automation promoted the tie-break
 winner, resumed its exact checkpoint on the original worker, and
 released the continuation's claim after completion.
+The same workflow also passed with two separately enrolled workers on
+one Windows host, each with its own supervisor, artifacts and evaluator.
+Selection scheduling refuses conflicting suite fingerprints already known
+at plan creation. Physical multi-host execution remains unqualified.
 All prospective candidates must use the same approved continuation
 environment/profile fingerprint. The native continuation remains on
 its original machine with the original artifact lineage.
