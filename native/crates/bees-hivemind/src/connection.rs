@@ -218,6 +218,10 @@ impl NativeHiveMindConnection {
         self.stores.pending_count()
     }
 
+    pub fn pending_reconciliation_count(&self) -> usize {
+        self.stores.reconciliation_count()
+    }
+
     pub fn pending_request_count(&self) -> usize {
         self.session.pending_count()
     }

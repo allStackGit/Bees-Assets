@@ -37,9 +37,11 @@ use bees_sim::squad_movement::{SquadFormationMember, SquadFormationOptions};
 use bees_sim::simulation::World;
 use bees_sim::policy::Decision;
 use bees_sim::simulation::{Simulation, WorldId};
+use bees_sim::telemetry::Measurements;
 
 use crate::inference::{
-    NativeLevelInferenceBatch, NativePolicyInference, NativePolicyRoute,
+    NativeInferenceMeasurements, NativeLevelInferenceBatch,
+    NativePolicyInference, NativePolicyRoute,
 };
 use crate::commands::{
     GameCommandError, HiveMindCommandSettings, NativeBombWeapon,
@@ -376,6 +378,28 @@ pub enum NativeLevelDriverError {
     AlreadyRegistered,
     UnstartedWorldRequired,
     WorldIdentityChanged,
+}
+
+/// On-demand status derived exclusively from the authoritative per-world
+/// simulation, the already-owned inference sampler, and ONE HiveMind
+/// connection. No background clock, independent health state, log scanning,
+/// per-step history, or game/training fork is introduced.
+#[derive(Clone, Copy, Debug)]
+pub struct NativeRuntimeStatus {
+    pub simulation: Measurements,
+    pub inference: NativeInferenceMeasurements,
+    pub total_worlds: usize,
+    pub running_worlds: usize,
+    pub completed_worlds: usize,
+    pub aborted_worlds: usize,
+    pub failed_worlds: usize,
+    pub living_ships: usize,
+    pub active_commands: usize,
+    pub queued_notifications: usize,
+    pub queued_squad_retirements: usize,
+    pub pending_hivemind_requests: usize,
+    pub pending_store_commands: usize,
+    pub pending_store_reconciliations: usize,
 }
 
 /// Summary of one explicit bounded native rollout window, using the
@@ -732,6 +756,74 @@ impl NativeLevelBatchDriver {
                 ),
         };
         Ok(Some(delivery))
+    }
+
+    /// Read a single consistent local snapshot between rollout windows.
+    /// Runs in O(number of worlds), independent of fleet size; all ship,
+    /// command and notification counts are already maintained by their
+    /// canonical owners. Sampled durations and model counters retain their
+    /// original denominators, so dashboard consumers do not fabricate
+    /// average inference throughput from missing timing samples.
+    pub fn runtime_status<M, A>(
+        &self,
+        simulation: &Simulation<NativeLevelState<M, A>, NativeLevelRules>,
+        connection: &NativeHiveMindConnection,
+    ) -> Result<NativeRuntimeStatus, NativeLevelRoutingError>
+    where
+        M: NativeLevelRewardMetadata + NativeLevelCommandContext,
+        A: FnMut(SquadLifetime, i64) -> Result<SquadLifetime, SquadRosterError>,
+    {
+        if self.worlds.len() != simulation.world_count() {
+            return Err(NativeLevelRoutingError::UnregisteredWorldCount);
+        }
+        let mut status = NativeRuntimeStatus {
+            simulation: simulation.measurements(),
+            inference: self.inference.measurements(),
+            total_worlds: simulation.world_count(),
+            running_worlds: 0,
+            completed_worlds: 0,
+            aborted_worlds: 0,
+            failed_worlds: 0,
+            living_ships: 0,
+            active_commands: 0,
+            queued_notifications: 0,
+            queued_squad_retirements: 0,
+            pending_hivemind_requests: connection.pending_request_count(),
+            pending_store_commands: connection.pending_store_count(),
+            pending_store_reconciliations:
+                connection.pending_reconciliation_count(),
+        };
+        for (index, slot) in self.worlds.iter().enumerate() {
+            let world = simulation.world(index)
+                .expect("validated synchronous world count");
+            if world.id != slot.id {
+                return Err(NativeLevelRoutingError::WorldIdentityChanged {
+                    index,
+                });
+            }
+            if world.episode_revision() != slot.revision {
+                return Err(NativeLevelRoutingError::EpisodeRevisionChanged {
+                    index,
+                });
+            }
+            let events = &world.state.events;
+            if events.was_aborted() {
+                status.aborted_worlds += 1;
+            } else if world.is_failed() || events.is_failed() {
+                status.failed_worlds += 1;
+            } else if events.completed() {
+                status.completed_worlds += 1;
+            } else {
+                status.running_worlds += 1;
+            }
+            status.living_ships += world.state.combat.total_living_ships();
+            status.active_commands += events.active_command_count();
+            status.queued_notifications +=
+                events.pending_notifications().len();
+            status.queued_squad_retirements +=
+                events.pending_session_retirements().len();
+        }
+        Ok(status)
     }
 
     pub fn registered_world_count(&self) -> usize {
