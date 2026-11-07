@@ -5,6 +5,7 @@
 //! token. The graphical Level owns the minion Squad and presentation adapter.
 
 use super::*;
+use crate::ship_assets::BEACON_TYPE;
 use crate::combat::ShipVitals;
 
 /// ConfigData.Gameplay constants. These are source gameplay defaults,
@@ -12,7 +13,6 @@ use crate::combat::ShipVitals;
 const COOLDOWN_SECONDS: f32 = 10.0;
 const MAX_BEACONS: u8 = 5;
 pub const SCOUT_TYPE: u8 = 18;
-const BEACON_TYPE: u8 = 14;
 
 /// Level-supplied real prefab metadata. ship-colliders.json intentionally
 /// has no health or movement stats; never invent those from the hull.
@@ -74,7 +74,7 @@ impl CombatWorld {
             !spec.valid() {
             return Err(CombatWorldError::InvalidPolicyScout);
         }
-        if !self.fleet_id_by_ship.get(&scout_id).is_some_and(|&id| id > 0) {
+        if !self.fleet_id_by_ship.get(&scout_id).is_some_and(|&id| id != 0) {
             return Err(CombatWorldError::InvalidFleetIdentity);
         }
         let runtime = self.policy_ship_runtime.get_mut(&scout_id)
@@ -103,7 +103,7 @@ impl CombatWorld {
         if self.ships[index].ship_type != SCOUT_TYPE ||
             self.ships[index].vitals.is_dead() ||
             !self.physics.ships()[index].active ||
-            !self.fleet_id_by_ship.get(&scout_id).is_some_and(|&id| id > 0) ||
+            !self.fleet_id_by_ship.get(&scout_id).is_some_and(|&id| id != 0) ||
             !spec.valid() ||
             self.scout_beacon_specs.contains_key(&scout_id) ||
             self.policy_ship_runtime.contains_key(&scout_id) {

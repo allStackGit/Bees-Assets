@@ -20,7 +20,7 @@ impl CombatWorld {
             bomb_power < 0 || self.fire_barge_bomb_powers.contains_key(&ship_id) {
             return Err(CombatWorldError::InvalidPolicyFireBarge);
         }
-        if !self.fleet_id_by_ship.get(&ship_id).is_some_and(|&id| id > 0) {
+        if !self.fleet_id_by_ship.get(&ship_id).is_some_and(|&id| id != 0) {
             return Err(CombatWorldError::InvalidFleetIdentity);
         }
         self.fire_barge_bomb_powers.insert(ship_id, bomb_power);

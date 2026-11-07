@@ -10,6 +10,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use bees_hivemind::session::SquadLifetime;
 use bees_sim::combat_world::{CombatEvent, CombatWorld};
+use bees_sim::ship_assets::BEACON_TYPE;
 use bees_sim::episode_terminal::{
     EpisodeDeathAttribution, EpisodeTerminalError, EpisodeTerminalResult,
     EpisodeTerminalRewards, NativeEpisodeTerminal,
@@ -20,7 +21,6 @@ use crate::commands::{
 };
 
 const SCOUT_TYPE: u8 = 18;
-const BEACON_TYPE: u8 = 14;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SquadRosterError {

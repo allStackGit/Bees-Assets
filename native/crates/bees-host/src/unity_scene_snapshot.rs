@@ -57,6 +57,7 @@ use crate::scene_builder::{
     NativeAuthoredEntity, NativeAuthoredShip, NativeAuthoredPolicy,
     NativeAuthoredTurret, NativeAuthoredSquad, NativeAuthoredLevel,
     NativeAuthoredGroups, NativeRuntimeBuildError,
+    NativeAuthoredPolicyCapabilities, NativeHealingEligibility,
 };
 use crate::policy_only_metadata::{
     NativeSourceVision,
@@ -67,13 +68,46 @@ use crate::scene_assets::NativeSceneAssets;
 use crate::runtime::NativeHostRuntime;
 use crate::durable_connection::DurableHiveMindConnection;
 
-const SNAPSHOT_VERSION: u32 = 15;
+const SNAPSHOT_VERSION: u32 = 16;
 
 #[derive(Deserialize, Clone, Copy)]
 struct UnityVec2 { x: f32, y: f32 }
 
 #[derive(Deserialize, Clone, Copy)]
 struct UnityVec4 { x: f32, y: f32, z: f32, w: f32 }
+
+#[derive(Deserialize, Clone, Copy)]
+struct UnitySize { x: u32, y: u32 }
+
+#[derive(Deserialize)]
+struct UnitySupportCollider {
+    kind: String,
+    vertices: Vec<UnityVec2>,
+    offset: UnityVec2,
+    radius: f32,
+}
+
+impl UnitySupportCollider {
+    fn into_shape(self, id: i64) -> Result<ShipShape, NativeSnapshotError> {
+        let invalid = || NativeSnapshotError::InvalidShip(id);
+        match self.kind.as_str() {
+            "box" if self.vertices.len() == 4 => {
+                let corners = [self.vertices[0].into_vec(), self.vertices[1].into_vec(),
+                    self.vertices[2].into_vec(), self.vertices[3].into_vec()];
+                live_box_shape(corners).map_err(|_| invalid())
+            }
+            "polygon" if (3..=8192).contains(&self.vertices.len()) => {
+                let vertices: Vec<_> = self.vertices.into_iter().map(UnityVec2::into_vec).collect();
+                if vertices.iter().any(|v| !v.is_finite()) { return Err(invalid()); }
+                Ok(ShipShape::Polygon(Arc::from(vertices.into_boxed_slice())))
+            }
+            "circle" if self.vertices.is_empty() && self.offset.into_vec().is_finite() &&
+                self.radius.is_finite() && self.radius > 0.0 =>
+                Ok(ShipShape::Circle { offset: self.offset.into_vec(), radius: self.radius }),
+            _ => Err(invalid()),
+        }
+    }
+}
 
 impl UnityVec2 {
     fn into_vec(self) -> Vec2 { Vec2::new(self.x, self.y) }
@@ -86,6 +120,9 @@ struct UnitySnapshot {
     stage_name: String,
     fixed_dt_seconds: f32,
     shots_harmless: bool,
+    bee_side: i32,
+    human_side: i32,
+    beehive_size_pixels: UnitySize,
     has_policy_episode: bool,
     policy_episode: Option<UnityPolicyEpisode>,
     min: UnityVec2,
@@ -122,6 +159,12 @@ struct UnityShip {
     current_tsv: i32,
     mined_cargo: i32,
     original_health: i32,
+    size_class: f32,
+    size_pixels: UnitySize,
+    has_healing_zone: bool,
+    healing_zone: Option<UnitySupportCollider>,
+    has_warp_zone: bool,
+    warp_zone: Option<UnitySupportCollider>,
     fleet_ship_id: i64,
     persistent_fleet: bool,
     position: UnityVec2,
@@ -742,14 +785,18 @@ impl NativePhysicalScene {
         if raw.schema_version != SNAPSHOT_VERSION {
             return Err(NativeSnapshotError::UnsupportedSchema(raw.schema_version));
         }
+        if raw.bee_side <= 0 || raw.human_side <= 0 || raw.bee_side == raw.human_side ||
+            raw.beehive_size_pixels.x == 0 || raw.beehive_size_pixels.y == 0 {
+            return Err(NativeSnapshotError::InvalidLevelBounds);
+        }
         let source_episode = if raw.has_policy_episode {
             let raw_episode = raw.policy_episode
                 .ok_or(NativeSnapshotError::InvalidEpisodeSource)?;
             let baselines = raw_episode.discovery_baselines
                 .ok_or(NativeSnapshotError::InvalidEpisodeSource)?;
             if baselines.len() != 8 ||
-                raw_episode.bee_side <= 0 ||
-                raw_episode.human_side <= 0 ||
+                raw_episode.bee_side != raw.bee_side ||
+                raw_episode.human_side != raw.human_side ||
                 raw_episode.bee_side == raw_episode.human_side ||
                 raw_episode.bee_starting_tsv <= 0 ||
                 raw_episode.human_starting_tsv <= 0 ||
@@ -815,6 +862,8 @@ impl NativePhysicalScene {
         for ship in raw.ships {
             if ship.entity_id <= 0 || ship.side <= 0 ||
                 ship.original_health <= 0 ||
+                !ship.size_class.is_finite() || ship.size_class < 0.0 ||
+                ship.size_pixels.x == 0 || ship.size_pixels.y == 0 ||
                 ship.base_speed < 0.0 || ship.current_speed < 0.0 ||
                 !ship.base_speed.is_finite() || !ship.current_speed.is_finite() ||
                 !ship.rotation_speed.is_finite() || ship.rotation_speed < 0.0 ||
@@ -869,6 +918,35 @@ impl NativePhysicalScene {
             motion.is_policy_controlled = ship.is_rl_policy_controlled;
             motion.is_moving = ship.is_moving;
             motion.movement_direction = ship.movement_direction;
+
+            let healing_zone = if ship.has_healing_zone {
+                if ship.ship_type != 2 { return Err(NativeSnapshotError::InvalidShip(ship.entity_id)); }
+                Some(ship.healing_zone.ok_or(NativeSnapshotError::InvalidShip(ship.entity_id))?
+                    .into_shape(ship.entity_id)?)
+            } else { None };
+            let warp_zone = if ship.has_warp_zone {
+                if ship.ship_type != 20 { return Err(NativeSnapshotError::InvalidShip(ship.entity_id)); }
+                Some(ship.warp_zone.ok_or(NativeSnapshotError::InvalidShip(ship.entity_id))?
+                    .into_shape(ship.entity_id)?)
+            } else { None };
+            let can_mine = matches!(ship.ship_type, 4 | 9);
+            let can_heal = ship.side == raw.bee_side &&
+                ship.size_pixels.x < raw.beehive_size_pixels.x &&
+                ship.size_pixels.y < raw.beehive_size_pixels.y;
+            let can_warp = ship.side == raw.human_side && ship.ship_type != 20;
+            if ship.has_bound_policy && (ship.mining_possible != can_mine ||
+                ship.healing_possible != can_heal || ship.warp_possible != can_warp) {
+                return Err(NativeSnapshotError::InvalidPolicySource(ship.entity_id));
+            }
+            let policy_capabilities = NativeAuthoredPolicyCapabilities {
+                mining: can_mine,
+                healing: can_heal.then_some(NativeHealingEligibility {
+                    bee_side: raw.bee_side,
+                    ship_size_pixels: [ship.size_pixels.x, ship.size_pixels.y],
+                    beehive_size_pixels: [raw.beehive_size_pixels.x, raw.beehive_size_pixels.y],
+                }),
+                warp_human_side: can_warp.then_some(raw.human_side),
+            };
 
             let mut observed_weapons = [None; 5];
             for weapon in ship.observed_weapons {
@@ -1070,7 +1148,9 @@ impl NativePhysicalScene {
                 entity_id: ship.entity_id, ship_type: ship.ship_type,
                 side: ship.side, vitals, motion,
                 original_health: ship.original_health,
-                fleet_ship_id: (ship.fleet_ship_id > 0)
+                size_class: ship.size_class,
+                healing_zone, warp_zone, policy_capabilities,
+                fleet_ship_id: (ship.fleet_ship_id != 0)
                     .then_some(ship.fleet_ship_id),
                 policy: None,
             }));

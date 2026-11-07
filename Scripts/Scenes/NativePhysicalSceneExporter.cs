@@ -28,6 +28,11 @@ internal static class NativePhysicalSceneExporter
         public int side;
         public int health, max_health, max_tsv, current_tsv;
         public int mined_cargo, original_health;
+        public float size_class;
+        public Vector2Int size_pixels;
+        public bool has_healing_zone, has_warp_zone;
+        public SourceCollider healing_zone = new SourceCollider();
+        public SourceCollider warp_zone = new SourceCollider();
         public long fleet_ship_id;
         public bool persistent_fleet;
         public Vector2 position, body_velocity, target_coordinates;
@@ -56,6 +61,15 @@ internal static class NativePhysicalSceneExporter
         public List<SourceObservedWeapon> observed_weapons =
             new List<SourceObservedWeapon>();
         public List<SourceTurret> turrets = new List<SourceTurret>();
+    }
+
+    [Serializable]
+    private sealed class SourceCollider
+    {
+        public string kind = "";
+        public List<Vector2> vertices = new List<Vector2>();
+        public Vector2 offset;
+        public float radius;
     }
 
     [Serializable]
@@ -134,11 +148,13 @@ internal static class NativePhysicalSceneExporter
     [Serializable]
     private sealed class PhysicalScene
     {
-        public int schema_version = 15;
+        public int schema_version = 16;
         public string level_name;
         public string stage_name;
         public float fixed_dt_seconds;
         public bool shots_harmless;
+        public int bee_side, human_side;
+        public Vector2Int beehive_size_pixels;
         public bool has_policy_episode;
         public SourcePolicyEpisode policy_episode = new SourcePolicyEpisode();
         public Vector2 min, max;
@@ -159,6 +175,7 @@ internal static class NativePhysicalSceneExporter
         var selected = Selection.activeGameObject;
         var level = selected == null ? null : selected.GetComponent<Level>();
         if (level == null || level.Stage == null || level.State == null ||
+            ConfigData.Configuration == null ||
             !IsFinite(level.MinX) || !IsFinite(level.MaxX) ||
             !IsFinite(level.MinY) || !IsFinite(level.MaxY) ||
             level.MinX >= level.MaxX || level.MinY >= level.MaxY ||
@@ -176,6 +193,9 @@ internal static class NativePhysicalSceneExporter
             fixed_dt_seconds = level.Stage.FixedDeltaTime,
             stage_name = level.Stage.gameObject.name,
             shots_harmless = level.Stage.MakeShotsHarmless,
+            bee_side = ConfigData.Configuration.BeeSide,
+            human_side = ConfigData.Configuration.HumanSide,
+            beehive_size_pixels = ConfigData.ShipSizes[ConfigData.ShipTypes.Beehive],
             min = new Vector2(level.MinX, level.MinY),
             max = new Vector2(level.MaxX, level.MaxY),
             navigation_map_width = level.MapWidth,
@@ -235,6 +255,13 @@ internal static class NativePhysicalSceneExporter
                     (ship == null ? "<null>" : ship.name));
             }
             var fleet = ship.FleetShip;
+            if (!IsFinite(ship.SizeClass) || ship.SizeClass < 0f)
+                throw new InvalidOperationException("Invalid source SizeClass on ship " + ship.Id);
+            Collider2D healingZone = (ship as Beehive)?.HealCollider;
+            Collider2D warpZone = (ship as WarpGate)?.WarpCollider;
+            if ((ship is Beehive && healingZone == null) ||
+                (ship is WarpGate && warpZone == null))
+                throw new InvalidOperationException("Missing authored support collider on ship " + ship.Id);
             bool hasCommunication = RlOneVsOneAgent.TryReadCommunication(
                 ship, out Vector4 communication);
             bool hasBoundPolicy = RlOneVsOneAgent.TryReadBoundPolicy(
@@ -262,6 +289,12 @@ internal static class NativePhysicalSceneExporter
                 current_tsv = ship.Tsv,
                 mined_cargo = fleet.MineralsMinedThisLevel,
                 original_health = ship.OriginalHealth,
+                size_class = ship.SizeClass,
+                size_pixels = ConfigData.ShipSizes[ship.ShipType],
+                has_healing_zone = healingZone != null && healingZone.isActiveAndEnabled,
+                has_warp_zone = warpZone != null && warpZone.isActiveAndEnabled,
+                healing_zone = ExportShipSupportZone(level, ship, healingZone),
+                warp_zone = ExportShipSupportZone(level, ship, warpZone),
                 fleet_ship_id = fleet.Id,
                 persistent_fleet = fleet.Id > 0 &&
                     !ship.IsMinionShip && !ship.IsCarrierShip,
@@ -652,12 +685,30 @@ internal static class NativePhysicalSceneExporter
                 entry.linked_obstacle_id = tank.TargetObstacle.Id;
             }
         }
+        SourceCollider shape = ExportColliderShape(map, collider, entry.position, entry.rotation_degrees);
+        entry.collider_kind = shape.kind;
+        entry.collider_vertices = shape.vertices;
+        entry.circle_offset = shape.offset;
+        entry.circle_radius = shape.radius;
+        snapshot.map_objects.Add(entry);
+    }
+
+    private static SourceCollider ExportShipSupportZone(Level level, Ship ship, Collider2D collider)
+    {
+        if (collider == null || !collider.isActiveAndEnabled) return new SourceCollider();
+        return ExportColliderShape(level.Map.Transform, collider, ship.GetPosition(), ship.Rotation);
+    }
+
+    private static SourceCollider ExportColliderShape(
+        Transform map, Collider2D collider, Vector2 rootPosition, float rootRotation)
+    {
+        var shape = new SourceCollider();
         if (collider is BoxCollider2D box)
         {
             if (box.edgeRadius != 0f)
                 throw new InvalidOperationException(
-                    "Rounded MapObject box is not representable: " + obj.name);
-            entry.collider_kind = "box";
+                    "Rounded authored box is not representable: " + collider.name);
+            shape.kind = "box";
             Vector2 h = box.size * 0.5f;
             Vector2 c = box.offset;
             Vector2[] corners = {
@@ -666,20 +717,20 @@ internal static class NativePhysicalSceneExporter
                 c + new Vector2(h.x, h.y),
                 c + new Vector2(-h.x, h.y),
             };
-            ExportColliderVertices(map, box, entry.position,
-                entry.rotation_degrees, corners, entry.collider_vertices);
+            ExportColliderVertices(map, box, rootPosition,
+                rootRotation, corners, shape.vertices);
         }
         else if (collider is PolygonCollider2D polygon)
         {
             if (polygon.pathCount != 1)
                 throw new InvalidOperationException(
-                    "MapObject requires a single authored polygon path: " + obj.name);
-            entry.collider_kind = "polygon";
+                    "Collider requires a single authored polygon path: " + collider.name);
+            shape.kind = "polygon";
             Vector2[] points = polygon.GetPath(0);
             for (int i = 0; i < points.Length; i++)
                 points[i] += polygon.offset;
-            ExportColliderVertices(map, polygon, entry.position,
-                entry.rotation_degrees, points, entry.collider_vertices);
+            ExportColliderVertices(map, polygon, rootPosition,
+                rootRotation, points, shape.vertices);
         }
         else if (collider is CircleCollider2D circle)
         {
@@ -698,21 +749,21 @@ internal static class NativePhysicalSceneExporter
                 Mathf.Abs(radiusX - radiusY) > limit ||
                 Mathf.Abs(Vector2.Dot(x, y)) > limit * Mathf.Max(radiusX, radiusY))
                 throw new InvalidOperationException(
-                    "Scaled MapObject circle is not isotropic: " + obj.name);
-            entry.collider_kind = "circle";
-            entry.circle_radius = (radiusX + radiusY) * 0.5f;
+                    "Scaled authored circle is not isotropic: " + collider.name);
+            shape.kind = "circle";
+            shape.radius = (radiusX + radiusY) * 0.5f;
             Vector2 center = map.InverseTransformPoint(
                 circle.transform.TransformPoint(circle.offset));
-            entry.circle_offset = Quaternion.Euler(
-                0f, 0f, -entry.rotation_degrees) * (center - entry.position);
+            shape.offset = Quaternion.Euler(
+                0f, 0f, -rootRotation) * (center - rootPosition);
         }
         else
         {
             throw new InvalidOperationException(
-                "Unsupported primary MapObject Collider2D: " +
+                "Unsupported primary authored Collider2D: " +
                 collider.GetType().Name);
         }
-        snapshot.map_objects.Add(entry);
+        return shape;
     }
 
     private static List<SourceSelfWeapon> ExportNonTurretSelfWeapons(Ship ship)

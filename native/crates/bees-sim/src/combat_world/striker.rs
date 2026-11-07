@@ -110,7 +110,7 @@ impl CombatWorld {
             (self.physics.ships()[index].motion.is_policy_controlled &&
                 !self.physics.ships()[index].motion.user_controlled) ||
             !self.fleet_id_by_ship.get(&striker_id)
-                .is_some_and(|&id| id > 0) {
+                .is_some_and(|&id| id != 0) {
             return Err(CombatWorldError::InvalidGameStriker);
         }
         if let Some(carrier_id) = carrier.carrier_id {
@@ -246,7 +246,7 @@ impl CombatWorld {
             return Err(CombatWorldError::InvalidPolicyStriker);
         }
         if !self.fleet_id_by_ship.get(&striker_id)
-            .is_some_and(|&fleet_id| fleet_id > 0) {
+            .is_some_and(|&fleet_id| fleet_id != 0) {
             return Err(CombatWorldError::InvalidFleetIdentity);
         }
         let runtime = self.policy_ship_runtime.get_mut(&striker_id)

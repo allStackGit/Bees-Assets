@@ -104,7 +104,7 @@ rendering, full parity or production durability of all app-side effects.
 Do not use its partial trajectories as valid learner data. Native
 Windows/Linux execution and throughput are not yet verified.
 
-## Unity scene import (schema 15)
+## Unity scene import (schema 16)
 
 **Bees > Native > Export Selected Level Physical Scene** captures a
 source-authored initial Unity Level, not a resumable match checkpoint.
@@ -114,6 +114,23 @@ controller/frame/capability inputs, episode starting TSV, discovery
 baselines, navigation frame and Stage damage settings. Unsupported
 geometry, missing source identity and partial active combat state fail
 closed rather than generating plausible replacement values.
+
+Schema 16 additionally records actual `Ship.SizeClass`, configured ship and
+Beehive pixel sizes, faction IDs, and active Beehive HealCollider / WarpGate
+WarpCollider geometry in the owning ship's body frame. Boxes, single-path
+polygons and isotropically transformed circles use one exporter shared with
+MapObjects. Older scene exports must be re-exported; missing inputs are not
+estimated from health, hull radius or old capability-observation bits.
+
+The shared scene builder installs every ship's original-health collision
+profile and support zones, then binds real policy mining/healing/warp
+eligibility. Readiness comes from the world-owned contact/cooldown state.
+The source eligibility bits are checked against the exported faction, type
+and size inputs. New ship hull geometry is ready at tick zero, so initial
+observations and masks do not require an artificial warm-up physics step.
+Signed FleetShip identities are preserved: negative training/campaign/minion
+IDs remain transient; positive IDs alone do not replace the separate
+`persistent_fleet` flag used for reward/economic accounting.
 
 Read through `NativePhysicalScene::read`; launch actual policy-only
 Levels with `NativeSceneAssets::build_imported_policy_runtime`.

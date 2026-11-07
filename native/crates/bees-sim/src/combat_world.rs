@@ -270,7 +270,7 @@ pub enum CombatEvent {
     BargeChargeStarted { ship_id: i64 },
     BargeChargeHit { ship_id: i64, target_id: i64 },
     BargeChargeStopped { ship_id: i64 },
-    /// A real type-14 Beacon ship joined the active roster and inherits
+    /// An authored Beacon ship joined the active roster and inherits
     /// the parent's persistent FleetShip identity (not its runtime ID).
     ScoutBeaconDropped {
         scout_id: i64, beacon_id: i64, parent_fleet_id: i64,
@@ -469,7 +469,7 @@ impl CombatProjectile {
         if power < 0 {
             return Err(CombatWorldError::InvalidProjectilePower);
         }
-        if shooter_fleet_id <= 0 {
+        if shooter_fleet_id == 0 {
             return Err(CombatWorldError::InvalidFleetIdentity);
         }
         Ok(Self {
@@ -2093,13 +2093,15 @@ impl CombatWorld {
         Ok(())
     }
 
-    /// Preserve the persistent FleetShip identity independently of pooled
+    /// Preserve the signed FleetShip identity independently of pooled
     /// combat wrappers. Required before bomb launch to permit future damage
     /// attribution even if the shooter has since been killed.
     pub fn set_ship_fleet_identity(
         &mut self, ship_id: i64, fleet_ship_id: i64,
     ) -> Result<(), CombatWorldError> {
-        if fleet_ship_id <= 0 {
+        // Unity assigns negative IDs to training, campaign and carrier
+        // temporaries. Sign expresses persistence, not identity validity.
+        if fleet_ship_id == 0 {
             return Err(CombatWorldError::InvalidFleetIdentity);
         }
         if !self.ship_by_id.contains_key(&ship_id) {
@@ -2121,7 +2123,7 @@ impl CombatWorld {
         power: i32,
         motion: ProjectileMotion,
     ) -> Result<(), CombatWorldError> {
-        if shooter_fleet_id <= 0 {
+        if shooter_fleet_id == 0 {
             return Err(CombatWorldError::InvalidFleetIdentity);
         }
         let target_index = *self.ship_by_id.get(&target_id)

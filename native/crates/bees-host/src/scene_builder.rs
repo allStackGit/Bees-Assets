@@ -17,7 +17,7 @@ use bees_gameplay::squads::SquadRosterError;
 use bees_hivemind::session::SquadLifetime;
 use bees_sim::collision::{Aabb, Pose};
 use bees_sim::combat::ShipVitals;
-use bees_sim::combat_world::{CombatWorld, CombatWorldError, NativeTurretSpec};
+use bees_sim::combat_world::{CombatWorld, CombatWorldError, NativeTurretSpec, ShipCollisionProfile};
 use bees_sim::asteroid_spawn::FullAsteroidPrototype;
 use bees_sim::geometry::Vec2;
 use bees_sim::navigation::NavigationError;
@@ -25,7 +25,7 @@ use bees_sim::combat_perception_bridge::CombatPerceptionError;
 use bees_sim::control::PolicyFrame;
 use bees_sim::movement::ShipMotion;
 use bees_sim::map_object::CombatMapObject;
-use bees_sim::physics::ObstacleBody;
+use bees_sim::physics::{ObstacleBody, ShipShape};
 use bees_sim::obstacle::CombatObstacle;
 use bees_sim::simulation::{Simulation, World, WorldId};
 use crate::runtime::{NativeHostRuntime, HostInitError};
@@ -42,8 +42,29 @@ pub struct NativeAuthoredShip {
     pub vitals: ShipVitals,
     pub motion: ShipMotion,
     pub original_health: i32,
+    pub size_class: f32,
+    /// Actual child trigger geometry, in the same body-local frame as the hull.
+    pub healing_zone: Option<ShipShape>,
+    pub warp_zone: Option<ShipShape>,
+    pub policy_capabilities: NativeAuthoredPolicyCapabilities,
     pub fleet_ship_id: Option<i64>,
     pub policy: Option<NativeAuthoredPolicy>,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct NativeHealingEligibility {
+    pub bee_side: i32,
+    pub ship_size_pixels: [u32; 2],
+    pub beehive_size_pixels: [u32; 2],
+}
+
+/// Capability eligibility is authored at setup; readiness is always queried
+/// from the live CombatWorld, never copied from a captured observation mask.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct NativeAuthoredPolicyCapabilities {
+    pub mining: bool,
+    pub healing: Option<NativeHealingEligibility>,
+    pub warp_human_side: Option<i32>,
 }
 
 /// Exact source SquadLifetime. A pooled Squad ID alone is not sufficient.
@@ -275,6 +296,17 @@ impl NativeSceneAssets {
                 combat.configure_game_ship_original_health(
                     ship.entity_id, ship.original_health,
                 ).map_err(NativeSceneBuildError::Combat)?;
+                combat.set_ship_collision_profile(ship.entity_id, ShipCollisionProfile {
+                    size_class: ship.size_class, original_health: ship.original_health,
+                }).map_err(NativeSceneBuildError::Combat)?;
+                if let Some(shape) = ship.healing_zone {
+                    combat.configure_beehive_healing_zone(ship.entity_id, shape)
+                        .map_err(NativeSceneBuildError::Combat)?;
+                }
+                if let Some(shape) = ship.warp_zone {
+                    combat.configure_warp_gate_zone(ship.entity_id, shape)
+                        .map_err(NativeSceneBuildError::Combat)?;
+                }
                 if let Some(fleet_id) = ship.fleet_ship_id {
                     combat.set_ship_fleet_identity(ship.entity_id, fleet_id)
                         .map_err(NativeSceneBuildError::Combat)?;
@@ -290,6 +322,19 @@ impl NativeSceneAssets {
                         combat.configure_policy_turret(
                             ship.entity_id, turret.slot, turret.spec,
                         ).map_err(NativeSceneBuildError::Combat)?;
+                    }
+                    if ship.policy_capabilities.mining {
+                        combat.configure_policy_mining(ship.entity_id)
+                            .map_err(NativeSceneBuildError::Combat)?;
+                    }
+                    if let Some(heal) = ship.policy_capabilities.healing {
+                        combat.configure_policy_healing(ship.entity_id, heal.bee_side,
+                            heal.ship_size_pixels, heal.beehive_size_pixels)
+                            .map_err(NativeSceneBuildError::Combat)?;
+                    }
+                    if let Some(side) = ship.policy_capabilities.warp_human_side {
+                        combat.configure_policy_warp(ship.entity_id, side)
+                            .map_err(NativeSceneBuildError::Combat)?;
                     }
                 }
                 }

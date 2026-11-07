@@ -461,13 +461,18 @@ impl ShipBody {
         // Outward padding cannot suppress an actual contact; it only causes
         // an occasional extra exact test at a numerical boundary.
         let radius = collider.shape.maximum_extent();
-        Ok(Self {
+        let mut body = Self {
             id, motion, layer, active: true,
             hull_radius_bound: radius * 1.0001 + 0.001,
             collider,
             healing_zone: None,
             warp_zone: None,
-        })
+        };
+        // Tick-zero perception and capability masks read the same collider
+        // cache as contact physics. Construction must not require a dummy
+        // simulation step before mining/healing/warp contact is observable.
+        body.update_hull();
+        Ok(body)
     }
 
     pub fn shape(&self) -> &ShipShape {
