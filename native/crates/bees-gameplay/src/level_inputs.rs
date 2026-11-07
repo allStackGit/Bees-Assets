@@ -99,7 +99,8 @@ pub fn collect_live_friendlies_from_catalog(
 /// *current* position at command issue changes Unity formation behavior
 /// when a member has already moved away from its original formation.
 /// Ship.GetClearance can also depend on the active stage; neither quantity
-/// can be guessed from a collider or sprite dimension.
+/// can be guessed from a collider or sprite dimension. Unity requests
+/// clearance only for mobile ships on obstacle-bearing maps.
 ///
 /// Reuses one caller-owned buffer across activations. Its borrowed members
 /// remain valid until that buffer changes, matching one command-issue
@@ -126,9 +127,16 @@ pub fn native_squad_order_from_catalog<'a>(
         let offset = authored_offset(ship_id)
             .filter(|value| value.is_finite())
             .ok_or(GameCommandError::InvalidSquad)?;
-        let clearance = authored_clearance(ship_id)
-            .filter(|&value| value >= 0)
-            .ok_or(GameCommandError::InvalidSquad)?;
+        // Source Squad.MoveInternal calls Ship.GetClearance only for
+        // mobile ships when Level.HasObstacles. An obstacle-free training
+        // level must not need Pathfinder clearance metadata at all.
+        let clearance = if formation.has_obstacles && body.motion.mobile {
+            authored_clearance(ship_id)
+                .filter(|&value| value >= 0)
+                .ok_or(GameCommandError::InvalidSquad)?
+        } else {
+            0
+        };
         members.push(SquadFormationMember {
             ship_id,
             offset_from_center: offset,
