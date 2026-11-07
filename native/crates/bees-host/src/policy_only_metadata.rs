@@ -29,7 +29,11 @@ use bees_sim::combat_perception_bridge::{
 };
 use bees_sim::combat_world::CombatWorld;
 use bees_sim::navigation_runtime::NavigationRuntime;
-use bees_sim::perception::{CapabilitySource, EXPLORATION_LEN};
+use bees_sim::perception::CapabilitySource;
+use bees_sim::combat_perception_bridge::{
+    update_exploration_from_world, CombatPerceptionError,
+};
+use bees_sim::team_exploration::{TeamExplorationGrid, Explorer};
 use bees_sim::perception_weapons::SelfWeapon;
 use bees_sim::ship_assets::ShipAssetCatalog;
 use bees_gameplay::inference::NativePolicyRoute;
@@ -58,14 +62,12 @@ pub struct AuthoredPolicyAgent {
     pub own_weapons: [Option<SelfWeapon>; 5],
 }
 
-/// Only genuinely team-shared discovery/observation inputs live here.
-/// The 21x21 navigation grid is NOT side-wide: the gameplay assembler
-/// recomputes it around each ship using shared cached static bounds.
-/// Dynamic scenes must refresh mining/exploration inputs at the Level's
-/// authoritative discovery boundary.
+/// The authentic 16x16 team sight memory starts fresh for each native
+/// episode, then advances on the same canonical fixed-step clock as combat.
+/// Observer-local 21x21 navigation remains in the perception assembler.
 pub struct AuthoredPolicySide {
     pub side: i32,
-    pub exploration_last_seen: Option<[f32; EXPLORATION_LEN]>,
+    pub exploration: TeamExplorationGrid,
 }
 
 /// For policy-only native matches. The owner provides the real
@@ -78,6 +80,10 @@ pub struct NativePolicyOnlyMetadata {
     pub fleet: NativeFleetInventory,
     pub ship_catalog: Arc<ShipAssetCatalog>,
     authored_ships: HashMap<i64, AuthoredShipPerception>,
+    /// Exact sight ranges for ALL original allied ships, including
+    /// non-policy escorts that contribute to team coverage.
+    effective_vision: HashMap<i64, i32>,
+    explorers: Vec<Explorer>,
     agents: HashMap<i64, AuthoredPolicyAgent>,
     sides: HashMap<i32, AuthoredPolicySide>,
 }
@@ -89,6 +95,7 @@ impl NativePolicyOnlyMetadata {
         fleet: NativeFleetInventory,
         ship_catalog: Arc<ShipAssetCatalog>,
         ships: impl IntoIterator<Item=(i64, AuthoredShipPerception)>,
+        vision: impl IntoIterator<Item=(i64, i32)>,
         agents: impl IntoIterator<Item=AuthoredPolicyAgent>,
         sides: impl IntoIterator<Item=AuthoredPolicySide>,
     ) -> Result<Self, PolicyOnlyMetadataError> {
@@ -105,12 +112,20 @@ impl NativePolicyOnlyMetadata {
                 return Err(PolicyOnlyMetadataError::DuplicateShip(id));
             }
         }
+        let mut effective_vision = HashMap::new();
+        for (id, range) in vision {
+            if id <= 0 || range < 0 ||
+                !authored_ships.contains_key(&id) ||
+                effective_vision.insert(id, range).is_some() {
+                return Err(PolicyOnlyMetadataError::InvalidSource);
+            }
+        }
+        if effective_vision.len() != authored_ships.len() {
+            return Err(PolicyOnlyMetadataError::InvalidSource);
+        }
         let mut side_map = HashMap::new();
         for side in sides {
-            if side.side <= 0 ||
-                side.exploration_last_seen.as_ref().is_some_and(
-                    |values| values.iter().any(|value| !value.is_finite()),
-                ) {
+            if side.side <= 0 {
                 return Err(PolicyOnlyMetadataError::InvalidSource);
             }
             let id = side.side;
@@ -143,12 +158,15 @@ impl NativePolicyOnlyMetadata {
         }
         Ok(Self {
             bounds, navigation, fleet, ship_catalog,
-            authored_ships, agents: agent_map, sides: side_map,
+            authored_ships, effective_vision,
+            explorers: Vec::new(),
+            agents: agent_map, sides: side_map,
         })
     }
 
-    /// A rendered Level that changes dynamic navigation/mining/exploration
-    /// values updates this exact owned side state between windows.
+    /// A rendered Level may change externally authored ship/controller
+    /// fields between synchronous inference windows. Exploration itself
+    /// is fixed-step owned and must not be independently resampled here.
     pub fn side_mut(&mut self, side: i32) -> Option<&mut AuthoredPolicySide> {
         self.sides.get_mut(&side)
     }
@@ -177,6 +195,22 @@ impl NativeLevelRewardMetadata for NativePolicyOnlyMetadata {
 
     fn credit_mined_minerals(&mut self, ship_id: i64, amount: i32) -> Option<i32> {
         self.fleet.credit_mined_minerals(ship_id, amount)
+    }
+
+    fn update_observation_memory(
+        &mut self, world: &CombatWorld, progress: f32,
+    ) -> Result<(), CombatPerceptionError> {
+        // No per-tick allocation: reuse one scratch explorer array for the
+        // two sides. Every current living ship contributes its real source
+        // HiveMindVision range, regardless of policy ownership.
+        for side in self.sides.values_mut() {
+            update_exploration_from_world(
+                world, side.side, self.bounds, progress,
+                &mut side.exploration, &mut self.explorers,
+                |ship_id| self.effective_vision.get(&ship_id).copied(),
+            )?;
+        }
+        Ok(())
     }
 }
 
@@ -262,7 +296,7 @@ impl NativeLevelObservationContext for NativePolicyOnlyMetadata {
             capability,
             parent_carrier_id: agent.parent_carrier_id,
             own_weapons: &agent.own_weapons,
-            exploration_last_seen: side.exploration_last_seen.as_ref(),
+            exploration_last_seen: Some(side.exploration.last_seen()),
         })
     }
 
