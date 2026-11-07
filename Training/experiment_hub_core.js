@@ -2359,8 +2359,8 @@ class ExperimentHub {
             throw Error('Native execution agent requires a process instance identity.');
         const previous=this.agentReports.get(machine.id);
         if(previous&&previous.local_executor&&
-            received>=previous.received_ms&&
-            received-previous.received_ms<AGENT_HEARTBEAT_TTL_MS&&
+            (received<previous.received_ms||
+                received-previous.received_ms<AGENT_HEARTBEAT_TTL_MS)&&
             instance!==previous.instance_id) {
             const error=Error('Another authenticated native agent instance is still active.');
             error.status=409;throw error;
