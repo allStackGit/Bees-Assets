@@ -68,7 +68,7 @@ use crate::projectile_assets::ProjectileAssetCatalog;
 use crate::timer::ScaledTimer;
 use crate::simulation::{GameRules, RandomStream, World};
 use crate::telemetry::StepCounts;
-use crate::vision::{HiveMindObserver, VisionError, VisionSweepCounts};
+use crate::vision::{HiveMindObserver, VisionError, VisionSweepCounts, VisionFirstSighting};
 
 // Child module owns the complete live collider-vision refresh and keeps
 // the 140K+ combat gameplay implementation focused on authoritative state.

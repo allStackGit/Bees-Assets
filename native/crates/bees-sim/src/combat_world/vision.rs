@@ -29,6 +29,23 @@ impl CombatWorld {
         observers: &[HiveMindObserver],
         setup_suppressed: bool,
     ) -> Result<VisionSweepCounts, VisionError> {
+        let mut ignored = Vec::new();
+        self.refresh_hivemind_vision_with_sightings(
+            observers, setup_suppressed, &mut ignored,
+        )
+    }
+
+    /// The game Level/reward owner receives the exact first discoveries in
+    /// source observer/target traversal order. Both graphical and headless
+    /// clients use this one detector. The caller owns/reuses the output
+    /// buffer across fixed ticks, so no per-agent event allocation occurs.
+    pub fn refresh_hivemind_vision_with_sightings(
+        &mut self,
+        observers: &[HiveMindObserver],
+        setup_suppressed: bool,
+        first_sightings: &mut Vec<VisionFirstSighting>,
+    ) -> Result<VisionSweepCounts, VisionError> {
+        first_sightings.clear();
         // Unity returns immediately during RL scene setup. The roster and
         // storage can legitimately be incomplete while ships are spawning,
         // so do not run visibility validation until setup has finished.
@@ -117,6 +134,10 @@ impl CombatWorld {
                     if self.discovery.record(side, DiscoveryKind::Ship, target_id)
                         .expect("prevalidated side and entity ID") {
                         counts.first_ship_discoveries += 1;
+                        first_sightings.push(VisionFirstSighting {
+                            observer_id: observer.ship_id, side,
+                            target_id, kind: DiscoveryKind::Ship,
+                        });
                     }
                 }
             }
@@ -150,6 +171,10 @@ impl CombatWorld {
                 if counts.record_proximity(proximity) {
                     if self.discovery.record(side, kind, target_id)
                         .expect("prevalidated side and entity ID") {
+                        first_sightings.push(VisionFirstSighting {
+                            observer_id: observer.ship_id, side,
+                            target_id, kind,
+                        });
                         match kind {
                             DiscoveryKind::MiningAsteroid => {
                                 counts.first_mining_discoveries += 1;

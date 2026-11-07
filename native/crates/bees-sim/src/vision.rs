@@ -46,6 +46,17 @@ pub enum VisionError {
     InvalidObserverState(i64),
 }
 
+/// A single authoritative first faction-wide sighting made by the actual
+/// collider vision pass. It carries only identity and sighting category,
+/// never fabricated reward, command TSV or model observation values.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct VisionFirstSighting {
+    pub observer_id: i64,
+    pub side: i32,
+    pub target_id: i64,
+    pub kind: crate::level_discovery::DiscoveryKind,
+}
+
 /// Rollup throughput costs without allocations inside the combat loop.
 impl VisionSweepCounts {
     /// Account for broadphase and exact geometry effort in both ship and
