@@ -626,6 +626,14 @@ fn main() -> Result<(), Box<dyn Error>> {
         let update_due = config.model_updates.get(next_model_update)
             .is_some_and(|item| rounds >= item.at_round);
         if update_due && all_finished {
+            if completed_episodes.iter().all(|&finished|
+                finished >= config.episodes_per_world
+            ) {
+                failed_window = Some(format!(
+                    "model update requested at round {rounds} but no future episodes remain",
+                ));
+                break;
+            }
             // An overrun may have crossed another scheduled threshold
             // while slower worlds finished. Never claim an intermediate
             // checkpoint was meaningfully evaluated when it ran zero
@@ -749,11 +757,13 @@ fn main() -> Result<(), Box<dyn Error>> {
                 break;
             }
         }
-        if counts.stopped_with_no_live_worlds && recycled == 0 { break; }
         if counts.stopped_with_no_live_worlds && holding_for_update {
-            failed_window = Some("model boundary has no active worlds but still lacks a completed episode".into());
+            failed_window = Some(
+                "model boundary has no active worlds but still lacks a completed episode".into(),
+            );
             break;
         }
+        if counts.stopped_with_no_live_worlds && recycled == 0 { break; }
     }
 
     if failed_window.is_none() && next_model_update < config.model_updates.len() {
