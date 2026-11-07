@@ -7,7 +7,7 @@ import re
 import sys
 from pathlib import Path
 
-from experiment_hub_eval_poll import poll_checkpoint
+from experiment_hub_eval_poll import poll_checkpoint, poll_batch
 from experiment_hub_tinybrains_evaluate import SUITE_ID, UUID, evaluate, read_suite
 
 CHECKPOINT = re.compile(r"update-([0-9]{6,8})\.pt")
@@ -33,25 +33,32 @@ def latest_numbered_checkpoint(artifact_root, job):
     return latest
 
 
-def poll(args, suite):
-    trials = 2 * len(suite["maps"]) * len(suite["seeds"])
-
-    def evaluate_checkpoint(job, file, digest, work):
+def poll(args, suites):
+    def evaluated(job, file, digest, work, suite):
         wins, observed = evaluate(file, digest, suite, work)
+        trials = 2 * len(suite["maps"]) * len(suite["seeds"])
         if observed != trials:
             raise ValueError("Unexpected TinyBrains evaluation trial count.")
         return wins
 
-    poll_checkpoint(args, "tinybrains", suite, {**suite, "trials": trials},
-                    lambda job: latest_numbered_checkpoint(args.artifact_root, job),
-                    evaluate_checkpoint)
+    find_checkpoint = lambda job: latest_numbered_checkpoint(args.artifact_root, job)
+    pairs = [(suite, {**suite, "trials":
+                      2 * len(suite["maps"]) * len(suite["seeds"])}) for suite in suites]
+    if len(pairs) == 1:
+        poll_checkpoint(args, "tinybrains", *pairs[0], find_checkpoint,
+                        lambda job, file, digest, work:
+                            evaluated(job, file, digest, work, suites[0]))
+    else:
+        poll_batch(args, "tinybrains", pairs, find_checkpoint, evaluated)
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--machine", required=True)
     parser.add_argument("--port", type=int, default=7148)
-    for option in ("artifact-root", "suite", "scratch", "receipt-root"):
+    parser.add_argument("--suite", required=True, type=Path, action="append",
+                        help="Repeat 2–8 times for one same-checkpoint evaluation batch.")
+    for option in ("artifact-root", "scratch", "receipt-root"):
         parser.add_argument("--" + option, required=True, type=Path)
     args = parser.parse_args()
     try:
@@ -65,7 +72,7 @@ def main():
             if not directory.is_dir() or directory.is_relative_to(args.artifact_root):
                 raise ValueError("Evaluator directories must be outside training artifacts.")
             setattr(args, key, directory)
-        poll(args, read_suite(args.suite))
+        poll(args, [read_suite(source) for source in args.suite])
         return 0
     except (OSError, RuntimeError, ValueError, TypeError, KeyError, http.client.HTTPException) as exc:
         print(f"Scheduled TinyBrains evaluation failed: {exc}", file=sys.stderr)
