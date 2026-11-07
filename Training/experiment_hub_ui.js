@@ -529,8 +529,8 @@ document.addEventListener('DOMContentLoaded', () => {
     function renderComparisonEvaluations(runs) {
         const table=$('hub-compare-evaluation-rows');
         table.replaceChildren();
-        const suites=new Set(),digests=new Set(),counts=new Set();
-        let missingDigest=false;
+        const suites=new Set(),digestBySuite=new Map(),trialsBySuite=new Map();
+        let missingDigest=false,differentDigests=false,differentTrialCounts=false;
         for(const {job,slot} of runs) {
             const rules=job.evaluation_stop?.all_of||[job.evaluation_stop].filter(Boolean);
             const passed=job.evaluation_stop_evidence?.all_of||null;
@@ -562,9 +562,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 table.append(row);
                 if(evidence) {
                     suites.add(evidence.suite_id);
-                    counts.add(evidence.trials);
-                    if(evidence.suite_sha256)digests.add(evidence.suite_sha256);
-                    else missingDigest=true;
+                    if(trialsBySuite.has(evidence.suite_id)&&
+                        trialsBySuite.get(evidence.suite_id)!==evidence.trials)
+                        differentTrialCounts=true;
+                    trialsBySuite.set(evidence.suite_id,evidence.trials);
+                    if(evidence.suite_sha256) {
+                        if(digestBySuite.has(evidence.suite_id)&&
+                            digestBySuite.get(evidence.suite_id)!==evidence.suite_sha256)
+                            differentDigests=true;
+                        digestBySuite.set(evidence.suite_id,evidence.suite_sha256);
+                    }else missingDigest=true;
                 }
             }
         }
@@ -575,8 +582,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         feedback('hub-compare-evaluation-note',[
             suites.size>1?'Selected receipts use different suites. Compare rates within the same suite.':'',
-            digests.size>1?'Selected receipts use different suite definitions.':'',
-            counts.size>1?'Selected receipts have different trial counts.':'',
+            differentDigests?'Selected receipts for the same suite use different definitions.':'',
+            differentTrialCounts?'Selected receipts for the same suite have different trial counts.':'',
             missingDigest?'Some receipts lack a suite fingerprint. A shared suite ID cannot verify matching scenarios.':'',
         ].filter(Boolean).join(' '));
     }
