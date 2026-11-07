@@ -2507,8 +2507,14 @@ class ExperimentHub {
         const next=copy(this.state);
         const plan=value.selection_plan_id==null?null:
             (next.candidate_selections||[]).find(p=>p.id===value.selection_plan_id);
+        if(value.selection_plan_id==null&&
+            (next.candidate_selections||[]).some(p=>
+                ['waiting','needs_review'].includes(p.status)&&
+                p.candidate_job_ids.some(id=>value.candidate_job_ids.includes(id))))
+            throw Error('Resolve or cancel the existing candidate selection before promoting the same candidate.');
         if(value.selection_plan_id!=null&&
-            (!plan||plan.status!=='waiting'||
+            (!plan||(plan.status!=='waiting'&&
+                !(plan.status==='needs_review'&&value.confirm_review===true))||
              JSON.stringify(plan.candidate_job_ids)!==
                 JSON.stringify(value.candidate_job_ids)||
              plan.configuration_id!==value.configuration_id||
@@ -2533,6 +2539,7 @@ class ExperimentHub {
         };
         if(plan) {
             plan.status='queued';
+            delete plan.error;
             plan.winner_job_id=parent.id;
             plan.promoted_job_id=job.id;
             plan.resolved_at=job.candidate_selection.selected_at;
@@ -2591,9 +2598,9 @@ class ExperimentHub {
                 throw Error('Too many unresolved candidate selection plans.');
             plans.splice(archived,1);
         }
-        if(plans.some(p=>p.status==='waiting'&&
+        if(plans.some(p=>['waiting','needs_review'].includes(p.status)&&
             p.candidate_job_ids.some(id=>ids.includes(id))))
-            throw Error('One candidate already belongs to another pending selection.');
+            throw Error('One candidate already belongs to another unresolved selection.');
         const plan={id:crypto.randomUUID(),project_id:jobs[0].project_id,
             candidate_job_ids:ids.slice(),
             configuration_id:selected.id,expected_revision:selected.revision,

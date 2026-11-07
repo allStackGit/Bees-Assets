@@ -455,6 +455,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if(cancellable.some(p=>p.id===oldPlan))
             cancelSelect.value=oldPlan;
         $('hub-compare-selection-cancel').disabled=!cancellable.length;
+        $('hub-compare-selection-review').disabled=!cancellable.some(p=>
+            p.id===cancelSelect.value&&p.status==='needs_review');
         feedback('hub-compare-selection-status',plans.length
             ?plans.map(p=>(p.status==='queued'
                     ?'Queued winner '+p.winner_job_id?.slice(-8)+
@@ -1783,6 +1785,45 @@ document.addEventListener('DOMContentLoaded', () => {
                 feedback('hub-compare-selection-message',
                     'Scheduled selection '+plan.id+'. Automatic queueing requires an armed native scheduler.');
             }
+            await reload();
+        }catch(error){
+            feedback('hub-compare-selection-message',String(error.message||error));
+        }
+    });
+    $('hub-compare-selection-cancel-id').addEventListener('change',()=>{
+        const id=$('hub-compare-selection-cancel-id').value;
+        $('hub-compare-selection-review').disabled=!(state.candidate_selections||[])
+            .some(p=>p.id===id&&p.status==='needs_review');
+    });
+    $('hub-compare-selection-review').addEventListener('click',async()=>{
+        const id=$('hub-compare-selection-cancel-id').value;
+        try {
+            const plan=(state.candidate_selections||[]).find(p=>p.id===id);
+            if(!plan||plan.status!=='needs_review')
+                throw Error('Select a review-required candidate decision.');
+            // A fresh ranking validates every frozen suite, model byte digest,
+            // native completion and capacity release before operator consent.
+            const decision=await action('hub/candidates/rank',{
+                candidate_job_ids:plan.candidate_job_ids,
+            });
+            if(decision.project_id!==plan.project_id)
+                throw Error('The candidate project changed; cancel this plan.');
+            const winner=decision.ranked[0];
+            if(!confirm('Resolve reviewed selection '+plan.id+' and queue '+winner.job_id+
+                ' as the winning '+plan.project_id+' checkpoint? Mean independent success '+
+                (winner.score*100).toFixed(2)+
+                '%. The original frozen next-stage configuration and resources will be used.'))return;
+            const result=await action('hub/candidates/promote',{
+                selection_plan_id:plan.id,
+                candidate_job_ids:plan.candidate_job_ids,
+                configuration_id:plan.configuration_id,
+                expected_revision:plan.expected_revision,
+                resources:plan.resources,
+                expected_winner_job_id:winner.job_id,
+                confirm_review:true,confirm_queue:true,
+            });
+            feedback('hub-compare-selection-message',
+                'Reviewed selection '+plan.id+' queued pinned continuation '+result.job.id+'.');
             await reload();
         }catch(error){
             feedback('hub-compare-selection-message',String(error.message||error));

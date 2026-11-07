@@ -1311,8 +1311,16 @@ released verified capacity. Missing evidence, failed candidates, changed
 definitions or incompatible checkpoint lineages record a review-required
 decision and disarm automatic execution instead of guessing a winner.
 Pending/review-required selections can be cancelled without stopping
-training jobs. Editing the selected next-stage configuration during the
-competition invalidates its frozen revision and requires review.
+training jobs. A review-required plan can also be re-ranked against fresh
+verified evidence and explicitly completed with **Review & queue verified
+winner**. The existing promotion endpoint requires `confirm_review:true`
+when resuming such a plan; it rechecks the original frozen candidate IDs,
+continuation configuration revision and resources before one atomic commit.
+Unresolved plans reserve their candidate cohort against duplicate selection
+or unrelated immediate promotion. No manual review bypasses benchmark or
+checkpoint identity checks, and review never re-arms automation.
+Editing the selected next-stage configuration during the competition
+invalidates its frozen revision and requires cancelling/replacing the plan.
 
 ### Independent evaluation stops for non-Bees jobs
 
