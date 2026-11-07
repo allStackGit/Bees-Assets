@@ -100,6 +100,10 @@ pub enum NativeInferenceRunError<E> {
 pub struct NativeInferenceMeasurements {
     pub model_calls: u64,
     pub model_rows: u64,
+    /// Validated action rows with a real MA-POCA participant identity,
+    /// distinct from the live ship ID. A missing identity is never
+    /// silently repaired by substituting the physical ship ID.
+    pub grouped_actor_rows: u64,
     /// Wall time of calls selected for timing, not the sum of all calls.
     pub model_forward_nanos: u128,
     pub model_forward_timed_calls: u64,
@@ -351,6 +355,9 @@ impl NativeLevelInferenceBatch {
             self.measurements.invalid_action_batches += 1;
             return Err(NativeInferenceError::Batch(error));
         }
+        self.measurements.grouped_actor_rows = self.measurements
+            .grouped_actor_rows
+            .saturating_add(self.group_agents_seen.len() as u64);
         self.finalized = true;
         Ok(&self.keyed_decisions)
     }
