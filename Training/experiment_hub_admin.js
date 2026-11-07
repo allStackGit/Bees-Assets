@@ -18,6 +18,7 @@ const POST_ACTIONS={
     '/api/hub/jobs':[201,'queueConfiguration'],
     '/api/hub/pipelines':[201,'queuePipeline'],
     '/api/hub/candidates/rank':[200,'rankCandidates'],
+    '/api/hub/candidates/schedule':[201,'queueCandidateSelection'],
     '/api/hub/candidates/promote':[201,'queueBestCandidate'],
     '/api/hub/sequences':[201,'queueSequence'],
     '/api/hub/jobs/cancel':[200,'cancelJob'],
