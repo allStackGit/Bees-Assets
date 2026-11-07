@@ -715,7 +715,9 @@ class ExperimentHub {
             restart_rearm_pending:!this.automation.enabled&&
                 Boolean(this.state.automation_restart)};
     }
-    configureAutomation(value) {
+    configureAutomation(value,origin='operator') {
+        if(!['operator','restart'].includes(origin))
+            throw Error('Unknown native automation authorization source.');
         if(!object(value)||typeof value.enabled!=='boolean')
             throw Error('Choose whether to arm or disarm native queue automation.');
         if(value.enabled===false) {
@@ -740,6 +742,8 @@ class ExperimentHub {
         }
         if(this.automation.enabled)
             throw Error('Native automation is already armed; disarm explicitly before starting another session.');
+        if(this.state.automation_restart&&origin!=='restart')
+            throw Error('Restart restoration is pending; cancel it with Disarm before manually arming.');
         if(value.probe_exclusive_gpu===true&&value.claim_exclusive_gpu!==true)
             throw Error('Automatic GPU probes require automatic exclusive GPU claims.');
         if(value.resume_after_restart===true&&
@@ -908,7 +912,7 @@ class ExperimentHub {
                 adopt_reconciled_running:true,confirm_adopt_running:true,
                 resume_after_restart:true,confirm_restart_rearm:true,
                 confirm_arm:true,confirm_untracked_load:true,
-            });
+            },'restart');
             this.automation.last_action='Restored explicitly opted-in CPU automation after fresh native reconciliation.';
             this.automation.waiting_reason=null;
         }catch(error) {
