@@ -639,6 +639,29 @@ re-arming is authorized by this service setup. This source-only Linux
 integration is **not yet qualified on Halifax**. The Windows process
 startup path is separate.
 
+The same generator can install a separately budgeted **periodic independent
+evaluator** on a trusted Linux coordinator host, without adding any native
+training authority. Use `evaluator --project courier|tinybrains --machine
+MACHINE_ID --python /absolute/python --suite /absolute/suite.json
+--artifact-root /absolute/artifacts --scratch /absolute/scratch
+--receipt-root /absolute/receipts --cpus 2 --ram-mb 4096`. Courier also
+requires `--project-root` and `--snapshot-root`; TinyBrains on Linux
+requires `--engine-path`. Repeat `--suite` for each independently required
+suite in one coordinated same-checkpoint evaluation batch. The timer defaults
+to a 180-second interval after the previous invocation finishes and a
+two-hour timeout; optional `--interval` and `--timeout` are seconds.
+Inspect generated service/timer units before using `--install`, then
+explicitly enable the generated `...-evaluator.timer`. Units are
+exclusive-create and not automatically enabled. systemd prevents overlapping
+runs of the same one-shot service and enforces the specified CPU and RAM caps.
+The evaluator still needs its approved project dependencies and access to
+the model/receipt directories, and its port reaches only loopback; do not
+expose the Hub administrator listener to ordinary remote workers. CPU
+quotas are not exclusive cores and this timer is not a substitute for
+production coexistence qualification.
+
+## Linux native supervisor and authenticated dispatch (CPU-only)
+
 ## Linux native supervisor and authenticated dispatch (CPU-only)
 
 `experiment_hub_linux_supervisor.js` now provides a **locally invoked**
