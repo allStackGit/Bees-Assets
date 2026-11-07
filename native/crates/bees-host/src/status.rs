@@ -6,7 +6,7 @@
 
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
-use bees_gameplay::level_host::NativeRuntimeStatus;
+use bees_gameplay::level_host::{NativeLevelWindowCounts, NativeRuntimeStatus};
 use serde::Serialize;
 
 pub const STATUS_SCHEMA_VERSION: u32 = 1;
@@ -93,19 +93,55 @@ pub struct NativeHostStatusInterval {
     pub sampled_model_forward_rows: u64,
     /// Only valid if the policy backend synchronizes before returning.
     pub sampled_model_forward_nanos_per_row: Option<f64>,
+    /// Completed rollout windows only, accumulated between status samples.
+    /// These raw host-wall durations are from selectively sampled rounds,
+    /// not estimates of total elapsed time or accelerator utilization.
+    pub sampled_rollout_phase_rounds: u64,
+    pub sampled_rollout_world_steps: u64,
+    pub sampled_rollout_model_rows: u64,
+    pub sampled_observation_build_nanos: u128,
+    pub sampled_inference_and_validation_nanos: u128,
+    pub sampled_world_dispatch_and_step_nanos: u128,
     pub gauges: NativeHostGauges,
 }
 
 /// One previous status plus a monotonic clock, not a history buffer.
 /// A counter reset (new process or simulation) starts a new baseline.
+#[derive(Clone, Copy, Default)]
+struct PhaseSamples {
+    rounds: u64,
+    world_steps: u64,
+    model_rows: u64,
+    observation_nanos: u128,
+    inference_nanos: u128,
+    dispatch_nanos: u128,
+}
+
 pub struct NativeStatusSampler {
     previous: NativeRuntimeStatus,
     when: Instant,
+    pending_phases: PhaseSamples,
 }
 
 impl NativeStatusSampler {
     pub fn new(initial: NativeRuntimeStatus) -> Self {
-        Self { previous: initial, when: Instant::now() }
+        Self {
+            previous: initial,
+            when: Instant::now(),
+            pending_phases: PhaseSamples::default(),
+        }
+    }
+
+    /// Called by the host after an entire native rollout window succeeds.
+    /// Do not include failed partial windows as completed measurements.
+    pub fn record_window(&mut self, counts: &NativeLevelWindowCounts) {
+        let pending = &mut self.pending_phases;
+        pending.rounds += u64::from(counts.sampled_rounds);
+        pending.world_steps += counts.sampled_world_steps as u64;
+        pending.model_rows += counts.sampled_policy_rows as u64;
+        pending.observation_nanos += counts.sampled_observation_build_nanos;
+        pending.inference_nanos += counts.sampled_inference_and_validation_nanos;
+        pending.dispatch_nanos += counts.sampled_world_dispatch_and_step_nanos;
     }
 
     pub fn sample(&mut self, current: NativeRuntimeStatus)
@@ -117,6 +153,8 @@ impl NativeStatusSampler {
             return None;
         }
         let previous = self.previous;
+        let phases = self.pending_phases;
+        self.pending_phases = PhaseSamples::default();
         self.previous = current;
         self.when = now;
 
@@ -189,6 +227,12 @@ impl NativeStatusSampler {
                         model_forward_nanos as f64 /
                         sampled_model_forward_rows as f64
                     ),
+                sampled_rollout_phase_rounds: phases.rounds,
+                sampled_rollout_world_steps: phases.world_steps,
+                sampled_rollout_model_rows: phases.model_rows,
+                sampled_observation_build_nanos: phases.observation_nanos,
+                sampled_inference_and_validation_nanos: phases.inference_nanos,
+                sampled_world_dispatch_and_step_nanos: phases.dispatch_nanos,
                 gauges: NativeHostGauges::from(&current),
             })
         };
