@@ -2514,7 +2514,9 @@ class ExperimentHub {
             plan.winner_job_id=parent.id;
             plan.promoted_job_id=job.id;
             plan.resolved_at=job.candidate_selection.selected_at;
-            plan.ranking=decision.ranked;
+            plan.scores=decision.ranked.map(item=>({
+                job_id:item.job_id,score:item.score,
+            }));
         }
         this.commit(next);
         return {job:copy(job),selection:decision};
@@ -2553,8 +2555,16 @@ class ExperimentHub {
             throw Error('Every candidate must be compatible with the same approved continuation environment.');
         const resources=resourceRequest(value.resources);
         const next=copy(this.state),plans=next.candidate_selections||[];
-        if(plans.length>=32)
-            throw Error('Selection history limit reached; review old selection plans before adding more.');
+        // The winner job retains its own decision and the contender jobs
+        // retain their receipts. Prune only concluded plan metadata so a
+        // long-running experiment queue never fills with old decisions.
+        if(plans.length>=64) {
+            const archived=plans.findIndex(p=>
+                ['queued','cancelled'].includes(p.status));
+            if(archived<0)
+                throw Error('Too many unresolved candidate selection plans.');
+            plans.splice(archived,1);
+        }
         if(plans.some(p=>p.status==='waiting'&&
             p.candidate_job_ids.some(id=>ids.includes(id))))
             throw Error('One candidate already belongs to another pending selection.');
