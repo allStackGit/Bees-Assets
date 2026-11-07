@@ -49,6 +49,8 @@ function hubComparisonTerminal(job) {
     return ['finished','failed','stopped'].includes(job.status);
 }
 function hubComparisonEvaluation(job) {
+    if(job.evaluation_stop?.all_of)return job.evaluation_stop_evidence?.all_of?.[0]||
+        Object.values(job.evaluation_candidates?.[0]?.receipts||{})[0]||null;
     return job.evaluation_stop_evidence||job.last_evaluation||null;
 }
 function hubComparisonPoints(run) {
@@ -530,24 +532,38 @@ document.addEventListener('DOMContentLoaded', () => {
         const suites=new Set(),digests=new Set(),counts=new Set();
         let missingDigest=false;
         for(const {job,slot} of runs) {
-            const evidence=hubComparisonEvaluation(job);
-            const row=document.createElement('tr');
-            cell(row,slot+' · '+job.configuration_name);
-            cell(row,evidence?.suite_id||job.evaluation_stop?.suite_id||'—');
-            cell(row,evidence?.suite_sha256||'—').classList.add('hub-checkpoint-digest');
-            cell(row,evidence?evidence.successes.toLocaleString()+' / '+evidence.trials.toLocaleString():'—');
-            cell(row,evidence?(evidence.successes/evidence.trials).toLocaleString(undefined,
-                {style:'percent',maximumFractionDigits:2}):'—');
-            const checkpoint=cell(row,evidence?.checkpoint_sha256||'—');
-            checkpoint.classList.add('hub-checkpoint-digest');
-            cell(row,job.evaluation_stop_evidence?'Stop target met':evidence?'Stop target not met':
-                job.evaluation_stop?'Awaiting receipt':'No evaluation configured');
-            table.append(row);
-            if(evidence) {
-                suites.add(evidence.suite_id);
-                counts.add(evidence.trials);
-                if(evidence.suite_sha256)digests.add(evidence.suite_sha256);
-                else missingDigest=true;
+            const rules=job.evaluation_stop?.all_of||[job.evaluation_stop].filter(Boolean);
+            const passed=job.evaluation_stop_evidence?.all_of||null;
+            const cohort=job.evaluation_candidates?.[0]?.receipts||{};
+            const entries=rules.length?rules:[null];
+            for(const [index,rule] of entries.entries()) {
+                const evidence=passed?passed[index]:
+                    rule?cohort[rule.suite_id]||job.last_evaluation:null;
+                const row=document.createElement('tr');
+                cell(row,slot+' · '+job.configuration_name);
+                cell(row,evidence?.suite_id||rule?.suite_id||'—');
+                cell(row,evidence?.suite_sha256||rule?.suite_sha256||'—')
+                    .classList.add('hub-checkpoint-digest');
+                cell(row,evidence?evidence.successes.toLocaleString()+' / '+
+                    evidence.trials.toLocaleString():'—');
+                cell(row,evidence?(evidence.successes/evidence.trials)
+                    .toLocaleString(undefined,{style:'percent',maximumFractionDigits:2}):'—');
+                cell(row,evidence?.checkpoint_sha256||'—')
+                    .classList.add('hub-checkpoint-digest');
+                const meets=Boolean(evidence&&rule&&
+                    evidence.trials>=rule.min_trials&&
+                    evidence.successes/evidence.trials>=rule.min_success_rate);
+                cell(row,job.evaluation_stop_evidence?'All stop targets met':
+                    evidence?(meets?'This suite passed; awaiting remaining gates':
+                        'Target not met') :
+                    rule?'Awaiting receipt':'No evaluation configured');
+                table.append(row);
+                if(evidence) {
+                    suites.add(evidence.suite_id);
+                    counts.add(evidence.trials);
+                    if(evidence.suite_sha256)digests.add(evidence.suite_sha256);
+                    else missingDigest=true;
+                }
             }
         }
         if(!runs.length) {
@@ -682,6 +698,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 evaluation_stop:job.evaluation_stop||null,
                 last_evaluation:job.last_evaluation||null,
                 evaluation_stop_evidence:job.evaluation_stop_evidence||null,
+                evaluation_candidates:job.evaluation_candidates||null,
                 stop_requested_at:job.stop_requested_at||null,
                 points:hubComparisonPoints({job,points:byJob.get(id)||[]}),
             };
@@ -788,16 +805,24 @@ document.addEventListener('DOMContentLoaded', () => {
         return job.dispatch_id?'Awaiting trusted project summary':'—';
     }
     function setEvaluationEditor(policy) {
-        $('hub-evaluation-suite').value=policy?.suite_id??'';
-        $('hub-evaluation-digest').value=policy?.suite_sha256??'';
-        $('hub-evaluation-trials').value=policy?.min_trials??'';
-        $('hub-evaluation-rate').value=policy?.min_success_rate??'';
+        const multi=policy?.all_of||null;
+        $('hub-evaluation-suite').value=multi?'':policy?.suite_id??'';
+        $('hub-evaluation-digest').value=multi?'':policy?.suite_sha256??'';
+        $('hub-evaluation-trials').value=multi?'':policy?.min_trials??'';
+        $('hub-evaluation-rate').value=multi?'':policy?.min_success_rate??'';
+        $('hub-evaluation-all-of').value=multi?JSON.stringify(multi,null,2):'';
     }
     function evaluationFromEditor() {
         const suite=$('hub-evaluation-suite').value.trim();
         const digest=$('hub-evaluation-digest').value.trim();
         const trials=$('hub-evaluation-trials').value;
         const rate=$('hub-evaluation-rate').value;
+        const allOf=$('hub-evaluation-all-of').value.trim();
+        if(allOf) {
+            if(suite||digest||trials||rate)
+                throw Error('Choose either the single-suite fields or all-required-suites JSON.');
+            return {all_of:JSON.parse(allOf)};
+        }
         if(!suite&&!digest&&!trials&&!rate)return null;
         if(!suite||!trials||!rate||Number(rate)<=0)
             throw Error('Enter an approved suite ID, minimum trials, and a success rate greater than zero.');
@@ -1147,13 +1172,28 @@ document.addEventListener('DOMContentLoaded', () => {
             cell(tr,j.resources.cpus+' CPU / '+j.resources.ram_mb+' MiB / '+
                 j.resources.gpu_count+' GPUs');
             const policy=j.evaluation_stop;
+            const multi=policy?.all_of||null;
             const evidence=j.evaluation_stop_evidence||j.last_evaluation;
+            const cohort=j.evaluation_candidates?.[0];
+            const gateSummary=multi?multi.map((rule,index)=>{
+                const receipt=j.evaluation_stop_evidence?.all_of?.[index]||
+                    cohort?.receipts?.[rule.suite_id];
+                const met=receipt&&receipt.trials>=rule.min_trials&&
+                    receipt.successes/receipt.trials>=rule.min_success_rate;
+                return rule.suite_id+': '+(receipt
+                    ?receipt.successes+'/'+receipt.trials+(met?' passed':' below target')
+                    :'pending');
+            }).join(' · '):null;
             const evaluation=policy
-                ?' · Evaluation '+policy.suite_id+': '+(evidence
-                    ?evidence.successes+'/'+evidence.trials+' successes'+
-                        (j.evaluation_stop_evidence?' · stop target met':' · target not met')
-                    :'awaiting evidence')+
-                    (j.live_execution?.evaluation_issue?' · '+j.live_execution.evaluation_issue:'')
+                ?multi
+                    ?' · Benchmark gates ('+multi.length+' required, same checkpoint): '+
+                        gateSummary+(j.evaluation_stop_evidence?' · Stop authorized':'')+
+                        (j.live_execution?.evaluation_issue?' · '+j.live_execution.evaluation_issue:'')
+                    :' · Evaluation '+policy.suite_id+': '+(evidence
+                        ?evidence.successes+'/'+evidence.trials+' successes'+
+                            (j.evaluation_stop_evidence?' · stop target met':' · target not met')
+                        :'awaiting evidence')+
+                        (j.live_execution?.evaluation_issue?' · '+j.live_execution.evaluation_issue:'')
                 :'';
             cell(tr,learningSummary(j)+evaluation);
             const actions=cell(tr,'');
