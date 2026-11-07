@@ -122,6 +122,14 @@ internal static class NativePhysicalSceneExporter
     }
 
     [Serializable]
+    private sealed class SourcePolicyEpisode
+    {
+        public int bee_side, human_side, bee_starting_tsv, human_starting_tsv;
+        public float timeout_seconds;
+        public int[] discovery_baselines;
+    }
+
+    [Serializable]
     private sealed class PhysicalScene
     {
         public int schema_version = 12;
