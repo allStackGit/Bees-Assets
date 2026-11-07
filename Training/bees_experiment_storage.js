@@ -45,7 +45,20 @@ function copyAndSelect(trainingRoot, fromRoot, requestedRoot, state, writeJsonAt
     if (typeof requestedRoot !== 'string' || !path.isAbsolute(requestedRoot))
         throw Error('Enter an absolute path to the new experiment data directory.');
     const target = path.resolve(requestedRoot);
-    if (isInside(fromRoot, target) || isInside(target, fromRoot)) {
+    // A symlinked destination (or an existing ancestor) may resolve back
+    // into the source even when the written paths look unrelated. Resolve
+    // before copying, without creating any destination directories.
+    let existing = target;
+    while (!fs.existsSync(existing)) {
+        const parent = path.dirname(existing);
+        if (parent === existing) throw Error('Storage destination parent is unavailable.');
+        existing = parent;
+    }
+    const realSource = fs.realpathSync(fromRoot);
+    const realTarget = path.resolve(fs.realpathSync(existing),
+        path.relative(existing, target));
+    if (isInside(fromRoot, target) || isInside(target, fromRoot) ||
+        isInside(realSource, realTarget) || isInside(realTarget, realSource)) {
         throw Error('New storage directory must not contain or be inside the current one.');
     }
     if (fs.existsSync(target) && fs.readdirSync(target).length)
