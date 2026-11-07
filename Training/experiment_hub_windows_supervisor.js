@@ -12,6 +12,7 @@ const crypto=require('node:crypto');
 const {spawn,execFile}=require('node:child_process');
 const {promisify}=require('node:util');
 const runDefault=promisify(execFile);
+const {matchingLeaseBudget}=require('./experiment_hub_resources');
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const ID=/^[a-z][a-z0-9_-]{0,47}$/;
 const SHA=/^[a-f0-9]{64}$/;
@@ -57,6 +58,8 @@ function validateInvocation(job,lease,machineId,adapters,hostOs,pathApi,cryptoAp
         r.ram_mb!==lr.ram_mb||r.gpu_count!==0||lr.gpu_count!==0||
         (r.gpus||[]).length||(lr.gpus||[]).length)
         throw Error('Windows Job Objects currently support CPU/RAM-only budgets.');
+    if(!matchingLeaseBudget(r,lr))
+        throw Error('Windows resource budget differs from the acknowledged lease.');
     const adapter=adapters[job.project_id];
     if(!adapter||typeof adapter.args!=='function'||
         adapter.stop_policy!=='terminate-group'||

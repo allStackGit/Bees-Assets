@@ -36,6 +36,18 @@ function request(input) {
         gpu_mode,gpu_vram_mb,gpu_compute_pct};
 }
 
+// Check the original job budget against the reservation made for it.
+ // The planner may choose GPU IDs when the request was unpinned, but
+ // may not alter any requested resource quantity or GPU mode.
+function matchingLeaseBudget(jobBudget,leaseBudget) {
+    const requested=request(jobBudget),leased=request(leaseBudget);
+    const fields=['cpus','ram_mb','gpu_count','min_gpu_vram_mb',
+        'gpu_mode','gpu_vram_mb','gpu_compute_pct'];
+    return fields.every(key=>requested[key]===leased[key])&&
+        (!requested.gpus.length||
+            requested.gpus.length===leased.gpus.length&&
+            requested.gpus.every((id,index)=>id===leased.gpus[index]));
+}
 function remaining(machine,reservations) {
     // Both unacknowledged offers and acknowledged leases consume the Hub's
     // scheduling budget. Releasing only one side would permit overcommit.
@@ -192,4 +204,4 @@ function plan(machines,reservations,jobs) {
     }
     return results.sort((a,b)=>a.index-b.index).map(({index,...row})=>row);
 }
-module.exports={request,remaining,placements,plan};
+module.exports={request,matchingLeaseBudget,remaining,placements,plan};

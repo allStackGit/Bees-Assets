@@ -4,7 +4,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
-const {request: resourceRequest,placements: resourcePlacements} =
+const {request: resourceRequest,matchingLeaseBudget,placements: resourcePlacements} =
     require('./experiment_hub_resources');
 const {validateProgress}=require('./experiment_hub_progress');
 const {tinyBrainsProfiles,supportsTinyBrainsProfile}=require('./experiment_hub_tinybrains_adapter');
@@ -204,23 +204,12 @@ function gpuStartBlock(job,lease,machine) {
     return null;
 }
 function nativeResourceBlock(job,lease) {
-    let requested, reserved;
     try {
-        requested=resourceRequest(job.resources);
-        reserved=resourceRequest(lease.resources);
+        return matchingLeaseBudget(job.resources,lease.resources)
+            ?null:'Stored job resource budget differs from its reserved lease.';
     }catch {
         return 'Stored job or lease resource budget is invalid.';
     }
-    // A reservation may assign physical GPU IDs to an unpinned request,
-    // but it must preserve every requested resource amount and GPU mode.
-    const budgetKeys=['cpus','ram_mb','gpu_count','min_gpu_vram_mb',
-        'gpu_mode','gpu_vram_mb','gpu_compute_pct'];
-    if(budgetKeys.some(key=>requested[key]!==reserved[key])||
-        (requested.gpus.length&&(
-            requested.gpus.length!==reserved.gpus.length||
-            requested.gpus.some((id,index)=>id!==reserved.gpus[index]))))
-        return 'Stored job resource budget differs from its reserved lease.';
-    return null;
 }
 function gpuProbeWorkerReady(job,lease,machine) {
     return Boolean(job&&job.project_id!=='bees'&&job.adapter==='unconfigured'&&
