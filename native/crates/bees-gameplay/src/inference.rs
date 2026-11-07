@@ -79,6 +79,11 @@ pub trait NativePolicyInference {
         continuous: &mut [f32],
         discrete: &mut [u8],
     ) -> Result<(), Self::Error>;
+
+    /// Process-local model incarnation for attribution of sampled policy
+    /// actions. Non-reloading backends retain generation zero. A learner
+    /// must also retain the run identity and immutable model artifact SHA.
+    fn model_generation(&self) -> u64 { 0 }
 }
 
 #[derive(Debug)]
@@ -104,6 +109,9 @@ pub struct NativeInferenceMeasurements {
     /// distinct from the live ship ID. A missing identity is never
     /// silently repaired by substituting the physical ship ID.
     pub grouped_actor_rows: u64,
+    /// Last successfully validated model batch's generation. A new run or
+    /// non-reloading model starts at 0. This is not a checkpoint hash.
+    pub last_model_generation: Option<u64>,
     /// Wall time of calls selected for timing, not the sum of all calls.
     pub model_forward_nanos: u128,
     pub model_forward_timed_calls: u64,
@@ -413,7 +421,13 @@ impl NativeLevelInferenceBatch {
             self.measurements.backend_failures += 1;
             return Err(NativeInferenceRunError::Backend(error));
         }
-        self.finalize().map_err(NativeInferenceRunError::Boundary)
+        let generation = backend.model_generation();
+        let finalized = self.finalize()
+            .map_err(NativeInferenceRunError::Boundary)?;
+        // Record the generation only for fully validated actions. An
+        // invalid/masked model result is never a PPO policy sample.
+        self.measurements.last_model_generation = Some(generation);
+        Ok(finalized)
     }
 
     /// Export the complete source-defined PPO action activity weights
