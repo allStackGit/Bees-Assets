@@ -305,6 +305,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut world_ids = HashSet::new();
     let mut highest_squad_item_id = 0_i64;
     let mut source_levels = Vec::with_capacity(config.levels.len());
+    let mut source_sides = Vec::with_capacity(config.levels.len());
     // Many headless arenas often share one exported Level. Keep one
     // immutable source template per canonical path, not N copies and
     // filesystem reads. Each arena still parses its own mutable world.
@@ -327,10 +328,43 @@ fn main() -> Result<(), Box<dyn Error>> {
             source_templates.insert(source_path, Arc::clone(&text));
             text
         };
-        let source = NativePhysicalScene::parse(&source_json)
+        let mut source = NativePhysicalScene::parse(&source_json)
             .map_err(|error| contextual("exported Level", error))?;
         if source.stage_name != config.stage_name {
             return Err(invalid("exported Level belongs to a different Stage").into());
+        }
+        let sides = source.exported_episode()
+            .map_err(|error| contextual("source episode", error))?.sides();
+        if let Some(group) = &level.groups {
+            if group.episode_number == 0 ||
+                group.episode_number.checked_add(config.episodes_per_world - 1)
+                    .is_none()
+            {
+                return Err(invalid("configured group episode range is invalid").into());
+            }
+            let mut agents = HashSet::new();
+            let mut side_participants = [0_usize; 2];
+            for participant in &group.participants {
+                let side = sides.iter().position(|&side| side == participant.side)
+                    .ok_or_else(|| invalid("MA-POCA participant side does not belong to Level"))?;
+                if participant.agent_id == 0 ||
+                    !agents.insert((participant.side, participant.agent_id))
+                {
+                    return Err(invalid("MA-POCA participant ID is zero or repeated").into());
+                }
+                side_participants[side] += 1;
+            }
+            if side_participants.contains(&0) {
+                return Err(invalid("MA-POCA training needs actual participants on both source sides").into());
+            }
+            // Check the exported initial controller team BEFORE any
+            // per-episode permutation or output file creation.
+            bind_group_routes(&mut source, group, 0, true)?;
+            if !level.model_slots.contains_key(&0) ||
+                !level.model_slots.contains_key(&1)
+            {
+                return Err(invalid("group-enabled source requires real model slots for both teams").into());
+            }
         }
         for squad in &source.source_squads {
             highest_squad_item_id = highest_squad_item_id.max(squad.item_id);
@@ -341,6 +375,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             }
         }
         source_levels.push(source);
+        source_sides.push(sides);
         source_jsons.push(source_json);
     }
     if config.next_squad_item_id <= highest_squad_item_id {
@@ -371,13 +406,15 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     }
     let mut launches = Vec::with_capacity(source_levels.len());
-    for (source, level) in source_levels.into_iter().zip(&config.levels) {
+    for (index, (source, level)) in source_levels.into_iter()
+        .zip(&config.levels).enumerate()
+    {
         launches.push((
             source,
             make_setup(
                 &config, level, &assets, period,
-                Rc::clone(&next_id), level.seed,
-            ),
+                Rc::clone(&next_id), level.seed, 0, source_sides[index],
+            )?,
         ));
     }
 
@@ -457,9 +494,15 @@ fn main() -> Result<(), Box<dyn Error>> {
                 let seed = level.seed.wrapping_add(
                     u64::from(completed_episodes[index])
                 );
+                if let Some(group) = &level.groups {
+                    bind_group_routes(
+                        &mut scene, group, completed_episodes[index], false,
+                    )?;
+                }
                 let setup = make_setup(
                     &config, level, &assets, period, Rc::clone(&next_id), seed,
-                );
+                    completed_episodes[index], source_sides[index],
+                )?;
                 let authored = scene.into_exported_policy_only_level(setup)
                     .map_err(|error| contextual("replayed Level source", error))?;
                 let replacement = assets.build_level(authored)
