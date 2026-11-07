@@ -16,7 +16,10 @@ use crate::geometry::Vec2;
 use crate::local_navigation_observation::{LocalNavigationError, LocalNavigationOccupancy};
 use crate::obstacle::ObstacleKind;
 use crate::perception::{CapabilitySource, SelfSource, ship_type_scalar};
-use crate::perception_environment::{CollisionAsteroid, MapObject as MapObjectObservation};
+use crate::perception_environment::{
+    CollisionAsteroid, MapObject as MapObjectObservation,
+    MiningAsteroid as MiningAsteroidObservation,
+};
 use crate::team_exploration::{Explorer, ExplorationError, TeamExplorationGrid};
 use crate::perception_entities::{ObservedShip, ObservedWeapon};
 use crate::physics::ShipBody;
@@ -507,6 +510,75 @@ pub fn collect_learned_collision_asteroids(
             level_velocity: body.linear_velocity,
             health_fraction: (vitals.health as f32 /
                 vitals.effective_max_health as f32).clamp(0.0, 1.0),
+            alive: true,
+        });
+    }
+    Ok(output.len())
+}
+
+/// Native mining observations use one authoritative world obstacle and
+/// learned-discovery registry, not a second mutable team-side asteroid
+/// list. Collider bounds come from actual current physical geometry.
+pub fn collect_learned_mining_asteroids(
+    world: &CombatWorld,
+    observing_side: i32,
+    output: &mut Vec<MiningAsteroidObservation>,
+    mut mining_squad_count: impl FnMut(i64) -> u32,
+) -> Result<usize, CombatPerceptionError> {
+    if observing_side <= 0 ||
+        world.obstacles().len() != world.physics().obstacles().len()
+    {
+        return Err(CombatPerceptionError::InvalidObstacleStorage);
+    }
+    output.clear();
+    for (obstacle, body) in world.obstacles().iter()
+        .zip(world.physics().obstacles())
+    {
+        if obstacle.entity_id != body.id {
+            output.clear();
+            return Err(CombatPerceptionError::InvalidObstacleStorage);
+        }
+        if obstacle.kind != ObstacleKind::MiningAsteroid ||
+            !body.active || !obstacle.live() ||
+            !world.discovery().has(
+                observing_side,
+                crate::level_discovery::DiscoveryKind::MiningAsteroid,
+                obstacle.entity_id,
+            )
+        {
+            continue;
+        }
+        let vitals = obstacle.vitals.ok_or(
+            CombatPerceptionError::MissingAsteroidVitals(obstacle.entity_id)
+        )?;
+        if vitals.original_health <= 0 {
+            output.clear();
+            return Err(CombatPerceptionError::MissingAsteroidVitals(
+                obstacle.entity_id,
+            ));
+        }
+        let bounds = body.navigation_bounds().ok_or(
+            CombatPerceptionError::MissingNavigationBounds(obstacle.entity_id)
+        )?;
+        let center = Vec2::new(
+            (bounds.min.x + bounds.max.x) * 0.5,
+            (bounds.min.y + bounds.max.y) * 0.5,
+        );
+        let extents = Vec2::new(
+            (bounds.max.x - bounds.min.x).abs() * 0.5,
+            (bounds.max.y - bounds.min.y).abs() * 0.5,
+        );
+        if !center.is_finite() || !extents.is_finite() {
+            output.clear();
+            return Err(CombatPerceptionError::InvalidAuthoredMetadata);
+        }
+        output.push(MiningAsteroidObservation {
+            id: obstacle.entity_id,
+            position: center,
+            half_extents: extents,
+            resource_fraction: (vitals.health as f32 /
+                vitals.original_health as f32).clamp(0.0, 1.0),
+            squads_mining: mining_squad_count(obstacle.entity_id),
             alive: true,
         });
     }

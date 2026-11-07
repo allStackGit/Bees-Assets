@@ -30,7 +30,6 @@ use bees_sim::combat_perception_bridge::{
 use bees_sim::combat_world::CombatWorld;
 use bees_sim::navigation_runtime::NavigationRuntime;
 use bees_sim::perception::{CapabilitySource, EXPLORATION_LEN};
-use bees_sim::perception_environment::MiningAsteroid;
 use bees_sim::perception_weapons::SelfWeapon;
 use bees_sim::ship_assets::ShipAssetCatalog;
 use bees_gameplay::inference::NativePolicyRoute;
@@ -67,7 +66,6 @@ pub struct AuthoredPolicyAgent {
 pub struct AuthoredPolicySide {
     pub side: i32,
     pub exploration_last_seen: Option<[f32; EXPLORATION_LEN]>,
-    pub visible_mining: Vec<MiningAsteroid>,
 }
 
 /// For policy-only native matches. The owner provides the real
@@ -257,7 +255,6 @@ impl NativeLevelObservationContext for NativePolicyOnlyMetadata {
             capability,
             parent_carrier_id: agent.parent_carrier_id,
             own_weapons: &agent.own_weapons,
-            visible_mining: &side.visible_mining,
             exploration_last_seen: side.exploration_last_seen.as_ref(),
         })
     }

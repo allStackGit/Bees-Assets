@@ -15,6 +15,7 @@ use bees_sim::combat_perception_bridge::{
     capability_source_from_world, collect_learned_map_objects,
     collect_learned_collision_asteroids,
     collect_learned_static_navigation_bounds,
+    collect_learned_mining_asteroids,
 };
 use bees_sim::combat_world::{CombatWorld, CombatWorldError};
 use bees_sim::episode_ship_identity::EpisodeShipIdentities;
@@ -69,7 +70,6 @@ pub struct NativeLevelPerceptionInputs<'a> {
     /// episode-scoped identity is assigned before ordinary ally slots.
     pub parent_carrier_id: Option<i64>,
     pub own_weapons: &'a [Option<SelfWeapon>; 5],
-    pub visible_mining: &'a [MiningAsteroid],
     // Learned map objects and collision asteroids are projected from
     // CombatWorld's discovery and physical obstacle registries, not
     // supplied by an external observation-only collection.
@@ -90,6 +90,7 @@ struct SideEnvironment {
     epoch: Option<EnvironmentEpoch>,
     objects: Vec<MapObject>,
     asteroids: Vec<CollisionAsteroid>,
+    mining: Vec<MiningAsteroid>,
     /// Real discovered static collider AABBs, one collection per side/tick.
     static_navigation: Vec<(bees_sim::geometry::Vec2, bees_sim::geometry::Vec2)>,
 }
@@ -109,6 +110,8 @@ pub struct NativeWorldPerceptionAssembler {
     own_weapons: [Option<SelfWeapon>; 5],
     /// 21x21 observer-local grid; reused for each agent with no allocation.
     navigation: LocalNavigationOccupancy,
+    mining_squad_counts: HashMap<i64, u32>,
+    mining_counts_epoch: Option<EnvironmentEpoch>,
     environment_by_side: HashMap<i32, SideEnvironment>,
 }
 
@@ -121,6 +124,8 @@ impl NativeWorldPerceptionAssembler {
             enemies: Vec::new(),
             own_weapons: [None; 5],
             navigation: LocalNavigationOccupancy::new(),
+            mining_squad_counts: HashMap::new(),
+            mining_counts_epoch: None,
             environment_by_side: HashMap::new(),
         }
     }
@@ -135,6 +140,7 @@ impl NativeWorldPerceptionAssembler {
         self.allies.clear();
         self.enemies.clear();
         self.own_weapons = [None; 5];
+        self.mining_counts_epoch = None;
         // Retain storage for recurring episode resets but never reuse
         // old discovery data under a new identity permutation.
         for environment in self.environment_by_side.values_mut() {
@@ -170,6 +176,7 @@ impl NativeWorldPerceptionAssembler {
     /// registry between inference boundaries without a fixed step.
     /// Normal fixed-step changes invalidate automatically via tick.
     pub fn invalidate_environment(&mut self) {
+        self.mining_counts_epoch = None;
         for environment in self.environment_by_side.values_mut() {
             environment.epoch = None;
         }
@@ -238,6 +245,15 @@ impl NativeWorldPerceptionAssembler {
             episode: owning_world.episode_revision(),
             tick: owning_world.tick(),
         };
+        // Native mining command enrollment is world-wide, but the known
+        // mining asteroid set is per faction. Snapshot the command-owner
+        // map once per world tick and reuse for every policy decision.
+        if self.mining_counts_epoch != Some(epoch) {
+            owning_world.state.events.collect_mining_squad_counts(
+                &mut self.mining_squad_counts,
+            );
+            self.mining_counts_epoch = Some(epoch);
+        }
         let environment = self.environment_by_side.entry(side).or_default();
         if environment.epoch != Some(epoch) {
             collect_learned_map_objects(
@@ -245,6 +261,10 @@ impl NativeWorldPerceptionAssembler {
             )?;
             collect_learned_collision_asteroids(
                 world, side, &mut environment.asteroids,
+            )?;
+            collect_learned_mining_asteroids(
+                world, side, &mut environment.mining,
+                |id| self.mining_squad_counts.get(&id).copied().unwrap_or(0),
             )?;
             collect_learned_static_navigation_bounds(
                 world, side, &mut environment.static_navigation,
@@ -272,7 +292,7 @@ impl NativeWorldPerceptionAssembler {
             same_side_ships: &self.allies,
             vision_cache_enemies: &self.enemies,
             own_weapons: &self.own_weapons,
-            visible_mining: inputs.visible_mining,
+            visible_mining: &environment.mining,
             visible_map_objects: &environment.objects,
             visible_collision_asteroids: &environment.asteroids,
             navigation_world_grid: self.navigation.occupancy(),
