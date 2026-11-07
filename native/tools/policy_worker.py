@@ -329,6 +329,7 @@ def main() -> None:
             payload = read_exact(reader, rows)
             if payload is None:
                 raise EOFError("incomplete model-update manifest path")
+            new_map = None
             try:
                 manifest_path = Path(bytes(payload).decode("utf-8"))
                 if not manifest_path.is_absolute():
@@ -338,13 +339,20 @@ def main() -> None:
                     raise ValueError("model-update policy ABI signature mismatch")
                 if new_map.keys() != policy_map.keys():
                     raise ValueError("model-update changes active policy slots")
-            except (OSError, UnicodeError, ValueError, RuntimeError) as error:
+            except Exception as error:
+                # Backend libraries raise different Exception subclasses.
+                # A failed candidate must not replace or poison the active
+                # policy, nor leave a successfully loaded candidate resident.
+                new_map = None
                 print(f"Native policy reload rejected: {error}",
                       file=sys.stderr, flush=True)
                 writer.write(HEADER.pack(b"MNOK", VERSION, request_id, 0))
                 writer.flush()
                 continue
+            old_map = policy_map
             policy_map = new_map
+            new_map = None
+            del old_map
             writer.write(HEADER.pack(b"MACK", VERSION, request_id, len(policy_map)))
             writer.flush()
             continue
