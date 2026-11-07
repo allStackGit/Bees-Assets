@@ -74,7 +74,8 @@ function validateInvocation(job,lease,machineId,adapters,hostOs,pathApi,cryptoAp
         throw Error('Invalid Windows continuation ancestry.');
     const context=Object.freeze({
         job_id:job.id,project_id:job.project_id,
-        dispatch_id:job.dispatch_id||null,evaluation_suite_id:job.evaluation_stop?.suite_id||null,
+        dispatch_id:job.dispatch_id||null,evaluation_suite_id:job.evaluation_stop?.suite_id||
+            job.evaluation_stop?.all_of?.[0]?.suite_id||null,
         artifact_lineage_root_id:root,continuation_of_job_id:predecessor,
     });
     const stopFile=adapter.checkpoint_stop_file?.(context)??null;
