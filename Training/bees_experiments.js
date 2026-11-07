@@ -2939,7 +2939,8 @@ if (require.main === module) {
         // arms named native-capable machines. Native service state and Bees
         // training ownership remain separate; faults disarm Hub automation.
         setInterval(() => {
-            if(!hub?.automation?.enabled)return;
+            const before=hub?.automationStatus();
+            if(!before?.enabled&&!before?.restart_rearm_pending)return;
             const status=hub.tickAutomation();
             if(status.last_error)
                 console.error('[hub] native automation disarmed: '+status.last_error);
