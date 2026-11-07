@@ -1291,6 +1291,10 @@ are persisted; selection does not directly launch a workload.
 Ranking uses the equal-weight mean evaluation success rate across
 **identical frozen suite definitions, minimum thresholds and trial counts**,
 with stable job-ID tie-breaking. Training metrics do not determine winners.
+Compare now offers a read-only ranking preview before committing or reviewing
+a model promotion, including every candidate's per-suite successes/trials.
+The displayed percentages are screening estimates, not proof of a significant
+quality difference; previewing does not reserve resources or queue a job.
 Every candidate needs an independent artifact lineage, a successfully
 finished or evaluation-stopped native service, verified resumable
 checkpoint, released capacity and a complete matching benchmark receipt.

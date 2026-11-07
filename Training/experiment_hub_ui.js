@@ -204,7 +204,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let project = document.documentElement.dataset.hubDefaultProject || 'bees';
     let tab = 'monitor', state = null, editing = null;
     let comparisonData = null,comparisonProject = null,comparisonError = null;
-    let comparisonRequest = 0,selectionProject = null;
+    let comparisonRequest = 0,selectionProject = null,previewCandidateKey = null;
     let comparisonDefaultsApplied = false;
     let pipelineKindProject = null;
     let pipelineStageProject = null;
@@ -434,11 +434,19 @@ document.addEventListener('DOMContentLoaded', () => {
             configSelect.value=previousConfig;
         const chosenIds=compareSlots.map(slot=>$('hub-compare-'+slot).value)
             .filter(Boolean);
+        const candidateKey=JSON.stringify(chosenIds);
+        if(candidateKey!==previewCandidateKey) {
+            feedback('hub-compare-selection-ranking','');
+            previewCandidateKey=candidateKey;
+        }
         const readyForRanking=chosenIds.length>=2&&chosenIds.every(id=>{
             const candidate=jobs.find(j=>j.id===id);
             return candidate&&['finished','stopped'].includes(candidate.status)&&
                 candidate.capacity_released_at;
         });
+        $('hub-compare-selection-preview').disabled=!readyForRanking||
+            new Set(chosenIds).size!==chosenIds.length||
+            !['courier','tinybrains'].includes(project);
         $('hub-compare-selection-queue').textContent=readyForRanking
             ?'Queue best evaluated continuation':'Schedule candidate selection';
         $('hub-compare-selection-queue').disabled=chosenIds.length<2||
@@ -1741,6 +1749,27 @@ document.addEventListener('DOMContentLoaded', () => {
                 feedback('hub-compare-export-message',String(error.message||error));
             }
         });
+    function candidateRankingText(decision) {
+        if(!Array.isArray(decision.ranked)||!decision.ranked.length)
+            throw Error('No comparable independently evaluated candidates.');
+        return 'Equal-weight mean across identical frozen suites; differences are not proof of superiority.\n'+
+            decision.ranked.map((candidate,i)=>
+                (i+1)+'. '+candidate.job_id+' · '+
+                (candidate.score*100).toFixed(2)+'% mean\n   '+
+                candidate.suites.map(suite=>
+                    suite.suite_id+': '+suite.successes+'/'+suite.trials+' ('+
+                    (100*suite.successes/suite.trials).toFixed(2)+'%)').join(' | ')
+            ).join('\n');
+    }
+    $('hub-compare-selection-preview').addEventListener('click',async()=>{
+        try {
+            const ids=compareSlots.map(slot=>$('hub-compare-'+slot).value).filter(Boolean);
+            const decision=await action('hub/candidates/rank',{candidate_job_ids:ids});
+            feedback('hub-compare-selection-ranking',candidateRankingText(decision));
+        }catch(error) {
+            feedback('hub-compare-selection-ranking',String(error.message||error));
+        }
+    });
     $('hub-compare-selection-queue').addEventListener('click',async()=>{
         try {
             if(!['courier','tinybrains'].includes(project))
@@ -1766,9 +1795,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 const decision=await action('hub/candidates/rank',payload);
                 const winner=decision.ranked[0];
                 if(!confirm('Queue the best independently evaluated '+project+
-                    ' candidate? Winner '+winner.job_id+' · mean success rate '+
-                    (winner.score*100).toFixed(2)+
-                    '%. The next stage will resume only if the native model bytes still match the evaluated checkpoint.'))return;
+                    ' candidate?\n'+candidateRankingText(decision)+
+                    '\nThe next stage resumes only when the native model bytes still match the evaluated checkpoint.'))return;
                 const result=await action('hub/candidates/promote',{
                     ...payload,expected_winner_job_id:winner.job_id,
                     confirm_queue:true,
@@ -1809,10 +1837,9 @@ document.addEventListener('DOMContentLoaded', () => {
             if(decision.project_id!==plan.project_id)
                 throw Error('The candidate project changed; cancel this plan.');
             const winner=decision.ranked[0];
-            if(!confirm('Resolve reviewed selection '+plan.id+' and queue '+winner.job_id+
-                ' as the winning '+plan.project_id+' checkpoint? Mean independent success '+
-                (winner.score*100).toFixed(2)+
-                '%. The original frozen next-stage configuration and resources will be used.'))return;
+            if(!confirm('Resolve reviewed selection '+plan.id+' and queue the winning '+
+                plan.project_id+' checkpoint?\n'+candidateRankingText(decision)+
+                '\nThe original frozen next-stage configuration and resources will be used.'))return;
             const result=await action('hub/candidates/promote',{
                 selection_plan_id:plan.id,
                 candidate_job_ids:plan.candidate_job_ids,

@@ -465,11 +465,13 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
       <label>Next-stage CPU/RAM request (JSON)<input id="hub-compare-selection-resources" type="text" value='{"cpus":2,"ram_mb":2048,"gpu_count":0}'></label>
     </div>
     <div class="hub-controls">
+      <button type="button" id="hub-compare-selection-preview" disabled>Preview frozen benchmark ranking</button>
       <button type="button" id="hub-compare-selection-queue">Schedule candidate selection</button>
       <select id="hub-compare-selection-cancel-id" aria-label="Pending candidate selection"></select>
       <button type="button" id="hub-compare-selection-review" disabled>Review &amp; queue verified winner</button>
       <button type="button" id="hub-compare-selection-cancel">Cancel pending selection</button>
     </div>
+    <p id="hub-compare-selection-ranking" class="muted" style="white-space:pre-line" role="status"></p>
     <p id="hub-compare-selection-status" class="muted" role="status">No candidate selection scheduled.</p>
     <p id="hub-compare-selection-message" class="muted" role="status"></p>
   </div>
