@@ -49,6 +49,8 @@ internal static class NativePhysicalSceneExporter
         public bool is_carrier_child, has_living_parent_carrier;
         public long parent_carrier_id;
         public int team_retainable_mined_tsv, side_starting_tsv;
+        public bool hivemind_registered, hivemind_vision_enabled;
+        public int hivemind_sight_range;
         public List<SourceSelfWeapon> self_weapons = new List<SourceSelfWeapon>();
         public Vector4 communication;
         public List<SourceObservedWeapon> observed_weapons =
@@ -132,7 +134,7 @@ internal static class NativePhysicalSceneExporter
     [Serializable]
     private sealed class PhysicalScene
     {
-        public int schema_version = 13;
+        public int schema_version = 14;
         public string level_name;
         public float fixed_dt_seconds;
         public bool shots_harmless;
@@ -284,6 +286,16 @@ internal static class NativePhysicalSceneExporter
                 policy_movement_disabled = movementDisabled,
                 policy_cease_fire = ship.IsCeaseFire,
                 effective_vision_range = HiveMindVision.GetEffectiveRange(ship),
+                hivemind_registered = ship.IsHiveMindControlled,
+                hivemind_vision_enabled = ship.HiveMindVision != null &&
+                    ship.HiveMindVision.enabled &&
+                    ship.HiveMindVision.gameObject.activeInHierarchy &&
+                    ship.HiveMindVision.Collider != null &&
+                    ship.HiveMindVision.Collider.enabled,
+                // The Unity trigger keeps its Create-time Range even if
+                // a weapon's observed MaxRange later changes.
+                hivemind_sight_range = ship.HiveMindVision != null
+                    ? ship.HiveMindVision.Range : 0,
                 has_weapons = hasBoundPolicy && ship.HasWeapons,
                 has_turrets = hasBoundPolicy && ship.HasTurrets,
                 has_special_action = hasBoundPolicy &&
