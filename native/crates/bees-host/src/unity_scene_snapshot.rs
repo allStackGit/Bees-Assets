@@ -1413,6 +1413,15 @@ impl NativePhysicalScene {
         if !source_policy_bindings.is_empty() && source_episode.is_none() {
             return Err(NativeSnapshotError::InvalidEpisodeSource);
         }
+        // A schema-16 export MUST include every source-controlled
+        // participant: it must not silently degrade to guessed or manual
+        // MA-POCA ownership when its authenticated group is absent.
+        if raw.schema_version >= 16 &&
+            !source_policy_bindings.is_empty() &&
+            source_policy_group.is_none()
+        {
+            return Err(NativeSnapshotError::InvalidGroupSource);
+        }
         if let Some(group) = &source_policy_group {
             let mut bound_ship_ids = HashSet::new();
             for member in &group.participants {
