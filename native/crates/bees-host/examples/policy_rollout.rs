@@ -675,6 +675,8 @@ fn main() -> Result<(), Box<dyn Error>> {
                 Ok(generation) => {
                     let manifest_sha256 =
                         host.model_mut().model_manifest_sha256();
+                    let segment_mean =
+                        completed_segment.mean_episode_seconds();
                     println!("{}", json!({
                         "kind": "policy_segment",
                         "run_id": config.run_id,
@@ -683,7 +685,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                         "from_round": segment_start_round,
                         "through_round": rounds,
                         "evaluation": completed_segment,
-                        "mean_episode_seconds": completed_segment.mean_episode_seconds(),
+                        "mean_episode_seconds": segment_mean,
                     }));
                     println!("{}", json!({
                         "kind": "policy_updated",
@@ -776,6 +778,12 @@ fn main() -> Result<(), Box<dyn Error>> {
                 "kind": "interval",
                 "run_id": config.run_id,
                 "rounds": rounds,
+                "policy_generation": host.model_mut().model_generation(),
+                "policy_manifest_sha256": host.model_mut().model_manifest_sha256(),
+                "model_updates_applied": next_model_update,
+                "next_model_update_at_round": config.model_updates
+                    .get(next_model_update).map(|item| item.at_round),
+                "awaiting_clean_episode_boundary": holding_for_update,
                 "completed_episodes": completed_episodes.iter()
                     .map(|&count| u64::from(count)).sum::<u64>(),
                 "evaluation": evaluation,
@@ -839,6 +847,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     let evaluation = host.sink_mut().measurements().clone();
     let mean_episode_seconds = evaluation.mean_episode_seconds();
     let final_segment = evaluation.delta_since(&segment_baseline);
+    let final_segment_mean = final_segment.as_ref()
+        .and_then(|segment| segment.mean_episode_seconds());
     if final_segment.is_none() && failed_window.is_none() {
         failed_window = Some("durable evaluation counters regressed".into());
     }
@@ -866,8 +876,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             "from_round": segment_start_round,
             "through_round": rounds,
             "evaluation": final_segment,
-            "mean_episode_seconds": final_segment.as_ref()
-                .and_then(|segment| segment.mean_episode_seconds()),
+            "mean_episode_seconds": final_segment_mean,
         },
         "failed_window": failed_window,
         "cleanup_errors": cleanup_errors,
