@@ -152,6 +152,9 @@ pub struct NativeAuthoredLevel<M, A> {
     pub squads: Vec<NativeAuthoredSquad>,
     /// Exact scenario count, not a population estimate.
     pub initial_full_asteroids: usize,
+    /// Map-local asteroid spawn bounds; imported Unity Levels must supply
+    /// their own. The immutable prefab palette remains shared by the Stage.
+    pub spawn_map_geometry: Option<(Aabb, Vec2)>,
     /// Already configured with true starting TSV, sides, timeout and
     /// discovery baselines. It is NOT reconstructed from combat geometry.
     pub episode: NativeEpisodeRewardCoordinator,
@@ -249,7 +252,9 @@ impl NativeSceneAssets {
             authored.broadphase_cell_size,
             self.projectile_catalog(),
         ).map_err(NativeSceneBuildError::Combat)?;
-        self.configure_combat_world(&mut combat)
+        self.configure_combat_world_for_map(
+            &mut combat, authored.spawn_map_geometry,
+        )
             .map_err(NativeSceneBuildError::Combat)?;
         combat.shots_harmless = authored.shots_harmless;
 

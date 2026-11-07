@@ -631,6 +631,13 @@ impl NativePhysicalScene {
             entities: self.entities,
             squads,
             initial_full_asteroids: setup.initial_full_asteroids,
+            spawn_map_geometry: Some((
+                self.bounds,
+                Vec2::new(
+                    (self.source_navigation.map_width / 2.0).floor(),
+                    (self.source_navigation.map_height / 2.0).floor(),
+                ),
+            )),
             episode: setup.episode,
             groups: setup.groups,
             metadata,

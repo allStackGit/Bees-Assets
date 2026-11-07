@@ -21,6 +21,8 @@ use bees_sim::asteroid_spawn::{
 };
 use bees_sim::combat_world::{AsteroidFragmentationConfig, CombatWorld, CombatWorldError};
 use bees_sim::physics::{CollisionMatrix, CollisionMatrixAssetError};
+use bees_sim::collision::Aabb;
+use bees_sim::geometry::Vec2;
 use bees_sim::ship_assets::{AssetError, ShipAssetCatalog};
 use bees_sim::projectile_assets::{ProjectileAssetError, ProjectileAssetCatalog};
 use bees_sim::box_obstacle_assets::{BoxObstacleCatalog, BoxObstacleAssetError};
@@ -114,11 +116,28 @@ impl NativeSceneAssets {
     pub fn configure_combat_world(
         &self, world: &mut CombatWorld,
     ) -> Result<(), CombatWorldError> {
-        world.configure_full_asteroid_stage(self.asteroid_stage.clone())?;
+        self.configure_combat_world_for_map(world, None)
+    }
+
+    /// The Stage supplies immutable asteroid prefab identities, maximum
+    /// speed and training durability; each Level supplies its own actual
+    /// map-local spawn rectangle. No alternate world or random selection
+    /// rules are introduced for multi-map headless training.
+    pub fn configure_combat_world_for_map(
+        &self,
+        world: &mut CombatWorld,
+        map_geometry: Option<(Aabb, Vec2)>,
+    ) -> Result<(), CombatWorldError> {
+        let mut stage = self.asteroid_stage.clone();
+        if let Some((bounds, half_extents)) = map_geometry {
+            stage.settings.map_bounds = bounds;
+            stage.settings.half_map_extents = half_extents;
+        }
+        world.configure_full_asteroid_stage(stage.clone())?;
         world.configure_asteroid_fragments(AsteroidFragmentationConfig {
-            catalog: Arc::clone(&self.asteroid_stage.catalog),
+            catalog: Arc::clone(&stage.catalog),
             palette: self.fragment_palette.clone(),
-            settings: self.asteroid_stage.settings,
+            settings: stage.settings,
         })
     }
 }
