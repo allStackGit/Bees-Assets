@@ -1180,7 +1180,9 @@ TinyBrains checks `latest.pt` and its profile; Courier checks the
 checkpoint summary, approved environment and population archives.
 If verification fails, the job remains terminal and its diagnostic is
 reported, but any prequeued checkpoint successor stays blocked while
-independent successors can still advance after a natural finish. New
+independent successors can still advance after a natural finish. Armed
+automation releases verified capacity and disarms for operator review
+rather than silently waiting on that blocked checkpoint stage. New
 TinyBrains/Courier jobs freeze this proof requirement when queued.
 Previously completed jobs lacking the new proof field retain their
 existing continuation behavior: the local adapter must verify the
