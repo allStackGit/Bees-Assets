@@ -477,6 +477,14 @@ function nativeStartReadiness(snapshot, job) {
     const r=job.resources;
     if(!r||r.ram_mb<128)
         return block('Native Start requires at least 128 MiB RAM.');
+    // Recovered jobs and leases must meet the original resource contract,
+    // not just the CPU-only shortcut in the native readiness projection.
+    try {
+        resourceRequest(r);
+        resourceRequest(lease.resources);
+    }catch {
+        return block('Stored job or lease resource budget is invalid.');
+    }
     const gpuBlock=gpuStartBlock(job,lease,machine);
     if(gpuBlock)return block(gpuBlock);
     if(r.cpus>machine.reported_cpus||r.ram_mb>machine.reported_ram_mb)
