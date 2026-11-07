@@ -323,7 +323,9 @@ def poll_batch(args, project, suites, find_checkpoint, evaluate_checkpoint):
                 with tempfile.TemporaryDirectory(
                     prefix=f"{project}-eval-batch-", dir=args.scratch
                 ) as temp:
-                    frozen = Path(temp) / ("checkpoint" + file.suffix)
+                    # Evaluators may create checkpoint.pt or policy.zip
+                    # inside their work directory; avoid using either name.
+                    frozen = Path(temp) / ("immutable-source" + file.suffix)
                     shutil.copyfile(file, frozen)
                     with frozen.open("rb") as stream:
                         checkpoint_digest = hashlib.file_digest(stream, "sha256").hexdigest()
