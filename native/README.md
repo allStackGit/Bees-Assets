@@ -416,6 +416,13 @@ The shared native Level step/observation/command/notification driver is
 wired, but no runnable full-game client, model backend, authenticated server
 adapter or executable game/training binary exists yet.
 
+The `bees-host::runtime::NativeHostRuntime` now unifies the
+simulation, real model backend, multi-Level inference driver, durable
+connection, source-ordered notification sink, stop/reset and sampled
+throughput reporting under one cross-platform rendered/headless API.
+This does **not** provide the missing source-authored Level adapter,
+loaded neural model, WebSocket implementation or rendering frontend.
+
 ## Low-overhead performance and command measurements
 
 The same host crate exposes `status::NativeStatusSampler` for

@@ -74,6 +74,18 @@ impl DurableHiveMindConnection {
 
     pub fn is_available(&self) -> bool { !self.unavailable }
 
+    // Only the shared Level host can borrow the raw session to retire
+    // lifetimes and deliver events. The socket never gets mutable access
+    // that could bypass the checkpoint-before-send boundary.
+    pub(crate) fn with_level_lifecycle<R>(
+        &mut self,
+        operation: impl FnOnce(&mut NativeHiveMindConnection) -> R,
+    ) -> Result<R, DurableConnectionError> {
+        self.ensure_available()?;
+        Ok(operation(&mut self.connection))
+    }
+
+
     fn ensure_available(&self) -> Result<(), DurableConnectionError> {
         if self.unavailable {
             Err(DurableConnectionError::Unavailable)
