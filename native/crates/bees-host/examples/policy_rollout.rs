@@ -104,6 +104,16 @@ fn resolve(root: &Path, path: &Path) -> PathBuf {
     if path.is_absolute() { path.to_owned() } else { root.join(path) }
 }
 
+fn resolve_interpreter(root: &Path, path: &Path) -> PathBuf {
+    // A bare python/python3/py executable resolves through PATH on
+    // Windows and Linux; explicit relative script paths use the config dir.
+    if !path.is_absolute() && path.components().count() == 1 {
+        path.to_owned()
+    } else {
+        resolve(root, path)
+    }
+}
+
 fn vec2(coordinates: [f32; 2]) -> Vec2 {
     Vec2::new(coordinates[0], coordinates[1])
 }
@@ -240,7 +250,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 
     let model = ResidentPolicyProcess::python_worker(
-        &resolve(root, &config.python),
+        &resolve_interpreter(root, &config.python),
         &resolve(root, &config.policy_worker),
         &manifest_path,
     ).map_err(|error| contextual("model worker startup", error))?;
@@ -255,11 +265,20 @@ fn main() -> Result<(), Box<dyn Error>> {
     host.set_timing_sample_period(timing);
 
     let mut rounds = 0_u64;
+    let mut failed_window = None;
     while rounds < config.max_rounds {
         let remaining = config.max_rounds - rounds;
         let count = nonzero(remaining.min(u64::from(window.get())) as u32, "window")?;
-        let counts = host.run_window(count, delivery)
-            .map_err(|error| contextual("native Level window (no replay)", error))?;
+        let counts = match host.run_window(count, delivery) {
+            Ok(counts) => counts,
+            Err(error) => {
+                // The partial world/trajectory is never counted as a
+                // successful window. Retain the cause, then use the same
+                // authored cancellation path as a finite-budget stop.
+                failed_window = Some(format!("{error:?}"));
+                break;
+            }
+        };
         rounds += u64::from(counts.rounds);
         if let Some(status) = host.sample_status()
             .map_err(|error| contextual("native host status", error))?
@@ -301,6 +320,10 @@ fn main() -> Result<(), Box<dyn Error>> {
         "running_worlds": status.running_worlds,
         "pending_notifications": status.queued_notifications,
         "pending_store_commands": status.pending_store_commands,
+        "failed_window": failed_window.is_some(),
     }));
+    if let Some(reason) = failed_window {
+        return Err(contextual("native Level window failed; unfinished episodes aborted", reason).into());
+    }
     Ok(())
 }
