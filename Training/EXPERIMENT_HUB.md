@@ -193,7 +193,15 @@ file, for example `post jobs/move-claim --data move.json`. Use the same
 fields and confirmation values as the dashboard API. The CLI also accepts
 the existing `bees/control`, `bees/workers`, `bees/start`, `bees/stop`,
 `bees/build`, and `bees/update-workers` routes on the production manager.
-Requests use loopback only and default to port 7148.
+Requests use loopback only and default to port 7148. The same CLI also
+supports Bees experiment coordinator JSON APIs under `manager/`, for example
+`get manager/state`, `get 'manager/metric-history?id=EXPERIMENT_ID'`,
+`post manager/queue --data queue.json`, `post manager/pause --data empty.json`,
+and `post manager/resume --data empty.json`. These are experiment-owned
+actions, not the separate `bees/start` and `bees/stop` operator routes.
+The CLI uses an explicit list of supported JSON endpoints, retains the
+existing server-side guards and confirmation requirements, and does not
+support binary downloads or arbitrary process paths.
 
 ### Atomic advisory job allocation
 
