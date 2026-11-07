@@ -1054,6 +1054,35 @@ internal sealed class RlOneVsOneAgent : Agent
         return result.WinningSide == side ? EloWinMarker : EloLossMarker;
     }
 
+    /// Snapshot the ACTIVE real controller without binding an idle agent,
+    /// modifying the ship, or drawing a new randomized policy frame.
+    /// These identities are per Level and episode, not a SavedSquad ID.
+    internal static bool TryReadBoundPolicy(
+        Ship ship,
+        out int teamId,
+        out int quarterTurns,
+        out bool movementDisabled)
+    {
+        teamId = -1;
+        quarterTurns = -1;
+        movementDisabled = false;
+        if (ship == null || ship.IsDead ||
+            !ShipControllers.TryGetValue(ship, out RlOneVsOneAgent agent) ||
+            agent == null || !agent._hasBoundShip ||
+            agent._ship != ship || agent._level != ship.Level ||
+            agent._boundRuntimeShipId != ship.Id ||
+            !agent.IsCurrentController() ||
+            !RlPolicyCoordinateFrame.TryGetExistingQuarterTurns(
+                ship.Level, agent._teamId, out quarterTurns))
+        {
+            return false;
+        }
+        teamId = agent._teamId;
+        movementDisabled =
+            RlOneVsOneTrainingBootstrap.CurrentMovementDisabledForTeam(teamId);
+        return true;
+    }
+
     private bool IsCurrentController()
     {
         return !RlPlayerDerivedActionReplay.IsScriptedSide(_level, _side) &&
@@ -1442,6 +1471,23 @@ internal static class RlPolicyCoordinateFrame
     private static readonly Dictionary<Level, EpisodeFrame> EpisodeFrames =
         new Dictionary<Level, EpisodeFrame>();
     private static int _assignmentGeneration;
+
+    /// Export-only source frame lookup. GetQuarterTurns intentionally
+    /// allocates a random frame on first read; an export must not change
+    /// episode randomness or create a false controller identity.
+    internal static bool TryGetExistingQuarterTurns(
+        Level level, int teamId, out int quarterTurns)
+    {
+        quarterTurns = -1;
+        if (level == null || (teamId != 0 && teamId != 1) ||
+            !EpisodeFrames.TryGetValue(level, out EpisodeFrame frame))
+        {
+            return false;
+        }
+        quarterTurns = teamId == 0
+            ? frame.Team0QuarterTurns : frame.Team1QuarterTurns;
+        return true;
+    }
 
     internal static int GetQuarterTurns(Level level, int teamId)
     {

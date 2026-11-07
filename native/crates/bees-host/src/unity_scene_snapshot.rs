@@ -48,7 +48,7 @@ use crate::policy_only_metadata::{
     PolicyOnlyMetadataError,
 };
 
-const SNAPSHOT_VERSION: u32 = 6;
+const SNAPSHOT_VERSION: u32 = 7;
 
 #[derive(Deserialize, Clone, Copy)]
 struct UnityVec2 { x: f32, y: f32 }
@@ -107,6 +107,11 @@ struct UnityShip {
     is_carrier_ship: bool,
     has_communication: bool,
     communication: UnityVec4,
+    has_bound_policy: bool,
+    policy_team_id: i32,
+    policy_quarter_turns: i32,
+    policy_movement_disabled: bool,
+    policy_cease_fire: bool,
     observed_weapons: Vec<UnityObservedWeapon>,
     // Required in v2, exported from the actual Unity Weapon/Piece instances.
     turrets: Vec<UnityTurret>,
@@ -207,6 +212,10 @@ pub struct NativePhysicalScene {
     /// Source GameState.Squads order and exact members; no duplicate
     /// persistent fleet or second mutable native squad registry.
     pub source_squads: Vec<NativeSourceSquad>,
+    /// Real active Unity agent/frame bindings only, never a random
+    /// fabricated policy identity. Loaded model slots remain selected by
+    /// the host's checkpoint schedule.
+    pub source_policy_bindings: HashMap<i64, NativeSourcePolicyBinding>,
 }
 
 /// All values not represented in Unity's physical snapshot remain required
@@ -234,6 +243,14 @@ pub enum NativePolicyOnlyLevelError {
     Snapshot(NativeSnapshotError),
     Metadata(PolicyOnlyMetadataError),
     InvalidControllerBinding(i64),
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct NativeSourcePolicyBinding {
+    pub team_id: u8,
+    pub frame: PolicyFrame,
+    pub movement_disabled: bool,
+    pub cease_fire: bool,
 }
 
 /// Runtime source Squad.ItemId is allocated once per Squad.Setup by the
@@ -329,6 +346,39 @@ impl NativePhysicalScene {
     /// The caller supplies its episode frame, cease-fire and mobility flags;
     /// imported native turrets retain exactly their authored mount and shot
     /// specifications. Never attach to a nonexistent/previously bound ship.
+    /// Attach every *exported* real Unity controller and its actual
+    /// randomized episode frame. Return the ship IDs and source team IDs
+    /// needed to select genuine loaded model slots, never placeholder
+    /// policy outputs. Preflight avoids partial mutation on ordinary
+    /// duplicate-bind failures; a failed snapshot must be discarded.
+    pub fn bind_exported_policy_ships(
+        &mut self,
+    ) -> Result<Vec<(i64, u8)>, NativeSnapshotError> {
+        let mut source: Vec<_> = self.source_policy_bindings.iter()
+            .map(|(&id, &binding)| (id, binding))
+            .collect();
+        source.sort_unstable_by_key(|entry| entry.0);
+        for &(ship_id, _) in &source {
+            let ship = self.entities.iter().find_map(|entity| match entity {
+                NativeAuthoredEntity::Ship(ship)
+                    if ship.entity_id == ship_id => Some(ship),
+                _ => None,
+            }).ok_or(NativeSnapshotError::UnknownPolicyShip(ship_id))?;
+            if ship.policy.is_some() {
+                return Err(NativeSnapshotError::AlreadyBound(ship_id));
+            }
+        }
+        for &(ship_id, binding) in &source {
+            self.bind_policy_ship(
+                ship_id, binding.frame, binding.movement_disabled,
+                binding.cease_fire,
+            )?;
+        }
+        Ok(source.into_iter()
+            .map(|(ship_id, binding)| (ship_id, binding.team_id))
+            .collect())
+    }
+
     pub fn bind_policy_ship(
         &mut self,
         ship_id: i64,
@@ -381,6 +431,7 @@ impl NativePhysicalScene {
         let mut turrets_by_ship = HashMap::with_capacity(raw.ships.len());
         let mut authored_ship_perceptions = HashMap::with_capacity(raw.ships.len());
         let mut active_policy_ship_ids = Vec::new();
+        let mut source_policy_bindings = HashMap::new();
         let mut seen = HashSet::with_capacity(entities.capacity());
         for ship in raw.ships {
             if ship.entity_id <= 0 || ship.side <= 0 ||
@@ -516,6 +567,25 @@ impl NativePhysicalScene {
             }
             if !authored_turrets.is_empty() {
                 turrets_by_ship.insert(ship.entity_id, authored_turrets);
+            }
+            if ship.has_bound_policy {
+                if !(0..=1).contains(&ship.policy_team_id) ||
+                    !(0..=3).contains(&ship.policy_quarter_turns) {
+                    return Err(NativeSnapshotError::InvalidShip(ship.entity_id));
+                }
+                source_policy_bindings.insert(
+                    ship.entity_id,
+                    NativeSourcePolicyBinding {
+                        team_id: ship.policy_team_id as u8,
+                        frame: PolicyFrame::new(ship.policy_quarter_turns as u8),
+                        movement_disabled: ship.policy_movement_disabled,
+                        cease_fire: ship.policy_cease_fire,
+                    },
+                );
+            } else if ship.policy_team_id != -1 || ship.policy_quarter_turns != -1 {
+                // A serialized non-controller must not masquerade as
+                // having an unverified, newly sampled coordinate frame.
+                return Err(NativeSnapshotError::InvalidShip(ship.entity_id));
             }
             if ship.is_rl_policy_controlled {
                 active_policy_ship_ids.push(ship.entity_id);
@@ -661,6 +731,7 @@ impl NativePhysicalScene {
             authored_ship_perceptions,
             active_policy_ship_ids,
             source_squads,
+            source_policy_bindings,
         })
     }
 }

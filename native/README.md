@@ -3,7 +3,7 @@
 This directory is the beginning of the Unity-independent replacement platform,
 created from the current `feat/experiment-queue-ui` branch.
 
-## Authored Unity scene bridge (schema 6)
+## Authored Unity scene bridge (schema 7)
 
 The Unity Editor menu **Bees > Native > Export Selected Level Physical
 Scene** reads the selected live Level and exports
@@ -29,8 +29,15 @@ duplicate IDs and unsupported snapshots instead of making up values.
 `NativePhysicalScene::squads_for_level` retains Unity's Stage-allocated
 `Squad.ItemId` as the actual lifetime identity for a caller-selected Level.
 
-For the policy-only native path, bind each **real** source policy frame
-with `bind_policy_ship`, then call `into_policy_only_level` with explicit
+For the policy-only native path, the v7 export also includes active
+controller team IDs, pre-existing randomized quarter-turn frames,
+movement-disabled state and cease-fire. Call
+`bind_exported_policy_ships` to attach these source-verified controllers,
+or explicitly call `bind_policy_ship` for a separately authored new
+episode. A read-only export never samples a new random frame. The
+caller still selects genuine loaded model slots for each returned team
+and supplies its full observation/learner context. Then call
+`into_policy_only_level` with explicit
 `NativePolicyOnlyLevelSetup` (real v26 policy routes, agent capability
 and navigation/exploration inputs, reward coordinator and optional group
 identities). The real v26 21×21 navigation observation is observer-local, not one

@@ -38,6 +38,8 @@ internal static class NativePhysicalSceneExporter
         public int movement_direction;
         public float longest_side, max_weapon_range, firepower;
         public bool is_bomber, is_carrier_ship, has_communication;
+        public bool has_bound_policy, policy_movement_disabled, policy_cease_fire;
+        public int policy_team_id, policy_quarter_turns;
         public Vector4 communication;
         public List<SourceObservedWeapon> observed_weapons =
             new List<SourceObservedWeapon>();
@@ -90,7 +92,7 @@ internal static class NativePhysicalSceneExporter
     [Serializable]
     private sealed class PhysicalScene
     {
-        public int schema_version = 6;
+        public int schema_version = 7;
         public string level_name;
         public float fixed_dt_seconds;
         public Vector2 min, max;
@@ -138,6 +140,9 @@ internal static class NativePhysicalSceneExporter
             var fleet = ship.FleetShip;
             bool hasCommunication = RlOneVsOneAgent.TryReadCommunication(
                 ship, out Vector4 communication);
+            bool hasBoundPolicy = RlOneVsOneAgent.TryReadBoundPolicy(
+                ship, out int policyTeamId,
+                out int policyQuarterTurns, out bool movementDisabled);
             snapshot.ships.Add(new SourceShip {
                 entity_id = ship.Id,
                 ship_type = (int)ship.ShipType,
@@ -172,6 +177,11 @@ internal static class NativePhysicalSceneExporter
                 is_bomber = ship.IsBomber,
                 is_carrier_ship = ship.IsCarrierShip,
                 has_communication = hasCommunication,
+                has_bound_policy = hasBoundPolicy,
+                policy_team_id = policyTeamId,
+                policy_quarter_turns = policyQuarterTurns,
+                policy_movement_disabled = movementDisabled,
+                policy_cease_fire = ship.IsCeaseFire,
                 communication = communication,
                 observed_weapons = ExportObservedWeapons(ship),
                 turrets = ExportTurrets(ship)
