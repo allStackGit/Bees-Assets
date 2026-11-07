@@ -559,6 +559,8 @@ class ExperimentHub {
             last_claimed_project_id:null,last_started_project_id:null,
         };
         const s = this.state;
+        if(s.automation_restart)
+            this.automation.last_action='Opted-in CPU automation awaiting fresh native reconciliation after coordinator restart.';
         if (!object(s) || s.version !== 1 ||
             !['projects','configurations','jobs','machines','reservations'].every(key=>Array.isArray(s[key])))
             throw Error('Experiment Hub registry invalid; refusing to start.');
@@ -707,7 +709,11 @@ class ExperimentHub {
     }
     automationStatus() {
         const {agent_instances,managed_job_ids,claimed_lease_ids,session_id,...publicState}=this.automation;
-        return {...copy(publicState),managed_jobs:managed_job_ids.length};
+        return {...copy(publicState),managed_jobs:managed_job_ids.length,
+            resume_after_restart:this.automation.enabled&&
+                Boolean(this.state.automation_restart),
+            restart_rearm_pending:!this.automation.enabled&&
+                Boolean(this.state.automation_restart)};
     }
     configureAutomation(value) {
         if(!object(value)||typeof value.enabled!=='boolean')
@@ -715,6 +721,12 @@ class ExperimentHub {
         if(value.enabled===false) {
             if(value.confirm_disarm!==true)
                 throw Error('Explicitly confirm disarming native automation.');
+            this.automation.enabled=false;
+            if(this.state.automation_restart) {
+                const next=copy(this.state);
+                delete next.automation_restart;
+                this.commit(next);
+            }
             this.automation={
                 enabled:false,machine_ids:[],agent_instances:{},managed_job_ids:[],
                 rebalance_queued:false,start_qualified_gpu:false,claim_exclusive_gpu:false,probe_exclusive_gpu:false,claimed_lease_ids:[],
@@ -730,6 +742,12 @@ class ExperimentHub {
             throw Error('Native automation is already armed; disarm explicitly before starting another session.');
         if(value.probe_exclusive_gpu===true&&value.claim_exclusive_gpu!==true)
             throw Error('Automatic GPU probes require automatic exclusive GPU claims.');
+        if(value.resume_after_restart===true&&
+            (value.confirm_restart_rearm!==true||
+             value.start_qualified_gpu===true||
+             value.claim_exclusive_gpu===true||
+             value.probe_exclusive_gpu===true))
+            throw Error('Unattended restart restoration needs explicit permission and CPU-only scheduling.');
         const ids=value.machine_ids;
         if(value.confirm_arm!==true||value.confirm_untracked_load!==true||
             !Array.isArray(ids)||ids.length<1||ids.length>16||
@@ -793,6 +811,17 @@ class ExperimentHub {
                 adopted.push(job.id);
             }
         }
+        const next=copy(this.state);
+        if(value.resume_after_restart===true)
+            next.automation_restart={
+                machine_ids:ids.slice(),
+                rebalance_queued:value.rebalance_queued===true,
+                authorized_at:now(),
+            };
+        else delete next.automation_restart;
+        if(JSON.stringify(next.automation_restart||null)!==
+            JSON.stringify(this.state.automation_restart||null))
+            this.commit(next);
         this.automation={
             enabled:true,machine_ids:ids.slice(),agent_instances:agentInstances,
             managed_job_ids:adopted,session_id:crypto.randomUUID(),
@@ -829,11 +858,73 @@ class ExperimentHub {
         this.automation.last_error=String(error.message||error).slice(0,240);
         this.automation.last_action='Automation disarmed; operator review required.';
         this.automation.waiting_reason=null;
+        if(this.state.automation_restart) {
+            const next=copy(this.state);
+            delete next.automation_restart;
+            this.commit(next);
+        }
+    }
+    restoreOptedInAutomation() {
+        const intent=this.state.automation_restart;
+        if(!intent||this.automation.enabled)return;
+        const reason=message=>{
+            this.automation.waiting_reason=message;
+            return;
+        };
+        // A restart provides no proof of current machine ownership.
+        // Wait for every selected native agent and its lease receipts.
+        const snapshot=this.snapshot(),nowMs=Date.now();
+        for(const id of intent.machine_ids||[]) {
+            const machine=snapshot.machines.find(item=>item.id===id);
+            const report=this.agentReports.get(id);
+            if(!report||!machine||machine.status!=='connected'||
+                nowMs-report.received_ms>=AGENT_HEARTBEAT_TTL_MS)
+                return reason('Restart restoration is awaiting a fresh authenticated agent on '+id+'.');
+        }
+        for(const job of snapshot.jobs) {
+            if(!intent.machine_ids.includes(job.assigned_machine_id)||
+                !job.automation_start_session_id||job.capacity_released_at)
+                continue;
+            if(['start_requested','launch_requested','stop_requested'].includes(job.status))
+                return this.disarmUnsafeAutomation(Error('Prior automated job '+job.id+
+                    ' has an uncertain in-flight Start or Stop after restart.'));
+            if(['unverified','failed'].includes(job.status))
+                return this.disarmUnsafeAutomation(Error('Prior automated job '+job.id+
+                    ' needs operator review after restart.'));
+            const observed=this.executionTelemetry.get(job.id),agent=this.agentReports.get(job.assigned_machine_id);
+            const age=nowMs-Date.parse(observed?.at||'');
+            const lease=snapshot.reservations.find(l=>l.id===job.lease_id&&
+                l.job_id===job.id&&l.status==='acknowledged'&&l.receipt_fresh===true);
+            if(!observed||observed.dispatch_id!==job.dispatch_id||
+                observed.agent_instance_id!==agent?.instance_id||
+                observed.state!==job.status||
+                !(age>=0&&age<AGENT_HEARTBEAT_TTL_MS)||!lease)
+                return reason('Restart restoration is awaiting fresh native dispatch and lease proof for '+job.id+'.');
+        }
+        try {
+            this.configureAutomation({
+                enabled:true,machine_ids:intent.machine_ids,
+                rebalance_queued:intent.rebalance_queued===true,
+                adopt_reconciled_running:true,confirm_adopt_running:true,
+                resume_after_restart:true,confirm_restart_rearm:true,
+                confirm_arm:true,confirm_untracked_load:true,
+            });
+            this.automation.last_action='Restored explicitly opted-in CPU automation after fresh native reconciliation.';
+            this.automation.waiting_reason=null;
+        }catch(error) {
+            this.disarmUnsafeAutomation(error);
+        }
     }
     // At most one durable transition per pass. Existing lifecycle methods
     // remain the only admission, start and release authorities. Stop/failed
     // recovery is deliberately manual; this never retries an uncertain job.
     tickAutomation() {
+        if(!this.automation.enabled&&this.state.automation_restart) {
+            this.restoreOptedInAutomation();
+            // Recovery only arms the session. Never dispatch a new Start in
+            // the same tick that first confirms restarted native ownership.
+            return this.automationStatus();
+        }
         const session=this.automation;
         if(!session.enabled)return this.automationStatus();
         session.last_tick_at=now();
