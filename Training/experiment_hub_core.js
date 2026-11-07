@@ -291,9 +291,18 @@ function finalEvaluationPending(snapshot,job,observedAt) {
             continue;
         const candidates=plan.candidate_job_ids.map(id=>
             snapshot.jobs.find(candidate=>candidate.id===id));
-        if(candidates.some(candidate=>!candidate||
+        const incomplete=candidates.filter(candidate=>!candidate||
             !['finished','stopped'].includes(candidate.status)||
-            !candidate.capacity_released_at))continue;
+            !candidate.capacity_released_at);
+        if(incomplete.length) {
+            // Preserve final evaluation during an active tournament, not
+            // indefinitely for a selection whose next candidate is merely
+            // queued, failed or awaiting manual recovery.
+            if(incomplete.every(candidate=>candidate?.dispatch_id&&
+                ['start_requested','launch_requested','running','stop_requested']
+                    .includes(candidate.status)))return true;
+            continue;
+        }
         const lastRelease=Math.max(...candidates.map(candidate=>
             Date.parse(candidate.capacity_released_at)));
         if(Number.isFinite(lastRelease))
