@@ -84,6 +84,12 @@ pub trait NativeLevelObservationContext {
     fn route_for_agent(&self, ship_id: i64)
         -> Result<NativePolicyRoute, Self::Error>;
 
+    /// Source MA-POCA Agent identity bound to this ship. A group Agent
+    /// can survive multiple physical hulls, so this is NOT ship_id.
+    /// Return None only for a Level without authenticated group membership.
+    fn group_agent_for_ship(&self, ship_id: i64)
+        -> Result<Option<u64>, Self::Error>;
+
     fn inputs_for_agent<'a>(
         &'a self, world: &'a CombatWorld, ship_id: i64,
     ) -> Result<NativeLevelPerceptionInputs<'a>, Self::Error>;
@@ -940,12 +946,14 @@ impl NativeLevelBatchDriver {
                 for ship_id in world.state.decisions.due_agent_ids(next_tick) {
                     let route = metadata.route_for_agent(ship_id)
                         .map_err(NativeLevelSourceError::Source)?;
+                    let group_agent = metadata.group_agent_for_ship(ship_id)
+                        .map_err(NativeLevelSourceError::Source)?;
                     let inputs = metadata.inputs_for_agent(
                         &world.state.combat, ship_id,
                     ).map_err(NativeLevelSourceError::Source)?;
                     state.perception.push_agent(
-                        batch, world, ship_id, route, inputs,
-                        |id| metadata.authored_ship_perception(id),
+                        batch, world, ship_id, route, group_agent,
+                        inputs, |id| metadata.authored_ship_perception(id),
                     ).map_err(NativeLevelSourceError::Perception)?;
                 }
                 Ok(())
