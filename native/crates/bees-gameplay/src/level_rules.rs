@@ -13,6 +13,7 @@ use std::num::NonZeroU32;
 use bees_hivemind::session::SquadLifetime;
 use bees_hivemind::dispatch::LocalCommandKind;
 use bees_sim::combat_world::{CombatEvent, CombatWorld, CombatWorldError};
+use bees_sim::combat_perception_bridge::CombatPerceptionError;
 use bees_sim::geometry::Vec2;
 use bees_sim::ship_assets::ShipAssetCatalog;
 use bees_sim::navigation_runtime::NavigationRuntime;
@@ -55,6 +56,15 @@ pub trait NativeLevelRewardMetadata {
     /// No default implementation: a Level without persisted fleet state
     /// must not silently acknowledge an action and lose mined resources.
     fn credit_mined_minerals(&mut self, ship_id: i64, amount: i32) -> Option<i32>;
+
+    /// After every successful canonical physics/reward tick, advance any
+    /// world-owned observation memory (e.g. actual allied sight history).
+    /// No inference-only clock may drift independently of world progress.
+    fn update_observation_memory(
+        &mut self, _world: &CombatWorld, _episode_progress: f32,
+    ) -> Result<(), CombatPerceptionError> {
+        Ok(())
+    }
 }
 
 /// One authentic Unity OnTriggerEnter2D ship contact with the currently
@@ -495,8 +505,14 @@ pub enum NativeLevelStepError {
     InvalidDecisionCadence,
     MissingMiningFleetValue(i64),
     InvalidMiningFleetValue(i64),
+    Perception(CombatPerceptionError),
 }
 
+impl From<CombatPerceptionError> for NativeLevelStepError {
+    fn from(error: CombatPerceptionError) -> Self {
+        Self::Perception(error)
+    }
+}
 impl From<GameCommandError> for NativeLevelStepError {
     fn from(error: GameCommandError) -> Self {
         Self::Events(NativeLevelEventError::Commands(error))
@@ -698,6 +714,13 @@ where
                 |mother, beacon| allocate_late_minion(mother, beacon),
             )?;
         }
+        // The observation history is part of the same World lifetime:
+        // sample after physical movement and combat events, never via
+        // an unrelated UI or inference tick. Fixed-step failures are
+        // reported to the caller and the world is not reused as valid PPO.
+        state.metadata.update_observation_memory(
+            &state.combat, state.events.normalized_episode_progress(),
+        )?;
         Ok(counts)
     }
 }

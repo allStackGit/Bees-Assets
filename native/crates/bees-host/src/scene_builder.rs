@@ -18,6 +18,7 @@ use bees_sim::combat_world::{CombatWorld, CombatWorldError, NativeTurretSpec};
 use bees_sim::asteroid_spawn::FullAsteroidPrototype;
 use bees_sim::geometry::Vec2;
 use bees_sim::navigation::NavigationError;
+use bees_sim::combat_perception_bridge::CombatPerceptionError;
 use bees_sim::control::PolicyFrame;
 use bees_sim::movement::ShipMotion;
 use bees_sim::map_object::CombatMapObject;
@@ -169,6 +170,7 @@ pub enum NativeSceneBuildError {
     MissingLiveBoxPose(i64),
     MissingLivePolygonPose(i64),
     Navigation(NavigationError),
+    Perception(CombatPerceptionError),
     Group(GroupRewardError),
     GroupConfiguration(NativeLevelEventError),
 }
@@ -227,7 +229,7 @@ impl NativeSceneAssets {
         authored: NativeAuthoredLevel<M, A>,
     ) -> Result<World<NativeLevelState<M, A>>, NativeSceneBuildError>
     where
-        M: NativeLevelCommandContext,
+        M: NativeLevelCommandContext + NativeLevelRewardMetadata,
     {
         if authored.entities.is_empty() {
             return Err(NativeSceneBuildError::EmptyScene);
@@ -363,6 +365,12 @@ impl NativeSceneAssets {
         world.state.metadata.initialize_navigation_from_world(
             &world.state.combat,
         ).map_err(NativeSceneBuildError::Navigation)?;
+        // First native decision at tick zero observes initial physical
+        // visibility, not an empty fabricated exploration grid.
+        world.state.metadata.update_observation_memory(
+            &world.state.combat,
+            world.state.events.normalized_episode_progress(),
+        ).map_err(NativeSceneBuildError::Perception)?;
         Ok(world)
     }
 }
