@@ -80,6 +80,17 @@ internal static class NativePhysicalSceneExporter
     }
 
     [Serializable]
+    private sealed class SourceMapObject
+    {
+        public long entity_id, linked_obstacle_id;
+        public string kind, collider_kind;
+        public int layer, health, max_health, explosion_power;
+        public Vector2 position, linear_velocity, circle_offset;
+        public float rotation_degrees, angular_velocity_degrees, circle_radius;
+        public List<Vector2> collider_vertices = new List<Vector2>();
+    }
+
+    [Serializable]
     private sealed class SourceSquad
     {
         // ItemId is the runtime ID allocated by Stage.Pool.ItemCount++ at
@@ -92,7 +103,7 @@ internal static class NativePhysicalSceneExporter
     [Serializable]
     private sealed class PhysicalScene
     {
-        public int schema_version = 8;
+        public int schema_version = 9;
         public string level_name;
         public float fixed_dt_seconds;
         public bool shots_harmless;
@@ -100,6 +111,7 @@ internal static class NativePhysicalSceneExporter
         public List<SourceShip> ships = new List<SourceShip>();
         public List<SourceSquad> squads = new List<SourceSquad>();
         public List<SourceObstacle> obstacles = new List<SourceObstacle>();
+        public List<SourceMapObject> map_objects = new List<SourceMapObject>();
     }
 
     [MenuItem("Bees/Native/Export Selected Level Physical Scene")]
@@ -258,6 +270,21 @@ internal static class NativePhysicalSceneExporter
                 exportedObjects, exportedIds);
         }
 
+        // MapObjects do NOT derive from Obstacle and were previously
+        // omitted even when their physics and damage were active. The
+        // canonical native combat world already owns their collision,
+        // health, Fire Tank explosion and discovery gameplay.
+        foreach (MapObject obj in
+                 level.Map.Transform.GetComponentsInChildren<MapObject>(false))
+        {
+            if (obj == null || obj.IsDead) continue;
+            if (!obj.gameObject.activeInHierarchy) continue;
+            if (obj.Level != level)
+                throw new InvalidOperationException(
+                    "MapObject belongs to a different Level: " + obj.name);
+            AddMapObject(level, snapshot, obj, exportedIds);
+        }
+
         if (level.State.Projectiles.Count != 0)
         {
             throw new InvalidOperationException(
@@ -367,7 +394,8 @@ internal static class NativePhysicalSceneExporter
             Vector2[] points = polygon.GetPath(0);
             for (int i = 0; i < points.Length; i++)
                 points[i] += polygon.offset;
-            ExportColliderVertices(map, polygon, entity, points);
+            ExportColliderVertices(map, polygon, entity.position,
+                entity.rotation_degrees, points, entity.collider_vertices);
         }
         else if (obstacle is StaticObstacle || obstacle is MapBorder)
         {
@@ -387,7 +415,8 @@ internal static class NativePhysicalSceneExporter
                 center + new Vector2(half.x, half.y),
                 center + new Vector2(-half.x, half.y)
             };
-            ExportColliderVertices(map, box, entity, corners);
+            ExportColliderVertices(map, box, entity.position,
+                entity.rotation_degrees, corners, entity.collider_vertices);
         }
         else
         {
@@ -404,18 +433,120 @@ internal static class NativePhysicalSceneExporter
     /// Obstacle body local frame, including nested rotation/scale. The
     /// Level owns these coordinates; presentation never affects them.
     private static void ExportColliderVertices(
-        Transform map, Collider2D collider, SourceObstacle destination,
-        Vector2[] points)
+        Transform map, Collider2D collider,
+        Vector2 rootPosition, float rootRotation,
+        Vector2[] points, List<Vector2> destination)
     {
-        Quaternion unrotate = Quaternion.Euler(
-            0f, 0f, -destination.rotation_degrees);
+        Quaternion unrotate = Quaternion.Euler(0f, 0f, -rootRotation);
         foreach (Vector2 point in points)
         {
             Vector2 world = collider.transform.TransformPoint(point);
             Vector2 local = map.InverseTransformPoint(world);
-            destination.collider_vertices.Add(
-                unrotate * (local - destination.position));
+            destination.Add(unrotate * (local - rootPosition));
         }
+    }
+
+    private static void AddMapObject(
+        Level level, PhysicalScene snapshot, MapObject obj,
+        HashSet<long> exportedIds)
+    {
+        if (obj.Id <= 0 || !exportedIds.Add(obj.Id) ||
+            obj.Health <= 0 || obj.MaxHealth <= 0 ||
+            obj.Health != obj.MaxHealth ||
+            obj.Collider == null || !obj.Collider.isActiveAndEnabled)
+        {
+            throw new InvalidOperationException(
+                "Cannot export a partial/inactive physical MapObject: " + obj.name);
+        }
+        Transform map = level.Map.Transform;
+        Collider2D collider = obj.Collider;
+        SourceMapObject entry = new SourceMapObject {
+            entity_id = obj.Id,
+            kind = obj is CanisterBomb ? "fire-tank" : "generic",
+            layer = collider.gameObject.layer,
+            health = obj.Health,
+            max_health = obj.MaxHealth,
+            position = map.InverseTransformPoint(obj.transform.position),
+            rotation_degrees = Mathf.DeltaAngle(
+                map.eulerAngles.z, obj.transform.eulerAngles.z),
+            linear_velocity = obj.Body != null
+                ? (Vector2)map.InverseTransformVector(obj.Body.linearVelocity)
+                : Vector2.zero,
+            angular_velocity_degrees = obj.Body != null
+                ? obj.Body.angularVelocity : 0f,
+        };
+        if (obj is CanisterBomb tank)
+        {
+            entry.explosion_power = tank.Power;
+            if (tank.TargetObstacle != null)
+            {
+                if (tank.TargetObstacle.IsDead || tank.TargetObstacle.Id <= 0)
+                    throw new InvalidOperationException(
+                        "Fire Tank has no live linked obstacle: " + obj.name);
+                entry.linked_obstacle_id = tank.TargetObstacle.Id;
+            }
+        }
+        if (collider is BoxCollider2D box)
+        {
+            if (box.edgeRadius != 0f)
+                throw new InvalidOperationException(
+                    "Rounded MapObject box is not representable: " + obj.name);
+            entry.collider_kind = "box";
+            Vector2 h = box.size * 0.5f;
+            Vector2 c = box.offset;
+            Vector2[] corners = {
+                c + new Vector2(-h.x, -h.y),
+                c + new Vector2(h.x, -h.y),
+                c + new Vector2(h.x, h.y),
+                c + new Vector2(-h.x, h.y),
+            };
+            ExportColliderVertices(map, box, entry.position,
+                entry.rotation_degrees, corners, entry.collider_vertices);
+        }
+        else if (collider is PolygonCollider2D polygon)
+        {
+            if (polygon.pathCount != 1)
+                throw new InvalidOperationException(
+                    "MapObject requires a single authored polygon path: " + obj.name);
+            entry.collider_kind = "polygon";
+            Vector2[] points = polygon.GetPath(0);
+            for (int i = 0; i < points.Length; i++)
+                points[i] += polygon.offset;
+            ExportColliderVertices(map, polygon, entry.position,
+                entry.rotation_degrees, points, entry.collider_vertices);
+        }
+        else if (collider is CircleCollider2D circle)
+        {
+            // A native circle must remain a circle under the actual
+            // complete map/parent transforms. Never substitute an AABB
+            // when Unity's physical shape becomes an ellipse.
+            Vector2 x = map.InverseTransformVector(
+                circle.transform.TransformVector(Vector3.right * circle.radius));
+            Vector2 y = map.InverseTransformVector(
+                circle.transform.TransformVector(Vector3.up * circle.radius));
+            float radiusX = x.magnitude;
+            float radiusY = y.magnitude;
+            float limit = Mathf.Max(0.0001f, Mathf.Max(radiusX, radiusY) * 0.0001f);
+            if (!IsFinite(radiusX) || !IsFinite(radiusY) ||
+                radiusX <= 0f || radiusY <= 0f ||
+                Mathf.Abs(radiusX - radiusY) > limit ||
+                Mathf.Abs(Vector2.Dot(x, y)) > limit * Mathf.Max(radiusX, radiusY))
+                throw new InvalidOperationException(
+                    "Scaled MapObject circle is not isotropic: " + obj.name);
+            entry.collider_kind = "circle";
+            entry.circle_radius = (radiusX + radiusY) * 0.5f;
+            Vector2 center = map.InverseTransformPoint(
+                circle.transform.TransformPoint(circle.offset));
+            entry.circle_offset = Quaternion.Euler(
+                0f, 0f, -entry.rotation_degrees) * (center - entry.position);
+        }
+        else
+        {
+            throw new InvalidOperationException(
+                "Unsupported primary MapObject Collider2D: " +
+                collider.GetType().Name);
+        }
+        snapshot.map_objects.Add(entry);
     }
 
     private static List<SourceObservedWeapon> ExportObservedWeapons(Ship ship)
