@@ -348,6 +348,55 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
     /// Read-only snapshot of the CURRENT episode's assigned controller.
     /// IsControllerForSide may create/start the coordinator and therefore
     /// change source episode state. Export/inspection must not call it.
+    /// Export-only read of the ACTIVE source episode's original values.
+    /// All denominators are the ones captured by CaptureDiscoveryBaselines
+    /// at the beginning of this same episode, not recalculated from the
+    /// partially depleted/visible current physical scene. Never starts
+    /// a coordinator or advances time.
+    internal static bool TryReadNativeInitialEpisode(
+        Level level,
+        out int beeSide, out int humanSide,
+        out int beeStartingTsv, out int humanStartingTsv,
+        out float timeoutSeconds, out int[] discoveryBaselines)
+    {
+        beeSide = 0;
+        humanSide = 0;
+        beeStartingTsv = 0;
+        humanStartingTsv = 0;
+        timeoutSeconds = 0f;
+        discoveryBaselines = null;
+        RlOneVsOneEpisodeCoordinator coordinator =
+            GetCoordinator(level, false);
+        if (coordinator == null || !coordinator._episodeActive ||
+            coordinator._level != level ||
+            ConfigData.Configuration == null)
+        {
+            return false;
+        }
+        beeSide = ConfigData.Configuration.BeeSide;
+        humanSide = ConfigData.Configuration.HumanSide;
+        beeStartingTsv = coordinator._beeStartingTsv;
+        humanStartingTsv = coordinator._humanStartingTsv;
+        timeoutSeconds = RlOneVsOneTrainingBootstrap.CurrentTimeoutSeconds;
+        if (beeSide <= 0 || humanSide <= 0 || beeSide == humanSide ||
+            beeStartingTsv <= 0 || humanStartingTsv <= 0 ||
+            timeoutSeconds <= 0f)
+        {
+            return false;
+        }
+        discoveryBaselines = new[] {
+            coordinator._enemyShipDiscoveryValue[0],
+            coordinator._miningAsteroidDiscoveryValue[0],
+            coordinator._staticObstacleDiscoveryValue[0],
+            coordinator._mapObjectDiscoveryValue[0],
+            coordinator._enemyShipDiscoveryValue[1],
+            coordinator._miningAsteroidDiscoveryValue[1],
+            coordinator._staticObstacleDiscoveryValue[1],
+            coordinator._mapObjectDiscoveryValue[1]
+        };
+        return true;
+    }
+
     internal static bool IsExistingControllerForSide(
         Level level, int side, int teamId)
     {

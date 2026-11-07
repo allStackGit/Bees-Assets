@@ -124,10 +124,12 @@ internal static class NativePhysicalSceneExporter
     [Serializable]
     private sealed class PhysicalScene
     {
-        public int schema_version = 11;
+        public int schema_version = 12;
         public string level_name;
         public float fixed_dt_seconds;
         public bool shots_harmless;
+        public bool has_policy_episode;
+        public SourcePolicyEpisode policy_episode = new SourcePolicyEpisode();
         public Vector2 min, max;
         public List<SourceShip> ships = new List<SourceShip>();
         public List<SourceSquad> squads = new List<SourceSquad>();
@@ -160,6 +162,22 @@ internal static class NativePhysicalSceneExporter
             min = new Vector2(level.MinX, level.MinY),
             max = new Vector2(level.MaxX, level.MaxY)
         };
+
+        if (RlOneVsOneEpisodeCoordinator.TryReadNativeInitialEpisode(
+                level,
+                out int beeSide, out int humanSide,
+                out int beeStartingTsv, out int humanStartingTsv,
+                out float timeoutSeconds, out int[] discoveryBaselines))
+        {
+            snapshot.has_policy_episode = true;
+            snapshot.policy_episode = new SourcePolicyEpisode {
+                bee_side = beeSide, human_side = humanSide,
+                bee_starting_tsv = beeStartingTsv,
+                human_starting_tsv = humanStartingTsv,
+                timeout_seconds = timeoutSeconds,
+                discovery_baselines = discoveryBaselines,
+            };
+        }
 
         foreach (Ship ship in level.State.Ships)
         {
@@ -265,6 +283,13 @@ internal static class NativePhysicalSceneExporter
                 observed_weapons = ExportObservedWeapons(ship),
                 turrets = ExportTurrets(ship)
             });
+        }
+        if (!snapshot.has_policy_episode &&
+            snapshot.ships.Exists(ship => ship.has_bound_policy))
+        {
+            throw new InvalidOperationException(
+                "A bound policy requires the real source episode seed; " +
+                "do not invent starting TSV or discovery reward baselines.");
         }
         if (snapshot.ships.Count == 0)
         {
