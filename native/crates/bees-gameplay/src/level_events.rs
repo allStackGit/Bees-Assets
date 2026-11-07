@@ -7,6 +7,7 @@
 
 use bees_hivemind::session::{HiveMindSession, SquadLifetime, StrategyReceipt};
 use bees_sim::combat_world::{CombatEvent, CombatWorld};
+use bees_sim::geometry::Vec2;
 use bees_sim::physics::CollisionMatrix;
 use bees_sim::navigation_runtime::NavigationRuntime;
 use bees_sim::simulation::RandomStream;
@@ -832,7 +833,7 @@ impl NativeLevelEventProcessor {
         if self.completed() || self.commands.active_count() == 0 {
             return Ok(());
         }
-        if let Err(error) = self.commands.advance_into_with_bombing(
+        if let Err(error) = self.commands.advance_into_with_scouting_center(
             world, navigation, Some(&self.roster), friendlies, random, dt,
             circle_snapshot, swipe_snapshot, aggressive_snapshot,
             bombing_snapshot, charge_snapshot, scouting_center,
