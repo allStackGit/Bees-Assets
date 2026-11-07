@@ -172,9 +172,11 @@ def read_reused(reader, storage: bytearray, count: int):
     return storage, view
 
 
-def checked_manifest(path: Path):
+def checked_manifest(path: Path, expected_digest: bytes | None = None):
     manifest_bytes = path.read_bytes()
     manifest_digest = hashlib.sha256(manifest_bytes).digest()
+    if expected_digest is not None and manifest_digest != expected_digest:
+        raise ValueError("model-update manifest changed before loading")
     manifest = json.loads(manifest_bytes.decode("utf-8"))
     if not isinstance(manifest, dict) or manifest.get("format") != "bees-native-model-v1":
         raise ValueError("manifest must declare bees-native-model-v1")
@@ -339,10 +341,8 @@ def main() -> None:
                 if not manifest_path.is_absolute():
                     raise ValueError("model-update manifest must be absolute")
                 new_signature, new_map, new_digest = checked_manifest(
-                    manifest_path
+                    manifest_path, expected_digest
                 )
-                if new_digest != expected_digest:
-                    raise ValueError("model-update manifest changed before loading")
                 if new_signature != signature:
                     raise ValueError("model-update policy ABI signature mismatch")
                 if new_map.keys() != policy_map.keys():
