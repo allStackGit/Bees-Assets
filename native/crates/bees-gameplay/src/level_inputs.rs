@@ -12,7 +12,7 @@ use bees_sim::ship_assets::ShipAssetCatalog;
 
 use crate::commands::{GameCommandError, NativeFriendlySquad};
 use crate::squad_geometry::live_squad_bounds_from_catalog;
-use crate::squads::NativeSquadEntry;
+use crate::squads::{NativeSquadEntry, NativeSquadRoster};
 
 /// Construct the source-friendly entry for ClosestFriendly and Guard.
 ///
@@ -56,4 +56,31 @@ pub fn live_friendly_squad_from_catalog(
         return Err(GameCommandError::InvalidFriendlies);
     }
     Ok(friendly)
+}
+
+/// Build the complete reusable friendly projection on demand for a due
+/// ClosestFriendly/Guard timer. The *source Level* supplies its actual
+/// Level.State.Squads order and command/guard state; dead or retired
+/// lifetimes no longer appear in the native roster and are skipped.
+///
+/// Every shape and speed comes from canonical world state. This runs only
+/// for due following-command polls, never on every fixed combat step.
+pub fn collect_live_friendlies_from_catalog(
+    world: &CombatWorld,
+    roster: &NativeSquadRoster,
+    catalog: &ShipAssetCatalog,
+    source_squad_order: &[SquadLifetime],
+    mut source_command: impl FnMut(SquadLifetime)
+        -> Result<(Option<LocalCommandKind>, Option<SquadLifetime>), GameCommandError>,
+    output: &mut Vec<NativeFriendlySquad>,
+) -> Result<(), GameCommandError> {
+    output.clear();
+    for &owner in source_squad_order {
+        let Some(squad) = roster.get(owner) else { continue };
+        let (active_command, guarded_squad) = source_command(owner)?;
+        output.push(live_friendly_squad_from_catalog(
+            world, squad, catalog, active_command, guarded_squad,
+        )?);
+    }
+    Ok(())
 }
