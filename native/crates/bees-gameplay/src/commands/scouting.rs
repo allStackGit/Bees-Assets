@@ -142,13 +142,24 @@ impl ScoutingRun {
         if let Some(due) = self.beacon_timer.as_mut()
             .and_then(|timer| timer.begin_update(dt)) {
             callbacks += 1;
-            // Each game Scout has an independent world-owned charge and
-            // cooldown; command supersession cannot replenish Beacons.
-            for &id in &self.scout_ids {
+            // Unity Scouting.DropScoutBeacons visits its initial
+            // GetShips-ordered Scout list from last to first, removing dead
+            // Scouts as it goes. Reversing matters if the side's available
+            // Beacon slots are limited: a different Scout would spawn.
+            self.scout_ids.retain(|&id| world.ship(id)
+                .is_some_and(|ship| !ship.vitals.is_dead()));
+            for &id in self.scout_ids.iter().rev() {
+                // Each Scout has its own world-owned charges and cooldown.
                 world.try_drop_game_scout_beacon(id)?;
             }
-            self.beacon_timer.as_mut().expect("active beacon timer")
-                .finish_update(due);
+            if self.scout_ids.is_empty() {
+                // The source keeps calling an empty timer. No new Scouts
+                // are added during this command, so omit that idle work.
+                self.beacon_timer = None;
+            } else {
+                self.beacon_timer.as_mut().expect("active beacon timer")
+                    .finish_update(due);
+            }
         }
         if let Some(due) = self.after_sighting.as_mut()
             .and_then(|timer| timer.begin_update(dt)) {
