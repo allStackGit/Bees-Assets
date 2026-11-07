@@ -275,7 +275,15 @@ function missingFinalEvaluationRules(job) {
     const cohort=job.evaluation_candidates?.find(row=>row.checkpoint_sha256===job.checkpoint_model_sha256);
     return evaluationRules(job.evaluation_stop).filter(rule=>{
         const receipt=cohort?.receipts?.[rule.suite_id];
-        return !receipt?.suite_sha256||receipt.trials<rule.min_trials;
+        try {
+            const evidence=evaluationEvidence(receipt,rule,job.dispatch_id);
+            return evidence.checkpoint_sha256!==job.checkpoint_model_sha256||
+                !evidence.suite_sha256||evidence.trials<rule.min_trials||
+                (job.evaluation_suite_definitions?.[rule.suite_id]&&
+                    evidence.suite_sha256!==job.evaluation_suite_definitions[rule.suite_id]);
+        }catch {
+            return true;
+        }
     });
 }
 // A missing final receipt cannot justify inspecting a historical terminal
