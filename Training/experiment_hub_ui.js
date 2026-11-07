@@ -434,6 +434,13 @@ document.addEventListener('DOMContentLoaded', () => {
             configSelect.value=previousConfig;
         const chosenIds=compareSlots.map(slot=>$('hub-compare-'+slot).value)
             .filter(Boolean);
+        const readyForRanking=chosenIds.length>=2&&chosenIds.every(id=>{
+            const candidate=jobs.find(j=>j.id===id);
+            return candidate&&['finished','stopped'].includes(candidate.status)&&
+                candidate.capacity_released_at;
+        });
+        $('hub-compare-selection-queue').textContent=readyForRanking
+            ?'Queue best evaluated continuation':'Schedule candidate selection';
         $('hub-compare-selection-queue').disabled=chosenIds.length<2||
             new Set(chosenIds).size!==chosenIds.length||!configs.length;
         const allPlans=(state.candidate_selections||[])
