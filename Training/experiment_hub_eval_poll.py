@@ -331,8 +331,10 @@ def poll_batch(args, project, suites, find_checkpoint, evaluate_checkpoint):
                         checkpoint_digest = hashlib.file_digest(stream, "sha256").hexdigest()
                     pending = []
                     for (sid, (suite, receipt_suite)), job in zip(ordered, jobs):
+                        work = Path(temp) / sid
+                        work.mkdir()
                         successes = evaluate_checkpoint(
-                            job, frozen, checkpoint_digest, Path(temp), suite)
+                            job, frozen, checkpoint_digest, work, suite)
                         if (type(successes) is not int or
                             not 0 <= successes <= receipt_suite["trials"]):
                             raise ValueError("Invalid batch evaluation success count.")
