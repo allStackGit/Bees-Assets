@@ -646,6 +646,8 @@ fn main() -> Result<(), Box<dyn Error>> {
                 break;
             }
         };
+        let evaluation = host.sink_mut().measurements().clone();
+        let mean_episode_seconds = evaluation.mean_episode_seconds();
         match host.sample_status() {
             Ok(Some(status)) => println!("{}", json!({
                 "kind": "interval",
@@ -653,6 +655,8 @@ fn main() -> Result<(), Box<dyn Error>> {
                 "rounds": rounds,
                 "completed_episodes": completed_episodes.iter()
                     .map(|&count| u64::from(count)).sum::<u64>(),
+                "evaluation": evaluation,
+                "mean_episode_seconds": mean_episode_seconds,
                 "metrics": status,
             })),
             Ok(None) => {},
@@ -724,6 +728,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
     let status = host.runtime_status()
         .map_err(|error| contextual("final native host status", error))?;
+    let evaluation = host.sink_mut().measurements().clone();
+    let mean_episode_seconds = evaluation.mean_episode_seconds();
     println!("{}", json!({
         "kind": "run_final",
         "run_id": config.run_id,
@@ -738,6 +744,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         "running_worlds": status.running_worlds,
         "pending_notifications": status.queued_notifications,
         "pending_store_commands": status.pending_store_commands,
+        "evaluation": evaluation,
+        "mean_episode_seconds": mean_episode_seconds,
         "failed_window": failed_window,
         "cleanup_errors": cleanup_errors,
     }));
