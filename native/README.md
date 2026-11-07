@@ -39,16 +39,19 @@ The single JSON configuration file requires:
   model_slots, groups?}`. Each scene is an exported **initial** Level;
   both IDs must be unique and positive, and `model_slots` maps exact
   Unity policy-team IDs (`"0"`/`"1"`) to verified manifest slots.
-  For actual MA-POCA episodes, `groups` is
-  `{"episode_number": 1, "participants": [{"side": 1, "agent_id": 123}]}`
-  with **all** authentic source group agent IDs (both sides required).
-  These IDs are not necessarily ship IDs and are NOT supplied or
-  verifiable from the current physical-scene export; they must be
-  obtained from the authoritative episode, never guessed. A source
-  controller whose initial team disagrees with the supplied episode
-  number rejects the run. Each subsequent episode advances that
-  number and updates the real side/team routing using the existing
-  MA-POCA alternation. Omit `groups` only for non-group gameplay.
+  For schema-16 exports, the actual participating Unity Agent instance
+  IDs, source ship bindings and episode number are recorded in the scene
+  itself; the runner derives `groups` automatically. If manually supplied,
+  `groups` must match that source record exactly. Legacy schema-15 scenes
+  can still supply `{"episode_number": 1, "participants":
+  [{"side": 1, "agent_id": 123}]}` from actual external group ownership,
+  never inferred hull IDs. Scripted opponents may have no group
+  participants on their side. A source controller whose initial team
+  disagrees with the configured episode rejects the run. On subsequent
+  episodes, the native Level advances the episode number, alternates
+  team routes, and selects fresh source-equivalent distinct policy
+  coordinate frames from a world-specific reproducible seed.
+  Omit `groups` only for non-group gameplay.
 
 
 The runner checks source identities, model routing, collision settings and
@@ -76,7 +79,7 @@ rendering, full parity or production durability of all app-side effects.
 Do not use its partial trajectories as valid learner data. Native
 Windows/Linux execution and throughput are not yet verified.
 
-## Unity scene import (schema 15)
+## Unity scene import (schema 16; schema 15 supported)
 
 **Bees > Native > Export Selected Level Physical Scene** captures a
 source-authored initial Unity Level, not a resumable match checkpoint.
