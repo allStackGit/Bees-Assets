@@ -374,10 +374,11 @@ native Job Object CPU/RAM enforcement, concurrent automatic scheduling,
 terminal receipt/release, dashboard controls, and heartbeat-loss disarming
 on a real host. **Production Bees/TinyBrains coexistence and unattended project
 training are still unverified**; real Linux services and GPU isolation remain
-unqualified. The **generic non-Bees scheduler** supports frozen independent-evaluation
-stop thresholds and verified, checkpoint-preserving transitions to
-prequeued continuation stages. It does not yet support Bees-style
-multi-benchmark promotion, dynamic live rebalancing, or enforced
+unqualified. The **generic non-Bees scheduler** supports frozen single-suite and
+same-checkpoint multi-suite early-stop gates with verified,
+checkpoint-preserving transitions to prequeued continuation stages.
+It does not yet support Bees-style promotion between independently
+competing policy lineages, dynamic live resource balancing, or enforced
 performance shares. The existing Bees experiment manager separately
 supports an opt-in periodic, frozen development-benchmark completion
 target, documented in `EXPERIMENTS.md`. It stops only after verified
@@ -1273,9 +1274,26 @@ Compare identifies missing fingerprints and differing definitions,
 even when the IDs match.
 Design accepts a suite ID, minimum trial count and minimum success rate, for
 example `{"suite_id":"heldout","min_trials":100,"min_success_rate":0.8}`.
-Queueing freezes the rule. Only hosts advertising the requested suite for
-that project can claim or start the job. Agents without suite advertisements
-remain eligible for jobs without an evaluation stop.
+For a multi-benchmark stopping gate, fill **All required benchmark suites**
+with a JSON array instead of the single-suite fields. The coordinator freezes
+`{"all_of":[{"suite_id":"short","min_trials":100,"min_success_rate":0.8},
+{"suite_id":"long","min_trials":100,"min_success_rate":0.7}]}`
+with **2–8 distinct suite IDs** and optional `suite_sha256` per rule.
+The worker must advertise all required suites. Run a scheduled evaluator
+for each suite using its own frozen definition. The coordinator records
+at most eight checkpoint cohorts and requests Stop **only when every
+threshold passes on the exact same checkpoint SHA-256**. A successful
+short-range evaluation from one checkpoint cannot be combined with a
+long-range evaluation from another. Configure the evaluation cadence
+and checkpoint retention so the independent evaluators can inspect a
+shared immutable candidate. Previously scheduled single-suite experiments
+retain their original format and behavior. This is an early-stop policy:
+a natural trainer finish still completes an independent sequence under
+its existing rules, even if no evaluation stop target was reached.
+
+Queueing freezes the rule. Only hosts advertising the requested suite(s)
+for that project can claim or start the job. Agents without suite
+advertisements remain eligible for jobs without an evaluation stop.
 
 The locally installed adapter declares `evaluation_suites`, an array of one
 to eight suite IDs, and provides synchronous `readEvaluation(context)`.
@@ -1288,8 +1306,10 @@ heartbeat and a running native observation from the current worker instance;
 persisted `running` status alone is not sufficient after a disconnect or
 restart. The Hub verifies ownership and the frozen threshold, records the
 triggering report, and requests Stop through the existing native supervisor.
-The job retains capacity until terminal handling. After a verified native
-Stop and capacity release, a qualifying evaluation can advance an independent
+The job retains capacity until terminal handling. An all-of Stop
+preserves the qualifying receipt for each suite and the common checkpoint
+hash. After a verified native Stop and capacity release, a qualifying evaluation
+can advance an independent
 `after_job_id` sequence, with fresh allocation and Start authorization for
 its successor. A queued Courier/TinyBrains checkpoint continuation also
 advances only when the local supervisor confirms checkpoint-preserving Stop
