@@ -1321,8 +1321,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     ?j.predecessor_wait?.reason||'Waiting for predecessor'
                     :nativeJobLabel(j,j.status))+
                 (j.capacity_released_at?' · capacity released':'')+
-                (['failed','unverified'].includes(j.status)&&j.execution_diagnostic
-                    ?' · '+j.execution_diagnostic:''));
+                (['finished','stopped','failed','unverified'].includes(j.status)&&
+                    j.execution_diagnostic?' · '+j.execution_diagnostic:''));
             cell(tr,learningSummary(j));
             cell(tr,progress?.source_modified_at
                 ?new Date(progress.source_modified_at).toLocaleString():'—');
