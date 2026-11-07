@@ -15,6 +15,11 @@
 //! silently allowed to corrupt PPO trajectories.
 
 use std::num::NonZeroU32;
+use bees_hivemind::connection::NativeHiveMindConnection;
+use bees_hivemind::outcomes::StoreAcknowledgement;
+use bees_hivemind::wire::{
+    decode_hivemind_response_frame, HiveMindServerResponse, HiveMindWireError,
+};
 use bees_hivemind::session::{
     HiveMindSession, HiveMindSessionError, SquadLifetime, StrategyReceipt,
     TargetingReceipt,
@@ -344,6 +349,26 @@ pub enum NativeLevelTargetingReceiveError {
     Routing(NativeLevelRoutingError),
 }
 
+/// One complete recognized server reply, already decoded through the
+/// source-sized wire codec and routed to the correct owner. StoreCommands
+/// acknowledgement changes the connection's existing durable retry ledger;
+/// the transport must persist its next checkpoint before considering that
+/// change crash-safe.
+#[derive(Debug)]
+pub enum NativeHiveMindFrameDelivery {
+    Strategy(NativeLevelStrategyDelivery),
+    Targeting(NativeLevelTargetingDelivery),
+    StoreCommands(StoreAcknowledgement),
+}
+
+#[derive(Debug)]
+pub enum NativeHiveMindFrameError {
+    Wire(HiveMindWireError),
+    Strategy(NativeLevelStrategyReceiveError),
+    Targeting(NativeLevelTargetingReceiveError),
+    StoreCommands(bees_hivemind::protocol::HiveMindProtocolError),
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NativeLevelDriverError {
     MissingWorld,
@@ -662,6 +687,51 @@ impl NativeLevelBatchDriver {
         Ok(NativeLevelTargetingDelivery {
             world_index, receipt,
         })
+    }
+
+    /// Complete authenticated-WebSocket JSON ingress for all supported
+    /// HiveMind response types. The host socket authenticates first, then
+    /// passes the exact raw frame here. No retry/ack or strategy attribution
+    /// is fabricated on an unrecognized setup/settings message: the caller
+    /// receives None and dispatches that frame to its separate owner.
+    ///
+    /// Successful StoreCommands acknowledgements must be persisted via
+    /// NativeHiveMindConnection::checkpoint. Actual network I/O, auth and
+    /// durable storage stay outside this shared game/worker boundary.
+    pub fn receive_hivemind_frame<M, A>(
+        &mut self,
+        simulation: &mut Simulation<NativeLevelState<M, A>, NativeLevelRules>,
+        connection: &mut NativeHiveMindConnection,
+        frame: &[u8],
+    ) -> Result<Option<NativeHiveMindFrameDelivery>, NativeHiveMindFrameError>
+    where
+        M: NativeLevelRewardMetadata + NativeLevelActivationContext,
+        A: FnMut(SquadLifetime, i64) -> Result<SquadLifetime, SquadRosterError>,
+    {
+        let Some(response) = decode_hivemind_response_frame(frame)
+            .map_err(NativeHiveMindFrameError::Wire)? else {
+            return Ok(None);
+        };
+        let delivery = match response {
+            HiveMindServerResponse::Strategy(response) =>
+                NativeHiveMindFrameDelivery::Strategy(
+                    self.receive_strategy_response(
+                        simulation, connection.session_mut(), &response,
+                    ).map_err(NativeHiveMindFrameError::Strategy)?,
+                ),
+            HiveMindServerResponse::Targeting(response) =>
+                NativeHiveMindFrameDelivery::Targeting(
+                    self.receive_targeting_response(
+                        simulation, connection.session_mut(), &response,
+                    ).map_err(NativeHiveMindFrameError::Targeting)?,
+                ),
+            HiveMindServerResponse::StoreCommands(response) =>
+                NativeHiveMindFrameDelivery::StoreCommands(
+                    connection.acknowledge_store(&response)
+                        .map_err(NativeHiveMindFrameError::StoreCommands)?,
+                ),
+        };
+        Ok(Some(delivery))
     }
 
     pub fn registered_world_count(&self) -> usize {

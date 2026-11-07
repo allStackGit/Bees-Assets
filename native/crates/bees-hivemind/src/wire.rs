@@ -29,6 +29,45 @@ impl From<serde_json::Error> for HiveMindWireError {
     }
 }
 
+/// Three HiveMind reply types that are already source-ported. The same
+/// authenticated WebSocket also carries Level setup, settings and other
+/// replies; these are deliberately left to their existing host handlers.
+#[derive(Debug)]
+pub enum HiveMindServerResponse {
+    Strategy(GetStrategyResponse),
+    Targeting(GetTargetingResponse),
+    StoreCommands(StoreCommandsResponse),
+}
+
+#[derive(serde::Deserialize)]
+struct ResponseType {
+    #[serde(rename = "Type")]
+    message_type: String,
+}
+
+/// Decode one bounded, authenticated HiveMind reply. Unknown valid JSON
+/// message types return None so the caller can hand setup/reconnect/user
+/// data messages to their appropriate owner. Malformed known messages are
+/// errors, not unverified or half-applied strategy selections.
+pub fn decode_hivemind_response_frame(
+    data: &[u8],
+) -> Result<Option<HiveMindServerResponse>, HiveMindWireError> {
+    within_limit(data)?;
+    let header: ResponseType = serde_json::from_slice(data)?;
+    match header.message_type.as_str() {
+        STRATEGY_REQUEST_TYPE => Ok(Some(HiveMindServerResponse::Strategy(
+            decode_strategy_response(data)?,
+        ))),
+        TARGETING_REQUEST_TYPE => Ok(Some(HiveMindServerResponse::Targeting(
+            decode_targeting_response(data)?,
+        ))),
+        STORE_COMMANDS_TYPE => Ok(Some(HiveMindServerResponse::StoreCommands(
+            decode_store_commands_response(data)?,
+        ))),
+        _ => Ok(None),
+    }
+}
+
 fn within_limit(bytes: &[u8]) -> Result<(), HiveMindWireError> {
     if bytes.is_empty() || bytes.len() > MAX_HIVEMIND_MESSAGE_BYTES {
         return Err(HiveMindWireError::TooLarge);
