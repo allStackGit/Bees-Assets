@@ -105,6 +105,8 @@ function validateLocalInput(job,lease,machineId,adapters,hostOs=os,gpuEnabled=fa
             job.evaluation_stop?.all_of?.[0]?.suite_id||null,
         continuation_of_job_id:predecessor,
         artifact_lineage_root_id:lineageRoot,
+        ...(job.expected_parent_model_sha256?
+            {expected_parent_model_sha256:job.expected_parent_model_sha256}:{}),
         ...(!cpuOnly?{gpu_pci_address:binding.pci_address}:{}),
     });
     const argsFor=fn=>{
