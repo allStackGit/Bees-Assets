@@ -113,6 +113,13 @@ impl MiningRun {
 
     }
 
+    /// Unity MiningAsteroid.SquadsMining adds one Squad when its first
+    /// eligible ship physically enters this asteroid. The same squad
+    /// stays enrolled until command finalization or asteroid destruction.
+    pub(super) fn enrolled_target(&self) -> Option<i64> {
+        (!self.currently_mining.is_empty()).then_some(self.target_id)
+    }
+
     pub(super) fn advance(
         &mut self,
         world: &mut CombatWorld,

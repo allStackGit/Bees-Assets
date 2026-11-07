@@ -12,7 +12,7 @@
 //! Fleet credits remain Level-owned, and source shooting/targeting rewards
 //! are never fabricated by the command director.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 use bees_hivemind::dispatch::{
     resolve_hivemind_command, LocalCommandKind, ResolvedHiveMindCommand,
@@ -483,6 +483,24 @@ impl NativeSquadCommandDirector {
     pub fn new() -> Self { Self::default() }
 
     pub fn active_count(&self) -> usize { self.active.len() }
+
+    /// Observations use the true MiningAsteroid.SquadsMining cardinality:
+    /// count unique live command-owning squads already enrolled by an
+    /// actual collider contact. The active BTreeMap has one command per
+    /// SquadLifetime, so no duplicate-ship count is possible. One
+    /// ephemeral aggregate is updated per world/tick, not per agent.
+    pub fn collect_mining_squad_counts(
+        &self, output: &mut HashMap<i64, u32>,
+    ) {
+        output.clear();
+        for active in self.active.values() {
+            if let Some(asteroid_id) = active.mining.as_ref()
+                .and_then(MiningRun::enrolled_target)
+            {
+                *output.entry(asteroid_id).or_insert(0) += 1;
+            }
+        }
+    }
 
     /// Most commands do not require a source ship-to-ship trigger input.
     /// Poll the small active-command map instead of creating another

@@ -211,6 +211,14 @@ impl NativeLevelEventProcessor {
         self.commands.active_count()
     }
 
+    /// Source mining enrollment belongs to the one command director.
+    /// Only its real hull-contact transitions can populate this view.
+    pub fn collect_mining_squad_counts(
+        &self, output: &mut std::collections::HashMap<i64, u32>,
+    ) {
+        self.commands.collect_mining_squad_counts(output);
+    }
+
     pub fn needs_bomber_contacts(&self, world: &CombatWorld) -> bool {
         self.commands.needs_bomber_contacts(world)
     }
