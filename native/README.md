@@ -3,7 +3,7 @@
 This directory is the beginning of the Unity-independent replacement platform,
 created from the current `feat/experiment-queue-ui` branch.
 
-## Unity scene import (schema 9)
+## Unity scene import (schema 10)
 
 The Unity Editor action **Bees > Native > Export Selected Level Physical Scene**
 is implemented inside the gameplay assembly at
@@ -11,7 +11,9 @@ is implemented inside the gameplay assembly at
 It captures initial Level state directly from Unity: real source IDs and
 squad membership, living ships and v26 weapon metadata, policy frame/team
 bindings, stage damage rules, static/map-border and asteroid geometry, and
-active destructible MapObjects (including Fire Tank power/linked obstacles).
+active destructible MapObjects (including Fire Tank power/linked obstacles)
+and fully stocked MiningAsteroids with their original resource health,
+runtime collision layer and actual polygon hull.
 Live BoxCollider2D, PolygonCollider2D and supported isotropic CircleCollider2D
 shapes retain their actual parent transforms. Unsupported or partial state
 fails export; no approximate colliders or synthetic IDs are produced.
@@ -23,7 +25,9 @@ Unity policy frames, then `into_policy_only_level` with an actual
 `NativePolicyOnlyLevelSetup` and `NativeSceneAssets::build_runtime` with
 the loaded model and durable sink. Agent capabilities, checkpoint routing,
 real episode rewards, navigation and learned exploration still require
-their authoritative Level inputs. The v26 21×21 navigation observation is
+their authoritative Level inputs. Mining perception uses the canonical
+world's discovered resource bodies and actual command-enrolled squad
+counts, not an independent observation list. The v26 21×21 navigation observation is
 computed per agent from world-local discovered collider bounds.
 
 This is an **initial physical-scene bridge**, not a resumable checkpoint
