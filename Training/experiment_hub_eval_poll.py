@@ -6,6 +6,7 @@ import hashlib
 import http.client
 import json
 import os
+import shutil
 from pathlib import Path
 import sys
 import tempfile
@@ -142,6 +143,10 @@ def poll_checkpoint(args, project, suite, receipt_suite, find_checkpoint, evalua
                 continue
             job = live[dispatch]
             try:
+                # A one-suite worker cannot satisfy a checkpoint-coherent
+                # multi-suite gate. Such jobs need one coordinated batch.
+                if set(job.get("required_suite_ids", [suite_id])) != {suite_id}:
+                    continue
                 if not UUID.fullmatch(dispatch) or receipt_suite["trials"] < job["min_trials"]:
                     continue
                 if job.get("suite_sha256", digest) != digest:
@@ -181,6 +186,165 @@ def poll_checkpoint(args, project, suite, receipt_suite, find_checkpoint, evalua
             }}
             save_cursor(state, {**saved, "pending_receipt": pending})
             flush_receipt(args, receipt_suite, pending, digest)
+            save_cursor(state, saved)
+            return
+        if saved != prior:
+            save_cursor(state, saved)
+
+
+def poll_batch(args, project, suites, find_checkpoint, evaluate_checkpoint):
+    """Evaluate every required suite on one immutable checkpoint snapshot.
+
+    suites: sequence of (frozen suite, receipt suite with trial count).
+    A separate scheduler should invoke this worker for each all-of gate
+    instead of invoking multiple independent single-suite pollers.
+    """
+    if not 2 <= len(suites) <= 8:
+        raise ValueError("A batch needs 2–8 independent evaluation suites.")
+    by_id = {suite["suite_id"]: (suite, receipt) for suite, receipt in suites}
+    if len(by_id) != len(suites):
+        raise ValueError("Batch suites must have distinct IDs.")
+    ordered = sorted(by_id.items())
+    definitions = {sid: suite_digest(suite) for sid, (suite, _) in ordered}
+    identity = hashlib.sha256(json.dumps(
+        definitions, sort_keys=True).encode()).hexdigest()
+    state = args.scratch / f"{project}-evaluation-{args.machine}.batch-{identity[:20]}.json"
+
+    def flush_batch(pending):
+        if not isinstance(pending, list) or len(pending) != len(ordered):
+            raise ValueError("Invalid pending evaluation batch.")
+        common_checkpoint = None
+        common_dispatch = None
+        receipts = []
+        for (sid, (suite, receipt_suite)), item in zip(ordered, pending):
+            target, receipt = item["target"], item["receipt"]
+            if (receipt["suite_id"] != sid or
+                receipt.get("suite_sha256") != definitions[sid] or
+                receipt["trials"] != receipt_suite["trials"] or
+                type(receipt["successes"]) is not int or
+                not 0 <= receipt["successes"] <= receipt["trials"] or
+                not UUID.fullmatch(receipt["dispatch_id"]) or
+                not UUID.fullmatch(target["job_id"]) or
+                target["dispatch_id"] != receipt["dispatch_id"] or
+                (target.get("suite_sha256") and
+                 target["suite_sha256"] != definitions[sid]) or
+                not SHA256.fullmatch(receipt.get("checkpoint_sha256", ""))):
+                raise ValueError("Invalid pending batch identity.")
+            if common_checkpoint is not None and (
+                receipt["checkpoint_sha256"] != common_checkpoint or
+                receipt["dispatch_id"] != common_dispatch
+            ):
+                raise ValueError("A batch must belong to one checkpoint and dispatch.")
+            common_checkpoint = receipt["checkpoint_sha256"]
+            common_dispatch = receipt["dispatch_id"]
+            receipts.append(receipt)
+        for receipt in receipts:
+            destination = args.receipt_root / (
+                f'{receipt["dispatch_id"]}.{receipt["suite_id"]}.json')
+            try:
+                existing = json.loads(read_bounded(destination, 4096))
+            except (FileNotFoundError, ValueError, json.JSONDecodeError):
+                existing = None
+            if existing != receipt:
+                print(publish(args.receipt_root, receipt))
+
+    with exclusive(state.with_suffix(".lock")):
+        try:
+            prior = json.loads(read_bounded(state, 131072))
+            if prior["suite_sha256"] != identity:
+                raise ValueError("Batch suite definitions changed; use new suite IDs.")
+        except FileNotFoundError:
+            prior = {"suite_sha256": identity, "dispatches": {}}
+        if (pending := prior.get("pending_receipts")) is not None:
+            flush_batch(pending)
+            save_cursor(state, {"suite_sha256": identity,
+                                "dispatches": prior["dispatches"]})
+            return
+
+        target_sets = {sid: targets(args.port, args.machine, sid, project)
+                       for sid, _ in ordered}
+        expected_ids = set(by_id)
+        common = set.intersection(*(set(items) for items in target_sets.values()))
+        live = {}
+        for dispatch in target_sets[ordered[0][0]]:
+            if dispatch not in common:
+                continue
+            per_suite = [target_sets[sid][dispatch] for sid, _ in ordered]
+            if (any(set(job.get("required_suite_ids", [])) != expected_ids
+                    for job in per_suite) or
+                len({job["job_id"] for job in per_suite}) != 1 or
+                len({job["artifact_lineage_root_id"] for job in per_suite}) != 1):
+                continue
+            live[dispatch] = per_suite
+
+        cursor = retain_dispatch_cursors(prior["dispatches"], live)
+        for dispatch in live:
+            cursor.setdefault(dispatch, 0)
+        saved = {"suite_sha256": identity, "dispatches": cursor}
+        for dispatch in list(cursor):
+            if dispatch not in live:
+                continue
+            jobs = live[dispatch]
+            try:
+                if not UUID.fullmatch(dispatch):
+                    continue
+                if any(receipt_suite["trials"] < job["min_trials"] or
+                       job.get("suite_sha256", definitions[sid]) != definitions[sid]
+                       for (sid, (_, receipt_suite)), job
+                       in zip(ordered, jobs)):
+                    continue
+                seen = []
+                for sid, (_, receipt_suite) in ordered:
+                    job = target_sets[sid][dispatch]
+                    destination = args.receipt_root / f"{dispatch}.{sid}.json"
+                    if not passed_receipt(
+                        destination, dispatch, receipt_suite, job, definitions[sid]):
+                        break
+                    seen.append(json.loads(read_bounded(destination, 4096))[
+                        "checkpoint_sha256"])
+                else:
+                    if len(set(seen)) == 1:
+                        continue
+                checkpoint = find_checkpoint(jobs[0])
+                if not checkpoint or checkpoint[0] <= cursor[dispatch]:
+                    continue
+                update, file = checkpoint
+                if not file.is_file():
+                    continue
+            except (OSError, ValueError, TypeError, KeyError) as exc:
+                print(f"{project} batch target {dispatch} skipped: {exc}",
+                      file=sys.stderr)
+                continue
+
+            # One durable snapshot is shared by every suite. The trainer
+            # may prune its source at any moment; copy and verify it first.
+            with tempfile.TemporaryDirectory(
+                prefix=f"{project}-eval-batch-", dir=args.scratch
+            ) as temp:
+                frozen = Path(temp) / ("checkpoint" + file.suffix)
+                shutil.copyfile(file, frozen)
+                with frozen.open("rb") as stream:
+                    checkpoint_digest = hashlib.file_digest(stream, "sha256").hexdigest()
+                pending = []
+                for (sid, (suite, receipt_suite)), job in zip(ordered, jobs):
+                    successes = evaluate_checkpoint(
+                        job, frozen, checkpoint_digest, Path(temp), suite)
+                    if (type(successes) is not int or
+                        not 0 <= successes <= receipt_suite["trials"]):
+                        raise ValueError("Invalid batch evaluation success count.")
+                    pending.append({"target": job, "receipt": {
+                        "schema_version": 1, "suite_id": sid,
+                        "suite_sha256": definitions[sid],
+                        "dispatch_id": dispatch,
+                        "checkpoint_sha256": checkpoint_digest,
+                        "trials": receipt_suite["trials"],
+                        "successes": successes,
+                    }})
+
+            cursor.pop(dispatch)
+            cursor[dispatch] = update
+            save_cursor(state, {**saved, "pending_receipts": pending})
+            flush_batch(pending)
             save_cursor(state, saved)
             return
         if saved != prior:
