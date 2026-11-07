@@ -3,7 +3,7 @@
 This directory is the beginning of the Unity-independent replacement platform,
 created from the current `feat/experiment-queue-ui` branch.
 
-## Authored Unity scene bridge (schema 4)
+## Authored Unity scene bridge (schema 6)
 
 The Unity Editor menu **Bees > Native > Export Selected Level Physical
 Scene** reads the selected live Level and exports
@@ -16,8 +16,13 @@ communication and asteroid state. Player builds do not include it.
 the real world bounds, physics step, source entity IDs, ship health,
 movement, persistent fleet mining, observed weapons, turret mounts and
 projectile speeds, source-order live squads, and ordinary intact asteroid/
-static obstacle placements (including pathfinder-owned map borders that
-are not in GameState.Obstacles). An active map collider with no real
+static obstacle placements (including pathfinder-owned map borders
+that are not in GameState.Obstacles). The v6 format also exports
+the actual primary box/polygon Collider2D vertices after runtime
+transformations (scale, nested parents and child rotations), not just the
+serialized prefab shape. Native keeps a Box fast path when possible
+and uses its existing concave polygon physics for genuinely transformed
+outlines. This only affects setup: no extra geometry is rebuilt per tick. An active map collider with no real
 allocated Unity ID causes export to fail instead of inventing one.
 It rejects incomplete squad coverage,
 duplicate IDs and unsupported snapshots instead of making up values.
@@ -28,7 +33,13 @@ For the policy-only native path, bind each **real** source policy frame
 with `bind_policy_ship`, then call `into_policy_only_level` with explicit
 `NativePolicyOnlyLevelSetup` (real v26 policy routes, agent capability
 and navigation/exploration inputs, reward coordinator and optional group
-identities). The resulting `NativeAuthoredLevel` feeds
+identities). The real v26 21×21 navigation observation is observer-local, not one
+shared grid per team. The assembler derives it from source bounds,
+current ship position, and discovered static obstacle AABBs collected
+once per faction/decision boundary; callers only supply truly external
+mining, exploration and weapon/agent source fields.
+
+The resulting `NativeAuthoredLevel` feeds
 `NativeSceneAssets::build_runtime` alongside the actual loaded
 `ResidentPolicyProcess` and a durable notification sink.
 The same `CombatWorld` feeds rendered read-only body views and

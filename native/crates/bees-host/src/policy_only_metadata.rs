@@ -59,9 +59,11 @@ pub struct AuthoredPolicyAgent {
     pub own_weapons: [Option<SelfWeapon>; 5],
 }
 
-/// Side-wide environments are shared among all controlled ships. A static
-/// arena supplies its actual fixed grid once; dynamic scenes MUST refresh
-/// these source values on the owning Level between windows.
+/// Only genuinely team-shared discovery/observation inputs live here.
+/// The 21x21 navigation grid is NOT side-wide: the gameplay assembler
+/// recomputes it around each ship using shared cached static bounds.
+/// Dynamic scenes must refresh mining/exploration inputs at the Level's
+/// authoritative discovery boundary.
 pub struct AuthoredPolicySide {
     pub side: i32,
     pub exploration_last_seen: Option<[f32; EXPLORATION_LEN]>,

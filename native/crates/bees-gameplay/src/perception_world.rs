@@ -1,8 +1,9 @@
 //! World-local assembly of the real v26 policy observation inputs.
 //! This combines existing physical/perception projections in source order,
 //! without duplicating any movement, combat, vision or reward rules.
-//! External Level-only values (authored weapon stats, static occupancy,
-//! mining, exploration and campaign data) MUST be provided, never guessed.
+//! External Level-only values (authored weapon stats, mining, exploration
+//! and campaign data) MUST be provided, never guessed. Observer-local
+//! static occupancy is derived from the authoritative discovered world.
 
 use std::collections::HashMap;
 
