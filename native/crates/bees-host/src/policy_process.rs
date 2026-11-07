@@ -53,6 +53,8 @@ pub struct ResidentPolicyProcess {
     output: BufReader<ChildStdout>,
     sequence: u64,
     unavailable: bool,
+    // Reused model route/action-mask packet, 16 bytes per agent.
+    row_headers: Vec<u8>,
 }
 
 impl ResidentPolicyProcess {
@@ -73,6 +75,7 @@ impl ResidentPolicyProcess {
             output: BufReader::new(output),
             sequence: 0,
             unavailable: false,
+            row_headers: Vec::new(),
         };
         backend.read_handshake()?;
         Ok(backend)
@@ -142,19 +145,29 @@ impl ResidentPolicyProcess {
         self.input.write_all(&PROTOCOL_VERSION.to_le_bytes())?;
         self.input.write_all(&seq.to_le_bytes())?;
         self.input.write_all(&rows32.to_le_bytes())?;
-        // 16 bytes/row: model slot (4), team ID (1), five fire masks,
-        // five special masks, and one version-reserved zero byte.
-        for (route, mask) in routes.iter().zip(masks) {
-            self.input.write_all(&route.model_slot.to_le_bytes())?;
-            self.input.write_all(&[route.team_id])?;
-            for flag in mask.fire {
-                self.input.write_all(&[u8::from(flag)])?;
+        // One contiguous 16-byte route/mask header per agent. No per-row
+        // write calls or heap allocation after the maximum batch grows.
+        let header_bytes = rows.checked_mul(PER_ROW_HEADER_BYTES)
+            .ok_or(PolicyProcessError::InvalidBatch)?;
+        self.row_headers.resize(header_bytes, 0);
+        for (index, (route, mask)) in routes.iter().zip(masks).enumerate() {
+            if !mask.valid() {
+                return Err(PolicyProcessError::InvalidBatch);
             }
-            for flag in mask.special {
-                self.input.write_all(&[u8::from(flag)])?;
+            let header = &mut self.row_headers[
+                index * PER_ROW_HEADER_BYTES..(index + 1) * PER_ROW_HEADER_BYTES
+            ];
+            header[..4].copy_from_slice(&route.model_slot.to_le_bytes());
+            header[4] = route.team_id;
+            for (output, &enabled) in header[5..10].iter_mut().zip(mask.fire.iter()) {
+                *output = u8::from(enabled);
             }
-            self.input.write_all(&[0_u8])?;
+            for (output, &enabled) in header[10..15].iter_mut().zip(mask.special.iter()) {
+                *output = u8::from(enabled);
+            }
+            header[15] = 0;
         }
+        self.input.write_all(&self.row_headers)?;
         write_floats(&mut self.input, observations)?;
         self.input.flush()?;
 

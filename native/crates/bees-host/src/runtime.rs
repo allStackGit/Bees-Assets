@@ -22,7 +22,7 @@ use bees_hivemind::protocol::{
     GetStrategyRequest, GetTargetingRequest, StoreCommandsRequest,
 };
 use bees_hivemind::session::SquadLifetime;
-use bees_sim::simulation::Simulation;
+use bees_sim::simulation::{RandomStream, Simulation, World};
 use crate::durable_connection::{DurableConnectionError, DurableHiveMindConnection};
 use crate::status::{NativeHostStatusInterval, NativeStatusSampler};
 
@@ -42,6 +42,12 @@ pub enum HostWindowError<Source, Model, Sink> {
 pub enum HostStopError<E> {
     Connection(DurableConnectionError),
     Stop(NativeLevelStopError<E>),
+}
+
+#[derive(Debug)]
+pub enum HostRegistrationError {
+    Simulation(&'static str),
+    Driver(NativeLevelDriverError),
 }
 
 #[derive(Debug)]
@@ -86,6 +92,52 @@ where
             simulation, driver, model, connection, sink,
             sampler: NativeStatusSampler::new(baseline),
         })
+    }
+
+    /// Add an independently seeded authored Level after runtime startup.
+    /// Preflight before modifying Simulation so a rejected Level cannot
+    /// leave the model driver and world indices out of sync.
+    pub fn add_world(
+        &mut self,
+        world: World<NativeLevelState<M, A>>,
+    ) -> Result<usize, HostRegistrationError> {
+        if self.driver.registered_world_count() != self.simulation.world_count() {
+            return Err(HostRegistrationError::Driver(
+                NativeLevelDriverError::IndexOutOfOrder,
+            ));
+        }
+        if world.tick() != 0 || world.is_failed() ||
+            world.state.events.is_failed() || world.state.events.completed()
+        {
+            return Err(HostRegistrationError::Driver(
+                NativeLevelDriverError::UnstartedWorldRequired,
+            ));
+        }
+        let index = self.simulation.add_world(world)
+            .map_err(HostRegistrationError::Simulation)?;
+        self.driver.register_added_world(&mut self.simulation, index)
+            .map_err(HostRegistrationError::Driver)?;
+        Ok(index)
+    }
+
+    /// Game/editor/scenario input may change the true Level state between
+    /// synchronous inference/physics windows. Borrow only state and its
+    /// world-owned RandomStream, not the World identity or reset methods.
+    /// Invalidate observation-side environment projections on every edit;
+    /// the caller must still preserve gameplay/asset invariants.
+    pub fn edit_level<R>(
+        &mut self,
+        index: usize,
+        edit: impl FnOnce(&mut NativeLevelState<M, A>, &mut RandomStream) -> R,
+    ) -> Result<R, NativeLevelDriverError> {
+        self.driver.invalidate_environment(index)?;
+        let world = self.simulation.world_mut(index)
+            .ok_or(NativeLevelDriverError::MissingWorld)?;
+        Ok(edit(&mut world.state, &mut world.random))
+    }
+
+    pub fn set_timing_sample_period(&mut self, every: Option<NonZeroU32>) {
+        self.simulation.set_timing_sample_period(every);
     }
 
     /// Actual multi-Level model inference, fixed-step combat and ordered
