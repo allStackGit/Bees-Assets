@@ -13,6 +13,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod connection;
 pub mod dispatch;
 pub mod outcomes;
 pub mod protocol;

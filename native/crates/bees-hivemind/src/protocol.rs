@@ -23,7 +23,7 @@ pub const REQUEST_CLIENT_PREFIX_BITS: u32 = 21;
 /// One allocator per native client process, shared by ALL request types.
 /// The host supplies a securely generated 21-bit client prefix. A 32-bit
 /// monotonically increasing counter matches Unity's Unique53Hash scheme.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RequestHashAllocator {
     client_prefix: u32,
     counter: u32,
@@ -37,7 +37,19 @@ impl RequestHashAllocator {
         Ok(Self { client_prefix, counter: 0 })
     }
 
+    /// Validate an allocator restored from durable connection state.
+    /// A restart may continue its original 21-bit client prefix only
+    /// when its full counter and pending StoreCommands ledger were
+    /// persisted before the corresponding messages were sent.
+    pub fn validate(&self) -> Result<(), HiveMindProtocolError> {
+        if self.client_prefix >= (1 << REQUEST_CLIENT_PREFIX_BITS) {
+            return Err(HiveMindProtocolError::InvalidRequest);
+        }
+        Ok(())
+    }
+
     pub fn next_hash(&mut self) -> Result<i64, HiveMindProtocolError> {
+        self.validate()?;
         self.counter = self.counter.checked_add(1)
             .ok_or(HiveMindProtocolError::RequestHashExhausted)?;
         let hash = ((u64::from(self.client_prefix)) << 32)

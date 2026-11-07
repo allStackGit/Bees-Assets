@@ -210,7 +210,17 @@ deployed `get-matchup-strategy`, `get-strategy` and
 `store-commands` JSON fields, server command IDs **1–15**, shooting
 IDs **1–40** and distinct targeting IDs **1–40**, exact 53-bit request
 hashes, and unsigned matchup identities. Request hashes are allocated once by the client
-transport for **all** message types; multiple Levels may share one WebSocket
+transport for **all** message types. The transport-neutral
+`NativeHiveMindConnection` now owns Unity-compatible 53-bit hash
+allocation, the single shared `HiveMindSession`, and the existing
+`PendingStoreCommands` retry/409-reconciliation ledger. Its
+`NativeConnectionCheckpoint` contains only durable retry ownership and
+the monotonic allocator (not socket credentials or transient Level
+lifetimes). Persist a checkpoint before transmitting a newly created
+request, and after acknowledging/reconciling a stored outcome; otherwise
+a process crash can cause replay or Hash reuse. The actual WebSocket,
+authentication and atomic file/database persistence remain client work.
+Multiple Levels may share one WebSocket
 and one server Hive Mind Game. Each strategy request captures both the requesting Squad lifetime and
 its original targeted enemy lifetime, so a late response cannot adopt
 a replacement pooled squad with the same ItemId. Target-dependent
