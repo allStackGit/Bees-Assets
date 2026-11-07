@@ -1149,6 +1149,26 @@ pub trait NativeLevelNotificationSink {
         event_sequence: u64,
         notification: &NativeLevelNotification,
     ) -> Result<(), Self::Error>;
+
+    /// Deliver a contiguous source-order prefix. The default preserves
+    /// existing per-notification sink semantics. A durable batch sink may
+    /// commit a group with one disk sync, but MUST return the exact number
+    /// of events known committed before an error. Uncommitted events stay
+    /// in the authoritative Level outbox for explicit reconciliation.
+    fn accept_batch(
+        &mut self,
+        world: WorldId,
+        episode_revision: u64,
+        first_sequence: u64,
+        notifications: &[NativeLevelNotification],
+    ) -> Result<(), (usize, Self::Error)> {
+        for (index, notification) in notifications.iter().enumerate() {
+            let sequence = first_sequence + index as u64;
+            self.accept(world, episode_revision, sequence, notification)
+                .map_err(|error| (index, error))?;
+        }
+        Ok(())
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -1210,27 +1230,16 @@ where
                 }
             )?;
         debug_assert!(upper >= first_sequence);
-        let (accepted, failure) = {
-            let notifications = world.state.events.pending_notifications();
-            let mut accepted = 0usize;
-            let mut failure = None;
-            for (offset, notification) in notifications.iter().enumerate() {
-                // Range checked above, and each offset is strictly smaller
-                // than the pending queue length.
-                let event_sequence = first_sequence + offset as u64;
-                match sink.accept(
-                    world.id, world.episode_revision(),
-                    event_sequence, notification,
-                ) {
-                    Ok(()) => accepted += 1,
-                    Err(error) => {
-                        failure = Some(error);
-                        break;
-                    }
-                }
-            }
-            (accepted, failure)
+        let (accepted, failure) = match sink.accept_batch(
+            world.id, world.episode_revision(), first_sequence,
+            world.state.events.pending_notifications(),
+        ) {
+            Ok(()) => (count, None),
+            Err((committed, error)) => (committed, Some(error)),
         };
+        // A sink reporting more committed events than it was offered has
+        // violated its contract; the existing outbox will refuse the ACK.
+
         world.state.events.acknowledge_notifications(accepted)
             .map_err(|error|
                 NativeNotificationDeliveryError::Acknowledgement {
