@@ -175,9 +175,16 @@ def flush_receipt(args, suite: dict, pending: dict, expected_digest: str) -> Non
     job = pending["target"]
     if (
         not isinstance(dispatch, str) or not UUID.fullmatch(dispatch)
+        or receipt.get("schema_version") != 1
         or receipt["suite_id"] != suite["suite_id"]
         or job["dispatch_id"] != dispatch or not UUID.fullmatch(job["job_id"])
-        or receipt["trials"] != suite["trials"]
+        or type(receipt.get("trials")) is not int or receipt["trials"] != suite["trials"]
+        or type(receipt.get("successes")) is not int
+        or not 0 <= receipt["successes"] <= receipt["trials"]
+        or not isinstance(receipt.get("checkpoint_sha256"), str)
+        or not SHA256.fullmatch(receipt["checkpoint_sha256"])
+        or (job.get("final_checkpoint_sha256") and
+            receipt["checkpoint_sha256"] != job["final_checkpoint_sha256"])
         or receipt.get("suite_sha256") != expected_digest
         or (job.get("suite_sha256") and receipt.get("suite_sha256") != job["suite_sha256"])
     ):
@@ -303,15 +310,19 @@ def poll_batch(args, project, suites, find_checkpoint, evaluate_checkpoint):
             if (receipt["suite_id"] != sid or
                 receipt.get("suite_sha256") != definitions[sid] or
                 receipt["schema_version"] != 1 or
+                type(receipt.get("trials")) is not int or
                 receipt["trials"] != receipt_suite["trials"] or
-                type(receipt["successes"]) is not int or
+                type(receipt.get("successes")) is not int or
                 not 0 <= receipt["successes"] <= receipt["trials"] or
                 not UUID.fullmatch(receipt["dispatch_id"]) or
                 not UUID.fullmatch(target["job_id"]) or
                 target["dispatch_id"] != receipt["dispatch_id"] or
                 (target.get("suite_sha256") and
                  target["suite_sha256"] != definitions[sid]) or
-                not SHA256.fullmatch(receipt.get("checkpoint_sha256", ""))):
+                (not isinstance(receipt.get("checkpoint_sha256"), str) or
+                 not SHA256.fullmatch(receipt["checkpoint_sha256"])) or
+                (target.get("final_checkpoint_sha256") and
+                 receipt["checkpoint_sha256"] != target["final_checkpoint_sha256"])):
                 raise ValueError("Invalid pending batch identity.")
             if common_checkpoint is not None and (
                 receipt["checkpoint_sha256"] != common_checkpoint or
