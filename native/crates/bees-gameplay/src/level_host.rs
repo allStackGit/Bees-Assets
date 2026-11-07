@@ -941,7 +941,7 @@ impl NativeLevelBatchDriver {
         &mut self,
         simulation: &mut Simulation<NativeLevelState<M, A>, NativeLevelRules>,
         backend: &mut B,
-        connection: &mut HiveMindSession,
+        connection: &mut NativeHiveMindConnection,
         sink: &mut S,
         max_rounds: NonZeroU32,
         delivery_every: NonZeroU32,
@@ -960,7 +960,7 @@ impl NativeLevelBatchDriver {
         // delivery. Never start another inference batch over a backlog
         // that the sink has not yet durably accepted.
         counts.retirement_notifications +=
-            flush_all_squad_retirements(simulation, connection);
+            flush_all_squad_retirements(simulation, connection.session_mut());
         counts.delivered_notifications +=
             deliver_all_level_notifications(simulation, sink)
                 .map_err(|error| NativeLevelWindowError::Delivery {
@@ -979,7 +979,7 @@ impl NativeLevelBatchDriver {
                 round == max_rounds.get()
             {
                 counts.retirement_notifications +=
-                    flush_all_squad_retirements(simulation, connection);
+                    flush_all_squad_retirements(simulation, connection.session_mut());
                 counts.delivered_notifications +=
                     deliver_all_level_notifications(simulation, sink)
                         .map_err(|error| NativeLevelWindowError::Delivery {
@@ -1008,7 +1008,7 @@ impl NativeLevelBatchDriver {
         simulation: &mut Simulation<NativeLevelState<M, A>, NativeLevelRules>,
         index: usize,
         kind: NativeLevelStopKind,
-        connection: &mut HiveMindSession,
+        connection: &mut NativeHiveMindConnection,
         sink: &mut S,
     ) -> Result<NativeLevelStopDelivery, NativeLevelStopError<S::Error>>
     where
@@ -1038,7 +1038,7 @@ impl NativeLevelBatchDriver {
                     .map_err(NativeLevelStopError::Abort)?,
         };
         let retired = flush_all_squad_retirements(
-            simulation, connection,
+            simulation, connection.session_mut(),
         );
         let delivered = deliver_all_level_notifications(
             simulation, sink,
