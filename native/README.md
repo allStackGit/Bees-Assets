@@ -219,8 +219,23 @@ allocation, the single shared `HiveMindSession`, and the existing
 the monotonic allocator (not socket credentials or transient Level
 lifetimes). Persist a checkpoint before transmitting a newly created
 request, and after acknowledging/reconciling a stored outcome; otherwise
-a process crash can cause replay or Hash reuse. The actual WebSocket,
-authentication and atomic file/database persistence remain client work.
+a process crash can cause replay or Hash reuse. The actual WebSocket and authentication remain client work.
+
+The native host adapter `bees-host::checkpoint_file` provides optional,
+cross-platform, file-backed persistence for this exact connection checkpoint:
+it streams JSON to a unique same-directory temporary file, flushes and syncs
+the file, replaces the checkpoint atomically, and syncs the directory on Unix.
+Call `ConnectionCheckpointFile::persist` before transmitting any newly
+allocated request and after a StoreCommands acknowledgement or reconciliation.
+`load` fails closed on corrupt or incompatible state rather than silently
+resetting request IDs. The host must ensure a **single writer** per checkpoint
+path; the adapter does not implement network delivery, authentication, locking,
+or a durable Level-notification sink. On Windows, replacement is atomic when
+the filesystem permits it, but the standard library does not expose a portable
+parent-directory sync; sudden-power-loss persistence must be qualified on the
+actual filesystem.
+
+
 Multiple Levels may share one WebSocket
 and one server Hive Mind Game. Each strategy request captures both the requesting Squad lifetime and
 its original targeted enemy lifetime, so a late response cannot adopt

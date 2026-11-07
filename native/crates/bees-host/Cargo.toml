@@ -1,0 +1,11 @@
+[package]
+name = "bees-host"
+version = "0.1.0"
+edition.workspace = true
+publish = false
+
+# OS-backed adapters shared by the rendered client and headless worker.
+# Neither gameplay nor the HiveMind protocol crate depends on the host.
+[dependencies]
+bees-hivemind = { path = "../bees-hivemind" }
+serde_json = "1"
