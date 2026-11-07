@@ -1080,7 +1080,9 @@ class ExperimentHub {
                 artifact_lineage_root_id:job.artifact_lineage_root_id||job.id,
                 ...(rule.suite_sha256?{suite_sha256:rule.suite_sha256}:{}),
                 min_trials:rule.min_trials,
-                min_success_rate:rule.min_success_rate};
+                min_success_rate:rule.min_success_rate,
+                required_suite_ids:evaluationRules(job.evaluation_stop)
+                    .map(candidate=>candidate.suite_id)};
         });
     }
     progressComparison(projectId) {
