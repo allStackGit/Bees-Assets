@@ -242,12 +242,16 @@ impl NativeHiveMindConnection {
     /// The socket may send a strategy request only if the single shared
     /// session still owns the exact request hash. No duplicate request
     /// registry is maintained by the transport.
-    pub fn has_pending_strategy(&self, hash: i64) -> bool {
-        self.session.requested_strategy_owner(hash).is_some()
+    pub fn matches_live_strategy_request(
+        &self, request: &GetStrategyRequest,
+    ) -> bool {
+        self.session.matches_live_strategy_request(request)
     }
 
-    pub fn has_pending_targeting(&self, hash: i64) -> bool {
-        self.session.requested_targeting_owner(hash).is_some()
+    pub fn matches_live_targeting_request(
+        &self, request: &GetTargetingRequest,
+    ) -> bool {
+        self.session.matches_live_targeting_request(request)
     }
 
     pub fn stale_reconciliation_ids(&self, hash: i64) -> Option<&[i64]> {

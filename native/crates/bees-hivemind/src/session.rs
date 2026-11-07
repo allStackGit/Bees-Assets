@@ -119,6 +119,21 @@ impl HiveMindSession {
         self.pending_targeting.get(&hash).map(|pending| pending.owner)
     }
 
+    /// The socket sends only the exact prepared request still owned by
+    /// this live session. This also excludes superseded/retired requests:
+    /// the server must never reserve new outcomes for a canceled choice.
+    pub fn matches_live_strategy_request(&self, request: &GetStrategyRequest) -> bool {
+        self.pending.get(&request.hash).is_some_and(|pending|
+            !pending.retired && pending.request == *request
+        )
+    }
+
+    pub fn matches_live_targeting_request(&self, request: &GetTargetingRequest) -> bool {
+        self.pending_targeting.get(&request.hash).is_some_and(|pending|
+            !pending.retired && pending.request == *request
+        )
+    }
+
     /// Reissuing an order for a squad retires its prior request but retains
     /// it until a late response can be converted into explicit discards.
     /// The caller must supply a transport-owned connection-unique Hash,

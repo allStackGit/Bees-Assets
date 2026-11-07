@@ -275,7 +275,7 @@ impl NativeHiveMindSocket {
         request: &GetStrategyRequest,
     ) -> Result<(), HiveMindSocketError> {
         self.require_ready()?;
-        if !connection.has_pending_strategy(request.hash) {
+        if !connection.matches_live_strategy_request(request) {
             return Err(HiveMindSocketError::InvalidRequestOwnership);
         }
         self.send(request)
@@ -287,7 +287,7 @@ impl NativeHiveMindSocket {
         request: &GetTargetingRequest,
     ) -> Result<(), HiveMindSocketError> {
         self.require_ready()?;
-        if !connection.has_pending_targeting(request.hash) {
+        if !connection.matches_live_targeting_request(request) {
             return Err(HiveMindSocketError::InvalidRequestOwnership);
         }
         self.send(request)
