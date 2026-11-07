@@ -15,7 +15,7 @@ use super::{CommandFinishCause, GameCommandError, NativeEnemyTargetStats, Native
 use super::bombing::{
     NativeBombWeapon, assign_initial_charge_targets,
     retarget_selected_game_bomb, send_bomber_to_selected_target,
-    release_superseded_bomb_targets,
+    release_superseded_bomb_targets, has_live_game_bomb_target,
 };
 use super::targeting::NativeAttackTarget;
 
@@ -88,9 +88,7 @@ impl NativeChargeRun {
             };
             !ship.vitals.is_dead() &&
                 world.game_barge_charge_completed(member.ship_id).is_none() &&
-                world.game_bomb_current_target(member.ship_id)
-                    .and_then(|id| world.ship(id))
-                    .is_none_or(|target| target.vitals.is_dead())
+                !has_live_game_bomb_target(world, member.ship_id)
         })
     }
 
@@ -123,10 +121,8 @@ impl NativeChargeRun {
                 Some(false) => continue,
                 None => {}
             }
-            let prior_target_live = world.game_bomb_current_target(
-                member.ship_id,
-            ).and_then(|id| world.ship(id))
-                .is_some_and(|target| !target.vitals.is_dead());
+            let prior_target_live =
+                has_live_game_bomb_target(world, member.ship_id);
             if !retarget_selected_game_bomb(
                 world, roster, random, member.ship_id,
                 snapshot.enemy_owner, selection,
@@ -135,9 +131,13 @@ impl NativeChargeRun {
             )? {
                 return Ok(Some(CommandFinishCause::NoEnemyTargets));
             }
-            // Eligibility was captured before retargeting. Do not charge
-            // a new enemy using the previous target's angle/range/LOS.
-            if prior_target_live && snapshot.eligible_barges.binary_search(
+            // Source Charge.Timer picks a replacement target during this
+            // callback, but first movement toward it waits until the next
+            // callback. Eligibility also belongs to the old target.
+            if !prior_target_live {
+                continue;
+            }
+            if snapshot.eligible_barges.binary_search(
                 &member.ship_id,
             ).is_ok() {
                 world.try_start_game_barge_charge(

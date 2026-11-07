@@ -182,6 +182,17 @@ fn assign_initial_special_bomb_targets(
     Ok(assigned.is_some())
 }
 
+/// Source Ship.HasTargetEnemyShipToFollow: the selected target is
+/// non-null and not dead. Movement and retarget phase decisions share
+/// this predicate so a new target does not receive an early move order.
+pub(super) fn has_live_game_bomb_target(
+    world: &CombatWorld, ship_id: i64,
+) -> bool {
+    world.game_bomb_current_target(ship_id)
+        .and_then(|id| world.ship(id))
+        .is_some_and(|target| !target.vitals.is_dead())
+}
+
 /// Reuse the existing Bomb.SetTargetShip strategy and world lease.
 /// Healthy, still-selected targets do not consume RNG or metadata work.
 pub(super) fn retarget_selected_game_bomb(
@@ -194,12 +205,8 @@ pub(super) fn retarget_selected_game_bomb(
     enemies: &[NativeEnemyTargetStats],
     ranked: &mut Vec<NativeEnemyTargetStats>,
 ) -> Result<bool, GameCommandError> {
-    if let Some(target_id) = world.game_bomb_current_target(ship_id) {
-        if world.ship(target_id).is_some_and(|ship|
-            !ship.vitals.is_dead(),
-        ) {
-            return Ok(true);
-        }
+    if has_live_game_bomb_target(world, ship_id) {
+        return Ok(true);
     }
     let weapon = weapons.iter().find(|weapon|
         weapon.ship_id == ship_id,
@@ -493,17 +500,24 @@ impl NativeBombingRun {
                 return false;
             };
             if ship.vitals.is_dead() { return false }
-            if ship.ship_type == 19 {
-                if self.strikers.binary_search_by_key(
-                    &member.ship_id, |state| state.ship_id,
-                ).ok().is_some_and(|index| self.strikers[index].completed) ||
-                    world.game_striker_bomb_ready(member.ship_id) != Some(true) {
-                    return false;
+            match ship.ship_type {
+                19 => {
+                    if self.strikers.binary_search_by_key(
+                        &member.ship_id, |state| state.ship_id,
+                    ).ok().is_some_and(|index|
+                        self.strikers[index].completed
+                    ) || world.game_striker_bomb_ready(member.ship_id) !=
+                        Some(true) {
+                        return false;
+                    }
                 }
+                22 => {}
+                // Original BombingRun.Timer does not retarget Fire Barges
+                // whose selected enemy died. Avoid requesting metadata that
+                // Unity would not consume.
+                _ => return false,
             }
-            world.game_bomb_current_target(member.ship_id)
-                .and_then(|id| world.ship(id))
-                .is_none_or(|target| target.vitals.is_dead())
+            !has_live_game_bomb_target(world, member.ship_id)
         })
     }
 
@@ -576,6 +590,8 @@ impl NativeBombingRun {
                         // of AreBombersCloseToEnemyTargets.
                         if !completed { all_near = false; }
                     } else {
+                        let had_live_target =
+                            has_live_game_bomb_target(world, member.ship_id);
                         if !retarget_selected_game_bomb(
                             world, roster, random, member.ship_id,
                             enemy_owner, selection,
@@ -583,6 +599,12 @@ impl NativeBombingRun {
                             &mut self.ranked_enemies,
                         )? {
                             return Ok(Some(CommandFinishCause::NoEnemyTargets));
+                        }
+                        // Unity's Timer calls GetTarget on a lost target;
+                        // pursuit resumes on the next timer, not this one.
+                        if !had_live_target {
+                            all_near = false;
+                            continue;
                         }
                         if let Some(target_id) =
                             send_bomber_to_selected_target(
@@ -599,13 +621,23 @@ impl NativeBombingRun {
                     }
                 }
                 10 | 22 => {
-                    if !retarget_selected_game_bomb(
+                    let had_live_target =
+                        has_live_game_bomb_target(world, member.ship_id);
+                    if ship_type == 22 && !retarget_selected_game_bomb(
                         world, roster, random, member.ship_id,
                         enemy_owner, selection,
                         retarget_weapons, retarget_enemies,
                         &mut self.ranked_enemies,
                     )? {
                         return Ok(Some(CommandFinishCause::NoEnemyTargets));
+                    }
+                    // Yellow Jacket.GetTarget only chooses an enemy this
+                    // timer; it will pursue that target on the next one.
+                    // Fire Barge has no lost-target GetTarget branch at all
+                    // in the original BombingRun.Timer.
+                    if !had_live_target {
+                        all_near = false;
+                        continue;
                     }
                     if let Some(target_id) = send_bomber_to_selected_target(
                         world, member, self.formation,
