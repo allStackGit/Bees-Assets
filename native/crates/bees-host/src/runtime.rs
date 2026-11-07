@@ -159,7 +159,9 @@ where
                 &mut self.sink, rounds, delivery_every,
             )
         ).map_err(HostWindowError::Connection)?;
-        result.map_err(HostWindowError::Window)
+        let counts = result.map_err(HostWindowError::Window)?;
+        self.sampler.record_window(&counts);
+        Ok(counts)
     }
 
     /// Cancel or abort an episode and durably deliver all source-owned
