@@ -57,7 +57,7 @@ function createAgentServer(getHub) {
             return respond(res,200,getHub().heartbeat(value,
                 req.headers['x-hub-agent-token']));
         }catch(error) {
-            return respond(res,[401,413].includes(error.status)?error.status:400,{
+            return respond(res,[401,409,413].includes(error.status)?error.status:400,{
                 error:String(error.message||error),
             });
         }
