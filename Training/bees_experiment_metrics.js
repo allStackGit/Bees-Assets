@@ -20,8 +20,41 @@ function append(root, item) {
             ((item.samples || []).length ? '\n' : ''), {flag:'wx'});
         return target;
     }
-    const latest = (item.samples || []).at(-1);
-    if (latest) fs.appendFileSync(target, JSON.stringify(latest) + '\n');
+    const samples = item.samples || [];
+    let pending = samples.slice(-1);
+    if (item.metric_archive_error && samples.length) {
+        // After an append failure, recover missing samples from the last
+        // complete archived observation. A later successful append alone
+        // would silently skip the failed measurement.
+        const fd = fs.openSync(target, 'r');
+        try {
+            const size = fs.fstatSync(fd).size;
+            if (!Number.isSafeInteger(size) || size < 1)
+                throw Error('Metrics archive is empty or has an invalid size.');
+            const length = Math.min(size, 256 * 1024);
+            const bytes = Buffer.alloc(length);
+            if (fs.readSync(fd, bytes, 0, length, size - length) !== length)
+                throw Error('Metrics archive changed while being inspected.');
+            const tail = bytes.toString('utf8');
+            if (!tail.endsWith('\n'))
+                throw Error('Metrics archive ends with an incomplete sample; inspect before resuming.');
+            const boundary = tail.lastIndexOf('\n', tail.length - 2);
+            if (boundary < 0 && size > length)
+                throw Error('Last metrics archive sample exceeds recovery limit.');
+            const last = JSON.parse(tail.slice(boundary + 1, -1));
+            const index = samples.findLastIndex(sample =>
+                sample.at === last.at && sample.step === last.step &&
+                sample.stage_index === last.stage_index &&
+                sample.training_s === last.training_s);
+            if (index < 0)
+                throw Error('Last archived metrics sample is outside retained history; inspect before resuming.');
+            pending = samples.slice(index + 1);
+        } finally {
+            fs.closeSync(fd);
+        }
+    }
+    if (pending.length) fs.appendFileSync(target,
+        pending.map(sample => JSON.stringify(sample)).join('\n') + '\n');
     return target;
 }
 function load(root, item) {
