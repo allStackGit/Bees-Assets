@@ -108,7 +108,8 @@ internal static class NativePhysicalSceneExporter
             !IsFinite(level.MinY) || !IsFinite(level.MaxY) ||
             level.MinX >= level.MaxX || level.MinY >= level.MaxY ||
             !IsFinite(level.Stage.FixedDeltaTime) ||
-            level.Stage.FixedDeltaTime <= 0)
+            level.Stage.FixedDeltaTime <= 0 ||
+            level.Map == null || level.Map.Transform == null)
         {
             throw new InvalidOperationException(
                 "Select a fully initialized live Level with valid source bounds.");
@@ -217,66 +218,31 @@ internal static class NativePhysicalSceneExporter
         if (registered.Count != liveIds.Count)
         {
             throw new InvalidOperationException(
-                "Not all living ships belong to exactly one source Squad.");
-        }
-
+                "Not all        // GameState.Obstacles is not complete for every level. Map-authored
+        // physical borders and static prefabs can instead be set up by
+        // Pathfinder.InitializeMap without ever joining that State list.
+        // Reuse Unity's exact Level-scoped obstacle discovery, merge with
+        // the State-owned physical obstacles, and preserve real entity IDs.
+        var exportedObjects =
+            new HashSet<Obstacle>(ReferenceIdentityComparer<Obstacle>.Instance);
+        var exportedIds = new HashSet<long>(liveIds);
         foreach (Obstacle obstacle in level.State.Obstacles)
         {
-            if (obstacle == null || obstacle.IsDead) continue;
-            var prefab = PrefabUtility.GetCorrespondingObjectFromSource(
-                obstacle.gameObject);
-            if (prefab == null || obstacle.Id <= 0)
-            {
-                throw new InvalidOperationException(
-                    "Native source obstacle needs a real prefab and runtime ID.");
-            }
-            var entity = new SourceObstacle {
-                entity_id = obstacle.Id,
-                prefab_name = prefab.name,
-                position = obstacle.GetPosition(),
-                rotation_degrees = obstacle.transform.localEulerAngles.z,
-                health = obstacle.Health,
-                effective_max_health = obstacle.OriginalHealth
-            };
-            if (obstacle is CollisionAsteroid full)
-            {
-                if (full.IsShard || full.IsDelayKilled ||
-                    full.Health != full.EffectiveMaxHealth ||
-                    !prefab.name.StartsWith("Asteroid ", StringComparison.Ordinal) ||
-                    !int.TryParse(
-                        prefab.name.Substring("Asteroid ".Length),
-                        out int prefabNumber) ||
-                    prefabNumber < 1 || prefabNumber > 28 ||
-                    full.Body == null)
-                {
-                    throw new InvalidOperationException(
-                        "Only complete ordinary source asteroids can be imported: " +
-                        obstacle.name);
-                }
-                entity.kind = "full-asteroid";
-                entity.prefab_number = prefabNumber;
-                entity.speed = full.Speed;
-                entity.health = full.Health;
-                entity.effective_max_health = full.EffectiveMaxHealth;
-                entity.velocity = full.Body.linearVelocity;
-                entity.angular_velocity_degrees = full.Body.angularVelocity;
-            }
-            else if (prefab.name == "Polygon Obstacle")
-            {
-                entity.kind = "polygon";
-            }
-            else if (obstacle is StaticObstacle || obstacle is MapBorder)
-            {
-                entity.kind = "box";
-            }
-            else
-            {
-                // MiningAsteroids and other classes require authentic
-                // source-specific bodies/reward state, not invented boxes.
-                throw new InvalidOperationException(
-                    "Native physical snapshot cannot represent obstacle " +
-                    obstacle.name + " (" + prefab.name + ")");
-            }
+            if (!IsLivePhysicalObstacle(obstacle)) continue;
+            AddPhysicalObstacle(level, snapshot, obstacle,
+                exportedObjects, exportedIds);
+        }
+        foreach (GameObject mapChild in
+                 PathfinderObstacleScope.GetActiveObstacleObjects(level))
+        {
+            if (mapChild == null) continue;
+            Obstacle obstacle = mapChild.GetComponent<Obstacle>();
+            if (!IsLivePhysicalObstacle(obstacle)) continue;
+            AddPhysicalObstacle(level, snapshot, obstacle,
+                exportedObjects, exportedIds);
+        }
+
+       }
             snapshot.obstacles.Add(entity);
         }
 
@@ -298,6 +264,101 @@ internal static class NativePhysicalSceneExporter
             new UTF8Encoding(false));
         AssetDatabase.Refresh();
         Debug.Log("Exported native physical Level source: " + path);
+    }
+
+    private static bool IsLivePhysicalObstacle(Obstacle obstacle)
+    {
+        return obstacle != null && !obstacle.IsDead &&
+            obstacle.gameObject.activeInHierarchy &&
+            obstacle.Collider != null && obstacle.Collider.isActiveAndEnabled;
+    }
+
+    private static void AddPhysicalObstacle(
+        Level level,
+        PhysicalScene snapshot,
+        Obstacle obstacle,
+        HashSet<Obstacle> exportedObjects,
+        HashSet<long> exportedIds)
+    {
+        if (!exportedObjects.Add(obstacle)) return;
+        if (obstacle.Id <= 0)
+        {
+            // Some map borders are active before Pathfinder has called
+            // Obstacle.Setup. Allocating a fake Unity ID here would change
+            // transport/event identity. Export is deliberately refused.
+            throw new InvalidOperationException(
+                "Active map obstacle has no assigned source ID: " +
+                obstacle.gameObject.name +
+                ". Export after the Level has initialized its obstacles.");
+        }
+        if (!exportedIds.Add(obstacle.Id))
+        {
+            throw new InvalidOperationException(
+                "Duplicate source physical entity ID " + obstacle.Id);
+        }
+
+        var prefab = PrefabUtility.GetCorrespondingObjectFromSource(
+            obstacle.gameObject);
+        if (prefab == null)
+        {
+            throw new InvalidOperationException(
+                "Native obstacle needs a verified source prefab: " +
+                obstacle.gameObject.name);
+        }
+        Transform map = level.Map.Transform;
+        var entity = new SourceObstacle {
+            entity_id = obstacle.Id,
+            prefab_name = prefab.name,
+            // A map-authored obstacle may have a nested parent. The
+            // physical world and native simulation both use Level-local
+            // coordinates, not the immediate parent-local transform.
+            position = map.InverseTransformPoint(obstacle.transform.position),
+            rotation_degrees = Mathf.DeltaAngle(
+                map.eulerAngles.z, obstacle.transform.eulerAngles.z),
+            health = obstacle.Health,
+            effective_max_health = obstacle.OriginalHealth
+        };
+        if (obstacle is CollisionAsteroid full)
+        {
+            if (full.IsShard || full.IsDelayKilled ||
+                full.Health != full.EffectiveMaxHealth ||
+                !prefab.name.StartsWith("Asteroid ", StringComparison.Ordinal) ||
+                !int.TryParse(
+                    prefab.name.Substring("Asteroid ".Length),
+                    out int prefabNumber) ||
+                prefabNumber < 1 || prefabNumber > 28 ||
+                full.Body == null)
+            {
+                throw new InvalidOperationException(
+                    "Only complete ordinary source asteroids can be imported: " +
+                    obstacle.name);
+            }
+            entity.kind = "full-asteroid";
+            entity.prefab_number = prefabNumber;
+            entity.speed = full.Speed;
+            entity.health = full.Health;
+            entity.effective_max_health = full.EffectiveMaxHealth;
+            entity.velocity = map.InverseTransformVector(
+                full.Body.linearVelocity);
+            entity.angular_velocity_degrees = full.Body.angularVelocity;
+        }
+        else if (prefab.name == "Polygon Obstacle")
+        {
+            entity.kind = "polygon";
+        }
+        else if (obstacle is StaticObstacle || obstacle is MapBorder)
+        {
+            entity.kind = "box";
+        }
+        else
+        {
+            // MiningAsteroids and other classes require authentic
+            // source-specific bodies/reward state, not invented boxes.
+            throw new InvalidOperationException(
+                "Native physical snapshot cannot represent obstacle " +
+                obstacle.name + " (" + prefab.name + ")");
+        }
+        snapshot.obstacles.Add(entity);
     }
 
     private static List<SourceObservedWeapon> ExportObservedWeapons(Ship ship)

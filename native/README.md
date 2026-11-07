@@ -16,7 +16,10 @@ communication and asteroid state. Player builds do not include it.
 the real world bounds, physics step, source entity IDs, ship health,
 movement, persistent fleet mining, observed weapons, turret mounts and
 projectile speeds, source-order live squads, and ordinary intact asteroid/
-static obstacle placements. It rejects incomplete squad coverage,
+static obstacle placements (including pathfinder-owned map borders that
+are not in GameState.Obstacles). An active map collider with no real
+allocated Unity ID causes export to fail instead of inventing one.
+It rejects incomplete squad coverage,
 duplicate IDs and unsupported snapshots instead of making up values.
 `NativePhysicalScene::squads_for_level` retains Unity's Stage-allocated
 `Squad.ItemId` as the actual lifetime identity for a caller-selected Level.
