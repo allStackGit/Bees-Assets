@@ -49,10 +49,33 @@ pub enum SquadGeometryError {
 pub fn live_squad_geometry(
     world: &CombatWorld,
     squad: &NativeSquadEntry,
-    mut authored_sprite_size: impl FnMut(i64) -> Option<Vec2>,
+    authored_sprite_size: impl FnMut(i64) -> Option<Vec2>,
     offsets: &mut Vec<SquadMemberOffset>,
 ) -> Result<SquadLiveGeometry, SquadGeometryError> {
     offsets.clear();
+    let geometry = live_squad_bounds(world, squad, authored_sprite_size)?;
+    offsets.reserve(squad.members.len());
+    for &ship_id in &squad.members {
+        let body = world.ship_body(ship_id)
+            .expect("validated live squad member");
+        offsets.push(SquadMemberOffset {
+            ship_id,
+            offset: body.motion.position - geometry.center,
+        });
+    }
+    Ok(geometry)
+}
+
+/// Read only Unity Squad.GetCenterPoint/GetWidth/GetHeight from authored
+/// sprite extents. Scouting's five-second movement callback and live
+/// friendly-command projections do not need to allocate or recalculate
+/// formation offsets. Source sprite sizes remain mandatory: collision
+/// hull bounds are not a gameplay-equivalent substitute.
+pub fn live_squad_bounds(
+    world: &CombatWorld,
+    squad: &NativeSquadEntry,
+    mut authored_sprite_size: impl FnMut(i64) -> Option<Vec2>,
+) -> Result<SquadLiveGeometry, SquadGeometryError> {
     let Some(&first_id) = squad.members.first() else {
         return Err(SquadGeometryError::EmptySquad);
     };
@@ -94,15 +117,6 @@ pub fn live_squad_geometry(
         (bounds.min.x + bounds.max.x) * 0.5,
         (bounds.min.y + bounds.max.y) * 0.5,
     );
-    offsets.reserve(squad.members.len());
-    for &ship_id in &squad.members {
-        let body = world.ship_body(ship_id)
-            .expect("validated live squad member");
-        offsets.push(SquadMemberOffset {
-            ship_id,
-            offset: body.motion.position - center,
-        });
-    }
     Ok(SquadLiveGeometry {
         bounds, center,
         width: bounds.max.x - bounds.min.x,
