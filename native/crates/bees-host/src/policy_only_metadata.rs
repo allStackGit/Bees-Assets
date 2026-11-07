@@ -123,6 +123,14 @@ impl NativePolicyOnlyMetadata {
         let mut agent_map = HashMap::new();
         for agent in agents {
             if agent.ship_id <= 0 || agent.side <= 0 ||
+                !agent.controller.effective_vision_range.is_finite() ||
+                agent.controller.effective_vision_range < 0.0 ||
+                !agent.capability.special_resource_fraction.is_finite() ||
+                !agent.capability.special_cooldown_fraction.is_finite() ||
+                !agent.capability.special_phase.is_finite() ||
+                agent.capability.ship_mined_tsv < 0 ||
+                agent.capability.team_retainable_mined_tsv < 0 ||
+                agent.capability.side_starting_tsv < 0 ||
                 !authored_ships.contains_key(&agent.ship_id) ||
                 !side_map.contains_key(&agent.side) || agent.route.team_id > 1 ||
                 agent.parent_carrier_id.is_some_and(|id|
@@ -226,6 +234,17 @@ impl NativeLevelObservationContext for NativePolicyOnlyMetadata {
     ) -> Result<NativeLevelPerceptionInputs<'a>, Self::Error> {
         let agent = self.agents.get(&ship_id)
             .ok_or(PolicyOnlyMetadataError::MissingAgent(ship_id))?;
+        // The live physical owner, not a stale metadata slot, determines
+        // the current policy roster and side. A removed/rebound agent must
+        // never receive a trajectory under its previous imported identity.
+        let real_ship = _world.ship(ship_id)
+            .ok_or(PolicyOnlyMetadataError::InvalidSource)?;
+        if real_ship.side != agent.side ||
+            real_ship.vitals.is_dead() ||
+            _world.policy_frame(ship_id).is_none()
+        {
+            return Err(PolicyOnlyMetadataError::InvalidSource);
+        }
         let side = self.sides.get(&agent.side)
             .ok_or(PolicyOnlyMetadataError::MissingSide(agent.side))?;
         let mut capability = agent.capability;

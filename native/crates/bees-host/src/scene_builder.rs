@@ -166,44 +166,44 @@ impl NativeSceneAssets {
             .map_err(NativeSceneBuildError::Combat)?;
 
         for entity in authored.entities {
-            let NativeAuthoredEntity::Ship(ship) = entity else {
-                match entity {
-                    NativeAuthoredEntity::BoxObstacle {
-                        entity_id, prefab_name, pose,
-                    } => combat.spawn_box_obstacle(
-                        self.box_catalog(), &prefab_name, entity_id, pose,
-                    ).map_err(NativeSceneBuildError::Combat)?,
-                    NativeAuthoredEntity::PolygonObstacle {
-                        entity_id, pose,
-                    } => combat.spawn_polygon_obstacle(
-                        self.polygon_catalog(), entity_id, pose,
-                    ).map_err(NativeSceneBuildError::Combat)?,
-                    NativeAuthoredEntity::Ship(_) => unreachable!(),
+            match entity {
+                NativeAuthoredEntity::Ship(ship) => {
+                let asset = self.ship_catalog().by_type(ship.ship_type)
+                    .ok_or(NativeSceneBuildError::MissingShipAsset(ship.ship_type))?;
+                combat.spawn_ship(
+                    asset, ship.entity_id, ship.side, ship.vitals, ship.motion,
+                ).map_err(NativeSceneBuildError::Combat)?;
+                combat.configure_game_ship_original_health(
+                    ship.entity_id, ship.original_health,
+                ).map_err(NativeSceneBuildError::Combat)?;
+                if let Some(fleet_id) = ship.fleet_ship_id {
+                    combat.set_ship_fleet_identity(ship.entity_id, fleet_id)
+                        .map_err(NativeSceneBuildError::Combat)?;
                 }
-                continue;
-            };
-            let asset = self.ship_catalog().by_type(ship.ship_type)
-                .ok_or(NativeSceneBuildError::MissingShipAsset(ship.ship_type))?;
-            combat.spawn_ship(
-                asset, ship.entity_id, ship.side, ship.vitals, ship.motion,
-            ).map_err(NativeSceneBuildError::Combat)?;
-            combat.configure_game_ship_original_health(
-                ship.entity_id, ship.original_health,
-            ).map_err(NativeSceneBuildError::Combat)?;
-            if let Some(fleet_id) = ship.fleet_ship_id {
-                combat.set_ship_fleet_identity(ship.entity_id, fleet_id)
-                    .map_err(NativeSceneBuildError::Combat)?;
-            }
-            if let Some(policy) = ship.policy {
-                combat.bind_policy_ship(
-                    ship.entity_id, policy.frame, policy.movement_disabled,
-                ).map_err(NativeSceneBuildError::Combat)?;
-                combat.set_policy_ship_cease_fire(
-                    ship.entity_id, policy.cease_fire,
-                ).map_err(NativeSceneBuildError::Combat)?;
-                for turret in policy.turrets {
-                    combat.configure_policy_turret(
-                        ship.entity_id, turret.slot, turret.spec,
+                if let Some(policy) = ship.policy {
+                    combat.bind_policy_ship(
+                        ship.entity_id, policy.frame, policy.movement_disabled,
+                    ).map_err(NativeSceneBuildError::Combat)?;
+                    combat.set_policy_ship_cease_fire(
+                        ship.entity_id, policy.cease_fire,
+                    ).map_err(NativeSceneBuildError::Combat)?;
+                    for turret in policy.turrets {
+                        combat.configure_policy_turret(
+                            ship.entity_id, turret.slot, turret.spec,
+                        ).map_err(NativeSceneBuildError::Combat)?;
+                    }
+                }
+                }
+                NativeAuthoredEntity::BoxObstacle {
+                    entity_id, prefab_name, pose,
+                } => {
+                    combat.spawn_box_obstacle(
+                        self.box_catalog(), &prefab_name, entity_id, pose,
+                    ).map_err(NativeSceneBuildError::Combat)?;
+                }
+                NativeAuthoredEntity::PolygonObstacle { entity_id, pose } => {
+                    combat.spawn_polygon_obstacle(
+                        self.polygon_catalog(), entity_id, pose,
                     ).map_err(NativeSceneBuildError::Combat)?;
                 }
             }
