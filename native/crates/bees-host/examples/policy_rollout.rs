@@ -179,6 +179,8 @@ fn bind_group_routes(
         .map_err(|error| contextual("source group sides", error))?
         .sides();
     let number = episode_number(group, offset)?;
+    let movement_by_team = scene.source_policy_group.as_ref()
+        .map(|source| source.movement_disabled_by_team);
     // Unity draws one of 12 ordered distinct quarter-turn frame pairs
     // at the beginning of EACH new self-play episode. Initial imports
     // retain the actual Unity frames; subsequent native episodes derive
@@ -206,7 +208,17 @@ fn bind_group_routes(
                 binding.team_id,
             )));
         }
+        if verify_source && movement_by_team.is_some_and(|flags|
+            binding.movement_disabled != flags[usize::from(team)]
+        ) {
+            return Err(invalid(format!(
+                "source ship {ship_id} has mismatched team movement restriction",
+            )));
+        }
         binding.team_id = team;
+        if let Some(flags) = movement_by_team {
+            binding.movement_disabled = flags[usize::from(team)];
+        }
         if let Some((team0, team1)) = frames {
             binding.frame = if team == 0 { team0 } else { team1 };
         }
@@ -381,6 +393,19 @@ fn main() -> Result<(), Box<dyn Error>> {
             }
         }
         if let Some(group) = &level.groups {
+            // Old source scenes lack the source's per-team movement flags.
+            // They may be evaluated once, but must not silently produce
+            // unfaithful alternate-team training trajectories on replay.
+            if source.source_policy_group.is_none() &&
+                config.episodes_per_world > 1
+            {
+                return Err(invalid(
+                    "MA-POCA episode replay requires schema-16 source group metadata",
+                ).into());
+            }
+            if source.source_policy_bindings.is_empty() {
+                return Err(invalid("group source has no bound policy controllers").into());
+            }
             if group.episode_number == 0 ||
                 group.episode_number.checked_add(config.episodes_per_world - 1)
                     .is_none()
