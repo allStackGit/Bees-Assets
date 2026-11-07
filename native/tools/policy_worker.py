@@ -30,7 +30,8 @@ MASK_WIDTH = 15  # Five fire choices × 2, then five ship specials
 ROW_META_BYTES = 16
 MAX_SIGNATURE_BYTES = 8192
 MAX_BATCH_ROWS = 65536
-VERSION = 1
+VERSION = 2
+MAX_MANIFEST_PATH_BYTES = 4096
 HEADER = struct.Struct("<4sIQI")
 READY = struct.Struct("<4sIIH")
 # Mirrors the Rust per-row wire header: slot(4), team(1), fire(5),
@@ -316,7 +317,38 @@ def main() -> None:
         if data is None:
             break
         magic, version, request_id, rows = HEADER.unpack(data)
-        if magic != b"BINF" or version != VERSION:
+        if version != VERSION:
+            raise ValueError("invalid policy worker protocol version")
+        if magic == b"BMOD":
+            # A model-update control frame is processed strictly between
+            # inference batches. New models are loaded and SHA-verified
+            # before replacing the active slot map; a rejected update
+            # leaves every previously loaded model available.
+            if not 0 < rows <= MAX_MANIFEST_PATH_BYTES:
+                raise ValueError("invalid model-update manifest path size")
+            payload = read_exact(reader, rows)
+            if payload is None:
+                raise EOFError("incomplete model-update manifest path")
+            try:
+                manifest_path = Path(bytes(payload).decode("utf-8"))
+                if not manifest_path.is_absolute():
+                    raise ValueError("model-update manifest must be absolute")
+                new_signature, new_map = checked_manifest(manifest_path)
+                if new_signature != signature:
+                    raise ValueError("model-update policy ABI signature mismatch")
+                if new_map.keys() != policy_map.keys():
+                    raise ValueError("model-update changes active policy slots")
+            except (OSError, UnicodeError, ValueError, RuntimeError) as error:
+                print(f"Native policy reload rejected: {error}",
+                      file=sys.stderr, flush=True)
+                writer.write(HEADER.pack(b"MNOK", VERSION, request_id, 0))
+                writer.flush()
+                continue
+            policy_map = new_map
+            writer.write(HEADER.pack(b"MACK", VERSION, request_id, len(policy_map)))
+            writer.flush()
+            continue
+        if magic != b"BINF":
             raise ValueError("invalid inference request header")
         if not 0 < rows <= MAX_BATCH_ROWS:
             raise ValueError("invalid model batch size")
