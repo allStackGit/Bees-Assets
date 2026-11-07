@@ -11,6 +11,7 @@ import tempfile
 from pathlib import Path
 
 from experiment_hub_eval_io import SHA256, SUITE_ID, UUID, publish, read_bounded, suite_digest
+from experiment_hub_evaluation_runtime import pinned_runtime
 from experiment_hub_tinybrains_runtime import configure_engine
 
 MAP = re.compile(r"[a-zA-Z0-9_-]{1,80}")
@@ -18,8 +19,8 @@ MAP = re.compile(r"[a-zA-Z0-9_-]{1,80}")
 
 def read_suite(file):
     suite = json.loads(read_bounded(file, 8192))
-    if not isinstance(suite, dict) or set(suite) != {"suite_id", "maps", "seeds", "max_turns"}:
-        raise ValueError("Expected suite_id, maps, seeds, and max_turns.")
+    if not isinstance(suite, dict) or set(suite) - {"runtime_sha256"} != {"suite_id", "maps", "seeds", "max_turns"}:
+        raise ValueError("Expected suite_id, maps, seeds, max_turns, and optional runtime_sha256.")
     maps, seeds, turns = suite["maps"], suite["seeds"], suite["max_turns"]
     if (
         not isinstance(suite["suite_id"], str) or not SUITE_ID.fullmatch(suite["suite_id"])
@@ -31,12 +32,19 @@ def read_suite(file):
         or len(set(seeds)) != len(seeds)
         or len(maps) * len(seeds) * 2 > 256
         or type(turns) is not int or not 1 <= turns <= 1000
+        or ("runtime_sha256" in suite and (not isinstance(suite["runtime_sha256"], str)
+            or not SHA256.fullmatch(suite["runtime_sha256"])))
     ):
         raise ValueError("Invalid TinyBrains evaluation suite.")
     return suite
 
 
 def evaluate(checkpoint, digest, suite, work):
+    with pinned_runtime("tinybrains", suite):
+        return _evaluate(checkpoint, digest, suite, work)
+
+
+def _evaluate(checkpoint, digest, suite, work):
     from ants_mapoca.artifacts import export
     from ants_mapoca.runtime import STARTER, configure, dump, run_cli
 
