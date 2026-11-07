@@ -782,7 +782,7 @@ impl NativeLevelEventProcessor {
             completed_tick, world, navigation, friendlies, random, dt,
             circle_snapshot, swipe_snapshot, aggressive_snapshot,
             bombing_snapshot, charge_snapshot,
-            |_, _| Err(GameCommandError::MissingScoutingContext),
+            |_, _, _| Err(GameCommandError::MissingScoutingContext),
         )
     }
 
@@ -813,7 +813,7 @@ impl NativeLevelEventProcessor {
             SquadLifetime, i64, &CombatWorld, bool,
         ) -> Result<NativeChargeTimerSnapshot, GameCommandError>,
         scouting_center: impl FnMut(
-            SquadLifetime, &CombatWorld,
+            SquadLifetime, &CombatWorld, &crate::squads::NativeSquadEntry,
         ) -> Result<Vec2, GameCommandError>,
     ) -> Result<(), NativeLevelEventError> {
         if self.is_failed() {

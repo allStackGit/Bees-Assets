@@ -29,7 +29,8 @@ use crate::commands::{
 use crate::level_events::{
     NativeLevelEventError, NativeLevelEventProcessor,
 };
-use crate::squads::{NativeSquadRoster, SquadRosterError};
+use crate::squads::{NativeSquadEntry, NativeSquadRoster, SquadRosterError};
+use crate::squad_geometry::live_squad_bounds;
 
 /// The native game Level's authoritative FleetShip metadata. This is NOT
 /// computed from collider size or estimated from training observations.
@@ -143,15 +144,29 @@ pub trait NativeLevelCommandContext {
         Err(GameCommandError::MissingCombatSnapshot)
     }
 
-    /// Unity Squad.GetPosition on each Scouting movement callback. This
-    /// is the live union of the ships' authored sprite extents, NOT the
-    /// current collision hulls or mean position. The Level may calculate
-    /// it from live sprites or via squad_geometry using actual ship sizes.
-    /// Without authentic sprite geometry Scouting fails closed.
+    /// Authored Unity Ship.GetSize, including sprites that are wider or
+    /// narrower than their collision hulls. The native Level retains
+    /// membership in its one NativeSquadRoster; supplying sizes does not
+    /// create a second ship or squad registry. Fail closed if absent.
+    fn authored_ship_sprite_size(&self, _ship_id: i64) -> Option<Vec2> {
+        None
+    }
+
+    /// Unity Squad.GetPosition computed on demand for Scouting's
+    /// destination timer. The default uses live physical positions and
+    /// authoritative roster membership with the original sprite sizes.
+    /// Rendered Levels may override with their actual Squad.GetPosition.
     fn scouting_command_center(
-        &self, _world: &CombatWorld, _owner: SquadLifetime,
+        &self, world: &CombatWorld, owner: SquadLifetime,
+        squad: &NativeSquadEntry,
     ) -> Result<Vec2, GameCommandError> {
-        Err(GameCommandError::MissingScoutingContext)
+        if squad.owner != owner {
+            return Err(GameCommandError::InvalidSquad);
+        }
+        live_squad_bounds(world, squad,
+            |id| self.authored_ship_sprite_size(id),
+        ).map(|geometry| geometry.center)
+            .map_err(GameCommandError::SquadGeometry)
     }
 
     fn navigation(&self) -> &NavigationRuntime;
@@ -556,8 +571,8 @@ where
                         combat, owner, enemy_id, need_retarget,
                     )
                 },
-                |owner, combat| {
-                    metadata.scouting_command_center(combat, owner)
+                |owner, combat, squad| {
+                    metadata.scouting_command_center(combat, owner, squad)
                 },
             )?;
             if state.combat.events().len() > previous_event_count {

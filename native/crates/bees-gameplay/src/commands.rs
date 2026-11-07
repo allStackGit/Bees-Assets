@@ -37,6 +37,7 @@ use bees_sim::squad_movement::{
     SquadFormationOptions, SquadOrderError,
 };
 use bees_sim::timer::ScaledTimer;
+use crate::squads::{NativeSquadEntry, NativeSquadRoster};
 
 mod mining;
 mod heal;
@@ -214,6 +215,7 @@ impl HiveMindCommandSettings {
 #[derive(Debug)]
 pub enum GameCommandError {
     InvalidSquad,
+    SquadGeometry(crate::squad_geometry::SquadGeometryError),
     InvalidSettings,
     InvalidDelta,
     InvalidEnemy,
@@ -1354,7 +1356,7 @@ impl NativeSquadCommandDirector {
             world, navigation, roster, friendlies, random, dt,
             circle_snapshot, swipe_snapshot, aggressive_snapshot,
             bombing_snapshot, charge_snapshot,
-            |_, _| Err(GameCommandError::MissingScoutingContext),
+            |_, _, _| Err(GameCommandError::MissingScoutingContext),
             finished,
         )
     }
@@ -1386,7 +1388,7 @@ impl NativeSquadCommandDirector {
             SquadLifetime, i64, &CombatWorld, bool,
         ) -> Result<NativeChargeTimerSnapshot, GameCommandError>,
         mut scouting_center: impl FnMut(
-            SquadLifetime, &CombatWorld,
+            SquadLifetime, &CombatWorld, &NativeSquadEntry,
         ) -> Result<Vec2, GameCommandError>,
         finished: &mut Vec<FinishedNativeCommand>,
     ) -> Result<(), GameCommandError> {
@@ -1424,9 +1426,15 @@ impl NativeSquadCommandDirector {
             }
             if let Some(scouting) = command.scouting.as_mut() {
                 let previous_events = world.events().len();
+                let mut source_center = |owner: SquadLifetime,
+                    combat: &CombatWorld| {
+                    let entry = roster.and_then(|registry| registry.get(owner))
+                        .ok_or(GameCommandError::MissingScoutingContext)?;
+                    scouting_center(owner, combat, entry)
+                };
                 let (mut finished, callbacks) = scouting.advance(
                     world, navigation, random, &mut command.command_poll, dt,
-                    owner, &mut scouting_center,
+                    owner, &mut source_center,
                 )?;
                 self.measurements.command_timer_callbacks += callbacks;
                 self.measurements.scouting_beacons_dropped +=
