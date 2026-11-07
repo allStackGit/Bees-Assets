@@ -4,7 +4,7 @@ const fs=require('node:fs');
 const path=require('node:path');
 const crypto=require('node:crypto');
 const {validateProgress}=require('./experiment_hub_progress');
-const {evaluationReader}=require('./experiment_hub_evaluation');
+const {evaluationReader,modelFileSha256}=require('./experiment_hub_evaluation');
 
 const UUID=/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
 const WINDOWS_ENTRY=[
@@ -130,6 +130,12 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
             completedCheckpoint(jobRoot(context),10000000);
             return true;
         },
+        model_checkpoint_sha256(context) {
+            const saved=completedCheckpoint(jobRoot(context),10000000);
+            const model=saved.files.find(file=>path.basename(file)==='lineage-0.zip');
+            if(!model)throw Error('Courier evaluated policy is not available for promotion.');
+            return modelFileSha256(model);
+        },
         ...(windows?{checkpoint_stop_file:context=>path.join(jobRoot(context),'hub-stop.request')}:{}),
         ...evaluator,
         args(parameters,context) {
@@ -151,6 +157,10 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
                 const source=path.join(artifacts,predecessor);
                 const saved=completedCheckpoint(source,max_rounds);
                 files=saved.files;
+                if(context.expected_parent_model_sha256&&
+                    modelFileSha256(saved.files.find(file=>path.basename(file)==='lineage-0.zip'))!==
+                        context.expected_parent_model_sha256)
+                    throw Error('Courier promoted checkpoint no longer matches its evaluated model.');
                 if(max_rounds!==0)limit=saved.checkpoint.round+max_rounds;
             }
             fs.mkdirSync(out,{mode:0o700});
