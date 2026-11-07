@@ -591,9 +591,14 @@ impl NativePhysicalScene {
                     if ship.entity_id == ship_id => Some(ship.side),
                 _ => None,
             }).ok_or(NativeSnapshotError::UnknownPolicyShip(ship_id))?;
+            let source_group_agent_id = self.source_policy_group.as_ref()
+                .and_then(|group| group.participants.iter().find(|member|
+                    member.ship_id == ship_id
+                )).map(|member| member.agent_id);
             agents.push(AuthoredPolicyAgent {
                 ship_id,
                 side,
+                source_group_agent_id,
                 route: NativePolicyRoute {
                     team_id: binding.team_id, model_slot,
                 },
