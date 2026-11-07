@@ -1188,6 +1188,7 @@ document.addEventListener('DOMContentLoaded', () => {
             (automation.waiting_reason?' · '+automation.waiting_reason:'')+
             (automation.last_error?' · REQUIRES REVIEW: '+automation.last_error:''));
         $('hub-job-rows').replaceChildren();
+        const displayedTrialBatches=new Set();
         for(const j of hubVisibleJobs(records,50)) {
             const tr=document.createElement('tr');
             cell(tr,(j.configuration_name||j.configuration_id)+trialBatchLabel(j));
@@ -1460,6 +1461,23 @@ document.addEventListener('DOMContentLoaded', () => {
                     await reload();
                 }catch(e){feedback('hub-job-message',e.message);}
             }));
+            if(j.trial_batch&&!displayedTrialBatches.has(j.trial_batch.id)) {
+                displayedTrialBatches.add(j.trial_batch.id);
+                const queued=state.jobs.filter(job=>job.trial_batch?.id===j.trial_batch.id&&
+                    job.status==='waiting_adapter'&&!job.dispatch_id);
+                if(queued.length)actions.append(button('Cancel queued batch trials',async()=>{
+                    if(!confirm('Cancel '+queued.length+' queued trials from batch '+j.trial_batch.id.slice(-8)+
+                        ' across all projects? Trials already dispatched keep running.'))return;
+                    try {
+                        const result=await action('hub/trials/cancel-queued',{
+                            trial_batch_id:j.trial_batch.id,
+                            expected_job_ids:queued.map(job=>job.id),confirm_cancel:true,
+                        });
+                        feedback('hub-job-message','Cancelled '+result.cancelled_count+' queued trials.');
+                        await reload();
+                    }catch(error){feedback('hub-job-message',error.message);}
+                }));
+            }
             $('hub-job-rows').append(tr);
         }
         if(!records.length) {
