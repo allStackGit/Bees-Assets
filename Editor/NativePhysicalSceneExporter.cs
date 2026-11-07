@@ -66,10 +66,10 @@ internal static class NativePhysicalSceneExporter
         var selected = Selection.activeGameObject;
         var level = selected == null ? null : selected.GetComponent<Level>();
         if (level == null || level.Stage == null || level.State == null ||
-            !float.IsFinite(level.MinX) || !float.IsFinite(level.MaxX) ||
-            !float.IsFinite(level.MinY) || !float.IsFinite(level.MaxY) ||
+            !IsFinite(level.MinX) || !IsFinite(level.MaxX) ||
+            !IsFinite(level.MinY) || !IsFinite(level.MaxY) ||
             level.MinX >= level.MaxX || level.MinY >= level.MaxY ||
-            !float.IsFinite(level.Stage.FixedDeltaTime) ||
+            !IsFinite(level.Stage.FixedDeltaTime) ||
             level.Stage.FixedDeltaTime <= 0)
         {
             throw new InvalidOperationException(
@@ -210,6 +210,13 @@ internal static class NativePhysicalSceneExporter
             new UTF8Encoding(false));
         AssetDatabase.Refresh();
         Debug.Log("Exported native physical Level source: " + path);
+    }
+
+    // Unity targets both .NET Standard and Mono profiles where
+    // Single.IsFinite is not consistently available.
+    private static bool IsFinite(float value)
+    {
+        return !float.IsNaN(value) && !float.IsInfinity(value);
     }
 
     private static string Sanitize(string input)
