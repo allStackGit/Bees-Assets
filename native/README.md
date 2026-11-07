@@ -36,13 +36,27 @@ The single JSON configuration file requires:
   `rounds_per_window`, `delivery_every`, and optional
   `timing_sample_period` (all step counts are positive).
 - `levels`: a nonempty array of `{scene, world_id, level_id, seed,
-  model_slots}`. Each scene is an exported **initial** Level; both IDs
-  must be unique and positive, and `model_slots` maps exact Unity
-  policy-team IDs (`"0"`/`"1"`) to verified slots in the manifest.
+  model_slots, groups?}`. Each scene is an exported **initial** Level;
+  both IDs must be unique and positive, and `model_slots` maps exact
+  Unity policy-team IDs (`"0"`/`"1"`) to verified manifest slots.
+  For actual MA-POCA episodes, `groups` is
+  `{"episode_number": 1, "participants": [{"side": 1, "agent_id": 123}]}`
+  with **all** authentic source group agent IDs (both sides required).
+  These IDs are not necessarily ship IDs and are NOT supplied or
+  verifiable from the current physical-scene export; they must be
+  obtained from the authoritative episode, never guessed. A source
+  controller whose initial team disagrees with the supplied episode
+  number rejects the run. Each subsequent episode advances that
+  number and updates the real side/team routing using the existing
+  MA-POCA alternation. Omit `groups` only for non-group gameplay.
+
 
 The runner checks source identities, model routing, collision settings and
 Stage consistency **before starting**. It emits run-tagged JSON interval
-measurements on stdout. Its durable sink synchronizes bounded ordered event
+measurements on stdout. Group-reward and terminal diagnostics include typed
+numeric fields; ELO markers remain separate from PPO reward. This diagnostic
+log is **not** the complete observation/action/value/log-probability data
+needed to train a policy. Its durable sink synchronizes bounded ordered event
 chunks (up to 128 records or 256 KiB) and acknowledges only the actually
 committed source prefix; a previously created output path is never overwritten.
 Completed worlds can be recycled up to `episodes_per_world` times through
