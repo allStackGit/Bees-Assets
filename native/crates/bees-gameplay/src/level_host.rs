@@ -55,7 +55,7 @@ pub trait NativeLevelObservationContext {
         -> Result<NativePolicyRoute, Self::Error>;
 
     fn inputs_for_agent<'a>(
-        &'a self, world: &CombatWorld, ship_id: i64,
+        &'a self, world: &'a CombatWorld, ship_id: i64,
     ) -> Result<NativeLevelPerceptionInputs<'a>, Self::Error>;
 
     fn authored_ship_perception(&self, ship_id: i64)
@@ -65,6 +65,7 @@ pub trait NativeLevelObservationContext {
 #[derive(Debug)]
 pub enum NativeLevelSourceError<E> {
     MissingRegisteredWorld,
+    UnregisteredWorldCount,
     WorldIdentityChanged,
     EpisodeRevisionChanged,
     Source(E),
@@ -210,6 +211,31 @@ impl NativeLevelBatchDriver {
         A: FnMut(SquadLifetime, i64) -> Result<SquadLifetime, SquadRosterError>,
         B: NativePolicyInference,
     {
+        // Preflight ALL slots, including complete worlds and worlds whose
+        // policy period is not due. The lower-level observation callback is
+        // intentionally skipped for those worlds; relying on it alone
+        // would let a secretly reset arena advance several physics ticks
+        // using the previous episode's identity permutation.
+        if self.worlds.len() != simulation.world_count() {
+            return Err(NativeBatchedStepError::Source {
+                index: self.worlds.len().min(simulation.world_count()),
+                error: NativeLevelSourceError::UnregisteredWorldCount,
+            });
+        }
+        for (index, slot) in self.worlds.iter().enumerate() {
+            let world = simulation.world(index)
+                .expect("world count is stable during synchronous preflight");
+            if slot.id != world.id {
+                return Err(NativeBatchedStepError::Source {
+                    index, error: NativeLevelSourceError::WorldIdentityChanged,
+                });
+            }
+            if slot.revision != world.episode_revision() {
+                return Err(NativeBatchedStepError::Source {
+                    index, error: NativeLevelSourceError::EpisodeRevisionChanged,
+                });
+            }
+        }
         let worlds = &mut self.worlds;
         step_batched_levels(
             simulation, &mut self.inference, backend,
@@ -223,7 +249,8 @@ impl NativeLevelBatchDriver {
                     return Err(NativeLevelSourceError::EpisodeRevisionChanged);
                 }
                 let metadata = &world.state.metadata;
-                let next_tick = world.tick() + 1;
+                let next_tick = world.tick().checked_add(1)
+                    .ok_or(NativeLevelSourceError::EpisodeRevisionChanged)?;
                 for ship_id in world.state.decisions.due_agent_ids(next_tick) {
                     let route = metadata.route_for_agent(ship_id)
                         .map_err(NativeLevelSourceError::Source)?;
