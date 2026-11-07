@@ -695,12 +695,6 @@ impl ObstacleBody {
         &self.collider.shape
     }
 
-    /// The exact world AABB of this obstacle's authored primary collider.
-    /// Used for the source Mining command's bounded destination spread.
-    pub fn primary_bounds(&self) -> Option<Aabb> {
-        if self.active { self.collider.bounds } else { None }
-    }
-
     /// Authored proximity is a distinct child trigger, not an enlarged
     /// approximation of the primary collision hull.
     pub fn set_proximity_collider(
@@ -741,6 +735,8 @@ impl ObstacleBody {
         self.clearance_collider.as_ref().unwrap_or(&self.collider).bounds
     }
 
+    /// This same primary collider AABB is used by the Mining command's
+    /// bounded destination spread, without another geometric cache.
     /// MapObject.Collider is its own authored trigger, not the obstacle's
     /// optional pathfinder clearance shape. Project its primary bounds into
     /// native perception without inventing a sprite AABB.
