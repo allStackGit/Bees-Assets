@@ -404,10 +404,18 @@ fn main() -> Result<(), Box<dyn Error>> {
             // Check the exported initial controller team BEFORE any
             // per-episode permutation or output file creation.
             bind_group_routes(&mut source, group, 0, true, level.seed)?;
-            if !level.model_slots.contains_key(&0) ||
-                !level.model_slots.contains_key(&1)
+            // Replayed self-play episodes flip each controlled side's
+            // team ID. Only require the other slot when a replay can
+            // actually occur; a one-sided/scripted episode may have just
+            // one participating policy team.
+            if config.episodes_per_world > 1 &&
+                source.source_policy_bindings.values().any(|binding|
+                    !level.model_slots.contains_key(&(1 - binding.team_id))
+                )
             {
-                return Err(invalid("group-enabled source requires real model slots for both teams").into());
+                return Err(invalid(
+                    "recycled group Levels require real models for both alternating policy teams",
+                ).into());
             }
         }
         for squad in &source.source_squads {
