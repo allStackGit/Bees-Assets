@@ -87,26 +87,7 @@ internal static class HubService
         try
         {
             Report(2);
-            using(var child=new NodeProcess(config,entrypoint))
-            {
-                childPid=child.Pid;
-                Record("running");
-                Report(4);
-                var handles=new[]{child.Handle,Stop.SafeWaitHandle.DangerousGetHandle()};
-                uint waited=Native.WaitForMultipleObjects(2,handles,false,uint.MaxValue);
-                if(waited==1||Stop.WaitOne(0))
-                {
-                    Report(3);
-                    child.Terminate();
-                    Record("stopped");
-                }
-                else if(waited==0)
-                {
-                    result=child.ExitCode();
-                    Record(result==0?"completed":"failed",result);
-                }
-                else throw Native.Error("Service process wait failed");
-            }
+            result=RunChild(true);
         }
         catch(Exception error)
         {
@@ -122,12 +103,37 @@ internal static class HubService
         }
         Report(1);
     }
+    static uint RunChild(bool service)
+    {
+        uint result=0;
+        using(var child=new NodeProcess(config,entrypoint))
+            {
+                childPid=child.Pid;
+                Record("running");
+                if(service)Report(4);
+                var handles=new[]{child.Handle,Stop.SafeWaitHandle.DangerousGetHandle()};
+                uint waited=Native.WaitForMultipleObjects(2,handles,false,uint.MaxValue);
+                if(waited==1||Stop.WaitOne(0))
+                {
+                    if(service)Report(3);
+                    child.Terminate();
+                    Record("stopped");
+                }
+                else if(waited==0)
+                {
+                    result=child.ExitCode();
+                    Record(result==0?"completed":"failed",result);
+                }
+                else throw Native.Error("Service process wait failed");
+            }
+        return result;
+    }
     static int Main(string[] args)
     {
         try
         {
-            if(!OperatingSystem.IsWindows()||args.Length!=2||args[0]!="--service")
-                throw new ArgumentException("Usage: --service <absolute-local-config.json> (SCM only)");
+            if(!OperatingSystem.IsWindows()||args.Length!=2||args[0] is not ("--service" or "--run-once"))
+                throw new ArgumentException("Usage: --service or --run-once <absolute-local-config.json>");
             string file=Local(args[1]);
             if(new FileInfo(file).Length>16384)throw new ArgumentException("Configuration is oversized.");
             config=JsonSerializer.Deserialize<Configuration>(File.ReadAllText(file),
@@ -145,6 +151,11 @@ internal static class HubService
                 throw new ArgumentException("Agent service requires a private environment file.");
             entrypoint=Local(Path.Combine(config.TrainingDirectory,
                 config.Role=="agent"?"experiment_hub_agent.js":"bees_experiments.js"));
+            if(args[0]=="--run-once")
+            {
+                Console.CancelKeyPress+=(_,eventArgs)=>{eventArgs.Cancel=true;Stop.Set();};
+                return unchecked((int)RunChild(false));
+            }
             if(!StartServiceCtrlDispatcher(new[]{
                 new Entry {Name=config.Name,Main=MainCallback},new Entry()}))
                 throw Native.Error("Cannot connect to Windows Service Control Manager");
@@ -172,6 +183,11 @@ internal sealed class NodeProcess : IDisposable
             if(!Native.SetInformationJobObject(job,9,ref limits,
                 (uint)Marshal.SizeOf<Native.ExtendedLimits>()))
                 throw Native.Error("Cannot configure direct-process ownership");
+            var observed=new Native.ExtendedLimits();
+            if(!Native.QueryInformationJobObject(job,9,ref observed,
+                (uint)Marshal.SizeOf<Native.ExtendedLimits>(),out _)||
+                observed.Basic.Flags!=limits.Basic.Flags)
+                throw new InvalidOperationException("Direct-process ownership settings mismatch");
             var args=new List<string>{config.NodePath};
             if(config.EnvironmentFile is not null)args.Add("--env-file="+config.EnvironmentFile);
             args.Add(entry);
@@ -262,6 +278,9 @@ internal static class Native
     internal static extern IntPtr CreateJobObject(IntPtr attributes,string? name);
     [DllImport("kernel32.dll",SetLastError=true)]
     internal static extern bool SetInformationJobObject(IntPtr job,int kind,ref ExtendedLimits limits,uint length);
+    [DllImport("kernel32.dll",SetLastError=true)]
+    internal static extern bool QueryInformationJobObject(IntPtr job,int kind,
+        ref ExtendedLimits limits,uint length,out uint returned);
     [DllImport("kernel32.dll",EntryPoint="CreateProcessW",CharSet=CharSet.Unicode,SetLastError=true)]
     internal static extern bool CreateProcess(string application,StringBuilder command,IntPtr processAttributes,
         IntPtr threadAttributes,bool inherit,uint flags,IntPtr environment,string cwd,
