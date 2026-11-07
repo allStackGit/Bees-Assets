@@ -112,6 +112,13 @@ impl HiveMindSession {
         self.pending.get(&hash).map(|pending| pending.owner)
     }
 
+    /// The same read-only correlation for the independent targeting
+    /// request registry. A retired request stays identifiable until its
+    /// response has produced an explicit StoreCommands discard.
+    pub fn requested_targeting_owner(&self, hash: i64) -> Option<SquadLifetime> {
+        self.pending_targeting.get(&hash).map(|pending| pending.owner)
+    }
+
     /// Reissuing an order for a squad retires its prior request but retains
     /// it until a late response can be converted into explicit discards.
     /// The caller must supply a transport-owned connection-unique Hash,

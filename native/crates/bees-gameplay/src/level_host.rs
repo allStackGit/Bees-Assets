@@ -16,8 +16,11 @@
 
 use bees_hivemind::session::{
     HiveMindSession, HiveMindSessionError, SquadLifetime, StrategyReceipt,
+    TargetingReceipt,
 };
-use bees_hivemind::protocol::GetStrategyResponse;
+use bees_hivemind::protocol::{
+    GetStrategyResponse, GetTargetingResponse,
+};
 use bees_hivemind::dispatch::{
     LocalCommandKind, SquadCommandComposition, resolve_hivemind_command,
 };
@@ -282,14 +285,38 @@ pub struct NativeLevelStrategyDelivery {
     pub action: StrategyReceiptAction,
 }
 
+/// One authoritative registration/lifetime lookup for strategy and
+/// targeting replies. A malformed active-world registry must not be
+/// mistaken for a dead squad and must not consume its valid server reply.
+#[derive(Debug)]
+pub enum NativeLevelRoutingError {
+    UnregisteredWorldCount,
+    WorldIdentityChanged { index: usize },
+    EpisodeRevisionChanged { index: usize },
+    DuplicateOwnerAcrossWorlds { first: usize, second: usize },
+}
+
 #[derive(Debug)]
 pub enum NativeLevelStrategyReceiveError {
     Session(HiveMindSessionError),
-    Driver(NativeLevelDriverError),
-    /// A reused Level/squad/lifecycle identity across live worlds is
-    /// ambiguous, so do not consume a response and guess its recipient.
-    DuplicateOwnerAcrossWorlds { first: usize, second: usize },
+    Routing(NativeLevelRoutingError),
     Activation(StrategyReceiptFailure),
+}
+
+/// Targeting choices are independent server reservations. This delivery
+/// routes the validated response to the correct live Level but leaves the
+/// actual ship/weapon targeting installation and TSV attribution with
+/// its authored Level adapter. Do not credit targeting until installed.
+#[derive(Debug)]
+pub struct NativeLevelTargetingDelivery {
+    pub world_index: Option<usize>,
+    pub receipt: TargetingReceipt,
+}
+
+#[derive(Debug)]
+pub enum NativeLevelTargetingReceiveError {
+    Session(HiveMindSessionError),
+    Routing(NativeLevelRoutingError),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -431,6 +458,48 @@ impl NativeLevelBatchDriver {
         )
     }
 
+    /// Source-correct, allocation-free routing shared by the two HiveMind
+    /// request types. The connection already owns the only pending-hash map;
+    /// this scans native Level registries only when a server reply arrives.
+    fn locate_live_owner<M, A>(
+        &self,
+        simulation: &Simulation<NativeLevelState<M, A>, NativeLevelRules>,
+        owner: SquadLifetime,
+    ) -> Result<Option<usize>, NativeLevelRoutingError>
+    where
+        M: NativeLevelRewardMetadata + NativeLevelCommandContext,
+        A: FnMut(SquadLifetime, i64) -> Result<SquadLifetime, SquadRosterError>,
+    {
+        if self.worlds.len() != simulation.world_count() {
+            return Err(NativeLevelRoutingError::UnregisteredWorldCount);
+        }
+        let mut found = None;
+        for (index, slot) in self.worlds.iter().enumerate() {
+            let world = simulation.world(index)
+                .expect("validated synchronous world count");
+            if slot.id != world.id {
+                return Err(NativeLevelRoutingError::WorldIdentityChanged { index });
+            }
+            if slot.revision != world.episode_revision() {
+                return Err(NativeLevelRoutingError::EpisodeRevisionChanged { index });
+            }
+            if world.is_failed() || world.state.events.is_failed() ||
+                world.state.events.completed() ||
+                world.state.events.was_aborted() ||
+                world.state.events.roster().get(owner).is_none()
+            {
+                continue;
+            }
+            if let Some(first) = found {
+                return Err(NativeLevelRoutingError::DuplicateOwnerAcrossWorlds {
+                    first, second: index,
+                });
+            }
+            found = Some(index);
+        }
+        Ok(found)
+    }
+
     /// Correlate one real BeesServer GetStrategyResponse to the connection's
     /// original request, flush pending squad retirements, and route to the
     /// owning live Level. This is the complete synchronous transport/Level
@@ -450,70 +519,74 @@ impl NativeLevelBatchDriver {
         M: NativeLevelRewardMetadata + NativeLevelActivationContext,
         A: FnMut(SquadLifetime, i64) -> Result<SquadLifetime, SquadRosterError>,
     {
-        // Do not consume an authenticated server decision against a stale
-        // registration. This includes quiet worlds with no due policy rows.
-        if self.worlds.len() != simulation.world_count() {
-            return Err(NativeLevelStrategyReceiveError::Driver(
-                NativeLevelDriverError::MissingWorld,
-            ));
-        }
-        for (index, slot) in self.worlds.iter().enumerate() {
-            let world = simulation.world(index)
-                .expect("validated fixed Simulation world count");
-            if slot.id != world.id ||
-                slot.revision != world.episode_revision()
-            {
-                return Err(NativeLevelStrategyReceiveError::Driver(
-                    NativeLevelDriverError::WorldIdentityChanged,
-                ));
-            }
-        }
-        // The connection owns request correlation for ALL Levels. Apply
-        // death/terminal retirement instructions before interpreting the
-        // newest response, even when its numeric Squad ID was recycled.
-        flush_all_squad_retirements(simulation, connection);
+        // The connection owns request correlation for ALL Levels. Do not
+        // consume a reply if world registrations or live owner identities
+        // are ambiguous; the request then remains retrievable by Hash.
         let owner = connection.requested_strategy_owner(response.hash)
             .ok_or(NativeLevelStrategyReceiveError::Session(
                 HiveMindSessionError::UnknownRequest,
             ))?;
-        let mut found = None;
-        for index in 0..simulation.world_count() {
-            let world = simulation.world(index)
-                .expect("validated fixed Simulation world count");
-            if world.is_failed() || world.state.events.is_failed() ||
-                world.state.events.completed() ||
-                world.state.events.was_aborted() ||
-                world.state.events.roster().get(owner).is_none()
-            {
-                continue;
-            }
-            if let Some(first) = found {
-                return Err(
-                    NativeLevelStrategyReceiveError::DuplicateOwnerAcrossWorlds {
-                        first, second: index,
-                    },
-                );
-            }
-            found = Some(index);
-        }
+        let found = self.locate_live_owner(simulation, owner)
+            .map_err(NativeLevelStrategyReceiveError::Routing)?;
+        // Death/terminal retirement instructions persist across rollout
+        // windows. Apply them before validating this server response.
+        flush_all_squad_retirements(simulation, connection);
         let receipt = connection.receive_strategy(
             response, found.map(|_| owner),
         ).map_err(NativeLevelStrategyReceiveError::Session)?;
-        let Some(index) = found else {
-            let StrategyReceipt::Retired { reservation_ids, .. } = receipt
-            else { unreachable!("a missing live owner cannot be accepted") };
-            return Ok(NativeLevelStrategyDelivery {
-                world_index: None,
-                action: StrategyReceiptAction::DiscardReservations(
-                    reservation_ids,
-                ),
-            });
+        match receipt {
+            StrategyReceipt::Retired { reservation_ids, .. } =>
+                Ok(NativeLevelStrategyDelivery {
+                    world_index: None,
+                    action: StrategyReceiptAction::DiscardReservations(
+                        reservation_ids,
+                    ),
+                }),
+            accepted @ StrategyReceipt::Accepted { .. } => {
+                let index = found.expect("validated accepted live owner");
+                let action = self.apply_strategy_receipt(
+                    simulation, index, accepted,
+                ).map_err(NativeLevelStrategyReceiveError::Activation)?;
+                Ok(NativeLevelStrategyDelivery {
+                    world_index: Some(index), action,
+                })
+            }
+        }
+    }
+
+    /// Receive a separate GetTargetingResponse from the SAME shared
+    /// connection and route it by exact source squad lifetime. Accepted
+    /// targeting must still be applied by the destination Level's real
+    /// shooting/targeting owner, which also retains the outcome reservation
+    /// for later StoreCommands settlement. This method never silently
+    /// converts a valid targeting reservation into command TSV.
+    pub fn receive_targeting_response<M, A>(
+        &mut self,
+        simulation: &mut Simulation<NativeLevelState<M, A>, NativeLevelRules>,
+        connection: &mut HiveMindSession,
+        response: &GetTargetingResponse,
+    ) -> Result<NativeLevelTargetingDelivery, NativeLevelTargetingReceiveError>
+    where
+        M: NativeLevelRewardMetadata + NativeLevelCommandContext,
+        A: FnMut(SquadLifetime, i64) -> Result<SquadLifetime, SquadRosterError>,
+    {
+        let owner = connection.requested_targeting_owner(response.hash)
+            .ok_or(NativeLevelTargetingReceiveError::Session(
+                HiveMindSessionError::UnknownRequest,
+            ))?;
+        let found = self.locate_live_owner(simulation, owner)
+            .map_err(NativeLevelTargetingReceiveError::Routing)?;
+        flush_all_squad_retirements(simulation, connection);
+        let receipt = connection.receive_targeting(
+            response, found.map(|_| owner),
+        ).map_err(NativeLevelTargetingReceiveError::Session)?;
+        let world_index = match receipt {
+            TargetingReceipt::Retired { .. } => None,
+            TargetingReceipt::Accepted { .. } =>
+                Some(found.expect("validated accepted live owner")),
         };
-        let action = self.apply_strategy_receipt(
-            simulation, index, receipt,
-        ).map_err(NativeLevelStrategyReceiveError::Activation)?;
-        Ok(NativeLevelStrategyDelivery {
-            world_index: Some(index), action,
+        Ok(NativeLevelTargetingDelivery {
+            world_index, receipt,
         })
     }
 
