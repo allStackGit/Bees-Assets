@@ -7,6 +7,7 @@
 use serde::Deserialize;
 
 use crate::collider_asset_shape::RawShape;
+use crate::geometry::Vec2;
 use crate::movement::ShipMotion;
 use crate::physics::{PhysicsError, ShipBody, ShipShape};
 
@@ -15,6 +16,38 @@ const ASSET_JSON: &str = include_str!(concat!(
     "/../../assets/ship-colliders.json"
 ));
 pub const SHIP_TYPE_COUNT: usize = 24;
+
+/// Unity ConfigData.ShipSizes / ConfigData.PixelsPerUnit (8), in world
+/// units, indexed by ConfigData.ShipTypes. These are the UNROTATED sprite
+/// extents used by Ship.GetSize and Squad.GetCenterPoint, not colliders.
+/// Ported as a compact immutable table so headless and rendered Levels
+/// calculate the same squad/command formation without a second registry.
+const SHIP_SPRITE_SIZES: [Vec2; SHIP_TYPE_COUNT] = [
+    Vec2::new(19, 9), // 0: Barge (152x72 pixels)
+    Vec2::new(2.25, 2), // 1: Beacon (18x16 pixels)
+    Vec2::new(34, 34), // 2: Beehive (272x272 pixels)
+    Vec2::new(17, 12), // 3: Bumblebee (136x96 pixels)
+    Vec2::new(16, 16), // 4: CarpenterBee (128x128 pixels)
+    Vec2::new(12, 14), // 5: Carrier (96x112 pixels)
+    Vec2::new(8, 9), // 6: Cruiser (64x72 pixels)
+    Vec2::new(8, 10.5), // 7: Dreadnought (64x84 pixels)
+    Vec2::new(4, 4), // 8: Drone (32x32 pixels)
+    Vec2::new(16, 16), // 9: Factory (128x128 pixels)
+    Vec2::new(19, 9), // 10: FireBarge (152x72 pixels)
+    Vec2::new(16, 19), // 11: Flagship (128x152 pixels)
+    Vec2::new(6, 6), // 12: Frigate (48x48 pixels)
+    Vec2::new(6, 6), // 13: Gunship (48x48 pixels)
+    Vec2::new(4, 4), // 14: Honeybee (32x32 pixels)
+    Vec2::new(4, 4), // 15: Hornet (32x32 pixels)
+    Vec2::new(8, 8), // 16: Leafcutter (64x64 pixels)
+    Vec2::new(160, 128), // 17: Queen (1280x1024 pixels)
+    Vec2::new(5, 4), // 18: Scout (40x32 pixels)
+    Vec2::new(4, 4), // 19: Striker (32x32 pixels)
+    Vec2::new(28, 16), // 20: WarpGate (224x128 pixels)
+    Vec2::new(6, 6), // 21: Wasp (48x48 pixels)
+    Vec2::new(4, 4), // 22: YellowJacket (32x32 pixels)
+    Vec2::new(32, 32), // 23: HumanTarget (256x256 pixels)
+];
 
 #[derive(Clone, Debug)]
 pub struct ShipAsset {
@@ -110,6 +143,15 @@ impl ShipAssetCatalog {
     #[inline]
     pub fn by_type(&self, ship_type: u8) -> Option<&ShipAsset> {
         self.ships.get(usize::from(ship_type))
+    }
+
+    /// Authoritative sprite size by Unity ship type. This must not be
+    /// reconstructed from the independently authored collision hull.
+    /// Reading an existing ship type is constant time and allocation-free.
+    #[inline]
+    pub fn sprite_size(&self, ship_type: u8) -> Option<Vec2> {
+        self.by_type(ship_type)?;
+        SHIP_SPRITE_SIZES.get(usize::from(ship_type)).copied()
     }
 
     pub fn ships(&self) -> &[ShipAsset] {

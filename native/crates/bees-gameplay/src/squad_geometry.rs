@@ -9,6 +9,7 @@
 use bees_sim::collision::Aabb;
 use bees_sim::combat_world::CombatWorld;
 use bees_sim::geometry::Vec2;
+use bees_sim::ship_assets::ShipAssetCatalog;
 
 use crate::squads::NativeSquadEntry;
 
@@ -122,4 +123,34 @@ pub fn live_squad_bounds(
         width: bounds.max.x - bounds.min.x,
         height: bounds.max.y - bounds.min.y,
     })
+}
+
+/// Authoritative native Level convenience path: source sprite extents
+/// from the same immutable ship catalog already loaded for physics,
+/// with live squad membership and current positions from CombatWorld.
+/// No per-world sprite registry or collider approximation is needed.
+pub fn live_squad_bounds_from_catalog(
+    world: &CombatWorld,
+    squad: &NativeSquadEntry,
+    catalog: &ShipAssetCatalog,
+) -> Result<SquadLiveGeometry, SquadGeometryError> {
+    live_squad_bounds(world, squad, |id| {
+        let ship = world.ship(id)?;
+        catalog.sprite_size(ship.ship_type)
+    })
+}
+
+/// Source Squad.SetOffsets using the same catalog, only when a squad's
+/// formation actually changes. Quiet Scouting snapshots use the bounds
+/// variant above to avoid allocation and offset recomputation.
+pub fn live_squad_geometry_from_catalog(
+    world: &CombatWorld,
+    squad: &NativeSquadEntry,
+    catalog: &ShipAssetCatalog,
+    offsets: &mut Vec<SquadMemberOffset>,
+) -> Result<SquadLiveGeometry, SquadGeometryError> {
+    live_squad_geometry(world, squad, |id| {
+        let ship = world.ship(id)?;
+        catalog.sprite_size(ship.ship_type)
+    }, offsets)
 }
