@@ -511,7 +511,10 @@ impl NativePhysicalScene {
             seed: setup.seed,
             broadphase_cell_size: setup.broadphase_cell_size,
             decision_period: setup.decision_period,
-            initial_full_asteroids: setup.initial_full_asteroids,
+            // The snapshot already imports every existing full asteroid.
+            // Spawning extra randomized ones would duplicate the authored
+            // initial scene and invalidate the recorded discovery totals.
+            initial_full_asteroids: 0,
             episode,
             groups: setup.groups,
             navigation,
