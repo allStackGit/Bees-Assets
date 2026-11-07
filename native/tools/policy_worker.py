@@ -33,7 +33,17 @@ MAX_BATCH_ROWS = 65536
 VERSION = 1
 HEADER = struct.Struct("<4sIQI")
 READY = struct.Struct("<4sIIH")
-U32 = struct.Struct("<I")
+# Mirrors the Rust per-row wire header: slot(4), team(1), fire(5),
+# special(5), reserved(1). One NumPy view replaces per-agent Python
+# unpacking, slicing and array construction in large inference batches.
+ROW_META_DTYPE = np.dtype([
+    ("slot", "<u4"),
+    ("team", "u1"),
+    ("fire", "u1", (5,)),
+    ("special", "u1", (5,)),
+    ("reserved", "u1"),
+])
+assert ROW_META_DTYPE.itemsize == ROW_META_BYTES
 
 
 def read_exact(reader, count: int) -> bytearray | None:
@@ -211,30 +221,25 @@ def checked_manifest(path: Path):
 
 
 def decode_row_metadata(meta: bytearray, rows: int):
-    slots = np.empty(rows, dtype=np.uint32)
-    fire = np.empty((rows, 5), dtype=np.bool_)
-    special = np.empty((rows, 5), dtype=np.bool_)
-    for index in range(rows):
-        start = index * ROW_META_BYTES
-        slots[index] = U32.unpack_from(meta, start)[0]
-        # The 1-byte faction/team ID is for routing diagnostics only; the
-        # signed faction discriminator already resides in observation tail.
-        if meta[start + 15] != 0:
-            raise ValueError("nonzero reserved metadata")
-        fire_bytes = meta[start + 5 : start + 10]
-        special_bytes = meta[start + 10 : start + 15]
-        if any(value not in (0, 1) for value in fire_bytes + special_bytes):
-            raise ValueError("invalid boolean action mask")
-        fire[index] = np.frombuffer(fire_bytes, dtype=np.uint8).astype(np.bool_)
-        special[index] = np.frombuffer(special_bytes, dtype=np.uint8).astype(np.bool_)
-        if not special[index, 0]:
-            raise ValueError("NoSpecial must remain enabled")
+    fields = np.frombuffer(meta, dtype=ROW_META_DTYPE, count=rows)
+    if np.any(fields["reserved"]):
+        raise ValueError("nonzero reserved metadata")
+    fire_bytes = fields["fire"]
+    special_bytes = fields["special"]
+    if np.any(fire_bytes > 1) or np.any(special_bytes > 1):
+        raise ValueError("invalid boolean action mask")
+    if np.any(special_bytes[:, 0] == 0):
+        raise ValueError("NoSpecial must remain enabled")
+
+    # Contiguous, batch-wide copies are cheaper than allocating two arrays
+    # per agent; the slot IDs remain a borrowed view of this input frame.
+    slots = fields["slot"]
+    fire = fire_bytes.astype(np.bool_)
+    special = special_bytes.astype(np.bool_)
     allow = np.ones((rows, MASK_WIDTH), dtype=np.float32)
-    for slot in range(5):
-        allow[:, slot * 2 + 1] = fire[:, slot]
+    allow[:, 1:10:2] = fire
     allow[:, 10:15] = special
     return slots, fire, special, allow
-
 
 def collect_predictions(
     policy_map, slots, observations, fire, special, allowed,
