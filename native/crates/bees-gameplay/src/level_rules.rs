@@ -60,11 +60,11 @@ pub struct NativeBomberContact {
     /// and timer callbacks use this same authoritative view.
 pub trait NativeLevelCommandContext {
     /// Deliver source-order, real OnTriggerEnter2D contacts for active
-    /// Yellow Jacket bombing runs. Called only when one such command is
-    /// active, after the physics fixed step and before combat-event
-    /// reconciliation. Do not scan every ship if no new contacts occurred.
-    /// Without the authored trigger adapter a Yellow Jacket command must
-    /// fail rather than appear functional without ever detonating.
+    /// Striker and Yellow Jacket BombingRuns. Called only when a live,
+    /// ready contact bomber has an active target, after the physics fixed
+    /// step and before combat-event reconciliation. Do not scan every ship
+    /// if no new contacts occurred. Without the authentic trigger adapter
+    /// contact-bomber commands fail instead of silently never delivering.
     fn collect_bomber_contacts(
         &mut self, _combat: &CombatWorld, _roster: &NativeSquadRoster,
         _output: &mut Vec<NativeBomberContact>,
@@ -280,8 +280,8 @@ pub struct NativeCommandInputMeasurements {
     pub friendly_snapshots: u64,
     /// Number of friendly squad entries returned in those snapshots.
     pub friendly_entries_supplied: u64,
-    /// Authored contact projections are requested only for active
-    /// non-carrier bombing commands containing Yellow Jackets.
+    /// Authored contact projections are requested only when an active
+    /// BombingRun has a live, ready Striker or Yellow Jacket with a target.
     pub bomber_contact_snapshots: u64,
     pub bomber_contacts_supplied: u64,
 }
