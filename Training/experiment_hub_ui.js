@@ -1078,22 +1078,26 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         if(!automationCandidates.length)
             automationOptions.textContent='No connected native-capable machines with a passing preflight.';
-        $('hub-automation-arm').disabled=automation.enabled||!automationCandidates.length;
-        $('hub-automation-disarm').disabled=!automation.enabled;
-        $('hub-automation-adopt-running').disabled=automation.enabled;
-        $('hub-automation-rebalance').disabled=automation.enabled;
-        $('hub-automation-gpu').disabled=automation.enabled;
-        $('hub-automation-gpu-claim').disabled=automation.enabled;
-        $('hub-automation-gpu-probe').disabled=automation.enabled;
+        const pendingRecovery=automation.restart_rearm_pending===true;
+        $('hub-automation-arm').disabled=automation.enabled||pendingRecovery||
+            !automationCandidates.length;
+        $('hub-automation-disarm').disabled=!automation.enabled&&!pendingRecovery;
+        for(const id of ['hub-automation-adopt-running',
+            'hub-automation-resume-after-restart','hub-automation-rebalance',
+            'hub-automation-gpu','hub-automation-gpu-claim',
+            'hub-automation-gpu-probe'])
+            $(id).disabled=automation.enabled||pendingRecovery;
         if(automation.enabled) {
+            $('hub-automation-resume-after-restart').checked=
+                automation.resume_after_restart===true;
             $('hub-automation-rebalance').checked=automation.rebalance_queued===true;
             $('hub-automation-gpu').checked=automation.start_qualified_gpu===true;
             $('hub-automation-gpu-claim').checked=automation.claim_exclusive_gpu===true;
             $('hub-automation-gpu-probe').checked=automation.probe_exclusive_gpu===true;
         }
         feedback('hub-automation-status',
-            (automation.enabled?'Armed for '+automation.machine_ids.join(', ')
-                :'Disarmed')+
+            (automation.enabled?'Armed for '+automation.machine_ids.join(', '):
+                pendingRecovery?'Awaiting restart reconciliation':'Disarmed')+
             (automation.last_action?' · '+automation.last_action:'')+
             (automation.last_transition_at?' · Last change '+
                 new Date(automation.last_transition_at).toLocaleString():'')+
@@ -1895,6 +1899,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         const adopt=$('hub-automation-adopt-running').checked;
+        const resume=$('hub-automation-resume-after-restart').checked;
         const rebalance=$('hub-automation-rebalance').checked;
         const gpu=$('hub-automation-gpu').checked;
         const gpuClaim=$('hub-automation-gpu-claim').checked;
@@ -1903,8 +1908,13 @@ document.addEventListener('DOMContentLoaded', () => {
             feedback('hub-automation-status','Enable exclusive GPU claims to automate their access probes.');
             return;
         }
+        if(resume&&(gpu||gpuClaim||gpuProbe)) {
+            feedback('hub-automation-status','Unattended restart restoration currently supports CPU-only automation.');
+            return;
+        }
         if(!confirm('Arm native queue automation on '+ids.join(', ')+
-            '? This will start eligible CPU jobs and release verified completed capacity. You confirm that unmanaged host workloads have been accounted for. Restart disarms automation.'+
+            '? This will start eligible CPU jobs and release verified completed capacity. You confirm that unmanaged host workloads have been accounted for. Restart disarms automation by default.'+
+            (resume?' You explicitly authorize persistent CPU-only restart restoration after all selected agents and their native dispatches are freshly verified. Uncertainty cancels the permission.':'')+
             (adopt?' Previously automated running or completed jobs will be re-adopted ONLY after fresh, same-dispatch native inspection and verified lease ownership. Uncertain jobs block arming; existing native processes will not be relaunched.':'')+
             (gpu?' This session will also start jobs with a currently qualified exclusive GPU.':'')+
             (gpuClaim?' This session may claim exclusive GPU capacity on armed Linux hosts.':'')+
@@ -1914,6 +1924,7 @@ document.addEventListener('DOMContentLoaded', () => {
             await action('hub/automation',{
                 enabled:true,machine_ids:ids,rebalance_queued:rebalance,
                 adopt_reconciled_running:adopt,confirm_adopt_running:adopt,
+                resume_after_restart:resume,confirm_restart_rearm:resume,
                 start_qualified_gpu:gpu,claim_exclusive_gpu:gpuClaim,probe_exclusive_gpu:gpuProbe,
                 confirm_arm:true,confirm_untracked_load:true,
             });
@@ -1921,7 +1932,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }catch(error){feedback('hub-automation-status',error.message);}
     });
     $('hub-automation-disarm').addEventListener('click',async()=>{
-        if(!confirm('Disarm future automatic allocations and Start directives? Already delivered Starts may still be executing; existing processes are NOT stopped and capacity claims remain held. Use manual Stop and native inspection to resolve suspended Start requests.'))return;
+        if(!confirm('Disarm future automatic allocations, Start directives, and any pending restart permission? Already delivered Starts may still be executing; existing processes are NOT stopped and capacity claims remain held. Use manual Stop and native inspection to resolve suspended Start requests.'))return;
         try {
             await action('hub/automation',{enabled:false,confirm_disarm:true});
             await reload();
