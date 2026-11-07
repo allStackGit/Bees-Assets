@@ -2564,6 +2564,20 @@ class ExperimentHub {
         this.commit(next);
         return copy(plan);
     }
+    cancelCandidateSelection(value) {
+        if(!object(value)||value.confirm_cancel!==true||
+            !UUID.test(String(value.selection_id||'')))
+            throw Error('Explicitly confirm the candidate selection to cancel.');
+        const next=copy(this.state);
+        const plan=(next.candidate_selections||[])
+            .find(item=>item.id===value.selection_id);
+        if(!plan||!['waiting','needs_review'].includes(plan.status))
+            throw Error('Only an unresolved candidate selection can be cancelled.');
+        plan.status='cancelled';
+        plan.cancelled_at=now();
+        this.commit(next);
+        return copy(plan);
+    }
     // One durable write for the full linear checkpoint-continuation
     // pipeline: either all stages have validated lineage, or none do.
     queuePipeline(value) {
