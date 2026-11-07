@@ -1184,7 +1184,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         j.configuration_name+' on '+machine.name+
                         '? Only locally installed adapter code selects the executable. '+
                         (gpu?'The service will verify device access and ROCm visibility before training. ':'')+
-                        (windows?'Windows Stop FORCE-TERMINATES the entire process tree without checkpoint-aware interruption. ':
+                        (windows?'Windows Stop requests checkpoint-preserving shutdown when the local adapter supports it; otherwise it force-terminates the Job Object process tree. ':
                             'Linux uses the locally selected service stop policy. ')+
                         (autoRelease?'The Hub will release this claim after verified finish or Stop. ':'')+
                         'This starts a real process; verify host capacity and experimental validity.'))return;
@@ -1217,7 +1217,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     const windows=machine?.agent_platform==='win32';
                     if(!confirm('Request native stop for '+j.configuration_name+
                         '? '+(windows
-                            ?'Windows will FORCE-TERMINATE the owned Job Object process tree, without a checkpoint-aware interrupt. '
+                            ?'Windows will request checkpoint-preserving shutdown when supported by the local adapter; otherwise it will force-terminate the owned Job Object process tree. '
                             :'Linux will use the locally installed systemd stop policy. ')+
                         'An offline agent may leave the stop request pending.'))return;
                     try{
