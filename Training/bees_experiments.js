@@ -1144,6 +1144,7 @@ async function finishFinalStageEvaluation(item, status) {
     if (!(item.evaluation_mode === 'periodic'
         ? await evaluateDuePeriodic(item, status)
         : await evaluateStageSuite(item, item.stage_index || 0, status))) return;
+    if (item.benchmark_target_met && completeBenchmarkTarget(item)) return;
     item.status = 'completed';
     item.finished_at = item.finished_at || now();
     state.active_id = null;
@@ -1397,7 +1398,8 @@ function completeBenchmarkTarget(item) {
             ?record:latest,null);
     const expected=item.status==='checkpointing'
         ?item.checkpoint_active_ordinal
-        :item.status==='transitioning'?latestCompleted?.ordinal:null;
+        :['transitioning','evaluating_final_stage'].includes(item.status)
+            ?latestCompleted?.ordinal:null;
     if(!winning||winning.ordinal!==expected||
         winning.stage_index!==(item.stage_index||0))
         throw Error('Benchmark completion checkpoint lineage changed.');
