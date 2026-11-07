@@ -2540,9 +2540,13 @@ const server = http.createServer(async (req, res) => {
             });
         }
         if (route === '/api/storage') {
+            const nativeUnsettled = hub && (
+                hub.state.jobs.some(job => job.dispatch_id && !job.capacity_released_at) ||
+                hub.state.reservations.some(lease =>
+                    ['active', 'offered', 'acknowledged'].includes(lease.status)));
             if (busy || state.active_id || state.armed || state.stop_requested ||
-                hub?.automation?.enabled) {
-                return json(res, 409, { error: 'Disarm native automation and stop active experiments before relocating data.' });
+                hub?.automation?.enabled || nativeUnsettled) {
+                return json(res, 409, { error: 'Stop active experiments, disarm native automation, and settle native jobs and leases before relocating data.' });
             }
             if (value.root === DATA_ROOT)
                 return json(res, 200, { root: DATA_ROOT, restart_required: false });
