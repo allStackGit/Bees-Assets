@@ -303,8 +303,9 @@ machines** using the loopback-only `POST /api/hub/automation` endpoint.
 Arming requires a passing local CPU/RAM preflight, a current authenticated
 agent instance, installed trusted project adapters, and confirmation that
 the operator has accounted for Bees and any other **untracked workloads**
-on those machines. The automation session is process-local and starts
-**disarmed**, including after every coordinator restart. A second Arm
+on those machines. The automation session is process-local and starts **disarmed**. By
+default a coordinator restart also disarms, unless the operator has
+explicitly opted into the CPU-only restoration policy below. A second Arm
 request is rejected while an automation session is active; otherwise it
 could abandon ownership of running jobs. Disarming does
 not stop a running service or release its capacity. Automatic Start
@@ -328,14 +329,31 @@ resume a stopped job. A verified terminal report is released through
 the same checkpoint and dependent-stage eligibility checks as a normal
 automated completion; an ineligible handoff disarms for review.
 Unreleased jobs with missing, stale, conflicting, or uncertain native
-evidence block adoption until the operator inspects or releases them. All choices remain disarmed by default
-after restart, and re-adoption does not bypass host preflight or
-checkpoint continuation proof.
+evidence block adoption until the operator inspects or releases them.
+Re-adoption does not bypass host preflight or checkpoint continuation proof.
+
+For unattended coordinator restarts, the operator can separately check
+**Automatically restore CPU-only automation after coordinator restart**
+when arming. This stores explicit, revocable permission in the Hub
+registry; GPU claims, probes and Starts cannot use this option.
+On startup, native automation remains disarmed until every selected
+machine reauthenticates, its preflight passes, every outstanding
+previously automated dispatch has fresh native inspection and its
+matching lease is acknowledged. A pending restart is visible in Train
+and can be cancelled using Disarm. Restoring permission re-adopts
+verified previous jobs; it never repeats an ambiguous Start or Stop.
+Restoration only arms the scheduler: a later pass decides whether any
+new job may Start. Unverified/failed services, in-flight Starts or
+Stops, disconnections, changed agent ownership, or failed safety checks
+require operator review and revoke saved restart permission. Normal
+operator disarming also revokes it. The coordinator process itself
+still needs an independently installed OS service supervisor to be
+restarted; this option does not install one.
 
 While armed, a coordinator pass every ten seconds performs **at most one
 durable transition**: release capacity only for a job started in the
-**current automation session** after an authenticated native `finished`
-or `stopped` report (activating an eligible prequeued successor in the
+**current automation session**, or explicitly re-adopted after restart,
+after an authenticated native `finished` or `stopped` report (activating an eligible prequeued successor in the
 same write after `finished`), authorize one eligible Start that passes
 the same live readiness gate as the manual Start button, or claim available
 CPU/RAM budget for an unassigned CPU-only non-Bees job or, when opted in,
