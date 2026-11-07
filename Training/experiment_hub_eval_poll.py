@@ -220,6 +220,7 @@ def poll_batch(args, project, suites, find_checkpoint, evaluate_checkpoint):
             target, receipt = item["target"], item["receipt"]
             if (receipt["suite_id"] != sid or
                 receipt.get("suite_sha256") != definitions[sid] or
+                receipt["schema_version"] != 1 or
                 receipt["trials"] != receipt_suite["trials"] or
                 type(receipt["successes"]) is not int or
                 not 0 <= receipt["successes"] <= receipt["trials"] or
@@ -318,28 +319,35 @@ def poll_batch(args, project, suites, find_checkpoint, evaluate_checkpoint):
 
             # One durable snapshot is shared by every suite. The trainer
             # may prune its source at any moment; copy and verify it first.
-            with tempfile.TemporaryDirectory(
-                prefix=f"{project}-eval-batch-", dir=args.scratch
-            ) as temp:
-                frozen = Path(temp) / ("checkpoint" + file.suffix)
-                shutil.copyfile(file, frozen)
-                with frozen.open("rb") as stream:
-                    checkpoint_digest = hashlib.file_digest(stream, "sha256").hexdigest()
-                pending = []
-                for (sid, (suite, receipt_suite)), job in zip(ordered, jobs):
-                    successes = evaluate_checkpoint(
-                        job, frozen, checkpoint_digest, Path(temp), suite)
-                    if (type(successes) is not int or
-                        not 0 <= successes <= receipt_suite["trials"]):
-                        raise ValueError("Invalid batch evaluation success count.")
-                    pending.append({"target": job, "receipt": {
-                        "schema_version": 1, "suite_id": sid,
-                        "suite_sha256": definitions[sid],
-                        "dispatch_id": dispatch,
-                        "checkpoint_sha256": checkpoint_digest,
-                        "trials": receipt_suite["trials"],
-                        "successes": successes,
-                    }})
+            try:
+                with tempfile.TemporaryDirectory(
+                    prefix=f"{project}-eval-batch-", dir=args.scratch
+                ) as temp:
+                    frozen = Path(temp) / ("checkpoint" + file.suffix)
+                    shutil.copyfile(file, frozen)
+                    with frozen.open("rb") as stream:
+                        checkpoint_digest = hashlib.file_digest(stream, "sha256").hexdigest()
+                    pending = []
+                    for (sid, (suite, receipt_suite)), job in zip(ordered, jobs):
+                        successes = evaluate_checkpoint(
+                            job, frozen, checkpoint_digest, Path(temp), suite)
+                        if (type(successes) is not int or
+                            not 0 <= successes <= receipt_suite["trials"]):
+                            raise ValueError("Invalid batch evaluation success count.")
+                        pending.append({"target": job, "receipt": {
+                            "schema_version": 1, "suite_id": sid,
+                            "suite_sha256": definitions[sid],
+                            "dispatch_id": dispatch,
+                            "checkpoint_sha256": checkpoint_digest,
+                            "trials": receipt_suite["trials"],
+                            "successes": successes,
+                        }})
+            except (OSError, RuntimeError, ValueError, TypeError, KeyError):
+                # A bad snapshot cannot consume the cursor or starve other
+                # eligible dispatches on subsequent scheduled invocations.
+                cursor[dispatch] = cursor.pop(dispatch)
+                save_cursor(state, saved)
+                raise
 
             cursor.pop(dispatch)
             cursor[dispatch] = update
