@@ -38,13 +38,18 @@ The single JSON configuration file requires:
 - Optional `model_updates`: an ordered array of
   `{"at_round": 1000, "manifest": "next-model.json"}` entries.
   Rounds must be strictly increasing and less than `max_rounds`.
-  The runner splits windows at those exact simulation rounds, then
-  sends a verified model-update request **after** the previous window
-  has completed and delivered its notifications. Each target manifest
-  must already exist and contain verified artifacts and the same model
-  slot IDs. It emits a `policy_updated` event with the new generation.
-  A failed update aborts the unfinished Levels rather than continuing
-  an experiment under a silently wrong checkpoint.
+  Each round is the **earliest eligibility threshold** for a switch, not
+  permission to change policies mid-episode. The runner splits its
+  rollout at that threshold, pauses arenas as they finish, waits for
+  all live episodes to complete and deliver their notifications, then
+  changes models **before** recycling any world. It records both the
+  requested and effective round, previous/new generation, exact model
+  manifest SHA-256, and the cumulative evaluation at the boundary.
+  A switch without remaining episodes, one that overruns the next
+  threshold, or a run ending before a requested switch fails explicitly
+  rather than reporting invalid mixed-policy benchmark outcomes.
+  Each target manifest must have verified artifacts and the same
+  model slot IDs. Failed changes abort the unfinished run.
 - `levels`: a nonempty array of `{scene, world_id, level_id, seed,
   model_slots, groups?}`. Each scene is an exported **initial** Level;
   both IDs must be unique and positive, and `model_slots` maps exact
@@ -69,7 +74,10 @@ The single JSON configuration file requires:
 
 The runner checks source identities, model routing, collision settings and
 Stage consistency **before starting**. It emits run-tagged JSON interval
-measurements on stdout. Group-reward and terminal diagnostics include typed
+measurements on stdout, including completed episodes, wins by source side,
+draws, timeouts, mean episode duration, and real group rewards. Evaluation
+counts advance only after their notifications have been synchronized and
+acknowledged, not when an unfinished physical world merely becomes idle. Group-reward and terminal diagnostics include typed
 numeric fields; ELO markers remain separate from PPO reward. This diagnostic
 log is **not** the complete observation/action/value/log-probability data
 needed to train a policy. Its durable sink synchronizes bounded ordered event
