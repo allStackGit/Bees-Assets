@@ -93,9 +93,13 @@ pub fn collect_live_friendlies_from_catalog(
 /// and the owning Level's non-geometric source inputs.
 ///
 /// An authenticated HiveMind strategy receipt supplies the actual enemy
-/// and Scouting context, while the Level supplies its current Pathfinder
-/// clearance for each ship. Ship.GetClearance can depend on the active
-/// stage; it is NEVER estimated from collider or sprite dimensions.
+/// and Scouting context. The Level supplies each ship's stored
+/// Ship.OffsetFromCenter (retained between Squad.SetOffsets calls) and
+/// current Pathfinder clearance. Reconstructing an offset from the ship's
+/// *current* position at command issue changes Unity formation behavior
+/// when a member has already moved away from its original formation.
+/// Ship.GetClearance can also depend on the active stage; neither quantity
+/// can be guessed from a collider or sprite dimension.
 ///
 /// Reuses one caller-owned buffer across activations. Its borrowed members
 /// remain valid until that buffer changes, matching one command-issue
@@ -107,6 +111,7 @@ pub fn native_squad_order_from_catalog<'a>(
     formation: SquadFormationOptions,
     enemy: Option<NativeEnemySquad>,
     scouting: Option<NativeScoutingContext>,
+    mut authored_offset: impl FnMut(i64) -> Option<bees_sim::geometry::Vec2>,
     mut authored_clearance: impl FnMut(i64) -> Option<i32>,
     members: &'a mut Vec<SquadFormationMember>,
 ) -> Result<NativeSquadOrder<'a>, GameCommandError> {
@@ -118,12 +123,15 @@ pub fn native_squad_order_from_catalog<'a>(
         let body = world.ship_body(ship_id)
             .filter(|body| body.active)
             .ok_or(GameCommandError::InvalidSquad)?;
+        let offset = authored_offset(ship_id)
+            .filter(|value| value.is_finite())
+            .ok_or(GameCommandError::InvalidSquad)?;
         let clearance = authored_clearance(ship_id)
             .filter(|&value| value >= 0)
             .ok_or(GameCommandError::InvalidSquad)?;
         members.push(SquadFormationMember {
             ship_id,
-            offset_from_center: body.motion.position - geometry.center,
+            offset_from_center: offset,
             clearance,
             mobile: body.motion.mobile,
         });
