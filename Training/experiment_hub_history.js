@@ -116,7 +116,8 @@ class ProgressHistory {
             this.byJob.set(jobId,entry);
         }
         if(entry.project_id!==projectId||
-            entry.experiment_id!==point.experiment_id)return false;
+            entry.experiment_id!==point.experiment_id||
+            receivedMs<entry.last_received_ms)return false;
         const previous=entry.points[entry.points.length-1];
         // The source file is written atomically. Repeated reads of the same
         // exact source version must never manufacture extra chart points.
