@@ -1,0 +1,42 @@
+#!/usr/bin/env python3
+"""Select a locally installed TinyBrains engine before importing the trainer."""
+
+import os
+from pathlib import Path
+import runpy
+import subprocess
+import sys
+
+
+def configure_engine(engine):
+    if engine is None:
+        if os.name != "nt":
+            raise ValueError("Set --engine-path to the installed native TinyBrains executable.")
+        return
+    if not engine.is_absolute():
+        raise ValueError("TinyBrains engine path must be absolute.")
+    engine = engine.resolve(strict=True)
+    if not engine.is_file() or not os.access(engine, os.X_OK):
+        raise ValueError("TinyBrains engine is not executable.")
+    try:
+        version = subprocess.check_output([str(engine), "--version"], text=True, timeout=5)
+    except subprocess.SubprocessError as error:
+        raise ValueError("TinyBrains engine version probe failed.") from error
+    if version.strip() != "tinybrains 0.5.0":
+        raise ValueError("The installed TinyBrains engine did not report supported version 0.5.0.")
+    os.environ["TINYBRAINS"] = str(engine)
+    from ants_mapoca import runtime
+
+    # The upstream trainer imports CLI directly in its environment module.
+    # Set the local executable before importing that module or the CLI.
+    runtime.CLI = engine
+
+
+if __name__ == "__main__":
+    engine, stderr = sys.argv[1:3]
+    if stderr != "-":
+        sys.stdout = open(os.devnull, "w", encoding="utf-8")
+        sys.stderr = open(stderr, "x", encoding="utf-8", buffering=1)
+    configure_engine(Path(engine))
+    sys.argv = [sys.argv[0], *sys.argv[3:]]
+    runpy.run_module("ants_mapoca.cli", run_name="__main__", alter_sys=True)

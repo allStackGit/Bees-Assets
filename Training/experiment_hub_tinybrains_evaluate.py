@@ -11,6 +11,7 @@ import tempfile
 from pathlib import Path
 
 from experiment_hub_eval_io import SHA256, SUITE_ID, UUID, publish, read_bounded, suite_digest
+from experiment_hub_tinybrains_runtime import configure_engine
 
 MAP = re.compile(r"[a-zA-Z0-9_-]{1,80}")
 
@@ -86,8 +87,10 @@ def main():
         parser.add_argument("--" + option, required=True, type=Path)
     parser.add_argument("--dispatch-id", required=True)
     parser.add_argument("--checkpoint-sha256", required=True)
+    parser.add_argument("--engine-path", type=Path)
     args = parser.parse_args()
     try:
+        configure_engine(args.engine_path)
         if not UUID.fullmatch(args.dispatch_id) or not SHA256.fullmatch(args.checkpoint_sha256):
             raise ValueError("Expected a Hub dispatch UUID and checkpoint SHA-256.")
         checkpoint = args.checkpoint.resolve(strict=True)

@@ -141,8 +141,8 @@ function boundedReport(value) {
         Object.keys(evaluators).some(project=>!installed.includes(project)))
         throw Error('Evaluation capability requires a corresponding installed adapter.');
     const profiles=tinyBrainsProfiles(value.tinybrains_profiles??{});
-    if(Object.keys(profiles).length&&(!installed.includes('tinybrains')||value.platform!=='win32'))
-        throw Error('TinyBrains profiles require an installed Windows adapter.');
+    if(Object.keys(profiles).length&&(!installed.includes('tinybrains')||!['win32','linux'].includes(value.platform)))
+        throw Error('TinyBrains profiles require an installed native adapter.');
     const gpuProjects=value.gpu_projects??[];
     if(!Array.isArray(gpuProjects)||new Set(gpuProjects).size!==gpuProjects.length||
         gpuProjects.length>installed.length||
@@ -524,7 +524,7 @@ function allocationBlockReason(machines,job,preferredMachineId=null) {
             :'No worker is connected.';
     if(job.project_id==='tinybrains'&&
         !candidates.some(machine=>supportsTinyBrainsProfile(machine,job)))
-        return 'No eligible Windows worker advertises this TinyBrains CPU profile and digest, or the update count is invalid.';
+        return 'No eligible worker advertises this TinyBrains CPU profile and digest, or the update count is invalid.';
     return 'No eligible connected worker has enough remaining capacity.';
 }
 function allocationChoice(machines,reservations,job,preferredMachineId=null,
@@ -1306,8 +1306,7 @@ class ExperimentHub {
         // service or checkpoint authority.
         if(!report?.local_executor||age<0||age>=AGENT_HEARTBEAT_TTL_MS||
             !report.installed_projects?.includes(projectId)||
-            !report.evaluation_suites?.[projectId]?.includes(suiteId)||
-            (projectId==='tinybrains'&&report.platform!=='win32'))
+            !report.evaluation_suites?.[projectId]?.includes(suiteId))
             return [];
         const observedAt=Date.now();
         return this.state.jobs.filter(job=>{

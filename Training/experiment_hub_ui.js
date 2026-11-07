@@ -194,7 +194,7 @@ function hubVisibleJobs(jobs,limit) {
 function approvedTinyBrainsProfiles(machines) {
     const profiles=new Map();
     for(const machine of machines) {
-        if(machine.status!=='connected'||machine.agent_platform!=='win32')continue;
+        if(machine.status!=='connected'||!['win32','linux'].includes(machine.agent_platform))continue;
         for(const [profile,digest] of Object.entries(machine.tinybrains_profiles||{})) {
             const key=profile+':'+digest;
             if(!profiles.has(key))
@@ -815,7 +815,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const tinyBrainsPicker=document.createElement('fieldset');
     tinyBrainsPicker.hidden=true;
     const tinyBrainsLegend=document.createElement('legend');
-    tinyBrainsLegend.textContent='TinyBrains Windows CPU job';
+    tinyBrainsLegend.textContent='TinyBrains CPU job';
     const tinyBrainsSelect=document.createElement('select');
     const tinyBrainsUpdates=document.createElement('input');
     tinyBrainsUpdates.type='number';

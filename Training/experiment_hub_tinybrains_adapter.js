@@ -1,6 +1,6 @@
 'use strict';
 
-// Windows CPU adapter for the TinyBrains Ants-MAPOCA trainer.
+// Native CPU adapter for the TinyBrains Ants-MAPOCA trainer.
 const fs=require('node:fs');
 const path=require('node:path');
 const crypto=require('node:crypto');
@@ -27,7 +27,7 @@ function supportsTinyBrainsProfile(machine,job) {
     if(job.project_id!=='tinybrains')return true;
     const p=job.frozen_parameters;
     const profiles=machine.tinybrains_profiles;
-    return machine.agent_platform==='win32'&&job.resources?.gpu_count===0&&
+    return ['win32','linux'].includes(machine.agent_platform)&&job.resources?.gpu_count===0&&
         p&&Object.keys(p).every(key=>['profile','profile_sha256','updates'].includes(key))&&
         Number.isSafeInteger(p.updates)&&p.updates>=1&&p.updates<=10000000&&
         typeof p.profile==='string'&&profiles&&Object.hasOwn(profiles,p.profile)&&
@@ -72,7 +72,7 @@ function validateApprovedProfiles(executable,project,configs) {
 }
 
 function createTinyBrainsAdapter({projectRoot,pythonPath,artifactRoot,profiles,
-    evaluationRoot,evaluationSuites}) {
+    evaluationRoot,evaluationSuites,enginePath}) {
     for(const target of [projectRoot,pythonPath,artifactRoot]) {
         if(typeof target!=='string'||!path.isAbsolute(target))
             throw Error('TinyBrains requires absolute local project, Python and artifact paths.');
@@ -80,11 +80,20 @@ function createTinyBrainsAdapter({projectRoot,pythonPath,artifactRoot,profiles,
     const project=fs.realpathSync(projectRoot);
     const artifacts=fs.realpathSync(artifactRoot);
     const executable=fs.realpathSync(pythonPath);
+    const windows=process.platform==='win32';
+    if((!windows||enginePath!=null)&&(typeof enginePath!=='string'||!path.isAbsolute(enginePath)))
+        throw Error('Specify the absolute path to the installed native TinyBrains engine.');
+    const engine=fs.realpathSync(enginePath??path.join(project,'tools','tinybrains-0.5.0','tinybrains.exe'));
     if(!fs.statSync(project).isDirectory()||!fs.statSync(artifacts).isDirectory()||
         !fs.statSync(executable).isFile()||
-        !fs.statSync(path.join(project,'tools','tinybrains-0.5.0','tinybrains.exe')).isFile()||
+        !fs.statSync(engine).isFile()||
         isWithin(project,artifacts)||isWithin(artifacts,project))
-        throw Error('TinyBrains needs the Windows engine and a dedicated artifact directory outside the project.');
+        throw Error('TinyBrains needs a native engine and a dedicated artifact directory outside the project.');
+    if(enginePath!=null) {
+        const probe=spawnSync(engine,['--version'],{cwd:project,encoding:'utf8',windowsHide:true,timeout:5000,maxBuffer:4096});
+        if(probe.status!==0||probe.stdout?.trim()!=='tinybrains 0.5.0')
+            throw Error('The installed TinyBrains engine did not report supported version 0.5.0.');
+    }
     if(!profiles||typeof profiles!=='object'||Array.isArray(profiles)||!Object.keys(profiles).length||
         Object.keys(profiles).length>MAX_PROFILES)
         throw Error('Configure at least one locally approved TinyBrains CPU profile.');
@@ -125,8 +134,8 @@ function createTinyBrainsAdapter({projectRoot,pythonPath,artifactRoot,profiles,
     }
 
     return {
-        executable,cwd:project,stop_policy:'terminate-group',
-        checkpoint_stop_file:context=>path.join(jobRoot(context),'STOP'),
+        executable,cwd:project,stop_policy:windows?'terminate-group':'interrupt-main',
+        ...(windows?{checkpoint_stop_file:context=>path.join(jobRoot(context),'STOP')}:{}),
         checkpoint_ready(context) {
             const pinned=context.frozen_parameters||{};
             const approved=configs.get(pinned.profile);
@@ -165,7 +174,10 @@ function createTinyBrainsAdapter({projectRoot,pythonPath,artifactRoot,profiles,
             fs.mkdirSync(out,{mode:0o700});
             const config=path.join(out,'hub-profile.json');
             fs.writeFileSync(config,approved.content,{flag:'wx',mode:0o600});
-            return ['-B','-c',TRAIN_ENTRY,path.join(out,'trainer.stderr.txt'),
+            const stderr=windows?path.join(out,'trainer.stderr.txt'):'-';
+            const entry=enginePath!=null?[path.join(__dirname,'experiment_hub_tinybrains_runtime.py'),engine,stderr]:
+                ['-c',TRAIN_ENTRY,stderr];
+            return ['-B',...entry,
                 'train','--config',config,'--out',out,
                 '--updates',String(updates),...resume];
         },
