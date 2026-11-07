@@ -189,11 +189,12 @@ impl NativeHiveMindSocket {
         );
         // Never follow an HTTP redirect to a different origin or to
         // plaintext ws:// after initially demanding authenticated WSS.
-        let config = tungstenite::protocol::WebSocketConfig {
-            max_frame_size: Some(MAX_SERVER_MESSAGE_BYTES),
-            max_message_size: Some(MAX_SERVER_MESSAGE_BYTES),
-            ..Default::default()
-        };
+        // WebSocketConfig is non-exhaustive: initialize from Default and
+        // explicitly tighten the two receive limits without constructing
+        // fields that may change across tungstenite versions.
+        let mut config = tungstenite::protocol::WebSocketConfig::default();
+        config.max_frame_size = Some(MAX_SERVER_MESSAGE_BYTES);
+        config.max_message_size = Some(MAX_SERVER_MESSAGE_BYTES);
         let (socket, response) =
             tungstenite::connect_with_config(request, Some(config), 0)?;
         let confirmed = response.headers().get(SEC_WEBSOCKET_PROTOCOL)
