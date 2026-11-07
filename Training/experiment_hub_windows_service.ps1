@@ -29,6 +29,7 @@ if(-not $NodePath){$NodePath=(Get-Command node.exe -CommandType Application | Se
 $NodePath=LocalPath $NodePath
 $entry=if($Role -eq 'agent'){'experiment_hub_agent.js'}else{'bees_experiments.js'}
 $null=LocalPath (Join-Path $TrainingDirectory $entry)
+$null=LocalPath (Join-Path $TrainingDirectory experiment_hub_service_console.js)
 if($EnvironmentFile){
     $EnvironmentFile=LocalPath $EnvironmentFile
     $major=& $NodePath -p 'parseInt(process.versions.node)'
