@@ -17,6 +17,7 @@ use std::io::{self, ErrorKind};
 use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
+use std::sync::Arc;
 
 use bees_gameplay::level_host::NativeLevelStopKind;
 use bees_gameplay::squads::SquadRosterError;
@@ -228,9 +229,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut world_ids = HashSet::new();
     let mut highest_squad_item_id = 0_i64;
     let mut source_levels = Vec::with_capacity(config.levels.len());
-    // Cache the verified snapshots for repeat episodes. Edits to the
-    // source files during a run cannot silently change scenario rules.
+    // Many headless arenas often share one exported Level. Keep one
+    // immutable source template per canonical path, not N copies and
+    // filesystem reads. Each arena still parses its own mutable world.
     let mut source_jsons = Vec::with_capacity(config.levels.len());
+    let mut source_templates: HashMap<PathBuf, Arc<str>> = HashMap::new();
     for level in &config.levels {
         if level.level_id <= 0 || level.world_id == 0 ||
             !level_ids.insert(level.level_id) ||
@@ -240,7 +243,14 @@ fn main() -> Result<(), Box<dyn Error>> {
         {
             return Err(invalid("duplicate/invalid Level or missing real model slot").into());
         }
-        let source_json = fs::read_to_string(resolve(root, &level.scene))?;
+        let source_path = resolve(root, &level.scene).canonicalize()?;
+        let source_json = if let Some(cached) = source_templates.get(&source_path) {
+            Arc::clone(cached)
+        } else {
+            let text: Arc<str> = fs::read_to_string(&source_path)?.into();
+            source_templates.insert(source_path, Arc::clone(&text));
+            text
+        };
         let source = NativePhysicalScene::parse(&source_json)
             .map_err(|error| contextual("exported Level", error))?;
         if source.stage_name != config.stage_name {
@@ -267,6 +277,23 @@ fn main() -> Result<(), Box<dyn Error>> {
     // shared Rc<Cell> gives independent Level callbacks one identity stream
     // while keeping all mutable state on the simulation-owning thread.
     let next_id = Rc::new(Cell::new(config.next_squad_item_id));
+    // Multiple independently driven arena instances may intentionally use
+    // the same exported Level template, whose original Stage pool IDs are
+    // duplicates. Keep the first source lifetime and allocate fresh IDs
+    // for subsequent copies so session ownership remains unambiguous.
+    let mut seen_squad_ids = HashSet::new();
+    for source in &mut source_levels {
+        for squad in &mut source.source_squads {
+            if !seen_squad_ids.insert(squad.item_id) {
+                let item_id = next_id.get();
+                let following = item_id.checked_add(1)
+                    .ok_or_else(|| invalid("Stage squad identities exhausted"))?;
+                next_id.set(following);
+                squad.item_id = item_id;
+                seen_squad_ids.insert(item_id);
+            }
+        }
+    }
     let mut launches = Vec::with_capacity(source_levels.len());
     for (source, level) in source_levels.into_iter().zip(&config.levels) {
         launches.push((
