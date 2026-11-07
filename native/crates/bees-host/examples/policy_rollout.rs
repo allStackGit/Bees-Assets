@@ -630,6 +630,12 @@ fn main() -> Result<(), Box<dyn Error>> {
         let update_due = config.model_updates.get(next_model_update)
             .is_some_and(|item| rounds >= item.at_round);
         if update_due && all_finished {
+            if rounds == config.max_rounds {
+                failed_window = Some(
+                    "scheduled model change reached episode boundary only at the exhausted run budget".into(),
+                );
+                break;
+            }
             if completed_episodes.iter().all(|&finished|
                 finished >= config.episodes_per_world
             ) {
@@ -850,6 +856,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         "running_worlds": status.running_worlds,
         "pending_notifications": status.queued_notifications,
         "pending_store_commands": status.pending_store_commands,
+        "model_updates_applied": next_model_update,
+        "model_updates_remaining": config.model_updates.len() - next_model_update,
         "evaluation": evaluation,
         "mean_episode_seconds": mean_episode_seconds,
         "active_policy_segment": {
