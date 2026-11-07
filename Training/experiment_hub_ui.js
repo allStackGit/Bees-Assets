@@ -1173,7 +1173,7 @@ document.addEventListener('DOMContentLoaded', () => {
             $(id).disabled=automation.enabled||pendingRecovery;
         if(automation.enabled) {
             $('hub-automation-resume-after-restart').checked=
-                automation.resume_after_restart===true;
+                automation.resume_after_restart===true&&automation.resume_after_agent_restart===true;
             $('hub-automation-rebalance').checked=automation.rebalance_queued===true;
             $('hub-automation-gpu').checked=automation.start_qualified_gpu===true;
             $('hub-automation-gpu-claim').checked=automation.claim_exclusive_gpu===true;
@@ -1182,6 +1182,8 @@ document.addEventListener('DOMContentLoaded', () => {
         feedback('hub-automation-status',
             (automation.enabled?'Armed for '+automation.machine_ids.join(', '):
                 pendingRecovery?'Awaiting restart reconciliation':'Disarmed')+
+            (automation.resume_after_restart&&!automation.resume_after_agent_restart
+                ?' · Saved permission covers coordinator restarts only; disarm and re-arm to include agent recovery.':'')+
             (automation.last_action?' · '+automation.last_action:'')+
             (automation.last_transition_at?' · Last change '+
                 new Date(automation.last_transition_at).toLocaleString():'')+
@@ -2144,7 +2146,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         if(!confirm('Arm native queue automation on '+ids.join(', ')+
             '? This will start eligible CPU jobs and release verified completed capacity. You confirm that unmanaged host workloads have been accounted for. Restart disarms automation by default.'+
-            (resume?' You explicitly authorize persistent CPU-only restart restoration after all selected agents and their native dispatches are freshly verified. Uncertainty cancels the permission.':'')+
+            (resume?' You explicitly authorize CPU-only scheduling recovery after coordinator or agent restart, after fresh native and lease proof. This does not enable machine boot startup. Uncertain jobs or changed credentials cancel the permission.':'')+
             (adopt?' Previously automated running or completed jobs will be re-adopted ONLY after fresh, same-dispatch native inspection and verified lease ownership. Uncertain jobs block arming; existing native processes will not be relaunched.':'')+
             (gpu?' This session will also start jobs with a currently qualified exclusive GPU.':'')+
             (gpuClaim?' This session may claim exclusive GPU capacity on armed Linux hosts.':'')+
@@ -2155,6 +2157,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 enabled:true,machine_ids:ids,rebalance_queued:rebalance,
                 adopt_reconciled_running:adopt,confirm_adopt_running:adopt,
                 resume_after_restart:resume,confirm_restart_rearm:resume,
+                confirm_agent_restart_rearm:resume,
                 start_qualified_gpu:gpu,claim_exclusive_gpu:gpuClaim,probe_exclusive_gpu:gpuProbe,
                 confirm_arm:true,confirm_untracked_load:true,
             });

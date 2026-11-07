@@ -409,7 +409,7 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
       <p class="muted">Select only machines where you have accounted for existing Bees workers and other processes. Native service execution requires separately installed and verified adapters, including a completed OS preflight.</p>
       <div id="hub-automation-machines" class="hub-notice">No eligible native machines connected.</div>
       <label><input type="checkbox" id="hub-automation-adopt-running"> Re-adopt previously automated native jobs after a coordinator restart, only after the current agent freshly verifies a running or terminal dispatch</label>
-      <label><input type="checkbox" id="hub-automation-resume-after-restart"> Automatically restore CPU-only automation after coordinator restart, but only after fresh native inspection and lease verification; revoke restoration on uncertainty</label>
+      <label><input type="checkbox" id="hub-automation-resume-after-restart"> Automatically restore CPU-only automation after coordinator or agent restart, only after fresh native inspection and lease verification; uncertain jobs require review. This does not enable startup after a machine reboot.</label>
       <label><input type="checkbox" id="hub-automation-rebalance"> Move this session’s queued CPU and unprobed GPU claims when an armed host loses capacity or job compatibility</label>
       <label><input type="checkbox" id="hub-automation-gpu-claim"> Claim capacity for queued exclusive GPU jobs</label>
       <label><input type="checkbox" id="hub-automation-gpu-probe"> Probe exclusive GPU claims made by this session</label>
