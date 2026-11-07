@@ -120,7 +120,10 @@ impl NativeScoutingContext {
 
 #[derive(Clone, Copy, Debug)]
 pub struct NativeEnemySquad {
-    pub squad_id: i64,
+    /// Exact enemy lifecycle captured at command activation, not the
+    /// numeric pooled Squad ID alone. This prevents target substitution
+    /// before the attack command's first source timer callback.
+    pub owner: SquadLifetime,
     pub position: Vec2,
     pub max_range: f32,
     pub is_alive: bool,
@@ -128,7 +131,7 @@ pub struct NativeEnemySquad {
 
 impl NativeEnemySquad {
     pub fn valid(self) -> bool {
-        self.squad_id > 0 && self.position.is_finite() &&
+        self.owner.valid() && self.position.is_finite() &&
             self.max_range.is_finite() && self.max_range >= 0.0
     }
 }
@@ -175,6 +178,9 @@ impl NativeSquadOrder<'_> {
     pub fn valid(self) -> bool {
         self.owner.valid() && self.squad_center.is_finite() &&
         self.formation.valid() && !self.members.is_empty() &&
+            self.enemy.is_none_or(|enemy|
+                enemy.valid() && enemy.owner.level_id == self.owner.level_id
+            ) &&
             self.scouting.is_none_or(NativeScoutingContext::valid)
     }
 }
@@ -701,7 +707,7 @@ impl NativeSquadCommandDirector {
             LocalCommandKind::LeftSwipe | LocalCommandKind::InAndOut |
             LocalCommandKind::BombingRun | LocalCommandKind::Charge
         ) && (enemy_squad_id.is_none() ||
-            squad.enemy.map(|enemy| enemy.squad_id) != enemy_squad_id)
+            squad.enemy.map(|enemy| enemy.owner.squad_id) != enemy_squad_id)
         {
             return Ok(StrategyReceiptAction::DiscardReservations(vec![
                 selection.command_outcome_id,

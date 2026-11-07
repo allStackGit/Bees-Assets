@@ -57,7 +57,7 @@ impl InAndOutRun {
             max_distance, min_distance,
         );
         Ok(Some(Self {
-            target: NativeAttackTarget::new(enemy.squad_id),
+            target: NativeAttackTarget::new(enemy.owner),
             members: squad.members.to_vec(),
             formation: squad.formation,
             return_point,

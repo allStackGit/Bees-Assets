@@ -61,7 +61,7 @@ impl NativeChargeRun {
             }
             world.validate_ship_game_order(member.ship_id)?;
         }
-        let mut target = NativeAttackTarget::new(enemy_owner.squad_id);
+        let mut target = NativeAttackTarget::new(enemy_owner);
         target.validate(squad.owner, enemy_owner)?;
         if !assign_initial_charge_targets(
             world, roster, random, squad, enemy_owner,

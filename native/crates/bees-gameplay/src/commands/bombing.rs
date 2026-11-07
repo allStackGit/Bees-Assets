@@ -117,7 +117,7 @@ fn assign_initial_special_bomb_targets(
         !enemy_owner.valid() ||
         !squad.enemy.is_some_and(|enemy|
             enemy.valid() && enemy.is_alive &&
-            enemy.squad_id == enemy_owner.squad_id
+            enemy.owner == enemy_owner
         )
     {
         return Err(GameCommandError::InvalidSquad);
@@ -398,7 +398,7 @@ impl NativeBombingRun {
         if defenseless_carrier_strikers(world, squad, is_carrier_squad) {
             return Ok(None);
         }
-        let mut target = NativeAttackTarget::new(enemy_owner.squad_id);
+        let mut target = NativeAttackTarget::new(enemy_owner);
         target.validate(squad.owner, enemy_owner)?;
         if !assign_initial_bombing_run_targets(
             world, roster, random, squad, enemy_owner,

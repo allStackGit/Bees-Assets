@@ -163,7 +163,7 @@ impl CircleRun {
             world.validate_ship_game_order(member.ship_id)?;
         }
         Ok(Some(Self {
-            target: NativeAttackTarget::new(enemy.squad_id),
+            target: NativeAttackTarget::new(enemy.owner),
             members: squad.members.to_vec(),
             formation: squad.formation,
             reached_enemy: false,
