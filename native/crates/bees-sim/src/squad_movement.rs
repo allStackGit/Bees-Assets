@@ -81,8 +81,13 @@ pub fn plan_squad_formation(
     if !requested_destination.is_finite() || !options.valid() {
         return Err(SquadFormationError::InvalidRequest);
     }
-    let mut unique_ids = HashSet::new();
-    let mut mobile_members = Vec::with_capacity(members.len());
+    // One-ship training arenas do not need a duplicate-ID allocation.
+    // For larger squads keep O(n) membership validation, but read mobile
+    // members from the original slice rather than copying them into a
+    // second temporary Vec on every move.
+    let mut unique_ids = (members.len() > 1)
+        .then(|| HashSet::with_capacity(members.len()));
+    let mut mobile_count = 0usize;
     let mut largest_clearance = 0;
     for &member in members {
         if member.ship_id <= 0 ||
@@ -90,19 +95,19 @@ pub fn plan_squad_formation(
             member.clearance < 0 {
             return Err(SquadFormationError::InvalidRequest);
         }
-        if !unique_ids.insert(member.ship_id) {
+        if unique_ids.as_mut().is_some_and(|ids| !ids.insert(member.ship_id)) {
             return Err(SquadFormationError::DuplicateShip);
         }
         if member.mobile {
-            mobile_members.push(member);
+            mobile_count += 1;
             largest_clearance = largest_clearance.max(member.clearance);
         }
     }
     let mut center = options.force_bounds(requested_destination);
     let mut compression = 1.0;
-    if options.has_obstacles && !mobile_members.is_empty() {
+    if options.has_obstacles && mobile_count != 0 {
         if let Some(first) = formation_compression(
-            &mobile_members, center, options, navigation,
+            members, center, options, navigation,
         ) {
             compression = first;
         } else {
@@ -115,14 +120,14 @@ pub fn plan_squad_formation(
                 navigation.map_frame().level_to_world(candidate),
             );
             let Some(retry) = formation_compression(
-                &mobile_members, center, options, navigation,
+                members, center, options, navigation,
             ) else { return Ok(None) };
             compression = retry;
         }
     }
 
-    let mut orders = Vec::with_capacity(mobile_members.len());
-    for member in mobile_members {
+    let mut orders = Vec::with_capacity(mobile_count);
+    for member in members.iter().filter(|member| member.mobile) {
         let destination = options.force_bounds(
             center + member.offset_from_center * compression,
         );
@@ -147,7 +152,7 @@ fn formation_compression(
     for step in 0..=FORMATION_COMPRESSION_STEPS {
         let compression = 1.0 - step as f32 / FORMATION_COMPRESSION_STEPS as f32;
         let mut all_valid = true;
-        for member in members {
+        for member in members.iter().filter(|member| member.mobile) {
             let destination = options.force_bounds(
                 center + member.offset_from_center * compression,
             );
