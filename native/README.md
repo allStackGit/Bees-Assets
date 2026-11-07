@@ -558,6 +558,12 @@ array) in `model-slots.json`, then run:
 policy_manifest -- model-slots.json native-models.json`. The generated
 manifest includes the single source-of-truth v26 signature. Slot-relative
 model paths are resolved relative to the generated manifest.
+The generator also hashes each loaded ONNX/TorchScript file with SHA-256
+and writes that digest into its model entry; the persistent Python worker
+checks every digest before loading weights or acknowledging its model
+handshake. If a checkpoint is replaced in place after manifest creation,
+the worker fails closed instead of silently evaluating another network.
+Hashes are computed only on startup/manifest creation, not during rollout.
 
 Both processes must use matching artifacts. Diagnostics go to stderr;
 stdout is exclusively binary protocol.

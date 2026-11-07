@@ -22,3 +22,6 @@ tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"] }
 
 # OS cryptographic entropy for the one persisted 21-bit socket identity.
 getrandom = "0.2"
+
+# Manifest-time SHA-256 of real model weights, not an alternate policy ID.
+sha2 = "0.10"

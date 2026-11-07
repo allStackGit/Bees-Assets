@@ -15,6 +15,7 @@ group critic. Running this worker does NOT make native training complete.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from pathlib import Path
 import struct
@@ -189,6 +190,17 @@ def checked_manifest(path: Path):
         if not isinstance(model_path, str) or not model_path:
             raise ValueError("model path is required")
         model_file = path.parent / model_path
+        expected_sha256 = config.get("sha256")
+        if not isinstance(expected_sha256, str) or (
+            len(expected_sha256) != 64
+        ) or any(char not in "0123456789abcdef" for char in expected_sha256):
+            raise ValueError("model requires a canonical lowercase SHA-256 digest")
+        digest = hashlib.sha256()
+        with model_file.open("rb") as artifact:
+            for chunk in iter(lambda: artifact.read(1024 * 1024), b""):
+                digest.update(chunk)
+        if digest.hexdigest() != expected_sha256:
+            raise ValueError(f"model artifact content changed: slot {slot}")
         if backend == "torchscript":
             policies[slot] = TorchScriptPolicy(model_file, config)
         elif backend == "onnx":
