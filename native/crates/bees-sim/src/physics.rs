@@ -849,7 +849,10 @@ struct SpatialGrid {
     height: usize,
     cells: Vec<Vec<usize>>,
     touched: Vec<usize>,
-    overflow: Vec<usize>,
+    /// Out-of-grid bodies still participate in contact queries, but
+    /// their retained bounds reject unrelated far-away queries before
+    /// the expensive candidate/narrowphase stages.
+    overflow: Vec<(usize, Aabb)>,
     seen: Vec<u32>,
     generation: u32,
 }
@@ -905,7 +908,7 @@ impl SpatialGrid {
             if bounds.min.x < self.area.min.x || bounds.min.y < self.area.min.y
                 || bounds.max.x > self.area.max.x || bounds.max.y > self.area.max.y
             {
-                self.overflow.push(ship_index);
+                self.overflow.push((ship_index, bounds));
                 continue;
             }
             if let Some((min_x, max_x, min_y, max_y)) = self.range(bounds) {
@@ -929,7 +932,8 @@ impl SpatialGrid {
             self.seen.fill(0);
             self.generation = 1;
         }
-        for &ship_index in &self.overflow {
+        for &(ship_index, item_bounds) in &self.overflow {
+            if !bounds.overlaps(item_bounds) { continue; }
             self.seen[ship_index] = self.generation;
             output.push(ship_index);
         }
