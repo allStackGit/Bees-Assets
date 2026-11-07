@@ -73,6 +73,7 @@ internal static class NativePhysicalSceneExporter
         public string prefab_name;
         public int prefab_number;
         public int speed, health, effective_max_health;
+        public int layer;
         public bool is_shard;
         public Vector2 position, velocity;
         public float rotation_degrees, angular_velocity_degrees;
@@ -103,7 +104,7 @@ internal static class NativePhysicalSceneExporter
     [Serializable]
     private sealed class PhysicalScene
     {
-        public int schema_version = 9;
+        public int schema_version = 10;
         public string level_name;
         public float fixed_dt_seconds;
         public bool shots_harmless;
@@ -355,9 +356,32 @@ internal static class NativePhysicalSceneExporter
             rotation_degrees = Mathf.DeltaAngle(
                 map.eulerAngles.z, obstacle.transform.eulerAngles.z),
             health = obstacle.Health,
-            effective_max_health = obstacle.OriginalHealth
+            effective_max_health = obstacle.OriginalHealth,
+            layer = obstacle.Collider.gameObject.layer
         };
-        if (obstacle is CollisionAsteroid full)
+        if (obstacle is MiningAsteroid)
+        {
+            // Source mining asteroids are authored PolygonCollider2D
+            // resources, not asteroid-size approximations. The snapshot
+            // represents an initial fully stocked mine, never a partially
+            // extracted mid-episode resource.
+            if (!(obstacle.Collider is PolygonCollider2D polygon) ||
+                polygon.pathCount != 1 ||
+                obstacle.OriginalHealth <= 0 ||
+                obstacle.Health != obstacle.OriginalHealth)
+            {
+                throw new InvalidOperationException(
+                    "Only fully stocked authored polygon mining asteroids " +
+                    "can be imported: " + obstacle.name);
+            }
+            entity.kind = "mining";
+            Vector2[] points = polygon.GetPath(0);
+            for (int i = 0; i < points.Length; i++)
+                points[i] += polygon.offset;
+            ExportColliderVertices(map, polygon, entity.position,
+                entity.rotation_degrees, points, entity.collider_vertices);
+        }
+        else if (obstacle is CollisionAsteroid full)
         {
             if (full.IsShard || full.IsDelayKilled ||
                 full.Health != full.EffectiveMaxHealth ||
