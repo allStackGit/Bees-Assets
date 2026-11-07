@@ -245,7 +245,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
     let config_path = config_path.canonicalize()?;
     let root = config_path.parent().ok_or_else(|| invalid("missing config directory"))?;
-    let config: RunConfig = serde_json::from_reader(File::open(&config_path)?)?;
+    let mut config: RunConfig = serde_json::from_reader(File::open(&config_path)?)?;
 
     let period = nonzero(config.decision_period, "decision_period")?;
     let window = nonzero(config.rounds_per_window, "rounds_per_window")?;
@@ -311,7 +311,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     // filesystem reads. Each arena still parses its own mutable world.
     let mut source_jsons = Vec::with_capacity(config.levels.len());
     let mut source_templates: HashMap<PathBuf, Arc<str>> = HashMap::new();
-    for level in &config.levels {
+    for level in &mut config.levels {
         if level.level_id <= 0 || level.world_id == 0 ||
             !level_ids.insert(level.level_id) ||
             !world_ids.insert(level.world_id) ||
@@ -335,6 +335,35 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
         let sides = source.exported_episode()
             .map_err(|error| contextual("source episode", error))?.sides();
+        // Schema 16 carries authentic Unity Agent instance identities.
+        // New scenes do not need operator-supplied group IDs; any manual
+        // values must agree exactly with the recorded source membership.
+        if let Some(exported) = &source.source_policy_group {
+            if let Some(configured) = &level.groups {
+                let mut supplied: Vec<_> = configured.participants.iter()
+                    .map(|member| (member.side, member.agent_id)).collect();
+                let mut actual: Vec<_> = exported.participants.iter()
+                    .map(|member| (member.side, member.agent_id)).collect();
+                supplied.sort_unstable();
+                actual.sort_unstable();
+                if configured.episode_number != exported.episode_number ||
+                    supplied != actual
+                {
+                    return Err(invalid(
+                        "explicit group identity does not match exported Unity MA-POCA participants",
+                    ).into());
+                }
+            } else {
+                level.groups = Some(GroupConfig {
+                    episode_number: exported.episode_number,
+                    participants: exported.participants.iter().map(|member|
+                        GroupParticipantConfig {
+                            side: member.side, agent_id: member.agent_id,
+                        }
+                    ).collect(),
+                });
+            }
+        }
         if let Some(group) = &level.groups {
             if group.episode_number == 0 ||
                 group.episode_number.checked_add(config.episodes_per_world - 1)
@@ -343,19 +372,18 @@ fn main() -> Result<(), Box<dyn Error>> {
                 return Err(invalid("configured group episode range is invalid").into());
             }
             let mut agents = HashSet::new();
-            let mut side_participants = [0_usize; 2];
             for participant in &group.participants {
-                let side = sides.iter().position(|&side| side == participant.side)
-                    .ok_or_else(|| invalid("MA-POCA participant side does not belong to Level"))?;
+                if !sides.contains(&participant.side) {
+                    return Err(invalid("MA-POCA participant side does not belong to Level").into());
+                }
                 if participant.agent_id == 0 ||
                     !agents.insert((participant.side, participant.agent_id))
                 {
                     return Err(invalid("MA-POCA participant ID is zero or repeated").into());
                 }
-                side_participants[side] += 1;
             }
-            if side_participants.contains(&0) {
-                return Err(invalid("MA-POCA training needs actual participants on both source sides").into());
+            if group.participants.is_empty() {
+                return Err(invalid("MA-POCA group has no participating source agents").into());
             }
             // Check the exported initial controller team BEFORE any
             // per-episode permutation or output file creation.
