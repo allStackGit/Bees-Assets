@@ -28,6 +28,7 @@ use bees_sim::geometry::Vec2;
 use bees_sim::box_obstacle_assets::live_box_shape;
 use bees_sim::physics::{ObstacleBody, ShipShape};
 use bees_sim::map_object::CombatMapObject;
+use bees_sim::obstacle::{CombatObstacle, ObstacleKind, ObstacleVitals};
 use bees_sim::movement::ShipMotion;
 use bees_sim::simulation::WorldId;
 use bees_sim::ship_assets::ShipAssetCatalog;
@@ -51,7 +52,7 @@ use crate::policy_only_metadata::{
     PolicyOnlyMetadataError,
 };
 
-const SNAPSHOT_VERSION: u32 = 9;
+const SNAPSHOT_VERSION: u32 = 10;
 
 #[derive(Deserialize, Clone, Copy)]
 struct UnityVec2 { x: f32, y: f32 }
@@ -171,6 +172,7 @@ struct UnityObstacle {
     velocity: UnityVec2,
     angular_velocity_degrees: f32,
     collider_vertices: Vec<UnityVec2>,
+    layer: u8,
 }
 
 /// A physically present MapObject with authentic Unity collider geometry.
@@ -683,6 +685,36 @@ impl NativePhysicalScene {
                         entity_id: obstacle.entity_id,
                         pose: Some(pose),
                         live_vertices: Some(vertices),
+                    }
+                },
+                "mining" => {
+                    let verts: Vec<Vec2> = obstacle.collider_vertices.iter()
+                        .map(|p| p.into_vec()).collect();
+                    if verts.len() < 3 || verts.len() > 8192 ||
+                        verts.iter().any(|p| !p.is_finite()) ||
+                        obstacle.health <= 0 ||
+                        obstacle.health != obstacle.effective_max_health ||
+                        obstacle.layer >= 32
+                    {
+                        return Err(NativeSnapshotError::InvalidObstacle(obstacle.entity_id));
+                    }
+                    let vitals = ObstacleVitals::with_original_health(
+                        obstacle.health, obstacle.effective_max_health,
+                        obstacle.effective_max_health,
+                    ).ok_or(NativeSnapshotError::InvalidObstacle(obstacle.entity_id))?;
+                    let body = ObstacleBody::new(
+                        obstacle.entity_id, pose, obstacle.layer,
+                        ShipShape::Polygon(Arc::from(verts.into_boxed_slice())),
+                        velocity, obstacle.angular_velocity_degrees,
+                    ).map_err(|_| NativeSnapshotError::InvalidObstacle(obstacle.entity_id))?;
+                    NativeAuthoredEntity::MiningAsteroid {
+                        obstacle: CombatObstacle {
+                            entity_id: obstacle.entity_id,
+                            kind: ObstacleKind::MiningAsteroid,
+                            vitals: Some(vitals),
+                            size_class: 0,
+                        },
+                        body,
                     }
                 },
                 "full-asteroid" => {
