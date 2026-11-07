@@ -144,7 +144,7 @@ struct UnityShip {
     policy_movement_disabled: bool,
     policy_cease_fire: bool,
     observed_weapons: Vec<UnityObservedWeapon>,
-    effective_vision_range: f32,
+    effective_vision_range: i32,
     has_weapons: bool,
     has_turrets: bool,
     has_special_action: bool,
@@ -311,6 +311,7 @@ pub struct NativePhysicalScene {
     /// the host's checkpoint schedule.
     pub source_policy_bindings: HashMap<i64, NativeSourcePolicyBinding>,
     source_policy_inputs: HashMap<i64, NativeSourcePolicyInputs>,
+    source_vision: HashMap<i64, i32>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -787,6 +788,7 @@ impl NativePhysicalScene {
         let mut active_policy_ship_ids = Vec::new();
         let mut source_policy_bindings = HashMap::new();
         let mut source_policy_inputs = HashMap::new();
+        let mut source_vision = HashMap::new();
         let mut seen = HashSet::with_capacity(entities.capacity());
         for ship in raw.ships {
             if ship.entity_id <= 0 || ship.side <= 0 ||
@@ -804,6 +806,10 @@ impl NativePhysicalScene {
             if !seen.insert(ship.entity_id) {
                 return Err(NativeSnapshotError::DuplicateEntity(ship.entity_id));
             }
+            if ship.effective_vision_range < 0 {
+                return Err(NativeSnapshotError::InvalidShip(ship.entity_id));
+            }
+            source_vision.insert(ship.entity_id, ship.effective_vision_range);
             let vitals = ShipVitals::new(
                 ship.health, ship.max_health, ship.max_tsv, ship.mined_cargo,
             ).map_err(NativeSnapshotError::Combat)?;
@@ -944,7 +950,7 @@ impl NativePhysicalScene {
                     ));
                 }
                 let controller = ControlledShipPerception {
-                    effective_vision_range: ship.effective_vision_range,
+                    effective_vision_range: ship.effective_vision_range as f32,
                     movement_disabled_for_team: ship.policy_movement_disabled,
                     has_weapons: ship.has_weapons,
                     has_turrets: ship.has_turrets,
@@ -1311,6 +1317,7 @@ impl NativePhysicalScene {
             source_squads,
             source_policy_bindings,
             source_policy_inputs,
+            source_vision,
         })
     }
 }
