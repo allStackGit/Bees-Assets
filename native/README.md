@@ -3,61 +3,33 @@
 This directory is the beginning of the Unity-independent replacement platform,
 created from the current `feat/experiment-queue-ui` branch.
 
-## Authored Unity scene bridge (schema 8)
+## Unity scene import (schema 9)
 
-The Unity Editor menu **Bees > Native > Export Selected Level Physical
-Scene** reads the selected live Level and exports
-`Assets/native/assets/unity-physical-<level>.json`. The editor-only code is
-in `Scripts/Scenes/NativePhysicalSceneExporter.cs` under
-`#if UNITY_EDITOR` because it needs the game's internal ship, policy
-communication and asteroid state. Player builds do not include it.
+The Unity Editor action **Bees > Native > Export Selected Level Physical Scene**
+is implemented inside the gameplay assembly at
+`Scripts/Scenes/NativePhysicalSceneExporter.cs`, behind `UNITY_EDITOR`.
+It captures initial Level state directly from Unity: real source IDs and
+squad membership, living ships and v26 weapon metadata, policy frame/team
+bindings, stage damage rules, static/map-border and asteroid geometry, and
+active destructible MapObjects (including Fire Tank power/linked obstacles).
+Live BoxCollider2D, PolygonCollider2D and supported isotropic CircleCollider2D
+shapes retain their actual parent transforms. Unsupported or partial state
+fails export; no approximate colliders or synthetic IDs are produced.
 
-`bees-host::unity_scene_snapshot::NativePhysicalScene::read` imports
-the real world bounds, physics step, source Stage harmless-shot setting, source entity IDs, ship health,
-movement, persistent fleet mining, observed weapons, turret mounts and
-projectile speeds, source-order live squads, and ordinary intact asteroid/
-static obstacle placements (including pathfinder-owned map borders
-that are not in GameState.Obstacles). The v6 format also exports
-the actual primary box/polygon Collider2D vertices after runtime
-transformations (scale, nested parents and child rotations), not just the
-serialized prefab shape. Native keeps a Box fast path when possible
-and uses its existing concave polygon physics for genuinely transformed
-outlines. This only affects setup: no extra geometry is rebuilt per tick. An active map collider with no real
-allocated Unity ID causes export to fail instead of inventing one.
-It rejects incomplete squad coverage,
-duplicate IDs and unsupported snapshots instead of making up values.
-`NativePhysicalScene::squads_for_level` retains Unity's Stage-allocated
-`Squad.ItemId` as the actual lifetime identity for a caller-selected Level.
+`bees-host::unity_scene_snapshot::NativePhysicalScene::read` validates the
+same version and constructs the original entity order in the shared
+`CombatWorld`. Call `bind_exported_policy_ships` for genuine pre-existing
+Unity policy frames, then `into_policy_only_level` with an actual
+`NativePolicyOnlyLevelSetup` and `NativeSceneAssets::build_runtime` with
+the loaded model and durable sink. Agent capabilities, checkpoint routing,
+real episode rewards, navigation and learned exploration still require
+their authoritative Level inputs. The v26 21×21 navigation observation is
+computed per agent from world-local discovered collider bounds.
 
-For the policy-only native path, the v7 export also includes active
-controller team IDs, pre-existing randomized quarter-turn frames,
-movement-disabled state and cease-fire. Call
-`bind_exported_policy_ships` to attach these source-verified controllers,
-or explicitly call `bind_policy_ship` for a separately authored new
-episode. A read-only export never samples a new random frame. The
-caller still selects genuine loaded model slots for each returned team
-and supplies its full observation/learner context. Then call
-`into_policy_only_level` with explicit
-`NativePolicyOnlyLevelSetup` (real v26 policy routes, agent capability
-and navigation/exploration inputs, reward coordinator and optional group
-identities). The real v26 21×21 navigation observation is observer-local, not one
-shared grid per team. The assembler derives it from source bounds,
-current ship position, and discovered static obstacle AABBs collected
-once per faction/decision boundary; callers only supply truly external
-mining, exploration and weapon/agent source fields.
-
-The resulting `NativeAuthoredLevel` feeds
-`NativeSceneAssets::build_runtime` alongside the actual loaded
-`ResidentPolicyProcess` and a durable notification sink.
-The same `CombatWorld` feeds rendered read-only body views and
-headless inference/physics steps.
-
-**This is not a resumed game checkpoint or a finished playable build.**
-In-flight projectiles, learned discovery, pending commands/outcomes,
-model weights, agent-group history and PPO trajectories cannot be inferred
-from a physical snapshot. There is still no full native game
-presentation, optimizer/learner or validated Windows/Linux runtime parity.
-Do not use the snapshot to resume an active match.
+This is an **initial physical-scene bridge**, not a resumable checkpoint
+or a finished game. It cannot restore in-flight shots, prior visibility,
+active commands, reward history or PPO trajectories. Native UI, full
+gameplay/learner parity, and Windows/Linux runtime qualification are pending.
 
 ## Non-negotiable boundaries
 

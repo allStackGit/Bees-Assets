@@ -79,9 +79,6 @@ pub enum NativeAuthoredEntity {
         /// coordinates. None only for direct immutable prefab spawning.
         live_vertices: Option<Vec<Vec2>>,
     },
-    /// Physically existing full asteroid from a source scene snapshot.
-    /// Shards require their original parent/family lifetime and cannot
-    /// silently enter the ordinary full-asteroid pool.
     /// Real source MapObject with its current primary collider and
     /// optional authored Fire Tank explosion/obstacle relationship.
     /// Gameplay damage and discovery are handled by CombatWorld itself.
@@ -89,6 +86,9 @@ pub enum NativeAuthoredEntity {
         object: CombatMapObject,
         body: ObstacleBody,
     },
+    /// Physically existing full asteroid from a source scene snapshot.
+    /// Shards require their original parent/family lifetime and cannot
+    /// silently enter the ordinary full-asteroid pool.
     FullCollisionAsteroid {
         entity_id: i64,
         profile: FullAsteroidPrototype,
