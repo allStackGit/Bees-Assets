@@ -186,7 +186,8 @@ async function main(argv=process.argv.slice(2),env=process.env) {
         const tickScheduler=()=>{
             if(closing)return;
             observeSnapshot();
-            if(!hub.automation.enabled)return;
+            const before=hub.automationStatus();
+            if(!before.enabled&&!before.restart_rearm_pending)return;
             const status=hub.tickAutomation();
             if(!status.enabled) {
                 measurements.automation_safety_disarms++;

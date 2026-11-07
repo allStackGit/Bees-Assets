@@ -354,9 +354,11 @@ In an isolated 90-second Windows Courier run, closing the worker listener
 and reopening the coordinator and supervisor preserved the original
 dispatch and lease. CPU automation restored after reconciliation, and a
 later evaluation stopped training at round 7 with a signed successful exit
-and released capacity. This exercised registry and supervisor reopening
-inside the qualification process. OS service restart and host reboot
-remain unqualified.
+and released capacity. A separate run terminated and relaunched the
+isolated coordinator process while the original worker stayed active.
+The production coordinator timer also restored an isolated opted-in
+registry after a fresh worker heartbeat. OS service restart and host
+reboot remain unqualified.
 
 While armed, a coordinator pass every ten seconds performs **at most one
 durable transition**: release capacity only for a job started in the
