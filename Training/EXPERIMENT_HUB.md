@@ -592,6 +592,53 @@ administrator start authorization, and successful native service/limit
 verification are all required. Native Windows execution is CPU-only and has not
 been compiled or qualified on a real Windows machine.
 
+### Opt-in Linux service startup and process-failure recovery
+
+The project includes a **Linux user-systemd unit generator** for the
+coordinator and the authenticated machine agent. This installs no service by
+default, requires an explicit `--install`, and never enables or starts
+either service itself:
+
+```sh
+# Review the generated coordinator unit before installing it.
+node Training/experiment_hub_systemd.js coordinator
+node Training/experiment_hub_systemd.js coordinator --install
+systemctl --user daemon-reload
+systemctl --user enable --now bees-experiment-hub.service
+systemctl --user status bees-experiment-hub.service
+
+# On the machine running the Hub agent, store the machine ID, one-time
+# enrollment token, and any locally approved execution opt-ins in a private
+# environment file outside the checkout (chmod 600).
+node Training/experiment_hub_systemd.js agent --env-file /absolute/private/hub-agent.env
+node Training/experiment_hub_systemd.js agent --env-file /absolute/private/hub-agent.env --install
+systemctl --user daemon-reload
+systemctl --user enable --now bees-experiment-hub-agent.service
+```
+
+Use `--training-dir` for an installed Training checkout outside this
+script's current directory and `--node` for a pinned absolute Node binary.
+The generator resolves paths, rejects unsafe unit syntax, refuses symlinked
+or group-readable secret environment files, and refuses to overwrite an
+existing unit. It emits no enrollment token. Units use systemd's bounded
+`Restart=on-failure` rather than an in-process watchdog. Repeated failures
+hit systemd's start limit and require inspection, not an endless relaunch.
+The coordinator unit uses `KillMode=process` deliberately: its Bees
+operator manages learner/worker lifecycles independently, and restarting
+only the coordinator must not kill their processes. The agent uses
+`KillMode=control-group`; its native training workloads belong to
+independent transient systemd units with their own journals and leases.
+
+`enable --now` enables login-session startup. Running without a login
+also requires the host administrator to enable user lingering if permitted.
+An OS reboot, expired credentials, missing private state, occupied ports
+or a failed preflight cannot be treated as confirmed training recovery:
+the Hub must reconcile exact native service and lease identities before
+restoring any previously opted-in unattended CPU scheduling. No GPU
+re-arming is authorized by this service setup. This source-only Linux
+integration is **not yet qualified on Halifax**. The Windows process
+startup path is separate.
+
 ## Linux native supervisor and authenticated dispatch (CPU-only)
 
 `experiment_hub_linux_supervisor.js` now provides a **locally invoked**
