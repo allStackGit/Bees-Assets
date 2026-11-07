@@ -216,6 +216,15 @@ or StoreCommands requests, checks current request ownership, and refuses
 to send a StoreCommands payload different from the saved retry ledger.
 Its read API returns every unrelated server frame for the
 `NativeHostRuntime::receive_frame` and remaining feature owners.
+After reconnect and setup ACK, call
+`NativeHiveMindSocket::replay_pending_stores` to send exactly the durable
+pending original StoreCommands requests (not 409 reconciliations). The
+socket exposes small cumulative counts of frames/bytes, setup successes
+and transport/protocol errors, suitable for sampling between rollout
+windows without expensive per-frame traces. Incoming frames are bounded
+to the deployed server's 8 MiB limit and redirects are not followed,
+preventing WSS downgrade.
+
 The rendered host must run its blocking socket I/O on a separate
 network thread; only the gameplay/Level driver runs in the game loop.
 On disconnection, call `DurableHiveMindConnection::retire_socket`,

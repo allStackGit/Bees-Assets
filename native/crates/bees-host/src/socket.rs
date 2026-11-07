@@ -29,6 +29,19 @@ use crate::durable_connection::{
 const MAX_SERVER_MESSAGE_BYTES: usize = 8 * 1024 * 1024;
 const SUBPROTOCOL: &str = "game";
 
+/// O(1) connection-level counters; sampled between rollout/network windows,
+/// never an extra per-agent or fixed-step telemetry event.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct NativeSocketMeasurements {
+    pub outgoing_frames: u64,
+    pub outgoing_json_bytes: u64,
+    pub incoming_frames: u64,
+    pub incoming_json_bytes: u64,
+    pub setup_accepted: u64,
+    pub transport_errors: u64,
+    pub protocol_rejections: u64,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SetupKind { Initial, Reconnect }
 
@@ -148,6 +161,7 @@ pub struct NativeHiveMindSocket {
     game_id: Option<i64>,
     pending_setup: Option<PendingSetup>,
     failed: bool,
+    measurements: NativeSocketMeasurements,
 }
 
 impl NativeHiveMindSocket {
@@ -173,7 +187,15 @@ impl NativeHiveMindSocket {
         request.headers_mut().insert(
             SEC_WEBSOCKET_PROTOCOL, HeaderValue::from_static(SUBPROTOCOL),
         );
-        let (socket, response) = tungstenite::connect(request)?;
+        // Never follow an HTTP redirect to a different origin or to
+        // plaintext ws:// after initially demanding authenticated WSS.
+        let config = tungstenite::protocol::WebSocketConfig {
+            max_frame_size: Some(MAX_SERVER_MESSAGE_BYTES),
+            max_message_size: Some(MAX_SERVER_MESSAGE_BYTES),
+            ..Default::default()
+        };
+        let (socket, response) =
+            tungstenite::connect_with_config(request, Some(config), 0)?;
         let confirmed = response.headers().get(SEC_WEBSOCKET_PROTOCOL)
             .and_then(|value| value.to_str().ok());
         if confirmed != Some(SUBPROTOCOL) {
@@ -182,10 +204,20 @@ impl NativeHiveMindSocket {
         Ok(Self {
             socket, secure, game_id: None,
             pending_setup: None, failed: false,
+            measurements: NativeSocketMeasurements::default(),
         })
     }
 
     pub fn game_id(&self) -> Option<i64> { self.game_id }
+    pub fn measurements(&self) -> NativeSocketMeasurements { self.measurements }
+
+    fn reject_protocol<T>(
+        &mut self, error: HiveMindSocketError,
+    ) -> Result<T, HiveMindSocketError> {
+        self.failed = true;
+        self.measurements.protocol_rejections += 1;
+        Err(error)
+    }
 
     pub fn ready(&self) -> bool {
         !self.failed && self.game_id.is_some() && self.pending_setup.is_none()
@@ -207,10 +239,14 @@ impl NativeHiveMindSocket {
         if json.len() > MAX_SERVER_MESSAGE_BYTES {
             return Err(HiveMindSocketError::ServerFrameTooLarge);
         }
+        let bytes = json.len();
         if let Err(error) = self.socket.send(Message::Text(json.into())) {
             self.failed = true;
+            self.measurements.transport_errors += 1;
             return Err(HiveMindSocketError::Transport(error));
         }
+        self.measurements.outgoing_frames += 1;
+        self.measurements.outgoing_json_bytes += bytes as u64;
         Ok(())
     }
 
@@ -316,6 +352,24 @@ impl NativeHiveMindSocket {
         self.send(request)
     }
 
+    /// After an authenticated reconnect, resend only the exact original
+    /// StoreCommands hashes retained on disk. Terminal 409 reconciliation
+    /// records are intentionally excluded: their successful sibling writes
+    /// have already committed, so replaying the batch would double-credit.
+    pub fn replay_pending_stores(
+        &mut self,
+        connection: &DurableHiveMindConnection,
+    ) -> Result<usize, HiveMindSocketError> {
+        self.require_ready()?;
+        let hashes = connection.pending_store_hashes()?;
+        for &hash in &hashes {
+            let original = connection.retry_payload(hash)?
+                .ok_or(HiveMindSocketError::InvalidRequestOwnership)?;
+            self.send_store(connection, original)?;
+        }
+        Ok(hashes.len())
+    }
+
     /// Read one non-control message. Ping/pong servicing does not create
     /// application events. Setup responses are validated before unlocking
     /// the ordinary request stream. All other messages must be handed to
@@ -327,13 +381,18 @@ impl NativeHiveMindSocket {
                 Ok(message) => message,
                 Err(error) => {
                     self.failed = true;
+                    self.measurements.transport_errors += 1;
                     return Err(HiveMindSocketError::Transport(error));
                 }
             };
             let frame = match message {
                 Message::Text(text) => text.into_bytes(),
                 Message::Ping(_) | Message::Pong(_) => {
-                    self.socket.flush()?;
+                    if let Err(error) = self.socket.flush() {
+                        self.failed = true;
+                        self.measurements.transport_errors += 1;
+                        return Err(HiveMindSocketError::Transport(error));
+                    }
                     continue;
                 }
                 Message::Close(_) => {
@@ -341,28 +400,41 @@ impl NativeHiveMindSocket {
                     return Err(HiveMindSocketError::Disconnected);
                 }
                 Message::Binary(_) | Message::Frame(_) =>
-                    return Err(HiveMindSocketError::InvalidServerFrame),
+                    return self.reject_protocol(
+                        HiveMindSocketError::InvalidServerFrame,
+                    ),
             };
             if frame.len() > MAX_SERVER_MESSAGE_BYTES {
-                self.failed = true;
-                return Err(HiveMindSocketError::ServerFrameTooLarge);
+                return self.reject_protocol(HiveMindSocketError::ServerFrameTooLarge);
             }
-            let response: ServerResponseIdentity =
-                serde_json::from_slice(&frame)?;
+            self.measurements.incoming_frames += 1;
+            self.measurements.incoming_json_bytes += frame.len() as u64;
+            let response: ServerResponseIdentity = match serde_json::from_slice(&frame) {
+                Ok(value) => value,
+                Err(error) => return self.reject_protocol(HiveMindSocketError::Json(error)),
+            };
+            if self.pending_setup.is_some_and(|pending| pending.hash == response.hash) &&
+                !matches!(response.message_type.as_str(), "setup-level" | "reconnect-level")
+            {
+                return self.reject_protocol(HiveMindSocketError::UnexpectedSetupResponse);
+            }
             let is_setup = matches!(
                 response.message_type.as_str(),
                 "setup-level" | "reconnect-level",
             );
             if is_setup {
-                let pending = self.pending_setup
-                    .ok_or(HiveMindSocketError::UnexpectedSetupResponse)?;
+                let Some(pending) = self.pending_setup else {
+                    return self.reject_protocol(HiveMindSocketError::UnexpectedSetupResponse);
+                };
                 if response.hash != pending.hash ||
                     response.message_type != pending.kind.message_type()
                 {
-                    self.failed = true;
-                    return Err(HiveMindSocketError::UnexpectedSetupResponse);
+                    return self.reject_protocol(HiveMindSocketError::UnexpectedSetupResponse);
                 }
-                let ack: SetupServerResponse = serde_json::from_slice(&frame)?;
+                let ack: SetupServerResponse = match serde_json::from_slice(&frame) {
+                    Ok(value) => value,
+                    Err(error) => return self.reject_protocol(HiveMindSocketError::Json(error)),
+                };
                 if ack.hash != pending.hash ||
                     ack.message_type != pending.kind.message_type()
                 {
@@ -370,20 +442,20 @@ impl NativeHiveMindSocket {
                     return Err(HiveMindSocketError::UnexpectedSetupResponse);
                 }
                 if ack.status != 200 {
-                    self.failed = true;
-                    return Err(HiveMindSocketError::SetupRejected(ack.status));
+                    return self.reject_protocol(HiveMindSocketError::SetupRejected(ack.status));
                 }
-                let id = ack.game_id
-                    .filter(|&id| id > 0 && id <= MAX_SAFE_REQUEST_HASH)
-                    .ok_or(HiveMindSocketError::InvalidServerFrame)?;
+                let Some(id) = ack.game_id
+                    .filter(|&id| id > 0 && id <= MAX_SAFE_REQUEST_HASH) else {
+                    return self.reject_protocol(HiveMindSocketError::InvalidServerFrame);
+                };
                 if pending.kind == SetupKind::Initial &&
                     self.game_id.is_some_and(|original| original != id)
                 {
-                    self.failed = true;
-                    return Err(HiveMindSocketError::MismatchedServerGame);
+                    return self.reject_protocol(HiveMindSocketError::MismatchedServerGame);
                 }
                 self.pending_setup = None;
                 self.game_id = Some(id);
+                self.measurements.setup_accepted += 1;
                 return Ok(HiveMindSocketEvent::SetupAccepted {
                     request_hash: pending.hash, server_game_id: id,
                 });
