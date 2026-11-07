@@ -45,57 +45,9 @@ impl BoxObstacleAsset {
     pub fn prepare_spawn_live_box(
         &self, entity_id: i64, pose: Pose, points: [Vec2; 4],
     ) -> Result<(CombatObstacle, ObstacleBody), PhysicsError> {
-        if points.iter().any(|point| !point.is_finite()) {
-            return Err(PhysicsError::InvalidCollider);
-        }
-        let mut twice_area = 0.0_f32;
-        for i in 0..4 {
-            let a = points[i];
-            let b = points[(i + 1) % 4];
-            if (b - a).length_squared() < 1.0e-10 {
-                return Err(PhysicsError::InvalidCollider);
-            }
-            twice_area += a.x * b.y - a.y * b.x;
-        }
-        if !twice_area.is_finite() || twice_area.abs() < 1.0e-7 {
-            return Err(PhysicsError::InvalidCollider);
-        }
-        let mut min = points[0];
-        let mut max = points[0];
-        for point in points.iter().skip(1) {
-            min.x = min.x.min(point.x);
-            min.y = min.y.min(point.y);
-            max.x = max.x.max(point.x);
-            max.y = max.y.max(point.y);
-        }
-        let span = max - min;
-        if span.x <= 1.0e-6 || span.y <= 1.0e-6 {
-            return Err(PhysicsError::InvalidCollider);
-        }
-        let nearly = |value: f32, low: f32, high: f32, span: f32| {
-            let tolerance = span * 1.0e-5;
-            (value - low).abs() <= tolerance ||
-                (value - high).abs() <= tolerance
-        };
-        // Most layouts are scaled but axis-aligned in the root's local
-        // frame. Retain the Box fast path; genuinely rotated nested child
-        // colliders use the same canonical polygon path, without guessing.
-        let rectangular = points.iter().all(|p|
-            nearly(p.x, min.x, max.x, span.x) &&
-            nearly(p.y, min.y, max.y, span.y)
-        );
-        let shape = if rectangular {
-            ShipShape::Box {
-                offset: Vec2::new(
-                    (min.x + max.x) * 0.5,
-                    (min.y + max.y) * 0.5,
-                ),
-                half_extents: span * 0.5,
-            }
-        } else {
-            ShipShape::Polygon(Arc::from(points.to_vec().into_boxed_slice()))
-        };
-        self.prepare_spawn_shape(entity_id, Some(pose), shape)
+        self.prepare_spawn_shape(
+            entity_id, Some(pose), live_box_shape(points)?,
+        )
     }
 
     fn prepare_spawn_shape(
@@ -120,6 +72,63 @@ impl BoxObstacleAsset {
         };
         Ok((combat, body))
     }
+}
+
+/// Convert the real four corners of a source BoxCollider2D into the
+/// fastest exact shared physics representation. Unity may have resized
+/// the box or rotated its child under a nonuniformly scaled parent.
+pub fn live_box_shape(points: [Vec2; 4]) -> Result<ShipShape, PhysicsError> {
+    if points.iter().any(|point| !point.is_finite()) {
+        return Err(PhysicsError::InvalidCollider);
+    }
+    let mut twice_area = 0.0_f32;
+    for i in 0..4 {
+        let a = points[i];
+        let b = points[(i + 1) % 4];
+        if (b - a).length_squared() < 1.0e-10 {
+            return Err(PhysicsError::InvalidCollider);
+        }
+        twice_area += a.x * b.y - a.y * b.x;
+    }
+    if !twice_area.is_finite() || twice_area.abs() < 1.0e-7 {
+        return Err(PhysicsError::InvalidCollider);
+    }
+    let mut min = points[0];
+    let mut max = points[0];
+    for point in points.iter().skip(1) {
+        min.x = min.x.min(point.x);
+        min.y = min.y.min(point.y);
+        max.x = max.x.max(point.x);
+        max.y = max.y.max(point.y);
+    }
+    let span = max - min;
+    if span.x <= 1.0e-6 || span.y <= 1.0e-6 {
+        return Err(PhysicsError::InvalidCollider);
+    }
+    let nearly = |value: f32, low: f32, high: f32, span: f32| {
+        let tolerance = span * 1.0e-5;
+        (value - low).abs() <= tolerance ||
+            (value - high).abs() <= tolerance
+    };
+    // Most layouts are scaled but axis-aligned in the root's local
+    // frame. Retain the Box fast path; genuinely rotated nested child
+    // colliders use the same canonical polygon path, without guessing.
+    let rectangular = points.iter().all(|p|
+        nearly(p.x, min.x, max.x, span.x) &&
+        nearly(p.y, min.y, max.y, span.y)
+    );
+    let shape = if rectangular {
+        ShipShape::Box {
+            offset: Vec2::new(
+                (min.x + max.x) * 0.5,
+                (min.y + max.y) * 0.5,
+            ),
+            half_extents: span * 0.5,
+        }
+    } else {
+        ShipShape::Polygon(Arc::from(points.to_vec().into_boxed_slice()))
+    };
+    Ok(shape)
 }
 
 #[derive(Debug)]
