@@ -1443,10 +1443,12 @@ python -B Training/experiment_hub_tinybrains_evaluate.py --checkpoint $checkpoin
 Use pre-created private scratch and receipt directories. The command above
 evaluates one explicit checkpoint. For scheduled evaluation, run
 `Training/experiment_hub_tinybrains_eval_poll.py` with `--machine`, 
-`--artifact-root`, `--suite`, `--scratch`, and `--receipt-root`. The poller
+`--artifact-root`, `--suite`, `--scratch`, and `--receipt-root`.
+For a multi-suite gate, pass `--suite short.json --suite long.json`
+in one invocation instead of launching independent pollers. The poller
 queries the local coordinator (port 7148 by default), selects a completed
 numbered checkpoint for an eligible running dispatch, and evaluates at most
-one per invocation. Set the profile's `training.checkpoint_every` so a
+one checkpoint batch per invocation. Set the profile's `training.checkpoint_every` so a
 numbered checkpoint appears while the job is still running. The poller
 leaves the changing `latest.pt` alone. Use persistent scratch to retain
 checkpoint watermarks across temporary worker disconnects (up to
