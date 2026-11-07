@@ -844,15 +844,14 @@ class ExperimentHub {
             }
             // A native terminal report can release capacity before the
             // scheduler observes it if release-on-terminal was enabled.
-            const blocked=snapshot.jobs.find(j=>{
-                if(j.status!=='waiting_predecessor'||!j.continuation_of_job_id)
-                    return false;
-                const parent=snapshot.jobs.find(p=>p.id===j.continuation_of_job_id);
-                return parent?.automation_start_session_id===session.session_id&&
-                    parent.capacity_released_at&&
-                    ['finished','stopped'].includes(parent.status)&&
-                    !checkpointContinuationComplete(parent);
-            });
+            const missingCheckpoints=new Set(snapshot.jobs.filter(parent=>
+                parent.automation_start_session_id===session.session_id&&
+                parent.capacity_released_at&&
+                ['finished','stopped'].includes(parent.status)&&
+                !checkpointContinuationComplete(parent)).map(parent=>parent.id));
+            const blocked=snapshot.jobs.find(j=>
+                j.status==='waiting_predecessor'&&
+                missingCheckpoints.has(j.continuation_of_job_id));
             if(blocked)throw Error('Job '+blocked.continuation_of_job_id+
                 ' released capacity without a verified resumable checkpoint; stage '+
                 blocked.id+' requires operator review.');
