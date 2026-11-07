@@ -140,12 +140,16 @@ function sequenceRowsForJobs(jobs) {
                 visited.add(child.id);
                 chain.push(child);
             }
-            // Evaluation-triggered Stops can complete independent stages.
-            // The coordinator, not the browser, validates their evidence.
-            const completed=job=>Boolean(job.capacity_released_at&&(
-                job.status==='finished'||
-                job.status==='stopped'&&job.independent_sequence_complete===true));
-            const current=chain.find(job=>!completed(job))||chain[chain.length-1];
+            // A finished or evaluation-stopped stage is only complete
+            // when it can actually hand off its queued successor. Read
+            // coordinator-owned decisions; never infer evaluation or
+            // checkpoint authority from a terminal state in the browser.
+            const completed=(job,index)=>Boolean(job.capacity_released_at&&
+                job.independent_sequence_complete===true&&
+                (chain[index+1]?.continuation_of_job_id!==job.id||
+                    job.checkpoint_continuation_complete===true));
+            const current=chain.find((job,index)=>!completed(job,index))||
+                chain[chain.length-1];
             const blocked=chain.find(job=>job.status==='waiting_predecessor');
             return {root,chain,current,canCancel:!conflict,
                 completed:chain.filter(completed).length,
