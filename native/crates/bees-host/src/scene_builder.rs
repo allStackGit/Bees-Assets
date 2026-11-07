@@ -21,6 +21,7 @@ use bees_sim::control::PolicyFrame;
 use bees_sim::movement::ShipMotion;
 use bees_sim::map_object::CombatMapObject;
 use bees_sim::physics::ObstacleBody;
+use bees_sim::obstacle::CombatObstacle;
 use bees_sim::simulation::{Simulation, World, WorldId};
 use crate::runtime::{NativeHostRuntime, HostInitError};
 use crate::durable_connection::DurableHiveMindConnection;
@@ -86,6 +87,13 @@ pub enum NativeAuthoredEntity {
         object: CombatMapObject,
         body: ObstacleBody,
     },
+    /// Actual initial MiningAsteroid resource health and primary collider,
+    /// not a decorative radius. Command/policy mining uses this same
+    /// physical obstacle and the canonical fleet-credit event path.
+    MiningAsteroid {
+        obstacle: CombatObstacle,
+        body: ObstacleBody,
+    },
     /// Physically existing full asteroid from a source scene snapshot.
     /// Shards require their original parent/family lifetime and cannot
     /// silently enter the ordinary full-asteroid pool.
@@ -104,6 +112,7 @@ impl NativeAuthoredEntity {
         match self {
             Self::Ship(ship) => ship.entity_id,
             Self::MapObject { object, .. } => object.entity_id,
+            Self::MiningAsteroid { obstacle, .. } => obstacle.entity_id,
             Self::BoxObstacle { entity_id, .. } |
             Self::PolygonObstacle { entity_id, .. } |
             Self::FullCollisionAsteroid { entity_id, .. } => *entity_id,
@@ -289,6 +298,10 @@ impl NativeSceneAssets {
                 }
                 NativeAuthoredEntity::MapObject { object, body } => {
                     combat.add_map_object(object, body)
+                        .map_err(NativeSceneBuildError::Combat)?;
+                }
+                NativeAuthoredEntity::MiningAsteroid { obstacle, body } => {
+                    combat.add_obstacle(obstacle, body)
                         .map_err(NativeSceneBuildError::Combat)?;
                 }
                 NativeAuthoredEntity::PolygonObstacle {
