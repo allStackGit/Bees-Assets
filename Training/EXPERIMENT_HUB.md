@@ -318,6 +318,18 @@ retains the last actual scheduler transition, its timestamp and a
 separate current waiting reason instead of repeatedly overwriting
 the meaningful event during idle polling.
 
+After restarting the coordinator, the operator may explicitly re-arm
+automation with **Re-adopt previously automated native jobs** selected.
+This can manage terminal capacity release for earlier automatic jobs
+only after the current authenticated agent has freshly inspected each
+running dispatch and acknowledged its matching native lease. Adoption
+does not relaunch a service, repeat an ambiguous Start, or resume a
+stopped job. Any unreleased earlier automated job with missing, stale,
+terminal, or uncertain native evidence blocks adoption until the
+operator inspects or releases it. All choices remain disarmed by default
+after restart, and re-adoption does not bypass host preflight or
+checkpoint continuation proof.
+
 While armed, a coordinator pass every ten seconds performs **at most one
 durable transition**: release capacity only for a job started in the
 **current automation session** after an authenticated native `finished`
