@@ -436,8 +436,18 @@ document.addEventListener('DOMContentLoaded', () => {
             .filter(Boolean);
         $('hub-compare-selection-queue').disabled=chosenIds.length<2||
             new Set(chosenIds).size!==chosenIds.length||!configs.length;
-        const plans=(state.candidate_selections||[])
-            .filter(p=>p.project_id===project).slice(-5).reverse();
+        const allPlans=(state.candidate_selections||[])
+            .filter(p=>p.project_id===project);
+        const plans=allPlans.slice(-5).reverse();
+        const cancelSelect=$('hub-compare-selection-cancel-id');
+        const oldPlan=cancelSelect.value;
+        const cancellable=allPlans.filter(p=>
+            ['waiting','needs_review'].includes(p.status)).reverse();
+        cancelSelect.replaceChildren(...cancellable.map(p=>
+            new Option(p.status+' · '+p.id.slice(-8),p.id)));
+        if(cancellable.some(p=>p.id===oldPlan))
+            cancelSelect.value=oldPlan;
+        $('hub-compare-selection-cancel').disabled=!cancellable.length;
         feedback('hub-compare-selection-status',plans.length
             ?plans.map(p=>(p.status==='queued'
                     ?'Queued winner '+p.winner_job_id?.slice(-8)+
@@ -1757,6 +1767,22 @@ document.addEventListener('DOMContentLoaded', () => {
                 feedback('hub-compare-selection-message',
                     'Scheduled selection '+plan.id+'. Automatic queueing requires an armed native scheduler.');
             }
+            await reload();
+        }catch(error){
+            feedback('hub-compare-selection-message',String(error.message||error));
+        }
+    });
+    $('hub-compare-selection-cancel').addEventListener('click',async()=>{
+        const selectionId=$('hub-compare-selection-cancel-id').value;
+        if(!selectionId)return;
+        if(!confirm('Cancel pending candidate selection '+selectionId+
+            '? Existing training jobs are unaffected.'))return;
+        try {
+            await action('hub/candidates/cancel',{
+                selection_id:selectionId,confirm_cancel:true,
+            });
+            feedback('hub-compare-selection-message',
+                'Candidate selection cancelled; existing jobs remain unchanged.');
             await reload();
         }catch(error){
             feedback('hub-compare-selection-message',String(error.message||error));
