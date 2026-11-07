@@ -163,16 +163,24 @@ function sequenceRowsForJobs(jobs) {
 // the registry contains far more historical jobs than a table can show.
 function hubVisibleJobs(jobs,limit) {
     const priority=job=>{
-        if(['running','start_requested','launch_requested','stop_requested',
-            'failed','unverified'].includes(job.status))return 3;
-        if(['finished','stopped'].includes(job.status)&&
-            job.lease_id&&!job.capacity_released_at)return 2;
-        if(job.status==='waiting_adapter'&&job.lease_id)return 1;
+        if(['running','start_requested','launch_requested','stop_requested']
+            .includes(job.status))return 4;
+        if(!job.capacity_released_at&&
+            ['failed','unverified'].includes(job.status))return 3;
+        if(!job.capacity_released_at&&job.lease_id&&(
+            ['finished','stopped','waiting_adapter'].includes(job.status)))
+            return 2;
+        if(job.status==='waiting_predecessor'&&
+            ['needs_review','broken_lineage'].includes(job.predecessor_wait?.status))
+            return 1;
         return 0;
     };
-    return jobs.map((job,index)=>({job,index,priority:priority(job)}))
-        .sort((a,b)=>b.priority-a.priority||b.index-a.index)
-        .slice(0,limit).map(item=>item.job);
+    const ordered=jobs.map((job,index)=>({job,index,priority:priority(job)}))
+        .sort((a,b)=>b.priority-a.priority||b.index-a.index);
+    // Do not discard live or capacity-holding jobs just because a machine
+    // has accumulated more records than the historical display limit.
+    const actionable=ordered.filter(item=>item.priority>=2).length;
+    return ordered.slice(0,Math.max(limit,actionable)).map(item=>item.job);
 }
 
 function approvedTinyBrainsProfiles(machines) {
