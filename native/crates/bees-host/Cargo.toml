@@ -15,3 +15,7 @@ bees-sim = { path = "../bees-sim" }
 
 # Zero-copy byte views for little-endian contiguous v26 model rows.
 bytemuck = "1"
+
+# One cross-platform blocking WSS transport; the app owns its I/O thread.
+# Rustls verifies normal certificate chains (never insecure TLS fallback).
+tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"] }

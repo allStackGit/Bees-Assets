@@ -203,6 +203,26 @@ model execution, policy optimization/checkpoints, transport, and
 cross-engine/Windows/Linux qualification remain outstanding. No
 performance or parity gains are claimed without executable measurements.
 
+The OS host now includes a **blocking, certificate-verified WSS client**
+(`bees-host::socket::NativeHiveMindSocket`) for the production
+`game` WebSocket subprotocol. It requires an authentic Steam
+`AuthTicket` in `setup-level`/`reconnect-level` and uses the single
+connection's durably committed request-hash allocator. One socket can
+register multiple Levels against the same server Game. Only a explicitly
+opted-in **loopback** `ws://` endpoint is permitted without TLS for
+development; no insecure TLS certificate bypass is supported. The socket
+validates setup acknowledgements, authenticates before issuing strategy
+or StoreCommands requests, checks current request ownership, and refuses
+to send a StoreCommands payload different from the saved retry ledger.
+Its read API returns every unrelated server frame for the
+`NativeHostRuntime::receive_frame` and remaining feature owners.
+The rendered host must run its blocking socket I/O on a separate
+network thread; only the gameplay/Level driver runs in the game loop.
+On disconnection, call `DurableHiveMindConnection::retire_socket`,
+reconnect/authenticate, then inspect pending StoreCommands for safe
+original-hash retries. Connection transport does not replace server
+outcome persistence or claim a completed gameplay runner.
+
 ## Hive Mind / server migration boundary
 
 The native workspace now also contains `bees-hivemind`, a separate,

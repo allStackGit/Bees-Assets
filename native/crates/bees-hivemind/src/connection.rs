@@ -239,6 +239,17 @@ impl NativeHiveMindConnection {
         self.session.pending_count()
     }
 
+    /// The socket may send a strategy request only if the single shared
+    /// session still owns the exact request hash. No duplicate request
+    /// registry is maintained by the transport.
+    pub fn has_pending_strategy(&self, hash: i64) -> bool {
+        self.session.requested_strategy_owner(hash).is_some()
+    }
+
+    pub fn has_pending_targeting(&self, hash: i64) -> bool {
+        self.session.requested_targeting_owner(hash).is_some()
+    }
+
     pub fn stale_reconciliation_ids(&self, hash: i64) -> Option<&[i64]> {
         self.stores.stale_reconciliation_ids(hash)
     }
