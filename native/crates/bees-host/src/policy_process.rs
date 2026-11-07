@@ -15,13 +15,18 @@
 use std::ffi::OsStr;
 use std::io::{self, BufReader, BufWriter, Read, Write};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
+use std::path::Path;
 
 use bees_gameplay::inference::{NativePolicyInference, NativePolicyRoute};
 use bees_sim::policy::{CONTINUOUS_ACTIONS, DISCRETE_BRANCHES, OBSERVATION_FLOATS};
 use bees_sim::policy_batch::{PolicyActionMask, PolicyAgentKey};
 use bees_sim::policy::{validate_model_abi, PolicyAbiError};
 
-const PROTOCOL_VERSION: u32 = 1;
+const PROTOCOL_VERSION: u32 = 2;
+const CONTROL_RELOAD_MAGIC: &[u8; 4] = b"BMOD";
+const CONTROL_RELOAD_ACK: &[u8; 4] = b"MACK";
+const CONTROL_RELOAD_REJECTED: &[u8; 4] = b"MNOK";
+const MAX_MANIFEST_PATH_BYTES: usize = 4096;
 const REQUEST_MAGIC: &[u8; 4] = b"BINF";
 const RESPONSE_MAGIC: &[u8; 4] = b"BOUT";
 const READY_MAGIC: &[u8; 4] = b"BHOK";
@@ -37,6 +42,8 @@ pub enum PolicyProcessError {
     InvalidBatch,
     WrongResponse,
     RequestSequenceExhausted,
+    InvalidReloadPath,
+    ReloadRejected,
     Unavailable,
 }
 
@@ -52,6 +59,9 @@ pub struct ResidentPolicyProcess {
     input: BufWriter<ChildStdin>,
     output: BufReader<ChildStdout>,
     sequence: u64,
+    /// Monotonic process-local model generation. Capture with the run ID
+    /// and manifest SHA to identify policy versions in learner trajectories.
+    model_generation: u64,
     unavailable: bool,
     // Reused model route/action-mask packet, 16 bytes per agent.
     row_headers: Vec<u8>,
@@ -74,6 +84,7 @@ impl ResidentPolicyProcess {
             input: BufWriter::new(input),
             output: BufReader::new(output),
             sequence: 0,
+            model_generation: 0,
             unavailable: false,
             row_headers: Vec::new(),
         };
@@ -185,6 +196,72 @@ impl ResidentPolicyProcess {
         self.output.read_exact(discrete)?;
         Ok(())
     }
+
+    /// Swap genuine model artifacts without restarting the shared
+    /// simulation or poisoning previously loaded weights on a normal
+    /// validation rejection. The worker verifies all artifacts and the
+    /// exact v26 signature, and requires identical policy slot IDs.
+    ///
+    /// &mut self guarantees this transaction cannot interleave with a
+    /// batch forward. Rejected model updates preserve the old generation;
+    /// malformed/partial wire exchanges permanently invalidate the stream.
+    pub fn reload_manifest(&mut self, manifest: &Path)
+        -> Result<u64, PolicyProcessError>
+    {
+        if self.unavailable {
+            return Err(PolicyProcessError::Unavailable);
+        }
+        let path = manifest.canonicalize()
+            .map_err(PolicyProcessError::Io)?;
+        let bytes = path.to_str()
+            .ok_or(PolicyProcessError::InvalidReloadPath)?.as_bytes();
+        if bytes.is_empty() || bytes.len() > MAX_MANIFEST_PATH_BYTES {
+            return Err(PolicyProcessError::InvalidReloadPath);
+        }
+        let seq = self.sequence.checked_add(1)
+            .ok_or(PolicyProcessError::RequestSequenceExhausted)?;
+        let next_generation = self.model_generation.checked_add(1)
+            .ok_or(PolicyProcessError::RequestSequenceExhausted)?;
+        let exchanged = (|| -> Result<bool, PolicyProcessError> {
+            self.input.write_all(CONTROL_RELOAD_MAGIC)?;
+            self.input.write_all(&PROTOCOL_VERSION.to_le_bytes())?;
+            self.input.write_all(&seq.to_le_bytes())?;
+            self.input.write_all(&(bytes.len() as u32).to_le_bytes())?;
+            self.input.write_all(bytes)?;
+            self.input.flush()?;
+            let mut response = [0_u8; 20];
+            self.output.read_exact(&mut response)?;
+            if u32::from_le_bytes(response[4..8].try_into().unwrap()) !=
+                    PROTOCOL_VERSION ||
+                u64::from_le_bytes(response[8..16].try_into().unwrap()) != seq
+            {
+                return Err(PolicyProcessError::WrongResponse);
+            }
+            let status = &response[..4];
+            let count = u32::from_le_bytes(response[16..20].try_into().unwrap());
+            if status == CONTROL_RELOAD_ACK && count > 0 {
+                Ok(true)
+            } else if status == CONTROL_RELOAD_REJECTED && count == 0 {
+                Ok(false)
+            } else {
+                Err(PolicyProcessError::WrongResponse)
+            }
+        })();
+        self.sequence = seq;
+        match exchanged {
+            Ok(true) => {
+                self.model_generation = next_generation;
+                Ok(next_generation)
+            }
+            Ok(false) => Err(PolicyProcessError::ReloadRejected),
+            Err(error) => {
+                self.unavailable = true;
+                Err(error)
+            }
+        }
+    }
+
+    pub fn model_generation(&self) -> u64 { self.model_generation }
 
     pub fn is_available(&self) -> bool { !self.unavailable }
 }
