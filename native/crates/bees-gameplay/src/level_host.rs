@@ -911,12 +911,16 @@ impl NativeLevelBatchDriver {
 /// durably handled (presentation applied, PPO group delivered, or command
 /// reservation persisted). Its effect cannot depend on later notifications
 /// being accepted; the host acknowledges the successful prefix on failure.
+/// For idempotent external storage, use the host's run incarnation plus
+/// WorldId, episode_revision and event_sequence as the stable event key.
+/// These identifiers cannot be substituted for server OutcomeIds.
 pub trait NativeLevelNotificationSink {
     type Error;
     fn accept(
         &mut self,
         world: WorldId,
         episode_revision: u64,
+        event_sequence: u64,
         notification: &NativeLevelNotification,
     ) -> Result<(), Self::Error>;
 }
@@ -938,6 +942,7 @@ pub enum NativeNotificationDeliveryError<E> {
         index: usize,
         error: NativeLevelEventError,
     },
+    NotificationSequenceExhausted { index: usize },
 }
 
 /// Drain each world's ONE persistent, source-ordered gameplay/reward/command
@@ -966,13 +971,30 @@ where
         let world = simulation.world_mut(index)
             .expect("indexed native world count cannot change during delivery");
         delivery.worlds_visited += 1;
+        let first_sequence =
+            world.state.events.pending_notification_sequence();
+        let count = world.state.events.pending_notifications().len();
+        // Preflight the entire contiguous range before any side effects,
+        // so an exhausted sequence can never partially reach a sink.
+        let upper = u64::try_from(count).ok()
+            .and_then(|len| first_sequence.checked_add(len))
+            .ok_or(
+                NativeNotificationDeliveryError::NotificationSequenceExhausted {
+                    index,
+                }
+            )?;
+        debug_assert!(upper >= first_sequence);
         let (accepted, failure) = {
             let notifications = world.state.events.pending_notifications();
             let mut accepted = 0usize;
             let mut failure = None;
-            for notification in notifications {
+            for (offset, notification) in notifications.iter().enumerate() {
+                // Range checked above, and each offset is strictly smaller
+                // than the pending queue length.
+                let event_sequence = first_sequence + offset as u64;
                 match sink.accept(
-                    world.id, world.episode_revision(), notification,
+                    world.id, world.episode_revision(),
+                    event_sequence, notification,
                 ) {
                     Ok(()) => accepted += 1,
                     Err(error) => {

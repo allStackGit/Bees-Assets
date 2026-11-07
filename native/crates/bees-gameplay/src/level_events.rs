@@ -149,6 +149,10 @@ pub struct NativeLevelEventProcessor {
     /// Sparse output outbox survives multiple fixed ticks. No per-tick
     /// arena snapshots and no duplicated per-agent group rewards.
     pending_notifications: Vec<NativeLevelNotification>,
+    /// Stable zero-based offset of the first pending event in this episode.
+    /// A successful prefix acknowledgement advances this cursor; a rejected
+    /// delivery never changes the identities of undelivered notifications.
+    acknowledged_notification_count: u64,
     peak_pending_notifications: usize,
     episode: NativeEpisodeRewardCoordinator,
     group_delivery: Option<NativeGroupRewardDelivery>,
@@ -173,6 +177,7 @@ impl NativeLevelEventProcessor {
             commands: NativeSquadCommandDirector::new(),
             pending_session_retirements: Vec::new(),
             pending_notifications: Vec::new(),
+            acknowledged_notification_count: 0,
             peak_pending_notifications: 0,
             episode,
             group_delivery: None,
@@ -468,13 +473,26 @@ impl NativeLevelEventProcessor {
         &self.pending_notifications
     }
 
+    /// The first pending event's stable, zero-based sequence within this
+    /// episode. For each following event add its index in the returned slice.
+    /// The host's run incarnation, WorldId and episode revision provide the
+    /// remaining durable identity. This sequence is deliberately NOT a
+    /// second notification registry or a wire-level OutcomeId.
+    pub fn pending_notification_sequence(&self) -> u64 {
+        self.acknowledged_notification_count
+    }
+
     pub fn acknowledge_notifications(
         &mut self, count: usize,
     ) -> Result<(), NativeLevelEventError> {
         if count > self.pending_notifications.len() {
             return Err(NativeLevelEventError::InvalidOutputAcknowledgement);
         }
+        let next = u64::try_from(count).ok()
+            .and_then(|count| self.acknowledged_notification_count.checked_add(count))
+            .ok_or(NativeLevelEventError::InvalidOutputAcknowledgement)?;
         self.pending_notifications.drain(..count);
+        self.acknowledged_notification_count = next;
         Ok(())
     }
 
