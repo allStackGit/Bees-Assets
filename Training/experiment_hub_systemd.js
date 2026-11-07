@@ -78,9 +78,6 @@ function serviceDefinition(kind,{trainingDir=__dirname,nodePath=process.execPath
         'TimeoutStopSec=30s',
         'KillMode='+killMode,
         '',
-        '[Install]',
-        'WantedBy=default.target',
-        '',
     ].join('\n');
 }
 function installUnit(kind,content,home=os.homedir()) {
@@ -147,7 +144,6 @@ function evaluatorDefinition({
         '[Unit]','Description=Schedule '+project+' evaluation for '+machine,'',
         '[Timer]','OnStartupSec=120s','OnUnitInactiveSec='+period+'s',
         'AccuracySec=15s','Unit='+name+'.service','',
-        '[Install]','WantedBy=timers.target','',
     ].join('\n');
     return {name,service,timer};
 }
@@ -213,7 +209,7 @@ function main(argv=process.argv.slice(2)) {
         }
         const installed=installEvaluatorUnits(result);
         console.log('Installed (not enabled): '+installed.service+' and '+installed.timer);
-        console.log('Review the units, then run: systemctl --user daemon-reload && systemctl --user enable --now '+result.name+'.timer');
+        console.log('Review the units, then run: systemctl --user daemon-reload && systemctl --user start '+result.name+'.timer');
         return;
     }
     const unit=serviceDefinition(kind,{
@@ -227,7 +223,7 @@ function main(argv=process.argv.slice(2)) {
     }
     const filename=installUnit(kind,unit);
     console.log('Installed (not started): '+filename);
-    console.log('Review the unit, then run: systemctl --user daemon-reload && systemctl --user enable --now '+NAMES[kind]);
+    console.log('Review the unit, then run: systemctl --user daemon-reload && systemctl --user start '+NAMES[kind]);
 }
 if(require.main===module) {
     try {main();}
