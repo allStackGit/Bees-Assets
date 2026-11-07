@@ -22,6 +22,7 @@ const POST_ACTIONS={
     '/api/hub/candidates/cancel':[200,'cancelCandidateSelection'],
     '/api/hub/candidates/promote':[201,'queueBestCandidate'],
     '/api/hub/sequences':[201,'queueSequence'],
+    '/api/hub/trials':[201,'queueTrials'],
     '/api/hub/jobs/cancel':[200,'cancelJob'],
     '/api/hub/jobs/cancel-future':[200,'cancelFutureJobs'],
     '/api/hub/jobs/allocate':[200,'allocateJobs'],

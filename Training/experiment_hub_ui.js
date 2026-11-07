@@ -305,13 +305,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const configs=(state?.configurations||[]).filter(c=>
             checkpointPipeline?c.project_id===project:
                 !['bees','ants'].includes(c.project_id));
-        const relationship=checkpointPipeline?'continuation':'independent';
+        const relationship=$('hub-pipeline-kind').value;
         const sameSelection=pipelineStageProject===project&&
             pipelineStageKind===relationship;
         for(const [i,row] of rows.entries()) {
             const label=row.firstElementChild;
              const select=row.querySelector('select');
-            label.textContent='Stage '+(i+1)+' saved configuration';
+            label.textContent=(relationship==='batch'?'Trial ':'Stage ')+(i+1)+' saved configuration';
             label.append(select);
             const old=select.value;
             select.replaceChildren(...configs.map(c=>new Option(
@@ -1056,30 +1056,36 @@ document.addEventListener('DOMContentLoaded', () => {
         const kind=$('hub-pipeline-kind'),oldKind=kind.value;
         kind.replaceChildren(
             new Option('Independent fresh jobs (no shared checkpoint)','independent'),
+            new Option('Independent trials (no dependency)','batch'),
             ...(['tinybrains','courier'].includes(project)
                 ?[new Option('Checkpoint-continuation stages','continuation')]
                 :[]));
         if(pipelineKindProject===project&&
-            ['independent','continuation'].includes(oldKind)&&
+            ['independent','batch','continuation'].includes(oldKind)&&
             (oldKind!=='continuation'||['tinybrains','courier'].includes(project)))
             kind.value=oldKind;
         else kind.value=['tinybrains','courier'].includes(project)?'continuation':'independent';
         pipelineKindProject=project;
         const checkpointPipeline=['tinybrains','courier'].includes(project)&&kind.value==='continuation';
+        const trialBatch=kind.value==='batch';
+        $('hub-pipeline-add').textContent=trialBatch?'Add trial':'Add stage';
+        $('hub-pipeline-queue').textContent=trialBatch?'Queue all trials':'Queue entire pipeline';
         $('hub-pipeline-title').textContent=checkpointPipeline
             ?'Prequeue checkpoint-continuation stages'
-            :'Queue independent project jobs in sequence';
+            :trialBatch?'Queue independent trials together':'Queue independent project jobs in sequence';
         $('hub-pipeline-description').textContent=checkpointPipeline
             ?'Two to sixteen stages with the same approved configuration digest, on the original worker. Natural completion advances only with a verified saved checkpoint; evaluation-triggered Stop additionally requires native checkpoint-preserving shutdown. Manual Stops and failures hold later stages for review.'
-            :'Two to sixteen fresh, independent jobs from any non-Bees project. Each job gets its own artifact lineage and may use a different machine. No checkpoint, optimizer or qualification result is inherited. A verified finish or an evaluation-driven Stop can advance the next job after capacity release. Manual Stops and failures do not advance. Queueing never starts training.';
+            :trialBatch?'Two to sixteen fresh jobs with separate artifact lineages. Select saved configurations for each seed or parameter variant. The jobs are eligible independently as qualified capacity becomes available.':
+                'Two to sixteen fresh, independent jobs from any non-Bees project. Each job gets its own artifact lineage and may use a different machine. No checkpoint, optimizer or qualification result is inherited. A verified finish or an evaluation-driven Stop can advance the next job after capacity release. Manual Stops and failures do not advance. Queueing never starts training.';
         $('hub-pipeline-predecessor-label').textContent=checkpointPipeline
             ?'Continue an existing job (optional)'
             :'Run after an existing native job (optional)';
         const pipelinePredecessor=$('hub-pipeline-predecessor');
+        pipelinePredecessor.closest('label').hidden=trialBatch;
         const formerPipelineParent=pipelinePredecessor.value;
         const retiredParents=new Set((state.jobs||[]).filter(j=>
             j.project_id==='ants').map(j=>j.id));
-        const sequenceParents=checkpointPipeline?availableParents:
+        const sequenceParents=trialBatch?[]:checkpointPipeline?availableParents:
             (state.jobs||[]).filter(j=>{
                 if(['bees','ants'].includes(j.project_id)||
                     retiredParents.has(j.after_job_id)||successors.has(j.id))
@@ -2208,6 +2214,7 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const checkpointPipeline=['tinybrains','courier'].includes(project)&&
                 $('hub-pipeline-kind').value==='continuation';
+            const trialBatch=$('hub-pipeline-kind').value==='batch';
             const configs=state.configurations.filter(c=>checkpointPipeline
                 ?c.project_id===project:!['bees','ants'].includes(c.project_id));
             const rows=[...$('hub-pipeline-rows').children];
@@ -2221,16 +2228,17 @@ document.addEventListener('DOMContentLoaded', () => {
                     expected_revision:selected.revision,
                     resources:JSON.parse(row.querySelector('input').value)};
             });
-            const predecessor=$('hub-pipeline-predecessor').value;
+            const predecessor=trialBatch?'':$('hub-pipeline-predecessor').value;
             const question=checkpointPipeline
                 ?'Queue '+stages.length+' frozen checkpoint-continuation stages? They share verified checkpoint lineage and original machine.'
-                :'Queue '+stages.length+' independent jobs as a frozen sequence? No job inherits any previous checkpoint, machine affinity, optimizer state or evaluation evidence.';
+                :trialBatch?'Queue '+stages.length+' frozen independent trials? Each is eligible as capacity becomes available.':
+                    'Queue '+stages.length+' independent jobs as a frozen sequence? No job inherits any previous checkpoint, machine affinity, optimizer state or evaluation evidence.';
             if(!confirm(question+
                 (checkpointPipeline
                     ?' Each stage waits for its predecessor to finish and release capacity.'
-                    :' Each stage waits for a verified finish or evaluation-driven Stop and capacity release.')+
+                    :trialBatch?'':' Each stage waits for a verified finish or evaluation-driven Stop and capacity release.')+
                 ' No work starts without the separate native authorization gates.'))return;
-            const result=await action(checkpointPipeline?'hub/pipelines':'hub/sequences',{
+            const result=await action(checkpointPipeline?'hub/pipelines':trialBatch?'hub/trials':'hub/sequences',{
                 confirm_queue:true,stages,
                 ...(predecessor?(checkpointPipeline
                     ?{continuation_of_job_id:predecessor}
@@ -2238,7 +2246,7 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             feedback('hub-pipeline-message',
                 'Queued '+result.jobs.length+' jobs atomically; no work started. '+
-                'Only the first eligible job may request capacity.');
+                (trialBatch?'Every trial is independently eligible for capacity.':'Only the first eligible job may request capacity.'));
             await reload();
         }catch(error){
             feedback('hub-pipeline-message',String(error.message||error));
