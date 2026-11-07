@@ -664,13 +664,13 @@ impl NativeSquadCommandDirector {
         receipt: StrategyReceipt,
         bombing: Option<NativeBombingActivation<'_>>,
     ) -> Result<StrategyReceiptAction, StrategyReceiptFailure> {
-        let (owner, enemy_squad_id, selection) = match receipt {
+        let (owner, enemy_owner, selection) = match receipt {
             StrategyReceipt::Retired { reservation_ids, .. } =>
                 return Ok(StrategyReceiptAction::DiscardReservations(
                     reservation_ids,
                 )),
-            StrategyReceipt::Accepted { owner, enemy_squad_id, selection } =>
-                (owner, enemy_squad_id, selection),
+            StrategyReceipt::Accepted { owner, enemy_owner, selection } =>
+                (owner, enemy_owner, selection),
         };
         if owner != squad.owner || !squad.valid() {
             return Ok(StrategyReceiptAction::DiscardReservations(vec![
@@ -696,18 +696,18 @@ impl NativeSquadCommandDirector {
                 selection: selection.clone(),
                 cause: StrategyReceiptFailureCause::InvalidStrategy(cause),
             })?;
-        // A delayed response must not silently adopt the current squad's
-        // different enemy. All commands with an explicit source enemy target
-        // use this same request identity boundary, not only Retreat.
-        // Exact pooled lifetimes are checked by the attack command on
-        // later callbacks.
+        // The connection-owned request stores the ORIGINAL enemy
+        // lifecycle, not just the numeric pooled Squad ID. Reject delayed
+        // target-strategy replies after that lifetime disappears, even if
+        // another squad has already reused the same numeric ID. Attack
+        // timers independently validate the same captured lifetime.
         if matches!(resolved.local_command,
             LocalCommandKind::Retreat | LocalCommandKind::Aggressive |
             LocalCommandKind::CircleSquad | LocalCommandKind::RightSwipe |
             LocalCommandKind::LeftSwipe | LocalCommandKind::InAndOut |
             LocalCommandKind::BombingRun | LocalCommandKind::Charge
-        ) && (enemy_squad_id.is_none() ||
-            squad.enemy.map(|enemy| enemy.owner.squad_id) != enemy_squad_id)
+        ) && (enemy_owner.is_none() ||
+            squad.enemy.map(|enemy| enemy.owner) != enemy_owner)
         {
             return Ok(StrategyReceiptAction::DiscardReservations(vec![
                 selection.command_outcome_id,

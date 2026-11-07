@@ -30,7 +30,10 @@ impl SquadLifetime {
 #[derive(Clone, Debug)]
 pub struct PendingStrategy {
     pub owner: SquadLifetime,
-    pub enemy_squad_id: Option<i64>,
+    /// Exact enemy lifetime captured when the request was issued. A
+    /// delayed server reply must never bind to a pooled squad that later
+    /// reused the same numeric ID. No additional server wire field.
+    pub enemy_owner: Option<SquadLifetime>,
     pub request: GetStrategyRequest,
     retired: bool,
 }
@@ -59,7 +62,7 @@ pub enum TargetingReceipt {
 pub enum StrategyReceipt {
     Accepted {
         owner: SquadLifetime,
-        enemy_squad_id: Option<i64>,
+        enemy_owner: Option<SquadLifetime>,
         selection: ValidatedStrategySelection,
     },
     /// Caller MUST explicitly discard both returned reservation IDs via
@@ -111,13 +114,16 @@ impl HiveMindSession {
         &mut self,
         hash: i64,
         owner: SquadLifetime,
-        enemy_squad_id: Option<i64>,
+        enemy_owner: Option<SquadLifetime>,
         matchup: String,
         shooting_matchup: String,
         opponent_id: u64,
         banned_strats: impl IntoIterator<Item = String>,
     ) -> Result<GetStrategyRequest, HiveMindSessionError> {
-        if !owner.valid() || enemy_squad_id.is_some_and(|id| id <= 0) {
+        if !owner.valid() || enemy_owner.is_some_and(|enemy|
+            !enemy.valid() || enemy.level_id != owner.level_id ||
+            enemy == owner,
+        ) {
             return Err(HiveMindSessionError::InvalidOwner);
         }
         // The WebSocket transport assigns unique Hash values across ALL
@@ -136,7 +142,7 @@ impl HiveMindSession {
             }
         }
         self.pending.insert(hash, PendingStrategy {
-            owner, enemy_squad_id, request: request.clone(), retired: false,
+            owner, enemy_owner, request: request.clone(), retired: false,
         });
         Ok(request)
     }
@@ -245,7 +251,7 @@ impl HiveMindSession {
         let retired = pending.retired ||
             self.latest_by_squad.get(&owner) != Some(&response.hash) ||
             live_owner != Some(owner);
-        let enemy_squad_id = pending.enemy_squad_id;
+        let enemy_owner = pending.enemy_owner;
         self.pending.remove(&response.hash);
         if self.latest_by_squad.get(&owner) == Some(&response.hash) {
             self.latest_by_squad.remove(&owner);
@@ -259,7 +265,7 @@ impl HiveMindSession {
                 ],
             });
         }
-        Ok(StrategyReceipt::Accepted { owner, enemy_squad_id, selection })
+        Ok(StrategyReceipt::Accepted { owner, enemy_owner, selection })
     }
 
     /// The server owns no known positive reservation until a response is

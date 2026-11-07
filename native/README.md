@@ -178,9 +178,11 @@ deployed `get-matchup-strategy`, `get-strategy` and
 IDs **1–40** and distinct targeting IDs **1–40**, exact 53-bit request
 hashes, and unsigned matchup identities. Request hashes are allocated once by the client
 transport for **all** message types; multiple Levels may share one WebSocket
-and one server Hive Mind Game. Each strategy request captures its squad
-lifecycle, so a late response for a retired squad becomes an explicit
-reservation-discard obligation rather than an executable command.
+and one server Hive Mind Game. Each strategy request captures both the requesting Squad lifetime and
+its original targeted enemy lifetime, so a late response cannot adopt
+a replacement pooled squad with the same ItemId. Target-dependent
+commands reject that stale lifetime and preserve their returned
+OutcomeIds for explicit discard; no new server wire field is needed.
 
 For completed commands, the game must settle every issued primary/shooting
 OutcomeId, independently decide whether a targeting reservation earned TSV,
