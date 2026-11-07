@@ -2981,6 +2981,10 @@ class ExperimentHub {
             (!Array.isArray(expected)||expected.length!==cancelledIds.length||
              cancelledIds.some((id,index)=>id!==expected[index])))
             throw Error('The queued successors changed. Review the refreshed sequence before cancelling.');
+        if(next.candidate_selections?.some(plan=>
+            ['waiting','needs_review'].includes(plan.status)&&
+            future.some(job=>plan.candidate_job_ids.includes(job.id))))
+            throw Error('Cancel the unresolved candidate selection before cancelling its queued successor.');
         const cancellationTime=now();
         // Descendants first. Reuse existing unstarted lease release and
         // GPU-qualification cancellation, then commit every state together.
@@ -3037,6 +3041,10 @@ class ExperimentHub {
     cancelUnstartedJob(next,job,cancelledAt) {
         if (job.dispatch_id||!['waiting_adapter','waiting_predecessor'].includes(job.status))
             throw Error('Only unstarted jobs can be cancelled without an execution adapter.');
+        if(next.candidate_selections?.some(plan=>
+            ['waiting','needs_review'].includes(plan.status)&&
+            plan.candidate_job_ids.includes(job.id)))
+            throw Error('Cancel the unresolved candidate selection before cancelling its candidate.');
         if(next.jobs.some(j=>
             (j.continuation_of_job_id===job.id||j.after_job_id===job.id)&&
             j.status!=='cancelled'))
