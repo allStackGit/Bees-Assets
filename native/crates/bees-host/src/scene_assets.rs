@@ -23,6 +23,8 @@ use bees_sim::combat_world::{AsteroidFragmentationConfig, CombatWorld, CombatWor
 use bees_sim::physics::{CollisionMatrix, CollisionMatrixAssetError};
 use bees_sim::ship_assets::{AssetError, ShipAssetCatalog};
 use bees_sim::projectile_assets::{ProjectileAssetError, ProjectileAssetCatalog};
+use bees_sim::box_obstacle_assets::{BoxObstacleCatalog, BoxObstacleAssetError};
+use bees_sim::polygon_obstacle_assets::{PolygonObstacleCatalog, PolygonObstacleAssetError};
 
 #[derive(Debug)]
 pub enum NativeSceneAssetError {
@@ -31,6 +33,8 @@ pub enum NativeSceneAssetError {
     FragmentPalette(FragmentError),
     ShipCatalog(AssetError),
     ProjectileCatalog(ProjectileAssetError),
+    BoxCatalog(BoxObstacleAssetError),
+    PolygonCatalog(PolygonObstacleAssetError),
     CollisionMatrix(CollisionMatrixAssetError),
     StagePalette(FullAsteroidSpawnError),
 }
@@ -44,6 +48,8 @@ pub struct NativeSceneAssets {
     fragment_palette: AsteroidFragmentPalette,
     ship_catalog: Arc<ShipAssetCatalog>,
     projectile_catalog: Arc<ProjectileAssetCatalog>,
+    box_catalog: Arc<BoxObstacleCatalog>,
+    polygon_catalog: Arc<PolygonObstacleCatalog>,
 }
 
 impl NativeSceneAssets {
@@ -73,9 +79,13 @@ impl NativeSceneAssets {
             .map_err(NativeSceneAssetError::ShipCatalog)?);
         let projectile_catalog = Arc::new(ProjectileAssetCatalog::embedded()
             .map_err(NativeSceneAssetError::ProjectileCatalog)?);
+        let box_catalog = Arc::new(BoxObstacleCatalog::embedded()
+            .map_err(NativeSceneAssetError::BoxCatalog)?);
+        let polygon_catalog = Arc::new(PolygonObstacleCatalog::embedded()
+            .map_err(NativeSceneAssetError::PolygonCatalog)?);
         Ok(Self {
             collision_matrix, asteroid_stage, fragment_palette,
-            ship_catalog, projectile_catalog,
+            ship_catalog, projectile_catalog, box_catalog, polygon_catalog,
         })
     }
 
@@ -86,6 +96,8 @@ impl NativeSceneAssets {
     }
 
     pub fn ship_catalog(&self) -> &ShipAssetCatalog { &self.ship_catalog }
+    pub fn box_catalog(&self) -> &BoxObstacleCatalog { &self.box_catalog }
+    pub fn polygon_catalog(&self) -> &PolygonObstacleCatalog { &self.polygon_catalog }
 
     pub fn projectile_catalog(&self) -> Arc<ProjectileAssetCatalog> {
         Arc::clone(&self.projectile_catalog)

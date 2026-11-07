@@ -9,7 +9,7 @@ use bees_gameplay::level_events::NativeLevelEventProcessor;
 use bees_gameplay::level_rules::NativeLevelState;
 use bees_gameplay::squads::SquadRosterError;
 use bees_hivemind::session::SquadLifetime;
-use bees_sim::collision::Aabb;
+use bees_sim::collision::{Aabb, Pose};
 use bees_sim::combat::ShipVitals;
 use bees_sim::combat_world::{CombatWorld, CombatWorldError};
 use bees_sim::control::PolicyFrame;
@@ -32,6 +32,22 @@ pub struct NativeAuthoredShip {
 }
 
 /// Exact source SquadLifetime. A pooled Squad ID alone is not sufficient.
+/// The actual Stage/Level spawn order across ship and static obstacle
+/// types. Do not sort by entity ID or type: Unity's source list order
+/// matters for event ordering and source identity allocation.
+pub enum NativeAuthoredEntity {
+    Ship(NativeAuthoredShip),
+    BoxObstacle {
+        entity_id: i64,
+        prefab_name: String,
+        pose: Option<Pose>,
+    },
+    PolygonObstacle {
+        entity_id: i64,
+        pose: Option<Pose>,
+    },
+}
+
 pub struct NativeAuthoredSquad {
     pub owner: SquadLifetime,
     pub side: i32,
@@ -44,7 +60,7 @@ pub struct NativeAuthoredLevel<M, A> {
     pub broadphase_bounds: Aabb,
     pub broadphase_cell_size: f32,
     pub decision_period: NonZeroU32,
-    pub ships: Vec<NativeAuthoredShip>,
+    pub entities: Vec<NativeAuthoredEntity>,
     pub squads: Vec<NativeAuthoredSquad>,
     /// Exact scenario count, not a population estimate.
     pub initial_full_asteroids: usize,
@@ -72,7 +88,7 @@ impl NativeSceneAssets {
         &self,
         authored: NativeAuthoredLevel<M, A>,
     ) -> Result<World<NativeLevelState<M, A>>, NativeSceneBuildError> {
-        if authored.ships.is_empty() {
+        if authored.entities.is_empty() {
             return Err(NativeSceneBuildError::EmptyScene);
         }
         let mut combat = CombatWorld::new(
@@ -83,7 +99,23 @@ impl NativeSceneAssets {
         self.configure_combat_world(&mut combat)
             .map_err(NativeSceneBuildError::Combat)?;
 
-        for ship in authored.ships {
+        for entity in authored.entities {
+            let NativeAuthoredEntity::Ship(ship) = entity else {
+                match entity {
+                    NativeAuthoredEntity::BoxObstacle {
+                        entity_id, prefab_name, pose,
+                    } => combat.spawn_box_obstacle(
+                        self.box_catalog(), &prefab_name, entity_id, pose,
+                    ).map_err(NativeSceneBuildError::Combat)?,
+                    NativeAuthoredEntity::PolygonObstacle {
+                        entity_id, pose,
+                    } => combat.spawn_polygon_obstacle(
+                        self.polygon_catalog(), entity_id, pose,
+                    ).map_err(NativeSceneBuildError::Combat)?,
+                    NativeAuthoredEntity::Ship(_) => unreachable!(),
+                }
+                continue;
+            };
             let asset = self.ship_catalog().by_type(ship.ship_type)
                 .ok_or(NativeSceneBuildError::MissingShipAsset(ship.ship_type))?;
             combat.spawn_ship(
@@ -100,6 +132,9 @@ impl NativeSceneAssets {
                 combat.bind_policy_ship(ship.entity_id, frame, movement_disabled)
                     .map_err(NativeSceneBuildError::Combat)?;
             }
+        }
+        if combat.total_living_ships() == 0 {
+            return Err(NativeSceneBuildError::EmptyScene);
         }
         let mut events = NativeLevelEventProcessor::new(authored.episode);
         for squad in authored.squads {
