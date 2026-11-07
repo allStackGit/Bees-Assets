@@ -1446,6 +1446,8 @@ impl NativePhysicalScene {
                     return Err(NativeSnapshotError::InvalidGroupSource);
                 };
                 if binding.team_id != member.team_id ||
+                    binding.movement_disabled !=
+                        group.movement_disabled_by_team[usize::from(member.team_id)] ||
                     live_ships.get(&member.ship_id) != Some(&member.side) ||
                     !bound_ship_ids.insert(member.ship_id)
                 {
