@@ -91,8 +91,9 @@ struct LevelConfig {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ModelUpdateConfig {
-    /// Global completed rollout round. Changes occur only at this exact
-    /// completed-window boundary, never during a model or physics step.
+    /// Earliest completed rollout round at which a model can change.
+    /// The runner finishes every live episode first and switches before
+    /// recycling them, so benchmark outcomes never mix policy versions.
     at_round: u64,
     manifest: PathBuf,
 }
@@ -562,14 +563,17 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut rounds = 0_u64;
     let mut failed_window = None;
     let mut completed_episodes = vec![0_u32; config.levels.len()];
+    // A world may finish before other arenas and remain paused at a
+    // model boundary. Count each physical episode revision exactly once.
+    let mut counted_revisions = vec![None::<u64>; config.levels.len()];
     let mut next_model_update = 0usize;
     while rounds < config.max_rounds {
         let until_update = config.model_updates.get(next_model_update)
+            .filter(|item| item.at_round > rounds)
             .map_or(config.max_rounds, |item| item.at_round);
-        // A model update requires all preceding observations, actions,
-        // gameplay and group rewards to have crossed a completed window.
-        // Split a window exactly at the requested round; never reload a
-        // partial BINF frame or let two policies be used in one batch.
+        // Treat at_round as the earliest eligibility point. Completing
+        // the current episodes before reloading prevents mixed-model
+        // evaluation outcomes, even if episodes have different lengths.
         let remaining = (config.max_rounds - rounds)
             .min(until_update - rounds);
         let count = nonzero(remaining.min(u64::from(window.get())) as u32, "window")?;
@@ -584,9 +588,91 @@ fn main() -> Result<(), Box<dyn Error>> {
             }
         };
         rounds += u64::from(counts.rounds);
-        // The reset is an independent fallible transaction. Errors are
-        // reported through the same end-of-run abort/report path as a bad
-        // model step, rather than escaping main() with live Levels.
+        // Pause completed worlds while the slowest active arena reaches
+        // the same model-change boundary. A physical episode must never
+        // contribute a partially old/partially new benchmark result.
+        let completion = (|| -> io::Result<bool> {
+            let mut all_finished = true;
+            for index in 0..config.levels.len() {
+                let world = host.simulation().world(index)
+                    .ok_or_else(|| invalid("registered Level disappeared"))?;
+                if world.state.events.was_aborted() || world.is_failed() ||
+                    world.state.events.is_failed()
+                {
+                    return Err(invalid("failed or aborted world cannot satisfy a model boundary"));
+                }
+                if !world.state.events.completed() {
+                    all_finished = false;
+                    continue;
+                }
+                let revision = world.episode_revision();
+                if counted_revisions[index] != Some(revision) {
+                    if completed_episodes[index] >= config.episodes_per_world {
+                        return Err(invalid("world exceeded its configured episode budget"));
+                    }
+                    completed_episodes[index] += 1;
+                    counted_revisions[index] = Some(revision);
+                }
+            }
+            Ok(all_finished)
+        })();
+        let all_finished = match completion {
+            Ok(value) => value,
+            Err(error) => {
+                failed_window = Some(format!("episode accounting: {error}"));
+                break;
+            }
+        };
+        let update_due = config.model_updates.get(next_model_update)
+            .is_some_and(|item| rounds >= item.at_round);
+        if update_due && all_finished {
+            // An overrun may have crossed another scheduled threshold
+            // while slower worlds finished. Never claim an intermediate
+            // checkpoint was meaningfully evaluated when it ran zero
+            // simulated rounds.
+            if config.model_updates.get(next_model_update + 1)
+                .is_some_and(|item| rounds >= item.at_round)
+            {
+                failed_window = Some(format!(
+                    "model schedule thresholds crossed before an episode boundary at round {rounds}",
+                ));
+                break;
+            }
+            let update = &config.model_updates[next_model_update];
+            let previous_generation = host.model_mut().model_generation();
+            let evaluation_before_update =
+                host.sink_mut().measurements().clone();
+            match host.model_mut().reload_manifest(
+                &resolve(root, &update.manifest),
+            ) {
+                Ok(generation) => {
+                    let manifest_sha256 =
+                        host.model_mut().model_manifest_sha256();
+                    println!("{}", json!({
+                        "kind": "policy_updated",
+                        "run_id": config.run_id,
+                        "requested_round": update.at_round,
+                        "rounds": rounds,
+                        "previous_policy_generation": previous_generation,
+                        "policy_generation": generation,
+                        "policy_manifest_sha256": manifest_sha256,
+                        "evaluation_before_update": evaluation_before_update,
+                        "manifest": update.manifest,
+                    }));
+                    next_model_update += 1;
+                }
+                Err(error) => {
+                    failed_window = Some(format!(
+                        "scheduled policy update at episode boundary round {rounds}: {error:?}"
+                    ));
+                    break;
+                }
+            }
+        }
+        let holding_for_update = update_due && !all_finished;
+        // The reset is independently guarded by the normal episode
+        // delivery barrier. No completed world may be reset while its
+        // peers are still finishing a checkpoint transition.
         let recycling = (|| -> io::Result<usize> {
             let mut recycled = 0usize;
             for (index, level) in config.levels.iter().enumerate() {
@@ -594,12 +680,8 @@ fn main() -> Result<(), Box<dyn Error>> {
                     .ok_or_else(|| invalid("registered Level disappeared"))?
                     .state.events.completed();
                 if !finished ||
-                    completed_episodes[index] == config.episodes_per_world
-                {
-                    continue;
-                }
-                completed_episodes[index] += 1;
-                if completed_episodes[index] == config.episodes_per_world ||
+                    holding_for_update ||
+                    completed_episodes[index] >= config.episodes_per_world ||
                     rounds == config.max_rounds
                 {
                     continue;
@@ -668,34 +750,17 @@ fn main() -> Result<(), Box<dyn Error>> {
             }
         }
         if counts.stopped_with_no_live_worlds && recycled == 0 { break; }
-        if config.model_updates.get(next_model_update)
-            .is_some_and(|item| item.at_round == rounds)
-        {
-            let update = &config.model_updates[next_model_update];
-            match host.model_mut().reload_manifest(
-                &resolve(root, &update.manifest),
-            ) {
-                Ok(generation) => {
-                    let manifest_sha256 =
-                        host.model_mut().model_manifest_sha256();
-                    println!("{}", json!({
-                        "kind": "policy_updated",
-                        "run_id": config.run_id,
-                        "rounds": rounds,
-                        "policy_generation": generation,
-                        "policy_manifest_sha256": manifest_sha256,
-                        "manifest": update.manifest,
-                    }));
-                    next_model_update += 1;
-                }
-                Err(error) => {
-                    failed_window = Some(format!(
-                        "scheduled policy update at round {rounds}: {error:?}"
-                    ));
-                    break;
-                }
-            }
+        if counts.stopped_with_no_live_worlds && holding_for_update {
+            failed_window = Some("model boundary has no active worlds but still lacks a completed episode".into());
+            break;
         }
+    }
+
+    if failed_window.is_none() && next_model_update < config.model_updates.len() {
+        failed_window = Some(format!(
+            "{} scheduled policy updates were not reached before the run ended",
+            config.model_updates.len() - next_model_update,
+        ));
     }
 
     // A finite run budget is an intentional stop, NEVER a fake terminal
