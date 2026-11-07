@@ -128,6 +128,7 @@ internal static class NativePhysicalSceneExporter
     {
         public int bee_side, human_side, bee_starting_tsv, human_starting_tsv;
         public int episode_number;
+        public bool team0_movement_disabled, team1_movement_disabled;
         public float timeout_seconds;
         public int[] discovery_baselines;
         public List<SourceGroupParticipant> group_participants =
@@ -357,6 +358,10 @@ internal static class NativePhysicalSceneExporter
                     "Source MA-POCA episode identity is unavailable.");
             }
             snapshot.policy_episode.episode_number = episodeNumber;
+            snapshot.policy_episode.team0_movement_disabled =
+                RlOneVsOneTrainingBootstrap.CurrentMovementDisabledForTeam(0);
+            snapshot.policy_episode.team1_movement_disabled =
+                RlOneVsOneTrainingBootstrap.CurrentMovementDisabledForTeam(1);
             var registeredBoundShips = new HashSet<long>();
             foreach (var member in RlOneVsOneAgent.ReadNativeGroupMembers(level))
             {
