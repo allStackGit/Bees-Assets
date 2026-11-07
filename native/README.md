@@ -3,6 +3,41 @@
 This directory is the beginning of the Unity-independent replacement platform,
 created from the current `feat/experiment-queue-ui` branch.
 
+## Authored Unity scene bridge (schema 4)
+
+The Unity Editor menu **Bees > Native > Export Selected Level Physical
+Scene** reads the selected live Level and exports
+`Assets/native/assets/unity-physical-<level>.json`. The editor-only code is
+in `Scripts/Scenes/NativePhysicalSceneExporter.cs` under
+`#if UNITY_EDITOR` because it needs the game's internal ship, policy
+communication and asteroid state. Player builds do not include it.
+
+`bees-host::unity_scene_snapshot::NativePhysicalScene::read` imports
+the real world bounds, physics step, source entity IDs, ship health,
+movement, persistent fleet mining, observed weapons, turret mounts and
+projectile speeds, source-order live squads, and ordinary intact asteroid/
+static obstacle placements. It rejects incomplete squad coverage,
+duplicate IDs and unsupported snapshots instead of making up values.
+`NativePhysicalScene::squads_for_level` retains Unity's Stage-allocated
+`Squad.ItemId` as the actual lifetime identity for a caller-selected Level.
+
+For the policy-only native path, bind each **real** source policy frame
+with `bind_policy_ship`, then call `into_policy_only_level` with explicit
+`NativePolicyOnlyLevelSetup` (real v26 policy routes, agent capability
+and navigation/exploration inputs, reward coordinator and optional group
+identities). The resulting `NativeAuthoredLevel` feeds
+`NativeSceneAssets::build_runtime` alongside the actual loaded
+`ResidentPolicyProcess` and a durable notification sink.
+The same `CombatWorld` feeds rendered read-only body views and
+headless inference/physics steps.
+
+**This is not a resumed game checkpoint or a finished playable build.**
+In-flight projectiles, learned discovery, pending commands/outcomes,
+model weights, agent-group history and PPO trajectories cannot be inferred
+from a physical snapshot. There is still no full native game
+presentation, optimizer/learner or validated Windows/Linux runtime parity.
+Do not use the snapshot to resume an active match.
+
 ## Non-negotiable boundaries
 
 - Exactly one authoritative set of gameplay rules must power both the rendered

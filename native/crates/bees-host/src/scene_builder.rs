@@ -56,9 +56,10 @@ pub struct NativeAuthoredPolicy {
     pub turrets: Vec<NativeAuthoredTurret>,
 }
 
-/// The actual Stage/Level spawn order across ship and static obstacle
-/// types. Do not sort by entity ID or type: Unity's source list order
-/// matters for event ordering and source identity allocation.
+/// Real authored world entities with original source IDs. Unity allocates
+/// these monotonically across ships and obstacles, even though its GameState
+/// stores them in separate lists. Sort once by that ID at setup to recover
+/// original creation order; never reorder the live physics hot path.
 pub enum NativeAuthoredEntity {
     Ship(NativeAuthoredShip),
     BoxObstacle {
