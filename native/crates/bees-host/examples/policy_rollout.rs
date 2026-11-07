@@ -12,7 +12,7 @@ use std::cell::Cell;
 use std::collections::{HashMap, HashSet};
 use std::env;
 use std::error::Error;
-use std::fs::File;
+use std::fs::{self, File};
 use std::io::{self, ErrorKind};
 use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
@@ -82,11 +82,15 @@ struct RunConfig {
     broadphase_cell_size: f32,
     decision_period: u32,
     max_rounds: u64,
+    #[serde(default = "one_episode")]
+    episodes_per_world: u32,
     rounds_per_window: u32,
     delivery_every: u32,
     timing_sample_period: Option<u32>,
     levels: Vec<LevelConfig>,
 }
+
+fn one_episode() -> u32 { 1 }
 
 fn invalid(message: impl Into<String>) -> io::Error {
     io::Error::new(ErrorKind::InvalidInput, message.into())
@@ -118,6 +122,42 @@ fn vec2(coordinates: [f32; 2]) -> Vec2 {
     Vec2::new(coordinates[0], coordinates[1])
 }
 
+fn allocate_from_stage(next_id: Rc<Cell<i64>>) -> MinionAllocator {
+    Box::new(move |mother, _beacon| {
+        let item_id = next_id.get();
+        let next = item_id.checked_add(1)
+            .ok_or(SquadRosterError::InvalidOwner)?;
+        next_id.set(next);
+        Ok(SquadLifetime {
+            level_id: mother.level_id,
+            squad_id: item_id,
+            lifecycle_id: item_id as u64,
+        })
+    })
+}
+
+fn make_setup(
+    config: &RunConfig,
+    level: &LevelConfig,
+    assets: &NativeSceneAssets,
+    period: NonZeroU32,
+    next_id: Rc<Cell<i64>>,
+    seed: u64,
+) -> NativeExportedPolicyLevelSetup<MinionAllocator> {
+    NativeExportedPolicyLevelSetup {
+        world_id: WorldId(level.world_id),
+        level_id: level.level_id,
+        seed,
+        broadphase_cell_size: config.broadphase_cell_size,
+        decision_period: period,
+        initial_full_asteroids: 0,
+        groups: None,
+        ship_catalog: assets.shared_ship_catalog(),
+        model_slots: level.model_slots.clone(),
+        allocate_minion: allocate_from_stage(next_id),
+    }
+}
+
 fn main() -> Result<(), Box<dyn Error>> {
     let mut args = env::args_os().skip(1);
     let config_path = PathBuf::from(args.next().ok_or_else(|| {
@@ -138,6 +178,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         .transpose()?;
     if config.run_id.trim().is_empty() || config.stage_name.trim().is_empty() ||
         config.levels.is_empty() || config.max_rounds == 0 ||
+        config.episodes_per_world == 0 ||
         !config.broadphase_cell_size.is_finite() ||
         config.broadphase_cell_size <= 0.0 ||
         config.next_squad_item_id <= 0 ||
@@ -187,6 +228,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut world_ids = HashSet::new();
     let mut highest_squad_item_id = 0_i64;
     let mut source_levels = Vec::with_capacity(config.levels.len());
+    // Cache the verified snapshots for repeat episodes. Edits to the
+    // source files during a run cannot silently change scenario rules.
+    let mut source_jsons = Vec::with_capacity(config.levels.len());
     for level in &config.levels {
         if level.level_id <= 0 || level.world_id == 0 ||
             !level_ids.insert(level.level_id) ||
@@ -196,7 +240,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         {
             return Err(invalid("duplicate/invalid Level or missing real model slot").into());
         }
-        let source = NativePhysicalScene::read(&resolve(root, &level.scene))
+        let source_json = fs::read_to_string(resolve(root, &level.scene))?;
+        let source = NativePhysicalScene::parse(&source_json)
             .map_err(|error| contextual("exported Level", error))?;
         if source.stage_name != config.stage_name {
             return Err(invalid("exported Level belongs to a different Stage").into());
@@ -210,6 +255,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             }
         }
         source_levels.push(source);
+        source_jsons.push(source_json);
     }
     if config.next_squad_item_id <= highest_squad_item_id {
         return Err(invalid(
@@ -223,30 +269,13 @@ fn main() -> Result<(), Box<dyn Error>> {
     let next_id = Rc::new(Cell::new(config.next_squad_item_id));
     let mut launches = Vec::with_capacity(source_levels.len());
     for (source, level) in source_levels.into_iter().zip(&config.levels) {
-        let next_id = Rc::clone(&next_id);
-        let allocate_minion: MinionAllocator = Box::new(move |mother, _beacon| {
-            let item_id = next_id.get();
-            let next = item_id.checked_add(1)
-                .ok_or(SquadRosterError::InvalidOwner)?;
-            next_id.set(next);
-            Ok(SquadLifetime {
-                level_id: mother.level_id,
-                squad_id: item_id,
-                lifecycle_id: item_id as u64,
-            })
-        });
-        launches.push((source, NativeExportedPolicyLevelSetup {
-            world_id: WorldId(level.world_id),
-            level_id: level.level_id,
-            seed: level.seed,
-            broadphase_cell_size: config.broadphase_cell_size,
-            decision_period: period,
-            initial_full_asteroids: 0,
-            groups: None,
-            ship_catalog: assets.shared_ship_catalog(),
-            model_slots: level.model_slots.clone(),
-            allocate_minion,
-        }));
+        launches.push((
+            source,
+            make_setup(
+                &config, level, &assets, period,
+                Rc::clone(&next_id), level.seed,
+            ),
+        ));
     }
 
     let model = ResidentPolicyProcess::python_worker(
@@ -268,6 +297,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         "run_id": config.run_id,
         "stage_name": config.stage_name,
         "worlds": config.levels.len(),
+        "episodes_per_world": config.episodes_per_world,
         "decision_period": config.decision_period,
         "delivery_every": config.delivery_every,
         "timing_sample_period": config.timing_sample_period,
@@ -275,6 +305,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let mut rounds = 0_u64;
     let mut failed_window = None;
+    let mut completed_episodes = vec![0_u32; config.levels.len()];
     while rounds < config.max_rounds {
         let remaining = config.max_rounds - rounds;
         let count = nonzero(remaining.min(u64::from(window.get())) as u32, "window")?;
@@ -299,7 +330,51 @@ fn main() -> Result<(), Box<dyn Error>> {
                 "metrics": status,
             }));
         }
-        if counts.stopped_with_no_live_worlds { break; }
+        // A successful run_window has already durably delivered the final
+        // event prefix and retired this world's old squad lifetimes. The
+        // driver reset guard checks those obligations once more before
+        // replacing anything. Worlds with exhausted episode budgets remain
+        // completed and are skipped by future simulation windows.
+        let mut recycled = 0usize;
+        for (index, level) in config.levels.iter().enumerate() {
+            let finished = host.simulation().world(index)
+                .ok_or_else(|| invalid("registered Level disappeared"))?
+                .state.events.completed();
+            if !finished || completed_episodes[index] == config.episodes_per_world {
+                continue;
+            }
+            completed_episodes[index] += 1;
+            if completed_episodes[index] == config.episodes_per_world ||
+                rounds == config.max_rounds
+            {
+                continue;
+            }
+            let mut scene = NativePhysicalScene::parse(&source_jsons[index])
+                .map_err(|error| contextual("cached authored Level", error))?;
+            // A newly constructed Unity Squad receives a NEW Stage
+            // Pool.ItemCount even if its serialized template is identical.
+            // Never reuse a retired HiveMind lifetime across episodes.
+            for squad in &mut scene.source_squads {
+                let item_id = next_id.get();
+                let following = item_id.checked_add(1)
+                    .ok_or_else(|| invalid("Stage squad identities exhausted"))?;
+                next_id.set(following);
+                squad.item_id = item_id;
+            }
+            let seed = level.seed.wrapping_add(u64::from(completed_episodes[index]));
+            let setup = make_setup(
+                &config, level, &assets, period, Rc::clone(&next_id), seed,
+            );
+            let authored = scene.into_exported_policy_only_level(setup)
+                .map_err(|error| contextual("replayed Level source", error))?;
+            let replacement = assets.build_level(authored)
+                .map_err(|error| contextual("replayed Level assembly", error))?
+                .state;
+            host.reset_world(index, seed, replacement)
+                .map_err(|error| contextual("guarded Level reset", error))?;
+            recycled += 1;
+        }
+        if counts.stopped_with_no_live_worlds && recycled == 0 { break; }
     }
 
     // A finite run budget is an intentional stop, NEVER a fake terminal
@@ -328,6 +403,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         "kind": "run_final",
         "run_id": config.run_id,
         "rounds": rounds,
+        "completed_episodes": completed_episodes.iter()
+            .map(|&count| u64::from(count)).sum::<u64>(),
         "completed_worlds": status.completed_worlds,
         "aborted_worlds": status.aborted_worlds,
         "failed_worlds": status.failed_worlds,
