@@ -171,6 +171,23 @@ updates source Ship.OffsetFromCenter and composition bans using the
 authoritative sprite catalog, and in-flight command member snapshots
 rebase without restarting timers or server reservations.
 
+A native client or worker initializes a `Simulation<NativeLevelState,
+NativeLevelRules>`, registers its worlds with
+`NativeLevelBatchDriver::from_simulation`, then calls
+`run_window` with a real `NativePolicyInference` backend, the one
+connection-owned `HiveMindSession` and its durable
+`NativeLevelNotificationSink`. The explicit delivery interval can be
+1 for rendered gameplay or larger for bounded headless windows. Incoming
+strategy/targeting replies use `receive_strategy_response` and
+`receive_targeting_response` to route by the original Squad lifetime;
+the latter returns the still-uninstalled targeting reservation to the
+source Level. On a failed step or intentional stop, call
+`stop_world_and_deliver` with the proper failed/normal stop kind,
+then `reset_world_after_delivery` only after every notification and
+connection retirement has been handled. No method retries an ambiguous
+partial world update, fabricates a model action, or commits unearned
+training outcomes.
+
 `NativeLevelInferenceBatch::poca_dimension_activity`
 exports the source PPO's 22 activity weights from the *same* validated
 observations, masks and selected actions, requiring live POCA groupmate
