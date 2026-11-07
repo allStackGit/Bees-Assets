@@ -69,7 +69,7 @@ def save_cursor(path: Path, cursor: dict):
     os.replace(pending, path)
 
 
-def passed_receipt(path: Path, dispatch: str, suite: dict, job: dict) -> bool:
+def passed_receipt(path: Path, dispatch: str, suite: dict, job: dict, expected_digest: str) -> bool:
     try:
         receipt = json.loads(read_bounded(path, 4096))
         successes = receipt["successes"]
@@ -78,6 +78,7 @@ def passed_receipt(path: Path, dispatch: str, suite: dict, job: dict) -> bool:
             receipt["schema_version"] == 1
             and receipt["dispatch_id"] == dispatch
             and receipt["suite_id"] == suite["suite_id"]
+            and receipt.get("suite_sha256") == expected_digest
             and (not job.get("suite_sha256") or receipt.get("suite_sha256") == job["suite_sha256"])
             and SHA256.fullmatch(receipt.get("checkpoint_sha256", ""))
             and type(trials) is int
@@ -108,7 +109,7 @@ def flush_receipt(args, suite: dict, pending: dict) -> None:
     # worker and Hub verify independently. Do not discard completed work
     # because a heartbeat expires during a long independent evaluation.
     destination = args.receipt_root / f"{dispatch}.{suite['suite_id']}.json"
-    if not passed_receipt(destination, dispatch, suite, job):
+    if not passed_receipt(destination, dispatch, suite, job, receipt["suite_sha256"]):
         print(publish(args.receipt_root, receipt))
 
 
@@ -146,7 +147,7 @@ def poll_checkpoint(args, project, suite, receipt_suite, find_checkpoint, evalua
                     print(f"{project} evaluation target {dispatch} requires a different suite definition.", file=sys.stderr)
                     continue
                 receipt = args.receipt_root / f"{dispatch}.{suite_id}.json"
-                if passed_receipt(receipt, dispatch, receipt_suite, job):
+                if passed_receipt(receipt, dispatch, receipt_suite, job, digest):
                     continue
                 checkpoint = find_checkpoint(job)
                 if not checkpoint or checkpoint[0] <= cursor[dispatch]:
