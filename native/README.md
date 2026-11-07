@@ -475,6 +475,44 @@ performance needs profiling at 1v1 and large-battle sizes. These are
 runtime comparisons remain necessary once a native executable loop exists. The shared simulation
 stays platform-independent for Windows and Linux.
 
+## Resident neural inference backend
+
+`bees-host::policy_process::ResidentPolicyProcess` now implements the
+actual `NativePolicyInference` model boundary, not a fake policy. One
+resident Python/PyTorch worker holds loaded model weights on CPU or GPU
+(`cuda` is also PyTorch's ROCm device name on supported Linux builds);
+it receives one dense, little-endian binary v26 batch, groups rows by
+model slot, applies the real discrete masks through the model, and returns
+exactly sixteen continuous and six discrete actions per row. Headers bind
+replies to a monotonically increasing batch sequence. The worker
+handshakes the **entire** frozen `POLICY_SIGNATURE` and version 26
+before accepting a single observation. Rust sends zero-copy float slices
+on little-endian CPUs; the model process never receives or mutates game
+world state. A malformed/incomplete response poisons the stream and the
+simulator rejects the entire batch before advancing physics.
+
+Launch with
+`ResidentPolicyProcess::python_worker("python", "native/tools/policy_worker.py", "native-models.json")`.
+The manifest must contain `format: "bees-native-torchscript-v1"`,
+`abi_version: 26`, the *exact* `policy_signature` from
+`bees_sim::policy::POLICY_SIGNATURE`, and
+`models: [{"slot":0, "path":"policy.pt", "device":"cpu"}]`
+(adjust real model paths/device/slots). The loaded TorchScript model must
+implement `forward(observation[N,7743], allowed_mask[N,15])` returning
+`(float32[N,16], integer[N,6])` with the original trained action
+sampling/learned weights; no wrapper is invented from dimensions alone.
+Both processes must use matching artifacts. Diagnostics go to stderr;
+stdout is exclusively binary protocol.
+
+**Boundary:** Existing ML-Agents checkpoints have NOT been exported to
+this exact scripted interface here. This backend is not yet an operating
+replacement for the original training system. Native PPO still requires
+the genuine stochastic-action log probabilities, value estimates,
+centralized group critic and completed rollout delivery. Inference
+latency includes process transfer and GPU synchronization. A larger
+native shared-memory/GPU execution path can be selected by the same
+`NativePolicyInference` trait without changing gameplay.
+
 ## v26 batched policy interface
 
 `bees-sim::policy_batch::PolicyBatch` provides a reusable, row-major
