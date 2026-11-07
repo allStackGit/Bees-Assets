@@ -14,6 +14,7 @@ use bees_gameplay::level_events::{
     NativeLevelNotification, NativeLevelNotificationKind,
 };
 use bees_gameplay::level_host::NativeLevelNotificationSink;
+use bees_gameplay::group_rewards::GroupRewardKind;
 use bees_sim::simulation::WorldId;
 use serde_json::json;
 
@@ -77,6 +78,52 @@ impl DurableDiagnosticNotifications {
             NativeLevelNotificationKind::EpisodeFinal(_) => "episode_final",
             NativeLevelNotificationKind::EpisodeAborted => "episode_aborted",
         };
+        // Keep exact numeric reward/terminal values machine-readable for
+        // diagnostics. MA-POCA's ELO marker and EndEpisode command must
+        // NEVER become PPO reward when this log is inspected or migrated.
+        let payload = match &notification.kind {
+            NativeLevelNotificationKind::Reward(value) => Some(json!({
+                "side": value.side, "reward": value.amount,
+            })),
+            NativeLevelNotificationKind::GroupReward(value) => {
+                let (group_kind, ppo_reward, elo_marker) = match value.kind {
+                    GroupRewardKind::Immediate =>
+                        ("immediate", Some(value.amount), None),
+                    GroupRewardKind::Terminal =>
+                        ("terminal", Some(value.amount), None),
+                    GroupRewardKind::EloMarker =>
+                        ("elo_marker", None, Some(value.amount)),
+                    GroupRewardKind::EndEpisode =>
+                        ("end_episode", None, None),
+                };
+                Some(json!({
+                    "side": value.side,
+                    "team_id": value.team_id,
+                    "episode_number": value.episode_number,
+                    "group_kind": group_kind,
+                    "ppo_reward": ppo_reward,
+                    "elo_marker": elo_marker,
+                }))
+            }
+            NativeLevelNotificationKind::EpisodeFinal(value) => Some(json!({
+                "winner_side": value.result.winner_side,
+                "timed_out": value.result.timed_out,
+                "duration_seconds": value.result.duration_seconds,
+                "bee_side_eliminated": value.result.bee_side_eliminated,
+                "human_side_eliminated": value.result.human_side_eliminated,
+                "bee_terminal": value.terminal_rewards.bee_terminal,
+                "human_terminal": value.terminal_rewards.human_terminal,
+                "bee_time": value.terminal_rewards.bee_time,
+                "human_time": value.terminal_rewards.human_time,
+                "bee_retained_mined_tsv":
+                    value.economic_rewards.bee_retained_mined_tsv,
+                "human_retained_mined_tsv":
+                    value.economic_rewards.human_retained_mined_tsv,
+                "bee_retained_reward": value.economic_rewards.bee_retained_reward,
+                "human_retained_reward": value.economic_rewards.human_retained_reward,
+            })),
+            _ => None,
+        };
         let record = json!({
             "schema_version": 1,
             "run_id": self.run_id,
@@ -85,6 +132,7 @@ impl DurableDiagnosticNotifications {
             "event_sequence": event_sequence,
             "tick": notification.tick,
             "kind": kind,
+            "payload": payload,
             "payload_debug": format!("{:?}", notification.kind),
         });
         serde_json::to_writer(&mut self.pending, &record)
