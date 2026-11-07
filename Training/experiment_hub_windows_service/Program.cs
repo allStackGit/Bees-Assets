@@ -151,6 +151,7 @@ internal static class HubService
                 throw new ArgumentException("Agent service requires a private environment file.");
             entrypoint=Local(Path.Combine(config.TrainingDirectory,
                 config.Role=="agent"?"experiment_hub_agent.js":"bees_experiments.js"));
+            _=Local(Path.Combine(config.TrainingDirectory,"experiment_hub_service_console.js"));
             if(args[0]=="--run-once")
             {
                 Console.CancelKeyPress+=(_,eventArgs)=>{eventArgs.Cancel=true;Stop.Set();};
@@ -190,6 +191,8 @@ internal sealed class NodeProcess : IDisposable
                 throw new InvalidOperationException("Direct-process ownership settings mismatch");
             var args=new List<string>{config.NodePath};
             if(config.EnvironmentFile is not null)args.Add("--env-file="+config.EnvironmentFile);
+            args.Add("--require");
+            args.Add(Path.Combine(config.TrainingDirectory,"experiment_hub_service_console.js"));
             args.Add(entry);
             var variables=new SortedDictionary<string,string>(StringComparer.OrdinalIgnoreCase);
             foreach(DictionaryEntry pair in Environment.GetEnvironmentVariables())
@@ -200,6 +203,10 @@ internal sealed class NodeProcess : IDisposable
                     key.StartsWith("EXPERIMENT_HUB_",StringComparison.OrdinalIgnoreCase)))
                     variables[key]=(string?)pair.Value??"";
             }
+            // These destinations come from the reviewed service configuration,
+            // not an environment file or an experiment's parameters.
+            variables["EXPERIMENT_HUB_SERVICE_LOG_ROOT"]=config.StateDirectory;
+            variables["EXPERIMENT_HUB_SERVICE_NAME"]=config.Name;
             var block=string.Join("\0",variables.Select(x=>x.Key+"="+x.Value))+"\0\0";
             IntPtr environment=Marshal.StringToHGlobalUni(block);
             try

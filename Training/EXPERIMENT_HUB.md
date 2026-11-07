@@ -726,12 +726,22 @@ An explicit service stop is a successful stop and requests no restart.
 
 The service writes one bounded latest-lifecycle JSON file per service in
 `-StateDirectory`, recording the observed Node identity and child exit status.
-Application output is not captured by this launcher. For local configuration
-diagnosis, `ExperimentHubWindowsService.exe --run-once C:HubPrivatecoordinator.json`
+It also timestamps application console output and uncaught JavaScript failures
+in `<service-name>.stdout.log` and `<service-name>.stderr.log`. Each channel
+keeps its current file and one `.previous` file, capped at 1 MiB each (4 MiB
+total per service). Oversized messages retain a marked tail. Keep this
+directory private; diagnostic output can contain local configuration details.
+The service logger does not intercept failures or change child exit status.
+Direct writes outside JavaScript console and errors before the Node preload
+runs are not captured by these files.
+
+For local configuration diagnosis,
+`ExperimentHubWindowsService.exe --run-once C:\Hub\Private\coordinator.json`
 uses the same native ownership path without installing a service or retrying.
+Its application console output goes to the same bounded files.
 Confirm the existing owner is stopped before using this command.
 
-Isolated Windows checks exercised the actual LocalService installation and
+Before console capture was added, isolated Windows checks exercised LocalService installation and
 Service Control Manager recovery after both a child failure and a service-host
 crash. Explicit stop did not restart the service; detached child processes
 survived. A separate native check observed four failed launches (the initial
@@ -739,11 +749,17 @@ launch plus exactly three retries), then a stopped service with no further
 restarts. Test-only retry delays were one second; the installed 60-second
 delays were inspected through the native service configuration.
 
-The same compiled ownership path also passed suspended launch, environment
-files, failed-child status and exit-code propagation. All temporary services
-were removed. Reboot behavior, real training owner reconnection, account access
-on deployed hosts, production training coexistence and long-duration operation
-remain unqualified. No production service was installed.
+The console-enabled build passed suspended launch, environment files,
+failed-child status and exit-code propagation through `--run-once`. Actual
+console and uncaught-error output remained bounded across repeated failures,
+rotation, an oversized message and a successful exit. A production-agent
+process check also recovered its original inert native job, advanced a second
+job once and released both claims with console capture enabled.
+
+Current-build LocalService/SCM qualification, reboot behavior, real training
+owner reconnection, deployed account access, production coexistence and
+long-duration operation remain unqualified. All earlier temporary services
+were removed; no production service was installed.
 
 ## Linux native supervisor and authenticated dispatch (CPU-only)
 
