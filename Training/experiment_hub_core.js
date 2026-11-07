@@ -1794,12 +1794,31 @@ class ExperimentHub {
             const progress=report.progress==null||job.project_id==='ants'
                 ?null:validateProgress(report.progress,job.project_id);
             if(['finished','failed','stopped'].includes(job.status)) {
-                // After a coordinator restart, recheck an unreleased
-                // historical terminal dispatch without changing its
-                // durable terminal state or checkpoint authority.
-                if(report.state===job.status)
+                // An authenticated same-dispatch native Inspect may supply
+                // an exact model identity missing from an older terminal
+                // record. Never rewrite previously pinned bytes, native
+                // status, or checkpoint ownership on a repeated report.
+                if(report.state===job.status) {
+                    if(report.checkpoint_model_sha256!=null) {
+                        const verified=job.status==='finished'
+                            ?job.checkpoint_ready_verified===true&&
+                                report.checkpoint_ready_verified===true
+                            :job.status==='stopped'&&
+                                job.checkpoint_stop_verified===true&&
+                                report.checkpoint_stop_verified===true;
+                        if(!verified||
+                            !SHA256.test(String(report.checkpoint_model_sha256))||
+                            (job.checkpoint_model_sha256&&
+                             job.checkpoint_model_sha256!==report.checkpoint_model_sha256))
+                            throw Error('Terminal model fingerprint changed or lacks native proof.');
+                        if(!job.checkpoint_model_sha256) {
+                            job.checkpoint_model_sha256=report.checkpoint_model_sha256;
+                            changed=true;
+                        }
+                    }
                     accepted.set(report.job_id,{progress:null,evaluation:null,
                         evaluationIssue:null,resources:null});
+                }
                 continue;
             }
             if(!['start_requested','launch_requested','running',
