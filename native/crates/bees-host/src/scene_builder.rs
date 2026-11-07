@@ -121,6 +121,9 @@ pub struct NativeAuthoredLevel<M, A> {
     pub broadphase_bounds: Aabb,
     pub broadphase_cell_size: f32,
     pub decision_period: NonZeroU32,
+    /// Source Stage.MakeShotsHarmless is part of the actual combat rules,
+    /// not a training-only damage model; do not assume false.
+    pub shots_harmless: bool,
     pub entities: Vec<NativeAuthoredEntity>,
     pub squads: Vec<NativeAuthoredSquad>,
     /// Exact scenario count, not a population estimate.
@@ -212,6 +215,7 @@ impl NativeSceneAssets {
         ).map_err(NativeSceneBuildError::Combat)?;
         self.configure_combat_world(&mut combat)
             .map_err(NativeSceneBuildError::Combat)?;
+        combat.shots_harmless = authored.shots_harmless;
 
         // Unity assigns GameState entity IDs from a monotonic Stage pool.
         // Imported ship/obstacle lists arrive separately; sort their

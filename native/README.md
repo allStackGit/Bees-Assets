@@ -3,7 +3,7 @@
 This directory is the beginning of the Unity-independent replacement platform,
 created from the current `feat/experiment-queue-ui` branch.
 
-## Authored Unity scene bridge (schema 7)
+## Authored Unity scene bridge (schema 8)
 
 The Unity Editor menu **Bees > Native > Export Selected Level Physical
 Scene** reads the selected live Level and exports
@@ -13,7 +13,7 @@ in `Scripts/Scenes/NativePhysicalSceneExporter.cs` under
 communication and asteroid state. Player builds do not include it.
 
 `bees-host::unity_scene_snapshot::NativePhysicalScene::read` imports
-the real world bounds, physics step, source entity IDs, ship health,
+the real world bounds, physics step, source Stage harmless-shot setting, source entity IDs, ship health,
 movement, persistent fleet mining, observed weapons, turret mounts and
 projectile speeds, source-order live squads, and ordinary intact asteroid/
 static obstacle placements (including pathfinder-owned map borders

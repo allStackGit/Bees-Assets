@@ -48,7 +48,7 @@ use crate::policy_only_metadata::{
     PolicyOnlyMetadataError,
 };
 
-const SNAPSHOT_VERSION: u32 = 7;
+const SNAPSHOT_VERSION: u32 = 8;
 
 #[derive(Deserialize, Clone, Copy)]
 struct UnityVec2 { x: f32, y: f32 }
@@ -65,6 +65,7 @@ struct UnitySnapshot {
     schema_version: u32,
     level_name: String,
     fixed_dt_seconds: f32,
+    shots_harmless: bool,
     min: UnityVec2,
     max: UnityVec2,
     ships: Vec<UnityShip>,
@@ -198,6 +199,7 @@ pub struct NativePhysicalScene {
     pub level_name: String,
     pub bounds: Aabb,
     pub fixed_dt_seconds: f32,
+    pub shots_harmless: bool,
     pub entities: Vec<NativeAuthoredEntity>,
     pub fleet: NativeFleetInventory,
     // Real authored physical mounts retained even for non-policy ships.
@@ -310,6 +312,7 @@ impl NativePhysicalScene {
             broadphase_bounds: self.bounds,
             broadphase_cell_size: setup.broadphase_cell_size,
             decision_period: setup.decision_period,
+            shots_harmless: self.shots_harmless,
             entities: self.entities,
             squads,
             initial_full_asteroids: setup.initial_full_asteroids,
@@ -725,6 +728,7 @@ impl NativePhysicalScene {
             level_name: raw.level_name,
             bounds: Aabb { min, max },
             fixed_dt_seconds: raw.fixed_dt_seconds,
+            shots_harmless: raw.shots_harmless,
             entities,
             fleet,
             turrets_by_ship,

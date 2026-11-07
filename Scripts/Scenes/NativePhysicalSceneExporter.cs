@@ -92,9 +92,10 @@ internal static class NativePhysicalSceneExporter
     [Serializable]
     private sealed class PhysicalScene
     {
-        public int schema_version = 7;
+        public int schema_version = 8;
         public string level_name;
         public float fixed_dt_seconds;
+        public bool shots_harmless;
         public Vector2 min, max;
         public List<SourceShip> ships = new List<SourceShip>();
         public List<SourceSquad> squads = new List<SourceSquad>();
@@ -122,6 +123,7 @@ internal static class NativePhysicalSceneExporter
             level_name = !string.IsNullOrEmpty(level.Name)
                 ? level.Name : level.gameObject.name,
             fixed_dt_seconds = level.Stage.FixedDeltaTime,
+            shots_harmless = level.Stage.MakeShotsHarmless,
             min = new Vector2(level.MinX, level.MinY),
             max = new Vector2(level.MaxX, level.MaxY)
         };
