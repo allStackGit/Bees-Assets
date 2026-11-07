@@ -422,12 +422,11 @@ impl NativeLevelInferenceBatch {
             return Err(NativeInferenceRunError::Backend(error));
         }
         let generation = backend.model_generation();
-        let finalized = self.finalize()
-            .map_err(NativeInferenceRunError::Boundary)?;
-        // Record the generation only for fully validated actions. An
-        // invalid/masked model result is never a PPO policy sample.
+        self.finalize().map_err(NativeInferenceRunError::Boundary)?;
+        // Record only a fully validated batch. Drop the temporary borrow
+        // returned by finalize before updating the cumulative measurement.
         self.measurements.last_model_generation = Some(generation);
-        Ok(finalized)
+        Ok(&self.keyed_decisions)
     }
 
     /// Export the complete source-defined PPO action activity weights
