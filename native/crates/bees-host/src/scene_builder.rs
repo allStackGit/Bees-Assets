@@ -5,7 +5,8 @@
 
 use std::num::NonZeroU32;
 use bees_gameplay::episode::NativeEpisodeRewardCoordinator;
-use bees_gameplay::level_events::NativeLevelEventProcessor;
+use bees_gameplay::level_events::{NativeLevelEventProcessor, NativeLevelEventError};
+use bees_gameplay::group_rewards::{NativeGroupRewardDelivery, GroupRewardError};
 use bees_gameplay::level_rules::{NativeLevelState, NativeLevelRewardMetadata, NativeLevelCommandContext};
 use bees_gameplay::level_host::{NativeLevelActivationContext, NativeLevelObservationContext, NativeLevelNotificationSink};
 use bees_gameplay::inference::NativePolicyInference;
@@ -75,6 +76,14 @@ pub struct NativeAuthoredSquad {
     pub members: Vec<i64>,
 }
 
+/// The original MA-POCA group agent IDs are NOT necessarily runtime ship
+/// IDs. Retain their exact source identity and true side; never infer a
+/// synthetic group participant from a physical hull.
+pub struct NativeAuthoredGroups {
+    pub delivery: NativeGroupRewardDelivery,
+    pub participants: Vec<(i32, u64)>,
+}
+
 pub struct NativeAuthoredLevel<M, A> {
     pub world_id: WorldId,
     pub seed: u64,
@@ -88,6 +97,10 @@ pub struct NativeAuthoredLevel<M, A> {
     /// Already configured with true starting TSV, sides, timeout and
     /// discovery baselines. It is NOT reconstructed from combat geometry.
     pub episode: NativeEpisodeRewardCoordinator,
+    /// None for rendered game without group rewards; Some for source MA-POCA
+    /// with original group identities. The same single event processor
+    /// publishes group rewards and terminal/ELO markers.
+    pub groups: Option<NativeAuthoredGroups>,
     pub metadata: M,
     pub allocate_minion: A,
 }
@@ -99,6 +112,8 @@ pub enum NativeSceneBuildError {
     Combat(CombatWorldError),
     Squad(SquadRosterError),
     IncompleteSquadRoster,
+    Group(GroupRewardError),
+    GroupConfiguration(NativeLevelEventError),
 }
 
 #[derive(Debug)]
@@ -212,6 +227,14 @@ impl NativeSceneAssets {
             return Err(NativeSceneBuildError::EmptyScene);
         }
         let mut events = NativeLevelEventProcessor::new(authored.episode);
+        if let Some(mut groups) = authored.groups {
+            for (side, agent_id) in groups.participants {
+                groups.delivery.register_agent(side, agent_id)
+                    .map_err(NativeSceneBuildError::Group)?;
+            }
+            events.configure_group_delivery(groups.delivery)
+                .map_err(NativeSceneBuildError::GroupConfiguration)?;
+        }
         for squad in authored.squads {
             events.roster_mut().register_squad(
                 &combat, squad.owner, squad.side, &squad.members,
