@@ -322,11 +322,13 @@ After restarting the coordinator, the operator may explicitly re-arm
 automation with **Re-adopt previously automated native jobs** selected.
 This can manage terminal capacity release for earlier automatic jobs
 only after the current authenticated agent has freshly inspected each
-running dispatch and acknowledged its matching native lease. Adoption
-does not relaunch a service, repeat an ambiguous Start, or resume a
-stopped job. Any unreleased earlier automated job with missing, stale,
-terminal, or uncertain native evidence blocks adoption until the
-operator inspects or releases it. All choices remain disarmed by default
+running or terminal dispatch and acknowledged its matching native lease.
+Adoption does not relaunch a service, repeat an ambiguous Start, or
+resume a stopped job. A verified terminal report is released through
+the same checkpoint and dependent-stage eligibility checks as a normal
+automated completion; an ineligible handoff disarms for review.
+Unreleased jobs with missing, stale, conflicting, or uncertain native
+evidence block adoption until the operator inspects or releases them. All choices remain disarmed by default
 after restart, and re-adoption does not bypass host preflight or
 checkpoint continuation proof.
 
@@ -339,8 +341,7 @@ the same live readiness gate as the manual Start button, or claim available
 CPU/RAM budget for an unassigned CPU-only non-Bees job or, when opted in,
 an exclusive single-GPU job. Jobs completed under older sessions require explicit capacity release
 unless their manual Start opted into terminal release, or the operator
-explicitly re-adopted their freshly verified running dispatch before
-completion. A machine cannot
+explicitly re-adopted their freshly verified running or terminal dispatch. A machine cannot
 receive a second automatic Start authorization while another Start is
 awaiting its native running/terminal acknowledgement. Project queues are
 interleaved fairly (FIFO within each project). Because automation makes
