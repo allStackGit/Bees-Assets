@@ -1440,8 +1440,8 @@ Deploy the updated supervisor before updating the pinned Windows owner.
 ## TinyBrains Ants-MAPOCA adapter
 
 `Training/experiment_hub_tinybrains_adapter.js` provides
-`createTinyBrainsAdapter` for fresh Windows CPU training jobs. Prepare a
-TinyBrains Ants-MAPOCA checkout with its Windows engine and cartridge,
+`createTinyBrainsAdapter` for native CPU training jobs. Prepare a
+TinyBrains Ants-MAPOCA checkout with its native engine and cartridge,
 and install the package into the Python environment the worker will use.
 Use a dedicated, existing artifact directory outside the checkout.
 Register a Hub project with ID `tinybrains` and include this entry in the
@@ -1467,14 +1467,23 @@ invalid profile prevents adapter startup and names the rejected profile.
 Compute
 the SHA-256 of the UTF-8 bytes of `JSON.stringify(profile, null, 2) + '\n'`
 after parsing that JSON. In Design, choose an approved profile from a
-connected Windows worker, enter the update count, and select **Use profile
+connected worker, enter the update count, and select **Use profile
 and update count**. The picker fills the draft without saving or starting it.
 For API callers, set `profile`, `profile_sha256`, and `updates` (a positive
-integer up to 10,000,000). Use a CPU/RAM claim on the configured Windows worker.
+integer up to 10,000,000). Use a CPU/RAM claim on the configured worker.
 The worker advertises approved profile names and digests. The Hub matches
 them before claiming capacity and checks again before dispatch. Install
 the updated worker before enabling placement on the updated coordinator.
 The adapter independently verifies the digest at launch.
+
+On Linux, set `enginePath` to the absolute path of a locally installed
+native TinyBrains 0.5.0 executable. The adapter probes its version before
+advertising profiles. Use the same engine with `--engine-path` for both
+evaluation commands. Linux Stop uses the existing systemd interrupt policy
+and requires a successful native exit and verified checkpoint for resume.
+Native Linux TinyBrains training, evaluation and Stop still need runtime
+qualification. Windows can keep using the bundled executable or select
+an explicit `enginePath`.
 
 Each launch uses a fresh job directory containing its exact profile,
 training history, checkpoints and `trainer.stderr.txt` for startup and

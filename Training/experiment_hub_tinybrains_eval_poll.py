@@ -9,6 +9,7 @@ from pathlib import Path
 
 from experiment_hub_eval_poll import final_checkpoint, poll_checkpoint, poll_batch
 from experiment_hub_tinybrains_evaluate import SUITE_ID, UUID, evaluate, read_suite
+from experiment_hub_tinybrains_runtime import configure_engine
 
 CHECKPOINT = re.compile(r"update-([0-9]{6,8})\.pt")
 
@@ -59,12 +60,14 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--machine", required=True)
     parser.add_argument("--port", type=int, default=7148)
+    parser.add_argument("--engine-path", type=Path)
     parser.add_argument("--suite", required=True, type=Path, action="append",
                         help="Repeat 2–8 times for one same-checkpoint evaluation batch.")
     for option in ("artifact-root", "scratch", "receipt-root"):
         parser.add_argument("--" + option, required=True, type=Path)
     args = parser.parse_args()
     try:
+        configure_engine(args.engine_path)
         if not SUITE_ID.fullmatch(args.machine) or not 1 <= args.port <= 65535:
             raise ValueError("Invalid machine ID or loopback port.")
         args.artifact_root = args.artifact_root.resolve(strict=True)
