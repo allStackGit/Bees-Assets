@@ -156,7 +156,7 @@ pub fn spawn_fragment_motion(
     speed: i32,
 ) -> (Pose, Vec2, f32) {
     let heading = rng.next_below(360) as f32;
-    let (destination, _) = random_map_destination(
+    let (destination, _, _) = random_map_destination(
         rng, settings.map_bounds, settings.half_map_extents,
     );
     let velocity = (destination - start).normalized_or_zero() * speed as f32;
@@ -173,7 +173,7 @@ pub(crate) fn random_map_destination(
     rng: &mut RandomStream,
     bounds: Aabb,
     half_extents: Vec2,
-) -> (Vec2, u8) {
+) -> (Vec2, u8, bool) {
     let mut destination = Vec2::ZERO;
     for attempt in 1..=35 {
         destination = Vec2::new(
@@ -185,10 +185,10 @@ pub(crate) fn random_map_destination(
             destination.x < bounds.max.x &&
             destination.y > bounds.min.y &&
             destination.y < bounds.max.y {
-            return (destination, attempt);
+            return (destination, attempt, true);
         }
     }
-    (destination, 35)
+    (destination, 35, false)
 }
 
 pub(crate) fn random_unit_float(rng: &mut RandomStream) -> f32 {

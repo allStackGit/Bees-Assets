@@ -48,6 +48,8 @@ pub struct FullAsteroidMotion {
     /// Number of candidate interior positions drawn by RandomCoordinate.
     /// Normally one; 35 indicates the source's placement retry budget ended.
     pub destination_attempts: u8,
+    /// False only when all 35 random interior candidates were invalid.
+    pub destination_accepted: bool,
 }
 
 /// One immutable Stage selection and map configuration, shared by all
@@ -138,7 +140,7 @@ pub fn sample_full_asteroid_motion(
         return Err(FullAsteroidSpawnError::InvalidStageOrMap);
     }
     let max_speed = MINIMUM_ASTEROID_SPEED as u32 +
-        settings.asteroid_max_speed_exclusive;
+        settings.asteroid_max_speed_exclusive.saturating_sub(1);
     if prototype.speed < MINIMUM_ASTEROID_SPEED ||
         prototype.speed as u32 > max_speed ||
         prototype.prefab_number == 0 {
@@ -165,7 +167,7 @@ pub fn sample_full_asteroid_motion(
         );
     }
     let rotation_degrees = rng.next_below(360) as f32;
-    let (destination, destination_attempts) = random_map_destination(
+    let (destination, destination_attempts, destination_accepted) = random_map_destination(
         rng, settings.map_bounds, settings.half_map_extents,
     );
     // Unity: Body.linearVelocity = Speed * -DirectionBetweenPoints(position,
@@ -173,9 +175,10 @@ pub fn sample_full_asteroid_motion(
     let velocity = (destination - position).normalized_or_zero() *
         prototype.speed as f32;
     let angular_velocity_degrees = prototype.speed as f32 *
-        random_unit_float(rng) * MINIMUM_ASTEROID_ANGULAR_SPEED_MULTIPLIER;
+        (random_unit_float(rng) * MINIMUM_ASTEROID_ANGULAR_SPEED_MULTIPLIER);
     Ok(FullAsteroidMotion {
         pose: Pose { position, rotation_degrees },
-        velocity, angular_velocity_degrees, destination_attempts,
+        velocity, angular_velocity_degrees,
+        destination_attempts, destination_accepted,
     })
 }

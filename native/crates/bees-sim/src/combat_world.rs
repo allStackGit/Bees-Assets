@@ -1374,7 +1374,7 @@ impl CombatWorld {
         self.active_full_asteroid_profiles.insert(id, profile);
         self.full_asteroid_pool_work.total_destination_draws +=
             u64::from(motion.destination_attempts);
-        if motion.destination_attempts == 35 {
+        if !motion.destination_accepted {
             self.full_asteroid_pool_work.exhausted_destination_searches += 1;
         }
         Ok((id, motion))
