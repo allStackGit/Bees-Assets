@@ -713,12 +713,19 @@ diagnosis, `ExperimentHubWindowsService.exe --run-once C:HubPrivatecoordinator.j
 uses the same native ownership path without installing a service or retrying.
 Confirm the existing owner is stopped before using this command.
 
-The Windows build and direct-process path have been exercised with inert
-Node workloads: suspended launch, verified ownership settings, environment
-files, failed-child status, exit-code propagation, and launcher-crash cleanup
-while preserving an independently detached child. Service Control Manager
-recovery, reboot behavior and production training coexistence require separate
-qualification. No production service is installed by development checks.
+Isolated Windows checks exercised the actual LocalService installation and
+Service Control Manager recovery after both a child failure and a service-host
+crash. Explicit stop did not restart the service; detached child processes
+survived. A separate native check observed four failed launches (the initial
+launch plus exactly three retries), then a stopped service with no further
+restarts. Test-only retry delays were one second; the installed 60-second
+delays were inspected through the native service configuration.
+
+The same compiled ownership path also passed suspended launch, environment
+files, failed-child status and exit-code propagation. All temporary services
+were removed. Reboot behavior, real training owner reconnection, account access
+on deployed hosts, production training coexistence and long-duration operation
+remain unqualified. No production service was installed.
 
 ## Linux native supervisor and authenticated dispatch (CPU-only)
 
