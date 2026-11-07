@@ -517,6 +517,14 @@ unsupported output layouts is rejected rather than supplied fabricated
 values. The model's own inference graph must honor the 15-column
 allowed-action mask. The worker verifies masks again before returning.
 
+A small Rust generator eliminates manual duplication of the long model
+signature. Place only the `models` array entries (as a top-level JSON
+array) in `model-slots.json`, then run:
+`cargo run --manifest-path native/Cargo.toml -p bees-host --example
+policy_manifest -- model-slots.json native-models.json`. The generated
+manifest includes the single source-of-truth v26 signature. Slot-relative
+model paths are resolved relative to the generated manifest.
+
 Both processes must use matching artifacts. Diagnostics go to stderr;
 stdout is exclusively binary protocol.
 
