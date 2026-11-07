@@ -91,6 +91,8 @@ pub struct NativeSquadEntry {
 #[derive(Default)]
 pub struct NativeSquadRoster {
     active: BTreeMap<SquadLifetime, NativeSquadEntry>,
+    /// Actual Level.State.Squads registration order, independent of IDs.
+    source_order: Vec<SquadLifetime>,
     owner_by_ship: HashMap<i64, SquadLifetime>,
     measurements: SquadRosterMeasurements,
     /// A partial source-order event pass must never be replayed.
@@ -131,6 +133,8 @@ impl NativeSquadRoster {
     pub fn owning_squad(&self, ship_id: i64) -> Option<SquadLifetime> {
         self.owner_by_ship.get(&ship_id).copied()
     }
+
+    pub fn source_order(&self) -> &[SquadLifetime] { &self.source_order }
 
     /// A full native Level cannot emit valid rollout samples when ships
     /// are missing from the squad registry. Both counts are maintained
@@ -178,6 +182,7 @@ impl NativeSquadRoster {
             owner, side, members: members.to_vec(), mother_squad: None,
         };
         self.active.insert(owner, entry);
+        self.source_order.push(owner);
         for &ship_id in members {
             self.owner_by_ship.insert(ship_id, owner);
         }
@@ -273,6 +278,7 @@ impl NativeSquadRoster {
             mother_squad: Some(mother_squad),
         };
         self.active.insert(minion_owner, entry);
+        self.source_order.push(minion_owner);
         self.owner_by_ship.insert(*beacon_id, minion_owner);
         self.measurements.squads_registered += 1;
         self.measurements.minion_squads_registered += 1;
@@ -307,6 +313,7 @@ impl NativeSquadRoster {
         self.measurements.ships_removed += 1;
         if squad.members.is_empty() {
             self.active.remove(&owner);
+            self.source_order.retain(|entry| *entry != owner);
             self.measurements.squads_retired += 1;
             changes.push(SquadRosterChange::SquadRetired { squad: owner });
         } else {

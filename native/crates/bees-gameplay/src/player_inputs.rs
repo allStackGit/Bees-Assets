@@ -153,7 +153,7 @@ impl NativePlayerMovePlan {
         let result = (|| {
             state.metadata.cancel_player_scripted_queue(self.owner)
                 .map_err(NativePlayerInputError::Source)?;
-            state.events.finalize_player_command(self.tick, &mut state.combat, self.owner)
+            state.events.finalize_local_command(self.tick, &mut state.combat, self.owner)
                 .map_err(NativePlayerInputError::Finalization)?;
             // Formation search uses the current colliders, including edits
             // made between fixed steps. All ship orders remain in bees-sim.

@@ -256,7 +256,7 @@ where
         LocalCommandKind::ClosestFriendly | LocalCommandKind::Guard)
     {
         metadata.collect_live_friendlies(
-            &world.state.combat, world.state.events.roster(),
+            &world.state.combat, world.state.events.roster(), world.state.events.commands(),
             &mut scratch.friendlies,
         ).map_err(&fail)?;
     }

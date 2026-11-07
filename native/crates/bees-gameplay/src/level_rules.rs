@@ -11,7 +11,6 @@ use std::collections::{BTreeMap, HashMap};
 use std::num::NonZeroU32;
 
 use bees_hivemind::session::SquadLifetime;
-use bees_hivemind::dispatch::LocalCommandKind;
 use bees_sim::combat_world::{CombatEvent, CombatWorld, CombatWorldError};
 use bees_sim::combat_perception_bridge::CombatPerceptionError;
 use bees_sim::vision::{HiveMindObserver, VisionFirstSighting, VisionError};
@@ -127,22 +126,6 @@ pub trait NativeLevelCommandContext {
         Err(GameCommandError::MissingCombatSnapshot)
     }
 
-    /// Source Level.State.Squads order, including authentic player and
-    /// scripted Squad lifetimes. Command selection must not be based on
-    /// BTreeMap lifecycle ordering (which may differ from source order).
-    /// A Level not providing this authoritative order fails closed.
-    fn current_squad_order(&self) -> Result<&[SquadLifetime], GameCommandError> {
-        Err(GameCommandError::MissingCombatSnapshot)
-    }
-
-    /// The real current command of a live squad, including user/scripted
-    /// Guard and ClosestFriendly commands and their protected squad.
-    fn current_squad_command(
-        &self, _owner: SquadLifetime,
-    ) -> Result<(Option<LocalCommandKind>, Option<SquadLifetime>), GameCommandError> {
-        Err(GameCommandError::MissingCombatSnapshot)
-    }
-
     /// Build one current source-order friendly snapshot from the SAME
     /// native roster, physical world and immutable sprite catalog. The
     /// Level caller clears this reused output buffer before every due
@@ -152,14 +135,14 @@ pub trait NativeLevelCommandContext {
         &mut self,
         combat: &CombatWorld,
         roster: &NativeSquadRoster,
+        commands: &crate::commands::NativeSquadCommandDirector,
         output: &mut Vec<NativeFriendlySquad>,
     ) -> Result<(), GameCommandError> {
         let catalog = self.ship_asset_catalog()
             .ok_or(GameCommandError::MissingCombatSnapshot)?;
-        let order = self.current_squad_order()?;
         collect_live_friendlies_from_catalog(
-            combat, roster, catalog, order,
-            |owner| self.current_squad_command(owner), output,
+            combat, roster, catalog, roster.source_order(),
+            |owner| Ok(commands.current_kind_and_guarded_target(owner)), output,
         )
     }
 
@@ -786,6 +769,7 @@ where
             if state.events.needs_live_command_friendlies_on_update(dt_seconds) {
                 state.metadata.collect_live_friendlies(
                     &state.combat, state.events.roster(),
+                    state.events.commands(),
                     &mut state.command_friendlies,
                 ).map_err(|err|
                     NativeLevelStepError::Events(

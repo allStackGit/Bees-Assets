@@ -33,6 +33,7 @@ impl FullRetreatRun {
         world: &mut CombatWorld, random: &mut RandomStream,
         squad: NativeSquadOrder<'_>,
         replacing_gate: Option<i64>,
+        chosen_gate: Option<i64>,
     ) -> Result<Option<Self>, GameCommandError> {
         let mut side = None;
         let mut members = Vec::new();
@@ -61,6 +62,7 @@ impl FullRetreatRun {
         let mut closest = None;
         let mut best_distance = f32::INFINITY;
         for gate_id in world.live_warp_gate_ids_for_side(side) {
+            if chosen_gate.is_some_and(|chosen| chosen != gate_id) { continue; }
             let Some(position) = world.game_warp_gate_position(gate_id) else {
                 continue;
             };

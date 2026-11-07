@@ -610,9 +610,13 @@ authority retirement before inbound replies can apply. Server IDs remain solely
 in HiveMind origins. `FinishedNativeCommand::settle` returns a typed
 `NativeCommandSettlement`; local records retain their value and any independently
 issued targeting reservation without inventing command/shooting reservations.
-Local attack inputs support Aggressive, Charge and BombingRun, plus scripted Hold.
-Other local commands require their exact chosen regions/targets and currently
-return Unsupported. Player attack UI and complete scripted queues remain unfinished.
+`NativeLocalCommandAction` carries exact local inputs: guarded squad lifetime,
+patrol corners, mining asteroid, ordered Beehive IDs or chosen WarpGate. Attacks
+and scripted Hold use the same director as before. Local replacement finalizes
+the old command first, including when the new target is unavailable. Local Guard,
+Patrol, Mining and Heal omit the source's AI-only timeout. Friendly projections
+use the canonical roster's registration order and director state for every origin.
+Host/player UI routing and complete scripted queues remain unfinished.
 
 **Aggressive** uses the shared ranked target queue and authoritative
 tracked ship orders, but unlike Swipe or InAndOut advances its attack

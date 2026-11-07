@@ -24,9 +24,9 @@ use crate::commands::{
     NativeSwipeCommandSnapshot, HiveMindCommandSettings,
     StrategyReceiptAction, StrategyReceiptFailure,
     Activation, NativeCommandSelection, NativeLocalCommandIdentity,
-    NativeLocalCommandSource,
+    NativeLocalCommandSource, NativeLocalCommandAction,
 };
-use bees_hivemind::{dispatch::LocalCommandKind, protocol::StrategyIdentity};
+use bees_hivemind::protocol::StrategyIdentity;
 use crate::episode::{
     NativeEpisodeFinal, NativeEpisodeRewardCoordinator,
     NativeEpisodeRewardError, NativeEpisodeRewardMeasurements,
@@ -324,9 +324,11 @@ impl NativeLevelEventProcessor {
         &mut self.commands
     }
 
+    pub fn commands(&self) -> &NativeSquadCommandDirector { &self.commands }
+
     /// Source FinalizeUserCommand, retaining the real outcome/reservation
     /// payload in the same durable outbox as timed command completion.
-    pub fn finalize_player_command(
+    pub fn finalize_local_command(
         &mut self, tick: u64, world: &mut CombatWorld, owner: SquadLifetime,
     ) -> Result<(), NativeLevelEventError> {
         if self.is_failed() || self.completed() {
@@ -335,7 +337,7 @@ impl NativeLevelEventProcessor {
         Self::reserve_output_records(
             &mut self.pending_notifications, &mut self.failed, 1,
         )?;
-        let finished = self.commands.supersede_for_player(world, owner)
+        let finished = self.commands.supersede_for_local_command(world, owner)
             .map_err(|error| {
                 self.failed = true;
                 NativeLevelEventError::Commands(error)
@@ -361,7 +363,7 @@ impl NativeLevelEventProcessor {
         navigation: &NavigationRuntime, random: &mut RandomStream,
         squad: NativeSquadOrder<'_>, friendlies: &[NativeFriendlySquad],
         settings: HiveMindCommandSettings, source: NativeLocalCommandSource,
-        command: LocalCommandKind, shooting: StrategyIdentity,
+        action: NativeLocalCommandAction<'_>, shooting: StrategyIdentity,
         bombing: Option<NativeLocalBombingTargets<'_>>,
     ) -> Result<Activation, NativeLevelEventError> {
         if self.is_failed() || self.completed() || tick != self.next_tick.saturating_sub(1) {
@@ -374,37 +376,33 @@ impl NativeLevelEventProcessor {
         }
         let selection = NativeCommandSelection::local(NativeLocalCommandIdentity {
             source, sequence: self.next_local_command_sequence,
-        }, command, shooting).map_err(NativeLevelEventError::Commands)?;
+        }, action.kind(), shooting).map_err(NativeLevelEventError::Commands)?;
         let next_sequence = self.next_local_command_sequence.checked_add(1)
             .ok_or(NativeLevelEventError::Commands(GameCommandError::LocalCommandIdExhausted))?;
-        Self::reserve_output_records(&mut self.pending_notifications, &mut self.failed, 1)?;
+        self.next_local_command_sequence = next_sequence;
+        // Source UI Hold ends chasing; it is not a request to install the
+        // AI/scripted Hold command. Unsupported input has no side effects.
+        if matches!(action, NativeLocalCommandAction::Hold) && source == NativeLocalCommandSource::Player {
+            return Ok(Activation::Unsupported(selection));
+        }
+        // MakeUserCommand finalizes first, including when the chosen target
+        // has vanished and Execute cannot install a replacement. Unlike AI
+        // strategy admission this must not retain the previous command.
+        self.finalize_local_command(tick, world, squad.owner)?;
+        if !self.pending_session_retirements.contains(&squad.owner) {
+            self.pending_session_retirements.push(squad.owner);
+        }
         let bombing_input = bombing.map(|input| NativeBombingActivation {
             roster: &self.roster, enemy_owner: input.enemy_owner,
             is_carrier_squad: input.is_carrier_squad,
             weapons: input.weapons, enemies: input.enemies,
         });
-        self.next_local_command_sequence = next_sequence;
-        let mut activation = self.commands.activate_local_selection(
-            world, navigation, random, squad, friendlies, settings, selection, bombing_input,
+        self.commands.activate_local_selection(
+            world, navigation, random, squad, friendlies, settings, selection, action, bombing_input,
         ).map_err(|error| {
             self.failed = true;
             NativeLevelEventError::Commands(error)
-        })?;
-        if let Activation::Applied { superseded, .. } = &mut activation {
-            // Ownership changed, not physical squad lifetime. Shared
-            // ingress flushes this queue before strategy/targeting replies.
-            if !self.pending_session_retirements.contains(&squad.owner) {
-                self.pending_session_retirements.push(squad.owner);
-            }
-            if let Some(finished) = superseded.take() {
-                self.pending_notifications.push(NativeLevelNotification {
-                    tick, kind: NativeLevelNotificationKind::FinishedCommand(finished),
-                });
-                Self::update_output_peak(&mut self.peak_pending_notifications,
-                    self.pending_notifications.len());
-            }
-        }
-        Ok(activation)
+        })
     }
 
     /// Apply any non-bomb strategy receipt to the SAME owning Level,

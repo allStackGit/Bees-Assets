@@ -43,7 +43,7 @@ use crate::squad_geometry::SquadMemberOffset;
 mod mining;
 mod identity;
 pub use identity::{NativeCommandSelection, NativeCommandOrigin,
-    NativeLocalCommandIdentity, NativeLocalCommandSource};
+    NativeLocalCommandIdentity, NativeLocalCommandSource, NativeLocalCommandAction};
 mod heal;
 mod scouting;
 mod full_retreat;
@@ -547,6 +547,15 @@ impl NativeSquadCommandDirector {
         self.active.contains_key(&owner)
     }
 
+    pub fn current_kind_and_guarded_target(&self, owner: SquadLifetime)
+        -> (Option<LocalCommandKind>, Option<SquadLifetime>)
+    {
+        let Some(command) = self.active.get(&owner) else { return (None, None) };
+        let guarded = command.following.as_ref().filter(|follow| follow.guard_slot.is_some())
+            .map(|follow| follow.target);
+        (Some(command.selection.kind()), guarded)
+    }
+
     /// A real source hull-contact callback may deliver a commanded bomb
     /// only for the original, still-live BombingRun owning that member.
     /// Never accept a transport-supplied command OutcomeId for damage.
@@ -901,7 +910,7 @@ impl NativeSquadCommandDirector {
         bombing_input: Option<NativeBombingActivation<'_>>,
     ) -> Result<Activation, GameCommandError> {
         self.activate_selection(world, navigation, random, squad, friendlies,
-            settings, selection.into(), bombing_input)
+            settings, selection.into(), None, bombing_input)
     }
 
     /// Execute player/scripted commands through the same timers, target
@@ -911,26 +920,22 @@ impl NativeSquadCommandDirector {
         random: &mut RandomStream, squad: NativeSquadOrder<'_>,
         friendlies: &[NativeFriendlySquad], settings: HiveMindCommandSettings,
         selection: NativeCommandSelection,
+        action: NativeLocalCommandAction<'_>,
         bombing_input: Option<NativeBombingActivation<'_>>,
     ) -> Result<Activation, GameCommandError> {
         let NativeCommandOrigin::Local(identity) = selection.origin() else {
             return Err(GameCommandError::InvalidCommandOrigin);
         };
-        // These commands consume exactly the supplied enemy and real Bomb
-        // inputs. User Guard/Patrol/Mining/Heal/FullRetreat additionally
-        // require chosen targets/regions; AI target selection is not their
-        // source behavior. Admit them when those inputs are implemented.
-        let supported = matches!(selection.local_command,
-            LocalCommandKind::Aggressive | LocalCommandKind::BombingRun |
-            LocalCommandKind::Charge) ||
-            (selection.local_command == LocalCommandKind::Hold &&
-             identity.source == NativeLocalCommandSource::Scripted);
-        if !supported {
+        if selection.local_command != action.kind() {
+            return Err(GameCommandError::InvalidCommandOrigin);
+        }
+        if selection.local_command == LocalCommandKind::Hold &&
+            identity.source != NativeLocalCommandSource::Scripted {
             self.measurements.unsupported += 1;
             return Ok(Activation::Unsupported(selection));
         }
         self.activate_selection(world, navigation, random, squad, friendlies,
-            settings, selection, bombing_input)
+            settings, selection, Some(action), bombing_input)
     }
 
     fn activate_selection(
@@ -938,6 +943,7 @@ impl NativeSquadCommandDirector {
         random: &mut RandomStream, squad: NativeSquadOrder<'_>,
         friendlies: &[NativeFriendlySquad], settings: HiveMindCommandSettings,
         selection: NativeCommandSelection,
+        local: Option<NativeLocalCommandAction<'_>>,
         bombing_input: Option<NativeBombingActivation<'_>>,
     ) -> Result<Activation, GameCommandError> {
         if !squad.valid() {
@@ -966,7 +972,11 @@ impl NativeSquadCommandDirector {
                 true
             }
             LocalCommandKind::Mining => {
-                let Some(run) = MiningRun::start(world, random, squad)?
+                let chosen = match local {
+                    Some(NativeLocalCommandAction::Mining { asteroid_id }) => Some(asteroid_id),
+                    _ => None,
+                };
+                let Some(run) = MiningRun::start(world, random, squad, chosen)?
                 else {
                     self.measurements.unavailable += 1;
                     return Ok(Activation::Unavailable(selection));
@@ -975,7 +985,11 @@ impl NativeSquadCommandDirector {
                 false
             }
             LocalCommandKind::Heal => {
-                let Some(run) = HealRun::start(world, squad)?
+                let chosen = match local {
+                    Some(NativeLocalCommandAction::Heal { beehive_ids }) => Some(beehive_ids),
+                    _ => None,
+                };
+                let Some(run) = HealRun::start(world, squad, chosen)?
                 else {
                     self.measurements.unavailable += 1;
                     return Ok(Activation::Unavailable(selection));
@@ -995,6 +1009,10 @@ impl NativeSquadCommandDirector {
                     .map(FullRetreatRun::gate_id);
                 let Some(run) = FullRetreatRun::start(
                     world, random, squad, previous_gate,
+                    match local {
+                        Some(NativeLocalCommandAction::FullRetreat { warp_gate_id }) => Some(warp_gate_id),
+                        _ => None,
+                    },
                 )? else {
                     self.measurements.unavailable += 1;
                     return Ok(Activation::Unavailable(selection));
@@ -1096,14 +1114,22 @@ impl NativeSquadCommandDirector {
                 )?.is_some()
             }
             LocalCommandKind::Patrol => {
-                let top_left = choose_random_coordinate(
-                    random, squad.squad_center, squad.formation.map_bounds,
-                    settings.ai_patrol_max_size, 10.0,
-                );
-                let bottom_right = choose_random_coordinate(
-                    random, squad.squad_center, squad.formation.map_bounds,
-                    settings.ai_patrol_max_size, 10.0,
-                );
+                let (top_left, bottom_right) = if let Some(NativeLocalCommandAction::Patrol { top_left, bottom_right }) = local {
+                    if !top_left.is_finite() || !bottom_right.is_finite() {
+                        return Err(GameCommandError::InvalidCombatSnapshot);
+                    }
+                    (top_left, bottom_right)
+                } else {
+                    let top_left = choose_random_coordinate(
+                        random, squad.squad_center, squad.formation.map_bounds,
+                        settings.ai_patrol_max_size, 10.0,
+                    );
+                    let bottom_right = choose_random_coordinate(
+                        random, squad.squad_center, squad.formation.map_bounds,
+                        settings.ai_patrol_max_size, 10.0,
+                    );
+                    (top_left, bottom_right)
+                };
                 patrol = Some(PatrolRoute {
                     corners: [
                         top_left,
@@ -1190,6 +1216,10 @@ impl NativeSquadCommandDirector {
                 let self_entry = lookup_friendly(friendlies, squad.owner)?
                     .filter(|entry| entry.is_alive && entry.side == side)
                     .ok_or(GameCommandError::InvalidFriendlies)?;
+                let chosen = match local {
+                    Some(NativeLocalCommandAction::Guard { target }) => Some(target),
+                    _ => None,
+                };
                 // Guard uses the same Squad.GetPosition as ClosestFriendly.
                 // A target tied on distance retains Level registry order.
                 let mut nearest = None;
@@ -1199,9 +1229,11 @@ impl NativeSquadCommandDirector {
                         return Err(GameCommandError::InvalidFriendlies);
                     }
                     if candidate.owner.level_id != squad.owner.level_id ||
-                        candidate.owner == squad.owner || candidate.side != side ||
+                        (chosen.is_none() && candidate.owner == squad.owner) ||
+                        candidate.side != side ||
                         !candidate.is_alive ||
-                        candidate.active_command == Some(LocalCommandKind::Guard) {
+                        (chosen.is_none() && candidate.active_command == Some(LocalCommandKind::Guard)) ||
+                        chosen.is_some_and(|target| candidate.owner != target) {
                         continue;
                     }
                     let distance = (candidate.position - squad.squad_center)
@@ -1277,6 +1309,8 @@ impl NativeSquadCommandDirector {
         // command supersede an earlier one; a failed order leaves the
         // existing HiveMind command and its reserved IDs intact.
         let timeout_seconds = match selection.local_command {
+            LocalCommandKind::Guard | LocalCommandKind::Patrol |
+            LocalCommandKind::Mining | LocalCommandKind::Heal if local.is_some() => None,
             LocalCommandKind::Patrol => Some(settings.ai_squad_patrol_seconds),
             LocalCommandKind::ClosestFriendly =>
                 Some(settings.ai_squad_following_seconds),
@@ -2062,7 +2096,7 @@ impl NativeSquadCommandDirector {
         self.finish_squad(world, owner, CommandFinishCause::SquadRetired)
     }
 
-    pub fn supersede_for_player(
+    pub fn supersede_for_local_command(
         &mut self, world: &mut CombatWorld, owner: SquadLifetime,
     ) -> Result<Option<FinishedNativeCommand>, GameCommandError> {
         self.finish_squad(world, owner, CommandFinishCause::Superseded)

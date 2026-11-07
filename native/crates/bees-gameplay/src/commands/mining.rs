@@ -24,14 +24,20 @@ impl MiningRun {
     pub(super) fn start(
         world: &CombatWorld, random: &mut RandomStream,
         squad: NativeSquadOrder<'_>,
+        chosen_target: Option<i64>,
     ) -> Result<Option<Self>, GameCommandError> {
         // Unity Squad.GetNearestMiningAsteroid selects by distance
         // from the current live squad bounds center. An absent
         // target or no mining ships bans Mining for this strategy
         // response rather than installing a nonfunctional command.
-        let Some((target_id, _)) =
-            world.nearest_mining_asteroid(squad.squad_center)
-        else { return Ok(None); };
+        let target_id = if let Some(id) = chosen_target {
+            if world.mining_asteroid_position(id).is_none() { return Ok(None); }
+            id
+        } else {
+            let Some((id, _)) = world.nearest_mining_asteroid(squad.squad_center)
+                else { return Ok(None); };
+            id
+        };
         let spread = world.mining_asteroid_spread_radius(target_id)
             .ok_or(GameCommandError::InvalidMiningTarget)?;
         let mut eligible = Vec::new();

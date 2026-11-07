@@ -22,8 +22,8 @@ use crate::squads::{NativeSquadEntry, NativeSquadRoster};
 ///
 /// Call in actual Level.State.Squads order; this function does not sort
 /// or select targets. Command kind and protected-Guard identity must come
-/// from the Level's real command registry (which includes user orders),
-/// not solely the HiveMind director. All sizes, locations and immutable
+/// from the canonical director (including local and HiveMind origins).
+/// All sizes, locations and immutable
 /// ship speeds come from the authoritative native game state.
 pub fn live_friendly_squad_from_catalog(
     world: &CombatWorld,

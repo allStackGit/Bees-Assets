@@ -3,6 +3,37 @@
 use bees_hivemind::{dispatch::{LocalCommandKind, ResolvedHiveMindCommand},
     protocol::{StrategyIdentity, SHOOTING_STRATEGIES}};
 use super::GameCommandError;
+use bees_hivemind::session::SquadLifetime;
+use bees_sim::geometry::Vec2;
+
+#[derive(Clone, Copy, Debug)]
+pub enum NativeLocalCommandAction<'a> {
+    Aggressive,
+    BombingRun,
+    Charge,
+    Hold,
+    Guard { target: SquadLifetime },
+    Patrol { top_left: Vec2, bottom_right: Vec2 },
+    Mining { asteroid_id: i64 },
+    Heal { beehive_ids: &'a [i64] },
+    FullRetreat { warp_gate_id: i64 },
+}
+
+impl NativeLocalCommandAction<'_> {
+    pub fn kind(self) -> LocalCommandKind {
+        match self {
+            Self::Aggressive => LocalCommandKind::Aggressive,
+            Self::BombingRun => LocalCommandKind::BombingRun,
+            Self::Charge => LocalCommandKind::Charge,
+            Self::Hold => LocalCommandKind::Hold,
+            Self::Guard { .. } => LocalCommandKind::Guard,
+            Self::Patrol { .. } => LocalCommandKind::Patrol,
+            Self::Mining { .. } => LocalCommandKind::Mining,
+            Self::Heal { .. } => LocalCommandKind::Heal,
+            Self::FullRetreat { .. } => LocalCommandKind::FullRetreat,
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NativeLocalCommandSource { Player, Scripted }

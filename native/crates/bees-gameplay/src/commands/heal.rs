@@ -32,6 +32,7 @@ pub(super) struct HealRun {
 impl HealRun {
     pub(super) fn start(
         world: &mut CombatWorld, squad: NativeSquadOrder<'_>,
+        chosen_hives: Option<&[i64]>,
     ) -> Result<Option<Self>, GameCommandError> {
         let mut side = None;
         let mut seen = HashSet::with_capacity(squad.members.len());
@@ -65,7 +66,15 @@ impl HealRun {
                 let position = world.ship_body(id)?.motion.position;
                 Some((id, (position - squad.squad_center).length_squared()))
             }).collect();
-        hives.sort_by(|a, b| a.1.total_cmp(&b.1));
+        if let Some(chosen) = chosen_hives {
+            // Source Heal.Execute preserves the supplied live Beehive list,
+            // including its order; only the server dispatcher sorts by range.
+            let live: HashMap<_, _> = hives.into_iter().collect();
+            hives = chosen.iter().filter_map(|id|
+                live.get(id).map(|&distance| (*id, distance))).collect();
+        } else {
+            hives.sort_by(|a, b| a.1.total_cmp(&b.1));
+        }
         if hives.is_empty() { return Ok(None); }
         // A command that cannot find a live heal slot is simply
         // unavailable; it does not require gameplay-only metadata.
