@@ -40,10 +40,30 @@ internal static class NativePhysicalSceneExporter
         public bool is_bomber, is_carrier_ship, has_communication;
         public bool has_bound_policy, policy_movement_disabled, policy_cease_fire;
         public int policy_team_id, policy_quarter_turns;
+        // Frozen source v26 controller/capability observations.
+        // Model slot remains a separately authenticated host decision.
+        public float effective_vision_range;
+        public bool has_weapons, has_turrets, has_special_action, special_ready;
+        public float special_resource_fraction, special_cooldown_fraction, special_phase;
+        public bool mining_possible, healing_possible, warp_possible;
+        public bool is_carrier_child, has_living_parent_carrier;
+        public long parent_carrier_id;
+        public int team_retainable_mined_tsv, side_starting_tsv;
+        public List<SourceSelfWeapon> self_weapons = new List<SourceSelfWeapon>();
         public Vector4 communication;
         public List<SourceObservedWeapon> observed_weapons =
             new List<SourceObservedWeapon>();
         public List<SourceTurret> turrets = new List<SourceTurret>();
+    }
+
+    [Serializable]
+    private sealed class SourceSelfWeapon
+    {
+        public int slot, weapon_type;
+        public Vector2 position;
+        public float range, power, rate_of_fire, rotation_rate, projectile_value;
+        public double projectile_speed;
+        public bool has_projectile_speed, has_target_ship;
     }
 
     [Serializable]
@@ -104,7 +124,7 @@ internal static class NativePhysicalSceneExporter
     [Serializable]
     private sealed class PhysicalScene
     {
-        public int schema_version = 10;
+        public int schema_version = 11;
         public string level_name;
         public float fixed_dt_seconds;
         public bool shots_harmless;
@@ -158,6 +178,18 @@ internal static class NativePhysicalSceneExporter
             bool hasBoundPolicy = RlOneVsOneAgent.TryReadBoundPolicy(
                 ship, out int policyTeamId,
                 out int policyQuarterTurns, out bool movementDisabled);
+            // Read only the real current policy controller. Do not request
+            // a new frame or start the episode merely for export.
+            CarrierShip carrierChild = ship as CarrierShip;
+            bool hasParent = carrierChild != null &&
+                carrierChild.Carrier != null && !carrierChild.Carrier.IsDead;
+            if (hasBoundPolicy &&
+                (ship.Side < 1 || ship.Side > level.State.InitialTsv.Length ||
+                 level.State.InitialTsv[ship.Side - 1] <= 0))
+            {
+                throw new InvalidOperationException(
+                    "Bound policy ship has no configured source episode TSV: " + ship.Id);
+            }
             snapshot.ships.Add(new SourceShip {
                 entity_id = ship.Id,
                 ship_type = (int)ship.ShipType,
@@ -197,6 +229,38 @@ internal static class NativePhysicalSceneExporter
                 policy_quarter_turns = policyQuarterTurns,
                 policy_movement_disabled = movementDisabled,
                 policy_cease_fire = ship.IsCeaseFire,
+                effective_vision_range = hasBoundPolicy
+                    ? HiveMindVision.GetEffectiveRange(ship) : 0f,
+                has_weapons = hasBoundPolicy && ship.HasWeapons,
+                has_turrets = hasBoundPolicy && ship.HasTurrets,
+                has_special_action = hasBoundPolicy &&
+                    RlCombatPerception.HasSpecialAction(ship),
+                special_ready = hasBoundPolicy &&
+                    RlCombatPerception.GetSpecialReadiness(ship) > 0f,
+                special_resource_fraction = hasBoundPolicy
+                    ? RlCombatPerception.GetSpecialResourceFraction(ship) : 0f,
+                special_cooldown_fraction = hasBoundPolicy
+                    ? RlCombatPerception.GetSpecialCooldownFraction(ship) : 0f,
+                special_phase = hasBoundPolicy
+                    ? RlCombatPerception.GetSpecialPhase(ship) : 0f,
+                mining_possible = hasBoundPolicy &&
+                    RlOneVsOneAgent.CanUseMiningAction(ship),
+                healing_possible = hasBoundPolicy &&
+                    RlOneVsOneAgent.CanUseHealingAction(ship),
+                warp_possible = hasBoundPolicy &&
+                    RlOneVsOneAgent.CanUseWarpAction(ship),
+                is_carrier_child = hasBoundPolicy && carrierChild != null,
+                has_living_parent_carrier = hasBoundPolicy && hasParent,
+                parent_carrier_id = hasBoundPolicy && hasParent
+                    ? carrierChild.Carrier.Id : 0,
+                side_starting_tsv = hasBoundPolicy
+                    ? level.State.InitialTsv[ship.Side - 1] : 0,
+                team_retainable_mined_tsv = hasBoundPolicy
+                    ? RlOneVsOneEpisodeCoordinator.GetRetainableMinedTsv(
+                        level, ship.Side) : 0,
+                self_weapons = hasBoundPolicy
+                    ? ExportNonTurretSelfWeapons(ship)
+                    : new List<SourceSelfWeapon>(),
                 communication = communication,
                 observed_weapons = ExportObservedWeapons(ship),
                 turrets = ExportTurrets(ship)
@@ -573,6 +637,39 @@ internal static class NativePhysicalSceneExporter
         snapshot.map_objects.Add(entry);
     }
 
+    private static List<SourceSelfWeapon> ExportNonTurretSelfWeapons(Ship ship)
+    {
+        var entries = new List<SourceSelfWeapon>();
+        if (ship.Weapons == null) return entries;
+        int count = Math.Min(5, ship.Weapons.Count);
+        for (int slot = 0; slot < count; slot++)
+        {
+            Weapon weapon = ship.Weapons[slot];
+            // Turrets are entirely owned by CombatWorld. Passing them
+            // again as external observations would duplicate mutable
+            // aiming and cooldown state.
+            if (weapon == null || weapon is Turret) continue;
+            GameObject source = FindProjectilePrefab(
+                ship.Stage.Prefabs, weapon.ProjectileType);
+            Projectile projectile = source != null
+                ? source.GetComponent<Projectile>() : null;
+            entries.Add(new SourceSelfWeapon {
+                slot = slot,
+                weapon_type = (int)weapon.Type,
+                position = weapon.GetPosition(),
+                range = weapon.Range,
+                power = weapon.Power,
+                rate_of_fire = weapon.RateOfFire,
+                rotation_rate = weapon.RotationRate,
+                projectile_value = weapon.ProjectileValue,
+                has_projectile_speed = projectile != null,
+                projectile_speed = projectile != null ? projectile.Speed : 0d,
+                has_target_ship = weapon.HasTargetShip
+            });
+        }
+        return entries;
+    }
+
     private static List<SourceObservedWeapon> ExportObservedWeapons(Ship ship)
     {
         var entries = new List<SourceObservedWeapon>();
@@ -678,6 +775,8 @@ internal static class NativePhysicalSceneExporter
                 return p.QueenSmallPrefab;
             case ConfigData.ProjectileTypes.QueenLarge:
                 return p.QueenLargePrefab;
+            case ConfigData.ProjectileTypes.StrikerBomb:
+                return p.StrikerBombPrefab;
             default:
                 return null;
         }

@@ -957,12 +957,12 @@ internal sealed class RlCombatPerception
         return dx * dx + dy * dy;
     }
 
-    private static bool HasSpecialAction(Ship ship)
+    internal static bool HasSpecialAction(Ship ship)
     {
         return ship is YellowJacket || ship is Striker || ship is FireBarge || ship is Barge || ship is Scout;
     }
 
-    private static float GetSpecialReadiness(Ship ship)
+    internal static float GetSpecialReadiness(Ship ship)
     {
         if (ship is YellowJacket)
         {
@@ -987,7 +987,7 @@ internal sealed class RlCombatPerception
         return 0f;
     }
 
-    private static float GetSpecialResourceFraction(Ship ship)
+    internal static float GetSpecialResourceFraction(Ship ship)
     {
         if (ship is Scout scout)
         {
@@ -1005,7 +1005,7 @@ internal sealed class RlCombatPerception
         return ship is YellowJacket || ship is FireBarge ? 1f : 0f;
     }
 
-    private static float GetSpecialCooldownFraction(Ship ship)
+    internal static float GetSpecialCooldownFraction(Ship ship)
     {
         if (ship is Barge barge)
         {
@@ -1024,7 +1024,7 @@ internal sealed class RlCombatPerception
         return 0f;
     }
 
-    private static float GetSpecialPhase(Ship ship)
+    internal static float GetSpecialPhase(Ship ship)
     {
         if (ship is Barge barge)
         {
