@@ -40,6 +40,7 @@ use bees_sim::perception_weapons::SelfWeapon;
 use bees_gameplay::inference::NativePolicyRoute;
 use bees_sim::navigation_runtime::{NavigationMapFrame, NavigationRuntime};
 use bees_sim::navigation::{NavigationGrid, NavigationError};
+use bees_sim::team_exploration::TeamExplorationGrid;
 use bees_gameplay::episode::{
     NativeEpisodeRewardCoordinator, NativeEpisodeRewardError,
 };
@@ -366,8 +367,8 @@ pub struct NativeExportedPolicyLevelSetup<A> {
     /// Existing model slots selected by the learner/opponent scheduler,
     /// keyed by the Unity policy team (0 or 1), never inferred from side.
     pub model_slots: HashMap<u8, u32>,
-    /// Genuine source team observation state, including exploration.
-    pub sides: Vec<AuthoredPolicySide>,
+    // Team-owned exploration starts fresh for the newly constructed
+    // episode, and then follows the actual fixed-step ship movement.
     pub allocate_minion: A,
 }
 
@@ -466,34 +467,26 @@ impl NativePhysicalScene {
                 NativeSnapshotError::InvalidEpisodeSource,
             ),
         )?;
-        let mut sides = HashSet::with_capacity(setup.sides.len());
-        for side in &setup.sides {
-            if !sides.insert(side.side) {
-                return Err(NativePolicyOnlyLevelError::Metadata(
-                    PolicyOnlyMetadataError::DuplicateSide(side.side),
-                ));
-            }
-        }
-        if sides.len() != 2 ||
-            !sides.contains(&episode_source.bee_side) ||
-            !sides.contains(&episode_source.human_side)
-        {
+        let agents = self.exported_policy_agents(&setup.model_slots)
+            .map_err(NativePolicyOnlyLevelError::Snapshot)?;
+        if agents.iter().any(|agent|
+            agent.side != episode_source.bee_side &&
+            agent.side != episode_source.human_side
+        ) {
             return Err(NativePolicyOnlyLevelError::Snapshot(
                 NativeSnapshotError::InvalidEpisodeSource,
             ));
         }
-        let agents = self.exported_policy_agents(&setup.model_slots)
-            .map_err(NativePolicyOnlyLevelError::Snapshot)?;
-        if agents.iter().any(|agent|
-            setup.sides.iter().find(|side| side.side == agent.side)
-                .is_none_or(|side| side.exploration_last_seen.is_none())
-        ) {
-            // Without current side exploration, v26 silently receives a
-            // fake all-zero history, not the source's 16x16 sight memory.
-            return Err(NativePolicyOnlyLevelError::Metadata(
-                PolicyOnlyMetadataError::InvalidSource,
-            ));
-        }
+        let sides = vec![
+            AuthoredPolicySide {
+                side: episode_source.bee_side,
+                exploration: TeamExplorationGrid::new(),
+            },
+            AuthoredPolicySide {
+                side: episode_source.human_side,
+                exploration: TeamExplorationGrid::new(),
+            },
+        ];
         let episode = self.exported_episode()
             .map_err(NativePolicyOnlyLevelError::Snapshot)?;
         let navigation = self.exported_navigation_runtime()
@@ -512,7 +505,7 @@ impl NativePhysicalScene {
             navigation,
             ship_catalog: setup.ship_catalog,
             policy_agents: agents,
-            sides: setup.sides,
+            sides,
             allocate_minion: setup.allocate_minion,
         })
     }
@@ -608,6 +601,7 @@ impl NativePhysicalScene {
             self.fleet,
             setup.ship_catalog,
             self.authored_ship_perceptions,
+            self.source_vision,
             setup.policy_agents,
             setup.sides,
         ).map_err(NativePolicyOnlyLevelError::Metadata)?;
