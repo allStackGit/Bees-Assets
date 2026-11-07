@@ -19,6 +19,8 @@ use bees_sim::asteroid_spawn::FullAsteroidPrototype;
 use bees_sim::geometry::Vec2;
 use bees_sim::control::PolicyFrame;
 use bees_sim::movement::ShipMotion;
+use bees_sim::map_object::CombatMapObject;
+use bees_sim::physics::ObstacleBody;
 use bees_sim::simulation::{Simulation, World, WorldId};
 use crate::runtime::{NativeHostRuntime, HostInitError};
 use crate::durable_connection::DurableHiveMindConnection;
@@ -80,6 +82,13 @@ pub enum NativeAuthoredEntity {
     /// Physically existing full asteroid from a source scene snapshot.
     /// Shards require their original parent/family lifetime and cannot
     /// silently enter the ordinary full-asteroid pool.
+    /// Real source MapObject with its current primary collider and
+    /// optional authored Fire Tank explosion/obstacle relationship.
+    /// Gameplay damage and discovery are handled by CombatWorld itself.
+    MapObject {
+        object: CombatMapObject,
+        body: ObstacleBody,
+    },
     FullCollisionAsteroid {
         entity_id: i64,
         profile: FullAsteroidPrototype,
@@ -94,6 +103,7 @@ impl NativeAuthoredEntity {
     pub fn entity_id(&self) -> i64 {
         match self {
             Self::Ship(ship) => ship.entity_id,
+            Self::MapObject { object, .. } => object.entity_id,
             Self::BoxObstacle { entity_id, .. } |
             Self::PolygonObstacle { entity_id, .. } |
             Self::FullCollisionAsteroid { entity_id, .. } => *entity_id,
@@ -276,6 +286,10 @@ impl NativeSceneAssets {
                         entity_id, profile, pose, velocity,
                         angular_velocity_degrees, effective_max_health,
                     ).map_err(NativeSceneBuildError::Combat)?;
+                }
+                NativeAuthoredEntity::MapObject { object, body } => {
+                    combat.add_map_object(object, body)
+                        .map_err(NativeSceneBuildError::Combat)?;
                 }
                 NativeAuthoredEntity::PolygonObstacle {
                     entity_id, pose, live_vertices,
