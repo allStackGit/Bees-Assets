@@ -794,6 +794,9 @@ class ExperimentHub {
         }
         if(this.automation.enabled)
             throw Error('Native automation is already armed; disarm explicitly before starting another session.');
+        if((this.state.candidate_selections||[])
+            .some(p=>p.status==='needs_review'))
+            throw Error('Cancel or resolve review-required candidate selections before arming native automation.');
         if(this.state.automation_restart&&origin!=='restart')
             throw Error('Restart restoration is pending; cancel it with Disarm before manually arming.');
         if(value.probe_exclusive_gpu===true&&value.claim_exclusive_gpu!==true)
