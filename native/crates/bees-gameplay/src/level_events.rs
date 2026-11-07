@@ -23,8 +23,10 @@ use crate::commands::{
     NativeFriendlySquad, NativeSquadOrder, NativeSquadCommandDirector,
     NativeSwipeCommandSnapshot, HiveMindCommandSettings,
     StrategyReceiptAction, StrategyReceiptFailure,
+    Activation, NativeCommandSelection, NativeLocalCommandIdentity,
+    NativeLocalCommandSource,
 };
-use bees_hivemind::dispatch::ResolvedHiveMindCommand;
+use bees_hivemind::{dispatch::LocalCommandKind, protocol::StrategyIdentity};
 use crate::episode::{
     NativeEpisodeFinal, NativeEpisodeRewardCoordinator,
     NativeEpisodeRewardError, NativeEpisodeRewardMeasurements,
@@ -78,6 +80,13 @@ pub struct NativeLevelNotification {
     pub kind: NativeLevelNotificationKind,
 }
 
+pub struct NativeLocalBombingTargets<'a> {
+    pub enemy_owner: SquadLifetime,
+    pub weapons: &'a [NativeBombWeapon],
+    pub enemies: &'a [NativeEnemyTargetStats],
+    pub is_carrier_squad: bool,
+}
+
 #[derive(Clone, Debug)]
 pub enum NativeLevelNotificationKind {
     SquadChange(SquadRosterChange),
@@ -86,11 +95,11 @@ pub enum NativeLevelNotificationKind {
     /// acknowledged. The Level never re-simulates these physical actions.
     Gameplay(CombatEvent),
     FinishedCommand(FinishedNativeCommand),
-    /// A failed world has no trustworthy final TSV. Both command/shooting
-    /// OutcomeIds must be explicitly discarded or reconciled, never credited.
+    /// A failed world has no trustworthy final TSV. HiveMind origins must
+    /// discard/reconcile their reservations; local origins have none.
     AbortedCommand {
         owner: SquadLifetime,
-        selection: ResolvedHiveMindCommand,
+        selection: crate::commands::NativeCommandSelection,
     },
     /// Only emitted when group delivery is not configured. Never also
     /// apply this raw reward to a group-enabled PPO trajectory.
@@ -157,6 +166,7 @@ pub struct NativeLevelEventProcessor {
     episode: NativeEpisodeRewardCoordinator,
     group_delivery: Option<NativeGroupRewardDelivery>,
     next_tick: u64,
+    next_local_command_sequence: u64,
     last_advanced_command_tick: Option<u64>,
     /// Timed callbacks and their sparse notifications form one delivery
     /// boundary; never publish a phase twice after an acknowledgement.
@@ -182,6 +192,7 @@ impl NativeLevelEventProcessor {
             episode,
             group_delivery: None,
             next_tick: 1,
+            next_local_command_sequence: 0,
             last_advanced_command_tick: None,
             last_published_timed_tick: None,
             failed: false,
@@ -281,7 +292,7 @@ impl NativeLevelEventProcessor {
         for owner in self.roster.active_lifetimes() {
             self.pending_session_retirements.push(owner);
         }
-        for (owner, selection) in self.commands.take_failed_command_reservations() {
+        for (owner, selection) in self.commands.take_failed_commands() {
             self.pending_notifications.push(NativeLevelNotification {
                 tick: self.next_tick.saturating_sub(1),
                 kind: NativeLevelNotificationKind::AbortedCommand {
@@ -341,6 +352,60 @@ impl NativeLevelEventProcessor {
     }
 
     pub(crate) fn fail_player_input(&mut self) { self.failed = true; }
+
+    /// Local commands acquire a Level-owned identity, never a server
+    /// reservation. Superseded outcomes join the one durable outbox before
+    /// returning; callers must not separately settle them a second time.
+    pub fn activate_local_command(
+        &mut self, tick: u64, world: &mut CombatWorld,
+        navigation: &NavigationRuntime, random: &mut RandomStream,
+        squad: NativeSquadOrder<'_>, friendlies: &[NativeFriendlySquad],
+        settings: HiveMindCommandSettings, source: NativeLocalCommandSource,
+        command: LocalCommandKind, shooting: StrategyIdentity,
+        bombing: Option<NativeLocalBombingTargets<'_>>,
+    ) -> Result<Activation, NativeLevelEventError> {
+        if self.is_failed() || self.completed() || tick != self.next_tick.saturating_sub(1) {
+            return Err(NativeLevelEventError::FailedLevel);
+        }
+        if !self.roster.get(squad.owner).is_some_and(|entry|
+            entry.members.len() == squad.members.len() &&
+            entry.members.iter().zip(squad.members).all(|(&id, member)| id == member.ship_id)) {
+            return Err(NativeLevelEventError::Commands(GameCommandError::InvalidSquad));
+        }
+        let selection = NativeCommandSelection::local(NativeLocalCommandIdentity {
+            source, sequence: self.next_local_command_sequence,
+        }, command, shooting).map_err(NativeLevelEventError::Commands)?;
+        let next_sequence = self.next_local_command_sequence.checked_add(1)
+            .ok_or(NativeLevelEventError::Commands(GameCommandError::LocalCommandIdExhausted))?;
+        Self::reserve_output_records(&mut self.pending_notifications, &mut self.failed, 1)?;
+        let bombing_input = bombing.map(|input| NativeBombingActivation {
+            roster: &self.roster, enemy_owner: input.enemy_owner,
+            is_carrier_squad: input.is_carrier_squad,
+            weapons: input.weapons, enemies: input.enemies,
+        });
+        self.next_local_command_sequence = next_sequence;
+        let mut activation = self.commands.activate_local_selection(
+            world, navigation, random, squad, friendlies, settings, selection, bombing_input,
+        ).map_err(|error| {
+            self.failed = true;
+            NativeLevelEventError::Commands(error)
+        })?;
+        if let Activation::Applied { superseded, .. } = &mut activation {
+            // Ownership changed, not physical squad lifetime. Shared
+            // ingress flushes this queue before strategy/targeting replies.
+            if !self.pending_session_retirements.contains(&squad.owner) {
+                self.pending_session_retirements.push(squad.owner);
+            }
+            if let Some(finished) = superseded.take() {
+                self.pending_notifications.push(NativeLevelNotification {
+                    tick, kind: NativeLevelNotificationKind::FinishedCommand(finished),
+                });
+                Self::update_output_peak(&mut self.peak_pending_notifications,
+                    self.pending_notifications.len());
+            }
+        }
+        Ok(activation)
+    }
 
     /// Apply any non-bomb strategy receipt to the SAME owning Level,
     /// preserving the same terminal/abort discard behavior as the Bomb

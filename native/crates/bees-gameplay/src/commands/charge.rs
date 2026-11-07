@@ -4,7 +4,7 @@
 //! The Level supplies the original Charge.ShipsWithinRange, rotation,
 //! and unobstructed-sight eligibility; this module does not invent range.
 
-use bees_hivemind::dispatch::ResolvedHiveMindCommand;
+use super::NativeCommandSelection;
 use bees_hivemind::session::SquadLifetime;
 use bees_sim::combat_world::CombatWorld;
 use bees_sim::simulation::RandomStream;
@@ -47,7 +47,7 @@ impl NativeChargeRun {
         random: &mut RandomStream,
         squad: NativeSquadOrder<'_>,
         enemy_owner: SquadLifetime,
-        selection: &ResolvedHiveMindCommand,
+        selection: &NativeCommandSelection,
         weapons: &[NativeBombWeapon],
         enemies: &[NativeEnemyTargetStats],
     ) -> Result<Option<Self>, GameCommandError> {
@@ -100,7 +100,7 @@ impl NativeChargeRun {
         world: &mut CombatWorld,
         owner: SquadLifetime,
         snapshot: &NativeChargeTimerSnapshot,
-        selection: &ResolvedHiveMindCommand,
+        selection: &NativeCommandSelection,
         roster: &NativeSquadRoster,
         random: &mut RandomStream,
     ) -> Result<Option<CommandFinishCause>, GameCommandError> {
@@ -141,7 +141,7 @@ impl NativeChargeRun {
                 &member.ship_id,
             ).is_ok() {
                 world.try_start_game_barge_charge(
-                    member.ship_id, selection.command_outcome_id,
+                    member.ship_id, selection.server_outcome(),
                     self.formation.map_bounds,
                     self.formation.can_override_bounds,
                 )?;

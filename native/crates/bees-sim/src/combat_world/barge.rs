@@ -35,7 +35,7 @@ pub(super) struct GameBargeCharge {
     /// Source Ship.CanOverrideBounds, supplied by the owning Level.
     pub(super) can_override_bounds: bool,
     pub(super) power: i32,
-    pub(super) command_outcome_id: i64,
+    pub(super) command_outcome_id: Option<i64>,
 }
 
 impl CombatWorld {
@@ -45,7 +45,7 @@ impl CombatWorld {
     /// the originally reserved Bomb target, real ship state and movement
     /// profile before accepting the command.
     pub fn try_start_game_barge_charge(
-        &mut self, ship_id: i64, command_outcome_id: i64,
+        &mut self, ship_id: i64, command_outcome_id: Option<i64>,
         map_bounds: Aabb, can_override_bounds: bool,
     ) -> Result<bool, CombatWorldError> {
         if !map_bounds.min.is_finite() || !map_bounds.max.is_finite() ||
@@ -53,7 +53,7 @@ impl CombatWorld {
             map_bounds.min.y > map_bounds.max.y {
             return Err(CombatWorldError::InvalidGameMovementOrder);
         }
-        if command_outcome_id <= 0 {
+        if command_outcome_id.is_some_and(|id| id <= 0) {
             return Err(CombatWorldError::InvalidBombTarget);
         }
         let &ship_index = self.ship_by_id.get(&ship_id)
@@ -558,7 +558,7 @@ impl CombatWorld {
                 self.policy_special_measurements.barge_contact_hits += 1;
                 let (enemy_killed, barge_killed) =
                     self.apply_barge_charge_hit(
-                        ship_index, target_index, barge.power, 0,
+                        ship_index, target_index, barge.power, None,
                     )?;
                 if barge_killed {
                     break;
@@ -582,8 +582,11 @@ impl CombatWorld {
     /// through killed enemies and stops on a surviving enemy.
     fn apply_barge_charge_hit(
         &mut self, ship_index: usize, target_index: usize,
-        power: i32, command_outcome_id: i64,
+        power: i32, command_outcome_id: Option<i64>,
     ) -> Result<(bool, bool), CombatWorldError> {
+        // Existing combat events use zero for absence of a server outcome,
+        // including neural-policy hits. Local commands earn no server credit.
+        let command_outcome_id = command_outcome_id.unwrap_or(0);
         let ship_id = self.ships[ship_index].entity_id;
         let target_id = self.ships[target_index].entity_id;
         let side = self.ships[ship_index].side;

@@ -71,9 +71,9 @@ impl CombatWorld {
     /// reconciled by the owning Level before clearing them.
     pub fn detonate_game_yellow_jacket_on_contact(
         &mut self, ship_id: i64, contacted_target_id: i64,
-        command_outcome_id: i64, collisions: &CollisionMatrix,
+        command_outcome_id: Option<i64>, collisions: &CollisionMatrix,
     ) -> Result<bool, CombatWorldError> {
-        if command_outcome_id <= 0 {
+        if command_outcome_id.is_some_and(|id| id <= 0) {
             return Err(CombatWorldError::InvalidBombTarget);
         }
         let &ship_index = self.ship_by_id.get(&ship_id)
@@ -115,7 +115,7 @@ impl CombatWorld {
         // both hits. No projectile or independent damage ledger is created.
         self.reservations.release(weapon_id);
         let detonated = self.resolve_yellow_jacket_detonation(
-            ship_index, target_index, held.amount, command_outcome_id,
+            ship_index, target_index, held.amount, command_outcome_id.unwrap_or(0),
         )?;
         self.game_bomb_measurements.yellow_jacket_detonations +=
             u64::from(detonated);

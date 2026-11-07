@@ -603,6 +603,17 @@ identical live enemy membership, weapon validity and targeting metadata.
 The missing authored Level adapter still fails closed rather than treating
 distance as weapon eligibility.
 
+Commands now carry `NativeCommandOrigin::HiveMind` or a Level-owned local
+player/scripted identity through the same director, timers and completion/abort
+outbox. Local activation through `activate_local_command` queues pending AI
+authority retirement before inbound replies can apply. Server IDs remain solely
+in HiveMind origins. `FinishedNativeCommand::settle` returns a typed
+`NativeCommandSettlement`; local records retain their value and any independently
+issued targeting reservation without inventing command/shooting reservations.
+Local attack inputs support Aggressive, Charge and BombingRun, plus scripted Hold.
+Other local commands require their exact chosen regions/targets and currently
+return Unsupported. Player attack UI and complete scripted queues remain unfinished.
+
 **Aggressive** uses the shared ranked target queue and authoritative
 tracked ship orders, but unlike Swipe or InAndOut advances its attack
 orders one ship per native simulation step, matching the command's

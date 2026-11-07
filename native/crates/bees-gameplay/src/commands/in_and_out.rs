@@ -2,7 +2,7 @@
 //! issue one formation return order and finish after all ships arrive.
 //! This does not duplicate targeting, navigation, or weapon firing.
 
-use bees_hivemind::dispatch::ResolvedHiveMindCommand;
+use super::NativeCommandSelection;
 use bees_hivemind::session::SquadLifetime;
 use bees_sim::combat_world::CombatWorld;
 use bees_sim::geometry::Vec2;
@@ -81,7 +81,7 @@ impl InAndOutRun {
         roster: &NativeSquadRoster,
         random: &mut RandomStream,
         owner: SquadLifetime,
-        selection: &ResolvedHiveMindCommand,
+        selection: &NativeCommandSelection,
         snapshot: NativeSwipeCommandSnapshot,
     ) -> Result<Option<CommandFinishCause>, GameCommandError> {
         if !snapshot.enemy_alive {

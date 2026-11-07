@@ -5,7 +5,7 @@
 //! variable-render-rate timing parity still needs runtime qualification.
 //! Only canonical CombatWorld movement and targeting apply.
 
-use bees_hivemind::dispatch::ResolvedHiveMindCommand;
+use super::NativeCommandSelection;
 use bees_hivemind::session::SquadLifetime;
 use bees_sim::combat_world::CombatWorld;
 use bees_sim::navigation_runtime::NavigationRuntime;
@@ -248,7 +248,7 @@ impl AggressiveRun {
         roster: &NativeSquadRoster,
         random: &mut RandomStream,
         owner: SquadLifetime,
-        selection: &ResolvedHiveMindCommand,
+        selection: &NativeCommandSelection,
         snapshot: Option<&NativeAggressiveCommandSnapshot>,
     ) -> Result<Option<CommandFinishCause>, GameCommandError> {
         let Some(index) = self.next_coroutine_member else {

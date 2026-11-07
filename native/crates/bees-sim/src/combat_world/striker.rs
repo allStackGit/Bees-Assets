@@ -296,10 +296,10 @@ impl CombatWorld {
     pub fn drop_game_striker_bomb_on_contact(
         &mut self,
         striker_id: i64, contacted_target_id: i64,
-        command_outcome_id: i64,
+        command_outcome_id: Option<i64>,
         collisions: &CollisionMatrix,
     ) -> Result<bool, CombatWorldError> {
-        if command_outcome_id <= 0 {
+        if command_outcome_id.is_some_and(|id| id <= 0) {
             return Err(CombatWorldError::InvalidBombTarget);
         }
         let &ship_index = self.ship_by_id.get(&striker_id)
@@ -361,7 +361,7 @@ impl CombatWorld {
             },
             contacted_target_id, fleet_id, held.amount,
             ProjectileMotion::new(
-                position, 0.0, 0.0, 0.0, shot_id, command_outcome_id,
+                position, 0.0, 0.0, 0.0, shot_id, command_outcome_id.unwrap_or(0),
             ),
         )?;
         // This transfer is infallible after preflight: the original weapon

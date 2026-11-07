@@ -97,7 +97,7 @@ impl CombatWorld {
         Ok(true)
     }
 
-    /// A HiveMind BombingRun timer may request FireBarge.Detonate. The
+    /// A gameplay BombingRun timer may request FireBarge.Detonate. The
     /// authoritative ship death must happen inside the NEXT fixed-step
     /// combat transaction, not after the Level has already reconciled the
     /// current tick's economic, roster, reward and terminal events.
@@ -105,9 +105,9 @@ impl CombatWorld {
     /// The world additionally authenticates the ship's live Bomb target
     /// reservation before admitting the irreversible request.
     pub fn queue_game_fire_barge_detonation(
-        &mut self, ship_id: i64, command_outcome_id: i64,
+        &mut self, ship_id: i64, command_outcome_id: Option<i64>,
     ) -> Result<bool, CombatWorldError> {
-        if command_outcome_id <= 0 {
+        if command_outcome_id.is_some_and(|id| id <= 0) {
             return Err(CombatWorldError::InvalidPolicyFireBarge);
         }
         let &index = self.ship_by_id.get(&ship_id)
@@ -159,7 +159,7 @@ impl CombatWorld {
                 !self.physics.ships()[index].active {
                 continue;
             }
-            self.complete_fire_barge_detonation(index, command_outcome_id)?;
+            self.complete_fire_barge_detonation(index, command_outcome_id.unwrap_or(0))?;
         }
         self.pending_game_fire_barges.clear();
         Ok(())

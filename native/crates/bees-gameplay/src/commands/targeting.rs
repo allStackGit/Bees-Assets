@@ -7,7 +7,7 @@
 use std::cmp::Ordering;
 use std::collections::{HashMap, VecDeque};
 
-use bees_hivemind::dispatch::ResolvedHiveMindCommand;
+use super::NativeCommandSelection;
 use bees_hivemind::protocol::{StrategyIdentity, SHOOTING_STRATEGIES};
 use bees_hivemind::session::SquadLifetime;
 use bees_sim::combat_world::{CombatWorld, GamePointOrder};
@@ -365,7 +365,7 @@ impl NativeTargetApproach {
         random: &mut RandomStream,
         members: &[SquadFormationMember],
         formation: SquadFormationOptions,
-        selection: &ResolvedHiveMindCommand,
+        selection: &NativeCommandSelection,
         enemy_owner: SquadLifetime,
         squad_center: Vec2,
         candidates: &[NativeEnemyTargetStats],
@@ -396,7 +396,7 @@ impl NativeTargetApproach {
         random: &mut RandomStream,
         member: SquadFormationMember,
         formation: SquadFormationOptions,
-        selection: &ResolvedHiveMindCommand,
+        selection: &NativeCommandSelection,
         enemy_owner: SquadLifetime,
         squad_center: Vec2,
         candidates: &[NativeEnemyTargetStats],
@@ -418,7 +418,7 @@ impl NativeTargetApproach {
         random: &mut RandomStream,
         member: SquadFormationMember,
         formation: SquadFormationOptions,
-        selection: &ResolvedHiveMindCommand,
+        selection: &NativeCommandSelection,
         enemy_owner: SquadLifetime,
         squad_center: Vec2,
         candidates: &[NativeEnemyTargetStats],

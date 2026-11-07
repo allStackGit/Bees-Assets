@@ -41,6 +41,9 @@ use crate::squads::{NativeSquadEntry, NativeSquadRoster};
 use crate::squad_geometry::SquadMemberOffset;
 
 mod mining;
+mod identity;
+pub use identity::{NativeCommandSelection, NativeCommandOrigin,
+    NativeLocalCommandIdentity, NativeLocalCommandSource};
 mod heal;
 mod scouting;
 mod full_retreat;
@@ -221,6 +224,9 @@ impl HiveMindCommandSettings {
 
 #[derive(Debug)]
 pub enum GameCommandError {
+    InvalidShootingStrategy,
+    InvalidCommandOrigin,
+    LocalCommandIdExhausted,
     InvalidSquad,
     SquadGeometry(crate::squad_geometry::SquadGeometryError),
     InvalidSettings,
@@ -308,7 +314,7 @@ pub enum CommandFinishCause {
 #[derive(Clone, Debug)]
 pub struct FinishedNativeCommand {
     pub owner: SquadLifetime,
-    pub selection: ResolvedHiveMindCommand,
+    pub selection: NativeCommandSelection,
     pub cause: CommandFinishCause,
     /// Unity Mining.Mine and Heal.HealShips add their actual minerals or
     /// recovered TSV to Command.Tsv. Physical outcomes are not inferable
@@ -322,37 +328,55 @@ impl FinishedNativeCommand {
     /// excludes authored capability TSV (but includes real damage or
     /// other command TSV). Mining.Mine and Heal.HealShips add earned value. Inactive
     /// reservations are explicitly discarded, not given synthetic credit.
+    /// Local completions retain their identity/value without inventing
+    /// command/shooting reservations. An independently issued targeting
+    /// reservation is preserved for either origin.
     pub fn settle(
         self,
         command_tsv: i64,
         shooting_tsv: Option<i64>,
         targeting: Option<(&ValidatedTargetingSelection, Option<i64>)>,
-    ) -> FinalizedCommand {
-        FinalizedCommand {
+    ) -> NativeCommandSettlement {
+        let targeting = targeting.map(|(selection, tsv)| match tsv {
+            Some(tsv) => OutcomeSettlement::Credit { outcome_id: selection.outcome_id, tsv },
+            None => OutcomeSettlement::Discard { outcome_id: selection.outcome_id },
+        });
+        let command_tsv = command_tsv.saturating_add(self.capability_command_tsv.unwrap_or(0));
+        let selection = match self.selection.origin() {
+            NativeCommandOrigin::HiveMind(selection) => selection,
+            NativeCommandOrigin::Local(identity) => return NativeCommandSettlement::Local {
+                identity: *identity, command_tsv, shooting_tsv, targeting,
+            },
+        };
+        NativeCommandSettlement::HiveMind(FinalizedCommand {
             command: OutcomeSettlement::Credit {
-                outcome_id: self.selection.command_outcome_id,
-                tsv: command_tsv.saturating_add(
-                    self.capability_command_tsv.unwrap_or(0),
-                ),
+                outcome_id: selection.command_outcome_id,
+                tsv: command_tsv,
             },
             shooting: match shooting_tsv {
                 Some(tsv) => OutcomeSettlement::Credit {
-                    outcome_id: self.selection.shooting_outcome_id, tsv,
+                    outcome_id: selection.shooting_outcome_id, tsv,
                 },
                 None => OutcomeSettlement::Discard {
-                    outcome_id: self.selection.shooting_outcome_id,
+                    outcome_id: selection.shooting_outcome_id,
                 },
             },
-            targeting: targeting.map(|(selection, tsv)| match tsv {
-                Some(tsv) => OutcomeSettlement::Credit {
-                    outcome_id: selection.outcome_id, tsv,
-                },
-                None => OutcomeSettlement::Discard {
-                    outcome_id: selection.outcome_id,
-                },
-            }),
-        }
+            targeting,
+        })
     }
+}
+
+#[derive(Debug)]
+pub enum NativeCommandSettlement {
+    HiveMind(FinalizedCommand),
+    Local {
+        identity: NativeLocalCommandIdentity,
+        command_tsv: i64,
+        shooting_tsv: Option<i64>,
+        /// Targeting has its own server reservation and lifetime even when
+        /// the enclosing movement/attack command originated locally.
+        targeting: Option<OutcomeSettlement>,
+    },
 }
 
 #[derive(Debug)]
@@ -364,12 +388,12 @@ pub enum Activation {
         issued_move: bool,
         superseded: Option<FinishedNativeCommand>,
     },
-    /// No side effects. The native caller MUST discard or otherwise
-    /// reconcile this validated server selection's reservations.
-    Unsupported(ResolvedHiveMindCommand),
+    /// No side effects. HiveMind origins must reconcile their real
+    /// reservations; local origins have no server reservations.
+    Unsupported(NativeCommandSelection),
     /// Unity ClosestFriendly/Guard cannot install without a valid target.
     /// No server reservation has earned learning credit.
-    Unavailable(ResolvedHiveMindCommand),
+    Unavailable(NativeCommandSelection),
 }
 
 struct PatrolRoute {
@@ -392,10 +416,10 @@ struct FollowingFriendly {
     guard_slot: Option<usize>,
 }
 
-/// One server Mining command's source state. Physics and cargo belong
+/// One canonical command's source state. Physics and cargo belong
 /// exclusively to CombatWorld, not to this timer/movement controller.
 struct ActiveNativeCommand {
-    selection: ResolvedHiveMindCommand,
+    selection: NativeCommandSelection,
     // Retreat has no time limit while moving; other commands may have
     // their own one-shot timeout or delayed finalization timer.
     timeout: Option<ScaledTimer>,
@@ -528,13 +552,13 @@ impl NativeSquadCommandDirector {
     /// Never accept a transport-supplied command OutcomeId for damage.
     pub fn bombing_contact_outcome(
         &self, owner: SquadLifetime, ship_id: i64,
-    ) -> Option<i64> {
+    ) -> Option<Option<i64>> {
         let active = self.active.get(&owner)?;
         if active.member_ids.contains(&ship_id) &&
             active.bombing.as_ref().is_some_and(|run|
                 run.may_deliver_contact(ship_id)
             ) {
-            Some(active.selection.command_outcome_id)
+            Some(active.selection.server_outcome())
         } else {
             None
         }
@@ -820,8 +844,8 @@ impl NativeSquadCommandDirector {
         ) {
             Ok(Activation::Unavailable(unavailable)) => {
                 let reservation_ids = vec![
-                    unavailable.command_outcome_id,
-                    unavailable.shooting_outcome_id,
+                    selection.command_outcome_id,
+                    selection.shooting_outcome_id,
                 ];
                 if matches!(unavailable.local_command,
                     LocalCommandKind::Guard | LocalCommandKind::Mining) {
@@ -833,10 +857,10 @@ impl NativeSquadCommandDirector {
                     Ok(StrategyReceiptAction::DiscardReservations(reservation_ids))
                 }
             },
-            Ok(Activation::Unsupported(unimplemented)) =>
+            Ok(Activation::Unsupported(_)) =>
                 Ok(StrategyReceiptAction::DiscardReservations(vec![
-                    unimplemented.command_outcome_id,
-                    unimplemented.shooting_outcome_id,
+                    selection.command_outcome_id,
+                    selection.shooting_outcome_id,
                 ])),
             Ok(activation) => Ok(StrategyReceiptAction::Applied(activation)),
             Err(cause) => Err(StrategyReceiptFailure {
@@ -874,6 +898,46 @@ impl NativeSquadCommandDirector {
         friendlies: &[NativeFriendlySquad],
         settings: HiveMindCommandSettings,
         selection: ResolvedHiveMindCommand,
+        bombing_input: Option<NativeBombingActivation<'_>>,
+    ) -> Result<Activation, GameCommandError> {
+        self.activate_selection(world, navigation, random, squad, friendlies,
+            settings, selection.into(), bombing_input)
+    }
+
+    /// Execute player/scripted commands through the same timers, target
+    /// reservations, formations and capability controllers as HiveMind.
+    pub fn activate_local_selection(
+        &mut self, world: &mut CombatWorld, navigation: &NavigationRuntime,
+        random: &mut RandomStream, squad: NativeSquadOrder<'_>,
+        friendlies: &[NativeFriendlySquad], settings: HiveMindCommandSettings,
+        selection: NativeCommandSelection,
+        bombing_input: Option<NativeBombingActivation<'_>>,
+    ) -> Result<Activation, GameCommandError> {
+        let NativeCommandOrigin::Local(identity) = selection.origin() else {
+            return Err(GameCommandError::InvalidCommandOrigin);
+        };
+        // These commands consume exactly the supplied enemy and real Bomb
+        // inputs. User Guard/Patrol/Mining/Heal/FullRetreat additionally
+        // require chosen targets/regions; AI target selection is not their
+        // source behavior. Admit them when those inputs are implemented.
+        let supported = matches!(selection.local_command,
+            LocalCommandKind::Aggressive | LocalCommandKind::BombingRun |
+            LocalCommandKind::Charge) ||
+            (selection.local_command == LocalCommandKind::Hold &&
+             identity.source == NativeLocalCommandSource::Scripted);
+        if !supported {
+            self.measurements.unsupported += 1;
+            return Ok(Activation::Unsupported(selection));
+        }
+        self.activate_selection(world, navigation, random, squad, friendlies,
+            settings, selection, bombing_input)
+    }
+
+    fn activate_selection(
+        &mut self, world: &mut CombatWorld, navigation: &NavigationRuntime,
+        random: &mut RandomStream, squad: NativeSquadOrder<'_>,
+        friendlies: &[NativeFriendlySquad], settings: HiveMindCommandSettings,
+        selection: NativeCommandSelection,
         bombing_input: Option<NativeBombingActivation<'_>>,
     ) -> Result<Activation, GameCommandError> {
         if !squad.valid() {
@@ -1974,13 +2038,12 @@ impl NativeSquadCommandDirector {
         Ok(())
     }
 
-    /// A failed world cannot safely run more gameplay callbacks or claim
-    /// its accumulated TSV. Move unresolved server reservations out without
-    /// touching potentially half-updated physics. The caller must persist
-    /// explicit discard/reconciliation obligations before reset.
-    pub(crate) fn take_failed_command_reservations(
+    /// A failed world cannot safely run more callbacks or claim its TSV.
+    /// Drain every origin without touching partially updated physics. Only
+    /// HiveMind origins carry server discard/reconciliation obligations.
+    pub(crate) fn take_failed_commands(
         &mut self,
-    ) -> impl Iterator<Item = (SquadLifetime, ResolvedHiveMindCommand)> {
+    ) -> impl Iterator<Item = (SquadLifetime, NativeCommandSelection)> {
         let active = std::mem::take(&mut self.active);
         self.measurements.aborted += active.len() as u64;
         self.measurements.active_following = 0;

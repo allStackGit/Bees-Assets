@@ -6,7 +6,8 @@
 
 use std::collections::HashSet;
 
-use bees_hivemind::dispatch::{LocalCommandKind, ResolvedHiveMindCommand};
+use bees_hivemind::dispatch::LocalCommandKind;
+use super::NativeCommandSelection;
 use bees_hivemind::session::SquadLifetime;
 use bees_sim::combat_world::{CombatWorld, GamePointOrder};
 use bees_sim::simulation::RandomStream;
@@ -73,7 +74,7 @@ pub fn assign_initial_bombing_run_targets(
     random: &mut RandomStream,
     squad: NativeSquadOrder<'_>,
     enemy_owner: SquadLifetime,
-    selection: &ResolvedHiveMindCommand,
+    selection: &NativeCommandSelection,
     weapons: &[NativeBombWeapon],
     enemies: &[NativeEnemyTargetStats],
 ) -> Result<bool, GameCommandError> {
@@ -91,7 +92,7 @@ pub(super) fn assign_initial_charge_targets(
     random: &mut RandomStream,
     squad: NativeSquadOrder<'_>,
     enemy_owner: SquadLifetime,
-    selection: &ResolvedHiveMindCommand,
+    selection: &NativeCommandSelection,
     weapons: &[NativeBombWeapon],
     enemies: &[NativeEnemyTargetStats],
 ) -> Result<bool, GameCommandError> {
@@ -107,7 +108,7 @@ fn assign_initial_special_bomb_targets(
     random: &mut RandomStream,
     squad: NativeSquadOrder<'_>,
     enemy_owner: SquadLifetime,
-    selection: &ResolvedHiveMindCommand,
+    selection: &NativeCommandSelection,
     weapons: &[NativeBombWeapon],
     enemies: &[NativeEnemyTargetStats],
     expected_command: LocalCommandKind,
@@ -200,7 +201,7 @@ pub(super) fn retarget_selected_game_bomb(
     roster: &NativeSquadRoster,
     random: &mut RandomStream,
     ship_id: i64, enemy_owner: SquadLifetime,
-    selection: &ResolvedHiveMindCommand,
+    selection: &NativeCommandSelection,
     weapons: &[NativeBombWeapon],
     enemies: &[NativeEnemyTargetStats],
     ranked: &mut Vec<NativeEnemyTargetStats>,
@@ -355,7 +356,7 @@ impl NativeBombingRun {
         random: &mut RandomStream,
         squad: NativeSquadOrder<'_>,
         enemy_owner: SquadLifetime,
-        selection: &ResolvedHiveMindCommand,
+        selection: &NativeCommandSelection,
         weapons: &[NativeBombWeapon],
         enemies: &[NativeEnemyTargetStats],
         is_carrier_squad: bool,
@@ -535,7 +536,7 @@ impl NativeBombingRun {
         owner: SquadLifetime,
         enemy_owner: SquadLifetime,
         enemy_alive: bool,
-        selection: &ResolvedHiveMindCommand,
+        selection: &NativeCommandSelection,
         roster: &NativeSquadRoster,
         random: &mut RandomStream,
         retarget_enemies: &[NativeEnemyTargetStats],
@@ -545,7 +546,7 @@ impl NativeBombingRun {
     ) -> Result<Option<CommandFinishCause>, GameCommandError> {
         // A recycled enemy squad number cannot complete an unrelated run.
         self.target.validate(owner, enemy_owner)?;
-        let command_outcome_id = selection.command_outcome_id;
+        let command_outcome_id = selection.server_outcome();
         if !enemy_alive && !self.only_strikers {
             return Ok(Some(CommandFinishCause::BombingRunCompleted));
         }

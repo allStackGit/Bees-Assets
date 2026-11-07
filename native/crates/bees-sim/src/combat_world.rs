@@ -819,7 +819,7 @@ pub struct CombatWorld {
     game_bomb_weapon_by_ship: HashMap<i64, i64>,
     /// Command-timer self-detonations are settled inside the NEXT normal
     /// physics step so roster, rewards, deaths and outbox see them once.
-    pending_game_fire_barges: Vec<(i64, i64)>,
+    pending_game_fire_barges: Vec<(i64, Option<i64>)>,
     projectile_by_id: HashMap<i64, usize>,
     /// Per-world RL root-shot lifetime, not per-projectile hit telemetry.
     shot_outcomes: ProjectileOutcomeTracker,
