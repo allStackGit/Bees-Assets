@@ -295,10 +295,14 @@ def poll_batch(args, project, suites, find_checkpoint, evaluate_checkpoint):
             try:
                 if not UUID.fullmatch(dispatch):
                     continue
-                if any(receipt_suite["trials"] < job["min_trials"] or
-                       job.get("suite_sha256", definitions[sid]) != definitions[sid]
-                       for (sid, (_, receipt_suite)), job
-                       in zip(ordered, jobs)):
+                if any(receipt_suite["trials"] < job["min_trials"]
+                       for (_, (_, receipt_suite)), job in zip(ordered, jobs)):
+                    continue
+                if any(job.get("suite_sha256", definitions[sid]) != definitions[sid]
+                       for (sid, _), job in zip(ordered, jobs)):
+                    print(f"{project} batch target {dispatch} has a changed "
+                          "benchmark suite definition; restore the pinned "
+                          "suite or use a new experiment.", file=sys.stderr)
                     continue
                 seen = []
                 for sid, (_, receipt_suite) in ordered:
