@@ -48,8 +48,11 @@ committed source prefix; a previously created output path is never overwritten.
 Completed worlds can be recycled up to `episodes_per_world` times through
 `NativeHostRuntime::reset_world`, with fresh monotonic squad lifetimes and
 per-episode deterministic seeds. Each replay uses the exact initial exported
-scene bytes cached at run startup, not a newly randomized Unity scene or a
-training-only variant. The global `max_rounds` budget bounds the run, and
+scene bytes cached once per canonical source file at run startup, not
+a newly randomized Unity scene or a training-only variant. Multiple arenas
+may share the same immutable template, but each arena has independent mutable
+state and duplicate source Squad ItemIds are reassigned from the verified
+Stage-wide allocator. The global `max_rounds` budget bounds the run, and
 unfinished episodes are explicitly canceled with `episode_aborted` rather
 than awarded invented terminal outcomes. The event
 `payload_debug` is **diagnostic text**, not an optimizer or training-data
