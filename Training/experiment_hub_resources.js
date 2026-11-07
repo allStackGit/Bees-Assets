@@ -63,9 +63,19 @@ function remaining(machine,reservations) {
     const indexed=new Map(capacity.map(g=>[g.id,g]));
     for(const claim of claimed) {
         const resources=claim.resources||{};
-        for(const id of resources.gpus||[]) {
+        const ids=resources.gpus??[];
+        const count=resources.gpu_count??(Array.isArray(ids)?ids.length:0);
+        // A live legacy/stale claim with no trustworthy device mapping may
+        // own any GPU on this host. Do not admit a second GPU claim until
+        // its original reservation is reconciled or released.
+        if(!Array.isArray(ids)||!int(count)||count>32||
+            ids.length!==count||new Set(ids).size!==ids.length||
+            ids.some(id=>!indexed.has(id))) {
+            for(const gpu of capacity)gpu.exclusive=true;
+            continue;
+        }
+        for(const id of ids) {
             const gpu=indexed.get(id);
-            if(!gpu)continue;
             // Unknown/legacy/invalid modes fail closed, avoiding overcommit.
             if(resources.gpu_mode!=='shared'||
                 !int(resources.gpu_vram_mb)||!resources.gpu_vram_mb||
