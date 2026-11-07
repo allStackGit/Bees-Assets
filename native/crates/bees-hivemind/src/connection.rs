@@ -87,6 +87,11 @@ impl NativeHiveMindConnection {
         snapshot: NativeConnectionCheckpoint,
     ) -> Result<Self, HiveMindProtocolError> {
         snapshot.hashes.validate()?;
+        if !snapshot.stores.owned_request_hashes()
+            .all(|hash| snapshot.hashes.has_issued(hash))
+        {
+            return Err(HiveMindProtocolError::InvalidRequest);
+        }
         Ok(Self {
             hashes: snapshot.hashes,
             session: HiveMindSession::new(),

@@ -48,6 +48,21 @@ impl RequestHashAllocator {
         Ok(())
     }
 
+    /// True only for a request ID already allocated by THIS persisted
+    /// client prefix/counter pair, including a previous connection using
+    /// the same durable allocator. No server credentials are involved.
+    pub fn has_issued(&self, hash: i64) -> bool {
+        if hash <= 0 || hash > MAX_SAFE_REQUEST_HASH ||
+            self.validate().is_err()
+        {
+            return false;
+        }
+        let value = hash as u64;
+        (value >> 32) == u64::from(self.client_prefix) &&
+            (value as u32) != 0 &&
+            (value as u32) <= self.counter
+    }
+
     pub fn next_hash(&mut self) -> Result<i64, HiveMindProtocolError> {
         self.validate()?;
         self.counter = self.counter.checked_add(1)

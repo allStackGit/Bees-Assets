@@ -198,17 +198,40 @@ where
             selection: selection.clone(),
             cause: StrategyReceiptFailureCause::InvalidStrategy(error),
         })?;
+    // A strategy reply may arrive AFTER its original target died or its
+    // Squad wrapper was recycled. Validate against the live roster before
+    // asking the authored Level for command-specific snapshots, so absent
+    // source metadata cannot turn a genuinely stale reply into an
+    // unowned activation failure.
+    let targeted = matches!(resolved.local_command,
+        LocalCommandKind::Retreat | LocalCommandKind::Aggressive |
+        LocalCommandKind::CircleSquad | LocalCommandKind::RightSwipe |
+        LocalCommandKind::LeftSwipe | LocalCommandKind::InAndOut |
+        LocalCommandKind::BombingRun | LocalCommandKind::Charge);
+    if targeted {
+        let Some(target_owner) = original_enemy else {
+            return Ok(discard());
+        };
+        let Some(enemy_squad) =
+            world.state.events.roster().get(target_owner) else {
+            return Ok(discard());
+        };
+        if enemy_squad.side == squad.side ||
+            !enemy_squad.members.iter().any(|&id|
+                world.state.combat.ship(id).is_some_and(|ship|
+                    !ship.vitals.is_dead()
+                )
+            )
+        {
+            return Ok(discard());
+        }
+    }
     let metadata = &mut world.state.metadata;
     let details = metadata.strategy_inputs(owner, original_enemy)
         .map_err(&fail)?;
     if !details.formation.valid() || !details.settings.valid() {
         return Err(fail(GameCommandError::InvalidSettings));
     }
-    let targeted = matches!(resolved.local_command,
-        LocalCommandKind::Retreat | LocalCommandKind::Aggressive |
-        LocalCommandKind::CircleSquad | LocalCommandKind::RightSwipe |
-        LocalCommandKind::LeftSwipe | LocalCommandKind::InAndOut |
-        LocalCommandKind::BombingRun | LocalCommandKind::Charge);
     if targeted && (original_enemy.is_none() ||
         details.enemy.map(|enemy| enemy.owner) != original_enemy)
     {
