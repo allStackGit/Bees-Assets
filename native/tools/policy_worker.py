@@ -230,22 +230,27 @@ def collect_predictions(
     rows = len(slots)
     continuous = np.empty((rows, CONTINUOUS), dtype="<f4")
     discrete = np.empty((rows, DISCRETE), dtype=np.uint8)
-    # Group by model slot without touching game state or changing row
-    # identity. The common single-model case does not gather-copy obs.
-    unique_slots = np.unique(slots)
+    # Most short-range runs use a single policy slot for both factions.
+    # Avoid sorting model IDs, allocating N row indices and scattering
+    # N actions when the whole batch already belongs to one loaded model.
+    single_slot = bool(np.all(slots == slots[0]))
+    unique_slots = (slots[:1] if single_slot else np.unique(slots))
     for slot in unique_slots:
         slot_id = int(slot)
         if slot_id not in policy_map:
             raise ValueError(f"no genuine model loaded for slot {slot_id}")
         model = policy_map[slot_id]
-        indices = np.flatnonzero(slots == slot)
-        if len(indices) == rows:
+        if single_slot:
+            indices = slice(None)
+            count = rows
             sub_obs, sub_mask = observations, allowed
         else:
+            indices = np.flatnonzero(slots == slot)
+            count = len(indices)
             sub_obs, sub_mask = observations[indices], allowed[indices]
         out_cont, out_disc = model.predict(sub_obs, sub_mask)
-        expected_cont = (len(indices), CONTINUOUS)
-        expected_disc = (len(indices), DISCRETE)
+        expected_cont = (count, CONTINUOUS)
+        expected_disc = (count, DISCRETE)
         if out_cont.shape != expected_cont or out_disc.shape != expected_disc:
             raise ValueError("incompatible native policy output shape")
         if not np.all(np.isfinite(out_cont)):
