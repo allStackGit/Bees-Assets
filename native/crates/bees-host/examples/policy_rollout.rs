@@ -89,6 +89,15 @@ struct LevelConfig {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
+struct ModelUpdateConfig {
+    /// Global completed rollout round. Changes occur only at this exact
+    /// completed-window boundary, never during a model or physics step.
+    at_round: u64,
+    manifest: PathBuf,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct RunConfig {
     run_id: String,
     stage_name: String,
@@ -104,6 +113,8 @@ struct RunConfig {
     broadphase_cell_size: f32,
     decision_period: u32,
     max_rounds: u64,
+    #[serde(default)]
+    model_updates: Vec<ModelUpdateConfig>,
     #[serde(default = "one_episode")]
     episodes_per_world: u32,
     rounds_per_window: u32,
@@ -290,6 +301,18 @@ fn main() -> Result<(), Box<dyn Error>> {
         config.next_squad_item_id == i64::MAX
     {
         return Err(invalid("invalid run identity, bounds, allocator or round budget").into());
+    }
+    let mut previous_update = 0_u64;
+    for update in &config.model_updates {
+        if update.at_round <= previous_update ||
+            update.at_round >= config.max_rounds ||
+            update.manifest.as_os_str().is_empty()
+        {
+            return Err(invalid(
+                "model_updates must be strictly increasing rounds below max_rounds with nonempty manifest paths",
+            ).into());
+        }
+        previous_update = update.at_round;
     }
     let checkpoint = resolve(root, &config.connection_checkpoint);
     let notifications = resolve(root, &config.notifications);
@@ -520,6 +543,8 @@ fn main() -> Result<(), Box<dyn Error>> {
             .filter_map(|level| level.groups.as_ref())
             .map(|group| group.participants.len()).sum::<usize>(),
         "episodes_per_world": config.episodes_per_world,
+        "scheduled_model_updates": config.model_updates.len(),
+        "policy_generation": host.model_mut().model_generation(),
         "decision_period": config.decision_period,
         "delivery_every": config.delivery_every,
         "timing_sample_period": config.timing_sample_period,
@@ -528,8 +553,16 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut rounds = 0_u64;
     let mut failed_window = None;
     let mut completed_episodes = vec![0_u32; config.levels.len()];
+    let mut next_model_update = 0usize;
     while rounds < config.max_rounds {
-        let remaining = config.max_rounds - rounds;
+        let until_update = config.model_updates.get(next_model_update)
+            .map_or(config.max_rounds, |item| item.at_round);
+        // A model update requires all preceding observations, actions,
+        // gameplay and group rewards to have crossed a completed window.
+        // Split a window exactly at the requested round; never reload a
+        // partial BINF frame or let two policies be used in one batch.
+        let remaining = (config.max_rounds - rounds)
+            .min(until_update - rounds);
         let count = nonzero(remaining.min(u64::from(window.get())) as u32, "window")?;
         let counts = match host.run_window(count, delivery) {
             Ok(counts) => counts,
@@ -622,6 +655,31 @@ fn main() -> Result<(), Box<dyn Error>> {
             }
         }
         if counts.stopped_with_no_live_worlds && recycled == 0 { break; }
+        if config.model_updates.get(next_model_update)
+            .is_some_and(|item| item.at_round == rounds)
+        {
+            let update = &config.model_updates[next_model_update];
+            match host.model_mut().reload_manifest(
+                &resolve(root, &update.manifest),
+            ) {
+                Ok(generation) => {
+                    println!("{}", json!({
+                        "kind": "policy_updated",
+                        "run_id": config.run_id,
+                        "rounds": rounds,
+                        "policy_generation": generation,
+                        "manifest": update.manifest,
+                    }));
+                    next_model_update += 1;
+                }
+                Err(error) => {
+                    failed_window = Some(format!(
+                        "scheduled policy update at round {rounds}: {error:?}"
+                    ));
+                    break;
+                }
+            }
+        }
     }
 
     // A finite run budget is an intentional stop, NEVER a fake terminal
