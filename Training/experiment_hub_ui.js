@@ -741,6 +741,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 final_resource_usage:job.final_resource_usage||null,
                 evaluation_stop:job.evaluation_stop||null,
                 evaluation_suite_definitions:job.evaluation_suite_definitions||null,
+                checkpoint_model_sha256:job.checkpoint_model_sha256||null,
+                expected_parent_model_sha256:job.expected_parent_model_sha256||null,
+                candidate_selection:job.candidate_selection||null,
                 last_evaluation:job.last_evaluation||null,
                 evaluation_stop_evidence:job.evaluation_stop_evidence||null,
                 evaluation_candidates:job.evaluation_candidates||null,
@@ -760,6 +763,8 @@ document.addEventListener('DOMContentLoaded', () => {
             source:'Experiment Hub validated project metrics',
             interpretation:'Training curves are observational and use cumulative steps. Compare independent evaluation receipts only across matched suite definitions and scenarios.',
             runs,
+            candidate_selection_plans:(state.candidate_selections||[]).filter(p=>
+                p.candidate_job_ids?.some(id=>runs.some(r=>r.job_id===id))),
         };
         const content=format==='csv'?hubComparisonCsv(exported):
             JSON.stringify(exported,null,2)+String.fromCharCode(10);
@@ -1212,7 +1217,11 @@ document.addEventListener('DOMContentLoaded', () => {
             const hasSuccessor=(state.jobs||[]).some(x=>
                 (x.continuation_of_job_id===j.id||x.after_job_id===j.id)&&
                 x.status!=='cancelled');
-            const statusCell=cell(tr,status+lineage+gpuProof+readinessText+
+            const promoted=j.candidate_selection
+                ?' · Selected winner '+j.candidate_selection.winner_job_id.slice(-8)+
+                    ' · pinned evaluated model '+j.candidate_selection.checkpoint_sha256.slice(0,12)
+                :'';
+            const statusCell=cell(tr,status+lineage+promoted+gpuProof+readinessText+
                 (hasSuccessor&&['waiting_adapter','waiting_predecessor'].includes(j.status)
                     ?' · Cancel downstream stage first':''));
 
