@@ -1410,6 +1410,11 @@ class ExperimentHub {
                     .map(candidate=>candidate.suite_id)};
         });
     }
+    hasPendingFinalEvaluations() {
+        const snapshot=this.snapshot(),observedAt=Date.now();
+        return snapshot.jobs.some(job=>
+            finalEvaluationPending(snapshot,job,observedAt));
+    }
     progressComparison(projectId) {
         this.project(projectId);
         return this.progressHistory.snapshot(projectId,this.state.jobs);

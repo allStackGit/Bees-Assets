@@ -2541,12 +2541,14 @@ const server = http.createServer(async (req, res) => {
         }
         if (route === '/api/storage') {
             const nativeUnsettled = hub && (
+                hub.state.automation_restart ||
+                hub.hasPendingFinalEvaluations() ||
                 hub.state.jobs.some(job => job.dispatch_id && !job.capacity_released_at) ||
                 hub.state.reservations.some(lease =>
                     ['active', 'offered', 'acknowledged'].includes(lease.status)));
             if (busy || state.active_id || state.armed || state.stop_requested ||
                 hub?.automation?.enabled || nativeUnsettled) {
-                return json(res, 409, { error: 'Stop active experiments, disarm native automation, and settle native jobs and leases before relocating data.' });
+                return json(res, 409, { error: 'Stop active experiments, disarm native automation, and settle native jobs, leases, and final evaluations before relocating data.' });
             }
             if (value.root === DATA_ROOT)
                 return json(res, 200, { root: DATA_ROOT, restart_required: false });
@@ -2934,7 +2936,16 @@ const server = http.createServer(async (req, res) => {
 });
 // The dedicated worker-only HTTP boundary is shared with the isolated
 // transport smoke. It cannot serve Hub administration or Bees training.
-const agentServer=createAgentServer(requireHub);
+const agentServer=createAgentServer(() => {
+    // The registry has been copied to its new location. Do not accept
+    // additional native evidence into the old location before restart.
+    if(storageMigrationPending) {
+        const error=Error('Experiment data relocation prepared; restart the manager before agent updates.');
+        error.status=409;
+        throw error;
+    }
+    return requireHub();
+});
 if (require.main === module) {
     server.listen(PORT, HOST, () => {
         console.log('Bees experiments: http://' + HOST + ':' + PORT);
@@ -2945,6 +2956,7 @@ if (require.main === module) {
         // arms named native-capable machines. Native service state and Bees
         // training ownership remain separate; faults disarm Hub automation.
         setInterval(() => {
+            if(storageMigrationPending)return;
             const before=hub?.automationStatus();
             if(!before?.enabled&&!before?.restart_rearm_pending)return;
             const status=hub.tickAutomation();
