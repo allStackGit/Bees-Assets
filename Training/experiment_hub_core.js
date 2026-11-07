@@ -223,9 +223,9 @@ function gpuProbeBlock(job,lease,machine) {
         return 'GPU access probe requires a second observed GPU to verify access denial.';
     return null;
 }
-// Native finish can complete an independent sequence. A verified evaluator
-// target may also complete one after a native Stop, but must never authorize
-// checkpoint continuation or bypass native capacity release.
+// Native finish can complete an independent sequence. Checkpoint continuations
+// additionally require a verified resumable artifact; independent sequences
+// never inherit an optimizer or model checkpoint.
 function independentSequenceComplete(job) {
     // Retired Ants-v2 records remain inspectable, but cannot unlock
     // new experiment work or previously queued dependent launches.
@@ -246,8 +246,10 @@ function independentSequenceComplete(job) {
     }
 }
 function checkpointContinuationComplete(job) {
-    return job?.status==='finished'||(['courier','tinybrains'].includes(job?.project_id)&&job.status==='stopped'&&
-        job.checkpoint_stop_verified===true);
+    if(!['courier','tinybrains'].includes(job?.project_id))return false;
+    return job.status==='finished'
+        ?job.checkpoint_ready_verified===true
+        :job.status==='stopped'&&job.checkpoint_stop_verified===true;
 }
 // Shared by planning, capacity claims, automation and native Start.
 function predecessorBlock(snapshot,job) {
@@ -377,6 +379,10 @@ function waitingStageReason(job,byId) {
             status='stopping';explanation='has a pending Stop request; automatic advancement is blocked';
         }else if(parent.status==='finished'&&!parent.capacity_released_at) {
             status='release_pending';explanation='finished; capacity release is required';
+        }else if(parent.status==='finished'&&dependent.continuation_of_job_id&&
+            !checkpointContinuationComplete(parent)) {
+            status='needs_review';
+            explanation='finished without a verified resumable checkpoint; checkpoint continuation is blocked';
         }else if(parent.status==='stopped') {
             if(dependent.after_job_id) {
                 if(independentSequenceComplete(parent)&&!parent.capacity_released_at) {
@@ -1535,10 +1541,15 @@ class ExperimentHub {
                 ?'stop_requested':report.state;
             if(state==='launch_requested'&&job.status!=='start_requested')continue;
             if(job.status==='stop_requested'&&report.state==='launch_requested')continue;
-            if(state==='stopped'&&['courier','tinybrains'].includes(job.project_id)&&job.stop_requested_at&&
-                report.checkpoint_stop_verified===true) {
-                job.checkpoint_stop_verified=true;
-                changed=true;
+            if(['courier','tinybrains'].includes(job.project_id)) {
+                if(state==='finished'&&report.checkpoint_ready_verified===true) {
+                    job.checkpoint_ready_verified=true;
+                    changed=true;
+                }else if(state==='stopped'&&job.stop_requested_at&&
+                    report.checkpoint_stop_verified===true) {
+                    job.checkpoint_stop_verified=true;
+                    changed=true;
+                }
             }
             // Only reports accepted into the lifecycle may update live
             // telemetry and comparison samples. A delayed older report
@@ -2135,7 +2146,7 @@ class ExperimentHub {
                 futureStage);
             if(!waitingPredecessor&&
                 (!checkpointContinuationComplete(parent)||!parent.capacity_released_at))
-                throw Error('Continuation requires a finished or verified checkpoint-stopped predecessor with released capacity (or an eligible active or prequeued predecessor).');
+                throw Error('Continuation requires a verified resumable checkpoint and released capacity (or an eligible active or prequeued predecessor).');
             if(next.jobs.some(j=>
                 (j.continuation_of_job_id===parent.id||
                  j.after_job_id===parent.id)&&j.status!=='cancelled'))

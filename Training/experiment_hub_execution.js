@@ -162,10 +162,12 @@ class LocalExecution {
         const ownsArtifacts=owned&&owned.lease_id===lease.id&&owned.project_id===job.project_id&&
             (owned.artifact_lineage_root_id||owned.job_id)===
                 (job.artifact_lineage_root_id||job.id);
-        if(state==='stopped'&&observed.checkpoint_stop_verified===true) {
-            // A successful native exit does not establish that a resumable
-            // checkpoint exists. Only the pinned local adapter can verify
-            // the exact artifacts a continuation will consume.
+        const checkpointProject=['courier','tinybrains'].includes(job.project_id);
+        if(checkpointProject&&
+            (state==='finished'||state==='stopped'&&observed.checkpoint_stop_verified===true)) {
+            // A successful native exit, including natural completion, does
+            // not establish that a resumable checkpoint exists. Reuse the
+            // adapter's own continuation artifact contract.
             try {
                 if(!ownsArtifacts||typeof localAdapter?.checkpoint_ready!=='function'||
                     await localAdapter.checkpoint_ready(Object.freeze({
@@ -175,9 +177,11 @@ class LocalExecution {
                         frozen_parameters:job.frozen_parameters,
                     }))!==true)
                     throw Error('Local adapter did not verify resumable checkpoint artifacts.');
-                report.checkpoint_stop_verified=true;
+                if(state==='finished')report.checkpoint_ready_verified=true;
+                else report.checkpoint_stop_verified=true;
             }catch(error) {
-                report.diagnostic=('Checkpoint Stop completed but checkpoint not verified: '+
+                report.diagnostic=('Native '+(state==='finished'?'Finish':'checkpoint Stop')+
+                    ' completed without verified resumable checkpoint: '+
                     String(error.message||error)).slice(0,220);
             }
         }
