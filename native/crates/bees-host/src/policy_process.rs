@@ -269,6 +269,8 @@ impl ResidentPolicyProcess {
 impl NativePolicyInference for ResidentPolicyProcess {
     type Error = PolicyProcessError;
 
+    fn model_generation(&self) -> u64 { self.model_generation }
+
     fn forward(
         &mut self,
         keys: &[PolicyAgentKey],
