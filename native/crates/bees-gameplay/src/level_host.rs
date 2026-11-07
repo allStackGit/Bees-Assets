@@ -14,6 +14,7 @@
 //! episode-reset boundary. Stale world indices/revisions are rejected, not
 //! silently allowed to corrupt PPO trajectories.
 
+use std::num::NonZeroU32;
 use bees_hivemind::session::{
     HiveMindSession, HiveMindSessionError, SquadLifetime, StrategyReceipt,
     TargetingReceipt,
@@ -326,6 +327,31 @@ pub enum NativeLevelDriverError {
     AlreadyRegistered,
     UnstartedWorldRequired,
     WorldIdentityChanged,
+}
+
+/// Summary of one explicit bounded native rollout window, using the
+/// same simulation, source metadata, model backend and notification sink
+/// as individual fixed steps. No per-step histories are retained.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct NativeLevelWindowCounts {
+    pub rounds: u32,
+    pub world_steps: usize,
+    pub policy_rows: usize,
+    pub retirement_notifications: usize,
+    pub delivered_notifications: usize,
+    pub stopped_with_no_live_worlds: bool,
+}
+
+#[derive(Debug)]
+pub enum NativeLevelWindowError<SourceError, BackendError, SinkError> {
+    Step {
+        round: u32,
+        error: NativeBatchedStepError<NativeLevelSourceError<SourceError>, BackendError>,
+    },
+    Delivery {
+        round: u32,
+        error: NativeNotificationDeliveryError<SinkError>,
+    },
 }
 
 #[derive(Debug)]
@@ -686,6 +712,76 @@ impl NativeLevelBatchDriver {
             },
             &mut self.decisions,
         )
+    }
+
+    /// Drive a bounded synchronous rollout window across all registered
+    /// Levels with the REAL v26 model, shared physics and one durable
+    /// notification sink. A rendered client uses delivery_every = 1 to
+    /// publish immediately; headless workers may choose larger explicit
+    /// intervals to amortize transport overhead while respecting the
+    /// bounded Level notification outbox.
+    ///
+    /// On ANY failed model, gameplay or delivery step, return immediately.
+    /// Never retry a partially stepped world or quietly replace invalid
+    /// actions. Already accepted notifications are acknowledged; later
+    /// notifications remain pending. The owner must abort failed episodes
+    /// and discard their partial PPO trajectories through the existing
+    /// failure boundary before reset.
+    pub fn run_window<M, A, B, S>(
+        &mut self,
+        simulation: &mut Simulation<NativeLevelState<M, A>, NativeLevelRules>,
+        backend: &mut B,
+        connection: &mut HiveMindSession,
+        sink: &mut S,
+        max_rounds: NonZeroU32,
+        delivery_every: NonZeroU32,
+    ) -> Result<NativeLevelWindowCounts,
+        NativeLevelWindowError<
+            <M as NativeLevelObservationContext>::Error, B::Error, S::Error>>
+    where
+        M: NativeLevelRewardMetadata + NativeLevelCommandContext +
+            NativeLevelObservationContext,
+        A: FnMut(SquadLifetime, i64) -> Result<SquadLifetime, SquadRosterError>,
+        B: NativePolicyInference,
+        S: NativeLevelNotificationSink,
+    {
+        let mut counts = NativeLevelWindowCounts::default();
+        // An earlier window may have deferred its last notification
+        // delivery. Never start another inference batch over a backlog
+        // that the sink has not yet durably accepted.
+        counts.retirement_notifications +=
+            flush_all_squad_retirements(simulation, connection);
+        counts.delivered_notifications +=
+            deliver_all_level_notifications(simulation, sink)
+                .map_err(|error| NativeLevelWindowError::Delivery {
+                    round: 0, error,
+                })?.notifications_accepted;
+        for round in 1..=max_rounds.get() {
+            let step = self.step(simulation, backend)
+                .map_err(|error| NativeLevelWindowError::Step {
+                    round, error,
+                })?;
+            counts.rounds += 1;
+            counts.world_steps += step.worlds_stepped;
+            counts.policy_rows += step.policy_agents_inferred;
+            if round % delivery_every.get() == 0 ||
+                step.worlds_stepped == 0 ||
+                round == max_rounds.get()
+            {
+                counts.retirement_notifications +=
+                    flush_all_squad_retirements(simulation, connection);
+                counts.delivered_notifications +=
+                    deliver_all_level_notifications(simulation, sink)
+                        .map_err(|error| NativeLevelWindowError::Delivery {
+                            round, error,
+                        })?.notifications_accepted;
+            }
+            if step.worlds_stepped == 0 {
+                counts.stopped_with_no_live_worlds = true;
+                break;
+            }
+        }
+        Ok(counts)
     }
 
     /// Atomic with respect to host-visible episode identity: old Level
