@@ -83,6 +83,17 @@ pub enum NativeAuthoredEntity {
     },
 }
 
+impl NativeAuthoredEntity {
+    pub fn entity_id(&self) -> i64 {
+        match self {
+            Self::Ship(ship) => ship.entity_id,
+            Self::BoxObstacle { entity_id, .. } |
+            Self::PolygonObstacle { entity_id, .. } |
+            Self::FullCollisionAsteroid { entity_id, .. } => *entity_id,
+        }
+    }
+}
+
 pub struct NativeAuthoredSquad {
     pub owner: SquadLifetime,
     pub side: i32,
@@ -193,7 +204,12 @@ impl NativeSceneAssets {
         self.configure_combat_world(&mut combat)
             .map_err(NativeSceneBuildError::Combat)?;
 
-        for entity in authored.entities {
+        // Unity assigns GameState entity IDs from a monotonic Stage pool.
+        // Imported ship/obstacle lists arrive separately; sort their
+        // original IDs once at setup, never in the simulation hot path.
+        let mut entities = authored.entities;
+        entities.sort_unstable_by_key(NativeAuthoredEntity::entity_id);
+        for entity in entities {
             match entity {
                 NativeAuthoredEntity::Ship(ship) => {
                 let asset = self.ship_catalog().by_type(ship.ship_type)

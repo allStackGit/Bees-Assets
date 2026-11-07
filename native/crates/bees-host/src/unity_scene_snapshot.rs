@@ -10,12 +10,14 @@
 //! learned vision, missiles in flight, command timers, pending outcomes, PPO
 //! trajectories and random stream position are not reconstructed here.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
 use bees_sim::asteroid_spawn::FullAsteroidPrototype;
+use bees_sim::combat_world::{NativeFirePattern, NativeTurretSpec};
+use bees_sim::control::PolicyFrame;
 use bees_sim::collision::{Aabb, Pose};
 use bees_sim::combat::{CombatError, ShipVitals};
 use bees_sim::geometry::Vec2;
@@ -25,9 +27,11 @@ use serde::Deserialize;
 use crate::fleet_inventory::{
     NativeFleetInventory, NativeFleetInventoryError, NativeFleetShipValue,
 };
-use crate::scene_builder::{NativeAuthoredEntity, NativeAuthoredShip};
+use crate::scene_builder::{
+    NativeAuthoredEntity, NativeAuthoredShip, NativeAuthoredPolicy, NativeAuthoredTurret,
+};
 
-const SNAPSHOT_VERSION: u32 = 1;
+const SNAPSHOT_VERSION: u32 = 2;
 
 #[derive(Deserialize, Clone, Copy)]
 struct UnityVec2 { x: f32, y: f32 }
@@ -75,6 +79,26 @@ struct UnityShip {
     is_rl_policy_controlled: bool,
     is_moving: bool,
     movement_direction: u16,
+    // Required in v2, exported from the actual Unity Weapon/Piece instances.
+    turrets: Vec<UnityTurret>,
+}
+
+#[derive(Deserialize)]
+struct UnityTurret {
+    slot: usize,
+    weapon_type: u8,
+    projectile_type: u8,
+    power: i32,
+    mount_offset: UnityVec2,
+    left_offset: UnityVec2,
+    right_offset: UnityVec2,
+    initial_rotation_degrees: f32,
+    rotation_rate: f32,
+    range: f32,
+    rate_of_fire: f32,
+    projectile_value: f32,
+    projectile_speed: f64,
+    fire_pattern: String,
 }
 
 #[derive(Deserialize)]
@@ -105,6 +129,10 @@ pub enum NativeSnapshotError {
     UnsupportedObstacle(i64),
     InvalidObstacle(i64),
     DuplicateEntity(i64),
+    DuplicateTurretSlot { ship_id: i64, slot: usize },
+    InvalidTurret { ship_id: i64, slot: usize },
+    UnknownPolicyShip(i64),
+    AlreadyBound(i64),
     Fleet(NativeFleetInventoryError),
 }
 
@@ -118,6 +146,9 @@ pub struct NativePhysicalScene {
     pub fixed_dt_seconds: f32,
     pub entities: Vec<NativeAuthoredEntity>,
     pub fleet: NativeFleetInventory,
+    // Real authored physical mounts retained even for non-policy ships.
+    // A Level must bind its own policy/route; the snapshot never invents one.
+    pub turrets_by_ship: HashMap<i64, Vec<NativeAuthoredTurret>>,
     /// A physical Unity controller was active when captured. The caller
     /// must supply corresponding real NativeAuthoredPolicy for these IDs;
     /// this snapshot never fabricates a policy frame or decision period.
@@ -125,6 +156,32 @@ pub struct NativePhysicalScene {
 }
 
 impl NativePhysicalScene {
+    /// Bind an actual source policy controller to one imported physical ship.
+    /// The caller supplies its episode frame, cease-fire and mobility flags;
+    /// imported native turrets retain exactly their authored mount and shot
+    /// specifications. Never attach to a nonexistent/previously bound ship.
+    pub fn bind_policy_ship(
+        &mut self,
+        ship_id: i64,
+        frame: PolicyFrame,
+        movement_disabled: bool,
+        cease_fire: bool,
+    ) -> Result<(), NativeSnapshotError> {
+        let ship = self.entities.iter_mut().find_map(|entry| match entry {
+            NativeAuthoredEntity::Ship(ship) if ship.entity_id == ship_id =>
+                Some(ship),
+            _ => None,
+        }).ok_or(NativeSnapshotError::UnknownPolicyShip(ship_id))?;
+        if ship.policy.is_some() {
+            return Err(NativeSnapshotError::AlreadyBound(ship_id));
+        }
+        ship.policy = Some(NativeAuthoredPolicy {
+            frame, movement_disabled, cease_fire,
+            turrets: self.turrets_by_ship.remove(&ship_id).unwrap_or_default(),
+        });
+        Ok(())
+    }
+
     pub fn read(path: &Path) -> Result<Self, NativeSnapshotError> {
         let source = fs::read_to_string(path).map_err(|error| NativeSnapshotError::Read {
             path: path.to_path_buf(), error,
@@ -152,6 +209,7 @@ impl NativePhysicalScene {
             raw.ships.len().saturating_add(raw.obstacles.len())
         );
         let mut fleet_values = Vec::with_capacity(raw.ships.len());
+        let mut turrets_by_ship = HashMap::with_capacity(raw.ships.len());
         let mut active_policy_ship_ids = Vec::new();
         let mut seen = HashSet::with_capacity(entities.capacity());
         for ship in raw.ships {
@@ -198,6 +256,64 @@ impl NativePhysicalScene {
             motion.is_moving = ship.is_moving;
             motion.movement_direction = ship.movement_direction;
 
+            let mut authored_turrets = Vec::with_capacity(ship.turrets.len());
+            let mut occupied = [false; 5];
+            for weapon in ship.turrets {
+                let invalid = |slot| NativeSnapshotError::InvalidTurret {
+                    ship_id: ship.entity_id, slot,
+                };
+                if weapon.slot >= occupied.len() {
+                    return Err(invalid(weapon.slot));
+                }
+                if occupied[weapon.slot] {
+                    return Err(NativeSnapshotError::DuplicateTurretSlot {
+                        ship_id: ship.entity_id, slot: weapon.slot,
+                    });
+                }
+                occupied[weapon.slot] = true;
+                let mount = weapon.mount_offset.into_vec();
+                let left = weapon.left_offset.into_vec();
+                let right = weapon.right_offset.into_vec();
+                if !mount.is_finite() || !left.is_finite() || !right.is_finite() ||
+                    !weapon.initial_rotation_degrees.is_finite() ||
+                    !weapon.rotation_rate.is_finite() ||
+                    !weapon.range.is_finite() ||
+                    !weapon.rate_of_fire.is_finite() ||
+                    !weapon.projectile_value.is_finite() ||
+                    !weapon.projectile_speed.is_finite()
+                {
+                    return Err(invalid(weapon.slot));
+                }
+                let fire_pattern = match weapon.fire_pattern.as_str() {
+                    "single" => NativeFirePattern::Single,
+                    "dual" => NativeFirePattern::DualCannon {
+                        left_offset: left, right_offset: right,
+                    },
+                    "laser-builder" => NativeFirePattern::LaserBuilder,
+                    "full-ship" => NativeFirePattern::FullShipTurret,
+                    "beam" => NativeFirePattern::BeamCannon,
+                    _ => return Err(invalid(weapon.slot)),
+                };
+                authored_turrets.push(NativeAuthoredTurret {
+                    slot: weapon.slot,
+                    spec: NativeTurretSpec {
+                        weapon_type: weapon.weapon_type,
+                        projectile_type: weapon.projectile_type,
+                        mount_offset: mount,
+                        initial_rotation_degrees: weapon.initial_rotation_degrees,
+                        rotation_rate: weapon.rotation_rate,
+                        range: weapon.range,
+                        power: weapon.power,
+                        rate_of_fire: weapon.rate_of_fire,
+                        projectile_value: weapon.projectile_value,
+                        projectile_speed: weapon.projectile_speed,
+                        fire_pattern,
+                    },
+                });
+            }
+            if !authored_turrets.is_empty() {
+                turrets_by_ship.insert(ship.entity_id, authored_turrets);
+            }
             if ship.is_rl_policy_controlled {
                 active_policy_ship_ids.push(ship.entity_id);
             }
@@ -269,6 +385,11 @@ impl NativePhysicalScene {
             };
             entities.push(entity);
         }
+        // Unity GameState.GetId allocates Stage-wide ascending entity IDs.
+        // Ships and obstacles have separate source collections; merging
+        // them by exact allocated ID restores the real creation order and
+        // satisfies CombatWorld's monotonically increasing entity ledger.
+        entities.sort_unstable_by_key(NativeAuthoredEntity::entity_id);
         let fleet = NativeFleetInventory::from_source(fleet_values)
             .map_err(NativeSnapshotError::Fleet)?;
         Ok(Self {
@@ -277,6 +398,7 @@ impl NativePhysicalScene {
             fixed_dt_seconds: raw.fixed_dt_seconds,
             entities,
             fleet,
+            turrets_by_ship,
             active_policy_ship_ids,
         })
     }
