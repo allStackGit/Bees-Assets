@@ -1595,6 +1595,23 @@ retain their original format and behavior. This is an early-stop policy:
 a natural trainer finish still completes an independent sequence under
 its existing rules, even if no evaluation stop target was reached.
 
+Both scheduled pollers publish a small `.workspace.json` ownership record in
+their private `--scratch` directory before exporting models or writing replays.
+The next invocation takes the same kernel lock and reclaims only that recorded
+workspace, even when no job remains eligible. Receipts and checkpoint cursors
+are retained. The ownership record remains outside the workspace until cleanup
+finishes, so interrupted cleanup can also be recovered. Corrupt ownership or
+a redirected workspace stops evaluation for inspection; unrecorded scratch
+directories from older versions are left for manual review. The surrounding
+scheduler must contain the evaluator's complete process tree when stopping it.
+
+Windows execution checks covered abrupt single/batch worker exits, live-lock
+exclusion, redirected paths, junction target preservation and readonly model
+cleanup. Actual TinyBrains evaluation then completed 12 single-suite and 24
+batch held-out games with matching checkpoint receipts and no retained owned
+workspace. This qualifies evaluation mechanics and cleanup, not playing strength,
+production resource coexistence or Linux runtime behavior.
+
 Queueing freezes the rule. Only hosts advertising the requested suite(s)
 for that project can claim or start the job. Agents without suite
 advertisements remain eligible for jobs without an evaluation stop.

@@ -6,10 +6,13 @@ import hashlib
 import http.client
 import json
 import os
+import re
 import shutil
+import stat
 from pathlib import Path
 import sys
 import tempfile
+import uuid
 from urllib.parse import urlencode
 
 from experiment_hub_eval_io import SHA256, UUID, publish, read_bounded, suite_digest
@@ -68,6 +71,68 @@ def save_cursor(path: Path, cursor: dict):
         stream.flush()
         os.fsync(stream.fileno())
     os.replace(pending, path)
+
+
+def reclaim_workspace(state: Path):
+    """Reclaim only a workspace certified under this state's kernel lock."""
+    parent = state.parent.resolve(strict=True)
+    owner = (parent / state.name).with_suffix(".workspace.json")
+    if not os.path.lexists(owner):
+        return
+    if owner.is_symlink() or not owner.is_file() or owner.resolve(strict=True) != owner:
+        raise ValueError("Evaluation workspace ownership file is redirected or unavailable.")
+    record = json.loads(read_bounded(owner, 1024))
+    prefix = state.stem + ".work-"
+    if (not isinstance(record, dict) or
+        set(record) != {"schema_version", "state_file", "directory"} or
+        type(record["schema_version"]) is not int or record["schema_version"] != 1 or
+        record["state_file"] != state.name or
+        not isinstance(record["directory"], str) or
+        not record["directory"].startswith(prefix) or
+        not re.fullmatch(r"[a-f0-9]{32}", record["directory"][len(prefix):])):
+        raise ValueError("Invalid evaluation workspace ownership; inspect scratch storage.")
+    directory = parent / record["directory"]
+    if os.path.lexists(directory):
+        if (directory.is_symlink() or not directory.is_dir() or
+            directory.resolve(strict=True) != directory):
+            raise ValueError("Evaluation workspace is redirected; no files removed.")
+        # The absolute target is an exact, owned child of canonical scratch.
+        # Keep the external owner file until deletion finishes, so even an
+        # interrupted cleanup remains recoverable on the next locked poll.
+        def remove_readonly(function, file, error):
+            target = Path(file)
+            if (os.name != "nt" or function is not os.unlink or
+                not isinstance(error[1], PermissionError) or target.is_symlink() or
+                not target.is_file() or target.resolve(strict=True) != target or
+                not target.is_relative_to(directory)):
+                raise error[1]
+            # Match TemporaryDirectory's Windows readonly-file cleanup,
+            # restricted to a regular file within this certified workspace.
+            target.chmod(stat.S_IREAD | stat.S_IWRITE)
+            function(file)
+        shutil.rmtree(directory, onerror=remove_readonly)
+    owner.unlink()
+
+
+@contextmanager
+def evaluation_workspace(state: Path):
+    parent = state.parent.resolve(strict=True)
+    owner = (parent / state.name).with_suffix(".workspace.json")
+    directory = parent / (state.stem + ".work-" + uuid.uuid4().hex)
+    directory.mkdir(mode=0o700)
+    try:
+        # Publish ownership before any evaluator/model/replay can use it.
+        save_cursor(owner, {"schema_version": 1, "state_file": state.name,
+                            "directory": directory.name})
+    except BaseException:
+        directory.rmdir()  # Still empty: evaluation has not begun.
+        raise
+    try:
+        yield directory
+    finally:
+        if not os.path.lexists(owner):
+            raise ValueError("Evaluation workspace ownership disappeared; inspect scratch storage.")
+        reclaim_workspace(state)
 
 
 def final_checkpoint(artifact_root, job, filename):
@@ -132,6 +197,7 @@ def poll_checkpoint(args, project, suite, receipt_suite, find_checkpoint, evalua
     digest = suite_digest(suite)
 
     with exclusive(state.with_suffix(".lock")):
+        reclaim_workspace(state)
         try:
             prior = json.loads(read_bounded(state, 131072))
             if prior["suite_sha256"] != digest:
@@ -184,8 +250,8 @@ def poll_checkpoint(args, project, suite, receipt_suite, find_checkpoint, evalua
             # produced a durable pending receipt. An interrupted evaluator
             # must be able to retry the same immutable checkpoint.
             try:
-                with tempfile.TemporaryDirectory(prefix=f"{project}-eval-", dir=args.scratch) as temp:
-                    successes = evaluate_checkpoint(job, file, checkpoint_digest, Path(temp))
+                with evaluation_workspace(state) as work:
+                    successes = evaluate_checkpoint(job, file, checkpoint_digest, work)
                 if type(successes) is not int or not 0 <= successes <= receipt_suite["trials"]:
                     raise ValueError("Invalid evaluation success count.")
             except (OSError, RuntimeError, ValueError, TypeError, KeyError):
@@ -266,6 +332,7 @@ def poll_batch(args, project, suites, find_checkpoint, evaluate_checkpoint):
                 print(publish(args.receipt_root, receipt))
 
     with exclusive(state.with_suffix(".lock")):
+        reclaim_workspace(state)
         try:
             prior = json.loads(read_bounded(state, 131072))
             if prior["suite_sha256"] != identity:
@@ -343,9 +410,7 @@ def poll_batch(args, project, suites, find_checkpoint, evaluate_checkpoint):
             # One durable snapshot is shared by every suite. The trainer
             # may prune its source at any moment; copy and verify it first.
             try:
-                with tempfile.TemporaryDirectory(
-                    prefix=f"{project}-eval-batch-", dir=args.scratch
-                ) as temp:
+                with evaluation_workspace(state) as temp:
                     # Evaluators may create checkpoint.pt or policy.zip
                     # inside their work directory; avoid using either name.
                     frozen = Path(temp) / ("immutable-source" + file.suffix)
