@@ -38,7 +38,8 @@ use bees_sim::combat_perception_bridge::{
 use bees_sim::perception::CapabilitySource;
 use bees_sim::perception_weapons::SelfWeapon;
 use bees_gameplay::inference::NativePolicyRoute;
-use bees_sim::navigation_runtime::NavigationRuntime;
+use bees_sim::navigation_runtime::{NavigationMapFrame, NavigationRuntime};
+use bees_sim::navigation::{NavigationGrid, NavigationError};
 use bees_gameplay::episode::{
     NativeEpisodeRewardCoordinator, NativeEpisodeRewardError,
 };
@@ -59,7 +60,7 @@ use crate::policy_only_metadata::{
     PolicyOnlyMetadataError,
 };
 
-const SNAPSHOT_VERSION: u32 = 12;
+const SNAPSHOT_VERSION: u32 = 13;
 
 #[derive(Deserialize, Clone, Copy)]
 struct UnityVec2 { x: f32, y: f32 }
@@ -81,6 +82,11 @@ struct UnitySnapshot {
     policy_episode: Option<UnityPolicyEpisode>,
     min: UnityVec2,
     max: UnityVec2,
+    navigation_map_width: i32,
+    navigation_map_height: i32,
+    navigation_origin_world: UnityVec2,
+    navigation_x_axis_world: UnityVec2,
+    navigation_y_axis_world: UnityVec2,
     ships: Vec<UnityShip>,
     obstacles: Vec<UnityObstacle>,
     map_objects: Vec<UnityMapObject>,
@@ -268,6 +274,8 @@ pub enum NativeSnapshotError {
     AlreadyBound(i64),
     InvalidPolicySource(i64),
     InvalidEpisodeSource,
+    InvalidNavigationSource,
+    Navigation(NavigationError),
     Episode(NativeEpisodeRewardError),
     MissingModelSlot(u8),
     Fleet(NativeFleetInventoryError),
@@ -284,6 +292,7 @@ pub struct NativePhysicalScene {
     pub shots_harmless: bool,
     pub entities: Vec<NativeAuthoredEntity>,
     source_episode: Option<NativeSourceEpisode>,
+    source_navigation: NativeSourceNavigation,
     pub fleet: NativeFleetInventory,
     // Real authored physical mounts retained even for non-policy ships.
     // A Level must bind its own policy/route; the snapshot never invents one.
@@ -312,6 +321,13 @@ struct NativeSourceEpisode {
     human_starting_tsv: i32,
     timeout_seconds: f32,
     discovery_baselines: [[i32; 4]; 2],
+}
+
+#[derive(Clone, Copy, Debug)]
+struct NativeSourceNavigation {
+    map_width: f32,
+    map_height: f32,
+    frame: NavigationMapFrame,
 }
 
 /// All values not represented in Unity's physical snapshot remain required
@@ -369,6 +385,20 @@ pub struct NativeSourceSquad {
 }
 
 impl NativePhysicalScene {
+    /// Construct the same Pathfinder.Scale=4 navigation grid and complete
+    /// map affine basis used by this Unity Level. The canonical game world
+    /// owns the live obstacle colliders; refresh static/dynamic clearance
+    /// against that world before command-driven path requests.
+    pub fn exported_navigation_runtime(
+        &self,
+    ) -> Result<NavigationRuntime, NativeSnapshotError> {
+        let nav = self.source_navigation;
+        let grid = NavigationGrid::new(nav.map_width, nav.map_height)
+            .map_err(NativeSnapshotError::Navigation)?;
+        NavigationRuntime::new(grid, nav.frame)
+            .map_err(NativeSnapshotError::Navigation)
+    }
+
     /// Fresh native coordinator with the exact source *starting* TSV and
     /// all four source-defined discovery denominators per faction. This
     /// starts a NEW native episode; it does not replay Unity's consumed
@@ -623,6 +653,21 @@ impl NativePhysicalScene {
             })
         } else {
             None
+        };
+        let frame = NavigationMapFrame {
+            origin_world: raw.navigation_origin_world.into_vec(),
+            x_axis_world: raw.navigation_x_axis_world.into_vec(),
+            y_axis_world: raw.navigation_y_axis_world.into_vec(),
+        };
+        if raw.navigation_map_width <= 0 ||
+            raw.navigation_map_height <= 0 || !frame.valid()
+        {
+            return Err(NativeSnapshotError::InvalidNavigationSource);
+        }
+        let source_navigation = NativeSourceNavigation {
+            map_width: raw.navigation_map_width as f32,
+            map_height: raw.navigation_map_height as f32,
+            frame,
         };
         let min = raw.min.into_vec();
         let max = raw.max.into_vec();
@@ -1160,6 +1205,7 @@ impl NativePhysicalScene {
             shots_harmless: raw.shots_harmless,
             entities,
             source_episode,
+            source_navigation,
             fleet,
             turrets_by_ship,
             authored_ship_perceptions,
