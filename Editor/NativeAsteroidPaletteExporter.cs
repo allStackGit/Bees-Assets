@@ -1,5 +1,6 @@
 #if UNITY_EDITOR
 using System;
+using Assets.Scripts.Entities;
 using System.IO;
 using System.Text;
 using UnityEditor;
