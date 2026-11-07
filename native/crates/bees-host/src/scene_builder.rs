@@ -66,6 +66,9 @@ pub enum NativeAuthoredEntity {
         entity_id: i64,
         prefab_name: String,
         pose: Option<Pose>,
+        /// Exact Unity primary BoxCollider2D, for a live transformed scene.
+        /// None is valid when explicitly spawning an unmodified prefab.
+        live_corners: Option<[Vec2; 4]>,
     },
     PolygonObstacle {
         entity_id: i64,
@@ -137,6 +140,7 @@ pub enum NativeSceneBuildError {
     Combat(CombatWorldError),
     Squad(SquadRosterError),
     IncompleteSquadRoster,
+    MissingLiveBoxPose(i64),
     Group(GroupRewardError),
     GroupConfiguration(NativeLevelEventError),
 }
@@ -240,11 +244,21 @@ impl NativeSceneAssets {
                 }
                 }
                 NativeAuthoredEntity::BoxObstacle {
-                    entity_id, prefab_name, pose,
+                    entity_id, prefab_name, pose, live_corners,
                 } => {
-                    combat.spawn_box_obstacle(
-                        self.box_catalog(), &prefab_name, entity_id, pose,
-                    ).map_err(NativeSceneBuildError::Combat)?;
+                    if let Some(corners) = live_corners {
+                        let pose = pose.ok_or(
+                            NativeSceneBuildError::MissingLiveBoxPose(entity_id)
+                        )?;
+                        combat.spawn_authored_box_obstacle(
+                            self.box_catalog(), &prefab_name, entity_id,
+                            pose, corners,
+                        ).map_err(NativeSceneBuildError::Combat)?;
+                    } else {
+                        combat.spawn_box_obstacle(
+                            self.box_catalog(), &prefab_name, entity_id, pose,
+                        ).map_err(NativeSceneBuildError::Combat)?;
+                    }
                 }
                 NativeAuthoredEntity::FullCollisionAsteroid {
                     entity_id, profile, pose, velocity,

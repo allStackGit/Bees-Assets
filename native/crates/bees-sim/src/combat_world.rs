@@ -2325,6 +2325,21 @@ impl CombatWorld {
         self.add_obstacle(obstacle, body)
     }
 
+    /// Live authored instance of a verified primary BoxCollider2D. Unity
+    /// may resize/rotate a nested collider after prefab load; copy its real
+    /// four corners once, with no alternate collision or pathfinding core.
+    pub fn spawn_authored_box_obstacle(
+        &mut self, catalog: &BoxObstacleCatalog, prefab_name: &str,
+        entity_id: i64, pose: Pose, corners: [Vec2; 4],
+    ) -> Result<(), CombatWorldError> {
+        let asset = catalog.by_name(prefab_name)
+            .ok_or(CombatWorldError::InvalidObstacle)?;
+        let (obstacle, body) = asset.prepare_spawn_live_box(
+            entity_id, pose, corners,
+        )?;
+        self.add_obstacle(obstacle, body)
+    }
+
     /// Spawn the standalone authored concave Polygon Obstacle without
     /// treating its proximity sensor as a second damage collider.
     pub fn spawn_polygon_obstacle(

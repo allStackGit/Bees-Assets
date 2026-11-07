@@ -48,7 +48,7 @@ use crate::policy_only_metadata::{
     PolicyOnlyMetadataError,
 };
 
-const SNAPSHOT_VERSION: u32 = 4;
+const SNAPSHOT_VERSION: u32 = 5;
 
 #[derive(Deserialize, Clone, Copy)]
 struct UnityVec2 { x: f32, y: f32 }
@@ -160,6 +160,7 @@ struct UnityObstacle {
     rotation_degrees: f32,
     velocity: UnityVec2,
     angular_velocity_degrees: f32,
+    collider_vertices: Vec<UnityVec2>,
 }
 
 #[derive(Debug)]
@@ -553,10 +554,22 @@ impl NativePhysicalScene {
                 return Err(NativeSnapshotError::InvalidObstacle(obstacle.entity_id));
             }
             let entity = match obstacle.kind.as_str() {
-                "box" => NativeAuthoredEntity::BoxObstacle {
-                    entity_id: obstacle.entity_id,
-                    prefab_name: obstacle.prefab_name,
-                    pose: Some(pose),
+                "box" => {
+                    if obstacle.collider_vertices.len() != 4 {
+                        return Err(NativeSnapshotError::InvalidObstacle(obstacle.entity_id));
+                    }
+                    let mut corners = [Vec2::ZERO; 4];
+                    for (target, source) in corners.iter_mut()
+                        .zip(obstacle.collider_vertices.iter())
+                    {
+                        *target = source.into_vec();
+                    }
+                    NativeAuthoredEntity::BoxObstacle {
+                        entity_id: obstacle.entity_id,
+                        prefab_name: obstacle.prefab_name,
+                        pose: Some(pose),
+                        live_corners: Some(corners),
+                    }
                 },
                 "polygon" => NativeAuthoredEntity::PolygonObstacle {
                     entity_id: obstacle.entity_id,

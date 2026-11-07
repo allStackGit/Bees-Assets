@@ -74,6 +74,7 @@ internal static class NativePhysicalSceneExporter
         public bool is_shard;
         public Vector2 position, velocity;
         public float rotation_degrees, angular_velocity_degrees;
+        public List<Vector2> collider_vertices = new List<Vector2>();
     }
 
     [Serializable]
@@ -89,7 +90,7 @@ internal static class NativePhysicalSceneExporter
     [Serializable]
     private sealed class PhysicalScene
     {
-        public int schema_version = 4;
+        public int schema_version = 5;
         public string level_name;
         public float fixed_dt_seconds;
         public Vector2 min, max;
@@ -348,7 +349,34 @@ internal static class NativePhysicalSceneExporter
         }
         else if (obstacle is StaticObstacle || obstacle is MapBorder)
         {
+            if (!(obstacle.Collider is BoxCollider2D box) ||
+                box.edgeRadius != 0f)
+            {
+                throw new InvalidOperationException(
+                    "Only exact unrounded primary BoxCollider2D " +
+                    "can be imported: " + obstacle.name);
+            }
             entity.kind = "box";
+            Vector2 half = box.size * 0.5f;
+            Vector2 center = box.offset;
+            Vector2[] corners = {
+                center + new Vector2(-half.x, -half.y),
+                center + new Vector2(half.x, -half.y),
+                center + new Vector2(half.x, half.y),
+                center + new Vector2(-half.x, half.y)
+            };
+            Quaternion localUnrotate = Quaternion.Euler(
+                0f, 0f, -entity.rotation_degrees);
+            foreach (Vector2 corner in corners)
+            {
+                Vector2 worldCorner = box.transform.TransformPoint(corner);
+                Vector2 mapCorner = map.InverseTransformPoint(worldCorner);
+                // Convert transformed physical collider corners, including
+                // runtime scale/child rotation/nested prefab placement, into
+                // the obstacle root's coordinate frame. No AABB substitute.
+                entity.collider_vertices.Add(
+                    localUnrotate * (mapCorner - entity.position));
+            }
         }
         else
         {

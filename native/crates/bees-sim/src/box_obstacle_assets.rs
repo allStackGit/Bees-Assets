@@ -5,6 +5,7 @@
 //! placement may replace them without modifying immutable collider geometry.
 
 use serde::Deserialize;
+use std::sync::Arc;
 
 use crate::collider_asset_shape::RawShape;
 use crate::collision::Pose;
@@ -35,11 +36,76 @@ impl BoxObstacleAsset {
         entity_id: i64,
         override_pose: Option<Pose>,
     ) -> Result<(CombatObstacle, ObstacleBody), PhysicsError> {
+        self.prepare_spawn_shape(entity_id, override_pose, self.shape.clone())
+    }
+
+    /// Real current Unity BoxCollider2D quad in Obstacle-local coordinates.
+    /// Preserve source prefab kind/layer, and the same physical collision
+    /// implementation as the headless and rendered native game.
+    pub fn prepare_spawn_live_box(
+        &self, entity_id: i64, pose: Pose, points: [Vec2; 4],
+    ) -> Result<(CombatObstacle, ObstacleBody), PhysicsError> {
+        if points.iter().any(|point| !point.is_finite()) {
+            return Err(PhysicsError::InvalidCollider);
+        }
+        let mut twice_area = 0.0_f32;
+        for i in 0..4 {
+            let a = points[i];
+            let b = points[(i + 1) % 4];
+            if (b - a).length_squared() < 1.0e-10 {
+                return Err(PhysicsError::InvalidCollider);
+            }
+            twice_area += a.x * b.y - a.y * b.x;
+        }
+        if !twice_area.is_finite() || twice_area.abs() < 1.0e-7 {
+            return Err(PhysicsError::InvalidCollider);
+        }
+        let mut min = points[0];
+        let mut max = points[0];
+        for point in points.iter().skip(1) {
+            min.x = min.x.min(point.x);
+            min.y = min.y.min(point.y);
+            max.x = max.x.max(point.x);
+            max.y = max.y.max(point.y);
+        }
+        let span = max - min;
+        if span.x <= 1.0e-6 || span.y <= 1.0e-6 {
+            return Err(PhysicsError::InvalidCollider);
+        }
+        let nearly = |value: f32, low: f32, high: f32, span: f32| {
+            let tolerance = span * 1.0e-5;
+            (value - low).abs() <= tolerance ||
+                (value - high).abs() <= tolerance
+        };
+        // Most layouts are scaled but axis-aligned in the root's local
+        // frame. Retain the Box fast path; genuinely rotated nested child
+        // colliders use the same canonical polygon path, without guessing.
+        let rectangular = points.iter().all(|p|
+            nearly(p.x, min.x, max.x, span.x) &&
+            nearly(p.y, min.y, max.y, span.y)
+        );
+        let shape = if rectangular {
+            ShipShape::Box {
+                offset: Vec2::new(
+                    (min.x + max.x) * 0.5,
+                    (min.y + max.y) * 0.5,
+                ),
+                half_extents: span * 0.5,
+            }
+        } else {
+            ShipShape::Polygon(Arc::from(points.to_vec().into_boxed_slice()))
+        };
+        self.prepare_spawn_shape(entity_id, Some(pose), shape)
+    }
+
+    fn prepare_spawn_shape(
+        &self, entity_id: i64, override_pose: Option<Pose>, shape: ShipShape,
+    ) -> Result<(CombatObstacle, ObstacleBody), PhysicsError> {
         let body = ObstacleBody::new(
             entity_id,
             override_pose.unwrap_or(self.default_pose),
             self.collision_layer,
-            self.shape.clone(),
+            shape,
             Vec2::ZERO,
             0.0,
         )?;
