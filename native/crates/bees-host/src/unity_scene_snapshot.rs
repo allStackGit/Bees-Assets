@@ -11,6 +11,8 @@
 //! trajectories and random stream position are not reconstructed here.
 
 use std::collections::{HashMap, HashSet};
+use std::num::NonZeroU32;
+use std::sync::Arc;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -23,6 +25,13 @@ use bees_sim::collision::{Aabb, Pose};
 use bees_sim::combat::{CombatError, ShipVitals};
 use bees_sim::geometry::Vec2;
 use bees_sim::movement::ShipMotion;
+use bees_sim::simulation::WorldId;
+use bees_sim::ship_assets::ShipAssetCatalog;
+use bees_sim::combat_perception_bridge::AuthoredShipPerception;
+use bees_sim::navigation_runtime::NavigationRuntime;
+use bees_gameplay::episode::NativeEpisodeRewardCoordinator;
+use bees_gameplay::group_rewards::NativeGroupRewardDelivery;
+use bees_gameplay::level_rules::NativeLevelState;
 use serde::Deserialize;
 
 use crate::fleet_inventory::{
@@ -30,7 +39,12 @@ use crate::fleet_inventory::{
 };
 use crate::scene_builder::{
     NativeAuthoredEntity, NativeAuthoredShip, NativeAuthoredPolicy,
-    NativeAuthoredTurret, NativeAuthoredSquad,
+    NativeAuthoredTurret, NativeAuthoredSquad, NativeAuthoredLevel,
+    NativeAuthoredGroups,
+};
+use crate::policy_only_metadata::{
+    AuthoredPolicyAgent, AuthoredPolicySide, NativePolicyOnlyMetadata,
+    PolicyOnlyMetadataError,
 };
 
 const SNAPSHOT_VERSION: u32 = 3;
@@ -171,6 +185,34 @@ pub struct NativePhysicalScene {
     pub source_squads: Vec<NativeSourceSquad>,
 }
 
+/// All values not represented in Unity's physical snapshot remain required
+/// authenticated/authoritative inputs. The caller binds real controller
+/// frames to imported ships before composing the policy Level, and provides
+/// the complete v26 observation/NavigationRuntime environment here.
+pub struct NativePolicyOnlyLevelSetup<A> {
+    pub world_id: WorldId,
+    pub level_id: i64,
+    pub seed: u64,
+    pub broadphase_cell_size: f32,
+    pub decision_period: NonZeroU32,
+    pub initial_full_asteroids: usize,
+    pub episode: NativeEpisodeRewardCoordinator,
+    pub groups: Option<NativeAuthoredGroups>,
+    pub navigation: NavigationRuntime,
+    pub ship_catalog: Arc<ShipAssetCatalog>,
+    pub authored_ship_perceptions: Vec<(i64, AuthoredShipPerception)>,
+    pub policy_agents: Vec<AuthoredPolicyAgent>,
+    pub sides: Vec<AuthoredPolicySide>,
+    pub allocate_minion: A,
+}
+
+#[derive(Debug)]
+pub enum NativePolicyOnlyLevelError {
+    Snapshot(NativeSnapshotError),
+    Metadata(PolicyOnlyMetadataError),
+    InvalidControllerBinding(i64),
+}
+
 /// Runtime source Squad.ItemId is allocated once per Squad.Setup by the
 /// Stage-wide monotonic Pool.ItemCount, even for reused pooled wrappers.
 pub struct NativeSourceSquad {
@@ -180,6 +222,64 @@ pub struct NativeSourceSquad {
 }
 
 impl NativePhysicalScene {
+    /// Finish ONE actual imported Level without creating a separate combat
+    /// backend or estimated ship/weapon/squad values. Every supplied policy
+    /// agent must match one previously bound native ship on the same side;
+    /// likewise no bound policy ship may lack its source observation route.
+    pub fn into_policy_only_level<A>(
+        self,
+        setup: NativePolicyOnlyLevelSetup<A>,
+    ) -> Result<NativeAuthoredLevel<NativePolicyOnlyMetadata, A>,
+        NativePolicyOnlyLevelError>
+    {
+        let mut bound_sides = HashMap::new();
+        for entity in &self.entities {
+            if let NativeAuthoredEntity::Ship(ship) = entity {
+                if ship.policy.is_some() {
+                    bound_sides.insert(ship.entity_id, ship.side);
+                }
+            }
+        }
+        for agent in &setup.policy_agents {
+            if bound_sides.remove(&agent.ship_id) != Some(agent.side) {
+                return Err(NativePolicyOnlyLevelError::InvalidControllerBinding(
+                    agent.ship_id,
+                ));
+            }
+        }
+        if let Some((&ship_id, _)) = bound_sides.iter().next() {
+            return Err(NativePolicyOnlyLevelError::InvalidControllerBinding(
+                ship_id,
+            ));
+        }
+
+        let squads = self.squads_for_level(setup.level_id)
+            .map_err(NativePolicyOnlyLevelError::Snapshot)?;
+        let metadata = NativePolicyOnlyMetadata::new(
+            self.bounds,
+            setup.navigation,
+            self.fleet,
+            setup.ship_catalog,
+            setup.authored_ship_perceptions,
+            setup.policy_agents,
+            setup.sides,
+        ).map_err(NativePolicyOnlyLevelError::Metadata)?;
+        Ok(NativeAuthoredLevel {
+            world_id: setup.world_id,
+            seed: setup.seed,
+            broadphase_bounds: self.bounds,
+            broadphase_cell_size: setup.broadphase_cell_size,
+            decision_period: setup.decision_period,
+            entities: self.entities,
+            squads,
+            initial_full_asteroids: setup.initial_full_asteroids,
+            episode: setup.episode,
+            groups: setup.groups,
+            metadata,
+            allocate_minion: setup.allocate_minion,
+        })
+    }
+
     /// Derive the *current* lifetime token from the source's unique ItemId,
     /// not from a pooled GameObject pointer, reusable squad number or SavedSquad.
     /// The caller supplies the actual distinct Level identity used by HiveMind.
