@@ -202,10 +202,17 @@ impl FullRetreatRun {
         if self.participants.is_empty() {
             return Ok((Some(CommandFinishCause::AllWarpParticipantsGone), 0));
         }
-        // The collision enters before the timer. Once queued, a ship
-        // remains waiting even if it drifts away before animation readiness.
+        // Unity WarpGate.OnTriggerEnter2D calls QueueShipForWarp,
+        // which immediately calls WaitToWarp. An arrival after the gate
+        // is already ready therefore warps now, not at the next 2s poll.
+        // CombatWorld commits the resulting retirement on its next fixed
+        // step so ship/reward/event ownership remains in one place.
+        // Earlier waiting ships still use the recurring readiness poll.
         for &id in &self.participants {
-            world.queue_game_warp_contact(id, self.gate_id);
+            if world.queue_game_warp_contact(id, self.gate_id) &&
+                world.game_warp_gate_ready(self.gate_id) {
+                world.complete_game_warp(id, self.gate_id)?;
+            }
         }
         if let Some(due) = self.warp_poll.begin_update(dt) {
             callbacks += 1;
