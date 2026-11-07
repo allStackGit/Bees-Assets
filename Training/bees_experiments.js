@@ -2944,6 +2944,8 @@ if (require.main === module) {
             const status=hub.tickAutomation();
             if(status.last_error)
                 console.error('[hub] native automation disarmed: '+status.last_error);
+            else if(before.restart_rearm_pending&&status.enabled)
+                console.log('[hub] '+status.last_action);
         }, 10000);
     });
     // Optional Hub agent service must not prevent the existing Bees
