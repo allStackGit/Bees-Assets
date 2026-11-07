@@ -8,7 +8,7 @@ const {request: resourceRequest,placements: resourcePlacements} =
     require('./experiment_hub_resources');
 const {validateProgress}=require('./experiment_hub_progress');
 const {tinyBrainsProfiles,supportsTinyBrainsProfile}=require('./experiment_hub_tinybrains_adapter');
-const {evaluationPolicy,evaluationEvidence,suiteIds,supportsEvaluation}=
+const {evaluationPolicy,evaluationEvidence,evaluationRules,evaluationComplete,suiteIds,supportsEvaluation}=
     require('./experiment_hub_evaluation');
 const {ProgressHistory}=require('./experiment_hub_history');
 const ID = /^[a-z][a-z0-9_-]{0,47}$/;
@@ -235,15 +235,8 @@ function independentSequenceComplete(job) {
         !job.evaluation_stop_evidence||!UUID.test(String(job.dispatch_id||''))||
         !job.stop_requested_at||!job.execution_updated_at)
         return false;
-    try {
-        const rule=evaluationPolicy(job.evaluation_stop);
-        const evidence=evaluationEvidence(job.evaluation_stop_evidence,
-            rule,job.dispatch_id);
-        return evidence.trials>=rule.min_trials&&
-            evidence.successes/evidence.trials>=rule.min_success_rate;
-    }catch {
-        return false;
-    }
+    return evaluationComplete(job.evaluation_stop_evidence,
+        job.evaluation_stop,job.dispatch_id);
 }
 function checkpointContinuationComplete(job) {
     if(!['courier','tinybrains'].includes(job?.project_id))return false;
@@ -319,7 +312,7 @@ function nativeStartReadiness(snapshot, job) {
     if(!supportsTinyBrainsProfile(machine,job))
         return block('The assigned worker does not approve this TinyBrains CPU profile and update count.');
     if(!supportsEvaluation(machine.evaluation_suites,job))
-        return block('The assigned adapter does not advertise evaluation suite '+job.evaluation_stop.suite_id+'.');
+        return block('The assigned adapter does not advertise all required evaluation suites.');
     const r=job.resources;
     if(!r||r.ram_mb<128)
         return block('Native Start requires at least 128 MiB RAM.');
@@ -1073,17 +1066,22 @@ class ExperimentHub {
             const observed=this.executionTelemetry.get(job.id);
             const age=observedAt-Date.parse(observed?.at||'');
             return job.project_id===projectId&&job.assigned_machine_id===machineId&&
-                job.status==='running'&&job.evaluation_stop?.suite_id===suiteId&&
+                job.status==='running'&&
+                evaluationRules(job.evaluation_stop).some(rule=>rule.suite_id===suiteId)&&
                 UUID.test(job.dispatch_id||'')&&UUID.test(job.artifact_lineage_root_id||job.id)&&
                 observed?.dispatch_id===job.dispatch_id&&
                 observed?.agent_instance_id===report.instance_id&&
                 observed?.state==='running'&&
                 age>=0&&age<AGENT_HEARTBEAT_TTL_MS;
-        }).map(job=>({job_id:job.id,dispatch_id:job.dispatch_id,
-            artifact_lineage_root_id:job.artifact_lineage_root_id||job.id,
-            ...(job.evaluation_stop.suite_sha256?{suite_sha256:job.evaluation_stop.suite_sha256}:{}),
-            min_trials:job.evaluation_stop.min_trials,
-            min_success_rate:job.evaluation_stop.min_success_rate}));
+        }).map(job=>{
+            const rule=evaluationRules(job.evaluation_stop)
+                .find(candidate=>candidate.suite_id===suiteId);
+            return {job_id:job.id,dispatch_id:job.dispatch_id,
+                artifact_lineage_root_id:job.artifact_lineage_root_id||job.id,
+                ...(rule.suite_sha256?{suite_sha256:rule.suite_sha256}:{}),
+                min_trials:rule.min_trials,
+                min_success_rate:rule.min_success_rate};
+        });
     }
     progressComparison(projectId) {
         this.project(projectId);
@@ -1627,12 +1625,32 @@ class ExperimentHub {
             // Only reports accepted into the lifecycle may update live
             // telemetry and comparison samples. A delayed older report
             // must not make a terminal job appear to be running again.
-            let evaluation=null,evaluationIssue=null;
+            let evaluation=null,evaluations=[],evaluationIssue=null;
             if(state==='running'&&job.project_id!=='ants'&&job.evaluation_stop&&
                 supportsEvaluation(evaluationSuites,job)) {
                 evaluationIssue=typeof report.evaluation_issue==='string'
                     ?report.evaluation_issue.slice(0,160):null;
-                if(report.evaluation!=null) {
+                const rules=evaluationRules(job.evaluation_stop);
+                if(job.evaluation_stop.all_of) {
+                    if(report.evaluations!=null) {
+                        try {
+                            if(!Array.isArray(report.evaluations)||
+                                report.evaluations.length>rules.length)
+                                throw Error('Invalid multi-suite evaluation report count.');
+                            const seen=new Set();
+                            for(const raw of report.evaluations) {
+                                const rule=rules.find(r=>r.suite_id===raw?.suite_id);
+                                if(!rule||seen.has(rule.suite_id))
+                                    throw Error('Unexpected or duplicate evaluation suite.');
+                                seen.add(rule.suite_id);
+                                evaluations.push(evaluationEvidence(raw,rule,job.dispatch_id));
+                            }
+                        }catch(error) {
+                            evaluations=[];
+                            evaluationIssue=error.message;
+                        }
+                    }
+                }else if(report.evaluation!=null) {
                     try {
                         evaluation=evaluationEvidence(
                             report.evaluation,job.evaluation_stop,job.dispatch_id);
@@ -1660,8 +1678,40 @@ class ExperimentHub {
                 job.execution_updated_at=now();
                 changed=true;
             }
-            if(evaluation&&evaluation.trials>=job.evaluation_stop.min_trials&&
-                evaluation.successes/evaluation.trials>=job.evaluation_stop.min_success_rate) {
+            if(evaluations.length) {
+                // Retain a small bounded number of immutable checkpoint
+                // cohorts. Results from different policies must never be
+                // combined to authorize a benchmark-driven Stop.
+                const candidates=job.evaluation_candidates||[];
+                for(const receipt of evaluations) {
+                    let index=candidates.findIndex(c=>
+                        c.checkpoint_sha256===receipt.checkpoint_sha256);
+                    const cohort=index>=0?candidates[index]:{
+                        checkpoint_sha256:receipt.checkpoint_sha256,receipts:{}};
+                    const previous=cohort.receipts[receipt.suite_id];
+                    if(JSON.stringify(previous)===JSON.stringify(receipt))
+                        continue;
+                    cohort.receipts[receipt.suite_id]=receipt;
+                    if(index>=0)candidates.splice(index,1);
+                    candidates.unshift(cohort);
+                    if(candidates.length>8)candidates.length=8;
+                    changed=true;
+                }
+                if(changed)job.evaluation_candidates=candidates;
+                for(const cohort of candidates) {
+                    const proof={all_of:evaluationRules(job.evaluation_stop)
+                        .map(rule=>cohort.receipts[rule.suite_id])};
+                    if(evaluationComplete(proof,job.evaluation_stop,job.dispatch_id)) {
+                        job.status='stop_requested';
+                        job.stop_requested_at=now();
+                        job.status_reason='All independent evaluation targets met at one checkpoint; awaiting native Stop.';
+                        job.evaluation_stop_evidence=proof;
+                        changed=true;
+                        break;
+                    }
+                }
+            }else if(evaluation&&evaluationComplete(evaluation,
+                job.evaluation_stop,job.dispatch_id)) {
                 job.status='stop_requested';
                 job.stop_requested_at=now();
                 job.status_reason='Independent evaluation target met; awaiting native Stop.';
