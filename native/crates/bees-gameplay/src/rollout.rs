@@ -76,6 +76,9 @@ pub enum NativeBatchedStepError<SourceError, BackendError> {
 /// observation data. Missing observations and unsupported actions
 /// remain host errors; no all-zero fallback is supplied.
 ///
+/// The observation callback receives the authoritative Simulation world
+/// index, so per-world perception scratch can be accessed in O(1) without
+/// another world-ID lookup. The same index is used for dispatch.
 /// Model outputs are validated for the WHOLE batch before any world
 /// mutates. Each world then advances exactly once via NativeLevelRules.
 /// Level notifications are kept in its persistent outbox, so repeated
@@ -94,7 +97,7 @@ where
     A: FnMut(SquadLifetime, i64) -> Result<SquadLifetime, SquadRosterError>,
     B: NativePolicyInference,
     F: FnMut(
-        &World<NativeLevelState<M, A>>, &mut NativeLevelInferenceBatch,
+        usize, &World<NativeLevelState<M, A>>, &mut NativeLevelInferenceBatch,
     ) -> Result<(), SourceError>,
 {
     let sample_phases =
@@ -141,7 +144,7 @@ where
             // below; only policy perception has no consumer on this tick.
             counts.worlds_without_due_agents += 1;
         } else {
-            build_observations(world, batch).map_err(|error|
+            build_observations(index, world, batch).map_err(|error|
                 NativeBatchedStepError::Source { index, error }
             )?;
         }

@@ -22,4 +22,5 @@ pub mod level_inputs;
 pub mod inference;
 pub mod group_rewards;
 pub mod rollout;
+pub mod level_host;
 pub mod perception_world;
