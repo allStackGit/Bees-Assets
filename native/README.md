@@ -933,6 +933,13 @@ The portable `bees-sim` crate currently contains:
   28 known asteroid variants. Duplicate prefab entries retain their
   authored selection weighting; each pooled profile retains its
   Create-time speed. Export per authored Stage as applicable.
+- `bees-host::scene_assets::NativeSceneAssets::load` now reads both
+  Unity-authored exports once and creates the shared native
+  `NativeLevelRules` plus source-validated ordinary asteroid pool setup.
+  Every world reuses the immutable collider catalog and physics matrix;
+  each keeps its own active asteroid instances and sampled diagnostics.
+  If either asset is missing or mismatched, Level construction fails
+  rather than running silently with invented collisions or spawn weights.
 - The native collision-layer matrix can now be exported directly from the
   authoritative Unity Editor via **Bees → Native → Export Physics2D Collision
   Matrix**. The generated `native/assets/unity-physics2d-matrix.json` contains
