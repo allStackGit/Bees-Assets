@@ -356,8 +356,11 @@ dispatch and lease. CPU automation restored after reconciliation, and a
 later evaluation stopped training at round 7 with a signed successful exit
 and released capacity. A separate run terminated and relaunched the
 isolated coordinator process while the original worker stayed active.
-The production coordinator timer also restored an isolated opted-in
-registry after a fresh worker heartbeat. OS service restart and host
+In a 150-second Windows run through the production entry point with an
+isolated registry and ports, its timer restored the original Courier
+dispatch after process termination and relaunch. The same native owner
+saved round 10 on Stop, and the Hub released its claim. The production
+process logs a successful restoration once. OS service restart and host
 reboot remain unqualified.
 
 While armed, a coordinator pass every ten seconds performs **at most one
