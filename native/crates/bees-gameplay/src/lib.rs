@@ -18,6 +18,7 @@ pub mod squad_composition;
 pub mod episode;
 pub mod level_events;
 pub mod level_rules;
+pub mod level_inputs;
 pub mod inference;
 pub mod group_rewards;
 pub mod rollout;
