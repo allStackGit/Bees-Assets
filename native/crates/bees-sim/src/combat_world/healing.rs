@@ -6,7 +6,7 @@
 
 use super::*;
 
-const BEEHIVE_TYPE: u8 = 2;
+pub const BEEHIVE_TYPE: u8 = 2;
 const BEEHIVE_COMMAND_HEALING_SLOTS: u8 = 4;
 const HEAL_HEALTH: i32 = 50;
 const HEAL_COOLDOWN_SECONDS: f32 = 1.0;

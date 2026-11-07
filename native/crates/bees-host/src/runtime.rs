@@ -168,7 +168,7 @@ where
     /// request retirement and durable settlement path as graphical movement.
     pub fn player_command(&mut self,
         input: bees_gameplay::player_inputs::NativePlayerCommand<'_>,
-    ) -> Result<bees_gameplay::commands::Activation, HostPlayerInputError>
+    ) -> Result<bees_gameplay::player_inputs::NativePlayerCommandOutcome, HostPlayerInputError>
     where M: NativeLevelPlayerContext
     {
         let index = (0..self.simulation.world_count()).find(|&index|
@@ -229,6 +229,59 @@ where
                 .map_err(HostPlayerInputError::Gameplay)? {
                 counts.accepted_squads += 1;
             } else { counts.unreachable_squads += 1; }
+        }
+        Ok(counts)
+    }
+
+    /// Preflight the selected lifetimes in selection order before issuing the
+    /// first support action. Repeated identities execute once; each actual
+    /// activation re-reads shared resource/target state after its predecessor.
+    pub fn player_command_squads(&mut self,
+        input: &bees_gameplay::player_inputs::NativePlayerSquadCommands,
+    ) -> Result<bees_gameplay::player_inputs::NativePlayerCommandCounts, HostPlayerInputError>
+    where M: NativeLevelPlayerContext
+    {
+        use bees_gameplay::player_inputs::{NativePlayerCommand, NativePlayerCommandPlan,
+            NativePlayerCommandCounts};
+        let index = (0..self.simulation.world_count()).find(|&index|
+            self.simulation.world(index).is_some_and(|world| world.id == input.world_id))
+            .ok_or(HostPlayerInputError::Gameplay(NativePlayerInputError::StaleWorld))?;
+        let world = self.simulation.world_mut(index).expect("located world");
+        if world.episode_revision() != input.episode_revision {
+            return Err(HostPlayerInputError::Gameplay(NativePlayerInputError::StaleWorld));
+        }
+        let mut counts = NativePlayerCommandCounts::default();
+        let mut seen = std::collections::HashSet::with_capacity(input.squads.len());
+        let mut plans = Vec::with_capacity(input.squads.len());
+        for &owner in &input.squads {
+            if !seen.insert(owner) { continue; }
+            let Some(selected_ship) = world.state.events.roster().get(owner)
+                .and_then(|squad| squad.members.first()).copied() else {
+                counts.rejected_squads += 1;
+                continue;
+            };
+            match NativePlayerCommandPlan::prepare(world, NativePlayerCommand {
+                world_id: input.world_id, episode_revision: input.episode_revision,
+                selected_ship, action: input.action.as_local_action(),
+            }) {
+                Ok(plan) => plans.push(plan),
+                Err(error) if error.is_rejection() => counts.rejected_squads += 1,
+                Err(error) => return Err(HostPlayerInputError::Gameplay(error)),
+            }
+        }
+        if plans.is_empty() { return Ok(counts); }
+        self.driver.invalidate_environment(index).map_err(HostPlayerInputError::Driver)?;
+        for plan in plans {
+            self.connection.retire_player_requests(plan.owner())
+                .map_err(HostPlayerInputError::Connection)?;
+            match plan.execute(self.simulation.world_mut(index).expect("located world"))
+                .map_err(HostPlayerInputError::Gameplay)? {
+                bees_gameplay::player_inputs::NativePlayerCommandOutcome::Command(
+                    bees_gameplay::commands::Activation::Applied { .. }) |
+                bees_gameplay::player_inputs::NativePlayerCommandOutcome::Move { reachable: true } =>
+                    counts.accepted_squads += 1,
+                _ => counts.unavailable_squads += 1,
+            }
         }
         Ok(counts)
     }

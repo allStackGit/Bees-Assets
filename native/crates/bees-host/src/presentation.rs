@@ -12,7 +12,7 @@ use bees_sim::simulation::WorldId;
 mod software;
 mod selection;
 pub use software::{NativeCamera, NativeSoftwareRenderer, NativeRenderCounts};
-pub use selection::NativeSquadSelection;
+pub use selection::{NativeSquadSelection, NativeSupportMode};
 
 /// This view is valid only between fixed steps, and cannot outlive the
 /// NativeHostRuntime's immutable borrow. Presentation event effects are

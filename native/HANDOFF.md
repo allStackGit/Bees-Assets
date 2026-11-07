@@ -1,64 +1,74 @@
-# Unified native rewrite handoff — 2026-11-07
+# Unified native rewrite handoff - 2026-11-07
 
 Worktree `B:\Bees\unified-native`, branch `rewrite/unified-native`.
-Latest upstream `ca8fb367e` incorporated; fresh fetch before this increment found
-no new upstream commits. Original `B:\Bees\Assets` and live training untouched.
-Prior source-target command work: `34881ba6b`; origins: `aeb1bc9f7`;
-player selection/movement: `fcabe9599` / `8d76006dd`.
+Fresh fetch found no newer upstream than incorporated `ca8fb367e`.
+Prior host/support source settings: `c266ade64`; chosen targets: `34881ba6b`;
+origins: `aeb1bc9f7`; player selection/movement: `fcabe9599` / `8d76006dd`.
+Original `B:\Bees\Assets` and live training untouched.
 
 ## Latest integrated work
 
-- Scene schema20 exports loaded command timings/distances and each actual
-  Squad.GetShootingStrategy name. Import validates registry identity/settings;
-  metadata retains them under the real squad lifetime. Older scenes need export.
-- NativeHostRuntime::player_command routes chosen Guard, Patrol, Mining, Heal
-  and FullRetreat through canonical Level commands. World/revision, live squad,
-  permissions, input lock, policy ownership, formation, geometry, strategy and
-  settings preflight precedes pending HiveMind request retirement. The token is
-  revalidated synchronously before execution; failures use normal Level abort.
-- Movement and support now share one private squad-authority preflight. Support
-  adds its command-specific inputs without inventing a movement destination or
-  server reservation. The existing director/outbox owns replacement and outcomes.
-- Host attack inputs are rejected pending actual enemy/weapon integration.
-  Player Hold remains rejected: source UI Hold calls StopChasing, not AI Hold.
-  Existing chosen-target execution, local identity, AI-only timeout differences,
-  canonical roster order, navigation, model switching and evaluation remain.
+- Optional window keys G/P/M/H/R arm Guard/Patrol/Mining/Heal/retreat.
+  Left-click targets, left-drag sets Patrol; Backspace/right-click cancels.
+  Targeting does not replace squad selection. World/episode switches clear it.
+  The executable policy runner handles Support through the real shared host.
+- Owned NativePlayerSquadCommands contains only chosen identities/region and
+  selection order. NativeHostRuntime::player_command_squads preflights each
+  distinct lifetime before issuing the first command. Locked/non-player/stale
+  owners skip; real AI requests retire and the canonical command outbox settles.
+  Shared resource availability is re-read between activations.
+- UI queries cached real hulls, live mining obstacles and Beehive HealCollider
+  children (also source-clickable). Heal sends the clicked squad's Beehives in
+  actual member order. Friendly targeting uses the selected side; final per-squad
+  admission remains authoritative. Combat hulls/contact events are unchanged.
+- Source UserMining's non-miner behavior uses existing ordinary movement; it
+  does not invent a persistent Mining command. Entirely WarpGate squads skip
+  retreat. player_command now returns NativePlayerCommandOutcome::Command or
+  ::Move { reachable }, keeping both execution forms explicit.
+- Selected ship destination lines read CombatWorld::ship_game_destination,
+  the actual installed endpoint, rather than drawing a separate UI order cache.
+- Schema20 and source-loaded command settings/shooting remain as before.
 
 ## Executed evidence and limits
 
 Windows GNU toolchain: `B:\Bees\Runtime\Toolchains\rust-native`.
-Set rustup/cargo homes there; cargo/bin and w64devkit/bin on PATH;
+Rustup/cargo homes there; cargo/bin and w64devkit/bin on PATH;
 RUSTUP_TOOLCHAIN=stable-x86_64-pc-windows-gnu,
 RUSTFLAGS=-C link-self-contained=yes. System PATH unchanged.
 
-External qualification folder: `B:\Bees\native-capability-qualification`.
-`player-support.txt` / `src/bin/player_support.rs` exercise imported schema20,
-builder, NativeHostRuntime and actual run_window for all five support commands.
-Chosen asteroid6 is mined while nearer5 is untouched; Heal reserves6 before2;
-Guard picks farther squad14; Patrol follows supplied corners; retreat warps
-through chosen gate6 at tick202. Stale episode, missing owner and UI Hold reject.
-Late strategy reply9001/9002 is discarded for each; local Patrol finalization
-retains imported Closest shooting and Player origin. Missing target finalizes
-prior command without fallback. These use supplied fixtures/actions/identities
-and an in-memory sink, not trained inference or actual server reservations.
+External qualification: `B:\Bees\native-capability-qualification`.
+- player-support-ui.txt / src/bin/player_support_ui.rs: actual presentation
+  target picker and selection request builder -> host batch -> run_window.
+  Mining6 leaves nearer5 untouched; clicked Heal squad passes [6,2], reserving6;
+  Guard chooses14; Patrol honors corners; selected gate6 really warps at tick202.
+  Duplicated owner executes once, enemy/stale owners reject, stale revision
+  rejects; late strategy9001/9002 discards for every supported command.
+- player-support-batch.txt / -locked.txt: two actual Patrols installed; duplicate,
+  enemy and stale identities handled, locked owner skipped. Ten Level ticks
+  complete navigation and retain canonical first endpoint (50,50) for each.
+- player-mining-fallback.txt: non-mining Barge moves toward clicked asteroid
+  endpoint(30,0) with no Mining command; source-authorized all-gate squad skips
+  retreat. Ten actual host steps advance the ship.
+- workspace-support-ui.txt: all-target/all-feature build and 106 existing sim
+  tests passed; headless check passed. Other crates have no enabled tests.
+- Rendered ui-support-patrol.png from the real software renderer inspected;
+  tactical hulls, map, selected endpoint line/cross visible. This is an external
+  supplied scene capture, not a window/mouse interaction qualification.
 
-Workspace all-target/all-feature tests, headless check, assets and movement
-qualification are recorded with this increment. Existing simulation suite has
-106 tests; other crates have no enabled tests. Compilation does not prove parity.
-
-Actual mouse interaction, C# export execution, authentic model/reload/evaluation
-runs, Unity/Box2D parity, Linux execution and multi-machine behavior unverified.
-Previous mouse fixture stopped at Computer Use app approval timeout.
+Scenarios/actions/identities and in-memory sink are supplied fixtures, not trained
+inference, authentic Unity exports or actual server reservations. Physical mouse
+input, C# export execution, Unity/Box2D parity, authentic model switching/learning,
+Linux execution and multi-machine behavior remain unverified. The earlier window
+control attempt ended at Computer Use app approval timeout.
 
 ## Highest-value next work / full objective remains incomplete
 
-Connect window support actions and multi-squad admission to the new host API;
-complete source attack inputs, ordinary non-policy weapon targeting/firing,
-Chase/StopChasing and scripted queue progression. PolicyOnlyMetadata deliberately
-still rejects HiveMind strategy activation: complete its source strategy and
-per-command snapshots before enabling that path.
+Exercise actual window controls when desktop access is available. Complete
+source attack inputs and ordinary non-policy weapon targeting/firing,
+Chase/StopChasing and scripted queues. PolicyOnlyMetadata still deliberately
+rejects HiveMind activation pending full strategy/per-command snapshot adapters.
 
-The full Unity replacement requires complete game/mode/sprite/audio/UI,
-Carrier/Drone lifecycle and remaining parity, real connected optimizer and
-trajectory/checkpoint pipeline, distributed learning, evaluation/experiments and
-measured performance. Keep one authoritative gameplay implementation throughout.
+Full replacement also requires complete game/modes/sprites/audio/UI, Carrier/Drone
+lifecycle and remaining parity, connected optimizer/trajectory/checkpoint pipeline,
+distributed learning, evaluation/experiments and measured performance. Keep the
+same authoritative gameplay for rendered, headless, training and evaluation.

@@ -47,7 +47,117 @@ pub struct NativePlayerCommand<'a> {
     pub action: crate::commands::NativeLocalCommandAction<'a>,
 }
 
+/// Owned UI intent; targets remain identities in the canonical world. Heal
+/// owns its ordered ID list so input can cross the window's borrowed frame.
+#[derive(Clone, Debug, PartialEq)]
+pub enum NativePlayerSupportAction {
+    Guard { target: SquadLifetime },
+    Patrol { top_left: Vec2, bottom_right: Vec2 },
+    Mining { asteroid_id: i64 },
+    Heal { beehive_ids: Vec<i64> },
+    FullRetreat { warp_gate_id: i64 },
+}
+
+impl NativePlayerSupportAction {
+    pub fn as_local_action(&self) -> crate::commands::NativeLocalCommandAction<'_> {
+        use crate::commands::NativeLocalCommandAction as Action;
+        match self {
+            Self::Guard { target } => Action::Guard { target: *target },
+            Self::Patrol { top_left, bottom_right } => Action::Patrol {
+                top_left: *top_left, bottom_right: *bottom_right },
+            Self::Mining { asteroid_id } => Action::Mining { asteroid_id: *asteroid_id },
+            Self::Heal { beehive_ids } => Action::Heal { beehive_ids },
+            Self::FullRetreat { warp_gate_id } => Action::FullRetreat { warp_gate_id: *warp_gate_id },
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct NativePlayerSquadCommands {
+    pub world_id: WorldId,
+    pub episode_revision: u64,
+    pub squads: Vec<SquadLifetime>,
+    pub action: NativePlayerSupportAction,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct NativePlayerCommandCounts {
+    pub accepted_squads: usize,
+    pub unavailable_squads: usize,
+    pub rejected_squads: usize,
+}
+
+#[derive(Debug)]
+pub enum NativePlayerCommandOutcome {
+    Command(crate::commands::Activation),
+    Move { reachable: bool },
+}
+
 pub struct NativePlayerCommandPlan<'a> {
+    execution: NativePlayerCommandExecution<'a>,
+}
+
+enum NativePlayerCommandExecution<'a> {
+    Command(NativePlayerSupportCommandPlan<'a>),
+    Move { plan: NativePlayerMovePlan, asteroid_id: i64 },
+}
+
+impl<'a> NativePlayerCommandPlan<'a> {
+    pub fn owner(&self) -> SquadLifetime {
+        match &self.execution {
+            NativePlayerCommandExecution::Command(plan) => plan.owner(),
+            NativePlayerCommandExecution::Move { plan, .. } => plan.owner(),
+        }
+    }
+
+    pub fn prepare<M: NativeLevelPlayerContext, A>(
+        world: &mut World<NativeLevelState<M, A>>, input: NativePlayerCommand<'a>,
+    ) -> Result<Self, NativePlayerInputError> {
+        use crate::commands::NativeLocalCommandAction as Action;
+        let authority = NativePlayerSquadPlan::prepare(world, input.world_id,
+            input.episode_revision, input.selected_ship)?;
+        if let Action::Mining { asteroid_id } = input.action {
+            let has_miner = authority.members.iter().any(|member|
+                world.state.combat.ship(member.ship_id).is_some_and(|ship|
+                    bees_sim::combat_world::is_mining_ship_type(ship.ship_type)));
+            // Source UserMining moves non-mining squads to the chosen live
+            // asteroid; it does not install a persistent Mining command.
+            if !has_miner {
+                if let Some(destination) = world.state.combat.mining_asteroid_position(asteroid_id) {
+                    return Ok(Self { execution: NativePlayerCommandExecution::Move {
+                        plan: NativePlayerMovePlan { authority, input: NativePlayerMove {
+                            world_id: input.world_id, episode_revision: input.episode_revision,
+                            selected_ship: input.selected_ship, destination,
+                        } }, asteroid_id } });
+                }
+            }
+        }
+        if matches!(input.action, Action::FullRetreat { .. }) && authority.members.iter().all(|member|
+            world.state.combat.ship(member.ship_id).is_some_and(|ship|
+                ship.ship_type == bees_sim::combat_world::WARP_GATE_TYPE)) {
+            return Err(NativePlayerInputError::NotControllable);
+        }
+        Ok(Self { execution: NativePlayerCommandExecution::Command(
+            NativePlayerSupportCommandPlan::prepare(world, input)?) })
+    }
+
+    pub fn execute<M: NativeLevelPlayerContext, A>(self,
+        world: &mut World<NativeLevelState<M, A>>,
+    ) -> Result<NativePlayerCommandOutcome, NativePlayerInputError> {
+        match self.execution {
+            NativePlayerCommandExecution::Command(plan) =>
+                plan.execute(world).map(NativePlayerCommandOutcome::Command),
+            NativePlayerCommandExecution::Move { plan, asteroid_id } => {
+                if world.state.combat.mining_asteroid_position(asteroid_id) != Some(plan.input.destination) {
+                    return Err(NativePlayerInputError::StaleWorld);
+                }
+                plan.execute(world).map(|reachable| NativePlayerCommandOutcome::Move { reachable })
+            },
+        }
+    }
+}
+
+struct NativePlayerSupportCommandPlan<'a> {
     input: NativePlayerCommand<'a>,
     authority: NativePlayerSquadPlan,
     source: NativePlayerCommandInputs,
@@ -55,7 +165,7 @@ pub struct NativePlayerCommandPlan<'a> {
     friendlies: Vec<crate::commands::NativeFriendlySquad>,
 }
 
-impl<'a> NativePlayerCommandPlan<'a> {
+impl<'a> NativePlayerSupportCommandPlan<'a> {
     pub fn owner(&self) -> SquadLifetime { self.authority.owner }
 
     pub fn prepare<M: NativeLevelPlayerContext, A>(

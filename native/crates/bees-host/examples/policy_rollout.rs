@@ -624,6 +624,21 @@ fn main() -> Result<(), Box<dyn Error>> {
                     }
                     continue;
                 },
+                Ok(bees_host::client::NativeClientAction::Support(input)) => {
+                    match host.player_command_squads(&input) {
+                        Ok(counts) if counts.accepted_squads > 0 && counts.rejected_squads == 0 &&
+                            counts.unavailable_squads == 0 => client.report_move("Commands accepted"),
+                        Ok(counts) if counts.accepted_squads > 0 => client.report_move("Eligible squads commanded; some unavailable"),
+                        Ok(_) => client.report_move("Selected squads cannot accept that command"),
+                        Err(bees_host::runtime::HostPlayerInputError::Gameplay(error))
+                            if error.is_rejection() => client.report_move("Squad cannot accept that command"),
+                        Err(error) => {
+                            failed_window = Some(format!("native player command: {error:?}"));
+                            break;
+                        },
+                    }
+                    continue;
+                },
                 Ok(bees_host::client::NativeClientAction::Quit) => { user_closed = true; break; },
                 Err(error) => { failed_window = Some(format!("native window: {error}")); break; },
             }

@@ -98,6 +98,7 @@ use self::scout::PolicyScoutRuntime;
 use self::policy::{PolicyShipRuntime, PolicyShipSpecial};
 pub use self::policy::PolicySpecialObservations;
 pub use self::policy::WARP_GATE_TYPE;
+pub use self::healing::BEEHIVE_TYPE;
 use self::weapons::PendingPolicyShot;
 pub use self::weapons::{NativeFirePattern, NativeTurretSpec};
 
@@ -1479,6 +1480,12 @@ impl CombatWorld {
         )?;
         let body = asset.spawn_physics_body(entity_id, motion, rotation_degrees)?;
         self.add_projectile(metadata, body)
+    }
+
+    /// Read the installed final route/direct-order endpoint for UI and
+    /// diagnostics; a pending search has not installed its new endpoint yet.
+    pub fn ship_game_destination(&self, ship_id: i64) -> Option<Vec2> {
+        self.game_ship_steering.get(&ship_id)?.final_destination
     }
 
     /// Normal gameplay ship movement needs the live configuration's

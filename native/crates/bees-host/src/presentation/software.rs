@@ -81,6 +81,57 @@ impl NativeSoftwareRenderer {
             .map(|(_, id)| id)
     }
 
+    /// Target selection uses cached authored hull overlap, with a small screen
+    /// tolerance. This emits only identities; the host revalidates every action.
+    pub fn pick_support_action(&self, view: &NativeRenderWorldView<'_>,
+        mode: super::NativeSupportMode, point: Vec2, patrol_start: Option<Vec2>,
+    ) -> Option<bees_gameplay::player_inputs::NativePlayerSupportAction> {
+        use super::NativeSupportMode as Mode;
+        use bees_gameplay::player_inputs::NativePlayerSupportAction as Action;
+        if !point.is_finite() { return None; }
+        if mode == Mode::Patrol {
+            let start = patrol_start.filter(|start| start.is_finite())?;
+            return Some(Action::Patrol {
+                top_left: Vec2::new(start.x.min(point.x), start.y.max(point.y)),
+                bottom_right: Vec2::new(start.x.max(point.x), start.y.min(point.y)),
+            });
+        }
+        let radius = 5.0 / self.camera.pixels_per_unit;
+        let bounds = Aabb { min: point - Vec2::new(radius, radius),
+            max: point + Vec2::new(radius, radius) };
+        if mode == Mode::Mining {
+            let id = view.combat.physics().obstacle_ids_overlapping_box(bounds).ok()?
+                .filter_map(|id| view.combat.mining_asteroid_position(id)
+                    .map(|position| ((position - point).length_squared(), id)))
+                .min_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)))?.1;
+            return Some(Action::Mining { asteroid_id: id });
+        }
+        let selected_side = self.selection.squads().first()
+            .and_then(|owner| view.roster.get(*owner)).map(|squad| squad.side);
+        let id = view.combat.physics().input_ship_ids_overlapping_box(bounds).ok()?
+            .filter_map(|id| {
+                let ship = view.combat.ship(id)?;
+                if ship.vitals.is_dead() || selected_side.is_some_and(|side| ship.side != side) ||
+                    (mode == Mode::Heal && ship.ship_type != bees_sim::combat_world::BEEHIVE_TYPE) ||
+                    (mode == Mode::FullRetreat && ship.ship_type != bees_sim::combat_world::WARP_GATE_TYPE) {
+                    return None;
+                }
+                let position = view.combat.ship_body(id)?.motion.position;
+                Some(((position - point).length_squared(), id))
+            }).min_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)))?.1;
+        match mode {
+            Mode::Guard => Some(Action::Guard { target: view.roster.owning_squad(id)? }),
+            // Source input sends every Beehive in the clicked squad, in
+            // GetShips order, rather than silently restricting it to one hull.
+            Mode::Heal => Some(Action::Heal { beehive_ids: view.roster.get(view.roster.owning_squad(id)?)?
+                .members.iter().copied().filter(|id| view.combat.ship(*id).is_some_and(|ship|
+                    !ship.vitals.is_dead() && ship.ship_type == bees_sim::combat_world::BEEHIVE_TYPE))
+                .collect() }),
+            Mode::FullRetreat => Some(Action::FullRetreat { warp_gate_id: id }),
+            _ => None,
+        }
+    }
+
     pub fn render(&mut self, view: &NativeRenderWorldView<'_>, bounds: Aabb) -> NativeRenderCounts {
         self.selection.synchronize(view);
         self.pixels.fill(0x080e19);
@@ -111,6 +162,11 @@ impl NativeSoftwareRenderer {
                 .is_some_and(|owner| self.selection.squads().contains(&owner)) {
                 self.line(x - 14.0, y - 17.0, x + 14.0, y - 17.0, 0xffffff);
                 self.line(x - 14.0, y + 14.0, x + 14.0, y + 14.0, 0xffffff);
+                if let Some(destination) = view.combat.ship_game_destination(ship.entity_id) {
+                    let (tx, ty) = self.project(destination);
+                    self.line(x, y, tx, ty, 0x526a8a);
+                    self.cross(destination, 3.0, 0xddeaff);
+                }
             }
         }
         for (_, body) in view.combat.render_projectiles() {

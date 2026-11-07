@@ -5,6 +5,9 @@ use bees_hivemind::session::SquadLifetime;
 use bees_sim::{collision::Aabb, physics::PhysicsError, simulation::WorldId};
 use super::NativeRenderWorldView;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NativeSupportMode { Guard, Patrol, Mining, Heal, FullRetreat }
+
 #[derive(Default)]
 pub struct NativeSquadSelection {
     world: Option<(WorldId, u64)>,
@@ -56,6 +59,16 @@ impl NativeSquadSelection {
     {
         self.squads.iter().filter_map(|owner|
             view.roster.get(*owner).and_then(|squad| squad.members.first()).copied())
+    }
+
+    pub fn support_command(&mut self, view: &NativeRenderWorldView<'_>,
+        action: bees_gameplay::player_inputs::NativePlayerSupportAction,
+    ) -> Option<bees_gameplay::player_inputs::NativePlayerSquadCommands> {
+        self.synchronize(view);
+        (!self.squads.is_empty()).then(|| bees_gameplay::player_inputs::NativePlayerSquadCommands {
+            world_id: view.world_id, episode_revision: view.episode_revision,
+            squads: self.squads.clone(), action,
+        })
     }
 }
 

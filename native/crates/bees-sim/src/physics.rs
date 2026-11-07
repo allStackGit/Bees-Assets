@@ -1251,6 +1251,36 @@ impl KinematicPhysics {
     pub fn ship_ids_overlapping_box(&self, bounds: Aabb)
         -> Result<impl Iterator<Item = i64> + '_, PhysicsError>
     {
+        let query = Self::box_query(bounds)?;
+        Ok(self.ships.iter().filter_map(move |ship|
+            (ship.active && query.overlaps(&ship.collider)).then_some(ship.id)))
+    }
+
+    /// Source CheckClickCollision also recognizes a Beehive's child healing
+    /// collider. Preserve that input area without enlarging its combat hull.
+    pub fn input_ship_ids_overlapping_box(&self, bounds: Aabb)
+        -> Result<impl Iterator<Item = i64> + '_, PhysicsError>
+    {
+        let query = Self::box_query(bounds)?;
+        Ok(self.ships.iter().filter_map(move |ship|
+            (ship.active && (query.overlaps(&ship.collider) ||
+                ship.healing_zone.as_ref().is_some_and(|zone| query.overlaps(zone))))
+                .then_some(ship.id)))
+    }
+
+    pub fn ships_mut(&mut self) -> &mut [ShipBody] { &mut self.ships }
+
+    /// Read-only UI target query against the same cached obstacle hulls as
+    /// gameplay. It creates no contact events or alternate obstacle state.
+    pub fn obstacle_ids_overlapping_box(&self, bounds: Aabb)
+        -> Result<impl Iterator<Item = i64> + '_, PhysicsError>
+    {
+        let query = Self::box_query(bounds)?;
+        Ok(self.obstacles.iter().filter_map(move |body|
+            (body.active && query.overlaps(&body.collider)).then_some(body.id)))
+    }
+
+    fn box_query(bounds: Aabb) -> Result<WorldCollider, PhysicsError> {
         if !bounds.min.is_finite() || !bounds.max.is_finite() ||
             bounds.min.x >= bounds.max.x || bounds.min.y >= bounds.max.y {
             return Err(PhysicsError::InvalidCollider);
@@ -1260,10 +1290,8 @@ impl KinematicPhysics {
             half_extents: (bounds.max - bounds.min) * 0.5,
         })?;
         query.update(Pose { position: Vec2::ZERO, rotation_degrees: 0.0 });
-        Ok(self.ships.iter().filter_map(move |ship|
-            (ship.active && query.overlaps(&ship.collider)).then_some(ship.id)))
+        Ok(query)
     }
-    pub fn ships_mut(&mut self) -> &mut [ShipBody] { &mut self.ships }
     pub fn projectiles(&self) -> &[ProjectileBody] { &self.projectiles }
     pub fn projectiles_mut(&mut self) -> &mut [ProjectileBody] { &mut self.projectiles }
     pub fn counts(&self) -> PhysicsStepCounts { self.counts }

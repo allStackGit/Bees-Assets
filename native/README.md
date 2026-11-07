@@ -219,7 +219,14 @@ world/episode and a live controllable squad. Movement and support commands share
 one permission/membership preflight; pending AI requests retire before activation.
 The canonical director handles replacement, unavailable targets and settlement.
 Attack commands and UI Hold are rejected by this API; they need their own source
-semantics. Window controls for these support actions are still incomplete.
+semantics. In the window, G/P/M/H/R arm Guard/Patrol/Mining/Heal/retreat;
+left-click chooses a target, or left-drag supplies the Patrol rectangle.
+Backspace or right-click cancels targeting without issuing a move. Commands
+preserve selected squad order, deduplicate lifetimes and skip unavailable owners.
+Heal uses all Beehives in the clicked squad in source member order. Non-miners
+move to the clicked asteroid through ordinary movement; all-WarpGate squads skip
+retreat. The host returns a distinct Move outcome for that source fallback.
+Selected ships display their canonical installed movement endpoint.
 
 The shared scene builder installs every ship's original-health collision
 profile and support zones, then binds real policy mining/healing/warp
