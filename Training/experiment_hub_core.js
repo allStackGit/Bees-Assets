@@ -2090,10 +2090,19 @@ class ExperimentHub {
             ?j.live_execution?.state==='stop_requested'?'inspect':'stop'
             :j.status==='start_requested'?'start'
             :j.gpu_qualification?.status==='requested'?'qualify_gpu':'inspect';
-        const priority=j=>({stop:0,start:1,qualify_gpu:2,inspect:3})[actionFor(j)];
+        const observedAt=Date.now();
+        const priority=j=>{
+            const action=actionFor(j);
+            if(action!=='inspect')return {stop:0,start:1,qualify_gpu:2}[action];
+            // Reserve time to refresh native observations before they expire.
+            // Final receipt collection can share the normal rotation while
+            // the worker's unreleased jobs have fresh observations.
+            const age=observedAt-Date.parse(j.live_execution?.at||'');
+            return !j.capacity_released_at&&!(age>=0&&age<AGENT_HEARTBEAT_TTL_MS/2)?3:4;
+        };
         jobs.sort((a,b)=>priority(a)-priority(b));
         const ordered=[];
-        for(const level of [0,1,2,3]) {
+        for(const level of [0,1,2,3,4]) {
             const group=jobs.filter(j=>priority(j)===level);
             // Keep a separate cursor for each priority tier. An urgent
             // Stop must not reset fair rotation among pending Starts.
@@ -2171,6 +2180,7 @@ class ExperimentHub {
             return [{
                 action,dispatch_id:action==='qualify_gpu'
                     ?job.gpu_qualification.request_id:job.dispatch_id,
+                ...(action==='inspect'&&priority(job)===3?{refresh_native_observation:true}:{}),
                 job:{
                     id:job.id,project_id:job.project_id,adapter:job.adapter,
                     lease_id:job.lease_id,status:'waiting_adapter',
