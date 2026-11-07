@@ -1279,14 +1279,18 @@ with a JSON array instead of the single-suite fields. The coordinator freezes
 `{"all_of":[{"suite_id":"short","min_trials":100,"min_success_rate":0.8},
 {"suite_id":"long","min_trials":100,"min_success_rate":0.7}]}`
 with **2–8 distinct suite IDs** and optional `suite_sha256` per rule.
-The worker must advertise all required suites. Run a scheduled evaluator
-for each suite using its own frozen definition. The coordinator records
-at most eight checkpoint cohorts and requests Stop **only when every
-threshold passes on the exact same checkpoint SHA-256**. A successful
-short-range evaluation from one checkpoint cannot be combined with a
-long-range evaluation from another. Configure the evaluation cadence
-and checkpoint retention so the independent evaluators can inspect a
-shared immutable candidate. Previously scheduled single-suite experiments
+The worker must advertise all required suites. For an all-of gate, run
+**one coordinated scheduled evaluator with a repeated `--suite` argument**
+for every required frozen suite; do not separately schedule single-suite
+pollers for that dispatch. The batch evaluator pins one immutable checkpoint
+before running the suites, publishes matching receipts using a durable
+pending-batch record, and resumes incomplete publication after interruption.
+A single-suite poller skips all-of jobs. The coordinator records at most
+eight checkpoint cohorts and requests Stop **only when every threshold
+passes on the exact same checkpoint SHA-256**. A successful short-range
+evaluation from one checkpoint cannot be combined with long-range evaluation
+from another. Schedule the batch frequently enough to see retained
+checkpoint snapshots. Previously scheduled single-suite experiments
 retain their original format and behavior. This is an early-stop policy:
 a natural trainer finish still completes an independent sequence under
 its existing rules, even if no evaluation stop target was reached.
@@ -1438,7 +1442,7 @@ python -B Training/experiment_hub_tinybrains_evaluate.py --checkpoint $checkpoin
 
 Use pre-created private scratch and receipt directories. The command above
 evaluates one explicit checkpoint. For scheduled evaluation, run
-`Training/experiment_hub_tinybrains_eval_poll.py` with `--machine`,
+`Training/experiment_hub_tinybrains_eval_poll.py` with `--machine`, 
 `--artifact-root`, `--suite`, `--scratch`, and `--receipt-root`. The poller
 queries the local coordinator (port 7148 by default), selects a completed
 numbered checkpoint for an eligible running dispatch, and evaluates at most
@@ -1507,7 +1511,10 @@ trials alive at the fixed horizon. Configure the matching suite and
 thresholds in Design.
 
 For scheduled evaluation, run `experiment_hub_courier_eval_poll.py` with
-the same Python environment on a separately budgeted CPU schedule. Its
+the same Python environment on a separately budgeted CPU schedule. For an
+all-of gate pass `--suite short.json --suite long.json` (one argument
+per required suite) in a **single** scheduled invocation. For an ordinary
+single-suite gate, pass one `--suite` as before. Its
 `--snapshot-root` must match the adapter's optional `snapshotRoot` and be
 separate from source, live artifacts and receipts. For jobs with an
 evaluation stop policy, the Courier launch bridge exports lineage 0 after
