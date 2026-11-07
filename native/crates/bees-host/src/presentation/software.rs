@@ -1,0 +1,208 @@
+//! Small, window-independent tactical renderer of authoritative live geometry.
+//! Owns only pixels/camera/selection; it never mutates or steps a battle.
+
+use std::io::{self, Write};
+use bees_sim::collision::{Aabb, Pose};
+use bees_sim::geometry::Vec2;
+use bees_sim::physics::ShipShape;
+use super::NativeRenderWorldView;
+
+#[derive(Clone, Copy, Debug)]
+pub struct NativeCamera {
+    pub center: Vec2,
+    pub pixels_per_unit: f32,
+}
+
+impl NativeCamera {
+    pub fn fit(bounds: Aabb, width: usize, height: usize) -> Self {
+        Self {
+            center: (bounds.min + bounds.max) * 0.5,
+            pixels_per_unit: ((width as f32 / (bounds.max.x - bounds.min.x).max(1.0))
+                .min(height as f32 / (bounds.max.y - bounds.min.y).max(1.0)) * 0.9)
+                .clamp(0.001, 1000.0),
+        }
+    }
+
+    pub fn screen_to_world(self, x: f32, y: f32, width: usize, height: usize) -> Vec2 {
+        self.center + Vec2::new(x - width as f32 * 0.5, height as f32 * 0.5 - y)
+            * (1.0 / self.pixels_per_unit)
+    }
+
+    pub fn zoom_at(&mut self, factor: f32, x: f32, y: f32, width: usize, height: usize) {
+        if !factor.is_finite() || factor <= 0.0 { return; }
+        let before = self.screen_to_world(x, y, width, height);
+        self.pixels_per_unit = (self.pixels_per_unit * factor).clamp(0.001, 1000.0);
+        self.center += before - self.screen_to_world(x, y, width, height);
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, serde::Serialize)]
+pub struct NativeRenderCounts {
+    pub ships: usize,
+    pub obstacles: usize,
+    pub projectiles: usize,
+    pub pieces: usize,
+}
+
+pub struct NativeSoftwareRenderer {
+    width: usize,
+    height: usize,
+    pixels: Vec<u32>,
+    pub camera: NativeCamera,
+    /// Selection is scoped to a WorldId AND episode revision by the client.
+    pub selected_ship: Option<i64>,
+}
+
+impl NativeSoftwareRenderer {
+    pub fn new(width: usize, height: usize, bounds: Aabb) -> io::Result<Self> {
+        if width == 0 || height == 0 || width > 8192 || height > 8192 ||
+            !bounds.min.is_finite() || !bounds.max.is_finite() ||
+            bounds.min.x >= bounds.max.x || bounds.min.y >= bounds.max.y {
+            return Err(io::Error::new(io::ErrorKind::InvalidInput, "invalid viewport or bounds"));
+        }
+        Ok(Self { width, height, pixels: vec![0; width * height],
+            camera: NativeCamera::fit(bounds, width, height), selected_ship: None })
+    }
+
+    pub fn size(&self) -> (usize, usize) { (self.width, self.height) }
+    pub fn pixels(&self) -> &[u32] { &self.pixels }
+
+    /// Selection has a screen-space tolerance so tiny ships remain pickable.
+    /// It affects inspection only, never policy perception or physics queries.
+    pub fn pick_ship(&self, view: &NativeRenderWorldView<'_>, x: f32, y: f32) -> Option<i64> {
+        view.combat.render_ships().filter_map(|(ship, body)| {
+            let (sx, sy) = self.project(body.motion.position);
+            let d2 = (sx - x).powi(2) + (sy - y).powi(2);
+            (d2 <= 18.0 * 18.0).then_some((d2, ship.entity_id))
+        }).min_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)))
+            .map(|(_, id)| id)
+    }
+
+    pub fn render(&mut self, view: &NativeRenderWorldView<'_>, bounds: Aabb) -> NativeRenderCounts {
+        self.pixels.fill(0x080e19);
+        let mut counts = NativeRenderCounts::default();
+        self.shape(&ShipShape::Box { offset: (bounds.min + bounds.max) * 0.5,
+            half_extents: (bounds.max - bounds.min) * 0.5 },
+            Pose { position: Vec2::ZERO, rotation_degrees: 0.0 }, 0x33455e);
+        for (_, body) in view.combat.render_obstacles() {
+            counts.obstacles += 1;
+            self.shape(body.shape(), body.pose, 0x758496);
+        }
+        for piece in view.combat.render_asteroid_pieces() {
+            counts.pieces += 1;
+            let c = (piece.sprite_opacity() * 160.0) as u32;
+            self.cross(piece.pose.position, 1.0, c * 0x010101);
+        }
+        for (ship, body) in view.combat.render_ships() {
+            counts.ships += 1;
+            let color = side_color(ship.side);
+            self.shape(body.shape(), Pose { position: body.motion.position,
+                rotation_degrees: body.motion.rotation_degrees }, color);
+            self.cross(body.motion.position, 1.5, color);
+            let (x, y) = self.project(body.motion.position);
+            let health = ship.vitals.health() as f32 / ship.vitals.max_health() as f32;
+            self.line(x - 10.0, y - 12.0, x + 10.0, y - 12.0, 0x3c2837);
+            self.line(x - 10.0, y - 12.0, x - 10.0 + 20.0 * health, y - 12.0, color);
+            if self.selected_ship == Some(ship.entity_id) {
+                self.line(x - 14.0, y - 17.0, x + 14.0, y - 17.0, 0xffffff);
+                self.line(x - 14.0, y + 14.0, x + 14.0, y + 14.0, 0xffffff);
+            }
+        }
+        for (_, body) in view.combat.render_projectiles() {
+            counts.projectiles += 1;
+            if let Some(shape) = body.shape() {
+                self.shape(shape, Pose { position: body.motion.position,
+                    rotation_degrees: body.rotation_degrees }, 0xffd580);
+            }
+            // Collider-less script entities still have an inspectable position.
+            self.cross(body.motion.position, 1.0, 0xffd580);
+        }
+        counts
+    }
+
+    /// Portable capture for diagnostics, using exactly the window's pixel buffer.
+    pub fn write_ppm(&self, mut writer: impl Write) -> io::Result<()> {
+        write!(writer, "P6\n{} {}\n255\n", self.width, self.height)?;
+        let mut row = Vec::with_capacity(self.width * 3);
+        for pixels in self.pixels.chunks(self.width) {
+            row.clear();
+            for &p in pixels { row.extend_from_slice(&[(p >> 16) as u8, (p >> 8) as u8, p as u8]); }
+            writer.write_all(&row)?;
+        }
+        Ok(())
+    }
+
+    fn project(&self, point: Vec2) -> (f32, f32) {
+        ((point.x - self.camera.center.x) * self.camera.pixels_per_unit + self.width as f32 * 0.5,
+         (self.camera.center.y - point.y) * self.camera.pixels_per_unit + self.height as f32 * 0.5)
+    }
+
+    fn cross(&mut self, point: Vec2, radius: f32, color: u32) {
+        let (x, y) = self.project(point);
+        self.line(x - radius, y, x + radius, y, color);
+        self.line(x, y - radius, x, y + radius, color);
+    }
+
+    fn shape(&mut self, shape: &ShipShape, pose: Pose, color: u32) {
+        let mut edge = |a, b| {
+            let (x0, y0) = self.project(pose.transform_point(a));
+            let (x1, y1) = self.project(pose.transform_point(b));
+            self.line(x0, y0, x1, y1, color);
+        };
+        match shape {
+            ShipShape::Polygon(vertices) => {
+                if let Some(&last) = vertices.last() {
+                    let mut previous = last;
+                    for &point in vertices.iter() { edge(previous, point); previous = point; }
+                }
+            }
+            ShipShape::Box { offset: o, half_extents: h } => {
+                let corners = [*o + Vec2::new(-h.x, -h.y), *o + Vec2::new(h.x, -h.y),
+                    *o + Vec2::new(h.x, h.y), *o + Vec2::new(-h.x, h.y)];
+                for i in 0..4 { edge(corners[i], corners[(i + 1) % 4]); }
+            }
+            ShipShape::Circle { offset, radius } => {
+                let mut previous = *offset + Vec2::new(*radius, 0.0);
+                for i in 1..=32 {
+                    let (sin, cos) = (std::f32::consts::TAU * i as f32 / 32.0).sin_cos();
+                    let point = *offset + Vec2::new(cos, sin) * *radius;
+                    edge(previous, point); previous = point;
+                }
+            }
+        }
+    }
+
+    fn line(&mut self, x0: f32, y0: f32, x1: f32, y1: f32, color: u32) {
+        // Liang-Barsky clipping bounds raster work even for far-off-map geometry.
+        if ![x0, y0, x1, y1].iter().all(|x| x.is_finite()) { return; }
+        let dx = x1 - x0;
+        let dy = y1 - y0;
+        let mut lo = 0.0_f32;
+        let mut hi = 1.0_f32;
+        for (p, q) in [(-dx, x0), (dx, self.width as f32 - 1.0 - x0),
+            (-dy, y0), (dy, self.height as f32 - 1.0 - y0)] {
+            if p == 0.0 { if q < 0.0 { return; } }
+            else if p < 0.0 { lo = lo.max(q / p); }
+            else { hi = hi.min(q / p); }
+        }
+        if lo > hi { return; }
+        let ax = x0 + dx * lo;
+        let ay = y0 + dy * lo;
+        let bx = x0 + dx * hi;
+        let by = y0 + dy * hi;
+        let steps = ((bx - ax).abs().max((by - ay).abs()).ceil() as usize).max(1);
+        for i in 0..=steps {
+            let t = i as f32 / steps as f32;
+            let x = (ax + (bx - ax) * t).round() as i32;
+            let y = (ay + (by - ay) * t).round() as i32;
+            if x >= 0 && y >= 0 && (x as usize) < self.width && (y as usize) < self.height {
+                self.pixels[y as usize * self.width + x as usize] = color;
+            }
+        }
+    }
+}
+
+fn side_color(side: i32) -> u32 {
+    const COLORS: [u32; 6] = [0x62d6ff, 0xff778e, 0x8ee6a1, 0xd3a0ff, 0xffd166, 0xe4ecfa];
+    COLORS[side.rem_euclid(COLORS.len() as i32) as usize]
+}

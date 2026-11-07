@@ -8,6 +8,9 @@ use bees_gameplay::level_events::NativeLevelNotification;
 use bees_sim::combat_world::CombatWorld;
 use bees_sim::simulation::WorldId;
 
+mod software;
+pub use software::{NativeCamera, NativeSoftwareRenderer, NativeRenderCounts};
+
 /// This view is valid only between fixed steps, and cannot outlive the
 /// NativeHostRuntime's immutable borrow. Presentation event effects are
 /// acknowledged separately through NativeLevelNotificationSink, not here.

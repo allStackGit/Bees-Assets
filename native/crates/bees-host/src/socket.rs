@@ -196,7 +196,7 @@ impl NativeHiveMindSocket {
         config.max_frame_size = Some(MAX_SERVER_MESSAGE_BYTES);
         config.max_message_size = Some(MAX_SERVER_MESSAGE_BYTES);
         let (socket, response) =
-            tungstenite::connect_with_config(request, Some(config), 0)?;
+            tungstenite::client::connect_with_config(request, Some(config), 0)?;
         let confirmed = response.headers().get(SEC_WEBSOCKET_PROTOCOL)
             .and_then(|value| value.to_str().ok());
         if confirmed != Some(SUBPROTOCOL) {

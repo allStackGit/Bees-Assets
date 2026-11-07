@@ -1672,6 +1672,14 @@ impl crate::simulation::GameRules<KinematicPhysics> for KinematicPhysicsRules {
             decisions: 0,
             active_ships: world.state.ships().iter().filter(|ship| ship.active).count() as u32,
             active_projectiles: world.state.projectiles().iter().filter(|shot| shot.active).count() as u32,
+            integrated_bodies: counts.integrated_bodies,
+            broadphase_candidates: counts.broadphase_candidates,
+            ship_grid_overflow_bodies: counts.ship_grid_overflow_bodies,
+            obstacle_grid_overflow_bodies: counts.obstacle_grid_overflow_bodies,
+            narrowphase_tests: counts.narrowphase_tests,
+            trigger_enters: counts.trigger_enters + counts.obstacle_trigger_enters +
+                counts.ship_obstacle_enters + counts.obstacle_pair_enters +
+                counts.proximity_ship_enters + counts.proximity_obstacle_enters,
             events: counts.trigger_enters + counts.obstacle_trigger_enters +
                 counts.ship_obstacle_enters + counts.ship_obstacle_exits +
                 counts.obstacle_pair_enters + counts.obstacle_pair_exits +

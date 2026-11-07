@@ -17,6 +17,7 @@ const checks = [
     'import-unity-ship-colliders.mjs',
     'import-unity-projectile-colliders.mjs',
     'import-unity-asteroid-colliders.mjs',
+    'import-unity-asteroid-fragments.mjs',
     'import-unity-box-obstacle-colliders.mjs',
     'import-unity-polygon-obstacle.mjs',
 ];

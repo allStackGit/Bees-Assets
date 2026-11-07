@@ -963,8 +963,7 @@ impl NativePhysicalScene {
             }
             if ship.has_bound_policy {
                 if !ship.is_rl_policy_controlled ||
-                    !ship.effective_vision_range.is_finite() ||
-                    ship.effective_vision_range < 0.0 ||
+                    ship.effective_vision_range < 0 ||
                     (ship.has_turrets && !ship.has_weapons) ||
                     ship.side_starting_tsv <= 0 ||
                     ship.team_retainable_mined_tsv < 0 ||

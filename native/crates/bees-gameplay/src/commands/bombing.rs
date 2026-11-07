@@ -162,7 +162,7 @@ fn assign_initial_special_bomb_targets(
     // activation. The Level retains its old command and old OutcomeIds
     // until the replacement is fully installed. This is one short-lived
     // transaction over the canonical world ledger, not another ledger.
-    let assigned = world.with_atomic_game_bomb_assignments(|world| {
+    let assigned = world.with_atomic_game_bomb_assignments(|world| -> Result<_, GameCommandError> {
         // Each Bomb.GetTarget rebuilds its own sorted GetShips copy.
         // Reusing the preceding bomber's ranking changes FirstSeen,
         // Random and all tie-sensitive strategies. Reuse one scratch vec.

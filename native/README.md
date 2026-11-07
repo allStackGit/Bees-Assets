@@ -3,6 +3,48 @@
 This directory is the beginning of the Unity-independent replacement platform,
 created from the current `feat/experiment-queue-ui` branch.
 
+## Native tactical view (development)
+
+The existing policy runner can now open an optional native Windows/Linux-X11
+window around the **same** `NativeHostRuntime`, model inference and fixed-step
+Levels used headlessly:
+
+```sh
+cargo run --release --manifest-path native/Cargo.toml -p bees-host \
+  --features client --example policy_rollout -- /absolute/path/to/run.json --view
+```
+
+Space pauses all worlds; N advances one fixed round while paused; Tab changes
+the inspected world; arrow keys pan; the mouse wheel zooms around the pointer;
+F fits the imported bounds; left-click selects a nearby ship for live HP/TSV
+inspection in the window title; Escape or closing the window cancels unfinished
+episodes through the existing durable abort/delivery boundary. Viewing never
+issues ship orders or substitutes model actions. The configured step duration
+is preserved; a slow model slows playback rather than skipping battle ticks.
+Status intervals still include all elapsed host time, including pauses.
+
+The view draws authored primary collider outlines, current health, live
+projectiles, obstacles and fading debris directly from borrowed combat bodies.
+It is a tactical development view, **not** the finished sprite/UI/audio game.
+No window-system dependency is enabled in the default headless build. Linux
+interactive builds require X11 development libraries and a display; the native
+simulation and offscreen renderer do not.
+
+Either mode accepts `--capture final.ppm` to save the final inspected world's
+pixels (world zero when headless). This path is relative to the launch directory,
+must not already exist, and is reported with world/episode/tick identity.
+Capture failure is reported after live episodes are stopped; it cannot bypass
+their cleanup. Captures fit the original imported bounds independently of the
+interactive camera.
+
+Windows GNU compilation of all targets with/without the window feature and the
+existing 106 simulation tests have been exercised. A local eight-ship,
+collision-disabled presentation fixture opened a window, rendered 65 frames,
+advanced 56 shared simulation ticks, checked picking and captured its frame
+without rendering altering the world tick/RNG. This is presentation evidence,
+not imported-policy-run, physics-parity, Linux, training or game qualification.
+See `HANDOFF.md` for the remaining integration boundary and local evidence.
+
 ## Headless policy-only execution (development)
 
 The executable `bees-host/examples/policy_rollout.rs` connects the exported
@@ -1216,7 +1258,7 @@ From the repository root, with Node.js and a Rust/Cargo toolchain installed:
 node native/tools/verify-native.mjs
 ```
 
-This checks the five authored asset catalogs against the current Unity
+This checks the six authored asset catalogs against the current Unity
 prefabs **without rewriting them**, then compiles and runs the native Rust
 tests. An optional `--assets-only` skips Cargo explicitly and does **not**
 establish native compilation. These checks establish neither Unity

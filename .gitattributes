@@ -1,2 +1,5 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Importers compare deterministic JSON bytes on Windows and Linux.
+native/assets/*.json text eol=lf

@@ -25,6 +25,7 @@ use bees_hivemind::session::SquadLifetime;
 use bees_host::durable_connection::DurableHiveMindConnection;
 use bees_host::notification_file::DurableDiagnosticNotifications;
 use bees_host::policy_process::ResidentPolicyProcess;
+use bees_host::presentation::NativeSoftwareRenderer;
 use bees_host::scene_assets::NativeSceneAssets;
 use bees_host::unity_scene_snapshot::{
     NativeExportedPolicyLevelSetup, NativePhysicalScene,
@@ -164,9 +165,20 @@ fn main() -> Result<(), Box<dyn Error>> {
     let config_path = PathBuf::from(args.next().ok_or_else(|| {
         invalid("usage: policy_rollout run.json")
     })?);
-    if args.next().is_some() {
-        return Err(invalid("usage: policy_rollout run.json").into());
+    let mut view = false;
+    let mut capture = None;
+    while let Some(flag) = args.next() {
+        if flag == "--view" && !view {
+            view = true;
+        } else if flag == "--capture" && capture.is_none() {
+            capture = Some(PathBuf::from(args.next()
+                .ok_or_else(|| invalid("--capture requires an output .ppm path"))?));
+        } else {
+            return Err(invalid("usage: policy_rollout run.json [--view] [--capture final.ppm]").into());
+        }
     }
+    #[cfg(not(feature = "client"))]
+    if view { return Err(invalid("--view requires building with --features client").into()); }
     let config_path = config_path.canonicalize()?;
     let root = config_path.parent().ok_or_else(|| invalid("missing config directory"))?;
     let config: RunConfig = serde_json::from_reader(File::open(&config_path)?)?;
@@ -294,6 +306,15 @@ fn main() -> Result<(), Box<dyn Error>> {
             }
         }
     }
+    #[cfg(feature = "client")]
+    let fixed_dt = std::time::Duration::try_from_secs_f32(source_levels[0].fixed_dt_seconds)
+        .map_err(|_| invalid("source fixed duration cannot be represented by the host clock"))?;
+    let client_bounds: Vec<_> = source_levels.iter().map(|scene| scene.bounds).collect();
+    // Open the optional window before starting the model or creating durable
+    // run outputs. A window setup failure leaves no live episode to abandon.
+    #[cfg(feature = "client")]
+    let mut client = if view { Some(bees_host::client::NativeClient::new(client_bounds[0])?) }
+        else { None };
     let mut launches = Vec::with_capacity(source_levels.len());
     for (source, level) in source_levels.into_iter().zip(&config.levels) {
         launches.push((
@@ -328,14 +349,35 @@ fn main() -> Result<(), Box<dyn Error>> {
         "decision_period": config.decision_period,
         "delivery_every": config.delivery_every,
         "timing_sample_period": config.timing_sample_period,
+        "interactive_view": view,
     }));
 
     let mut rounds = 0_u64;
     let mut failed_window = None;
     let mut completed_episodes = vec![0_u32; config.levels.len()];
+    let mut next_status_round = u64::from(window.get());
+    #[cfg(feature = "client")]
+    let mut user_closed = false;
+    #[cfg(not(feature = "client"))]
+    let user_closed = false;
     while rounds < config.max_rounds {
+        #[cfg(feature = "client")]
+        if let Some(client) = &mut client {
+            let Some(current) = host.render_world(client.selected_world()) else {
+                failed_window = Some("selected Level disappeared".to_owned());
+                break;
+            };
+            match client.poll(current, client_bounds[client.selected_world()],
+                host.simulation().world_count(), fixed_dt) {
+                Ok(bees_host::client::NativeClientAction::Wait) => continue,
+                Ok(bees_host::client::NativeClientAction::Step) => {},
+                Ok(bees_host::client::NativeClientAction::Quit) => { user_closed = true; break; },
+                Err(error) => { failed_window = Some(format!("native window: {error}")); break; },
+            }
+        }
         let remaining = config.max_rounds - rounds;
-        let count = nonzero(remaining.min(u64::from(window.get())) as u32, "window")?;
+        let requested = if view { 1 } else { window.get() };
+        let count = nonzero(remaining.min(u64::from(requested)) as u32, "window")?;
         let counts = match host.run_window(count, delivery) {
             Ok(counts) => counts,
             Err(error) => {
@@ -402,21 +444,24 @@ fn main() -> Result<(), Box<dyn Error>> {
                 break;
             }
         };
-        match host.sample_status() {
-            Ok(Some(status)) => println!("{}", json!({
-                "kind": "interval",
-                "run_id": config.run_id,
-                "rounds": rounds,
-                "completed_episodes": completed_episodes.iter()
-                    .map(|&count| u64::from(count)).sum::<u64>(),
-                "metrics": status,
-            })),
-            Ok(None) => {},
-            Err(error) => {
-                failed_window = Some(format!(
-                    "native host status after window: {error:?}"
-                ));
-                break;
+        if rounds >= next_status_round || counts.stopped_with_no_live_worlds {
+            next_status_round = rounds.saturating_add(u64::from(window.get()));
+            match host.sample_status() {
+                Ok(Some(status)) => println!("{}", json!({
+                    "kind": "interval",
+                    "run_id": config.run_id,
+                    "rounds": rounds,
+                    "completed_episodes": completed_episodes.iter()
+                        .map(|&count| u64::from(count)).sum::<u64>(),
+                    "metrics": status,
+                })),
+                Ok(None) => {},
+                Err(error) => {
+                    failed_window = Some(format!(
+                        "native host status after window: {error:?}"
+                    ));
+                    break;
+                }
             }
         }
         if counts.stopped_with_no_live_worlds && recycled == 0 { break; }
@@ -427,6 +472,28 @@ fn main() -> Result<(), Box<dyn Error>> {
     // explicitly mark partial trajectories as unusable for learning.
     let count = host.simulation().world_count();
     let mut cleanup_errors = Vec::new();
+    if let Some(path) = &capture {
+        // Captures are diagnostic output, never a replacement world or model
+        // input. Failure joins cleanup reporting so live Levels still retire.
+        let captured = (|| -> io::Result<()> {
+            #[cfg(feature = "client")]
+            let index = client.as_ref().map_or(0, |client| client.selected_world());
+            #[cfg(not(feature = "client"))]
+            let index = 0;
+            let current = host.render_world(index)
+                .ok_or_else(|| invalid("capture Level disappeared"))?;
+            let mut renderer = NativeSoftwareRenderer::new(1100, 760, client_bounds[index])?;
+            let counts = renderer.render(&current, client_bounds[index]);
+            let mut file = fs::OpenOptions::new().write(true).create_new(true).open(path)?;
+            renderer.write_ppm(&mut file)?;
+            file.sync_all()?;
+            println!("{}", json!({ "kind": "frame_capture", "run_id": config.run_id,
+                "world_id": current.world_id.0, "episode_revision": current.episode_revision,
+                "tick": current.tick, "path": path, "entities": counts }));
+            Ok(())
+        })();
+        if let Err(error) = captured { cleanup_errors.push(format!("frame capture: {error}")); }
+    }
     for index in 0..count {
         let Some(world) = host.simulation().world(index) else {
             cleanup_errors.push(format!("world {index}: disappeared"));
@@ -466,7 +533,14 @@ fn main() -> Result<(), Box<dyn Error>> {
         "pending_store_commands": status.pending_store_commands,
         "failed_window": failed_window,
         "cleanup_errors": cleanup_errors,
+        "user_closed": user_closed,
     }));
+    #[cfg(feature = "client")]
+    if let Some(client) = &client {
+        println!("{}", json!({ "kind": "presentation_final", "run_id": config.run_id,
+            "rendered_frames": client.rendered_frames,
+            "render_wall_seconds": client.render_wall_seconds }));
+    }
     if failed_window.is_some() || !cleanup_errors.is_empty() {
         return Err(invalid(
             "headless rollout failed; run_final identifies the original failure and unresolved obligations",
