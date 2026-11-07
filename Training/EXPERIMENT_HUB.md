@@ -337,9 +337,10 @@ or `stopped` report (activating an eligible prequeued successor in the
 same write after `finished`), authorize one eligible Start that passes
 the same live readiness gate as the manual Start button, or claim available
 CPU/RAM budget for an unassigned CPU-only non-Bees job or, when opted in,
-an exclusive single-GPU job. Jobs completed under
-older sessions require explicit capacity release unless their manual Start
-opted into terminal release. A machine cannot
+an exclusive single-GPU job. Jobs completed under older sessions require explicit capacity release
+unless their manual Start opted into terminal release, or the operator
+explicitly re-adopted their freshly verified running dispatch before
+completion. A machine cannot
 receive a second automatic Start authorization while another Start is
 awaiting its native running/terminal acknowledgement. Project queues are
 interleaved fairly (FIFO within each project). Because automation makes
