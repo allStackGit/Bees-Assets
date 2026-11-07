@@ -1627,7 +1627,7 @@ class ExperimentHub {
             // Only reports accepted into the lifecycle may update live
             // telemetry and comparison samples. A delayed older report
             // must not make a terminal job appear to be running again.
-            let evaluation=null,evaluations=[],evaluationIssue=null;
+            let evaluation=null,evaluations=[],evaluationDefinitions=null,evaluationIssue=null;
             if(state==='running'&&job.project_id!=='ants'&&job.evaluation_stop&&
                 supportsEvaluation(evaluationSuites,job)) {
                 evaluationIssue=typeof report.evaluation_issue==='string'
@@ -1639,14 +1639,39 @@ class ExperimentHub {
                             if(!Array.isArray(report.evaluations)||
                                 report.evaluations.length>rules.length)
                                 throw Error('Invalid multi-suite evaluation report count.');
+                            // Unpinned suite IDs must not silently change
+                            // meaning between checkpoints. Recover the initial
+                            // fingerprints from earlier persisted receipts when
+                            // upgrading a running experiment.
+                            const definitions={...(job.evaluation_suite_definitions||{})};
+                            if(!job.evaluation_suite_definitions) {
+                                for(const cohort of job.evaluation_candidates||[])
+                                    for(const receipt of Object.values(cohort.receipts||{})) {
+                                        const prior=definitions[receipt.suite_id];
+                                        if(!receipt.suite_sha256||
+                                            Object.hasOwn(definitions,receipt.suite_id)&&
+                                            prior!==receipt.suite_sha256)
+                                            throw Error('Existing evaluation suite definitions conflict; review this run.');
+                                        definitions[receipt.suite_id]=receipt.suite_sha256;
+                                    }
+                            }
                             const seen=new Set();
                             for(const raw of report.evaluations) {
                                 const rule=rules.find(r=>r.suite_id===raw?.suite_id);
                                 if(!rule||seen.has(rule.suite_id))
                                     throw Error('Unexpected or duplicate evaluation suite.');
                                 seen.add(rule.suite_id);
-                                evaluations.push(evaluationEvidence(raw,rule,job.dispatch_id));
+                                const receipt=evaluationEvidence(raw,rule,job.dispatch_id);
+                                if(!receipt.suite_sha256)
+                                    throw Error('Multi-suite evaluations require suite SHA-256 fingerprints.');
+                                if(Object.hasOwn(definitions,receipt.suite_id)&&
+                                    definitions[receipt.suite_id]!==receipt.suite_sha256)
+                                    throw Error('Evaluation suite '+receipt.suite_id+
+                                        ' changed definition during training; use a new experiment.');
+                                definitions[receipt.suite_id]=receipt.suite_sha256;
+                                evaluations.push(receipt);
                             }
+                            evaluationDefinitions=definitions;
                         }catch(error) {
                             evaluations=[];
                             evaluationIssue=error.message;
@@ -1681,6 +1706,11 @@ class ExperimentHub {
                 changed=true;
             }
             if(evaluations.length) {
+                if(JSON.stringify(job.evaluation_suite_definitions||{})!==
+                    JSON.stringify(evaluationDefinitions)) {
+                    job.evaluation_suite_definitions=evaluationDefinitions;
+                    changed=true;
+                }
                 // Retain a small bounded number of immutable checkpoint
                 // cohorts. Results from different policies must never be
                 // combined to authorize a benchmark-driven Stop.
