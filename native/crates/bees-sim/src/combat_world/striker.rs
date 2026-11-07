@@ -229,21 +229,24 @@ impl CombatWorld {
     pub fn configure_policy_striker(
         &mut self,
         striker_id: i64,
-        carrier_id: i64,
+        carrier_id: Option<i64>,
         bomb_power: i32,
     ) -> Result<(), CombatWorldError> {
         let &ship_index = self.ship_by_id.get(&striker_id)
             .ok_or(CombatWorldError::UnknownShip)?;
-        let &carrier_index = self.ship_by_id.get(&carrier_id)
-            .ok_or(CombatWorldError::UnknownShip)?;
         let ship = &self.ships[ship_index];
-        let carrier = &self.ships[carrier_index];
-        if ship.ship_type != 19 || carrier.ship_type != CARRIER_SHIP_TYPE ||
-            ship.entity_id == carrier.entity_id ||
-            ship.side != carrier.side || ship.vitals.is_dead() ||
-            carrier.vitals.is_dead() || !self.physics.ships()[ship_index].active ||
-            !self.physics.ships()[carrier_index].active || bomb_power < 0 {
+        if ship.ship_type != 19 || ship.vitals.is_dead() ||
+            !self.physics.ships()[ship_index].active || bomb_power < 0 {
             return Err(CombatWorldError::InvalidPolicyStriker);
+        }
+        if let Some(id) = carrier_id {
+            let &index = self.ship_by_id.get(&id).ok_or(CombatWorldError::UnknownShip)?;
+            let carrier = &self.ships[index];
+            if carrier.ship_type != CARRIER_SHIP_TYPE || id == striker_id ||
+                ship.side != carrier.side || carrier.vitals.is_dead() ||
+                !self.physics.ships()[index].active {
+                return Err(CombatWorldError::InvalidPolicyStriker);
+            }
         }
         if !self.fleet_id_by_ship.get(&striker_id)
             .is_some_and(|&fleet_id| fleet_id != 0) {
@@ -255,7 +258,7 @@ impl CombatWorld {
             return Err(CombatWorldError::InvalidPolicyStriker);
         }
         runtime.special = Some(PolicyShipSpecial::Striker(PolicyStrikerRuntime {
-            carrier_id: Some(carrier_id),
+            carrier_id,
             bomb_power,
             ready: true, // Striker.ClearData: IsBombReady = true
             reload_timer: ScaledTimer::new(1.0, true, false),
@@ -267,6 +270,15 @@ impl CombatWorld {
     pub fn policy_striker_bomb_ready(&self, striker_id: i64) -> Option<bool> {
         match self.policy_ship_runtime.get(&striker_id)?.special {
             Some(PolicyShipSpecial::Striker(striker)) => Some(striker.ready),
+            _ => None,
+        }
+    }
+
+    /// The same live relation used by reload and source carrier-death
+    /// reassignment. Some(None) is a standalone/orphaned bound Striker.
+    pub fn policy_striker_carrier(&self, striker_id: i64) -> Option<Option<i64>> {
+        match self.policy_ship_runtime.get(&striker_id)?.special {
+            Some(PolicyShipSpecial::Striker(striker)) => Some(striker.carrier_id),
             _ => None,
         }
     }
@@ -526,7 +538,7 @@ mod tests {
         }
         world.set_ship_fleet_identity(1, 101).unwrap();
         world.bind_policy_ship(1, PolicyFrame::new(0), false).unwrap();
-        world.configure_policy_striker(1, 2, 25).unwrap();
+        world.configure_policy_striker(1, Some(2), 25).unwrap();
         world
     }
 

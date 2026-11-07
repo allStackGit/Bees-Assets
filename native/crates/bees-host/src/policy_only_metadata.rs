@@ -27,7 +27,7 @@ use bees_sim::collision::Aabb;
 use bees_sim::combat_perception_bridge::{
     AuthoredShipPerception, ControlledShipPerception,
 };
-use bees_sim::combat_world::CombatWorld;
+use bees_sim::combat_world::{CombatWorld, CombatEvent};
 use bees_sim::navigation_runtime::NavigationRuntime;
 use bees_sim::perception::CapabilitySource;
 use bees_sim::combat_perception_bridge::{
@@ -41,7 +41,8 @@ use bees_sim::obstacle::ObstacleKind;
 use bees_sim::perception_weapons::SelfWeapon;
 use bees_sim::ship_assets::ShipAssetCatalog;
 use bees_gameplay::inference::NativePolicyRoute;
-use crate::fleet_inventory::NativeFleetInventory;
+use crate::fleet_inventory::{NativeFleetInventory, NativeFleetShipValue};
+use crate::ship_specials::NativeBeaconTemplate;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PolicyOnlyMetadataError {
@@ -103,6 +104,7 @@ pub struct NativePolicyOnlyMetadata {
     explorers: Vec<Explorer>,
     agents: HashMap<i64, AuthoredPolicyAgent>,
     sides: HashMap<i32, AuthoredPolicySide>,
+    beacon_templates: HashMap<i64, Arc<NativeBeaconTemplate>>,
 }
 
 impl NativePolicyOnlyMetadata {
@@ -116,6 +118,7 @@ impl NativePolicyOnlyMetadata {
         source_static_discovery_values: HashMap<i64, i32>,
         agents: impl IntoIterator<Item=AuthoredPolicyAgent>,
         sides: impl IntoIterator<Item=AuthoredPolicySide>,
+        beacon_templates: HashMap<i64, Arc<NativeBeaconTemplate>>,
     ) -> Result<Self, PolicyOnlyMetadataError> {
         if !bounds.min.is_finite() || !bounds.max.is_finite() ||
             bounds.min.x >= bounds.max.x || bounds.min.y >= bounds.max.y {
@@ -180,12 +183,15 @@ impl NativePolicyOnlyMetadata {
                 return Err(PolicyOnlyMetadataError::DuplicateAgent(id));
             }
         }
+        if beacon_templates.iter().any(|(id, template)|
+            !authored_ships.contains_key(id) || !template.perception.valid()
+        ) { return Err(PolicyOnlyMetadataError::InvalidSource); }
         Ok(Self {
             bounds, navigation, fleet, ship_catalog,
             authored_ships, effective_vision,
             source_static_discovery_values,
             explorers: Vec::new(),
-            agents: agent_map, sides: side_map,
+            agents: agent_map, sides: side_map, beacon_templates,
         })
     }
 
@@ -208,6 +214,33 @@ impl NativePolicyOnlyMetadata {
 }
 
 impl NativeLevelRewardMetadata for NativePolicyOnlyMetadata {
+    fn register_scout_beacons(
+        &mut self, world: &CombatWorld, events: &[CombatEvent],
+    ) -> Result<(), CombatPerceptionError> {
+        for event in events {
+            let CombatEvent::ScoutBeaconDropped { scout_id, beacon_id, parent_fleet_id } = event
+                else { continue; };
+            let invalid = || CombatPerceptionError::InvalidAuthoredMetadata;
+            let template = self.beacon_templates.get(scout_id).ok_or_else(invalid)?;
+            let ship = world.ship(*beacon_id).ok_or_else(invalid)?;
+            if ship.ship_type != template.physical.beacon_asset.ship_type ||
+                world.ship_fleet_identity(*scout_id) != Some(*parent_fleet_id) ||
+                world.ship_fleet_identity(*beacon_id) != Some(*parent_fleet_id) ||
+                self.authored_ships.contains_key(beacon_id) || self.effective_vision.contains_key(beacon_id)
+            { return Err(invalid()); }
+            let cargo = ship.vitals.mined_cargo();
+            self.fleet.register_spawned_ship(NativeFleetShipValue {
+                ship_id: *beacon_id, has_persistent_fleet_value: false,
+                minerals_mined_this_level: cargo,
+            }).map_err(|_| invalid())?;
+            let mut perception = template.perception;
+            perception.minerals_mined_this_level = cargo;
+            self.authored_ships.insert(*beacon_id, perception);
+            self.effective_vision.insert(*beacon_id, template.vision);
+        }
+        Ok(())
+    }
+
     fn damage_metadata(&self, ship_id: i64)
         -> Option<bees_sim::rl_shaping::DamageRewardMetadata>
     {
@@ -396,6 +429,9 @@ impl NativeLevelObservationContext for NativePolicyOnlyMetadata {
         let side = self.sides.get(&agent.side)
             .ok_or(PolicyOnlyMetadataError::MissingSide(agent.side))?;
         let mut capability = agent.capability;
+        let parent_carrier_id = _world.policy_striker_carrier(ship_id)
+            .unwrap_or(agent.parent_carrier_id);
+        capability.has_living_parent_carrier = parent_carrier_id.is_some();
         capability.ship_mined_tsv = self.fleet.get(ship_id)
             .ok_or(PolicyOnlyMetadataError::InvalidSource)?
             .minerals_mined_this_level;
@@ -403,7 +439,7 @@ impl NativeLevelObservationContext for NativePolicyOnlyMetadata {
             level_bounds: self.bounds,
             controller: agent.controller,
             capability,
-            parent_carrier_id: agent.parent_carrier_id,
+            parent_carrier_id,
             own_weapons: &agent.own_weapons,
             exploration_last_seen: Some(side.exploration.last_seen()),
         })

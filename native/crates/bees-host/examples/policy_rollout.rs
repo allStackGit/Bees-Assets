@@ -263,7 +263,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             source_templates.insert(source_path, Arc::clone(&text));
             text
         };
-        let source = NativePhysicalScene::parse(&source_json)
+        let source = NativePhysicalScene::parse_with_ship_catalog(&source_json, assets.ship_catalog())
             .map_err(|error| contextual("exported Level", error))?;
         if source.stage_name != config.stage_name {
             return Err(invalid("exported Level belongs to a different Stage").into());
@@ -409,7 +409,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 {
                     continue;
                 }
-                let mut scene = NativePhysicalScene::parse(&source_jsons[index])
+                let mut scene = NativePhysicalScene::parse_with_ship_catalog(&source_jsons[index], assets.ship_catalog())
                     .map_err(|error| contextual("cached authored Level", error))?;
                 // Replaying an authored template creates new real Stage
                 // squad lifetimes, not aliases of retired pooled wrappers.

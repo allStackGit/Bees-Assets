@@ -30,6 +30,7 @@ use bees_sim::obstacle::CombatObstacle;
 use bees_sim::simulation::{Simulation, World, WorldId};
 use crate::runtime::{NativeHostRuntime, HostInitError};
 use crate::durable_connection::DurableHiveMindConnection;
+use crate::ship_specials::NativeAuthoredShipSpecial;
 use crate::scene_assets::NativeSceneAssets;
 
 /// Exactly the values obtained from a live authored ship. The original
@@ -49,6 +50,7 @@ pub struct NativeAuthoredShip {
     pub policy_capabilities: NativeAuthoredPolicyCapabilities,
     pub fleet_ship_id: Option<i64>,
     pub policy: Option<NativeAuthoredPolicy>,
+    pub special: Option<NativeAuthoredShipSpecial>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -284,10 +286,14 @@ impl NativeSceneAssets {
         // Imported ship/obstacle lists arrive separately; sort their
         // original IDs once at setup, never in the simulation hot path.
         let mut entities = authored.entities;
+        let mut specials = Vec::new();
         entities.sort_unstable_by_key(NativeAuthoredEntity::entity_id);
         for entity in entities {
             match entity {
                 NativeAuthoredEntity::Ship(ship) => {
+                if let Some(special) = ship.special {
+                    specials.push((ship.entity_id, ship.policy.is_some(), special));
+                }
                 let asset = self.ship_catalog().by_type(ship.ship_type)
                     .ok_or(NativeSceneBuildError::MissingShipAsset(ship.ship_type))?;
                 combat.spawn_ship(
@@ -389,6 +395,12 @@ impl NativeSceneAssets {
                     }
                 }
             }
+        }
+        // Carrier links can point forward in source creation order. Install
+        // specials only after every authored ship and fleet identity exists.
+        for (id, policy, special) in specials {
+            special.configure(&mut combat, id, policy)
+                .map_err(NativeSceneBuildError::Combat)?;
         }
         if combat.total_living_ships() == 0 {
             return Err(NativeSceneBuildError::EmptyScene);

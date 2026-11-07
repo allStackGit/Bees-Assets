@@ -18,7 +18,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use bees_sim::asteroid_spawn::FullAsteroidPrototype;
-use bees_sim::combat_world::{NativeFirePattern, NativeTurretSpec};
+use bees_sim::combat_world::{NativeFirePattern, NativeTurretSpec, GameStrikerCarrier, ScoutBeaconSpec};
 use bees_sim::perception_entities::ObservedWeapon;
 use bees_sim::control::PolicyFrame;
 use bees_hivemind::session::SquadLifetime;
@@ -31,7 +31,7 @@ use bees_sim::map_object::CombatMapObject;
 use bees_sim::obstacle::{CombatObstacle, ObstacleKind, ObstacleVitals};
 use bees_sim::movement::ShipMotion;
 use bees_sim::simulation::WorldId;
-use bees_sim::ship_assets::ShipAssetCatalog;
+use bees_sim::ship_assets::{ShipAssetCatalog, AssetError, BEACON_TYPE};
 use bees_sim::combat_perception_bridge::{
     AuthoredShipPerception, ControlledShipPerception,
 };
@@ -44,8 +44,6 @@ use bees_sim::team_exploration::TeamExplorationGrid;
 use bees_gameplay::episode::{
     NativeEpisodeRewardCoordinator, NativeEpisodeRewardError,
 };
-use bees_gameplay::group_rewards::NativeGroupRewardDelivery;
-use bees_gameplay::level_rules::NativeLevelState;
 use bees_gameplay::inference::NativePolicyInference;
 use bees_gameplay::level_host::NativeLevelNotificationSink;
 use serde::Deserialize;
@@ -66,9 +64,10 @@ use crate::policy_only_metadata::{
 };
 use crate::scene_assets::NativeSceneAssets;
 use crate::runtime::NativeHostRuntime;
+use crate::ship_specials::{NativeAuthoredShipSpecial, NativeBeaconTemplate};
 use crate::durable_connection::DurableHiveMindConnection;
 
-const SNAPSHOT_VERSION: u32 = 16;
+const SNAPSHOT_VERSION: u32 = 17;
 
 #[derive(Deserialize, Clone, Copy)]
 struct UnityVec2 { x: f32, y: f32 }
@@ -160,6 +159,7 @@ struct UnityShip {
     mined_cargo: i32,
     original_health: i32,
     size_class: f32,
+    special: UnityShipSpecial,
     size_pixels: UnitySize,
     has_healing_zone: bool,
     healing_zone: Option<UnitySupportCollider>,
@@ -217,6 +217,90 @@ struct UnityShip {
     self_weapons: Vec<UnitySelfWeapon>,
     // Required in v2, exported from the actual Unity Weapon/Piece instances.
     turrets: Vec<UnityTurret>,
+}
+
+#[derive(Deserialize)]
+struct UnityShipSpecial {
+    kind: String,
+    power: i32,
+    carrier_id: i64,
+    offset_from_center: UnityVec2,
+    refill_distance: f32,
+    scout_enabled: bool,
+    beacon: Option<UnityBeaconTemplate>,
+}
+
+#[derive(Deserialize)]
+struct UnityBeaconTemplate {
+    original_health: i32,
+    health: i32,
+    max_tsv: i32,
+    size_class: f32,
+    base_speed: f32,
+    rotation_speed: f32,
+    height: f32,
+    longest_side: f32,
+    effective_vision_range: i32,
+    hivemind_registered: bool,
+    hivemind_vision_enabled: bool,
+    max_living_ships_per_side: i32,
+}
+
+impl UnityShipSpecial {
+    fn into_native(self, id: i64, ship_type: u8, catalog: &ShipAssetCatalog)
+        -> Result<Option<NativeAuthoredShipSpecial>, NativeSnapshotError>
+    {
+        let invalid = || NativeSnapshotError::InvalidShip(id);
+        if self.power < 0 { return Err(invalid()); }
+        let special = match (self.kind.as_str(), ship_type) {
+            ("none", kind) if !matches!(kind, 0 | 10 | 18 | 19 | 22) => return Ok(None),
+            ("barge", 0) => NativeAuthoredShipSpecial::Barge { power: self.power },
+            ("fire-barge", 10) => NativeAuthoredShipSpecial::FireBarge { power: self.power },
+            ("yellow-jacket", 22) => NativeAuthoredShipSpecial::YellowJacket { power: self.power },
+            ("striker", 19) if self.carrier_id >= 0 &&
+                self.offset_from_center.into_vec().is_finite() &&
+                self.refill_distance.is_finite() && self.refill_distance > 0.0 =>
+                NativeAuthoredShipSpecial::Striker { power: self.power, carrier: GameStrikerCarrier {
+                    carrier_id: (self.carrier_id != 0).then_some(self.carrier_id),
+                    offset_from_center: self.offset_from_center.into_vec(),
+                    refill_distance: self.refill_distance,
+                } },
+            ("scout", 18) => {
+                let source = self.beacon.ok_or_else(invalid)?;
+                if source.original_health <= 0 || source.health <= 0 ||
+                    source.health > source.original_health || source.max_tsv < 0 ||
+                    !source.size_class.is_finite() || source.size_class < 0.0 ||
+                    ![source.base_speed, source.rotation_speed, source.height, source.longest_side]
+                        .iter().all(|v| v.is_finite() && *v >= 0.0) || source.height <= 0.0 ||
+                    source.effective_vision_range < 0 || source.max_living_ships_per_side < 0 ||
+                    (source.hivemind_vision_enabled && (!source.hivemind_registered || source.effective_vision_range == 0))
+                { return Err(invalid()); }
+                NativeAuthoredShipSpecial::Scout { enabled: self.scout_enabled, beacon: Arc::new(NativeBeaconTemplate {
+                    physical: ScoutBeaconSpec {
+                        beacon_asset: catalog.by_type(BEACON_TYPE).ok_or_else(invalid)?.clone(),
+                        beacon_vitals: ShipVitals::new(source.health, source.health, source.max_tsv, 0)
+                            .map_err(NativeSnapshotError::Combat)?,
+                        beacon_base_speed: source.base_speed, beacon_rotation_speed: source.rotation_speed,
+                        beacon_height: source.height, beacon_original_health: source.original_health,
+                        beacon_size_class: source.size_class,
+                        max_living_ships_per_side: (source.max_living_ships_per_side > 0)
+                            .then_some(source.max_living_ships_per_side as usize),
+                    },
+                    perception: AuthoredShipPerception {
+                        longest_side: source.longest_side, max_weapon_range: 0.0, firepower: 0.0,
+                        is_bomber: false, is_carrier_ship: false, minerals_mined_this_level: 0,
+                        observed_weapons: [None; 5], allied_communication: None,
+                    },
+                    vision: NativeSourceVision {
+                        effective_range: source.effective_vision_range, trigger_range: source.effective_vision_range,
+                        registered: source.hivemind_registered, enabled: source.hivemind_vision_enabled,
+                    },
+                }) }
+            }
+            _ => return Err(invalid()),
+        };
+        Ok(Some(special))
+    }
 }
 
 #[derive(Deserialize)]
@@ -308,6 +392,7 @@ struct UnityMapObject {
 
 #[derive(Debug)]
 pub enum NativeSnapshotError {
+    ShipCatalog(AssetError),
     Read { path: PathBuf, error: io::Error },
     Malformed(serde_json::Error),
     UnsupportedSchema(u32),
@@ -656,6 +741,14 @@ impl NativePhysicalScene {
 
         let squads = self.squads_for_level(setup.level_id)
             .map_err(NativePolicyOnlyLevelError::Snapshot)?;
+        let beacon_templates = self.entities.iter().filter_map(|entity| match entity {
+            NativeAuthoredEntity::Ship(ship) => match &ship.special {
+                Some(NativeAuthoredShipSpecial::Scout { beacon, .. }) =>
+                    Some((ship.entity_id, Arc::clone(beacon))),
+                _ => None,
+            },
+            _ => None,
+        }).collect();
         let metadata = NativePolicyOnlyMetadata::new(
             self.bounds,
             setup.navigation,
@@ -666,6 +759,7 @@ impl NativePhysicalScene {
             self.source_static_discovery_values,
             setup.policy_agents,
             setup.sides,
+            beacon_templates,
         ).map_err(NativePolicyOnlyLevelError::Metadata)?;
         Ok(NativeAuthoredLevel {
             world_id: setup.world_id,
@@ -780,6 +874,12 @@ impl NativePhysicalScene {
     }
 
     pub fn parse(json: &str) -> Result<Self, NativeSnapshotError> {
+        let catalog = ShipAssetCatalog::embedded().map_err(NativeSnapshotError::ShipCatalog)?;
+        Self::parse_with_ship_catalog(json, &catalog)
+    }
+
+    /// Reuse the Stage's immutable hull catalog when many arenas share a source.
+    pub fn parse_with_ship_catalog(json: &str, catalog: &ShipAssetCatalog) -> Result<Self, NativeSnapshotError> {
         let raw: UnitySnapshot = serde_json::from_str(json)
             .map_err(NativeSnapshotError::Malformed)?;
         if raw.schema_version != SNAPSHOT_VERSION {
@@ -947,6 +1047,17 @@ impl NativePhysicalScene {
                 }),
                 warp_human_side: can_warp.then_some(raw.human_side),
             };
+            let special = ship.special.into_native(ship.entity_id, ship.ship_type, catalog)?;
+            if ship.has_bound_policy && ship.has_special_action != special.is_some() {
+                return Err(NativeSnapshotError::InvalidPolicySource(ship.entity_id));
+            }
+            if ship.has_bound_policy {
+                if let Some(NativeAuthoredShipSpecial::Striker { carrier, .. }) = &special {
+                    if carrier.carrier_id != (ship.parent_carrier_id > 0).then_some(ship.parent_carrier_id) {
+                        return Err(NativeSnapshotError::InvalidPolicySource(ship.entity_id));
+                    }
+                }
+            }
 
             let mut observed_weapons = [None; 5];
             for weapon in ship.observed_weapons {
@@ -1153,6 +1264,7 @@ impl NativePhysicalScene {
                 fleet_ship_id: (ship.fleet_ship_id != 0)
                     .then_some(ship.fleet_ship_id),
                 policy: None,
+                special,
             }));
         }
         if fleet_values.is_empty() {

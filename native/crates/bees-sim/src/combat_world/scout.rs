@@ -24,6 +24,8 @@ pub struct ScoutBeaconSpec {
     pub beacon_base_speed: f32,
     pub beacon_rotation_speed: f32,
     pub beacon_height: f32,
+    pub beacon_original_health: i32,
+    pub beacon_size_class: f32,
     pub max_living_ships_per_side: Option<usize>,
 }
 
@@ -31,6 +33,8 @@ impl ScoutBeaconSpec {
     fn valid(&self) -> bool {
         self.beacon_asset.ship_type == BEACON_TYPE &&
             !self.beacon_vitals.is_dead() &&
+            self.beacon_original_health > 0 && self.beacon_size_class.is_finite() &&
+            self.beacon_size_class >= 0.0 &&
             self.beacon_base_speed.is_finite() &&
             self.beacon_base_speed >= 0.0 &&
             self.beacon_rotation_speed.is_finite() &&
@@ -288,7 +292,9 @@ impl CombatWorld {
         }
         let mother_motion = &self.physics.ships()[index].motion;
         let motion = ShipMotion::new(
-            mother_motion.position, mother_motion.rotation_degrees,
+            // Pool.CreatePooledBeacon uses Quaternion.identity; Setup restores
+            // that OriginalRotation. Scout.DropBeacon copies only position.
+            mother_motion.position, 0.0,
             spec.beacon_rotation_speed, spec.beacon_base_speed,
             spec.beacon_height,
         );
@@ -296,6 +302,10 @@ impl CombatWorld {
             &spec.beacon_asset, beacon_id, side, spec.beacon_vitals, motion,
         )?;
         self.set_ship_fleet_identity(beacon_id, parent_fleet_id)?;
+        self.configure_game_ship_original_health(beacon_id, spec.beacon_original_health)?;
+        self.set_ship_collision_profile(beacon_id, ShipCollisionProfile {
+            original_health: spec.beacon_original_health, size_class: spec.beacon_size_class,
+        })?;
         self.beacon_parent_by_id.insert(beacon_id, scout_id);
 
         self.events.push(CombatEvent::ScoutBeaconDropped {
@@ -357,6 +367,8 @@ mod tests {
                 beacon_base_speed: 0.0,
                 beacon_rotation_speed: 0.0,
                 beacon_height: 2.0,
+                beacon_original_health: 20,
+                beacon_size_class: 0.0,
                 max_living_ships_per_side: Some(3),
             }).unwrap();
             assert!(state.policy_action_mask(id).unwrap().special[1]);

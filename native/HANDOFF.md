@@ -1,77 +1,75 @@
 # Unified native rewrite handoff — 2026-11-07
 
 Worktree: `B:\Bees\unified-native`, branch `rewrite/unified-native`.
-Fetched `origin/rewrite/unified-native` during this increment: remote remained
-`a31ddf669`, already an ancestor of local `d77f1c48b`. No upstream rewrite
-changes were missing. The original `B:\Bees\Assets` checkout and training
-processes were not switched, stopped or reconfigured.
+Fetched the branch before this increment: upstream remains `a31ddf669`, with
+local commits `d77f1c48b` and `54a74dc68` already applied. The separate original
+`B:\Bees\Assets` checkout and live training processes were left unchanged.
 
-## Current integrated work
+## Implemented
 
-The previous local commit adds an optional tactical window, camera/inspection,
-pause/single-step, source-world rendering and frame captures to `policy_rollout`.
-The headless and viewed paths share `NativeHostRuntime`; this is still a
-presentation development tool, not the finished playable game.
+The shared scene -> native Level path now installs all five already-ported ship
+specials, in addition to the earlier collision, mining, healing and warp setup.
 
-This increment connects source ship setup to that same runtime:
+- Source scene schema **17** carries actual bomb/charge power, optional Striker
+  carrier identity and Scout Beacon prefab/Create/Setup inputs. Fresh-scene
+  exports reject consumed bomb, charge and Scout resource/cooldown histories.
+  New exports are required; do not upgrade an older file by inventing fields.
+- Special registration happens after all ships exist, so forward carrier
+  references work. Non-policy Fire Barge death explosions and game Scout/Striker
+  setup use the same core methods as policy ships. Barge/YellowJacket game-command
+  activation still obtains its live power from the existing command context.
+- Policy Strikers may have no Carrier, matching ordinary source Strikers. Their
+  observation parent uses the core's current carrier relation, including death
+  reassignment, instead of retaining the initial imported parent forever.
+- Scout Beacon templates are shared immutable inputs. Physical spawns install
+  real original-health/size collision profiles. The Level registers transient
+  fleet, perception and vision data before downstream consumers, and the existing
+  event pass registers the real minion Squad. Both policy-tick and later timed
+  command spawns use this lifecycle. Custom metadata without a spawn adapter fails
+  explicitly. Minions acquire no fabricated policy controller/model route.
+- Corrected the reproduced Beacon heading mismatch: source Pool/Setup restores
+  zero rotation; it does not copy the mother's rotation. A rotated-Scout check
+  failed with native heading 90 before correction and succeeds with heading 0.
+- Multi-arena policy startup/reset reuses the Stage ship catalog during source
+  parsing; it does not reparse a separate immutable hull catalog for every arena.
 
-- Physical scene schema **16** exports/imports actual `Ship.SizeClass`, configured
-  pixel sizes and factions, plus active Beehive/WarpGate child colliders. The
-  exporter shares box/polygon/circle transformation code with MapObjects. Old
-  exports need a fresh export; there is no guessed schema-15 compatibility path.
-- The shared builder installs original-health collision profiles, support zones
-  and policy mining/healing/warp eligibility. Source flags are cross-checked;
-  readiness and cooldowns remain owned by CombatWorld.
-- New ship collider caches are initialized at construction. A direct run first
-  reproduced all contact-based initial masks being false; initializing the
-  actual geometry enables correct tick-zero masks without advancing physics.
-- Negative FleetShip IDs from `Level.RandomSquadSetup`, campaign and transient
-  allocation are retained through import, combat ownership and delayed-shot
-  validation. Persistence remains a separate value. The negative-ID fixture
-  initially failed startup with `InvalidPolicyMining`; the same fixture now runs.
-- Scout setup and minion-roster validation now share the catalog's Beacon type
-  **1**. Previously both hardcoded 14 (Honeybee), rejecting the real Beacon
-  asset. The actual type-1 spawn and squad registration now execute successfully.
+## Executed evidence
 
-## Current executed evidence
+Toolchain outside the checkout: `B:\Bees\Runtime\Toolchains\rust-native`.
+Use its rustup and cargo homes; add `cargo\bin` and `w64devkit\bin` to PATH;
+RUSTUP_TOOLCHAIN=stable-x86_64-pc-windows-gnu,
+RUSTFLAGS=-C link-self-contained=yes. System PATH was not modified.
 
-Windows GNU Rust 1.99.1 toolchain: `B:\Bees\Runtime\Toolchains\rust-native`.
-Set RUSTUP_HOME to its `rustup`, CARGO_HOME to its `cargo`; add `cargo\bin` and
-`w64devkit\bin` to PATH; set RUSTUP_TOOLCHAIN=stable-x86_64-pc-windows-gnu and
-RUSTFLAGS=-C link-self-contained=yes. No system PATH change was made.
+- Workspace all-target/all-feature compilation and 106 existing simulation tests
+  passed on Windows GNU Rust. Other crates currently have no enabled tests;
+  compilation is not evidence of their runtime lifecycle behavior.
+- Six authored asset catalog checks passed.
+- Disposable explicit contract fixtures in `B:\Bees\native-capability-qualification`
+  exercise the actual schema-17 importer, builder and NativeLevelRules:
+  `specials-import.txt` executes all five specials. Carrier-backed and standalone
+  Strikers each drop a real bomb and deal delayed damage after 111 fixed ticks.
+  Fire Barge/Yellow Jacket self-death and Barge charge-start events are observed.
+  `scout-import.txt` verifies a real Beacon with negative inherited fleet ID,
+  immediate metadata/roster registration, inclusion in a complete ally perception
+  snapshot and a successful following Level step. `scout-cap.txt` verifies the
+  source side cap masks the special before a spawn. `beacon-heading-before.txt`
+  records the prior heading mismatch. These are deliberately supplied actions
+  and explicit scenarios, not trained inference or authentic Unity scene exports.
 
-- `node native/tools/verify-native.mjs`: six source asset checks and existing
-  executable Rust checks passed.
-- All-feature/all-target workspace build and tests passed: **106 existing
-  simulation tests**. The other crates currently have no enabled tests; their
-  compilation alone is not runtime evidence.
-- Disposable explicit scene fixtures: `B:\Bees\native-capability-qualification`.
-  These exercise the actual schema-16 importer -> builder -> shared Level step,
-  with deliberately supplied actions and no learner/model substitutes:
-  `verification.txt` / `negative-after.txt` show 5 minerals credited to fleet,
-  50 HP restored, a Human ship warped, and live cooldown masks, over three ticks.
-  `asteroid-verification.txt` shows an authored asteroid contact reducing ship
-  health 50 -> 0 without a missing-profile failure.
-  `scout-before.txt` / `scout-after.txt` reproduce the rejected actual Beacon and
-  then show a type-1 Beacon inheriting negative fleet identity and joining the
-  shared squad roster. Other supported bomber/charge registrations also accept
-  signed transient identities. These are explicit contract fixtures, **not**
-  authentic Unity scene exports or physics/gameplay parity evidence.
+## Remaining / next work
 
-## Remaining / highest-value next work
+The original replacement goal is **not complete**. Execute the updated C#
+exporter in Unity and use an authentic schema-17 Level, Stage palette, collision
+matrix and actual v26 model in both viewed and headless modes. Confirm fresh
+special masks, Beacon visibility/reward attribution, carrier retirement and
+outbox settlement. C# export execution, live model-host operation and actual
+multi-machine behavior remain unverified. Linux execution remains unverified;
+no installed WSL distribution was found in the prior environment check.
 
-The full replacement goal is **not complete**. Compile/run the updated Unity
-exporter and launch an authentic fresh schema-16 battle with its real Stage,
-collision matrix and v26 model in both headless and viewed modes. Confirm initial
-capability masks, exact resource/health/warp events and cancellation/terminal
-outbox settlement. Unity export execution and end-to-end model-host behavior
-remain unverified here. No Linux distribution is installed in WSL; Linux builds
-and execution remain unverified. No speedup or cross-engine parity is claimed.
-
-Supported ship-special setup still needs complete source import integration
-(Scout Beacon specs, carrier relations, bomb/charge powers and lifecycle state),
-including metadata for spawned minions. Normal user orders, game modes,
-sprites/audio/UI, actual optimizer/trajectory/checkpoint plumbing, distributed
-learning and experiment orchestration remain unfinished. Preserve canonical
-world/Level/connection ownership rather than adding another simulator or
-training on partial/invented trajectories.
+The tactical window still needs normal user commands and complete game/mode,
+sprite/audio/UI integration. Full Carrier/Drone spawn lifecycle and remaining
+source parity require work. A connected real optimizer/trajectory/checkpoint
+pipeline, distributed learner, evaluation and experiment orchestration are still
+unfinished. No Unity/Box2D parity, production durability or speedup claim has been
+established. Keep the same authoritative gameplay implementation throughout;
+do not train on partial or invented trajectories to conceal missing integration.

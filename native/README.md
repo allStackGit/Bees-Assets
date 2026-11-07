@@ -104,7 +104,7 @@ rendering, full parity or production durability of all app-side effects.
 Do not use its partial trajectories as valid learner data. Native
 Windows/Linux execution and throughput are not yet verified.
 
-## Unity scene import (schema 16)
+## Unity scene import (schema 17)
 
 **Bees > Native > Export Selected Level Physical Scene** captures a
 source-authored initial Unity Level, not a resumable match checkpoint.
@@ -115,7 +115,7 @@ baselines, navigation frame and Stage damage settings. Unsupported
 geometry, missing source identity and partial active combat state fail
 closed rather than generating plausible replacement values.
 
-Schema 16 additionally records actual `Ship.SizeClass`, configured ship and
+The scene additionally records actual `Ship.SizeClass`, configured ship and
 Beehive pixel sizes, faction IDs, and active Beehive HealCollider / WarpGate
 WarpCollider geometry in the owning ship's body frame. Boxes, single-path
 polygons and isotropically transformed circles use one exporter shared with
@@ -131,6 +131,24 @@ observations and masks do not require an artificial warm-up physics step.
 Signed FleetShip identities are preserved: negative training/campaign/minion
 IDs remain transient; positive IDs alone do not replace the separate
 `persistent_fleet` flag used for reward/economic accounting.
+
+Schema 17 connects all five supported ship specials to the same scene builder:
+actual bomb/charge power, optional Striker carrier relation and Scout Beacon
+prefab/Create/Setup inputs. Forward carrier references are configured only after
+all ships exist. Standalone Strikers are represented without an invented Carrier;
+their observation parent follows the world's live carrier-death reassignment.
+The exporter rejects consumed bombs, charges or Scout cooldown/resource history:
+this remains an initial scene, not a resumable checkpoint.
+
+Beacon templates retain real source durability, TSV, motion, size class, sight,
+registration and optional side-population cap. Both game and policy Scouts spawn
+through CombatWorld. The Level registers the new Beacon's transient fleet value,
+perception and vision before vision/reward/observation consumers run; the ordinary
+event processor registers its actual minion Squad. Beacon hulls and original-health
+collision profiles exist immediately, and their zero setup rotation matches
+`Pool.CreatePooledBeacon` / `Ship.Setup`. No model route is fabricated for minions.
+Hosts providing custom Level metadata must implement `register_scout_beacons`
+when enabling Scouts; missing spawn data fails the Level step explicitly.
 
 Read through `NativePhysicalScene::read`; launch actual policy-only
 Levels with `NativeSceneAssets::build_imported_policy_runtime`.

@@ -59,6 +59,18 @@ pub trait NativeLevelRewardMetadata {
     /// must not silently acknowledge an action and lose mined resources.
     fn credit_mined_minerals(&mut self, ship_id: i64, amount: i32) -> Option<i32>;
 
+    /// Install source-owned fleet/perception/vision data for real physical
+    /// Beacon spawns before this tick's vision and reward consumers run.
+    /// A Level without a spawn adapter must not acknowledge missing data.
+    fn register_scout_beacons(
+        &mut self, _world: &CombatWorld, events: &[CombatEvent],
+    ) -> Result<(), CombatPerceptionError> {
+        if events.iter().any(|event| matches!(event, CombatEvent::ScoutBeaconDropped { .. })) {
+            return Err(CombatPerceptionError::InvalidAuthoredMetadata);
+        }
+        Ok(())
+    }
+
     /// Collect real registered/enabled HiveMindVision observers. A full
     /// rendered Level may instead forward source OnTriggerEnter callbacks;
     /// only Levels with an authoritative observer adapter enable the
@@ -684,6 +696,7 @@ where
                 )?;
             }
         }
+        state.metadata.register_scout_beacons(&state.combat, state.combat.events())?;
         state.refresh_vision_and_rewards(completed_tick)
             .map_err(NativeLevelStepError::Vision)?;
         state.credit_mining_since(0)?;
@@ -785,6 +798,9 @@ where
                 },
             )?;
             if state.combat.events().len() > previous_event_count {
+                state.metadata.register_scout_beacons(
+                    &state.combat, &state.combat.events()[previous_event_count..],
+                )?;
                 // Timed Mining callbacks occur after the normal reward
                 // pass. Persist before publishing any command completion.
                 state.credit_mining_since(previous_event_count)?;

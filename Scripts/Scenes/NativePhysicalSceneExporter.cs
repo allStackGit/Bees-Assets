@@ -33,6 +33,7 @@ internal static class NativePhysicalSceneExporter
         public bool has_healing_zone, has_warp_zone;
         public SourceCollider healing_zone = new SourceCollider();
         public SourceCollider warp_zone = new SourceCollider();
+        public SourceShipSpecial special = new SourceShipSpecial();
         public long fleet_ship_id;
         public bool persistent_fleet;
         public Vector2 position, body_velocity, target_coordinates;
@@ -70,6 +71,28 @@ internal static class NativePhysicalSceneExporter
         public List<Vector2> vertices = new List<Vector2>();
         public Vector2 offset;
         public float radius;
+    }
+
+    [Serializable]
+    private sealed class SourceShipSpecial
+    {
+        public string kind = "none";
+        public int power;
+        public long carrier_id;
+        public Vector2 offset_from_center;
+        public float refill_distance;
+        public bool scout_enabled;
+        public SourceBeaconTemplate beacon = new SourceBeaconTemplate();
+    }
+
+    [Serializable]
+    private sealed class SourceBeaconTemplate
+    {
+        public int original_health, health, max_tsv, effective_vision_range;
+        public float size_class, base_speed, rotation_speed, height, longest_side;
+        public bool hivemind_registered, hivemind_vision_enabled;
+        // Zero is the ordinary game with no training population cap.
+        public int max_living_ships_per_side;
     }
 
     [Serializable]
@@ -148,7 +171,7 @@ internal static class NativePhysicalSceneExporter
     [Serializable]
     private sealed class PhysicalScene
     {
-        public int schema_version = 16;
+        public int schema_version = 17;
         public string level_name;
         public string stage_name;
         public float fixed_dt_seconds;
@@ -295,6 +318,7 @@ internal static class NativePhysicalSceneExporter
                 has_warp_zone = warpZone != null && warpZone.isActiveAndEnabled,
                 healing_zone = ExportShipSupportZone(level, ship, healingZone),
                 warp_zone = ExportShipSupportZone(level, ship, warpZone),
+                special = ExportShipSpecial(ship),
                 fleet_ship_id = fleet.Id,
                 persistent_fleet = fleet.Id > 0 &&
                     !ship.IsMinionShip && !ship.IsCarrierShip,
@@ -697,6 +721,92 @@ internal static class NativePhysicalSceneExporter
     {
         if (collider == null || !collider.isActiveAndEnabled) return new SourceCollider();
         return ExportColliderShape(level.Map.Transform, collider, ship.GetPosition(), ship.Rotation);
+    }
+
+    private static SourceShipSpecial ExportShipSpecial(Ship ship)
+    {
+        var result = new SourceShipSpecial();
+        Weapon weapon = null;
+        if (ship is Striker striker)
+        {
+            if (!striker.IsBombReady || striker.HasDroppedBomb || striker.HasCompletedRun ||
+                (striker.Carrier != null && striker.Carrier.IsDead))
+                throw new InvalidOperationException("Cannot export an active Striker lifecycle: " + ship.Id);
+            result.kind = "striker";
+            result.carrier_id = striker.Carrier != null ? striker.Carrier.Id : 0;
+            result.offset_from_center = ship.OffsetFromCenter;
+            // Source Striker.CheckCarrierReload uses the fixed 15-unit radius.
+            result.refill_distance = 15f;
+            weapon = striker.Bomb;
+        }
+        else if (ship is FireBarge fireBarge)
+        {
+            if (fireBarge.RlSelfDetonationRequested)
+                throw new InvalidOperationException("Cannot export a detonating Fire Barge: " + ship.Id);
+            result.kind = "fire-barge";
+            weapon = fireBarge.Bomb;
+        }
+        else if (ship is YellowJacket jacket)
+        {
+            result.kind = "yellow-jacket";
+            weapon = jacket.Bomb;
+        }
+        else if (ship is Barge barge)
+        {
+            if (!barge.IsRlChargeReady || barge.IsCharging || barge.HasStartedCharging)
+                throw new InvalidOperationException("Cannot export an active Barge charge: " + ship.Id);
+            result.kind = "barge";
+            weapon = barge.Charge;
+        }
+        else if (ship is Scout scout)
+        {
+            float clock = ship.Stage.IsTraining ? Time.time : Time.realtimeSinceStartup;
+            if (scout.MinionType != ConfigData.ShipTypes.Beacon || scout.BeaconsDropped != 0 ||
+                clock - scout.TimeSinceLastBeaconDropped + 0.0001f < ConfigData.MinimumDelayPerBeacon)
+                throw new InvalidOperationException("Cannot export a partially consumed Scout lifecycle: " + ship.Id);
+            result.kind = "scout";
+            result.scout_enabled = scout.CanDropBeacons;
+            result.beacon = ExportBeaconTemplate(ship);
+            return result;
+        }
+        else return result;
+
+        if (weapon == null || weapon.Power < 0)
+            throw new InvalidOperationException("Missing real ship-special weapon power: " + ship.Id);
+        result.power = weapon.Power;
+        return result;
+    }
+
+    private static SourceBeaconTemplate ExportBeaconTemplate(Ship scout)
+    {
+        GameObject prefab = scout.Stage.Prefabs.BeaconPrefab;
+        Beacon beacon = prefab != null ? prefab.GetComponent<Beacon>() : null;
+        var stats = ConfigData.GetShipInfo(ConfigData.ShipTypes.Beacon);
+        if (beacon == null || beacon.Side != scout.Side ||
+            AssetDatabase.GetAssetPath(prefab) != "Assets/Prefabs/Entities/Ships/Beacon.prefab" ||
+            stats.Health <= 0 || stats.ProjectileValues.Count != 0 ||
+            beacon.HiveMindVision == null || beacon.HiveMindVision.Collider == null)
+            throw new InvalidOperationException("Unsupported/missing authored Beacon prefab on Scout " + scout.Id);
+        // Read the SAME source Create/Setup inputs without instantiating a
+        // pool item or changing the live Level merely to produce an export.
+        Vector2 size = ConfigData.ShipSizes[ConfigData.ShipTypes.Beacon] / ConfigData.PixelsPerUnit;
+        bool training = RlOneVsOneTrainingBootstrap.IsActiveFor(scout.Stage);
+        bool user = scout.Side == ConfigData.Configuration.UserSide && scout.Stage.DoesUserHaveController;
+        bool registered = scout.Stage.IsTrainingNueralNetwork || !user;
+        return new SourceBeaconTemplate {
+            original_health = stats.Health,
+            health = training ? RlOneVsOneTrainingDurabilityGuard.CalculateTrainingHealth(stats.Health) : stats.Health,
+            max_tsv = stats.Tsv,
+            size_class = beacon.SizeClass,
+            base_speed = stats.Speed,
+            rotation_speed = stats.Speed * ConfigData.Configuration.RotationMultiplier,
+            height = size.y,
+            longest_side = Mathf.Max(size.x, size.y),
+            effective_vision_range = stats.Sight,
+            hivemind_registered = registered,
+            hivemind_vision_enabled = registered,
+            max_living_ships_per_side = training ? RlOneVsOneTrainingBootstrap.CurrentShipsPerSide : 0,
+        };
     }
 
     private static SourceCollider ExportColliderShape(

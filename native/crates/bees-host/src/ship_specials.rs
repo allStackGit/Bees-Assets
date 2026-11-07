@@ -1,0 +1,54 @@
+//! Immutable source ship-special inputs shared by scene startup and the
+//! Level's spawned-ship metadata. All execution remains in CombatWorld.
+use std::sync::Arc;
+use bees_sim::combat_world::{CombatWorld, CombatWorldError, GameStrikerCarrier, ScoutBeaconSpec};
+use bees_sim::combat_perception_bridge::AuthoredShipPerception;
+use crate::policy_only_metadata::NativeSourceVision;
+
+#[derive(Clone, Debug)]
+pub struct NativeBeaconTemplate {
+    pub physical: ScoutBeaconSpec,
+    pub perception: AuthoredShipPerception,
+    pub vision: NativeSourceVision,
+}
+
+#[derive(Clone, Debug)]
+pub enum NativeAuthoredShipSpecial {
+    Barge { power: i32 },
+    FireBarge { power: i32 },
+    Striker { power: i32, carrier: GameStrikerCarrier },
+    YellowJacket { power: i32 },
+    Scout { beacon: Arc<NativeBeaconTemplate>, enabled: bool },
+}
+
+impl NativeAuthoredShipSpecial {
+    pub(crate) fn configure(self, world: &mut CombatWorld, id: i64, policy: bool)
+        -> Result<(), CombatWorldError>
+    {
+        match self {
+            Self::FireBarge { power } => {
+                world.configure_fire_barge_bomb(id, power)?;
+                if policy { world.configure_policy_fire_barge(id, power)?; }
+            }
+            Self::Striker { power, carrier } => {
+                if policy { world.configure_policy_striker(id, carrier.carrier_id, power)?; }
+                else { world.configure_game_striker(id, carrier)?; }
+            }
+            Self::Barge { power } if policy => world.configure_policy_barge(id, power)?,
+            Self::YellowJacket { power } if policy => world.configure_policy_yellow_jacket(id, power)?,
+            Self::Scout { beacon, enabled } => {
+                if policy {
+                    world.configure_policy_scout(id, beacon.physical.clone())?;
+                    world.set_policy_scout_enabled(id, enabled)?;
+                } else {
+                    world.configure_game_scout(id, beacon.physical.clone())?;
+                    world.set_game_scout_enabled(id, enabled)?;
+                }
+            }
+            // Non-policy Barge/YellowJacket attacks are command-owned and
+            // receive their live weapon power through the command context.
+            Self::Barge { .. } | Self::YellowJacket { .. } => {},
+        }
+        Ok(())
+    }
+}
