@@ -146,6 +146,20 @@ class OnnxPolicy:
         ))
 
 
+def read_reused(reader, storage: bytearray, count: int):
+    """Reuse the largest observation receive buffer across model batches."""
+    if len(storage) < count:
+        storage = bytearray(count)
+    view = memoryview(storage)[:count]
+    offset = 0
+    while offset < count:
+        received = reader.readinto(view[offset:])
+        if not received:
+            raise EOFError("incomplete inference observation payload")
+        offset += received
+    return storage, view
+
+
 def checked_manifest(path: Path):
     manifest = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(manifest, dict) or manifest.get("format") != "bees-native-model-v1":
@@ -262,6 +276,7 @@ def main() -> None:
     writer.write(READY.pack(b"BHOK", VERSION, 26, len(signature)))
     writer.write(signature)
     writer.flush()
+    observation_storage = bytearray()
     while True:
         data = read_exact(reader, HEADER.size)
         if data is None:
@@ -272,9 +287,11 @@ def main() -> None:
         if not 0 < rows <= MAX_BATCH_ROWS:
             raise ValueError("invalid model batch size")
         meta = read_exact(reader, rows * ROW_META_BYTES)
-        payload = read_exact(reader, rows * OBS_FLOATS * 4)
-        if meta is None or payload is None:
-            raise EOFError("incomplete inference payload")
+        if meta is None:
+            raise EOFError("incomplete inference metadata")
+        observation_storage, payload = read_reused(
+            reader, observation_storage, rows * OBS_FLOATS * 4
+        )
         slots, fire, special, allowed = decode_row_metadata(meta, rows)
         observation = np.frombuffer(payload, dtype="<f4").reshape(
             (rows, OBS_FLOATS)
@@ -288,6 +305,9 @@ def main() -> None:
         writer.write(continuous.tobytes(order="C"))
         writer.write(discrete.tobytes(order="C"))
         writer.flush()
+        # Release NumPy/memoryview references before expanding the next
+        # batch's storage; smaller/equal batches reuse the same allocation.
+        del observation, payload
 
 
 if __name__ == "__main__":
