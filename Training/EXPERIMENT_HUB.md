@@ -1253,8 +1253,11 @@ Run this from the Hub's Training directory to compute it before queuing:
 python -B -c "import json,sys; from experiment_hub_eval_io import suite_digest; print(suite_digest(json.load(open(sys.argv[1], encoding='utf-8'))))" path/to/suite.json
 ```
 
-Older receipts can still satisfy unpinned policies. Compare identifies
-missing fingerprints and differing definitions, even when the IDs match.
+Older receipts can still satisfy unpinned policies through the adapter
+contract, but the scheduled evaluator does not reuse an existing receipt
+unless its fingerprint matches the current local suite definition.
+Compare identifies missing fingerprints and differing definitions,
+even when the IDs match.
 Design accepts a suite ID, minimum trial count and minimum success rate, for
 example `{"suite_id":"heldout","min_trials":100,"min_success_rate":0.8}`.
 Queueing freezes the rule. Only hosts advertising the requested suite for
@@ -1275,10 +1278,12 @@ triggering report, and requests Stop through the existing native supervisor.
 The job retains capacity until terminal handling. After a verified native
 Stop and capacity release, a qualifying evaluation can advance an independent
 `after_job_id` sequence, with fresh allocation and Start authorization for
-its successor. It cannot automatically advance a checkpoint continuation:
-the last durable checkpoint may predate the Stop, and the existing manual
-approval/cancellation rules still apply. Training progress has no stopping
-authority.
+its successor. A queued Courier/TinyBrains checkpoint continuation also
+advances only when the local supervisor confirms checkpoint-preserving Stop
+and the adapter verifies a resumable artifact. It resumes the last saved
+checkpoint, which can postdate the evaluated policy snapshot. Manual Stops,
+missing checkpoint proof and failures do not advance queued stages.
+Training progress has no stopping authority.
 
 ### Linux terminal recovery
 
