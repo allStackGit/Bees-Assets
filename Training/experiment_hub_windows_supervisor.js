@@ -233,8 +233,12 @@ class WindowsSupervisor {
         return {state:reply.state,active:false,owner_verified:true,exit_code:reply.exit_code,...counters};
     }
     verifyReply(record,report) {
-        const expected=Math.max(1,Math.min(10000,
-            Math.round(10000*record.cpus/record.host_cpus)));
+        // Match .NET Math.Round's midpoint-to-even rule used by the
+        // native Job Object owner. JavaScript Math.round uses midpoint-up.
+        const raw=10000*record.cpus/record.host_cpus;
+        const floor=Math.floor(raw);
+        const rounded=raw-floor===0.5&&floor%2===0?floor:Math.round(raw);
+        const expected=Math.max(1,Math.min(10000,rounded));
         if(!report||report.job_id!==record.job_id||
             report.owner_verified!==true||
             report.cpu_rate_units!==expected||
