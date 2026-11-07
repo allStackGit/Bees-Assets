@@ -1135,7 +1135,9 @@ impl NativeSquadCommandDirector {
                         2.0
                     } else { COMMAND_FREQUENCY_SECONDS },
                     true,
-                    selection.local_command != LocalCommandKind::ClosestFriendly,
+                    !matches!(selection.local_command,
+                        LocalCommandKind::ClosestFriendly | LocalCommandKind::Charge
+                    ),
                 ))
             } else { None },
             patrol,
