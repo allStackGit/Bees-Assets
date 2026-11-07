@@ -11,6 +11,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::num::NonZeroU32;
 
 use bees_hivemind::session::SquadLifetime;
+use bees_hivemind::dispatch::LocalCommandKind;
 use bees_sim::combat_world::{CombatEvent, CombatWorld, CombatWorldError};
 use bees_sim::geometry::Vec2;
 use bees_sim::ship_assets::ShipAssetCatalog;
@@ -32,6 +33,7 @@ use crate::level_events::{
 };
 use crate::squads::{NativeSquadEntry, NativeSquadRoster, SquadRosterError};
 use crate::squad_geometry::live_squad_bounds_from_catalog;
+use crate::level_inputs::collect_live_friendlies_from_catalog;
 
 /// The native game Level's authoritative FleetShip metadata. This is NOT
 /// computed from collider size or estimated from training observations.
@@ -75,15 +77,41 @@ pub trait NativeLevelCommandContext {
         Err(GameCommandError::MissingCombatSnapshot)
     }
 
-    /// Called with an empty, capacity-retaining output buffer. Append
-    /// current entries in exact Level.State.Squads order; the Level step
-    /// owns clearing so no caller can accidentally inherit stale entries.
+    /// Source Level.State.Squads order, including authentic player and
+    /// scripted Squad lifetimes. Command selection must not be based on
+    /// BTreeMap lifecycle ordering (which may differ from source order).
+    /// A Level not providing this authoritative order fails closed.
+    fn current_squad_order(&self) -> Result<&[SquadLifetime], GameCommandError> {
+        Err(GameCommandError::MissingCombatSnapshot)
+    }
+
+    /// The real current command of a live squad, including user/scripted
+    /// Guard and ClosestFriendly commands and their protected squad.
+    fn current_squad_command(
+        &self, _owner: SquadLifetime,
+    ) -> Result<(Option<LocalCommandKind>, Option<SquadLifetime>), GameCommandError> {
+        Err(GameCommandError::MissingCombatSnapshot)
+    }
+
+    /// Build one current source-order friendly snapshot from the SAME
+    /// native roster, physical world and immutable sprite catalog. The
+    /// Level caller clears this reused output buffer before every due
+    /// timer; this default also clears it for direct external callers.
+    /// A rendered Level may override when its actual scene values differ.
     fn collect_live_friendlies(
         &mut self,
         combat: &CombatWorld,
         roster: &NativeSquadRoster,
         output: &mut Vec<NativeFriendlySquad>,
-    ) -> Result<(), GameCommandError>;
+    ) -> Result<(), GameCommandError> {
+        let catalog = self.ship_asset_catalog()
+            .ok_or(GameCommandError::MissingCombatSnapshot)?;
+        let order = self.current_squad_order()?;
+        collect_live_friendlies_from_catalog(
+            combat, roster, catalog, order,
+            |owner| self.current_squad_command(owner), output,
+        )
+    }
 
     /// Exact Unity CircleSquad.Timer values from the current Level and
     /// Ship.IsShipWithinRange weapon-validity checks. Called only when a
