@@ -9,7 +9,7 @@ import sys
 
 from experiment_hub_courier_evaluate import evaluate, read_suite
 from experiment_hub_eval_io import SUITE_ID, UUID
-from experiment_hub_eval_poll import poll_checkpoint
+from experiment_hub_eval_poll import poll_checkpoint, poll_batch
 
 POLICY = re.compile(r"round-([1-9][0-9]{0,14})\.zip")
 
@@ -33,22 +33,30 @@ def latest_policy(root, job):
     return latest
 
 
-def poll(args, suite):
-    def evaluate_checkpoint(job, file, digest, work):
+def poll(args, suites):
+    def evaluate_checkpoint(job, file, digest, work, suite):
         config = args.artifact_root / job["job_id"] / "hub-environment.json"
         if config.resolve(strict=True) != config or not config.is_file():
             raise ValueError("Courier environment file is redirected or unavailable.")
         return evaluate(args.project_root, file, digest, config, suite, work)
 
-    poll_checkpoint(args, "courier", suite, suite,
-                    lambda job: latest_policy(args.snapshot_root, job), evaluate_checkpoint)
+    find_checkpoint = lambda job: latest_policy(args.snapshot_root, job)
+    if len(suites) == 1:
+        poll_checkpoint(args, "courier", suites[0], suites[0], find_checkpoint,
+                        lambda job, file, digest, work:
+                            evaluate_checkpoint(job, file, digest, work, suites[0]))
+    else:
+        poll_batch(args, "courier", [(suite, suite) for suite in suites],
+                   find_checkpoint, evaluate_checkpoint)
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--machine", required=True)
     parser.add_argument("--port", type=int, default=7148)
-    for option in ("project-root", "artifact-root", "snapshot-root", "suite", "scratch", "receipt-root"):
+    parser.add_argument("--suite", required=True, type=Path, action="append",
+                        help="Repeat 2–8 times to evaluate one checkpoint against all required suites.")
+    for option in ("project-root", "artifact-root", "snapshot-root", "scratch", "receipt-root"):
         parser.add_argument("--" + option, required=True, type=Path)
     args = parser.parse_args()
     try:
@@ -62,7 +70,7 @@ def main():
                 raise ValueError("Courier project, artifact and evaluator directories must be separate.")
             setattr(args, key, directory)
             directories.append(directory)
-        poll(args, read_suite(args.suite))
+        poll(args, [read_suite(source) for source in args.suite])
         return 0
     except (OSError, RuntimeError, ValueError, TypeError, KeyError, http.client.HTTPException) as exc:
         print(f"Scheduled Courier evaluation failed: {exc}", file=sys.stderr)
