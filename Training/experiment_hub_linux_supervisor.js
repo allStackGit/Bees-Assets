@@ -10,6 +10,7 @@ const crypto=require('node:crypto');
 const {promisify}=require('node:util');
 const {execFile}=require('node:child_process');
 const {inspectHost}=require('./experiment_hub_host');
+const {matchingLeaseBudget}=require('./experiment_hub_resources');
 const {verifyKernelLimits}=require('./experiment_hub_linux_cgroup');
 const {resolveRocmDevices,deviceIdentity}=require('./experiment_hub_linux_gpu_devices');
 const runDefault=promisify(execFile);
@@ -70,6 +71,8 @@ function validateLocalInput(job,lease,machineId,adapters,hostOs=os,gpuEnabled=fa
         r.ram_mb>Math.floor(hostOs.totalmem()/1048576)||
         lr.cpus!==r.cpus||lr.ram_mb!==r.ram_mb)
         throw Error('Native CPU/RAM request does not match the lease or exceeds the local host limits.');
+    if(!matchingLeaseBudget(r,lr))
+        throw Error('Native resource budget differs from the acknowledged lease.');
     const adapter=adapters[job.project_id];
     if(!adapter||typeof adapter.args!=='function'||
         typeof adapter.executable!=='string'||
