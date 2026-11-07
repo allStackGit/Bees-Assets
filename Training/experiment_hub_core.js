@@ -203,6 +203,25 @@ function gpuStartBlock(job,lease,machine) {
         return 'A current device access probe for this exact GPU lease is required.';
     return null;
 }
+function nativeResourceBlock(job,lease) {
+    let requested, reserved;
+    try {
+        requested=resourceRequest(job.resources);
+        reserved=resourceRequest(lease.resources);
+    }catch {
+        return 'Stored job or lease resource budget is invalid.';
+    }
+    // A reservation may assign physical GPU IDs to an unpinned request,
+    // but it must preserve every requested resource amount and GPU mode.
+    const budgetKeys=['cpus','ram_mb','gpu_count','min_gpu_vram_mb',
+        'gpu_mode','gpu_vram_mb','gpu_compute_pct'];
+    if(budgetKeys.some(key=>requested[key]!==reserved[key])||
+        (requested.gpus.length&&(
+            requested.gpus.length!==reserved.gpus.length||
+            requested.gpus.some((id,index)=>id!==reserved.gpus[index]))))
+        return 'Stored job resource budget differs from its reserved lease.';
+    return null;
+}
 function gpuProbeWorkerReady(job,lease,machine) {
     return Boolean(job&&job.project_id!=='bees'&&job.adapter==='unconfigured'&&
         job.status==='waiting_adapter'&&!job.dispatch_id&&
@@ -479,22 +498,8 @@ function nativeStartReadiness(snapshot, job) {
         return block('Native Start requires at least 128 MiB RAM.');
     // Recovered jobs and leases must meet the original resource contract,
     // not just the CPU-only shortcut in the native readiness projection.
-    let requested, reserved;
-    try {
-        requested=resourceRequest(r);
-        reserved=resourceRequest(lease.resources);
-    }catch {
-        return block('Stored job or lease resource budget is invalid.');
-    }
-    // Placement may assign GPU identities to an unpinned request; it must
-    // never change the CPU, memory, GPU count, mode, or minimum VRAM budget.
-    const budgetKeys=['cpus','ram_mb','gpu_count','min_gpu_vram_mb',
-        'gpu_mode','gpu_vram_mb','gpu_compute_pct'];
-    if(budgetKeys.some(key=>requested[key]!==reserved[key])||
-        (requested.gpus.length&&(
-            requested.gpus.length!==reserved.gpus.length||
-            requested.gpus.some((id,index)=>id!==reserved.gpus[index]))))
-        return block('Stored job resource budget differs from its reserved lease.');
+    const resourceBlock=nativeResourceBlock(job,lease);
+    if(resourceBlock)return block(resourceBlock);
     const gpuBlock=gpuStartBlock(job,lease,machine);
     if(gpuBlock)return block(gpuBlock);
     if(r.cpus>machine.reported_cpus||r.ram_mb>machine.reported_ram_mb)
@@ -2237,6 +2242,7 @@ class ExperimentHub {
                     machine.native_preflight_passed!==true||
                     !supportsEvaluation(machine.evaluation_suites,job)||
                     !supportsTinyBrainsProfile(machine,job)||
+                    nativeResourceBlock(job,lease)||
                     gpuStartBlock(job,lease,machine)) {
                     // A previously offered Start may already own a process.
                     // Recover observation without re-authorizing a launch.
