@@ -14,7 +14,10 @@
 //! episode-reset boundary. Stale world indices/revisions are rejected, not
 //! silently allowed to corrupt PPO trajectories.
 
-use bees_hivemind::session::{SquadLifetime, StrategyReceipt};
+use bees_hivemind::session::{
+    HiveMindSession, HiveMindSessionError, SquadLifetime, StrategyReceipt,
+};
+use bees_hivemind::protocol::GetStrategyResponse;
 use bees_hivemind::dispatch::{
     LocalCommandKind, SquadCommandComposition, resolve_hivemind_command,
 };
@@ -49,7 +52,8 @@ use crate::perception_world::{
     NativeWorldPerceptionError,
 };
 use crate::rollout::{
-    step_batched_levels, reset_level_after_delivery, NativeBatchedStepCounts,
+    step_batched_levels, reset_level_after_delivery,
+    flush_all_squad_retirements, NativeBatchedStepCounts,
     NativeBatchedStepError, NativeLevelResetError,
 };
 use crate::squads::SquadRosterError;
@@ -268,6 +272,26 @@ pub enum NativeLevelSourceError<E> {
     Perception(NativeWorldPerceptionError),
 }
 
+
+/// One decoded, connection-correlated strategy result. A retired reply
+/// belongs to no live world and its two server OutcomeIds must be explicitly
+/// discarded by the existing durable StoreCommands pipeline.
+#[derive(Debug)]
+pub struct NativeLevelStrategyDelivery {
+    pub world_index: Option<usize>,
+    pub action: StrategyReceiptAction,
+}
+
+#[derive(Debug)]
+pub enum NativeLevelStrategyReceiveError {
+    Session(HiveMindSessionError),
+    Driver(NativeLevelDriverError),
+    /// A reused Level/squad/lifecycle identity across live worlds is
+    /// ambiguous, so do not consume a response and guess its recipient.
+    DuplicateOwnerAcrossWorlds { first: usize, second: usize },
+    Activation(StrategyReceiptFailure),
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NativeLevelDriverError {
     MissingWorld,
@@ -405,6 +429,92 @@ impl NativeLevelBatchDriver {
         apply_native_level_strategy_receipt(
             world, receipt, &mut slot.activation,
         )
+    }
+
+    /// Correlate one real BeesServer GetStrategyResponse to the connection's
+    /// original request, flush pending squad retirements, and route to the
+    /// owning live Level. This is the complete synchronous transport/Level
+    /// handoff after the WebSocket adapter has validated its connection.
+    ///
+    /// Invalid wire replies leave their pending request intact. A reply
+    /// for an already-dead squad becomes a durable discard obligation, not
+    /// an action in a newer world. The server and StoreCommands persistence
+    /// are still owned by the external transport.
+    pub fn receive_strategy_response<M, A>(
+        &mut self,
+        simulation: &mut Simulation<NativeLevelState<M, A>, NativeLevelRules>,
+        connection: &mut HiveMindSession,
+        response: &GetStrategyResponse,
+    ) -> Result<NativeLevelStrategyDelivery, NativeLevelStrategyReceiveError>
+    where
+        M: NativeLevelRewardMetadata + NativeLevelActivationContext,
+        A: FnMut(SquadLifetime, i64) -> Result<SquadLifetime, SquadRosterError>,
+    {
+        // Do not consume an authenticated server decision against a stale
+        // registration. This includes quiet worlds with no due policy rows.
+        if self.worlds.len() != simulation.world_count() {
+            return Err(NativeLevelStrategyReceiveError::Driver(
+                NativeLevelDriverError::MissingWorld,
+            ));
+        }
+        for (index, slot) in self.worlds.iter().enumerate() {
+            let world = simulation.world(index)
+                .expect("validated fixed Simulation world count");
+            if slot.id != world.id ||
+                slot.revision != world.episode_revision()
+            {
+                return Err(NativeLevelStrategyReceiveError::Driver(
+                    NativeLevelDriverError::WorldIdentityChanged,
+                ));
+            }
+        }
+        // The connection owns request correlation for ALL Levels. Apply
+        // death/terminal retirement instructions before interpreting the
+        // newest response, even when its numeric Squad ID was recycled.
+        flush_all_squad_retirements(simulation, connection);
+        let owner = connection.requested_strategy_owner(response.hash)
+            .ok_or(NativeLevelStrategyReceiveError::Session(
+                HiveMindSessionError::UnknownRequest,
+            ))?;
+        let mut found = None;
+        for index in 0..simulation.world_count() {
+            let world = simulation.world(index)
+                .expect("validated fixed Simulation world count");
+            if world.is_failed() || world.state.events.is_failed() ||
+                world.state.events.completed() ||
+                world.state.events.was_aborted() ||
+                world.state.events.roster().get(owner).is_none()
+            {
+                continue;
+            }
+            if let Some(first) = found {
+                return Err(
+                    NativeLevelStrategyReceiveError::DuplicateOwnerAcrossWorlds {
+                        first, second: index,
+                    },
+                );
+            }
+            found = Some(index);
+        }
+        let receipt = connection.receive_strategy(
+            response, found.map(|_| owner),
+        ).map_err(NativeLevelStrategyReceiveError::Session)?;
+        let Some(index) = found else {
+            let StrategyReceipt::Retired { reservation_ids, .. } = receipt
+            else { unreachable!("a missing live owner cannot be accepted") };
+            return Ok(NativeLevelStrategyDelivery {
+                world_index: None,
+                action: StrategyReceiptAction::DiscardReservations(
+                    reservation_ids,
+                ),
+            });
+        };
+        let action = self.apply_strategy_receipt(
+            simulation, index, receipt,
+        ).map_err(NativeLevelStrategyReceiveError::Activation)?;
+        Ok(NativeLevelStrategyDelivery {
+            world_index: Some(index), action,
+        })
     }
 
     pub fn registered_world_count(&self) -> usize {

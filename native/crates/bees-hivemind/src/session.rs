@@ -104,6 +104,14 @@ impl HiveMindSession {
         self.pending.len() + self.pending_targeting.len()
     }
 
+    /// Read-only routing identity for a received strategy reply, including
+    /// a request already retired by a later order. The connection remains
+    /// the sole owner of pending hashes and server reservation correlation;
+    /// Level hosts must not create their own pending-request registry.
+    pub fn requested_strategy_owner(&self, hash: i64) -> Option<SquadLifetime> {
+        self.pending.get(&hash).map(|pending| pending.owner)
+    }
+
     /// Reissuing an order for a squad retires its prior request but retains
     /// it until a late response can be converted into explicit discards.
     /// The caller must supply a transport-owned connection-unique Hash,
