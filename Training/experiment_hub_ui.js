@@ -706,6 +706,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 ...(project==='tinybrains'?{profile_sha256:job.frozen_parameters?.profile_sha256||null}:{}),
                 final_resource_usage:job.final_resource_usage||null,
                 evaluation_stop:job.evaluation_stop||null,
+                evaluation_suite_definitions:job.evaluation_suite_definitions||null,
                 last_evaluation:job.last_evaluation||null,
                 evaluation_stop_evidence:job.evaluation_stop_evidence||null,
                 evaluation_candidates:job.evaluation_candidates||null,
