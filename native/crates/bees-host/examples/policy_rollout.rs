@@ -320,15 +320,20 @@ fn main() -> Result<(), Box<dyn Error>> {
             }
         };
         rounds += u64::from(counts.rounds);
-        if let Some(status) = host.sample_status()
-            .map_err(|error| contextual("native host status", error))?
-        {
-            println!("{}", json!({
+        match host.sample_status() {
+            Ok(Some(status)) => println!("{}", json!({
                 "kind": "interval",
                 "run_id": config.run_id,
                 "rounds": rounds,
                 "metrics": status,
-            }));
+            })),
+            Ok(None) => {},
+            Err(error) => {
+                failed_window = Some(format!(
+                    "native host status after window: {error:?}"
+                ));
+                break;
+            }
         }
         // A successful run_window has already durably delivered the final
         // event prefix and retired this world's old squad lifetimes. The
@@ -381,9 +386,12 @@ fn main() -> Result<(), Box<dyn Error>> {
     // win or a completed PPO episode. Durable EpisodeAborted notifications
     // explicitly mark partial trajectories as unusable for learning.
     let count = host.simulation().world_count();
+    let mut cleanup_errors = Vec::new();
     for index in 0..count {
-        let world = host.simulation().world(index)
-            .ok_or_else(|| invalid("registered Level disappeared"))?;
+        let Some(world) = host.simulation().world(index) else {
+            cleanup_errors.push(format!("world {index}: disappeared"));
+            continue;
+        };
         if world.state.events.was_aborted() ||
             world.state.events.completed() {
             continue;
@@ -393,10 +401,15 @@ fn main() -> Result<(), Box<dyn Error>> {
         } else {
             NativeLevelStopKind::CancelLive
         };
-        host.stop_world(index, kind)
-            .map_err(|error| contextual("final Level stop and delivery", error))?;
+        if let Err(error) = host.stop_world(index, kind) {
+            cleanup_errors.push(format!(
+                "world {index} final stop/delivery: {error:?}"
+            ));
+        }
     }
-    host.sink_mut().sync()?;
+    if let Err(error) = host.sink_mut().sync() {
+        cleanup_errors.push(format!("final notification sync: {error}"));
+    }
     let status = host.runtime_status()
         .map_err(|error| contextual("final native host status", error))?;
     println!("{}", json!({
@@ -411,10 +424,13 @@ fn main() -> Result<(), Box<dyn Error>> {
         "running_worlds": status.running_worlds,
         "pending_notifications": status.queued_notifications,
         "pending_store_commands": status.pending_store_commands,
-        "failed_window": failed_window.is_some(),
+        "failed_window": failed_window,
+        "cleanup_errors": cleanup_errors,
     }));
-    if let Some(reason) = failed_window {
-        return Err(contextual("native Level window failed; unfinished episodes aborted", reason).into());
+    if failed_window.is_some() || !cleanup_errors.is_empty() {
+        return Err(invalid(
+            "headless rollout failed; run_final identifies the original failure and unresolved obligations",
+        ).into());
     }
     Ok(())
 }
