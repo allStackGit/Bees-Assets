@@ -6,7 +6,7 @@ const path=require('node:path');
 const crypto=require('node:crypto');
 const {spawnSync}=require('node:child_process');
 const {validateProgress}=require('./experiment_hub_progress');
-const {evaluationReader}=require('./experiment_hub_evaluation');
+const {evaluationReader,modelFileSha256}=require('./experiment_hub_evaluation');
 
 const UUID=/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
 const PROFILE=/^[a-z][a-z0-9_-]{0,47}$/;
@@ -135,6 +135,13 @@ function createTinyBrainsAdapter({projectRoot,pythonPath,artifactRoot,profiles,
             completedCheckpoint(jobRoot(context),approved.content);
             return true;
         },
+        model_checkpoint_sha256(context) {
+            const pinned=context.frozen_parameters||{};
+            const approved=configs.get(pinned.profile);
+            if(!approved||approved.sha256!==pinned.profile_sha256)
+                throw Error('TinyBrains checkpoint profile is not approved.');
+            return modelFileSha256(completedCheckpoint(jobRoot(context),approved.content));
+        },
         ...evaluationReader('tinybrains',evaluationRoot,evaluationSuites,[project,artifacts]),
         tinybrains_profiles:Object.fromEntries([...configs].map(([id,item])=>[id,item.sha256])),
         args(parameters,context) {
@@ -148,7 +155,11 @@ function createTinyBrainsAdapter({projectRoot,pythonPath,artifactRoot,profiles,
             let resume=[];
             if(context.continuation_of_job_id) {
                 const parent=path.join(artifacts,context.continuation_of_job_id);
-                resume=['--resume',completedCheckpoint(parent,approved.content)];
+                const checkpoint=completedCheckpoint(parent,approved.content);
+                if(context.expected_parent_model_sha256&&
+                    modelFileSha256(checkpoint)!==context.expected_parent_model_sha256)
+                    throw Error('TinyBrains promoted checkpoint no longer matches its evaluated model.');
+                resume=['--resume',checkpoint];
             }
             // An existing directory may belong to a prior launch. Never reuse it.
             fs.mkdirSync(out,{mode:0o700});
