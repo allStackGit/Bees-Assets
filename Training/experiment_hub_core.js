@@ -833,28 +833,40 @@ class ExperimentHub {
             if(complete) {
                 const blocked=snapshot.jobs.find(j=>
                     j.status==='waiting_predecessor'&&
-                    j.continuation_of_job_id===complete.id&&
-                    !checkpointContinuationComplete(complete));
+                    (j.continuation_of_job_id===complete.id||
+                     j.after_job_id===complete.id)&&
+                    (!independentSequenceComplete(complete)||
+                     (j.continuation_of_job_id===complete.id&&
+                      !checkpointContinuationComplete(complete))));
                 this.releaseLease({lease_id:complete.lease_id,confirm_release:true});
                 session.managed_job_ids=session.managed_job_ids.filter(id=>id!==complete.id);
                 if(blocked)throw Error('Job '+complete.id+
-                    ' ended without a verified resumable checkpoint; stage '+
-                    blocked.id+' is blocked after capacity release.');
+                    ' ended without an eligible stage handoff; stage '+
+                    blocked.id+' is blocked after capacity release. Review the '+
+                    (independentSequenceComplete(complete)
+                        ?'resumable checkpoint proof.':'evaluation completion or manual Stop.'));
                 return transitioned('Released verified capacity: '+complete.project_id+
                     ' / '+(complete.configuration_name||complete.id.slice(-8))+'.');
             }
             // A native terminal report can release capacity before the
             // scheduler observes it if release-on-terminal was enabled.
-            const missingCheckpoints=new Set(snapshot.jobs.filter(parent=>
+            const releasedParents=new Map(snapshot.jobs.filter(parent=>
                 parent.automation_start_session_id===session.session_id&&
                 parent.capacity_released_at&&
-                ['finished','stopped'].includes(parent.status)&&
-                !checkpointContinuationComplete(parent)).map(parent=>parent.id));
-            const blocked=snapshot.jobs.find(j=>
-                j.status==='waiting_predecessor'&&
-                missingCheckpoints.has(j.continuation_of_job_id));
-            if(blocked)throw Error('Job '+blocked.continuation_of_job_id+
-                ' released capacity without a verified resumable checkpoint; stage '+
+                ['finished','stopped'].includes(parent.status))
+                .map(parent=>[parent.id,parent]));
+            const blocked=snapshot.jobs.find(j=>{
+                if(j.status!=='waiting_predecessor')return false;
+                const parent=releasedParents.get(
+                    j.continuation_of_job_id||j.after_job_id);
+                return Boolean(parent&&
+                    (!independentSequenceComplete(parent)||
+                     (j.continuation_of_job_id&&
+                      !checkpointContinuationComplete(parent))));
+            });
+            if(blocked)throw Error('Job '+
+                (blocked.continuation_of_job_id||blocked.after_job_id)+
+                ' released capacity without an eligible stage handoff; stage '+
                 blocked.id+' requires operator review.');
             const pending=snapshot.jobs.filter(j=>
                 j.adapter==='unconfigured'&&j.status==='waiting_adapter'&&
