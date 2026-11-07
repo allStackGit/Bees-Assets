@@ -6,7 +6,9 @@
 use std::num::NonZeroU32;
 use bees_gameplay::episode::NativeEpisodeRewardCoordinator;
 use bees_gameplay::level_events::NativeLevelEventProcessor;
-use bees_gameplay::level_rules::NativeLevelState;
+use bees_gameplay::level_rules::{NativeLevelState, NativeLevelRewardMetadata, NativeLevelCommandContext};
+use bees_gameplay::level_host::{NativeLevelActivationContext, NativeLevelObservationContext, NativeLevelNotificationSink};
+use bees_gameplay::inference::NativePolicyInference;
 use bees_gameplay::squads::SquadRosterError;
 use bees_hivemind::session::SquadLifetime;
 use bees_sim::collision::{Aabb, Pose};
@@ -14,7 +16,9 @@ use bees_sim::combat::ShipVitals;
 use bees_sim::combat_world::{CombatWorld, CombatWorldError};
 use bees_sim::control::PolicyFrame;
 use bees_sim::movement::ShipMotion;
-use bees_sim::simulation::{World, WorldId};
+use bees_sim::simulation::{Simulation, World, WorldId};
+use crate::runtime::{NativeHostRuntime, HostInitError};
+use crate::durable_connection::DurableHiveMindConnection;
 use crate::scene_assets::NativeSceneAssets;
 
 /// Exactly the values obtained from a live authored ship. The original
@@ -80,7 +84,52 @@ pub enum NativeSceneBuildError {
     IncompleteSquadRoster,
 }
 
+#[derive(Debug)]
+pub enum NativeRuntimeBuildError {
+    EmptyLevels,
+    Scene(NativeSceneBuildError),
+    Simulation(&'static str),
+    Host(HostInitError),
+}
+
 impl NativeSceneAssets {
+    /// Assemble multiple fully authored worlds and the ONE batched gameplay/
+    /// inference/notification host. No cloned physics worlds or alternate
+    /// rendering/worker simulation are constructed. The caller provides the
+    /// complete Level metadata and real policy backend.
+    pub fn build_runtime<M, A, B, S>(
+        &self,
+        fixed_dt_seconds: f32,
+        levels: impl IntoIterator<Item = NativeAuthoredLevel<M, A>>,
+        model: B,
+        connection: DurableHiveMindConnection,
+        sink: S,
+    ) -> Result<NativeHostRuntime<M, A, B, S>, NativeRuntimeBuildError>
+    where
+        M: NativeLevelRewardMetadata + NativeLevelCommandContext +
+            NativeLevelActivationContext + NativeLevelObservationContext,
+        A: FnMut(SquadLifetime, i64) -> Result<SquadLifetime, SquadRosterError>,
+        B: NativePolicyInference,
+        S: NativeLevelNotificationSink,
+    {
+        let mut simulation = Simulation::new(
+            self.level_rules(), fixed_dt_seconds,
+        ).map_err(NativeRuntimeBuildError::Simulation)?;
+        let mut count = 0usize;
+        for authored in levels {
+            let world = self.build_level(authored)
+                .map_err(NativeRuntimeBuildError::Scene)?;
+            simulation.add_world(world)
+                .map_err(NativeRuntimeBuildError::Simulation)?;
+            count += 1;
+        }
+        if count == 0 {
+            return Err(NativeRuntimeBuildError::EmptyLevels);
+        }
+        NativeHostRuntime::new(simulation, model, connection, sink)
+            .map_err(NativeRuntimeBuildError::Host)
+    }
+
     /// A failed setup leaves no partially registered Simulation world.
     /// Ship/asteroid collider geometry comes from the same imported assets
     /// used by the game renderer, with one CombatWorld and one squad roster.
