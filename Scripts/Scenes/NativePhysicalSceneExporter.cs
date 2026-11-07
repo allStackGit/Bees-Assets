@@ -127,14 +127,25 @@ internal static class NativePhysicalSceneExporter
     private sealed class SourcePolicyEpisode
     {
         public int bee_side, human_side, bee_starting_tsv, human_starting_tsv;
+        public int episode_number;
         public float timeout_seconds;
         public int[] discovery_baselines;
+        public List<SourceGroupParticipant> group_participants =
+            new List<SourceGroupParticipant>();
+    }
+
+    [Serializable]
+    private sealed class SourceGroupParticipant
+    {
+        // Active Unity Agent instance, NOT the runtime ship it controls.
+        public long agent_id, ship_id;
+        public int side, team_id;
     }
 
     [Serializable]
     private sealed class PhysicalScene
     {
-        public int schema_version = 15;
+        public int schema_version = 16;
         public string level_name;
         public string stage_name;
         public float fixed_dt_seconds;
@@ -337,6 +348,53 @@ internal static class NativePhysicalSceneExporter
                 turrets = ExportTurrets(ship)
             });
         }
+        if (snapshot.has_policy_episode)
+        {
+            if (!RlOneVsOneEpisodeCoordinator.TryReadNativeEpisodeNumber(
+                    level, out int episodeNumber))
+            {
+                throw new InvalidOperationException(
+                    "Source MA-POCA episode identity is unavailable.");
+            }
+            snapshot.policy_episode.episode_number = episodeNumber;
+            var registeredBoundShips = new HashSet<long>();
+            foreach (var member in RlOneVsOneAgent.ReadNativeGroupMembers(level))
+            {
+                if (member.Side != snapshot.policy_episode.bee_side &&
+                    member.Side != snapshot.policy_episode.human_side)
+                {
+                    throw new InvalidOperationException(
+                        "MA-POCA group participant belongs to another source side.");
+                }
+                if (member.BoundShipId != 0)
+                {
+                    SourceShip bound = snapshot.ships.Find(ship =>
+                        ship.entity_id == member.BoundShipId);
+                    if (bound == null || !bound.has_bound_policy ||
+                        bound.side != member.Side ||
+                        bound.policy_team_id != member.TeamId ||
+                        !registeredBoundShips.Add(member.BoundShipId))
+                    {
+                        throw new InvalidOperationException(
+                            "MA-POCA participant does not own its exported policy ship.");
+                    }
+                }
+                snapshot.policy_episode.group_participants.Add(
+                    new SourceGroupParticipant {
+                        agent_id = member.AgentId, side = member.Side,
+                        team_id = member.TeamId, ship_id = member.BoundShipId
+                    });
+            }
+            foreach (SourceShip ship in snapshot.ships)
+            {
+                if (ship.has_bound_policy &&
+                    !registeredBoundShips.Contains(ship.entity_id))
+                {
+                    throw new InvalidOperationException(
+                        "Exported policy ship has no participating MA-POCA Agent.");
+                }
+            }
+        }
         if (!snapshot.has_policy_episode &&
             snapshot.ships.Exists(ship => ship.has_bound_policy))
         {
@@ -435,9 +493,10 @@ internal static class NativePhysicalSceneExporter
                 "Capture before combat begins.");
         }
 
-        // Capture the stable world-local physical scene; SquadLifetime,
-        // agent-group IDs, model routes, and persistent command data are
-        // supplied to the native host separately and never guessed here.
+        // Capture the stable physical scene and actual participating
+        // Agent instance identities. The model weight slots, runtime
+        // squad lifetimes and pending server commands are still supplied
+        // independently; this is not a resumable gameplay checkpoint.
         string safe = Sanitize(snapshot.level_name);
         string dir = Path.Combine(Application.dataPath, "native", "assets");
         Directory.CreateDirectory(dir);
