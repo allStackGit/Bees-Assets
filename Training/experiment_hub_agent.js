@@ -228,9 +228,13 @@ async function main() {
                     const gpuResult=result?.kind==='gpu_qualification';
                     if(gpuResult)pendingGpuReports=[result];
                     else pendingReports=[result];
-                    // Return consequential results without waiting a full
-                    // heartbeat. Only a regular poll can schedule a follow-up.
-                    if(expedite&&(gpuResult||orders[0].action==='start'||
+                    // Return consequential results and urgent native observations
+                    // promptly. An empty receipt inspection can wait until the
+                    // next regular heartbeat, which bounds follow-up traffic.
+                    const releasedInspect=orders[0].action==='inspect'&&orders[0].lease.status==='released';
+                    if(expedite&&(releasedInspect?(result?.evaluation||result?.evaluations?.length):
+                        gpuResult||orders[0].action==='start'||
+                        orders[0].refresh_native_observation===true||
                         ['stop_requested','finished','failed','stopped'].includes(result?.state)))
                         setTimeout(()=>poll(),0);
                 }
