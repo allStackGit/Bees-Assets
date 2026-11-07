@@ -13,3 +13,4 @@ pub mod policy_process;
 pub mod socket;
 pub mod scene_assets;
 pub mod scene_builder;
+pub mod fleet_inventory;
