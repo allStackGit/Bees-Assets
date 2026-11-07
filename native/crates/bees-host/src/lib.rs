@@ -15,3 +15,4 @@ pub mod scene_assets;
 pub mod scene_builder;
 pub mod fleet_inventory;
 pub mod policy_only_metadata;
+pub mod presentation;

@@ -25,6 +25,7 @@ use bees_hivemind::session::SquadLifetime;
 use bees_sim::simulation::{RandomStream, Simulation, World};
 use crate::durable_connection::{DurableConnectionError, DurableHiveMindConnection};
 use crate::status::{NativeHostStatusInterval, NativeStatusSampler};
+use crate::presentation::NativeRenderWorldView;
 
 #[derive(Debug)]
 pub enum HostInitError {
@@ -217,6 +218,24 @@ where
         &mut self, batch: OutcomeBatch,
     ) -> Result<StoreCommandsRequest, DurableConnectionError> {
         self.connection.queue_outcomes(batch)
+    }
+
+    /// Borrow one immutable, live World for rendering. Only the actual
+    /// active combat/physics bodies are exposed, with their exact original
+    /// IDs/poses. The borrow prevents stepping or resetting this world
+    /// during the render pass, without allocating a second snapshot.
+    pub fn render_world(
+        &self, index: usize,
+    ) -> Option<NativeRenderWorldView<'_>> {
+        let world = self.simulation.world(index)?;
+        Some(NativeRenderWorldView {
+            world_id: world.id,
+            episode_revision: world.episode_revision(),
+            tick: world.tick(),
+            combat: &world.state.combat,
+            pending_notifications:
+                world.state.events.pending_notifications(),
+        })
     }
 
     /// Read-only world access; mutation always uses the canonical driver.

@@ -1255,6 +1255,39 @@ impl CombatWorld {
         self.fleet_id_by_ship.get(&entity_id).copied()
     }
 
+    /// Live rendered ships borrow the EXACT same dense physical bodies and
+    /// canonical combat state used by headless simulation. No scene copy,
+    /// temporary entity list or display-side collision engine is created.
+    pub fn render_ships(&self)
+        -> impl Iterator<Item = (&CombatShip, &ShipBody)> + '_
+    {
+        self.ships.iter().zip(self.physics.ships()).filter(
+            |(ship, body)| body.active && !ship.vitals.is_dead(),
+        )
+    }
+
+    pub fn render_projectiles(&self)
+        -> impl Iterator<Item = (&CombatProjectile, &ProjectileBody)> + '_
+    {
+        self.projectiles.iter().zip(self.physics.projectiles()).filter(
+            |(_, body)| body.active,
+        )
+    }
+
+    pub fn render_obstacles(&self)
+        -> impl Iterator<Item = (&CombatObstacle, &ObstacleBody)> + '_
+    {
+        self.obstacles.iter().zip(self.physics.obstacles()).filter(
+            |(_, body)| body.active,
+        )
+    }
+
+    pub fn render_asteroid_pieces(&self)
+        -> impl Iterator<Item = &AsteroidPieceState> + '_
+    {
+        self.pieces.iter().filter(|piece| piece.active)
+    }
+
     pub fn projectiles(&self) -> &[CombatProjectile] { &self.projectiles }
     pub fn reservations(&self) -> &DamageReservations { &self.reservations }
     pub fn obstacles(&self) -> &[CombatObstacle] { &self.obstacles }
