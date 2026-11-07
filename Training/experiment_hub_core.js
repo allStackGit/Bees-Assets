@@ -743,6 +743,9 @@ class ExperimentHub {
             ids.some(id=>typeof id!=='string'||!ID.test(id))||
             new Set(ids).size!==ids.length)
             throw Error('Explicitly confirm 1–16 distinct machines and responsibility for untracked host workloads.');
+        if(value.adopt_reconciled_running===true&&
+            value.confirm_adopt_running!==true)
+            throw Error('Explicitly confirm adoption of previously managed running services.');
         const snapshot=this.snapshot();
         const agentInstances={};
         for(const id of ids) {
@@ -764,9 +767,41 @@ class ExperimentHub {
                 throw Error('Resolve unverified or failed native jobs before arming this machine.');
             agentInstances[id]=report.instance_id;
         }
+        const adopted=[];
+        if(value.adopt_reconciled_running===true) {
+            const observedAt=Date.now();
+            const leases=new Map(snapshot.reservations.map(lease=>[lease.id,lease]));
+            for(const job of snapshot.jobs) {
+                if(!ids.includes(job.assigned_machine_id)||
+                    !job.automation_start_session_id||job.capacity_released_at)
+                    continue;
+                // A prior automated launch remains owned by its original
+                // supervisor. Only a freshly inspected running dispatch may
+                // be re-adopted for terminal capacity release; never retry
+                // an old Start, Stop, or an ambiguous terminal report.
+                const lease=leases.get(job.lease_id);
+                const observed=this.executionTelemetry.get(job.id);
+                const age=observedAt-Date.parse(observed?.at||'');
+                if(job.status!=='running'||job.stop_requested_at||
+                    !UUID.test(String(job.dispatch_id||''))||
+                    !lease||lease.issued_by!=='experiment-hub'||
+                    lease.job_id!==job.id||
+                    lease.project_id!==job.project_id||
+                    lease.machine_id!==job.assigned_machine_id||
+                    lease.status!=='acknowledged'||lease.receipt_fresh!==true||
+                    observed?.state!=='running'||
+                    observed.dispatch_id!==job.dispatch_id||
+                    observed.agent_instance_id!==
+                        agentInstances[job.assigned_machine_id]||
+                    !(age>=0&&age<AGENT_HEARTBEAT_TTL_MS))
+                    throw Error('Prior automated job '+job.id+
+                        ' is not a freshly verified running dispatch. Resolve its Start, Stop, or capacity release before adoption.');
+                adopted.push(job.id);
+            }
+        }
         this.automation={
             enabled:true,machine_ids:ids.slice(),agent_instances:agentInstances,
-            managed_job_ids:[],session_id:crypto.randomUUID(),
+            managed_job_ids:adopted,session_id:crypto.randomUUID(),
             rebalance_queued:value.rebalance_queued===true,claimed_lease_ids:[],
             start_qualified_gpu:value.start_qualified_gpu===true,
             claim_exclusive_gpu:value.claim_exclusive_gpu===true,
@@ -780,6 +815,9 @@ class ExperimentHub {
             last_error:null,last_transition_at:null,waiting_reason:null,
             last_claimed_project_id:null,last_started_project_id:null,
         };
+        if(adopted.length)
+            this.automation.last_action+=' Re-adopted '+adopted.length+
+                ' freshly inspected running native job(s) for terminal release.';
         return this.automationStatus();
     }
     assertAutomationContinuity(observedAt) {
@@ -851,7 +889,8 @@ class ExperimentHub {
             // A native terminal report can release capacity before the
             // scheduler observes it if release-on-terminal was enabled.
             const releasedParents=new Map(snapshot.jobs.filter(parent=>
-                parent.automation_start_session_id===session.session_id&&
+                (parent.automation_start_session_id===session.session_id||
+                 session.managed_job_ids.includes(parent.id))&&
                 parent.capacity_released_at&&
                 ['finished','stopped'].includes(parent.status))
                 .map(parent=>[parent.id,parent]));
