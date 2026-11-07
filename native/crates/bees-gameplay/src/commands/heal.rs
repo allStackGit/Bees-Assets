@@ -56,8 +56,11 @@ impl HealRun {
         }
         if candidates.is_empty() { return Ok(None); }
         let Some(side) = side else { return Ok(None); };
+        // Unity Heal keeps every live target Beehive even when its four
+        // slots are currently full. Those slots may free during this run;
+        // filtering here would permanently exclude that Beehive from the
+        // later AssignAvailableHealingSlots callbacks.
         let mut hives: Vec<(i64, f32)> = world.live_beehive_ids_for_side(side)
-            .filter(|id| world.beehive_healing_slots_available(*id) > 0)
             .filter_map(|id| {
                 let position = world.ship_body(id)?.motion.position;
                 Some((id, (position - squad.squad_center).length_squared()))
