@@ -485,6 +485,8 @@ function nativeStartReadiness(snapshot, job) {
     }catch {
         return block('Stored job or lease resource budget is invalid.');
     }
+    if(r.cpus!==lease.resources.cpus||r.ram_mb!==lease.resources.ram_mb)
+        return block('Stored job CPU/RAM budget differs from its reserved lease.');
     const gpuBlock=gpuStartBlock(job,lease,machine);
     if(gpuBlock)return block(gpuBlock);
     if(r.cpus>machine.reported_cpus||r.ram_mb>machine.reported_ram_mb)
