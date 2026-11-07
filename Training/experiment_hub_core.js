@@ -685,8 +685,8 @@ class ExperimentHub {
         this.progressHistory = new ProgressHistory(path.join(root,'hub-chart-v1.json'));
         this.executionOrderCursor = new Map();
         // Native queue automation is an explicitly armed, process-local
-        // session. Restarting the coordinator never restores permission to
-        // start unattended workloads, even though claims/jobs persist.
+        // session. Durable opt-in recovery still requires fresh native and
+        // lease proof before a new session can start unattended workloads.
         this.automation = {
             enabled:false,machine_ids:[],agent_instances:{},managed_job_ids:[],
             rebalance_queued:false,start_qualified_gpu:false,claim_exclusive_gpu:false,probe_exclusive_gpu:false,claimed_lease_ids:[],
@@ -849,6 +849,8 @@ class ExperimentHub {
         return {...copy(publicState),managed_jobs:managed_job_ids.length,
             resume_after_restart:this.automation.enabled&&
                 Boolean(this.state.automation_restart),
+            resume_after_agent_restart:this.automation.enabled&&
+                this.state.automation_restart?.agent_restart===true,
             restart_rearm_pending:!this.automation.enabled&&
                 Boolean(this.state.automation_restart)};
     }
@@ -892,6 +894,8 @@ class ExperimentHub {
              value.claim_exclusive_gpu===true||
              value.probe_exclusive_gpu===true))
             throw Error('Unattended restart restoration needs explicit permission and CPU-only scheduling.');
+        if(value.confirm_agent_restart_rearm===true&&value.resume_after_restart!==true)
+            throw Error('Agent recovery requires explicitly authorized CPU-only restart restoration.');
         const ids=value.machine_ids;
         if(value.confirm_arm!==true||value.confirm_untracked_load!==true||
             !Array.isArray(ids)||ids.length<1||ids.length>16||
@@ -960,6 +964,7 @@ class ExperimentHub {
             next.automation_restart={
                 machine_ids:ids.slice(),
                 rebalance_queued:value.rebalance_queued===true,
+                ...(value.confirm_agent_restart_rearm===true?{agent_restart:true}:{}),
                 authorized_at:now(),
             };
         else delete next.automation_restart;
@@ -987,15 +992,28 @@ class ExperimentHub {
                 ' freshly inspected native job(s) for terminal capacity release.';
         return this.automationStatus();
     }
-    assertAutomationContinuity(observedAt) {
+    reconcileAutomationContinuity(observedAt) {
         for(const id of this.automation.machine_ids) {
             const report=this.agentReports.get(id);
             if(!report||observedAt<report.received_ms||
                 observedAt-report.received_ms>=AGENT_HEARTBEAT_TTL_MS||
                 report.instance_id!==this.automation.agent_instances[id]||
                 report.native_preflight_passed!==true||report.local_executor!==true)
-                throw Error('Machine '+id+' lost qualified agent continuity; operator must re-arm.');
+            {
+                const message='Machine '+id+' lost qualified agent continuity.';
+                if(this.state.automation_restart?.agent_restart===true) {
+                    // Keep only the separately authorized CPU recovery intent.
+                    // No dispatch resumes until the existing restoration path
+                    // verifies fresh native ownership and matching leases.
+                    this.automation.enabled=false;
+                    this.automation.last_error=null;
+                    this.automation.last_action='CPU automation paused for agent reconciliation.';
+                    this.automation.waiting_reason=message+' Awaiting fresh native and lease proof.';
+                }else this.disarmUnsafeAutomation(Error(message+' Operator must re-arm.'));
+                return false;
+            }
         }
+        return true;
     }
     disarmUnsafeAutomation(error) {
         this.automation.enabled=false;
@@ -1051,6 +1069,7 @@ class ExperimentHub {
                 rebalance_queued:intent.rebalance_queued===true,
                 adopt_reconciled_running:true,confirm_adopt_running:true,
                 resume_after_restart:true,confirm_restart_rearm:true,
+                confirm_agent_restart_rearm:intent.agent_restart===true,
                 confirm_arm:true,confirm_untracked_load:true,
             },'restart');
             this.automation.last_action='Restored explicitly opted-in CPU automation after fresh native reconciliation.';
@@ -1082,7 +1101,7 @@ class ExperimentHub {
             const snapshot=this.snapshot();
             const selected=snapshot.machines.filter(m=>
                 session.machine_ids.includes(m.id));
-            this.assertAutomationContinuity(Date.now());
+            if(!this.reconcileAutomationContinuity(Date.now()))return this.automationStatus();
             const unsafe=snapshot.jobs.find(j=>
                 session.machine_ids.includes(j.assigned_machine_id)&&
                 !j.capacity_released_at&&
@@ -2268,12 +2287,7 @@ class ExperimentHub {
         const token = crypto.randomBytes(32).toString('hex');
         machine.agent_key_sha256 = fingerprint(machine.id, token);
         this.commit(next);
-        this.agentReports.delete(machine.id);
-        for (const lease of this.state.reservations)
-            if (lease.machine_id===machine.id) this.leaseReceipts.delete(lease.id);
-        for(const job of this.state.jobs)
-            if(job.assigned_machine_id===machine.id)
-                this.executionTelemetry.delete(job.id);
+        this.invalidateAgentIdentity(machine.id,'Agent credential changed; review and re-arm native automation.');
         return {machine_id:machine.id, agent_token:token};
     }
     revokeMachine(value) {
@@ -2285,13 +2299,19 @@ class ExperimentHub {
         if (!machine) throw Error('Machine not registered.');
         delete machine.agent_key_sha256;
         this.commit(next);
-        this.agentReports.delete(machine.id);
-        for (const lease of this.state.reservations)
-            if (lease.machine_id===machine.id) this.leaseReceipts.delete(lease.id);
-        for(const job of this.state.jobs)
-            if(job.assigned_machine_id===machine.id)
-                this.executionTelemetry.delete(job.id);
+        this.invalidateAgentIdentity(machine.id,'Agent credential revoked; review and re-arm native automation.');
         return {machine_id:machine.id, revoked:true};
+    }
+    invalidateAgentIdentity(machineId,reason) {
+        this.agentReports.delete(machineId);
+        for (const lease of this.state.reservations)
+            if (lease.machine_id===machineId) this.leaseReceipts.delete(lease.id);
+        for(const job of this.state.jobs)
+            if(job.assigned_machine_id===machineId)
+                this.executionTelemetry.delete(job.id);
+        if((this.automation.enabled&&this.automation.machine_ids.includes(machineId))||
+            this.state.automation_restart?.machine_ids?.includes(machineId))
+            this.disarmUnsafeAutomation(Error(reason));
     }
     heartbeat(value, token) {
         if (!object(value) || !ID.test(String(value.machine_id || '')))
@@ -2389,8 +2409,7 @@ class ExperimentHub {
         // Check the previous heartbeat before replacing it. A reconnect
         // must not erase an expired gap before the scheduler observes it.
         if(this.automation.enabled) {
-            try{this.assertAutomationContinuity(received);}
-            catch(error){this.disarmUnsafeAutomation(error);}
+            this.reconcileAutomationContinuity(received);
         }
         // A disconnected or replaced agent must re-observe its native
         // services before evaluator worklists or resource-rate samples

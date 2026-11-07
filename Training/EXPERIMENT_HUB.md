@@ -354,11 +354,15 @@ Unreleased jobs with missing, stale, conflicting, or uncertain native
 evidence block adoption until the operator inspects or releases them.
 Re-adoption does not bypass host preflight or checkpoint continuation proof.
 
-For unattended coordinator restarts, the operator can separately check
-**Automatically restore CPU-only automation after coordinator restart**
+For unattended coordinator or agent recovery, the operator can separately check
+**Automatically restore CPU-only automation after coordinator or agent restart**
 when arming. This stores explicit, revocable permission in the Hub
-registry; GPU claims, probes and Starts cannot use this option.
-On startup, native automation remains disarmed until every selected
+registry; GPU claims, probes and Starts cannot use this option. The API uses
+`resume_after_restart:true`, `confirm_restart_rearm:true` and the separate
+`confirm_agent_restart_rearm:true` confirmation. Older saved permissions and
+API requests without the last confirmation continue to cover coordinator
+restarts only; disarm and re-arm to authorize agent recovery.
+On coordinator startup or loss of agent continuity, scheduling pauses until every selected
 machine reauthenticates, its preflight passes, every outstanding
 previously automated dispatch has fresh native inspection and its
 matching lease is acknowledged. A pending restart is visible in Train
@@ -366,11 +370,22 @@ and can be cancelled using Disarm. Restoring permission re-adopts
 verified previous jobs; it never repeats an ambiguous Start or Stop.
 Restoration only arms the scheduler: a later pass decides whether any
 new job may Start. Unverified/failed services, in-flight Starts or
-Stops, disconnections, changed agent ownership, or failed safety checks
-require operator review and revoke saved restart permission. Normal
+Stops or failed safety checks require operator review and revoke saved restart
+permission. Credential rotation or revocation also cancels recovery; it is
+not treated as an agent process restart. A replacement agent must pass the
+existing active-instance exclusion period and re-inspect the original native
+dispatch before recovery can use its observations. Normal
 operator disarming also revokes it. The coordinator process itself
 still needs an independently installed OS service supervisor to be
-restarted; this option does not install one.
+restarted; this option does not install one or enable machine boot startup.
+
+An isolated Windows check ran the production agent through the compiled
+launcher's `--run-once` path, killed and relaunched that launcher, and observed
+the same native workload PID, dispatch and lease after fresh reconciliation.
+Explicitly authorized agent recovery restored CPU scheduling, started the
+second queued job once and released both signed terminal claims. A separate
+run with coordinator-only permission remained disarmed. These checks do not
+qualify production training, deployed service-account permissions or Linux.
 
 In an isolated 90-second Windows Courier run, closing the worker listener
 and reopening the coordinator and supervisor preserved the original
