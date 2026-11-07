@@ -148,6 +148,11 @@ Every job starts with its own artifact lineage and is independently
 eligible for capacity. Queueing issues no claim or Start authorization.
 Train and Compare display the batch and original trial position. JSON
 and CSV exports include the full batch ID so runs can be joined later.
+Train can cancel the remaining queued trials of a batch atomically.
+`POST /api/hub/trials/cancel-queued` requires `trial_batch_id`,
+`expected_job_ids`, and `confirm_cancel:true`. A changed queued set rejects
+the request. Dispatched trials remain under their native supervisor.
+Cancel any unresolved candidate selection before cancelling its trials.
 
 For **independent experiments**, including mixed approved non-Bees
 projects, the same Train editor offers

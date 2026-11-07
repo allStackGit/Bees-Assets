@@ -2962,6 +2962,32 @@ class ExperimentHub {
         const job=next.jobs.find(j=>j.id===value.job_id);
         if (!job) throw Error('Job not found.');
         if (job.status==='cancelled') return copy(job);
+        this.cancelUnstartedJob(next,job,now());
+        this.commit(next);
+        return copy(job);
+    }
+    cancelQueuedTrials(value) {
+        if(!object(value)||value.confirm_cancel!==true||!UUID.test(String(value.trial_batch_id||''))||
+            !Array.isArray(value.expected_job_ids)||!value.expected_job_ids.length||
+            value.expected_job_ids.length>16||value.expected_job_ids.some(id=>!UUID.test(String(id))))
+            throw Error('Confirm the trial batch and exact queued jobs to cancel.');
+        const next=copy(this.state);
+        const jobs=next.jobs.filter(job=>job.trial_batch?.id===value.trial_batch_id&&
+            job.status==='waiting_adapter'&&!job.dispatch_id);
+        const ids=jobs.map(job=>job.id);
+        const expected=new Set(value.expected_job_ids);
+        if(ids.length!==expected.size||ids.some(id=>!expected.has(id))||
+            expected.size!==value.expected_job_ids.length)
+            throw Error('Queued trials changed. Review the batch before cancelling.');
+        if(next.candidate_selections?.some(plan=>['waiting','needs_review'].includes(plan.status)&&
+            plan.candidate_job_ids.some(id=>expected.has(id))))
+            throw Error('Cancel the unresolved candidate selection before cancelling its trials.');
+        const cancelledAt=now();
+        for(const job of jobs)this.cancelUnstartedJob(next,job,cancelledAt);
+        this.commit(next);
+        return {cancelled_job_ids:ids,cancelled_count:ids.length,starts_stopped:0};
+    }
+    cancelUnstartedJob(next,job,cancelledAt) {
         if (job.dispatch_id||!['waiting_adapter','waiting_predecessor'].includes(job.status))
             throw Error('Only unstarted jobs can be cancelled without an execution adapter.');
         if(next.jobs.some(j=>
@@ -2976,9 +3002,7 @@ class ExperimentHub {
         }
         job.status='cancelled';
         job.status_reason='Cancelled before any execution was permitted.';
-        job.cancelled_at=now();
-        this.commit(next);
-        return copy(job);
+        job.cancelled_at=cancelledAt;
     }
     plannedJobs() {
         const jobs=this.state.jobs.filter(j=>
