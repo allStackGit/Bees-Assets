@@ -46,6 +46,8 @@ use bees_gameplay::episode::{
 };
 use bees_gameplay::group_rewards::NativeGroupRewardDelivery;
 use bees_gameplay::level_rules::NativeLevelState;
+use bees_gameplay::inference::NativePolicyInference;
+use bees_gameplay::level_host::NativeLevelNotificationSink;
 use serde::Deserialize;
 
 use crate::fleet_inventory::{
@@ -54,13 +56,16 @@ use crate::fleet_inventory::{
 use crate::scene_builder::{
     NativeAuthoredEntity, NativeAuthoredShip, NativeAuthoredPolicy,
     NativeAuthoredTurret, NativeAuthoredSquad, NativeAuthoredLevel,
-    NativeAuthoredGroups,
+    NativeAuthoredGroups, NativeRuntimeBuildError,
 };
 use crate::policy_only_metadata::{
     NativeSourceVision,
     AuthoredPolicyAgent, AuthoredPolicySide, NativePolicyOnlyMetadata,
     PolicyOnlyMetadataError,
 };
+use crate::scene_assets::NativeSceneAssets;
+use crate::runtime::NativeHostRuntime;
+use crate::durable_connection::DurableHiveMindConnection;
 
 const SNAPSHOT_VERSION: u32 = 14;
 
@@ -1345,5 +1350,58 @@ impl NativePhysicalScene {
             source_vision,
             source_static_discovery_values,
         })
+    }
+}
+
+
+impl NativeSceneAssets {
+    /// Launch a complete native, policy-only batched host from multiple
+    /// independently exported Unity Levels. Gameplay, model inference,
+    /// source-derived rewards and observations, presentation and
+    /// notifications all use the same shared runtime. No alternate
+    /// training-only physics world or placeholder policy is constructed.
+    ///
+    /// Every Level chooses its real model-slot mappings and squad allocator
+    /// in NativeExportedPolicyLevelSetup. One common Stage fixed delta is
+    /// mandatory for a synchronous batched Simulation. Check that before
+    /// constructing any world so an invalid mixed-stage set cannot leave
+    /// an accidentally partially started host.
+    pub fn build_imported_policy_runtime<A, B, S>(
+        &self,
+        imported: impl IntoIterator<Item=(
+            NativePhysicalScene, NativeExportedPolicyLevelSetup<A>,
+        )>,
+        model: B,
+        connection: DurableHiveMindConnection,
+        sink: S,
+    ) -> Result<
+        NativeHostRuntime<NativePolicyOnlyMetadata, A, B, S>,
+        NativeRuntimeBuildError,
+    >
+    where
+        A: FnMut(SquadLifetime, i64) -> Result<
+            SquadLifetime, bees_gameplay::squads::SquadRosterError,
+        >,
+        B: NativePolicyInference,
+        S: NativeLevelNotificationSink,
+    {
+        let mut fixed_dt_seconds = None;
+        let mut levels = Vec::new();
+        for (scene, setup) in imported {
+            let dt = scene.fixed_dt_seconds;
+            if let Some(expected) = fixed_dt_seconds {
+                if dt != expected {
+                    return Err(NativeRuntimeBuildError::MixedFixedStep {
+                        expected, actual: dt,
+                    });
+                }
+            } else {
+                fixed_dt_seconds = Some(dt);
+            }
+            levels.push(scene.into_exported_policy_only_level(setup)
+                .map_err(NativeRuntimeBuildError::Imported)?);
+        }
+        let dt = fixed_dt_seconds.ok_or(NativeRuntimeBuildError::EmptyLevels)?;
+        self.build_runtime(dt, levels, model, connection, sink)
     }
 }

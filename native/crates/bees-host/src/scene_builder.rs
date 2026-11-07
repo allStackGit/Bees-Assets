@@ -182,6 +182,12 @@ pub enum NativeSceneBuildError {
 #[derive(Debug)]
 pub enum NativeRuntimeBuildError {
     EmptyLevels,
+    /// An imported policy-only Level failed source validation or could
+    /// not map its actual policy teams to loaded model slots.
+    Imported(crate::unity_scene_snapshot::NativePolicyOnlyLevelError),
+    /// A single batched native runtime has ONE physics fixed dt. Mixed
+    /// source stage clocks must not silently run at the first one's rate.
+    MixedFixedStep { expected: f32, actual: f32 },
     Scene(NativeSceneBuildError),
     Simulation(&'static str),
     Host(HostInitError),
