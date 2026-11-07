@@ -191,6 +191,7 @@ pub enum NativeRuntimeBuildError {
     /// A single batched native runtime has ONE physics fixed dt. Mixed
     /// source stage clocks must not silently run at the first one's rate.
     MixedFixedStep { expected: f32, actual: f32 },
+    MixedSourceStage { expected: String, actual: String },
     Scene(NativeSceneBuildError),
     Simulation(&'static str),
     Host(HostInitError),

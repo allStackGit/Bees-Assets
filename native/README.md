@@ -3,7 +3,7 @@
 This directory is the beginning of the Unity-independent replacement platform,
 created from the current `feat/experiment-queue-ui` branch.
 
-## Unity scene import (schema 12)
+## Unity scene import (schema 15)
 
 **Bees > Native > Export Selected Level Physical Scene** captures a
 source-authored initial Unity Level, not a resumable match checkpoint.
@@ -21,8 +21,8 @@ minion-lifetime allocator, and a durable event sink. It runs all imported
 Levels through the same `CombatWorld`, game rules and batched inference
 interface. Each Level keeps its own actual navigation frame, observation
 memory and asteroid spawn map geometry; only immutable Stage assets and
-model weights are shared. Mixing different physics fixed-step durations
-in one synchronous host is rejected.
+model weights are shared. Mixing physics fixed-step durations or using snapshots from a
+different Stage than the loaded asteroid palette is rejected.
 
 This still does not restore prior projectiles, learned discovery or
 command/reward history. Full native game presentation, optimizer and

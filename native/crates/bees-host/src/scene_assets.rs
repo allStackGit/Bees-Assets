@@ -45,6 +45,7 @@ pub enum NativeSceneAssetError {
 /// catalog-sharing asteroid pool setup. Scene asset loading happens
 /// before any policy decisions or physical simulation steps.
 pub struct NativeSceneAssets {
+    stage_name: String,
     collision_matrix: CollisionMatrix,
     asteroid_stage: FullAsteroidStage,
     fragment_palette: AsteroidFragmentPalette,
@@ -86,6 +87,7 @@ impl NativeSceneAssets {
         let polygon_catalog = Arc::new(PolygonObstacleCatalog::embedded()
             .map_err(NativeSceneAssetError::PolygonCatalog)?);
         Ok(Self {
+            stage_name: expected_stage_name.to_owned(),
             collision_matrix, asteroid_stage, fragment_palette,
             ship_catalog, projectile_catalog, box_catalog, polygon_catalog,
         })
@@ -96,6 +98,8 @@ impl NativeSceneAssets {
     pub fn level_rules(&self) -> NativeLevelRules {
         NativeLevelRules { collision_matrix: self.collision_matrix.clone() }
     }
+
+    pub fn stage_name(&self) -> &str { &self.stage_name }
 
     pub fn ship_catalog(&self) -> &ShipAssetCatalog { &self.ship_catalog }
 

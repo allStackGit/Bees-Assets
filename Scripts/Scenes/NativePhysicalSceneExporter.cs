@@ -134,8 +134,9 @@ internal static class NativePhysicalSceneExporter
     [Serializable]
     private sealed class PhysicalScene
     {
-        public int schema_version = 14;
+        public int schema_version = 15;
         public string level_name;
+        public string stage_name;
         public float fixed_dt_seconds;
         public bool shots_harmless;
         public bool has_policy_episode;
@@ -173,6 +174,7 @@ internal static class NativePhysicalSceneExporter
             level_name = !string.IsNullOrEmpty(level.Name)
                 ? level.Name : level.gameObject.name,
             fixed_dt_seconds = level.Stage.FixedDeltaTime,
+            stage_name = level.Stage.gameObject.name,
             shots_harmless = level.Stage.MakeShotsHarmless,
             min = new Vector2(level.MinX, level.MinY),
             max = new Vector2(level.MaxX, level.MaxY),
@@ -216,6 +218,10 @@ internal static class NativePhysicalSceneExporter
                 discovery_baselines = discoveryBaselines,
             };
         }
+
+        if (string.IsNullOrWhiteSpace(snapshot.stage_name))
+            throw new InvalidOperationException(
+                "Native scene must retain the original Stage identity.");
 
         foreach (Ship ship in level.State.Ships)
         {

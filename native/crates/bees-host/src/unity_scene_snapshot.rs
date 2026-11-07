@@ -67,7 +67,7 @@ use crate::scene_assets::NativeSceneAssets;
 use crate::runtime::NativeHostRuntime;
 use crate::durable_connection::DurableHiveMindConnection;
 
-const SNAPSHOT_VERSION: u32 = 14;
+const SNAPSHOT_VERSION: u32 = 15;
 
 #[derive(Deserialize, Clone, Copy)]
 struct UnityVec2 { x: f32, y: f32 }
@@ -83,6 +83,7 @@ impl UnityVec2 {
 struct UnitySnapshot {
     schema_version: u32,
     level_name: String,
+    stage_name: String,
     fixed_dt_seconds: f32,
     shots_harmless: bool,
     has_policy_episode: bool,
@@ -297,6 +298,8 @@ pub enum NativeSnapshotError {
 /// existing NativeSceneAssets Arc catalogs.
 pub struct NativePhysicalScene {
     pub level_name: String,
+    /// Source Stage identity for validating the loaded prefab palette.
+    pub stage_name: String,
     pub bounds: Aabb,
     pub fixed_dt_seconds: f32,
     pub shots_harmless: bool,
@@ -788,6 +791,7 @@ impl NativePhysicalScene {
         let min = raw.min.into_vec();
         let max = raw.max.into_vec();
         if raw.level_name.trim().is_empty() ||
+            raw.stage_name.trim().is_empty() ||
             !raw.fixed_dt_seconds.is_finite() || raw.fixed_dt_seconds <= 0.0 ||
             !min.is_finite() || !max.is_finite() ||
             min.x >= max.x || min.y >= max.y
@@ -1344,6 +1348,7 @@ impl NativePhysicalScene {
             .map_err(NativeSnapshotError::Fleet)?;
         Ok(Self {
             level_name: raw.level_name,
+            stage_name: raw.stage_name,
             bounds: Aabb { min, max },
             fixed_dt_seconds: raw.fixed_dt_seconds,
             shots_harmless: raw.shots_harmless,
@@ -1398,6 +1403,12 @@ impl NativeSceneAssets {
         let mut fixed_dt_seconds = None;
         let mut levels = Vec::new();
         for (scene, setup) in imported {
+            if scene.stage_name != self.stage_name() {
+                return Err(NativeRuntimeBuildError::MixedSourceStage {
+                    expected: self.stage_name().to_owned(),
+                    actual: scene.stage_name,
+                });
+            }
             let dt = scene.fixed_dt_seconds;
             if let Some(expected) = fixed_dt_seconds {
                 if dt != expected {
