@@ -76,8 +76,11 @@ impl NativeLevelNotificationSink for DurableDiagnosticNotifications {
             "kind": kind,
             "payload_debug": format!("{:?}", notification.kind),
         });
-        serde_json::to_writer(&mut self.file, &record)?;
-        self.file.write_all(b"\n")?;
+        // Encode before writing so serialization failures never leave a
+        // fragment that looks like a committed record on disk.
+        let mut bytes = serde_json::to_vec(&record).map_err(io::Error::other)?;
+        bytes.push(b'\n');
+        self.file.write_all(&bytes)?;
         // The Level driver may now acknowledge this exact prefix. Do not
         // buffer uncommitted records across a call to accept.
         self.file.sync_data()
