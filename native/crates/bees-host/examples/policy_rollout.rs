@@ -320,11 +320,68 @@ fn main() -> Result<(), Box<dyn Error>> {
             }
         };
         rounds += u64::from(counts.rounds);
+        // The reset is an independent fallible transaction. Errors are
+        // reported through the same end-of-run abort/report path as a bad
+        // model step, rather than escaping main() with live Levels.
+        let recycling = (|| -> io::Result<usize> {
+            let mut recycled = 0usize;
+            for (index, level) in config.levels.iter().enumerate() {
+                let finished = host.simulation().world(index)
+                    .ok_or_else(|| invalid("registered Level disappeared"))?
+                    .state.events.completed();
+                if !finished ||
+                    completed_episodes[index] == config.episodes_per_world
+                {
+                    continue;
+                }
+                completed_episodes[index] += 1;
+                if completed_episodes[index] == config.episodes_per_world ||
+                    rounds == config.max_rounds
+                {
+                    continue;
+                }
+                let mut scene = NativePhysicalScene::parse(&source_jsons[index])
+                    .map_err(|error| contextual("cached authored Level", error))?;
+                // Replaying an authored template creates new real Stage
+                // squad lifetimes, not aliases of retired pooled wrappers.
+                for squad in &mut scene.source_squads {
+                    let item_id = next_id.get();
+                    let following = item_id.checked_add(1)
+                        .ok_or_else(|| invalid("Stage squad identities exhausted"))?;
+                    next_id.set(following);
+                    squad.item_id = item_id;
+                }
+                let seed = level.seed.wrapping_add(
+                    u64::from(completed_episodes[index])
+                );
+                let setup = make_setup(
+                    &config, level, &assets, period, Rc::clone(&next_id), seed,
+                );
+                let authored = scene.into_exported_policy_only_level(setup)
+                    .map_err(|error| contextual("replayed Level source", error))?;
+                let replacement = assets.build_level(authored)
+                    .map_err(|error| contextual("replayed Level assembly", error))?
+                    .state;
+                host.reset_world(index, seed, replacement)
+                    .map_err(|error| contextual("guarded Level reset", error))?;
+                recycled += 1;
+            }
+            Ok(recycled)
+        })();
+        let recycled = match recycling {
+            Ok(recycled) => recycled,
+            Err(error) => {
+                failed_window = Some(format!("episode turnover: {error}"));
+                break;
+            }
+        };
         match host.sample_status() {
             Ok(Some(status)) => println!("{}", json!({
                 "kind": "interval",
                 "run_id": config.run_id,
                 "rounds": rounds,
+                "completed_episodes": completed_episodes.iter()
+                    .map(|&count| u64::from(count)).sum::<u64>(),
                 "metrics": status,
             })),
             Ok(None) => {},
@@ -334,50 +391,6 @@ fn main() -> Result<(), Box<dyn Error>> {
                 ));
                 break;
             }
-        }
-        // A successful run_window has already durably delivered the final
-        // event prefix and retired this world's old squad lifetimes. The
-        // driver reset guard checks those obligations once more before
-        // replacing anything. Worlds with exhausted episode budgets remain
-        // completed and are skipped by future simulation windows.
-        let mut recycled = 0usize;
-        for (index, level) in config.levels.iter().enumerate() {
-            let finished = host.simulation().world(index)
-                .ok_or_else(|| invalid("registered Level disappeared"))?
-                .state.events.completed();
-            if !finished || completed_episodes[index] == config.episodes_per_world {
-                continue;
-            }
-            completed_episodes[index] += 1;
-            if completed_episodes[index] == config.episodes_per_world ||
-                rounds == config.max_rounds
-            {
-                continue;
-            }
-            let mut scene = NativePhysicalScene::parse(&source_jsons[index])
-                .map_err(|error| contextual("cached authored Level", error))?;
-            // A newly constructed Unity Squad receives a NEW Stage
-            // Pool.ItemCount even if its serialized template is identical.
-            // Never reuse a retired HiveMind lifetime across episodes.
-            for squad in &mut scene.source_squads {
-                let item_id = next_id.get();
-                let following = item_id.checked_add(1)
-                    .ok_or_else(|| invalid("Stage squad identities exhausted"))?;
-                next_id.set(following);
-                squad.item_id = item_id;
-            }
-            let seed = level.seed.wrapping_add(u64::from(completed_episodes[index]));
-            let setup = make_setup(
-                &config, level, &assets, period, Rc::clone(&next_id), seed,
-            );
-            let authored = scene.into_exported_policy_only_level(setup)
-                .map_err(|error| contextual("replayed Level source", error))?;
-            let replacement = assets.build_level(authored)
-                .map_err(|error| contextual("replayed Level assembly", error))?
-                .state;
-            host.reset_world(index, seed, replacement)
-                .map_err(|error| contextual("guarded Level reset", error))?;
-            recycled += 1;
         }
         if counts.stopped_with_no_live_worlds && recycled == 0 { break; }
     }
