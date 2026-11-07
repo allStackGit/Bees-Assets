@@ -16,6 +16,7 @@ use std::ffi::OsStr;
 use std::io::{self, BufReader, BufWriter, Read, Write};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::path::Path;
+use sha2::{Digest, Sha256};
 
 use bees_gameplay::inference::{NativePolicyInference, NativePolicyRoute};
 use bees_sim::policy::{CONTINUOUS_ACTIONS, DISCRETE_BRANCHES, OBSERVATION_FLOATS};
@@ -27,6 +28,7 @@ const CONTROL_RELOAD_MAGIC: &[u8; 4] = b"BMOD";
 const CONTROL_RELOAD_ACK: &[u8; 4] = b"MACK";
 const CONTROL_RELOAD_REJECTED: &[u8; 4] = b"MNOK";
 const MAX_MANIFEST_PATH_BYTES: usize = 4096;
+const MANIFEST_DIGEST_BYTES: usize = 32;
 const REQUEST_MAGIC: &[u8; 4] = b"BINF";
 const RESPONSE_MAGIC: &[u8; 4] = b"BOUT";
 const READY_MAGIC: &[u8; 4] = b"BHOK";
@@ -62,6 +64,9 @@ pub struct ResidentPolicyProcess {
     /// Monotonic process-local model generation. Capture with the run ID
     /// and manifest SHA to identify policy versions in learner trajectories.
     model_generation: u64,
+    /// Hash of the exact manifest bytes accepted by the resident worker,
+    /// not merely the operator-provided path to a potentially moving file.
+    manifest_digest: [u8; MANIFEST_DIGEST_BYTES],
     unavailable: bool,
     // Reused model route/action-mask packet, 16 bytes per agent.
     row_headers: Vec<u8>,
@@ -85,6 +90,7 @@ impl ResidentPolicyProcess {
             output: BufReader::new(output),
             sequence: 0,
             model_generation: 0,
+            manifest_digest: [0_u8; MANIFEST_DIGEST_BYTES],
             unavailable: false,
             row_headers: Vec::new(),
         };
@@ -122,7 +128,9 @@ impl ResidentPolicyProcess {
         self.output.read_exact(&mut signature)?;
         let signature = std::str::from_utf8(&signature)
             .map_err(|_| PolicyProcessError::InvalidHandshake)?;
-        validate_model_abi(abi, signature).map_err(PolicyProcessError::Abi)
+        validate_model_abi(abi, signature).map_err(PolicyProcessError::Abi)?;
+        self.output.read_exact(&mut self.manifest_digest)?;
+        Ok(())
     }
 
     fn exchange(
@@ -218,6 +226,15 @@ impl ResidentPolicyProcess {
         if bytes.is_empty() || bytes.len() > MAX_MANIFEST_PATH_BYTES {
             return Err(PolicyProcessError::InvalidReloadPath);
         }
+        // The worker verifies this digest against the bytes it loads
+        // before reading any model artifacts. A replaced schedule path
+        // cannot silently activate a different checkpoint.
+        let manifest_bytes = std::fs::read(&path)?;
+        if manifest_bytes.len() > 1024 * 1024 {
+            return Err(PolicyProcessError::InvalidReloadPath);
+        }
+        let mut expected_digest = [0_u8; MANIFEST_DIGEST_BYTES];
+        expected_digest.copy_from_slice(&Sha256::digest(&manifest_bytes));
         let seq = self.sequence.checked_add(1)
             .ok_or(PolicyProcessError::RequestSequenceExhausted)?;
         let next_generation = self.model_generation.checked_add(1)
@@ -226,7 +243,8 @@ impl ResidentPolicyProcess {
             self.input.write_all(CONTROL_RELOAD_MAGIC)?;
             self.input.write_all(&PROTOCOL_VERSION.to_le_bytes())?;
             self.input.write_all(&seq.to_le_bytes())?;
-            self.input.write_all(&(bytes.len() as u32).to_le_bytes())?;
+            self.input.write_all(&((bytes.len() + MANIFEST_DIGEST_BYTES) as u32).to_le_bytes())?;
+            self.input.write_all(&expected_digest)?;
             self.input.write_all(bytes)?;
             self.input.flush()?;
             let mut response = [0_u8; 20];
@@ -240,6 +258,11 @@ impl ResidentPolicyProcess {
             let status = &response[..4];
             let count = u32::from_le_bytes(response[16..20].try_into().unwrap());
             if status == CONTROL_RELOAD_ACK && count > 0 {
+                let mut confirmed = [0_u8; MANIFEST_DIGEST_BYTES];
+                self.output.read_exact(&mut confirmed)?;
+                if confirmed != expected_digest {
+                    return Err(PolicyProcessError::WrongResponse);
+                }
                 Ok(true)
             } else if status == CONTROL_RELOAD_REJECTED && count == 0 {
                 Ok(false)
@@ -251,6 +274,7 @@ impl ResidentPolicyProcess {
         match exchanged {
             Ok(true) => {
                 self.model_generation = next_generation;
+                self.manifest_digest = expected_digest;
                 Ok(next_generation)
             }
             Ok(false) => Err(PolicyProcessError::ReloadRejected),
@@ -262,6 +286,14 @@ impl ResidentPolicyProcess {
     }
 
     pub fn model_generation(&self) -> u64 { self.model_generation }
+
+    pub fn model_manifest_sha256(&self) -> String {
+        let mut hex = String::with_capacity(MANIFEST_DIGEST_BYTES * 2);
+        for byte in self.manifest_digest {
+            hex.push_str(&format!("{byte:02x}"));
+        }
+        hex
+    }
 
     pub fn is_available(&self) -> bool { !self.unavailable }
 }
