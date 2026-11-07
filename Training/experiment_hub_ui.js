@@ -49,9 +49,15 @@ function hubComparisonTerminal(job) {
     return ['finished','failed','stopped'].includes(job.status);
 }
 function hubComparisonEvaluation(job) {
+    const final=Object.values(hubFinalEvaluationCohort(job)||{})[0];
+    if(final)return final;
     if(job.evaluation_stop?.all_of)return job.evaluation_stop_evidence?.all_of?.[0]||
         Object.values(job.evaluation_candidates?.[0]?.receipts||{})[0]||null;
     return job.evaluation_stop_evidence||job.last_evaluation||null;
+}
+function hubFinalEvaluationCohort(job) {
+    return job.checkpoint_model_sha256?job.evaluation_candidates?.find(cohort=>
+        cohort.checkpoint_sha256===job.checkpoint_model_sha256)?.receipts:null;
 }
 function hubComparisonPoints(run) {
     return run.points.length?run.points:
@@ -471,7 +477,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         ' · next job '+p.promoted_job_id?.slice(-8)
                     :p.status==='needs_review'
                         ?'Needs review: '+(p.error||'unresolved model identity')
-                        :'Awaiting candidate completion: '+p.candidate_job_ids.length+
+                        :'Awaiting candidate completion or final checkpoint receipts: '+p.candidate_job_ids.length+
                             ' runs')+
                     ' · plan '+p.id.slice(-8)).join(' | ')
             :'No candidate selection scheduled.');
@@ -586,13 +592,15 @@ document.addEventListener('DOMContentLoaded', () => {
             const rules=job.evaluation_stop?.all_of||[job.evaluation_stop].filter(Boolean);
             const passed=job.evaluation_stop_evidence?.all_of||null;
             const cohort=job.evaluation_candidates?.[0]?.receipts||{};
+            const finalCohort=hubFinalEvaluationCohort(job);
             const entries=rules.length?rules:[null];
             for(const [index,rule] of entries.entries()) {
-                const evidence=passed?passed[index]:
+                const finalReceipt=rule&&finalCohort?.[rule.suite_id];
+                const evidence=finalReceipt||(passed?passed[index]:
                     rule?cohort[rule.suite_id]||
                         (!job.evaluation_stop?.all_of?job.evaluation_stop_evidence:null)||
                         job.last_evaluation:
-                        job.evaluation_stop_evidence||job.last_evaluation;
+                        job.evaluation_stop_evidence||job.last_evaluation);
                 const row=document.createElement('tr');
                 cell(row,slot+' · '+job.configuration_name);
                 cell(row,evidence?.suite_id||rule?.suite_id||'—');
@@ -607,10 +615,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 const meets=Boolean(evidence&&rule&&
                     evidence.trials>=rule.min_trials&&
                     evidence.successes/evidence.trials>=rule.min_success_rate);
-                cell(row,job.evaluation_stop_evidence?'All stop targets met':
+                const final=Boolean(evidence&&evidence.checkpoint_sha256===job.checkpoint_model_sha256);
+                const outcome=final?(meets?'Final checkpoint · suite target met':'Final checkpoint · below target'):
+                    job.evaluation_stop_evidence?'All stop targets met':
                     evidence?(meets?'This suite passed; awaiting remaining gates':
                         'Target not met') :
-                    rule?'Awaiting receipt':'No evaluation configured');
+                    rule?'Awaiting receipt':'No evaluation configured';
+                cell(row,!final&&evidence&&job.checkpoint_model_sha256?'Earlier checkpoint · '+outcome:outcome);
                 table.append(row);
                 if(evidence) {
                     suites.add(evidence.suite_id);
