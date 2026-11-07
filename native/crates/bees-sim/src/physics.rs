@@ -841,7 +841,8 @@ pub enum PhysicsError {
 
 /// A dense, world-local uniform spatial grid. Ship hulls span all their
 /// occupied cells. All allocations are reused between ticks. Out-of-bounds
-/// ships are tracked separately rather than silently disappearing.
+/// or very large colliders use a bounded list of exact AABBs rather than
+/// entering hundreds of cells; no collider is silently dropped.
 struct SpatialGrid {
     area: Aabb,
     cell_size: f32,
@@ -849,8 +850,8 @@ struct SpatialGrid {
     height: usize,
     cells: Vec<Vec<usize>>,
     touched: Vec<usize>,
-    /// Out-of-grid bodies still participate in contact queries, but
-    /// their retained bounds reject unrelated far-away queries before
+    /// Off-grid or wide bodies still participate in contact queries, but
+    /// their retained exact bounds reject unrelated far-away queries before
     /// the expensive candidate/narrowphase stages.
     overflow: Vec<(usize, Aabb)>,
     seen: Vec<u32>,
@@ -912,6 +913,17 @@ impl SpatialGrid {
                 continue;
             }
             if let Some((min_x, max_x, min_y, max_y)) = self.range(bounds) {
+                // Large authored borders/polygons otherwise write into a
+                // large fraction of every grid cell on EVERY physics tick.
+                // Query these few bodies by cached exact AABB instead.
+                // No broadphase false negatives: overflow candidates are
+                // filtered against every querying collider's true AABB.
+                let columns = max_x - min_x + 1;
+                let rows = max_y - min_y + 1;
+                if columns.saturating_mul(rows) > 64 {
+                    self.overflow.push((ship_index, bounds));
+                    continue;
+                }
                 for y in min_y..=max_y {
                     for x in min_x..=max_x {
                         let index = y * self.width + x;
