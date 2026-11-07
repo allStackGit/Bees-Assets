@@ -34,6 +34,10 @@ use bees_sim::combat_perception_bridge::{
     update_exploration_from_world, CombatPerceptionError,
 };
 use bees_sim::team_exploration::{TeamExplorationGrid, Explorer};
+use bees_sim::vision::{HiveMindObserver, VisionFirstSighting};
+use bees_sim::level_discovery::DiscoveryKind as WorldDiscoveryKind;
+use bees_sim::rl_discovery::DiscoveryKind as RewardDiscoveryKind;
+use bees_sim::obstacle::ObstacleKind;
 use bees_sim::perception_weapons::SelfWeapon;
 use bees_sim::ship_assets::ShipAssetCatalog;
 use bees_gameplay::inference::NativePolicyRoute;
@@ -70,6 +74,16 @@ pub struct AuthoredPolicySide {
     pub exploration: TeamExplorationGrid,
 }
 
+/// Captured separately from an agent's effective v26 self sight range:
+/// HiveMindVision's CircleCollider2D holds its original Create-time Range.
+#[derive(Clone, Copy, Debug)]
+pub struct NativeSourceVision {
+    pub effective_range: i32,
+    pub trigger_range: i32,
+    pub registered: bool,
+    pub enabled: bool,
+}
+
 /// For policy-only native matches. The owner provides the real
 /// NavigationRuntime (the same object used by gameplay pathfinding),
 /// complete ship source observations, team environments and FleetShip
@@ -82,7 +96,10 @@ pub struct NativePolicyOnlyMetadata {
     authored_ships: HashMap<i64, AuthoredShipPerception>,
     /// Exact sight ranges for ALL original allied ships, including
     /// non-policy escorts that contribute to team coverage.
-    effective_vision: HashMap<i64, i32>,
+    effective_vision: HashMap<i64, NativeSourceVision>,
+    /// Exact source OriginalHealth-based values of static obstacles.
+    /// The dynamic collider and side knowledge stay in CombatWorld.
+    source_static_discovery_values: HashMap<i64, i32>,
     explorers: Vec<Explorer>,
     agents: HashMap<i64, AuthoredPolicyAgent>,
     sides: HashMap<i32, AuthoredPolicySide>,
@@ -95,7 +112,8 @@ impl NativePolicyOnlyMetadata {
         fleet: NativeFleetInventory,
         ship_catalog: Arc<ShipAssetCatalog>,
         ships: impl IntoIterator<Item=(i64, AuthoredShipPerception)>,
-        vision: impl IntoIterator<Item=(i64, i32)>,
+        vision: impl IntoIterator<Item=(i64, NativeSourceVision)>,
+        source_static_discovery_values: HashMap<i64, i32>,
         agents: impl IntoIterator<Item=AuthoredPolicyAgent>,
         sides: impl IntoIterator<Item=AuthoredPolicySide>,
     ) -> Result<Self, PolicyOnlyMetadataError> {
@@ -113,14 +131,20 @@ impl NativePolicyOnlyMetadata {
             }
         }
         let mut effective_vision = HashMap::new();
-        for (id, range) in vision {
-            if id <= 0 || range < 0 ||
+        for (id, source) in vision {
+            if id <= 0 || source.effective_range < 0 ||
+                source.trigger_range < 0 ||
+                (source.enabled &&
+                    (!source.registered || source.trigger_range == 0)) ||
                 !authored_ships.contains_key(&id) ||
-                effective_vision.insert(id, range).is_some() {
+                effective_vision.insert(id, source).is_some() {
                 return Err(PolicyOnlyMetadataError::InvalidSource);
             }
         }
-        if effective_vision.len() != authored_ships.len() {
+        if effective_vision.len() != authored_ships.len() ||
+            source_static_discovery_values.iter().any(|(&id, &value)|
+                id <= 0 || value <= 0
+            ) {
             return Err(PolicyOnlyMetadataError::InvalidSource);
         }
         let mut side_map = HashMap::new();
@@ -159,6 +183,7 @@ impl NativePolicyOnlyMetadata {
         Ok(Self {
             bounds, navigation, fleet, ship_catalog,
             authored_ships, effective_vision,
+            source_static_discovery_values,
             explorers: Vec::new(),
             agents: agent_map, sides: side_map,
         })
@@ -197,6 +222,89 @@ impl NativeLevelRewardMetadata for NativePolicyOnlyMetadata {
         self.fleet.credit_mined_minerals(ship_id, amount)
     }
 
+    fn collect_hivemind_observers(
+        &self, world: &CombatWorld, output: &mut Vec<HiveMindObserver>,
+    ) -> Result<(), CombatPerceptionError> {
+        if world.ships().len() != world.physics().ships().len() {
+            return Err(CombatPerceptionError::MismatchedWorldStorage);
+        }
+        output.clear();
+        for (ship, body) in world.ships().iter()
+            .zip(world.physics().ships())
+        {
+            if ship.entity_id != body.id {
+                return Err(CombatPerceptionError::MismatchedWorldStorage);
+            }
+            if !body.active || ship.vitals.is_dead() ||
+                !self.sides.contains_key(&ship.side) {
+                continue;
+            }
+            let source = self.effective_vision.get(&ship.entity_id)
+                .ok_or(CombatPerceptionError::MissingEffectiveVision(
+                    ship.entity_id
+                ))?;
+            if source.registered && source.enabled {
+                output.push(HiveMindObserver {
+                    ship_id: ship.entity_id,
+                    effective_range: source.trigger_range,
+                    registered: true, enabled: true,
+                });
+            }
+        }
+        Ok(())
+    }
+
+    fn verified_discovery_reward(
+        &self, world: &CombatWorld, sighting: VisionFirstSighting,
+    ) -> Result<(RewardDiscoveryKind, i32), CombatPerceptionError> {
+        match sighting.kind {
+            WorldDiscoveryKind::Ship => {
+                let ship = world.ship(sighting.target_id).ok_or(
+                    CombatPerceptionError::MissingShip(sighting.target_id)
+                )?;
+                Ok((RewardDiscoveryKind::EnemyShip, ship.vitals.tsv().max(1)))
+            }
+            WorldDiscoveryKind::MapObject => {
+                let object = world.map_object(sighting.target_id).ok_or(
+                    CombatPerceptionError::InvalidAuthoredMetadata
+                )?;
+                Ok((RewardDiscoveryKind::MapObject, object.max_health.max(1)))
+            }
+            kind => {
+                // A discovered obstacle is rare; linear inspection here
+                // avoids retaining a duplicate mutable obstacle ledger
+                // or doing hash work per observer candidate.
+                let obstacle = world.obstacles().iter()
+                    .find(|item| item.entity_id == sighting.target_id)
+                    .ok_or(CombatPerceptionError::InvalidAuthoredMetadata)?;
+                match (kind, obstacle.kind) {
+                    (WorldDiscoveryKind::MiningAsteroid,
+                     ObstacleKind::MiningAsteroid) => {
+                        let vitals = obstacle.vitals.ok_or(
+                            CombatPerceptionError::MissingAsteroidVitals(
+                                sighting.target_id,
+                            )
+                        )?;
+                        Ok((RewardDiscoveryKind::MiningAsteroid,
+                            vitals.original_health.max(1)))
+                    }
+                    (WorldDiscoveryKind::Obstacle,
+                     ObstacleKind::CollisionAsteroid) =>
+                        Ok((RewardDiscoveryKind::CollisionAsteroid,
+                            i32::from(obstacle.size_class))),
+                    (WorldDiscoveryKind::Obstacle,
+                     ObstacleKind::StaticObstacle | ObstacleKind::MapBorder) => {
+                        let value = *self.source_static_discovery_values
+                            .get(&sighting.target_id)
+                            .ok_or(CombatPerceptionError::InvalidAuthoredMetadata)?;
+                        Ok((RewardDiscoveryKind::StaticObstacle, value))
+                    }
+                    _ => Err(CombatPerceptionError::InvalidAuthoredMetadata),
+                }
+            }
+        }
+    }
+
     fn update_observation_memory(
         &mut self, world: &CombatWorld, progress: f32,
     ) -> Result<(), CombatPerceptionError> {
@@ -207,7 +315,8 @@ impl NativeLevelRewardMetadata for NativePolicyOnlyMetadata {
             update_exploration_from_world(
                 world, side.side, self.bounds, progress,
                 &mut side.exploration, &mut self.explorers,
-                |ship_id| self.effective_vision.get(&ship_id).copied(),
+                |ship_id| self.effective_vision.get(&ship_id)
+                    .map(|vision| vision.effective_range),
             )?;
         }
         Ok(())
