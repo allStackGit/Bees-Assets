@@ -545,6 +545,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         "episodes_per_world": config.episodes_per_world,
         "scheduled_model_updates": config.model_updates.len(),
         "policy_generation": host.model_mut().model_generation(),
+        "policy_manifest_sha256": host.model_mut().model_manifest_sha256(),
         "decision_period": config.decision_period,
         "delivery_every": config.delivery_every,
         "timing_sample_period": config.timing_sample_period,
@@ -663,11 +664,14 @@ fn main() -> Result<(), Box<dyn Error>> {
                 &resolve(root, &update.manifest),
             ) {
                 Ok(generation) => {
+                    let manifest_sha256 =
+                        host.model_mut().model_manifest_sha256();
                     println!("{}", json!({
                         "kind": "policy_updated",
                         "run_id": config.run_id,
                         "rounds": rounds,
                         "policy_generation": generation,
+                        "policy_manifest_sha256": manifest_sha256,
                         "manifest": update.manifest,
                     }));
                     next_model_update += 1;
