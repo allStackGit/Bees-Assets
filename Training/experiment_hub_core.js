@@ -2530,6 +2530,7 @@ class ExperimentHub {
                 'Explicitly confirm 2–16 independent trials without a predecessor.');
         const next=copy(this.state),jobs=[];
         let predecessor=value.after_job_id??null;
+        const batchId=ordered?null:crypto.randomUUID();
         for(const stage of value.stages) {
             if(!object(stage)||Object.keys(stage).some(key=>
                 !['configuration_id','expected_revision','resources'].includes(key)))
@@ -2537,11 +2538,12 @@ class ExperimentHub {
             const job=this.queueIn(next,{
                 ...stage,...(predecessor?{after_job_id:predecessor}:{})
             });
+            if(batchId)job.trial_batch={id:batchId,index:jobs.length+1,size:value.stages.length};
             jobs.push(copy(job));
             if(ordered)predecessor=job.id;
         }
         this.commit(next);
-        return {jobs,executable:false,
+        return {jobs,executable:false,...(batchId?{trial_batch_id:batchId}:{}),
             note:'Independent jobs frozen together; native Start needs explicit authorization or a qualified armed automation session.'};
     }
     // Rank independent completed candidates only on identical frozen
