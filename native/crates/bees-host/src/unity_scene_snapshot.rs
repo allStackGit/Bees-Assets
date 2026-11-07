@@ -48,7 +48,7 @@ use crate::policy_only_metadata::{
     PolicyOnlyMetadataError,
 };
 
-const SNAPSHOT_VERSION: u32 = 5;
+const SNAPSHOT_VERSION: u32 = 6;
 
 #[derive(Deserialize, Clone, Copy)]
 struct UnityVec2 { x: f32, y: f32 }
@@ -571,9 +571,20 @@ impl NativePhysicalScene {
                         live_corners: Some(corners),
                     }
                 },
-                "polygon" => NativeAuthoredEntity::PolygonObstacle {
-                    entity_id: obstacle.entity_id,
-                    pose: Some(pose),
+                "polygon" => {
+                    let vertices: Vec<_> = obstacle.collider_vertices.iter()
+                        .map(|point| point.into_vec()).collect();
+                    if vertices.len() < 3 || vertices.len() > 8192 ||
+                        vertices.iter().any(|v| !v.is_finite()) {
+                        return Err(NativeSnapshotError::InvalidObstacle(
+                            obstacle.entity_id,
+                        ));
+                    }
+                    NativeAuthoredEntity::PolygonObstacle {
+                        entity_id: obstacle.entity_id,
+                        pose: Some(pose),
+                        live_vertices: Some(vertices),
+                    }
                 },
                 "full-asteroid" => {
                     // Partial asteroid durability, active shard-family

@@ -90,7 +90,7 @@ internal static class NativePhysicalSceneExporter
     [Serializable]
     private sealed class PhysicalScene
     {
-        public int schema_version = 5;
+        public int schema_version = 6;
         public string level_name;
         public float fixed_dt_seconds;
         public Vector2 min, max;
@@ -345,7 +345,18 @@ internal static class NativePhysicalSceneExporter
         }
         else if (prefab.name == "Polygon Obstacle")
         {
+            if (!(obstacle.Collider is PolygonCollider2D polygon) ||
+                polygon.pathCount != 1)
+            {
+                throw new InvalidOperationException(
+                    "Only a single actual primary PolygonCollider2D path " +
+                    "can be imported: " + obstacle.name);
+            }
             entity.kind = "polygon";
+            Vector2[] points = polygon.GetPath(0);
+            for (int i = 0; i < points.Length; i++)
+                points[i] += polygon.offset;
+            ExportColliderVertices(map, polygon, entity, points);
         }
         else if (obstacle is StaticObstacle || obstacle is MapBorder)
         {
@@ -365,18 +376,7 @@ internal static class NativePhysicalSceneExporter
                 center + new Vector2(half.x, half.y),
                 center + new Vector2(-half.x, half.y)
             };
-            Quaternion localUnrotate = Quaternion.Euler(
-                0f, 0f, -entity.rotation_degrees);
-            foreach (Vector2 corner in corners)
-            {
-                Vector2 worldCorner = box.transform.TransformPoint(corner);
-                Vector2 mapCorner = map.InverseTransformPoint(worldCorner);
-                // Convert transformed physical collider corners, including
-                // runtime scale/child rotation/nested prefab placement, into
-                // the obstacle root's coordinate frame. No AABB substitute.
-                entity.collider_vertices.Add(
-                    localUnrotate * (mapCorner - entity.position));
-            }
+            ExportColliderVertices(map, box, entity, corners);
         }
         else
         {
@@ -387,6 +387,24 @@ internal static class NativePhysicalSceneExporter
                 obstacle.name + " (" + prefab.name + ")");
         }
         snapshot.obstacles.Add(entity);
+    }
+
+    /// Re-express the live primary Collider2D geometry in the native
+    /// Obstacle body local frame, including nested rotation/scale. The
+    /// Level owns these coordinates; presentation never affects them.
+    private static void ExportColliderVertices(
+        Transform map, Collider2D collider, SourceObstacle destination,
+        Vector2[] points)
+    {
+        Quaternion unrotate = Quaternion.Euler(
+            0f, 0f, -destination.rotation_degrees);
+        foreach (Vector2 point in points)
+        {
+            Vector2 world = collider.transform.TransformPoint(point);
+            Vector2 local = map.InverseTransformPoint(world);
+            destination.collider_vertices.Add(
+                unrotate * (local - destination.position));
+        }
     }
 
     private static List<SourceObservedWeapon> ExportObservedWeapons(Ship ship)

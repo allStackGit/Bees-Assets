@@ -2353,6 +2353,20 @@ impl CombatWorld {
         self.add_obstacle(obstacle, body)
     }
 
+    /// Authored runtime polygon outline from the live primary collider.
+    /// Both the renderer and headless simulator reference the same
+    /// collision vertices and original prefab type, with no other
+    /// obstacle implementation or gameplay-dependent conversion.
+    pub fn spawn_authored_polygon_obstacle(
+        &mut self, catalog: &PolygonObstacleCatalog,
+        entity_id: i64, pose: Pose, vertices: Vec<Vec2>,
+    ) -> Result<(), CombatWorldError> {
+        let (obstacle, body) = catalog.prepare_spawn_live_polygon(
+            entity_id, pose, vertices,
+        ).map_err(|_| CombatWorldError::InvalidObstacle)?;
+        self.add_obstacle(obstacle, body)
+    }
+
     /// Obstacles use the same world-local geometry and collision matrix
     /// as ships and projectiles. Callers MUST supply the actual obstacle
     /// collider: this path never substitutes a bounding-circle heuristic.

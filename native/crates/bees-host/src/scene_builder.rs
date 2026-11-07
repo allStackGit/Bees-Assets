@@ -73,6 +73,9 @@ pub enum NativeAuthoredEntity {
     PolygonObstacle {
         entity_id: i64,
         pose: Option<Pose>,
+        /// Original source PolygonCollider2D path in owning obstacle-local
+        /// coordinates. None only for direct immutable prefab spawning.
+        live_vertices: Option<Vec<Vec2>>,
     },
     /// Physically existing full asteroid from a source scene snapshot.
     /// Shards require their original parent/family lifetime and cannot
@@ -141,6 +144,7 @@ pub enum NativeSceneBuildError {
     Squad(SquadRosterError),
     IncompleteSquadRoster,
     MissingLiveBoxPose(i64),
+    MissingLivePolygonPose(i64),
     Group(GroupRewardError),
     GroupConfiguration(NativeLevelEventError),
 }
@@ -269,10 +273,21 @@ impl NativeSceneAssets {
                         angular_velocity_degrees, effective_max_health,
                     ).map_err(NativeSceneBuildError::Combat)?;
                 }
-                NativeAuthoredEntity::PolygonObstacle { entity_id, pose } => {
-                    combat.spawn_polygon_obstacle(
-                        self.polygon_catalog(), entity_id, pose,
-                    ).map_err(NativeSceneBuildError::Combat)?;
+                NativeAuthoredEntity::PolygonObstacle {
+                    entity_id, pose, live_vertices,
+                } => {
+                    if let Some(vertices) = live_vertices {
+                        let pose = pose.ok_or(
+                            NativeSceneBuildError::MissingLivePolygonPose(entity_id)
+                        )?;
+                        combat.spawn_authored_polygon_obstacle(
+                            self.polygon_catalog(), entity_id, pose, vertices,
+                        ).map_err(NativeSceneBuildError::Combat)?;
+                    } else {
+                        combat.spawn_polygon_obstacle(
+                            self.polygon_catalog(), entity_id, pose,
+                        ).map_err(NativeSceneBuildError::Combat)?;
+                    }
                 }
             }
         }

@@ -4,6 +4,7 @@
 //! The 208-vertex concave outline is imported with its prefab root scale.
 
 use serde::Deserialize;
+use std::sync::Arc;
 
 use crate::collider_asset_shape::RawShape;
 use crate::collision::Pose;
@@ -93,11 +94,37 @@ impl PolygonObstacleCatalog {
         entity_id: i64,
         override_pose: Option<Pose>,
     ) -> Result<(CombatObstacle, ObstacleBody), PolygonObstacleAssetError> {
+        self.prepare_spawn_with_shape(
+            entity_id, override_pose, self.shape.clone(),
+        )
+    }
+
+    /// The active Unity PolygonCollider2D path transformed into its owning
+    /// obstacle's local coordinates. Source may resize/reparent the prefab;
+    /// no convex-hull, bounding box or guessed scale substitutes are used.
+    pub fn prepare_spawn_live_polygon(
+        &self, entity_id: i64, pose: Pose, vertices: Vec<Vec2>,
+    ) -> Result<(CombatObstacle, ObstacleBody), PolygonObstacleAssetError> {
+        if vertices.len() < 3 || vertices.len() > 8192 ||
+            vertices.iter().any(|v| !v.is_finite())
+        {
+            return Err(PolygonObstacleAssetError::InvalidAsset);
+        }
+        self.prepare_spawn_with_shape(
+            entity_id, Some(pose),
+            ShipShape::Polygon(Arc::from(vertices.into_boxed_slice())),
+        )
+    }
+
+    fn prepare_spawn_with_shape(
+        &self, entity_id: i64,
+        override_pose: Option<Pose>, shape: ShipShape,
+    ) -> Result<(CombatObstacle, ObstacleBody), PolygonObstacleAssetError> {
         let body = ObstacleBody::new(
             entity_id,
             override_pose.unwrap_or(self.default_pose),
             self.collision_layer,
-            self.shape.clone(),
+            shape,
             Vec2::ZERO,
             0.0,
         )?;
