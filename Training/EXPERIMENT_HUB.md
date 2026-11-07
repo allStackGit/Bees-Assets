@@ -352,8 +352,11 @@ remains under its own operator.
 
 A failed or unverified managed job, disappearing/replaced agent, or
 failed coordinator operation disarms the session without retrying an
-uncertain native launch or freeing uncertain capacity. Stop/recovery of
-failed jobs remains manual. Isolated Windows qualifications have verified
+uncertain native launch or freeing uncertain capacity. A manually stopped
+stage with a queued successor also disarms after verified capacity release:
+the successor stays blocked until operator review rather than permitting
+unrelated queued jobs to continue silently. Stop/recovery of failed jobs
+remains manual. Isolated Windows qualifications have verified
 native Job Object CPU/RAM enforcement, concurrent automatic scheduling,
 terminal receipt/release, dashboard controls, and heartbeat-loss disarming
 on a real host. **Production Bees/TinyBrains coexistence and unattended project
