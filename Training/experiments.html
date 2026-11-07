@@ -457,6 +457,20 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
     <button type="button" id="hub-compare-export-json" disabled>Export selected JSON</button>
   </div>
   <p id="hub-compare-export-message" class="muted" role="status"></p>
+  <div class="hub-standalone">
+    <h3>Promote the best evaluated model</h3>
+    <p class="muted">Choose 2–4 independent candidate jobs above and an approved next-stage configuration below. The Hub compares only identical frozen benchmark suites and promotes only a resumable model whose exact bytes match its evaluation. Active candidates can be scheduled for automatic selection after completion.</p>
+    <div class="formgrid">
+      <label>Next-stage saved configuration<select id="hub-compare-selection-config"></select></label>
+      <label>Next-stage CPU/RAM request (JSON)<input id="hub-compare-selection-resources" type="text" value='{"cpus":2,"ram_mb":2048,"gpu_count":0}'></label>
+    </div>
+    <div class="hub-controls">
+      <button type="button" id="hub-compare-selection-queue">Schedule candidate selection</button>
+    </div>
+    <p id="hub-compare-selection-status" class="muted" role="status">No candidate selection scheduled.</p>
+    <p id="hub-compare-selection-message" class="muted" role="status"></p>
+  </div>
+
   <div class="hub-progress-plot">
     <svg id="hub-compare-svg" xmlns="http://www.w3.org/2000/svg"
       role="img" aria-label="Run progress by cumulative project steps"
