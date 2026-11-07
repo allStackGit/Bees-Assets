@@ -13,6 +13,7 @@ const {evaluationPolicy,evaluationEvidence,evaluationRules,evaluationComplete,su
 const {ProgressHistory}=require('./experiment_hub_history');
 const ID = /^[a-z][a-z0-9_-]{0,47}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const SHA256 = /^[0-9a-f]{64}$/;
 const PCI = /^[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]$/;
 const now = () => new Date().toISOString();
 const AGENT_HEARTBEAT_TTL_MS = 45000;
@@ -1729,6 +1730,14 @@ class ExperimentHub {
                     job.checkpoint_stop_verified=true;
                     changed=true;
                 }
+                if(report.checkpoint_model_sha256!=null) {
+                    if(!SHA256.test(String(report.checkpoint_model_sha256))||
+                        !(state==='finished'&&job.checkpoint_ready_verified===true||
+                          state==='stopped'&&job.checkpoint_stop_verified===true))
+                        throw Error('Model fingerprint requires verified terminal checkpoint ownership.');
+                    job.checkpoint_model_sha256=report.checkpoint_model_sha256;
+                    changed=true;
+                }
             }
             // Only reports accepted into the lifecycle may update live
             // telemetry and comparison samples. A delayed older report
@@ -1995,6 +2004,8 @@ class ExperimentHub {
                     artifact_lineage_root_id:job.artifact_lineage_root_id||job.id,
                     resources:copy(job.resources),
                     ...(job.evaluation_stop?{evaluation_stop:copy(job.evaluation_stop)}:{}),
+                    ...(job.expected_parent_model_sha256
+                        ?{expected_parent_model_sha256:job.expected_parent_model_sha256}:{}),
                 },
                 lease:{
                     id:lease.id,job_id:job.id,project_id:lease.project_id,
