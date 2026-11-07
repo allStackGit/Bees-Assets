@@ -38,6 +38,7 @@ use bees_sim::geometry::Vec2;
 use bees_sim::simulation::{RandomStream, WorldId};
 use serde::Deserialize;
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 
 type MinionAllocator = Box<
     dyn FnMut(SquadLifetime, i64) -> Result<SquadLifetime, SquadRosterError>,
@@ -342,7 +343,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         fragment_settings,
     ).map_err(|error| contextual("stage assets", error))?;
     let manifest_path = resolve(root, &config.model_manifest);
-    let manifest: Value = serde_json::from_reader(File::open(&manifest_path)?)?;
+    let manifest_bytes = fs::read(&manifest_path)?;
+    let expected_manifest_sha256 = format!("{:x}", Sha256::digest(&manifest_bytes));
+    let manifest: Value = serde_json::from_slice(&manifest_bytes)?;
     let declared: HashSet<u32> = manifest.get("models")
         .and_then(Value::as_array)
         .ok_or_else(|| invalid("manifest has no models array"))?
@@ -523,6 +526,11 @@ fn main() -> Result<(), Box<dyn Error>> {
         &resolve(root, &config.policy_worker),
         &manifest_path,
     ).map_err(|error| contextual("model worker startup", error))?;
+    if model.model_manifest_sha256() != expected_manifest_sha256 {
+        return Err(invalid(
+            "model manifest changed between route preflight and authenticated worker startup",
+        ).into());
+    }
     let sink = DurableDiagnosticNotifications::create_new(
         &notifications, config.run_id.clone(),
     )?;
