@@ -12,3 +12,4 @@ pub mod policy_process;
 
 pub mod socket;
 pub mod scene_assets;
+pub mod scene_builder;
