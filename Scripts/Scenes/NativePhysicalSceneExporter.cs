@@ -40,6 +40,8 @@ internal static class NativePhysicalSceneExporter
         public float rotation_degrees, rotation_speed;
         public float base_speed, current_speed, height;
         public float turning_radius, half_width, half_height;
+        public Vector2 offset_from_center;
+        public int path_clearance;
         public bool mobile, cannot_change_orders, user_controlled;
         public bool has_target_coordinates, is_rl_policy_controlled, is_moving;
         public int movement_direction;
@@ -159,6 +161,7 @@ internal static class NativePhysicalSceneExporter
         public long item_id;
         public int side;
         public List<long> member_ids = new List<long>();
+        public bool user_controlled, can_accept_input, locked_on;
     }
 
     [Serializable]
@@ -184,12 +187,13 @@ internal static class NativePhysicalSceneExporter
     [Serializable]
     private sealed class PhysicalScene
     {
-        public int schema_version = 18;
+        public int schema_version = 19;
         public string level_name;
         public string stage_name;
         public float fixed_dt_seconds;
         public bool shots_harmless;
         public bool activate_collision_asteroids;
+        public bool has_obstacles;
         public int bee_side, human_side;
         public Vector2Int beehive_size_pixels;
         public bool has_policy_episode;
@@ -231,6 +235,7 @@ internal static class NativePhysicalSceneExporter
             stage_name = level.Stage.gameObject.name,
             shots_harmless = level.Stage.MakeShotsHarmless,
             activate_collision_asteroids = level.ActivateCollisionAsteroids,
+            has_obstacles = level.HasObstacles,
             bee_side = ConfigData.Configuration.BeeSide,
             human_side = ConfigData.Configuration.HumanSide,
             beehive_size_pixels = ConfigData.ShipSizes[ConfigData.ShipTypes.Beehive],
@@ -353,6 +358,8 @@ internal static class NativePhysicalSceneExporter
                 turning_radius = ConfigData.ShipTurningRadius,
                 half_width = ship.GetHalfWidth(),
                 half_height = ship.GetHalfHeight(),
+                offset_from_center = ship.OffsetFromCenter,
+                path_clearance = ship.GetClearance(),
                 mobile = ship.IsMobile,
                 cannot_change_orders = ship.CannotChangeMovementOrders,
                 user_controlled = ship.IsUserControlled,
@@ -500,8 +507,14 @@ internal static class NativePhysicalSceneExporter
                 throw new InvalidOperationException(
                     "Cannot export an empty living Squad " + squad.ItemId);
             var sourceSquad = new SourceSquad {
-                item_id = squad.ItemId, side = squad.Side
+                item_id = squad.ItemId, side = squad.Side,
+                user_controlled = squad.IsUserControlled,
+                can_accept_input = squad.CanAcceptUserInput,
+                locked_on = squad.IsLockedOn
             };
+            if (squad.HasCommand || squad.HasCommandQueue || squad.CommandQueue.Count > 0)
+                throw new InvalidOperationException(
+                    "Export a fresh scene before commands start; command history is not a checkpoint: " + squad.ItemId);
             foreach (Ship ship in members)
             {
                 if (ship == null || ship.IsDead || ship.Side != squad.Side ||

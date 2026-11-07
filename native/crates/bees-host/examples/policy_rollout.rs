@@ -609,6 +609,19 @@ fn main() -> Result<(), Box<dyn Error>> {
                 host.simulation().world_count(), fixed_dt) {
                 Ok(bees_host::client::NativeClientAction::Wait) => continue,
                 Ok(bees_host::client::NativeClientAction::Step) => {},
+                Ok(bees_host::client::NativeClientAction::Move(input)) => {
+                    match host.player_move(input) {
+                        Ok(true) => client.report_move("Move accepted"),
+                        Ok(false) => client.report_move("No valid formation destination"),
+                        Err(bees_host::runtime::HostPlayerInputError::Gameplay(error))
+                            if error.is_rejection() => client.report_move("Squad cannot accept that move"),
+                        Err(error) => {
+                            failed_window = Some(format!("native player input: {error:?}"));
+                            break;
+                        },
+                    }
+                    continue;
+                },
                 Ok(bees_host::client::NativeClientAction::Quit) => { user_closed = true; break; },
                 Err(error) => { failed_window = Some(format!("native window: {error}")); break; },
             }

@@ -43,6 +43,21 @@ use bees_sim::ship_assets::ShipAssetCatalog;
 use bees_gameplay::inference::NativePolicyRoute;
 use crate::fleet_inventory::{NativeFleetInventory, NativeFleetShipValue};
 use crate::ship_specials::NativeBeaconTemplate;
+use bees_gameplay::player_inputs::{NativeLevelPlayerContext, NativePlayerPermissions};
+use bees_gameplay::squad_geometry::SquadMemberOffset;
+use bees_sim::{geometry::Vec2, squad_movement::SquadFormationOptions};
+
+#[derive(Clone, Copy, Debug)]
+pub struct NativeSourceFormation {
+    pub offset: Vec2,
+    pub clearance: i32,
+}
+
+pub struct NativeSourcePlayerInputs {
+    pub has_obstacles: bool,
+    pub squads: HashMap<SquadLifetime, NativePlayerPermissions>,
+    pub ships: HashMap<i64, NativeSourceFormation>,
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PolicyOnlyMetadataError {
@@ -110,6 +125,7 @@ pub struct NativePolicyOnlyMetadata {
     agents: HashMap<i64, AuthoredPolicyAgent>,
     sides: HashMap<i32, AuthoredPolicySide>,
     beacon_templates: HashMap<i64, Arc<NativeBeaconTemplate>>,
+    player: NativeSourcePlayerInputs,
 }
 
 impl NativePolicyOnlyMetadata {
@@ -125,6 +141,7 @@ impl NativePolicyOnlyMetadata {
         agents: impl IntoIterator<Item=AuthoredPolicyAgent>,
         sides: impl IntoIterator<Item=AuthoredPolicySide>,
         beacon_templates: HashMap<i64, Arc<NativeBeaconTemplate>>,
+        player: NativeSourcePlayerInputs,
     ) -> Result<Self, PolicyOnlyMetadataError> {
         if !bounds.min.is_finite() || !bounds.max.is_finite() ||
             bounds.min.x >= bounds.max.x || bounds.min.y >= bounds.max.y {
@@ -196,12 +213,16 @@ impl NativePolicyOnlyMetadata {
         if beacon_templates.iter().any(|(id, template)|
             !authored_ships.contains_key(id) || !template.perception.valid()
         ) { return Err(PolicyOnlyMetadataError::InvalidSource); }
+        if authored_ships.keys().any(|id| !player.ships.get(id)
+            .is_some_and(|data| data.offset.is_finite() && data.clearance >= 0)) {
+            return Err(PolicyOnlyMetadataError::InvalidSource);
+        }
         Ok(Self {
             bounds, navigation, activate_collision_asteroids, fleet, ship_catalog,
             authored_ships, effective_vision,
             source_static_discovery_values,
             explorers: Vec::new(),
-            agents: agent_map, sides: side_map, beacon_templates,
+            agents: agent_map, sides: side_map, beacon_templates, player,
         })
     }
 
@@ -367,6 +388,18 @@ impl NativeLevelRewardMetadata for NativePolicyOnlyMetadata {
 }
 
 impl NativeLevelCommandContext for NativePolicyOnlyMetadata {
+    fn update_survivor_formation(
+        &mut self, _owner: SquadLifetime, offsets: &[SquadMemberOffset],
+    ) -> Result<(), GameCommandError> {
+        if offsets.iter().any(|entry| !entry.offset.is_finite() ||
+            !self.player.ships.contains_key(&entry.ship_id)) {
+            return Err(GameCommandError::MissingCombatSnapshot);
+        }
+        for entry in offsets {
+            self.player.ships.get_mut(&entry.ship_id).expect("validated").offset = entry.offset;
+        }
+        Ok(())
+    }
     fn ship_asset_catalog(&self) -> Option<&ShipAssetCatalog> {
         Some(&self.ship_catalog)
     }
@@ -399,13 +432,13 @@ impl NativeLevelActivationContext for NativePolicyOnlyMetadata {
     }
 
     fn stored_formation_offset(
-        &self, _ship_id: i64,
+        &self, ship_id: i64,
     ) -> Option<bees_sim::geometry::Vec2> {
-        None
+        self.player.ships.get(&ship_id).map(|data| data.offset)
     }
 
-    fn current_path_clearance(&self, _ship_id: i64) -> Option<i32> {
-        None
+    fn current_path_clearance(&self, ship_id: i64) -> Option<i32> {
+        self.player.ships.get(&ship_id).map(|data| data.clearance)
     }
 
     fn collect_bomb_activation(
@@ -415,6 +448,25 @@ impl NativeLevelActivationContext for NativePolicyOnlyMetadata {
         _enemies: &mut Vec<NativeEnemyTargetStats>,
     ) -> Result<bool, GameCommandError> {
         Err(GameCommandError::MissingCombatSnapshot)
+    }
+}
+
+impl NativeLevelPlayerContext for NativePolicyOnlyMetadata {
+    fn player_permissions(&self, owner: SquadLifetime) -> Option<NativePlayerPermissions> {
+        self.player.squads.get(&owner).copied()
+    }
+
+    fn player_formation_options(&self) -> SquadFormationOptions {
+        SquadFormationOptions { map_bounds: self.bounds,
+            has_obstacles: self.player.has_obstacles, can_override_bounds: false }
+    }
+
+    fn cancel_player_scripted_queue(&mut self, _owner: SquadLifetime)
+        -> Result<(), GameCommandError>
+    {
+        // The fresh-scene exporter rejects source scripted command queues;
+        // this adapter has no API that can create one after construction.
+        Ok(())
     }
 }
 

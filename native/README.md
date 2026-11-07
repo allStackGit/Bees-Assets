@@ -17,9 +17,12 @@ cargo run --release --manifest-path native/Cargo.toml -p bees-host \
 Space pauses all worlds; N advances one fixed round while paused; Tab changes
 the inspected world; arrow keys pan; the mouse wheel zooms around the pointer;
 F fits the imported bounds; left-click selects a nearby ship for live HP/TSV
-inspection in the window title; Escape or closing the window cancels unfinished
-episodes through the existing durable abort/delivery boundary. Viewing never
-issues ship orders or substitutes model actions. The configured step duration
+inspection in the window title. Right-click issues a move for the selected ship's
+source-authorized player squad; other squads reject input. Move requests carry
+world/episode identity, finalize prior commands through the normal outcome outbox,
+and invalidate pending AI request authority before shared formation/path movement.
+Escape or closing the window cancels unfinished episodes through the existing
+durable abort/delivery boundary. The configured step duration
 is preserved; a slow model slows playback rather than skipping battle ticks.
 Status intervals still include all elapsed host time, including pauses.
 
@@ -172,7 +175,7 @@ the inference-only TorchScript/ONNX model manifest does not provide
 action log probabilities or a group critic. Loading a replacement model
 can temporarily require space for both the old and new weights.
 
-## Unity scene import (schema 18)
+## Unity scene import (schema 19)
 
 **Bees > Native > Export Selected Level Physical Scene** captures a
 source-authored initial Unity Level, not a resumable match checkpoint.
@@ -202,6 +205,11 @@ workspace; quiet steps do no raster/search work. Completions retain ship/request
 lifecycle validation. Current-episode job totals appear in host status gauges.
 Active non-policy routes are rejected: a target position alone cannot restore
 their waypoint, retry and command history. Export a fresh scene.
+
+Schema 19 adds exact squad user-control/input/lock permissions, stored formation
+offsets, path clearances and Level.HasObstacles. Survivor offsets update after
+casualties through the shared Level rules. The fresh-scene exporter rejects
+existing commands and scripted queues; this format does not restore that history.
 
 The shared scene builder installs every ship's original-health collision
 profile and support zones, then binds real policy mining/healing/warp

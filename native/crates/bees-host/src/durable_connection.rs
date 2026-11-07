@@ -89,6 +89,18 @@ impl DurableHiveMindConnection {
 
     pub fn is_available(&self) -> bool { !self.unavailable }
 
+    /// Invalidate pending strategy/targeting authority before player input.
+    /// Correlation is socket-local and is discarded on disconnect, just as
+    /// ordinary squad retirement. Late replies retain their real reservation
+    /// IDs for explicit settlement through the durable StoreCommands ledger.
+    pub(crate) fn retire_player_requests(
+        &mut self, owner: bees_hivemind::session::SquadLifetime,
+    ) -> Result<(), DurableConnectionError> {
+        self.ensure_available()?;
+        self.connection.session_mut().retire_squad(owner);
+        Ok(())
+    }
+
     // Only the shared Level host can borrow the raw session to retire
     // lifetimes and deliver events. The socket never gets mutable access
     // that could bypass the checkpoint-before-send boundary.

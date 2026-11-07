@@ -26,6 +26,15 @@ use bees_sim::simulation::{RandomStream, Simulation, World};
 use crate::durable_connection::{DurableConnectionError, DurableHiveMindConnection};
 use crate::status::{NativeHostStatusInterval, NativeStatusSampler};
 use crate::presentation::NativeRenderWorldView;
+use bees_gameplay::player_inputs::{NativeLevelPlayerContext, NativePlayerMove,
+    NativePlayerMovePlan, NativePlayerInputError};
+
+#[derive(Debug)]
+pub enum HostPlayerInputError {
+    Gameplay(NativePlayerInputError),
+    Connection(DurableConnectionError),
+    Driver(NativeLevelDriverError),
+}
 
 #[derive(Debug)]
 pub enum HostInitError {
@@ -135,6 +144,23 @@ where
         let world = self.simulation.world_mut(index)
             .ok_or(NativeLevelDriverError::MissingWorld)?;
         Ok(edit(&mut world.state, &mut world.random))
+    }
+
+    pub fn player_move(&mut self, input: NativePlayerMove)
+        -> Result<bool, HostPlayerInputError>
+    where M: NativeLevelPlayerContext
+    {
+        let index = (0..self.simulation.world_count()).find(|&index|
+            self.simulation.world(index).is_some_and(|world| world.id == input.world_id))
+            .ok_or(HostPlayerInputError::Gameplay(NativePlayerInputError::StaleWorld))?;
+        let world = self.simulation.world(index).expect("located world");
+        let plan = NativePlayerMovePlan::prepare(world, input)
+            .map_err(HostPlayerInputError::Gameplay)?;
+        self.driver.invalidate_environment(index).map_err(HostPlayerInputError::Driver)?;
+        self.connection.retire_player_requests(plan.owner())
+            .map_err(HostPlayerInputError::Connection)?;
+        plan.execute(self.simulation.world_mut(index).expect("located world"))
+            .map_err(HostPlayerInputError::Gameplay)
     }
 
     pub fn set_timing_sample_period(&mut self, every: Option<NonZeroU32>) {

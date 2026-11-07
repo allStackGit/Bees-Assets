@@ -1996,6 +1996,19 @@ impl NativeSquadCommandDirector {
         world: &mut CombatWorld,
         owner: SquadLifetime,
     ) -> Result<Option<FinishedNativeCommand>, GameCommandError> {
+        self.finish_squad(world, owner, CommandFinishCause::SquadRetired)
+    }
+
+    pub fn supersede_for_player(
+        &mut self, world: &mut CombatWorld, owner: SquadLifetime,
+    ) -> Result<Option<FinishedNativeCommand>, GameCommandError> {
+        self.finish_squad(world, owner, CommandFinishCause::Superseded)
+    }
+
+    fn finish_squad(
+        &mut self, world: &mut CombatWorld, owner: SquadLifetime,
+        cause: CommandFinishCause,
+    ) -> Result<Option<FinishedNativeCommand>, GameCommandError> {
         // On squad death, missing/dead members are skipped, exactly as
         // Unity Guard.SetFinalize does not reset a dead squad's speed.
         if let Some(guard) = self.active.get(&owner)
@@ -2023,7 +2036,7 @@ impl NativeSquadCommandDirector {
             }
             FinishedNativeCommand {
                 owner, selection: active.selection,
-                cause: CommandFinishCause::SquadRetired,
+                cause,
                 capability_command_tsv: active.mining.as_ref()
                     .map(|mining| mining.mined_tsv)
                     .or_else(|| active.heal.as_ref().map(|heal| heal.earned_tsv))
@@ -2031,7 +2044,11 @@ impl NativeSquadCommandDirector {
                         .map(|retreat| retreat.earned_tsv)),
             }
         });
-        self.measurements.retired += u64::from(retired.is_some());
+        if cause == CommandFinishCause::Superseded {
+            self.measurements.superseded += u64::from(retired.is_some());
+        } else {
+            self.measurements.retired += u64::from(retired.is_some());
+        }
         Ok(retired)
     }
 }

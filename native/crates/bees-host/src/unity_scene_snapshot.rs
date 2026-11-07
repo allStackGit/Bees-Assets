@@ -63,13 +63,14 @@ use crate::policy_only_metadata::{
     NativeSourceVision,
     AuthoredPolicyAgent, AuthoredPolicySide, NativePolicyOnlyMetadata,
     PolicyOnlyMetadataError,
+    NativeSourcePlayerInputs, NativeSourceFormation,
 };
 use crate::scene_assets::NativeSceneAssets;
 use crate::runtime::NativeHostRuntime;
 use crate::ship_specials::{NativeAuthoredShipSpecial, NativeBeaconTemplate};
 use crate::durable_connection::DurableHiveMindConnection;
 
-const SNAPSHOT_VERSION: u32 = 18;
+const SNAPSHOT_VERSION: u32 = 19;
 
 #[derive(Deserialize, Clone, Copy)]
 struct UnityVec2 { x: f32, y: f32 }
@@ -122,6 +123,7 @@ struct UnitySnapshot {
     fixed_dt_seconds: f32,
     shots_harmless: bool,
     activate_collision_asteroids: bool,
+    has_obstacles: bool,
     bee_side: i32,
     human_side: i32,
     beehive_size_pixels: UnitySize,
@@ -196,6 +198,8 @@ struct UnityShip {
     turning_radius: f32,
     half_width: f32,
     half_height: f32,
+    offset_from_center: UnityVec2,
+    path_clearance: i32,
     mobile: bool,
     cannot_change_orders: bool,
     user_controlled: bool,
@@ -372,6 +376,9 @@ struct UnitySquad {
     item_id: i64,
     side: i32,
     member_ids: Vec<i64>,
+    user_controlled: bool,
+    can_accept_input: bool,
+    locked_on: bool,
 }
 
 #[derive(Deserialize)]
@@ -455,6 +462,7 @@ pub struct NativePhysicalScene {
     pub fixed_dt_seconds: f32,
     pub shots_harmless: bool,
     pub activate_collision_asteroids: bool,
+    pub has_obstacles: bool,
     pub entities: Vec<NativeAuthoredEntity>,
     source_episode: Option<NativeSourceEpisode>,
     /// Real participating Unity Agent instances and the active episode
@@ -483,6 +491,7 @@ pub struct NativePhysicalScene {
     /// Original static collider health for source discovery TSV. Geometry
     /// and projectile collision remain owned by the canonical combat body.
     source_static_discovery_values: HashMap<i64, i32>,
+    source_formation: HashMap<i64, NativeSourceFormation>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -574,6 +583,7 @@ pub struct NativeSourceSquad {
     pub item_id: i64,
     pub side: i32,
     pub members: Vec<i64>,
+    pub player_permissions: bees_gameplay::player_inputs::NativePlayerPermissions,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -815,6 +825,12 @@ impl NativePhysicalScene {
             setup.policy_agents,
             setup.sides,
             beacon_templates,
+            NativeSourcePlayerInputs {
+                has_obstacles: self.has_obstacles,
+                ships: self.source_formation,
+                squads: self.source_squads.iter().zip(&squads)
+                    .map(|(source, squad)| (squad.owner, source.player_permissions)).collect(),
+            },
         ).map_err(NativePolicyOnlyLevelError::Metadata)?;
         Ok(NativeAuthoredLevel {
             world_id: setup.world_id,
@@ -1056,6 +1072,7 @@ impl NativePhysicalScene {
         let mut source_policy_inputs = HashMap::new();
         let mut source_vision = HashMap::new();
         let mut source_static_discovery_values = HashMap::new();
+        let mut source_formation = HashMap::new();
         let mut seen = HashSet::with_capacity(entities.capacity());
         for ship in raw.ships {
             if ship.entity_id <= 0 || ship.side <= 0 ||
@@ -1124,6 +1141,13 @@ impl NativePhysicalScene {
             if !game_movement.valid() {
                 return Err(NativeSnapshotError::InvalidShip(ship.entity_id));
             }
+            let offset = ship.offset_from_center.into_vec();
+            if !offset.is_finite() || ship.path_clearance < 0 {
+                return Err(NativeSnapshotError::InvalidShip(ship.entity_id));
+            }
+            source_formation.insert(ship.entity_id, NativeSourceFormation {
+                offset, clearance: ship.path_clearance,
+            });
             // This format constructs fresh worlds. A target alone cannot
             // reconstruct a running game's waypoint/retry/command history.
             if (!ship.is_rl_policy_controlled || ship.user_controlled) &&
@@ -1625,6 +1649,10 @@ impl NativePhysicalScene {
             source_squads.push(NativeSourceSquad {
                 item_id: squad.item_id, side: squad.side,
                 members: squad.member_ids,
+                player_permissions: bees_gameplay::player_inputs::NativePlayerPermissions {
+                    user_controlled: squad.user_controlled,
+                    can_accept_input: squad.can_accept_input, locked_on: squad.locked_on,
+                },
             });
         }
         if registered_ships.len() != live_ships.len() {
@@ -1693,6 +1721,7 @@ impl NativePhysicalScene {
             fixed_dt_seconds: raw.fixed_dt_seconds,
             shots_harmless: raw.shots_harmless,
             activate_collision_asteroids: raw.activate_collision_asteroids,
+            has_obstacles: raw.has_obstacles,
             entities,
             source_episode,
             source_policy_group,
@@ -1705,7 +1734,7 @@ impl NativePhysicalScene {
             source_policy_bindings,
             source_policy_inputs,
             source_vision,
-            source_static_discovery_values,
+            source_static_discovery_values, source_formation,
         })
     }
 }

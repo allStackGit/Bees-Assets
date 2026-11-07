@@ -313,6 +313,35 @@ impl NativeLevelEventProcessor {
         &mut self.commands
     }
 
+    /// Source FinalizeUserCommand, retaining the real outcome/reservation
+    /// payload in the same durable outbox as timed command completion.
+    pub fn finalize_player_command(
+        &mut self, tick: u64, world: &mut CombatWorld, owner: SquadLifetime,
+    ) -> Result<(), NativeLevelEventError> {
+        if self.is_failed() || self.completed() {
+            return Err(NativeLevelEventError::FailedLevel);
+        }
+        Self::reserve_output_records(
+            &mut self.pending_notifications, &mut self.failed, 1,
+        )?;
+        let finished = self.commands.supersede_for_player(world, owner)
+            .map_err(|error| {
+                self.failed = true;
+                NativeLevelEventError::Commands(error)
+            })?;
+        if let Some(finished) = finished {
+            self.pending_notifications.push(NativeLevelNotification {
+                tick, kind: NativeLevelNotificationKind::FinishedCommand(finished),
+            });
+            Self::update_output_peak(
+                &mut self.peak_pending_notifications, self.pending_notifications.len(),
+            );
+        }
+        Ok(())
+    }
+
+    pub(crate) fn fail_player_input(&mut self) { self.failed = true; }
+
     /// Apply any non-bomb strategy receipt to the SAME owning Level,
     /// preserving the same terminal/abort discard behavior as the Bomb
     /// activation path. The connection still owns all OutcomeIds.
