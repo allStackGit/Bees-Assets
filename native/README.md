@@ -925,6 +925,13 @@ The portable `bees-sim` crate currently contains:
 - Versioned native assets for **all 24 primary ship colliders**, migrated from
   their specific serialized `Entity.Collider` component references. The same
   collision catalog is loaded once per process and shared across worlds.
+- The native collision-layer matrix can now be exported directly from the
+  authoritative Unity Editor via **Bees → Native → Export Physics2D Collision
+  Matrix**. The generated `native/assets/unity-physics2d-matrix.json` contains
+  the complete 32×32 permission matrix; `CollisionMatrix::from_unity_export`
+  validates its version, dimensions and symmetry. The native game/worker
+  must explicitly load this exported asset when constructing Level rules:
+  there is no guessed all-colliding or all-blocked production default.
 - Polygon, circular and box hulls (including concave polygon contact);
   reusable broadphase spatial grid; kinematic velocity integration; explicit
   layer-mask filtering; trigger-entry detection and per-step physics counters.

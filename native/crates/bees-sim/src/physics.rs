@@ -102,9 +102,54 @@ pub struct CollisionMatrix {
     rows: [u32; 32],
 }
 
+/// A missing/malformed project collision matrix is a setup error, not a
+/// reason to permit all contacts or silently disable gameplay collisions.
+#[derive(Debug)]
+pub enum CollisionMatrixAssetError {
+    Malformed(String),
+    WrongSchema(u32),
+    MissingRows(usize),
+    NonSymmetric { first: u8, second: u8 },
+}
+
+#[derive(serde::Deserialize)]
+struct UnityCollisionMatrixAsset {
+    schema_version: u32,
+    rows: Vec<u32>,
+}
+
 impl CollisionMatrix {
     pub const fn from_rows(rows: [u32; 32]) -> Self {
         Self { rows }
+    }
+
+    /// Load the exact collision-layer relationships exported by the Unity
+    /// Editor from Physics2D.GetIgnoreLayerCollision, not guesses from
+    /// prefab layer numbers. Requires all 32 rows and symmetry because
+    /// Unity pairwise layer filtering is reciprocal.
+    pub fn from_unity_export(
+        json: &str,
+    ) -> Result<Self, CollisionMatrixAssetError> {
+        let raw: UnityCollisionMatrixAsset = serde_json::from_str(json)
+            .map_err(|error| CollisionMatrixAssetError::Malformed(error.to_string()))?;
+        if raw.schema_version != 1 {
+            return Err(CollisionMatrixAssetError::WrongSchema(raw.schema_version));
+        }
+        let len = raw.rows.len();
+        let rows: [u32; 32] = raw.rows.try_into()
+            .map_err(|_| CollisionMatrixAssetError::MissingRows(len))?;
+        for first in 0..32 {
+            for second in (first + 1)..32 {
+                let ab = rows[first] & (1_u32 << second) != 0;
+                let ba = rows[second] & (1_u32 << first) != 0;
+                if ab != ba {
+                    return Err(CollisionMatrixAssetError::NonSymmetric {
+                        first: first as u8, second: second as u8,
+                    });
+                }
+            }
+        }
+        Ok(Self::from_rows(rows))
     }
 
     #[inline]
