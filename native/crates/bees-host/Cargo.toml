@@ -11,3 +11,4 @@ bees-hivemind = { path = "../bees-hivemind" }
 serde_json = "1"
 serde = { version = "1", features = ["derive"] }
 bees-gameplay = { path = "../bees-gameplay" }
+bees-sim = { path = "../bees-sim" }

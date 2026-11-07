@@ -246,6 +246,18 @@ impl PendingStoreCommands {
 
     pub fn pending_count(&self) -> usize { self.submissions.len() }
 
+    /// Inspect the original request hashes retained for retry after restart.
+    /// An iterator avoids copying the potentially large submission ledger.
+    pub fn pending_hashes(&self) -> impl Iterator<Item = i64> + '_ {
+        self.submissions.keys().copied()
+    }
+
+    /// Inspect unresolved terminal 409 records. These must be reconciled,
+    /// not sent again as StoreCommands requests.
+    pub fn reconciliation_hashes(&self) -> impl Iterator<Item = i64> + '_ {
+        self.reconciliation.keys().copied()
+    }
+
     /// Includes both retryable sends and terminal 409 reconciliation
     /// records. Used by connection restore to reject a corrupt allocator
     /// checkpoint before its Hash namespace can be reused.

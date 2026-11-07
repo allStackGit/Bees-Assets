@@ -53,6 +53,19 @@ impl NativeConnectionCheckpoint {
         self.stores.pending_count()
     }
 
+    /// Enumerate persisted retryable requests, preserving each original Hash
+    /// and payload. Ordering is not contractual; a reconnect host may sort
+    /// the hashes once without copying the pending outcomes.
+    pub fn pending_store_hashes(&self) -> impl Iterator<Item = i64> + '_ {
+        self.stores.pending_hashes()
+    }
+
+    /// Enumerate terminal 409 records, which require reconciliation rather
+    /// than retransmitting the already-partially-committed original batch.
+    pub fn pending_reconciliation_hashes(&self) -> impl Iterator<Item = i64> + '_ {
+        self.stores.reconciliation_hashes()
+    }
+
     pub fn reconciliation_count(&self) -> usize {
         self.stores.reconciliation_count()
     }

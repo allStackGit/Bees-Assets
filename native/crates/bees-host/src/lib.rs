@@ -5,3 +5,4 @@
 
 pub mod checkpoint_file;
 pub mod status;
+pub mod durable_connection;

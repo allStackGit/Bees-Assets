@@ -221,6 +221,18 @@ lifetimes). Persist a checkpoint before transmitting a newly created
 request, and after acknowledging/reconciling a stored outcome; otherwise
 a process crash can cause replay or Hash reuse. The actual WebSocket and authentication remain client work.
 
+For production-style file-backed clients, use
+`bees-host::durable_connection::DurableHiveMindConnection`: it wraps the
+shared session and checkpoint with a fail-closed send boundary. Request
+hashes, strategy/targeting requests and StoreCommands batches are returned
+to the socket owner only after checkpoint persistence succeeds. Server
+StoreCommands acknowledgements and 409 reconciliation changes are also
+checkpointed. After a write failure the instance stops issuing requests
+until restored, rather than returning an unsafe sendable payload. Pending
+StoreCommands hashes and terminal 409 reconciliation hashes are exposed
+without duplicating the retry ledger, enabling deterministic reconnect
+scans. The adapter assumes exclusive ownership of the checkpoint path.
+
 The native host adapter `bees-host::checkpoint_file` provides optional,
 cross-platform, file-backed persistence for this exact connection checkpoint:
 it streams JSON to a unique same-directory temporary file, flushes and syncs
