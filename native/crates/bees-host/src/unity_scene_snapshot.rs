@@ -350,6 +350,26 @@ pub struct NativePolicyOnlyLevelSetup<A> {
     pub allocate_minion: A,
 }
 
+/// Source-import launch settings: only genuine host-owned decisions stay
+/// external. Policy frames/capabilities, navigation, and episode starting
+/// reward baselines are taken from the verified Unity snapshot itself.
+pub struct NativeExportedPolicyLevelSetup<A> {
+    pub world_id: WorldId,
+    pub level_id: i64,
+    pub seed: u64,
+    pub broadphase_cell_size: f32,
+    pub decision_period: NonZeroU32,
+    pub initial_full_asteroids: usize,
+    pub groups: Option<NativeAuthoredGroups>,
+    pub ship_catalog: Arc<ShipAssetCatalog>,
+    /// Existing model slots selected by the learner/opponent scheduler,
+    /// keyed by the Unity policy team (0 or 1), never inferred from side.
+    pub model_slots: HashMap<u8, u32>,
+    /// Genuine source team observation state, including exploration.
+    pub sides: Vec<AuthoredPolicySide>,
+    pub allocate_minion: A,
+}
+
 #[derive(Debug)]
 pub enum NativePolicyOnlyLevelError {
     Snapshot(NativeSnapshotError),
@@ -416,6 +436,84 @@ impl NativePhysicalScene {
         episode.configure_discovery(source.discovery_baselines)
             .map_err(NativeSnapshotError::Episode)?;
         Ok(episode)
+    }
+
+    /// The single supported source-scene launch path for a policy-only
+    /// native Level. All fallible source/model/side validation is performed
+    /// before binding any physical controller. Scripted/unbound RL action
+    /// producers must use a full gameplay adapter, not silently stop moving.
+    pub fn into_exported_policy_only_level<A>(
+        mut self,
+        setup: NativeExportedPolicyLevelSetup<A>,
+    ) -> Result<NativeAuthoredLevel<NativePolicyOnlyMetadata, A>,
+        NativePolicyOnlyLevelError>
+    {
+        if self.source_policy_bindings.is_empty() {
+            return Err(NativePolicyOnlyLevelError::Snapshot(
+                NativeSnapshotError::InvalidPolicySource(0),
+            ));
+        }
+        for &ship_id in &self.active_policy_ship_ids {
+            if !self.source_policy_bindings.contains_key(&ship_id) {
+                return Err(NativePolicyOnlyLevelError::InvalidControllerBinding(
+                    ship_id,
+                ));
+            }
+        }
+        let episode_source = self.source_episode.ok_or(
+            NativePolicyOnlyLevelError::Snapshot(
+                NativeSnapshotError::InvalidEpisodeSource,
+            ),
+        )?;
+        let mut sides = HashSet::with_capacity(setup.sides.len());
+        for side in &setup.sides {
+            if !sides.insert(side.side) {
+                return Err(NativePolicyOnlyLevelError::Metadata(
+                    PolicyOnlyMetadataError::DuplicateSide(side.side),
+                ));
+            }
+        }
+        if sides.len() != 2 ||
+            !sides.contains(&episode_source.bee_side) ||
+            !sides.contains(&episode_source.human_side)
+        {
+            return Err(NativePolicyOnlyLevelError::Snapshot(
+                NativeSnapshotError::InvalidEpisodeSource,
+            ));
+        }
+        let agents = self.exported_policy_agents(&setup.model_slots)
+            .map_err(NativePolicyOnlyLevelError::Snapshot)?;
+        if agents.iter().any(|agent|
+            setup.sides.iter().find(|side| side.side == agent.side)
+                .is_none_or(|side| side.exploration_last_seen.is_none())
+        ) {
+            // Without current side exploration, v26 silently receives a
+            // fake all-zero history, not the source's 16x16 sight memory.
+            return Err(NativePolicyOnlyLevelError::Metadata(
+                PolicyOnlyMetadataError::InvalidSource,
+            ));
+        }
+        let episode = self.exported_episode()
+            .map_err(NativePolicyOnlyLevelError::Snapshot)?;
+        let navigation = self.exported_navigation_runtime()
+            .map_err(NativePolicyOnlyLevelError::Snapshot)?;
+        self.bind_exported_policy_ships()
+            .map_err(NativePolicyOnlyLevelError::Snapshot)?;
+        self.into_policy_only_level(NativePolicyOnlyLevelSetup {
+            world_id: setup.world_id,
+            level_id: setup.level_id,
+            seed: setup.seed,
+            broadphase_cell_size: setup.broadphase_cell_size,
+            decision_period: setup.decision_period,
+            initial_full_asteroids: setup.initial_full_asteroids,
+            episode,
+            groups: setup.groups,
+            navigation,
+            ship_catalog: setup.ship_catalog,
+            policy_agents: agents,
+            sides: setup.sides,
+            allocate_minion: setup.allocate_minion,
+        })
     }
 
     /// Compose observation-capable policy agents exclusively from verified
