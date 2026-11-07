@@ -9,8 +9,12 @@ use bees_hivemind::dispatch::LocalCommandKind;
 use bees_hivemind::session::SquadLifetime;
 use bees_sim::combat_world::CombatWorld;
 use bees_sim::ship_assets::ShipAssetCatalog;
+use bees_sim::squad_movement::{SquadFormationMember, SquadFormationOptions};
 
-use crate::commands::{GameCommandError, NativeFriendlySquad};
+use crate::commands::{
+    GameCommandError, NativeEnemySquad, NativeFriendlySquad, NativeScoutingContext,
+    NativeSquadOrder,
+};
 use crate::squad_geometry::live_squad_bounds_from_catalog;
 use crate::squads::{NativeSquadEntry, NativeSquadRoster};
 
@@ -83,4 +87,57 @@ pub fn collect_live_friendlies_from_catalog(
         )?);
     }
     Ok(())
+}
+
+/// Build the genuine command-activation squad view from world geometry
+/// and the owning Level's non-geometric source inputs.
+///
+/// An authenticated HiveMind strategy receipt supplies the actual enemy
+/// and Scouting context, while the Level supplies its current Pathfinder
+/// clearance for each ship. Ship.GetClearance can depend on the active
+/// stage; it is NEVER estimated from collider or sprite dimensions.
+///
+/// Reuses one caller-owned buffer across activations. Its borrowed members
+/// remain valid until that buffer changes, matching one command-issue
+/// boundary; the command director takes its own member snapshot if needed.
+pub fn native_squad_order_from_catalog<'a>(
+    world: &CombatWorld,
+    squad: &NativeSquadEntry,
+    catalog: &ShipAssetCatalog,
+    formation: SquadFormationOptions,
+    enemy: Option<NativeEnemySquad>,
+    scouting: Option<NativeScoutingContext>,
+    mut authored_clearance: impl FnMut(i64) -> Option<i32>,
+    members: &'a mut Vec<SquadFormationMember>,
+) -> Result<NativeSquadOrder<'a>, GameCommandError> {
+    members.clear();
+    let geometry = live_squad_bounds_from_catalog(world, squad, catalog)
+        .map_err(GameCommandError::SquadGeometry)?;
+    members.reserve(squad.members.len());
+    for &ship_id in &squad.members {
+        let body = world.ship_body(ship_id)
+            .filter(|body| body.active)
+            .ok_or(GameCommandError::InvalidSquad)?;
+        let clearance = authored_clearance(ship_id)
+            .filter(|&value| value >= 0)
+            .ok_or(GameCommandError::InvalidSquad)?;
+        members.push(SquadFormationMember {
+            ship_id,
+            offset_from_center: body.motion.position - geometry.center,
+            clearance,
+            mobile: body.motion.mobile,
+        });
+    }
+    let order = NativeSquadOrder {
+        owner: squad.owner,
+        members: members.as_slice(),
+        squad_center: geometry.center,
+        formation,
+        enemy,
+        scouting,
+    };
+    if !order.valid() {
+        return Err(GameCommandError::InvalidSquad);
+    }
+    Ok(order)
 }
