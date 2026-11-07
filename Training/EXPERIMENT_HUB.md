@@ -1274,6 +1274,46 @@ their units in CSV/JSON. Generic metric names do not grant stopping,
 model promotion or benchmark authority. A concrete project adapter must
 still be installed and independently qualified to produce real metrics.
 
+### Selecting and promoting independently trained models
+
+In **Compare**, choose 2–4 independently trained Courier or TinyBrains
+jobs and a saved next-stage configuration. Completed candidates can be
+ranked immediately; active or prequeued candidates can instead have a
+selection scheduled for the existing native automation scheduler.
+The API supports 2–16 candidates:
+`POST /api/hub/candidates/rank` (preview),
+`POST /api/hub/candidates/promote` (queue winner immediately),
+`POST /api/hub/candidates/schedule` (defer until all candidates complete),
+and `POST /api/hub/candidates/cancel` (cancel an unresolved selection).
+The deferred decision, winning checkpoint identity and queued continuation
+are persisted; selection does not directly launch a workload.
+
+Ranking uses the equal-weight mean evaluation success rate across
+**identical frozen suite definitions, minimum thresholds and trial counts**,
+with stable job-ID tie-breaking. Training metrics do not determine winners.
+Every candidate needs an independent artifact lineage, a successfully
+finished or evaluation-stopped native service, verified resumable
+checkpoint, released capacity and a complete matching benchmark receipt.
+The exact policy bytes used for evaluation must match the model artifact
+that its native adapter would resume: Courier pins `lineage-0.zip` and
+TinyBrains pins `latest.pt`. The promoted continuation pins that SHA-256
+again at native launch. A result from an earlier snapshot cannot
+silently substitute for the final model, even if the latest checkpoint
+is otherwise resumable. If no matching final-policy evaluation exists,
+the candidate is ineligible until that evidence exists; the Hub never
+assumes a final training checkpoint is the evaluated checkpoint.
+All prospective candidates must use the same approved continuation
+environment/profile fingerprint. The native continuation remains on
+its original machine with the original artifact lineage.
+
+A deferred selection resolves atomically when all candidates have
+released verified capacity. Missing evidence, failed candidates, changed
+definitions or incompatible checkpoint lineages record a review-required
+decision and disarm automatic execution instead of guessing a winner.
+Pending/review-required selections can be cancelled without stopping
+training jobs. Editing the selected next-stage configuration during the
+competition invalidates its frozen revision and requires review.
+
 ### Independent evaluation stops for non-Bees jobs
 
 A draft can set an optional `evaluation_stop` alongside its adapter parameters.
