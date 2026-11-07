@@ -562,6 +562,10 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let mut rounds = 0_u64;
     let mut failed_window = None;
+    let mut segment_start_round = 0_u64;
+    let mut segment_baseline = host.sink_mut().measurements().clone();
+    let mut segment_generation = host.model_mut().model_generation();
+    let mut segment_manifest_sha256 = host.model_mut().model_manifest_sha256();
     let mut completed_episodes = vec![0_u32; config.levels.len()];
     // A world may finish before other arenas and remain paused at a
     // model boundary. Count each physical episode revision exactly once.
@@ -650,12 +654,31 @@ fn main() -> Result<(), Box<dyn Error>> {
             let previous_generation = host.model_mut().model_generation();
             let evaluation_before_update =
                 host.sink_mut().measurements().clone();
+            let completed_segment = match evaluation_before_update
+                .delta_since(&segment_baseline)
+            {
+                Some(segment) => segment,
+                None => {
+                    failed_window = Some("durable evaluation counters regressed".into());
+                    break;
+                }
+            };
             match host.model_mut().reload_manifest(
                 &resolve(root, &update.manifest),
             ) {
                 Ok(generation) => {
                     let manifest_sha256 =
                         host.model_mut().model_manifest_sha256();
+                    println!("{}", json!({
+                        "kind": "policy_segment",
+                        "run_id": config.run_id,
+                        "policy_generation": segment_generation,
+                        "policy_manifest_sha256": segment_manifest_sha256,
+                        "from_round": segment_start_round,
+                        "through_round": rounds,
+                        "evaluation": completed_segment,
+                        "mean_episode_seconds": completed_segment.mean_episode_seconds(),
+                    }));
                     println!("{}", json!({
                         "kind": "policy_updated",
                         "run_id": config.run_id,
@@ -667,6 +690,10 @@ fn main() -> Result<(), Box<dyn Error>> {
                         "evaluation_before_update": evaluation_before_update,
                         "manifest": update.manifest,
                     }));
+                    segment_baseline = evaluation_before_update;
+                    segment_start_round = rounds;
+                    segment_generation = generation;
+                    segment_manifest_sha256 = manifest_sha256;
                     next_model_update += 1;
                 }
                 Err(error) => {
@@ -805,6 +832,10 @@ fn main() -> Result<(), Box<dyn Error>> {
         .map_err(|error| contextual("final native host status", error))?;
     let evaluation = host.sink_mut().measurements().clone();
     let mean_episode_seconds = evaluation.mean_episode_seconds();
+    let final_segment = evaluation.delta_since(&segment_baseline);
+    if final_segment.is_none() && failed_window.is_none() {
+        failed_window = Some("durable evaluation counters regressed".into());
+    }
     println!("{}", json!({
         "kind": "run_final",
         "run_id": config.run_id,
@@ -821,6 +852,15 @@ fn main() -> Result<(), Box<dyn Error>> {
         "pending_store_commands": status.pending_store_commands,
         "evaluation": evaluation,
         "mean_episode_seconds": mean_episode_seconds,
+        "active_policy_segment": {
+            "policy_generation": segment_generation,
+            "policy_manifest_sha256": segment_manifest_sha256,
+            "from_round": segment_start_round,
+            "through_round": rounds,
+            "evaluation": final_segment,
+            "mean_episode_seconds": final_segment.as_ref()
+                .and_then(|segment| segment.mean_episode_seconds()),
+        },
         "failed_window": failed_window,
         "cleanup_errors": cleanup_errors,
     }));
