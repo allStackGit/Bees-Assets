@@ -538,7 +538,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const entries=rules.length?rules:[null];
             for(const [index,rule] of entries.entries()) {
                 const evidence=passed?passed[index]:
-                    rule?cohort[rule.suite_id]||job.last_evaluation:null;
+                    rule?cohort[rule.suite_id]||
+                        (!job.evaluation_stop?.all_of?job.evaluation_stop_evidence:null)||
+                        job.last_evaluation:null;
                 const row=document.createElement('tr');
                 cell(row,slot+' · '+job.configuration_name);
                 cell(row,evidence?.suite_id||rule?.suite_id||'—');
