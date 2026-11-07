@@ -34,6 +34,15 @@ impl DurableDiagnosticNotifications {
             ));
         }
         let file = OpenOptions::new().create_new(true).write(true).open(path)?;
+        // On Unix, sync the parent entry as well as subsequent file data.
+        // Otherwise power loss could forget the newly created file name
+        // after the driver has acknowledged notifications inside it.
+        #[cfg(unix)]
+        {
+            let parent = path.parent().filter(|p| !p.as_os_str().is_empty())
+                .unwrap_or_else(|| Path::new("."));
+            File::open(parent)?.sync_all()?;
+        }
         Ok(Self { file, run_id })
     }
 
