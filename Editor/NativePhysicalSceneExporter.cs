@@ -6,6 +6,8 @@ using System.Text;
 using Assets.Scripts;
 using Assets.Scripts.Entities;
 using Assets.Scripts.Entities.Ships;
+using Assets.Scripts.Entities.Ships.Weapons;
+using Assets.Scripts.Entities.Projectiles;
 using Assets.Scripts.Levels;
 using UnityEditor;
 using UnityEngine;
@@ -34,6 +36,19 @@ internal static class NativePhysicalSceneExporter
         public bool mobile, cannot_change_orders, user_controlled;
         public bool has_target_coordinates, is_rl_policy_controlled, is_moving;
         public int movement_direction;
+        public List<SourceTurret> turrets = new List<SourceTurret>();
+    }
+
+    [Serializable]
+    private sealed class SourceTurret
+    {
+        public int slot;
+        public int weapon_type, projectile_type, power;
+        public Vector2 mount_offset, left_offset, right_offset;
+        public float initial_rotation_degrees, rotation_rate, range;
+        public float rate_of_fire, projectile_value;
+        public double projectile_speed;
+        public string fire_pattern;
     }
 
     [Serializable]
@@ -52,7 +67,7 @@ internal static class NativePhysicalSceneExporter
     [Serializable]
     private sealed class PhysicalScene
     {
-        public int schema_version = 1;
+        public int schema_version = 2;
         public string level_name;
         public float fixed_dt_seconds;
         public Vector2 min, max;
@@ -123,7 +138,8 @@ internal static class NativePhysicalSceneExporter
                 target_coordinates = ship.TargetCoordinates,
                 is_rl_policy_controlled = ship.IsRlPolicyControlled,
                 is_moving = ship.IsMoving,
-                movement_direction = ship.RlMovementDirection
+                movement_direction = ship.RlMovementDirection,
+                turrets = ExportTurrets(ship)
             });
         }
         if (snapshot.ships.Count == 0)
@@ -210,6 +226,94 @@ internal static class NativePhysicalSceneExporter
             new UTF8Encoding(false));
         AssetDatabase.Refresh();
         Debug.Log("Exported native physical Level source: " + path);
+    }
+
+    private static List<SourceTurret> ExportTurrets(Ship ship)
+    {
+        var entries = new List<SourceTurret>();
+        if (ship.Weapons == null) return entries;
+        for (int slot = 0; slot < ship.Weapons.Count; slot++)
+        {
+            if (!(ship.Weapons[slot] is Turret turret)) continue;
+            if (slot >= 5 || turret.PieceTransform == null)
+            {
+                throw new InvalidOperationException(
+                    "Unsupported authored turret slot on ship " + ship.Id);
+            }
+            string pattern = "single";
+            Vector2 left = Vector2.zero, right = Vector2.zero;
+            if (turret is FullShipTurret) pattern = "full-ship";
+            else if (turret is LaserBuilder) pattern = "laser-builder";
+            else if (turret is BeamCannon) pattern = "beam";
+            else if (turret is DualCannon dual)
+            {
+                pattern = "dual";
+                left = dual.LeftCannonOffset;
+                right = dual.RightCannonOffset;
+            }
+            GameObject source = FindProjectilePrefab(
+                ship.Stage.Prefabs, turret.ProjectileType);
+            Projectile projectile = source == null
+                ? null : source.GetComponent<Projectile>();
+            if (projectile == null)
+            {
+                throw new InvalidOperationException(
+                    "No source projectile Speed for " + turret.ProjectileType +
+                    " on ship " + ship.Id);
+            }
+            Vector3 localMount = ship.Transform.InverseTransformPoint(
+                turret.PieceTransform.position);
+            entries.Add(new SourceTurret {
+                slot = slot,
+                weapon_type = (int)turret.Type,
+                projectile_type = (int)turret.ProjectileType,
+                mount_offset = new Vector2(localMount.x, localMount.y),
+                left_offset = left,
+                right_offset = right,
+                initial_rotation_degrees = turret.Rotation,
+                rotation_rate = turret.RotationRate,
+                range = turret.Range,
+                power = turret.Power,
+                rate_of_fire = turret.RateOfFire,
+                projectile_value = turret.ProjectileValue,
+                projectile_speed = projectile.Speed,
+                fire_pattern = pattern
+            });
+        }
+        return entries;
+    }
+
+    private static GameObject FindProjectilePrefab(
+        Prefabs p, ConfigData.ProjectileTypes type)
+    {
+        if (p == null) return null;
+        switch (type)
+        {
+            case ConfigData.ProjectileTypes.BeeSmall:
+                return p.BeeSmallLaserShotPrefab;
+            case ConfigData.ProjectileTypes.BeeMedium:
+                return p.BeeMediumLaserShotPrefab;
+            case ConfigData.ProjectileTypes.BumblebeeShot:
+                return p.BumblebeeShotPrefab;
+            case ConfigData.ProjectileTypes.FlagshipShot:
+                return p.FlagshipShotPrefab;
+            case ConfigData.ProjectileTypes.Rocket:
+                return p.RocketPrefab;
+            case ConfigData.ProjectileTypes.HumanSmall:
+                return p.HumanSmallPrefab;
+            case ConfigData.ProjectileTypes.HumanMedium:
+                return p.HumanMediumPrefab;
+            case ConfigData.ProjectileTypes.Beam:
+                return p.BeamPrefab;
+            case ConfigData.ProjectileTypes.SplitShot:
+                return p.SplitShotPrefab;
+            case ConfigData.ProjectileTypes.QueenSmall:
+                return p.QueenSmallPrefab;
+            case ConfigData.ProjectileTypes.QueenLarge:
+                return p.QueenLargePrefab;
+            default:
+                return null;
+        }
     }
 
     // Unity targets both .NET Standard and Mono profiles where
