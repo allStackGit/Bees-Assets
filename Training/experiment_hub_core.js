@@ -378,12 +378,12 @@ function waitingStageReason(job,byId) {
             status='running';explanation='is still running';
         }else if(parent.status==='stop_requested') {
             status='stopping';explanation='has a pending Stop request; automatic advancement is blocked';
-        }else if(parent.status==='finished'&&!parent.capacity_released_at) {
-            status='release_pending';explanation='finished; capacity release is required';
         }else if(parent.status==='finished'&&dependent.continuation_of_job_id&&
             !checkpointContinuationComplete(parent)) {
             status='needs_review';
             explanation='finished without a verified resumable checkpoint; checkpoint continuation is blocked';
+        }else if(parent.status==='finished'&&!parent.capacity_released_at) {
+            status='release_pending';explanation='finished; capacity release is required';
         }else if(parent.status==='stopped') {
             if(dependent.after_job_id) {
                 if(independentSequenceComplete(parent)&&!parent.capacity_released_at) {
@@ -830,11 +830,32 @@ class ExperimentHub {
                     l.machine_id===j.assigned_machine_id&&
                     l.issued_by==='experiment-hub'&&l.status==='acknowledged'));
             if(complete) {
+                const blocked=snapshot.jobs.find(j=>
+                    j.status==='waiting_predecessor'&&
+                    j.continuation_of_job_id===complete.id&&
+                    !checkpointContinuationComplete(complete));
                 this.releaseLease({lease_id:complete.lease_id,confirm_release:true});
                 session.managed_job_ids=session.managed_job_ids.filter(id=>id!==complete.id);
+                if(blocked)throw Error('Job '+complete.id+
+                    ' ended without a verified resumable checkpoint; stage '+
+                    blocked.id+' is blocked after capacity release.');
                 return transitioned('Released verified capacity: '+complete.project_id+
                     ' / '+(complete.configuration_name||complete.id.slice(-8))+'.');
             }
+            // A native terminal report can release capacity before the
+            // scheduler observes it if release-on-terminal was enabled.
+            const blocked=snapshot.jobs.find(j=>{
+                if(j.status!=='waiting_predecessor'||!j.continuation_of_job_id)
+                    return false;
+                const parent=snapshot.jobs.find(p=>p.id===j.continuation_of_job_id);
+                return parent?.automation_start_session_id===session.session_id&&
+                    parent.capacity_released_at&&
+                    ['finished','stopped'].includes(parent.status)&&
+                    !checkpointContinuationComplete(parent);
+            });
+            if(blocked)throw Error('Job '+blocked.continuation_of_job_id+
+                ' released capacity without a verified resumable checkpoint; stage '+
+                blocked.id+' requires operator review.');
             const pending=snapshot.jobs.filter(j=>
                 j.adapter==='unconfigured'&&j.status==='waiting_adapter'&&
                 !['bees','ants'].includes(j.project_id)&&
