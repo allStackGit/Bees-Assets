@@ -16,6 +16,7 @@ use bees_sim::combat_world::{CombatEvent, CombatWorld, CombatWorldError};
 use bees_sim::geometry::Vec2;
 use bees_sim::ship_assets::ShipAssetCatalog;
 use bees_sim::navigation_runtime::NavigationRuntime;
+use bees_sim::navigation::NavigationError;
 use bees_sim::physics::CollisionMatrix;
 use bees_sim::policy::Decision;
 use bees_sim::rl_shaping::DamageRewardMetadata;
@@ -222,6 +223,16 @@ pub trait NativeLevelCommandContext {
     }
 
     fn navigation(&self) -> &NavigationRuntime;
+
+    /// Once the single CombatWorld exists, initialize this Level's real
+    /// static navigation clearance from its actual active colliders.
+    /// Rich game adapters may have their own fully authored navigation
+    /// lifecycle; policy-only scenes use the same canonical rasterizer.
+    fn initialize_navigation_from_world(
+        &mut self, _combat: &CombatWorld,
+    ) -> Result<(), NavigationError> {
+        Ok(())
+    }
 }
 
 /// Unity Agent.FixedUpdate requests a decision after each controller's

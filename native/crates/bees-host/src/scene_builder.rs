@@ -17,6 +17,7 @@ use bees_sim::combat::ShipVitals;
 use bees_sim::combat_world::{CombatWorld, CombatWorldError, NativeTurretSpec};
 use bees_sim::asteroid_spawn::FullAsteroidPrototype;
 use bees_sim::geometry::Vec2;
+use bees_sim::navigation::NavigationError;
 use bees_sim::control::PolicyFrame;
 use bees_sim::movement::ShipMotion;
 use bees_sim::map_object::CombatMapObject;
@@ -167,6 +168,7 @@ pub enum NativeSceneBuildError {
     IncompleteSquadRoster,
     MissingLiveBoxPose(i64),
     MissingLivePolygonPose(i64),
+    Navigation(NavigationError),
     Group(GroupRewardError),
     GroupConfiguration(NativeLevelEventError),
 }
@@ -223,7 +225,10 @@ impl NativeSceneAssets {
     pub fn build_level<M, A>(
         &self,
         authored: NativeAuthoredLevel<M, A>,
-    ) -> Result<World<NativeLevelState<M, A>>, NativeSceneBuildError> {
+    ) -> Result<World<NativeLevelState<M, A>>, NativeSceneBuildError>
+    where
+        M: NativeLevelCommandContext,
+    {
         if authored.entities.is_empty() {
             return Err(NativeSceneBuildError::EmptyScene);
         }
@@ -352,6 +357,12 @@ impl NativeSceneAssets {
                 &mut world.random,
             ).map_err(NativeSceneBuildError::Combat)?;
         }
+        // Build the Level's pathfinding clearance from the same authored
+        // physical objects that gameplay and rendering use. Once at world
+        // construction, never as a fabricated empty grid per policy tick.
+        world.state.metadata.initialize_navigation_from_world(
+            &world.state.combat,
+        ).map_err(NativeSceneBuildError::Navigation)?;
         Ok(world)
     }
 }
