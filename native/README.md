@@ -100,7 +100,11 @@ Level or respawning the Python worker. Version 2 of the binary worker
 protocol accepts one explicit `BMOD` manifest-load request, returns
 `MACK` only after SHA-256 verification and successful loading of ALL
 model slots, and rejects incompatible signatures or slot sets with
-`MNOK`. A rejected update keeps the existing policy live; a malformed
+`MNOK`. The startup handshake returns the exact source manifest digest;
+reload requests carry the expected manifest SHA-256, which is checked
+**before** loading weights, and successful receipts echo that digest.
+The runner emits both the manifest digest and process-local policy
+generation for every model transition. A rejected update keeps the existing policy live; a malformed
 or incomplete protocol response poisons the worker and requires explicit
 restart. Reloads are **not** triggered by filesystem polling: the caller
 explicitly requests them or configures the headless runner's
