@@ -12,6 +12,16 @@ const record=value=>value&&typeof value==='object'&&!Array.isArray(value);
 
 function evaluationPolicy(value) {
     if(value==null)return null;
+    if(record(value)&&Object.hasOwn(value,'all_of')) {
+        if(Object.keys(value).length!==1||!Array.isArray(value.all_of)||
+            value.all_of.length<2||value.all_of.length>8)
+            throw Error('All-of evaluation requires 2–8 independent suite thresholds.');
+        const rules=value.all_of.map(evaluationPolicy);
+        if(rules.some(rule=>!rule||rule.all_of)||
+            new Set(rules.map(rule=>rule.suite_id)).size!==rules.length)
+            throw Error('All-of evaluation requires distinct, nonnested suite IDs.');
+        return {all_of:rules};
+    }
     if(!record(value)||Object.keys(value).some(key=>
         !['suite_id','suite_sha256','min_trials','min_success_rate'].includes(key))||
         typeof value.suite_id!=='string'||!SUITE.test(value.suite_id)||
@@ -40,6 +50,33 @@ function evaluationEvidence(value,policy,dispatchId) {
         successes:value.successes,
         ...(value.suite_sha256?{suite_sha256:value.suite_sha256}:{})};
 }
+function evaluationRules(policy) {
+    return policy?.all_of|| (policy?[policy]:[]);
+}
+// A promotion target is satisfied only by complete independent evidence
+// for the exact same immutable checkpoint. Training progress is never proof.
+function evaluationComplete(evidence,policy,dispatchId) {
+    if(!policy||!evidence)return false;
+    try {
+        const rules=evaluationRules(evaluationPolicy(policy));
+        const observed=policy.all_of?evidence.all_of:[evidence];
+        if(!Array.isArray(observed)||observed.length!==rules.length)
+            return false;
+        let checkpoint=null;
+        for(const [i,rule] of rules.entries()) {
+            const receipt=evaluationEvidence(observed[i],rule,dispatchId);
+            if(checkpoint!==null&&receipt.checkpoint_sha256!==checkpoint)
+                return false;
+            checkpoint=receipt.checkpoint_sha256;
+            if(receipt.trials<rule.min_trials||
+                receipt.successes/receipt.trials<rule.min_success_rate)
+                return false;
+        }
+        return true;
+    }catch {
+        return false;
+    }
+}
 function suiteIds(value) {
     if(!Array.isArray(value)||value.length<1||value.length>8||
         new Set(value).size!==value.length||
@@ -50,7 +87,8 @@ function suiteIds(value) {
 function supportsEvaluation(suites,job) {
     return !job.evaluation_stop||
         (suites&&Object.hasOwn(suites,job.project_id)&&
-         suites[job.project_id].includes(job.evaluation_stop.suite_id));
+         evaluationRules(job.evaluation_stop).every(rule=>
+             suites[job.project_id].includes(rule.suite_id)));
 }
 function isWithin(parent,child) {
     const relative=path.relative(parent,child);
@@ -96,4 +134,5 @@ function evaluationReader(projectId,evaluationRoot,evaluationSuites,protectedRoo
     };
 }
 
-module.exports={evaluationPolicy,evaluationEvidence,suiteIds,supportsEvaluation,evaluationReader};
+module.exports={evaluationPolicy,evaluationEvidence,evaluationRules,evaluationComplete,
+    suiteIds,supportsEvaluation,evaluationReader};
