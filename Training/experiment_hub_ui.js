@@ -1905,7 +1905,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         if(!confirm('Arm native queue automation on '+ids.join(', ')+
             '? This will start eligible CPU jobs and release verified completed capacity. You confirm that unmanaged host workloads have been accounted for. Restart disarms automation.'+
-            (adopt?' Previously automated running jobs will be re-adopted ONLY after fresh, same-dispatch native inspection and verified lease ownership; ambiguous jobs block arming. Existing native processes will not be relaunched.':'')+
+            (adopt?' Previously automated running or completed jobs will be re-adopted ONLY after fresh, same-dispatch native inspection and verified lease ownership. Uncertain jobs block arming; existing native processes will not be relaunched.':'')+
             (gpu?' This session will also start jobs with a currently qualified exclusive GPU.':'')+
             (gpuClaim?' This session may claim exclusive GPU capacity on armed Linux hosts.':'')+
             (gpuProbe?' It may run one inert access probe for each GPU claim it creates.':'')+
