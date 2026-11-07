@@ -124,8 +124,17 @@ impl CombatWorld {
     pub fn queue_game_warp_contact(
         &mut self, ship_id: i64, gate_id: i64,
     ) -> bool {
-        if self.game_warp_participant_gate(ship_id) != Some(gate_id) ||
-            !self.game_ship_touches_warp_gate(ship_id, gate_id) {
+        if self.game_warp_participant_gate(ship_id) != Some(gate_id) {
+            return false;
+        }
+        // A source QueueShipForWarp contact remains waiting even after
+        // drifting out of the WarpCollider. Checking its exact hull again
+        // every fixed tick wastes collision work in long FullRetreat runs.
+        if self.game_warp_gate_sessions.get(&gate_id)
+            .is_some_and(|session| session.waiting.contains(&ship_id)) {
+            return false;
+        }
+        if !self.game_ship_touches_warp_gate(ship_id, gate_id) {
             return false;
         }
         self.game_warp_gate_sessions.get_mut(&gate_id)
