@@ -20,7 +20,14 @@ use serde_json::json;
 pub struct DurableDiagnosticNotifications {
     file: File,
     run_id: String,
+    // Reused serialization buffer; disk sync happens per bounded chunk,
+    // not per individual battle event.
+    pending: Vec<u8>,
+    unavailable: bool,
 }
+
+const MAX_SYNC_EVENTS: usize = 128;
+const MAX_SYNC_BYTES: usize = 256 * 1024;
 
 impl DurableDiagnosticNotifications {
     /// Never append to an existing run or overwrite another incarnation.
@@ -43,18 +50,17 @@ impl DurableDiagnosticNotifications {
                 .unwrap_or_else(|| Path::new("."));
             File::open(parent)?.sync_all()?;
         }
-        Ok(Self { file, run_id })
+        Ok(Self { file, run_id, pending: Vec::new(), unavailable: false })
     }
 
     pub fn sync(&mut self) -> io::Result<()> {
+        if self.unavailable {
+            return Err(io::Error::other("diagnostic sink unavailable"));
+        }
         self.file.sync_all()
     }
-}
 
-impl NativeLevelNotificationSink for DurableDiagnosticNotifications {
-    type Error = io::Error;
-
-    fn accept(
+    fn encode(
         &mut self,
         world: WorldId,
         episode_revision: u64,
@@ -71,10 +77,6 @@ impl NativeLevelNotificationSink for DurableDiagnosticNotifications {
             NativeLevelNotificationKind::EpisodeFinal(_) => "episode_final",
             NativeLevelNotificationKind::EpisodeAborted => "episode_aborted",
         };
-        // The payload is diagnostic Debug text, not a machine-readable
-        // training reward transport. Event identity, type, tick and full
-        // diagnostic payload remain available without adding a second
-        // serialization model to the authoritative gameplay types.
         let record = json!({
             "schema_version": 1,
             "run_id": self.run_id,
@@ -85,13 +87,73 @@ impl NativeLevelNotificationSink for DurableDiagnosticNotifications {
             "kind": kind,
             "payload_debug": format!("{:?}", notification.kind),
         });
-        // Encode before writing so serialization failures never leave a
-        // fragment that looks like a committed record on disk.
-        let mut bytes = serde_json::to_vec(&record).map_err(io::Error::other)?;
-        bytes.push(b'\n');
-        self.file.write_all(&bytes)?;
-        // The Level driver may now acknowledge this exact prefix. Do not
-        // buffer uncommitted records across a call to accept.
-        self.file.sync_data()
+        serde_json::to_writer(&mut self.pending, &record)
+            .map_err(io::Error::other)?;
+        self.pending.push(b'\\n');
+        Ok(())
+    }
+
+    fn commit_chunk(&mut self) -> io::Result<()> {
+        // Any failure leaves this instance unusable. The caller must not
+        // retry an ambiguous partially written frame against the same file.
+        let result = self.file.write_all(&self.pending)
+            .and_then(|()| self.file.sync_data());
+        self.pending.clear();
+        if result.is_err() { self.unavailable = true; }
+        result
+    }
+}
+
+impl NativeLevelNotificationSink for DurableDiagnosticNotifications {
+    type Error = io::Error;
+
+    fn accept(
+        &mut self,
+        world: WorldId,
+        episode_revision: u64,
+        event_sequence: u64,
+        notification: &NativeLevelNotification,
+    ) -> io::Result<()> {
+        self.accept_batch(
+            world, episode_revision, event_sequence,
+            std::slice::from_ref(notification),
+        ).map_err(|(_, error)| error)
+    }
+
+    fn accept_batch(
+        &mut self,
+        world: WorldId,
+        episode_revision: u64,
+        first_sequence: u64,
+        notifications: &[NativeLevelNotification],
+    ) -> Result<(), (usize, io::Error)> {
+        if self.unavailable {
+            return Err((0, io::Error::other("diagnostic sink unavailable")));
+        }
+        let mut committed = 0usize;
+        while committed < notifications.len() {
+            self.pending.clear();
+            let mut buffered = 0usize;
+            for notification in &notifications[committed..] {
+                let sequence = first_sequence + (committed + buffered) as u64;
+                if let Err(error) = self.encode(
+                    world, episode_revision, sequence, notification,
+                ) {
+                    self.unavailable = true;
+                    return Err((committed, error));
+                }
+                buffered += 1;
+                if buffered == MAX_SYNC_EVENTS ||
+                    self.pending.len() >= MAX_SYNC_BYTES
+                {
+                    break;
+                }
+            }
+            if let Err(error) = self.commit_chunk() {
+                return Err((committed, error));
+            }
+            committed += buffered;
+        }
+        Ok(())
     }
 }
