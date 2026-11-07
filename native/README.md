@@ -155,7 +155,23 @@ allied and VisionCache projections, with Level-only weapon, map and
 economic values required from the caller. `step_batched_levels`
 combines multiple world observations into one validated model call.
 `NativePolicyInference` is the backend contract, not an implemented
-neural network. `NativeLevelInferenceBatch::poca_dimension_activity`
+neural network. `NativeLevelBatchDriver` now owns per-world v26 observation
+assemblers, genuine batched model inference/step dispatch and guarded episode
+reset, and routes BeesServer strategy replies through the shared
+`HiveMindSession` by exact source SquadLifetime. Retired replies return
+explicit StoreCommands discards; accepted targeting selections are routed
+to their authentic Level but still require Level-side installation and
+credit attribution. `deliver_all_level_notifications` acknowledges only
+the durable, source-ordered prefix accepted by the user's output sink.
+The rendered game and headless worker must provide the SAME
+`NativeLevelCommandContext`, `NativeLevelObservationContext` and
+`NativeLevelActivationContext` game-derived values; no alternative
+training-only simulation is created. After any MemberLost event, the Level
+updates source Ship.OffsetFromCenter and composition bans using the
+authoritative sprite catalog, and in-flight command member snapshots
+rebase without restarting timers or server reservations.
+
+`NativeLevelInferenceBatch::poca_dimension_activity`
 exports the source PPO's 22 activity weights from the *same* validated
 observations, masks and selected actions, requiring live POCA groupmate
 counts. `poca_normalize_advantages` separately normalizes genuine
@@ -341,7 +357,9 @@ Unported command types return an explicit Unsupported result with their
 server reservations intact. Command reward
 totals and unused shooting/targeting settlement still belong to gameplay
 attribution, then the separate HiveMind durable StoreCommands pipeline.
-No native full-game client, server adapter or executable loop is wired yet.
+The shared native Level step/observation/command/notification driver is
+wired, but no runnable full-game client, model backend, authenticated server
+adapter or executable game/training binary exists yet.
 
 ## Low-overhead performance and command measurements
 
