@@ -32,7 +32,8 @@ The single JSON configuration file requires:
   `Pool.ItemCount` identity, strictly above all imported squads.
   The same monotonic allocator services every Level in this run.
 - `broadphase_cell_size`, `decision_period`,
-  `max_rounds`, `rounds_per_window`, `delivery_every`, and optional
+  `max_rounds`, optional `episodes_per_world` (default 1),
+  `rounds_per_window`, `delivery_every`, and optional
   `timing_sample_period` (all step counts are positive).
 - `levels`: a nonempty array of `{scene, world_id, level_id, seed,
   model_slots}`. Each scene is an exported **initial** Level; both IDs
@@ -40,11 +41,17 @@ The single JSON configuration file requires:
   policy-team IDs (`"0"`/`"1"`) to verified slots in the manifest.
 
 The runner checks source identities, model routing, collision settings and
-Stage consistency **before starting**. It emits JSON interval measurements
-on stdout and syncs each sparse diagnostic event before acknowledging its
-world outbox; a previously created output path is never overwritten. A
-finite budget explicitly cancels surviving episodes, recording
-`episode_aborted` rather than inventing terminal results. The event
+Stage consistency **before starting**. It emits run-tagged JSON interval
+measurements on stdout. Its durable sink synchronizes bounded ordered event
+chunks (up to 128 records or 256 KiB) and acknowledges only the actually
+committed source prefix; a previously created output path is never overwritten.
+Completed worlds can be recycled up to `episodes_per_world` times through
+`NativeHostRuntime::reset_world`, with fresh monotonic squad lifetimes and
+per-episode deterministic seeds. Each replay uses the exact initial exported
+scene bytes cached at run startup, not a newly randomized Unity scene or a
+training-only variant. The global `max_rounds` budget bounds the run, and
+unfinished episodes are explicitly canceled with `episode_aborted` rather
+than awarded invented terminal outcomes. The event
 `payload_debug` is **diagnostic text**, not an optimizer or training-data
 wire format. This harness deliberately does not connect to live HiveMind
 WebSocket gameplay or provide PPO/MA-POCA updates, checkpoints, graphical
