@@ -1337,7 +1337,13 @@ The scheduled evaluator also targets verified final checkpoints with
 released capacity and missing receipts. It uses the recorded model hash
 and retains the result for ranking without changing the job's terminal
 state. A deferred selection allows up to 24 hours after the last
-candidate releases capacity for these receipts to arrive.
+candidate releases capacity for these receipts to arrive. Post-terminal
+evaluator worklists and native Inspect orders are bounded to 24 hours after
+verified release; a still-waiting candidate selection extends that window
+to 24 hours after its last contender releases capacity. Already retained
+receipts remain available after expiration, but historical missing receipts
+cannot consume worker inspection slots indefinitely. An expired, incomplete
+selection disarms for review instead of assuming a benchmark result.
 An isolated Windows Courier run evaluated two independently trained final
 checkpoints against two suites each. Automation promoted the tie-break
 winner, resumed its exact checkpoint on the original worker, and

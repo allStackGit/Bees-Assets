@@ -17,6 +17,7 @@ const SHA256 = /^[0-9a-f]{64}$/;
 const PCI = /^[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]$/;
 const now = () => new Date().toISOString();
 const AGENT_HEARTBEAT_TTL_MS = 45000;
+const FINAL_EVALUATION_GRACE_MS = 24 * 60 * 60 * 1000;
 function fingerprint(machineId, token) {
     return crypto.createHash('sha256').update(machineId + ':' + token).digest('hex');
 }
@@ -276,6 +277,29 @@ function missingFinalEvaluationRules(job) {
         const receipt=cohort?.receipts?.[rule.suite_id];
         return !receipt?.suite_sha256||receipt.trials<rule.min_trials;
     });
+}
+// A missing final receipt cannot justify inspecting a historical terminal
+// job forever. A waiting candidate plan extends the grace period until
+// 24 hours after its last contender releases verified native capacity.
+function finalEvaluationPending(snapshot,job,observedAt) {
+    if(!missingFinalEvaluationRules(job).length)return false;
+    const releasedAt=Date.parse(job.capacity_released_at);
+    if(!Number.isFinite(releasedAt)||observedAt<releasedAt)return false;
+    let deadline=releasedAt+FINAL_EVALUATION_GRACE_MS;
+    for(const plan of snapshot.candidate_selections||[]) {
+        if(plan.status!=='waiting'||!plan.candidate_job_ids?.includes(job.id))
+            continue;
+        const candidates=plan.candidate_job_ids.map(id=>
+            snapshot.jobs.find(candidate=>candidate.id===id));
+        if(candidates.some(candidate=>!candidate||
+            !['finished','stopped'].includes(candidate.status)||
+            !candidate.capacity_released_at))continue;
+        const lastRelease=Math.max(...candidates.map(candidate=>
+            Date.parse(candidate.capacity_released_at)));
+        if(Number.isFinite(lastRelease))
+            deadline=Math.max(deadline,lastRelease+FINAL_EVALUATION_GRACE_MS);
+    }
+    return observedAt<deadline;
 }
 function retainFinalEvaluations(job,report) {
     const rules=missingFinalEvaluationRules(job);
@@ -1126,7 +1150,8 @@ class ExperimentHub {
                     j.capacity_released_at);
                 if(!bad&&!completed)continue;
                 if(!bad&&candidates.some(j=>missingFinalEvaluationRules(j).length)&&
-                    Date.now()-Math.max(...candidates.map(j=>Date.parse(j.capacity_released_at)))<86400000)
+                    Date.now()-Math.max(...candidates.map(j=>Date.parse(j.capacity_released_at)))<
+                        FINAL_EVALUATION_GRACE_MS)
                     continue;
                 try {
                     const decision=this.rankCandidates({
@@ -1319,7 +1344,7 @@ class ExperimentHub {
             return job.project_id===projectId&&job.assigned_machine_id===machineId&&
                 evaluationRules(job.evaluation_stop).some(rule=>rule.suite_id===suiteId)&&
                 UUID.test(job.dispatch_id||'')&&UUID.test(job.artifact_lineage_root_id||job.id)&&
-                (missingFinalEvaluationRules(job).length>0&&this.state.reservations.some(lease=>
+                (finalEvaluationPending(this.state,job,observedAt)&&this.state.reservations.some(lease=>
                     lease.id===job.lease_id&&lease.job_id===job.id&&lease.machine_id===machineId&&
                     lease.status==='released'&&lease.released_at)||
                 (job.status==='running'&&observed?.dispatch_id===job.dispatch_id&&
@@ -2072,13 +2097,15 @@ class ExperimentHub {
         const machine=snapshot.machines.find(m=>m.id===machineId);
         if(!machine||machine.status!=='connected'||
             machine.local_executor_enabled!==true)return [];
+        const observedAt=Date.now();
         const jobs=snapshot.jobs.filter(j=>j.assigned_machine_id===machineId &&
             (j.dispatch_id&&['start_requested','launch_requested','running',
                 'stop_requested','unverified'].includes(j.status)||
              j.dispatch_id&&j.automation_start_session_id&&
                 !j.capacity_released_at&&
                 ['finished','stopped'].includes(j.status)||
-             j.dispatch_id&&supportsEvaluation(machine.evaluation_suites,j)&&missingFinalEvaluationRules(j).length||
+             j.dispatch_id&&supportsEvaluation(machine.evaluation_suites,j)&&
+                finalEvaluationPending(snapshot,j,observedAt)||
              j.status==='waiting_adapter'&&
                 j.gpu_qualification?.status==='requested'));
         // A native Stop acknowledgement means the local supervisor has
@@ -2089,7 +2116,6 @@ class ExperimentHub {
             ?j.live_execution?.state==='stop_requested'?'inspect':'stop'
             :j.status==='start_requested'?'start'
             :j.gpu_qualification?.status==='requested'?'qualify_gpu':'inspect';
-        const observedAt=Date.now();
         const priority=j=>{
             const action=actionFor(j);
             if(action!=='inspect')return {stop:0,start:1,qualify_gpu:2}[action];
@@ -2117,7 +2143,8 @@ class ExperimentHub {
             const lease=snapshot.reservations.find(l=>l.id===job.lease_id &&
                 l.job_id===job.id&&l.project_id===job.project_id&&
                 l.machine_id===machineId&&(l.status==='acknowledged'||
-                    (l.status==='released'&&l.released_at&&missingFinalEvaluationRules(job).length)));
+                    (l.status==='released'&&l.released_at&&
+                        finalEvaluationPending(snapshot,job,observedAt))));
             if(!lease)continue;
             const adapterInstalled=machine.installed_projects.includes(job.project_id);
             let action=actionFor(job);
