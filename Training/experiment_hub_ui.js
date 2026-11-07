@@ -397,7 +397,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const history=new Map(samples.map(s=>[s.job_id,s.points||[]]));
         const hasSamples=j=>j.live_execution?.progress||j.final_progress||history.get(j.id)?.length;
         const selectable=jobs.filter(j=>hasSamples(j)||hubComparisonEvaluation(j)||
-            hubComparisonTerminal(j)).slice(-80).reverse();
+            hubComparisonTerminal(j)||['waiting_adapter','waiting_predecessor',
+                'start_requested','launch_requested','running','stop_requested']
+                .includes(j.status)).slice(-80).reverse();
         const chartable=selectable.filter(hasSamples);
         const defaults=[...chartable,...selectable.filter(j=>!hasSamples(j))];
         const previous=compareSlots.map(slot=>$('hub-compare-'+slot).value);
@@ -424,6 +426,28 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
         if(chooseDefaults)comparisonDefaultsApplied=true;
+        const configs=(state.configurations||[]).filter(c=>c.project_id===project);
+        const configSelect=$('hub-compare-selection-config'),previousConfig=configSelect.value;
+        configSelect.replaceChildren(...configs.map(c=>
+            new Option(c.name+' · revision '+c.revision,c.id)));
+        if(configs.some(c=>c.id===previousConfig))
+            configSelect.value=previousConfig;
+        const chosenIds=compareSlots.map(slot=>$('hub-compare-'+slot).value)
+            .filter(Boolean);
+        $('hub-compare-selection-queue').disabled=chosenIds.length<2||
+            new Set(chosenIds).size!==chosenIds.length||!configs.length;
+        const plans=(state.candidate_selections||[])
+            .filter(p=>p.project_id===project).slice(-5).reverse();
+        feedback('hub-compare-selection-status',plans.length
+            ?plans.map(p=>(p.status==='queued'
+                    ?'Queued winner '+p.winner_job_id?.slice(-8)+
+                        ' · next job '+p.promoted_job_id?.slice(-8)
+                    :p.status==='needs_review'
+                        ?'Needs review: '+(p.error||'unresolved model identity')
+                        :'Awaiting candidate completion: '+p.candidate_job_ids.length+
+                            ' runs')+
+                    ' · plan '+p.id.slice(-8)).join(' | ')
+            :'No candidate selection scheduled.');
         const runs=compareSlots.map((slot,i)=>{
             const id=$('hub-compare-'+slot).value;
             const job=jobs.find(j=>j.id===id);
@@ -1689,6 +1713,55 @@ document.addEventListener('DOMContentLoaded', () => {
                 feedback('hub-compare-export-message',String(error.message||error));
             }
         });
+    $('hub-compare-selection-queue').addEventListener('click',async()=>{
+        try {
+            if(!['courier','tinybrains'].includes(project))
+                throw Error('Model promotion needs the Courier or TinyBrains adapter.');
+            const candidateIds=compareSlots.map(slot=>$('hub-compare-'+slot).value)
+                .filter(Boolean);
+            if(candidateIds.length<2||new Set(candidateIds).size!==candidateIds.length)
+                throw Error('Choose at least two distinct candidate runs.');
+            const configuration=(state.configurations||[])
+                .find(c=>c.project_id===project&&
+                    c.id===$('hub-compare-selection-config').value);
+            if(!configuration)throw Error('Select a saved configuration for the next stage.');
+            const resources=JSON.parse($('hub-compare-selection-resources').value);
+            const payload={
+                candidate_job_ids:candidateIds,
+                configuration_id:configuration.id,
+                expected_revision:configuration.revision,resources,
+            };
+            const jobs=candidateIds.map(id=>state.jobs.find(j=>j.id===id));
+            const complete=jobs.every(j=>j&&
+                ['finished','stopped'].includes(j.status)&&j.capacity_released_at);
+            if(complete) {
+                const decision=await action('hub/candidates/rank',payload);
+                const winner=decision.ranked[0];
+                if(!confirm('Queue the best independently evaluated '+project+
+                    ' candidate? Winner '+winner.job_id+' · mean success rate '+
+                    (winner.score*100).toFixed(2)+
+                    '%. The next stage will resume only if the native model bytes still match the evaluated checkpoint.'))return;
+                const result=await action('hub/candidates/promote',{
+                    ...payload,expected_winner_job_id:winner.job_id,
+                    confirm_queue:true,
+                });
+                feedback('hub-compare-selection-message',
+                    'Queued exact-model continuation '+result.job.id+
+                    ' from winning candidate '+winner.job_id+'.');
+            }else {
+                if(!confirm('Schedule '+candidateIds.length+' '+project+
+                    ' candidates for automatic best-model selection when all complete? The coordinator will require identical suites, verified final model bytes and released capacity; invalid results require review.'))return;
+                const plan=await action('hub/candidates/schedule',{
+                    ...payload,confirm_queue:true,
+                });
+                feedback('hub-compare-selection-message',
+                    'Scheduled selection '+plan.id+'. Automatic queueing requires an armed native scheduler.');
+            }
+            await reload();
+        }catch(error){
+            feedback('hub-compare-selection-message',String(error.message||error));
+        }
+    });
     $('hub-project').addEventListener('change',()=>{
         project=$('hub-project').value;resetEditor();display();selectTab(tab);
     });
