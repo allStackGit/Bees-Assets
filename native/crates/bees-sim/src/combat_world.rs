@@ -2192,6 +2192,48 @@ impl CombatWorld {
         Ok(())
     }
 
+    /// An existing ordinary source asteroid arrives with exact live motion
+    /// and its pool-owned Create-time speed. Unlike a newly sampled spawn,
+    /// loading it consumes NO world RNG and retains its actual profile for
+    /// reuse when this asteroid is destroyed.
+    pub fn spawn_authored_full_collision_asteroid(
+        &mut self,
+        entity_id: i64,
+        profile: FullAsteroidPrototype,
+        pose: Pose,
+        velocity: Vec2,
+        angular_velocity_degrees: f32,
+        effective_max_health: i32,
+    ) -> Result<(), CombatWorldError> {
+        let stage = self.full_asteroid_stage.as_ref()
+            .ok_or(CombatWorldError::InvalidFragmentationConfiguration)?;
+        if !stage.prefabs.contains(&profile.prefab_number) ||
+            profile.speed < 2 ||
+            profile.speed as u32 > 2 + stage.settings.asteroid_max_speed_exclusive
+                .saturating_sub(1)
+        {
+            return Err(CombatWorldError::InvalidObstacle);
+        }
+        let asset = stage.catalog.by_number(profile.prefab_number)
+            .ok_or(CombatWorldError::InvalidObstacle)?;
+        let original = i32::from(asset.size_class)
+            .checked_mul(stage.catalog.health_increment())
+            .ok_or(CombatWorldError::InvalidObstacle)?;
+        let expected = stage.effective_health(profile.prefab_number)
+            .map_err(|_| CombatWorldError::InvalidObstacle)?
+            .unwrap_or(original);
+        if effective_max_health != expected {
+            return Err(CombatWorldError::InvalidObstacle);
+        }
+        let catalog = Arc::clone(&stage.catalog);
+        self.spawn_collision_asteroid(
+            &catalog, profile.prefab_number, entity_id, pose, velocity,
+            angular_velocity_degrees, Some(effective_max_health),
+        )?;
+        self.active_full_asteroid_profiles.insert(entity_id, profile);
+        Ok(())
+    }
+
     /// Spawns a concrete authored CollisionAsteroid prefab into the same
     /// physics/combat world as ships and projectiles. Never approximates an
     /// asteroid's hull using a sprite bounding rectangle.

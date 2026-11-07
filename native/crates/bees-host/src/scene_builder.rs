@@ -15,6 +15,8 @@ use bees_hivemind::session::SquadLifetime;
 use bees_sim::collision::{Aabb, Pose};
 use bees_sim::combat::ShipVitals;
 use bees_sim::combat_world::{CombatWorld, CombatWorldError, NativeTurretSpec};
+use bees_sim::asteroid_spawn::FullAsteroidPrototype;
+use bees_sim::geometry::Vec2;
 use bees_sim::control::PolicyFrame;
 use bees_sim::movement::ShipMotion;
 use bees_sim::simulation::{Simulation, World, WorldId};
@@ -67,6 +69,17 @@ pub enum NativeAuthoredEntity {
     PolygonObstacle {
         entity_id: i64,
         pose: Option<Pose>,
+    },
+    /// Physically existing full asteroid from a source scene snapshot.
+    /// Shards require their original parent/family lifetime and cannot
+    /// silently enter the ordinary full-asteroid pool.
+    FullCollisionAsteroid {
+        entity_id: i64,
+        profile: FullAsteroidPrototype,
+        pose: Pose,
+        velocity: Vec2,
+        angular_velocity_degrees: f32,
+        effective_max_health: i32,
     },
 }
 
@@ -214,6 +227,15 @@ impl NativeSceneAssets {
                 } => {
                     combat.spawn_box_obstacle(
                         self.box_catalog(), &prefab_name, entity_id, pose,
+                    ).map_err(NativeSceneBuildError::Combat)?;
+                }
+                NativeAuthoredEntity::FullCollisionAsteroid {
+                    entity_id, profile, pose, velocity,
+                    angular_velocity_degrees, effective_max_health,
+                } => {
+                    combat.spawn_authored_full_collision_asteroid(
+                        entity_id, profile, pose, velocity,
+                        angular_velocity_degrees, effective_max_health,
                     ).map_err(NativeSceneBuildError::Combat)?;
                 }
                 NativeAuthoredEntity::PolygonObstacle { entity_id, pose } => {
