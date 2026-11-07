@@ -1311,6 +1311,8 @@ silently substitute for the final model, even if the latest checkpoint
 is otherwise resumable. If no matching final-policy evaluation exists,
 the candidate is ineligible until that evidence exists; the Hub never
 assumes a final training checkpoint is the evaluated checkpoint.
+The scheduled evaluator currently targets running jobs. It cannot fill
+a missing final-policy receipt after a job exits.
 All prospective candidates must use the same approved continuation
 environment/profile fingerprint. The native continuation remains on
 its original machine with the original artifact lineage.
@@ -1482,6 +1484,8 @@ predecessor and a draft with the same
 profile digest. The continuation runs on the original worker and its
 update count is additional. It reads the predecessor's checkpoint and
 writes into its own job directory, leaving earlier checkpoints intact.
+An isolated Windows run stopped at update 12, reopened the Hub and
+native supervisor, and completed update 13 on the original worker.
 Train can also queue 2–16 TinyBrains continuation stages atomically.
 A successor stays unclaimed until its predecessor finishes with a verified
 resumable checkpoint and releases capacity. With native queue automation armed for the original worker,
