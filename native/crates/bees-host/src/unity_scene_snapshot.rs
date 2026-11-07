@@ -39,7 +39,9 @@ use bees_sim::perception::CapabilitySource;
 use bees_sim::perception_weapons::SelfWeapon;
 use bees_gameplay::inference::NativePolicyRoute;
 use bees_sim::navigation_runtime::NavigationRuntime;
-use bees_gameplay::episode::NativeEpisodeRewardCoordinator;
+use bees_gameplay::episode::{
+    NativeEpisodeRewardCoordinator, NativeEpisodeRewardError,
+};
 use bees_gameplay::group_rewards::NativeGroupRewardDelivery;
 use bees_gameplay::level_rules::NativeLevelState;
 use serde::Deserialize;
@@ -57,7 +59,7 @@ use crate::policy_only_metadata::{
     PolicyOnlyMetadataError,
 };
 
-const SNAPSHOT_VERSION: u32 = 11;
+const SNAPSHOT_VERSION: u32 = 12;
 
 #[derive(Deserialize, Clone, Copy)]
 struct UnityVec2 { x: f32, y: f32 }
@@ -75,12 +77,24 @@ struct UnitySnapshot {
     level_name: String,
     fixed_dt_seconds: f32,
     shots_harmless: bool,
+    has_policy_episode: bool,
+    policy_episode: Option<UnityPolicyEpisode>,
     min: UnityVec2,
     max: UnityVec2,
     ships: Vec<UnityShip>,
     obstacles: Vec<UnityObstacle>,
     map_objects: Vec<UnityMapObject>,
     squads: Vec<UnitySquad>,
+}
+
+#[derive(Deserialize)]
+struct UnityPolicyEpisode {
+    bee_side: i32,
+    human_side: i32,
+    bee_starting_tsv: i32,
+    human_starting_tsv: i32,
+    timeout_seconds: f32,
+    discovery_baselines: Option<Vec<i32>>,
 }
 
 #[derive(Deserialize)]
@@ -253,6 +267,8 @@ pub enum NativeSnapshotError {
     UnknownPolicyShip(i64),
     AlreadyBound(i64),
     InvalidPolicySource(i64),
+    InvalidEpisodeSource,
+    Episode(NativeEpisodeRewardError),
     MissingModelSlot(u8),
     Fleet(NativeFleetInventoryError),
 }
@@ -267,6 +283,7 @@ pub struct NativePhysicalScene {
     pub fixed_dt_seconds: f32,
     pub shots_harmless: bool,
     pub entities: Vec<NativeAuthoredEntity>,
+    source_episode: Option<NativeSourceEpisode>,
     pub fleet: NativeFleetInventory,
     // Real authored physical mounts retained even for non-policy ships.
     // A Level must bind its own policy/route; the snapshot never invents one.
@@ -285,6 +302,16 @@ pub struct NativePhysicalScene {
     /// the host's checkpoint schedule.
     pub source_policy_bindings: HashMap<i64, NativeSourcePolicyBinding>,
     source_policy_inputs: HashMap<i64, NativeSourcePolicyInputs>,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct NativeSourceEpisode {
+    bee_side: i32,
+    human_side: i32,
+    bee_starting_tsv: i32,
+    human_starting_tsv: i32,
+    timeout_seconds: f32,
+    discovery_baselines: [[i32; 4]; 2],
 }
 
 /// All values not represented in Unity's physical snapshot remain required
@@ -342,6 +369,25 @@ pub struct NativeSourceSquad {
 }
 
 impl NativePhysicalScene {
+    /// Fresh native coordinator with the exact source *starting* TSV and
+    /// all four source-defined discovery denominators per faction. This
+    /// starts a NEW native episode; it does not replay Unity's consumed
+    /// rewards, action trajectories or elapsed time.
+    pub fn exported_episode(
+        &self,
+    ) -> Result<NativeEpisodeRewardCoordinator, NativeSnapshotError> {
+        let source = self.source_episode
+            .ok_or(NativeSnapshotError::InvalidEpisodeSource)?;
+        let mut episode = NativeEpisodeRewardCoordinator::new(
+            source.bee_side, source.human_side,
+            source.bee_starting_tsv, source.human_starting_tsv,
+            source.timeout_seconds,
+        ).map_err(NativeSnapshotError::Episode)?;
+        episode.configure_discovery(source.discovery_baselines)
+            .map_err(NativeSnapshotError::Episode)?;
+        Ok(episode)
+    }
+
     /// Compose observation-capable policy agents exclusively from verified
     /// source-bound Unity controllers. Only *model slots* remain external:
     /// the host must resolve the requested checkpoint/learner matchup
@@ -547,6 +593,37 @@ impl NativePhysicalScene {
         if raw.schema_version != SNAPSHOT_VERSION {
             return Err(NativeSnapshotError::UnsupportedSchema(raw.schema_version));
         }
+        let source_episode = if raw.has_policy_episode {
+            let raw_episode = raw.policy_episode
+                .ok_or(NativeSnapshotError::InvalidEpisodeSource)?;
+            let baselines = raw_episode.discovery_baselines
+                .ok_or(NativeSnapshotError::InvalidEpisodeSource)?;
+            if baselines.len() != 8 ||
+                raw_episode.bee_side <= 0 ||
+                raw_episode.human_side <= 0 ||
+                raw_episode.bee_side == raw_episode.human_side ||
+                raw_episode.bee_starting_tsv <= 0 ||
+                raw_episode.human_starting_tsv <= 0 ||
+                !raw_episode.timeout_seconds.is_finite() ||
+                raw_episode.timeout_seconds <= 0.0 ||
+                baselines.iter().any(|value| *value < 0)
+            {
+                return Err(NativeSnapshotError::InvalidEpisodeSource);
+            }
+            Some(NativeSourceEpisode {
+                bee_side: raw_episode.bee_side,
+                human_side: raw_episode.human_side,
+                bee_starting_tsv: raw_episode.bee_starting_tsv,
+                human_starting_tsv: raw_episode.human_starting_tsv,
+                timeout_seconds: raw_episode.timeout_seconds,
+                discovery_baselines: [
+                    [baselines[0], baselines[1], baselines[2], baselines[3]],
+                    [baselines[4], baselines[5], baselines[6], baselines[7]],
+                ],
+            })
+        } else {
+            None
+        };
         let min = raw.min.into_vec();
         let max = raw.max.into_vec();
         if raw.level_name.trim().is_empty() ||
@@ -1071,6 +1148,9 @@ impl NativePhysicalScene {
                 }
             }
         }
+        if !source_policy_bindings.is_empty() && source_episode.is_none() {
+            return Err(NativeSnapshotError::InvalidEpisodeSource);
+        }
         let fleet = NativeFleetInventory::from_source(fleet_values)
             .map_err(NativeSnapshotError::Fleet)?;
         Ok(Self {
@@ -1079,6 +1159,7 @@ impl NativePhysicalScene {
             fixed_dt_seconds: raw.fixed_dt_seconds,
             shots_harmless: raw.shots_harmless,
             entities,
+            source_episode,
             fleet,
             turrets_by_ship,
             authored_ship_perceptions,
