@@ -75,6 +75,9 @@ pub trait NativeLevelCommandContext {
         Err(GameCommandError::MissingCombatSnapshot)
     }
 
+    /// Called with an empty, capacity-retaining output buffer. Append
+    /// current entries in exact Level.State.Squads order; the Level step
+    /// owns clearing so no caller can accidentally inherit stale entries.
     fn collect_live_friendlies(
         &mut self,
         combat: &CombatWorld,
@@ -528,6 +531,10 @@ where
             // Only tracked-friendly commands read this geometry; collecting
             // every squad on each fixed step for Mining, Heal, Scouting,
             // FullRetreat or idle Hold would waste large-battle work.
+            // The Level owns buffer lifetime: a projecting adapter
+            // receives an empty Vec every time, even if it only appends.
+            // clear() retains capacity across large-battle callbacks.
+            state.command_friendlies.clear();
             if state.events.needs_live_command_friendlies_on_update(dt_seconds) {
                 state.metadata.collect_live_friendlies(
                     &state.combat, state.events.roster(),
@@ -540,8 +547,6 @@ where
                 state.command_input_measurements.friendly_snapshots += 1;
                 state.command_input_measurements.friendly_entries_supplied +=
                     state.command_friendlies.len() as u64;
-            } else {
-                state.command_friendlies.clear();
             }
             let previous_event_count = state.combat.events().len();
             let metadata = &state.metadata;
