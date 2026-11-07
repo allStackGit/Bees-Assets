@@ -46,11 +46,14 @@ The single JSON configuration file requires:
   can still supply `{"episode_number": 1, "participants":
   [{"side": 1, "agent_id": 123}]}` from actual external group ownership,
   never inferred hull IDs. Scripted opponents may have no group
-  participants on their side. A source controller whose initial team
-  disagrees with the configured episode rejects the run. On subsequent
-  episodes, the native Level advances the episode number, alternates
-  team routes, and selects fresh source-equivalent distinct policy
-  coordinate frames from a world-specific reproducible seed.
+  participants on their side. Legacy schema-15 group scenes are
+  single-episode only: they lack the per-team movement settings required
+  to replay alternating policy ownership safely. A source controller
+  whose initial team disagrees with the configured episode rejects
+  the run. On subsequent schema-16 episodes, the native Level advances
+  the episode number, alternates team routes and source movement limits,
+  and selects fresh source-equivalent distinct policy coordinate frames
+  from a world-specific reproducible seed.
   Omit `groups` only for non-group gameplay.
 
 
@@ -83,6 +86,10 @@ Windows/Linux execution and throughput are not yet verified.
 
 **Bees > Native > Export Selected Level Physical Scene** captures a
 source-authored initial Unity Level, not a resumable match checkpoint.
+Schema 16 captures the active self-play episode, both team-specific
+movement settings and registered Unity Agent instance group membership,
+including its exact currently bound ship (if any). Schema 15 remains
+readable as a legacy physical snapshot.
 It records original ship/weapon, squad, obstacle, mining and destructible
 MapObject identities and live collider geometry, plus real policy
 controller/frame/capability inputs, episode starting TSV, discovery
