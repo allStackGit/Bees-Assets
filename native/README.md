@@ -35,6 +35,16 @@ The single JSON configuration file requires:
   `max_rounds`, optional `episodes_per_world` (default 1),
   `rounds_per_window`, `delivery_every`, and optional
   `timing_sample_period` (all step counts are positive).
+- Optional `model_updates`: an ordered array of
+  `{"at_round": 1000, "manifest": "next-model.json"}` entries.
+  Rounds must be strictly increasing and less than `max_rounds`.
+  The runner splits windows at those exact simulation rounds, then
+  sends a verified model-update request **after** the previous window
+  has completed and delivered its notifications. Each target manifest
+  must already exist and contain verified artifacts and the same model
+  slot IDs. It emits a `policy_updated` event with the new generation.
+  A failed update aborts the unfinished Levels rather than continuing
+  an experiment under a silently wrong checkpoint.
 - `levels`: a nonempty array of `{scene, world_id, level_id, seed,
   model_slots, groups?}`. Each scene is an exported **initial** Level;
   both IDs must be unique and positive, and `model_slots` maps exact
@@ -92,9 +102,10 @@ protocol accepts one explicit `BMOD` manifest-load request, returns
 model slots, and rejects incompatible signatures or slot sets with
 `MNOK`. A rejected update keeps the existing policy live; a malformed
 or incomplete protocol response poisons the worker and requires explicit
-restart. Reloads are **not** automatic: the caller owns the checkpoint
-schedule and must retain model artifact hashes, run/episode identities
-and policy generation for scientific attribution. The initial model
+restart. Reloads are **not** triggered by filesystem polling: the caller
+explicitly requests them or configures the headless runner's
+`model_updates` schedule. The caller must retain model artifact hashes,
+run/episode identities and policy generation for scientific attribution. The initial model
 generation is zero and each accepted replacement increments it. The
 status interval reports the last validated generation and exact
 authenticated MA-POCA actor rows. This is not yet a native PPO learner;
