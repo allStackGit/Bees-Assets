@@ -720,6 +720,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         "kind": "run_final",
         "run_id": config.run_id,
         "rounds": rounds,
+        "policy_generation": host.model_mut().model_generation(),
+        "policy_manifest_sha256": host.model_mut().model_manifest_sha256(),
         "completed_episodes": completed_episodes.iter()
             .map(|&count| u64::from(count)).sum::<u64>(),
         "completed_worlds": status.completed_worlds,
