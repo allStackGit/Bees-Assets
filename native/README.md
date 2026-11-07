@@ -909,6 +909,12 @@ rules; the benchmark does not change them.
 
 The portable `bees-sim` crate currently contains:
 
+- Physics now culls off-grid bodies by exact cached AABB and keeps
+  very wide authored colliders out of repeated multi-cell insertion.
+  The normal world/host telemetry separately reports ship-grid and
+  obstacle-grid overflow-body work, alongside broadphase candidates
+  and narrowphase tests. These are algorithmic savings, not yet
+  empirically measured speedups.
 - A fixed-step multi-world dispatcher, per-world deterministic RNG, explicit
   episode reset and sampled timing/failure counters.
 - The v26 policy's observation/action *shape* and actual action decoding:

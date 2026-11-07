@@ -13,6 +13,8 @@ pub struct StepCounts {
     /// Export them without extra collision queries or clock reads.
     pub integrated_bodies: u64,
     pub broadphase_candidates: u64,
+    pub ship_grid_overflow_bodies: u64,
+    pub obstacle_grid_overflow_bodies: u64,
     pub narrowphase_tests: u64,
     pub trigger_enters: u64,
 }
@@ -24,6 +26,8 @@ pub struct Measurements {
     pub events: u64,
     pub integrated_bodies: u64,
     pub broadphase_candidates: u64,
+    pub ship_grid_overflow_bodies: u64,
+    pub obstacle_grid_overflow_bodies: u64,
     pub narrowphase_tests: u64,
     pub trigger_enters: u64,
     /// Rules updates that returned an error and invalidated their world.
@@ -52,6 +56,8 @@ impl Default for Measurements {
             events: 0,
             integrated_bodies: 0,
             broadphase_candidates: 0,
+            ship_grid_overflow_bodies: 0,
+            obstacle_grid_overflow_bodies: 0,
             narrowphase_tests: 0,
             trigger_enters: 0,
             failed_steps: 0,
@@ -74,6 +80,8 @@ impl Measurements {
         self.events += counts.events;
         self.integrated_bodies += counts.integrated_bodies;
         self.broadphase_candidates += counts.broadphase_candidates;
+        self.ship_grid_overflow_bodies += counts.ship_grid_overflow_bodies;
+        self.obstacle_grid_overflow_bodies += counts.obstacle_grid_overflow_bodies;
         self.narrowphase_tests += counts.narrowphase_tests;
         self.trigger_enters += counts.trigger_enters;
         self.last_active_ships = counts.active_ships;
@@ -110,6 +118,8 @@ impl Measurements {
         self.events += other.events;
         self.integrated_bodies += other.integrated_bodies;
         self.broadphase_candidates += other.broadphase_candidates;
+        self.ship_grid_overflow_bodies += other.ship_grid_overflow_bodies;
+        self.obstacle_grid_overflow_bodies += other.obstacle_grid_overflow_bodies;
         self.narrowphase_tests += other.narrowphase_tests;
         self.trigger_enters += other.trigger_enters;
         self.failed_steps += other.failed_steps;

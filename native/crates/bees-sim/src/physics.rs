@@ -813,6 +813,10 @@ pub struct MovementObstacleHit {
 pub struct PhysicsStepCounts {
     pub integrated_bodies: u64,
     pub broadphase_candidates: u64,
+    /// Populations temporarily kept outside cells because their true
+    /// bounds cross the grid edge or span >64 cells (ship/obstacle phases).
+    pub ship_grid_overflow_bodies: u64,
+    pub obstacle_grid_overflow_bodies: u64,
     pub narrowphase_tests: u64,
     pub trigger_enters: u64,
     pub obstacle_trigger_enters: u64,
@@ -1428,6 +1432,7 @@ impl KinematicPhysics {
             if ship.active { ship.collider.bounds } else { None }
         });
         self.grid_contains_ships = true;
+        self.counts.ship_grid_overflow_bodies = self.grid.overflow.len() as u64;
         self.overlaps_current.clear();
         for projectile in &self.projectiles {
             if !projectile.active { continue; }
@@ -1495,6 +1500,7 @@ impl KinematicPhysics {
             if obstacle.active { obstacle.collider.bounds } else { None }
         });
         self.grid_contains_ships = false;
+        self.counts.obstacle_grid_overflow_bodies = self.grid.overflow.len() as u64;
         // Obstacle contacts retain their own overlap history and queue.
         // A shot can contact a ship and an obstacle in the same physics tick.
         self.obstacle_overlaps_current.clear();

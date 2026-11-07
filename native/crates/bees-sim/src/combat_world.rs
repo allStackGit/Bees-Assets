@@ -3767,6 +3767,8 @@ impl CombatWorld {
             events: self.events.len() as u64,
             integrated_bodies: physics_counts.integrated_bodies,
             broadphase_candidates: physics_counts.broadphase_candidates,
+            ship_grid_overflow_bodies: physics_counts.ship_grid_overflow_bodies,
+            obstacle_grid_overflow_bodies: physics_counts.obstacle_grid_overflow_bodies,
             narrowphase_tests: physics_counts.narrowphase_tests,
             trigger_enters: physics_counts.trigger_enters +
                 physics_counts.obstacle_trigger_enters +

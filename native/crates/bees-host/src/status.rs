@@ -81,6 +81,8 @@ pub struct NativeHostStatusInterval {
     pub game_failed_steps: u64,
     pub physics_integrated_bodies: u64,
     pub physics_broadphase_candidates: u64,
+    pub physics_ship_grid_overflow_bodies: u64,
+    pub physics_obstacle_grid_overflow_bodies: u64,
     pub physics_narrowphase_tests: u64,
     pub physics_trigger_enters: u64,
     /// Number of successful sampled fixed steps in this interval.
@@ -162,6 +164,12 @@ impl NativeStatusSampler {
                 )?,
                 physics_broadphase_candidates: diff(
                     s.broadphase_candidates, p.broadphase_candidates,
+                )?,
+                physics_ship_grid_overflow_bodies: diff(
+                    s.ship_grid_overflow_bodies, p.ship_grid_overflow_bodies,
+                )?,
+                physics_obstacle_grid_overflow_bodies: diff(
+                    s.obstacle_grid_overflow_bodies, p.obstacle_grid_overflow_bodies,
                 )?,
                 physics_narrowphase_tests: diff(
                     s.narrowphase_tests, p.narrowphase_tests,
