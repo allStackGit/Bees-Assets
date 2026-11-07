@@ -1044,6 +1044,7 @@ document.addEventListener('DOMContentLoaded', () => {
             automationOptions.textContent='No connected native-capable machines with a passing preflight.';
         $('hub-automation-arm').disabled=automation.enabled||!automationCandidates.length;
         $('hub-automation-disarm').disabled=!automation.enabled;
+        $('hub-automation-adopt-running').disabled=automation.enabled;
         $('hub-automation-rebalance').disabled=automation.enabled;
         $('hub-automation-gpu').disabled=automation.enabled;
         $('hub-automation-gpu-claim').disabled=automation.enabled;
@@ -1842,6 +1843,7 @@ document.addEventListener('DOMContentLoaded', () => {
             feedback('hub-automation-status','Select at least one native-capable machine.');
             return;
         }
+        const adopt=$('hub-automation-adopt-running').checked;
         const rebalance=$('hub-automation-rebalance').checked;
         const gpu=$('hub-automation-gpu').checked;
         const gpuClaim=$('hub-automation-gpu-claim').checked;
@@ -1852,6 +1854,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         if(!confirm('Arm native queue automation on '+ids.join(', ')+
             '? This will start eligible CPU jobs and release verified completed capacity. You confirm that unmanaged host workloads have been accounted for. Restart disarms automation.'+
+            (adopt?' Previously automated running jobs will be re-adopted ONLY after fresh, same-dispatch native inspection and verified lease ownership; ambiguous jobs block arming. Existing native processes will not be relaunched.':'')+
             (gpu?' This session will also start jobs with a currently qualified exclusive GPU.':'')+
             (gpuClaim?' This session may claim exclusive GPU capacity on armed Linux hosts.':'')+
             (gpuProbe?' It may run one inert access probe for each GPU claim it creates.':'')+
@@ -1859,6 +1862,7 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             await action('hub/automation',{
                 enabled:true,machine_ids:ids,rebalance_queued:rebalance,
+                adopt_reconciled_running:adopt,confirm_adopt_running:adopt,
                 start_qualified_gpu:gpu,claim_exclusive_gpu:gpuClaim,probe_exclusive_gpu:gpuProbe,
                 confirm_arm:true,confirm_untracked_load:true,
             });
