@@ -45,6 +45,47 @@ impl NativeDiagnosticMeasurements {
         )
     }
 
+    /// Derive one checkpoint's evaluated outcomes from two snapshots of
+    /// the same durable source sink. Reject a reset or counter regression
+    /// rather than manufacturing a plausible training benchmark.
+    pub fn delta_since(&self, previous: &Self) -> Option<Self> {
+        let mut victories_by_side = BTreeMap::new();
+        for (&side, &wins) in &self.victories_by_side {
+            let earlier = previous.victories_by_side
+                .get(&side).copied().unwrap_or(0);
+            victories_by_side.insert(side, wins.checked_sub(earlier)?);
+        }
+        if previous.victories_by_side.iter().any(|(&side, &wins)|
+            self.victories_by_side.get(&side).copied().unwrap_or(0) < wins
+        ) {
+            return None;
+        }
+        Some(Self {
+            episodes_finished:
+                self.episodes_finished.checked_sub(previous.episodes_finished)?,
+            episodes_aborted:
+                self.episodes_aborted.checked_sub(previous.episodes_aborted)?,
+            episodes_timed_out:
+                self.episodes_timed_out.checked_sub(previous.episodes_timed_out)?,
+            draws: self.draws.checked_sub(previous.draws)?,
+            victories_by_side,
+            total_episode_seconds:
+                self.total_episode_seconds - previous.total_episode_seconds,
+            immediate_reward_by_team: std::array::from_fn(|i|
+                self.immediate_reward_by_team[i] -
+                    previous.immediate_reward_by_team[i]
+            ),
+            terminal_reward_by_team: std::array::from_fn(|i|
+                self.terminal_reward_by_team[i] -
+                    previous.terminal_reward_by_team[i]
+            ),
+            elo_markers:
+                self.elo_markers.checked_sub(previous.elo_markers)?,
+            group_episodes_ended: self.group_episodes_ended
+                .checked_sub(previous.group_episodes_ended)?,
+        })
+    }
+
     fn record(&mut self, event: &NativeLevelNotification) {
         match &event.kind {
             NativeLevelNotificationKind::EpisodeFinal(finalized) => {
