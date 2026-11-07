@@ -19,6 +19,7 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::Arc;
 
+use bees_gameplay::group_rewards::{team_id_for_side, NativeGroupRewardDelivery};
 use bees_gameplay::level_host::NativeLevelStopKind;
 use bees_gameplay::squads::SquadRosterError;
 use bees_hivemind::session::SquadLifetime;
@@ -26,6 +27,7 @@ use bees_host::durable_connection::DurableHiveMindConnection;
 use bees_host::notification_file::DurableDiagnosticNotifications;
 use bees_host::policy_process::ResidentPolicyProcess;
 use bees_host::scene_assets::NativeSceneAssets;
+use bees_host::scene_builder::{NativeAuthoredEntity, NativeAuthoredGroups};
 use bees_host::unity_scene_snapshot::{
     NativeExportedPolicyLevelSetup, NativePhysicalScene,
 };
@@ -58,12 +60,30 @@ struct FragmentConfig {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
+struct GroupParticipantConfig {
+    side: i32,
+    agent_id: u64,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct GroupConfig {
+    /// The Unity self-play episode number at the exported initial scene.
+    episode_number: u32,
+    /// Actual source MA-POCA group identities, not inferred hull IDs.
+    participants: Vec<GroupParticipantConfig>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct LevelConfig {
     scene: PathBuf,
     world_id: u64,
     level_id: i64,
     seed: u64,
     model_slots: HashMap<u8, u32>,
+    /// Omit only for a game Level without MA-POCA group rewards.
+    groups: Option<GroupConfig>,
 }
 
 #[derive(Deserialize)]
@@ -137,6 +157,47 @@ fn allocate_from_stage(next_id: Rc<Cell<i64>>) -> MinionAllocator {
     })
 }
 
+
+fn episode_number(group: &GroupConfig, offset: u32) -> io::Result<u32> {
+    group.episode_number.checked_add(offset)
+        .ok_or_else(|| invalid("group episode number exhausted"))
+}
+
+/// In Unity, the real side-to-MA-POCA team permutation alternates with
+/// episode number. A reused physical scene retains ship geometry and source
+/// controller identity; only that episode-owned policy routing changes.
+/// An INITIAL import must already match the captured source route.
+fn bind_group_routes(
+    scene: &mut NativePhysicalScene,
+    group: &GroupConfig,
+    offset: u32,
+    verify_source: bool,
+) -> io::Result<[i32; 2]> {
+    let sides = scene.exported_episode()
+        .map_err(|error| contextual("source group sides", error))?
+        .sides();
+    let number = episode_number(group, offset)?;
+    for (&ship_id, binding) in &mut scene.source_policy_bindings {
+        let side = scene.entities.iter().find_map(|entity| match entity {
+            NativeAuthoredEntity::Ship(ship) if ship.entity_id == ship_id =>
+                Some(ship.side),
+            _ => None,
+        }).ok_or_else(|| invalid(format!(
+            "source policy ship {ship_id} has no authored side"
+        )))?;
+        let team = team_id_for_side(sides[0], sides[1], number, side)
+            .map_err(|error| contextual("source group team", error))?;
+        if verify_source && team != binding.team_id {
+            return Err(invalid(format!(
+                "source ship {ship_id} belongs to team {}, not configured self-play episode {number} team {team}",
+                binding.team_id,
+            )));
+        }
+        binding.team_id = team;
+    }
+    Ok(sides)
+}
+
 fn make_setup(
     config: &RunConfig,
     level: &LevelConfig,
@@ -144,19 +205,34 @@ fn make_setup(
     period: NonZeroU32,
     next_id: Rc<Cell<i64>>,
     seed: u64,
-) -> NativeExportedPolicyLevelSetup<MinionAllocator> {
-    NativeExportedPolicyLevelSetup {
+    episode_offset: u32,
+    sides: [i32; 2],
+) -> io::Result<NativeExportedPolicyLevelSetup<MinionAllocator>> {
+    let groups = level.groups.as_ref().map(|group| {
+        let number = episode_number(group, episode_offset)?;
+        let delivery = NativeGroupRewardDelivery::new(
+            sides[0], sides[1], number,
+        ).map_err(|error| contextual("MA-POCA group", error))?;
+        Ok(NativeAuthoredGroups {
+            delivery,
+            participants: group.participants.iter()
+                .map(|participant| (participant.side, participant.agent_id))
+                .collect(),
+        })
+    }).transpose()?;
+
+    Ok(NativeExportedPolicyLevelSetup {
         world_id: WorldId(level.world_id),
         level_id: level.level_id,
         seed,
         broadphase_cell_size: config.broadphase_cell_size,
         decision_period: period,
         initial_full_asteroids: 0,
-        groups: None,
+        groups,
         ship_catalog: assets.shared_ship_catalog(),
         model_slots: level.model_slots.clone(),
         allocate_minion: allocate_from_stage(next_id),
-    }
+    })
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
