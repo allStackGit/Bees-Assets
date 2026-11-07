@@ -19,6 +19,7 @@ use crate::collision::{Aabb, Pose};
 use crate::asteroid_assets::CollisionAsteroidCatalog;
 use crate::asteroid_spawn::{
     FullAsteroidSpawnError, FullAsteroidMotion, FullAsteroidPrototype,
+    FullAsteroidStage, create_full_asteroid_prototype,
     sample_full_asteroid_motion,
 };
 use crate::asteroid_fragments::{
@@ -605,6 +606,19 @@ pub struct ObstacleStorageMetrics {
     pub slots_reused: u64,
 }
 
+/// Stage-owned ordinary asteroid prefab pool and setup workload. The
+/// canonical CombatWorld owns active instances and source-derived events;
+/// these are compact counters, never per-asteroid telemetry records.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct FullAsteroidPoolMeasurements {
+    pub active: usize,
+    pub inactive: usize,
+    pub created_profiles: u64,
+    pub reused_profiles: u64,
+    pub total_destination_draws: u64,
+    pub exhausted_destination_searches: u64,
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct AsteroidBorderState {
     pub has_touched_map_border: bool,
@@ -783,6 +797,10 @@ pub struct CombatWorld {
     /// immutable entity ID as its family key. Non-shard asteroids are absent.
     asteroid_shard_family: HashMap<i64, i64>,
     fragmentation: Option<AsteroidFragmentationConfig>,
+    full_asteroid_stage: Option<FullAsteroidStage>,
+    active_full_asteroid_profiles: HashMap<i64, FullAsteroidPrototype>,
+    pooled_full_asteroid_profiles: Vec<FullAsteroidPrototype>,
+    full_asteroid_pool_work: FullAsteroidPoolMeasurements,
     pending_asteroid_breakups: Vec<PendingAsteroidBreakup>,
     active_shard_prototypes: HashMap<i64, FragmentPrototype>,
     pooled_shard_prototypes: Vec<FragmentPrototype>,
@@ -887,6 +905,10 @@ impl CombatWorld {
             nearby_asteroid_pairs: HashSet::new(),
             asteroid_shard_family: HashMap::new(),
             fragmentation: None,
+            full_asteroid_stage: None,
+            active_full_asteroid_profiles: HashMap::new(),
+            pooled_full_asteroid_profiles: Vec::new(),
+            full_asteroid_pool_work: FullAsteroidPoolMeasurements::default(),
             pending_asteroid_breakups: Vec::new(),
             active_shard_prototypes: HashMap::new(),
             pooled_shard_prototypes: Vec::new(),
@@ -1293,6 +1315,79 @@ impl CombatWorld {
         self.fragmentation = Some(config);
         Ok(())
     }
+    /// Configure the source Stage's actual serialized CollisionAsteroid
+    /// prefab palette once. Both the game and training use these same
+    /// authentic body shapes; the pool retains each Created speed/profile
+    /// until its object is acquired again.
+    pub fn configure_full_asteroid_stage(
+        &mut self, stage: FullAsteroidStage,
+    ) -> Result<(), CombatWorldError> {
+        if self.full_asteroid_stage.is_some() || !stage.valid() ||
+            stage.prefabs.iter().any(|&id| stage.effective_health(id).is_err()) {
+            return Err(CombatWorldError::InvalidFragmentationConfiguration);
+        }
+        self.full_asteroid_stage = Some(stage);
+        Ok(())
+    }
+
+    /// Source Stage.Pool.GetCollisionAsteroidFromPool() followed by Setup.
+    /// Recycled profiles keep their original prefab and Create-time speed;
+    /// newly created profiles sample from the source Stage's OWN palette.
+    /// The physical entity ID is always fresh, independent of reused slots.
+    pub fn spawn_next_full_collision_asteroid(
+        &mut self, random: &mut RandomStream,
+    ) -> Result<(i64, FullAsteroidMotion), CombatWorldError> {
+        let stage = self.full_asteroid_stage.as_ref()
+            .ok_or(CombatWorldError::InvalidFragmentationConfiguration)?;
+        // Preflight ID exhaustion before RNG, pool ownership or collider
+        // mutation. A failure during setup is returned, not recorded as
+        // a fabricated successful asteroid in episode measurements.
+        let id = self.next_entity_id;
+        id.checked_add(1).ok_or(CombatWorldError::EntityIdExhausted)?;
+        let reused = self.pooled_full_asteroid_profiles.last().copied();
+        let profile = if let Some(profile) = reused {
+            profile
+        } else {
+            let selected = stage.prefabs[
+                random.next_below(stage.prefabs.len() as u64) as usize
+            ];
+            create_full_asteroid_prototype(
+                &stage.catalog, selected, stage.settings, random,
+            ).map_err(|_| CombatWorldError::InvalidObstacle)?
+        };
+        let effective = stage.effective_health(profile.prefab_number)
+            .map_err(|_| CombatWorldError::InvalidObstacle)?;
+        let motion = sample_full_asteroid_motion(
+            stage.settings, profile, random,
+        ).map_err(|_| CombatWorldError::InvalidObstacle)?;
+        let catalog = Arc::clone(&stage.catalog);
+        self.spawn_collision_asteroid(
+            &catalog, profile.prefab_number, id, motion.pose,
+            motion.velocity, motion.angular_velocity_degrees, effective,
+        )?;
+        if reused.is_some() {
+            self.pooled_full_asteroid_profiles.pop();
+            self.full_asteroid_pool_work.reused_profiles += 1;
+        } else {
+            self.full_asteroid_pool_work.created_profiles += 1;
+        }
+        self.active_full_asteroid_profiles.insert(id, profile);
+        self.full_asteroid_pool_work.total_destination_draws +=
+            u64::from(motion.destination_attempts);
+        if motion.destination_attempts == 35 {
+            self.full_asteroid_pool_work.exhausted_destination_searches += 1;
+        }
+        Ok((id, motion))
+    }
+
+    pub fn full_asteroid_pool_measurements(&self) -> FullAsteroidPoolMeasurements {
+        FullAsteroidPoolMeasurements {
+            active: self.active_full_asteroid_profiles.len(),
+            inactive: self.pooled_full_asteroid_profiles.len(),
+            ..self.full_asteroid_pool_work
+        }
+    }
+
     pub fn asteroid_border_state(&self, entity_id: i64) -> Option<AsteroidBorderState> {
         self.asteroid_border_states.get(&entity_id).copied()
     }
@@ -3282,6 +3377,12 @@ impl CombatWorld {
         self.obstacle_by_id.remove(&entity_id);
         self.asteroid_border_states.remove(&entity_id);
         self.asteroid_shard_family.remove(&entity_id);
+        // Ordinary pooled full asteroids are separate from the shard pool.
+        // Retire exactly once, after the active collision body is disabled;
+        // reactivation gives the profile a new world-local runtime ID.
+        if let Some(prototype) = self.active_full_asteroid_profiles.remove(&entity_id) {
+            self.pooled_full_asteroid_profiles.push(prototype);
+        }
         if let Some(prototype) = self.active_shard_prototypes.remove(&entity_id) {
             self.pooled_shard_prototypes.push(prototype);
         }

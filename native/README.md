@@ -965,10 +965,12 @@ The portable `bees-sim` crate currently contains:
 - Normal CollisionAsteroid creation and reuse now have a shared authored
   spawn-motion path: pool-owned prefab/speed, exact source-style off-map
   edge sampling, interior destination retry budget, and velocity/spin
-  assignment. The existing collider catalog, physics, and collision-damage
-  pipeline own the actual spawned entities; World.RandomStream owns all
-  draws, and the caller receives the placement retry count. Unity and
-  native RNG streams still differ numerically.
+  assignment. The Stage's authored prefab palette and reusable normal
+  asteroid profiles are now owned by CombatWorld, independent from shard
+  profiles, while physical obstacle slots remain recycled separately.
+  World.RandomStream owns all draws, and compact per-world counters report
+  new/reused profiles and interior placement draws. The source RNG streams
+  remain numerically different from Unity.
 - Obstacle bodies now participate in the same kinematic physics as ships
   and projectiles, with a separate, layer-filtered obstacle trigger queue.
   Ordinary projectile impacts can damage collision asteroids, terminate

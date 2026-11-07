@@ -11,6 +11,7 @@
 //! heading, velocity and spin, but does NOT redraw Create-time Speed.
 
 use crate::asteroid_assets::CollisionAsteroidCatalog;
+use std::sync::Arc;
 use crate::asteroid_fragments::{
     FragmentSpawnSettings, random_map_destination, random_unit_float,
 };
@@ -25,6 +26,7 @@ pub const MINIMUM_ASTEROID_ANGULAR_SPEED_MULTIPLIER: f32 = 5.0;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FullAsteroidSpawnError {
     InvalidStageOrMap,
+    InvalidPrefabPalette,
     MissingAuthoredPrefab(u8),
     InvalidPrototype,
 }
@@ -46,6 +48,44 @@ pub struct FullAsteroidMotion {
     /// Number of candidate interior positions drawn by RandomCoordinate.
     /// Normally one; 35 indicates the source's placement retry budget ended.
     pub destination_attempts: u8,
+}
+
+/// One immutable Stage selection and map configuration, shared by all
+/// ordinary full asteroid spawns within this Level. The prefab numbers
+/// are imported from Stage.Prefabs.CollisionAsteroidPrefabs, not presumed
+/// to be all 28 available authored assets.
+#[derive(Clone, Debug)]
+pub struct FullAsteroidStage {
+    pub catalog: Arc<CollisionAsteroidCatalog>,
+    pub prefabs: Vec<u8>,
+    pub settings: FragmentSpawnSettings,
+}
+
+impl FullAsteroidStage {
+    pub fn valid(&self) -> bool {
+        valid_settings(self.settings) && !self.prefabs.is_empty() &&
+            self.prefabs.iter().all(|&id| self.catalog.by_number(id).is_some())
+    }
+
+    /// The same original/effective health split as native shard spawning.
+    pub fn effective_health(
+        &self, prefab_number: u8,
+    ) -> Result<Option<i32>, FullAsteroidSpawnError> {
+        let Some(asset) = self.catalog.by_number(prefab_number) else {
+            return Err(FullAsteroidSpawnError::MissingAuthoredPrefab(prefab_number));
+        };
+        let Some(ratio) = self.settings.training_health_ratio else {
+            return Ok(None);
+        };
+        let original = i32::from(asset.size_class)
+            .checked_mul(self.catalog.health_increment())
+            .ok_or(FullAsteroidSpawnError::InvalidStageOrMap)?;
+        let adjusted = (original as f32 * ratio).ceil();
+        if !adjusted.is_finite() || adjusted > i32::MAX as f32 {
+            return Err(FullAsteroidSpawnError::InvalidStageOrMap);
+        }
+        Ok(Some(adjusted.max(1.0) as i32))
+    }
 }
 
 fn valid_settings(settings: FragmentSpawnSettings) -> bool {
