@@ -87,29 +87,14 @@ impl ScoutingRun {
         true
     }
 
-    /// Unity Squad.GetPosition is the center of live ship AABB extrema.
-    /// Use the cached actual collider bounds; no mean-center approximation
-    /// and no allocation on the five-second command timer callback.
-    fn current_squad_center(&self, world: &CombatWorld) -> Option<Vec2> {
-        let mut lower = Vec2::new(f32::INFINITY, f32::INFINITY);
-        let mut upper = Vec2::new(f32::NEG_INFINITY, f32::NEG_INFINITY);
-        let mut any = false;
-        for member in &self.members {
-            let Some(bounds) = world.ship_body(member.ship_id)
-                .and_then(|body| body.primary_bounds()) else { continue; };
-            lower.x = lower.x.min(bounds.min.x);
-            lower.y = lower.y.min(bounds.min.y);
-            upper.x = upper.x.max(bounds.max.x);
-            upper.y = upper.y.max(bounds.max.y);
-            any = true;
-        }
-        if any { Some((lower + upper) * 0.5) } else { None }
-    }
-
     pub(super) fn advance(
         &mut self, world: &mut CombatWorld,
         navigation: &NavigationRuntime, random: &mut RandomStream,
         command_poll: &mut Option<ScaledTimer>, dt: f32,
+        owner: SquadLifetime,
+        mut source_center: impl FnMut(
+            SquadLifetime, &CombatWorld,
+        ) -> Result<Vec2, GameCommandError>,
     ) -> Result<(Option<CommandFinishCause>, u64), GameCommandError> {
         let mut callbacks = 0;
         if let Some(due) = command_poll.as_mut()
@@ -127,8 +112,14 @@ impl ScoutingRun {
                 )
             );
             if all_reached {
-                let center = self.current_squad_center(world)
-                    .ok_or(GameCommandError::InvalidSquad)?;
+                // Unity Squad.GetPosition uses authored *sprite* extents,
+                // not collision-hull bounds. Only ask the Level for this
+                // geometry when the five-second timer must choose a new
+                // destination; no additional per-step snapshot is built.
+                let center = source_center(owner, world)?;
+                if !center.is_finite() {
+                    return Err(GameCommandError::MissingScoutingContext);
+                }
                 let destination = choose_random_coordinate(
                     random, center, self.formation.map_bounds,
                     self.max_random_distance, RANDOM_STEP_MIN_DISTANCE,

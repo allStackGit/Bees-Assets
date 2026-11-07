@@ -1350,6 +1350,46 @@ impl NativeSquadCommandDirector {
         ) -> Result<NativeChargeTimerSnapshot, GameCommandError>,
         finished: &mut Vec<FinishedNativeCommand>,
     ) -> Result<(), GameCommandError> {
+        self.advance_into_with_scouting_center(
+            world, navigation, roster, friendlies, random, dt,
+            circle_snapshot, swipe_snapshot, aggressive_snapshot,
+            bombing_snapshot, charge_snapshot,
+            |_, _| Err(GameCommandError::MissingScoutingContext),
+            finished,
+        )
+    }
+
+    /// A Level can provide fresh source Squad.GetPosition for Scouting's
+    /// destination timer without rebuilding the entire friendly roster.
+    /// Existing non-Level callers remain fail-closed for this input.
+    pub fn advance_into_with_scouting_center(
+        &mut self,
+        world: &mut CombatWorld,
+        navigation: &NavigationRuntime,
+        roster: Option<&NativeSquadRoster>,
+        friendlies: &[NativeFriendlySquad],
+        random: &mut RandomStream,
+        dt: f32,
+        mut circle_snapshot: impl FnMut(
+            SquadLifetime, i64, &CombatWorld,
+        ) -> Result<NativeCircleCommandSnapshot, GameCommandError>,
+        mut swipe_snapshot: impl FnMut(
+            SquadLifetime, i64, &CombatWorld, bool,
+        ) -> Result<NativeSwipeCommandSnapshot, GameCommandError>,
+        mut aggressive_snapshot: impl FnMut(
+            SquadLifetime, i64, &CombatWorld, bool,
+        ) -> Result<NativeAggressiveCommandSnapshot, GameCommandError>,
+        mut bombing_snapshot: impl FnMut(
+            SquadLifetime, i64, &CombatWorld, bool,
+        ) -> Result<NativeBombingTimerSnapshot, GameCommandError>,
+        mut charge_snapshot: impl FnMut(
+            SquadLifetime, i64, &CombatWorld, bool,
+        ) -> Result<NativeChargeTimerSnapshot, GameCommandError>,
+        mut scouting_center: impl FnMut(
+            SquadLifetime, &CombatWorld,
+        ) -> Result<Vec2, GameCommandError>,
+        finished: &mut Vec<FinishedNativeCommand>,
+    ) -> Result<(), GameCommandError> {
         if !dt.is_finite() || dt < 0.0 {
             return Err(GameCommandError::InvalidDelta);
         }
@@ -1386,6 +1426,7 @@ impl NativeSquadCommandDirector {
                 let previous_events = world.events().len();
                 let (mut finished, callbacks) = scouting.advance(
                     world, navigation, random, &mut command.command_poll, dt,
+                    owner, &mut scouting_center,
                 )?;
                 self.measurements.command_timer_callbacks += callbacks;
                 self.measurements.scouting_beacons_dropped +=

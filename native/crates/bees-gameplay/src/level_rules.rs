@@ -12,6 +12,7 @@ use std::num::NonZeroU32;
 
 use bees_hivemind::session::SquadLifetime;
 use bees_sim::combat_world::{CombatEvent, CombatWorld, CombatWorldError};
+use bees_sim::geometry::Vec2;
 use bees_sim::navigation_runtime::NavigationRuntime;
 use bees_sim::physics::CollisionMatrix;
 use bees_sim::policy::Decision;
@@ -140,6 +141,17 @@ pub trait NativeLevelCommandContext {
         _enemy_squad_id: i64, _need_retarget: bool,
     ) -> Result<NativeChargeTimerSnapshot, GameCommandError> {
         Err(GameCommandError::MissingCombatSnapshot)
+    }
+
+    /// Unity Squad.GetPosition on each Scouting movement callback. This
+    /// is the live union of the ships' authored sprite extents, NOT the
+    /// current collision hulls or mean position. The Level may calculate
+    /// it from live sprites or via squad_geometry using actual ship sizes.
+    /// Without authentic sprite geometry Scouting fails closed.
+    fn scouting_command_center(
+        &self, _world: &CombatWorld, _owner: SquadLifetime,
+    ) -> Result<Vec2, GameCommandError> {
+        Err(GameCommandError::MissingScoutingContext)
     }
 
     fn navigation(&self) -> &NavigationRuntime;
@@ -517,7 +529,7 @@ where
             }
             let previous_event_count = state.combat.events().len();
             let metadata = &state.metadata;
-            state.events.advance_timed_commands_with_bombing(
+            state.events.advance_timed_commands_with_scouting_center(
                 completed_tick, &mut state.combat,
                 metadata.navigation(),
                 &state.command_friendlies, &mut world.random, dt_seconds,
@@ -543,6 +555,9 @@ where
                     metadata.charge_command_snapshot(
                         combat, owner, enemy_id, need_retarget,
                     )
+                },
+                |owner, combat| {
+                    metadata.scouting_command_center(combat, owner)
                 },
             )?;
             if state.combat.events().len() > previous_event_count {

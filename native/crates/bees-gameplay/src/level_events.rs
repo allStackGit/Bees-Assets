@@ -777,6 +777,44 @@ impl NativeLevelEventProcessor {
             SquadLifetime, i64, &CombatWorld, bool,
         ) -> Result<NativeChargeTimerSnapshot, GameCommandError>,
     ) -> Result<(), NativeLevelEventError> {
+        self.advance_timed_commands_with_scouting_center(
+            completed_tick, world, navigation, friendlies, random, dt,
+            circle_snapshot, swipe_snapshot, aggressive_snapshot,
+            bombing_snapshot, charge_snapshot,
+            |_, _| Err(GameCommandError::MissingScoutingContext),
+        )
+    }
+
+    /// Level-only source geometry is requested solely when a Scouting
+    /// command needs a new random destination. No fake hull-derived
+    /// Squad.GetPosition is allowed in the native game.
+    pub fn advance_timed_commands_with_scouting_center(
+        &mut self,
+        completed_tick: u64,
+        world: &mut CombatWorld,
+        navigation: &NavigationRuntime,
+        friendlies: &[NativeFriendlySquad],
+        random: &mut RandomStream,
+        dt: f32,
+        circle_snapshot: impl FnMut(
+            SquadLifetime, i64, &CombatWorld,
+        ) -> Result<NativeCircleCommandSnapshot, GameCommandError>,
+        swipe_snapshot: impl FnMut(
+            SquadLifetime, i64, &CombatWorld, bool,
+        ) -> Result<NativeSwipeCommandSnapshot, GameCommandError>,
+        aggressive_snapshot: impl FnMut(
+            SquadLifetime, i64, &CombatWorld, bool,
+        ) -> Result<NativeAggressiveCommandSnapshot, GameCommandError>,
+        bombing_snapshot: impl FnMut(
+            SquadLifetime, i64, &CombatWorld, bool,
+        ) -> Result<NativeBombingTimerSnapshot, GameCommandError>,
+        charge_snapshot: impl FnMut(
+            SquadLifetime, i64, &CombatWorld, bool,
+        ) -> Result<NativeChargeTimerSnapshot, GameCommandError>,
+        scouting_center: impl FnMut(
+            SquadLifetime, &CombatWorld,
+        ) -> Result<Vec2, GameCommandError>,
+    ) -> Result<(), NativeLevelEventError> {
         if self.is_failed() {
             return Err(NativeLevelEventError::FailedLevel);
         }
@@ -797,7 +835,8 @@ impl NativeLevelEventProcessor {
         if let Err(error) = self.commands.advance_into_with_bombing(
             world, navigation, Some(&self.roster), friendlies, random, dt,
             circle_snapshot, swipe_snapshot, aggressive_snapshot,
-            bombing_snapshot, charge_snapshot, &mut self.timed_finished,
+            bombing_snapshot, charge_snapshot, scouting_center,
+            &mut self.timed_finished,
         ) {
             self.failed = true;
             return Err(NativeLevelEventError::Commands(error));
