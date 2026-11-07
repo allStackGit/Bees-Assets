@@ -138,7 +138,7 @@ pub fn assemble_circle_snapshot_from_live_weapons(
 
 pub(super) struct CircleRun {
     target: NativeAttackTarget,
-    members: Vec<SquadFormationMember>,
+    pub(super) members: Vec<SquadFormationMember>,
     formation: SquadFormationOptions,
     reached_enemy: bool,
     ideal_distance: Option<f32>,

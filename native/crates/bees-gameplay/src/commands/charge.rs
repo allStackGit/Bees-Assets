@@ -35,7 +35,7 @@ pub struct NativeChargeTimerSnapshot {
 
 pub struct NativeChargeRun {
     target: NativeAttackTarget,
-    members: Vec<SquadFormationMember>,
+    pub(super) members: Vec<SquadFormationMember>,
     formation: SquadFormationOptions,
     ranked: Vec<NativeEnemyTargetStats>,
 }

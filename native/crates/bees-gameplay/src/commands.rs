@@ -38,6 +38,7 @@ use bees_sim::squad_movement::{
 };
 use bees_sim::timer::ScaledTimer;
 use crate::squads::{NativeSquadEntry, NativeSquadRoster};
+use crate::squad_geometry::SquadMemberOffset;
 
 mod mining;
 mod heal;
@@ -608,6 +609,58 @@ impl NativeSquadCommandDirector {
             cause: CommandFinishCause::HealingCompleted,
             capability_command_tsv: Some(earned_tsv),
         }))
+    }
+
+
+    /// Unity Ship.Kill -> Squad.RemoveShip -> Squad.SetOffsets recomputes
+    /// formation offsets for each surviving ship, even when the current
+    /// HiveMind command remains active. Retain the strategy's timer and
+    /// targeting state, but update every surviving cached movement order.
+    /// Drop retired members so subsequent polls cannot order dead ships.
+    pub fn refresh_survivor_formation(
+        &mut self, owner: SquadLifetime,
+        source_offsets: &[SquadMemberOffset],
+    ) {
+        let Some(active) = self.active.get_mut(&owner) else { return };
+        active.member_ids.retain(|id|
+            source_offsets.iter().any(|entry| entry.ship_id == *id),
+        );
+        if let Some(run) = active.patrol.as_mut() {
+            refresh_command_formation_members(&mut run.members, source_offsets);
+        }
+        if let Some(run) = active.following.as_mut() {
+            refresh_command_formation_members(&mut run.members, source_offsets);
+        }
+        if let Some(run) = active.circle.as_mut() {
+            refresh_command_formation_members(&mut run.members, source_offsets);
+        }
+        if let Some(run) = active.swipe.as_mut() {
+            refresh_command_formation_members(&mut run.members, source_offsets);
+        }
+        if let Some(run) = active.in_and_out.as_mut() {
+            refresh_command_formation_members(&mut run.members, source_offsets);
+        }
+        if let Some(run) = active.aggressive.as_mut() {
+            refresh_command_formation_members(&mut run.members, source_offsets);
+        }
+        if let Some(run) = active.bombing.as_mut() {
+            refresh_command_formation_members(&mut run.members, source_offsets);
+        }
+        if let Some(run) = active.charge.as_mut() {
+            refresh_command_formation_members(&mut run.members, source_offsets);
+        }
+        if let Some(run) = active.mining.as_mut() {
+            refresh_command_formation_members(&mut run.members, source_offsets);
+        }
+        if let Some(run) = active.scouting.as_mut() {
+            refresh_command_formation_members(&mut run.members, source_offsets);
+        }
+        if let Some(run) = active.full_retreat.as_mut() {
+            refresh_command_formation_members(&mut run.members, source_offsets);
+        }
+        // Heal retains per-ship reservation and clearance metadata rather
+        // than issuing formation moves. Its dead healing member is already
+        // removed by the authoritative squad death pass.
     }
 
     /// Source HivemindVision.RecordShipSighting only calls
@@ -2048,4 +2101,21 @@ fn next_unit(random: &mut RandomStream) -> f32 {
 
 fn next_sign(random: &mut RandomStream) -> f32 {
     if random.next_below(2) != 0 { 1.0 } else { -1.0 }
+}
+
+/// Rebase one command's surviving member offsets from the same source
+/// sprite-extent geometry used by the Level, preserving original member
+/// iteration order, mobility and authored Pathfinder clearance. This
+/// only executes when squad membership changes, not each fixed step.
+fn refresh_command_formation_members(
+    members: &mut Vec<SquadFormationMember>,
+    source_offsets: &[SquadMemberOffset],
+) {
+    members.retain_mut(|member| {
+        let Some(source) = source_offsets.iter().find(|entry|
+            entry.ship_id == member.ship_id,
+        ) else { return false };
+        member.offset_from_center = source.offset;
+        true
+    });
 }

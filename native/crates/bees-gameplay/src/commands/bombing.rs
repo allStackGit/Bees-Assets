@@ -334,7 +334,7 @@ pub(super) fn defenseless_carrier_strikers(
 /// CombatWorld; this controller does not duplicate combat mechanics.
 pub struct NativeBombingRun {
     target: NativeAttackTarget,
-    members: Vec<SquadFormationMember>,
+    pub(super) members: Vec<SquadFormationMember>,
     formation: SquadFormationOptions,
     fast_poll: bool,
     timer_loops: u64,

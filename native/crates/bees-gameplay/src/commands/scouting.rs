@@ -12,7 +12,7 @@ const RANDOM_STEP_MIN_DISTANCE: f32 = 10.0;
 
 pub(super) struct ScoutingRun {
     side: i32,
-    members: Vec<SquadFormationMember>,
+    pub(super) members: Vec<SquadFormationMember>,
     formation: SquadFormationOptions,
     max_random_distance: f32,
     scout_ids: Vec<i64>,

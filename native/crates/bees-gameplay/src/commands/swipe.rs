@@ -88,7 +88,7 @@ pub fn assemble_swipe_snapshot_from_live_weapons(
 pub(super) struct SwipeRun {
     target: NativeAttackTarget,
     kind: LocalCommandKind,
-    members: Vec<SquadFormationMember>,
+    pub(super) members: Vec<SquadFormationMember>,
     formation: SquadFormationOptions,
     reached_enemy: bool,
     swipe_destination: Vec2,

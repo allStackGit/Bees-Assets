@@ -31,8 +31,13 @@ use crate::commands::{
 use crate::level_events::{
     NativeLevelEventError, NativeLevelEventProcessor,
 };
-use crate::squads::{NativeSquadEntry, NativeSquadRoster, SquadRosterError};
-use crate::squad_geometry::live_squad_bounds_from_catalog;
+use crate::squads::{
+    NativeSquadEntry, NativeSquadRoster, SquadRosterChange, SquadRosterError,
+};
+use crate::squad_geometry::{
+    live_squad_bounds_from_catalog, live_squad_geometry_from_catalog,
+    SquadMemberOffset,
+};
 use crate::level_inputs::collect_live_friendlies_from_catalog;
 
 /// The native game Level's authoritative FleetShip metadata. This is NOT
@@ -182,6 +187,21 @@ pub trait NativeLevelCommandContext {
     /// A Level without authentic assets must fail closed for Scouting.
     fn ship_asset_catalog(&self) -> Option<&ShipAssetCatalog> {
         None
+    }
+
+    /// Unity Ship.Kill removes a member and immediately calls
+    /// Squad.SetOffsets for the surviving squad, before its next movement
+    /// command. Update the Level's single stored Ship.OffsetFromCenter
+    /// values and refresh composition-dependent command bans. The source
+    /// offsets have already been calculated from the one physical world
+    /// and its authored sprite catalog; there is no second game roster.
+    /// Without this Level-owned update, a later command would silently
+    /// apply formation offsets from before the casualty.
+    fn update_survivor_formation(
+        &mut self, _owner: SquadLifetime,
+        _offsets: &[SquadMemberOffset],
+    ) -> Result<(), GameCommandError> {
+        Err(GameCommandError::MissingCombatSnapshot)
     }
 
     /// Unity Squad.GetPosition on demand for Scouting's movement timer.
@@ -359,6 +379,10 @@ pub struct NativeLevelState<M, A> {
     /// Reused source Level.State.Squads snapshot; no per-frame allocation.
     command_friendlies: Vec<NativeFriendlySquad>,
     command_bomber_contacts: Vec<NativeBomberContact>,
+    /// Rare source-order survivor-formation updates after ship deaths.
+    /// Both buffers are reused; quiet frames do no formation work.
+    formation_changed_squads: Vec<SquadLifetime>,
+    survivor_offsets: Vec<SquadMemberOffset>,
     command_input_measurements: NativeCommandInputMeasurements,
     /// Reused sparse per-ship mining credit transaction. Events may contain
     /// multiple extractions for the same ship during one combat phase.
@@ -396,6 +420,8 @@ impl<M, A> NativeLevelState<M, A> {
             decisions: NativeDecisionCadence::new(period),
             command_friendlies: Vec::new(),
             command_bomber_contacts: Vec::new(),
+            formation_changed_squads: Vec::new(),
+            survivor_offsets: Vec::new(),
             command_input_measurements: NativeCommandInputMeasurements::default(),
             mining_credit_totals: HashMap::new(),
             mining_credit_order: Vec::new(),
@@ -460,6 +486,11 @@ pub enum NativeLevelStepError {
     InvalidMiningFleetValue(i64),
 }
 
+impl From<GameCommandError> for NativeLevelStepError {
+    fn from(error: GameCommandError) -> Self {
+        Self::Events(NativeLevelEventError::Commands(error))
+    }
+}
 impl From<CombatWorldError> for NativeLevelStepError {
     fn from(error: CombatWorldError) -> Self {
         Self::Combat(error)
@@ -555,6 +586,41 @@ where
             |id| metadata.damage_metadata(id),
             |id| metadata.current_mined_tsv(id),
         )?;
+        // Unity Ship.Kill removes the casualty, then calls Squad.SetOffsets
+        // on its survivors in the SAME kill transaction. The roster's
+        // MemberLost changes are the authoritative signal. Other commands
+        // retain their running strategies, but must use fresh live offsets
+        // on subsequent movement polls. When all members died this tick,
+        // the roster retired their squad instead; no rebasing is needed.
+        state.formation_changed_squads.clear();
+        for &change in state.events.latest_squad_changes() {
+            if let SquadRosterChange::MemberLost { squad, .. } = change {
+                if state.events.roster().get(squad).is_some() &&
+                    !state.formation_changed_squads.contains(&squad)
+                {
+                    state.formation_changed_squads.push(squad);
+                }
+            }
+        }
+        for &owner in &state.formation_changed_squads {
+            let squad = state.events.roster().get(owner)
+                .ok_or(GameCommandError::InvalidSquad)?;
+            let catalog = state.metadata.ship_asset_catalog()
+                .ok_or(GameCommandError::MissingCombatSnapshot)?;
+            live_squad_geometry_from_catalog(
+                &state.combat, squad, catalog, &mut state.survivor_offsets,
+            ).map_err(GameCommandError::SquadGeometry)?;
+            // Store the same authored formation and composition bans that
+            // Unity's actual Level uses for later strategy activations.
+            state.metadata.update_survivor_formation(
+                owner, &state.survivor_offsets,
+            )?;
+            // Also synchronize in-flight command copies without resetting
+            // their timers, strategy reservations or selection identities.
+            state.events.commands_mut().refresh_survivor_formation(
+                owner, &state.survivor_offsets,
+            );
+        }
         if state.events.has_active_commands() && !state.events.completed() {
             // Only tracked-friendly commands read this geometry; collecting
             // every squad on each fixed step for Mining, Heal, Scouting,

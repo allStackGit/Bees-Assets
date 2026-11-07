@@ -113,7 +113,7 @@ pub fn assemble_aggressive_snapshot_from_live_weapons(
 
 pub(super) struct AggressiveRun {
     target: NativeAttackTarget,
-    members: Vec<SquadFormationMember>,
+    pub(super) members: Vec<SquadFormationMember>,
     formation: SquadFormationOptions,
     approach: NativeTargetApproach,
     comfortably_in_range: bool,

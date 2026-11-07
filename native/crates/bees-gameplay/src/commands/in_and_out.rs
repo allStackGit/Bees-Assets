@@ -21,7 +21,7 @@ use super::{
 
 pub(super) struct InAndOutRun {
     target: NativeAttackTarget,
-    members: Vec<SquadFormationMember>,
+    pub(super) members: Vec<SquadFormationMember>,
     formation: SquadFormationOptions,
     return_point: Vec2,
     reached_enemy: bool,

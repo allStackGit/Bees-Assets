@@ -15,7 +15,7 @@ const STRIKER_TYPE: u8 = 19;
 
 pub(super) struct FullRetreatRun {
     gate_id: i64,
-    members: Vec<SquadFormationMember>,
+    pub(super) members: Vec<SquadFormationMember>,
     formation: SquadFormationOptions,
     /// Preserves source squad registration order; a ship remains listed
     /// until the next authoritative fixed tick actually retires it.

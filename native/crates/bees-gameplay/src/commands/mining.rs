@@ -6,7 +6,7 @@ pub(super) struct MiningRun {
     target_id: i64,
     destination_offset: Vec2,
     formation: SquadFormationOptions,
-    members: Vec<SquadFormationMember>,
+    pub(super) members: Vec<SquadFormationMember>,
     eligible: Vec<i64>,
     /// Enrollment bits parallel to eligible avoid O(squad size squared)
     /// repeated contains() checks on every physics step.
