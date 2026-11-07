@@ -418,6 +418,14 @@ pub struct NativeLevelWindowCounts {
     pub rounds: u32,
     pub world_steps: usize,
     pub policy_rows: usize,
+    /// Phase measurements cover only sampled successful rounds, never
+    /// all rounds or a fabricated estimate of total host wall time.
+    pub sampled_rounds: u32,
+    pub sampled_policy_rows: usize,
+    pub sampled_world_steps: usize,
+    pub sampled_observation_build_nanos: u128,
+    pub sampled_inference_and_validation_nanos: u128,
+    pub sampled_world_dispatch_and_step_nanos: u128,
     pub retirement_notifications: usize,
     pub delivered_notifications: usize,
     pub stopped_with_no_live_worlds: bool,
@@ -996,6 +1004,17 @@ impl NativeLevelBatchDriver {
             counts.rounds += 1;
             counts.world_steps += step.worlds_stepped;
             counts.policy_rows += step.policy_agents_inferred;
+            if step.phase_timing_sampled {
+                counts.sampled_rounds += 1;
+                counts.sampled_policy_rows += step.policy_agents_inferred;
+                counts.sampled_world_steps += step.worlds_stepped;
+                counts.sampled_observation_build_nanos +=
+                    step.observation_build_nanos;
+                counts.sampled_inference_and_validation_nanos +=
+                    step.inference_and_validation_nanos;
+                counts.sampled_world_dispatch_and_step_nanos +=
+                    step.world_dispatch_and_step_nanos;
+            }
             if round % delivery_every.get() == 0 ||
                 step.worlds_stepped == 0 ||
                 round == max_rounds.get()
