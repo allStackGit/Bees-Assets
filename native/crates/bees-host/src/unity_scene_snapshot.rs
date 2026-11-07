@@ -32,7 +32,12 @@ use bees_sim::obstacle::{CombatObstacle, ObstacleKind, ObstacleVitals};
 use bees_sim::movement::ShipMotion;
 use bees_sim::simulation::WorldId;
 use bees_sim::ship_assets::ShipAssetCatalog;
-use bees_sim::combat_perception_bridge::AuthoredShipPerception;
+use bees_sim::combat_perception_bridge::{
+    AuthoredShipPerception, ControlledShipPerception,
+};
+use bees_sim::perception::CapabilitySource;
+use bees_sim::perception_weapons::SelfWeapon;
+use bees_gameplay::inference::NativePolicyRoute;
 use bees_sim::navigation_runtime::NavigationRuntime;
 use bees_gameplay::episode::NativeEpisodeRewardCoordinator;
 use bees_gameplay::group_rewards::NativeGroupRewardDelivery;
@@ -52,7 +57,7 @@ use crate::policy_only_metadata::{
     PolicyOnlyMetadataError,
 };
 
-const SNAPSHOT_VERSION: u32 = 10;
+const SNAPSHOT_VERSION: u32 = 11;
 
 #[derive(Deserialize, Clone, Copy)]
 struct UnityVec2 { x: f32, y: f32 }
@@ -119,8 +124,40 @@ struct UnityShip {
     policy_movement_disabled: bool,
     policy_cease_fire: bool,
     observed_weapons: Vec<UnityObservedWeapon>,
+    effective_vision_range: f32,
+    has_weapons: bool,
+    has_turrets: bool,
+    has_special_action: bool,
+    special_ready: bool,
+    special_resource_fraction: f32,
+    special_cooldown_fraction: f32,
+    special_phase: f32,
+    mining_possible: bool,
+    healing_possible: bool,
+    warp_possible: bool,
+    is_carrier_child: bool,
+    has_living_parent_carrier: bool,
+    parent_carrier_id: i64,
+    team_retainable_mined_tsv: i32,
+    side_starting_tsv: i32,
+    self_weapons: Vec<UnitySelfWeapon>,
     // Required in v2, exported from the actual Unity Weapon/Piece instances.
     turrets: Vec<UnityTurret>,
+}
+
+#[derive(Deserialize)]
+struct UnitySelfWeapon {
+    slot: usize,
+    weapon_type: u8,
+    position: UnityVec2,
+    range: f32,
+    power: f32,
+    rate_of_fire: f32,
+    rotation_rate: f32,
+    projectile_value: f32,
+    projectile_speed: f64,
+    has_projectile_speed: bool,
+    has_target_ship: bool,
 }
 
 #[derive(Deserialize)]
@@ -215,6 +252,8 @@ pub enum NativeSnapshotError {
     InvalidTurret { ship_id: i64, slot: usize },
     UnknownPolicyShip(i64),
     AlreadyBound(i64),
+    InvalidPolicySource(i64),
+    MissingModelSlot(u8),
     Fleet(NativeFleetInventoryError),
 }
 
@@ -245,6 +284,7 @@ pub struct NativePhysicalScene {
     /// fabricated policy identity. Loaded model slots remain selected by
     /// the host's checkpoint schedule.
     pub source_policy_bindings: HashMap<i64, NativeSourcePolicyBinding>,
+    source_policy_inputs: HashMap<i64, NativeSourcePolicyInputs>,
 }
 
 /// All values not represented in Unity's physical snapshot remain required
@@ -282,6 +322,17 @@ pub struct NativeSourcePolicyBinding {
     pub cease_fire: bool,
 }
 
+/// The real Unity policy controller's static source fields. Dynamic
+/// cooldowns, observed turret aiming and ship motion are instead read from
+/// the same canonical CombatWorld during gameplay steps.
+#[derive(Clone, Copy, Debug)]
+struct NativeSourcePolicyInputs {
+    controller: ControlledShipPerception,
+    capability: CapabilitySource,
+    parent_carrier_id: Option<i64>,
+    own_weapons: [Option<SelfWeapon>; 5],
+}
+
 /// Runtime source Squad.ItemId is allocated once per Squad.Setup by the
 /// Stage-wide monotonic Pool.ItemCount, even for reused pooled wrappers.
 pub struct NativeSourceSquad {
@@ -291,6 +342,45 @@ pub struct NativeSourceSquad {
 }
 
 impl NativePhysicalScene {
+    /// Compose observation-capable policy agents exclusively from verified
+    /// source-bound Unity controllers. Only *model slots* remain external:
+    /// the host must resolve the requested checkpoint/learner matchup
+    /// before invoking this function. An unknown team is an error, not
+    /// a default policy or substituted model.
+    pub fn exported_policy_agents(
+        &self, model_slots: &HashMap<u8, u32>,
+    ) -> Result<Vec<AuthoredPolicyAgent>, NativeSnapshotError> {
+        let mut ids: Vec<_> = self.source_policy_bindings.keys()
+            .copied().collect();
+        ids.sort_unstable();
+        let mut agents = Vec::with_capacity(ids.len());
+        for ship_id in ids {
+            let binding = self.source_policy_bindings.get(&ship_id)
+                .expect("enumerated source-bound ship");
+            let input = self.source_policy_inputs.get(&ship_id)
+                .ok_or(NativeSnapshotError::InvalidPolicySource(ship_id))?;
+            let model_slot = *model_slots.get(&binding.team_id)
+                .ok_or(NativeSnapshotError::MissingModelSlot(binding.team_id))?;
+            let side = self.entities.iter().find_map(|entity| match entity {
+                NativeAuthoredEntity::Ship(ship)
+                    if ship.entity_id == ship_id => Some(ship.side),
+                _ => None,
+            }).ok_or(NativeSnapshotError::UnknownPolicyShip(ship_id))?;
+            agents.push(AuthoredPolicyAgent {
+                ship_id,
+                side,
+                route: NativePolicyRoute {
+                    team_id: binding.team_id, model_slot,
+                },
+                controller: input.controller,
+                capability: input.capability,
+                parent_carrier_id: input.parent_carrier_id,
+                own_weapons: input.own_weapons,
+            });
+        }
+        Ok(agents)
+    }
+
     /// Finish ONE actual imported Level without creating a separate combat
     /// backend or estimated ship/weapon/squad values. Every supplied policy
     /// agent must match one previously bound native ship on the same side;
@@ -310,7 +400,9 @@ impl NativePhysicalScene {
             }
         }
         for agent in &setup.policy_agents {
-            if bound_sides.remove(&agent.ship_id) != Some(agent.side) {
+            if self.source_policy_bindings.get(&agent.ship_id)
+                .is_some_and(|source| source.team_id != agent.route.team_id) ||
+                bound_sides.remove(&agent.ship_id) != Some(agent.side) {
                 return Err(NativePolicyOnlyLevelError::InvalidControllerBinding(
                     agent.ship_id,
                 ));
@@ -320,6 +412,17 @@ impl NativePhysicalScene {
             return Err(NativePolicyOnlyLevelError::InvalidControllerBinding(
                 ship_id,
             ));
+        }
+        for &ship_id in self.source_policy_bindings.keys() {
+            if !self.entities.iter().any(|entity| match entity {
+                NativeAuthoredEntity::Ship(ship) =>
+                    ship.entity_id == ship_id && ship.policy.is_some(),
+                _ => false,
+            }) {
+                return Err(NativePolicyOnlyLevelError::InvalidControllerBinding(
+                    ship_id,
+                ));
+            }
         }
 
         let squads = self.squads_for_level(setup.level_id)
@@ -463,6 +566,7 @@ impl NativePhysicalScene {
         let mut authored_ship_perceptions = HashMap::with_capacity(raw.ships.len());
         let mut active_policy_ship_ids = Vec::new();
         let mut source_policy_bindings = HashMap::new();
+        let mut source_policy_inputs = HashMap::new();
         let mut seen = HashSet::with_capacity(entities.capacity());
         for ship in raw.ships {
             if ship.entity_id <= 0 || ship.side <= 0 ||
@@ -600,6 +704,85 @@ impl NativePhysicalScene {
                 turrets_by_ship.insert(ship.entity_id, authored_turrets);
             }
             if ship.has_bound_policy {
+                if !ship.is_rl_policy_controlled ||
+                    !ship.effective_vision_range.is_finite() ||
+                    ship.effective_vision_range < 0.0 ||
+                    (ship.has_turrets && !ship.has_weapons) ||
+                    ship.side_starting_tsv <= 0 ||
+                    ship.team_retainable_mined_tsv < 0 ||
+                    (ship.has_living_parent_carrier !=
+                        (ship.parent_carrier_id > 0)) ||
+                    (!ship.is_carrier_child &&
+                        ship.parent_carrier_id != 0) ||
+                    [ship.special_resource_fraction,
+                     ship.special_cooldown_fraction, ship.special_phase]
+                        .iter().any(|value| !value.is_finite() ||
+                            *value < 0.0 || *value > 1.0)
+                {
+                    return Err(NativeSnapshotError::InvalidPolicySource(
+                        ship.entity_id,
+                    ));
+                }
+                let controller = ControlledShipPerception {
+                    effective_vision_range: ship.effective_vision_range,
+                    movement_disabled_for_team: ship.policy_movement_disabled,
+                    has_weapons: ship.has_weapons,
+                    has_turrets: ship.has_turrets,
+                    has_special_action: ship.has_special_action,
+                    special_ready: ship.special_ready,
+                };
+                let capability = CapabilitySource {
+                    special_resource_fraction: ship.special_resource_fraction,
+                    special_cooldown_fraction: ship.special_cooldown_fraction,
+                    special_phase: ship.special_phase,
+                    mining_possible: ship.mining_possible,
+                    healing_possible: ship.healing_possible,
+                    warp_possible: ship.warp_possible,
+                    is_carrier_child: ship.is_carrier_child,
+                    has_living_parent_carrier: ship.has_living_parent_carrier,
+                    ship_mined_tsv: ship.mined_cargo,
+                    team_retainable_mined_tsv: ship.team_retainable_mined_tsv,
+                    side_starting_tsv: ship.side_starting_tsv,
+                };
+                let mut own_weapons = [None; 5];
+                for weapon in ship.self_weapons {
+                    if weapon.slot >= own_weapons.len() ||
+                        own_weapons[weapon.slot].is_some() ||
+                        occupied[weapon.slot] ||
+                        !weapon.position.into_vec().is_finite() ||
+                        ![weapon.range, weapon.power, weapon.rate_of_fire,
+                          weapon.rotation_rate, weapon.projectile_value]
+                            .iter().all(|value| value.is_finite()) ||
+                        (weapon.has_projectile_speed &&
+                            !weapon.projectile_speed.is_finite())
+                    {
+                        return Err(NativeSnapshotError::InvalidPolicySource(
+                            ship.entity_id,
+                        ));
+                    }
+                    let index = weapon.slot;
+                    own_weapons[index] = Some(SelfWeapon {
+                        weapon_type: weapon.weapon_type,
+                        position: weapon.position.into_vec(),
+                        range: weapon.range,
+                        power: weapon.power,
+                        rate_of_fire: weapon.rate_of_fire,
+                        rotation_rate: weapon.rotation_rate,
+                        projectile_value: weapon.projectile_value,
+                        projectile_speed: weapon.has_projectile_speed
+                            .then_some(weapon.projectile_speed),
+                        turret: None,
+                        has_target_ship: weapon.has_target_ship,
+                    });
+                }
+                source_policy_inputs.insert(ship.entity_id,
+                    NativeSourcePolicyInputs {
+                        controller, capability,
+                        parent_carrier_id: (ship.parent_carrier_id > 0)
+                            .then_some(ship.parent_carrier_id),
+                        own_weapons,
+                    }
+                );
                 if !(0..=1).contains(&ship.policy_team_id) ||
                     !(0..=3).contains(&ship.policy_quarter_turns) {
                     return Err(NativeSnapshotError::InvalidShip(ship.entity_id));
@@ -874,6 +1057,20 @@ impl NativePhysicalScene {
         if registered_ships.len() != live_ships.len() {
             return Err(NativeSnapshotError::InvalidSquad(0));
         }
+        // A carrier-child policy observes the original living parent as
+        // a special entity BEFORE ordinary allies. Reject dangling links
+        // rather than changing the order of the learned identity scalars.
+        for (&ship_id, input) in &source_policy_inputs {
+            if let Some(parent_id) = input.parent_carrier_id {
+                if ship_id == parent_id ||
+                    live_ships.get(&parent_id) != live_ships.get(&ship_id)
+                {
+                    return Err(NativeSnapshotError::InvalidPolicySource(
+                        ship_id,
+                    ));
+                }
+            }
+        }
         let fleet = NativeFleetInventory::from_source(fleet_values)
             .map_err(NativeSnapshotError::Fleet)?;
         Ok(Self {
@@ -888,6 +1085,7 @@ impl NativePhysicalScene {
             active_policy_ship_ids,
             source_squads,
             source_policy_bindings,
+            source_policy_inputs,
         })
     }
 }
