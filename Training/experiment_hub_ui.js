@@ -540,7 +540,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 const evidence=passed?passed[index]:
                     rule?cohort[rule.suite_id]||
                         (!job.evaluation_stop?.all_of?job.evaluation_stop_evidence:null)||
-                        job.last_evaluation:null;
+                        job.last_evaluation:
+                        job.evaluation_stop_evidence||job.last_evaluation;
                 const row=document.createElement('tr');
                 cell(row,slot+' · '+job.configuration_name);
                 cell(row,evidence?.suite_id||rule?.suite_id||'—');
