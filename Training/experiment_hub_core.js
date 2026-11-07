@@ -2532,7 +2532,7 @@ class ExperimentHub {
             jobs.some(j=>j.project_id!==jobs[0].project_id||
                 !j.evaluation_stop||
                 !['waiting_adapter','waiting_predecessor','start_requested',
-                    'launch_requested','running','finished','stopped'].includes(j.status)))
+                    'launch_requested','running','stop_requested','finished','stopped'].includes(j.status)))
             throw Error('Candidate jobs must belong to one supported project and have independent evaluations.');
         const roots=jobs.map(j=>j.artifact_lineage_root_id||j.id);
         if(new Set(roots).size!==roots.length||
