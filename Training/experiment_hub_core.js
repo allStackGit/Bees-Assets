@@ -291,9 +291,12 @@ function comparableCandidate(job) {
     const score=evidence.reduce((n,r)=>n+r.successes/r.trials,0)/evidence.length;
     return {job_id:job.id,project_id:job.project_id,
         checkpoint_sha256:sha,suites,score,
-        policy_signature:JSON.stringify(policy),
+        policy_signature:JSON.stringify(rules.map(rule=>[
+            rule.suite_id,rule.min_trials,rule.min_success_rate,
+        ]).sort(([a],[b])=>a.localeCompare(b))),
         comparison_signature:JSON.stringify(suites.map(r=>[
-            r.suite_id,r.suite_sha256,r.trials])),
+            r.suite_id,r.suite_sha256,r.trials,
+        ]).sort(([a],[b])=>a.localeCompare(b))),
     };
 }
 
@@ -2559,9 +2562,13 @@ class ExperimentHub {
                     'launch_requested','running','stop_requested','finished','stopped'].includes(j.status)))
             throw Error('Candidate jobs must belong to one supported project and have independent evaluations.');
         const roots=jobs.map(j=>j.artifact_lineage_root_id||j.id);
+        const thresholds=j=>JSON.stringify(evaluationRules(
+            evaluationPolicy(j.evaluation_stop)).map(rule=>[
+                rule.suite_id,rule.min_trials,rule.min_success_rate,
+            ]).sort(([a],[b])=>a.localeCompare(b)));
         if(new Set(roots).size!==roots.length||
-            new Set(jobs.map(j=>JSON.stringify(evaluationPolicy(j.evaluation_stop)))).size!==1)
-            throw Error('Candidate models need independent lineages and identical evaluation rules.');
+            new Set(jobs.map(thresholds)).size!==1)
+            throw Error('Candidate models need independent lineages and identical evaluation thresholds.');
         if(jobs.some(j=>this.state.jobs.some(child=>child.status!=='cancelled'&&
             (child.continuation_of_job_id===j.id||child.after_job_id===j.id))))
             throw Error('A candidate already has a queued successor.');
