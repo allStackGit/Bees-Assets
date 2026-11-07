@@ -121,6 +121,15 @@ impl FullRetreatRun {
     fn move_to_gate(
         &self, world: &mut CombatWorld, random: &mut RandomStream,
     ) -> Result<(), GameCommandError> {
+        // Unity WarpKill removes ships from _shipIdsWarping synchronously.
+        // Native physical retirement is scheduled for the next fixed tick;
+        // do not consume an extra random destination when all the source
+        // participants have already been committed for warp.
+        if self.participants.iter().all(|&id|
+            world.game_warp_participant_committed(id, self.gate_id)
+        ) {
+            return Ok(());
+        }
         let position = world.game_warp_gate_position(self.gate_id)
             .ok_or(GameCommandError::InvalidSquad)?;
         // Utilities.RandomInt(6) * Vector2.one, not a uniform disk.
@@ -128,7 +137,9 @@ impl FullRetreatRun {
         let destination = position + Vec2::new(offset, offset);
         for member in &self.members {
             if world.game_warp_participant_gate(member.ship_id) != Some(self.gate_id) ||
-                !member.mobile || !world.ship(member.ship_id)
+                world.game_warp_participant_committed(
+                    member.ship_id, self.gate_id,
+                ) || !member.mobile || !world.ship(member.ship_id)
                     .is_some_and(|ship| !ship.vitals.is_dead()) {
                 continue;
             }

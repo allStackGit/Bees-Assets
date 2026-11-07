@@ -119,6 +119,17 @@ impl CombatWorld {
         self.game_warp_gate_by_ship.get(&ship_id).copied()
     }
 
+    /// Has this participant already completed the source WaitToWarp
+    /// callback? The world still owns its pending next-fixed-step
+    /// retirement, but no gameplay command should reissue movement.
+    pub fn game_warp_participant_committed(
+        &self, ship_id: i64, gate_id: i64,
+    ) -> bool {
+        self.game_warp_participant_gate(ship_id) == Some(gate_id) &&
+            self.game_warp_gate_sessions.get(&gate_id)
+                .is_some_and(|session| session.committed.contains(&ship_id))
+    }
+
     /// A collision entry is checked against the *real* WarpCollider once.
     /// The waiting registration survives later drift, as in FullRetreat.
     pub fn queue_game_warp_contact(
