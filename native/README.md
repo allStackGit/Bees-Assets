@@ -3,6 +3,55 @@
 This directory is the beginning of the Unity-independent replacement platform,
 created from the current `feat/experiment-queue-ui` branch.
 
+## Headless policy-only execution (development)
+
+The executable `bees-host/examples/policy_rollout.rs` connects the exported
+physical scenes to the **same** shared `CombatWorld`, multi-Level driver,
+resident v26 TorchScript/ONNX inference, durable HiveMind identity and
+notification delivery, and interval throughput counters:
+
+```sh
+cargo run --release --manifest-path native/Cargo.toml -p bees-host \
+  --example policy_rollout -- /absolute/path/to/run.json
+```
+
+The single JSON configuration file requires:
+
+- `run_id` (unique run incarnation); `stage_name`; paths
+  `collision_matrix` and `stage_palette` to **actual** Unity exports.
+- `fragment_spawn`: source `map_bounds: {min: [x,y], max: [x,y]}`,
+  `half_map_extents: [x,y]`, `asteroid_max_speed_exclusive`, and
+  `training_health_ratio` (number or null). These values come from the
+  real Stage, not a guessed training scenario.
+- `python` (Python executable path), `policy_worker` (normally
+  `native/tools/policy_worker.py`), `model_manifest` (generated using
+  the `policy_manifest` example), `connection_checkpoint`, and
+  `notifications` (a new nonexisting JSONL path, separate per run).
+  Relative paths are resolved against the configuration file's directory.
+- `next_squad_item_id`: the source Stage's next unique
+  `Pool.ItemCount` identity, strictly above all imported squads.
+  The same monotonic allocator services every Level in this run.
+- `broadphase_cell_size`, `decision_period`,
+  `max_rounds`, `rounds_per_window`, `delivery_every`, and optional
+  `timing_sample_period` (all step counts are positive).
+- `levels`: a nonempty array of `{scene, world_id, level_id, seed,
+  model_slots}`. Each scene is an exported **initial** Level; both IDs
+  must be unique and positive, and `model_slots` maps exact Unity
+  policy-team IDs (`"0"`/`"1"`) to verified slots in the manifest.
+
+The runner checks source identities, model routing, collision settings and
+Stage consistency **before starting**. It emits JSON interval measurements
+on stdout and syncs each sparse diagnostic event before acknowledging its
+world outbox; a previously created output path is never overwritten. A
+finite budget explicitly cancels surviving episodes, recording
+`episode_aborted` rather than inventing terminal results. The event
+`payload_debug` is **diagnostic text**, not an optimizer or training-data
+wire format. This harness deliberately does not connect to live HiveMind
+WebSocket gameplay or provide PPO/MA-POCA updates, checkpoints, graphical
+rendering, full parity or production durability of all app-side effects.
+Do not use its partial trajectories as valid learner data. Native
+Windows/Linux execution and throughput are not yet verified.
+
 ## Unity scene import (schema 15)
 
 **Bees > Native > Export Selected Level Physical Scene** captures a
