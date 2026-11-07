@@ -173,7 +173,9 @@ def read_reused(reader, storage: bytearray, count: int):
 
 
 def checked_manifest(path: Path):
-    manifest = json.loads(path.read_text(encoding="utf-8"))
+    manifest_bytes = path.read_bytes()
+    manifest_digest = hashlib.sha256(manifest_bytes).digest()
+    manifest = json.loads(manifest_bytes.decode("utf-8"))
     if not isinstance(manifest, dict) or manifest.get("format") != "bees-native-model-v1":
         raise ValueError("manifest must declare bees-native-model-v1")
     if type(manifest.get("abi_version")) is not int or manifest["abi_version"] != 26:
@@ -218,7 +220,7 @@ def checked_manifest(path: Path):
             policies[slot] = OnnxPolicy(model_file, config)
         else:
             raise ValueError(f"unsupported native model backend: {backend}")
-    return signature_bytes, policies
+    return signature_bytes, policies, manifest_digest
 
 
 def decode_row_metadata(meta: bytearray, rows: int):
@@ -305,11 +307,12 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--manifest", required=True, type=Path)
     args = parser.parse_args()
-    signature, policy_map = checked_manifest(args.manifest)
+    signature, policy_map, manifest_digest = checked_manifest(args.manifest)
     reader = sys.stdin.buffer
     writer = sys.stdout.buffer
     writer.write(READY.pack(b"BHOK", VERSION, 26, len(signature)))
     writer.write(signature)
+    writer.write(manifest_digest)
     writer.flush()
     observation_storage = bytearray()
     while True:
@@ -324,17 +327,22 @@ def main() -> None:
             # inference batches. New models are loaded and SHA-verified
             # before replacing the active slot map; a rejected update
             # leaves every previously loaded model available.
-            if not 0 < rows <= MAX_MANIFEST_PATH_BYTES:
-                raise ValueError("invalid model-update manifest path size")
+            if not 32 < rows <= MAX_MANIFEST_PATH_BYTES + 32:
+                raise ValueError("invalid model-update manifest payload size")
             payload = read_exact(reader, rows)
             if payload is None:
-                raise EOFError("incomplete model-update manifest path")
+                raise EOFError("incomplete model-update manifest payload")
+            expected_digest = bytes(payload[:32])
             new_map = None
             try:
-                manifest_path = Path(bytes(payload).decode("utf-8"))
+                manifest_path = Path(bytes(payload[32:]).decode("utf-8"))
                 if not manifest_path.is_absolute():
                     raise ValueError("model-update manifest must be absolute")
-                new_signature, new_map = checked_manifest(manifest_path)
+                new_signature, new_map, new_digest = checked_manifest(
+                    manifest_path
+                )
+                if new_digest != expected_digest:
+                    raise ValueError("model-update manifest changed before loading")
                 if new_signature != signature:
                     raise ValueError("model-update policy ABI signature mismatch")
                 if new_map.keys() != policy_map.keys():
@@ -351,9 +359,11 @@ def main() -> None:
                 continue
             old_map = policy_map
             policy_map = new_map
+            manifest_digest = new_digest
             new_map = None
             del old_map
             writer.write(HEADER.pack(b"MACK", VERSION, request_id, len(policy_map)))
+            writer.write(manifest_digest)
             writer.flush()
             continue
         if magic != b"BINF":
