@@ -172,7 +172,7 @@ function hubVisibleJobs(jobs,limit) {
             return 2;
         if(job.status==='waiting_predecessor'&&
             ['needs_review','broken_lineage'].includes(job.predecessor_wait?.status))
-            return 1;
+            return 3;
         return 0;
     };
     const ordered=jobs.map((job,index)=>({job,index,priority:priority(job)}))
