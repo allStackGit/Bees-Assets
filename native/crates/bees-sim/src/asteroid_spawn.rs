@@ -12,6 +12,7 @@
 
 use crate::asteroid_assets::CollisionAsteroidCatalog;
 use std::sync::Arc;
+use serde::Deserialize;
 use crate::asteroid_fragments::{
     FragmentSpawnSettings, random_map_destination, random_unit_float,
 };
@@ -63,7 +64,44 @@ pub struct FullAsteroidStage {
     pub settings: FragmentSpawnSettings,
 }
 
+#[derive(Deserialize)]
+struct UnityStageAsteroidPalette {
+    schema_version: u32,
+    stage_name: String,
+    asteroid_max_speed_exclusive: u32,
+    prefab_numbers: Vec<u8>,
+}
+
 impl FullAsteroidStage {
+    /// A serialized export of Stage.Prefabs.CollisionAsteroidPrefabs, in
+    /// the original Unity list order (including intentional duplicates).
+    /// Require the expected Stage identity and speed: accidentally using
+    /// another Level's prefab roster changes the gameplay distribution.
+    pub fn from_unity_export(
+        json: &str,
+        expected_stage: &str,
+        catalog: Arc<CollisionAsteroidCatalog>,
+        settings: FragmentSpawnSettings,
+    ) -> Result<Self, FullAsteroidSpawnError> {
+        let source: UnityStageAsteroidPalette = serde_json::from_str(json)
+            .map_err(|_| FullAsteroidSpawnError::InvalidPrefabPalette)?;
+        if source.schema_version != 1 ||
+            source.stage_name != expected_stage ||
+            source.stage_name.is_empty() ||
+            source.asteroid_max_speed_exclusive != settings.asteroid_max_speed_exclusive {
+            return Err(FullAsteroidSpawnError::InvalidPrefabPalette);
+        }
+        let config = Self {
+            catalog,
+            prefabs: source.prefab_numbers,
+            settings,
+        };
+        if !config.valid() {
+            return Err(FullAsteroidSpawnError::InvalidPrefabPalette);
+        }
+        Ok(config)
+    }
+
     pub fn valid(&self) -> bool {
         valid_settings(self.settings) && !self.prefabs.is_empty() &&
             self.prefabs.iter().all(|&id| self.catalog.by_number(id).is_some())

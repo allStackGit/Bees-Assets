@@ -925,6 +925,14 @@ The portable `bees-sim` crate currently contains:
 - Versioned native assets for **all 24 primary ship colliders**, migrated from
   their specific serialized `Entity.Collider` component references. The same
   collision catalog is loaded once per process and shared across worlds.
+- A selected Unity Stage can now export its exact ordered normal
+  CollisionAsteroid prefab list and source `AsteroidMaxSpeed` via
+  **Bees → Native → Export Selected Stage Asteroid Palette**. The
+  `FullAsteroidStage::from_unity_export` loader verifies Stage name,
+  speed and prefab identities instead of assuming every map spawns all
+  28 known asteroid variants. Duplicate prefab entries retain their
+  authored selection weighting; each pooled profile retains its
+  Create-time speed. Export per authored Stage as applicable.
 - The native collision-layer matrix can now be exported directly from the
   authoritative Unity Editor via **Bees → Native → Export Physics2D Collision
   Matrix**. The generated `native/assets/unity-physics2d-matrix.json` contains
