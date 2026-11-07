@@ -33,8 +33,9 @@ use bees_host::unity_scene_snapshot::{
 };
 use bees_sim::asteroid_fragments::FragmentSpawnSettings;
 use bees_sim::collision::Aabb;
+use bees_sim::control::distinct_team_frames;
 use bees_sim::geometry::Vec2;
-use bees_sim::simulation::WorldId;
+use bees_sim::simulation::{RandomStream, WorldId};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
@@ -172,11 +173,23 @@ fn bind_group_routes(
     group: &GroupConfig,
     offset: u32,
     verify_source: bool,
+    episode_seed: u64,
 ) -> io::Result<[i32; 2]> {
     let sides = scene.exported_episode()
         .map_err(|error| contextual("source group sides", error))?
         .sides();
     let number = episode_number(group, offset)?;
+    // Unity draws one of 12 ordered distinct quarter-turn frame pairs
+    // at the beginning of EACH new self-play episode. Initial imports
+    // retain the actual Unity frames; subsequent native episodes derive
+    // a reproducible pair from this world's episode seed, never a global
+    // process RNG. Both teams share one pair across every controlled ship.
+    let frames = if verify_source { None } else {
+        let mut random = RandomStream::new(
+            episode_seed ^ 0x96C3_41A7_7F2D_5E19,
+        );
+        Some(distinct_team_frames(random.next_below(12) as u8))
+    };
     for (&ship_id, binding) in &mut scene.source_policy_bindings {
         let side = scene.entities.iter().find_map(|entity| match entity {
             NativeAuthoredEntity::Ship(ship) if ship.entity_id == ship_id =>
@@ -194,6 +207,9 @@ fn bind_group_routes(
             )));
         }
         binding.team_id = team;
+        if let Some((team0, team1)) = frames {
+            binding.frame = if team == 0 { team0 } else { team1 };
+        }
     }
     Ok(sides)
 }
@@ -387,7 +403,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             }
             // Check the exported initial controller team BEFORE any
             // per-episode permutation or output file creation.
-            bind_group_routes(&mut source, group, 0, true)?;
+            bind_group_routes(&mut source, group, 0, true, level.seed)?;
             if !level.model_slots.contains_key(&0) ||
                 !level.model_slots.contains_key(&1)
             {
@@ -525,6 +541,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 if let Some(group) = &level.groups {
                     bind_group_routes(
                         &mut scene, group, completed_episodes[index], false,
+                        seed,
                     )?;
                 }
                 let setup = make_setup(
