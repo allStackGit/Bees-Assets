@@ -514,6 +514,11 @@ fn main() -> Result<(), Box<dyn Error>> {
         "run_id": config.run_id,
         "stage_name": config.stage_name,
         "worlds": config.levels.len(),
+        "group_worlds": config.levels.iter()
+            .filter(|level| level.groups.is_some()).count(),
+        "authenticated_group_agents": config.levels.iter()
+            .filter_map(|level| level.groups.as_ref())
+            .map(|group| group.participants.len()).sum::<usize>(),
         "episodes_per_world": config.episodes_per_world,
         "decision_period": config.decision_period,
         "delivery_every": config.delivery_every,
