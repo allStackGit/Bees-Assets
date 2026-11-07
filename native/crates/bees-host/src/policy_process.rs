@@ -15,13 +15,20 @@
 use std::ffi::OsStr;
 use std::io::{self, BufReader, BufWriter, Read, Write};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
+use std::path::Path;
+use sha2::{Digest, Sha256};
 
 use bees_gameplay::inference::{NativePolicyInference, NativePolicyRoute};
 use bees_sim::policy::{CONTINUOUS_ACTIONS, DISCRETE_BRANCHES, OBSERVATION_FLOATS};
 use bees_sim::policy_batch::{PolicyActionMask, PolicyAgentKey};
 use bees_sim::policy::{validate_model_abi, PolicyAbiError};
 
-const PROTOCOL_VERSION: u32 = 1;
+const PROTOCOL_VERSION: u32 = 2;
+const CONTROL_RELOAD_MAGIC: &[u8; 4] = b"BMOD";
+const CONTROL_RELOAD_ACK: &[u8; 4] = b"MACK";
+const CONTROL_RELOAD_REJECTED: &[u8; 4] = b"MNOK";
+const MAX_MANIFEST_PATH_BYTES: usize = 4096;
+const MANIFEST_DIGEST_BYTES: usize = 32;
 const REQUEST_MAGIC: &[u8; 4] = b"BINF";
 const RESPONSE_MAGIC: &[u8; 4] = b"BOUT";
 const READY_MAGIC: &[u8; 4] = b"BHOK";
@@ -33,10 +40,13 @@ pub enum PolicyProcessError {
     Io(io::Error),
     MissingPipe(&'static str),
     InvalidHandshake,
+    ManifestMismatch,
     Abi(PolicyAbiError),
     InvalidBatch,
     WrongResponse,
     RequestSequenceExhausted,
+    InvalidReloadPath,
+    ReloadRejected,
     Unavailable,
 }
 
@@ -52,6 +62,12 @@ pub struct ResidentPolicyProcess {
     input: BufWriter<ChildStdin>,
     output: BufReader<ChildStdout>,
     sequence: u64,
+    /// Monotonic process-local model generation. Capture with the run ID
+    /// and manifest SHA to identify policy versions in learner trajectories.
+    model_generation: u64,
+    /// Hash of the exact manifest bytes accepted by the resident worker,
+    /// not merely the operator-provided path to a potentially moving file.
+    manifest_digest: [u8; MANIFEST_DIGEST_BYTES],
     unavailable: bool,
     // Reused model route/action-mask packet, 16 bytes per agent.
     row_headers: Vec<u8>,
@@ -74,6 +90,8 @@ impl ResidentPolicyProcess {
             input: BufWriter::new(input),
             output: BufReader::new(output),
             sequence: 0,
+            model_generation: 0,
+            manifest_digest: [0_u8; MANIFEST_DIGEST_BYTES],
             unavailable: false,
             row_headers: Vec::new(),
         };
@@ -86,9 +104,21 @@ impl ResidentPolicyProcess {
         script: impl AsRef<OsStr>,
         manifest: impl AsRef<OsStr>,
     ) -> Result<Self, PolicyProcessError> {
+        // Bind the READY handshake to the exact manifest passed to this
+        // process. A replaced file between launch and worker load must
+        // fail before this backend can send any gameplay action.
+        let mut expected = [0_u8; MANIFEST_DIGEST_BYTES];
+        expected.copy_from_slice(&Sha256::digest(
+            std::fs::read(Path::new(manifest.as_ref()))?,
+        ));
         let mut command = Command::new(python);
         command.arg(script).arg("--manifest").arg(manifest);
-        Self::spawn(command)
+        let mut backend = Self::spawn(command)?;
+        if backend.manifest_digest != expected {
+            backend.unavailable = true;
+            return Err(PolicyProcessError::ManifestMismatch);
+        }
+        Ok(backend)
     }
 
     fn read_handshake(&mut self) -> Result<(), PolicyProcessError> {
@@ -111,7 +141,9 @@ impl ResidentPolicyProcess {
         self.output.read_exact(&mut signature)?;
         let signature = std::str::from_utf8(&signature)
             .map_err(|_| PolicyProcessError::InvalidHandshake)?;
-        validate_model_abi(abi, signature).map_err(PolicyProcessError::Abi)
+        validate_model_abi(abi, signature).map_err(PolicyProcessError::Abi)?;
+        self.output.read_exact(&mut self.manifest_digest)?;
+        Ok(())
     }
 
     fn exchange(
@@ -186,11 +218,103 @@ impl ResidentPolicyProcess {
         Ok(())
     }
 
+    /// Swap genuine model artifacts without restarting the shared
+    /// simulation or poisoning previously loaded weights on a normal
+    /// validation rejection. The worker verifies all artifacts and the
+    /// exact v26 signature, and requires identical policy slot IDs.
+    ///
+    /// &mut self guarantees this transaction cannot interleave with a
+    /// batch forward. Rejected model updates preserve the old generation;
+    /// malformed/partial wire exchanges permanently invalidate the stream.
+    pub fn reload_manifest(&mut self, manifest: &Path)
+        -> Result<u64, PolicyProcessError>
+    {
+        if self.unavailable {
+            return Err(PolicyProcessError::Unavailable);
+        }
+        let path = manifest.canonicalize()
+            .map_err(PolicyProcessError::Io)?;
+        let bytes = path.to_str()
+            .ok_or(PolicyProcessError::InvalidReloadPath)?.as_bytes();
+        if bytes.is_empty() || bytes.len() > MAX_MANIFEST_PATH_BYTES {
+            return Err(PolicyProcessError::InvalidReloadPath);
+        }
+        // The worker verifies this digest against the bytes it loads
+        // before reading any model artifacts. A replaced schedule path
+        // cannot silently activate a different checkpoint.
+        let manifest_bytes = std::fs::read(&path)?;
+        if manifest_bytes.len() > 1024 * 1024 {
+            return Err(PolicyProcessError::InvalidReloadPath);
+        }
+        let mut expected_digest = [0_u8; MANIFEST_DIGEST_BYTES];
+        expected_digest.copy_from_slice(&Sha256::digest(&manifest_bytes));
+        let seq = self.sequence.checked_add(1)
+            .ok_or(PolicyProcessError::RequestSequenceExhausted)?;
+        let next_generation = self.model_generation.checked_add(1)
+            .ok_or(PolicyProcessError::RequestSequenceExhausted)?;
+        let exchanged = (|| -> Result<bool, PolicyProcessError> {
+            self.input.write_all(CONTROL_RELOAD_MAGIC)?;
+            self.input.write_all(&PROTOCOL_VERSION.to_le_bytes())?;
+            self.input.write_all(&seq.to_le_bytes())?;
+            self.input.write_all(&((bytes.len() + MANIFEST_DIGEST_BYTES) as u32).to_le_bytes())?;
+            self.input.write_all(&expected_digest)?;
+            self.input.write_all(bytes)?;
+            self.input.flush()?;
+            let mut response = [0_u8; 20];
+            self.output.read_exact(&mut response)?;
+            if u32::from_le_bytes(response[4..8].try_into().unwrap()) !=
+                    PROTOCOL_VERSION ||
+                u64::from_le_bytes(response[8..16].try_into().unwrap()) != seq
+            {
+                return Err(PolicyProcessError::WrongResponse);
+            }
+            let status = &response[..4];
+            let count = u32::from_le_bytes(response[16..20].try_into().unwrap());
+            if status == CONTROL_RELOAD_ACK && count > 0 {
+                let mut confirmed = [0_u8; MANIFEST_DIGEST_BYTES];
+                self.output.read_exact(&mut confirmed)?;
+                if confirmed != expected_digest {
+                    return Err(PolicyProcessError::WrongResponse);
+                }
+                Ok(true)
+            } else if status == CONTROL_RELOAD_REJECTED && count == 0 {
+                Ok(false)
+            } else {
+                Err(PolicyProcessError::WrongResponse)
+            }
+        })();
+        self.sequence = seq;
+        match exchanged {
+            Ok(true) => {
+                self.model_generation = next_generation;
+                self.manifest_digest = expected_digest;
+                Ok(next_generation)
+            }
+            Ok(false) => Err(PolicyProcessError::ReloadRejected),
+            Err(error) => {
+                self.unavailable = true;
+                Err(error)
+            }
+        }
+    }
+
+    pub fn model_generation(&self) -> u64 { self.model_generation }
+
+    pub fn model_manifest_sha256(&self) -> String {
+        let mut hex = String::with_capacity(MANIFEST_DIGEST_BYTES * 2);
+        for byte in self.manifest_digest {
+            hex.push_str(&format!("{byte:02x}"));
+        }
+        hex
+    }
+
     pub fn is_available(&self) -> bool { !self.unavailable }
 }
 
 impl NativePolicyInference for ResidentPolicyProcess {
     type Error = PolicyProcessError;
+
+    fn model_generation(&self) -> u64 { self.model_generation }
 
     fn forward(
         &mut self,

@@ -19,6 +19,7 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::Arc;
 
+use bees_gameplay::group_rewards::{team_id_for_side, NativeGroupRewardDelivery};
 use bees_gameplay::level_host::NativeLevelStopKind;
 use bees_gameplay::squads::SquadRosterError;
 use bees_hivemind::session::SquadLifetime;
@@ -27,15 +28,18 @@ use bees_host::notification_file::DurableDiagnosticNotifications;
 use bees_host::policy_process::ResidentPolicyProcess;
 use bees_host::presentation::NativeSoftwareRenderer;
 use bees_host::scene_assets::NativeSceneAssets;
+use bees_host::scene_builder::{NativeAuthoredEntity, NativeAuthoredGroups};
 use bees_host::unity_scene_snapshot::{
     NativeExportedPolicyLevelSetup, NativePhysicalScene,
 };
 use bees_sim::asteroid_fragments::FragmentSpawnSettings;
 use bees_sim::collision::Aabb;
+use bees_sim::control::distinct_team_frames;
 use bees_sim::geometry::Vec2;
-use bees_sim::simulation::WorldId;
+use bees_sim::simulation::{RandomStream, WorldId};
 use serde::Deserialize;
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 
 type MinionAllocator = Box<
     dyn FnMut(SquadLifetime, i64) -> Result<SquadLifetime, SquadRosterError>,
@@ -59,12 +63,40 @@ struct FragmentConfig {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
+struct GroupParticipantConfig {
+    side: i32,
+    agent_id: u64,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct GroupConfig {
+    /// The Unity self-play episode number at the exported initial scene.
+    episode_number: u32,
+    /// Actual source MA-POCA group identities, not inferred hull IDs.
+    participants: Vec<GroupParticipantConfig>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct LevelConfig {
     scene: PathBuf,
     world_id: u64,
     level_id: i64,
     seed: u64,
     model_slots: HashMap<u8, u32>,
+    /// Omit only for a game Level without MA-POCA group rewards.
+    groups: Option<GroupConfig>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ModelUpdateConfig {
+    /// Earliest completed rollout round at which a model can change.
+    /// The runner finishes every live episode first and switches before
+    /// recycling them, so benchmark outcomes never mix policy versions.
+    at_round: u64,
+    manifest: PathBuf,
 }
 
 #[derive(Deserialize)]
@@ -84,6 +116,8 @@ struct RunConfig {
     broadphase_cell_size: f32,
     decision_period: u32,
     max_rounds: u64,
+    #[serde(default)]
+    model_updates: Vec<ModelUpdateConfig>,
     #[serde(default = "one_episode")]
     episodes_per_world: u32,
     rounds_per_window: u32,
@@ -138,6 +172,74 @@ fn allocate_from_stage(next_id: Rc<Cell<i64>>) -> MinionAllocator {
     })
 }
 
+
+fn episode_number(group: &GroupConfig, offset: u32) -> io::Result<u32> {
+    group.episode_number.checked_add(offset)
+        .ok_or_else(|| invalid("group episode number exhausted"))
+}
+
+/// In Unity, the real side-to-MA-POCA team permutation alternates with
+/// episode number. A reused physical scene retains ship geometry and source
+/// controller identity; only that episode-owned policy routing changes.
+/// An INITIAL import must already match the captured source route.
+fn bind_group_routes(
+    scene: &mut NativePhysicalScene,
+    group: &GroupConfig,
+    offset: u32,
+    verify_source: bool,
+    episode_seed: u64,
+) -> io::Result<[i32; 2]> {
+    let sides = scene.exported_episode()
+        .map_err(|error| contextual("source group sides", error))?
+        .sides();
+    let number = episode_number(group, offset)?;
+    let movement_by_team = scene.source_policy_group.as_ref()
+        .map(|source| source.movement_disabled_by_team);
+    // Unity draws one of 12 ordered distinct quarter-turn frame pairs
+    // at the beginning of EACH new self-play episode. Initial imports
+    // retain the actual Unity frames; subsequent native episodes derive
+    // a reproducible pair from this world's episode seed, never a global
+    // process RNG. Both teams share one pair across every controlled ship.
+    let frames = if verify_source { None } else {
+        let mut random = RandomStream::new(
+            episode_seed ^ 0x96C3_41A7_7F2D_5E19,
+        );
+        Some(distinct_team_frames(random.next_below(12) as u8))
+    };
+    for (&ship_id, binding) in &mut scene.source_policy_bindings {
+        let side = scene.entities.iter().find_map(|entity| match entity {
+            NativeAuthoredEntity::Ship(ship) if ship.entity_id == ship_id =>
+                Some(ship.side),
+            _ => None,
+        }).ok_or_else(|| invalid(format!(
+            "source policy ship {ship_id} has no authored side"
+        )))?;
+        let team = team_id_for_side(sides[0], sides[1], number, side)
+            .map_err(|error| contextual("source group team", error))?;
+        if verify_source && team != binding.team_id {
+            return Err(invalid(format!(
+                "source ship {ship_id} belongs to team {}, not configured self-play episode {number} team {team}",
+                binding.team_id,
+            )));
+        }
+        if verify_source && movement_by_team.is_some_and(|flags|
+            binding.movement_disabled != flags[usize::from(team)]
+        ) {
+            return Err(invalid(format!(
+                "source ship {ship_id} has mismatched team movement restriction",
+            )));
+        }
+        binding.team_id = team;
+        if let Some(flags) = movement_by_team {
+            binding.movement_disabled = flags[usize::from(team)];
+        }
+        if let Some((team0, team1)) = frames {
+            binding.frame = if team == 0 { team0 } else { team1 };
+        }
+    }
+    Ok(sides)
+}
+
 fn make_setup(
     config: &RunConfig,
     level: &LevelConfig,
@@ -145,19 +247,34 @@ fn make_setup(
     period: NonZeroU32,
     next_id: Rc<Cell<i64>>,
     seed: u64,
-) -> NativeExportedPolicyLevelSetup<MinionAllocator> {
-    NativeExportedPolicyLevelSetup {
+    episode_offset: u32,
+    sides: [i32; 2],
+) -> io::Result<NativeExportedPolicyLevelSetup<MinionAllocator>> {
+    let groups = level.groups.as_ref().map(|group| -> io::Result<NativeAuthoredGroups> {
+        let number = episode_number(group, episode_offset)?;
+        let delivery = NativeGroupRewardDelivery::new(
+            sides[0], sides[1], number,
+        ).map_err(|error| contextual("MA-POCA group", error))?;
+        Ok(NativeAuthoredGroups {
+            delivery,
+            participants: group.participants.iter()
+                .map(|participant| (participant.side, participant.agent_id))
+                .collect(),
+        })
+    }).transpose()?;
+
+    Ok(NativeExportedPolicyLevelSetup {
         world_id: WorldId(level.world_id),
         level_id: level.level_id,
         seed,
         broadphase_cell_size: config.broadphase_cell_size,
         decision_period: period,
         initial_full_asteroids: 0,
-        groups: None,
+        groups,
         ship_catalog: assets.shared_ship_catalog(),
         model_slots: level.model_slots.clone(),
         allocate_minion: allocate_from_stage(next_id),
-    }
+    })
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -181,7 +298,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     if view { return Err(invalid("--view requires building with --features client").into()); }
     let config_path = config_path.canonicalize()?;
     let root = config_path.parent().ok_or_else(|| invalid("missing config directory"))?;
-    let config: RunConfig = serde_json::from_reader(File::open(&config_path)?)?;
+    let mut config: RunConfig = serde_json::from_reader(File::open(&config_path)?)?;
 
     let period = nonzero(config.decision_period, "decision_period")?;
     let window = nonzero(config.rounds_per_window, "rounds_per_window")?;
@@ -198,6 +315,18 @@ fn main() -> Result<(), Box<dyn Error>> {
         config.next_squad_item_id == i64::MAX
     {
         return Err(invalid("invalid run identity, bounds, allocator or round budget").into());
+    }
+    let mut previous_update = 0_u64;
+    for update in &config.model_updates {
+        if update.at_round <= previous_update ||
+            update.at_round >= config.max_rounds ||
+            update.manifest.as_os_str().is_empty()
+        {
+            return Err(invalid(
+                "model_updates must be strictly increasing rounds below max_rounds with nonempty manifest paths",
+            ).into());
+        }
+        previous_update = update.at_round;
     }
     let checkpoint = resolve(root, &config.connection_checkpoint);
     let notifications = resolve(root, &config.notifications);
@@ -227,7 +356,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         fragment_settings,
     ).map_err(|error| contextual("stage assets", error))?;
     let manifest_path = resolve(root, &config.model_manifest);
-    let manifest: Value = serde_json::from_reader(File::open(&manifest_path)?)?;
+    let manifest_bytes = fs::read(&manifest_path)?;
+    let expected_manifest_sha256 = format!("{:x}", Sha256::digest(&manifest_bytes));
+    let manifest: Value = serde_json::from_slice(&manifest_bytes)?;
     let declared: HashSet<u32> = manifest.get("models")
         .and_then(Value::as_array)
         .ok_or_else(|| invalid("manifest has no models array"))?
@@ -241,12 +372,13 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut world_ids = HashSet::new();
     let mut highest_squad_item_id = 0_i64;
     let mut source_levels = Vec::with_capacity(config.levels.len());
+    let mut source_sides = Vec::with_capacity(config.levels.len());
     // Many headless arenas often share one exported Level. Keep one
     // immutable source template per canonical path, not N copies and
     // filesystem reads. Each arena still parses its own mutable world.
     let mut source_jsons = Vec::with_capacity(config.levels.len());
     let mut source_templates: HashMap<PathBuf, Arc<str>> = HashMap::new();
-    for level in &config.levels {
+    for level in &mut config.levels {
         if level.level_id <= 0 || level.world_id == 0 ||
             !level_ids.insert(level.level_id) ||
             !world_ids.insert(level.world_id) ||
@@ -263,10 +395,92 @@ fn main() -> Result<(), Box<dyn Error>> {
             source_templates.insert(source_path, Arc::clone(&text));
             text
         };
-        let source = NativePhysicalScene::parse_with_ship_catalog(&source_json, assets.ship_catalog())
+        let mut source = NativePhysicalScene::parse_with_ship_catalog(&source_json, assets.ship_catalog())
             .map_err(|error| contextual("exported Level", error))?;
         if source.stage_name != config.stage_name {
             return Err(invalid("exported Level belongs to a different Stage").into());
+        }
+        let sides = source.exported_episode()
+            .map_err(|error| contextual("source episode", error))?.sides();
+        // Schema 16 carries authentic Unity Agent instance identities.
+        // New scenes do not need operator-supplied group IDs; any manual
+        // values must agree exactly with the recorded source membership.
+        if let Some(exported) = &source.source_policy_group {
+            if let Some(configured) = &level.groups {
+                let mut supplied: Vec<_> = configured.participants.iter()
+                    .map(|member| (member.side, member.agent_id)).collect();
+                let mut actual: Vec<_> = exported.participants.iter()
+                    .map(|member| (member.side, member.agent_id)).collect();
+                supplied.sort_unstable();
+                actual.sort_unstable();
+                if configured.episode_number != exported.episode_number ||
+                    supplied != actual
+                {
+                    return Err(invalid(
+                        "explicit group identity does not match exported Unity MA-POCA participants",
+                    ).into());
+                }
+            } else {
+                level.groups = Some(GroupConfig {
+                    episode_number: exported.episode_number,
+                    participants: exported.participants.iter().map(|member|
+                        GroupParticipantConfig {
+                            side: member.side, agent_id: member.agent_id,
+                        }
+                    ).collect(),
+                });
+            }
+        }
+        if let Some(group) = &level.groups {
+            // Old source scenes lack the source's per-team movement flags.
+            // They may be evaluated once, but must not silently produce
+            // unfaithful alternate-team training trajectories on replay.
+            if source.source_policy_group.is_none() &&
+                config.episodes_per_world > 1
+            {
+                return Err(invalid(
+                    "MA-POCA episode replay requires schema-16 source group metadata",
+                ).into());
+            }
+            if source.source_policy_bindings.is_empty() {
+                return Err(invalid("group source has no bound policy controllers").into());
+            }
+            if group.episode_number == 0 ||
+                group.episode_number.checked_add(config.episodes_per_world - 1)
+                    .is_none()
+            {
+                return Err(invalid("configured group episode range is invalid").into());
+            }
+            let mut agents = HashSet::new();
+            for participant in &group.participants {
+                if !sides.contains(&participant.side) {
+                    return Err(invalid("MA-POCA participant side does not belong to Level").into());
+                }
+                if participant.agent_id == 0 ||
+                    !agents.insert((participant.side, participant.agent_id))
+                {
+                    return Err(invalid("MA-POCA participant ID is zero or repeated").into());
+                }
+            }
+            if group.participants.is_empty() {
+                return Err(invalid("MA-POCA group has no participating source agents").into());
+            }
+            // Check the exported initial controller team BEFORE any
+            // per-episode permutation or output file creation.
+            bind_group_routes(&mut source, group, 0, true, level.seed)?;
+            // Replayed self-play episodes flip each controlled side's
+            // team ID. Only require the other slot when a replay can
+            // actually occur; a one-sided/scripted episode may have just
+            // one participating policy team.
+            if config.episodes_per_world > 1 &&
+                source.source_policy_bindings.values().any(|binding|
+                    !level.model_slots.contains_key(&(1 - binding.team_id))
+                )
+            {
+                return Err(invalid(
+                    "recycled group Levels require real models for both alternating policy teams",
+                ).into());
+            }
         }
         for squad in &source.source_squads {
             highest_squad_item_id = highest_squad_item_id.max(squad.item_id);
@@ -277,6 +491,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             }
         }
         source_levels.push(source);
+        source_sides.push(sides);
         source_jsons.push(source_json);
     }
     if config.next_squad_item_id <= highest_squad_item_id {
@@ -316,13 +531,15 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut client = if view { Some(bees_host::client::NativeClient::new(client_bounds[0])?) }
         else { None };
     let mut launches = Vec::with_capacity(source_levels.len());
-    for (source, level) in source_levels.into_iter().zip(&config.levels) {
+    for (index, (source, level)) in source_levels.into_iter()
+        .zip(&config.levels).enumerate()
+    {
         launches.push((
             source,
             make_setup(
                 &config, level, &assets, period,
-                Rc::clone(&next_id), level.seed,
-            ),
+                Rc::clone(&next_id), level.seed, 0, source_sides[index],
+            )?,
         ));
     }
 
@@ -331,6 +548,11 @@ fn main() -> Result<(), Box<dyn Error>> {
         &resolve(root, &config.policy_worker),
         &manifest_path,
     ).map_err(|error| contextual("model worker startup", error))?;
+    if model.model_manifest_sha256() != expected_manifest_sha256 {
+        return Err(invalid(
+            "model manifest changed between route preflight and authenticated worker startup",
+        ).into());
+    }
     let sink = DurableDiagnosticNotifications::create_new(
         &notifications, config.run_id.clone(),
     )?;
@@ -345,7 +567,15 @@ fn main() -> Result<(), Box<dyn Error>> {
         "run_id": config.run_id,
         "stage_name": config.stage_name,
         "worlds": config.levels.len(),
+        "group_worlds": config.levels.iter()
+            .filter(|level| level.groups.is_some()).count(),
+        "authenticated_group_agents": config.levels.iter()
+            .filter_map(|level| level.groups.as_ref())
+            .map(|group| group.participants.len()).sum::<usize>(),
         "episodes_per_world": config.episodes_per_world,
+        "scheduled_model_updates": config.model_updates.len(),
+        "policy_generation": host.model_mut().model_generation(),
+        "policy_manifest_sha256": host.model_mut().model_manifest_sha256(),
         "decision_period": config.decision_period,
         "delivery_every": config.delivery_every,
         "timing_sample_period": config.timing_sample_period,
@@ -354,12 +584,20 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let mut rounds = 0_u64;
     let mut failed_window = None;
+    let mut segment_start_round = 0_u64;
+    let mut segment_baseline = host.sink_mut().measurements().clone();
+    let mut segment_generation = host.model_mut().model_generation();
+    let mut segment_manifest_sha256 = host.model_mut().model_manifest_sha256();
     let mut completed_episodes = vec![0_u32; config.levels.len()];
     let mut next_status_round = u64::from(window.get());
     #[cfg(feature = "client")]
     let mut user_closed = false;
     #[cfg(not(feature = "client"))]
     let user_closed = false;
+    // A world may finish before other arenas and remain paused at a
+    // model boundary. Count each physical episode revision exactly once.
+    let mut counted_revisions = vec![None::<u64>; config.levels.len()];
+    let mut next_model_update = 0usize;
     while rounds < config.max_rounds {
         #[cfg(feature = "client")]
         if let Some(client) = &mut client {
@@ -375,9 +613,15 @@ fn main() -> Result<(), Box<dyn Error>> {
                 Err(error) => { failed_window = Some(format!("native window: {error}")); break; },
             }
         }
-        let remaining = config.max_rounds - rounds;
-        let requested = if view { 1 } else { window.get() };
-        let count = nonzero(remaining.min(u64::from(requested)) as u32, "window")?;
+        let until_update = config.model_updates.get(next_model_update)
+            .filter(|item| item.at_round > rounds)
+            .map_or(config.max_rounds, |item| item.at_round);
+        // Treat at_round as the earliest eligibility point. Completing
+        // the current episodes before reloading prevents mixed-model
+        // evaluation outcomes, even if episodes have different lengths.
+        let remaining = (config.max_rounds - rounds)
+            .min(until_update - rounds);
+        let count = nonzero(remaining.min(u64::from(if view { 1 } else { window.get() })) as u32, "window")?;
         let counts = match host.run_window(count, delivery) {
             Ok(counts) => counts,
             Err(error) => {
@@ -389,9 +633,130 @@ fn main() -> Result<(), Box<dyn Error>> {
             }
         };
         rounds += u64::from(counts.rounds);
-        // The reset is an independent fallible transaction. Errors are
-        // reported through the same end-of-run abort/report path as a bad
-        // model step, rather than escaping main() with live Levels.
+        // Pause completed worlds while the slowest active arena reaches
+        // the same model-change boundary. A physical episode must never
+        // contribute a partially old/partially new benchmark result.
+        let completion = (|| -> io::Result<bool> {
+            let mut all_finished = true;
+            for index in 0..config.levels.len() {
+                let world = host.simulation().world(index)
+                    .ok_or_else(|| invalid("registered Level disappeared"))?;
+                if world.state.events.was_aborted() || world.is_failed() ||
+                    world.state.events.is_failed()
+                {
+                    return Err(invalid("failed or aborted world cannot satisfy a model boundary"));
+                }
+                if !world.state.events.completed() {
+                    all_finished = false;
+                    continue;
+                }
+                let revision = world.episode_revision();
+                if counted_revisions[index] != Some(revision) {
+                    if completed_episodes[index] >= config.episodes_per_world {
+                        return Err(invalid("world exceeded its configured episode budget"));
+                    }
+                    completed_episodes[index] += 1;
+                    counted_revisions[index] = Some(revision);
+                }
+            }
+            Ok(all_finished)
+        })();
+        let all_finished = match completion {
+            Ok(value) => value,
+            Err(error) => {
+                failed_window = Some(format!("episode accounting: {error}"));
+                break;
+            }
+        };
+        let update_due = config.model_updates.get(next_model_update)
+            .is_some_and(|item| rounds >= item.at_round);
+        if update_due && all_finished {
+            if rounds == config.max_rounds {
+                failed_window = Some(
+                    "scheduled model change reached episode boundary only at the exhausted run budget".into(),
+                );
+                break;
+            }
+            if completed_episodes.iter().all(|&finished|
+                finished >= config.episodes_per_world
+            ) {
+                failed_window = Some(format!(
+                    "model update requested at round {rounds} but no future episodes remain",
+                ));
+                break;
+            }
+            // An overrun may have crossed another scheduled threshold
+            // while slower worlds finished. Never claim an intermediate
+            // checkpoint was meaningfully evaluated when it ran zero
+            // simulated rounds.
+            if config.model_updates.get(next_model_update + 1)
+                .is_some_and(|item| rounds >= item.at_round)
+            {
+                failed_window = Some(format!(
+                    "model schedule thresholds crossed before an episode boundary at round {rounds}",
+                ));
+                break;
+            }
+            let update = &config.model_updates[next_model_update];
+            let previous_generation = host.model_mut().model_generation();
+            let evaluation_before_update =
+                host.sink_mut().measurements().clone();
+            let completed_segment = match evaluation_before_update
+                .delta_since(&segment_baseline)
+            {
+                Some(segment) => segment,
+                None => {
+                    failed_window = Some("durable evaluation counters regressed".into());
+                    break;
+                }
+            };
+            match host.model_mut().reload_manifest(
+                &resolve(root, &update.manifest),
+            ) {
+                Ok(generation) => {
+                    let manifest_sha256 =
+                        host.model_mut().model_manifest_sha256();
+                    let segment_mean =
+                        completed_segment.mean_episode_seconds();
+                    println!("{}", json!({
+                        "kind": "policy_segment",
+                        "run_id": config.run_id,
+                        "policy_generation": segment_generation,
+                        "policy_manifest_sha256": segment_manifest_sha256,
+                        "from_round": segment_start_round,
+                        "through_round": rounds,
+                        "evaluation": completed_segment,
+                        "mean_episode_seconds": segment_mean,
+                    }));
+                    println!("{}", json!({
+                        "kind": "policy_updated",
+                        "run_id": config.run_id,
+                        "requested_round": update.at_round,
+                        "rounds": rounds,
+                        "previous_policy_generation": previous_generation,
+                        "policy_generation": generation,
+                        "policy_manifest_sha256": manifest_sha256,
+                        "evaluation_before_update": evaluation_before_update,
+                        "manifest": update.manifest,
+                    }));
+                    segment_baseline = evaluation_before_update;
+                    segment_start_round = rounds;
+                    segment_generation = generation;
+                    segment_manifest_sha256 = manifest_sha256;
+                    next_model_update += 1;
+                }
+                Err(error) => {
+                    failed_window = Some(format!(
+                        "scheduled policy update at episode boundary round {rounds}: {error:?}"
+                    ));
+                    break;
+                }
+            }
+        }
+        let holding_for_update = update_due && !all_finished;
+        // The reset is independently guarded by the normal episode
+        // delivery barrier. No completed world may be reset while its
+        // peers are still finishing a checkpoint transition.
         let recycling = (|| -> io::Result<usize> {
             let mut recycled = 0usize;
             for (index, level) in config.levels.iter().enumerate() {
@@ -399,12 +764,8 @@ fn main() -> Result<(), Box<dyn Error>> {
                     .ok_or_else(|| invalid("registered Level disappeared"))?
                     .state.events.completed();
                 if !finished ||
-                    completed_episodes[index] == config.episodes_per_world
-                {
-                    continue;
-                }
-                completed_episodes[index] += 1;
-                if completed_episodes[index] == config.episodes_per_world ||
+                    holding_for_update ||
+                    completed_episodes[index] >= config.episodes_per_world ||
                     rounds == config.max_rounds
                 {
                     continue;
@@ -423,9 +784,16 @@ fn main() -> Result<(), Box<dyn Error>> {
                 let seed = level.seed.wrapping_add(
                     u64::from(completed_episodes[index])
                 );
+                if let Some(group) = &level.groups {
+                    bind_group_routes(
+                        &mut scene, group, completed_episodes[index], false,
+                        seed,
+                    )?;
+                }
                 let setup = make_setup(
                     &config, level, &assets, period, Rc::clone(&next_id), seed,
-                );
+                    completed_episodes[index], source_sides[index],
+                )?;
                 let authored = scene.into_exported_policy_only_level(setup)
                     .map_err(|error| contextual("replayed Level source", error))?;
                 let replacement = assets.build_level(authored)
@@ -445,26 +813,49 @@ fn main() -> Result<(), Box<dyn Error>> {
             }
         };
         if rounds >= next_status_round || counts.stopped_with_no_live_worlds {
-            next_status_round = rounds.saturating_add(u64::from(window.get()));
-            match host.sample_status() {
-                Ok(Some(status)) => println!("{}", json!({
-                    "kind": "interval",
-                    "run_id": config.run_id,
-                    "rounds": rounds,
-                    "completed_episodes": completed_episodes.iter()
-                        .map(|&count| u64::from(count)).sum::<u64>(),
-                    "metrics": status,
-                })),
-                Ok(None) => {},
-                Err(error) => {
-                    failed_window = Some(format!(
-                        "native host status after window: {error:?}"
-                    ));
-                    break;
-                }
+        next_status_round = rounds.saturating_add(u64::from(window.get()));
+        let evaluation = host.sink_mut().measurements().clone();
+        let mean_episode_seconds = evaluation.mean_episode_seconds();
+        match host.sample_status() {
+            Ok(Some(status)) => println!("{}", json!({
+                "kind": "interval",
+                "run_id": config.run_id,
+                "rounds": rounds,
+                "policy_generation": host.model_mut().model_generation(),
+                "policy_manifest_sha256": host.model_mut().model_manifest_sha256(),
+                "model_updates_applied": next_model_update,
+                "next_model_update_at_round": config.model_updates
+                    .get(next_model_update).map(|item| item.at_round),
+                "awaiting_clean_episode_boundary": holding_for_update,
+                "completed_episodes": completed_episodes.iter()
+                    .map(|&count| u64::from(count)).sum::<u64>(),
+                "evaluation": evaluation,
+                "mean_episode_seconds": mean_episode_seconds,
+                "metrics": status,
+            })),
+            Ok(None) => {},
+            Err(error) => {
+                failed_window = Some(format!(
+                    "native host status after window: {error:?}"
+                ));
+                break;
             }
         }
+        }
+        if counts.stopped_with_no_live_worlds && holding_for_update {
+            failed_window = Some(
+                "model boundary has no active worlds but still lacks a completed episode".into(),
+            );
+            break;
+        }
         if counts.stopped_with_no_live_worlds && recycled == 0 { break; }
+    }
+
+    if failed_window.is_none() && next_model_update < config.model_updates.len() {
+        failed_window = Some(format!(
+            "{} scheduled policy updates were not reached before the run ended",
+            config.model_updates.len() - next_model_update,
+        ));
     }
 
     // A finite run budget is an intentional stop, NEVER a fake terminal
@@ -519,10 +910,20 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
     let status = host.runtime_status()
         .map_err(|error| contextual("final native host status", error))?;
+    let evaluation = host.sink_mut().measurements().clone();
+    let mean_episode_seconds = evaluation.mean_episode_seconds();
+    let final_segment = evaluation.delta_since(&segment_baseline);
+    let final_segment_mean = final_segment.as_ref()
+        .and_then(|segment| segment.mean_episode_seconds());
+    if final_segment.is_none() && failed_window.is_none() {
+        failed_window = Some("durable evaluation counters regressed".into());
+    }
     println!("{}", json!({
         "kind": "run_final",
         "run_id": config.run_id,
         "rounds": rounds,
+        "policy_generation": host.model_mut().model_generation(),
+        "policy_manifest_sha256": host.model_mut().model_manifest_sha256(),
         "completed_episodes": completed_episodes.iter()
             .map(|&count| u64::from(count)).sum::<u64>(),
         "completed_worlds": status.completed_worlds,
@@ -531,6 +932,18 @@ fn main() -> Result<(), Box<dyn Error>> {
         "running_worlds": status.running_worlds,
         "pending_notifications": status.queued_notifications,
         "pending_store_commands": status.pending_store_commands,
+        "model_updates_applied": next_model_update,
+        "model_updates_remaining": config.model_updates.len() - next_model_update,
+        "evaluation": evaluation,
+        "mean_episode_seconds": mean_episode_seconds,
+        "active_policy_segment": {
+            "policy_generation": segment_generation,
+            "policy_manifest_sha256": segment_manifest_sha256,
+            "from_round": segment_start_round,
+            "through_round": rounds,
+            "evaluation": final_segment,
+            "mean_episode_seconds": final_segment_mean,
+        },
         "failed_window": failed_window,
         "cleanup_errors": cleanup_errors,
         "user_closed": user_closed,

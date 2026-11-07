@@ -1057,6 +1057,66 @@ internal sealed class RlOneVsOneAgent : Agent
     /// Snapshot the ACTIVE real controller without binding an idle agent,
     /// modifying the ship, or drawing a new randomized policy frame.
     /// These identities are per Level and episode, not a SavedSquad ID.
+    /// Read-only membership snapshot for the native initial Level exporter.
+    /// Unity's instance ID belongs to the actual participating Agent object,
+    /// not the physical ship it currently controls. Preserve unbound group
+    /// participants too: their trajectory continues when a ship dies.
+    internal readonly struct NativeGroupMember
+    {
+        internal readonly long AgentId;
+        internal readonly int Side;
+        internal readonly int TeamId;
+        internal readonly long BoundShipId;
+
+        internal NativeGroupMember(long agentId, int side, int teamId, long boundShipId)
+        {
+            AgentId = agentId;
+            Side = side;
+            TeamId = teamId;
+            BoundShipId = boundShipId;
+        }
+    }
+
+    internal static List<NativeGroupMember> ReadNativeGroupMembers(Level level)
+    {
+        var members = new List<NativeGroupMember>();
+        var ids = new HashSet<long>();
+        foreach (RlOneVsOneAgent agent in Instances)
+        {
+            if (agent == null || agent._level != level ||
+                !agent._hasParticipatedThisEpisode || agent._agentGroup == null)
+            {
+                continue;
+            }
+            if (!RlOneVsOneEpisodeCoordinator.IsExistingControllerForSide(
+                level, agent._side, agent._teamId))
+            {
+                throw new System.InvalidOperationException(
+                    "An active MA-POCA participant belongs to a stale team.");
+            }
+            // Unity Object instance IDs are signed. Their uint32 bit
+            // patterns preserve unique object identity as a positive
+            // native u64 for this exported episode.
+            long id = unchecked((uint)agent.GetInstanceID());
+            if (id == 0 || !ids.Add(id))
+            {
+                throw new System.InvalidOperationException(
+                    "A participating MA-POCA Agent has an invalid identity.");
+            }
+            long shipId = agent._hasBoundShip && agent._ship != null &&
+                !agent._ship.IsDead && agent._ship.Level == level &&
+                agent._boundRuntimeShipId == agent._ship.Id
+                ? agent._ship.Id : 0;
+            members.Add(new NativeGroupMember(
+                id, agent._side, agent._teamId, shipId));
+        }
+        members.Sort((a, b) => {
+            int side = a.Side.CompareTo(b.Side);
+            return side != 0 ? side : a.AgentId.CompareTo(b.AgentId);
+        });
+        return members;
+    }
+
     internal static bool TryReadBoundPolicy(
         Ship ship,
         out int teamId,

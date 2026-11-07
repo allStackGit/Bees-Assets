@@ -39,6 +39,7 @@ use bees_sim::combat_perception_bridge::{
 use bees_sim::perception::CapabilitySource;
 use bees_sim::perception_weapons::SelfWeapon;
 use bees_gameplay::inference::NativePolicyRoute;
+use bees_gameplay::group_rewards::team_id_for_side;
 use bees_sim::navigation_runtime::{NavigationMapFrame, NavigationRuntime};
 use bees_sim::navigation::{NavigationGrid, NavigationError};
 use bees_sim::team_exploration::TeamExplorationGrid;
@@ -147,6 +148,22 @@ struct UnityPolicyEpisode {
     human_starting_tsv: i32,
     timeout_seconds: f32,
     discovery_baselines: Option<Vec<i32>>,
+    #[serde(default)]
+    episode_number: u32,
+    #[serde(default)]
+    team0_movement_disabled: Option<bool>,
+    #[serde(default)]
+    team1_movement_disabled: Option<bool>,
+    #[serde(default)]
+    group_participants: Vec<UnityGroupParticipant>,
+}
+
+#[derive(Deserialize)]
+struct UnityGroupParticipant {
+    agent_id: u64,
+    ship_id: i64,
+    side: i32,
+    team_id: u8,
 }
 
 #[derive(Deserialize)]
@@ -418,6 +435,7 @@ pub enum NativeSnapshotError {
     AlreadyBound(i64),
     InvalidPolicySource(i64),
     InvalidEpisodeSource,
+    InvalidGroupSource,
     InvalidNavigationSource,
     Navigation(NavigationError),
     Episode(NativeEpisodeRewardError),
@@ -439,6 +457,9 @@ pub struct NativePhysicalScene {
     pub activate_collision_asteroids: bool,
     pub entities: Vec<NativeAuthoredEntity>,
     source_episode: Option<NativeSourceEpisode>,
+    /// Real participating Unity Agent instances and the active episode
+    /// number. Schema 15 may legitimately have no group identities.
+    pub source_policy_group: Option<NativeSourcePolicyGroup>,
     source_navigation: NativeSourceNavigation,
     pub fleet: NativeFleetInventory,
     // Real authored physical mounts retained even for non-policy ships.
@@ -553,6 +574,21 @@ pub struct NativeSourceSquad {
     pub item_id: i64,
     pub side: i32,
     pub members: Vec<i64>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct NativeSourceGroupParticipant {
+    pub agent_id: u64,
+    pub ship_id: i64,
+    pub side: i32,
+    pub team_id: u8,
+}
+
+#[derive(Debug)]
+pub struct NativeSourcePolicyGroup {
+    pub episode_number: u32,
+    pub movement_disabled_by_team: [bool; 2],
+    pub participants: Vec<NativeSourceGroupParticipant>,
 }
 
 impl NativePhysicalScene {
@@ -686,13 +722,25 @@ impl NativePhysicalScene {
                     if ship.entity_id == ship_id => Some(ship.side),
                 _ => None,
             }).ok_or(NativeSnapshotError::UnknownPolicyShip(ship_id))?;
+            let source_group_agent_id = self.source_policy_group.as_ref()
+                .and_then(|group| group.participants.iter().find(|member|
+                    member.ship_id == ship_id
+                )).map(|member| member.agent_id);
             agents.push(AuthoredPolicyAgent {
                 ship_id,
                 side,
+                source_group_agent_id,
                 route: NativePolicyRoute {
                     team_id: binding.team_id, model_slot,
                 },
-                controller: input.controller,
+                // Team policies change across self-play episodes. Read the
+                // current binding, not the immutable first-episode source
+                // controller's movement flag, so observations and physical
+                // policy commands agree after every team permutation.
+                controller: ControlledShipPerception {
+                    movement_disabled_for_team: binding.movement_disabled,
+                    ..input.controller
+                },
                 capability: input.capability,
                 parent_carrier_id: input.parent_carrier_id,
                 own_weapons: input.own_weapons,
@@ -896,7 +944,7 @@ impl NativePhysicalScene {
             raw.beehive_size_pixels.x == 0 || raw.beehive_size_pixels.y == 0 {
             return Err(NativeSnapshotError::InvalidLevelBounds);
         }
-        let source_episode = if raw.has_policy_episode {
+        let (source_episode, source_policy_group) = if raw.has_policy_episode {
             let raw_episode = raw.policy_episode
                 .ok_or(NativeSnapshotError::InvalidEpisodeSource)?;
             let baselines = raw_episode.discovery_baselines
@@ -913,7 +961,50 @@ impl NativePhysicalScene {
             {
                 return Err(NativeSnapshotError::InvalidEpisodeSource);
             }
-            Some(NativeSourceEpisode {
+            let source_group = if raw.schema_version >= 16 {
+                if raw_episode.episode_number == 0 {
+                    return Err(NativeSnapshotError::InvalidGroupSource);
+                }
+                let movement_disabled_by_team = match (
+                    raw_episode.team0_movement_disabled,
+                    raw_episode.team1_movement_disabled,
+                ) {
+                    (Some(team0), Some(team1)) => [team0, team1],
+                    _ => return Err(NativeSnapshotError::InvalidGroupSource),
+                };
+                let mut ids = HashSet::new();
+                let mut participants = Vec::with_capacity(
+                    raw_episode.group_participants.len()
+                );
+                for member in raw_episode.group_participants {
+                    let expected_team = team_id_for_side(
+                        raw_episode.bee_side, raw_episode.human_side,
+                        raw_episode.episode_number, member.side,
+                    ).map_err(|_| NativeSnapshotError::InvalidGroupSource)?;
+                    if member.agent_id == 0 || member.ship_id < 0 ||
+                        member.team_id != expected_team ||
+                        !ids.insert(member.agent_id)
+                    {
+                        return Err(NativeSnapshotError::InvalidGroupSource);
+                    }
+                    participants.push(NativeSourceGroupParticipant {
+                        agent_id: member.agent_id,
+                        ship_id: member.ship_id,
+                        side: member.side,
+                        team_id: member.team_id,
+                    });
+                }
+                if participants.is_empty() { None } else {
+                    Some(NativeSourcePolicyGroup {
+                        episode_number: raw_episode.episode_number,
+                        movement_disabled_by_team,
+                        participants,
+                    })
+                }
+            } else {
+                None
+            };
+            (Some(NativeSourceEpisode {
                 bee_side: raw_episode.bee_side,
                 human_side: raw_episode.human_side,
                 bee_starting_tsv: raw_episode.bee_starting_tsv,
@@ -923,9 +1014,9 @@ impl NativePhysicalScene {
                     [baselines[0], baselines[1], baselines[2], baselines[3]],
                     [baselines[4], baselines[5], baselines[6], baselines[7]],
                 ],
-            })
+            }), source_group)
         } else {
-            None
+            (None, None)
         };
         let frame = NavigationMapFrame {
             origin_world: raw.navigation_origin_world.into_vec(),
@@ -1556,6 +1647,43 @@ impl NativePhysicalScene {
         if !source_policy_bindings.is_empty() && source_episode.is_none() {
             return Err(NativeSnapshotError::InvalidEpisodeSource);
         }
+        // A schema-16 export MUST include every source-controlled
+        // participant: it must not silently degrade to guessed or manual
+        // MA-POCA ownership when its authenticated group is absent.
+        if raw.schema_version >= 16 &&
+            !source_policy_bindings.is_empty() &&
+            source_policy_group.is_none()
+        {
+            return Err(NativeSnapshotError::InvalidGroupSource);
+        }
+        if let Some(group) = &source_policy_group {
+            let mut bound_ship_ids = HashSet::new();
+            for member in &group.participants {
+                if member.ship_id == 0 {
+                    continue;
+                }
+                let Some(binding) = source_policy_bindings.get(&member.ship_id)
+                else {
+                    return Err(NativeSnapshotError::InvalidGroupSource);
+                };
+                if binding.team_id != member.team_id ||
+                    binding.movement_disabled !=
+                        group.movement_disabled_by_team[usize::from(member.team_id)] ||
+                    live_ships.get(&member.ship_id) != Some(&member.side) ||
+                    !bound_ship_ids.insert(member.ship_id)
+                {
+                    return Err(NativeSnapshotError::InvalidGroupSource);
+                }
+            }
+            // Every exported policy-controlled ship must belong to its
+            // actual participating Unity Agent; otherwise group rewards
+            // cannot be matched to the physical action trajectories.
+            if source_policy_bindings.keys().any(|id|
+                !bound_ship_ids.contains(id)
+            ) {
+                return Err(NativeSnapshotError::InvalidGroupSource);
+            }
+        }
         let fleet = NativeFleetInventory::from_source(fleet_values)
             .map_err(NativeSnapshotError::Fleet)?;
         Ok(Self {
@@ -1567,6 +1695,7 @@ impl NativePhysicalScene {
             activate_collision_asteroids: raw.activate_collision_asteroids,
             entities,
             source_episode,
+            source_policy_group,
             source_navigation,
             fleet,
             turrets_by_ship,

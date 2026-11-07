@@ -28,6 +28,7 @@ use crate::level_rules::NativeLevelState;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NativeInferenceError {
     InvalidAgent,
+    RepeatedGroupAgent { world: WorldId, agent: u64 },
     SnapshotIdentityMismatch,
     SnapshotStateMismatch,
     UnmatchedTeamRoute,
@@ -78,6 +79,11 @@ pub trait NativePolicyInference {
         continuous: &mut [f32],
         discrete: &mut [u8],
     ) -> Result<(), Self::Error>;
+
+    /// Process-local model incarnation for attribution of sampled policy
+    /// actions. Non-reloading backends retain generation zero. A learner
+    /// must also retain the run identity and immutable model artifact SHA.
+    fn model_generation(&self) -> u64 { 0 }
 }
 
 #[derive(Debug)]
@@ -99,6 +105,13 @@ pub enum NativeInferenceRunError<E> {
 pub struct NativeInferenceMeasurements {
     pub model_calls: u64,
     pub model_rows: u64,
+    /// Validated action rows with a real MA-POCA participant identity,
+    /// distinct from the live ship ID. A missing identity is never
+    /// silently repaired by substituting the physical ship ID.
+    pub grouped_actor_rows: u64,
+    /// Last successfully validated model batch's generation. A new run or
+    /// non-reloading model starts at 0. This is not a checkpoint hash.
+    pub last_model_generation: Option<u64>,
     /// Wall time of calls selected for timing, not the sum of all calls.
     pub model_forward_nanos: u128,
     pub model_forward_timed_calls: u64,
@@ -119,6 +132,10 @@ pub struct NativeLevelInferenceBatch {
     /// in the multi-world model batch at every dispatch.
     world_rows: HashMap<WorldId, Vec<usize>>,
     routes: Vec<NativePolicyRoute>,
+    /// Source MA-POCA Agent identity per inference row, distinct from
+    /// PolicyAgentKey.agent which is always the current physical ship.
+    group_agent_ids: Vec<Option<u64>>,
+    group_agents_seen: std::collections::HashSet<(WorldId, u64)>,
     /// Actual controller instance at the moment each observation row was
     /// encoded; an agent ID can outlive a controller rebind on the same tick.
     binding_revisions: Vec<u64>,
@@ -139,6 +156,8 @@ impl NativeLevelInferenceBatch {
             rows.clear();
         }
         self.routes.clear();
+        self.group_agent_ids.clear();
+        self.group_agents_seen.clear();
         self.binding_revisions.clear();
         self.finalized = false;
         self.failed = false;
@@ -155,6 +174,16 @@ impl NativeLevelInferenceBatch {
         ))?;
         self.routes.try_reserve(
             count.saturating_sub(self.routes.len()),
+        ).map_err(|_| NativeInferenceError::Batch(
+            PolicyBatchError::AllocationFailed,
+        ))?;
+        self.group_agent_ids.try_reserve(
+            count.saturating_sub(self.group_agent_ids.len()),
+        ).map_err(|_| NativeInferenceError::Batch(
+            PolicyBatchError::AllocationFailed,
+        ))?;
+        self.group_agents_seen.try_reserve(
+            count.saturating_sub(self.group_agents_seen.len()),
         ).map_err(|_| NativeInferenceError::Batch(
             PolicyBatchError::AllocationFailed,
         ))?;
@@ -205,6 +234,13 @@ impl NativeLevelInferenceBatch {
         &self.routes
     }
 
+    /// Row-aligned with keys()/observations()/routes()/actions().
+    /// None is reserved for the non-group game and older source scenes.
+    /// The owner must not fabricate an MA-POCA Agent from its ship ID.
+    pub fn group_agent_ids(&self) -> &[Option<u64>] {
+        &self.group_agent_ids
+    }
+
     /// An inference library fills BOTH buffers: 16 continuous channels
     /// and 6 discrete branches per agent. The underlying PolicyBatch
     /// performs complete finite/range/mask validation at finalization.
@@ -226,6 +262,7 @@ impl NativeLevelInferenceBatch {
         world: &World<NativeLevelState<M, A>>,
         ship_id: i64,
         route: NativePolicyRoute,
+        group_agent_id: Option<u64>,
         snapshot: &PolicyPerceptionSnapshot<'_>,
     ) -> Result<(), NativeInferenceError> {
         if self.finalized { return Err(NativeInferenceError::AlreadyFinalized); }
@@ -238,6 +275,17 @@ impl NativeLevelInferenceBatch {
         let agent = u64::try_from(ship_id)
             .map_err(|_| NativeInferenceError::InvalidAgent)?;
         if agent == 0 { return Err(NativeInferenceError::InvalidAgent); }
+        if group_agent_id == Some(0) {
+            return Err(NativeInferenceError::InvalidAgent);
+        }
+        if group_agent_id.is_some_and(|group_agent|
+            self.group_agents_seen.contains(&(world.id, group_agent))
+        ) {
+            return Err(NativeInferenceError::RepeatedGroupAgent {
+                world: world.id,
+                agent: group_agent_id.expect("validated group agent"),
+            });
+        }
         let ship = world.state.combat.ship(ship_id)
             .ok_or(NativeInferenceError::InvalidAgent)?;
         if snapshot.self_entity_id != ship_id ||
@@ -293,6 +341,10 @@ impl NativeLevelInferenceBatch {
         let row = self.batch.keys().len() - 1;
         self.world_rows.entry(world.id).or_default().push(row);
         self.routes.push(route);
+        self.group_agent_ids.push(group_agent_id);
+        if let Some(group_agent) = group_agent_id {
+            self.group_agents_seen.insert((world.id, group_agent));
+        }
         self.binding_revisions.push(bind_revision);
         Ok(())
     }
@@ -311,6 +363,9 @@ impl NativeLevelInferenceBatch {
             self.measurements.invalid_action_batches += 1;
             return Err(NativeInferenceError::Batch(error));
         }
+        self.measurements.grouped_actor_rows = self.measurements
+            .grouped_actor_rows
+            .saturating_add(self.group_agents_seen.len() as u64);
         self.finalized = true;
         Ok(&self.keyed_decisions)
     }
@@ -366,7 +421,12 @@ impl NativeLevelInferenceBatch {
             self.measurements.backend_failures += 1;
             return Err(NativeInferenceRunError::Backend(error));
         }
-        self.finalize().map_err(NativeInferenceRunError::Boundary)
+        let generation = backend.model_generation();
+        self.finalize().map_err(NativeInferenceRunError::Boundary)?;
+        // Record only a fully validated batch. Drop the temporary borrow
+        // returned by finalize before updating the cumulative measurement.
+        self.measurements.last_model_generation = Some(generation);
+        Ok(&self.keyed_decisions)
     }
 
     /// Export the complete source-defined PPO action activity weights

@@ -162,13 +162,14 @@ impl NativeWorldPerceptionAssembler {
         world: &World<NativeLevelState<M, A>>,
         ship_id: i64,
         route: NativePolicyRoute,
+        group_agent_id: Option<u64>,
         inputs: NativeLevelPerceptionInputs<'a>,
         authored_ship: impl FnMut(i64) -> Option<AuthoredShipPerception>,
     ) -> Result<(), NativeWorldPerceptionError> {
         let snapshot = self.assemble(
             world, ship_id, inputs, authored_ship,
         )?;
-        batch.push_agent(world, ship_id, route, &snapshot)?;
+        batch.push_agent(world, ship_id, route, group_agent_id, &snapshot)?;
         Ok(())
     }
 

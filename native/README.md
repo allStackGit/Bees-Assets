@@ -77,14 +77,57 @@ The single JSON configuration file requires:
   `max_rounds`, optional `episodes_per_world` (default 1),
   `rounds_per_window`, `delivery_every`, and optional
   `timing_sample_period` (all step counts are positive).
+- Optional `model_updates`: an ordered array of
+  `{"at_round": 1000, "manifest": "next-model.json"}` entries.
+  Rounds must be strictly increasing and less than `max_rounds`.
+  Each round is the **earliest eligibility threshold** for a switch, not
+  permission to change policies mid-episode. The runner splits its
+  rollout at that threshold, pauses arenas as they finish, waits for
+  all live episodes to complete and deliver their notifications, then
+  changes models **before** recycling any world. It records both the
+  requested and effective round, previous/new generation, exact model
+  manifest SHA-256, and the cumulative evaluation at the boundary.
+  A switch without remaining episodes, one that overruns the next
+  threshold, or a run ending before a requested switch fails explicitly
+  rather than reporting invalid mixed-policy benchmark outcomes.
+  Each successful switch emits a `policy_segment` with the previous
+  checkpoint's standalone evaluation; `run_final.active_policy_segment`
+  covers the final model generation. These are differences of counters
+  acknowledged by the durable notification sink, not estimates based
+  on unfinished or partially stepped episodes.
+  Each target manifest must have verified artifacts and the same
+  model slot IDs. Failed changes abort the unfinished run.
 - `levels`: a nonempty array of `{scene, world_id, level_id, seed,
-  model_slots}`. Each scene is an exported **initial** Level; both IDs
-  must be unique and positive, and `model_slots` maps exact Unity
-  policy-team IDs (`"0"`/`"1"`) to verified slots in the manifest.
+  model_slots, groups?}`. Each scene is an exported **initial** Level;
+  both IDs must be unique and positive, and `model_slots` maps exact
+  Unity policy-team IDs (`"0"`/`"1"`) to verified manifest slots.
+  For schema-16 exports, the actual participating Unity Agent instance
+  IDs, source ship bindings and episode number are recorded in the scene
+  itself; the runner derives `groups` automatically. If manually supplied,
+  `groups` must match that source record exactly. Legacy schema-15 scenes
+  can still supply `{"episode_number": 1, "participants":
+  [{"side": 1, "agent_id": 123}]}` from actual external group ownership,
+  never inferred hull IDs. Scripted opponents may have no group
+  participants on their side. Legacy schema-15 group scenes are
+  single-episode only: they lack the per-team movement settings required
+  to replay alternating policy ownership safely. A source controller
+  whose initial team disagrees with the configured episode rejects
+  the run. On subsequent schema-16 episodes, the native Level advances
+  the episode number, alternates team routes and source movement limits,
+  and selects fresh source-equivalent distinct policy coordinate frames
+  from a world-specific reproducible seed.
+  Omit `groups` only for non-group gameplay.
+
 
 The runner checks source identities, model routing, collision settings and
 Stage consistency **before starting**. It emits run-tagged JSON interval
-measurements on stdout. Its durable sink synchronizes bounded ordered event
+measurements on stdout, including completed episodes, wins by source side,
+draws, timeouts, mean episode duration, and real group rewards. Evaluation
+counts advance only after their notifications have been synchronized and
+acknowledged, not when an unfinished physical world merely becomes idle. Group-reward and terminal diagnostics include typed
+numeric fields; ELO markers remain separate from PPO reward. This diagnostic
+log is **not** the complete observation/action/value/log-probability data
+needed to train a policy. Its durable sink synchronizes bounded ordered event
 chunks (up to 128 records or 256 KiB) and acknowledges only the actually
 committed source prefix; a previously created output path is never overwritten.
 Completed worlds can be recycled up to `episodes_per_world` times through
@@ -104,10 +147,39 @@ rendering, full parity or production durability of all app-side effects.
 Do not use its partial trajectories as valid learner data. Native
 Windows/Linux execution and throughput are not yet verified.
 
+### Resident policy updates
+
+`ResidentPolicyProcess::reload_manifest(path)` updates the real policy
+weights **between complete inference calls**, without restarting a native
+Level or respawning the Python worker. Version 2 of the binary worker
+protocol accepts one explicit `BMOD` manifest-load request, returns
+`MACK` only after SHA-256 verification and successful loading of ALL
+model slots, and rejects incompatible signatures or slot sets with
+`MNOK`. The startup handshake returns the exact source manifest digest;
+reload requests carry the expected manifest SHA-256, which is checked
+**before** loading weights, and successful receipts echo that digest.
+The runner emits both the manifest digest and process-local policy
+generation for every model transition. A rejected update keeps the existing policy live; a malformed
+or incomplete protocol response poisons the worker and requires explicit
+restart. Reloads are **not** triggered by filesystem polling: the caller
+explicitly requests them or configures the headless runner's
+`model_updates` schedule. The caller must retain model artifact hashes,
+run/episode identities and policy generation for scientific attribution. The initial model
+generation is zero and each accepted replacement increments it. The
+status interval reports the last validated generation and exact
+authenticated MA-POCA actor rows. This is not yet a native PPO learner;
+the inference-only TorchScript/ONNX model manifest does not provide
+action log probabilities or a group critic. Loading a replacement model
+can temporarily require space for both the old and new weights.
+
 ## Unity scene import (schema 18)
 
 **Bees > Native > Export Selected Level Physical Scene** captures a
 source-authored initial Unity Level, not a resumable match checkpoint.
+The scene captures the active self-play episode, both team-specific
+movement settings and registered Unity Agent instance group membership,
+including its exact currently bound ship (if any). Earlier schemas require
+a fresh export to supply the additional authored collision and movement data.
 It records original ship/weapon, squad, obstacle, mining and destructible
 MapObject identities and live collider geometry, plus real policy
 controller/frame/capability inputs, episode starting TSV, discovery

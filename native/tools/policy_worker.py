@@ -30,7 +30,8 @@ MASK_WIDTH = 15  # Five fire choices × 2, then five ship specials
 ROW_META_BYTES = 16
 MAX_SIGNATURE_BYTES = 8192
 MAX_BATCH_ROWS = 65536
-VERSION = 1
+VERSION = 2
+MAX_MANIFEST_PATH_BYTES = 4096
 HEADER = struct.Struct("<4sIQI")
 READY = struct.Struct("<4sIIH")
 # Mirrors the Rust per-row wire header: slot(4), team(1), fire(5),
@@ -171,8 +172,20 @@ def read_reused(reader, storage: bytearray, count: int):
     return storage, view
 
 
-def checked_manifest(path: Path):
-    manifest = json.loads(path.read_text(encoding="utf-8"))
+def file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as artifact:
+        for chunk in iter(lambda: artifact.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def checked_manifest(path: Path, expected_digest: bytes | None = None):
+    manifest_bytes = path.read_bytes()
+    manifest_digest = hashlib.sha256(manifest_bytes).digest()
+    if expected_digest is not None and manifest_digest != expected_digest:
+        raise ValueError("model-update manifest changed before loading")
+    manifest = json.loads(manifest_bytes.decode("utf-8"))
     if not isinstance(manifest, dict) or manifest.get("format") != "bees-native-model-v1":
         raise ValueError("manifest must declare bees-native-model-v1")
     if type(manifest.get("abi_version")) is not int or manifest["abi_version"] != 26:
@@ -205,19 +218,22 @@ def checked_manifest(path: Path):
             len(expected_sha256) != 64
         ) or any(char not in "0123456789abcdef" for char in expected_sha256):
             raise ValueError("model requires a canonical lowercase SHA-256 digest")
-        digest = hashlib.sha256()
-        with model_file.open("rb") as artifact:
-            for chunk in iter(lambda: artifact.read(1024 * 1024), b""):
-                digest.update(chunk)
-        if digest.hexdigest() != expected_sha256:
+        if file_sha256(model_file) != expected_sha256:
             raise ValueError(f"model artifact content changed: slot {slot}")
         if backend == "torchscript":
-            policies[slot] = TorchScriptPolicy(model_file, config)
+            model = TorchScriptPolicy(model_file, config)
         elif backend == "onnx":
-            policies[slot] = OnnxPolicy(model_file, config)
+            model = OnnxPolicy(model_file, config)
         else:
             raise ValueError(f"unsupported native model backend: {backend}")
-    return signature_bytes, policies
+        # Libraries reopen model paths during deserialization. Detect an
+        # artifact replaced between the first verified read and actual
+        # model load, rather than attributing different weights to the
+        # manifest's immutable expected digest.
+        if file_sha256(model_file) != expected_sha256:
+            raise ValueError(f"model artifact changed during load: slot {slot}")
+        policies[slot] = model
+    return signature_bytes, policies, manifest_digest
 
 
 def decode_row_metadata(meta: bytearray, rows: int):
@@ -304,11 +320,12 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--manifest", required=True, type=Path)
     args = parser.parse_args()
-    signature, policy_map = checked_manifest(args.manifest)
+    signature, policy_map, manifest_digest = checked_manifest(args.manifest)
     reader = sys.stdin.buffer
     writer = sys.stdout.buffer
     writer.write(READY.pack(b"BHOK", VERSION, 26, len(signature)))
     writer.write(signature)
+    writer.write(manifest_digest)
     writer.flush()
     observation_storage = bytearray()
     while True:
@@ -316,7 +333,51 @@ def main() -> None:
         if data is None:
             break
         magic, version, request_id, rows = HEADER.unpack(data)
-        if magic != b"BINF" or version != VERSION:
+        if version != VERSION:
+            raise ValueError("invalid policy worker protocol version")
+        if magic == b"BMOD":
+            # A model-update control frame is processed strictly between
+            # inference batches. New models are loaded and SHA-verified
+            # before replacing the active slot map; a rejected update
+            # leaves every previously loaded model available.
+            if not 32 < rows <= MAX_MANIFEST_PATH_BYTES + 32:
+                raise ValueError("invalid model-update manifest payload size")
+            payload = read_exact(reader, rows)
+            if payload is None:
+                raise EOFError("incomplete model-update manifest payload")
+            expected_digest = bytes(payload[:32])
+            new_map = None
+            try:
+                manifest_path = Path(bytes(payload[32:]).decode("utf-8"))
+                if not manifest_path.is_absolute():
+                    raise ValueError("model-update manifest must be absolute")
+                new_signature, new_map, new_digest = checked_manifest(
+                    manifest_path, expected_digest
+                )
+                if new_signature != signature:
+                    raise ValueError("model-update policy ABI signature mismatch")
+                if new_map.keys() != policy_map.keys():
+                    raise ValueError("model-update changes active policy slots")
+            except Exception as error:
+                # Backend libraries raise different Exception subclasses.
+                # A failed candidate must not replace or poison the active
+                # policy, nor leave a successfully loaded candidate resident.
+                new_map = None
+                print(f"Native policy reload rejected: {error}",
+                      file=sys.stderr, flush=True)
+                writer.write(HEADER.pack(b"MNOK", VERSION, request_id, 0))
+                writer.flush()
+                continue
+            old_map = policy_map
+            policy_map = new_map
+            manifest_digest = new_digest
+            new_map = None
+            del old_map
+            writer.write(HEADER.pack(b"MACK", VERSION, request_id, len(policy_map)))
+            writer.write(manifest_digest)
+            writer.flush()
+            continue
+        if magic != b"BINF":
             raise ValueError("invalid inference request header")
         if not 0 < rows <= MAX_BATCH_ROWS:
             raise ValueError("invalid model batch size")

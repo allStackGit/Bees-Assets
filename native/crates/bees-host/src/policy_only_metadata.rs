@@ -60,6 +60,10 @@ pub enum PolicyOnlyMetadataError {
 pub struct AuthoredPolicyAgent {
     pub ship_id: i64,
     pub side: i32,
+    /// The actual Unity MA-POCA Agent instance controlling this ship.
+    /// It is distinct from the physical ship ID; None for non-group
+    /// gameplay and legacy scenes with no authenticated group record.
+    pub source_group_agent_id: Option<u64>,
     pub route: NativePolicyRoute,
     pub controller: ControlledShipPerception,
     pub capability: CapabilitySource,
@@ -163,6 +167,7 @@ impl NativePolicyOnlyMetadata {
             }
         }
         let mut agent_map = HashMap::new();
+        let mut seen_group_agents = std::collections::HashSet::new();
         for agent in agents {
             if agent.ship_id <= 0 || agent.side <= 0 ||
                 !agent.controller.effective_vision_range.is_finite() ||
@@ -177,6 +182,9 @@ impl NativePolicyOnlyMetadata {
                 !side_map.contains_key(&agent.side) || agent.route.team_id > 1 ||
                 agent.parent_carrier_id.is_some_and(|id|
                     !authored_ships.contains_key(&id)
+                ) ||
+                agent.source_group_agent_id.is_some_and(|id|
+                    id == 0 || !seen_group_agents.insert(id)
                 ) {
                 return Err(PolicyOnlyMetadataError::InvalidSource);
             }
@@ -412,6 +420,14 @@ impl NativeLevelActivationContext for NativePolicyOnlyMetadata {
 
 impl NativeLevelObservationContext for NativePolicyOnlyMetadata {
     type Error = PolicyOnlyMetadataError;
+
+    fn group_agent_for_ship(&self, ship_id: i64)
+        -> Result<Option<u64>, Self::Error>
+    {
+        Ok(self.agents.get(&ship_id)
+            .ok_or(PolicyOnlyMetadataError::MissingAgent(ship_id))?
+            .source_group_agent_id)
+    }
 
     fn route_for_agent(&self, ship_id: i64)
         -> Result<NativePolicyRoute, Self::Error>

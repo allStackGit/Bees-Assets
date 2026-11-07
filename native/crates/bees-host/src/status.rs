@@ -77,6 +77,12 @@ pub struct NativeHostStatusInterval {
     pub world_steps_per_second: f64,
     pub model_rows: u64,
     pub model_rows_per_second: f64,
+    /// Successfully validated model rows with authenticated MA-POCA
+    /// participants; not inferred from live ship identities.
+    pub grouped_actor_rows: u64,
+    /// Current resident policy generation, or absent before the first
+    /// successfully validated model batch. It is process/run-local.
+    pub last_model_generation: Option<u64>,
     pub model_calls: u64,
     pub model_backend_failures: u64,
     pub invalid_model_batches: u64,
@@ -191,6 +197,10 @@ impl NativeStatusSampler {
                 world_steps_per_second: world_steps as f64 / elapsed,
                 model_rows,
                 model_rows_per_second: model_rows as f64 / elapsed,
+                grouped_actor_rows: diff(
+                    m.grouped_actor_rows, q.grouped_actor_rows,
+                )?,
+                last_model_generation: m.last_model_generation,
                 model_calls: diff(m.model_calls, q.model_calls)?,
                 model_backend_failures: diff(
                     m.backend_failures, q.backend_failures,

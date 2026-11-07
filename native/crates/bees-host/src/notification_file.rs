@@ -6,6 +6,7 @@
 //! Each record therefore reaches stable storage before its source outbox
 //! entry is retired. A distinct, exclusive file is required for each run.
 
+use std::collections::BTreeMap;
 use std::fs::{File, OpenOptions};
 use std::io::{self, Write};
 use std::path::Path;
@@ -14,8 +15,120 @@ use bees_gameplay::level_events::{
     NativeLevelNotification, NativeLevelNotificationKind,
 };
 use bees_gameplay::level_host::NativeLevelNotificationSink;
+use bees_gameplay::group_rewards::GroupRewardKind;
 use bees_sim::simulation::WorldId;
+use serde::Serialize;
 use serde_json::json;
+
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct NativeDiagnosticMeasurements {
+    /// Exactly one outcome per durably delivered EpisodeFinal record.
+    pub episodes_finished: u64,
+    pub episodes_aborted: u64,
+    pub episodes_timed_out: u64,
+    pub draws: u64,
+    /// Winner identities are canonical source side IDs, not model teams.
+    pub victories_by_side: BTreeMap<i32, u64>,
+    pub total_episode_seconds: f64,
+    /// Group-only rewards, keyed by the model team in the actual episode.
+    /// ELO outcome markers are not included in these PPO reward totals.
+    pub immediate_reward_by_team: [f64; 2],
+    pub terminal_reward_by_team: [f64; 2],
+    pub elo_markers: u64,
+    pub group_episodes_ended: u64,
+}
+
+impl NativeDiagnosticMeasurements {
+    pub fn mean_episode_seconds(&self) -> Option<f64> {
+        (self.episodes_finished != 0).then_some(
+            self.total_episode_seconds / self.episodes_finished as f64
+        )
+    }
+
+    /// Derive one checkpoint's evaluated outcomes from two snapshots of
+    /// the same durable source sink. Reject a reset or counter regression
+    /// rather than manufacturing a plausible training benchmark.
+    pub fn delta_since(&self, previous: &Self) -> Option<Self> {
+        let mut victories_by_side = BTreeMap::new();
+        for (&side, &wins) in &self.victories_by_side {
+            let earlier = previous.victories_by_side
+                .get(&side).copied().unwrap_or(0);
+            victories_by_side.insert(side, wins.checked_sub(earlier)?);
+        }
+        if previous.victories_by_side.iter().any(|(&side, &wins)|
+            self.victories_by_side.get(&side).copied().unwrap_or(0) < wins
+        ) {
+            return None;
+        }
+        Some(Self {
+            episodes_finished:
+                self.episodes_finished.checked_sub(previous.episodes_finished)?,
+            episodes_aborted:
+                self.episodes_aborted.checked_sub(previous.episodes_aborted)?,
+            episodes_timed_out:
+                self.episodes_timed_out.checked_sub(previous.episodes_timed_out)?,
+            draws: self.draws.checked_sub(previous.draws)?,
+            victories_by_side,
+            total_episode_seconds:
+                self.total_episode_seconds - previous.total_episode_seconds,
+            immediate_reward_by_team: std::array::from_fn(|i|
+                self.immediate_reward_by_team[i] -
+                    previous.immediate_reward_by_team[i]
+            ),
+            terminal_reward_by_team: std::array::from_fn(|i|
+                self.terminal_reward_by_team[i] -
+                    previous.terminal_reward_by_team[i]
+            ),
+            elo_markers:
+                self.elo_markers.checked_sub(previous.elo_markers)?,
+            group_episodes_ended: self.group_episodes_ended
+                .checked_sub(previous.group_episodes_ended)?,
+        })
+    }
+
+    fn record(&mut self, event: &NativeLevelNotification) {
+        match &event.kind {
+            NativeLevelNotificationKind::EpisodeFinal(finalized) => {
+                self.episodes_finished = self.episodes_finished.saturating_add(1);
+                self.episodes_timed_out = self.episodes_timed_out
+                    .saturating_add(u64::from(finalized.result.timed_out));
+                self.total_episode_seconds +=
+                    f64::from(finalized.result.duration_seconds);
+                if finalized.result.winner_side == 0 {
+                    self.draws = self.draws.saturating_add(1);
+                } else {
+                    let wins = self.victories_by_side.entry(
+                        finalized.result.winner_side
+                    ).or_default();
+                    *wins = wins.saturating_add(1);
+                }
+            }
+            NativeLevelNotificationKind::EpisodeAborted =>
+                self.episodes_aborted = self.episodes_aborted.saturating_add(1),
+            NativeLevelNotificationKind::GroupReward(reward) => {
+                // These events have already passed the game-side side,
+                // team and finite-reward validation before reaching here.
+                let index = usize::from(reward.team_id);
+                if index >= 2 { return; }
+                match reward.kind {
+                    GroupRewardKind::Immediate =>
+                        self.immediate_reward_by_team[index] +=
+                            f64::from(reward.amount),
+                    GroupRewardKind::Terminal =>
+                        self.terminal_reward_by_team[index] +=
+                            f64::from(reward.amount),
+                    GroupRewardKind::EloMarker =>
+                        self.elo_markers = self.elo_markers.saturating_add(1),
+                    GroupRewardKind::EndEpisode =>
+                        self.group_episodes_ended =
+                            self.group_episodes_ended.saturating_add(1),
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
 
 pub struct DurableDiagnosticNotifications {
     file: File,
@@ -23,6 +136,7 @@ pub struct DurableDiagnosticNotifications {
     // Reused serialization buffer; disk sync happens per bounded chunk,
     // not per individual battle event.
     pending: Vec<u8>,
+    measurements: NativeDiagnosticMeasurements,
     unavailable: bool,
 }
 
@@ -50,7 +164,18 @@ impl DurableDiagnosticNotifications {
                 .unwrap_or_else(|| Path::new("."));
             File::open(parent)?.sync_all()?;
         }
-        Ok(Self { file, run_id, pending: Vec::new(), unavailable: false })
+        Ok(Self {
+            file, run_id, pending: Vec::new(),
+            measurements: NativeDiagnosticMeasurements::default(),
+            unavailable: false,
+        })
+    }
+
+    /// These are counters for notifications the driver is permitted
+    /// to acknowledge, never optimistic in-memory game outcomes.
+    /// The source event log remains authoritative for detailed evaluation.
+    pub fn measurements(&self) -> &NativeDiagnosticMeasurements {
+        &self.measurements
     }
 
     pub fn sync(&mut self) -> io::Result<()> {
@@ -77,6 +202,52 @@ impl DurableDiagnosticNotifications {
             NativeLevelNotificationKind::EpisodeFinal(_) => "episode_final",
             NativeLevelNotificationKind::EpisodeAborted => "episode_aborted",
         };
+        // Keep exact numeric reward/terminal values machine-readable for
+        // diagnostics. MA-POCA's ELO marker and EndEpisode command must
+        // NEVER become PPO reward when this log is inspected or migrated.
+        let payload = match &notification.kind {
+            NativeLevelNotificationKind::Reward(value) => Some(json!({
+                "side": value.side, "reward": value.amount,
+            })),
+            NativeLevelNotificationKind::GroupReward(value) => {
+                let (group_kind, ppo_reward, elo_marker) = match value.kind {
+                    GroupRewardKind::Immediate =>
+                        ("immediate", Some(value.amount), None),
+                    GroupRewardKind::Terminal =>
+                        ("terminal", Some(value.amount), None),
+                    GroupRewardKind::EloMarker =>
+                        ("elo_marker", None, Some(value.amount)),
+                    GroupRewardKind::EndEpisode =>
+                        ("end_episode", None, None),
+                };
+                Some(json!({
+                    "side": value.side,
+                    "team_id": value.team_id,
+                    "episode_number": value.episode_number,
+                    "group_kind": group_kind,
+                    "ppo_reward": ppo_reward,
+                    "elo_marker": elo_marker,
+                }))
+            }
+            NativeLevelNotificationKind::EpisodeFinal(value) => Some(json!({
+                "winner_side": value.result.winner_side,
+                "timed_out": value.result.timed_out,
+                "duration_seconds": value.result.duration_seconds,
+                "bee_side_eliminated": value.result.bee_side_eliminated,
+                "human_side_eliminated": value.result.human_side_eliminated,
+                "bee_terminal": value.terminal_rewards.bee_terminal,
+                "human_terminal": value.terminal_rewards.human_terminal,
+                "bee_time": value.terminal_rewards.bee_time,
+                "human_time": value.terminal_rewards.human_time,
+                "bee_retained_mined_tsv":
+                    value.economic_rewards.bee_retained_mined_tsv,
+                "human_retained_mined_tsv":
+                    value.economic_rewards.human_retained_mined_tsv,
+                "bee_retained_reward": value.economic_rewards.bee_retained_reward,
+                "human_retained_reward": value.economic_rewards.human_retained_reward,
+            })),
+            _ => None,
+        };
         let record = json!({
             "schema_version": 1,
             "run_id": self.run_id,
@@ -85,6 +256,7 @@ impl DurableDiagnosticNotifications {
             "event_sequence": event_sequence,
             "tick": notification.tick,
             "kind": kind,
+            "payload": payload,
             "payload_debug": format!("{:?}", notification.kind),
         });
         serde_json::to_writer(&mut self.pending, &record)
@@ -151,6 +323,12 @@ impl NativeLevelNotificationSink for DurableDiagnosticNotifications {
             }
             if let Err(error) = self.commit_chunk() {
                 return Err((committed, error));
+            }
+            // A chunk becomes visible to evaluation counters only AFTER
+            // the file has synchronized. This matches the exact durable
+            // prefix acknowledged by the Level event outbox.
+            for event in &notifications[committed..committed + buffered] {
+                self.measurements.record(event);
             }
             committed += buffered;
         }

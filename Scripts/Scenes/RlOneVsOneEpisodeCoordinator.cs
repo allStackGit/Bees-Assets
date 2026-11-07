@@ -397,6 +397,23 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         return true;
     }
 
+    /// Read-only episode identity for source-authoritative native export.
+    /// Never creates a coordinator, changes the active team or starts play.
+    internal static bool TryReadNativeEpisodeNumber(
+        Level level, out int episodeNumber)
+    {
+        episodeNumber = 0;
+        RlOneVsOneEpisodeCoordinator coordinator =
+            GetCoordinator(level, false);
+        if (coordinator == null || !coordinator._episodeActive ||
+            coordinator._level != level || coordinator._episodeNumber <= 0)
+        {
+            return false;
+        }
+        episodeNumber = coordinator._episodeNumber;
+        return true;
+    }
+
     internal static bool IsExistingControllerForSide(
         Level level, int side, int teamId)
     {
