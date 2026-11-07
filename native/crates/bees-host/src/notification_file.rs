@@ -89,7 +89,7 @@ impl DurableDiagnosticNotifications {
         });
         serde_json::to_writer(&mut self.pending, &record)
             .map_err(io::Error::other)?;
-        self.pending.push(b'\\n');
+        self.pending.push(b'\n');
         Ok(())
     }
 
