@@ -208,9 +208,19 @@ impl FullRetreatRun {
         // CombatWorld commits the resulting retirement on its next fixed
         // step so ship/reward/event ownership remains in one place.
         // Earlier waiting ships still use the recurring readiness poll.
+        let mut arrived_at_ready_gate = false;
         for &id in &self.participants {
             if world.queue_game_warp_contact(id, self.gate_id) &&
-                world.game_warp_gate_ready(self.gate_id) {
+                !arrived_at_ready_gate {
+                arrived_at_ready_gate =
+                    world.game_warp_gate_ready(self.gate_id);
+            }
+        }
+        if arrived_at_ready_gate {
+            // WaitToWarp flushes the command's ENTIRE waiting list when
+            // any new contact arrives at an already-open gate, including
+            // ships that were waiting before the animation completed.
+            for &id in &self.participants {
                 world.complete_game_warp(id, self.gate_id)?;
             }
         }
