@@ -89,7 +89,7 @@ The rendered fleet/command adapter and physical Windows/Linux
 qualification still require integration.
 
 HiveMind Scouting now uses source five-second movement polls, the
-authoritative squad collider-bounds center, ten-second Scout beacon polls,
+authoritative squad sprite-extents center, ten-second Scout beacon polls,
 a 300-second timeout, and five-second completion after first verified
 side-wide enemy-ship discovery. The owning Level must supply
 `NativeScoutingContext` with actual `Squad.MaxSight` and
@@ -311,9 +311,10 @@ FullRetreat now selects the nearest live same-side WarpGate, registers
 all non-gate squad members in the shared world-owned WarpGate session,
 follows the gate every three seconds, queues physical WarpCollider
 contacts and waits for the authored 2.375-second opening readiness.
-Its two-second wait callbacks only authorize a warp; the next canonical
-fixed step performs ShipWarped/EndKill and normal roster, economic and
-terminal accounting. Actual Striker/Drone warp outcomes subtract their
+An arrival at an already-ready gate immediately commits the waiting
+group; the two-second poll handles earlier waiting ships when the gate
+first becomes ready. The next canonical fixed step performs
+ShipWarped/EndKill and normal roster, economic and terminal accounting. Actual Striker/Drone warp outcomes subtract their
 preserved TSV from command credit before squad death can finalize the
 command. Replacement, timeout and squad retirement release only the
 command's participants, retaining same-gate registrations transferred
@@ -325,6 +326,13 @@ do not depend on randomized hash-table traversal.
 The game must supply real squad bounds, membership, configured speeds,
 live enemy squad identity/position/range where required, shooting/targeting
 state and scaled update time; the director does not invent missing game state.
+The ship asset catalog now retains all 24 Unity ConfigData.ShipSizes values
+in world units, separate from collision hulls; the Level's geometry
+helpers use those source sizes for squad centers and widths. Command
+activation must reuse each ship's actual saved OffsetFromCenter rather
+than deriving new offsets from its current pose; source SetOffsets only
+refreshes them at explicit formation/membership boundaries. Pathfinder
+clearance is requested only for mobile ships on obstacle-bearing maps.
 Squad movement and command polling use the world's canonical indexed ship
 lookups instead of rescanning every ship for each member.
 Unported command types return an explicit Unsupported result with their
