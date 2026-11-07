@@ -1303,7 +1303,9 @@ that its native adapter would resume: Courier pins `lineage-0.zip` and
 TinyBrains pins `latest.pt`. Single-suite and multi-suite evaluations retain
 up to eight recent checkpoint cohorts so candidate selection can locate
 verified receipts for the actual final model, not just the last observed
-intermediate evaluation. The promoted continuation pins that SHA-256
+intermediate evaluation. Both single- and multi-suite streams freeze the
+first accepted suite fingerprint and reject a changed or missing digest
+once pinned, without granting authority to legacy unpinned receipts. The promoted continuation pins that SHA-256
 again at native launch. A result from an earlier snapshot cannot
 silently substitute for the final model, even if the latest checkpoint
 is otherwise resumable. If no matching final-policy evaluation exists,

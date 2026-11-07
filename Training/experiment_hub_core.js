@@ -1935,7 +1935,15 @@ class ExperimentHub {
                     try {
                         evaluation=evaluationEvidence(
                             report.evaluation,job.evaluation_stop,job.dispatch_id);
+                        const prior=job.evaluation_suite_definitions?.[evaluation.suite_id];
+                        if(prior&&prior!==evaluation.suite_sha256)
+                            throw Error('Evaluation suite '+evaluation.suite_id+
+                                ' changed definition during training; use a new experiment.');
+                        if(evaluation.suite_sha256)
+                            evaluationDefinitions={...(job.evaluation_suite_definitions||{}),
+                                [evaluation.suite_id]:evaluation.suite_sha256};
                     }catch(error) {
+                        evaluation=null;
                         evaluationIssue=error.message;
                     }
                 }
@@ -1959,12 +1967,13 @@ class ExperimentHub {
                 job.execution_updated_at=now();
                 changed=true;
             }
-            if(evaluations.length) {
-                if(JSON.stringify(job.evaluation_suite_definitions||{})!==
+            if(evaluationDefinitions&&
+                JSON.stringify(job.evaluation_suite_definitions||{})!==
                     JSON.stringify(evaluationDefinitions)) {
-                    job.evaluation_suite_definitions=evaluationDefinitions;
-                    changed=true;
-                }
+                job.evaluation_suite_definitions=evaluationDefinitions;
+                changed=true;
+            }
+            if(evaluations.length) {
                 // Results from different checkpoints must never be mixed
                 // to authorize a benchmark-driven Stop.
                 if(retainEvaluationCohorts(job,evaluations))changed=true;
