@@ -1244,6 +1244,25 @@ impl KinematicPhysics {
     }
 
     pub fn ships(&self) -> &[ShipBody] { &self.ships }
+
+    /// Read-only Selection Box query against cached authored hulls. Build
+    /// one exact box collider, reuse existing narrowphase, allocate no copy
+    /// of the ship roster and do not feed UI selection into contact events.
+    pub fn ship_ids_overlapping_box(&self, bounds: Aabb)
+        -> Result<impl Iterator<Item = i64> + '_, PhysicsError>
+    {
+        if !bounds.min.is_finite() || !bounds.max.is_finite() ||
+            bounds.min.x >= bounds.max.x || bounds.min.y >= bounds.max.y {
+            return Err(PhysicsError::InvalidCollider);
+        }
+        let mut query = WorldCollider::new(ShipShape::Box {
+            offset: (bounds.min + bounds.max) * 0.5,
+            half_extents: (bounds.max - bounds.min) * 0.5,
+        })?;
+        query.update(Pose { position: Vec2::ZERO, rotation_degrees: 0.0 });
+        Ok(self.ships.iter().filter_map(move |ship|
+            (ship.active && query.overlaps(&ship.collider)).then_some(ship.id)))
+    }
     pub fn ships_mut(&mut self) -> &mut [ShipBody] { &mut self.ships }
     pub fn projectiles(&self) -> &[ProjectileBody] { &self.projectiles }
     pub fn projectiles_mut(&mut self) -> &mut [ProjectileBody] { &mut self.projectiles }

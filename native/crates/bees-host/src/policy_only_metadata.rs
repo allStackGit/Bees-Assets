@@ -43,7 +43,7 @@ use bees_sim::ship_assets::ShipAssetCatalog;
 use bees_gameplay::inference::NativePolicyRoute;
 use crate::fleet_inventory::{NativeFleetInventory, NativeFleetShipValue};
 use crate::ship_specials::NativeBeaconTemplate;
-use bees_gameplay::player_inputs::{NativeLevelPlayerContext, NativePlayerPermissions};
+use bees_gameplay::player_inputs::{NativeLevelPlayerContext, NativePlayerPermissions, NativePlayerAuthority};
 use bees_gameplay::squad_geometry::SquadMemberOffset;
 use bees_sim::{geometry::Vec2, squad_movement::SquadFormationOptions};
 
@@ -451,11 +451,13 @@ impl NativeLevelActivationContext for NativePolicyOnlyMetadata {
     }
 }
 
-impl NativeLevelPlayerContext for NativePolicyOnlyMetadata {
+impl NativePlayerAuthority for NativePolicyOnlyMetadata {
     fn player_permissions(&self, owner: SquadLifetime) -> Option<NativePlayerPermissions> {
         self.player.squads.get(&owner).copied()
     }
+}
 
+impl NativeLevelPlayerContext for NativePolicyOnlyMetadata {
     fn player_formation_options(&self) -> SquadFormationOptions {
         SquadFormationOptions { map_bounds: self.bounds,
             has_obstacles: self.player.has_obstacles, can_override_bounds: false }

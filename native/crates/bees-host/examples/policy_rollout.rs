@@ -610,9 +610,11 @@ fn main() -> Result<(), Box<dyn Error>> {
                 Ok(bees_host::client::NativeClientAction::Wait) => continue,
                 Ok(bees_host::client::NativeClientAction::Step) => {},
                 Ok(bees_host::client::NativeClientAction::Move(input)) => {
-                    match host.player_move(input) {
-                        Ok(true) => client.report_move("Move accepted"),
-                        Ok(false) => client.report_move("No valid formation destination"),
+                    match host.player_move_squads(input) {
+                        Ok(counts) if counts.accepted_squads > 0 && counts.rejected_squads == 0 &&
+                            counts.unreachable_squads == 0 => client.report_move("Moves accepted"),
+                        Ok(counts) if counts.accepted_squads > 0 => client.report_move("Eligible squads moved; some unavailable"),
+                        Ok(_) => client.report_move("Selected squads cannot accept that destination"),
                         Err(bees_host::runtime::HostPlayerInputError::Gameplay(error))
                             if error.is_rejection() => client.report_move("Squad cannot accept that move"),
                         Err(error) => {

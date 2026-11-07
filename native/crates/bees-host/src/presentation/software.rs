@@ -5,7 +5,7 @@ use std::io::{self, Write};
 use bees_sim::collision::{Aabb, Pose};
 use bees_sim::geometry::Vec2;
 use bees_sim::physics::ShipShape;
-use super::NativeRenderWorldView;
+use super::{NativeRenderWorldView, NativeSquadSelection};
 
 #[derive(Clone, Copy, Debug)]
 pub struct NativeCamera {
@@ -51,6 +51,8 @@ pub struct NativeSoftwareRenderer {
     pub camera: NativeCamera,
     /// Selection is scoped to a WorldId AND episode revision by the client.
     pub selected_ship: Option<i64>,
+    pub selection: NativeSquadSelection,
+    pub selection_box: Option<Aabb>,
 }
 
 impl NativeSoftwareRenderer {
@@ -61,7 +63,8 @@ impl NativeSoftwareRenderer {
             return Err(io::Error::new(io::ErrorKind::InvalidInput, "invalid viewport or bounds"));
         }
         Ok(Self { width, height, pixels: vec![0; width * height],
-            camera: NativeCamera::fit(bounds, width, height), selected_ship: None })
+            camera: NativeCamera::fit(bounds, width, height), selected_ship: None,
+            selection: NativeSquadSelection::default(), selection_box: None })
     }
 
     pub fn size(&self) -> (usize, usize) { (self.width, self.height) }
@@ -79,6 +82,7 @@ impl NativeSoftwareRenderer {
     }
 
     pub fn render(&mut self, view: &NativeRenderWorldView<'_>, bounds: Aabb) -> NativeRenderCounts {
+        self.selection.synchronize(view);
         self.pixels.fill(0x080e19);
         let mut counts = NativeRenderCounts::default();
         self.shape(&ShipShape::Box { offset: (bounds.min + bounds.max) * 0.5,
@@ -103,7 +107,8 @@ impl NativeSoftwareRenderer {
             let health = ship.vitals.health() as f32 / ship.vitals.max_health() as f32;
             self.line(x - 10.0, y - 12.0, x + 10.0, y - 12.0, 0x3c2837);
             self.line(x - 10.0, y - 12.0, x - 10.0 + 20.0 * health, y - 12.0, color);
-            if self.selected_ship == Some(ship.entity_id) {
+            if view.roster.owning_squad(ship.entity_id)
+                .is_some_and(|owner| self.selection.squads().contains(&owner)) {
                 self.line(x - 14.0, y - 17.0, x + 14.0, y - 17.0, 0xffffff);
                 self.line(x - 14.0, y + 14.0, x + 14.0, y + 14.0, 0xffffff);
             }
@@ -116,6 +121,11 @@ impl NativeSoftwareRenderer {
             }
             // Collider-less script entities still have an inspectable position.
             self.cross(body.motion.position, 1.0, 0xffd580);
+        }
+        if let Some(bounds) = self.selection_box {
+            self.shape(&ShipShape::Box { offset: (bounds.min + bounds.max) * 0.5,
+                half_extents: (bounds.max - bounds.min) * 0.5 },
+                Pose { position: Vec2::ZERO, rotation_degrees: 0.0 }, 0xddeaff);
         }
         counts
     }

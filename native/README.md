@@ -16,9 +16,10 @@ cargo run --release --manifest-path native/Cargo.toml -p bees-host \
 
 Space pauses all worlds; N advances one fixed round while paused; Tab changes
 the inspected world; arrow keys pan; the mouse wheel zooms around the pointer;
-F fits the imported bounds; left-click selects a nearby ship for live HP/TSV
-inspection in the window title. Right-click issues a move for the selected ship's
-source-authorized player squad; other squads reject input. Move requests carry
+F fits the imported bounds; left-click inspects a nearby ship and selects its
+source-authorized player squad. Ctrl-click adds squads; left-drag selects squads
+whose real hulls overlap the box. Right-click moves the selected squads, once per
+live squad lifetime; locked or unavailable squads are skipped. Move requests carry
 world/episode identity, finalize prior commands through the normal outcome outbox,
 and invalidate pending AI request authority before shared formation/path movement.
 Escape or closing the window cancels unfinished episodes through the existing

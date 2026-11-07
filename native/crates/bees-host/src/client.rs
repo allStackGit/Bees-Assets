@@ -7,10 +7,11 @@ use bees_sim::collision::Aabb;
 use bees_sim::simulation::WorldId;
 use minifb::{Key, KeyRepeat, MouseButton, MouseMode, Window, WindowOptions};
 use crate::presentation::{NativeCamera, NativeRenderWorldView, NativeSoftwareRenderer};
-use bees_gameplay::player_inputs::NativePlayerMove;
+use bees_gameplay::player_inputs::NativePlayerSquadMoves;
+use bees_sim::geometry::Vec2;
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum NativeClientAction { Wait, Step, Quit, Move(NativePlayerMove) }
+#[derive(Clone, Debug, PartialEq)]
+pub enum NativeClientAction { Wait, Step, Quit, Move(NativePlayerSquadMoves) }
 
 pub struct NativeClient {
     window: Window,
@@ -24,6 +25,7 @@ pub struct NativeClient {
     left_was_down: bool,
     right_was_down: bool,
     input_feedback: &'static str,
+    selection_drag: Option<(Vec2, Vec2)>,
     pub rendered_frames: u64,
     pub render_wall_seconds: f64,
 }
@@ -37,6 +39,7 @@ impl NativeClient {
         Ok(Self { window, renderer, bounds, selected_world: 0, selection_owner: None,
             paused: false, next_step: now, previous_frame: now, left_was_down: false,
             right_was_down: false, input_feedback: "",
+            selection_drag: None,
             rendered_frames: 0, render_wall_seconds: 0.0 })
     }
 
@@ -56,6 +59,8 @@ impl NativeClient {
         let owner = (view.world_id, view.episode_revision);
         if self.selection_owner != Some(owner) {
             self.renderer.selected_ship = None;
+            self.selection_drag = None;
+            self.renderer.selection_box = None;
             self.input_feedback = "";
             if self.selection_owner.is_some_and(|(world, _)| world != view.world_id) {
                 let (width, height) = self.renderer.size();
@@ -63,6 +68,7 @@ impl NativeClient {
             }
             self.selection_owner = Some(owner);
         }
+        self.renderer.selection.synchronize(&view);
         self.bounds = bounds;
         if self.window.is_key_pressed(Key::Space, KeyRepeat::No) {
             self.paused = !self.paused;
@@ -73,6 +79,9 @@ impl NativeClient {
         if changed_world {
             self.selected_world = (self.selected_world + 1) % world_count;
             self.renderer.selected_ship = None;
+            self.renderer.selection.clear();
+            self.selection_drag = None;
+            self.renderer.selection_box = None;
         }
         let (width, height) = self.renderer.size();
         if self.window.is_key_pressed(Key::F, KeyRepeat::No) {
@@ -89,14 +98,49 @@ impl NativeClient {
         }
         let left_down = self.window.get_mouse_down(MouseButton::Left);
         if !changed_world && left_down && !self.left_was_down {
-            self.renderer.selected_ship = mouse.and_then(|(x, y)| self.renderer.pick_ship(&view, x, y));
+            self.selection_drag = mouse.map(|(x, y)| (
+                self.renderer.camera.screen_to_world(x, y, width, height), Vec2::new(x, y)));
+        }
+        if !changed_world {
+            if let (Some((start, start_pixel)), Some((x, y))) = (self.selection_drag, mouse) {
+                let end = self.renderer.camera.screen_to_world(x, y, width, height);
+                let dragging = (Vec2::new(x, y) - start_pixel).length_squared() > 16.0;
+                let rectangle = Aabb {
+                    min: Vec2::new(start.x.min(end.x), start.y.min(end.y)),
+                    max: Vec2::new(start.x.max(end.x), start.y.max(end.y)),
+                };
+                self.renderer.selection_box = (left_down && dragging).then_some(rectangle);
+                if !left_down && self.left_was_down {
+                    if dragging {
+                        if rectangle.min.x < rectangle.max.x && rectangle.min.y < rectangle.max.y {
+                            if self.renderer.selection.select_box(&view, rectangle).is_err() {
+                                self.input_feedback = "Selection box is unavailable";
+                            }
+                        } else { self.renderer.selection.clear(); }
+                        self.renderer.selected_ship = self.renderer.selection
+                            .representative_ships(&view).next();
+                    } else {
+                        self.renderer.selected_ship = self.renderer.pick_ship(&view, x, y);
+                        if let Some(ship) = self.renderer.selected_ship {
+                            let additive = self.window.is_key_down(Key::LeftCtrl) ||
+                                self.window.is_key_down(Key::RightCtrl);
+                            self.renderer.selection.select_ship(&view, ship, additive);
+                        } else { self.renderer.selection.clear(); }
+                    }
+                }
+            }
+        }
+        if !left_down {
+            self.selection_drag = None;
+            self.renderer.selection_box = None;
         }
         self.left_was_down = left_down;
         let right_down = self.window.get_mouse_down(MouseButton::Right);
         let player_move = if !changed_world && right_down && !self.right_was_down {
-            self.renderer.selected_ship.zip(mouse).map(|(selected_ship, (x, y))|
-                NativePlayerMove { world_id: view.world_id,
-                    episode_revision: view.episode_revision, selected_ship,
+            mouse.filter(|_| !self.renderer.selection.squads().is_empty()).map(|(x, y)|
+                NativePlayerSquadMoves { world_id: view.world_id,
+                    episode_revision: view.episode_revision,
+                    squads: self.renderer.selection.squads().to_vec(),
                     destination: self.renderer.camera.screen_to_world(x, y, width, height) })
         } else { None };
         self.right_was_down = right_down;
@@ -108,8 +152,9 @@ impl NativeClient {
                 ship.entity_id, ship.ship_type, ship.side, ship.vitals.health(),
                 ship.vitals.max_health(), ship.vitals.tsv())).unwrap_or_default();
         self.window.set_title(&format!(
-            "Bees native | World {} | Episode {} | Tick {} | {} ships, {} shots | {}{} | {} | Left select, right move | Space pause, N step, Tab world, arrows pan, wheel zoom, F fit, Esc exit",
+            "Bees native | World {} | Episode {} | Tick {} | {} ships, {} shots | {} squads selected | {}{} | {} | Left select/drag, Ctrl add, right move | Space pause, N step, Tab world, arrows pan, wheel zoom, F fit, Esc exit",
             view.world_id.0, view.episode_revision, view.tick, counts.ships, counts.projectiles,
+            self.renderer.selection.squads().len(),
             if self.paused { "PAUSED" } else { "RUNNING" }, selected, self.input_feedback,
         ));
         self.render_wall_seconds += render_started.elapsed().as_secs_f64();

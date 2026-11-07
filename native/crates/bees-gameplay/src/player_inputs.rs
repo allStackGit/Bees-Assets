@@ -14,8 +14,12 @@ pub struct NativePlayerPermissions {
     pub locked_on: bool,
 }
 
-pub trait NativeLevelPlayerContext: NativeLevelActivationContext {
+/// Object-safe read-only authority, also borrowed by native presentation.
+pub trait NativePlayerAuthority {
     fn player_permissions(&self, owner: SquadLifetime) -> Option<NativePlayerPermissions>;
+}
+
+pub trait NativeLevelPlayerContext: NativeLevelActivationContext + NativePlayerAuthority {
     fn player_formation_options(&self) -> SquadFormationOptions;
     /// Full game adapters cancel their real scripted queue here. Fresh
     /// policy-scene adapters reject queued source history at import.
@@ -29,6 +33,22 @@ pub struct NativePlayerMove {
     pub episode_revision: u64,
     pub selected_ship: i64,
     pub destination: Vec2,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct NativePlayerSquadMoves {
+    pub world_id: WorldId,
+    pub episode_revision: u64,
+    /// Source selection order, with complete pooled-squad lifetimes.
+    pub squads: Vec<SquadLifetime>,
+    pub destination: Vec2,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct NativePlayerMoveCounts {
+    pub accepted_squads: usize,
+    pub unreachable_squads: usize,
+    pub rejected_squads: usize,
 }
 
 #[derive(Debug)]

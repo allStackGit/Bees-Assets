@@ -27,7 +27,8 @@ use crate::durable_connection::{DurableConnectionError, DurableHiveMindConnectio
 use crate::status::{NativeHostStatusInterval, NativeStatusSampler};
 use crate::presentation::NativeRenderWorldView;
 use bees_gameplay::player_inputs::{NativeLevelPlayerContext, NativePlayerMove,
-    NativePlayerMovePlan, NativePlayerInputError};
+    NativePlayerMovePlan, NativePlayerInputError, NativePlayerAuthority,
+    NativePlayerSquadMoves, NativePlayerMoveCounts};
 
 #[derive(Debug)]
 pub enum HostPlayerInputError {
@@ -163,6 +164,55 @@ where
             .map_err(HostPlayerInputError::Gameplay)
     }
 
+    /// Source MoveSquads selection order; duplicate lifetimes execute once.
+    /// Unavailable/locked squads are skipped without commandeering AI ships.
+    /// Prepare every eligible squad before retiring or issuing its first order.
+    pub fn player_move_squads(&mut self, input: NativePlayerSquadMoves)
+        -> Result<NativePlayerMoveCounts, HostPlayerInputError>
+    where M: NativeLevelPlayerContext
+    {
+        let index = (0..self.simulation.world_count()).find(|&index|
+            self.simulation.world(index).is_some_and(|world| world.id == input.world_id))
+            .ok_or(HostPlayerInputError::Gameplay(NativePlayerInputError::StaleWorld))?;
+        let world = self.simulation.world(index).expect("located world");
+        if world.episode_revision() != input.episode_revision {
+            return Err(HostPlayerInputError::Gameplay(NativePlayerInputError::StaleWorld));
+        }
+        if !input.destination.is_finite() {
+            return Err(HostPlayerInputError::Gameplay(NativePlayerInputError::InvalidDestination));
+        }
+        let mut counts = NativePlayerMoveCounts::default();
+        let mut seen = std::collections::HashSet::with_capacity(input.squads.len());
+        let mut plans = Vec::with_capacity(input.squads.len());
+        for owner in input.squads {
+            if !seen.insert(owner) { continue; }
+            let Some(ship_id) = world.state.events.roster().get(owner)
+                .and_then(|squad| squad.members.first()).copied() else {
+                counts.rejected_squads += 1;
+                continue;
+            };
+            match NativePlayerMovePlan::prepare(world, NativePlayerMove {
+                world_id: input.world_id, episode_revision: input.episode_revision,
+                selected_ship: ship_id, destination: input.destination,
+            }) {
+                Ok(plan) => plans.push(plan),
+                Err(error) if error.is_rejection() => counts.rejected_squads += 1,
+                Err(error) => return Err(HostPlayerInputError::Gameplay(error)),
+            }
+        }
+        if plans.is_empty() { return Ok(counts); }
+        self.driver.invalidate_environment(index).map_err(HostPlayerInputError::Driver)?;
+        for plan in plans {
+            self.connection.retire_player_requests(plan.owner())
+                .map_err(HostPlayerInputError::Connection)?;
+            if plan.execute(self.simulation.world_mut(index).expect("located world"))
+                .map_err(HostPlayerInputError::Gameplay)? {
+                counts.accepted_squads += 1;
+            } else { counts.unreachable_squads += 1; }
+        }
+        Ok(counts)
+    }
+
     pub fn set_timing_sample_period(&mut self, every: Option<NonZeroU32>) {
         self.simulation.set_timing_sample_period(every);
     }
@@ -254,13 +304,17 @@ where
     /// during the render pass, without allocating a second snapshot.
     pub fn render_world(
         &self, index: usize,
-    ) -> Option<NativeRenderWorldView<'_>> {
+    ) -> Option<NativeRenderWorldView<'_>>
+    where M: NativePlayerAuthority
+    {
         let world = self.simulation.world(index)?;
         Some(NativeRenderWorldView {
             world_id: world.id,
             episode_revision: world.episode_revision(),
             tick: world.tick(),
             combat: &world.state.combat,
+            roster: world.state.events.roster(),
+            player_authority: &world.state.metadata,
             pending_notifications:
                 world.state.events.pending_notifications(),
         })

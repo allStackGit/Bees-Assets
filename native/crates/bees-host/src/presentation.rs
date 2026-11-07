@@ -5,11 +5,14 @@
 //! geometry, health, active projectiles, movement, obstacles and fade timers.
 
 use bees_gameplay::level_events::NativeLevelNotification;
+use bees_gameplay::{squads::NativeSquadRoster, player_inputs::NativePlayerAuthority};
 use bees_sim::combat_world::CombatWorld;
 use bees_sim::simulation::WorldId;
 
 mod software;
+mod selection;
 pub use software::{NativeCamera, NativeSoftwareRenderer, NativeRenderCounts};
+pub use selection::NativeSquadSelection;
 
 /// This view is valid only between fixed steps, and cannot outlive the
 /// NativeHostRuntime's immutable borrow. Presentation event effects are
@@ -19,6 +22,8 @@ pub struct NativeRenderWorldView<'a> {
     pub episode_revision: u64,
     pub tick: u64,
     pub combat: &'a CombatWorld,
+    pub roster: &'a NativeSquadRoster,
+    pub player_authority: &'a dyn NativePlayerAuthority,
     pub pending_notifications: &'a [NativeLevelNotification],
 }
 
