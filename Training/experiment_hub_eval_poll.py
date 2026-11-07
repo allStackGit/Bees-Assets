@@ -246,10 +246,6 @@ def poll_checkpoint(args, project, suite, receipt_suite, find_checkpoint, evalua
                 if not checkpoint or ("final_checkpoint_sha256" not in job and checkpoint[0] <= cursor[dispatch]):
                     continue
                 update, file = checkpoint
-                with file.open("rb") as stream:
-                    checkpoint_digest = hashlib.file_digest(stream, "sha256").hexdigest()
-                if job.get("final_checkpoint_sha256", checkpoint_digest) != checkpoint_digest:
-                    raise ValueError("Final checkpoint no longer matches the Hub fingerprint.")
             except (OSError, ValueError, TypeError, KeyError) as exc:
                 print(f"{project} evaluation target {dispatch} skipped: {exc}", file=sys.stderr)
                 continue
@@ -258,7 +254,15 @@ def poll_checkpoint(args, project, suite, receipt_suite, find_checkpoint, evalua
             # must be able to retry the same immutable checkpoint.
             try:
                 with evaluation_workspace(state) as work:
-                    successes = evaluate_checkpoint(job, file, checkpoint_digest, work)
+                    # Training may prune or replace its checkpoint after
+                    # selection. Evaluate the exact private bytes we hash.
+                    frozen = work / ("immutable-source" + file.suffix)
+                    shutil.copyfile(file, frozen)
+                    with frozen.open("rb") as stream:
+                        checkpoint_digest = hashlib.file_digest(stream, "sha256").hexdigest()
+                    if job.get("final_checkpoint_sha256", checkpoint_digest) != checkpoint_digest:
+                        raise ValueError("Final checkpoint no longer matches the Hub fingerprint.")
+                    successes = evaluate_checkpoint(job, frozen, checkpoint_digest, work)
                 if type(successes) is not int or not 0 <= successes <= receipt_suite["trials"]:
                     raise ValueError("Invalid evaluation success count.")
             except (OSError, RuntimeError, ValueError, TypeError, KeyError):
