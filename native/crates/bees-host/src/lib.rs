@@ -17,3 +17,5 @@ pub mod fleet_inventory;
 pub mod policy_only_metadata;
 pub mod presentation;
 pub mod unity_scene_snapshot;
+
+pub mod notification_file;
