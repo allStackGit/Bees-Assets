@@ -1300,7 +1300,10 @@ finished or evaluation-stopped native service, verified resumable
 checkpoint, released capacity and a complete matching benchmark receipt.
 The exact policy bytes used for evaluation must match the model artifact
 that its native adapter would resume: Courier pins `lineage-0.zip` and
-TinyBrains pins `latest.pt`. The promoted continuation pins that SHA-256
+TinyBrains pins `latest.pt`. Single-suite and multi-suite evaluations retain
+up to eight recent checkpoint cohorts so candidate selection can locate
+verified receipts for the actual final model, not just the last observed
+intermediate evaluation. The promoted continuation pins that SHA-256
 again at native launch. A result from an earlier snapshot cannot
 silently substitute for the final model, even if the latest checkpoint
 is otherwise resumable. If no matching final-policy evaluation exists,

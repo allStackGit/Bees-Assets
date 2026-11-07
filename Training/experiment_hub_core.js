@@ -246,6 +246,28 @@ function checkpointContinuationComplete(job) {
             job.checkpoint_proof_required!==true
         :job.status==='stopped'&&job.checkpoint_stop_verified===true;
 }
+// Preserve a bounded set of independent evaluation receipts by exact model
+// identity for both single-suite and multi-suite gates. A final resumable
+// checkpoint may differ from the last observed intermediate checkpoint.
+function retainEvaluationCohorts(job,receipts) {
+    const cohorts=job.evaluation_candidates||[];
+    let changed=false;
+    for(const receipt of receipts) {
+        const index=cohorts.findIndex(c=>
+            c.checkpoint_sha256===receipt.checkpoint_sha256);
+        const cohort=index>=0?cohorts[index]:{
+            checkpoint_sha256:receipt.checkpoint_sha256,receipts:{}};
+        if(JSON.stringify(cohort.receipts[receipt.suite_id])===
+            JSON.stringify(receipt))continue;
+        cohort.receipts[receipt.suite_id]=receipt;
+        if(index>=0)cohorts.splice(index,1);
+        cohorts.unshift(cohort);
+        if(cohorts.length>8)cohorts.length=8;
+        changed=true;
+    }
+    if(changed)job.evaluation_candidates=cohorts;
+    return changed;
+}
 // Only compare policies that have actually been evaluated and remain the
 // exact bytes used for native checkpoint continuation. Training charts and
 // a checkpoint-ready flag alone cannot select a winning model.
@@ -269,8 +291,12 @@ function comparableCandidate(job) {
             proved.every(r=>r?.checkpoint_sha256===sha)
             ?proved:rules.map(rule=>cohort?.receipts?.[rule.suite_id]);
     }else {
+        const cohort=(job.evaluation_candidates||[])
+            .find(c=>c.checkpoint_sha256===sha);
         receipts=[job.evaluation_stop_evidence?.checkpoint_sha256===sha
-            ?job.evaluation_stop_evidence:job.last_evaluation];
+            ?job.evaluation_stop_evidence
+            :job.last_evaluation?.checkpoint_sha256===sha
+                ?job.last_evaluation:cohort?.receipts?.[policy.suite_id]];
     }
     if(receipts.length!==rules.length)
         throw Error('Candidate evaluations do not cover the frozen suite set.');
@@ -1939,26 +1965,10 @@ class ExperimentHub {
                     job.evaluation_suite_definitions=evaluationDefinitions;
                     changed=true;
                 }
-                // Retain a small bounded number of immutable checkpoint
-                // cohorts. Results from different policies must never be
-                // combined to authorize a benchmark-driven Stop.
-                const candidates=job.evaluation_candidates||[];
-                for(const receipt of evaluations) {
-                    let index=candidates.findIndex(c=>
-                        c.checkpoint_sha256===receipt.checkpoint_sha256);
-                    const cohort=index>=0?candidates[index]:{
-                        checkpoint_sha256:receipt.checkpoint_sha256,receipts:{}};
-                    const previous=cohort.receipts[receipt.suite_id];
-                    if(JSON.stringify(previous)===JSON.stringify(receipt))
-                        continue;
-                    cohort.receipts[receipt.suite_id]=receipt;
-                    if(index>=0)candidates.splice(index,1);
-                    candidates.unshift(cohort);
-                    if(candidates.length>8)candidates.length=8;
-                    changed=true;
-                }
-                if(changed)job.evaluation_candidates=candidates;
-                for(const cohort of candidates) {
+                // Results from different checkpoints must never be mixed
+                // to authorize a benchmark-driven Stop.
+                if(retainEvaluationCohorts(job,evaluations))changed=true;
+                for(const cohort of job.evaluation_candidates||[]) {
                     const proof={all_of:evaluationRules(job.evaluation_stop)
                         .map(rule=>cohort.receipts[rule.suite_id])};
                     if(evaluationComplete(proof,job.evaluation_stop,job.dispatch_id)) {
@@ -1972,14 +1982,18 @@ class ExperimentHub {
                 }
             }else if(evaluation&&evaluationComplete(evaluation,
                 job.evaluation_stop,job.dispatch_id)) {
+                if(retainEvaluationCohorts(job,[evaluation]))changed=true;
                 job.status='stop_requested';
                 job.stop_requested_at=now();
                 job.status_reason='Independent evaluation target met; awaiting native Stop.';
                 job.evaluation_stop_evidence=evaluation;
                 changed=true;
-            }else if(evaluation&&JSON.stringify(evaluation)!==JSON.stringify(job.last_evaluation)) {
-                job.last_evaluation=evaluation;
-                changed=true;
+            }else if(evaluation) {
+                if(retainEvaluationCohorts(job,[evaluation]))changed=true;
+                if(JSON.stringify(evaluation)!==JSON.stringify(job.last_evaluation)) {
+                    job.last_evaluation=evaluation;
+                    changed=true;
+                }
             }
             // Keep the last accepted source version if the terminal report
             // omitted progress or supplied an older/unrelated summary.
