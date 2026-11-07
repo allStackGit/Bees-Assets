@@ -76,6 +76,10 @@ function hubGenericMetricCatalog(runs) {
 function hubMetricValue(point,key) {
     return point.metrics?.[key.slice(7)]?.value;
 }
+function trialBatchLabel(job) {
+    const batch=job.trial_batch;
+    return batch?' · batch '+batch.id.slice(-8)+' · trial '+batch.index+'/'+batch.size:'';
+}
 function hubComparisonCsv(exported) {
     const fields=[
         'slot','job_id','project_id','configuration_name','configuration_sha256',
@@ -83,6 +87,7 @@ function hubComparisonCsv(exported) {
         'artifact_lineage_root_id','continuation_of_job_id','status',
         'observed_at','source_modified_at','experiment_id','segment_id',
         'break_before','steps_completed',
+        'trial_batch_id','trial_batch_index','trial_batch_size',
     ];
     const metrics=new Set(exported.runs.flatMap(run=>
         run.points.flatMap(point=>Object.keys(point.metrics||{}))));
@@ -109,6 +114,9 @@ function hubComparisonCsv(exported) {
         assigned_machine_id:run.assigned_machine_id,
         artifact_lineage_root_id:run.artifact_lineage_root_id,
         continuation_of_job_id:run.continuation_of_job_id,
+        trial_batch_id:run.trial_batch?.id,
+        trial_batch_index:run.trial_batch?.index,
+        trial_batch_size:run.trial_batch?.size,
         status:run.status,...point,
         ...Object.fromEntries(Object.entries(point.metrics||{}).flatMap(
             ([key,metric])=>[
@@ -419,6 +427,7 @@ document.addEventListener('DOMContentLoaded', () => {
             select.replaceChildren(new Option('No run',''),
                 ...selectable.map(j=>new Option(
                     j.configuration_name+
+                    trialBatchLabel(j)+
                     ' · job '+(jobs.indexOf(j)+1)+
                     (j.continuation_of_job_id?' · continuation':' · initial run')+
                     ' · '+j.status+
@@ -561,6 +570,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 run.points[run.points.length-1]||null;
             const tr=document.createElement('tr');
             cell(tr,run.slot+' · '+j.configuration_name+
+                trialBatchLabel(j)+
                 (j.continuation_of_job_id?' (continuation)':''));
             cell(tr,j.status+' · '+(j.assigned_machine_id||'unassigned')+
                 (j.execution_diagnostic?' · '+j.execution_diagnostic:''));
@@ -763,6 +773,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 assigned_machine_id:job.assigned_machine_id||null,
                 artifact_lineage_root_id:job.artifact_lineage_root_id||job.id,
                 continuation_of_job_id:job.continuation_of_job_id||null,
+                trial_batch:job.trial_batch||null,
                 status:job.status,
                 execution_diagnostic:job.execution_diagnostic||null,
                 ...(project==='tinybrains'?{profile_sha256:job.frozen_parameters?.profile_sha256||null}:{}),
@@ -1179,7 +1190,7 @@ document.addEventListener('DOMContentLoaded', () => {
         $('hub-job-rows').replaceChildren();
         for(const j of hubVisibleJobs(records,50)) {
             const tr=document.createElement('tr');
-            cell(tr,j.configuration_name||j.configuration_id);
+            cell(tr,(j.configuration_name||j.configuration_id)+trialBatchLabel(j));
             cell(tr,j.configuration_revision);
             const linked=state.reservations.find(l=>l.id===j.lease_id &&
                 ['offered','acknowledged'].includes(l.status));
@@ -1477,6 +1488,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const live=j.live_execution;
             const progress=live?.progress||j.final_progress;
             cell(tr,j.configuration_name+
+                trialBatchLabel(j)+
                 (j.continuation_of_job_id?' · continuation':''));
             cell(tr,(j.status==='waiting_predecessor'
                     ?j.predecessor_wait?.reason||'Waiting for predecessor'
@@ -2246,7 +2258,8 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             feedback('hub-pipeline-message',
                 'Queued '+result.jobs.length+' jobs atomically; no work started. '+
-                (trialBatch?'Every trial is independently eligible for capacity.':'Only the first eligible job may request capacity.'));
+                (trialBatch?'Batch '+result.trial_batch_id.slice(-8)+'. Every trial is independently eligible for capacity.':
+                    'Only the first eligible job may request capacity.'));
             await reload();
         }catch(error){
             feedback('hub-pipeline-message',String(error.message||error));
