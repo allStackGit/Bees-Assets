@@ -82,6 +82,26 @@ rendering, full parity or production durability of all app-side effects.
 Do not use its partial trajectories as valid learner data. Native
 Windows/Linux execution and throughput are not yet verified.
 
+### Resident policy updates
+
+`ResidentPolicyProcess::reload_manifest(path)` updates the real policy
+weights **between complete inference calls**, without restarting a native
+Level or respawning the Python worker. Version 2 of the binary worker
+protocol accepts one explicit `BMOD` manifest-load request, returns
+`MACK` only after SHA-256 verification and successful loading of ALL
+model slots, and rejects incompatible signatures or slot sets with
+`MNOK`. A rejected update keeps the existing policy live; a malformed
+or incomplete protocol response poisons the worker and requires explicit
+restart. Reloads are **not** automatic: the caller owns the checkpoint
+schedule and must retain model artifact hashes, run/episode identities
+and policy generation for scientific attribution. The initial model
+generation is zero and each accepted replacement increments it. The
+status interval reports the last validated generation and exact
+authenticated MA-POCA actor rows. This is not yet a native PPO learner;
+the inference-only TorchScript/ONNX model manifest does not provide
+action log probabilities or a group critic. Loading a replacement model
+can temporarily require space for both the old and new weights.
+
 ## Unity scene import (schema 16; schema 15 supported)
 
 **Bees > Native > Export Selected Level Physical Scene** captures a
