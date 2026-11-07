@@ -3,37 +3,31 @@
 This directory is the beginning of the Unity-independent replacement platform,
 created from the current `feat/experiment-queue-ui` branch.
 
-## Unity scene import (schema 10)
+## Unity scene import (schema 12)
 
-The Unity Editor action **Bees > Native > Export Selected Level Physical Scene**
-is implemented inside the gameplay assembly at
-`Scripts/Scenes/NativePhysicalSceneExporter.cs`, behind `UNITY_EDITOR`.
-It captures initial Level state directly from Unity: real source IDs and
-squad membership, living ships and v26 weapon metadata, policy frame/team
-bindings, stage damage rules, static/map-border and asteroid geometry, and
-active destructible MapObjects (including Fire Tank power/linked obstacles)
-and fully stocked MiningAsteroids with their original resource health,
-runtime collision layer and actual polygon hull.
-Live BoxCollider2D, PolygonCollider2D and supported isotropic CircleCollider2D
-shapes retain their actual parent transforms. Unsupported or partial state
-fails export; no approximate colliders or synthetic IDs are produced.
+**Bees > Native > Export Selected Level Physical Scene** captures a
+source-authored initial Unity Level, not a resumable match checkpoint.
+It records original ship/weapon, squad, obstacle, mining and destructible
+MapObject identities and live collider geometry, plus real policy
+controller/frame/capability inputs, episode starting TSV, discovery
+baselines, navigation frame and Stage damage settings. Unsupported
+geometry, missing source identity and partial active combat state fail
+closed rather than generating plausible replacement values.
 
-`bees-host::unity_scene_snapshot::NativePhysicalScene::read` validates the
-same version and constructs the original entity order in the shared
-`CombatWorld`. Call `bind_exported_policy_ships` for genuine pre-existing
-Unity policy frames, then `into_policy_only_level` with an actual
-`NativePolicyOnlyLevelSetup` and `NativeSceneAssets::build_runtime` with
-the loaded model and durable sink. Agent capabilities, checkpoint routing,
-real episode rewards, navigation and learned exploration still require
-their authoritative Level inputs. Mining perception uses the canonical
-world's discovered resource bodies and actual command-enrolled squad
-counts, not an independent observation list. The v26 21×21 navigation observation is
-computed per agent from world-local discovered collider bounds.
+Read through `NativePhysicalScene::read`; launch actual policy-only
+Levels with `NativeSceneAssets::build_imported_policy_runtime`.
+The host supplies loaded learner/opponent model slots, an authentic
+minion-lifetime allocator, and a durable event sink. It runs all imported
+Levels through the same `CombatWorld`, game rules and batched inference
+interface. Each Level keeps its own actual navigation frame, observation
+memory and asteroid spawn map geometry; only immutable Stage assets and
+model weights are shared. Mixing different physics fixed-step durations
+in one synchronous host is rejected.
 
-This is an **initial physical-scene bridge**, not a resumable checkpoint
-or a finished game. It cannot restore in-flight shots, prior visibility,
-active commands, reward history or PPO trajectories. Native UI, full
-gameplay/learner parity, and Windows/Linux runtime qualification are pending.
+This still does not restore prior projectiles, learned discovery or
+command/reward history. Full native game presentation, optimizer and
+distributed learner remain incomplete. Native Windows/Linux runtime
+qualification has not been performed.
 
 ## Non-negotiable boundaries
 
