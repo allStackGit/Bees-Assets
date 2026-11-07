@@ -589,8 +589,9 @@ Older agents without the installed execution bridge remain observation-only.
 A heartbeat, detected cgroup or coordination lease alone **never**
 permits execution. A locally opted-in installed project adapter, explicit
 administrator start authorization, and successful native service/limit
-verification are all required. Native Windows execution is CPU-only and has not
-been compiled or qualified on a real Windows machine.
+verification are all required. Native Windows execution is CPU-only. The Job Object backend has
+been exercised in isolated Windows runs, but those results do not
+establish qualified production workloads or the latest helper build.
 
 ### Opt-in Linux service startup and process-failure recovery
 
@@ -912,8 +913,9 @@ a network disconnect as evidence the process ended.
 exercised using isolated HTTP, filesystem, cryptography, and systemd
 simulations, not Halifax's Debian user service. Linux systemd
 delegation/permissions, real process termination and limits,
-Windows Job Objects, enforceable GPU isolation, and cross-project
-throughput/rebalancing remain unqualified.
+production Windows coexistence, enforceable GPU isolation, and cross-project
+throughput/rebalancing remain unqualified. Isolated Windows Job Object
+qualifications do not establish the same guarantees in production.
 
 ## Physical AMDGPU identity and bounded advisory allocation
 
