@@ -788,9 +788,9 @@ class ExperimentHub {
         snapshot.jobs = snapshot.jobs.map(job=>{
             const observed=this.executionTelemetry.get(job.id);
             const machine=snapshot.machines.find(m=>m.id===job.assigned_machine_id);
+            const age=observedAt-Date.parse(observed?.at||'');
             const live=observed&&machine?.status==='connected'&&
-                observedAt-new Date(observed.at).getTime()<AGENT_HEARTBEAT_TTL_MS
-                ?observed:null;
+                age>=0&&age<AGENT_HEARTBEAT_TTL_MS?observed:null;
             return {...job,live_execution:live};
         });
         snapshot.reservations = snapshot.reservations.map(lease => ({
