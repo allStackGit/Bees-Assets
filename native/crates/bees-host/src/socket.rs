@@ -12,7 +12,6 @@
 
 use std::net::TcpStream;
 
-use bees_hivemind::connection::NativeHiveMindConnection;
 use bees_hivemind::protocol::{
     GetStrategyRequest, GetTargetingRequest, StoreCommandsRequest,
     MAX_SAFE_REQUEST_HASH,
@@ -167,7 +166,7 @@ impl NativeHiveMindSocket {
         let secure = match uri.scheme_str() {
             Some("wss") => true,
             Some("ws") if allow_insecure_loopback &&
-                matches!(host, "localhost" | "127.0.0.1" | "[::1]") => false,
+                matches!(host, "localhost" | "127.0.0.1" | "::1" | "[::1]") => false,
             Some("ws") => return Err(HiveMindSocketError::InsecureEndpointForbidden),
             _ => return Err(HiveMindSocketError::InvalidEndpoint),
         };
@@ -237,7 +236,7 @@ impl NativeHiveMindSocket {
             return Err(HiveMindSocketError::InvalidSetup);
         }
         if self.secure &&
-            identity.auth_ticket.is_none_or(|ticket| ticket.is_empty())
+            identity.auth_ticket.map_or(true, |ticket| ticket.is_empty())
         {
             return Err(HiveMindSocketError::AuthenticationRequired);
         }
@@ -271,11 +270,16 @@ impl NativeHiveMindSocket {
     /// strategy session before writing. No independent transport hash map.
     pub fn send_strategy(
         &mut self,
-        connection: &NativeHiveMindConnection,
+        connection: &DurableHiveMindConnection,
         request: &GetStrategyRequest,
     ) -> Result<(), HiveMindSocketError> {
         self.require_ready()?;
-        if !connection.matches_live_strategy_request(request) {
+        if !connection.is_available() {
+            return Err(HiveMindSocketError::Durability(
+                DurableConnectionError::Unavailable,
+            ));
+        }
+        if !connection.connection().matches_live_strategy_request(request) {
             return Err(HiveMindSocketError::InvalidRequestOwnership);
         }
         self.send(request)
@@ -283,11 +287,16 @@ impl NativeHiveMindSocket {
 
     pub fn send_targeting(
         &mut self,
-        connection: &NativeHiveMindConnection,
+        connection: &DurableHiveMindConnection,
         request: &GetTargetingRequest,
     ) -> Result<(), HiveMindSocketError> {
         self.require_ready()?;
-        if !connection.matches_live_targeting_request(request) {
+        if !connection.is_available() {
+            return Err(HiveMindSocketError::Durability(
+                DurableConnectionError::Unavailable,
+            ));
+        }
+        if !connection.connection().matches_live_targeting_request(request) {
             return Err(HiveMindSocketError::InvalidRequestOwnership);
         }
         self.send(request)
