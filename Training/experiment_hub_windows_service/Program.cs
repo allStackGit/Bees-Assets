@@ -1,5 +1,5 @@
-// OS-owned process recovery. The service owns only its Node process;
-// children break away so Bees and native training keep their existing owners.
+// OS-owned process recovery. Coordinator/agent children keep their existing
+// owners; independent evaluators use a CPU/RAM-bounded whole-process-tree job.
 using System.Collections;
 using System.ComponentModel;
 using System.Runtime.InteropServices;
@@ -8,7 +8,8 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 
 internal sealed record Configuration(string Name,string Role,string NodePath,
-    string TrainingDirectory,string? EnvironmentFile,string StateDirectory);
+    string TrainingDirectory,string? EnvironmentFile,string StateDirectory,
+    int? Cpus=null,int? RamMb=null);
 
 internal static class HubService
 {
@@ -106,7 +107,7 @@ internal static class HubService
     static uint RunChild(bool service)
     {
         uint result=0;
-        using(var child=new NodeProcess(config,entrypoint))
+        using(var child=new NodeProcess(config,entrypoint,!service&&config.Role=="evaluator"))
             {
                 childPid=child.Pid;
                 Record("running");
@@ -132,6 +133,8 @@ internal static class HubService
     {
         try
         {
+            if(OperatingSystem.IsWindows()&&args.Length==3&&args[0]=="--probe-evaluator")
+                return NodeProcess.ProbeEvaluator(args[1],uint.Parse(args[2]));
             if(!OperatingSystem.IsWindows()||args.Length!=2||args[0] is not ("--service" or "--run-once"))
                 throw new ArgumentException("Usage: --service or --run-once <absolute-local-config.json>");
             string file=Local(args[1]);
@@ -141,16 +144,26 @@ internal static class HubService
                     System.Text.Json.Serialization.JsonUnmappedMemberHandling.Disallow})
                 ??throw new ArgumentException("Configuration is missing.");
             if(!Regex.IsMatch(config.Name??"",@"^Bees-ExperimentHub-[A-Za-z0-9-]{1,64}$")||
-                config.Role is not ("agent" or "coordinator"))
+                config.Role is not ("agent" or "coordinator" or "evaluator"))
                 throw new ArgumentException("Invalid service identity or role.");
             config=config with {NodePath=Local(config.NodePath),
                 TrainingDirectory=Local(config.TrainingDirectory,true),
                 StateDirectory=Local(config.StateDirectory,true),
                 EnvironmentFile=config.EnvironmentFile is null?null:Local(config.EnvironmentFile)};
-            if(config.Role=="agent"&&config.EnvironmentFile is null)
-                throw new ArgumentException("Agent service requires a private environment file.");
+            if((config.Role is "agent" or "evaluator")&&config.EnvironmentFile is null)
+                throw new ArgumentException("Agent/evaluator service requires a private environment file.");
+            if(config.Role=="evaluator")
+            {
+                if(config.Cpus is not (>=1 and <=64)||config.Cpus>Environment.ProcessorCount||
+                    config.RamMb is not (>=512 and <=1048576)||
+                    config.RamMb>GC.GetGCMemoryInfo().TotalAvailableMemoryBytes/1048576)
+                    throw new ArgumentException("Evaluator requires available CPU and RAM budgets.");
+            }
+            else if(config.Cpus is not null||config.RamMb is not null)
+                throw new ArgumentException("Service resource budgets apply only to independent evaluators.");
             entrypoint=Local(Path.Combine(config.TrainingDirectory,
-                config.Role=="agent"?"experiment_hub_agent.js":"bees_experiments.js"));
+                config.Role=="agent"?"experiment_hub_agent.js":config.Role=="evaluator"
+                    ?"experiment_hub_evaluator_windows.js":"bees_experiments.js"));
             _=Local(Path.Combine(config.TrainingDirectory,"experiment_hub_service_console.js"));
             if(args[0]=="--run-once")
             {
@@ -171,29 +184,46 @@ internal sealed class NodeProcess : IDisposable
     IntPtr job,process;
     public IntPtr Handle=>process;
     public uint Pid {get;private set;}
-    public NodeProcess(Configuration config,string entry)
+    public NodeProcess(Configuration config,string entry,bool once=false)
     {
         Native.ProcessInfo info=default;
         try
         {
-            job=Native.CreateJobObject(IntPtr.Zero,null);
+            bool evaluator=config.Role=="evaluator";
+            job=Native.CreateJobObject(IntPtr.Zero,evaluator?EvaluatorJobName(config.Name):null);
             if(job==IntPtr.Zero)throw Native.Error("Cannot create direct-process ownership job");
+            if(evaluator&&Marshal.GetLastWin32Error()==183)
+                throw new InvalidOperationException("Evaluator service already owns its native job.");
             // Silent breakaway applies to descendants, not the assigned Node.
             var limits=new Native.ExtendedLimits();
-            limits.Basic.Flags=0x2000|0x1000; // KILL_ON_JOB_CLOSE | SILENT_BREAKAWAY_OK.
+            limits.Basic.Flags=evaluator?0x2000u|0x200u:0x2000u|0x1000u;
+            if(evaluator)limits.JobMemory=(UIntPtr)checked((ulong)config.RamMb!.Value*1048576UL);
             if(!Native.SetInformationJobObject(job,9,ref limits,
                 (uint)Marshal.SizeOf<Native.ExtendedLimits>()))
                 throw Native.Error("Cannot configure direct-process ownership");
             var observed=new Native.ExtendedLimits();
             if(!Native.QueryInformationJobObject(job,9,ref observed,
                 (uint)Marshal.SizeOf<Native.ExtendedLimits>(),out _)||
-                observed.Basic.Flags!=limits.Basic.Flags)
+                observed.Basic.Flags!=limits.Basic.Flags||observed.JobMemory!=limits.JobMemory)
                 throw new InvalidOperationException("Direct-process ownership settings mismatch");
+            if(evaluator)
+            {
+                uint cores=Native.GetActiveProcessorCount(0xffff);
+                if(cores==0)throw Native.Error("Cannot determine total system logical processors");
+                var cpu=new Native.CpuLimits {Flags=5,
+                    Rate=(uint)Math.Max(1,Math.Floor(10000.0*config.Cpus!.Value/cores))};
+                if(!Native.SetInformationJobObject(job,15,ref cpu,(uint)Marshal.SizeOf<Native.CpuLimits>())||
+                    !Native.QueryInformationJobObject(job,15,out Native.CpuLimits checkedCpu,
+                        (uint)Marshal.SizeOf<Native.CpuLimits>(),out _)||
+                    checkedCpu.Flags!=cpu.Flags||checkedCpu.Rate!=cpu.Rate)
+                    throw Native.Error("Evaluator CPU hard cap not verified");
+            }
             var args=new List<string>{config.NodePath};
             if(config.EnvironmentFile is not null)args.Add("--env-file="+config.EnvironmentFile);
             args.Add("--require");
             args.Add(Path.Combine(config.TrainingDirectory,"experiment_hub_service_console.js"));
             args.Add(entry);
+            if(once)args.Add("--once");
             var variables=new SortedDictionary<string,string>(StringComparer.OrdinalIgnoreCase);
             foreach(DictionaryEntry pair in Environment.GetEnvironmentVariables())
             {
@@ -207,6 +237,15 @@ internal sealed class NodeProcess : IDisposable
             // not an environment file or an experiment's parameters.
             variables["EXPERIMENT_HUB_SERVICE_LOG_ROOT"]=config.StateDirectory;
             variables["EXPERIMENT_HUB_SERVICE_NAME"]=config.Name;
+            if(evaluator)
+            {
+                variables["EXPERIMENT_HUB_SERVICE_EXECUTABLE"]=Environment.ProcessPath!;
+                variables["EXPERIMENT_HUB_EVALUATOR_CPUS"]=config.Cpus!.Value.ToString();
+                variables["EXPERIMENT_HUB_EVALUATOR_RAM_MB"]=config.RamMb!.Value.ToString();
+                variables["CUDA_VISIBLE_DEVICES"]="";
+                variables["HIP_VISIBLE_DEVICES"]="";
+                variables["ROCR_VISIBLE_DEVICES"]="";
+            }
             var block=string.Join("\0",variables.Select(x=>x.Key+"="+x.Value))+"\0\0";
             IntPtr environment=Marshal.StringToHGlobalUni(block);
             try
@@ -238,6 +277,81 @@ internal sealed class NodeProcess : IDisposable
         if(input.IndexOfAny(new[]{'\0','\r','\n','"'})>=0||input.EndsWith('\\'))
             throw new ArgumentException("Unsafe file argument.");
         return "\""+input+"\"";
+    }
+    static string EvaluatorJobName(string name)=>"Local\\bees-hub-evaluator-"+name.ToLowerInvariant();
+    internal static int ProbeEvaluator(string name,uint pid)
+    {
+        if(!Regex.IsMatch(name,@"^Bees-ExperimentHub-[A-Za-z0-9-]{1,64}$")||pid==0)
+            throw new ArgumentException("Invalid evaluator identity.");
+        IntPtr owned=Native.OpenJobObject(4,false,EvaluatorJobName(name));
+        if(owned==IntPtr.Zero)throw Native.Error("No native evaluator job");
+        IntPtr caller=IntPtr.Zero;
+        try
+        {
+            caller=Native.OpenProcess(0x1000,false,pid);
+            if(caller==IntPtr.Zero||!Native.IsProcessInJob(caller,owned,out bool member)||!member||
+                !Native.IsProcessInJob(Native.GetCurrentProcess(),owned,out bool probeMember)||!probeMember)
+                throw Native.Error("Evaluator controller and probe must belong to the native job");
+            var limits=new Native.ExtendedLimits();
+            if(!Native.QueryInformationJobObject(owned,9,ref limits,
+                    (uint)Marshal.SizeOf<Native.ExtendedLimits>(),out _)||limits.Basic.Flags!=0x2200||
+                !Native.QueryInformationJobObject(owned,15,out Native.CpuLimits cpu,
+                    (uint)Marshal.SizeOf<Native.CpuLimits>(),out _)||cpu.Flags!=5||
+                !Native.QueryInformationJobObject(owned,1,out Native.Accounting accounting,
+                    (uint)Marshal.SizeOf<Native.Accounting>(),out _))
+                throw Native.Error("Native evaluator resource ownership not verified");
+            long ticks=accounting.UserTime+accounting.KernelTime;
+            var members=EvaluatorProcesses(owned);
+            Console.WriteLine(JsonSerializer.Serialize(new {
+                verified=true,cpu_rate_units=cpu.Rate,
+                host_logical_processors=Native.GetActiveProcessorCount(0xffff),
+                ram_limit_mb=limits.JobMemory.ToUInt64()/1048576,
+                process_tasks=accounting.ActiveProcesses,
+                application_process_tasks=members.Count(member=>!member.system_console_host),
+                processes=members,
+                cpu_time_ns=ticks>=0&&ticks<=90071992547409L?(long?)ticks*100:null,
+                peak_job_memory_bytes=limits.PeakJob.ToUInt64()
+            }));
+            return 0;
+        }
+        finally {if(caller!=IntPtr.Zero)Native.CloseHandle(caller);Native.CloseHandle(owned);}
+    }
+    sealed record EvaluatorMember(uint pid,string image,bool system_console_host);
+    static EvaluatorMember[] EvaluatorProcesses(IntPtr owned)
+    {
+        const int length=8+4096*8;
+        IntPtr buffer=Marshal.AllocHGlobal(length);
+        try
+        {
+            if(!Native.QueryInformationJobObject(owned,3,buffer,length,out _))
+                throw Native.Error("Cannot enumerate evaluator job members");
+            int count=Marshal.ReadInt32(buffer,4);
+            if(count<0||count>4096)throw new InvalidOperationException("Invalid evaluator process count");
+            var members=new List<EvaluatorMember>();
+            for(int index=0;index<count;index++)
+            {
+                uint id=checked((uint)Marshal.ReadIntPtr(buffer,8+index*IntPtr.Size).ToInt64());
+                IntPtr process=Native.OpenProcess(0x1000,false,id);
+                if(process==IntPtr.Zero)
+                {
+                    if(Marshal.GetLastWin32Error()==87)continue; // Already exited.
+                    throw Native.Error("Cannot inspect evaluator process identity");
+                }
+                try
+                {
+                    var image=new StringBuilder(4096);uint size=4096;
+                    if(!Native.QueryFullProcessImageName(process,0,image,ref size))
+                        throw Native.Error("Cannot verify evaluator process image");
+                    bool console=string.Equals(image.ToString(),
+                        Path.Combine(Environment.SystemDirectory,"conhost.exe"),
+                        StringComparison.OrdinalIgnoreCase);
+                    members.Add(new EvaluatorMember(id,Path.GetFileName(image.ToString()),console));
+                }
+                finally {Native.CloseHandle(process);}
+            }
+            return members.ToArray();
+        }
+        finally {Marshal.FreeHGlobal(buffer);}
     }
     public uint ExitCode()
     {
@@ -281,8 +395,36 @@ internal static class Native
         public BasicLimits Basic;public IoCounters Io;
         public UIntPtr ProcessMemory,JobMemory,PeakProcess,PeakJob;
     }
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct CpuLimits {public uint Flags,Rate;}
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct Accounting {
+        public long UserTime,KernelTime,PeriodUserTime,PeriodKernelTime;
+        public uint PageFaults,Processes,ActiveProcesses,TerminatedProcesses;
+    }
     [DllImport("kernel32.dll",EntryPoint="CreateJobObjectW",CharSet=CharSet.Unicode,SetLastError=true)]
     internal static extern IntPtr CreateJobObject(IntPtr attributes,string? name);
+    [DllImport("kernel32.dll",EntryPoint="OpenJobObjectW",CharSet=CharSet.Unicode,SetLastError=true)]
+    internal static extern IntPtr OpenJobObject(uint access,bool inherit,string name);
+    [DllImport("kernel32.dll",SetLastError=true)]
+    internal static extern IntPtr OpenProcess(uint access,bool inherit,uint pid);
+    [DllImport("kernel32.dll",EntryPoint="QueryFullProcessImageNameW",CharSet=CharSet.Unicode,SetLastError=true)]
+    internal static extern bool QueryFullProcessImageName(IntPtr process,uint flags,StringBuilder name,ref uint size);
+    [DllImport("kernel32.dll")]
+    internal static extern IntPtr GetCurrentProcess();
+    [DllImport("kernel32.dll",SetLastError=true)]
+    internal static extern uint GetActiveProcessorCount(ushort group);
+    [DllImport("kernel32.dll",SetLastError=true)]
+    internal static extern bool SetInformationJobObject(IntPtr job,int kind,ref CpuLimits limits,uint length);
+    [DllImport("kernel32.dll",SetLastError=true)]
+    internal static extern bool QueryInformationJobObject(IntPtr job,int kind,
+        out CpuLimits limits,uint length,out uint returned);
+    [DllImport("kernel32.dll",SetLastError=true)]
+    internal static extern bool QueryInformationJobObject(IntPtr job,int kind,
+        out Accounting limits,uint length,out uint returned);
+    [DllImport("kernel32.dll",SetLastError=true)]
+    internal static extern bool QueryInformationJobObject(IntPtr job,int kind,
+        IntPtr buffer,int length,out uint returned);
     [DllImport("kernel32.dll",SetLastError=true)]
     internal static extern bool SetInformationJobObject(IntPtr job,int kind,ref ExtendedLimits limits,uint length);
     [DllImport("kernel32.dll",SetLastError=true)]

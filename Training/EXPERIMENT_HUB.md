@@ -690,8 +690,9 @@ production coexistence qualification.
 Task Scheduler launched an inert Node program successfully but did not retry
 its nonzero exit in the isolated checks. Use the Windows service launcher for
 the intended OS-owned recovery path, rather than relying on a logon task.
-The launcher has no internal restart loop and owns only its direct Node
-process. Independently detached training owners keep their existing lifecycle.
+The launcher has no internal restart loop. Coordinator and agent modes own
+their direct Node process; independently detached training owners keep their
+existing lifecycle. Evaluator mode bounds and owns its complete process tree.
 
 Build the reviewed launcher locally, then preview its installation:
 
@@ -760,6 +761,80 @@ Current-build LocalService/SCM qualification, reboot behavior, real training
 owner reconnection, deployed account access, production coexistence and
 long-duration operation remain unqualified. All earlier temporary services
 were removed; no production service was installed.
+
+### Budgeted Windows independent evaluators
+
+Use the same launcher with `-Role evaluator -Cpus 1 -RamMb 3072`. Its
+private environment file points to an administrator-owned JSON configuration:
+
+```text
+EXPERIMENT_HUB_EVALUATOR_CONFIG=C:\Hub\Private\tinybrains-evaluator.json
+```
+
+```json
+{
+  "schema_version": 1,
+  "project": "tinybrains",
+  "machine": "worker",
+  "python": "C:\\Projects\\TinyBrains\\.venv\\Scripts\\python.exe",
+  "engine_path": "C:\\Projects\\TinyBrains\\tools\\tinybrains-0.5.0\\tinybrains.exe",
+  "suites": ["C:\\Hub\\Private\\heldout.json"],
+  "artifact_root": "C:\\Hub\\Data\\Artifacts",
+  "scratch": "C:\\Hub\\Data\\EvaluationScratch",
+  "receipt_root": "C:\\Hub\\Data\\EvaluationReceipts",
+  "interval_seconds": 180,
+  "timeout_seconds": 7200
+}
+```
+
+All paths must already exist. The artifact, scratch and receipt directories
+must be separate. For Courier, use `"project":"courier"` and add
+`project_root` and `snapshot_root`, also separate; omit `engine_path`.
+The optional loopback `port` defaults to 7148. Supply 1–8 distinct suite
+paths; multiple suites run in one same-checkpoint batch. Intervals and
+timeouts accept 60–86,400 seconds. A new poll waits until the previous poll
+has finished, then waits the configured interval. Configuration is read once
+at startup and its exact file hash is recorded; restart to apply edits.
+
+```powershell
+.\Training\experiment_hub_windows_service.ps1 -Role evaluator -Name Bees-ExperimentHub-evaluator-tinybrains -Cpus 1 -RamMb 3072 -ServiceExecutable C:\Hub\Service\ExperimentHubWindowsService.exe -ConfigurationFile C:\Hub\Private\evaluator-service.json -StateDirectory C:\Hub\Private -EnvironmentFile C:\Hub\Private\evaluator.env
+```
+
+Preview installation before using `-Install`, then select **Manual** startup
+in Services and explicitly start it. The account needs its approved Python,
+project dependencies, engine and cache, read access to checkpoints/suites and
+write access to evaluator scratch, receipts and service state. Use distinct
+service names for different evaluation profiles. No boot or logon startup
+is enabled by this setup. Before installation, the compiled launcher's
+`--run-once` command with an evaluator service configuration performs exactly
+one constrained poll without registering a service.
+
+The Windows Job Object applies CPU and committed-memory caps to the Node
+controller and its complete evaluator subtree. The controller verifies native
+job membership and limits before invoking the installed project poller.
+Verified Windows console hosts stay inside those budgets; an unexpected
+application child prevents another poll. Timeouts and launcher termination
+close the evaluator job, stopping its tree. Coordinator/agent mode retains
+its existing independent-training ownership behavior. These CPU quotas do
+not reserve exclusive cores or isolate GPU devices. Account for the extra
+evaluation budget when declaring shared-host training capacity; it is not
+automatically deducted from the Hub's training registry.
+
+`<service-name>.evaluation.json` retains the latest poll outcome, exact local
+configuration hash, elapsed time, observed service-job CPU counter delta and
+the service job's lifetime peak committed memory. A completed poll can have
+no eligible target; experiment outcomes still come from checkpoint-pinned
+receipts. Python failures are logged and the next scheduled poll can retry
+after its complete tree has exited. Containment failures and timeouts stop
+the controller and use the service's bounded OS recovery policy.
+
+Windows diagnostic-mode checks exercised actual native limits, periodic
+non-overlap, duplicate-owner refusal, allocation beyond the memory cap,
+stray-child rejection, timeout/tree cleanup and launcher crash cleanup.
+Production pollers completed 24 TinyBrains games and 16 Courier held-out
+survival scenarios under a 1-CPU / 3-GiB budget with pinned receipts and no
+owned workspace left. These checks did not install a service or qualify its
+deployed account, production coexistence, long-duration operation or Linux.
 
 ## Linux native supervisor and authenticated dispatch (CPU-only)
 
