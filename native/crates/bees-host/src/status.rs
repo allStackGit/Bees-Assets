@@ -117,10 +117,13 @@ impl NativeStatusSampler {
             )?;
             let model_forward_nanos = m.model_forward_nanos
                 .checked_sub(q.model_forward_nanos)?;
-            let histogram: Vec<u64> = s.sampled_step_latency_log2_ns.iter()
+            let mut histogram = [0_u64; 64];
+            for ((out, &new), &old) in histogram.iter_mut()
+                .zip(s.sampled_step_latency_log2_ns.iter())
                 .zip(p.sampled_step_latency_log2_ns.iter())
-                .map(|(&now, &before)| now.checked_sub(before))
-                .collect::<Option<Vec<_>>>()?;
+            {
+                *out = new.checked_sub(old)?;
+            }
             Some(NativeHostStatusInterval {
                 schema_version: STATUS_SCHEMA_VERSION,
                 observed_at_unix_ms: SystemTime::now()
@@ -159,9 +162,9 @@ impl NativeStatusSampler {
                 )?,
                 sampled_model_forward_rows,
                 sampled_model_forward_nanos_per_row:
-                    (sampled_model_forward_rows != 0).then_some(
+                    (sampled_model_forward_rows != 0).then(||
                         model_forward_nanos as f64 /
-                        sampled_model_forward_rows.max(1) as f64,
+                        sampled_model_forward_rows as f64
                     ),
                 gauges: NativeHostGauges::from(&current),
             })
