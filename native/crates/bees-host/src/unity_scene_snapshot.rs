@@ -70,7 +70,7 @@ use crate::runtime::NativeHostRuntime;
 use crate::ship_specials::{NativeAuthoredShipSpecial, NativeBeaconTemplate};
 use crate::durable_connection::DurableHiveMindConnection;
 
-const SNAPSHOT_VERSION: u32 = 19;
+const SNAPSHOT_VERSION: u32 = 20;
 
 #[derive(Deserialize, Clone, Copy)]
 struct UnityVec2 { x: f32, y: f32 }
@@ -124,6 +124,7 @@ struct UnitySnapshot {
     shots_harmless: bool,
     activate_collision_asteroids: bool,
     has_obstacles: bool,
+    command_settings: UnityCommandSettings,
     bee_side: i32,
     human_side: i32,
     beehive_size_pixels: UnitySize,
@@ -372,6 +373,29 @@ struct UnityTurret {
 }
 
 #[derive(Deserialize)]
+struct UnityCommandSettings {
+    max_command_seconds: f32,
+    ai_random_max_distance: f32,
+    ai_patrol_max_size: f32,
+    ai_squad_patrol_seconds: f32,
+    ai_squad_following_seconds: f32,
+    ai_squad_guard_seconds: f32,
+}
+
+impl From<UnityCommandSettings> for bees_gameplay::commands::HiveMindCommandSettings {
+    fn from(value: UnityCommandSettings) -> Self {
+        Self {
+            max_command_seconds: value.max_command_seconds,
+            ai_random_max_distance: value.ai_random_max_distance,
+            ai_patrol_max_size: value.ai_patrol_max_size,
+            ai_squad_patrol_seconds: value.ai_squad_patrol_seconds,
+            ai_squad_following_seconds: value.ai_squad_following_seconds,
+            ai_squad_guard_seconds: value.ai_squad_guard_seconds,
+        }
+    }
+}
+
+#[derive(Deserialize)]
 struct UnitySquad {
     item_id: i64,
     side: i32,
@@ -379,6 +403,7 @@ struct UnitySquad {
     user_controlled: bool,
     can_accept_input: bool,
     locked_on: bool,
+    shooting_strategy: String,
 }
 
 #[derive(Deserialize)]
@@ -426,6 +451,7 @@ pub enum NativeSnapshotError {
     Malformed(serde_json::Error),
     UnsupportedSchema(u32),
     InvalidLevelBounds,
+    InvalidCommandSettings,
     InvalidShip(i64),
     MismatchedShipTsv(i64),
     Combat(CombatError),
@@ -463,6 +489,7 @@ pub struct NativePhysicalScene {
     pub shots_harmless: bool,
     pub activate_collision_asteroids: bool,
     pub has_obstacles: bool,
+    pub command_settings: bees_gameplay::commands::HiveMindCommandSettings,
     pub entities: Vec<NativeAuthoredEntity>,
     source_episode: Option<NativeSourceEpisode>,
     /// Real participating Unity Agent instances and the active episode
@@ -584,6 +611,7 @@ pub struct NativeSourceSquad {
     pub side: i32,
     pub members: Vec<i64>,
     pub player_permissions: bees_gameplay::player_inputs::NativePlayerPermissions,
+    pub shooting: bees_hivemind::protocol::StrategyIdentity,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -828,6 +856,10 @@ impl NativePhysicalScene {
             NativeSourcePlayerInputs {
                 has_obstacles: self.has_obstacles,
                 ships: self.source_formation,
+                commands: self.source_squads.iter().zip(&squads).map(|(source, squad)|
+                    (squad.owner, bees_gameplay::player_inputs::NativePlayerCommandInputs {
+                        shooting: source.shooting, settings: self.command_settings,
+                    })).collect(),
                 squads: self.source_squads.iter().zip(&squads)
                     .map(|(source, squad)| (squad.owner, source.player_permissions)).collect(),
             },
@@ -956,6 +988,8 @@ impl NativePhysicalScene {
         if raw.schema_version != SNAPSHOT_VERSION {
             return Err(NativeSnapshotError::UnsupportedSchema(raw.schema_version));
         }
+        let command_settings: bees_gameplay::commands::HiveMindCommandSettings = raw.command_settings.into();
+        if !command_settings.valid() { return Err(NativeSnapshotError::InvalidCommandSettings); }
         if raw.bee_side <= 0 || raw.human_side <= 0 || raw.bee_side == raw.human_side ||
             raw.beehive_size_pixels.x == 0 || raw.beehive_size_pixels.y == 0 {
             return Err(NativeSnapshotError::InvalidLevelBounds);
@@ -1646,7 +1680,14 @@ impl NativePhysicalScene {
                     return Err(NativeSnapshotError::DuplicateSquadShip(ship_id));
                 }
             }
+            let shooting_index = bees_hivemind::protocol::SHOOTING_STRATEGIES.iter()
+                .position(|&name| name == squad.shooting_strategy)
+                .ok_or(NativeSnapshotError::InvalidSquad(squad.item_id))?;
             source_squads.push(NativeSourceSquad {
+                shooting: bees_hivemind::protocol::StrategyIdentity {
+                    id: (shooting_index + 1) as u8,
+                    name: bees_hivemind::protocol::SHOOTING_STRATEGIES[shooting_index],
+                },
                 item_id: squad.item_id, side: squad.side,
                 members: squad.member_ids,
                 player_permissions: bees_gameplay::player_inputs::NativePlayerPermissions {
@@ -1722,6 +1763,7 @@ impl NativePhysicalScene {
             shots_harmless: raw.shots_harmless,
             activate_collision_asteroids: raw.activate_collision_asteroids,
             has_obstacles: raw.has_obstacles,
+            command_settings,
             entities,
             source_episode,
             source_policy_group,

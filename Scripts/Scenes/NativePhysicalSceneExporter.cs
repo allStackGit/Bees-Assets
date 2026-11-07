@@ -162,6 +162,7 @@ internal static class NativePhysicalSceneExporter
         public int side;
         public List<long> member_ids = new List<long>();
         public bool user_controlled, can_accept_input, locked_on;
+        public string shooting_strategy;
     }
 
     [Serializable]
@@ -185,15 +186,23 @@ internal static class NativePhysicalSceneExporter
     }
 
     [Serializable]
+    private sealed class SourceCommandSettings
+    {
+        public float max_command_seconds, ai_random_max_distance, ai_patrol_max_size;
+        public float ai_squad_patrol_seconds, ai_squad_following_seconds, ai_squad_guard_seconds;
+    }
+
+    [Serializable]
     private sealed class PhysicalScene
     {
-        public int schema_version = 19;
+        public int schema_version = 20;
         public string level_name;
         public string stage_name;
         public float fixed_dt_seconds;
         public bool shots_harmless;
         public bool activate_collision_asteroids;
         public bool has_obstacles;
+        public SourceCommandSettings command_settings;
         public int bee_side, human_side;
         public Vector2Int beehive_size_pixels;
         public bool has_policy_episode;
@@ -236,6 +245,14 @@ internal static class NativePhysicalSceneExporter
             shots_harmless = level.Stage.MakeShotsHarmless,
             activate_collision_asteroids = level.ActivateCollisionAsteroids,
             has_obstacles = level.HasObstacles,
+            command_settings = new SourceCommandSettings {
+                max_command_seconds = ConfigData.StandardMaxCommandTime,
+                ai_random_max_distance = ConfigData.Configuration.AIRandomMovementMaxDistance,
+                ai_patrol_max_size = ConfigData.Configuration.AIPatrolMaxSize,
+                ai_squad_patrol_seconds = ConfigData.Configuration.AISquadPatrolTime,
+                ai_squad_following_seconds = ConfigData.Configuration.AISquadFollowingTime,
+                ai_squad_guard_seconds = ConfigData.Configuration.AISquadGuardTime
+            },
             bee_side = ConfigData.Configuration.BeeSide,
             human_side = ConfigData.Configuration.HumanSide,
             beehive_size_pixels = ConfigData.ShipSizes[ConfigData.ShipTypes.Beehive],
@@ -510,7 +527,8 @@ internal static class NativePhysicalSceneExporter
                 item_id = squad.ItemId, side = squad.Side,
                 user_controlled = squad.IsUserControlled,
                 can_accept_input = squad.CanAcceptUserInput,
-                locked_on = squad.IsLockedOn
+                locked_on = squad.IsLockedOn,
+                shooting_strategy = Utilities.ConvertShootingStrategyTypeToName[squad.GetShootingStrategy()]
             };
             if (squad.HasCommand || squad.HasCommandQueue || squad.CommandQueue.Count > 0)
                 throw new InvalidOperationException(

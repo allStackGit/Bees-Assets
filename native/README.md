@@ -176,7 +176,7 @@ the inference-only TorchScript/ONNX model manifest does not provide
 action log probabilities or a group critic. Loading a replacement model
 can temporarily require space for both the old and new weights.
 
-## Unity scene import (schema 19)
+## Unity scene import (schema 20)
 
 **Bees > Native > Export Selected Level Physical Scene** captures a
 source-authored initial Unity Level, not a resumable match checkpoint.
@@ -211,6 +211,15 @@ Schema 19 adds exact squad user-control/input/lock permissions, stored formation
 offsets, path clearances and Level.HasObstacles. Survivor offsets update after
 casualties through the shared Level rules. The fresh-scene exporter rejects
 existing commands and scripted queues; this format does not restore that history.
+
+Schema 20 adds the loaded command timing/distance settings and each squad's
+actual chosen shooting strategy. `NativeHostRuntime::player_command` accepts
+chosen Guard, Patrol, Mining, Heal and FullRetreat actions, scoped to the current
+world/episode and a live controllable squad. Movement and support commands share
+one permission/membership preflight; pending AI requests retire before activation.
+The canonical director handles replacement, unavailable targets and settlement.
+Attack commands and UI Hold are rejected by this API; they need their own source
+semantics. Window controls for these support actions are still incomplete.
 
 The shared scene builder installs every ship's original-health collision
 profile and support zones, then binds real policy mining/healing/warp

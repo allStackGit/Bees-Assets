@@ -21,10 +21,114 @@ pub trait NativePlayerAuthority {
 
 pub trait NativeLevelPlayerContext: NativeLevelActivationContext + NativePlayerAuthority {
     fn player_formation_options(&self) -> SquadFormationOptions;
+    /// Current source Squad.GetShootingStrategy and loaded command settings.
+    fn player_command_inputs(&self, _owner: SquadLifetime)
+        -> Result<NativePlayerCommandInputs, GameCommandError>
+    { Err(GameCommandError::MissingCombatSnapshot) }
     /// Full game adapters cancel their real scripted queue here. Fresh
     /// policy-scene adapters reject queued source history at import.
     fn cancel_player_scripted_queue(&mut self, owner: SquadLifetime)
         -> Result<(), GameCommandError>;
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct NativePlayerCommandInputs {
+    pub shooting: bees_hivemind::protocol::StrategyIdentity,
+    pub settings: crate::commands::HiveMindCommandSettings,
+}
+
+/// A chosen support command, scoped to the displayed world and episode.
+/// Attack commands require additional enemy/weapon authority and are rejected.
+#[derive(Clone, Copy, Debug)]
+pub struct NativePlayerCommand<'a> {
+    pub world_id: WorldId,
+    pub episode_revision: u64,
+    pub selected_ship: i64,
+    pub action: crate::commands::NativeLocalCommandAction<'a>,
+}
+
+pub struct NativePlayerCommandPlan<'a> {
+    input: NativePlayerCommand<'a>,
+    authority: NativePlayerSquadPlan,
+    source: NativePlayerCommandInputs,
+    center: Vec2,
+    friendlies: Vec<crate::commands::NativeFriendlySquad>,
+}
+
+impl<'a> NativePlayerCommandPlan<'a> {
+    pub fn owner(&self) -> SquadLifetime { self.authority.owner }
+
+    pub fn prepare<M: NativeLevelPlayerContext, A>(
+        world: &mut World<NativeLevelState<M, A>>, input: NativePlayerCommand<'a>,
+    ) -> Result<Self, NativePlayerInputError> {
+        use crate::commands::NativeLocalCommandAction as Action;
+        match input.action {
+            Action::Guard { .. } | Action::Mining { .. } | Action::Heal { .. } |
+            Action::FullRetreat { .. } => (),
+            Action::Patrol { top_left, bottom_right } if top_left.is_finite() &&
+                bottom_right.is_finite() && top_left.x <= bottom_right.x &&
+                top_left.y >= bottom_right.y => (),
+            _ => return Err(NativePlayerInputError::InvalidAction),
+        }
+        let authority = NativePlayerSquadPlan::prepare(world, input.world_id,
+            input.episode_revision, input.selected_ship)?;
+        let source = world.state.metadata.player_command_inputs(authority.owner)
+            .map_err(NativePlayerInputError::Source)?;
+        if !source.settings.valid() {
+            return Err(NativePlayerInputError::Source(GameCommandError::InvalidSettings));
+        }
+        // Validate source identity before any reservation retirement or mutation.
+        crate::commands::NativeCommandSelection::local(
+            crate::commands::NativeLocalCommandIdentity {
+                source: crate::commands::NativeLocalCommandSource::Player, sequence: 0,
+            }, input.action.kind(), source.shooting)
+            .map_err(NativePlayerInputError::Source)?;
+        let state = &mut world.state;
+        let center = crate::squad_geometry::live_squad_bounds_from_catalog(
+            &state.combat, state.events.roster().get(authority.owner)
+                .ok_or(NativePlayerInputError::MissingSquad)?,
+            state.metadata.ship_asset_catalog()
+                .ok_or(NativePlayerInputError::Source(GameCommandError::MissingCombatSnapshot))?,
+        ).map_err(|error| NativePlayerInputError::Source(GameCommandError::SquadGeometry(error)))?.center;
+        let mut friendlies = Vec::new();
+        if matches!(input.action, Action::Guard { .. }) {
+            state.metadata.collect_live_friendlies(&state.combat, state.events.roster(),
+                state.events.commands(), &mut friendlies)
+                .map_err(NativePlayerInputError::Source)?;
+        }
+        Ok(Self { input, authority, source, center, friendlies })
+    }
+
+    pub fn execute<M: NativeLevelPlayerContext, A>(self,
+        world: &mut World<NativeLevelState<M, A>>,
+    ) -> Result<crate::commands::Activation, NativePlayerInputError> {
+        let current = Self::prepare(world, self.input)?;
+        if current.authority != self.authority || current.source != self.source ||
+            current.center != self.center {
+            return Err(NativePlayerInputError::StaleWorld);
+        }
+        let owner = self.owner();
+        let tick = world.tick();
+        let state = &mut world.state;
+        let result = (|| {
+            let squad = crate::commands::NativeSquadOrder {
+                owner, members: &self.authority.members, squad_center: self.center,
+                formation: self.authority.options, enemy: None, scouting: None,
+            };
+            state.metadata.cancel_player_scripted_queue(owner)
+                .map_err(NativePlayerInputError::Source)?;
+            let asteroids = state.metadata.collision_asteroids_enabled();
+            let navigation = state.metadata.navigation_mut();
+            state.combat.refresh_world_navigation(navigation, true, asteroids)
+                .map_err(|error| NativePlayerInputError::Source(error.into()))?;
+            state.events.activate_local_command(tick, &mut state.combat, navigation,
+                &mut world.random, squad, &current.friendlies, self.source.settings,
+                crate::commands::NativeLocalCommandSource::Player, self.input.action,
+                self.source.shooting, None).map_err(NativePlayerInputError::Finalization)
+        })();
+        if result.is_err() { state.events.fail_player_input(); }
+        result
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -58,6 +162,7 @@ pub enum NativePlayerInputError {
     MissingSquad,
     NotControllable,
     InvalidDestination,
+    InvalidAction,
     Source(GameCommandError),
     Finalization(NativeLevelEventError),
 }
@@ -67,38 +172,33 @@ impl NativePlayerInputError {
     /// terminate the caller's window and follow normal abort settlement.
     pub fn is_rejection(&self) -> bool {
         matches!(self, Self::StaleWorld | Self::InactiveWorld | Self::MissingSquad |
-            Self::NotControllable | Self::InvalidDestination)
+            Self::NotControllable | Self::InvalidDestination | Self::InvalidAction)
     }
 }
 
-/// Immutable preflight token. Host retires pending network authority after
-/// preparation, before consuming this token synchronously. No fake command
-/// selection, outcome IDs or persistent MoveToPoint command are allocated.
-pub struct NativePlayerMovePlan {
-    input: NativePlayerMove,
+/// Shared world, lifetime, permissions and formation preflight for every
+/// player order. The host retires pending AI authority only after preparation.
+#[derive(PartialEq)]
+struct NativePlayerSquadPlan {
     tick: u64,
     owner: SquadLifetime,
     members: Vec<SquadFormationMember>,
     options: SquadFormationOptions,
 }
 
-impl NativePlayerMovePlan {
-    pub fn owner(&self) -> SquadLifetime { self.owner }
-
-    pub fn prepare<M: NativeLevelPlayerContext, A>(
-        world: &World<NativeLevelState<M, A>>, input: NativePlayerMove,
+impl NativePlayerSquadPlan {
+    fn prepare<M: NativeLevelPlayerContext, A>(
+        world: &World<NativeLevelState<M, A>>, world_id: WorldId,
+        episode_revision: u64, selected_ship: i64,
     ) -> Result<Self, NativePlayerInputError> {
-        if world.id != input.world_id || world.episode_revision() != input.episode_revision {
+        if world.id != world_id || world.episode_revision() != episode_revision {
             return Err(NativePlayerInputError::StaleWorld);
         }
         let state = &world.state;
         if world.is_failed() || state.events.is_failed() || state.events.completed() {
             return Err(NativePlayerInputError::InactiveWorld);
         }
-        if !input.destination.is_finite() {
-            return Err(NativePlayerInputError::InvalidDestination);
-        }
-        let owner = state.events.roster().owning_squad(input.selected_ship)
+        let owner = state.events.roster().owning_squad(selected_ship)
             .ok_or(NativePlayerInputError::MissingSquad)?;
         let permission = state.metadata.player_permissions(owner)
             .ok_or(NativePlayerInputError::NotControllable)?;
@@ -136,7 +236,28 @@ impl NativePlayerMovePlan {
                 ship_id, offset_from_center: offset, clearance, mobile: body.motion.mobile,
             });
         }
-        Ok(Self { input, tick: world.tick(), owner, members, options })
+        Ok(Self { tick: world.tick(), owner, members, options })
+    }
+
+}
+
+pub struct NativePlayerMovePlan {
+    input: NativePlayerMove,
+    authority: NativePlayerSquadPlan,
+}
+
+impl NativePlayerMovePlan {
+    pub fn owner(&self) -> SquadLifetime { self.authority.owner }
+
+    pub fn prepare<M: NativeLevelPlayerContext, A>(
+        world: &World<NativeLevelState<M, A>>, input: NativePlayerMove,
+    ) -> Result<Self, NativePlayerInputError> {
+        if !input.destination.is_finite() {
+            return Err(NativePlayerInputError::InvalidDestination);
+        }
+        let authority = NativePlayerSquadPlan::prepare(world, input.world_id,
+            input.episode_revision, input.selected_ship)?;
+        Ok(Self { input, authority })
     }
 
     pub fn execute<M: NativeLevelPlayerContext, A>(
@@ -145,15 +266,14 @@ impl NativePlayerMovePlan {
         // Reject tokens retained across ticks, resets, membership/permission
         // edits or pooled identities before any gameplay mutation.
         let current = Self::prepare(world, self.input)?;
-        if world.tick() != self.tick || current.owner != self.owner ||
-            current.members != self.members || current.options != self.options {
+        if current.authority != self.authority {
             return Err(NativePlayerInputError::StaleWorld);
         }
         let state = &mut world.state;
         let result = (|| {
-            state.metadata.cancel_player_scripted_queue(self.owner)
+            state.metadata.cancel_player_scripted_queue(self.authority.owner)
                 .map_err(NativePlayerInputError::Source)?;
-            state.events.finalize_local_command(self.tick, &mut state.combat, self.owner)
+            state.events.finalize_local_command(self.authority.tick, &mut state.combat, self.authority.owner)
                 .map_err(NativePlayerInputError::Finalization)?;
             // Formation search uses the current colliders, including edits
             // made between fixed steps. All ship orders remain in bees-sim.
@@ -161,8 +281,8 @@ impl NativePlayerMovePlan {
             let navigation = state.metadata.navigation_mut();
             state.combat.refresh_world_navigation(navigation, true, asteroids)
                 .map_err(|error| NativePlayerInputError::Source(error.into()))?;
-            issue_squad_move(&mut state.combat, navigation, &self.members,
-                self.input.destination, self.options)
+            issue_squad_move(&mut state.combat, navigation, &self.authority.members,
+                self.input.destination, self.authority.options)
                 .map(|result| result.is_some())
                 .map_err(|error| NativePlayerInputError::Source(error.into()))
         })();

@@ -164,6 +164,26 @@ where
             .map_err(HostPlayerInputError::Gameplay)
     }
 
+    /// Chosen player support actions use the same authority, command director,
+    /// request retirement and durable settlement path as graphical movement.
+    pub fn player_command(&mut self,
+        input: bees_gameplay::player_inputs::NativePlayerCommand<'_>,
+    ) -> Result<bees_gameplay::commands::Activation, HostPlayerInputError>
+    where M: NativeLevelPlayerContext
+    {
+        let index = (0..self.simulation.world_count()).find(|&index|
+            self.simulation.world(index).is_some_and(|world| world.id == input.world_id))
+            .ok_or(HostPlayerInputError::Gameplay(NativePlayerInputError::StaleWorld))?;
+        let plan = bees_gameplay::player_inputs::NativePlayerCommandPlan::prepare(
+            self.simulation.world_mut(index).expect("located world"), input)
+            .map_err(HostPlayerInputError::Gameplay)?;
+        self.driver.invalidate_environment(index).map_err(HostPlayerInputError::Driver)?;
+        self.connection.retire_player_requests(plan.owner())
+            .map_err(HostPlayerInputError::Connection)?;
+        plan.execute(self.simulation.world_mut(index).expect("located world"))
+            .map_err(HostPlayerInputError::Gameplay)
+    }
+
     /// Source MoveSquads selection order; duplicate lifetimes execute once.
     /// Unavailable/locked squads are skipped without commandeering AI ships.
     /// Prepare every eligible squad before retiring or issuing its first order.

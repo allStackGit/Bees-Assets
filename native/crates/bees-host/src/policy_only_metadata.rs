@@ -55,6 +55,7 @@ pub struct NativeSourceFormation {
 
 pub struct NativeSourcePlayerInputs {
     pub has_obstacles: bool,
+    pub commands: HashMap<SquadLifetime, bees_gameplay::player_inputs::NativePlayerCommandInputs>,
     pub squads: HashMap<SquadLifetime, NativePlayerPermissions>,
     pub ships: HashMap<i64, NativeSourceFormation>,
 }
@@ -458,6 +459,13 @@ impl NativePlayerAuthority for NativePolicyOnlyMetadata {
 }
 
 impl NativeLevelPlayerContext for NativePolicyOnlyMetadata {
+    fn player_command_inputs(&self, owner: SquadLifetime)
+        -> Result<bees_gameplay::player_inputs::NativePlayerCommandInputs, GameCommandError>
+    {
+        self.player.commands.get(&owner).copied()
+            .ok_or(GameCommandError::MissingCombatSnapshot)
+    }
+
     fn player_formation_options(&self) -> SquadFormationOptions {
         SquadFormationOptions { map_bounds: self.bounds,
             has_obstacles: self.player.has_obstacles, can_override_bounds: false }
