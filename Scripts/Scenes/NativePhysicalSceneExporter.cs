@@ -132,13 +132,18 @@ internal static class NativePhysicalSceneExporter
     [Serializable]
     private sealed class PhysicalScene
     {
-        public int schema_version = 12;
+        public int schema_version = 13;
         public string level_name;
         public float fixed_dt_seconds;
         public bool shots_harmless;
         public bool has_policy_episode;
         public SourcePolicyEpisode policy_episode = new SourcePolicyEpisode();
         public Vector2 min, max;
+        // Exact Pathfinder grid dimensions and map-to-Unity affine frame,
+        // not approximations from gameplay ForceBounds or broadphase.
+        public int navigation_map_width, navigation_map_height;
+        public Vector2 navigation_origin_world;
+        public Vector2 navigation_x_axis_world, navigation_y_axis_world;
         public List<SourceShip> ships = new List<SourceShip>();
         public List<SourceSquad> squads = new List<SourceSquad>();
         public List<SourceObstacle> obstacles = new List<SourceObstacle>();
@@ -168,8 +173,31 @@ internal static class NativePhysicalSceneExporter
             fixed_dt_seconds = level.Stage.FixedDeltaTime,
             shots_harmless = level.Stage.MakeShotsHarmless,
             min = new Vector2(level.MinX, level.MinY),
-            max = new Vector2(level.MaxX, level.MaxY)
+            max = new Vector2(level.MaxX, level.MaxY),
+            navigation_map_width = level.MapWidth,
+            navigation_map_height = level.MapHeight,
+            navigation_origin_world = level.Map.Transform.TransformPoint(
+                Vector3.zero),
+            navigation_x_axis_world =
+                level.Map.Transform.TransformPoint(Vector3.right) -
+                level.Map.Transform.TransformPoint(Vector3.zero),
+            navigation_y_axis_world =
+                level.Map.Transform.TransformPoint(Vector3.up) -
+                level.Map.Transform.TransformPoint(Vector3.zero)
         };
+
+        if (snapshot.navigation_map_width <= 0 ||
+            snapshot.navigation_map_height <= 0 ||
+            !IsFinite(snapshot.navigation_origin_world.x) ||
+            !IsFinite(snapshot.navigation_origin_world.y) ||
+            !IsFinite(snapshot.navigation_x_axis_world.x) ||
+            !IsFinite(snapshot.navigation_x_axis_world.y) ||
+            !IsFinite(snapshot.navigation_y_axis_world.x) ||
+            !IsFinite(snapshot.navigation_y_axis_world.y))
+        {
+            throw new InvalidOperationException(
+                "Source Pathfinder map size or affine frame is invalid.");
+        }
 
         if (RlOneVsOneEpisodeCoordinator.TryReadNativeInitialEpisode(
                 level,
