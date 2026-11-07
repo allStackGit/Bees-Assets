@@ -231,11 +231,14 @@ internal static class NativePhysicalSceneExporter
         if (registered.Count != liveIds.Count)
         {
             throw new InvalidOperationException(
-                "Not all        // GameState.Obstacles is not complete for every level. Map-authored
-        // physical borders and static prefabs can instead be set up by
-        // Pathfinder.InitializeMap without ever joining that State list.
-        // Reuse Unity's exact Level-scoped obstacle discovery, merge with
-        // the State-owned physical obstacles, and preserve real entity IDs.
+                "Not all living ships belong to exactly one source Squad.");
+        }
+
+        // GameState.Obstacles does not include all map-authored physical
+        // borders and static colliders. PathfinderObstacleScope uses the
+        // Level's actual active obstacle hierarchy, while the State list
+        // also includes transient physical entities outside that hierarchy.
+        // Union by reference, then reject repeated or missing source IDs.
         var exportedObjects =
             new HashSet<Obstacle>(ReferenceIdentityComparer<Obstacle>.Instance);
         var exportedIds = new HashSet<long>(liveIds);
@@ -253,10 +256,6 @@ internal static class NativePhysicalSceneExporter
             if (!IsLivePhysicalObstacle(obstacle)) continue;
             AddPhysicalObstacle(level, snapshot, obstacle,
                 exportedObjects, exportedIds);
-        }
-
-       }
-            snapshot.obstacles.Add(entity);
         }
 
         if (level.State.Projectiles.Count != 0)
