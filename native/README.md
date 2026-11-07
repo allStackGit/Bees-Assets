@@ -479,8 +479,9 @@ stays platform-independent for Windows and Linux.
 
 `bees-host::policy_process::ResidentPolicyProcess` now implements the
 actual `NativePolicyInference` model boundary, not a fake policy. One
-resident Python/PyTorch worker holds loaded model weights on CPU or GPU
-(`cuda` is also PyTorch's ROCm device name on supported Linux builds);
+resident Python model worker holds TorchScript or ONNX model weights on
+CPU or a configured GPU provider (`cuda` is PyTorch's ROCm device
+name on supported Linux builds);
 it receives one dense, little-endian binary v26 batch, groups rows by
 model slot, applies the real discrete masks through the model, and returns
 exactly sixteen continuous and six discrete actions per row. Headers bind
@@ -493,19 +494,34 @@ simulator rejects the entire batch before advancing physics.
 
 Launch with
 `ResidentPolicyProcess::python_worker("python", "native/tools/policy_worker.py", "native-models.json")`.
-The manifest must contain `format: "bees-native-torchscript-v1"`,
+The manifest must contain `format: "bees-native-model-v1"`,
 `abi_version: 26`, the *exact* `policy_signature` from
-`bees_sim::policy::POLICY_SIGNATURE`, and
-`models: [{"slot":0, "path":"policy.pt", "device":"cpu"}]`
-(adjust real model paths/device/slots). The loaded TorchScript model must
-implement `forward(observation[N,7743], allowed_mask[N,15])` returning
-`(float32[N,16], integer[N,6])` with the original trained action
-sampling/learned weights; no wrapper is invented from dimensions alone.
+`bees_sim::policy::POLICY_SIGNATURE`, and a `models` array. A
+TorchScript slot uses
+`{"slot":0, "backend":"torchscript", "path":"policy.pt", "device":"cpu"}`.
+The loaded model must implement
+`forward(observation[N,7743], allowed_mask[N,15])` returning
+`(float32[N,16], integer[N,6])`, with the original trained action
+sampling/masking and authentic weights.
+
+Existing exported ONNX policies can instead use an explicit slot mapping,
+for example
+`{"slot":1, "backend":"onnx", "path":"policy.onnx",
+"providers":["CPUExecutionProvider"],
+"inputs":{"observations":"obs_0", "allowed_mask":"action_masks"},
+"outputs":{"continuous":"continuous_actions", "discrete":"discrete_actions"}}`.
+Names must match the actual exported model; if the model instead emits
+one already-decoded 22-column action tensor, use `"outputs":{"combined":"actual_name"}`.
+An exported ONNX policy needing additional recurrent/memory inputs or
+unsupported output layouts is rejected rather than supplied fabricated
+values. The model's own inference graph must honor the 15-column
+allowed-action mask. The worker verifies masks again before returning.
+
 Both processes must use matching artifacts. Diagnostics go to stderr;
 stdout is exclusively binary protocol.
 
-**Boundary:** Existing ML-Agents checkpoints have NOT been exported to
-this exact scripted interface here. This backend is not yet an operating
+**Boundary:** Existing ML-Agents checkpoints have NOT been
+verified/exported into a matching model interface here. This backend is not yet an operating
 replacement for the original training system. Native PPO still requires
 the genuine stochastic-action log probabilities, value estimates,
 centralized group critic and completed rollout delivery. Inference
