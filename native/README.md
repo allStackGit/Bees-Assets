@@ -48,6 +48,11 @@ The single JSON configuration file requires:
   A switch without remaining episodes, one that overruns the next
   threshold, or a run ending before a requested switch fails explicitly
   rather than reporting invalid mixed-policy benchmark outcomes.
+  Each successful switch emits a `policy_segment` with the previous
+  checkpoint's standalone evaluation; `run_final.active_policy_segment`
+  covers the final model generation. These are differences of counters
+  acknowledged by the durable notification sink, not estimates based
+  on unfinished or partially stepped episodes.
   Each target manifest must have verified artifacts and the same
   model slot IDs. Failed changes abort the unfinished run.
 - `levels`: a nonempty array of `{scene, world_id, level_id, seed,
