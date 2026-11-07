@@ -6,7 +6,12 @@ From the Bees project root, with Node installed and an existing RL build:
 node Assets/Training/bees_experiments.js
 ```
 
-Open **http://127.0.0.1:7148** on the same machine. Keep the process running while unattended; it is not yet installed as a boot-time service. The interface is intentionally bound to loopback and is not accessible directly from remote workers. For scripted, local experiment administration, `node Assets/Training/experiment_hub_cli.js get manager/state` reads the coordinator and `post manager/<action> --data request.json` calls allow-listed JSON controls using the same dashboard request shapes and explicit confirmations. Native Hub jobs use `get state` / `post jobs/start` without the `manager/` prefix. The CLI cannot install or restart the coordinator service.
+Open **http://127.0.0.1:7148** on the same machine. Keep the process running while unattended; it is not yet installed as a boot-time service. The interface is intentionally bound to loopback and is not accessible directly from remote workers. For scripted, local experiment administration, `node Assets/Training/experiment_hub_cli.js get manager/state` reads the coordinator and `post manager/<action> --data request.json` calls allow-listed JSON controls using the same dashboard request shapes and explicit confirmations. Native Hub jobs use `get state` / `post jobs/start` without the `manager/` prefix. The CLI cannot install or restart the coordinator service. Linux users
+can generate and opt into a native user-systemd coordinator/agent service
+using `node Assets/Training/experiment_hub_systemd.js coordinator` or
+`agent --env-file /absolute/private/file`; review the output and pass
+`--install` explicitly. The installed unit is not enabled or started
+automatically. Never place agent tokens in the repository.
 
 Queue one or more experiments. Each creates a **new run** from the current built release, using the cluster environment arguments with explicitly entered `--rl-*` overrides. Specify a learner step budget, maximum wall time, and no-progress timeout. Step budgets use the existing published learner summaries, so stopping can overshoot by the summary interval and graceful-stop latency. Press **Run queue** to start. The manager requires the existing Bees operator to confirm its full graceful stop (including worker finalization) before starting the next run; disabling training alone is insufficient. **Stop safely** disarms the queue and requests coordinated stop of the active experiment.
 
