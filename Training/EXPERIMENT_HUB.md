@@ -1311,8 +1311,11 @@ silently substitute for the final model, even if the latest checkpoint
 is otherwise resumable. If no matching final-policy evaluation exists,
 the candidate is ineligible until that evidence exists; the Hub never
 assumes a final training checkpoint is the evaluated checkpoint.
-The scheduled evaluator currently targets running jobs. It cannot fill
-a missing final-policy receipt after a job exits.
+The scheduled evaluator also targets verified final checkpoints with
+released capacity and missing receipts. It uses the recorded model hash
+and retains the result for ranking without changing the job's terminal
+state. A deferred selection allows up to 24 hours after the last
+candidate releases capacity for these receipts to arrive.
 All prospective candidates must use the same approved continuation
 environment/profile fingerprint. The native continuation remains on
 its original machine with the original artifact lineage.

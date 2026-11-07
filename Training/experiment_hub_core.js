@@ -268,6 +268,38 @@ function retainEvaluationCohorts(job,receipts) {
     if(changed)job.evaluation_candidates=cohorts;
     return changed;
 }
+function missingFinalEvaluationRules(job) {
+    if(!job.capacity_released_at||!checkpointContinuationComplete(job)||
+        !independentSequenceComplete(job)||!SHA256.test(job.checkpoint_model_sha256||''))return [];
+    const cohort=job.evaluation_candidates?.find(row=>row.checkpoint_sha256===job.checkpoint_model_sha256);
+    return evaluationRules(job.evaluation_stop).filter(rule=>{
+        const receipt=cohort?.receipts?.[rule.suite_id];
+        return !receipt?.suite_sha256||receipt.trials<rule.min_trials;
+    });
+}
+function retainFinalEvaluations(job,report) {
+    const rules=missingFinalEvaluationRules(job);
+    if(!rules.length||report.checkpoint_model_sha256!==job.checkpoint_model_sha256)return false;
+    const raw=job.evaluation_stop.all_of?report.evaluations:report.evaluation?[report.evaluation]:[];
+    if(!Array.isArray(raw)||raw.length>8)return false;
+    const definitions={...job.evaluation_suite_definitions};
+    const receipts=[];
+    for(const rule of rules) {
+        const matching=raw.filter(receipt=>receipt?.suite_id===rule.suite_id);
+        if(matching.length!==1)continue;
+        try {
+            const receipt=evaluationEvidence(matching[0],rule,job.dispatch_id);
+            if(receipt.checkpoint_sha256!==job.checkpoint_model_sha256||!receipt.suite_sha256||
+                receipt.trials<rule.min_trials||
+                (definitions[rule.suite_id]&&definitions[rule.suite_id]!==receipt.suite_sha256))continue;
+            definitions[rule.suite_id]=receipt.suite_sha256;
+            receipts.push(receipt);
+        }catch { /* Keep other valid suites eligible for comparison. */ }
+    }
+    if(!receipts.length)return false;
+    job.evaluation_suite_definitions=definitions;
+    return retainEvaluationCohorts(job,receipts);
+}
 // Only compare policies that have actually been evaluated and remain the
 // exact bytes used for native checkpoint continuation. Training charts and
 // a checkpoint-ready flag alone cannot select a winning model.
@@ -293,10 +325,10 @@ function comparableCandidate(job) {
     }else {
         const cohort=(job.evaluation_candidates||[])
             .find(c=>c.checkpoint_sha256===sha);
-        receipts=[job.evaluation_stop_evidence?.checkpoint_sha256===sha
+        receipts=[cohort?.receipts?.[policy.suite_id]||(job.evaluation_stop_evidence?.checkpoint_sha256===sha
             ?job.evaluation_stop_evidence
             :job.last_evaluation?.checkpoint_sha256===sha
-                ?job.last_evaluation:cohort?.receipts?.[policy.suite_id]];
+                ?job.last_evaluation:null)];
     }
     if(receipts.length!==rules.length)
         throw Error('Candidate evaluations do not cover the frozen suite set.');
@@ -1093,6 +1125,9 @@ class ExperimentHub {
                     ['finished','stopped'].includes(j.status)&&
                     j.capacity_released_at);
                 if(!bad&&!completed)continue;
+                if(!bad&&candidates.some(j=>missingFinalEvaluationRules(j).length)&&
+                    Date.now()-Math.max(...candidates.map(j=>Date.parse(j.capacity_released_at)))<86400000)
+                    continue;
                 try {
                     const decision=this.rankCandidates({
                         candidate_job_ids:plan.candidate_job_ids});
@@ -1283,13 +1318,15 @@ class ExperimentHub {
             const observed=this.executionTelemetry.get(job.id);
             const age=observedAt-Date.parse(observed?.at||'');
             return job.project_id===projectId&&job.assigned_machine_id===machineId&&
-                job.status==='running'&&
                 evaluationRules(job.evaluation_stop).some(rule=>rule.suite_id===suiteId)&&
                 UUID.test(job.dispatch_id||'')&&UUID.test(job.artifact_lineage_root_id||job.id)&&
-                observed?.dispatch_id===job.dispatch_id&&
+                (missingFinalEvaluationRules(job).length>0&&this.state.reservations.some(lease=>
+                    lease.id===job.lease_id&&lease.job_id===job.id&&lease.machine_id===machineId&&
+                    lease.status==='released'&&lease.released_at)||
+                (job.status==='running'&&observed?.dispatch_id===job.dispatch_id&&
                 observed?.agent_instance_id===report.instance_id&&
                 observed?.state==='running'&&
-                age>=0&&age<AGENT_HEARTBEAT_TTL_MS;
+                age>=0&&age<AGENT_HEARTBEAT_TTL_MS));
         }).map(job=>{
             const rule=evaluationRules(job.evaluation_stop)
                 .find(candidate=>candidate.suite_id===suiteId);
@@ -1298,6 +1335,7 @@ class ExperimentHub {
             return {job_id:job.id,dispatch_id:job.dispatch_id,
                 artifact_lineage_root_id:job.artifact_lineage_root_id||job.id,
                 ...(frozenSuite?{suite_sha256:frozenSuite}:{}),
+                ...(job.capacity_released_at?{final_checkpoint_sha256:job.checkpoint_model_sha256}:{}),
                 min_trials:rule.min_trials,
                 min_success_rate:rule.min_success_rate,
                 required_suite_ids:evaluationRules(job.evaluation_stop)
@@ -1807,15 +1845,15 @@ class ExperimentHub {
                 lease.machine_id!==machine.id||job.assigned_machine_id!==machine.id||
                 lease.project_id!==job.project_id)
                 throw Error('Native execution report does not match its job and machine.');
-            // An agent can lose the HTTP acknowledgement after the Hub has
-            // committed a terminal report and an operator has released its
-            // capacity. Accept only the identical terminal state and exact
-            // former ownership; never restore the lease or update the job.
+            // Released capacity stays released. A matching terminal Inspect
+            // may add evidence for the exact final checkpoint only.
             if(lease.status==='released'&&lease.released_at&&
                 job.capacity_released_at&&
-                ['finished','failed','stopped'].includes(job.status)&&
-                report.state===job.status)
+                ['finished','failed','stopped'].includes(job.status)) {
+                if(report.state===job.status&&supportsEvaluation(evaluationSuites,job)&&
+                    retainFinalEvaluations(job,report))changed=true;
                 continue;
+            }
             if(lease.status!=='acknowledged')
                 throw Error('Native execution report requires an acknowledged lease.');
             // Metrics cannot grant authority or change status: they are
@@ -2041,6 +2079,7 @@ class ExperimentHub {
              j.dispatch_id&&j.automation_start_session_id&&
                 !j.capacity_released_at&&
                 ['finished','stopped'].includes(j.status)||
+             j.dispatch_id&&supportsEvaluation(machine.evaluation_suites,j)&&missingFinalEvaluationRules(j).length||
              j.status==='waiting_adapter'&&
                 j.gpu_qualification?.status==='requested'));
         // A native Stop acknowledgement means the local supervisor has
@@ -2069,7 +2108,8 @@ class ExperimentHub {
         for(const job of ordered) {
             const lease=snapshot.reservations.find(l=>l.id===job.lease_id &&
                 l.job_id===job.id&&l.project_id===job.project_id&&
-                l.machine_id===machineId&&l.status==='acknowledged');
+                l.machine_id===machineId&&(l.status==='acknowledged'||
+                    (l.status==='released'&&l.released_at&&missingFinalEvaluationRules(job).length)));
             if(!lease)continue;
             const adapterInstalled=machine.installed_projects.includes(job.project_id);
             let action=actionFor(job);
@@ -2140,6 +2180,7 @@ class ExperimentHub {
                     artifact_lineage_root_id:job.artifact_lineage_root_id||job.id,
                     resources:copy(job.resources),
                     ...(job.evaluation_stop?{evaluation_stop:copy(job.evaluation_stop)}:{}),
+                    ...(lease.status==='released'?{final_checkpoint_sha256:job.checkpoint_model_sha256}:{}),
                     ...(job.expected_parent_model_sha256
                         ?{expected_parent_model_sha256:job.expected_parent_model_sha256}:{}),
                 },

@@ -50,7 +50,8 @@ class LocalExecution {
             order.lease.machine_id!==this.machineId||
             order.lease.project_id!==order.job.project_id||
             !ID.test(String(order.job.project_id||''))||order.job.project_id==='bees'||
-            order.lease.issued_by!=='experiment-hub'||order.lease.status!=='acknowledged')
+            order.lease.issued_by!=='experiment-hub'||
+            !(order.lease.status==='acknowledged'||order.action==='inspect'&&order.lease.status==='released'))
             throw Error('Rejected invalid or unauthorized local dispatch instruction.');
         const {job,lease}=order;
         if(order.action==='start'&&!this.projects.includes(job.project_id))
@@ -162,8 +163,32 @@ class LocalExecution {
         const ownsArtifacts=owned&&owned.lease_id===lease.id&&owned.project_id===job.project_id&&
             (owned.artifact_lineage_root_id||owned.job_id)===
                 (job.artifact_lineage_root_id||job.id);
+        if(ownsArtifacts&&(state==='running'&&lease.status==='acknowledged'||
+            lease.status==='released'&&['finished','stopped'].includes(state)&&job.final_checkpoint_sha256)&&job.evaluation_stop&&
+            supportsEvaluation(this.evaluationSuites,job)) {
+            const results=[];
+            for(const rule of evaluationRules(job.evaluation_stop)) {
+                try {
+                    const result=localAdapter.readEvaluation(Object.freeze({
+                        job_id:job.id,project_id:job.project_id,
+                        artifact_lineage_root_id:job.artifact_lineage_root_id||job.id,
+                        dispatch_id:order.dispatch_id,suite_id:rule.suite_id,
+                    }));
+                    if(result!=null&&(state==='running'||result.checkpoint_sha256===job.final_checkpoint_sha256))
+                        results.push(evaluationEvidence(result,rule,order.dispatch_id));
+                }catch(error) {
+                    report.evaluation_issue=(rule.suite_id+': '+
+                        String(error.message||error)).slice(0,160);
+                }
+            }
+            if(job.evaluation_stop.all_of) {
+                if(results.length)report.evaluations=results;
+            }else if(results.length) {
+                report.evaluation=results[0];
+            }
+        }
         const checkpointProject=['courier','tinybrains'].includes(job.project_id);
-        if(checkpointProject&&
+        if(checkpointProject&&(lease.status!=='released'||report.evaluation||report.evaluations)&&
             (state==='finished'||state==='stopped'&&observed.checkpoint_stop_verified===true)) {
             // A successful native exit, including natural completion, does
             // not establish that a resumable checkpoint exists. Reuse the
@@ -203,7 +228,7 @@ class LocalExecution {
                     String(error.message||error)).slice(0,220);
             }
         }
-        if(ownsArtifacts&&typeof localAdapter?.readProgress==='function'&&
+        if(lease.status!=='released'&&ownsArtifacts&&typeof localAdapter?.readProgress==='function'&&
             ['running','stop_requested','finished','failed','stopped']
                 .includes(state)) {
             try {
@@ -217,29 +242,6 @@ class LocalExecution {
                     report.progress=validateProgress(result,job.project_id);
             }catch(error) {
                 report.progress_issue=String(error.message||error).slice(0,160);
-            }
-        }
-        if(ownsArtifacts&&state==='running'&&job.evaluation_stop&&
-            supportsEvaluation(this.evaluationSuites,job)) {
-            const results=[];
-            for(const rule of evaluationRules(job.evaluation_stop)) {
-                try {
-                    const result=localAdapter.readEvaluation(Object.freeze({
-                        job_id:job.id,project_id:job.project_id,
-                        artifact_lineage_root_id:job.artifact_lineage_root_id||job.id,
-                        dispatch_id:order.dispatch_id,suite_id:rule.suite_id,
-                    }));
-                    if(result!=null)
-                        results.push(evaluationEvidence(result,rule,order.dispatch_id));
-                }catch(error) {
-                    report.evaluation_issue=(rule.suite_id+': '+
-                        String(error.message||error)).slice(0,160);
-                }
-            }
-            if(job.evaluation_stop.all_of) {
-                if(results.length)report.evaluations=results;
-            }else if(results.length) {
-                report.evaluation=results[0];
             }
         }
         return report;
