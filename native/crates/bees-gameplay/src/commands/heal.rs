@@ -264,6 +264,24 @@ impl HealRun {
         self.healing_timer = None;
     }
 
+    /// GameState.RemoveShip calls Heal.ShipBecameUnavailable before the
+    /// surviving Squad's next command timer. CombatWorld has already
+    /// released the dead ship's physical Beehive reservation; reconcile
+    /// this command's waiting/active queues and offer any freed slot to
+    /// another pending member now, not up to three seconds later.
+    pub(super) fn ship_became_unavailable(
+        &mut self, world: &mut CombatWorld,
+    ) -> Result<bool, GameCommandError> {
+        self.pending.retain(|&id| world.ship(id).is_some_and(|ship|
+            !ship.vitals.is_dead() &&
+                ship.vitals.health() < ship.vitals.max_health()
+        ));
+        self.release_unavailable(world);
+        self.assign_slots(world)?;
+        Ok(self.pending.is_empty() && self.waiting.is_empty() &&
+            self.healing.is_empty())
+    }
+
     pub(super) fn advance(
         &mut self, world: &mut CombatWorld,
         command_poll: &mut Option<ScaledTimer>, dt: f32,

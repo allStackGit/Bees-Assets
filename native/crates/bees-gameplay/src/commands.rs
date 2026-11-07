@@ -571,6 +571,37 @@ impl NativeSquadCommandDirector {
         }
     }
 
+    /// Source GameState.RemoveShip releases an unavailable Heal member's
+    /// command queue entry immediately, then offers the newly freed
+    /// Beehive slot to the next damaged member. Use the existing world
+    /// reservation table; no second healing-slot owner is introduced.
+    /// The roster emits MemberLost only while the squad still survives.
+    pub fn healing_member_lost(
+        &mut self, world: &mut CombatWorld, owner: SquadLifetime,
+    ) -> Result<Option<FinishedNativeCommand>, GameCommandError> {
+        let Some(active) = self.active.get_mut(&owner) else {
+            return Ok(None);
+        };
+        let Some(heal) = active.heal.as_mut() else {
+            return Ok(None);
+        };
+        if !heal.ship_became_unavailable(world)? {
+            return Ok(None);
+        }
+        let mut active = self.active.remove(&owner)
+            .expect("existing completed Heal command");
+        let earned_tsv = active.heal.as_ref()
+            .expect("completed Heal command").earned_tsv;
+        active.heal.as_mut().expect("completed Heal command")
+            .release_all(world);
+        self.measurements.completed += 1;
+        Ok(Some(FinishedNativeCommand {
+            owner, selection: active.selection,
+            cause: CommandFinishCause::HealingCompleted,
+            capability_command_tsv: Some(earned_tsv),
+        }))
+    }
+
     /// Source HivemindVision.RecordShipSighting only calls
     /// Scouting.FoundNewShips on the first side-wide enemy sighting,
     /// credited to its real squad (or a Beacon's MotherSquad).

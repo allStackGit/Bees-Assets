@@ -446,10 +446,19 @@ impl NativeSquadRoster {
         if !self.covers_live_roster(world) {
             return Err(SquadRosterError::UnregisteredLiveShips.into());
         }
-        // Only whole dead squads retire in-flight strategies. Surviving
-        // squads keep their lifecycle: their Level adapter may refresh or
-        // supersede orders after recomputing formation and command bans.
+        // Unity GameState.RemoveShip notifies a surviving squad's Heal
+        // command before the next 3s movement poll. The physical death
+        // already freed its slot; assign waiting members immediately and
+        // emit a finished command if none remain. All other command types
+        // retain their existing lifecycle until explicit replacement.
         for &change in changes.iter() {
+            if let SquadRosterChange::MemberLost { squad, .. } = change {
+                if let Some(command) = commands.healing_member_lost(
+                    world, squad,
+                )? {
+                    finished.push(command);
+                }
+            }
             if let SquadRosterChange::SquadRetired { .. } = change {
                 if let Some(command) = reconcile_retired_squad(
                     change, world, commands,
