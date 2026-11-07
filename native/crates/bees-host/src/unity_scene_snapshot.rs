@@ -25,6 +25,9 @@ use bees_hivemind::session::SquadLifetime;
 use bees_sim::collision::{Aabb, Pose};
 use bees_sim::combat::{CombatError, ShipVitals};
 use bees_sim::geometry::Vec2;
+use bees_sim::box_obstacle_assets::live_box_shape;
+use bees_sim::physics::{ObstacleBody, ShipShape};
+use bees_sim::map_object::CombatMapObject;
 use bees_sim::movement::ShipMotion;
 use bees_sim::simulation::WorldId;
 use bees_sim::ship_assets::ShipAssetCatalog;
@@ -48,7 +51,7 @@ use crate::policy_only_metadata::{
     PolicyOnlyMetadataError,
 };
 
-const SNAPSHOT_VERSION: u32 = 8;
+const SNAPSHOT_VERSION: u32 = 9;
 
 #[derive(Deserialize, Clone, Copy)]
 struct UnityVec2 { x: f32, y: f32 }
@@ -70,6 +73,7 @@ struct UnitySnapshot {
     max: UnityVec2,
     ships: Vec<UnityShip>,
     obstacles: Vec<UnityObstacle>,
+    map_objects: Vec<UnityMapObject>,
     squads: Vec<UnitySquad>,
 }
 
@@ -169,6 +173,26 @@ struct UnityObstacle {
     collider_vertices: Vec<UnityVec2>,
 }
 
+/// A physically present MapObject with authentic Unity collider geometry.
+#[derive(Deserialize)]
+struct UnityMapObject {
+    entity_id: i64,
+    kind: String,
+    layer: u8,
+    health: i32,
+    max_health: i32,
+    position: UnityVec2,
+    rotation_degrees: f32,
+    linear_velocity: UnityVec2,
+    angular_velocity_degrees: f32,
+    collider_kind: String,
+    collider_vertices: Vec<UnityVec2>,
+    circle_offset: UnityVec2,
+    circle_radius: f32,
+    explosion_power: i32,
+    linked_obstacle_id: i64,
+}
+
 #[derive(Debug)]
 pub enum NativeSnapshotError {
     Read { path: PathBuf, error: io::Error },
@@ -180,6 +204,7 @@ pub enum NativeSnapshotError {
     Combat(CombatError),
     UnsupportedObstacle(i64),
     InvalidObstacle(i64),
+    InvalidMapObject(i64),
     DuplicateEntity(i64),
     InvalidSquad(i64),
     DuplicateSquad(i64),
@@ -429,6 +454,7 @@ impl NativePhysicalScene {
 
         let mut entities = Vec::with_capacity(
             raw.ships.len().saturating_add(raw.obstacles.len())
+                .saturating_add(raw.map_objects.len())
         );
         let mut fleet_values = Vec::with_capacity(raw.ships.len());
         let mut turrets_by_ship = HashMap::with_capacity(raw.ships.len());
@@ -683,6 +709,100 @@ impl NativePhysicalScene {
                 _ => return Err(NativeSnapshotError::UnsupportedObstacle(obstacle.entity_id)),
             };
             entities.push(entity);
+        }
+        // MapObjects are independent Unity components, NOT Obstacle
+        // subclasses: they must retain their source entity IDs, health,
+        // current live collider and optional exact Fire Tank relationship.
+        // Initial snapshots cannot represent ongoing damage/animation.
+        for entry in raw.map_objects {
+            let id = entry.entity_id;
+            if id <= 0 || !seen.insert(id) || entry.max_health <= 0 ||
+                entry.health != entry.max_health || entry.layer >= 32 ||
+                !entry.position.into_vec().is_finite() ||
+                !entry.linear_velocity.into_vec().is_finite() ||
+                !entry.rotation_degrees.is_finite() ||
+                !entry.angular_velocity_degrees.is_finite()
+            {
+                return Err(NativeSnapshotError::InvalidMapObject(id));
+            }
+            let object = match entry.kind.as_str() {
+                "generic" if entry.explosion_power == 0 &&
+                    entry.linked_obstacle_id == 0 =>
+                {
+                    CombatMapObject::new(
+                        id, bees_sim::map_object::MapObjectKind::Generic,
+                        entry.max_health,
+                    )
+                }
+                "fire-tank" => CombatMapObject::new_fire_tank(
+                    id, entry.max_health, entry.explosion_power,
+                    (entry.linked_obstacle_id > 0)
+                        .then_some(entry.linked_obstacle_id),
+                ),
+                _ => return Err(NativeSnapshotError::InvalidMapObject(id)),
+            }.map_err(|_| NativeSnapshotError::InvalidMapObject(id))?;
+
+            let shape = match entry.collider_kind.as_str() {
+                "box" if entry.collider_vertices.len() == 4 => {
+                    let mut vertices = [Vec2::ZERO; 4];
+                    for (dst, src) in vertices.iter_mut()
+                        .zip(&entry.collider_vertices)
+                    {
+                        *dst = src.into_vec();
+                    }
+                    live_box_shape(vertices)
+                        .map_err(|_| NativeSnapshotError::InvalidMapObject(id))?
+                }
+                "polygon" if entry.collider_vertices.len() >= 3 &&
+                    entry.collider_vertices.len() <= 8192 =>
+                {
+                    let vertices: Vec<Vec2> = entry.collider_vertices
+                        .iter().map(|v| v.into_vec()).collect();
+                    if vertices.iter().any(|v| !v.is_finite()) {
+                        return Err(NativeSnapshotError::InvalidMapObject(id));
+                    }
+                    ShipShape::Polygon(Arc::from(vertices.into_boxed_slice()))
+                }
+                "circle" if entry.collider_vertices.is_empty() => {
+                    ShipShape::Circle {
+                        offset: entry.circle_offset.into_vec(),
+                        radius: entry.circle_radius,
+                    }
+                }
+                _ => return Err(NativeSnapshotError::InvalidMapObject(id)),
+            };
+            let body = ObstacleBody::new(
+                id,
+                Pose {
+                    position: entry.position.into_vec(),
+                    rotation_degrees: entry.rotation_degrees,
+                },
+                entry.layer,
+                shape,
+                entry.linear_velocity.into_vec(),
+                entry.angular_velocity_degrees,
+            ).map_err(|_| NativeSnapshotError::InvalidMapObject(id))?;
+            entities.push(NativeAuthoredEntity::MapObject { object, body });
+        }
+        // Fire Tanks may break only an actual imported static Obstacle.
+        // Never quietly point a blast at a nonexistent/other-kind entity.
+        let static_obstacle_ids: HashSet<i64> = entities.iter()
+            .filter_map(|entity| match entity {
+                NativeAuthoredEntity::BoxObstacle { entity_id, .. } |
+                NativeAuthoredEntity::PolygonObstacle { entity_id, .. } =>
+                    Some(*entity_id),
+                _ => None,
+            }).collect();
+        for entry in &entities {
+            if let NativeAuthoredEntity::MapObject { object, .. } = entry {
+                if object.fire_tank.and_then(|tank| tank.target_obstacle_id)
+                    .is_some_and(|id| !static_obstacle_ids.contains(&id))
+                {
+                    return Err(NativeSnapshotError::InvalidMapObject(
+                        object.entity_id,
+                    ));
+                }
+            }
         }
         // Unity GameState.GetId allocates Stage-wide ascending entity IDs.
         // Ships and obstacles have separate source collections; merging
