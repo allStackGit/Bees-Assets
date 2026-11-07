@@ -116,6 +116,10 @@ struct UnityPolicyEpisode {
     #[serde(default)]
     episode_number: u32,
     #[serde(default)]
+    team0_movement_disabled: Option<bool>,
+    #[serde(default)]
+    team1_movement_disabled: Option<bool>,
+    #[serde(default)]
     group_participants: Vec<UnityGroupParticipant>,
 }
 
@@ -452,6 +456,7 @@ pub struct NativeSourceGroupParticipant {
 #[derive(Debug)]
 pub struct NativeSourcePolicyGroup {
     pub episode_number: u32,
+    pub movement_disabled_by_team: [bool; 2],
     pub participants: Vec<NativeSourceGroupParticipant>,
 }
 
@@ -797,6 +802,13 @@ impl NativePhysicalScene {
                 if raw_episode.episode_number == 0 {
                     return Err(NativeSnapshotError::InvalidGroupSource);
                 }
+                let movement_disabled_by_team = match (
+                    raw_episode.team0_movement_disabled,
+                    raw_episode.team1_movement_disabled,
+                ) {
+                    (Some(team0), Some(team1)) => [team0, team1],
+                    _ => return Err(NativeSnapshotError::InvalidGroupSource),
+                };
                 let mut ids = HashSet::new();
                 let mut participants = Vec::with_capacity(
                     raw_episode.group_participants.len()
@@ -822,6 +834,7 @@ impl NativePhysicalScene {
                 if participants.is_empty() { None } else {
                     Some(NativeSourcePolicyGroup {
                         episode_number: raw_episode.episode_number,
+                        movement_disabled_by_team,
                         participants,
                     })
                 }
