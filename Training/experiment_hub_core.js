@@ -246,6 +246,57 @@ function checkpointContinuationComplete(job) {
             job.checkpoint_proof_required!==true
         :job.status==='stopped'&&job.checkpoint_stop_verified===true;
 }
+// Only compare policies that have actually been evaluated and remain the
+// exact bytes used for native checkpoint continuation. Training charts and
+// a checkpoint-ready flag alone cannot select a winning model.
+function comparableCandidate(job) {
+    if(!job||!['courier','tinybrains'].includes(job.project_id)||
+        !['finished','stopped'].includes(job.status)||
+        !checkpointContinuationComplete(job)||
+        !independentSequenceComplete(job)||
+        !SHA256.test(String(job.checkpoint_model_sha256||'')))
+        throw Error('Candidate needs a verified, completed native checkpoint and model fingerprint.');
+    const policy=evaluationPolicy(job.evaluation_stop);
+    if(!policy)throw Error('Candidate lacks a frozen independent evaluation policy.');
+    const rules=evaluationRules(policy);
+    const sha=job.checkpoint_model_sha256;
+    let receipts;
+    if(policy.all_of) {
+        const proved=job.evaluation_stop_evidence?.all_of;
+        const cohort=(job.evaluation_candidates||[])
+            .find(c=>c.checkpoint_sha256===sha);
+        receipts=Array.isArray(proved)&&
+            proved.every(r=>r?.checkpoint_sha256===sha)
+            ?proved:rules.map(rule=>cohort?.receipts?.[rule.suite_id]);
+    }else {
+        receipts=[job.evaluation_stop_evidence?.checkpoint_sha256===sha
+            ?job.evaluation_stop_evidence:job.last_evaluation];
+    }
+    if(receipts.length!==rules.length)
+        throw Error('Candidate evaluations do not cover the frozen suite set.');
+    const evidence=rules.map((rule,index)=>{
+        const receipt=evaluationEvidence(receipts[index],rule,job.dispatch_id);
+        if(receipt.checkpoint_sha256!==sha||
+            !SHA256.test(String(receipt.suite_sha256||''))||
+            receipt.trials<rule.min_trials||
+            job.evaluation_suite_definitions?.[rule.suite_id]&&
+                job.evaluation_suite_definitions[rule.suite_id]!==receipt.suite_sha256)
+            throw Error('Candidate evaluation differs from its resumable checkpoint or frozen suite.');
+        return receipt;
+    });
+    const suites=evidence.map(r=>({
+        suite_id:r.suite_id,suite_sha256:r.suite_sha256,
+        successes:r.successes,trials:r.trials,
+    }));
+    const score=evidence.reduce((n,r)=>n+r.successes/r.trials,0)/evidence.length;
+    return {job_id:job.id,project_id:job.project_id,
+        checkpoint_sha256:sha,suites,score,
+        policy_signature:JSON.stringify(policy),
+        comparison_signature:JSON.stringify(suites.map(r=>[
+            r.suite_id,r.suite_sha256,r.trials])),
+    };
+}
+
 // Shared by planning, capacity claims, automation and native Start.
 function predecessorBlock(snapshot,job) {
     if(job.continuation_of_job_id&&job.after_job_id)
@@ -2348,6 +2399,67 @@ class ExperimentHub {
         this.commit(next);
         return {jobs,executable:false,
             note:'Independent jobs frozen together; native Start needs explicit authorization or a qualified armed automation session.'};
+    }
+    // Rank independent completed candidates only on identical frozen
+    // benchmark definitions and trial counts. Never use training metrics.
+    rankCandidates(value) {
+        const ids=value?.candidate_job_ids;
+        if(!Array.isArray(ids)||ids.length<2||ids.length>16||
+            ids.some(id=>typeof id!=='string'||!UUID.test(id))||
+            new Set(ids).size!==ids.length)
+            throw Error('Select 2–16 distinct candidate job IDs.');
+        const jobs=ids.map(id=>this.state.jobs.find(job=>job.id===id));
+        if(jobs.some(job=>!job))throw Error('Candidate job is missing.');
+        const roots=jobs.map(job=>job.artifact_lineage_root_id||job.id);
+        if(new Set(roots).size!==roots.length)
+            throw Error('Compare independent checkpoint lineages, not repeated stages from one model.');
+        const compared=jobs.map(job=>{
+            const lease=this.state.reservations.find(l=>l.id===job.lease_id&&
+                l.job_id===job.id&&l.machine_id===job.assigned_machine_id&&
+                l.project_id===job.project_id&&l.issued_by==='experiment-hub'&&
+                l.status==='released'&&l.released_at);
+            if(!lease||!job.capacity_released_at)
+                throw Error('Every candidate must have released its verified native capacity.');
+            return comparableCandidate(job);
+        });
+        const first=compared[0];
+        if(compared.some(c=>c.project_id!==first.project_id||
+            c.policy_signature!==first.policy_signature||
+            c.comparison_signature!==first.comparison_signature))
+            throw Error('Candidate benchmarks must have identical suites, fingerprints, thresholds and trial counts.');
+        const ranked=compared.sort((a,b)=>b.score-a.score||
+            a.job_id.localeCompare(b.job_id)).map(({policy_signature,comparison_signature,...item})=>item);
+        return {project_id:first.project_id,
+            ranking_rule:'equal-weight mean success rate across matching independent suites',
+            winner_job_id:ranked[0].job_id,ranked};
+    }
+    // Choose a trained candidate, but start nothing. The chosen model is
+    // cryptographically pinned again at native launch on the original host.
+    queueBestCandidate(value) {
+        if(!object(value)||value.confirm_queue!==true||
+            !UUID.test(String(value.expected_winner_job_id||'')))
+            throw Error('Confirm the exact expected winner before queuing continuation.');
+        const decision=this.rankCandidates(value);
+        if(decision.winner_job_id!==value.expected_winner_job_id)
+            throw Error('Candidate results changed; review the ranking before promotion.');
+        const next=copy(this.state);
+        const parent=next.jobs.find(j=>j.id===decision.winner_job_id);
+        const job=this.queueIn(next,{
+            configuration_id:value.configuration_id,
+            expected_revision:value.expected_revision,
+            resources:value.resources,
+            continuation_of_job_id:parent.id,
+        });
+        job.expected_parent_model_sha256=parent.checkpoint_model_sha256;
+        job.candidate_selection={
+            candidate_job_ids:value.candidate_job_ids.slice(),
+            winner_job_id:parent.id,
+            checkpoint_sha256:parent.checkpoint_model_sha256,
+            score:decision.ranked[0].score,
+            selected_at:now(),
+        };
+        this.commit(next);
+        return {job:copy(job),selection:decision};
     }
     // One durable write for the full linear checkpoint-continuation
     // pipeline: either all stages have validated lineage, or none do.
