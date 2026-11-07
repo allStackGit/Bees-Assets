@@ -597,7 +597,14 @@ impl NativePhysicalScene {
                 route: NativePolicyRoute {
                     team_id: binding.team_id, model_slot,
                 },
-                controller: input.controller,
+                // Team policies change across self-play episodes. Read the
+                // current binding, not the immutable first-episode source
+                // controller's movement flag, so observations and physical
+                // policy commands agree after every team permutation.
+                controller: ControlledShipPerception {
+                    movement_disabled_for_team: binding.movement_disabled,
+                    ..input.controller
+                },
                 capability: input.capability,
                 parent_carrier_id: input.parent_carrier_id,
                 own_weapons: input.own_weapons,
