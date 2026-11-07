@@ -36,7 +36,19 @@ internal static class NativePhysicalSceneExporter
         public bool mobile, cannot_change_orders, user_controlled;
         public bool has_target_coordinates, is_rl_policy_controlled, is_moving;
         public int movement_direction;
+        public float longest_side, max_weapon_range, firepower;
+        public bool is_bomber, is_carrier_ship, has_communication;
+        public Vector4 communication;
+        public List<SourceObservedWeapon> observed_weapons =
+            new List<SourceObservedWeapon>();
         public List<SourceTurret> turrets = new List<SourceTurret>();
+    }
+
+    [Serializable]
+    private sealed class SourceObservedWeapon
+    {
+        public int slot, weapon_type;
+        public float range, power, rate_of_fire;
     }
 
     [Serializable]
@@ -77,7 +89,7 @@ internal static class NativePhysicalSceneExporter
     [Serializable]
     private sealed class PhysicalScene
     {
-        public int schema_version = 3;
+        public int schema_version = 4;
         public string level_name;
         public float fixed_dt_seconds;
         public Vector2 min, max;
@@ -122,6 +134,8 @@ internal static class NativePhysicalSceneExporter
                     (ship == null ? "<null>" : ship.name));
             }
             var fleet = ship.FleetShip;
+            bool hasCommunication = RlOneVsOneAgent.TryReadCommunication(
+                ship, out Vector4 communication);
             snapshot.ships.Add(new SourceShip {
                 entity_id = ship.Id,
                 ship_type = (int)ship.ShipType,
@@ -150,6 +164,14 @@ internal static class NativePhysicalSceneExporter
                 is_rl_policy_controlled = ship.IsRlPolicyControlled,
                 is_moving = ship.IsMoving,
                 movement_direction = ship.RlMovementDirection,
+                longest_side = ship.LongestSide,
+                max_weapon_range = ship.MaxRange,
+                firepower = ship.Firepower,
+                is_bomber = ship.IsBomber,
+                is_carrier_ship = ship.IsCarrierShip,
+                has_communication = hasCommunication,
+                communication = communication,
+                observed_weapons = ExportObservedWeapons(ship),
                 turrets = ExportTurrets(ship)
             });
         }
@@ -276,6 +298,28 @@ internal static class NativePhysicalSceneExporter
             new UTF8Encoding(false));
         AssetDatabase.Refresh();
         Debug.Log("Exported native physical Level source: " + path);
+    }
+
+    private static List<SourceObservedWeapon> ExportObservedWeapons(Ship ship)
+    {
+        var entries = new List<SourceObservedWeapon>();
+        if (ship.Weapons == null) return entries;
+        // RlCombatPerception.AddEntityWeaponSlots consumes exactly the
+        // first five actual Weapon list slots without compacting gaps.
+        int count = Math.Min(5, ship.Weapons.Count);
+        for (int slot = 0; slot < count; slot++)
+        {
+            Weapon weapon = ship.Weapons[slot];
+            if (weapon == null) continue;
+            entries.Add(new SourceObservedWeapon {
+                slot = slot,
+                weapon_type = (int)weapon.Type,
+                range = weapon.Range,
+                power = weapon.Power,
+                rate_of_fire = weapon.RateOfFire
+            });
+        }
+        return entries;
     }
 
     private static List<SourceTurret> ExportTurrets(Ship ship)

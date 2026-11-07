@@ -1386,6 +1386,13 @@ internal sealed class RlOneVsOneAgent : Agent
         }
     }
 
+    // Export the same private channel used by AddCommunicationObservations.
+    internal static bool TryReadCommunication(Ship ship, out Vector4 value)
+    {
+        value = Vector4.zero;
+        return ship != null && ShipCommunications.TryGetValue(ship, out value);
+    }
+
     internal static void AddCommunicationObservations(VectorSensor sensor, Ship ally)
     {
         if (ally != null && ShipCommunications.TryGetValue(ally, out Vector4 communication))

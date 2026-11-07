@@ -19,6 +19,7 @@ use std::path::{Path, PathBuf};
 
 use bees_sim::asteroid_spawn::FullAsteroidPrototype;
 use bees_sim::combat_world::{NativeFirePattern, NativeTurretSpec};
+use bees_sim::perception_entities::ObservedWeapon;
 use bees_sim::control::PolicyFrame;
 use bees_hivemind::session::SquadLifetime;
 use bees_sim::collision::{Aabb, Pose};
@@ -47,10 +48,13 @@ use crate::policy_only_metadata::{
     PolicyOnlyMetadataError,
 };
 
-const SNAPSHOT_VERSION: u32 = 3;
+const SNAPSHOT_VERSION: u32 = 4;
 
 #[derive(Deserialize, Clone, Copy)]
 struct UnityVec2 { x: f32, y: f32 }
+
+#[derive(Deserialize, Clone, Copy)]
+struct UnityVec4 { x: f32, y: f32, z: f32, w: f32 }
 
 impl UnityVec2 {
     fn into_vec(self) -> Vec2 { Vec2::new(self.x, self.y) }
@@ -96,8 +100,25 @@ struct UnityShip {
     is_rl_policy_controlled: bool,
     is_moving: bool,
     movement_direction: u16,
+    longest_side: f32,
+    max_weapon_range: f32,
+    firepower: f32,
+    is_bomber: bool,
+    is_carrier_ship: bool,
+    has_communication: bool,
+    communication: UnityVec4,
+    observed_weapons: Vec<UnityObservedWeapon>,
     // Required in v2, exported from the actual Unity Weapon/Piece instances.
     turrets: Vec<UnityTurret>,
+}
+
+#[derive(Deserialize)]
+struct UnityObservedWeapon {
+    slot: usize,
+    weapon_type: u8,
+    range: f32,
+    power: f32,
+    rate_of_fire: f32,
 }
 
 #[derive(Deserialize)]
@@ -176,6 +197,8 @@ pub struct NativePhysicalScene {
     // Real authored physical mounts retained even for non-policy ships.
     // A Level must bind its own policy/route; the snapshot never invents one.
     pub turrets_by_ship: HashMap<i64, Vec<NativeAuthoredTurret>>,
+    /// Exact source ship, weapon and private communication metadata.
+    pub authored_ship_perceptions: HashMap<i64, AuthoredShipPerception>,
     /// A physical Unity controller was active when captured. The caller
     /// must supply corresponding real NativeAuthoredPolicy for these IDs;
     /// this snapshot never fabricates a policy frame or decision period.
@@ -200,7 +223,6 @@ pub struct NativePolicyOnlyLevelSetup<A> {
     pub groups: Option<NativeAuthoredGroups>,
     pub navigation: NavigationRuntime,
     pub ship_catalog: Arc<ShipAssetCatalog>,
-    pub authored_ship_perceptions: Vec<(i64, AuthoredShipPerception)>,
     pub policy_agents: Vec<AuthoredPolicyAgent>,
     pub sides: Vec<AuthoredPolicySide>,
     pub allocate_minion: A,
@@ -260,7 +282,7 @@ impl NativePhysicalScene {
             setup.navigation,
             self.fleet,
             setup.ship_catalog,
-            setup.authored_ship_perceptions,
+            self.authored_ship_perceptions,
             setup.policy_agents,
             setup.sides,
         ).map_err(NativePolicyOnlyLevelError::Metadata)?;
@@ -356,6 +378,7 @@ impl NativePhysicalScene {
         );
         let mut fleet_values = Vec::with_capacity(raw.ships.len());
         let mut turrets_by_ship = HashMap::with_capacity(raw.ships.len());
+        let mut authored_ship_perceptions = HashMap::with_capacity(raw.ships.len());
         let mut active_policy_ship_ids = Vec::new();
         let mut seen = HashSet::with_capacity(entities.capacity());
         for ship in raw.ships {
@@ -401,6 +424,39 @@ impl NativePhysicalScene {
             motion.is_policy_controlled = ship.is_rl_policy_controlled;
             motion.is_moving = ship.is_moving;
             motion.movement_direction = ship.movement_direction;
+
+            let mut observed_weapons = [None; 5];
+            for weapon in ship.observed_weapons {
+                if weapon.slot >= observed_weapons.len() ||
+                    observed_weapons[weapon.slot].is_some() {
+                    return Err(NativeSnapshotError::InvalidTurret {
+                        ship_id: ship.entity_id, slot: weapon.slot,
+                    });
+                }
+                observed_weapons[weapon.slot] = Some(ObservedWeapon {
+                    weapon_type: weapon.weapon_type,
+                    range: weapon.range,
+                    power: weapon.power,
+                    rate_of_fire: weapon.rate_of_fire,
+                });
+            }
+            let comm = ship.communication;
+            let metadata = AuthoredShipPerception {
+                longest_side: ship.longest_side,
+                max_weapon_range: ship.max_weapon_range,
+                firepower: ship.firepower,
+                is_bomber: ship.is_bomber,
+                is_carrier_ship: ship.is_carrier_ship,
+                minerals_mined_this_level: ship.mined_cargo,
+                observed_weapons,
+                allied_communication: ship.has_communication.then_some([
+                    comm.x, comm.y, comm.z, comm.w,
+                ]),
+            };
+            if !metadata.valid() {
+                return Err(NativeSnapshotError::InvalidShip(ship.entity_id));
+            }
+            authored_ship_perceptions.insert(ship.entity_id, metadata);
 
             let mut authored_turrets = Vec::with_capacity(ship.turrets.len());
             let mut occupied = [false; 5];
@@ -578,6 +634,7 @@ impl NativePhysicalScene {
             entities,
             fleet,
             turrets_by_ship,
+            authored_ship_perceptions,
             active_policy_ship_ids,
             source_squads,
         })
