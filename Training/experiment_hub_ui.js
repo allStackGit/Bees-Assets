@@ -159,6 +159,22 @@ function sequenceRowsForJobs(jobs) {
         });
 }
 
+// Older live services and unreleased claims remain operable even when
+// the registry contains far more historical jobs than a table can show.
+function hubVisibleJobs(jobs,limit) {
+    const priority=job=>{
+        if(['running','start_requested','launch_requested','stop_requested',
+            'failed','unverified'].includes(job.status))return 3;
+        if(['finished','stopped'].includes(job.status)&&
+            job.lease_id&&!job.capacity_released_at)return 2;
+        if(job.status==='waiting_adapter'&&job.lease_id)return 1;
+        return 0;
+    };
+    return jobs.map((job,index)=>({job,index,priority:priority(job)}))
+        .sort((a,b)=>b.priority-a.priority||b.index-a.index)
+        .slice(0,limit).map(item=>item.job);
+}
+
 function approvedTinyBrainsProfiles(machines) {
     const profiles=new Map();
     for(const machine of machines) {
@@ -1039,7 +1055,7 @@ document.addEventListener('DOMContentLoaded', () => {
             (automation.waiting_reason?' · '+automation.waiting_reason:'')+
             (automation.last_error?' · REQUIRES REVIEW: '+automation.last_error:''));
         $('hub-job-rows').replaceChildren();
-        for(const j of records.slice(-50).reverse()) {
+        for(const j of hubVisibleJobs(records,50)) {
             const tr=document.createElement('tr');
             cell(tr,j.configuration_name||j.configuration_id);
             cell(tr,j.configuration_revision);
@@ -1315,7 +1331,7 @@ document.addEventListener('DOMContentLoaded', () => {
             ' start/stop operations pending · '+uncertain+' requiring inspection · '+
             cancelled+' cancelled. Remote status is heartbeat-based.');
         $('hub-monitor-rows').replaceChildren();
-        for(const j of records.slice(-30).reverse()) {
+        for(const j of hubVisibleJobs(records,30)) {
             const tr=document.createElement('tr');
             const live=j.live_execution;
             const progress=live?.progress||j.final_progress;
