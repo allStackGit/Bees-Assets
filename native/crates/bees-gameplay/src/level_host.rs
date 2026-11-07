@@ -400,6 +400,14 @@ pub struct NativeRuntimeStatus {
     pub pending_hivemind_requests: usize,
     pub pending_store_commands: usize,
     pub pending_store_reconciliations: usize,
+    /// Current episode's ordinary asteroid pool, shared between game and RL.
+    /// These are gauges/cumulative episode counts, NOT global lifetime rates.
+    pub full_asteroids_active: usize,
+    pub full_asteroid_profiles_cached: usize,
+    pub full_asteroid_profiles_created: u64,
+    pub full_asteroid_profiles_reused: u64,
+    pub full_asteroid_destination_draws: u64,
+    pub full_asteroid_destination_exhaustions: u64,
 }
 
 /// Summary of one explicit bounded native rollout window, using the
@@ -792,6 +800,12 @@ impl NativeLevelBatchDriver {
             pending_store_commands: connection.pending_store_count(),
             pending_store_reconciliations:
                 connection.pending_reconciliation_count(),
+            full_asteroids_active: 0,
+            full_asteroid_profiles_cached: 0,
+            full_asteroid_profiles_created: 0,
+            full_asteroid_profiles_reused: 0,
+            full_asteroid_destination_draws: 0,
+            full_asteroid_destination_exhaustions: 0,
         };
         for (index, slot) in self.worlds.iter().enumerate() {
             let world = simulation.world(index)
@@ -817,6 +831,14 @@ impl NativeLevelBatchDriver {
                 status.running_worlds += 1;
             }
             status.living_ships += world.state.combat.total_living_ships();
+            let asteroids = world.state.combat.full_asteroid_pool_measurements();
+            status.full_asteroids_active += asteroids.active;
+            status.full_asteroid_profiles_cached += asteroids.inactive;
+            status.full_asteroid_profiles_created += asteroids.created_profiles;
+            status.full_asteroid_profiles_reused += asteroids.reused_profiles;
+            status.full_asteroid_destination_draws += asteroids.total_destination_draws;
+            status.full_asteroid_destination_exhaustions +=
+                asteroids.exhausted_destination_searches;
             status.active_commands += events.active_command_count();
             status.queued_notifications +=
                 events.pending_notifications().len();

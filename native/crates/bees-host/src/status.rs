@@ -27,6 +27,14 @@ pub struct NativeHostGauges {
     pub hivemind_requests_pending: usize,
     pub store_commands_pending: usize,
     pub store_reconciliations_pending: usize,
+    /// Per-episode game-owned asteroid setup/pooling, sampled without scanning
+    /// physical objects or retaining a history of spawn events.
+    pub full_asteroids_active: usize,
+    pub full_asteroid_profiles_cached: usize,
+    pub full_asteroid_profiles_created: u64,
+    pub full_asteroid_profiles_reused: u64,
+    pub full_asteroid_destination_draws: u64,
+    pub full_asteroid_destination_exhaustions: u64,
 }
 
 impl From<&NativeRuntimeStatus> for NativeHostGauges {
@@ -44,6 +52,13 @@ impl From<&NativeRuntimeStatus> for NativeHostGauges {
             hivemind_requests_pending: value.pending_hivemind_requests,
             store_commands_pending: value.pending_store_commands,
             store_reconciliations_pending: value.pending_store_reconciliations,
+            full_asteroids_active: value.full_asteroids_active,
+            full_asteroid_profiles_cached: value.full_asteroid_profiles_cached,
+            full_asteroid_profiles_created: value.full_asteroid_profiles_created,
+            full_asteroid_profiles_reused: value.full_asteroid_profiles_reused,
+            full_asteroid_destination_draws: value.full_asteroid_destination_draws,
+            full_asteroid_destination_exhaustions:
+                value.full_asteroid_destination_exhaustions,
         }
     }
 }
