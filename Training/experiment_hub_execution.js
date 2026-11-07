@@ -8,7 +8,7 @@ const {LinuxSupervisor}=require('./experiment_hub_linux_supervisor');
 const {WindowsSupervisor}=require('./experiment_hub_windows_supervisor');
 const {inspectHost}=require('./experiment_hub_host');
 const {validateProgress}=require('./experiment_hub_progress');
-const {evaluationEvidence,suiteIds,supportsEvaluation}=
+const {evaluationEvidence,evaluationRules,suiteIds,supportsEvaluation}=
     require('./experiment_hub_evaluation');
 const ID=/^[a-z][a-z0-9_-]{0,47}$/;
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -203,16 +203,25 @@ class LocalExecution {
         }
         if(ownsArtifacts&&state==='running'&&job.evaluation_stop&&
             supportsEvaluation(this.evaluationSuites,job)) {
-            try {
-                const result=localAdapter.readEvaluation(Object.freeze({
-                    job_id:job.id,project_id:job.project_id,
-                    artifact_lineage_root_id:job.artifact_lineage_root_id||job.id,
-                    dispatch_id:order.dispatch_id,suite_id:job.evaluation_stop.suite_id,
-                }));
-                if(result!=null)
-                    report.evaluation=evaluationEvidence(result,job.evaluation_stop,order.dispatch_id);
-            }catch(error) {
-                report.evaluation_issue=String(error.message||error).slice(0,160);
+            const results=[];
+            for(const rule of evaluationRules(job.evaluation_stop)) {
+                try {
+                    const result=localAdapter.readEvaluation(Object.freeze({
+                        job_id:job.id,project_id:job.project_id,
+                        artifact_lineage_root_id:job.artifact_lineage_root_id||job.id,
+                        dispatch_id:order.dispatch_id,suite_id:rule.suite_id,
+                    }));
+                    if(result!=null)
+                        results.push(evaluationEvidence(result,rule,order.dispatch_id));
+                }catch(error) {
+                    report.evaluation_issue=(rule.suite_id+': '+
+                        String(error.message||error)).slice(0,160);
+                }
+            }
+            if(job.evaluation_stop.all_of) {
+                if(results.length)report.evaluations=results;
+            }else if(results.length) {
+                report.evaluation=results[0];
             }
         }
         return report;
