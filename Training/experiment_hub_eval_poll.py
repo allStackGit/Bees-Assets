@@ -146,6 +146,9 @@ def poll_checkpoint(args, project, suite, receipt_suite, find_checkpoint, evalua
                 # A one-suite worker cannot satisfy a checkpoint-coherent
                 # multi-suite gate. Such jobs need one coordinated batch.
                 if set(job.get("required_suite_ids", [suite_id])) != {suite_id}:
+                    print(f"{project} evaluation target {dispatch} needs one "
+                          "coordinated --suite batch for all required suites.",
+                          file=sys.stderr)
                     continue
                 if not UUID.fullmatch(dispatch) or receipt_suite["trials"] < job["min_trials"]:
                     continue
@@ -275,6 +278,9 @@ def poll_batch(args, project, suites, find_checkpoint, evaluate_checkpoint):
                     for job in per_suite) or
                 len({job["job_id"] for job in per_suite}) != 1 or
                 len({job["artifact_lineage_root_id"] for job in per_suite}) != 1):
+                print(f"{project} batch target {dispatch} needs the complete "
+                      "frozen suite set for one job and artifact lineage.",
+                      file=sys.stderr)
                 continue
             live[dispatch] = per_suite
 
