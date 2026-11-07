@@ -92,7 +92,7 @@ def passed_receipt(path: Path, dispatch: str, suite: dict, job: dict, expected_d
         return False
 
 
-def flush_receipt(args, suite: dict, pending: dict) -> None:
+def flush_receipt(args, suite: dict, pending: dict, expected_digest: str) -> None:
     receipt = pending["receipt"]
     dispatch = receipt["dispatch_id"]
     job = pending["target"]
@@ -101,6 +101,7 @@ def flush_receipt(args, suite: dict, pending: dict) -> None:
         or receipt["suite_id"] != suite["suite_id"]
         or job["dispatch_id"] != dispatch or not UUID.fullmatch(job["job_id"])
         or receipt["trials"] != suite["trials"]
+        or receipt.get("suite_sha256") != expected_digest
         or (job.get("suite_sha256") and receipt.get("suite_sha256") != job["suite_sha256"])
     ):
         raise ValueError("invalid pending evaluation receipt identity")
@@ -109,7 +110,7 @@ def flush_receipt(args, suite: dict, pending: dict) -> None:
     # worker and Hub verify independently. Do not discard completed work
     # because a heartbeat expires during a long independent evaluation.
     destination = args.receipt_root / f"{dispatch}.{suite['suite_id']}.json"
-    if not passed_receipt(destination, dispatch, suite, job, receipt["suite_sha256"]):
+    if not passed_receipt(destination, dispatch, suite, job, expected_digest):
         print(publish(args.receipt_root, receipt))
 
 
@@ -126,7 +127,7 @@ def poll_checkpoint(args, project, suite, receipt_suite, find_checkpoint, evalua
         except FileNotFoundError:
             prior = {"suite_sha256": digest, "dispatches": {}}
         if (pending := prior.get("pending_receipt")) is not None:
-            flush_receipt(args, receipt_suite, pending)
+            flush_receipt(args, receipt_suite, pending, digest)
             save_cursor(state, {"suite_sha256": digest, "dispatches": prior["dispatches"]})
             return
         live = targets(args.port, args.machine, suite_id, project)
@@ -179,7 +180,7 @@ def poll_checkpoint(args, project, suite, receipt_suite, find_checkpoint, evalua
                 "checkpoint_sha256": checkpoint_digest, "trials": receipt_suite["trials"], "successes": successes,
             }}
             save_cursor(state, {**saved, "pending_receipt": pending})
-            flush_receipt(args, receipt_suite, pending)
+            flush_receipt(args, receipt_suite, pending, digest)
             save_cursor(state, saved)
             return
         if saved != prior:
