@@ -2514,22 +2514,31 @@ class ExperimentHub {
     // dependencies do not imply checkpoint inheritance, machine affinity,
     // shared experiments, or evaluation success.
     queueSequence(value) {
+        return this.queueIndependentJobs(value,true);
+    }
+    queueTrials(value) {
+        if(!object(value)||Object.keys(value).some(key=>!['confirm_queue','stages'].includes(key)))
+            throw Error('Independent trials accept saved stages and queue confirmation only.');
+        return this.queueIndependentJobs(value,false);
+    }
+    queueIndependentJobs(value,ordered) {
         if(!object(value)||value.confirm_queue!==true||
             !Array.isArray(value.stages)||value.stages.length<2||
             value.stages.length>16||
-            (value.after_job_id!=null&&!UUID.test(String(value.after_job_id))))
-            throw Error('Explicitly confirm 2–16 independent sequential jobs.');
+            (value.after_job_id!=null&&(!ordered||!UUID.test(String(value.after_job_id)))))
+            throw Error(ordered?'Explicitly confirm 2–16 independent sequential jobs.':
+                'Explicitly confirm 2–16 independent trials without a predecessor.');
         const next=copy(this.state),jobs=[];
         let predecessor=value.after_job_id??null;
         for(const stage of value.stages) {
             if(!object(stage)||Object.keys(stage).some(key=>
                 !['configuration_id','expected_revision','resources'].includes(key)))
-                throw Error('Each sequential job must select a saved configuration and resources.');
+                throw Error('Each job must select a saved configuration and resources.');
             const job=this.queueIn(next,{
                 ...stage,...(predecessor?{after_job_id:predecessor}:{})
             });
             jobs.push(copy(job));
-            predecessor=job.id;
+            if(ordered)predecessor=job.id;
         }
         this.commit(next);
         return {jobs,executable:false,

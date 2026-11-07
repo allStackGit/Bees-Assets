@@ -140,6 +140,13 @@ revision, resource request or predecessor is invalid. Later stages
 inherit the original machine and checkpoint lineage. The Train tab
 provides a visual pipeline builder.
 
+For a seed study or parameter sweep, save one configuration per variant
+and choose **Independent trials (no dependency)** in Train. The API is
+`POST /api/hub/trials` with `{"confirm_queue":true,"stages":[...]}`.
+All 2–16 saved revisions and resource requests are frozen atomically.
+Every job starts with its own artifact lineage and is independently
+eligible for capacity. Queueing issues no claim or Start authorization.
+
 For **independent experiments**, including mixed approved non-Bees
 projects, the same Train editor offers
 `POST /api/hub/sequences` with
