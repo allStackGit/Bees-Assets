@@ -13,6 +13,7 @@ use std::num::NonZeroU32;
 use bees_hivemind::session::SquadLifetime;
 use bees_sim::combat_world::{CombatEvent, CombatWorld, CombatWorldError};
 use bees_sim::geometry::Vec2;
+use bees_sim::ship_assets::ShipAssetCatalog;
 use bees_sim::navigation_runtime::NavigationRuntime;
 use bees_sim::physics::CollisionMatrix;
 use bees_sim::policy::Decision;
@@ -30,7 +31,7 @@ use crate::level_events::{
     NativeLevelEventError, NativeLevelEventProcessor,
 };
 use crate::squads::{NativeSquadEntry, NativeSquadRoster, SquadRosterError};
-use crate::squad_geometry::live_squad_bounds;
+use crate::squad_geometry::live_squad_bounds_from_catalog;
 
 /// The native game Level's authoritative FleetShip metadata. This is NOT
 /// computed from collider size or estimated from training observations.
@@ -144,18 +145,17 @@ pub trait NativeLevelCommandContext {
         Err(GameCommandError::MissingCombatSnapshot)
     }
 
-    /// Authored Unity Ship.GetSize, including sprites that are wider or
-    /// narrower than their collision hulls. The native Level retains
-    /// membership in its one NativeSquadRoster; supplying sizes does not
-    /// create a second ship or squad registry. Fail closed if absent.
-    fn authored_ship_sprite_size(&self, _ship_id: i64) -> Option<Vec2> {
+    /// Share the same immutable ship catalog used to spawn native
+    /// collision bodies; it also contains Unity's complete sprite-size
+    /// table. The Level never needs a duplicate ship-ID -> size registry.
+    /// A Level without authentic assets must fail closed for Scouting.
+    fn ship_asset_catalog(&self) -> Option<&ShipAssetCatalog> {
         None
     }
 
-    /// Unity Squad.GetPosition computed on demand for Scouting's
-    /// destination timer. The default uses live physical positions and
-    /// authoritative roster membership with the original sprite sizes.
-    /// Rendered Levels may override with their actual Squad.GetPosition.
+    /// Unity Squad.GetPosition on demand for Scouting's movement timer.
+    /// The native roster supplies current member IDs, CombatWorld supplies
+    /// positions and the real Unity ship catalog supplies sprite extents.
     fn scouting_command_center(
         &self, world: &CombatWorld, owner: SquadLifetime,
         squad: &NativeSquadEntry,
@@ -163,9 +163,10 @@ pub trait NativeLevelCommandContext {
         if squad.owner != owner {
             return Err(GameCommandError::InvalidSquad);
         }
-        live_squad_bounds(world, squad,
-            |id| self.authored_ship_sprite_size(id),
-        ).map(|geometry| geometry.center)
+        let catalog = self.ship_asset_catalog()
+            .ok_or(GameCommandError::MissingScoutingContext)?;
+        live_squad_bounds_from_catalog(world, squad, catalog)
+            .map(|geometry| geometry.center)
             .map_err(GameCommandError::SquadGeometry)
     }
 
