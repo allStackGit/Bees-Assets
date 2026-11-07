@@ -1279,6 +1279,11 @@ with a JSON array instead of the single-suite fields. The coordinator freezes
 `{"all_of":[{"suite_id":"short","min_trials":100,"min_success_rate":0.8},
 {"suite_id":"long","min_trials":100,"min_success_rate":0.7}]}`
 with **2–8 distinct suite IDs** and optional `suite_sha256` per rule.
+A provided hash pins the suite from the start. Without an explicit pin,
+the Hub freezes each suite's fingerprint from its first authenticated
+evaluation receipt; later changes under that suite ID block progression
+and require a new experiment. Multi-suite receipts must contain their
+suite fingerprints; old single-suite behavior remains compatible.
 The worker must advertise all required suites. For an all-of gate, run
 **one coordinated scheduled evaluator with a repeated `--suite` argument**
 for every required frozen suite; do not separately schedule single-suite
