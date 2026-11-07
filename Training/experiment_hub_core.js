@@ -769,26 +769,27 @@ class ExperimentHub {
                     !job.automation_start_session_id||job.capacity_released_at)
                     continue;
                 // A prior automated launch remains owned by its original
-                // supervisor. Only a freshly inspected running dispatch may
-                // be re-adopted for terminal capacity release; never retry
-                // an old Start, Stop, or an ambiguous terminal report.
+                // supervisor. Only a freshly inspected running or terminal
+                // dispatch may be re-adopted for capacity release; never
+                // retry an old Start, Stop, or an ambiguous report.
                 const lease=leases.get(job.lease_id);
                 const observed=this.executionTelemetry.get(job.id);
                 const age=observedAt-Date.parse(observed?.at||'');
-                if(job.status!=='running'||job.stop_requested_at||
+                if(!['running','finished','stopped'].includes(job.status)||
+                    (job.status==='running'&&job.stop_requested_at)||
                     !UUID.test(String(job.dispatch_id||''))||
                     !lease||lease.issued_by!=='experiment-hub'||
                     lease.job_id!==job.id||
                     lease.project_id!==job.project_id||
                     lease.machine_id!==job.assigned_machine_id||
                     lease.status!=='acknowledged'||lease.receipt_fresh!==true||
-                    observed?.state!=='running'||
+                    observed?.state!==job.status||
                     observed.dispatch_id!==job.dispatch_id||
                     observed.agent_instance_id!==
                         agentInstances[job.assigned_machine_id]||
                     !(age>=0&&age<AGENT_HEARTBEAT_TTL_MS))
                     throw Error('Prior automated job '+job.id+
-                        ' is not a freshly verified running dispatch. Resolve its Start, Stop, or capacity release before adoption.');
+                        ' is not a freshly verified native running or terminal dispatch. Resolve its Start, Stop, or capacity release before adoption.');
                 adopted.push(job.id);
             }
         }
@@ -810,7 +811,7 @@ class ExperimentHub {
         };
         if(adopted.length)
             this.automation.last_action+=' Re-adopted '+adopted.length+
-                ' freshly inspected running native job(s) for terminal release.';
+                ' freshly inspected native job(s) for terminal capacity release.';
         return this.automationStatus();
     }
     assertAutomationContinuity(observedAt) {
