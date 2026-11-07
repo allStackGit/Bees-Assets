@@ -574,6 +574,42 @@ impl NativeLevelEventProcessor {
         &mut self, side: i32, kind: DiscoveryKind,
         entity_id: i64, authored_value: i32,
     ) -> Result<bool, NativeLevelEventError> {
+        self.record_verified_discovery_at_tick(
+            self.next_tick.saturating_sub(1),
+            side, kind, entity_id, authored_value,
+        )
+    }
+
+    /// A collider sighting occurring DURING a fixed physics tick receives
+    /// that actual tick, not the previous completed tick. The immutable
+    /// first-sighting fact is already validated by CombatWorld's single
+    /// discovery cache and is recorded here exactly once for reward and
+    /// potential Scouting command completion.
+    pub fn record_verified_vision_sighting(
+        &mut self, tick: u64, side: i32, kind: DiscoveryKind,
+        entity_id: i64, authored_value: i32,
+        reward_squad: Option<SquadLifetime>,
+    ) -> Result<(), NativeLevelEventError> {
+        if tick != self.next_tick && tick != self.next_tick.saturating_sub(1) {
+            return Err(NativeLevelEventError::MissingOrRepeatedTick {
+                expected: self.next_tick, got: tick,
+            });
+        }
+        let first = self.record_verified_discovery_at_tick(
+            tick, side, kind, entity_id, authored_value,
+        )?;
+        if first && kind == DiscoveryKind::EnemyShip {
+            if let Some(squad) = reward_squad {
+                self.commands.record_first_ship_sighting(squad, side);
+            }
+        }
+        Ok(())
+    }
+
+    fn record_verified_discovery_at_tick(
+        &mut self, tick: u64, side: i32, kind: DiscoveryKind,
+        entity_id: i64, authored_value: i32,
+    ) -> Result<bool, NativeLevelEventError> {
         if self.is_failed() || self.completed() {
             return Err(NativeLevelEventError::FailedLevel);
         }
@@ -590,7 +626,7 @@ impl NativeLevelEventProcessor {
                 return Err(NativeLevelEventError::Rewards(error));
             }
         };
-        self.queue_immediate_emission(emission)?;
+        self.queue_immediate_emission_at_tick(emission, tick)?;
         Ok(first)
     }
 
@@ -664,6 +700,14 @@ impl NativeLevelEventProcessor {
     fn queue_immediate_emission(
         &mut self, emission: Option<RewardEmission>,
     ) -> Result<(), NativeLevelEventError> {
+        self.queue_immediate_emission_at_tick(
+            emission, self.next_tick.saturating_sub(1),
+        )
+    }
+
+    fn queue_immediate_emission_at_tick(
+        &mut self, emission: Option<RewardEmission>, tick: u64,
+    ) -> Result<(), NativeLevelEventError> {
         let group_event = if let (Some(event), Some(group)) = (
             emission, self.group_delivery.as_mut(),
         ) {
@@ -686,7 +730,7 @@ impl NativeLevelEventProcessor {
         };
         if let Some(kind) = notification {
             self.pending_notifications.push(NativeLevelNotification {
-                tick: self.next_tick.saturating_sub(1),
+                tick,
                 kind,
             });
             Self::update_output_peak(
