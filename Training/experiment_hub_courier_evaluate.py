@@ -10,14 +10,15 @@ import tempfile
 from pathlib import Path
 
 from experiment_hub_eval_io import SHA256, SUITE_ID, UUID, publish, read_bounded, suite_digest
+from experiment_hub_evaluation_runtime import pinned_runtime
 
 
 def read_suite(file):
     suite = json.loads(read_bounded(file, 8192))
-    if not isinstance(suite, dict) or set(suite) != {
+    if not isinstance(suite, dict) or set(suite) - {"runtime_sha256"} != {
         "suite_id", "config_sha256", "seed", "trials", "horizon",
     }:
-        raise ValueError("Expected suite_id, config_sha256, seed, trials, and horizon.")
+        raise ValueError("Expected suite_id, config_sha256, seed, trials, horizon, and optional runtime_sha256.")
     if (
         not isinstance(suite["suite_id"], str) or not SUITE_ID.fullmatch(suite["suite_id"])
         or not isinstance(suite["config_sha256"], str) or not SHA256.fullmatch(suite["config_sha256"])
@@ -25,12 +26,19 @@ def read_suite(file):
         or suite["seed"] in (981723, 172981)  # Courier's built-in reporting scenarios.
         or type(suite["trials"]) is not int or not 1 <= suite["trials"] <= 128
         or type(suite["horizon"]) is not int or not 1 <= suite["horizon"] <= 16384
+        or ("runtime_sha256" in suite and (not isinstance(suite["runtime_sha256"], str)
+            or not SHA256.fullmatch(suite["runtime_sha256"])))
     ):
         raise ValueError("Invalid Courier evaluation suite.")
     return suite
 
 
 def evaluate(project, checkpoint, digest, config_file, suite, work):
+    with pinned_runtime("courier", suite, project):
+        return _evaluate(project, checkpoint, digest, config_file, suite, work)
+
+
+def _evaluate(project, checkpoint, digest, config_file, suite, work):
     config = read_bounded(config_file, 256 * 1024)
     if hashlib.sha256(config).hexdigest() != suite["config_sha256"]:
         raise ValueError("Courier environment did not match the suite SHA-256.")

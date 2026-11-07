@@ -1861,6 +1861,43 @@ accept the receipt only for the exact running dispatch and suite.
 A separate host needs a trusted loopback forward and read access to the
 training artifacts.
 
+For reproducible comparisons, pin the evaluation runtime as well as the
+scenario. Run the following with the evaluator's Python environment and its
+same `TINYBRAINS_HOME` / `TINYBRAINS_REGISTRY` settings, after the cartridge
+has been installed locally:
+
+```powershell
+python -B Training/experiment_hub_evaluation_runtime.py --project tinybrains --engine-path $engine
+```
+
+Save the returned manifest alongside the suite and add its `runtime_sha256`
+to the suite JSON. The fingerprint covers the native CLI, actual cartridge
+and map bytes, Nano weights/manifest, project and baseline Python sources,
+export observations, evaluator code, Python/platform and dependency versions.
+It excludes absolute installation paths. The evaluator verifies this pin
+before loading the candidate and again after scoring; a mismatch publishes
+no receipt and leaves the checkpoint eligible for retry. The runtime pin
+is part of the suite fingerprint already frozen by the Hub, so changing
+it requires a new suite ID/experiment and cannot silently mix comparisons.
+Inspect changed manifest entries before approving a new pin. This does not
+isolate an evaluator from concurrent changes or replace an immutable deployment.
+
+Existing suites without `runtime_sha256` retain their previous behavior and
+hashes; their suite fingerprints identify the scenario only. They do not
+prove identical evaluator code, opponents or dependencies. Runtime pins
+include the OS and dependency build versions, so Windows/Linux environments
+need separately approved suites. Native Linux execution remains unqualified.
+
+Windows qualification exercised runtime-pinned batches through the native
+CPU/RAM-contained evaluator: 24 actual TinyBrains games and 16 Courier
+scenarios. Private source drift was refused without consuming the checkpoint;
+restoring the source allowed retry. Drift after another eight actual Courier
+scenarios discarded the result. Altered private Nano weights were refused,
+and identical bytes in another directory retained their fingerprint. The
+receipt reader and isolated ranking fixtures rejected different suite hashes.
+These checks qualify pin enforcement and integration, not policy strength,
+long-duration operation or the deployed service account.
+
 In an isolated Windows run, the scheduled evaluator played both seats
 against Nano from a numbered TinyBrains checkpoint. The Hub retained
 the pinned suite receipt and kept training when the result was below
@@ -1914,6 +1951,19 @@ same dispatch and pass that policy's SHA-256 and the job's
 changing the scenario definition. The success count is the number of
 trials alive at the fixed horizon. Configure the matching suite and
 thresholds in Design.
+
+Courier suites also accept `runtime_sha256`. Obtain it using the Basic
+Training Python environment:
+
+```powershell
+python -B Training/experiment_hub_evaluation_runtime.py --project courier --project-root $project
+```
+
+Save the returned manifest and copy its fingerprint into the suite before
+pinning the suite SHA-256 in Design. It identifies `courier_env.py`,
+`courier_safe_ppo.py`, evaluator code, Python/platform and dependency versions.
+Both explicit and scheduled evaluations verify it before and after scoring.
+The separate `config_sha256` continues to pin the environment JSON.
 
 For scheduled evaluation, run `experiment_hub_courier_eval_poll.py` with
 the same Python environment on a separately budgeted CPU schedule. For an
