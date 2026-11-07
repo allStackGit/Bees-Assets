@@ -156,27 +156,50 @@ pub fn spawn_fragment_motion(
     speed: i32,
 ) -> (Pose, Vec2, f32) {
     let heading = rng.next_below(360) as f32;
-    let mut destination = Vec2::ZERO;
-    for _ in 0..35 {
-        let x = random_coordinate(rng, settings.half_map_extents.x);
-        let y = random_coordinate(rng, settings.half_map_extents.y);
-        destination = Vec2::new(x, y);
-        if destination != Vec2::ZERO &&
-            destination.x > settings.map_bounds.min.x &&
-            destination.x < settings.map_bounds.max.x &&
-            destination.y > settings.map_bounds.min.y &&
-            destination.y < settings.map_bounds.max.y {
-            break;
-        }
-    }
+    let (destination, _) = random_map_destination(
+        rng, settings.map_bounds, settings.half_map_extents,
+    );
     let velocity = (destination - start).normalized_or_zero() * speed as f32;
     (Pose { position: start, rotation_degrees: heading },
         velocity, parent_angular_velocity)
 }
 
+/// Shared Unity Utilities.RandomCoordinate behavior for ordinary asteroids
+/// and their live shard children. Returns its actual draw count so the
+/// owning Level can measure exhausted/expensive placement attempts without
+/// a per-frame event log. The last draw remains authoritative after 35
+/// unsuccessful attempts, matching the Unity source.
+pub(crate) fn random_map_destination(
+    rng: &mut RandomStream,
+    bounds: Aabb,
+    half_extents: Vec2,
+) -> (Vec2, u8) {
+    let mut destination = Vec2::ZERO;
+    for attempt in 1..=35 {
+        destination = Vec2::new(
+            random_coordinate(rng, half_extents.x),
+            random_coordinate(rng, half_extents.y),
+        );
+        if destination != Vec2::ZERO &&
+            destination.x > bounds.min.x &&
+            destination.x < bounds.max.x &&
+            destination.y > bounds.min.y &&
+            destination.y < bounds.max.y {
+            return (destination, attempt);
+        }
+    }
+    (destination, 35)
+}
+
+pub(crate) fn random_unit_float(rng: &mut RandomStream) -> f32 {
+    // Same 24-bit uniform source as random_coordinate; world-local and
+    // deterministic, but intentionally not Unity's System.Random stream.
+    (rng.next_u64() >> 40) as f32 / 16_777_216.0
+}
+
 fn random_coordinate(rng: &mut RandomStream, half_extent: f32) -> f32 {
     // A 24-bit float fraction suffices for native f32 world positions.
-    let fraction = (rng.next_u64() >> 40) as f32 / 16_777_216.0;
+    let fraction = random_unit_float(rng);
     let sign = if rng.next_below(2) == 0 { -1.0 } else { 1.0 };
     fraction * half_extent * sign
 }

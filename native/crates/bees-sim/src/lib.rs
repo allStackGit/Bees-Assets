@@ -9,6 +9,7 @@
 
 pub mod asteroid_assets;
 pub mod asteroid_fragments;
+pub mod asteroid_spawn;
 pub mod bomb;
 pub mod box_obstacle_assets;
 mod collider_asset_shape;

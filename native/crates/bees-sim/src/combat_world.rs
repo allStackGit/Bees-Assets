@@ -17,6 +17,10 @@ use std::sync::Arc;
 
 use crate::collision::{Aabb, Pose};
 use crate::asteroid_assets::CollisionAsteroidCatalog;
+use crate::asteroid_spawn::{
+    FullAsteroidSpawnError, FullAsteroidMotion, FullAsteroidPrototype,
+    sample_full_asteroid_motion,
+};
 use crate::asteroid_fragments::{
     AsteroidFragmentPalette, AsteroidPieceState, FragmentPrototype,
     FragmentSpawnSettings, new_piece_prototype, new_shard_prototype,
@@ -2081,6 +2085,38 @@ impl CombatWorld {
             angular_velocity_degrees, effective_max_health,
         ).map_err(|_| CombatWorldError::InvalidObstacle)?;
         self.add_obstacle(obstacle, body)
+    }
+
+    /// Spawn a normal pooled CollisionAsteroid with authentic Stage/Level
+    /// edge placement and velocity, rather than requiring callers to pass
+    /// arbitrary training-only motion. A Level creates the prototype only
+    /// once with create_full_asteroid_prototype and retains it across
+    /// pooled acquisition; a shard uses the separate fragment pipeline.
+    ///
+    /// Scene construction calls this through its World.RandomStream so
+    /// independent arenas do not affect each other's placement or training
+    /// reproducibility. Destination draw count is returned for inexpensive
+    /// per-episode setup diagnostics.
+    pub fn spawn_full_collision_asteroid(
+        &mut self,
+        catalog: &CollisionAsteroidCatalog,
+        prototype: FullAsteroidPrototype,
+        entity_id: i64,
+        settings: FragmentSpawnSettings,
+        effective_max_health: Option<i32>,
+        random: &mut RandomStream,
+    ) -> Result<FullAsteroidMotion, CombatWorldError> {
+        if catalog.by_number(prototype.prefab_number).is_none() {
+            return Err(CombatWorldError::InvalidObstacle);
+        }
+        let motion = sample_full_asteroid_motion(settings, prototype, random)
+            .map_err(|_error: FullAsteroidSpawnError| CombatWorldError::InvalidObstacle)?;
+        self.spawn_collision_asteroid(
+            catalog, prototype.prefab_number, entity_id, motion.pose,
+            motion.velocity, motion.angular_velocity_degrees,
+            effective_max_health,
+        )?;
+        Ok(motion)
     }
 
     /// Assign the parent-destruction ID to a newly spawned shard. Both

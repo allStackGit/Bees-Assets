@@ -962,6 +962,13 @@ The portable `bees-sim` crate currently contains:
   child speed, original shot/command attribution and untargeted child
   reservation semantics. Children spawn before a valid parent impact
   finishes; map-border contacts and ordinary range expiry do not split.
+- Normal CollisionAsteroid creation and reuse now have a shared authored
+  spawn-motion path: pool-owned prefab/speed, exact source-style off-map
+  edge sampling, interior destination retry budget, and velocity/spin
+  assignment. The existing collider catalog, physics, and collision-damage
+  pipeline own the actual spawned entities; World.RandomStream owns all
+  draws, and the caller receives the placement retry count. Unity and
+  native RNG streams still differ numerically.
 - Obstacle bodies now participate in the same kinematic physics as ships
   and projectiles, with a separate, layer-filtered obstacle trigger queue.
   Ordinary projectile impacts can damage collision asteroids, terminate
