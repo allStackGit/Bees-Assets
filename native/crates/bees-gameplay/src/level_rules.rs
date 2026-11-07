@@ -14,6 +14,8 @@ use bees_hivemind::session::SquadLifetime;
 use bees_hivemind::dispatch::LocalCommandKind;
 use bees_sim::combat_world::{CombatEvent, CombatWorld, CombatWorldError};
 use bees_sim::combat_perception_bridge::CombatPerceptionError;
+use bees_sim::vision::{HiveMindObserver, VisionFirstSighting, VisionError};
+use bees_sim::rl_discovery::DiscoveryKind as RewardDiscoveryKind;
 use bees_sim::geometry::Vec2;
 use bees_sim::ship_assets::ShipAssetCatalog;
 use bees_sim::navigation_runtime::NavigationRuntime;
@@ -56,6 +58,26 @@ pub trait NativeLevelRewardMetadata {
     /// No default implementation: a Level without persisted fleet state
     /// must not silently acknowledge an action and lose mined resources.
     fn credit_mined_minerals(&mut self, ship_id: i64, amount: i32) -> Option<i32>;
+
+    /// Collect real registered/enabled HiveMindVision observers. A full
+    /// rendered Level may instead forward source OnTriggerEnter callbacks;
+    /// only Levels with an authoritative observer adapter enable the
+    /// native collider sweep. Reuse caller-owned output across steps.
+    fn collect_hivemind_observers(
+        &self, _world: &CombatWorld, output: &mut Vec<HiveMindObserver>,
+    ) -> Result<(), CombatPerceptionError> {
+        output.clear();
+        Ok(())
+    }
+
+    /// Use the real *source* discovery denominator/category for a verified
+    /// first-sighting identity. Physics never guesses health-based reward
+    /// TSV from geometry or from the current model's visible slots.
+    fn verified_discovery_reward(
+        &self, _world: &CombatWorld, _sighting: VisionFirstSighting,
+    ) -> Result<(RewardDiscoveryKind, i32), CombatPerceptionError> {
+        Err(CombatPerceptionError::InvalidAuthoredMetadata)
+    }
 
     /// After every successful canonical physics/reward tick, advance any
     /// world-owned observation memory (e.g. actual allied sight history).
@@ -386,6 +408,23 @@ pub struct NativeCommandInputMeasurements {
     pub bomber_contacts_supplied: u64,
 }
 
+#[derive(Debug)]
+pub enum NativeLevelVisionError {
+    Source(CombatPerceptionError),
+    Geometry(VisionError),
+    Reward(NativeLevelEventError),
+}
+
+impl From<CombatPerceptionError> for NativeLevelVisionError {
+    fn from(error: CombatPerceptionError) -> Self { Self::Source(error) }
+}
+impl From<VisionError> for NativeLevelVisionError {
+    fn from(error: VisionError) -> Self { Self::Geometry(error) }
+}
+impl From<NativeLevelEventError> for NativeLevelVisionError {
+    fn from(error: NativeLevelEventError) -> Self { Self::Reward(error) }
+}
+
 pub struct NativeLevelState<M, A> {
     pub combat: CombatWorld,
     pub events: NativeLevelEventProcessor,
@@ -400,6 +439,10 @@ pub struct NativeLevelState<M, A> {
     /// Reused source Level.State.Squads snapshot; no per-frame allocation.
     command_friendlies: Vec<NativeFriendlySquad>,
     command_bomber_contacts: Vec<NativeBomberContact>,
+    /// One source-validated observer roster and its exact new sightings
+    /// per tick. Neither is a second learned cache or a model-side view.
+    hivemind_observers: Vec<HiveMindObserver>,
+    first_sightings: Vec<VisionFirstSighting>,
     /// Rare source-order survivor-formation updates after ship deaths.
     /// Both buffers are reused; quiet frames do no formation work.
     formation_changed_squads: Vec<SquadLifetime>,
@@ -441,6 +484,8 @@ impl<M, A> NativeLevelState<M, A> {
             decisions: NativeDecisionCadence::new(period),
             command_friendlies: Vec::new(),
             command_bomber_contacts: Vec::new(),
+            hivemind_observers: Vec::new(),
+            first_sightings: Vec::new(),
             formation_changed_squads: Vec::new(),
             survivor_offsets: Vec::new(),
             command_input_measurements: NativeCommandInputMeasurements::default(),
@@ -451,6 +496,40 @@ impl<M, A> NativeLevelState<M, A> {
 }
 
 impl<M: NativeLevelRewardMetadata, A> NativeLevelState<M, A> {
+    /// The sole physical sighting -> faction discovery -> reward path for
+    /// worlds whose Level metadata provides real HiveMind observers.
+    /// At startup tick=0; during a fixed step this is its completed tick
+    /// BEFORE episode termination. Both cases preserve source ordering,
+    /// and duplicate observers never award second discovery reward.
+    pub fn refresh_vision_and_rewards(
+        &mut self, tick: u64,
+    ) -> Result<(), NativeLevelVisionError> {
+        self.hivemind_observers.clear();
+        self.first_sightings.clear();
+        self.metadata.collect_hivemind_observers(
+            &self.combat, &mut self.hivemind_observers,
+        )?;
+        self.combat.refresh_hivemind_vision_with_sightings(
+            &self.hivemind_observers, false, &mut self.first_sightings,
+        )?;
+        for &sighting in &self.first_sightings {
+            let (kind, value) = self.metadata.verified_discovery_reward(
+                &self.combat, sighting,
+            )?;
+            let credited_ship = self.combat
+                .scout_beacon_parent(sighting.observer_id)
+                .unwrap_or(sighting.observer_id);
+            let reward_squad = self.events.roster()
+                .owning_squad(credited_ship);
+            self.events.record_verified_vision_sighting(
+                tick, sighting.side, kind, sighting.target_id,
+                value, reward_squad,
+            )?;
+        }
+        Ok(())
+    }
+
+
     /// Reconcile one combat-event phase to authoritative FleetShip state.
     /// Multiple legitimate mining actions can credit the same ship before
     /// the Level callback, so compare against its final physical cargo
@@ -506,6 +585,7 @@ pub enum NativeLevelStepError {
     MissingMiningFleetValue(i64),
     InvalidMiningFleetValue(i64),
     Perception(CombatPerceptionError),
+    Vision(NativeLevelVisionError),
 }
 
 impl From<CombatPerceptionError> for NativeLevelStepError {
@@ -604,6 +684,8 @@ where
                 )?;
             }
         }
+        state.refresh_vision_and_rewards(completed_tick)
+            .map_err(NativeLevelStepError::Vision)?;
         state.credit_mining_since(0)?;
         let metadata = &state.metadata;
         let allocate = &mut state.allocate_minion;

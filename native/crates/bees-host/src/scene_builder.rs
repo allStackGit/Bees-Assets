@@ -7,7 +7,10 @@ use std::num::NonZeroU32;
 use bees_gameplay::episode::NativeEpisodeRewardCoordinator;
 use bees_gameplay::level_events::{NativeLevelEventProcessor, NativeLevelEventError};
 use bees_gameplay::group_rewards::{NativeGroupRewardDelivery, GroupRewardError};
-use bees_gameplay::level_rules::{NativeLevelState, NativeLevelRewardMetadata, NativeLevelCommandContext};
+use bees_gameplay::level_rules::{
+    NativeLevelState, NativeLevelRewardMetadata, NativeLevelCommandContext,
+    NativeLevelVisionError,
+};
 use bees_gameplay::level_host::{NativeLevelActivationContext, NativeLevelObservationContext, NativeLevelNotificationSink};
 use bees_gameplay::inference::NativePolicyInference;
 use bees_gameplay::squads::SquadRosterError;
@@ -171,6 +174,7 @@ pub enum NativeSceneBuildError {
     MissingLivePolygonPose(i64),
     Navigation(NavigationError),
     Perception(CombatPerceptionError),
+    Vision(NativeLevelVisionError),
     Group(GroupRewardError),
     GroupConfiguration(NativeLevelEventError),
 }
@@ -367,6 +371,8 @@ impl NativeSceneAssets {
         ).map_err(NativeSceneBuildError::Navigation)?;
         // First native decision at tick zero observes initial physical
         // visibility, not an empty fabricated exploration grid.
+        world.state.refresh_vision_and_rewards(0)
+            .map_err(NativeSceneBuildError::Vision)?;
         world.state.metadata.update_observation_memory(
             &world.state.combat,
             world.state.events.normalized_episode_progress(),
