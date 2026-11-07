@@ -267,6 +267,28 @@ pub trait NativeLevelCommandContext {
     }
 
     fn navigation(&self) -> &NavigationRuntime;
+    fn navigation_mut(&mut self) -> &mut NavigationRuntime;
+
+    /// Exact Level.ActivateCollisionAsteroids, independent of asteroid count.
+    fn collision_asteroids_enabled(&self) -> bool;
+
+    /// Shared fixed-step navigation pump. Refresh actual geometry only when
+    /// work is queued, then consume lifecycle-checked results before movement.
+    /// Rebuilding static clearance here also covers destroyed/edited obstacles
+    /// without maintaining another mutable entity registry or a stale cache.
+    fn advance_navigation(&mut self, combat: &mut CombatWorld)
+        -> Result<u64, CombatWorldError>
+    {
+        if !combat.has_waiting_path_jobs() { return Ok(0); }
+        let asteroids = self.collision_asteroids_enabled();
+        let navigation = self.navigation_mut();
+        combat.refresh_world_navigation(navigation, true, asteroids)?;
+        let mut jobs = 0;
+        while combat.solve_next_world_navigation_job(navigation)?.is_some() {
+            jobs += 1;
+        }
+        Ok(jobs)
+    }
 
     /// Once the single CombatWorld exists, initialize this Level's real
     /// static navigation clearance from its actual active colliders.
@@ -460,6 +482,7 @@ pub struct NativeLevelState<M, A> {
     formation_changed_squads: Vec<SquadLifetime>,
     survivor_offsets: Vec<SquadMemberOffset>,
     command_input_measurements: NativeCommandInputMeasurements,
+    navigation_jobs_completed: u64,
     /// Reused sparse per-ship mining credit transaction. Events may contain
     /// multiple extractions for the same ship during one combat phase.
     mining_credit_totals: HashMap<i64, i32>,
@@ -467,6 +490,12 @@ pub struct NativeLevelState<M, A> {
 }
 
 impl<M, A> NativeLevelState<M, A> {
+    /// Cumulative path jobs delivered in this episode, including genuine
+    /// path-not-found completions. No histories or per-ship timers are stored.
+    pub fn navigation_jobs_completed(&self) -> u64 {
+        self.navigation_jobs_completed
+    }
+
     pub fn command_input_measurements(&self) -> NativeCommandInputMeasurements {
         self.command_input_measurements
     }
@@ -501,6 +530,7 @@ impl<M, A> NativeLevelState<M, A> {
             formation_changed_squads: Vec::new(),
             survivor_offsets: Vec::new(),
             command_input_measurements: NativeCommandInputMeasurements::default(),
+            navigation_jobs_completed: 0,
             mining_credit_totals: HashMap::new(),
             mining_credit_order: Vec::new(),
         }
@@ -668,6 +698,8 @@ where
         }) {
             return Err(NativeLevelStepError::InvalidDecisionCadence);
         }
+        state.navigation_jobs_completed +=
+            state.metadata.advance_navigation(&mut state.combat)?;
         // No independent policy/physics rules in gameplay or training:
         // both adapters invoke CombatWorld's one canonical transaction.
         let counts = state.combat.step_policy_combat_with_random(

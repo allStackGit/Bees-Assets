@@ -395,6 +395,9 @@ pub struct NativeRuntimeStatus {
     pub failed_worlds: usize,
     pub living_ships: usize,
     pub active_commands: usize,
+    /// Sum of current episodes' lifecycle-checked navigation completions.
+    /// Resets with worlds; this is not a host-lifetime rate counter.
+    pub navigation_jobs_completed: u64,
     pub queued_notifications: usize,
     pub queued_squad_retirements: usize,
     pub pending_hivemind_requests: usize,
@@ -802,6 +805,7 @@ impl NativeLevelBatchDriver {
             failed_worlds: 0,
             living_ships: 0,
             active_commands: 0,
+            navigation_jobs_completed: 0,
             queued_notifications: 0,
             queued_squad_retirements: 0,
             pending_hivemind_requests: connection.pending_request_count(),
@@ -829,6 +833,7 @@ impl NativeLevelBatchDriver {
                 });
             }
             let events = &world.state.events;
+            status.navigation_jobs_completed += world.state.navigation_jobs_completed();
             if events.was_aborted() {
                 status.aborted_worlds += 1;
             } else if world.is_failed() || events.is_failed() {

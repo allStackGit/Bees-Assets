@@ -39,6 +39,7 @@ internal static class NativePhysicalSceneExporter
         public Vector2 position, body_velocity, target_coordinates;
         public float rotation_degrees, rotation_speed;
         public float base_speed, current_speed, height;
+        public float turning_radius, half_width, half_height;
         public bool mobile, cannot_change_orders, user_controlled;
         public bool has_target_coordinates, is_rl_policy_controlled, is_moving;
         public int movement_direction;
@@ -171,11 +172,12 @@ internal static class NativePhysicalSceneExporter
     [Serializable]
     private sealed class PhysicalScene
     {
-        public int schema_version = 17;
+        public int schema_version = 18;
         public string level_name;
         public string stage_name;
         public float fixed_dt_seconds;
         public bool shots_harmless;
+        public bool activate_collision_asteroids;
         public int bee_side, human_side;
         public Vector2Int beehive_size_pixels;
         public bool has_policy_episode;
@@ -216,6 +218,7 @@ internal static class NativePhysicalSceneExporter
             fixed_dt_seconds = level.Stage.FixedDeltaTime,
             stage_name = level.Stage.gameObject.name,
             shots_harmless = level.Stage.MakeShotsHarmless,
+            activate_collision_asteroids = level.ActivateCollisionAsteroids,
             bee_side = ConfigData.Configuration.BeeSide,
             human_side = ConfigData.Configuration.HumanSide,
             beehive_size_pixels = ConfigData.ShipSizes[ConfigData.ShipTypes.Beehive],
@@ -302,6 +305,12 @@ internal static class NativePhysicalSceneExporter
                 throw new InvalidOperationException(
                     "Bound policy ship has no configured source episode TSV: " + ship.Id);
             }
+            if ((!ship.IsRlPolicyControlled || ship.IsUserControlled) &&
+                (ship.HasTargetCoordinates || ship.IsMoving))
+            {
+                throw new InvalidOperationException(
+                    "Export a fresh scene before game movement starts; active routes are not checkpoints: " + ship.Id);
+            }
             snapshot.ships.Add(new SourceShip {
                 entity_id = ship.Id,
                 ship_type = (int)ship.ShipType,
@@ -329,6 +338,9 @@ internal static class NativePhysicalSceneExporter
                 current_speed = ship.CurrentSpeed,
                 body_velocity = ship.Body.linearVelocity,
                 height = ship.GetHeight(),
+                turning_radius = ConfigData.ShipTurningRadius,
+                half_width = ship.GetHalfWidth(),
+                half_height = ship.GetHalfHeight(),
                 mobile = ship.IsMobile,
                 cannot_change_orders = ship.CannotChangeMovementOrders,
                 user_controlled = ship.IsUserControlled,

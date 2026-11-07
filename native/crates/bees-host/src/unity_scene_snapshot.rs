@@ -30,6 +30,7 @@ use bees_sim::physics::{ObstacleBody, ShipShape};
 use bees_sim::map_object::CombatMapObject;
 use bees_sim::obstacle::{CombatObstacle, ObstacleKind, ObstacleVitals};
 use bees_sim::movement::ShipMotion;
+use bees_sim::navigation_movement::GameMovementProfile;
 use bees_sim::simulation::WorldId;
 use bees_sim::ship_assets::{ShipAssetCatalog, AssetError, BEACON_TYPE};
 use bees_sim::combat_perception_bridge::{
@@ -67,7 +68,7 @@ use crate::runtime::NativeHostRuntime;
 use crate::ship_specials::{NativeAuthoredShipSpecial, NativeBeaconTemplate};
 use crate::durable_connection::DurableHiveMindConnection;
 
-const SNAPSHOT_VERSION: u32 = 17;
+const SNAPSHOT_VERSION: u32 = 18;
 
 #[derive(Deserialize, Clone, Copy)]
 struct UnityVec2 { x: f32, y: f32 }
@@ -119,6 +120,7 @@ struct UnitySnapshot {
     stage_name: String,
     fixed_dt_seconds: f32,
     shots_harmless: bool,
+    activate_collision_asteroids: bool,
     bee_side: i32,
     human_side: i32,
     beehive_size_pixels: UnitySize,
@@ -174,6 +176,9 @@ struct UnityShip {
     current_speed: f32,
     body_velocity: UnityVec2,
     height: f32,
+    turning_radius: f32,
+    half_width: f32,
+    half_height: f32,
     mobile: bool,
     cannot_change_orders: bool,
     user_controlled: bool,
@@ -431,6 +436,7 @@ pub struct NativePhysicalScene {
     pub bounds: Aabb,
     pub fixed_dt_seconds: f32,
     pub shots_harmless: bool,
+    pub activate_collision_asteroids: bool,
     pub entities: Vec<NativeAuthoredEntity>,
     source_episode: Option<NativeSourceEpisode>,
     source_navigation: NativeSourceNavigation,
@@ -752,6 +758,7 @@ impl NativePhysicalScene {
         let metadata = NativePolicyOnlyMetadata::new(
             self.bounds,
             setup.navigation,
+            self.activate_collision_asteroids,
             self.fleet,
             setup.ship_catalog,
             self.authored_ship_perceptions,
@@ -1018,6 +1025,20 @@ impl NativePhysicalScene {
             motion.is_policy_controlled = ship.is_rl_policy_controlled;
             motion.is_moving = ship.is_moving;
             motion.movement_direction = ship.movement_direction;
+            let game_movement = GameMovementProfile {
+                turning_radius: ship.turning_radius,
+                half_width: ship.half_width,
+                half_height: ship.half_height,
+            };
+            if !game_movement.valid() {
+                return Err(NativeSnapshotError::InvalidShip(ship.entity_id));
+            }
+            // This format constructs fresh worlds. A target alone cannot
+            // reconstruct a running game's waypoint/retry/command history.
+            if (!ship.is_rl_policy_controlled || ship.user_controlled) &&
+                (ship.has_target_coordinates || ship.is_moving) {
+                return Err(NativeSnapshotError::InvalidShip(ship.entity_id));
+            }
 
             let healing_zone = if ship.has_healing_zone {
                 if ship.ship_type != 2 { return Err(NativeSnapshotError::InvalidShip(ship.entity_id)); }
@@ -1257,7 +1278,7 @@ impl NativePhysicalScene {
             });
             entities.push(NativeAuthoredEntity::Ship(NativeAuthoredShip {
                 entity_id: ship.entity_id, ship_type: ship.ship_type,
-                side: ship.side, vitals, motion,
+                side: ship.side, vitals, motion, game_movement,
                 original_health: ship.original_health,
                 size_class: ship.size_class,
                 healing_zone, warp_zone, policy_capabilities,
@@ -1543,6 +1564,7 @@ impl NativePhysicalScene {
             bounds: Aabb { min, max },
             fixed_dt_seconds: raw.fixed_dt_seconds,
             shots_harmless: raw.shots_harmless,
+            activate_collision_asteroids: raw.activate_collision_asteroids,
             entities,
             source_episode,
             source_navigation,

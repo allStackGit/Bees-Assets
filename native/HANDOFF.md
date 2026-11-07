@@ -1,75 +1,73 @@
 # Unified native rewrite handoff — 2026-11-07
 
-Worktree: `B:\Bees\unified-native`, branch `rewrite/unified-native`.
-Fetched the branch before this increment: upstream remains `a31ddf669`, with
-local commits `d77f1c48b` and `54a74dc68` already applied. The separate original
-`B:\Bees\Assets` checkout and live training processes were left unchanged.
+Worktree `B:\Bees\unified-native`, branch `rewrite/unified-native`.
+Latest fetch completed successfully; upstream remains `a31ddf669`.
+Earlier local increments: `d77f1c48b` (Windows host/presentation),
+`54a74dc68` (authored collision/support), `4d7ee1da1` (specials/Beacon metadata).
+The original `B:\Bees\Assets` checkout and live training were not changed.
 
-## Implemented
+## Latest implemented increment
 
-The shared scene -> native Level path now installs all five already-ported ship
-specials, in addition to the earlier collision, mining, healing and warp setup.
-
-- Source scene schema **17** carries actual bomb/charge power, optional Striker
-  carrier identity and Scout Beacon prefab/Create/Setup inputs. Fresh-scene
-  exports reject consumed bomb, charge and Scout resource/cooldown histories.
-  New exports are required; do not upgrade an older file by inventing fields.
-- Special registration happens after all ships exist, so forward carrier
-  references work. Non-policy Fire Barge death explosions and game Scout/Striker
-  setup use the same core methods as policy ships. Barge/YellowJacket game-command
-  activation still obtains its live power from the existing command context.
-- Policy Strikers may have no Carrier, matching ordinary source Strikers. Their
-  observation parent uses the core's current carrier relation, including death
-  reassignment, instead of retaining the initial imported parent forever.
-- Scout Beacon templates are shared immutable inputs. Physical spawns install
-  real original-health/size collision profiles. The Level registers transient
-  fleet, perception and vision data before downstream consumers, and the existing
-  event pass registers the real minion Squad. Both policy-tick and later timed
-  command spawns use this lifecycle. Custom metadata without a spawn adapter fails
-  explicitly. Minions acquire no fabricated policy controller/model route.
-- Corrected the reproduced Beacon heading mismatch: source Pool/Setup restores
-  zero rotation; it does not copy the mother's rotation. A rotated-Scout check
-  failed with native heading 90 before correction and succeeds with heading 0.
-- Multi-arena policy startup/reset reuses the Stage ship catalog during source
-  parsing; it does not reparse a separate immutable hull catalog for every arena.
+- Scene schema **18** exports actual ShipTurningRadius, GetHalfWidth/GetHalfHeight
+  and Level.ActivateCollisionAsteroids. Re-export older scenes; do not fabricate
+  missing fields. Exporter/importer reject initial active game movement history:
+  target coordinates cannot reconstruct waypoint, retry or command history.
+- The shared builder installs GameShipSteering profiles for every ship, including
+  stationary members needed by squad speed/finalization preflight. Existing policy
+  ownership checks keep neural movement authoritative for policy-owned ships.
+- NativeLevelRules processes queued paths before canonical combat/movement. The
+  Level-owned reusable NavigationRuntime reads real current obstacle geometry,
+  runs existing A*, and delivers completions through existing ship/request
+  lifecycle validation. Graphics and headless execution use the same path.
+- Quiet ticks skip raster/search work. Each pending batch refreshes static and
+  enabled dynamic clearance once, covering edited/added/removed objects without
+  maintaining another obstacle registry. Large-map/batch cost remains unmeasured;
+  static geometry revision tracking and the existing bounded worker scheduler
+  are potential optimizations, preserving current ownership semantics.
+- Current-episode navigation completion totals reach NativeRuntimeStatus and JSON
+  host gauges. These reset with worlds; they are not host-lifetime rate counters.
 
 ## Executed evidence
 
-Toolchain outside the checkout: `B:\Bees\Runtime\Toolchains\rust-native`.
-Use its rustup and cargo homes; add `cargo\bin` and `w64devkit\bin` to PATH;
+Windows GNU toolchain: `B:\Bees\Runtime\Toolchains\rust-native`.
+Use its rustup/cargo homes; add cargo/bin and w64devkit/bin to PATH;
 RUSTUP_TOOLCHAIN=stable-x86_64-pc-windows-gnu,
 RUSTFLAGS=-C link-self-contained=yes. System PATH was not modified.
 
 - Workspace all-target/all-feature compilation and 106 existing simulation tests
-  passed on Windows GNU Rust. Other crates currently have no enabled tests;
-  compilation is not evidence of their runtime lifecycle behavior.
-- Six authored asset catalog checks passed.
-- Disposable explicit contract fixtures in `B:\Bees\native-capability-qualification`
-  exercise the actual schema-17 importer, builder and NativeLevelRules:
-  `specials-import.txt` executes all five specials. Carrier-backed and standalone
-  Strikers each drop a real bomb and deal delayed damage after 111 fixed ticks.
-  Fire Barge/Yellow Jacket self-death and Barge charge-start events are observed.
-  `scout-import.txt` verifies a real Beacon with negative inherited fleet ID,
-  immediate metadata/roster registration, inclusion in a complete ally perception
-  snapshot and a successful following Level step. `scout-cap.txt` verifies the
-  source side cap masks the special before a spawn. `beacon-heading-before.txt`
-  records the prior heading mismatch. These are deliberately supplied actions
-  and explicit scenarios, not trained inference or authentic Unity scene exports.
+  passed. Other crates currently have no enabled tests.
+- Headless/no-default-feature workspace compilation passed. Six asset catalogs
+  match their Unity sources. Source diff whitespace checks passed.
+- External disposable execution probe:
+  `B:\Bees\native-capability-qualification\src\bin\navigation_import.rs`, evidence
+  `navigation-import.txt`. An explicit schema-18 scene uses the actual importer,
+  builder, NativeLevelRules and CombatWorld. A real layer-19 static obstacle is
+  added AFTER initial navigation setup. An imported game-owned ship completes
+  one path job, routes around it (maximum lateral distance 27.9873), and arrives
+  within sqrt(5) of its destination after 668 fixed ticks. This is a supplied
+  contract fixture, not an authentic Unity export or trained model inference.
+- Earlier special/Beacon evidence remains in that external qualification folder.
+  Those schema-17 fixtures require new source fields before running on schema18;
+  old recorded results do not validate changed source.
 
-## Remaining / next work
+## Highest-value next work / original goal remains incomplete
 
-The original replacement goal is **not complete**. Execute the updated C#
-exporter in Unity and use an authentic schema-17 Level, Stage palette, collision
-matrix and actual v26 model in both viewed and headless modes. Confirm fresh
-special masks, Beacon visibility/reward attribution, carrier retirement and
-outbox settlement. C# export execution, live model-host operation and actual
-multi-machine behavior remain unverified. Linux execution remains unverified;
-no installed WSL distribution was found in the prior environment check.
+Connect normal player squad movement to the native window and host with current
+world/episode ownership, actual CanAcceptUserInput/IsUserControlled permissions,
+source offsets/clearances, and canonical command finalization/outbox handling.
+Source LevelInputManager.MoveSquads calls FinalizeUserCommand then Squad.Move;
+ordinary right-click movement is NOT a persistent MoveToPoint HiveMind command.
+Reuse bees-sim squad_movement. Preserve outcome reservations; cancel applicable
+pending request authority rather than manufacturing selection IDs. Inspect
+scripted queue cancellation, Guard unlink/speed restoration and survivor formation
+rebasing before claiming complete player-command integration.
 
-The tactical window still needs normal user commands and complete game/mode,
-sprite/audio/UI integration. Full Carrier/Drone spawn lifecycle and remaining
-source parity require work. A connected real optimizer/trajectory/checkpoint
-pipeline, distributed learner, evaluation and experiment orchestration are still
-unfinished. No Unity/Box2D parity, production durability or speedup claim has been
-established. Keep the same authoritative gameplay implementation throughout;
-do not train on partial or invented trajectories to conceal missing integration.
+Execute the updated C# exporter in Unity, then run authentic schema-18 scenes,
+Stage palette/collision matrix and actual v26 models in viewed/headless modes.
+C# compilation/execution, Unity/Box2D parity, live model-host operation, Linux
+execution, speedup and actual multi-machine behavior remain unverified.
+
+The full replacement still needs complete game/mode/sprite/audio/UI integration,
+Carrier/Drone lifecycle and remaining source parity, a connected real optimizer,
+trajectory/checkpoint pipeline, distributed learning, evaluation and experiment
+orchestration. Maintain one authoritative gameplay implementation throughout.

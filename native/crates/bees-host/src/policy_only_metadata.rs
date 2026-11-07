@@ -92,6 +92,7 @@ pub struct NativeSourceVision {
 pub struct NativePolicyOnlyMetadata {
     pub bounds: Aabb,
     pub navigation: NavigationRuntime,
+    pub activate_collision_asteroids: bool,
     pub fleet: NativeFleetInventory,
     pub ship_catalog: Arc<ShipAssetCatalog>,
     authored_ships: HashMap<i64, AuthoredShipPerception>,
@@ -111,6 +112,7 @@ impl NativePolicyOnlyMetadata {
     pub fn new(
         bounds: Aabb,
         navigation: NavigationRuntime,
+        activate_collision_asteroids: bool,
         fleet: NativeFleetInventory,
         ship_catalog: Arc<ShipAssetCatalog>,
         ships: impl IntoIterator<Item=(i64, AuthoredShipPerception)>,
@@ -187,7 +189,7 @@ impl NativePolicyOnlyMetadata {
             !authored_ships.contains_key(id) || !template.perception.valid()
         ) { return Err(PolicyOnlyMetadataError::InvalidSource); }
         Ok(Self {
-            bounds, navigation, fleet, ship_catalog,
+            bounds, navigation, activate_collision_asteroids, fleet, ship_catalog,
             authored_ships, effective_vision,
             source_static_discovery_values,
             explorers: Vec::new(),
@@ -363,6 +365,14 @@ impl NativeLevelCommandContext for NativePolicyOnlyMetadata {
 
     fn navigation(&self) -> &NavigationRuntime {
         &self.navigation
+    }
+
+    fn navigation_mut(&mut self) -> &mut NavigationRuntime {
+        &mut self.navigation
+    }
+
+    fn collision_asteroids_enabled(&self) -> bool {
+        self.activate_collision_asteroids
     }
 
     fn initialize_navigation_from_world(

@@ -104,7 +104,7 @@ rendering, full parity or production durability of all app-side effects.
 Do not use its partial trajectories as valid learner data. Native
 Windows/Linux execution and throughput are not yet verified.
 
-## Unity scene import (schema 17)
+## Unity scene import (schema 18)
 
 **Bees > Native > Export Selected Level Physical Scene** captures a
 source-authored initial Unity Level, not a resumable match checkpoint.
@@ -121,6 +121,15 @@ WarpCollider geometry in the owning ship's body frame. Boxes, single-path
 polygons and isotropically transformed circles use one exporter shared with
 MapObjects. Older scene exports must be re-exported; missing inputs are not
 estimated from health, hull radius or old capability-observation bits.
+
+Schema 18 also carries the actual turning radius, sprite half-extents and
+`Level.ActivateCollisionAsteroids`. The builder installs shared game movement
+profiles for all ships (including stationary squad members). Before each fixed
+step, queued navigation uses live world colliders and the Level's reusable search
+workspace; quiet steps do no raster/search work. Completions retain ship/request
+lifecycle validation. Current-episode job totals appear in host status gauges.
+Active non-policy routes are rejected: a target position alone cannot restore
+their waypoint, retry and command history. Export a fresh scene.
 
 The shared scene builder installs every ship's original-health collision
 profile and support zones, then binds real policy mining/healing/warp

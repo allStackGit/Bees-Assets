@@ -1950,7 +1950,7 @@ impl CombatWorld {
         self.navigation_requests.next()
     }
 
-    pub(crate) fn has_waiting_path_jobs(&self) -> bool {
+    pub fn has_waiting_path_jobs(&self) -> bool {
         self.navigation_requests.has_waiting_jobs()
     }
 

@@ -24,6 +24,7 @@ use bees_sim::navigation::NavigationError;
 use bees_sim::combat_perception_bridge::CombatPerceptionError;
 use bees_sim::control::PolicyFrame;
 use bees_sim::movement::ShipMotion;
+use bees_sim::navigation_movement::GameMovementProfile;
 use bees_sim::map_object::CombatMapObject;
 use bees_sim::physics::{ObstacleBody, ShipShape};
 use bees_sim::obstacle::CombatObstacle;
@@ -42,6 +43,9 @@ pub struct NativeAuthoredShip {
     pub side: i32,
     pub vitals: ShipVitals,
     pub motion: ShipMotion,
+    /// Actual source turning radius and sprite half-extents. Stationary
+    /// members also need this for shared squad speed/finalization preflight.
+    pub game_movement: GameMovementProfile,
     pub original_health: i32,
     pub size_class: f32,
     /// Actual child trigger geometry, in the same body-local frame as the hull.
@@ -299,6 +303,8 @@ impl NativeSceneAssets {
                 combat.spawn_ship(
                     asset, ship.entity_id, ship.side, ship.vitals, ship.motion,
                 ).map_err(NativeSceneBuildError::Combat)?;
+                combat.configure_ship_game_movement(ship.entity_id, ship.game_movement)
+                    .map_err(NativeSceneBuildError::Combat)?;
                 combat.configure_game_ship_original_health(
                     ship.entity_id, ship.original_health,
                 ).map_err(NativeSceneBuildError::Combat)?;
