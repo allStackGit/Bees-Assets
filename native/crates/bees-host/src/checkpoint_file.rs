@@ -31,6 +31,7 @@ pub enum CheckpointFileError {
     Io(io::Error),
     Json(serde_json::Error),
     Protocol(HiveMindProtocolError),
+    Entropy(getrandom::Error),
 }
 
 impl From<io::Error> for CheckpointFileError {

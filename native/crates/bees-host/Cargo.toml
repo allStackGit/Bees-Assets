@@ -19,3 +19,6 @@ bytemuck = "1"
 # One cross-platform blocking WSS transport; the app owns its I/O thread.
 # Rustls verifies normal certificate chains (never insecure TLS fallback).
 tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"] }
+
+# OS cryptographic entropy for the one persisted 21-bit socket identity.
+getrandom = "0.2"

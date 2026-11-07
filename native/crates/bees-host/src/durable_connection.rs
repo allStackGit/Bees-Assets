@@ -58,12 +58,27 @@ pub struct DurableHiveMindConnection {
 }
 
 impl DurableHiveMindConnection {
+    /// Create one connection identity automatically from OS cryptographic
+    /// randomness, or resume the exact original prefix and pending outcome
+    /// ledger when the checkpoint exists. Never hardcode a prefix in game
+    /// or worker launch scripts: collisions can cause request aliasing.
     pub fn open(
         checkpoint_path: impl Into<PathBuf>,
-        fresh_client_prefix: u32,
     ) -> Result<Self, CheckpointFileError> {
         let checkpoint = ConnectionCheckpointFile::new(checkpoint_path);
-        let connection = checkpoint.open_or_initialize(fresh_client_prefix)?;
+        let connection = if let Some(restored) = checkpoint.load()? {
+            restored
+        } else {
+            let mut random = [0_u8; 4];
+            getrandom::getrandom(&mut random)
+                .map_err(CheckpointFileError::Entropy)?;
+            let prefix = u32::from_le_bytes(random) &
+                ((1_u32 << bees_hivemind::protocol::REQUEST_CLIENT_PREFIX_BITS) - 1);
+            let fresh = NativeHiveMindConnection::new(prefix)
+                .map_err(CheckpointFileError::Protocol)?;
+            checkpoint.persist(&fresh)?;
+            fresh
+        };
         Ok(Self { connection, checkpoint, unavailable: false })
     }
 

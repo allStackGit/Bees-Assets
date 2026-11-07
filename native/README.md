@@ -241,6 +241,11 @@ lifetimes). Persist a checkpoint before transmitting a newly created
 request, and after acknowledging/reconciling a stored outcome; otherwise
 a process crash can cause replay or Hash reuse. The actual WebSocket and authentication remain client work.
 
+The connection checkpoint now initializes its 21-bit client request-hash
+prefix from operating-system cryptographic entropy on first creation.
+Subsequent launches restore precisely the persisted prefix and counter;
+no application or shell script must invent a shared static prefix.
+
 For production-style file-backed clients, use
 `bees-host::durable_connection::DurableHiveMindConnection`: it wraps the
 shared session and checkpoint with a fail-closed send boundary. Request
