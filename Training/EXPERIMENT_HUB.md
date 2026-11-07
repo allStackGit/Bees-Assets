@@ -638,7 +638,10 @@ independent transient systemd units with their own journals and leases.
 Services are started explicitly for the current machine session. Generated
 units have no installation target, so this setup does not enable boot or
 login startup. After a reboot, leave the Hub stopped until an operator
-starts it again. Process-failure recovery applies only to a service that
+starts it again. If upgrading a previously enabled unit, remove its existing
+boot/login links with `systemctl --user disable UNIT` (without `--now`);
+replacing unit text alone does not remove those links. Process-failure
+recovery applies only to a service that
 was already started. Expired credentials, missing private state, occupied
 ports or a failed preflight cannot be treated as confirmed training recovery:
 the Hub must reconcile exact native service and lease identities before
