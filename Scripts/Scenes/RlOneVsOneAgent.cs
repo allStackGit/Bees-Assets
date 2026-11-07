@@ -1071,7 +1071,10 @@ internal sealed class RlOneVsOneAgent : Agent
             agent == null || !agent._hasBoundShip ||
             agent._ship != ship || agent._level != ship.Level ||
             agent._boundRuntimeShipId != ship.Id ||
-            !agent.IsCurrentController() ||
+            RlPlayerDerivedActionReplay.IsScriptedSide(
+                agent._level, agent._side) ||
+            !RlOneVsOneEpisodeCoordinator.IsExistingControllerForSide(
+                agent._level, agent._side, agent._teamId) ||
             !RlPolicyCoordinateFrame.TryGetExistingQuarterTurns(
                 ship.Level, agent._teamId, out quarterTurns))
         {

@@ -345,6 +345,33 @@ internal sealed class RlOneVsOneEpisodeCoordinator : MonoBehaviour
         return 0f;
     }
 
+    /// Read-only snapshot of the CURRENT episode's assigned controller.
+    /// IsControllerForSide may create/start the coordinator and therefore
+    /// change source episode state. Export/inspection must not call it.
+    internal static bool IsExistingControllerForSide(
+        Level level, int side, int teamId)
+    {
+        if (level == null || ConfigData.Configuration == null)
+        {
+            return false;
+        }
+        RlOneVsOneEpisodeCoordinator coordinator =
+            GetCoordinator(level, false);
+        if (coordinator == null || !coordinator._episodeActive)
+        {
+            return false;
+        }
+        if (side == ConfigData.Configuration.BeeSide)
+        {
+            return teamId == coordinator._beeTeamId;
+        }
+        if (side == ConfigData.Configuration.HumanSide)
+        {
+            return teamId == coordinator._humanTeamId;
+        }
+        return false;
+    }
+
     internal static bool IsControllerForSide(Level level, int side, int teamId)
     {
         RlOneVsOneEpisodeCoordinator coordinator = GetCoordinator(level);
