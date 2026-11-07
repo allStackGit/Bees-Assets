@@ -610,7 +610,7 @@ either service itself:
 node Training/experiment_hub_systemd.js coordinator
 node Training/experiment_hub_systemd.js coordinator --install
 systemctl --user daemon-reload
-systemctl --user enable --now bees-experiment-hub.service
+systemctl --user start bees-experiment-hub.service
 systemctl --user status bees-experiment-hub.service
 
 # On the machine running the Hub agent, store the machine ID, one-time
@@ -619,7 +619,7 @@ systemctl --user status bees-experiment-hub.service
 node Training/experiment_hub_systemd.js agent --env-file /absolute/private/hub-agent.env
 node Training/experiment_hub_systemd.js agent --env-file /absolute/private/hub-agent.env --install
 systemctl --user daemon-reload
-systemctl --user enable --now bees-experiment-hub-agent.service
+systemctl --user start bees-experiment-hub-agent.service
 ```
 
 Use `--training-dir` for an installed Training checkout outside this
@@ -635,15 +635,16 @@ only the coordinator must not kill their processes. The agent uses
 `KillMode=control-group`; its native training workloads belong to
 independent transient systemd units with their own journals and leases.
 
-`enable --now` enables login-session startup. Running without a login
-also requires the host administrator to enable user lingering if permitted.
-An OS reboot, expired credentials, missing private state, occupied ports
-or a failed preflight cannot be treated as confirmed training recovery:
+Services are started explicitly for the current machine session. Generated
+units have no installation target, so this setup does not enable boot or
+login startup. After a reboot, leave the Hub stopped until an operator
+starts it again. Process-failure recovery applies only to a service that
+was already started. Expired credentials, missing private state, occupied
+ports or a failed preflight cannot be treated as confirmed training recovery:
 the Hub must reconcile exact native service and lease identities before
 restoring any previously opted-in unattended CPU scheduling. No GPU
 re-arming is authorized by this service setup. This source-only Linux
-integration is **not yet qualified on Halifax**. The Windows process
-startup path is separate.
+integration is **not yet qualified on Halifax**.
 
 The same generator can install a separately budgeted **periodic independent
 evaluator** on a trusted Linux coordinator host, without adding any native
@@ -657,7 +658,7 @@ suite in one coordinated same-checkpoint evaluation batch. The timer defaults
 to a 180-second interval after the previous invocation finishes and a
 two-hour timeout; optional `--interval` and `--timeout` are seconds.
 Inspect generated service/timer units before using `--install`, then
-explicitly enable the generated `...-evaluator.timer`. Units are
+explicitly start the generated `...-evaluator.timer` for this machine session. Units are
 exclusive-create and not automatically enabled. systemd prevents overlapping
 runs of the same one-shot service and enforces the specified CPU and RAM caps.
 The evaluator still needs its approved project dependencies and access to
@@ -666,53 +667,58 @@ expose the Hub administrator listener to ordinary remote workers. CPU
 quotas are not exclusive cores and this timer is not a substitute for
 production coexistence qualification.
 
-### Opt-in Windows logon startup
+### Opt-in Windows service recovery, with manual startup
 
-`experiment_hub_windows_task.ps1` previews a disabled current-user Task
-Scheduler definition. `-Install` registers it without enabling or starting it
-and refuses to overwrite an existing task:
+Task Scheduler launched an inert Node program successfully but did not retry
+its nonzero exit in the isolated checks. Use the Windows service launcher for
+the intended OS-owned recovery path, rather than relying on a logon task.
+The launcher has no internal restart loop and owns only its direct Node
+process. Independently detached training owners keep their existing lifecycle.
+
+Build the reviewed launcher locally, then preview its installation:
 
 ```powershell
-# Preview first, then install the disabled coordinator task.
-.\Training\experiment_hub_windows_task.ps1 -Role coordinator
-.\Training\experiment_hub_windows_task.ps1 -Role coordinator -Install
+dotnet publish .\Training\experiment_hub_windows_service\ExperimentHubWindowsService.csproj -c Release -r win-x64 --self-contained true -o C:\Hub\Service
 
-# Agent configuration belongs in a private local environment file.
-.\Training\experiment_hub_windows_task.ps1 -Role agent -EnvironmentFile C:\Private\hub-agent.env
-.\Training\experiment_hub_windows_task.ps1 -Role agent -EnvironmentFile C:\Private\hub-agent.env -Install
+.\Training\experiment_hub_windows_service.ps1 -Role coordinator -ServiceExecutable C:\Hub\Service\ExperimentHubWindowsService.exe -ConfigurationFile C:\Hub\Private\coordinator.json -StateDirectory C:\Hub\Private
 ```
 
-In Task Scheduler, show hidden tasks and review
-`Bees-ExperimentHub-coordinator` or `Bees-ExperimentHub-agent` before enabling
-it. Confirm there is a single execution owner before starting a task alongside
-an existing coordinator or agent. The task runs with the installing user's
-normal privileges, 30 seconds after that user's logon, without storing a
-password. It requires that user to remain logged on; this is not a
-before-login Windows service. It ignores overlapping triggers and has no
-runtime limit. Disabling a task prevents subsequent launches; manage an
-active job through the Hub's existing controls.
+The executable, configuration parent directory and state directory must
+already exist. Use `-NodePath` and `-TrainingDirectory` to pin installed
+absolute local paths. Agents additionally require `-EnvironmentFile`; coordinators
+can use it too. Environment files require Node 22 or newer. Their Hub settings
+replace inherited `EXPERIMENT_HUB_*` settings. No arbitrary executable or command
+comes from a queued project configuration.
 
-Use `-TrainingDirectory` and `-NodePath` for pinned absolute local paths.
-An agent requires `-EnvironmentFile`; a coordinator can use one too.
-Environment files require Node 22 or newer. Protect them with NTFS permissions
-for the intended account before installation. Their Hub settings replace
-inherited `EXPERIMENT_HUB_*` settings at launch, so interactive-session
-configuration cannot override the reviewed file. Tokens are not embedded in
-the task definition. Keep the launcher, checkout and Node installation at
-their configured paths.
+After review, an administrator may repeat the command with `-Install`.
+It creates a **disabled** LocalService service and an exclusive-create local
+configuration. It refuses to overwrite an existing service or configuration.
+Grant the chosen service account only the required read/execute access to
+the installed launcher, Node, checkout and private environment file, plus
+write access to its state and approved Hub data directories. Review account
+access before starting; installing a service does not qualify these permissions.
+Tokens are not embedded in the service command line.
 
-The definition requests three native task-start retries at one-minute
-intervals. **Application process-failure recovery remains unqualified**:
-isolated checks observed the correct nonzero exit status but did not observe
-an automatic retry after an inert Node failure. Do not rely on this task as
-a crash-recovery service. Inspect Task Scheduler's Last Run Result after a
-failure; the task does not itself capture application output.
+In Services, select **Manual** startup and start the service explicitly.
+Do not select Automatic or Automatic (Delayed Start), add a logon task, or
+enable another boot launcher. A reboot leaves the Hub stopped until an
+operator starts it again. Recovery requests three restarts, 60 seconds apart,
+then no further action; the failure counter resets after a failure-free day.
+An explicit service stop is a successful stop and requests no restart.
 
-Windows qualification exercised disabled registration/removal and an actual
-scheduled launch through Windows PowerShell 5.1, including paths containing
-spaces, an environment file, inherited-setting replacement and child exit
-status propagation. No production task was installed. Reboot/logon recovery,
-logoff behavior and production training coexistence remain unverified.
+The service writes one bounded latest-lifecycle JSON file per service in
+`-StateDirectory`, recording the observed Node identity and child exit status.
+Application output is not captured by this launcher. For local configuration
+diagnosis, `ExperimentHubWindowsService.exe --run-once C:HubPrivatecoordinator.json`
+uses the same native ownership path without installing a service or retrying.
+Confirm the existing owner is stopped before using this command.
+
+The Windows build and direct-process path have been exercised with inert
+Node workloads: suspended launch, verified ownership settings, environment
+files, failed-child status, exit-code propagation, and launcher-crash cleanup
+while preserving an independently detached child. Service Control Manager
+recovery, reboot behavior and production training coexistence require separate
+qualification. No production service is installed by development checks.
 
 ## Linux native supervisor and authenticated dispatch (CPU-only)
 
