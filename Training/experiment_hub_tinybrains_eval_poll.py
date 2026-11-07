@@ -7,7 +7,7 @@ import re
 import sys
 from pathlib import Path
 
-from experiment_hub_eval_poll import poll_checkpoint, poll_batch
+from experiment_hub_eval_poll import final_checkpoint, poll_checkpoint, poll_batch
 from experiment_hub_tinybrains_evaluate import SUITE_ID, UUID, evaluate, read_suite
 
 CHECKPOINT = re.compile(r"update-([0-9]{6,8})\.pt")
@@ -41,7 +41,10 @@ def poll(args, suites):
             raise ValueError("Unexpected TinyBrains evaluation trial count.")
         return wins
 
-    find_checkpoint = lambda job: latest_numbered_checkpoint(args.artifact_root, job)
+    def find_checkpoint(job):
+        if "final_checkpoint_sha256" in job:
+            return final_checkpoint(args.artifact_root, job, "latest.pt")
+        return latest_numbered_checkpoint(args.artifact_root, job)
     pairs = [(suite, {**suite, "trials":
                       2 * len(suite["maps"]) * len(suite["seeds"])}) for suite in suites]
     if len(pairs) == 1:

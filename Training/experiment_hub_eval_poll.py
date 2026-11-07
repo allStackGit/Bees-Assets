@@ -70,6 +70,16 @@ def save_cursor(path: Path, cursor: dict):
     os.replace(pending, path)
 
 
+def final_checkpoint(artifact_root, job, filename):
+    identity = job["job_id"]
+    if not UUID.fullmatch(identity) or not SHA256.fullmatch(job["final_checkpoint_sha256"]):
+        raise ValueError("Invalid final checkpoint identity.")
+    file = artifact_root / identity / filename
+    if file.resolve(strict=True) != file or not file.is_file():
+        raise ValueError("Final checkpoint is redirected or unavailable.")
+    return 10**16, file  # Greater than any supported running checkpoint ordinal.
+
+
 def passed_receipt(path: Path, dispatch: str, suite: dict, job: dict, expected_digest: str) -> bool:
     try:
         receipt = json.loads(read_bounded(path, 4096))
@@ -87,7 +97,8 @@ def passed_receipt(path: Path, dispatch: str, suite: dict, job: dict, expected_d
             and type(successes) is int
             and 0 <= successes <= trials
             and trials >= job["min_trials"]
-            and successes / trials >= job["min_success_rate"]
+            and (receipt["checkpoint_sha256"] == job["final_checkpoint_sha256"]
+                 if "final_checkpoint_sha256" in job else successes / trials >= job["min_success_rate"])
         )
     except (FileNotFoundError, KeyError, TypeError, ValueError):
         return False
@@ -159,11 +170,13 @@ def poll_checkpoint(args, project, suite, receipt_suite, find_checkpoint, evalua
                 if passed_receipt(receipt, dispatch, receipt_suite, job, digest):
                     continue
                 checkpoint = find_checkpoint(job)
-                if not checkpoint or checkpoint[0] <= cursor[dispatch]:
+                if not checkpoint or ("final_checkpoint_sha256" not in job and checkpoint[0] <= cursor[dispatch]):
                     continue
                 update, file = checkpoint
                 with file.open("rb") as stream:
                     checkpoint_digest = hashlib.file_digest(stream, "sha256").hexdigest()
+                if job.get("final_checkpoint_sha256", checkpoint_digest) != checkpoint_digest:
+                    raise ValueError("Final checkpoint no longer matches the Hub fingerprint.")
             except (OSError, ValueError, TypeError, KeyError) as exc:
                 print(f"{project} evaluation target {dispatch} skipped: {exc}", file=sys.stderr)
                 continue
@@ -317,7 +330,7 @@ def poll_batch(args, project, suites, find_checkpoint, evaluate_checkpoint):
                     if len(set(seen)) == 1:
                         continue
                 checkpoint = find_checkpoint(jobs[0])
-                if not checkpoint or checkpoint[0] <= cursor[dispatch]:
+                if not checkpoint or ("final_checkpoint_sha256" not in jobs[0] and checkpoint[0] <= cursor[dispatch]):
                     continue
                 update, file = checkpoint
                 if not file.is_file():
@@ -339,6 +352,9 @@ def poll_batch(args, project, suites, find_checkpoint, evaluate_checkpoint):
                     shutil.copyfile(file, frozen)
                     with frozen.open("rb") as stream:
                         checkpoint_digest = hashlib.file_digest(stream, "sha256").hexdigest()
+                    if any(job.get("final_checkpoint_sha256", checkpoint_digest) != checkpoint_digest
+                           for job in jobs):
+                        raise ValueError("Final checkpoint no longer matches the Hub fingerprint.")
                     pending = []
                     for (sid, (suite, receipt_suite)), job in zip(ordered, jobs):
                         # Dispose of large models and replays after each

@@ -9,7 +9,7 @@ import sys
 
 from experiment_hub_courier_evaluate import evaluate, read_suite
 from experiment_hub_eval_io import SUITE_ID, UUID
-from experiment_hub_eval_poll import poll_checkpoint, poll_batch
+from experiment_hub_eval_poll import final_checkpoint, poll_checkpoint, poll_batch
 
 POLICY = re.compile(r"round-([1-9][0-9]{0,14})\.zip")
 
@@ -40,7 +40,10 @@ def poll(args, suites):
             raise ValueError("Courier environment file is redirected or unavailable.")
         return evaluate(args.project_root, file, digest, config, suite, work)
 
-    find_checkpoint = lambda job: latest_policy(args.snapshot_root, job)
+    def find_checkpoint(job):
+        if "final_checkpoint_sha256" in job:
+            return final_checkpoint(args.artifact_root, job, "lineage-0.zip")
+        return latest_policy(args.snapshot_root, job)
     if len(suites) == 1:
         poll_checkpoint(args, "courier", suites[0], suites[0], find_checkpoint,
                         lambda job, file, digest, work:
