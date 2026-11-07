@@ -18,6 +18,7 @@ use std::path::{Path, PathBuf};
 use bees_sim::asteroid_spawn::FullAsteroidPrototype;
 use bees_sim::combat_world::{NativeFirePattern, NativeTurretSpec};
 use bees_sim::control::PolicyFrame;
+use bees_hivemind::session::SquadLifetime;
 use bees_sim::collision::{Aabb, Pose};
 use bees_sim::combat::{CombatError, ShipVitals};
 use bees_sim::geometry::Vec2;
@@ -28,10 +29,11 @@ use crate::fleet_inventory::{
     NativeFleetInventory, NativeFleetInventoryError, NativeFleetShipValue,
 };
 use crate::scene_builder::{
-    NativeAuthoredEntity, NativeAuthoredShip, NativeAuthoredPolicy, NativeAuthoredTurret,
+    NativeAuthoredEntity, NativeAuthoredShip, NativeAuthoredPolicy,
+    NativeAuthoredTurret, NativeAuthoredSquad,
 };
 
-const SNAPSHOT_VERSION: u32 = 2;
+const SNAPSHOT_VERSION: u32 = 3;
 
 #[derive(Deserialize, Clone, Copy)]
 struct UnityVec2 { x: f32, y: f32 }
@@ -49,6 +51,7 @@ struct UnitySnapshot {
     max: UnityVec2,
     ships: Vec<UnityShip>,
     obstacles: Vec<UnityObstacle>,
+    squads: Vec<UnitySquad>,
 }
 
 #[derive(Deserialize)]
@@ -102,6 +105,13 @@ struct UnityTurret {
 }
 
 #[derive(Deserialize)]
+struct UnitySquad {
+    item_id: i64,
+    side: i32,
+    member_ids: Vec<i64>,
+}
+
+#[derive(Deserialize)]
 struct UnityObstacle {
     kind: String,
     entity_id: i64,
@@ -129,6 +139,9 @@ pub enum NativeSnapshotError {
     UnsupportedObstacle(i64),
     InvalidObstacle(i64),
     DuplicateEntity(i64),
+    InvalidSquad(i64),
+    DuplicateSquad(i64),
+    DuplicateSquadShip(i64),
     DuplicateTurretSlot { ship_id: i64, slot: usize },
     InvalidTurret { ship_id: i64, slot: usize },
     UnknownPolicyShip(i64),
@@ -153,9 +166,42 @@ pub struct NativePhysicalScene {
     /// must supply corresponding real NativeAuthoredPolicy for these IDs;
     /// this snapshot never fabricates a policy frame or decision period.
     pub active_policy_ship_ids: Vec<i64>,
+    /// Source GameState.Squads order and exact members; no duplicate
+    /// persistent fleet or second mutable native squad registry.
+    pub source_squads: Vec<NativeSourceSquad>,
+}
+
+/// Runtime source Squad.ItemId is allocated once per Squad.Setup by the
+/// Stage-wide monotonic Pool.ItemCount, even for reused pooled wrappers.
+pub struct NativeSourceSquad {
+    pub item_id: i64,
+    pub side: i32,
+    pub members: Vec<i64>,
 }
 
 impl NativePhysicalScene {
+    /// Derive the *current* lifetime token from the source's unique ItemId,
+    /// not from a pooled GameObject pointer, reusable squad number or SavedSquad.
+    /// The caller supplies the actual distinct Level identity used by HiveMind.
+    pub fn squads_for_level(
+        &self, level_id: i64,
+    ) -> Result<Vec<NativeAuthoredSquad>, NativeSnapshotError> {
+        if level_id <= 0 {
+            return Err(NativeSnapshotError::InvalidSquad(level_id));
+        }
+        Ok(self.source_squads.iter().map(|source|
+            NativeAuthoredSquad {
+                owner: SquadLifetime {
+                    level_id, squad_id: source.item_id,
+                    lifecycle_id: source.item_id as u64,
+                },
+                side: source.side,
+                members: source.members.clone(),
+            }
+        ).collect())
+    }
+
+
     /// Bind an actual source policy controller to one imported physical ship.
     /// The caller supplies its episode frame, cease-fire and mobility flags;
     /// imported native turrets retain exactly their authored mount and shot
@@ -390,6 +436,39 @@ impl NativePhysicalScene {
         // them by exact allocated ID restores the real creation order and
         // satisfies CombatWorld's monotonically increasing entity ledger.
         entities.sort_unstable_by_key(NativeAuthoredEntity::entity_id);
+        let live_ships: HashMap<i64, i32> = entities.iter().filter_map(|entity|
+            match entity {
+                NativeAuthoredEntity::Ship(ship) =>
+                    Some((ship.entity_id, ship.side)),
+                _ => None,
+            }
+        ).collect();
+        let mut source_squads = Vec::with_capacity(raw.squads.len());
+        let mut squad_ids = HashSet::with_capacity(raw.squads.len());
+        let mut registered_ships = HashSet::with_capacity(live_ships.len());
+        for squad in raw.squads {
+            if squad.item_id <= 0 || squad.side <= 0 || squad.member_ids.is_empty() {
+                return Err(NativeSnapshotError::InvalidSquad(squad.item_id));
+            }
+            if !squad_ids.insert(squad.item_id) {
+                return Err(NativeSnapshotError::DuplicateSquad(squad.item_id));
+            }
+            for &ship_id in &squad.member_ids {
+                if live_ships.get(&ship_id) != Some(&squad.side) {
+                    return Err(NativeSnapshotError::InvalidSquad(squad.item_id));
+                }
+                if !registered_ships.insert(ship_id) {
+                    return Err(NativeSnapshotError::DuplicateSquadShip(ship_id));
+                }
+            }
+            source_squads.push(NativeSourceSquad {
+                item_id: squad.item_id, side: squad.side,
+                members: squad.member_ids,
+            });
+        }
+        if registered_ships.len() != live_ships.len() {
+            return Err(NativeSnapshotError::InvalidSquad(0));
+        }
         let fleet = NativeFleetInventory::from_source(fleet_values)
             .map_err(NativeSnapshotError::Fleet)?;
         Ok(Self {
@@ -400,6 +479,7 @@ impl NativePhysicalScene {
             fleet,
             turrets_by_ship,
             active_policy_ship_ids,
+            source_squads,
         })
     }
 }

@@ -65,13 +65,24 @@ internal static class NativePhysicalSceneExporter
     }
 
     [Serializable]
+    private sealed class SourceSquad
+    {
+        // ItemId is the runtime ID allocated by Stage.Pool.ItemCount++ at
+        // every Squad.Setup, including reuse of a pooled Squad wrapper.
+        public long item_id;
+        public int side;
+        public List<long> member_ids = new List<long>();
+    }
+
+    [Serializable]
     private sealed class PhysicalScene
     {
-        public int schema_version = 2;
+        public int schema_version = 3;
         public string level_name;
         public float fixed_dt_seconds;
         public Vector2 min, max;
         public List<SourceShip> ships = new List<SourceShip>();
+        public List<SourceSquad> squads = new List<SourceSquad>();
         public List<SourceObstacle> obstacles = new List<SourceObstacle>();
     }
 
@@ -146,6 +157,45 @@ internal static class NativePhysicalSceneExporter
         {
             throw new InvalidOperationException(
                 "Native scene export requires at least one living source ship.");
+        }
+
+        // Source GameState.Squads defines membership and source order; the
+        // physics snapshot alone cannot recover command or group ownership.
+        // Reject partial formation, double ownership and unbound living
+        // ships rather than constructing a plausible but false native game.
+        var liveIds = new HashSet<long>();
+        foreach (var ship in snapshot.ships) liveIds.Add(ship.entity_id);
+        var registered = new HashSet<long>();
+        foreach (Squad squad in level.State.Squads)
+        {
+            if (squad == null || squad.IsDead) continue;
+            if (squad.ItemId <= 0 || squad.Side <= 0)
+                throw new InvalidOperationException(
+                    "Cannot export a Squad without an allocated source identity.");
+            var members = squad.GetShips();
+            if (members == null || members.Count == 0)
+                throw new InvalidOperationException(
+                    "Cannot export an empty living Squad " + squad.ItemId);
+            var sourceSquad = new SourceSquad {
+                item_id = squad.ItemId, side = squad.Side
+            };
+            foreach (Ship ship in members)
+            {
+                if (ship == null || ship.IsDead || ship.Side != squad.Side ||
+                    !liveIds.Contains(ship.Id) || !registered.Add(ship.Id))
+                {
+                    throw new InvalidOperationException(
+                        "Invalid/duplicate live Squad membership in " +
+                        squad.ItemId);
+                }
+                sourceSquad.member_ids.Add(ship.Id);
+            }
+            snapshot.squads.Add(sourceSquad);
+        }
+        if (registered.Count != liveIds.Count)
+        {
+            throw new InvalidOperationException(
+                "Not all living ships belong to exactly one source Squad.");
         }
 
         foreach (Obstacle obstacle in level.State.Obstacles)
