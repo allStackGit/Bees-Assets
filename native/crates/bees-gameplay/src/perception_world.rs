@@ -13,11 +13,13 @@ use bees_sim::combat_perception_bridge::{
     observed_ship_from_world, self_source_from_world,
     capability_source_from_world, collect_learned_map_objects,
     collect_learned_collision_asteroids,
+    collect_learned_static_navigation_bounds,
 };
 use bees_sim::combat_world::{CombatWorld, CombatWorldError};
 use bees_sim::episode_ship_identity::EpisodeShipIdentities;
 use bees_sim::full_perception::PolicyPerceptionSnapshot;
-use bees_sim::perception::{CapabilitySource, EXPLORATION_LEN, NAV_LEN};
+use bees_sim::perception::{CapabilitySource, EXPLORATION_LEN};
+use bees_sim::local_navigation_observation::LocalNavigationOccupancy;
 use bees_sim::perception_entities::ObservedShip;
 use bees_sim::perception_environment::{
     CollisionAsteroid, MapObject, MiningAsteroid,
@@ -70,7 +72,6 @@ pub struct NativeLevelPerceptionInputs<'a> {
     // Learned map objects and collision asteroids are projected from
     // CombatWorld's discovery and physical obstacle registries, not
     // supplied by an external observation-only collection.
-    pub navigation_world_grid: &'a [f32; NAV_LEN],
     pub exploration_last_seen: Option<&'a [f32; EXPLORATION_LEN]>,
 }
 
@@ -88,6 +89,8 @@ struct SideEnvironment {
     epoch: Option<EnvironmentEpoch>,
     objects: Vec<MapObject>,
     asteroids: Vec<CollisionAsteroid>,
+    /// Real discovered static collider AABBs, one collection per side/tick.
+    static_navigation: Vec<(bees_sim::geometry::Vec2, bees_sim::geometry::Vec2)>,
 }
 
 /// Construct ONE assembler per world and episode. Identity and candidate
@@ -103,6 +106,8 @@ pub struct NativeWorldPerceptionAssembler {
     /// Live native turrets override the Level's non-turret weapon slots.
     /// Reused across agents, just like ally and enemy buffers.
     own_weapons: [Option<SelfWeapon>; 5],
+    /// 21x21 observer-local grid; reused for each agent with no allocation.
+    navigation: LocalNavigationOccupancy,
     environment_by_side: HashMap<i32, SideEnvironment>,
 }
 
@@ -114,6 +119,7 @@ impl NativeWorldPerceptionAssembler {
             allies: Vec::new(),
             enemies: Vec::new(),
             own_weapons: [None; 5],
+            navigation: LocalNavigationOccupancy::new(),
             environment_by_side: HashMap::new(),
         }
     }
@@ -239,7 +245,20 @@ impl NativeWorldPerceptionAssembler {
             collect_learned_collision_asteroids(
                 world, side, &mut environment.asteroids,
             )?;
+            collect_learned_static_navigation_bounds(
+                world, side, &mut environment.static_navigation,
+            )?;
             environment.epoch = Some(epoch);
+        }
+        // The Unity 21x21 navigation grid is local to THIS observer,
+        // not faction-wide. Use real Level bounds, ship position and the
+        // faction's current known static colliders. One 441-cell stack-
+        // backed scratch buffer is reused for every agent.
+        self.navigation.reset(inputs.level_bounds, ship.position)
+            .map_err(CombatPerceptionError::from)?;
+        for &(center, extents) in &environment.static_navigation {
+            self.navigation.mark_static_aabb(center, extents)
+                .map_err(CombatPerceptionError::from)?;
         }
         Ok(PolicyPerceptionSnapshot {
             ship,
@@ -255,7 +274,7 @@ impl NativeWorldPerceptionAssembler {
             visible_mining: inputs.visible_mining,
             visible_map_objects: &environment.objects,
             visible_collision_asteroids: &environment.asteroids,
-            navigation_world_grid: inputs.navigation_world_grid,
+            navigation_world_grid: self.navigation.occupancy(),
             exploration_last_seen: inputs.exploration_last_seen,
             self_entity_id: ship_id,
         })

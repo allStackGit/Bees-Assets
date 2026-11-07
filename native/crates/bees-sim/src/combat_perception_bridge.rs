@@ -294,17 +294,17 @@ pub fn live_ship_position(
 /// static collider bounds. The visibility predicate must read the faction's
 /// authoritative HiveMind discovery cache. A physical obstacle that is not
 /// discovered must not leak into RL observations.
-pub fn navigation_from_world(
+/// Source-authored visible-static obstacle projection shared by gameplay
+/// and observation hosts. Only the true active, learned static Collider2D
+/// (or its authored clearance collider) enters the local navigation grid.
+fn visit_visible_static_navigation(
     world: &CombatWorld,
-    bounds: Aabb,
-    observer: Vec2,
-    occupancy: &mut LocalNavigationOccupancy,
     mut is_visible_to_hivemind: impl FnMut(i64) -> bool,
+    mut visitor: impl FnMut(Vec2, Vec2) -> Result<(), CombatPerceptionError>,
 ) -> Result<usize, CombatPerceptionError> {
     if world.obstacles().len() != world.physics().obstacles().len() {
         return Err(CombatPerceptionError::InvalidObstacleStorage);
     }
-    occupancy.reset(bounds, observer)?;
     let mut included = 0;
     for (obstacle, body) in world.obstacles().iter().zip(world.physics().obstacles()) {
         if obstacle.entity_id != body.id {
@@ -317,9 +317,6 @@ pub fn navigation_from_world(
         }
         let area = body.navigation_bounds()
             .ok_or(CombatPerceptionError::MissingNavigationBounds(obstacle.entity_id))?;
-        // World/level coordinates are already identical for the native
-        // gameplay arena. Unity's source takes the clearance collider's
-        // world AABB and transforms it into Level-local coordinates here.
         let center = Vec2::new(
             (area.min.x + area.max.x) * 0.5,
             (area.min.y + area.max.y) * 0.5,
@@ -328,10 +325,50 @@ pub fn navigation_from_world(
             (area.max.x - area.min.x).abs() * 0.5,
             (area.max.y - area.min.y).abs() * 0.5,
         );
-        occupancy.mark_static_aabb(center, extents)?;
+        visitor(center, extents)?;
         included += 1;
     }
     Ok(included)
+}
+
+/// Same source geometry, now reusable by the world-local batch assembler.
+/// A faction's discovery/cache may be shared, but EVERY observer's grid
+/// must still be centered on its own live physical ship position. This
+/// collects world-coordinate AABBs once per side/decision boundary.
+pub fn collect_learned_static_navigation_bounds(
+    world: &CombatWorld,
+    side: i32,
+    output: &mut Vec<(Vec2, Vec2)>,
+) -> Result<usize, CombatPerceptionError> {
+    output.clear();
+    visit_visible_static_navigation(
+        world,
+        |id| world.discovery().has(
+            side, crate::level_discovery::DiscoveryKind::Obstacle, id,
+        ),
+        |center, half_extents| {
+            output.push((center, half_extents));
+            Ok(())
+        },
+    )
+}
+
+pub fn navigation_from_world(
+    world: &CombatWorld,
+    bounds: Aabb,
+    observer: Vec2,
+    occupancy: &mut LocalNavigationOccupancy,
+    is_visible_to_hivemind: impl FnMut(i64) -> bool,
+) -> Result<usize, CombatPerceptionError> {
+    occupancy.reset(bounds, observer)?;
+    visit_visible_static_navigation(
+        world,
+        is_visible_to_hivemind,
+        |center, half_extents| {
+            occupancy.mark_static_aabb(center, half_extents)?;
+            Ok(())
+        },
+    )
 }
 
 /// Prepare the actual alive allied ship inventory for the existing

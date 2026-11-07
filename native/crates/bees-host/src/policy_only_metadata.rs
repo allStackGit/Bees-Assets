@@ -29,7 +29,7 @@ use bees_sim::combat_perception_bridge::{
 };
 use bees_sim::combat_world::CombatWorld;
 use bees_sim::navigation_runtime::NavigationRuntime;
-use bees_sim::perception::{CapabilitySource, NAV_LEN, EXPLORATION_LEN};
+use bees_sim::perception::{CapabilitySource, EXPLORATION_LEN};
 use bees_sim::perception_environment::MiningAsteroid;
 use bees_sim::perception_weapons::SelfWeapon;
 use bees_sim::ship_assets::ShipAssetCatalog;
@@ -64,7 +64,6 @@ pub struct AuthoredPolicyAgent {
 /// these source values on the owning Level between windows.
 pub struct AuthoredPolicySide {
     pub side: i32,
-    pub navigation_world_grid: [f32; NAV_LEN],
     pub exploration_last_seen: Option<[f32; EXPLORATION_LEN]>,
     pub visible_mining: Vec<MiningAsteroid>,
 }
@@ -108,8 +107,7 @@ impl NativePolicyOnlyMetadata {
         }
         let mut side_map = HashMap::new();
         for side in sides {
-            if side.side <= 0 || side.navigation_world_grid.iter()
-                .any(|value| !value.is_finite()) ||
+            if side.side <= 0 ||
                 side.exploration_last_seen.as_ref().is_some_and(
                     |values| values.iter().any(|value| !value.is_finite()),
                 ) {
@@ -258,7 +256,6 @@ impl NativeLevelObservationContext for NativePolicyOnlyMetadata {
             parent_carrier_id: agent.parent_carrier_id,
             own_weapons: &agent.own_weapons,
             visible_mining: &side.visible_mining,
-            navigation_world_grid: &side.navigation_world_grid,
             exploration_last_seen: side.exploration_last_seen.as_ref(),
         })
     }
