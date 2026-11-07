@@ -40,6 +40,7 @@ pub enum PolicyProcessError {
     Io(io::Error),
     MissingPipe(&'static str),
     InvalidHandshake,
+    ManifestMismatch,
     Abi(PolicyAbiError),
     InvalidBatch,
     WrongResponse,
@@ -103,9 +104,21 @@ impl ResidentPolicyProcess {
         script: impl AsRef<OsStr>,
         manifest: impl AsRef<OsStr>,
     ) -> Result<Self, PolicyProcessError> {
+        // Bind the READY handshake to the exact manifest passed to this
+        // process. A replaced file between launch and worker load must
+        // fail before this backend can send any gameplay action.
+        let mut expected = [0_u8; MANIFEST_DIGEST_BYTES];
+        expected.copy_from_slice(&Sha256::digest(
+            std::fs::read(Path::new(manifest.as_ref()))?,
+        ));
         let mut command = Command::new(python);
         command.arg(script).arg("--manifest").arg(manifest);
-        Self::spawn(command)
+        let mut backend = Self::spawn(command)?;
+        if backend.manifest_digest != expected {
+            backend.unavailable = true;
+            return Err(PolicyProcessError::ManifestMismatch);
+        }
+        Ok(backend)
     }
 
     fn read_handshake(&mut self) -> Result<(), PolicyProcessError> {
