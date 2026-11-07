@@ -57,8 +57,9 @@ use crate::perception_world::{
 };
 use crate::rollout::{
     step_batched_levels, reset_level_after_delivery,
-    flush_all_squad_retirements, NativeBatchedStepCounts,
-    NativeBatchedStepError, NativeLevelResetError,
+    flush_all_squad_retirements, abort_failed_level, cancel_level,
+    NativeBatchedStepCounts, NativeBatchedStepError, NativeLevelResetError,
+    NativeFailedLevelAbortError, NativeLevelCancelError,
 };
 use crate::squads::SquadRosterError;
 
@@ -352,6 +353,30 @@ pub enum NativeLevelWindowError<SourceError, BackendError, SinkError> {
         round: u32,
         error: NativeNotificationDeliveryError<SinkError>,
     },
+}
+
+/// A normal operator stop and a failed-step abort have different source
+/// contracts. Neither may manufacture terminal rewards or erase unearned
+/// HiveMind OutcomeIds.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NativeLevelStopKind {
+    CancelLive,
+    AbortFailed,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct NativeLevelStopDelivery {
+    pub aborted_command_reservations: usize,
+    pub retired_squad_lifetimes: usize,
+    pub delivered_notifications: usize,
+}
+
+#[derive(Debug)]
+pub enum NativeLevelStopError<E> {
+    Driver(NativeLevelDriverError),
+    Cancel(NativeLevelCancelError),
+    Abort(NativeFailedLevelAbortError),
+    Delivery(NativeNotificationDeliveryError<E>),
 }
 
 #[derive(Debug)]
@@ -782,6 +807,62 @@ impl NativeLevelBatchDriver {
             }
         }
         Ok(counts)
+    }
+
+    /// One explicit stop/abort handoff for a long-running experiment.
+    /// The existing game Level owns its command/episode cleanup, the
+    /// connection owns squad request retirement, and the sink owns durable
+    /// StoreCommands/MA-POCA/presentation delivery. No retry or silent
+    /// recovery occurs: any failed sink acknowledgement leaves the
+    /// unaccepted notifications in the existing persistent outbox.
+    ///
+    /// A successful return permits a later reset_world_after_delivery;
+    /// that reset independently rejects any unresolved world obligations.
+    pub fn stop_world_and_deliver<M, A, S>(
+        &mut self,
+        simulation: &mut Simulation<NativeLevelState<M, A>, NativeLevelRules>,
+        index: usize,
+        kind: NativeLevelStopKind,
+        connection: &mut HiveMindSession,
+        sink: &mut S,
+    ) -> Result<NativeLevelStopDelivery, NativeLevelStopError<S::Error>>
+    where
+        M: NativeLevelRewardMetadata + NativeLevelCommandContext,
+        A: FnMut(SquadLifetime, i64) -> Result<SquadLifetime, SquadRosterError>,
+        S: NativeLevelNotificationSink,
+    {
+        let slot = self.worlds.get(index).ok_or(
+            NativeLevelStopError::Driver(NativeLevelDriverError::MissingWorld),
+        )?;
+        let world = simulation.world(index).ok_or(
+            NativeLevelStopError::Driver(NativeLevelDriverError::MissingWorld),
+        )?;
+        if slot.id != world.id ||
+            slot.revision != world.episode_revision()
+        {
+            return Err(NativeLevelStopError::Driver(
+                NativeLevelDriverError::WorldIdentityChanged,
+            ));
+        }
+        let aborted = match kind {
+            NativeLevelStopKind::CancelLive =>
+                cancel_level(simulation, index)
+                    .map_err(NativeLevelStopError::Cancel)?,
+            NativeLevelStopKind::AbortFailed =>
+                abort_failed_level(simulation, index)
+                    .map_err(NativeLevelStopError::Abort)?,
+        };
+        let retired = flush_all_squad_retirements(
+            simulation, connection,
+        );
+        let delivered = deliver_all_level_notifications(
+            simulation, sink,
+        ).map_err(NativeLevelStopError::Delivery)?.notifications_accepted;
+        Ok(NativeLevelStopDelivery {
+            aborted_command_reservations: aborted,
+            retired_squad_lifetimes: retired,
+            delivered_notifications: delivered,
+        })
     }
 
     /// Atomic with respect to host-visible episode identity: old Level
