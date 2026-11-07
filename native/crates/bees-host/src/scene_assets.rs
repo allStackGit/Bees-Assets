@@ -96,6 +96,11 @@ impl NativeSceneAssets {
     }
 
     pub fn ship_catalog(&self) -> &ShipAssetCatalog { &self.ship_catalog }
+
+    /// Share immutable prefab geometry and sprite sizes among all Levels.
+    pub fn shared_ship_catalog(&self) -> Arc<ShipAssetCatalog> {
+        Arc::clone(&self.ship_catalog)
+    }
     pub fn box_catalog(&self) -> &BoxObstacleCatalog { &self.box_catalog }
     pub fn polygon_catalog(&self) -> &PolygonObstacleCatalog { &self.polygon_catalog }
 

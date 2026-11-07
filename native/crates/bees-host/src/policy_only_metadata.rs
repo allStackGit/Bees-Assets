@@ -9,6 +9,7 @@
 //! richer metadata implementation of the same shared traits.
 
 use std::collections::HashMap;
+use std::sync::Arc;
 use bees_gameplay::commands::{
     GameCommandError, NativeBombWeapon, NativeEnemyTargetStats,
 };
@@ -76,7 +77,7 @@ pub struct NativePolicyOnlyMetadata {
     pub bounds: Aabb,
     pub navigation: NavigationRuntime,
     pub fleet: NativeFleetInventory,
-    pub ship_catalog: ShipAssetCatalog,
+    pub ship_catalog: Arc<ShipAssetCatalog>,
     authored_ships: HashMap<i64, AuthoredShipPerception>,
     agents: HashMap<i64, AuthoredPolicyAgent>,
     sides: HashMap<i32, AuthoredPolicySide>,
@@ -87,7 +88,7 @@ impl NativePolicyOnlyMetadata {
         bounds: Aabb,
         navigation: NavigationRuntime,
         fleet: NativeFleetInventory,
-        ship_catalog: ShipAssetCatalog,
+        ship_catalog: Arc<ShipAssetCatalog>,
         ships: impl IntoIterator<Item=(i64, AuthoredShipPerception)>,
         agents: impl IntoIterator<Item=AuthoredPolicyAgent>,
         sides: impl IntoIterator<Item=AuthoredPolicySide>,
@@ -123,7 +124,7 @@ impl NativePolicyOnlyMetadata {
         for agent in agents {
             if agent.ship_id <= 0 || agent.side <= 0 ||
                 !authored_ships.contains_key(&agent.ship_id) ||
-                !side_map.contains_key(&agent.side) ||
+                !side_map.contains_key(&agent.side) || agent.route.team_id > 1 ||
                 agent.parent_carrier_id.is_some_and(|id|
                     !authored_ships.contains_key(&id)
                 ) {
@@ -227,10 +228,14 @@ impl NativeLevelObservationContext for NativePolicyOnlyMetadata {
             .ok_or(PolicyOnlyMetadataError::MissingAgent(ship_id))?;
         let side = self.sides.get(&agent.side)
             .ok_or(PolicyOnlyMetadataError::MissingSide(agent.side))?;
+        let mut capability = agent.capability;
+        capability.ship_mined_tsv = self.fleet.get(ship_id)
+            .ok_or(PolicyOnlyMetadataError::InvalidSource)?
+            .minerals_mined_this_level;
         Ok(NativeLevelPerceptionInputs {
             level_bounds: self.bounds,
             controller: agent.controller,
-            capability: agent.capability,
+            capability,
             parent_carrier_id: agent.parent_carrier_id,
             own_weapons: &agent.own_weapons,
             visible_mining: &side.visible_mining,
