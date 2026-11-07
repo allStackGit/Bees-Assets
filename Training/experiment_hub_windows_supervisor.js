@@ -300,7 +300,7 @@ class WindowsSupervisor {
         else if(record.stop_requested_at) {
             if(observation.active)state='stop_requested';
             else if(terminal.has(state)) {
-                if(!checkpointStop)state='stopped';
+                if(!checkpointStop&&state!=='failed')state='stopped';
                 else if(!observation.owner_verified)state='stop_requested';
                 else state=state==='finished'?'stopped':'failed';
             }
