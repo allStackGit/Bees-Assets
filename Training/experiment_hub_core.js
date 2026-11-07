@@ -1048,6 +1048,43 @@ class ExperimentHub {
                 (blocked.continuation_of_job_id||blocked.after_job_id)+
                 ' released capacity without an eligible stage handoff; stage '+
                 blocked.id+' requires operator review.');
+            // Fulfill at most one frozen candidate decision per pass.
+            // Evaluation/checkpoint mismatches remain visible and cannot
+            // silently promote a different native model.
+            for(const plan of snapshot.candidate_selections||[]) {
+                if(plan.status!=='waiting')continue;
+                const candidates=plan.candidate_job_ids.map(id=>
+                    snapshot.jobs.find(job=>job.id===id));
+                const bad=candidates.some(j=>!j||
+                    ['failed','unverified','cancelled'].includes(j.status));
+                const completed=candidates.every(j=>j&&
+                    ['finished','stopped'].includes(j.status)&&
+                    j.capacity_released_at);
+                if(!bad&&!completed)continue;
+                try {
+                    const decision=this.rankCandidates({
+                        candidate_job_ids:plan.candidate_job_ids});
+                    const result=this.queueBestCandidate({...plan,
+                        selection_plan_id:plan.id,
+                        expected_winner_job_id:decision.winner_job_id,
+                        confirm_queue:true});
+                    return transitioned('Promoted best evaluated '+plan.project_id+
+                        ' candidate '+decision.winner_job_id+
+                        '; queued exact-model continuation '+result.job.id+'.');
+                }catch(error) {
+                    const next=copy(this.state);
+                    const current=(next.candidate_selections||[])
+                        .find(item=>item.id===plan.id);
+                    if(current&&current.status==='waiting') {
+                        current.status='needs_review';
+                        current.error=String(error.message||error).slice(0,200);
+                        current.resolved_at=now();
+                        this.commit(next);
+                    }
+                    throw Error('Candidate selection '+plan.id+
+                        ' needs review: '+String(error.message||error));
+                }
+            }
             const pending=snapshot.jobs.filter(j=>
                 j.adapter==='unconfigured'&&j.status==='waiting_adapter'&&
                 !['bees','ants'].includes(j.project_id)&&
@@ -2443,6 +2480,16 @@ class ExperimentHub {
         if(decision.winner_job_id!==value.expected_winner_job_id)
             throw Error('Candidate results changed; review the ranking before promotion.');
         const next=copy(this.state);
+        const plan=value.selection_plan_id==null?null:
+            (next.candidate_selections||[]).find(p=>p.id===value.selection_plan_id);
+        if(value.selection_plan_id!=null&&
+            (!plan||plan.status!=='waiting'||
+             JSON.stringify(plan.candidate_job_ids)!==
+                JSON.stringify(value.candidate_job_ids)||
+             plan.configuration_id!==value.configuration_id||
+             plan.expected_revision!==value.expected_revision||
+             JSON.stringify(plan.resources)!==JSON.stringify(value.resources)))
+            throw Error('Candidate selection plan changed or was already fulfilled.');
         const parent=next.jobs.find(j=>j.id===decision.winner_job_id);
         const job=this.queueIn(next,{
             configuration_id:value.configuration_id,
@@ -2457,9 +2504,65 @@ class ExperimentHub {
             checkpoint_sha256:parent.checkpoint_model_sha256,
             score:decision.ranked[0].score,
             selected_at:now(),
+            ...(plan?{selection_plan_id:plan.id}:{}),
         };
+        if(plan) {
+            plan.status='queued';
+            plan.winner_job_id=parent.id;
+            plan.promoted_job_id=job.id;
+            plan.resolved_at=job.candidate_selection.selected_at;
+            plan.ranking=decision.ranked;
+        }
         this.commit(next);
         return {job:copy(job),selection:decision};
+    }
+    // A reusable winner selection is armed before experiments finish.
+    // Its result and the selected continuation commit together, never
+    // in two separate writes that could orphan the winner after restart.
+    queueCandidateSelection(value) {
+        if(!object(value)||value.confirm_queue!==true)
+            throw Error('Explicitly confirm the candidate selection plan.');
+        const ids=value.candidate_job_ids;
+        if(!Array.isArray(ids)||ids.length<2||ids.length>16||
+            ids.some(id=>!UUID.test(String(id||'')))||
+            new Set(ids).size!==ids.length)
+            throw Error('Select 2–16 distinct candidate jobs.');
+        const jobs=ids.map(id=>this.state.jobs.find(j=>j.id===id));
+        if(jobs.some(j=>!j)||!['courier','tinybrains'].includes(jobs[0].project_id)||
+            jobs.some(j=>j.project_id!==jobs[0].project_id||
+                !j.evaluation_stop||
+                !['waiting_adapter','waiting_predecessor','start_requested',
+                    'launch_requested','running','finished','stopped'].includes(j.status)))
+            throw Error('Candidate jobs must belong to one supported project and have independent evaluations.');
+        const roots=jobs.map(j=>j.artifact_lineage_root_id||j.id);
+        if(new Set(roots).size!==roots.length||
+            new Set(jobs.map(j=>JSON.stringify(evaluationPolicy(j.evaluation_stop)))).size!==1)
+            throw Error('Candidate models need independent lineages and identical evaluation rules.');
+        if(jobs.some(j=>this.state.jobs.some(child=>child.status!=='cancelled'&&
+            (child.continuation_of_job_id===j.id||child.after_job_id===j.id))))
+            throw Error('A candidate already has a queued successor.');
+        const selected=this.state.configurations.find(c=>c.id===value.configuration_id&&
+            c.revision===value.expected_revision&&c.project_id===jobs[0].project_id);
+        if(!selected)throw Error('Select a current saved continuation configuration in the same project.');
+        const pin=jobs[0].project_id==='courier'?'config_sha256':'profile_sha256';
+        if(!SHA256.test(String(selected.parameters?.[pin]||''))||
+            jobs.some(j=>j.frozen_parameters?.[pin]!==selected.parameters[pin]))
+            throw Error('Every candidate must be compatible with the same approved continuation environment.');
+        const resources=resourceRequest(value.resources);
+        const next=copy(this.state),plans=next.candidate_selections||[];
+        if(plans.length>=32)
+            throw Error('Selection history limit reached; review old selection plans before adding more.');
+        if(plans.some(p=>p.status==='waiting'&&
+            p.candidate_job_ids.some(id=>ids.includes(id))))
+            throw Error('One candidate already belongs to another pending selection.');
+        const plan={id:crypto.randomUUID(),project_id:jobs[0].project_id,
+            candidate_job_ids:ids.slice(),
+            configuration_id:selected.id,expected_revision:selected.revision,
+            resources,status:'waiting',created_at:now()};
+        plans.push(plan);
+        next.candidate_selections=plans;
+        this.commit(next);
+        return copy(plan);
     }
     // One durable write for the full linear checkpoint-continuation
     // pipeline: either all stages have validated lineage, or none do.
