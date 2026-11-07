@@ -57,11 +57,12 @@ use crate::scene_builder::{
     NativeAuthoredGroups,
 };
 use crate::policy_only_metadata::{
+    NativeSourceVision,
     AuthoredPolicyAgent, AuthoredPolicySide, NativePolicyOnlyMetadata,
     PolicyOnlyMetadataError,
 };
 
-const SNAPSHOT_VERSION: u32 = 13;
+const SNAPSHOT_VERSION: u32 = 14;
 
 #[derive(Deserialize, Clone, Copy)]
 struct UnityVec2 { x: f32, y: f32 }
@@ -146,6 +147,9 @@ struct UnityShip {
     policy_cease_fire: bool,
     observed_weapons: Vec<UnityObservedWeapon>,
     effective_vision_range: i32,
+    hivemind_registered: bool,
+    hivemind_vision_enabled: bool,
+    hivemind_sight_range: i32,
     has_weapons: bool,
     has_turrets: bool,
     has_special_action: bool,
@@ -312,7 +316,10 @@ pub struct NativePhysicalScene {
     /// the host's checkpoint schedule.
     pub source_policy_bindings: HashMap<i64, NativeSourcePolicyBinding>,
     source_policy_inputs: HashMap<i64, NativeSourcePolicyInputs>,
-    source_vision: HashMap<i64, i32>,
+    source_vision: HashMap<i64, NativeSourceVision>,
+    /// Original static collider health for source discovery TSV. Geometry
+    /// and projectile collision remain owned by the canonical combat body.
+    source_static_discovery_values: HashMap<i64, i32>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -602,6 +609,7 @@ impl NativePhysicalScene {
             setup.ship_catalog,
             self.authored_ship_perceptions,
             self.source_vision,
+            self.source_static_discovery_values,
             setup.policy_agents,
             setup.sides,
         ).map_err(NativePolicyOnlyLevelError::Metadata)?;
@@ -783,6 +791,7 @@ impl NativePhysicalScene {
         let mut source_policy_bindings = HashMap::new();
         let mut source_policy_inputs = HashMap::new();
         let mut source_vision = HashMap::new();
+        let mut source_static_discovery_values = HashMap::new();
         let mut seen = HashSet::with_capacity(entities.capacity());
         for ship in raw.ships {
             if ship.entity_id <= 0 || ship.side <= 0 ||
@@ -800,10 +809,20 @@ impl NativePhysicalScene {
             if !seen.insert(ship.entity_id) {
                 return Err(NativeSnapshotError::DuplicateEntity(ship.entity_id));
             }
-            if ship.effective_vision_range < 0 {
+            if ship.effective_vision_range < 0 ||
+                ship.hivemind_sight_range < 0 ||
+                (ship.hivemind_vision_enabled &&
+                    (!ship.hivemind_registered ||
+                     ship.hivemind_sight_range <= 0))
+            {
                 return Err(NativeSnapshotError::InvalidShip(ship.entity_id));
             }
-            source_vision.insert(ship.entity_id, ship.effective_vision_range);
+            source_vision.insert(ship.entity_id, NativeSourceVision {
+                effective_range: ship.effective_vision_range,
+                trigger_range: ship.hivemind_sight_range,
+                registered: ship.hivemind_registered,
+                enabled: ship.hivemind_vision_enabled,
+            });
             let vitals = ShipVitals::new(
                 ship.health, ship.max_health, ship.max_tsv, ship.mined_cargo,
             ).map_err(NativeSnapshotError::Combat)?;
@@ -1056,6 +1075,18 @@ impl NativePhysicalScene {
                 !obstacle.angular_velocity_degrees.is_finite()
             {
                 return Err(NativeSnapshotError::InvalidObstacle(obstacle.entity_id));
+            }
+            // Source RlOneVsOneEpisodeCoordinator uses OriginalHealth
+            // when positive, then current Health, clamped to at least one.
+            // These are reward-only immutable inputs, not duplicated
+            // mutable obstacle health or a second collision registry.
+            if matches!(obstacle.kind.as_str(), "box" | "polygon") {
+                let value = if obstacle.effective_max_health > 0 {
+                    obstacle.effective_max_health
+                } else {
+                    obstacle.health
+                }.max(1);
+                source_static_discovery_values.insert(obstacle.entity_id, value);
             }
             let entity = match obstacle.kind.as_str() {
                 "box" => {
@@ -1312,6 +1343,7 @@ impl NativePhysicalScene {
             source_policy_bindings,
             source_policy_inputs,
             source_vision,
+            source_static_discovery_values,
         })
     }
 }
