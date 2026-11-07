@@ -479,14 +479,22 @@ function nativeStartReadiness(snapshot, job) {
         return block('Native Start requires at least 128 MiB RAM.');
     // Recovered jobs and leases must meet the original resource contract,
     // not just the CPU-only shortcut in the native readiness projection.
+    let requested, reserved;
     try {
-        resourceRequest(r);
-        resourceRequest(lease.resources);
+        requested=resourceRequest(r);
+        reserved=resourceRequest(lease.resources);
     }catch {
         return block('Stored job or lease resource budget is invalid.');
     }
-    if(r.cpus!==lease.resources.cpus||r.ram_mb!==lease.resources.ram_mb)
-        return block('Stored job CPU/RAM budget differs from its reserved lease.');
+    // Placement may assign GPU identities to an unpinned request; it must
+    // never change the CPU, memory, GPU count, mode, or minimum VRAM budget.
+    const budgetKeys=['cpus','ram_mb','gpu_count','min_gpu_vram_mb',
+        'gpu_mode','gpu_vram_mb','gpu_compute_pct'];
+    if(budgetKeys.some(key=>requested[key]!==reserved[key])||
+        (requested.gpus.length&&(
+            requested.gpus.length!==reserved.gpus.length||
+            requested.gpus.some((id,index)=>id!==reserved.gpus[index]))))
+        return block('Stored job resource budget differs from its reserved lease.');
     const gpuBlock=gpuStartBlock(job,lease,machine);
     if(gpuBlock)return block(gpuBlock);
     if(r.cpus>machine.reported_cpus||r.ram_mb>machine.reported_ram_mb)
