@@ -38,7 +38,12 @@ function configuredGpus(input,requirePci=false) {
     }));
 }
 function physicalGpuBindings(machine,report,resources,pinned) {
-    if(!resources||resources.gpu_count===0)return [];
+    // Legacy claims can omit GPU fields, but inconsistent GPU budgets
+    // must never be treated as CPU-only or acknowledged after rebinding.
+    let validated;
+    try { validated=resourceRequest(resources); }
+    catch { return null; }
+    if(validated.gpu_count===0)return [];
     const ids=resources.gpus;
     // A lease freezes logical ID -> physical PCI identity at allocation.
     // Never reconstruct a missing old pin from a later machine registration.
@@ -2283,9 +2288,12 @@ class ExperimentHub {
         if(gpu.some(g=>!machine.observed_gpus.some(actual=>
             actual.pci_address===g.pci_address)))
             throw Error('Configured PCI GPU does not match a currently observed physical device.');
-        if(this.state.reservations.some(l=>l.machine_id===machine.id&&
-            ['active','offered','acknowledged'].includes(l.status)&&
-            (l.resources?.gpu_count>0||(l.resources?.gpus||[]).length)))
+        if(this.state.reservations.some(l=>{
+            if(l.machine_id!==machine.id||
+                !['active','offered','acknowledged'].includes(l.status))return false;
+            try { return resourceRequest(l.resources).gpu_count!==0; }
+            catch { return true; } // Unreconciled claims may own a GPU.
+        }))
             throw Error('Release all GPU-bearing leases before rebinding machine GPU identities.');
         const next=copy(this.state);
         next.machines.find(m=>m.id===machine.id).gpus=gpu;
