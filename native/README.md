@@ -406,6 +406,19 @@ adapter or executable game/training binary exists yet.
 
 ## Low-overhead performance and command measurements
 
+The same host crate exposes `status::NativeStatusSampler` for
+allocation-free, per-window telemetry: it samples the authoritative
+`NativeRuntimeStatus`, uses monotonic wall time to compute actual completed
+world-steps/s and inferred policy rows/s, and exports low-cardinality JSON
+records with physics-work deltas, request backlogs, model-forward timing
+denominators and an explicitly approximate, *sample-only* physics latency p95.
+The sampler rejects counter resets rather than producing false throughput
+spikes. Sampling runs between rollout windows, never per ship or per tick,
+and does not claim to measure GPU execution time when the model backend
+does not synchronize.
+
+
+
 `Simulation.measurements()` provides cumulative cross-world
 per-fixed-step counters (ticks, decisions, events, active-body snapshots),
 plus integrated body counts, broadphase candidates, narrowphase tests and

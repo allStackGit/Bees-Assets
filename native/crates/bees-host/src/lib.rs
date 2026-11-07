@@ -4,3 +4,4 @@
 #![forbid(unsafe_code)]
 
 pub mod checkpoint_file;
+pub mod status;
