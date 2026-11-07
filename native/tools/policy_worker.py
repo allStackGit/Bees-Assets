@@ -222,14 +222,26 @@ def checked_manifest(path: Path):
 
 def decode_row_metadata(meta: bytearray, rows: int):
     fields = np.frombuffer(meta, dtype=ROW_META_DTYPE, count=rows)
-    if np.any(fields["reserved"]):
-        raise ValueError("nonzero reserved metadata")
     fire_bytes = fields["fire"]
     special_bytes = fields["special"]
-    if np.any(fire_bytes > 1) or np.any(special_bytes > 1):
-        raise ValueError("invalid boolean action mask")
-    if np.any(special_bytes[:, 0] == 0):
-        raise ValueError("NoSpecial must remain enabled")
+    # NumPy reduction dispatch outweighs Python indexing for 1v1 and
+    # other tiny batches. Keep the tiny path fast without trading away
+    # vectorized validation for hundreds or thousands of agents.
+    if rows <= 3:
+        if any(meta[index * ROW_META_BYTES + 15] for index in range(rows)):
+            raise ValueError("nonzero reserved metadata")
+        if any(value > 1 for index in range(rows) for value in
+               meta[index * ROW_META_BYTES + 5:index * ROW_META_BYTES + 15]):
+            raise ValueError("invalid boolean action mask")
+        if any(meta[index * ROW_META_BYTES + 10] == 0 for index in range(rows)):
+            raise ValueError("NoSpecial must remain enabled")
+    else:
+        if np.any(fields["reserved"]):
+            raise ValueError("nonzero reserved metadata")
+        if np.any(fire_bytes > 1) or np.any(special_bytes > 1):
+            raise ValueError("invalid boolean action mask")
+        if np.any(special_bytes[:, 0] == 0):
+            raise ValueError("NoSpecial must remain enabled")
 
     # Contiguous, batch-wide copies are cheaper than allocating two arrays
     # per agent; the slot IDs remain a borrowed view of this input frame.
