@@ -263,6 +263,15 @@ fn main() -> Result<(), Box<dyn Error>> {
         launches, model, connection, sink,
     ).map_err(|error| contextual("native Level construction", error))?;
     host.set_timing_sample_period(timing);
+    println!("{}", json!({
+        "kind": "run_started",
+        "run_id": config.run_id,
+        "stage_name": config.stage_name,
+        "worlds": config.levels.len(),
+        "decision_period": config.decision_period,
+        "delivery_every": config.delivery_every,
+        "timing_sample_period": config.timing_sample_period,
+    }));
 
     let mut rounds = 0_u64;
     let mut failed_window = None;
@@ -283,7 +292,12 @@ fn main() -> Result<(), Box<dyn Error>> {
         if let Some(status) = host.sample_status()
             .map_err(|error| contextual("native host status", error))?
         {
-            println!("{}", serde_json::to_string(&status)?);
+            println!("{}", json!({
+                "kind": "interval",
+                "run_id": config.run_id,
+                "rounds": rounds,
+                "metrics": status,
+            }));
         }
         if counts.stopped_with_no_live_worlds { break; }
     }
