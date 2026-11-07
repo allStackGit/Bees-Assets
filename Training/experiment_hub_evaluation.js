@@ -2,6 +2,7 @@
 
 const fs=require('node:fs');
 const path=require('node:path');
+const crypto=require('node:crypto');
 
 // Independent evaluation is a separate adapter contract from training progress.
 const SUITE=/^[a-z][a-z0-9_-]{0,47}$/;
@@ -9,6 +10,32 @@ const SHA256=/^[a-f0-9]{64}$/;
 const UUID=/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
 const trials=n=>Number.isSafeInteger(n)&&n>=1&&n<=1000000;
 const record=value=>value&&typeof value==='object'&&!Array.isArray(value);
+
+// Fingerprint the exact local model bytes used for evaluation/continuation.
+function modelFileSha256(file) {
+    if(typeof file!=='string'||!path.isAbsolute(file)||
+        fs.realpathSync(file)!==file)
+        throw Error('Evaluated model artifact must be a local, non-redirected file.');
+    const fd=fs.openSync(file,'r');
+    try {
+        const before=fs.fstatSync(fd);
+        if(!before.isFile()||before.size<1)
+            throw Error('Evaluated model artifact must be a nonempty regular file.');
+        const digest=crypto.createHash('sha256'),buffer=Buffer.allocUnsafe(1048576);
+        let bytes=0;
+        while(true) {
+            const count=fs.readSync(fd,buffer,0,buffer.length,null);
+            if(!count)break;
+            digest.update(buffer.subarray(0,count));
+            bytes+=count;
+        }
+        const after=fs.fstatSync(fd);
+        if(bytes!==before.size||after.size!==before.size||
+            after.mtimeMs!==before.mtimeMs)
+            throw Error('Evaluated model artifact changed while being fingerprinted.');
+        return digest.digest('hex');
+    }finally {fs.closeSync(fd);}
+}
 
 function evaluationPolicy(value) {
     if(value==null)return null;
@@ -135,4 +162,4 @@ function evaluationReader(projectId,evaluationRoot,evaluationSuites,protectedRoo
 }
 
 module.exports={evaluationPolicy,evaluationEvidence,evaluationRules,evaluationComplete,
-    suiteIds,supportsEvaluation,evaluationReader};
+    suiteIds,supportsEvaluation,evaluationReader,modelFileSha256};
