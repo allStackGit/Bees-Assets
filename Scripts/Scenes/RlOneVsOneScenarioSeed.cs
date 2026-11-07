@@ -28,10 +28,70 @@ internal static class RlOneVsOneScenarioSeed
     {
         if (!RlOneVsOneEvaluationSideChannel.IsEvaluationMode(args))
         {
-            return Guid.NewGuid().GetHashCode();
+            // Ordinary training stays stochastic unless research explicitly
+            // selects a process root. Separate per-arena streams still derive
+            // deterministically from this root; distributed execution order
+            // need not become deterministic.
+            int? requestedSeed = RlOneVsOneTrainingOptions.Parse(args).ScenarioSeed;
+            return requestedSeed.HasValue
+                ? DeriveProcessRoot(requestedSeed.Value, args)
+                : Guid.NewGuid().GetHashCode();
         }
 
         return UnityEngine.Random.Range(0, int.MaxValue);
+    }
+
+    // ML-Agents launches each Unity worker with an individual port. A single
+    // configured seed must not give every process an identical random stream;
+    // use stable machine/port identity to keep parallel environments diverse
+    // while permitting repeatable topologies across independent training runs.
+    internal static int DeriveProcessRoot(int seed, string[] args)
+    {
+        int port = 0;
+        if (args != null)
+        {
+            for (int i = 0; i < args.Length; i++)
+            {
+                string argument = args[i] ?? string.Empty;
+                if (argument.Equals("--mlagents-port", StringComparison.OrdinalIgnoreCase) &&
+                    i + 1 < args.Length)
+                {
+                    int.TryParse(args[i + 1], out port);
+                    break;
+                }
+                const string prefix = "--mlagents-port=";
+                if (argument.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                {
+                    int.TryParse(argument.Substring(prefix.Length), out port);
+                    break;
+                }
+            }
+        }
+
+        if (port <= 0)
+        {
+            // Do not silently reuse an identical stream across processes whose
+            // stable worker identity is unavailable.
+            Debug.LogWarning("RL scenario seed requested without an ML-Agents port: " +
+                "worker scenarios cannot be reproduced exactly.");
+            return Derive(seed, Guid.NewGuid().GetHashCode() & int.MaxValue,
+                EnvironmentStreamSalt);
+        }
+
+        int hostHash = 23;
+        unchecked
+        {
+            foreach (char value in Environment.MachineName.ToUpperInvariant())
+            {
+                hostHash = (hostHash * 31) + value;
+            }
+        }
+        int resolved = Derive(Derive(seed, hostHash & int.MaxValue, EnvironmentStreamSalt),
+            port, IdentityStreamSalt);
+        Debug.Log("Bees RL scenario seed: configured=" + seed +
+            " host=" + Environment.MachineName +
+            " mlagents_port=" + port + " derived_root=" + resolved);
+        return resolved;
     }
 
     internal static int Create(Level level, int streamSalt, string[] args = null)

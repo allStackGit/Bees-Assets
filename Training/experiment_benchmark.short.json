@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "id": "one-v-one-short-range",
+  "revision": 1,
+  "behavior_name": "BeesRL1v1",
+  "matches": 100,
+  "seed": 10031,
+  "max_environment_steps_per_match": 200000,
+  "time_scale": 20,
+  "env_args": [
+    "--rl-ships-per-side=1",
+    "--rl-bee-ship-types=Wasp",
+    "--rl-human-ship-types=Gunship",
+    "--rl-map-size-min=32",
+    "--rl-map-size-max=40",
+    "--rl-episode-timeout=60",
+    "--rl-matchup-mode=sampled",
+    "--rl-static-obstacles=false",
+    "--rl-mining-asteroids=false",
+    "--rl-health-ratio=0.25",
+    "--rl-decision-period=5"
+  ]
+}

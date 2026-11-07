@@ -276,10 +276,10 @@ def _validate_unity_policy_identity(config: Mapping[str, Any], policy_path: Path
         )
 
 
-def contract_payload(assets_root: Path) -> dict[str, Any]:
+def contract_payload(assets_root: Path, trainer_config: Optional[Path] = None) -> dict[str, Any]:
     assets_root = assets_root.resolve()
     continual_path = assets_root / "Training" / "continual_learning_config.json"
-    trainer_path = assets_root / "Training" / "rl_1v1_config.yaml"
+    trainer_path = trainer_config or assets_root / "Training" / "rl_1v1_config.yaml"
     scenes_root = assets_root / "Scripts" / "Scenes"
     reward_path = scenes_root / "RlOneVsOneReward.cs"
     policy_path = scenes_root / "RlPolicySchema.cs"
@@ -413,6 +413,7 @@ def plan_run(
     resume_run_id: Optional[str] = None,
     build_id: Optional[str] = None,
     environment_args: Optional[Sequence[str]] = None,
+    trainer_config: Optional[Path] = None,
 ) -> dict[str, Any]:
     now = now or _utc_now()
     if sum(bool(value) for value in (force_new, preserve_run, resume_run_id)) > 1:
@@ -439,7 +440,9 @@ def plan_run(
             if not isinstance(argument, str) or not argument:
                 raise ValueError("environment_args must contain non-empty strings")
             normalized_environment_args.append(argument)
-    payload = contract_payload(assets_root)
+    if trainer_config is not None and not force_new:
+        raise ValueError("trainer_config requires a forced-new run")
+    payload = contract_payload(assets_root, trainer_config)
     key = compatibility_key(payload)
     previous = _load_state(state_path)
     if preserve_run and previous is None:
@@ -505,6 +508,9 @@ def plan_run(
         "resume_existing_run": resume_existing_run,
         "build_id": build_id,
         "environment_args": normalized_environment_args,
+        "trainer_config": ({"path": str(trainer_config.resolve()),
+                            "sha256": hashlib.sha256(trainer_config.read_bytes()).hexdigest()}
+                           if trainer_config else None),
         "contract": payload,
     }
 
@@ -595,6 +601,7 @@ def _parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
 
     plan = sub.add_parser("plan")
+    plan.add_argument("--trainer-config", type=Path)
     plan.add_argument("--assets-root", required=True)
     plan.add_argument("--state", required=True)
     plan.add_argument("--out", required=True)
@@ -677,6 +684,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             resume_run_id=args.resume_run_id,
             build_id=args.build_id,
             environment_args=environment_args,
+            trainer_config=args.trainer_config,
         )
         _atomic_json(Path(args.out), value)
         print(json.dumps(value, sort_keys=True))

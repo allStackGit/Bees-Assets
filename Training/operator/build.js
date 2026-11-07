@@ -1,6 +1,7 @@
 'use strict';
 
 const fs = require('node:fs');
+const crypto = require('node:crypto');
 const os = require('node:os');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
@@ -8,6 +9,7 @@ const { spawn } = require('node:child_process');
 const {
     ensureDir,
     ensureTokenFile,
+    invokePythonJson,
     exists,
     getGitShortSha,
     getProcessIdentity,
@@ -23,12 +25,14 @@ const {
     runSync,
     sleep,
     testControl,
+    writeJsonAtomic,
 } = require('./common');
 const {
     commitTrainingRunPlan,
     getLatestRelease,
     getPendingForcedNewRunPlan,
     getTrainingCompatibilityFingerprint,
+    resolveReleaseTrainingRuntime,
     newReleaseTrainingRuntime,
     newTrainingRunPlan,
     recoverTrainingRunLifecycle,
@@ -190,7 +194,7 @@ function findFilesByName(root, name, limit = 20) {
     return found;
 }
 
-async function invokeUnityBuild(unity, method, output, entrypoint, logName) {
+async function invokeUnityBuild(unity, method, output, entrypoint, logName, onProgress = null) {
     const logRoot = path.join(paths.logsRoot, 'Build');
     ensureDir(logRoot);
     const logPath = path.join(logRoot, logName);
@@ -219,9 +223,11 @@ async function invokeUnityBuild(unity, method, output, entrypoint, logName) {
         stdio: 'ignore',
     });
     const started = Date.now();
+    if (onProgress) onProgress('Starting Unity', 0);
     let lastStatus = '';
     const timer = setInterval(() => {
         const phase = getUnityBuildProgressStatus(logPath);
+        if (onProgress) onProgress(phase, Math.floor((Date.now() - started) / 1000));
         if (phase !== lastStatus || Date.now() - started < 5000) {
             const seconds = Math.floor((Date.now() - started) / 1000);
             console.log('Unity build: ' + phase + ' - elapsed ' + seconds + 's');
@@ -404,6 +410,199 @@ async function reconcileLatestReleaseBeforeBuild(config, python, unity, adminTok
         }
     }
     return {};
+}
+
+// A Unity-only maintenance rebuild never runs the ordinary build planner:
+// that planner can select a new run and repackage mutable learner source.
+// The paused experiment owns the same optimizer, run, Python runtime and
+// frozen trainer config while Unity game behavior may intentionally change.
+async function invokeMaintenanceUnityRebuild(options = {}) {
+    const report = typeof options.onProgress === 'function' ? options.onProgress : () => {};
+    report('Verifying paused run, checkpoint ownership and RL compatibility');
+    const config = require('./common').loadConfig();
+    const python = resolvePython(config);
+    const release = getLatestRelease();
+    const expected = String(options.expectedRunId || '');
+    if (!expected || release.run_id !== expected ||
+        release.build_id !== options.expectedBuildId ||
+        release.experiment_config?.sha256 !== options.expectedConfigSha) {
+        throw Error('Unity rebuild requires the exact paused experiment run, build and trainer configuration.');
+    }
+    if (getPendingForcedNewRunPlan()) {
+        throw Error('Pending forced-new-run plan prevents a same-run Unity maintenance rebuild.');
+    }
+    ensureRunLifecycleMatchesRelease(python, release);
+    const admin = readText(paths.adminTokenPath).trim();
+    const status = await getStatus(config, admin);
+    const desired = status.desired || {};
+    if (desired.training_enabled || desired.pending_release ||
+        desired.run_id !== release.run_id ||
+        desired.canonical_build_id !== release.build_id ||
+        desired.compatibility_key !== release.compatibility_key) {
+        throw Error('Unity rebuild requires stopped training on the exact canonical build with no pending release.');
+    }
+    const originalKey = String(release.compatibility_key || '').toLowerCase();
+    const checkKey = () => String(
+        getTrainingCompatibilityFingerprint(python).compatibility_key || ''
+    ).toLowerCase();
+    if (checkKey() !== originalKey) {
+        throw Error('Unity source changes the RL compatibility contract. Rebuild refused to protect the existing optimizer.');
+    }
+    assertUnityProjectAvailableForBatchBuild();
+    report('Preparing the pinned training and worker runtimes');
+    const unity = resolveUnityEditor(config);
+    const stamp = new Date();
+    const sha = getGitShortSha();
+    const buildId = formatLocalDate(stamp) + '-' + formatLocalTime(stamp) +
+        '-unity-maintenance-' + sha + '-' + crypto.randomBytes(3).toString('hex');
+    const packageRoot = path.join(paths.buildsRoot, 'Packages', buildId);
+    const buildRoot = path.join(paths.buildsRoot, 'MaintenanceUnity', buildId);
+    const windows = path.join(buildRoot, 'Windows');
+    const linux = path.join(buildRoot, 'Linux');
+    ensureDir(packageRoot);
+    const pinned = resolveReleaseTrainingRuntime(python, release);
+    const rebaseScript = path.join(paths.assetsRoot, 'Training', 'bees_pinned_runtime_rebase.py');
+    const rebase = (source, archive, oldSha) => invokePythonJson(python, [
+        rebaseScript,
+        '--source', source, '--source-sha256', oldSha,
+        '--old-build-id', release.build_id, '--new-build-id', buildId,
+        '--source-commit', sha, '--output', archive,
+    ]);
+    const trainingRuntime = rebase(pinned.archive,
+        path.join(packageRoot, 'training-runtime.zip'), pinned.archive_sha256);
+    if (trainingRuntime.runtime_version !== pinned.runtime_version) {
+        throw Error('Unity-only build modified the pinned learner runtime.');
+    }
+    // If the dashboard previously installed updated remote supervisors,
+    // carry those same bytes forward independently of the frozen learner.
+    const overridePath = path.join(paths.runtimeRoot, 'worker-runtime-override.json');
+    let workerOverride = null;
+    if (exists(overridePath)) {
+        const previous = readJson(overridePath);
+        if (previous.run_id === release.run_id &&
+            previous.build_id === release.build_id &&
+            previous.compatibility_key === release.compatibility_key) {
+            const workerRuntime = previous.training_runtime;
+            if (!workerRuntime?.archive || !workerRuntime?.archive_sha256) {
+                throw Error('Existing remote-only runtime metadata is incomplete; refusing to downgrade workers.');
+            }
+            const rebasedWorker = rebase(workerRuntime.archive,
+                path.join(packageRoot, 'worker-overlay.zip'), workerRuntime.archive_sha256);
+            workerOverride = {
+                run_id: release.run_id, build_id: buildId,
+                compatibility_key: release.compatibility_key,
+                training_runtime: rebasedWorker,
+            };
+        }
+    }
+
+    report('Compiling Windows RL Unity player');
+    await invokeUnityBuild(unity, 'BeesCommandLineBuild.BuildWindowsRl',
+        windows, 'Bees RL Training.exe', buildId + '-rl-windows.log',
+        (phase, seconds) => report('Windows Unity: ' + phase + ' (' + seconds + 's in Unity)'));
+    report('Compiling Linux RL Unity player');
+    await invokeUnityBuild(unity, 'BeesCommandLineBuild.BuildLinuxRl',
+        linux, 'Bees RL Training.x86_64', buildId + '-rl-linux.log',
+        (phase, seconds) => report('Linux Unity: ' + phase + ' (' + seconds + 's in Unity)'));
+    report('Checking RL compatibility and packaging Windows/Linux players');
+    if (checkKey() !== originalKey) {
+        throw Error('RL compatibility contract changed during Unity compilation. The old release remains active.');
+    }
+    const windowsZip = path.join(packageRoot, 'rl-windows.zip');
+    const linuxZip = path.join(packageRoot, 'rl-linux.zip');
+    packageBuild(python, windows, windowsZip, 'Bees RL Training.exe');
+    packageBuild(python, linux, linuxZip, 'Bees RL Training.x86_64');
+    const candidate = {
+        ...release,
+        build_id: buildId,
+        source_commit: sha,
+        created_utc: new Date().toISOString(),
+        previous_run_id: release.previous_run_id,
+        incompatible: false,
+        preserve_run_override: false,
+        training_runtime: trainingRuntime,
+        artifacts: [
+            { role: 'dedicated', platform: 'WindowsPlayer', folder: windows,
+                archive: windowsZip, entrypoint: 'Bees RL Training.exe' },
+            { role: 'dedicated', platform: 'LinuxPlayer', folder: linux,
+                archive: linuxZip, entrypoint: 'Bees RL Training.x86_64' },
+        ],
+        unity_maintenance: {
+            previous_build_id: release.build_id,
+            at: new Date().toISOString(),
+            warning: 'Unity simulation implementation may have changed; comparisons across this point require review.',
+        },
+    };
+    const envArgs = (desired.environment_args || []).map(String);
+    // The new compiled Windows player must validate *the current stage's*
+    // environment arguments before the control plane may stage a new build.
+    report('Validating the new Unity player against the current curriculum stage');
+    const validationKey = await assertRlEnvironmentArgsValid(
+        config, candidate, envArgs, python
+    );
+    const again = await getStatus(config, admin);
+    if (again.desired?.training_enabled || again.desired?.pending_release ||
+        again.desired?.run_id !== release.run_id ||
+        again.desired?.canonical_build_id !== release.build_id ||
+        again.desired?.compatibility_key !== release.compatibility_key ||
+        JSON.stringify(again.desired?.environment_args || []) !== JSON.stringify(envArgs)) {
+        throw Error('Training control changed while compiling. The candidate was not published.');
+    }
+
+    let bootstrapPublished = false;
+    try {
+        report('Publishing compatible Unity builds to the paused worker cluster');
+        if (!config.localOnly && exists(paths.tailnetAddressPath)) {
+            bootstrapPublished = true;
+            prepareRemoteBootstrap(config, python, candidate,
+                workerOverride ? { workerOverride, persistWorkerOverride: false } : {});
+            await startTailnetGatewayIfNeeded(config);
+        }
+        await publishRelease(config, admin, candidate);
+        const staged = await stageRelease(config, admin, candidate, envArgs, validationKey);
+        if (staged.pending_release) {
+            report('Waiting for the new Unity build to become canonical on workers');
+            await waitReleaseRollout(config, admin, buildId,
+                release.run_id, release.compatibility_key);
+        }
+        report('Finalizing the same-run release and retaining its learner checkpoint');
+        // Persist only when the coordinated control-plane release is canonical.
+        saveLatestRelease(candidate);
+        if (workerOverride) writeJsonAtomic(overridePath, workerOverride);
+        const centralRuntime = await prepareCentralReleaseRuntime(config, python, unity, candidate);
+        await startCentralAgentIfNeeded(config, python, unity, candidate, centralRuntime);
+        prepareLocalActorReleaseRuntime(config, candidate, centralRuntime);
+    } catch (error) {
+        // If the control-plane remained on the original build, undo the
+        // published candidate bootstrap. Otherwise a resumed old worker can
+        // wait forever for a candidate build that never became canonical.
+        if (bootstrapPublished) {
+            try {
+                const after = await getStatus(config, admin);
+                if (!after.desired?.pending_release &&
+                    after.desired?.canonical_build_id === release.build_id &&
+                    after.desired?.run_id === release.run_id &&
+                    getLatestRelease().build_id === release.build_id) {
+                    // The original worker-runtime pointer was retained until
+                    // canonical promotion, so ordinary bootstrap publication
+                    // restores the original pinned runtime or worker overlay.
+                    prepareRemoteBootstrap(config, python, release);
+                }
+            } catch (rollbackError) {
+                throw Error('Unity rebuild failed: ' + error.message +
+                    '; worker bootstrap rollback failed: ' + rollbackError.message +
+                    '. Leave the experiment paused and inspect the package.');
+            }
+        }
+        throw error;
+    }
+    return {
+        run_id: release.run_id,
+        old_build_id: release.build_id,
+        build_id: buildId,
+        runtime_version: trainingRuntime.runtime_version,
+        compatibility_key: release.compatibility_key,
+    };
 }
 
 async function invokeBuild(options = {}) {
@@ -722,6 +921,7 @@ module.exports = {
     getActiveRunId,
     getUnityBuildProgressStatus,
     invokeBuild,
+    invokeMaintenanceUnityRebuild,
     invokeUnityBuild,
     packageBuild,
     queryUnityProcesses,

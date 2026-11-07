@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "id": "one-v-one-stationary-aiming",
+  "revision": 1,
+  "behavior_name": "BeesRL1v1",
+  "matches": 100,
+  "seed": 10031,
+  "max_environment_steps_per_match": 200000,
+  "time_scale": 20,
+  "env_args": [
+    "--rl-ships-per-side=1",
+    "--rl-bee-ship-types=Wasp",
+    "--rl-human-ship-types=Gunship",
+    "--rl-matchup-mode=fixed",
+    "--rl-map-size=32",
+    "--rl-episode-timeout=30",
+    "--rl-health-ratio=0.00001",
+    "--rl-disable-movement=true",
+    "--rl-static-obstacles=false",
+    "--rl-mining-asteroids=false",
+    "--rl-collision-asteroid-spawn-seconds=0",
+    "--rl-decision-period=5"
+  ]
+}

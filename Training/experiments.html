@@ -1,0 +1,2916 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Experiment Hub · Bees</title>
+<style>
+:root {
+    color-scheme: light;
+    font: 14px/1.4 Arial, Helvetica, sans-serif;
+    color: #000000;
+    background: #ffffff;
+    --ink: #000000;
+    --paper: #ffffff;
+    --error: #c40000;
+    --control-height: 36px;
+}
+* { box-sizing: border-box; }
+html { background: var(--paper); }
+body {
+    width: calc(100% - 32px);
+    max-width: none;
+    margin: 16px auto;
+    padding: 18px 22px;
+    border: 4px solid var(--ink);
+    background: var(--paper);
+    color: var(--ink);
+}
+h1 {
+    margin: 0;
+    font-size: clamp(40px, 5.8vw, 68px);
+    line-height: .94;
+    font-weight: 900;
+    letter-spacing: -2.5px;
+}
+h2 {
+    margin: 0;
+    font-size: 24px;
+    line-height: 1.1;
+    font-weight: 900;
+    letter-spacing: -.5px;
+}
+header, .bar, .formgrid, .summary { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+header {
+    justify-content: space-between;
+    align-items: end;
+    gap: 20px;
+    border-bottom: 14px solid var(--ink);
+    padding: 2px 0 16px;
+    margin-bottom: 14px;
+}
+header small {
+    display: block;
+    margin-top: 10px;
+    font-size: 11px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: .7px;
+}
+section { border-bottom: 9px solid var(--ink); padding: 16px 0 20px; }
+section:last-of-type { border-bottom: 0; padding-bottom: 6px; }
+section > h2, section > .bar {
+    border-bottom: 2px solid var(--ink);
+    padding-bottom: 10px;
+    margin-bottom: 14px;
+}
+section > .bar { justify-content: space-between; }
+section > .bar h2 { margin: 0; }
+button {
+    cursor: pointer;
+    height: var(--control-height);
+    padding: 0 10px;
+    border: 2px solid var(--ink);
+    border-radius: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font: 800 13px Arial, Helvetica, sans-serif;
+    text-transform: uppercase;
+    letter-spacing: .3px;
+}
+button.primary { border-width: 3px; font-weight: 900; }
+button:hover:not(:disabled) { text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 3px; }
+button:active:not(:disabled) { outline: 2px solid var(--ink); outline-offset: -5px; }
+button:disabled { cursor: not-allowed; border-style: dotted; }
+input, textarea, select {
+    width: 100%;
+    padding: 8px;
+    border: 1px solid var(--ink);
+    border-radius: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font: inherit;
+}
+input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]), select {
+    height: var(--control-height);
+    padding: 0 8px;
+}
+input::placeholder, textarea::placeholder { color: var(--ink); opacity: 1; font-style: italic; }
+input:disabled, textarea:disabled, select:disabled { background: var(--paper); color: var(--ink); border-style: dotted; }
+input:focus, textarea:focus, select:focus, button:focus-visible, summary:focus-visible {
+    outline: 2px solid var(--ink);
+    outline-offset: 2px;
+}
+input[type=checkbox] { accent-color: var(--ink); }
+label {
+    display: block;
+    font-size: 12px;
+    font-weight: 800;
+    color: var(--ink);
+}
+label input, label select, label textarea { margin-top: 5px; }
+.formgrid { align-items: start; gap: 14px; }
+.formgrid > label { flex: 1 1 170px; }
+.formgrid > label.wide { flex: 2 1 350px; }
+textarea { min-height: 80px; resize: vertical; }
+small, .muted { color: var(--ink); }
+small { font-size: 11px; }
+.muted { font-size: 12px; }
+#message:not(:empty) {
+    margin: 12px 0;
+    padding: 10px 0;
+    border-top: 2px solid var(--ink);
+    border-bottom: 2px solid var(--ink);
+    font-weight: 800;
+}
+#message.error { border-color: var(--error); color: var(--error); }
+.summary {
+    gap: 0;
+    align-items: stretch;
+    border-top: 2px solid var(--ink);
+    border-bottom: 2px solid var(--ink);
+}
+.summary span {
+    flex: 1 1 auto;
+    padding: 8px 12px;
+    border-right: 1px solid var(--ink);
+    background: var(--paper);
+    color: var(--ink);
+    font-weight: 900;
+    font-variant-numeric: tabular-nums;
+}
+.summary span:last-child { border-right: 0; }
+.summary.error, .summary.error span { color: var(--error); border-color: var(--error); }
+.tablewrap { max-width: 100%; overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+th, td {
+    padding: 8px 9px;
+    border-bottom: 1px solid var(--ink);
+    text-align: left;
+    white-space: nowrap;
+    background: var(--paper);
+    color: var(--ink);
+}
+thead { border-top: 5px solid var(--ink); border-bottom: 2px solid var(--ink); }
+th { font-size: 11px; font-weight: 900; text-transform: uppercase; }
+td.name { white-space: normal; min-width: 170px; }
+td.worker-error { white-space: normal; min-width: 250px; overflow-wrap: anywhere; }
+.worker-issue, .error { color: var(--error); font-weight: 800; }
+.worker-summary { cursor: pointer; font-weight: 900; font-size: 24px; line-height: 1.1; }
+.worker-summary small { font-size: 11px; font-weight: 800; letter-spacing: .3px; }
+details.worker-details[open] > summary {
+    border-bottom: 7px solid var(--ink);
+    padding-bottom: 10px;
+    margin-bottom: 14px;
+}
+details { font-size: 12px; }
+summary { cursor: pointer; font-weight: 800; }
+.curriculum-stages { display: grid; gap: 14px; margin: 14px 0; }
+.curriculum-stages details { margin: 0; border: 2px solid var(--ink); padding: 8px 12px; min-width: 0; background: var(--paper); }
+.curriculum-stages summary { padding: 4px 0; font-size: 13px; }
+.curriculum-stages .bar { margin-top: 10px; }
+pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.5 Arial, Helvetica, sans-serif; }
+.graph { display: block; width: 100%; height: auto; border: 2px solid var(--ink); border-radius: 0; background: var(--paper); color: var(--ink); }
+.graph-wrap { position: relative; }
+#graph-tooltip { position:absolute; display:none; z-index:10; max-width:min(420px,90%); padding:9px 12px; white-space:pre-line; font-size:12px; font-weight:700; background:var(--paper); border:2px solid var(--ink); pointer-events:none; box-shadow:3px 3px 0 rgba(0,0,0,.15); }
+#graph-inspect { min-height:22px; margin:6px 0; font-size:12px; font-weight:700; }
+.benchmark-controls { display:flex; align-items:flex-end; justify-content:flex-start; gap:12px; flex-wrap:wrap; }
+.benchmark-controls label { min-width:170px; }
+.benchmark-controls button { align-self:flex-end; margin:0; }
+.benchmark-controls label { flex:1 1 190px; max-width:360px; }
+.benchmark-note { padding:10px 0; font-size:13px; font-weight:700; border-bottom:2px solid var(--ink); }
+.benchmark-results { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; margin:14px 0; }
+.benchmark-card { border:2px solid var(--ink); padding:14px; min-width:0; }
+.benchmark-card h3 { font-size:18px; margin:0 0 4px; }
+.benchmark-card p { margin:3px 0 10px; font-size:12px; }
+.benchmark-stats { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; padding:10px 0; border-top:1px solid var(--ink); border-bottom:1px solid var(--ink); }
+.benchmark-stats strong { display:block; font-size:24px; font-weight:900; font-variant-numeric:tabular-nums; }
+.benchmark-stats span { font-size:11px; font-weight:700; }
+.benchmark-card .muted { margin:10px 0 0; }
+.benchmark-subsection { padding:12px 0; border-top:2px solid var(--ink); margin-top:10px; }
+.benchmark-subsection > summary { font-size:16px; }
+.benchmark-subsection[open] > summary { margin-bottom:12px; }
+#benchmark-compare-panel td { white-space:normal; min-width:120px; }
+#benchmark-history-panel th, #benchmark-history-panel td { white-space:normal; }
+#benchmark-history-panel .tablewrap { overflow-x:auto; }
+@media (max-width:1000px) { .benchmark-results { grid-template-columns:1fr; } }
+.env-control { display:inline-flex; gap:5px; align-items:center; }
+.env-control button { padding:0 8px; min-width:32px; font-size:14px; }
+.env-control button:hover:not(:disabled) { background:var(--ink); color:var(--paper); }
+.env-control button:not(:disabled) { cursor:pointer; }
+.env-control .env-count { min-width:60px; text-align:center; }
+.env-feedback { margin-top: 4px; font-size: 11px; font-weight: 700; }
+.log-export { display: inline-flex; align-items: end; gap: 6px; flex-wrap: wrap; margin: 5px 0; }
+.log-export label { font-size: 11px; }
+.log-export select { min-width: 94px; }
+.log-export button { padding: 0 9px; font-size: 11px; }
+#chart-png { align-self: flex-end; }
+@media (min-width:1200px) { .graph-wrap { max-width:100%; } }
+#legend { display: flex; gap: 8px 20px; flex-wrap: wrap; padding: 8px 0 4px; font-size: 12px; font-weight: 800; }
+.legend-series { display: inline-flex; align-items: center; gap: 6px; }
+.dot { display: inline-block; flex: 0 0 auto; width: 10px; height: 10px; border: 1px solid var(--ink); }
+#chart-notes { display: flex; flex-wrap: wrap; gap: 4px 16px; padding: 2px 0 8px; font-size: 11px; }
+@media (max-width: 650px) {
+    body { width: calc(100% - 16px); margin: 8px auto; padding: 12px; border-width: 3px; }
+    h1 { font-size: 40px; letter-spacing: -1.5px; }
+    header { align-items: start; }
+    section { padding: 14px 0 17px; }
+    .summary span { flex-basis: 50%; }
+}
+
+[hidden] { display: none !important; }
+.hub-checkpoint-digest { font-family: monospace; overflow-wrap: anywhere; }
+.hub-tabs { display: flex; flex-wrap: wrap; gap: 7px; padding: 8px 0 14px; border-bottom: 4px solid var(--ink); align-items: flex-end; }
+.hub-tabs button[aria-selected="true"] { background: var(--ink); color: var(--paper); }
+.hub-tabs label { margin-left: auto; min-width: 160px; }
+.hub-standalone { border: 2px solid var(--ink); padding: 12px; margin: 14px 0; }
+.hub-standalone h3 { margin: 0 0 8px; font-size: 17px; }
+.hub-table td { white-space: normal; }
+.hub-pipeline-stage {
+    display: grid;
+    grid-template-columns: minmax(160px, 1fr) minmax(220px, 1fr) auto;
+    gap: 8px;
+    align-items: end;
+    margin: 9px 0;
+}
+.hub-pipeline-stage label { min-width: 0; }
+.hub-pipeline-stage select, .hub-pipeline-stage input { width: 100%; }
+@media (max-width: 720px) {
+    .hub-pipeline-stage { grid-template-columns: 1fr; }
+}
+.hub-notice { font-size: 12px; font-weight: 700; border-bottom: 2px solid var(--ink); padding: 6px 0; }
+.hub-controls { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 10px; }
+ .hub-controls button { flex: 0 1 auto; }
+#benchmark-target-controls .benchmark-target-toggle {
+    display: flex; flex-direction: row; align-items: flex-start;
+    gap: 8px; cursor: pointer;
+}
+#benchmark-target-controls .benchmark-target-toggle input[type="checkbox"] {
+    flex: 0 0 16px; width: 16px; height: 16px; margin: 2px 0 0;
+}
+#hub-automation-machines label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 0;
+    cursor: pointer;
+}
+#hub-automation-machines input[type="checkbox"] {
+    flex: 0 0 16px;
+    width: 16px;
+    height: 16px;
+    margin: 0;
+    padding: 0;
+    cursor: pointer;
+}
+.hub-tabs label select { min-width: 150px; }
+#hub-placements, #hub-plan-result { white-space: pre-line; }
+.hub-progress-plot { margin: 12px 0; width: 100%; border: 2px solid var(--ink); background: var(--paper); padding: 8px; }
+.hub-progress-plot svg { display: block; width: 100%; height: auto; max-height: 350px; }
+.hub-progress-plot text { font: 13px Arial, Helvetica, sans-serif; fill: #000; }
+.hub-progress-plot .plot-axis { stroke: #000; stroke-width: 2; }
+.hub-progress-plot .plot-grid { stroke: #ddd; stroke-width: 1; }
+.hub-progress-plot .plot-line { fill: none; stroke-width: 3; }
+.hub-progress-plot .plot-point { stroke: #fff; stroke-width: 1.5; }
+</style>
+</head>
+<body>
+<header><div><h1>Experiment Hub</h1><small>Independent projects · unified training management · Bees integration</small></div>
+<div class="bar" id="bees-controls"><button id="start" class="primary">Run queue</button><button id="pause">Pause for maintenance</button><button id="update-workers" hidden>Update worker software</button><button id="rebuild-unity" hidden>Rebuild Unity (experimental)</button><button id="resume" class="primary" hidden>Resume training</button><button id="stop" class="danger">Stop safely</button></div></header>
+
+<nav class="hub-tabs" role="tablist" aria-label="Experiment Hub navigation">
+  <button type="button" data-hub-go="design" aria-selected="false">Design</button>
+  <button type="button" data-hub-go="train" aria-selected="false">Train</button>
+  <button type="button" data-hub-go="monitor" aria-selected="true">Monitor</button>
+  <button type="button" data-hub-go="compare" aria-selected="false">Compare</button>
+  <button type="button" data-hub-go="machines" aria-selected="false">Machines</button>
+  <label>Project <select id="hub-project"><option value="bees">Bees</option></select></label>
+</nav>
+<div id="message" role="status"></div>
+<section data-hub-tab="design">
+  <h2>Configuration library</h2>
+  <p class="muted">Save and revise configurations without scheduling training. Projects own their simulation and training implementation; a new project needs a trusted adapter before it can execute.</p>
+  <div class="hub-standalone">
+    <h3>Saved configuration</h3>
+    <form id="hub-config-form">
+      <div class="formgrid">
+        <label>Configuration name<input id="hub-config-name" maxlength="100" required placeholder="Aiming baseline — beta 0.001"></label>
+        <label class="wide">Parameters (JSON)<textarea id="hub-config-json" rows="9" required>{}</textarea></label>
+        <fieldset class="wide" id="hub-config-evaluation" hidden>
+          <legend>Independent evaluation stop (optional)</legend>
+          <label>Approved suite ID <input id="hub-evaluation-suite" maxlength="48" placeholder="heldout"></label>
+          <label>Suite SHA-256 (optional) <input id="hub-evaluation-digest" maxlength="64" pattern="[0-9a-f]{64}"></label>
+          <label>Minimum trials <input id="hub-evaluation-trials" type="number" min="1" max="1000000" step="1" placeholder="100"></label>
+          <label>Minimum success rate (0–1) <input id="hub-evaluation-rate" type="number" min="0" max="1" step="any" placeholder="0.8"></label>
+          <label class="wide">All required benchmark suites (JSON array; use instead of the single-suite fields)
+            <textarea id="hub-evaluation-all-of" rows="5" placeholder='[{"suite_id":"short","min_trials":100,"min_success_rate":0.8},{"suite_id":"long","min_trials":100,"min_success_rate":0.7}]'></textarea>
+          </label>
+          <p class="muted wide">All suites must pass independently on the same checkpoint SHA-256. Supply 2–8 distinct suites, with optional per-suite hashes. An unqualified or mismatched checkpoint cannot advance the experiment.</p>
+        </fieldset>
+      </div>
+      <div class="hub-controls">
+        <button class="primary" type="submit" id="hub-config-save">Save draft</button>
+        <button type="button" id="hub-config-cancel">New draft</button>
+        <button type="button" id="hub-copy-bees-form">Copy current Bees training form</button>
+      </div>
+    </form>
+    <p id="hub-config-message" class="hub-notice" role="status"></p>
+  </div>
+  <div class="tablewrap hub-table"><table>
+    <thead><tr><th>Configuration</th><th>Project</th><th>Revision</th><th>Updated</th><th>Actions</th></tr></thead>
+    <tbody id="hub-config-rows"></tbody>
+  </table></div>
+  <div class="hub-standalone">
+    <h3>Register a project</h3>
+    <form id="hub-project-form">
+      <div class="formgrid">
+        <label>Project ID<input id="hub-new-project-id" required placeholder="ants"></label>
+        <label>Name<input id="hub-new-project-name" required placeholder="Ants"></label>
+        <label class="wide">Description<input id="hub-new-project-description" placeholder="Independent simulation and training system"></label>
+      </div>
+      <button type="submit">Add project</button>
+      <p class="muted">Project registration does not install executable code. Only trusted server-side adapters may launch jobs.</p>
+    </form>
+  </div>
+</section>
+<section data-hub-tab="train" data-project="bees">
+  <h2>Ordinary Bees training</h2>
+  <p class="muted">Start a new run or continue the current optimizer lineage without entering the experiment queue. These controls use the same Bees operator as the CLI. Existing experiment-owned runs must be managed through their own controls.</p>
+  <p id="hub-bees-control-status" class="hub-notice">Loading Bees training control…</p>
+  <label>Unity environment arguments for this ordinary run (one --rl-... argument per line)
+    <textarea id="hub-bees-env-args" rows="4" placeholder="Current release defaults"></textarea>
+  </label>
+  <p class="muted">Existing-run starts use these arguments. Changing the environment within the same run requires confirmation and can affect comparability. Actual argument validation is performed against the built Unity release before training starts.</p>
+  <div class="hub-controls">
+    <button type="button" id="hub-bees-resume" class="primary">Start / resume existing run</button>
+    <button type="button" id="hub-bees-new">Start fresh run</button>
+    <button type="button" id="hub-bees-build">Build Windows + Linux RL</button>
+    <button type="button" id="hub-bees-update-workers">Update remote workers</button>
+    <button type="button" id="hub-bees-stop" class="danger">Stop gracefully</button>
+  </div>
+  <p id="hub-operator-message" class="hub-notice" role="status"></p>
+</section>
+<section data-hub-tab="train" data-project="other">
+  <h2>Project job queue</h2>
+  <p class="hub-notice">Queue frozen configurations, coordinate resource claims, and explicitly start or stop CPU-only jobs on supported Linux or Windows machines with a locally installed, opted-in trusted adapter. Real-host native execution still requires qualification. Workloads cannot execute from configuration JSON alone. GPU jobs, disconnected agents, and unverified native limits remain blocked. Bees training stays under its existing operator.</p>
+  <div class="hub-standalone">
+    <h3>Queue a saved configuration</h3>
+    <div class="formgrid">
+      <label>Saved configuration<select id="hub-job-configuration"></select></label>
+      <label>Continue previous job (optional)<select id="hub-job-predecessor"></select></label>
+      <label class="wide">Requested resources (JSON)<textarea id="hub-job-resources" rows="5">{"cpus":2,"ram_mb":2048,"gpu_count":0}</textarea></label>
+    </div>
+    <button type="button" id="hub-job-queue">Queue job</button>
+    <button type="button" id="hub-job-preview">Preview queued placements</button>
+    <p id="hub-job-message" class="hub-notice" role="status">No work scheduled or executing.</p>
+    <div class="hub-standalone" id="hub-pipeline-panel" hidden>
+      <h3 id="hub-pipeline-title">Queue a multi-job pipeline</h3>
+      <label>Relationship between jobs
+        <select id="hub-pipeline-kind">
+          <option value="independent">Independent fresh jobs (no shared checkpoint)</option>
+          <option value="batch">Independent trials (no dependency)</option>
+          <option value="continuation">TinyBrains checkpoint-continuation stages</option>
+        </select>
+      </label>
+      <p class="muted" id="hub-pipeline-description">Choose two or more saved configurations. Queueing is atomic and does not authorize execution.</p>
+      <label><span id="hub-pipeline-predecessor-label">Run after existing job (optional)</span>
+        <select id="hub-pipeline-predecessor"><option value="">Start new sequence</option></select>
+      </label>
+      <div id="hub-pipeline-rows"></div>
+      <div class="hub-controls">
+        <button type="button" id="hub-pipeline-add">Add stage</button>
+        <button type="button" id="hub-pipeline-queue">Queue entire pipeline</button>
+      </div>
+      <p id="hub-pipeline-message" class="hub-notice" role="status">No pipeline queued.</p>
+    </div>
+    <div class="hub-standalone" id="hub-sequence-overview-panel" hidden>
+      <h3>Queued job sequences</h3>
+      <p class="muted">Review recent job chains and cancel their unstarted successors. Resume stages inherit a checkpoint and worker. Fresh stages run independently.</p>
+      <div class="tablewrap hub-table"><table>
+        <thead><tr><th>Sequence root</th><th>Projects / jobs</th><th>Current stage</th><th>Progress</th><th>Waiting reason</th><th>Action</th></tr></thead>
+        <tbody id="hub-sequence-overview-rows"></tbody>
+      </table></div>
+    </div>
+    <p id="hub-sequence-message" class="hub-notice" role="status" hidden></p>
+    <div class="hub-standalone">
+      <h3>Coordinate queued workload capacity</h3>
+      <p class="muted">These operations only claim capacity within the Hub ledger. They do not isolate CPU/RAM/GPUs, launch a process, or guarantee unused resources on the host. Only presently connected machines are eligible for new claims. Claims survive disconnects and restarts.</p>
+      <label>Preferred machine for a new or moved claim<select id="hub-job-machine"></select></label>
+      <label><input type="checkbox" id="hub-native-release-on-terminal"> Release the next started job’s claim after verified finish or Stop</label>
+      <button type="button" id="hub-job-allocate-all">Coordinate all eligible queued jobs</button>
+      <p class="muted">Use Stage move on each job to review several changes together. Apply staged moves can swap jobs between full hosts.</p>
+      <ul id="hub-claim-moves" aria-label="Staged claim moves"></ul>
+      <button type="button" id="hub-apply-claim-moves" disabled>Apply staged moves</button>
+      <p id="hub-job-allocate-message" class="hub-notice" role="status">No capacity claims made.</p>
+    </div>
+    <div class="hub-standalone">
+      <h3>Native queue automation</h3>
+      <p class="muted">Optional, disabled by default. Arm specific enrolled machines to automatically claim CPU/RAM budget, start only jobs with fresh authenticated native readiness, and release capacity after confirmed finished/stopped reports. One durable transition per pass. The scheduler stops on uncertain or failed jobs, agent replacement, or disconnect; restart disarms by default unless explicitly authorized below. GPU Starts require the option below and a current access proof. Bees training stays under its existing operator. The Hub does not measure or reserve capacity consumed by unmanaged workloads on a host.</p>
+      <p class="muted">Select only machines where you have accounted for existing Bees workers and other processes. Native service execution requires separately installed and verified adapters, including a completed OS preflight.</p>
+      <div id="hub-automation-machines" class="hub-notice">No eligible native machines connected.</div>
+      <label><input type="checkbox" id="hub-automation-adopt-running"> Re-adopt previously automated native jobs after a coordinator restart, only after the current agent freshly verifies a running or terminal dispatch</label>
+      <label><input type="checkbox" id="hub-automation-resume-after-restart"> Automatically restore CPU-only automation after coordinator or agent restart, only after fresh native inspection and lease verification; uncertain jobs require review. This does not enable startup after a machine reboot.</label>
+      <label><input type="checkbox" id="hub-automation-rebalance"> Move this session’s queued CPU and unprobed GPU claims when an armed host loses capacity or job compatibility</label>
+      <label><input type="checkbox" id="hub-automation-gpu-claim"> Claim capacity for queued exclusive GPU jobs</label>
+      <label><input type="checkbox" id="hub-automation-gpu-probe"> Probe exclusive GPU claims made by this session</label>
+      <label><input type="checkbox" id="hub-automation-gpu"> Start explicitly qualified exclusive GPU jobs</label>
+      <button type="button" id="hub-automation-arm">Arm selected machines</button>
+      <button type="button" id="hub-automation-disarm">Disarm automation</button>
+      <p id="hub-automation-status" class="hub-notice" role="status">Automation disarmed.</p>
+    </div>
+  </div>
+  <div class="tablewrap hub-table"><table>
+    <thead><tr><th>Configuration</th><th>Revision</th><th>Status</th><th>Resources</th><th>Learning progress</th><th>Action</th></tr></thead>
+    <tbody id="hub-job-rows"></tbody>
+  </table></div>
+  <div id="hub-job-plan" class="hub-notice" role="status">Capacity previews do not reserve resources.</div>
+</section>
+<section data-hub-tab="monitor" data-project="other">
+  <h2>Project monitoring</h2>
+  <p id="hub-other-monitor" class="hub-notice">No managed work reported yet.</p>
+  <div class="tablewrap hub-table"><table>
+    <thead><tr><th>Job</th><th>Native state</th><th>Learning progress</th><th>Summary timestamp</th><th>Host use</th></tr></thead>
+    <tbody id="hub-monitor-rows"></tbody>
+  </table></div>
+  <p class="muted">Native CPU-only service status and CPU/RAM observations appear when an approved Linux or Windows agent reports them. The isolated Windows Job Object lifecycle has passed real-hardware qualification; production project adapters and Linux host execution still need separate verification. Unknown service states require manual review; GPU isolation and cross-project GPU execution are not available.</p>
+</section>
+<section data-hub-tab="compare" data-project="other">
+  <h2>Project comparisons</h2>
+  <p id="hub-compare-notice" class="hub-notice">Select two or more jobs to compare reported learning progress. A chart describes progress; it does not establish experimental equivalence.</p>
+  <div class="formgrid">
+    <label>Metric
+      <select id="hub-compare-metric">
+        <option value="">Select a reported metric</option>
+      </select>
+    </label>
+    <label>Horizontal axis
+      <select id="hub-compare-x-axis">
+        <option value="steps_completed">Cumulative project steps</option>
+      </select>
+    </label>
+    <label>Run A<select id="hub-compare-a"></select></label>
+    <label>Run B<select id="hub-compare-b"></select></label>
+    <label>Run C<select id="hub-compare-c"></select></label>
+    <label>Run D<select id="hub-compare-d"></select></label>
+  </div>
+  <div class="hub-controls">
+    <button type="button" id="hub-compare-export-csv" disabled>Export selected CSV</button>
+    <button type="button" id="hub-compare-export-json" disabled>Export selected JSON</button>
+  </div>
+  <p id="hub-compare-export-message" class="muted" role="status"></p>
+  <div class="hub-standalone">
+    <h3>Promote the best evaluated model</h3>
+    <p class="muted">Choose 2–4 independent candidate jobs above and an approved next-stage configuration below. The Hub compares only identical frozen benchmark suites and promotes only a resumable model whose exact bytes match its evaluation. Active candidates can be scheduled for automatic selection after completion.</p>
+    <div class="formgrid">
+      <label>Next-stage saved configuration<select id="hub-compare-selection-config"></select></label>
+      <label>Next-stage CPU/RAM request (JSON)<input id="hub-compare-selection-resources" type="text" value='{"cpus":2,"ram_mb":2048,"gpu_count":0}'></label>
+    </div>
+    <div class="hub-controls">
+      <button type="button" id="hub-compare-selection-preview" disabled>Preview frozen benchmark ranking</button>
+      <button type="button" id="hub-compare-selection-queue">Schedule candidate selection</button>
+      <select id="hub-compare-selection-cancel-id" aria-label="Pending candidate selection"></select>
+      <button type="button" id="hub-compare-selection-review" disabled>Review &amp; queue verified winner</button>
+      <button type="button" id="hub-compare-selection-cancel">Cancel pending selection</button>
+    </div>
+    <p id="hub-compare-selection-ranking" class="muted" style="white-space:pre-line" role="status"></p>
+    <p id="hub-compare-selection-status" class="muted" role="status">No candidate selection scheduled.</p>
+    <p id="hub-compare-selection-message" class="muted" role="status"></p>
+  </div>
+
+  <div class="hub-progress-plot">
+    <svg id="hub-compare-svg" xmlns="http://www.w3.org/2000/svg"
+      role="img" aria-label="Run progress by cumulative project steps"
+      viewBox="0 0 900 320" preserveAspectRatio="xMidYMid meet"></svg>
+  </div>
+  <p id="hub-compare-chart-note" class="muted">Bounded comparison curves are saved separately from training records. Comparisons are observational, not independent evaluations.</p>
+  <div class="tablewrap hub-table"><table>
+    <thead><tr><th>Run</th><th>Status / host</th><th>Project steps</th><th>Selected metric</th><th>Reported metrics</th><th>Segment</th><th>Latest summary</th></tr></thead>
+    <tbody id="hub-compare-rows"></tbody>
+  </table></div>
+  <p class="muted">CSV and charts show observed training samples. JSON also includes job provenance and available evaluation receipts.</p>
+  <h3>Independent evaluation receipts</h3>
+  <p id="hub-compare-evaluation-note" class="muted"></p>
+  <div class="tablewrap hub-table"><table>
+    <thead><tr><th>Run</th><th>Suite</th><th>Suite SHA-256</th><th>Successes / trials</th><th>Success rate</th><th>Checkpoint SHA-256</th><th>Outcome</th></tr></thead>
+    <tbody id="hub-compare-evaluation-rows"></tbody>
+  </table></div>
+</section>
+<section data-hub-tab="machines">
+  <h2>Machine inventory and resource admission</h2>
+  <div class="hub-standalone">
+    <h3>Live Bees training workers</h3>
+    <p class="muted">Read-only data from the existing Bees control plane. Worker IDs are not necessarily distinct physical machines. These reports are not registered as verified generic compute agents.</p>
+    <button type="button" id="hub-live-bees-refresh">Refresh worker status</button>
+    <div class="tablewrap hub-table"><table>
+      <thead><tr><th>Trainer</th><th>Role</th><th>Platform</th><th>State</th><th>Environments</th><th>CPU %</th><th>RAM %</th><th>Accepted/s</th><th>Diagnostic</th></tr></thead>
+      <tbody id="hub-live-bees-rows"></tbody>
+    </table></div>
+    <p id="hub-live-bees-note" class="hub-notice"></p>
+  </div>
+  <p class="muted">Register capacities and preview concurrent CPU, RAM, and GPU placement. Linux agents may report a locally passed CPU/RAM service preflight after explicit native opt-in; each managed service is then verified against kernel cgroup limits. This does not establish exclusive physical host ownership or GPU isolation. GPU percentages are advisory budgets, not enforceable performance guarantees. Windows native jobs require an independently built and SHA-pinned local Job Object helper; none is installed automatically.</p>
+  <div class="hub-standalone">
+    <h3>Register machine</h3>
+    <form id="hub-machine-form">
+      <div class="formgrid">
+        <label>Machine ID<input id="hub-machine-id" required placeholder="halifax"></label>
+        <label>Name<input id="hub-machine-name" required placeholder="Halifax"></label>
+        <label>CPU slots<input id="hub-machine-cpus" type="number" min="1" max="4096" value="16" required></label>
+        <label>RAM MiB<input id="hub-machine-ram" type="number" min="128" value="98304" required></label>
+        <label class="wide">GPU devices (JSON array: ID, nominal VRAM MiB, optional PCI address)<textarea id="hub-machine-gpus" rows="3">[]</textarea></label>
+      </div>
+      <button type="submit">Register unverified machine</button>
+    </form>
+  </div>
+  <div class="hub-standalone">
+    <h3>Adjust Hub scheduling budget</h3>
+    <p class="muted">Use a smaller CPU/RAM budget than the machine's physical capacity to leave room for existing Bees training or other workloads. These are scheduling admission limits, not measured utilization, CPU pinning, or a guarantee that unmanaged workloads will stay within their share. Disarm native automation before changing them. Existing native jobs are not stopped or resized, and claimed capacity cannot be reduced away.</p>
+    <form id="hub-budget-form">
+      <div class="formgrid">
+        <label>Registered machine<select id="hub-budget-machine"></select></label>
+        <label>Hub CPU slots<input id="hub-budget-cpus" type="number" min="1" max="4096" required></label>
+        <label>Hub RAM MiB<input id="hub-budget-ram" type="number" min="128" max="100000000" required></label>
+      </div>
+      <button type="submit" id="hub-budget-save">Save scheduling budget</button>
+    </form>
+    <p id="hub-budget-message" class="hub-notice" role="status"></p>
+  </div>
+  <div class="hub-standalone">
+    <h3>Bind physical AMD GPUs</h3>
+    <p class="muted">Only a connected Linux agent with fresh AMDGPU sysfs observations can bind a logical GPU ID to a PCI address. Bindings must match the observed devices. Existing GPU coordination leases must be released first. Binding improves identity-aware capacity planning; it does not enable GPU execution, VRAM enforcement or device isolation.</p>
+    <form id="hub-gpu-bind-form">
+      <div class="formgrid">
+        <label>Connected Linux machine<select id="hub-gpu-bind-machine"></select></label>
+        <label class="wide">Logical GPU IDs, nominal VRAM MiB and exact observed PCI addresses (JSON)
+          <textarea id="hub-gpu-bind-json" rows="4">[]</textarea>
+        </label>
+      </div>
+      <button type="submit">Save GPU identity bindings</button>
+    </form>
+    <p id="hub-gpu-bind-message" class="hub-notice"></p>
+  </div>
+  <div class="tablewrap hub-table"><table>
+    <thead><tr><th>Machine</th><th>Agent</th><th>CPU slots</th><th>RAM MiB</th><th>GPUs</th><th>Native controls</th><th>Last seen</th><th>Credentials</th></tr></thead>
+    <tbody id="hub-machine-rows"></tbody>
+  </table></div>
+  <div class="hub-standalone">
+    <h3>Machine agent enrollment</h3>
+    <p class="muted">Enroll a registered machine once, then configure its agent with its machine ID and enrollment token. Rotate invalidates the previous token. Revoke disables access. Only the issued response shows the token; routine dashboard refreshes cannot retrieve it. Run Training/experiment_hub_agent.js on the machine using the restricted agent-only localhost port 7149 (or a trusted SSH tunnel forwarding that port). Never forward the privileged dashboard port 7148 to workers. Agent heartbeats report CPU, memory, and operating system, not physical GPU isolation.</p>
+    <p id="hub-enrollment-message" class="hub-notice" role="status">No enrollment token issued in this session.</p>
+    <label>One-time machine token<textarea id="hub-enrollment-token" readonly rows="2" spellcheck="false"></textarea></label>
+    <button id="hub-enrollment-clear" type="button">Clear token display</button>
+  </div>
+  <div class="hub-standalone">
+    <h3>Placement preview</h3>
+    <div class="formgrid">
+      <label>Requested CPU slots<input id="hub-request-cpus" type="number" value="2" min="1"></label>
+      <label>Requested RAM MiB<input id="hub-request-ram" type="number" value="2048" min="1"></label>
+      <label>GPU count<input id="hub-request-gpu-count" type="number" value="0" min="0" max="32"></label>
+      <label>Minimum VRAM per GPU (MiB)<input id="hub-request-gpu-vram" type="number" value="0" min="0"></label>
+      <label>GPU allocation mode<select id="hub-request-gpu-mode"><option value="exclusive">Exclusive device</option><option value="shared">Shared budget (advisory)</option></select></label>
+      <label>Shared VRAM budget per GPU (MiB)<input id="hub-request-share-vram" type="number" value="8192" min="1" disabled></label>
+      <label>Shared compute budget per GPU (%)<input id="hub-request-share-compute" type="number" value="50" min="1" max="100" disabled></label>
+      <label class="wide">Exact GPU device IDs (optional, comma separated)<input id="hub-request-gpus" placeholder="Leave empty to choose any suitable GPU"></label>
+    </div>
+    <button type="button" id="hub-preview">Check capacity</button>
+    <div id="hub-placements" class="hub-notice" role="status">Resource placement does not start a workload.</div>
+    <div class="hub-standalone">
+      <h3>Coordinate a resource lease</h3>
+      <p class="muted">Uses the CPU, RAM and GPU requirements above. Only connected machines may receive a lease. Issuing a lease blocks capacity for other Hub requests; the agent acknowledges its receipt but does not enforce isolation, reserve actual GPU memory, or start training. Existing untracked processes may still conflict. You must release a lease explicitly.</p>
+      <div class="formgrid">
+        <label>Project<select id="hub-lease-project"></select></label>
+        <label>Connected machine<select id="hub-lease-machine"></select></label>
+      </div>
+      <button type="button" id="hub-lease-request">Issue coordination lease</button>
+      <p id="hub-lease-message" class="hub-notice" role="status">No lease requested.</p>
+    </div>
+  </div>
+  <div class="hub-standalone">
+    <h3>Current coordination leases</h3>
+    <p class="muted">An acknowledged lease means the agent saw the request. Receipt freshness is lost after disconnection or coordinator restart, but the capacity claim remains until it is explicitly released.</p>
+    <div class="tablewrap hub-table"><table>
+      <thead><tr><th>Project</th><th>Machine</th><th>CPU / RAM</th><th>GPUs</th><th>Lease state</th><th>Action</th></tr></thead>
+      <tbody id="hub-lease-rows"></tbody>
+    </table></div>
+  </div>
+  <div class="hub-standalone">
+    <h3>Cross-project capacity coordination</h3>
+    <p class="muted">Coordinate available Hub budgets across all queued non-Bees projects in round-robin order. Each project gets an opportunity before its next waiting job. This changes only the Hub's advisory lease ledger. No machine process starts and no OS resource limit is enforced.</p>
+    <button type="button" id="hub-global-allocate">Coordinate pending jobs across projects</button>
+    <p id="hub-global-allocate-result" class="hub-notice" role="status">No cross-project claims made.</p>
+  </div>
+  <div class="hub-standalone">
+    <h3>Simultaneous workload preview</h3>
+    <p class="muted">Enter a JSON array of workloads, each with a unique ID and resource request. CPU and RAM are required; GPU fields are optional. Shared GPUs additionally require gpu_mode = shared, gpu_count, gpu_vram_mb, and gpu_compute_pct. This is greedy capacity planning, not scheduling, process isolation, or a performance promise.</p>
+    <label class="wide">Workloads (JSON)
+      <textarea id="hub-plan-json" rows="8">[]</textarea>
+    </label>
+    <button type="button" id="hub-plan">Preview concurrent workloads</button>
+    <div id="hub-plan-result" class="hub-notice" role="status">No resources reserved or processes launched.</div>
+  </div>
+</section>
+
+<section data-hub-tab="machines">
+<details id="storage-panel">
+<summary>Experiment data storage</summary>
+<div class="formgrid">
+<label class="wide">Data directory (absolute path)<input id="storage-root" type="text" placeholder="Loading current experiment data path…"></label>
+<button id="storage-save" type="button">Copy data and change directory</button>
+</div>
+<p id="storage-status" class="muted">Current directory will be loaded from the manager.</p>
+<p class="muted">Default: the existing Training/Experiments directory. Changing this copies experiment definitions, evaluator snapshots, benchmark reports, and full metric history to a new empty directory. Original data is retained as a backup. Only available while the manager is idle. Restart the manager to activate the new location. Unity builds, model checkpoints and the learner registry remain in their existing Bees locations.</p>
+</details>
+</section>
+<section data-hub-tab="monitor" data-project="bees">
+<h2>Bees training</h2>
+<p id="hub-monitor-training" class="hub-notice">Loading live training status…</p>
+<h2>Experiment overview</h2><div id="overview" class="summary"></div>
+<p class="muted">Progress is measured from the active run's ML-Agents learner summaries. Combat metrics are sampled from live worker windows, <strong>not</strong> a frozen evaluation benchmark.</p>
+</section>
+<section data-hub-tab="monitor" data-project="bees">
+<details id="worker-panel" class="worker-details">
+<summary class="worker-summary">Worker Status <small id="worker-indicator">· Open for live diagnostics</small></summary>
+<p class="muted" id="worker-summary">Loading current Bees training control status…</p>
+<div class="tablewrap"><table><thead><tr>
+<th>Worker</th><th>State</th><th>Envs</th><th>CPU</th><th>RAM</th>
+<th>LiveExp/s</th><th>Staged/s</th><th>Accept/s</th><th>Accepted total</th><th>Consumed total</th><th>UploadQ</th><th>BrokerQ</th><th>Age</th><th>Error / diagnostic</th>
+</tr></thead><tbody id="worker-rows"></tbody></table></div>
+<p class="muted">Live training-control information (same source as <code>bees.ps1 status</code>). Cumulative accepted/consumed counts are reported by each worker process and may reset when a worker restarts; compare only workers reporting for the current run. Use +/- to set a persistent per-worker environment target. Clicking a button explicitly authorizes that live adjustment; changing capacity can affect throughput and before/after performance comparisons. The row confirms when the request was accepted and when the worker actually applied it. Disabled controls explain why the worker cannot resize. Other workers and the learner are not restarted by a live environment-count change. Workers must be online to change their targets. Worker status refreshes without duplicating history.</p>
+</details>
+</section>
+<section data-hub-tab="train" data-project="bees">
+<h2 id="create-title">Queue an experiment</h2>
+<form id="create">
+<div class="formgrid">
+<label>Experiment name<input id="name" maxlength="100" required placeholder="Long-range baseline"></label>
+<label>Campaign / comparison group<input id="group" maxlength="80" value="Turret combat"></label>
+<label>First-stage step budget<input id="steps" type="number" min="1000" step="1000" value="20000000" required></label>
+<label>Scenario root seed (optional)<input id="scenario-seed" type="number" min="0" max="2147483647" step="1" placeholder="Fresh random seed (default)"></label>
+<label>Time limit (minutes; blank = unlimited)<input id="minutes" type="number" min="1" placeholder="Unlimited"></label>
+<label>No-progress limit (minutes; blank = unlimited)<input id="stall" type="number" min="1" value="45" placeholder="Unlimited"></label>
+<label class="wide"><input id="unlimited-steps" type="checkbox" style="width:auto"> Continue indefinitely on the final curriculum stage (no total step cap)</label>
+<label class="wide">Environment argument overrides, one per line<textarea id="args" placeholder="--rl-map-size-min=96&#10;--rl-map-size-max=112"></textarea></label>
+</div>
+<details style="margin:14px 0">
+<summary>Curriculum stages · saved defaults, fully editable</summary>
+<p class="muted">The saved curriculum loads by default (initially 19 combat stages at 20 million steps each). Expand any stage to edit its duration, name or environment overrides; reorder or remove it as needed. Changes are frozen per queued experiment and retain the same network and optimizer. Advancing remains step-based.</p>
+<div class="bar">
+<button id="load-curriculum" type="button">Reload saved default curriculum</button>
+<button id="save-curriculum" type="button">Save current curriculum as default</button>
+</div>
+<small id="curriculum-status" class="muted">Loading saved curriculum…</small>
+<div class="formgrid">
+<label>First stage name<input id="stage-name" maxlength="100" value="Initial combat"></label>
+<label>First stage timeout target % (optional)<input id="stage-target" type="number" min="0" max="100" step="any" placeholder="5"></label>
+</div>
+<div id="stage-rows" class="curriculum-stages"></div>
+<button id="add-stage" type="button">Add curriculum stage</button>
+<div class="bar">
+<label>Keep first N stages<input id="prefix-stages" type="number" min="1" step="1" value="19"></label>
+<button id="keep-prefix" type="button">Keep first N</button>
+<label>Set all stage durations (steps)<input id="bulk-stage-steps" type="number" min="1000" step="1000" value="20000000"></label>
+<button id="apply-stage-steps" type="button">Apply to every stage</button>
+</div>
+<p id="curriculum-preview" class="muted"></p>
+</details>
+<p class="muted">Arguments override the cluster defaults. Each experiment starts a fresh policy and optimizer using its frozen trainer configuration. v26 supports width 128 and feedforward networks; layer count and normalization can vary.</p><details style="margin:12px 0"><summary>Trainer configuration · fresh initialization</summary><p id="trainer-config-status">Loading release defaults…</p><div class="formgrid"><label>Entropy beta<input id="trainer-beta" type="number" min="0" step="any" required></label><label>Lambda<input id="trainer-lambd" type="number" min="0" step="any" required></label><label>Learning rate<input id="trainer-learning_rate" type="number" min="0" step="any" required></label><label>Batch size<input id="trainer-batch_size" type="number" min="1" step="1" required></label><label>Buffer size<input id="trainer-buffer_size" type="number" min="1" step="1" required></label><label>PPO epochs<input id="trainer-num_epoch" type="number" min="1" step="1" required></label><label>Network layers (width 128)<input id="trainer-num_layers" type="number" min="1" step="1" required></label><label>ML-Agents initialization seed<input id="trainer-seed" type="number" min="0" step="1" required></label><label>Observation normalization<select id="trainer-normalize"><option value="true">Enabled</option><option value="false">Disabled</option></select></label></div></details>
+<p><label>Evaluation schedule
+<select id="evaluation-mode">
+<option value="periodic" selected>Every 100M learner steps or every 25% of planned run, whichever is more frequent</option>
+<option value="each_stage">Every curriculum stage (legacy option)</option>
+<option value="final">Final checkpoint only</option>
+<option value="none">No automatic evaluations</option>
+</select></label>
+<small id="benchmark-config">Loading evaluation settings…</small></p>
+<fieldset id="benchmark-target-controls">
+<legend>Optional verified development benchmark completion</legend>
+<label class="benchmark-target-toggle"><input id="benchmark-target-enabled" type="checkbox"> End the run early when every frozen development scenario passes the target at consecutive periodic checkpoints</label>
+<div class="formgrid">
+<label>Minimum win rate %<input id="benchmark-target-wins" type="number" min="0" max="100" step="any" value="70"></label>
+<label>Maximum timeout rate %<input id="benchmark-target-timeouts" type="number" min="0" max="100" step="any" value="5"></label>
+<label>Minimum matches per scenario<input id="benchmark-target-matches" type="number" min="30" max="10000" step="1" value="100"></label>
+<label>Consecutive passing checkpoints<input id="benchmark-target-passes" type="number" min="1" max="4" step="1" value="2"></label>
+</div>
+<p class="muted">Off by default. Requires periodic evaluation and sufficient frozen matches in every scenario. Uses validated independent development evaluations, not live training statistics or the reserved held-out suite. A passing target completes the run after the verified checkpoint stop; it does not skip checkpoint verification or establish statistical certainty.</p>
+</fieldset>
+<label><input id="reserve-heldout" type="checkbox" style="width:auto"> Reserve a separate held-out benchmark suite for optional final validation</label>
+<small id="heldout-config">Configure Training/Experiments/heldout-benchmark-settings.json before using this option. The suite is frozen when queued and never runs automatically.</small>
+<p class="muted">Evaluations pin an ONNX checkpoint, run the unchanged benchmark suite, and resume the same optimizer. Periodic evaluations can occur within a stage. For unlimited runs, evaluations occur every 100M steps. Evaluations require a configured frozen benchmark suite; failures disarm the queue.</p>
+<fieldset id="replication-controls"><legend>Optional scientific replication</legend><label><input id="replicate-enabled" type="checkbox" style="width:auto"> Queue fresh independent-seed runs</label><label>Run count <input id="replicate-count" type="number" min="2" max="32" step="1" value="3" disabled></label><p class="muted">Off by default. When enabled, queues fresh sequential training runs with consecutive ML-Agents initialization seeds. Unity's training scenario randomness is independently randomized.</p></fieldset>
+<button class="primary" type="submit">Add to queue</button> <button id="hub-save-bees-draft" type="button">Save as draft</button> <button id="cancel-edit" type="button" hidden>Cancel editing</button>
+</form>
+</section>
+<section data-hub-tab="compare" data-project="bees">
+<div class="bar"><h2>Runs and comparisons</h2><label>Show group <select id="filter"><option value="">All</option></select></label>
+<label>Graph <select id="metric"><option value="timeout_pct">Timeout %</option><option value="bee_hits_per_shot">Bee hits per shot</option><option value="human_hits_per_shot">Human hits per shot</option><option value="bee_aim_error_deg">Bee aim error °</option><option value="human_aim_error_deg">Human aim error °</option><option value="bee_near_miss_pct">Bee near-miss %</option><option value="human_near_miss_pct">Human near-miss %</option><option value="bee_win_pct">Bee win %</option><option value="human_win_pct">Human win %</option><option value="group_reward" selected>Mean Group Reward</option><option value="reward">Mean Reward (individual)</option><option value="steps_per_second">Reported learner steps/s</option><option value="effective_steps_per_second">Effective learner steps/s</option><option value="ppo_busy_pct">PPO busy %</option><option value="ppo_update_s">PPO seconds/update</option><option value="ppo_minibatches_s">PPO minibatches/s</option><option value="ppo_gpu_pct">PPO GPU utilization %</option><option value="pipeline_staged_s">Worker staged/s</option><option value="pipeline_accepted_s">Worker accepted/s</option><option value="pipeline_consumed_s">Worker consumed/s</option><option value="pipeline_broker_q">Broker queue depth</option></select></label>
+<label>Horizontal axis <select id="axis"><option value="steps">Learner steps</option><option value="time">Observed training hours</option></select></label>
+<label>Smoothing <select id="smoothing"><option value="1">Raw samples</option><option value="5">Last 5 samples</option><option value="15">Last 15 samples</option><option value="30">Last 30 samples</option></select></label><button id="chart-png" type="button">Save chart PNG</button><button id="chart-csv" type="button">Save chart CSV</button><button id="chart-history" type="button">Load full chart history</button><button id="chart-recent" type="button">Use recent samples</button></div>
+<div class="graph-wrap"><svg id="graph" class="graph" viewBox="0 0 800 250" role="img" aria-label="Interactive training curves"></svg><div id="graph-tooltip" role="status"></div></div>
+<div id="graph-inspect">Hover over the graph for sample values. Latest and average values appear in the legend.</div>
+<div id="legend"></div>
+<div id="chart-notes" class="muted"></div>
+<div id="aggregate" class="summary" style="margin:14px 0"></div>
+<div class="tablewrap"><table><thead><tr><th>Plot</th><th>Experiment</th><th>Status</th><th>Steps</th><th>Training hours</th><th>Effective steps/s</th><th>Timeout</th><th>Hit/shot</th><th>Run</th></tr></thead><tbody id="rows"></tbody></table></div>
+</section>
+<section data-hub-tab="compare" data-project="bees">
+<details id="research-panel" class="worker-details">
+<summary class="worker-summary">Research comparisons <small>· independent training seeds and uncertainty</small></summary>
+<p class="muted">Results are grouped only when the study, frozen training settings, checkpoint target, Unity build, evaluator, opponent, and benchmark recipe agree. The unit of analysis is the independently trained network, not individual matches or shots. Confidence intervals across seeds use a Student-t calculation and do not establish causality. Development and held-out suites remain separate.</p>
+<div class="bar"><button id="research-refresh" type="button">Refresh comparisons</button><button id="research-csv" type="button">Save research CSV</button><label>Win-rate threshold %<input id="research-threshold" type="number" min="0" max="100" step="1" value="50"></label></div>
+<p id="research-message" class="muted">Expand to load research comparisons.</p>
+<div class="tablewrap"><table><thead><tr><th>Comparison</th><th>Configuration</th><th>Checkpoint</th><th>Benchmark</th><th>Runs</th><th>Mean win %</th><th>Win SD</th><th>95% interval (across seeds)</th><th>Mean timeout %</th><th>Validation</th></tr></thead><tbody id="research-rows"></tbody></table></div>
+<h3>Between-configuration comparisons</h3>
+<p class="muted">Win-rate difference (A − B) at the same evaluated step and benchmark. Intervals use independent trained-network replicates (Welch approximation). With only one seed per condition, the difference is descriptive only.</p>
+<div class="bar"><button id="research-diff-csv" type="button">Save differences CSV</button></div>
+<div class="tablewrap"><table><thead><tr><th>Campaign</th><th>Benchmark</th><th>Steps</th><th>Beta A</th><th>Beta B</th><th>Runs A/B</th><th>A − B win %</th><th>95% interval</th></tr></thead><tbody id="research-difference-rows"></tbody></table></div>
+<h3>Sample efficiency</h3>
+<p class="muted">First recorded evaluation meeting the chosen win-rate threshold; intervening steps are unknown. Runs not observed meeting the threshold are treated as censored, not zero. Held-out results are excluded from sample-efficiency screening.</p>
+<div class="bar"><button id="research-efficiency-csv" type="button">Save efficiency CSV</button></div>
+<div class="tablewrap"><table><thead><tr><th>Campaign</th><th>Beta</th><th>Benchmark</th><th>Reached</th><th>Median first observed steps</th><th>Threshold</th></tr></thead><tbody id="research-efficiency-rows"></tbody></table></div>
+</details>
+</section>
+<section data-hub-tab="monitor" data-project="bees">
+<details id="performance-panel" class="worker-details">
+<summary class="worker-summary">Training efficiency <small>· Speed and bottleneck signals by curriculum stage</small></summary>
+<p class="muted">Effective steps/s = observed learner-step increase divided by observed training time. Paused evaluations and checkpoint transitions are excluded; the first partial interval after a restart is not counted. PPO busy uses the learner's cumulative optimizer clock. The PPO update, CPU and GPU columns sample the latest completed update; CPU/GPU and detailed timing require existing PPO diagnostics. Missing readings remain blank. These are screening signals, not definitive bottleneck diagnoses.</p>
+<div class="tablewrap"><table><thead><tr>
+<th>Experiment</th><th>Stage</th><th>Epochs</th><th>Training h</th><th>Effective steps/s</th><th>PPO s/update</th><th>Minibatches/s</th><th>PPO busy %</th><th>PPO CPU %</th><th>PPO GPU %</th><th>Workers</th><th>Staged/s</th><th>Accepted/s</th><th>Consumed/s</th><th>Broker %</th><th>Upload Q</th><th>Pressure signals</th>
+</tr></thead><tbody id="performance-rows"></tbody></table></div>
+<p class="muted">Keep hardware, worker capacity, execution flags, and diagnostics settings identical when comparing runs. Quality at the same learner step is not the same as quality after the same number of training hours. The experiment manager does not automatically enable profiling.</p>
+</details>
+</section>
+<section data-hub-tab="compare" data-project="bees">
+<details id="benchmark-panel" class="worker-details">
+<summary class="worker-summary">Checkpoint evaluations <small>· What can this network do?</small></summary>
+<p class="muted">At each curriculum checkpoint, the saved network fights <strong>three fixed opponents</strong>, 100 matches each. The opponents and test conditions stay the same across beta runs. These matches measure ability; they do not train the network.</p>
+<div class="bar benchmark-controls">
+<label>Whose results?
+<select id="benchmark-run-filter"><option value="current">Current beta run</option></select></label>
+<label>Which checkpoint?
+<select id="benchmark-checkpoint-filter"><option value="latest">Most recent checkpoint</option></select></label>
+<label>Which test?
+<select id="benchmark-scenario-filter"><option value="">All three tests</option></select></label>
+<button id="benchmark-refresh" type="button">Refresh results</button>
+</div>
+<div id="benchmark-summary" class="benchmark-note" role="status"></div>
+<div id="benchmark-results" class="benchmark-results"></div>
+<details id="benchmark-compare-panel" class="benchmark-subsection">
+<summary>Compare checkpoints and beta runs</summary>
+<p class="muted">Compare the same test and stage across beta runs. Compare one network's earlier and later checkpoints to check learning and retention. A changed Unity build, opponent or benchmark recipe is a different test, even if the name is the same.</p>
+<div class="tablewrap"><table>
+<thead id="benchmark-matrix-head"></thead>
+<tbody id="benchmark-matrix-rows"></tbody>
+</table></div>
+</details>
+<details id="benchmark-history-panel" class="benchmark-subsection">
+<summary>Detailed results and older reports</summary>
+<p class="muted">Older qualification runs and legacy benchmarks remain saved. Choose “All reports, including tests” in the run selector to see them here. Expand “Technical details” for hashes, paths, versions and fixed seeds.</p>
+<div class="tablewrap"><table><thead><tr>
+<th>Test</th><th>Run / checkpoint</th><th>Stage</th><th>Wins</th><th>Losses</th><th>Timeouts</th><th>Hits / shots</th><th>Mean seconds</th><th>Technical details</th>
+</tr></thead><tbody id="benchmark-rows"></tbody></table></div>
+</details>
+</details>
+</section>
+<script src="/experiment-hub-ui.js"></script>
+<script>
+'use strict';
+const $ = id => document.getElementById(id);
+const chosen = new Set();
+let chosenInitialized = false;
+let rebuildRequestPending = false;
+let latest = null;
+let editingId = null;
+let editingRevision = null;
+let editingDefaultsSha = null;
+let defaultCurriculum = null;
+// Series colors are confined to the chart and its legend; red is reserved for errors.
+const colors = ['#2469aa','#946100','#347857','#7952a3','#087c9b','#64711a','#8b4d83','#465f9a'];
+const fmt = (n, d = 0) => n == null || !Number.isFinite(Number(n)) ? '—' : Number(n).toLocaleString(undefined, { maximumFractionDigits: d });
+const txt = (tag, value) => { const e = document.createElement(tag); e.textContent = value; return e; };
+function request(url, value) {
+    return fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(value) })
+        .then(async r => { const data = await r.json(); if (!r.ok) throw Error(data.error || r.statusText); return data; });
+}
+function cell(tr, text, className) {
+    const td = txt('td', String(text)); if (className) td.className = className;
+    tr.append(td); return td;
+}
+function performanceMean(perf, key) {
+    const count = perf?.counts?.[key];
+    return count > 0 ? perf.totals[key] / count : null;
+}
+function stagePerformanceThrough(item, index) {
+    if (!item || !Number.isInteger(index) || index < 0) return null;
+    const stages = (item.stage_history || []).slice(0, index + 1);
+    if (stages.length !== index + 1 || stages.some(record => !record?.performance)) return null;
+    const seconds = stages.reduce((n, record) => n + record.performance.training_s, 0);
+    const steps = stages.reduce((n, record) => n + record.performance.steps, 0);
+    return { hours: seconds / 3600, steps_per_second: seconds > 0 ? steps / seconds : null };
+}
+function metricValue(sample, field) {
+    if (field.startsWith('ppo_') && field !== 'ppo_busy_pct')
+        return sample.ppo?.[field.slice(4)] ?? null;
+    if (field.startsWith('pipeline_')) return sample.pipeline?.[field.slice(9)] ?? null;
+    return sample[field] ?? null;
+}
+// Applied count changes use worker status; older manual requests remain
+// approximate because the historical record does not prove when they applied.
+function isTrainingSpeedMetric(metric) {
+    return metric === 'steps_per_second' || metric === 'effective_steps_per_second' ||
+        metric.startsWith('ppo_') || metric.startsWith('pipeline_');
+}
+function environmentMarkers(item, axis) {
+    const samples = (item.samples || []).map(sample => ({
+        at: Date.parse(sample.at),
+        x: axis === 'time'
+            ? (sample.training_s == null ? null : sample.training_s / 3600)
+            : sample.step,
+    })).filter(point => Number.isFinite(point.at) && Number.isFinite(point.x))
+        .sort((a, b) => a.at - b.at);
+    const approximatePosition = at => {
+        const time = Date.parse(at);
+        if (!Number.isFinite(time) || !samples.length) return null;
+        const afterIndex = samples.findIndex(sample => sample.at >= time);
+        if (afterIndex === 0) return samples[0].x;
+        if (afterIndex === -1) return samples[samples.length - 1].x;
+        const before = samples[afterIndex - 1], after = samples[afterIndex];
+        return after.at === before.at ? after.x :
+            before.x + (after.x - before.x) * (time - before.at) / (after.at - before.at);
+    };
+    const since = Date.parse(item.env_observation_started_at);
+    const olderRequests = (item.capacity_changes || [])
+        .filter(change => !Number.isFinite(since) || Date.parse(change.at) < since)
+        .filter(change => Number.isInteger(change.envs) && change.envs > 0)
+        .map(change => ({
+            ...change, label: change.trainer_id + ' · requested ' +
+                fmt(change.envs) + ' envs (historical, unconfirmed)',
+        }));
+    const observed = (item.env_count_changes || []).map(change => ({
+        ...change, label: change.trainer_id + ' · ' + fmt(change.from) +
+            ' → ' + fmt(change.to) + ' envs (observed)',
+    }));
+    return [...olderRequests, ...observed].map(change => {
+        const recordedX = axis === 'time' ? (change.training_s == null
+            ? null : Number(change.training_s) / 3600) : change.step;
+        const x = Number.isFinite(recordedX) ? recordedX :
+            approximatePosition(change.at);
+        return { ...change, x, run: item.name };
+    }).filter(change => Number.isFinite(change.x) && change.x >= 0);
+}
+let chartHover = null;
+const fullChartHistory = new Map();
+function chart(items) {
+    const svg = $('graph'); svg.replaceChildren(); $('legend').replaceChildren(); $('chart-notes').replaceChildren();
+    const tooltip = $('graph-tooltip');
+    tooltip.style.display = 'none';
+    const metric = $('metric').value, axis = $('axis').value;
+    const smooth = Number($('smoothing').value) || 1;
+    const all = items.filter(x => chosen.has(x.id));
+    const xValue = sample => axis === 'time'
+        ? (Number.isFinite(sample.training_s) ? sample.training_s / 3600 : null)
+        : sample.step;
+    const seriesFor = item => {
+        const archive = fullChartHistory.get(item.id);
+        const compatible = archive && archive.metric === metric &&
+            archive.axis === axis && archive.smooth === smooth;
+        const inputs = (compatible ? archive.samples : item.samples || [])
+            .map((sample, sourceIndex) => ({
+                x: xValue(sample), raw: metricValue(sample, metric),
+                step: sample.step, at: sample.at, sourceIndex,
+                fromArchive: compatible,
+                chartY: sample._chart_plotted, chartMean: sample._chart_mean,
+            }))
+            .filter(point => Number.isFinite(point.x) &&
+                point.raw != null && Number.isFinite(Number(point.raw)));
+        let total = 0;
+        return inputs.map((point, index) => {
+            total += Number(point.raw);
+            const range = inputs.slice(Math.max(0, index - smooth + 1), index + 1);
+            return {
+                ...point,
+                y: point.fromArchive && Number.isFinite(point.chartY)
+                    ? point.chartY : range.reduce((n, p) => n + Number(p.raw), 0) / range.length,
+                mean: point.fromArchive && Number.isFinite(point.chartMean)
+                    ? point.chartMean : total / (index + 1),
+            };
+        });
+    };
+    const datasets = all.map((item, index) => ({
+        item, color: colors[index % colors.length], points: seriesFor(item),
+    }));
+    const chartNotes = [];
+    const renderChartNotes = () => $('chart-notes').replaceChildren(
+        ...chartNotes.map(note => txt('span', note)));
+    for (const dataset of datasets) {
+        const archive = fullChartHistory.get(dataset.item.id);
+        const samples = archive && archive.metric === metric &&
+            archive.axis === axis && archive.smooth === smooth
+            ? archive.samples : dataset.item.samples || [];
+        if (archive?.downsampled && archive.metric === metric &&
+            archive.axis === axis && archive.smooth === smooth) {
+            chartNotes.push(dataset.item.name + ': full recorded history available; ' +
+                archive.plotted + ' valid points reduced to ' + samples.length +
+                ' display points (min/max preserving, smoothing calculated before reduction).');
+        }
+        if (!samples.length) continue;
+        const covered = samples.filter(sample =>
+            Number.isFinite(xValue(sample)) && metricValue(sample, metric) != null &&
+            Number.isFinite(Number(metricValue(sample, metric))));
+        const firstSaved = samples[0];
+        const firstPlotted = covered[0];
+        if (covered.length !== samples.length ||
+            (Number.isFinite(firstSaved.step) && firstSaved.step > 1000000)) {
+            const firstStep = firstPlotted?.step ?? firstSaved.step;
+            chartNotes.push(dataset.item.name + ': partial history' +
+                (Number.isFinite(firstStep)
+                    ? ' (first plotted at ' + fmt(firstStep) + ' steps)' : ''));
+        }
+    }
+    const points = datasets.flatMap(series => series.points);
+    chartHover = null;
+    if (!points.length) {
+        const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        label.setAttribute('x', '85');
+        label.setAttribute('y', '125');
+        label.setAttribute('fill', 'currentColor');
+        label.textContent = !all.length
+            ? 'Select a run using the Plot checkbox in the table below'
+            : axis === 'time'
+                ? 'Training-time samples were not recorded for these runs or this metric'
+                : 'This metric has no recorded samples for the selected runs';
+        svg.append(label);
+        $('graph-inspect').textContent = !all.length
+            ? 'Select a run in the Plot column.'
+            : 'Existing runs retain available metrics; newly added measurements cannot be reconstructed retroactively.';
+        renderChartNotes();
+        return;
+    }
+    // Avoid spreading tens of thousands of points into Math.max/min:
+    // long experiments retain full minute-resolution history.
+    let xmax = 0.000001, ymin = 0, ymax = 0;
+    for (const point of points) {
+        xmax = Math.max(xmax, point.x);
+        ymin = Math.min(ymin, point.y);
+        ymax = Math.max(ymax, point.y);
+    }
+    // Signed rewards keep their negative range; nonnegative metrics start at zero.
+    if (ymin === ymax) ymax = ymin + 1;
+    const xx = x => 55 + x / xmax * 710;
+    const yy = y => 210 - (y - ymin) / (ymax - ymin) * 175;
+    function line(x1, y1, x2, y2, color) {
+        const element = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        for (const [key, val] of Object.entries({ x1, y1, x2, y2 }))
+            element.setAttribute(key, String(val));
+        element.setAttribute('stroke', color);
+        svg.append(element);
+    }
+    line(55, 20, 55, 210, '#000000'); line(55, 210, 765, 210, '#000000');
+    if (ymin < 0 && ymax > 0) {
+        const zero = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        for (const [key, value] of Object.entries({
+            x1: 55, x2: 765, y1: yy(0), y2: yy(0),
+        })) zero.setAttribute(key, String(value));
+        zero.setAttribute('stroke', '#888');
+        zero.setAttribute('stroke-dasharray', '3 5');
+        svg.append(zero);
+        const zeroLabel = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        zeroLabel.setAttribute('x', '4');
+        zeroLabel.setAttribute('y', String(yy(0) + 4));
+        zeroLabel.setAttribute('font-size', '12');
+        zeroLabel.setAttribute('fill', 'currentColor');
+        zeroLabel.textContent = '0';
+        svg.append(zeroLabel);
+    }
+    const xLabel = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    xLabel.setAttribute('x', '640'); xLabel.setAttribute('y', '237');
+    xLabel.setAttribute('fill', 'currentColor');
+    xLabel.textContent = fmt(xmax, axis === 'time' ? 2 : 0) +
+        (axis === 'time' ? ' training h' : ' steps');
+    svg.append(xLabel);
+    for (const [y, val] of [[204, ymin], [24, ymax]]) {
+        const marker = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        marker.setAttribute('x', '4'); marker.setAttribute('y', String(y));
+        marker.setAttribute('font-size', '12'); marker.setAttribute('fill', 'currentColor');
+        marker.textContent = fmt(val, 3); svg.append(marker);
+    }
+    const evaluationMarkers = [];
+    for (const dataset of datasets) {
+        if (!dataset.points.length) continue;
+        for (const [index, record] of (dataset.item.stage_history || []).entries()) {
+            if (record?.finished_step == null && !record?.evaluation) continue;
+            // The final stage finishes the experiment; it is not a transition.
+            if (!record?.evaluation && index >= (dataset.item.stages?.length || 0) - 1) continue;
+            const x = axis === 'time'
+                ? (record.finished_training_s != null
+                    ? record.finished_training_s / 3600
+                    : stagePerformanceThrough(dataset.item, index)?.hours)
+                : (record.evaluation?.boundary_step ?? record.finished_step);
+            if (!Number.isFinite(x) || x < 0 || x > xmax) continue;
+            const position = xx(x);
+            const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+            const marker = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+            for (const [key, value] of Object.entries({
+                x1: position, x2: position, y1: 20, y2: 210,
+            })) marker.setAttribute(key, String(value));
+            marker.setAttribute('stroke', '#555');
+            marker.setAttribute('stroke-opacity', '0.5');
+            marker.setAttribute('stroke-dasharray', '7 4');
+            const tag = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+            tag.setAttribute('x', String(position - 4));
+            tag.setAttribute('y', '15');
+            tag.setAttribute('fill', '#111');
+            tag.setAttribute('font-size', '10');
+            tag.textContent = record.evaluation ? 'E' : 'T';
+            const stageName = dataset.item.stages?.[index]?.name || 'Stage ' + (index + 1);
+            const threshold = dataset.item.stages?.[index]?.end_step;
+            const actualStep = record.evaluation?.boundary_step ?? record.finished_step;
+            const label = dataset.item.name + ' · ' + stageName +
+                (record.evaluation ? ' checkpoint evaluation' : ' curriculum transition') +
+                ' at ' + fmt(actualStep) + ' learner steps' +
+                (Number.isFinite(threshold)
+                    ? ' (planned threshold ' + fmt(threshold) + ' steps)' : '') +
+                (record.evaluation ? ' · learner stopped' : '');
+            const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+            title.textContent = label;
+            group.append(marker, tag, title);
+            svg.append(group);
+            evaluationMarkers.push({ x, label, type: record.evaluation ? 'E' : 'T' });
+        }
+    }
+    for (const dataset of datasets) {
+        for (const record of (dataset.item.checkpoint_history || [])) {
+            const actualStep = record.evaluation?.boundary_step ?? record.actual_step;
+            const x = axis === 'time'
+                ? (record.training_s == null ? null : record.training_s / 3600)
+                : actualStep;
+            if (record.evaluation?.status !== 'completed' ||
+                !Number.isFinite(x) || x < 0 || x > xmax) continue;
+            const position = xx(x);
+            const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+            const marker = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+            for (const [key, value] of Object.entries({
+                x1: position, x2: position, y1: 20, y2: 210,
+            })) marker.setAttribute(key, String(value));
+            marker.setAttribute('stroke', '#555');
+            marker.setAttribute('stroke-opacity', '0.5');
+            marker.setAttribute('stroke-dasharray', '7 4');
+            const tag = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+            tag.setAttribute('x', String(position - 4));
+            tag.setAttribute('y', '15');
+            tag.setAttribute('fill', '#111');
+            tag.setAttribute('font-size', '10');
+            tag.textContent = 'E';
+            const label = dataset.item.name + ' · periodic checkpoint ' + record.ordinal +
+                ' at ' + fmt(actualStep) + ' learner steps' +
+                ' (planned ' + fmt(record.target_step) + ')';
+            const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+            title.textContent = label;
+            group.append(marker, tag, title);
+            svg.append(group);
+            evaluationMarkers.push({ x, label, type: 'E' });
+        }
+    }
+    if (evaluationMarkers.length)
+        chartNotes.push([
+            evaluationMarkers.some(marker => marker.type === 'E') && 'E = checkpoint evaluation',
+            evaluationMarkers.some(marker => marker.type === 'T') && 'T = stage transition',
+        ].filter(Boolean).join(' · '));
+    const unityRebuildMarkers = [];
+    for (const dataset of datasets) {
+        for (const change of (dataset.item.unity_rebuilds || [])) {
+            const x = axis === 'time' ? change.training_s / 3600 : change.step;
+            if (!Number.isFinite(x) || x < 0 || x > xmax) continue;
+            const position = xx(x);
+            const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+            for (const [key, value] of Object.entries({
+                x1: position, x2: position, y1: 20, y2: 210,
+            })) line.setAttribute(key, String(value));
+            line.setAttribute('stroke', '#111');
+            line.setAttribute('stroke-width', '1.5');
+            const tag = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+            tag.setAttribute('x', String(position - 5));
+            tag.setAttribute('y', '15');
+            tag.setAttribute('font-size', '10');
+            tag.setAttribute('fill', '#111');
+            tag.textContent = 'U';
+            const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+            const label = dataset.item.name + ': Unity rebuilt at ' +
+                fmt(change.step) + ' learner steps. Results before and after may not be comparable.';
+            title.textContent = label;
+            const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+            group.append(line, tag, title);
+            svg.append(group);
+            unityRebuildMarkers.push({ x, label });
+        }
+    }
+    if (unityRebuildMarkers.length)
+        chartNotes.push('U = Unity rebuilt (compare before and after separately)');
+    const envMarkers = [];
+    if (isTrainingSpeedMetric(metric)) {
+        for (const dataset of datasets) {
+            if (!dataset.points.length) continue;
+            for (const change of environmentMarkers(dataset.item, axis)) {
+                if (change.x > xmax) continue;
+                const position = xx(change.x);
+                const marker = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+                const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                for (const [key, value] of Object.entries({
+                    x1: position, x2: position, y1: 20, y2: 210,
+                })) line.setAttribute(key, String(value));
+                line.setAttribute('stroke', dataset.color);
+                line.setAttribute('stroke-opacity', '.38');
+                line.setAttribute('stroke-dasharray', '2 5');
+                const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                dot.setAttribute('cx', String(position));
+                dot.setAttribute('cy', '16');
+                dot.setAttribute('r', '4');
+                dot.setAttribute('fill', '#fff');
+                dot.setAttribute('stroke', dataset.color);
+                dot.setAttribute('stroke-width', '2');
+                const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+                title.textContent = change.run + ' · ' + change.label +
+                    ' · ' + new Date(change.at).toLocaleString();
+                marker.append(line, dot, title);
+                svg.append(marker);
+                envMarkers.push(change);
+            }
+        }
+    }
+    // The previous 500-sample compaction permanently reduced historical
+    // resolution. Do not split that old data into isolated dots based on an
+    // arbitrary step-distance threshold. The line connects known samples.
+    for (const dataset of datasets) {
+        if (!dataset.points.length) continue;
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+        path.setAttribute('points', dataset.points.map(p =>
+            xx(p.x) + ',' + yy(p.y)).join(' '));
+        path.setAttribute('stroke', dataset.color);
+        path.setAttribute('stroke-width', '1.2');
+        path.setAttribute('fill', 'none');
+        svg.append(path);
+        const latestPoint = dataset.points[dataset.points.length - 1];
+        const label = txt('span', dataset.item.name +
+            ' · latest ' + fmt(latestPoint.raw, 3) +
+            (smooth > 1 ? ' · ' + smooth + '-sample avg ' + fmt(latestPoint.y, 3) : '') +
+            ' · recorded avg ' + fmt(latestPoint.mean, 3));
+        label.className = 'legend-series';
+        label.dataset.chartColor = dataset.color;
+        const dot = document.createElement('span');
+        dot.className = 'dot'; dot.style.background = dataset.color;
+        label.prepend(dot); $('legend').append(label);
+    }
+    if (envMarkers.length)
+        chartNotes.push('○ = worker environment change (' + envMarkers.length + '; hover for details)');
+    renderChartNotes();
+    const hoverLayer = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    hoverLayer.setAttribute('id', 'chart-hover-overlay');
+    svg.append(hoverLayer);
+    chartHover = { datasets, hoverLayer, xmax, xx, yy, metric, axis, smooth,
+        envMarkers, evaluationMarkers, unityRebuildMarkers };
+    $('graph-inspect').textContent =
+        'Hover for raw, rolling and running-mean values.' +
+        (envMarkers.length ? ' Vertical ticks mark observed worker environment-count changes; historical requests are approximate.' : '') +
+        ' Rolling averages use the last ' +
+        smooth + ' recorded sample(s), not an independent evaluation.';
+}
+async function loadFullChartHistory() {
+    const button = $('chart-history');
+    if (button.disabled || !latest) return;
+    const visible = latest.items.filter(item =>
+        chosen.has(item.id) && (!$('filter').value || item.group === $('filter').value));
+    if (!visible.length) {
+        $('graph-inspect').textContent = 'Select a run using its Plot checkbox first.';
+        return;
+    }
+    button.disabled = true;
+    try {
+        const metric = $('metric').value, axis = $('axis').value;
+        const smooth = Number($('smoothing').value) || 1;
+        const history = await Promise.all(visible.map(async item => {
+            const qs = new URLSearchParams({id:item.id,metric,axis,
+                smoothing:String(smooth)});
+            const response = await fetch('/api/metric-history?' + qs, {cache:'no-store'});
+            const data = await response.json();
+            if (!response.ok) throw Error(data.error || 'History retrieval failed.');
+            return [item.id, { ...data, metric, axis, smooth }];
+        }));
+        for (const [id, data] of history) fullChartHistory.set(id, data);
+        chart(visible);
+    } catch (error) {
+        $('graph-inspect').textContent = 'Full metric history unavailable: ' + error.message;
+    } finally {
+        button.disabled = false;
+    }
+}
+$('chart-history').addEventListener('click', loadFullChartHistory);
+$('chart-recent').addEventListener('click', () => {
+    fullChartHistory.clear();
+    if (latest) chart(latest.items.filter(x =>
+        !$('filter').value || x.group === $('filter').value));
+});
+
+// Export the exact displayed SVG and its series legend; no chart-data
+// rerendering or external image service is needed.
+async function saveChartPng() {
+    const button = $('chart-png');
+    if (button.disabled) return;
+    button.disabled = true;
+    let svgUrl = null;
+    try {
+        const metric = $('metric').value;
+        const metricName = $('metric').selectedOptions[0]?.textContent || 'Training metric';
+        const axisName = $('axis').selectedOptions[0]?.textContent || 'Learner steps';
+        const labels = [...$('legend').querySelectorAll('.legend-series')]
+            .map(el => ({ text: el.textContent, color: el.dataset.chartColor }));
+        const notes = [...$('chart-notes').querySelectorAll('span')]
+            .map(el => el.textContent);
+        const source = $('graph').cloneNode(true);
+        source.querySelector('#chart-hover-overlay')?.remove();
+        source.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+        source.setAttribute('width', '1600');
+        source.setAttribute('height', '500');
+        source.style.color = '#111';
+        source.style.fontFamily = 'Arial, Helvetica, sans-serif';
+        for (const node of source.querySelectorAll('[fill="currentColor"]'))
+            node.setAttribute('fill', '#111');
+        const encoded = new XMLSerializer().serializeToString(source);
+        svgUrl = URL.createObjectURL(new Blob([encoded],
+            { type: 'image/svg+xml;charset=utf-8' }));
+        const image = new Image();
+        const loaded = new Promise((resolve, reject) => {
+            image.onload = resolve;
+            image.onerror = () => reject(Error('Browser could not render the chart as an image.'));
+        });
+        image.src = svgUrl;
+        await loaded;
+        const canvas = document.createElement('canvas');
+        canvas.width = 1600;
+        canvas.height = 600 + Math.max(1, labels.length) * 44 + notes.length * 32;
+        const context = canvas.getContext('2d');
+        if (!context) throw Error('PNG export requires canvas support.');
+        context.fillStyle = '#fff';
+        context.fillRect(0, 0, canvas.width, canvas.height);
+        context.fillStyle = '#111';
+        context.font = 'bold 26px Arial, sans-serif';
+        context.fillText(metricName + ' · ' + axisName, 55, 41);
+        context.drawImage(image, 0, 60, 1600, 500);
+        context.font = '21px Arial, sans-serif';
+        for (let i = 0; i < labels.length; i++) {
+            const y = 585 + i * 44;
+            context.fillStyle = labels[i].color;
+            context.fillRect(55, y - 15, 17, 17);
+            context.fillStyle = '#111';
+            context.fillText(labels[i].text, 88, y, 1480);
+        }
+        context.font = '18px Arial, sans-serif';
+        for (let i = 0; i < notes.length; i++) {
+            context.fillText(notes[i], 55,
+                585 + Math.max(1, labels.length) * 44 + i * 32, 1480);
+        }
+        const png = await new Promise((resolve, reject) =>
+            canvas.toBlob(blob => blob ? resolve(blob) :
+                reject(Error('Browser could not encode the PNG.')), 'image/png'));
+        const downloadUrl = URL.createObjectURL(png);
+        const anchor = document.createElement('a');
+        const timestamp = new Date().toISOString()
+            .replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z');
+        anchor.download = 'bees-' + metric + '-chart-' + timestamp + '.png';
+        anchor.href = downloadUrl;
+        anchor.click();
+        // The download is initiated synchronously. Revoke the object URL after
+        // the next task to allow the browser to open it.
+        setTimeout(() => URL.revokeObjectURL(downloadUrl), 1000);
+    } catch (error) {
+        $('message').textContent = 'Chart PNG export failed: ' + error.message;
+        $('message').classList.add('error');
+    } finally {
+        if (svgUrl) URL.revokeObjectURL(svgUrl);
+        button.disabled = false;
+    }
+}
+$('chart-png').addEventListener('click', saveChartPng);
+// Export the same valid plotted samples used by the current chart, with the
+// displayed smoothed value alongside its underlying raw and running mean.
+// No interpolation, averaging across experiments, or historical reconstruction.
+function saveChartCsv() {
+    const button = $('chart-csv');
+    if (button.disabled) return;
+    button.disabled = true;
+    try {
+        const datasets = chartHover?.datasets || [];
+        if (!datasets.some(dataset => dataset.points.length)) {
+            throw Error('Select a plotted run with recorded samples first.');
+        }
+        const metric = chartHover.metric;
+        const axis = chartHover.axis;
+        const smooth = chartHover.smooth;
+        const header = [
+            'experiment', 'run_id', 'metric', 'horizontal_axis', 'smoothing_samples',
+            'learner_steps', 'recorded_at_utc', 'x_value', 'raw_value',
+            'plotted_value', 'recorded_running_mean',
+        ];
+        const rows = [header];
+        for (const dataset of datasets) {
+            for (const point of dataset.points) {
+                rows.push([
+                    dataset.item.name, dataset.item.run_id || '', metric, axis, smooth,
+                    point.step, point.at, point.x, Number(point.raw),
+                    point.y, point.mean,
+                ]);
+            }
+        }
+        // Quote CSV fields, preserve Unicode, and guard spreadsheet viewers
+        // against interpreting user-entered experiment names as formulas.
+        const csvCell = value => {
+            if (value == null) return '';
+            let text = String(value);
+            if (typeof value === 'string' && /^[\s]*[=+@-]/.test(text)) {
+                text = "'" + text;
+            }
+            return '"' + text.replace(/"/g, '""') + '"';
+        };
+        const csv = '\uFEFF' + rows.map(row => row.map(csvCell).join(',')).join('\r\n') + '\r\n';
+        const url = URL.createObjectURL(new Blob([csv], {
+            type: 'text/csv;charset=utf-8',
+        }));
+        const anchor = document.createElement('a');
+        const timestamp = new Date().toISOString()
+            .replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z');
+        anchor.download = 'bees-' + metric + '-chart-' + timestamp + '.csv';
+        anchor.href = url;
+        anchor.click();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (error) {
+        $('message').textContent = 'Chart CSV export failed: ' + error.message;
+        $('message').classList.add('error');
+    } finally {
+        button.disabled = false;
+    }
+}
+$('chart-csv').addEventListener('click', saveChartCsv);
+function inspectChart(event) {
+    if (!chartHover) return;
+    const svg = $('graph'), rect = svg.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+    const sx = (event.clientX - rect.left) * 800 / rect.width;
+    const x = (Math.max(55, Math.min(765, sx)) - 55) *
+        chartHover.xmax / 710;
+    const nearest = [];
+    for (const dataset of chartHover.datasets) {
+        if (!dataset.points.length) continue;
+        const closest = dataset.points.reduce((best, point) =>
+            Math.abs(point.x - x) < Math.abs(best.x - x) ? point : best);
+        nearest.push({ ...dataset, point: closest });
+    }
+    chartHover.hoverLayer.replaceChildren();
+    if (!nearest.length) return;
+    const cross = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    const pixelX = chartHover.xx(x);
+    for (const [key, val] of Object.entries({
+        x1: pixelX, x2: pixelX, y1: 20, y2: 210,
+    })) cross.setAttribute(key, String(val));
+    cross.setAttribute('stroke', '#555');
+    cross.setAttribute('stroke-dasharray', '3 4');
+    chartHover.hoverLayer.append(cross);
+    for (const dataset of nearest) {
+        const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        dot.setAttribute('cx', String(chartHover.xx(dataset.point.x)));
+        dot.setAttribute('cy', String(chartHover.yy(dataset.point.y)));
+        dot.setAttribute('r', '4');
+        dot.setAttribute('fill', dataset.color);
+        chartHover.hoverLayer.append(dot);
+    }
+    const nearbyChanges = chartHover.envMarkers.filter(change =>
+        Math.abs(chartHover.xx(change.x) - pixelX) <= 7);
+    const nearbyEvaluations = chartHover.evaluationMarkers.filter(event =>
+        Math.abs(chartHover.xx(event.x) - pixelX) <= 7);
+    const nearbyUnityRebuilds = chartHover.unityRebuildMarkers.filter(event =>
+        Math.abs(chartHover.xx(event.x) - pixelX) <= 7);
+    const text = [
+        ...nearest.map(({ item, point }) =>
+            item.name + ' · ' + (chartHover.axis === 'time'
+                ? fmt(point.x, 2) + ' training h' : fmt(point.x) + ' steps') +
+            '\n  raw ' + fmt(point.raw, 3) +
+            ' · rolling ' + fmt(point.y, 3) +
+            ' · running mean ' + fmt(point.mean, 3)),
+        ...nearbyChanges.map(change =>
+            'ENV COUNT · ' + change.run + ' · ' + change.label +
+            ' · ' + new Date(change.at).toLocaleString()),
+        ...nearbyEvaluations.map(event => 'STAGE EVENT · ' + event.label),
+        ...nearbyUnityRebuilds.map(event => 'UNITY REBUILD · ' + event.label),
+    ].join('\n');
+    $('graph-inspect').textContent = text.replaceAll('\n', ' ');
+    const tooltip = $('graph-tooltip');
+    tooltip.textContent = text;
+    tooltip.style.display = 'block';
+    tooltip.style.left = Math.max(8, Math.min(rect.width - 240,
+        event.clientX - rect.left + 12)) + 'px';
+    tooltip.style.top = Math.max(5, Math.min(rect.height - 110,
+        event.clientY - rect.top - 35)) + 'px';
+}
+
+function renderPerformance(items) {
+    const tbody = $('performance-rows');
+    tbody.replaceChildren();
+    for (const item of items) {
+        const records = item.stage_history || [];
+        const epochs = item.trainer_config?.resolved?.hyperparameters?.num_epoch;
+        for (const [index, record] of records.entries()) {
+            const perf = record?.performance;
+            if (!perf) continue;
+            const stage = item.stages?.[index];
+            const tr = document.createElement('tr');
+            cell(tr, item.name, 'name');
+            cell(tr, (index + 1) + '. ' + (stage?.name || 'Initial'));
+            cell(tr, fmt(epochs));
+            cell(tr, fmt(perf.training_s / 3600, 2));
+            cell(tr, fmt(perf.training_s > 0 ? perf.steps / perf.training_s : null, 1));
+            cell(tr, fmt(performanceMean(perf, 'ppo_update_s'), 2));
+            cell(tr, fmt(performanceMean(perf, 'ppo_minibatches_s'), 2));
+            cell(tr, fmt(perf.busy_observed_s > 0
+                ? 100 * perf.optimizer_busy_s / perf.busy_observed_s : null, 1));
+            cell(tr, fmt(performanceMean(perf, 'ppo_cpu_pct'), 1));
+            cell(tr, fmt(performanceMean(perf, 'ppo_gpu_pct'), 1));
+            cell(tr, fmt(performanceMean(perf, 'workers'), 1));
+            cell(tr, fmt(performanceMean(perf, 'staged_s'), 1));
+            cell(tr, fmt(performanceMean(perf, 'accepted_s'), 1));
+            cell(tr, fmt(performanceMean(perf, 'consumed_s'), 1));
+            cell(tr, fmt(performanceMean(perf, 'broker_ratio') == null
+                ? null : 100 * performanceMean(perf, 'broker_ratio'), 1));
+            cell(tr, fmt(performanceMean(perf, 'upload_q'), 1));
+            const pressure = perf.pressure || {};
+            const signals = [];
+            if (pressure.broker_samples >= 3 &&
+                pressure.broker_high / pressure.broker_samples >= 0.5)
+                signals.push('Frequent broker pressure');
+            if (pressure.upload_samples >= 3 &&
+                pressure.upload_high / pressure.upload_samples >= 0.5)
+                signals.push('Frequent upload backlog');
+            if (perf.busy_observed_s >= 60 &&
+                perf.optimizer_busy_s / perf.busy_observed_s >= 0.75)
+                signals.push('PPO occupied ≥75%');
+            const signalCell = cell(tr, '');
+            const details = document.createElement('details');
+            details.append(txt('summary', signals.join('; ') || 'No sustained signal established'));
+            const timing = [
+                ['PPO materialize (s/update)', 'ppo_materialize_s'],
+                ['PPO backward (s/minibatch)', 'ppo_backward_s'],
+                ['PPO optimizer step (s/minibatch)', 'ppo_optimizer_step_s'],
+                ['CPU preparation wait (s/minibatch)', 'ppo_cpu_prepare_wait_s'],
+            ].map(([label, key]) => label + ': ' + fmt(performanceMean(perf, key), 4));
+            details.append(txt('pre', timing.join('\n') +
+                '\nBroker pressure samples: ' + fmt(pressure.broker_high || 0) +
+                '/' + fmt(pressure.broker_samples || 0) +
+                '\nUpload backlog samples: ' + fmt(pressure.upload_high || 0) +
+                '/' + fmt(pressure.upload_samples || 0)));
+            signalCell.append(details);
+            tbody.append(tr);
+        }
+    }
+    if (!tbody.childNodes.length) {
+        const tr = document.createElement('tr'), td = txt('td', 'No measured stage performance yet.');
+        td.colSpan = 17; tr.append(td); tbody.append(tr);
+    }
+}
+
+function render(data) {
+    latest = data;
+    const items = data.items;
+    const active = items.find(x => x.id === data.active_id);
+    if (!chosenInitialized) {
+        const withSamples = items.filter(item => (item.samples || []).some(s =>
+            Number.isFinite(s.step)));
+        if (withSamples.length) {
+            // Show useful curves immediately, without overriding later manual selections.
+            for (const item of withSamples.slice(-4)) chosen.add(item.id);
+            if (active && withSamples.some(item => item.id === active.id)) chosen.add(active.id);
+            chosenInitialized = true;
+        }
+    }
+    $('overview').replaceChildren(
+        txt('span', items.filter(x => x.status === 'completed').length + ' completed'),
+        txt('span', items.filter(x => x.status === 'queued').length + ' queued'),
+        txt('span', active ? active.name + ' · ' + active.status : 'No active experiment'),
+        txt('span', data.armed ? 'Queue armed' : 'Queue not armed')
+    );
+    const maintaining = ['pausing', 'paused', 'resuming'].includes(active?.status);
+    $('start').disabled = data.busy || data.armed || maintaining ||
+        (!items.some(x => x.status === 'queued') &&
+            !['transitioning', 'checkpointing', 'evaluating_final_stage'].includes(active?.status));
+    $('pause').hidden = !active || active.status !== 'running';
+    $('pause').disabled = data.busy || Boolean(data.stop_requested);
+    $('resume').hidden = active?.status !== 'paused';
+    $('resume').disabled = data.busy;
+    $('update-workers').hidden = active?.status !== 'paused';
+    $('update-workers').disabled = data.busy;
+    $('rebuild-unity').hidden = active?.status !== 'paused';
+    $('rebuild-unity').disabled = data.busy;
+    $('stop').disabled = maintaining || (!data.active_id && !data.armed);
+    const progress = data.rebuild_progress;
+    const elapsed = progress ? Math.max(0, Math.floor((Date.now() - Date.parse(progress.started_at)) / 1000)) : 0;
+    $('message').textContent = progress
+        ? progress.message + ' · elapsed ' + fmt(elapsed) + 's'
+        : rebuildRequestPending ? 'Checking paused run before Unity rebuild…' : data.message || '';
+    $('message').classList.toggle('error', !progress && !rebuildRequestPending &&
+        /failed|error|attention|interrupted|refusing|changed|not started/i.test(data.message || ''));
+    $('reserve-heldout').disabled = !data.heldout_configured && !editingId;
+    $('heldout-config').textContent = data.heldout_configured
+        ? 'Frozen independently from development evaluations when this experiment is queued; run only after choosing the final checkpoint.'
+        : 'Optional: configure Training/Experiments/heldout-benchmark-settings.json, with different recipes/seeds.';
+    $('benchmark-config').textContent = data.benchmark_configured
+        ? 'Uses frozen recipes, scripted or ONNX opponents, and evaluation build from benchmark-settings.json.'
+        : 'Benchmark suite not configured. Set Training/Experiments/benchmark-settings.json or select no automatic evaluations.';
+    const groups = [...new Set(items.map(x => x.group))].sort();
+    const filter = $('filter'), before = filter.value;
+    filter.replaceChildren(new Option('All', ''), ...groups.map(x => new Option(x, x)));
+    filter.value = groups.includes(before) ? before : '';
+    const visible = items.filter(x => !filter.value || x.group === filter.value);
+    const openRuns = new Set([...$('rows').querySelectorAll('details[open]')].map(d => d.dataset.runId));
+    $('rows').replaceChildren();
+    visible.slice().reverse().forEach(item => {
+        const tr = document.createElement('tr');
+        const td = document.createElement('td'), check = document.createElement('input');
+        check.type = 'checkbox'; check.checked = chosen.has(item.id); check.style.width = 'auto';
+        check.addEventListener('change', () => { if (check.checked) chosen.add(item.id); else chosen.delete(item.id); chart(visible); });
+        td.append(check);tr.append(td);
+        const name = cell(tr, '', 'name');
+        const details = document.createElement('details');
+        details.dataset.runId = item.id;
+        details.open = openRuns.has(item.id);
+        const summary = txt('summary', item.name);
+        const info = txt('pre', 'Campaign: ' + item.group + '\nCreated: ' + item.created_at +
+            '\nBuild: ' + (item.build_id || item.release_build) +
+            '\nBudget: ' + (item.max_steps == null ? 'unlimited' : fmt(item.max_steps)) +
+                ' steps / ' + (item.max_minutes == null ? 'unlimited' : fmt(item.max_minutes)) + ' minutes' +
+            '\nEvaluations: ' + (item.evaluation_mode || (item.stage_benchmarks
+                ? 'each stage' : item.benchmark ? 'final only' : 'none')) +
+            '\nEnd reason: ' + (item.end_reason || '—') +
+            '\nArguments:\n' + item.env_args.join('\n') + '\n' + (item.error || ''));
+        if (item.unity_rebuilds?.length) {
+            info.textContent += '\nWARNING: Unity was rebuilt during this training run. ' +
+                'Simulation changes may invalidate before/after comparisons.' +
+                '\nRebuild boundaries: ' +
+                item.unity_rebuilds.map(x => fmt(x.step) + ' learner steps').join(', ');
+        }
+        details.append(summary,info);
+        if (item.stages && item.stages.length) {
+            const history = item.stage_history || [];
+            const description = item.stages.map((stage, index) => {
+                const record = history[index] || {};
+                const current = index === (item.stage_index || 0);
+                const stageStart = record.entered_step ?? (index ? null : 0);
+                const completion = record.finished_step == null ? '' :
+                    ' · finished at ' + fmt(record.finished_step) + ' total steps' +
+                    (stageStart == null ? '' :
+                        ' (' + fmt(record.finished_step - stageStart) + ' in stage)');
+                const milestone = record.first_target_step == null ? '' :
+                    ' · sampled timeout target at ' + fmt(record.first_target_step) +
+                    ' total steps' + (stageStart == null ? '' :
+                        ' (' + fmt(record.first_target_step - stageStart) + ' in stage)');
+                const evaluations = record.evaluation;
+                const assessment = evaluations
+                    ? ' · fixed-seed suite: ' + evaluations.status +
+                        ' (' + Object.keys(evaluations.reports || {}).length +
+                        '/' + (item.stage_benchmarks?.scenarios?.length || 1) + ' scenarios)' +
+                        (evaluations.candidate ? ' · ONNX step ' +
+                            fmt(evaluations.candidate.training_step) : '') +
+                        (evaluations.error ? ' · ' + evaluations.error : '')
+                    : '';
+                return (current ? 'CURRENT ' : '') + (index + 1) + '/' + item.stages.length +
+                    ' ' + stage.name +
+                    (item.unlimited_steps && index === item.stages.length - 1
+                        ? ' · final stage continues indefinitely'
+                        : ' · through ' + fmt(stage.end_step) + ' cumulative steps') +
+                    (stage.timeout_target_pct == null ? '' :
+                        ' · timeout target ' + fmt(stage.timeout_target_pct, 1) + '%') +
+                    completion + milestone + assessment + '\nArguments:\n' +
+                    stage.env_args.join('\n');
+            }).join('\n\n');
+            details.append(txt('pre', 'CURRICULUM · SAME POLICY / OPTIMIZER\n' + description));
+            if (item.checkpoint_history?.length) {
+                const checkpoints = item.checkpoint_history.map(record =>
+                    'Checkpoint ' + record.ordinal + ': planned ' + fmt(record.target_step) +
+                    ', actual ' + fmt(record.evaluation?.boundary_step ?? record.actual_step) +
+                    ' steps · ' + (record.evaluation?.status || 'pending') +
+                    ' · reports ' + Object.keys(record.evaluation?.reports || {}).length).join('\n');
+                details.append(txt('pre', 'PERIODIC EVALUATIONS\n' + checkpoints));
+            }
+            if (item.capacity_changes?.length) details.append(
+                txt('p', 'Worker environment changes during training: ' +
+                    item.capacity_changes.length +
+                    '. Compare speed before and after separately; worker capacity changed.'));
+        }
+        if (item.heldout_benchmarks) {
+            const research = document.createElement('div');
+            const status = item.heldout_validation?.status || 'reserved';
+            research.append(txt('p', 'Held-out final validation: ' + status +
+                (item.heldout_validation?.error ? ' · ' + item.heldout_validation.error : '') +
+                '. Reserved benchmarks remain separate from development checkpoints.'));
+            if (item.run_id && ['completed','stopped','ended_early'].includes(item.status) &&
+                status !== 'completed') {
+                const btn = txt('button', status === 'failed'
+                    ? 'Retry held-out validation' : 'Run held-out validation');
+                btn.type = 'button';
+                btn.disabled = Boolean(data.busy || data.armed || data.active_id);
+                btn.addEventListener('click', async () => {
+                    if (!confirm('Run the reserved held-out benchmark suite now? Use this only after selecting the final network/configuration. Results will be saved permanently and cannot be replaced.')) return;
+                    btn.disabled = true;
+                    try {
+                        await request('/api/research-heldout', { id: item.id });
+                        await refresh();
+                    } catch (error) {
+                        $('message').textContent = error.message;
+                        $('message').classList.add('error');
+                    }
+                });
+                research.append(btn);
+            }
+            details.append(research);
+        }
+        if (item.id && item.samples?.length) {
+            const rawMetrics = txt('button', 'Save complete metrics JSONL');
+            rawMetrics.type = 'button';
+            rawMetrics.title = 'Save all preserved minute-resolution samples, including nested PPO and pipeline measurements. Older samples already discarded before archival cannot be recovered.';
+            rawMetrics.addEventListener('click', () => {
+                window.location.href = '/api/metric-archive?id=' +
+                    encodeURIComponent(item.id);
+            });
+            details.append(rawMetrics);
+            if (item.metric_archive_error)
+                details.append(txt('p', 'Metric archive warning: ' + item.metric_archive_error));
+        }
+        if (item.run_id) {
+            const exportResearch = txt('button', item.study_id
+                ? 'Export study evidence ZIP' : 'Export experiment evidence ZIP');
+            exportResearch.type = 'button';
+            exportResearch.title = 'Export frozen configurations, benchmark inputs, aggregated reports, individual-match CSVs and sampled training metrics. Model and Unity binaries are referenced by hash, not duplicated.';
+            exportResearch.addEventListener('click', () => {
+                const key = item.study_id ? 'study_id' : 'experiment_id';
+                const value = item.study_id || item.id;
+                window.location.href = '/api/research-bundle?' +
+                    key + '=' + encodeURIComponent(value);
+            });
+            details.append(exportResearch);
+        }
+        if (item.trainer_config) details.append(txt('pre', 'Initialization: fresh\nFrozen configuration SHA: ' + item.trainer_config.sha256 + '\nSettings:\n' + JSON.stringify(item.trainer_config.resolved, null, 2) + '\nVerified generated configurations: ' + (item.applied_configurations || []).length));
+        if (item.stage_evaluation_error) {
+            details.append(Object.assign(txt('p', 'Evaluation failure: ' +
+                item.stage_evaluation_error), { className: 'error' }));
+        }
+        if (item.benchmark_target) {
+            const checkpoints=(item.checkpoint_history||[])
+                .filter(record=>record.benchmark_target_result);
+            const latest=checkpoints[checkpoints.length-1];
+            const result=latest?.benchmark_target_result;
+            details.append(txt('p','Development benchmark completion target: '+
+                item.benchmark_target.min_win_rate_pct+'% minimum win, '+
+                item.benchmark_target.max_timeout_rate_pct+'% maximum timeouts, '+
+                item.benchmark_target.min_matches+' matches per scenario, '+
+                item.benchmark_target.consecutive_passes+' consecutive checkpoint passes. '+
+                (item.benchmark_target_met
+                    ?'Met at checkpoint '+item.benchmark_target_met.checkpoint_ordinal+
+                        ' (learner step '+item.benchmark_target_met.actual_step+').'
+                    :result?'Latest verified checkpoint '+latest.ordinal+': '+
+                        (result.passed?'all scenarios passed':'one or more scenarios did not pass')+
+                        ', current consecutive passes '+result.consecutive_passes+'.'
+                        :'No completed target evaluation yet.')));
+        }
+        if (item.benchmark_status) {
+            const evaluation = txt('p', 'Checkpoint evaluation: ' + item.benchmark_status +
+                (item.benchmark_report ? ' · ' + item.benchmark_report : '') +
+                (item.benchmark_error ? ' · ' + item.benchmark_error : ''));
+            if (item.benchmark_status === 'failed') evaluation.classList.add('error');
+            details.append(evaluation);
+        }
+        if (data.benchmark_configured && item.run_id &&
+            ['completed', 'stopped', 'ended_early'].includes(item.status) &&
+            item.benchmark_status !== 'completed') {
+            const evaluate = txt('button', 'Evaluate checkpoint');
+            evaluate.disabled = data.busy || Boolean(data.active_id) || data.armed;
+            evaluate.addEventListener('click', async () => {
+                try { await request('/api/evaluate', { id: item.id }); await refresh(); }
+                catch (error) { $('message').textContent = error.message; $('message').classList.add('error'); }
+            });
+            details.append(evaluate);
+        }
+        name.append(details);
+        if (item.run_id) {
+            const exportBar = document.createElement('div');
+            exportBar.className = 'log-export';
+            const label = txt('label', 'Newest log portion');
+            const percent = document.createElement('select');
+            percent.setAttribute('aria-label', 'Log portion for ' + item.name);
+            for (const value of [1, 5, 10, 25, 50, 100]) {
+                const option = document.createElement('option');
+                option.value = String(value);
+                option.textContent = value + '%';
+                percent.append(option);
+            }
+            percent.value = '5';
+            label.append(percent);
+            const download = txt('button', 'Download logs ZIP');
+            download.type = 'button';
+            download.title = 'Export the newest selected portion of each run log as ZIP files of at most 500 MB each; no checkpoints';
+            download.addEventListener('click', () => {
+                const link = document.createElement('a');
+                link.href = '/api/experiment-logs?experiment_id=' +
+                    encodeURIComponent(item.id) + '&percent=' + percent.value;
+                // The server chooses the filename. HTTP errors open visibly
+                // rather than being saved as a misleading ZIP.
+                link.target = '_blank';
+                link.rel = 'noopener';
+                document.body.append(link);
+                link.click();
+                link.remove();
+                $('message').classList.remove('error');
+                $('message').textContent = 'Preparing newest ' + percent.value +
+                    '% of available logs for ' + item.name + '. Exports over 500 MB open a page with numbered ZIP downloads.';
+            });
+            exportBar.append(label, download);
+            name.append(exportBar);
+        }
+        if (item.status === 'queued' && !item.run_id) {
+            const edit = txt('button', 'Edit queued');
+            edit.type = 'button';
+            edit.title = 'Edit an experiment that has not started';
+            edit.disabled = data.busy;
+            edit.addEventListener('click', () => openQueuedEditor(item.id));
+            name.append(edit);
+        }
+        const last = item.samples[item.samples.length - 1] || {};
+        const stageLabel = item.stages && item.stages.length > 1 &&
+            ['running', 'transitioning', 'pausing', 'paused', 'resuming'].includes(item.status)
+            ? ' · stage ' + (Math.min(item.stages.length,
+                (item.stage_index || 0) + (item.status === 'transitioning' ? 2 : 1))) +
+                '/' + item.stages.length : '';
+        const runState = cell(tr, item.benchmark_status === 'running' || item.benchmark_status === 'pending' ?
+            item.status + ' · evaluating' : item.status + stageLabel);
+        if (item.status === 'interrupted' || item.benchmark_status === 'failed') runState.classList.add('error');
+        cell(tr, fmt(item.step));
+        const perf = stagePerformanceThrough(item, item.stage_index || 0);
+        cell(tr, fmt(perf?.hours, 2));
+        cell(tr, fmt(perf?.steps_per_second, 1));
+        cell(tr, fmt(last.timeout_pct,1) + (last.timeout_pct == null ? '' : '%'));
+        cell(tr, fmt(last.bee_hits_per_shot,3));
+        cell(tr, item.run_id ? item.run_id.slice(0,24) : '—');
+        $('rows').append(tr);
+    });
+    const complete = visible.filter(x => x.status === 'completed');
+    const avg = field => {
+        const vals = complete.map(x => x.samples.length ? x.samples[x.samples.length - 1][field] : null)
+            .filter(v => v != null && Number.isFinite(v));
+        return vals.length ? vals.reduce((a,b) => a + b,0) / vals.length : null;
+    };
+    const avgSteps = complete.length ? complete.reduce((v,x) => v + (x.step || 0),0) / complete.length : null;
+    $('aggregate').replaceChildren(
+        txt('span', complete.length + ' completed in displayed group'),
+        txt('span', 'Mean final steps: ' + fmt(avgSteps)),
+        txt('span', 'Mean final timeout: ' + fmt(avg('timeout_pct'),1) + '%')
+    );
+    chart(visible);
+    renderPerformance(visible);
+    if ($('benchmark-panel').open && benchmarkDataLoaded &&
+        $('benchmark-run-filter').value === 'current' &&
+        (currentBenchmarkRun()?.id || null) !== benchmarkDisplayedRunId) renderBenchmarks();
+}
+
+let benchmarkData = [];
+let benchmarkDataLoaded = false;
+let benchmarkDisplayedRunId = null;
+const BENCHMARK_TYPES = [
+    { key:'aiming', name:'Stationary aiming', description:'24×24 map · 5 seconds. The opponent stays still, aims and fires. Tests close-range accuracy and survival.' },
+    { key:'moving', name:'Moving combat', description:'32–64 map · 15 seconds. The opponent strafes, tracks and fires. Tests fighting moving targets.' },
+    { key:'pursuit', name:'Long-range pursuit', description:'96–128 map · 30 seconds. The opponent approaches visible enemies and searches otherwise. Tests finding and engaging targets.' },
+];
+function benchmarkType(report) {
+    const id = String(report?.benchmark?.id || '').toLowerCase();
+    if (id.startsWith('scripted-') && (id.includes('stationary') || id.includes('aiming'))) return 'aiming';
+    if (id.startsWith('scripted-') && (id.includes('moving') || id.includes('strafe'))) return 'moving';
+    if (id.startsWith('scripted-') && (id.includes('pursuit') || id.includes('range'))) return 'pursuit';
+    return 'legacy';
+}
+function benchmarkInfo(report) {
+    return BENCHMARK_TYPES.find(type => type.key === benchmarkType(report)) || {
+        key:'legacy', name:'Older / custom benchmark',
+        description:'Uses a different recipe or older opponent. Inspect technical details before comparing it.',
+    };
+}
+function stageLabel(report) {
+    const index = report.experiment?.stage_index;
+    if (!Number.isInteger(index)) return 'Final checkpoint';
+    return 'Stage ' + (index + 1) + (report.experiment.stage_name
+        ? ' · ' + report.experiment.stage_name : '');
+}
+function stepsLabel(step) {
+    if (!Number.isFinite(step)) return 'unknown steps';
+    return step >= 1000000
+        ? fmt(step / 1000000, 2) + 'M steps'
+        : step >= 1000 ? fmt(step / 1000, 0) + 'k steps' : fmt(step) + ' steps';
+}
+function reportStep(report) {
+    return report.experiment?.candidate_training_step ?? null;
+}
+function reportCheckpoint(report) {
+    return String(report.run_id || '') + ':' +
+        (report.candidate_sha256 || report.candidate_path || report.evaluated_at) + ':' +
+        (report.experiment?.stage_index ?? 'final');
+}
+function orderedCheckpoints(reports) {
+    const map = new Map();
+    for (const report of reports) {
+        const key = reportCheckpoint(report);
+        if (!map.has(key)) map.set(key, report);
+    }
+    return [...map.entries()].sort((a,b) =>
+        (reportStep(b[1]) ?? -1) - (reportStep(a[1]) ?? -1) ||
+        String(b[1].evaluated_at || '').localeCompare(String(a[1].evaluated_at || '')));
+}
+function reportExperiment(report) {
+    const items = latest?.items || [];
+    return items.find(item => item.id === report.experiment?.id ||
+        (item.run_id && item.run_id === report.run_id)) || null;
+}
+function runName(item) {
+    if (!item) return 'Unlinked run';
+    const beta = item.trainer_config?.resolved?.hyperparameters?.beta;
+    const prefix = beta == null || /\bbeta\b|β/i.test(item.name)
+        ? '' : 'β=' + fmt(beta, 4) + ' · ';
+    return prefix + item.name;
+}
+function currentBenchmarkRun() {
+    const items = latest?.items || [];
+    const active = items.find(item => item.id === latest?.active_id);
+    if (active?.run_id) return active;
+    const withReports = items.filter(item => item.run_id &&
+        benchmarkData.some(report => report.run_id === item.run_id));
+    const betaRuns = withReports.filter(item => /\bbeta\b|β/i.test(item.name));
+    return (betaRuns.length ? betaRuns : withReports).slice().sort((a,b) =>
+        String(b.started_at || b.created_at || '').localeCompare(
+            String(a.started_at || a.created_at || '')))[0] || null;
+}
+function availableRuns() {
+    const map = new Map();
+    for (const report of benchmarkData) {
+        const item = reportExperiment(report);
+        if (item && !map.has(item.id)) map.set(item.id, item);
+    }
+    return [...map.values()].sort((a,b) =>
+        String(b.started_at || b.created_at || '').localeCompare(
+            String(a.started_at || a.created_at || '')));
+}
+function benchmarkKey(report) {
+    return report.benchmark.id + ' v' + report.benchmark.revision;
+}
+function scenarioIdentityKey(report) {
+    return [report.benchmark.sha256, report.opponent_sha256, report.build_id,
+        report.environment_executable_sha256, report.evaluation_code_sha256,
+        report.opponent_kind || 'onnx', report.evaluation_protocol_version].join('|');
+}
+function outcomeInterval(count, total) {
+    if (!Number.isFinite(count) || !Number.isFinite(total) || total <= 0) return '—';
+    const z = 1.959963984540054, p = count / total, d = 1 + z*z/total;
+    const center = (p + z*z/(2*total))/d;
+    const radius = z*Math.sqrt(p*(1-p)/total + z*z/(4*total*total))/d;
+    return fmt(100*p,1) + '% [' + fmt(100*Math.max(0,center-radius),1) + '–' +
+        fmt(100*Math.min(1,center+radius),1) + ']';
+}
+function reportProvenance(report) {
+    const box = document.createElement('details');
+    box.append(txt('summary', 'Technical details'));
+    const lines = [
+        'Checkpoint: ' + (report.candidate_path || 'unrecorded'),
+        'Candidate SHA-256: ' + (report.candidate_sha256 || 'unrecorded'),
+        'Run ID: ' + (report.run_id || 'unrecorded'),
+        'Opponent: ' + (report.opponent_path || 'unrecorded'),
+        'Opponent SHA-256: ' + (report.opponent_sha256 || 'unrecorded'),
+        'Benchmark ID: ' + benchmarkKey(report),
+        'Benchmark SHA-256: ' + (report.benchmark.sha256 || 'unrecorded'),
+        'Unity build: ' + (report.build_id || 'unrecorded'),
+        'Evaluator SHA-256: ' + (report.evaluation_code_sha256 || 'unrecorded'),
+        'Seed: ' + report.benchmark.seed,
+        'Environment args: ' + (report.benchmark.env_args || []).join(' '),
+        'Evaluated: ' + (report.evaluated_at || 'unrecorded'),
+    ];
+    box.append(txt('pre', lines.join('\n')));
+    return box;
+}
+function statBlock(name, value) {
+    const box = document.createElement('div');
+    box.append(txt('strong', value), txt('span', name));
+    return box;
+}
+function renderBenchmarkCard(type, report) {
+    const card = document.createElement('article');
+    card.className = 'benchmark-card';
+    const heading = document.createElement('h3');
+    heading.textContent = type.name;
+    card.append(heading, txt('p', type.description));
+    if (!report) {
+        card.append(txt('p', 'No saved result for this test at the selected checkpoint.'));
+        return card;
+    }
+    const metrics = report.metrics || {};
+    const matches = metrics.matches || 0, shots = metrics.candidate_shots || 0;
+    const summary = document.createElement('div');
+    summary.className = 'benchmark-stats';
+    summary.append(
+        statBlock('Candidate wins', matches ? fmt(100*metrics.wins/matches, 0) + '%' : '—'),
+        statBlock('Timeouts', matches ? fmt(100*metrics.timeouts/matches, 0) + '%' : '—'),
+        statBlock('Shot accuracy', shots ? fmt(100*metrics.candidate_hits/shots, 1) + '%' : '—'),
+    );
+    const losses = metrics.losses ?? null;
+    const otherDraws = metrics.draws == null ? null :
+        Math.max(0, metrics.draws - (metrics.timeouts || 0));
+    card.append(summary, txt('p',
+        fmt(metrics.wins) + ' wins · ' + fmt(losses) + ' losses · ' +
+        fmt(metrics.timeouts) + ' timeouts' +
+        (otherDraws ? ' · ' + fmt(otherDraws) + ' other draws' : '') +
+        ' in ' + fmt(matches) + ' matches.'));
+    card.append(txt('p', 'Hits: ' + fmt(metrics.candidate_hits) + '/' +
+        fmt(metrics.candidate_shots) + ' shots · mean match ' +
+        fmt(metrics.average_duration_seconds, 1) + ' seconds.'));
+    card.append(reportProvenance(report));
+    return card;
+}
+function selectedBenchmarkReports() {
+    const mode = $('benchmark-run-filter').value;
+    if (mode === 'archive') return benchmarkData;
+    if (mode === 'compare') {
+        const runs = availableRuns();
+        const beta = runs.filter(item => /\bbeta\b|β/i.test(item.name));
+        const allowed = new Set((beta.length ? beta : runs).map(item => item.id));
+        return benchmarkData.filter(report => allowed.has(reportExperiment(report)?.id));
+    }
+    const item = mode === 'current' ? currentBenchmarkRun()
+        : (latest?.items || []).find(run => 'run:' + run.id === mode);
+    if (!item) return [];
+    return benchmarkData.filter(report =>
+        report.experiment?.id === item.id ||
+        (item.run_id && report.run_id === item.run_id));
+}
+function renderBenchmarkComparison(reports) {
+    const head = $('benchmark-matrix-head'), body = $('benchmark-matrix-rows');
+    head.replaceChildren(); body.replaceChildren();
+    const known = reports.filter(report => Number.isInteger(report.experiment?.stage_index) &&
+        reportExperiment(report));
+    const variants = new Map();
+    const counts = new Map();
+    for (const report of known) {
+        const key = scenarioIdentityKey(report), type = benchmarkInfo(report);
+        if (!variants.has(key)) {
+            const n = (counts.get(type.key) || 0) + 1;
+            counts.set(type.key, n);
+            variants.set(key, { name:type.name, type:type.key, version:n,
+                identity:'Recipe: ' + report.benchmark.sha256 +
+                    ' · opponent: ' + report.opponent_sha256 +
+                    ' · Unity build: ' + report.build_id });
+        }
+    }
+    const ordered = [...variants.entries()].sort((a,b) => {
+        const at = BENCHMARK_TYPES.findIndex(x=>x.key===a[1].type);
+        const bt = BENCHMARK_TYPES.findIndex(x=>x.key===b[1].type);
+        return (at === -1 ? 10 : at) - (bt === -1 ? 10 : bt);
+    });
+    const hr = document.createElement('tr');
+    for (const title of ['Network', 'Checkpoint', ...ordered.map(([key,info]) =>
+        info.name + (counts.get(info.type)>1 ? ' · setup '+info.version : ''))]) {
+        hr.append(txt('th', title));
+    }
+    ordered.forEach(([key,info],i)=>{ hr.childNodes[i+2].title=info.identity; });
+    head.append(hr);
+    const rows = new Map();
+    for (const report of known) {
+        const experiment = reportExperiment(report);
+        const key = experiment.id + ':' + reportCheckpoint(report);
+        if (!rows.has(key)) rows.set(key, { experiment, report, entries:new Map() });
+        const entry = rows.get(key);
+        if (!entry.entries.has(scenarioIdentityKey(report)))
+            entry.entries.set(scenarioIdentityKey(report), report);
+    }
+    const list = [...rows.values()].sort((a,b) =>
+        runName(a.experiment).localeCompare(runName(b.experiment)) ||
+        (reportStep(a.report) ?? -1) - (reportStep(b.report) ?? -1));
+    for (const entry of list) {
+        const tr = document.createElement('tr');
+        cell(tr, runName(entry.experiment), 'name');
+        cell(tr, stageLabel(entry.report) + ' · ' + stepsLabel(reportStep(entry.report)));
+        for (const [key] of ordered) {
+            const report = entry.entries.get(key), m = report?.metrics || {};
+            cell(tr, !report ? 'Not tested' :
+                fmt(m.matches ? 100*m.wins/m.matches : null,0) + '% wins · ' +
+                fmt(m.matches ? 100*m.timeouts/m.matches : null,0) + '% timeouts · ' +
+                fmt(m.candidate_hits) + '/' + fmt(m.candidate_shots) + ' hits');
+        }
+        body.append(tr);
+    }
+    if (!list.length) {
+        const tr = document.createElement('tr'), td = txt('td', 'No comparable saved checkpoint reports.');
+        td.colSpan = ordered.length + 2; tr.append(td); body.append(tr);
+    }
+}
+function renderBenchmarkHistory(reports) {
+    const body = $('benchmark-rows');
+    body.replaceChildren();
+    for (const report of reports) {
+        const m = report.metrics || {}, item = reportExperiment(report), tr = document.createElement('tr');
+        cell(tr, benchmarkInfo(report).name);
+        cell(tr, (item ? runName(item) : 'Earlier / unlinked run') +
+            ' · ' + stepsLabel(reportStep(report)), 'name');
+        cell(tr, stageLabel(report));
+        cell(tr, outcomeInterval(m.wins, m.matches));
+        cell(tr, fmt(m.losses));
+        cell(tr, outcomeInterval(m.timeouts, m.matches));
+        cell(tr, fmt(m.candidate_hits) + '/' + fmt(m.candidate_shots) +
+            (m.candidate_shots ? ' (' + fmt(100*m.candidate_hits/m.candidate_shots,1) + '%)' : ''));
+        cell(tr, fmt(m.average_duration_seconds,1));
+        const td = document.createElement('td');
+        td.append(reportProvenance(report));
+        tr.append(td);
+        body.append(tr);
+    }
+    if (!reports.length) {
+        const tr = document.createElement('tr'), td = txt('td','No saved reports match this selection.');
+        td.colSpan=9;tr.append(td);body.append(tr);
+    }
+}
+function renderBenchmarks() {
+    const runSelect = $('benchmark-run-filter'), previousRun = runSelect.value;
+    const current = currentBenchmarkRun();
+    benchmarkDisplayedRunId = current?.id || null;
+    const runOptions = [
+        new Option(current ? 'Current run · ' + runName(current) : 'Current run', 'current'),
+        new Option('Compare beta runs', 'compare'),
+        new Option('All reports, including qualification / older tests', 'archive'),
+        ...availableRuns().map(item => new Option('Run · ' + runName(item), 'run:'+item.id)),
+    ];
+    runSelect.replaceChildren(...runOptions);
+    runSelect.value = runOptions.some(option => option.value === previousRun)
+        ? previousRun : 'current';
+    const mode = runSelect.value, reports = selectedBenchmarkReports();
+    const scenarioSelect = $('benchmark-scenario-filter'), previousScenario = scenarioSelect.value;
+    const relevant = mode === 'archive' ? reports : reports.filter(r => benchmarkType(r) !== 'legacy');
+    const scenarios = BENCHMARK_TYPES.filter(type =>
+        relevant.some(report => benchmarkType(report)===type.key));
+    const scenarioOptions = [new Option('All three tests',''),
+        ...scenarios.map(type => new Option(type.name,type.key))];
+    if (mode === 'archive' && reports.some(report => benchmarkType(report)==='legacy'))
+        scenarioOptions.push(new Option('Older / custom benchmarks','legacy'));
+    scenarioSelect.replaceChildren(...scenarioOptions);
+    scenarioSelect.value = scenarioOptions.some(x=>x.value===previousScenario)
+        ? previousScenario : '';
+    const scenarioFiltered = reports.filter(report =>
+        !scenarioSelect.value || benchmarkType(report)===scenarioSelect.value);
+    const checkpointSelect = $('benchmark-checkpoint-filter'), previousCheckpoint = checkpointSelect.value;
+    const manyRuns = mode === 'compare' || mode === 'archive';
+    const checkpoints = orderedCheckpoints(reports);
+    const checkpointOptions = manyRuns ? [new Option('All checkpoints','all')] : [
+        new Option('Latest evaluated checkpoint','latest'),
+        ...checkpoints.map(([key,report]) => new Option(
+            stageLabel(report) + ' · ' + stepsLabel(reportStep(report)),key)),
+        new Option('All checkpoints','all'),
+    ];
+    checkpointSelect.replaceChildren(...checkpointOptions);
+    checkpointSelect.value = checkpointOptions.some(x=>x.value===previousCheckpoint)
+        ? previousCheckpoint : manyRuns?'all':'latest';
+    checkpointSelect.disabled = manyRuns || !checkpoints.length;
+    const selection = checkpointSelect.value;
+    const checkpointKey = selection==='latest' ? checkpoints[0]?.[0] : selection;
+    const selected = checkpointKey==='all' ? scenarioFiltered : scenarioFiltered.filter(report =>
+        reportCheckpoint(report)===checkpointKey);
+    const container = $('benchmark-results');
+    container.replaceChildren();
+    if (manyRuns) {
+        container.append(txt('p', mode === 'compare'
+            ? 'Comparing beta runs. Open “Compare checkpoints and beta runs” below to see matched tests.'
+            : 'Showing the full report archive. Older test results are in “Detailed results and older reports” below.'));
+    } else if (!checkpoints.length) {
+        container.append(txt('p','No checkpoint evaluation for this run yet. Results are created when a curriculum stage finishes.'));
+    } else if (checkpointKey==='all') {
+        container.append(txt('p','All checkpoints selected. Open the comparison table below to see how the three tests changed over time.'));
+    } else {
+        for (const type of BENCHMARK_TYPES) {
+            if (scenarioSelect.value && scenarioSelect.value !== type.key) continue;
+            container.append(renderBenchmarkCard(type,selected.find(report=>benchmarkType(report)===type.key)));
+        }
+    }
+    const selectedCheckpoint = checkpoints.find(([key])=>key===checkpointKey)?.[1];
+    const owner = mode==='current' ? current : (latest?.items||[])
+        .find(item=>'run:'+item.id===mode);
+    $('benchmark-summary').textContent = manyRuns
+        ? (mode==='compare' ? 'Beta comparison' : 'Historical archive') +
+            ': ' + scenarioFiltered.length + ' matching reports · ' +
+            benchmarkData.length + ' reports saved overall, including older qualification runs.'
+        : owner ? runName(owner) + ' · ' +
+            (selectedCheckpoint ? stageLabel(selectedCheckpoint) + ' · ' +
+                stepsLabel(reportStep(selectedCheckpoint)) : 'no completed evaluation yet') +
+            ' · ' + checkpoints.length + ' evaluated checkpoint(s). ' +
+            benchmarkData.length + ' total saved reports, including older tests.'
+            : 'No active or saved experiment selected.';
+    const comparative = mode === 'archive' ? scenarioFiltered :
+        mode === 'compare' ? scenarioFiltered :
+            benchmarkData.filter(report => {
+                const item = reportExperiment(report);
+                return item && /\bbeta\b|β/i.test(item.name) &&
+                    (!scenarioSelect.value || benchmarkType(report)===scenarioSelect.value);
+            });
+    renderBenchmarkComparison(comparative.length ? comparative : scenarioFiltered);
+    renderBenchmarkHistory(scenarioFiltered);
+}
+async function refreshBenchmarks() {
+    if (!$('benchmark-panel').open) return;
+    try {
+        const response = await fetch('/api/benchmarks',{cache:'no-store'});
+        const value = await response.json();
+        if (!response.ok) throw Error(value.error || 'Could not load checkpoint results.');
+        benchmarkData = value.reports || [];
+        benchmarkDataLoaded = true;
+        $('benchmark-summary').classList.remove('error');
+        renderBenchmarks();
+    } catch (error) {
+        $('benchmark-summary').classList.add('error');
+        $('benchmark-summary').textContent = 'Evaluation results unavailable: ' + error.message;
+    }
+}
+$('benchmark-panel').addEventListener('toggle', refreshBenchmarks);
+$('benchmark-refresh').addEventListener('click', refreshBenchmarks);
+$('benchmark-run-filter').addEventListener('change', () => {
+    $('benchmark-checkpoint-filter').value = 'latest';
+    const mode = $('benchmark-run-filter').value;
+    if (mode==='compare') $('benchmark-compare-panel').open = true;
+    if (mode==='archive') $('benchmark-history-panel').open = true;
+    renderBenchmarks();
+});
+$('benchmark-checkpoint-filter').addEventListener('change', () => {
+    if ($('benchmark-checkpoint-filter').value==='all')
+        $('benchmark-compare-panel').open = true;
+    renderBenchmarks();
+});
+$('benchmark-scenario-filter').addEventListener('change', renderBenchmarks);
+
+let workerRefreshPending = false;
+let resizingWorker = null;
+const workerResizeFeedback = new Map();
+async function refreshWorkers() {
+    if (!$('worker-panel').open || workerRefreshPending) return;
+    workerRefreshPending = true;
+    try {
+        const response = await fetch('/api/workers', {cache: 'no-store'});
+        const data = await response.json();
+        if (!response.ok) throw Error(data.error || 'Training control unavailable');
+        const workers = data.workers || [];
+        for (const [workerId, operation] of workerResizeFeedback) {
+            if (operation.runId !== data.run_id) workerResizeFeedback.delete(workerId);
+        }
+        $('worker-indicator').classList.remove('error');
+        $('worker-summary').classList.remove('error');
+        const troubled = workers.filter(w => w.state === 'STALE' || Boolean(w.error));
+        $('worker-indicator').textContent = '· ' + workers.length + ' reported, ' +
+            troubled.length + ' with warnings';
+        const activeRun = latest?.items?.find(x => x.id === latest.active_id);
+        const publishedUpdate = activeRun?.run_id === data.run_id &&
+            activeRun.worker_software_updates?.length > 0;
+        const remoteWorkers = workers.filter(w => w.role === 'dedicated');
+        const resizeCapable = remoteWorkers.filter(w =>
+            w.state !== 'STALE' && w.can_override_envs).length;
+        $('worker-summary').textContent =
+            'Training: ' + (data.training_enabled ? 'enabled' : 'stopped') +
+            ' · Run: ' + (data.run_id || '—') +
+            ' · Revision: ' + data.revision +
+            (data.pending_release ? ' · Release: ' + data.pending_release : '') +
+            (publishedUpdate ? ' · After worker update: ' + resizeCapable + '/' +
+                remoteWorkers.length + ' reporting live-resize support' : '') +
+            ' · Updated: ' + new Date().toLocaleTimeString();
+        $('worker-rows').replaceChildren();
+        for (const w of workers) {
+            const tr = document.createElement('tr');
+            cell(tr, w.trainer_id || '—');
+            const stateCell = cell(tr, w.state);
+            if (w.state === 'STALE' || w.state === 'failed') stateCell.className = 'worker-issue';
+            const envCell = document.createElement('td');
+            const controls = document.createElement('div');
+            controls.className = 'env-control';
+            // +/- adjusts the worker's observed count, not the auto optimizer's
+            // speculative desired count. An explicit pending override remains
+            // the base for the next +/- press.
+            const count = w.worker_env_override ?? w.envs ?? w.desired_envs;
+            const number = txt('span',
+                (w.desired_envs == null || w.desired_envs === w.envs
+                    ? fmt(w.envs) : fmt(w.envs) + ' → ' + fmt(w.desired_envs)) +
+                (w.worker_env_override != null ? ' fixed' : w.auto_envs ? ' auto' : ''));
+            number.className = 'env-count';
+            const feedback = txt('div', '');
+            feedback.className = 'env-feedback';
+            const renderFeedback = () => {
+                const operation = workerResizeFeedback.get(w.trainer_id);
+                if (!operation) return;
+                if (operation.phase === 'accepted') {
+                    if (operation.target === null && w.worker_env_override == null) {
+                        operation.phase = 'applied';
+                    } else if (operation.target !== null &&
+                        w.envs === operation.target && data.training_enabled) {
+                        operation.phase = 'applied';
+                    } else if (!data.training_enabled &&
+                        w.worker_env_override === operation.target) {
+                        operation.phase = 'saved';
+                    }
+                }
+                const targetLabel = operation.target === null
+                    ? 'automatic/default mode' : fmt(operation.target) + ' envs';
+                feedback.textContent = operation.phase === 'sending'
+                    ? 'Sending ' + targetLabel + '…'
+                    : operation.phase === 'accepted'
+                        ? 'Request accepted · waiting for worker to apply ' + targetLabel
+                        : operation.phase === 'applied'
+                            ? 'Applied · ' + targetLabel
+                            : operation.phase === 'saved'
+                                ? 'Saved for next training · ' + targetLabel
+                                : 'Change failed · ' + operation.error;
+                feedback.classList.toggle('error', operation.phase === 'failed');
+            };
+            renderFeedback();
+            const change = async delta => {
+                if (resizingWorker) return;
+                const target = delta === null ? null : count + delta;
+                            resizingWorker = w.trainer_id;
+                const operation = { target, phase: 'sending', runId: data.run_id };
+                workerResizeFeedback.set(w.trainer_id, operation);
+                feedback.textContent = 'Sending ' +
+                    (target === null ? 'automatic/default mode' : fmt(target) + ' envs') + '…';
+                feedback.classList.remove('error');
+                for (const control of document.querySelectorAll('.env-control button'))
+                    control.disabled = true;
+                try {
+                    await request('/api/worker-envs', {
+                        trainer_id: w.trainer_id, envs: target,
+                        expected_revision: data.revision,
+                        expected_run_id: data.run_id,
+                        confirm_active: data.training_enabled,
+                    });
+                    operation.phase = 'accepted';
+                    feedback.textContent = 'Request accepted · waiting for worker to apply ' +
+                        (target === null ? 'automatic/default mode' : fmt(target) + ' envs');
+                    $('message').classList.remove('error');
+                    $('message').textContent = w.trainer_id + ': request accepted; waiting for worker confirmation.';
+                } catch (error) {
+                    operation.phase = 'failed';
+                    operation.error = error.message;
+                    feedback.textContent = 'Change failed · ' + error.message;
+                    feedback.classList.add('error');
+                    $('message').textContent = w.trainer_id + ': ' + error.message;
+                    $('message').classList.add('error');
+                } finally {
+                    resizingWorker = null;
+                    // Restore the table's original min/max/capability-disabled
+                    // states even if the next worker-status fetch fails.
+                    for (const control of document.querySelectorAll('.env-control button')) {
+                        control.disabled = control.dataset.baseDisabled === 'true';
+                    }
+                    await refreshWorkers();
+                }
+            };
+            const reason = w.role !== 'dedicated'
+                ? 'Central learner is not a resizable remote worker'
+                : w.state === 'STALE'
+                    ? 'Worker is offline or its lease is stale'
+                    : w.can_override_envs !== true
+                        ? 'Worker runtime does not advertise live resizing; update its deployed runtime'
+                        : !Number.isInteger(count) ||
+                            !Number.isInteger(w.min_envs) || !Number.isInteger(w.max_envs)
+                            ? 'Worker has not reported a valid environment count and safe limits'
+                            : data.pending_release
+                                ? 'Resize unavailable until the release rollout finishes'
+                                : '';
+            const editable = !reason;
+            const decrease = txt('button', '−'), increase = txt('button', '+');
+            decrease.type = increase.type = 'button';
+            decrease.setAttribute('aria-label', 'Decrease environments on ' + w.trainer_id);
+            increase.setAttribute('aria-label', 'Increase environments on ' + w.trainer_id);
+            decrease.title = reason || (count <= w.min_envs
+                ? 'At worker minimum of ' + w.min_envs + ' environments'
+                : 'Decrease worker environments by 1');
+            increase.title = reason || (count >= w.max_envs
+                ? 'At worker maximum of ' + w.max_envs + ' environments'
+                : 'Increase worker environments by 1');
+            decrease.dataset.baseDisabled = String(!editable || count <= w.min_envs);
+            increase.dataset.baseDisabled = String(!editable || count >= w.max_envs);
+            decrease.disabled = Boolean(resizingWorker) || decrease.dataset.baseDisabled === 'true';
+            increase.disabled = Boolean(resizingWorker) || increase.dataset.baseDisabled === 'true';
+            decrease.addEventListener('click', () => change(-1));
+            increase.addEventListener('click', () => change(1));
+            controls.append(decrease, number, increase);
+            if (w.worker_env_override != null) {
+                const reset = txt('button', w.auto_envs ? 'Auto' : 'Reset');
+                reset.type = 'button';
+                reset.title = 'Restore worker automatic tuning or its local manual target';
+                reset.dataset.baseDisabled = String(!editable);
+                reset.disabled = Boolean(resizingWorker) || reset.dataset.baseDisabled === 'true';
+                reset.addEventListener('click', () => change(null));
+                controls.append(reset);
+            }
+            if (reason) {
+                const unavailable = txt('div', reason);
+                unavailable.className = 'env-feedback';
+                envCell.append(controls, feedback, unavailable);
+            } else {
+                envCell.append(controls, feedback);
+            }
+            tr.append(envCell);
+            cell(tr, w.cpu_pct == null ? '—' : fmt(w.cpu_pct, 0) + '%');
+            cell(tr, w.ram_pct == null ? '—' : fmt(w.ram_pct, 0) + '%');
+            cell(tr, fmt(w.live_exp_s, 0));
+            cell(tr, fmt(w.staged_s, 0));
+            cell(tr, fmt(w.accepted_s, 0));
+            cell(tr, fmt(w.accepted_total));
+            cell(tr, fmt(w.consumed_total));
+            cell(tr, fmt(w.upload_queue));
+            cell(tr, fmt(w.broker_queue) +
+                (w.broker_capacity == null ? '' : '/' + fmt(w.broker_capacity)));
+            cell(tr, w.age_seconds == null ? '—' : fmt(w.age_seconds, 0) + 's');
+            const errorCell = cell(tr, w.error || '—', 'worker-error');
+            if (w.error) errorCell.classList.add('worker-issue');
+            $('worker-rows').append(tr);
+        }
+        if (!workers.length) $('worker-rows').append(
+            Object.assign(document.createElement('tr'), {
+                textContent: 'No workers currently reporting.',
+            }));
+    } catch (error) {
+        $('worker-indicator').textContent = '· Unavailable';
+        $('worker-indicator').classList.add('error');
+        $('worker-summary').textContent = 'Could not read Bees training control: ' + error.message;
+        $('worker-summary').classList.add('error');
+    } finally {
+        workerRefreshPending = false;
+    }
+}
+$('worker-panel').addEventListener('toggle', refreshWorkers);
+setInterval(refreshWorkers, 5000);
+
+async function refresh() {
+    try {
+        const r = await fetch('/api/state', {cache:'no-store'});
+        if (!r.ok) throw Error('Status request failed');
+        render(await r.json());
+    } catch(e) { $('message').textContent = e.message; $('message').classList.add('error'); }
+}
+function updateCurriculumPreview() {
+    const budgets = [Number($('steps').value),
+        ...[...$('stage-rows').children].map(row => Number(row.querySelector('.stage-steps').value))];
+    const total = budgets.reduce((sum, value) => sum + value, 0);
+    if (budgets.some(value => !Number.isSafeInteger(value) || value < 1000) ||
+        !Number.isSafeInteger(total)) {
+        $('curriculum-preview').textContent = 'Enter valid, safely representable learner step budgets.';
+        return;
+    }
+    if ($('unlimited-steps').checked) {
+        $('curriculum-preview').textContent = budgets.length +
+            ' stages · final stage continues indefinitely · evaluations every 100M steps.';
+        return;
+    }
+    const interval = Math.min(100_000_000, total / 4);
+    const count = interval === 100_000_000 ? Math.ceil(total / interval) : 4;
+    const checkpoints = Array.from({ length: Math.min(count, 8) }, (_, i) =>
+        fmt(interval === 100_000_000
+            ? Math.min((i + 1) * 100_000_000, total)
+            : Math.ceil(total / 4 * (i + 1))));
+    $('curriculum-preview').textContent = budgets.length + ' stages · ' + fmt(total) +
+        ' learner steps · ' + count + ' planned evaluations at ' +
+        checkpoints.join(', ') + (count > 8 ? ', …' : '') +
+        ' steps (when periodic evaluations are selected).';
+}
+function updateStageLabels() {
+    [...$('stage-rows').children].forEach((row, i) => {
+        const name = row.querySelector('.stage-name').value || 'Unnamed stage';
+        const budget = row.querySelector('.stage-steps').value;
+        row.querySelector('summary').textContent = (i + 2) + '. ' + name +
+            ' · ' + (budget ? fmt(budget) : '—') + ' steps';
+    });
+    updateCurriculumPreview();
+}
+function addCurriculumStage(stage = {}) {
+    const row = document.createElement('details');
+    row.className = 'stage-row';
+    const heading = document.createElement('summary');
+    const grid = document.createElement('div');
+    grid.className = 'formgrid';
+    const name = document.createElement('label');
+    name.textContent = 'Stage name';
+    const nameInput = document.createElement('input');
+    Object.assign(nameInput, {
+        className: 'stage-name', maxLength: 100, placeholder: 'Moving combat',
+        required: true, value: stage.name || '',
+    });
+    name.append(nameInput);
+    const steps = document.createElement('label');
+    steps.textContent = 'Additional learner steps';
+    const stepInput = document.createElement('input');
+    Object.assign(stepInput, { className: 'stage-steps', type: 'number',
+        min: '1000', step: '1000', required: true,
+        value: stage.steps == null ? '20000000' : String(stage.steps) });
+    steps.append(stepInput);
+    const target = document.createElement('label');
+    target.textContent = 'Timeout target % (optional)';
+    const targetInput = document.createElement('input');
+    Object.assign(targetInput, { className: 'stage-target', type: 'number',
+        min: '0', max: '100', step: 'any',
+        value: stage.target_timeout_pct == null ? '' : String(stage.target_timeout_pct) });
+    target.append(targetInput);
+    const args = document.createElement('label');
+    args.className = 'wide';
+    args.textContent = 'Environment overrides, one per line';
+    const area = document.createElement('textarea');
+    area.className = 'stage-args';
+    area.placeholder = '--rl-disable-movement=false';
+    area.value = (stage.env_args || []).join('\n');
+    args.append(area);
+    grid.append(name, steps, target, args);
+    const actions = document.createElement('div');
+    actions.className = 'bar';
+    for (const [text, action] of [
+        ['Move up', () => { const above = row.previousElementSibling;
+            if (above) $('stage-rows').insertBefore(row, above); }],
+        ['Move down', () => { const below = row.nextElementSibling;
+            if (below) $('stage-rows').insertBefore(below, row); }],
+        ['Remove stage', () => row.remove()],
+    ]) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.textContent = text;
+        button.addEventListener('click', () => { action(); updateStageLabels(); });
+        actions.append(button);
+    }
+    row.append(heading, grid, actions);
+    $('stage-rows').append(row);
+    nameInput.addEventListener('input', updateStageLabels);
+    stepInput.addEventListener('input', updateStageLabels);
+    updateStageLabels();
+    return row;
+}
+function captureCurriculum() {
+    return {
+        schema_version: 1,
+        name: defaultCurriculum?.name || 'Bees experiment curriculum',
+        first_steps: Number($('steps').value),
+        stage_name: $('stage-name').value,
+        target_timeout_pct: $('stage-target').value.trim() || null,
+        env_args: $('args').value.split('\n').map(x => x.trim()).filter(Boolean),
+        stages: [...$('stage-rows').children].map(row => ({
+            name: row.querySelector('.stage-name').value,
+            steps: Number(row.querySelector('.stage-steps').value),
+            target_timeout_pct: row.querySelector('.stage-target').value.trim() || null,
+            env_args: row.querySelector('.stage-args').value.split('\n')
+                .map(x => x.trim()).filter(Boolean),
+        })),
+    };
+}
+function applyCurriculum(template) {
+    if (!template) return;
+    $('steps').value = template.first_steps;
+    $('stage-name').value = template.stage_name;
+    $('stage-target').value = template.target_timeout_pct ?? '';
+    $('args').value = (template.env_args || []).join('\n');
+    $('stage-rows').replaceChildren();
+    for (const stage of template.stages || []) addCurriculumStage(stage);
+    $('prefix-stages').value = 1 + (template.stages || []).length;
+    $('bulk-stage-steps').value = template.first_steps;
+    updateStageLabels();
+    $('curriculum-status').textContent = 'Loaded ' + template.name +
+        ' · edit stages before queuing or save a revised default.';
+}
+async function loadCurriculumDefault() {
+    const response = await fetch('/api/curriculum-default', {cache:'no-store'});
+    const data = await response.json();
+    if (!response.ok) throw Error(data.error || 'Curriculum default unavailable.');
+    defaultCurriculum = data.curriculum;
+    if (!editingId) applyCurriculum(defaultCurriculum);
+}
+$('add-stage').addEventListener('click', () => {
+    const row = addCurriculumStage();
+    row.open = true;
+    row.scrollIntoView({block:'nearest'});
+});
+$('load-curriculum').addEventListener('click', async () => {
+    if (!confirm('Replace the curriculum fields in this form with the saved default?')) return;
+    try { await loadCurriculumDefault(); applyCurriculum(defaultCurriculum); }
+    catch (error) { $('curriculum-status').textContent = error.message; }
+});
+$('save-curriculum').addEventListener('click', async () => {
+    if (!confirm('Save the current stages as the default for future experiments? Existing queued and running experiments will not change.')) return;
+    try {
+        const saved = await request('/api/curriculum-default', captureCurriculum());
+        defaultCurriculum = saved.curriculum;
+        $('curriculum-status').textContent = 'Saved default: ' + defaultCurriculum.name;
+    } catch (error) { $('curriculum-status').textContent = error.message; }
+});
+$('keep-prefix').addEventListener('click', () => {
+    const count = Number($('prefix-stages').value);
+    if (!Number.isSafeInteger(count) || count < 1 ||
+        count > $('stage-rows').children.length + 1) {
+        $('curriculum-status').textContent = 'Choose a valid number of leading stages.';
+        return;
+    }
+    if (!confirm('Remove every stage after stage ' + count + ' from this form?')) return;
+    while ($('stage-rows').children.length > count - 1)
+        $('stage-rows').lastElementChild.remove();
+    updateStageLabels();
+});
+$('apply-stage-steps').addEventListener('click', () => {
+    const steps = Number($('bulk-stage-steps').value);
+    if (!Number.isSafeInteger(steps) || steps < 1000) {
+        $('curriculum-status').textContent = 'Enter a valid integer step budget.';
+        return;
+    }
+    if (!confirm('Change the duration of all current curriculum stages to ' +
+        fmt(steps) + ' learner steps?')) return;
+    $('steps').value = String(steps);
+    for (const row of $('stage-rows').children)
+        row.querySelector('.stage-steps').value = String(steps);
+    updateStageLabels();
+});
+$('steps').addEventListener('input', updateCurriculumPreview);
+$('unlimited-steps').addEventListener('change', updateCurriculumPreview);
+function closeQueuedEditor() {
+    editingId = null;
+    editingRevision = null;
+    editingDefaultsSha = null;
+    $('create-title').textContent = 'Queue an experiment';
+    $('create').querySelector('button[type=submit]').textContent = 'Add to queue';
+    $('cancel-edit').hidden = true;
+    $('create').reset();
+    $('replication-controls').hidden = false;
+    $('replicate-enabled').checked = false;
+    $('replicate-count').disabled = true;
+    applyCurriculum(defaultCurriculum);
+    loadTrainerDefaults();
+}
+$('cancel-edit').addEventListener('click', closeQueuedEditor);
+$('replicate-enabled').addEventListener('change', () => {
+    $('replicate-count').disabled = !$('replicate-enabled').checked;
+});
+
+async function openQueuedEditor(id) {
+    try {
+        const r = await fetch('/api/queued?id=' + encodeURIComponent(id), { cache: 'no-store' });
+        const data = await r.json();
+        if (!r.ok) throw Error(data.error || 'Cannot edit queued experiment.');
+        const def = data.definition, trainer = def.trainer;
+        if (!trainer?.hyperparameters || !trainer?.network_settings) {
+            throw Error('Queued trainer configuration is unavailable.');
+        }
+        editingId = data.id;
+        editingRevision = data.revision;
+        $('replication-controls').hidden = true;
+        editingDefaultsSha = data.defaults_sha256;
+        $('name').value = def.name;
+        $('group').value = def.group;
+        $('steps').value = def.max_steps;
+        $('scenario-seed').value = def.scenario_seed ?? '';
+        $('unlimited-steps').checked = def.unlimited_steps === true;
+        $('minutes').value = def.max_minutes ?? '';
+        $('stall').value = def.stall_minutes ?? '';
+        $('args').value = (def.env_args || []).join('\n');
+        $('stage-name').value = def.stage_name;
+        $('stage-target').value = def.target_timeout_pct ?? '';
+        $('stage-rows').replaceChildren();
+        for (const stage of def.stages || []) addCurriculumStage(stage);
+        $('prefix-stages').value = 1 + (def.stages || []).length;
+        $('evaluation-mode').value = def.evaluation_mode || 'none';
+        $('benchmark-target-enabled').checked = Boolean(def.benchmark_target);
+        $('benchmark-target-wins').value = def.benchmark_target?.min_win_rate_pct ?? 70;
+        $('benchmark-target-timeouts').value = def.benchmark_target?.max_timeout_rate_pct ?? 5;
+        $('benchmark-target-matches').value = def.benchmark_target?.min_matches ?? 100;
+        $('benchmark-target-passes').value = def.benchmark_target?.consecutive_passes ?? 2;
+        $('reserve-heldout').checked = def.reserve_heldout === true;
+        updateStageLabels();
+        for (const [key, value] of Object.entries(trainer.hyperparameters)) {
+            const input = $('trainer-' + key);
+            if (input) input.value = String(value);
+        }
+        $('trainer-num_layers').value = trainer.network_settings.num_layers;
+        $('trainer-normalize').value = String(trainer.network_settings.normalize);
+        $('trainer-seed').value = trainer.seed;
+        $('trainer-config-status').textContent = 'Editing the frozen settings of an unstarted experiment.';
+        $('create-title').textContent = 'Edit queued experiment';
+        $('create').querySelector('button[type=submit]').textContent = 'Save queued changes';
+        $('cancel-edit').hidden = false;
+        $('create').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } catch (error) {
+        $('message').textContent = error.message;
+        $('message').classList.add('error');
+    }
+}
+
+$('create').addEventListener('submit', async e => {
+    e.preventDefault();
+    try {
+        const payload = trainingFormPayload();
+        if (editingId) {
+            await request('/api/edit-queued', {
+                id: editingId, revision: editingRevision,
+                defaults_sha256: editingDefaultsSha, definition: payload,
+            });
+            closeQueuedEditor();
+        } else {
+            await request('/api/queue', payload);
+            $('name').value = '';
+        }
+        await refresh();
+    } catch(err) { $('message').textContent = err.message; $('message').classList.add('error'); }
+});
+$('pause').addEventListener('click', async () => {
+    if (!confirm('Pause the active experiment for maintenance? The trainer will save its checkpoint, the queue will stay stopped, and Resume will continue this same run. Wait for Paused before closing or updating the manager.')) return;
+    try { await request('/api/pause', {}); await refresh(); }
+    catch (err) { $('message').textContent = err.message; $('message').classList.add('error'); }
+});
+$('rebuild-unity').addEventListener('click', async () => {
+    const explanation = 'Rebuild both Windows and Linux RL Unity players for this paused experiment?\n\n' +
+        'WARNING: Even with an unchanged observation/action interface, changes to simulation ' +
+        'physics, weapons, rewards, spawning, or timing can invalidate comparisons between ' +
+        'earlier and later training results. The chart will record this rebuild boundary.\n\n' +
+        'The current run, optimizer checkpoint, curriculum stage and pinned learner runtime ' +
+        'will be retained. Builds whose RL compatibility fingerprint changed will be rejected. ' +
+        'A failed build leaves the experiment paused. Continue?';
+    if (!confirm(explanation)) return;
+    rebuildRequestPending = true;
+    $('rebuild-unity').disabled = true;
+    $('resume').disabled = true;
+    $('message').classList.remove('error');
+    $('message').textContent = 'Checking paused run before Unity rebuild…';
+    try {
+        await request('/api/rebuild-unity', {});
+        rebuildRequestPending = false;
+        await refresh();
+    } catch (error) {
+        rebuildRequestPending = false;
+        await refresh();
+        $('message').textContent = error.message;
+        $('message').classList.add('error');
+    } finally {
+        rebuildRequestPending = false;
+        $('rebuild-unity').disabled = false;
+        $('resume').disabled = false;
+    }
+});
+$('update-workers').addEventListener('click', async () => {
+    if (!confirm('Publish updated worker software to all remote workers for this paused experiment? Each worker supervisor may restart when it adopts the package, but the learner runtime, Unity build, optimizer checkpoint and experiment run will not change. Continue?')) return;
+    $('update-workers').disabled = true;
+    $('resume').disabled = true;
+    $('message').classList.remove('error');
+    $('message').textContent = 'Packaging and publishing worker-only runtime…';
+    try {
+        await request('/api/update-workers', {});
+        await refresh();
+    } catch (error) {
+        $('message').textContent = error.message;
+        $('message').classList.add('error');
+        await refresh();
+    } finally {
+        $('update-workers').disabled = false;
+        $('resume').disabled = false;
+    }
+});
+$('resume').addEventListener('click', async () => {
+    try { await request('/api/resume', {}); await refresh(); }
+    catch (err) { $('message').textContent = err.message; $('message').classList.add('error'); }
+});
+$('start').addEventListener('click', async () => {
+    try { await request('/api/start', {}); await refresh(); }
+    catch(err) { $('message').textContent = err.message; $('message').classList.add('error'); }
+});
+$('stop').addEventListener('click', async () => {
+    if (!confirm('Permanently stop the current experiment and disarm the queue? This ends the experiment and cannot be resumed from the manager. Use Pause for maintenance for a temporary interruption.')) return;
+    try { await request('/api/stop', {}); await refresh(); }
+    catch(err) { $('message').textContent = err.message; $('message').classList.add('error'); }
+});
+$('filter').addEventListener('change', () => latest && render(latest));
+$('metric').addEventListener('change', () => latest && chart(
+    latest.items.filter(x => !$('filter').value || x.group === $('filter').value)));
+$('smoothing').addEventListener('change', () => latest && chart(
+    latest.items.filter(x => !$('filter').value || x.group === $('filter').value)));
+$('graph').addEventListener('mousemove', inspectChart);
+$('graph').addEventListener('mouseleave', () => {
+    $('graph-tooltip').style.display = 'none';
+    if (chartHover) chartHover.hoverLayer.replaceChildren();
+});
+$('axis').addEventListener('change', () => latest && chart(
+    latest.items.filter(x => !$('filter').value || x.group === $('filter').value)));
+async function readStorage() {
+    try {
+        const response = await fetch('/api/storage', {cache:'no-store'});
+        const data = await response.json();
+        if (!response.ok) throw Error(data.error || 'Cannot read experiment data location.');
+        $('storage-root').value = data.root;
+        $('storage-status').textContent = data.restart_required
+            ? 'Data copy complete; restart the Experiment Manager to use this path.'
+            : 'Currently storing experiment data at ' + data.root;
+    } catch (error) {
+        $('storage-status').textContent = error.message;
+    }
+}
+$('storage-save').addEventListener('click', async () => {
+    const root = $('storage-root').value.trim();
+    if (!root || !confirm('Copy existing experiment data to ' + root +
+        '? This is only allowed when the queue is idle. The original directory remains as a backup; you must restart the manager before using the new directory.')) return;
+    $('storage-save').disabled = true;
+    try {
+        const response = await request('/api/storage', {root});
+        $('storage-status').textContent = response.message ||
+            'Data directory unchanged.';
+        await readStorage();
+    } catch (error) {
+        $('storage-status').textContent = 'Cannot change data directory: ' + error.message;
+    } finally {
+        $('storage-save').disabled = false;
+    }
+});
+readStorage();
+let researchGroups = [], researchComparisons = [], researchEfficiency = [];
+async function loadResearchSummary() {
+    const button = $('research-refresh');
+    button.disabled = true;
+    try {
+        const threshold = Number($('research-threshold').value);
+        if (!Number.isFinite(threshold) || threshold < 0 || threshold > 100)
+            throw Error('Select a threshold between 0 and 100%.');
+        const response = await fetch('/api/research-summary?threshold=' +
+            encodeURIComponent(String(threshold / 100)), {cache:'no-store'});
+        const data = await response.json();
+        if (!response.ok) throw Error(data.error || 'Research statistics unavailable.');
+        researchGroups = data.groups || [];
+        researchComparisons = data.comparisons || [];
+        researchEfficiency = data.efficiency || [];
+        const rows = $('research-rows');
+        rows.replaceChildren();
+        const percentage = number => number == null ? '—' : fmt(100 * number, 2) + '%';
+        for (const group of researchGroups) {
+            const row = document.createElement('tr');
+            cell(row, group.comparison_group + ' · ' + group.study_label);
+            cell(row, 'beta ' + (group.beta ?? '—'));
+            cell(row, group.checkpoint +
+                (typeof group.target_step === 'number'
+                    ? ' · ' + fmt(group.target_step) + ' steps' : ''));
+            cell(row, group.scenario);
+            cell(row, group.win_rate.n + '/' + group.expected_replicates);
+            cell(row, percentage(group.win_rate.mean));
+            cell(row, percentage(group.win_rate.sd));
+            cell(row, group.win_rate.ci95
+                ? group.win_rate.ci95.map(percentage).join(' to ') : '— (one seed)');
+            cell(row, percentage(group.timeout_rate.mean));
+            cell(row, group.purpose === 'heldout' ? 'Held-out' : 'Development');
+            rows.append(row);
+        }
+        const differenceRows = $('research-difference-rows');
+        differenceRows.replaceChildren();
+        for (const comparison of researchComparisons) {
+            const row = document.createElement('tr');
+            cell(row, comparison.comparison_group);
+            cell(row, comparison.scenario);
+            cell(row, fmt(comparison.target_step));
+            cell(row, String(comparison.beta_a));
+            cell(row, String(comparison.beta_b));
+            cell(row, comparison.independent_runs_a + '/' + comparison.independent_runs_b);
+            cell(row, percentage(comparison.win_rate_difference));
+            cell(row, comparison.win_difference_ci95
+                ? comparison.win_difference_ci95.map(percentage).join(' to ')
+                : '— (insufficient seeds)');
+            differenceRows.append(row);
+        }
+        const efficiencyRows = $('research-efficiency-rows');
+        efficiencyRows.replaceChildren();
+        for (const result of researchEfficiency) {
+            const row = document.createElement('tr');
+            cell(row, result.comparison_group);
+            cell(row, String(result.beta ?? '—'));
+            cell(row, result.scenario);
+            cell(row, result.reached_runs + '/' + result.expected_replicates);
+            cell(row, result.median_first_observed_step == null
+                ? 'Not observed' : fmt(result.median_first_observed_step));
+            cell(row, percentage(result.threshold));
+            efficiencyRows.append(row);
+        }
+        $('research-message').textContent = researchGroups.length
+            ? researchGroups.length + ' comparable condition/benchmark/checkpoint groups. ' +
+                'Incomplete replicate sets remain descriptive; do not infer a treatment advantage from a single seed.'
+            : 'No completed benchmark evaluations with comparable provenance yet.';
+    } catch (error) {
+        $('research-message').textContent = 'Research summary failed: ' + error.message;
+    } finally {
+        button.disabled = false;
+    }
+}
+function saveResearchCsv() {
+    if (!researchGroups.length) {
+        $('research-message').textContent = 'Refresh the research summary before exporting.';
+        return;
+    }
+    const columns = ['comparison_group','study_label','study_id','condition_id',
+        'beta','purpose','scenario','checkpoint','target_step','benchmark_identity',
+        'independent_runs','expected_replicates','mean_win_rate','sd_win_rate',
+        'win_ci95_lower','win_ci95_upper','mean_timeout_rate','sd_timeout_rate',
+        'mean_score_rate','seeds','run_ids','actual_steps'];
+    const data = researchGroups.map(group => ({
+        ...group,
+        independent_runs: group.win_rate.n,
+        mean_win_rate: group.win_rate.mean,
+        sd_win_rate: group.win_rate.sd,
+        win_ci95_lower: group.win_rate.ci95?.[0],
+        win_ci95_upper: group.win_rate.ci95?.[1],
+        mean_timeout_rate: group.timeout_rate.mean,
+        sd_timeout_rate: group.timeout_rate.sd,
+        mean_score_rate: group.score_rate.mean,
+        seeds: group.runs.map(run => run.seed).join(';'),
+        run_ids: group.runs.map(run => run.run_id).join(';'),
+        actual_steps: group.runs.map(run => run.actual_step).join(';'),
+    }));
+    const cellText = value => {
+        if (value == null) return '';
+        let text = String(value);
+        if (typeof value === 'string' && /^\s*[=+@-]/.test(text))
+            text = "'" + text;
+        return '"' + text.replace(/"/g, '""') + '"';
+    };
+    const csv = '\uFEFF' + [columns, ...data.map(row => columns.map(key => row[key]))]
+        .map(row => row.map(cellText).join(',')).join('\r\n') + '\r\n';
+    const url = URL.createObjectURL(new Blob([csv], {type:'text/csv;charset=utf-8'}));
+    const link = document.createElement('a');
+    const stamp = new Date().toISOString().replace(/[-:]/g,'').replace(/\.\d{3}Z$/, 'Z');
+    link.download = 'bees-research-comparison-' + stamp + '.csv';
+    link.href = url;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+$('research-refresh').addEventListener('click', loadResearchSummary);
+$('research-csv').addEventListener('click', saveResearchCsv);
+function downloadResearchRows(name, columns, rows) {
+    if (!rows.length) {
+        $('research-message').textContent = 'Refresh and select completed comparisons before exporting.';
+        return;
+    }
+    const cellText = value => {
+        if (value == null) return '';
+        let text = String(value);
+        if (typeof value === 'string' && /^\s*[=+@-]/.test(text))
+            text = "'" + text;
+        return '"' + text.replace(/"/g, '""') + '"';
+    };
+    const csv = '\uFEFF' + [columns, ...rows.map(row => columns.map(key => row[key]))]
+        .map(row => row.map(cellText).join(',')).join('\r\n') + '\r\n';
+    const url = URL.createObjectURL(new Blob([csv], {type:'text/csv;charset=utf-8'}));
+    const a = document.createElement('a');
+    a.download = 'bees-' + name + '-' + new Date().toISOString()
+        .replace(/[-:]/g,'').replace(/\.\d{3}Z$/, 'Z') + '.csv';
+    a.href = url; a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+$('research-diff-csv').addEventListener('click', () => {
+    const columns = ['comparison_group','scenario','purpose','target_step',
+        'beta_a','beta_b','study_a','study_b','independent_runs_a',
+        'independent_runs_b','win_rate_difference','standard_error',
+        'ci95_lower','ci95_upper','comparability_id','benchmark_identity'];
+    downloadResearchRows('beta-differences', columns, researchComparisons.map(g => ({
+        ...g, ci95_lower:g.win_difference_ci95?.[0],
+        ci95_upper:g.win_difference_ci95?.[1],
+    })));
+});
+$('research-efficiency-csv').addEventListener('click', () => {
+    const columns = ['comparison_group','study_id','study_label','beta','scenario',
+        'threshold','expected_replicates','reached_runs','median_first_observed_step',
+        'earliest_evaluated_steps','condition_id','benchmark_identity'];
+    downloadResearchRows('sample-efficiency', columns, researchEfficiency.map(g => ({
+        ...g, earliest_evaluated_steps:g.earliest_evaluated_steps.join(';'),
+    })));
+});
+$('research-threshold').addEventListener('change', () => {
+    if ($('research-panel').open) loadResearchSummary();
+});
+
+$('research-panel').addEventListener('toggle', () => {
+    if ($('research-panel').open) loadResearchSummary();
+});
+
+async function loadTrainerDefaults() {
+    const button = $('create').querySelector('button[type=submit]');
+    button.disabled = true;
+    try {
+        const r = await fetch('/api/configuration', {cache:'no-store'});
+        const data = await r.json();
+        if (!r.ok) throw Error(data.error || 'Trainer configuration unavailable');
+        const settings = data.resolved;
+        for (const [k,v] of Object.entries({...settings.hyperparameters, ...settings.network_settings, seed: settings.seed})) {
+            const input = $('trainer-' + k);
+            if (input && !editingId) input.value = String(v);
+        }
+        if (!editingId) $('trainer-config-status').textContent =
+            'Defaults from the pinned release. Settings are frozen when added to the queue.';
+        button.disabled = false;
+    } catch (error) {
+        $('trainer-config-status').textContent = error.message;
+        $('trainer-config-status').className = 'error';
+    }
+}
+loadTrainerDefaults();
+loadCurriculumDefault().catch(error => {
+    $('curriculum-status').textContent = 'Cannot load default: ' + error.message;
+});
+refresh(); setInterval(refresh, 5000);
+</script>
+</body></html>

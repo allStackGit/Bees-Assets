@@ -127,6 +127,7 @@ class TrainingControlClient:
         run_id = value.get("run_id", "")
         compatibility_key = value.get("compatibility_key", "")
         worker_env_count = value.get("worker_env_count")
+        worker_env_override = value.get("worker_env_override")
         env_optimizer = value.get("env_optimizer")
         if not isinstance(revision, int) or isinstance(revision, bool) or revision < 0:
             raise ControlRejected("training-control revision is invalid")
@@ -157,6 +158,12 @@ class TrainingControlClient:
             or not 1 <= worker_env_count <= 64
         ):
             raise ControlRejected("training-control worker_env_count is invalid")
+        if worker_env_override is not None and (
+            not isinstance(worker_env_override, int)
+            or isinstance(worker_env_override, bool)
+            or not 1 <= worker_env_override <= 64
+        ):
+            raise ControlRejected("training-control worker_env_override is invalid")
         if env_optimizer is not None and not isinstance(env_optimizer, Mapping):
             raise ControlRejected("training-control env_optimizer is malformed")
         if value.get("desired_mode") not in ("training", "stopped", "inference"):

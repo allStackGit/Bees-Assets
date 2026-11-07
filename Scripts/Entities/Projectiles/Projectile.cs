@@ -215,6 +215,13 @@ namespace Assets.Scripts.Entities.Projectiles
             {
                 return;
             }
+            // Defer cleanup to LevelOver, but do not resolve another collision,
+            // near miss or hit after a side has already lost its last squad.
+            if (Level != null && Level.State != null && Level.State.GameOver &&
+                global::RlOneVsOneTrainingBootstrap.IsActiveFor(Level.Stage))
+            {
+                return;
+            }
 
             if (RlTrackShot)
             {
