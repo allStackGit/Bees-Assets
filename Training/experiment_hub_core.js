@@ -248,7 +248,8 @@ function independentSequenceComplete(job) {
 function checkpointContinuationComplete(job) {
     if(!['courier','tinybrains'].includes(job?.project_id))return false;
     return job.status==='finished'
-        ?job.checkpoint_ready_verified===true
+        ?job.checkpoint_ready_verified===true||
+            job.checkpoint_proof_required!==true
         :job.status==='stopped'&&job.checkpoint_stop_verified===true;
 }
 // Shared by planning, capacity claims, automation and native Start.
@@ -2215,6 +2216,8 @@ class ExperimentHub {
             configuration_sha256:crypto.createHash('sha256')
                 .update(JSON.stringify(frozen)).digest('hex'),
             frozen_parameters:frozen, resources,
+            ...(['courier','tinybrains'].includes(project.id)
+                ?{checkpoint_proof_required:true}:{}),
             ...(selected.evaluation_stop
                 ?{evaluation_stop:evaluationPolicy(selected.evaluation_stop)}:{}),
             status:waitingPredecessor?'waiting_predecessor':'waiting_adapter',

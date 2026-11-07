@@ -1180,10 +1180,13 @@ TinyBrains checks `latest.pt` and its profile; Courier checks the
 checkpoint summary, approved environment and population archives.
 If verification fails, the job remains terminal and its diagnostic is
 reported, but any prequeued checkpoint successor stays blocked while
-independent successors can still advance after a natural finish. Older
-finished jobs without an artifact-verification receipt cannot authorize
-a new checkpoint continuation. These structural checks do not replace
-a real trainer resume qualification.
+independent successors can still advance after a natural finish. New
+TinyBrains/Courier jobs freeze this proof requirement when queued.
+Previously completed jobs lacking the new proof field retain their
+existing continuation behavior: the local adapter must verify the
+checkpoint and pinned configuration at native Start before creating the
+next workload. New jobs cannot use this legacy fallback. These
+structural checks do not replace a real trainer resume qualification.
 CPU-only jobs mask
 common CUDA/HIP/ROCm selector environment variables, but do not
 provide enforceable GPU isolation; GPU requests remain blocked.
