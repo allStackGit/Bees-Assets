@@ -723,9 +723,9 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
 <div class="bar"><button id="research-diff-csv" type="button">Save differences CSV</button></div>
 <div class="tablewrap"><table><thead><tr><th>Campaign</th><th>Benchmark</th><th>Steps</th><th>Beta A</th><th>Beta B</th><th>Runs A/B</th><th>A − B win %</th><th>95% interval</th></tr></thead><tbody id="research-difference-rows"></tbody></table></div>
 <h3>Sample efficiency</h3>
-<p class="muted">First recorded evaluation meeting the chosen win-rate threshold; intervening steps are unknown. Runs not observed meeting the threshold are treated as censored, not zero. Held-out results are excluded from sample-efficiency screening.</p>
+<p class="muted">First recorded development evaluation meeting the chosen win-rate threshold; intervening steps are unknown. Reached, right-censored (evaluated without reaching), and planned-but-not-yet-evaluated runs are reported separately. The median is conditional on the runs that reached the threshold, not an estimate across all planned replicates. Held-out evaluations are excluded.</p>
 <div class="bar"><button id="research-efficiency-csv" type="button">Save efficiency CSV</button></div>
-<div class="tablewrap"><table><thead><tr><th>Campaign</th><th>Beta</th><th>Benchmark</th><th>Reached</th><th>Median first observed steps</th><th>Threshold</th></tr></thead><tbody id="research-efficiency-rows"></tbody></table></div>
+<div class="tablewrap"><table><thead><tr><th>Campaign</th><th>Beta</th><th>Benchmark</th><th>Reached / planned</th><th>Evaluated but censored</th><th>Planned unevaluated</th><th>Median steps among reached</th><th>Threshold</th></tr></thead><tbody id="research-efficiency-rows"></tbody></table></div>
 </details>
 </section>
 <section data-hub-tab="monitor" data-project="bees">
@@ -2782,6 +2782,8 @@ async function loadResearchSummary() {
             cell(row, String(result.beta ?? '—'));
             cell(row, result.scenario);
             cell(row, result.reached_runs + '/' + result.expected_replicates);
+            cell(row, result.censored_runs ?? '—');
+            cell(row, result.planned_unevaluated_replicates ?? '—');
             cell(row, result.median_first_observed_step == null
                 ? 'Not observed' : fmt(result.median_first_observed_step));
             cell(row, percentage(result.threshold));
@@ -2873,10 +2875,13 @@ $('research-diff-csv').addEventListener('click', () => {
 });
 $('research-efficiency-csv').addEventListener('click', () => {
     const columns = ['comparison_group','study_id','study_label','beta','scenario',
-        'threshold','expected_replicates','reached_runs','median_first_observed_step',
-        'earliest_evaluated_steps','condition_id','benchmark_identity'];
+        'threshold','expected_replicates','observed_runs','reached_runs',
+        'censored_runs','planned_unevaluated_replicates','median_first_observed_step',
+        'earliest_evaluated_steps','censored_last_evaluated_steps',
+        'condition_id','benchmark_identity'];
     downloadResearchRows('sample-efficiency', columns, researchEfficiency.map(g => ({
         ...g, earliest_evaluated_steps:g.earliest_evaluated_steps.join(';'),
+        censored_last_evaluated_steps:(g.censored_last_evaluated_steps||[]).join(';'),
     })));
 });
 $('research-threshold').addEventListener('change', () => {
