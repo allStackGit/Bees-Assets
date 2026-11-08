@@ -45,6 +45,7 @@ pub enum HostPlayerInputError {
 pub enum HostInitError {
     Driver(NativeLevelDriverError),
     Status(NativeLevelRoutingError),
+    Connection(DurableConnectionError),
 }
 
 #[derive(Debug)]
@@ -101,11 +102,15 @@ where
     pub fn new(
         mut simulation: Simulation<NativeLevelState<M, A>, NativeLevelRules>,
         model: B,
-        connection: DurableHiveMindConnection,
+        mut connection: DurableHiveMindConnection,
         sink: S,
     ) -> Result<Self, HostInitError> {
         let driver = NativeLevelBatchDriver::from_simulation(&mut simulation)
             .map_err(HostInitError::Driver)?;
+        if let Some(run_id) = sink.journal_run_id() {
+            connection.register_journal_run(run_id)
+                .map_err(HostInitError::Connection)?;
+        }
         let baseline = driver.runtime_status(&simulation, connection.connection())
             .map_err(HostInitError::Status)?;
         Ok(Self {
