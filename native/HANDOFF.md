@@ -141,11 +141,29 @@ Finished/Aborted command records durably encode the original server strategy
 and both reservation IDs independently of BombingRun/Charge dispatch.
 Finished commands also retain the source-selected enemy-shooting admission;
 the settlement helper cannot credit an ineligible shooting reservation.
-The next boundary is a single, durable command/shooting TSV accrual and
-StoreCommands submission/reconciliation owner. Delayed projectile credit must
-be fully accounted before an outcome is committed. These records are
-evidence for that path, NOT committed server settlements. This new code
-remains source-reviewed only and needs executable verification.
+The current follow-on implemented NativeCommandCreditLedger as the one
+episode-owned command/shooting TSV projection. It consumes physical hits and
+unattributed victim losses, retains credit for commands superseded before a
+shot lands, and includes actual mined/healed capability TSV on finalization.
+HiveMind replacements now retain their predecessor in the authoritative
+Level notification outbox instead of dropping the returned superseded value.
+On a valid EpisodeFinal the Level emits one CommandOutcomesReady batch; on
+EpisodeAborted it discards all known command/shooting OutcomeIds. It never
+commits a FinishedCommand while delayed projectiles can still hit.
+
+DurableDiagnosticNotifications synchronizes that batch into the existing
+per-run journal before exposing it. NativeHostRuntime then queues the
+original batch into DurableHiveMindConnection, which checkpoints its canonical
+StoreCommands hash/retry payload before the sink retires it. The host queues
+completed batches even when a later window step fails, and also on stop/reset.
+**Queued is not transmitted or acknowledged**: a real socket still has to send
+pending_store_hashes/retry_payload and process 200/409 acknowledgements.
+Explicit targeting-result credit and stale-reply discard actions still need
+their real input/settlement path. The gap between journal fsync and connection
+checkpoint also needs restart-time replay/reconciliation before autonomous
+crash recovery can be claimed. No added shot history, made-up target TSV or
+premature per-command StoreCommands credit was introduced. This code remains
+source-reviewed only; native Rust compilation/runtime were not available.
 Earlier fixture qualifications below predate these edits.
 
 ## Shared weapons and geometry retained

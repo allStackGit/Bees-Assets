@@ -6,6 +6,7 @@
 //! All mutable scratch is reused per Level, never process-global.
 
 use bees_hivemind::session::{HiveMindSession, SquadLifetime, StrategyReceipt};
+use bees_hivemind::outcomes::OutcomeBatch;
 use bees_sim::combat_world::{CombatEvent, CombatWorld};
 use bees_sim::combat::{DamageDelta, HitEvent};
 use bees_sim::geometry::Vec2;
@@ -15,6 +16,7 @@ use bees_sim::simulation::RandomStream;
 use bees_sim::rl_shaping::{DamageRewardMetadata, RewardEmission};
 use bees_sim::rl_discovery::DiscoveryKind;
 
+use crate::command_credit::{CommandCreditError, NativeCommandCreditLedger};
 use crate::commands::{
     CommandFinishCause, CommandMeasurements, FinishedNativeCommand,
     GameCommandError, NativeAggressiveCommandSnapshot,
@@ -47,6 +49,7 @@ pub enum NativeLevelEventError {
     Roster(SquadEventBridgeError),
     Rewards(NativeEpisodeRewardError),
     Commands(GameCommandError),
+    Credit(CommandCreditError),
     Group(GroupRewardError),
     InvalidGroupConfiguration,
     InvalidRetirementAcknowledgement,
@@ -143,6 +146,10 @@ pub enum NativeLevelNotificationKind {
         defender_command_outcome_id: Option<i64>,
     },
     FinishedCommand(FinishedNativeCommand),
+    /// Final, source-accrued TSV values from one completed/aborted episode.
+    /// This is a PREPARED OutcomeBatch; durable StoreCommands request hash,
+    /// retry and server commit still belong to the connection.
+    CommandOutcomesReady(OutcomeBatch),
     /// A failed world has no trustworthy final TSV. HiveMind origins must
     /// discard/reconcile their reservations; local origins have none.
     AbortedCommand {
@@ -232,6 +239,7 @@ pub struct NativeLevelEventProcessor {
     /// Immutable death-time credit, retained while the dead ship's blast can
     /// still cause damage. Physical ownership and fleet credit stay in sim.
     fire_barge_killers: std::collections::HashMap<i64, FireBargeKiller>,
+    credit: NativeCommandCreditLedger,
 }
 
 impl NativeLevelEventProcessor {
@@ -257,6 +265,7 @@ impl NativeLevelEventProcessor {
             timed_finished: Vec::new(),
             core_damage_owners: Vec::new(),
             fire_barge_killers: std::collections::HashMap::new(),
+            credit: NativeCommandCreditLedger::new(),
         }
     }
 
@@ -402,6 +411,7 @@ impl NativeLevelEventProcessor {
             &mut self.pending_notifications, &mut self.failed,
             active.saturating_add(1),
         )?;
+        let first_new = self.pending_notifications.len();
         for owner in self.roster.active_lifetimes() {
             self.pending_session_retirements.push(owner);
         }
@@ -421,6 +431,11 @@ impl NativeLevelEventProcessor {
             &mut self.peak_pending_notifications,
             self.pending_notifications.len(),
         );
+        Self::account_new_notifications(
+            &mut self.pending_notifications, &mut self.credit,
+            &mut self.failed, &mut self.peak_pending_notifications,
+            first_new, self.next_tick.saturating_sub(1),
+        )?;
         self.failed_commands_drained = true;
         Ok(active)
     }
@@ -450,6 +465,7 @@ impl NativeLevelEventProcessor {
         Self::reserve_output_records(
             &mut self.pending_notifications, &mut self.failed, 1,
         )?;
+        let first_new = self.pending_notifications.len();
         let finished = self.commands.supersede_for_local_command(world, owner)
             .map_err(|error| {
                 self.failed = true;
@@ -463,6 +479,11 @@ impl NativeLevelEventProcessor {
                 &mut self.peak_pending_notifications, self.pending_notifications.len(),
             );
         }
+        Self::account_new_notifications(
+            &mut self.pending_notifications, &mut self.credit,
+            &mut self.failed, &mut self.peak_pending_notifications,
+            first_new, tick,
+        )?;
         Ok(())
     }
 
@@ -534,6 +555,59 @@ impl NativeLevelEventProcessor {
         })
     }
 
+    /// Preserve an old command's finalization inside the Level outbox
+    /// before a new accepted HiveMind selection replaces it. The raw
+    /// command director returns superseded as a value, but that value must
+    /// not disappear at the asynchronous server-reply boundary.
+    fn preflight_strategy_supersession(
+        &mut self, receipt: &StrategyReceipt,
+    ) -> Result<(), StrategyReceiptFailure> {
+        if let StrategyReceipt::Accepted { owner, selection, .. } = receipt {
+            if self.commands.has_active(*owner) {
+                if self.pending_notifications.len() >= MAX_PENDING_NOTIFICATIONS {
+                    self.failed = true;
+                    return Err(StrategyReceiptFailure {
+                        selection: selection.clone(),
+                        cause: crate::commands::StrategyReceiptFailureCause::OutputBackpressure,
+                    });
+                }
+                self.pending_notifications.reserve(1);
+            }
+        }
+        Ok(())
+    }
+
+    fn publish_superseded_strategy(
+        &mut self, mut action: StrategyReceiptAction,
+        accepted_selection: Option<bees_hivemind::protocol::ValidatedStrategySelection>,
+    ) -> Result<StrategyReceiptAction, StrategyReceiptFailure> {
+        if let StrategyReceiptAction::Applied(Activation::Applied {
+            superseded, ..
+        }) = &mut action {
+            if let Some(finished) = superseded.take() {
+                if let Err(error) = self.credit.finish(&finished) {
+                    self.failed = true;
+                    return Err(StrategyReceiptFailure {
+                        selection: accepted_selection
+                            .expect("an applied strategy came from an accepted reply"),
+                        cause: crate::commands::StrategyReceiptFailureCause::Credit(error),
+                    });
+                }
+                // No second settlement owner is returned to the socket:
+                // the Level outbox now carries the completed predecessor.
+                self.pending_notifications.push(NativeLevelNotification {
+                    tick: self.next_tick.saturating_sub(1),
+                    kind: NativeLevelNotificationKind::FinishedCommand(finished),
+                });
+                Self::update_output_peak(
+                    &mut self.peak_pending_notifications,
+                    self.pending_notifications.len(),
+                );
+            }
+        }
+        Ok(action)
+    }
+
     /// Apply any non-bomb strategy receipt to the SAME owning Level,
     /// preserving the same terminal/abort discard behavior as the Bomb
     /// activation path. The connection still owns all OutcomeIds.
@@ -556,9 +630,15 @@ impl NativeLevelEventProcessor {
             };
             return Ok(StrategyReceiptAction::DiscardReservations(ids));
         }
-        self.commands.apply_strategy_receipt(
+        self.preflight_strategy_supersession(&receipt)?;
+        let source = match &receipt {
+            StrategyReceipt::Accepted { selection, .. } => Some(selection.clone()),
+            _ => None,
+        };
+        let action = self.commands.apply_strategy_receipt(
             world, navigation, random, squad, friendlies, settings, receipt,
-        )
+        )?;
+        self.publish_superseded_strategy(action, source)
     }
 
     /// Apply a HiveMind receipt using this Level's SAME live roster,
@@ -596,10 +676,16 @@ impl NativeLevelEventProcessor {
             roster: &self.roster, enemy_owner, is_carrier_squad,
             weapons, enemies,
         };
-        self.commands.apply_strategy_receipt_with_bombing(
+        self.preflight_strategy_supersession(&receipt)?;
+        let source = match &receipt {
+            StrategyReceipt::Accepted { selection, .. } => Some(selection.clone()),
+            _ => None,
+        };
+        let action = self.commands.apply_strategy_receipt_with_bombing(
             world, navigation, random, squad, friendlies,
             settings, receipt, Some(bombing),
-        )
+        )?;
+        self.publish_superseded_strategy(action, source)
     }
 
     /// Called after the owning world's fixed step but before
@@ -722,6 +808,89 @@ impl NativeLevelEventProcessor {
             .ok_or(NativeLevelEventError::InvalidOutputAcknowledgement)?;
         self.pending_notifications.drain(..count);
         self.acknowledged_notification_count = next;
+        Ok(())
+    }
+
+    /// Consume only the newly emitted authoritative notification suffix.
+    /// This one command-scoped projection works across rollover windows:
+    /// acknowledgements may remove the outbox prefix, but do not remove
+    /// accrued credit for an already-finished command with delayed shots.
+    fn account_new_notifications(
+        pending: &mut Vec<NativeLevelNotification>,
+        credit: &mut NativeCommandCreditLedger,
+        failed: &mut bool,
+        peak: &mut usize,
+        first: usize, tick: u64,
+    ) -> Result<(), NativeLevelEventError> {
+        let mut terminal = None;
+        let mut accounting_error = None;
+        for notification in &pending[first..] {
+            let result = match &notification.kind {
+                NativeLevelNotificationKind::CombatHit(hit_credit) =>
+                    credit.record_hit(
+                        hit_credit.attacker_command_outcome_id,
+                        hit_credit.defender_command_outcome_id,
+                        hit_credit.hit.command_tsv_delta, hit_credit.hit.delta.tsv_loss,
+                    ),
+                NativeLevelNotificationKind::UnattributedDamage {
+                    delta, defender_command_outcome_id, ..
+                } => credit.record_unattributed(
+                    *defender_command_outcome_id, delta.tsv_loss,
+                ),
+                NativeLevelNotificationKind::FinishedCommand(finished) =>
+                    credit.finish(finished),
+                NativeLevelNotificationKind::AbortedCommand { selection, .. } =>
+                    credit.abort(selection),
+                NativeLevelNotificationKind::EpisodeFinal(_) => {
+                    terminal = Some(true);
+                    Ok(())
+                }
+                NativeLevelNotificationKind::EpisodeAborted => {
+                    terminal = Some(false);
+                    Ok(())
+                }
+                _ => Ok(()),
+            };
+            if let Err(error) = result {
+                accounting_error = Some(error);
+                break;
+            }
+        }
+        if let Some(error) = accounting_error {
+            // The input slice borrow is now over, so the failed suffix
+            // can be discarded without risking contradictory EpisodeFinal.
+            pending.truncate(first);
+            *failed = true;
+            return Err(NativeLevelEventError::Credit(error));
+        }
+        if let Some(successful) = terminal {
+            // Preflight the entire terminal publication before consuming
+            // the credit projection. A failed append must never strand the
+            // already-closed OutcomeBatch outside a durable notification.
+            if let Err(error) = Self::reserve_output_records(
+                pending, failed, 1,
+            ) {
+                pending.truncate(first);
+                return Err(error);
+            }
+            let batch = match credit.close_episode(successful) {
+                Ok(batch) => batch,
+                Err(error) => {
+                    pending.truncate(first);
+                    *failed = true;
+                    return Err(NativeLevelEventError::Credit(error));
+                }
+            };
+            if !batch.is_empty() {
+                pending.push(NativeLevelNotification {
+                    tick, kind: NativeLevelNotificationKind::CommandOutcomesReady(batch),
+                });
+                Self::update_output_peak(
+                    peak,
+                    pending.len(),
+                );
+            }
+        }
         Ok(())
     }
 
@@ -1209,6 +1378,7 @@ impl NativeLevelEventProcessor {
                 .saturating_add(combat_damage_count)
                 .saturating_add(self.timed_finished.len()),
         )?;
+        let first_new = self.pending_notifications.len();
         // Source Mining.Mine mutates the actual rock and fleet before
         // SetFinalize publishes its command outcome. Preserve that
         // relative order even across large asynchronous rollout windows.
@@ -1285,6 +1455,11 @@ impl NativeLevelEventProcessor {
             self.pending_notifications.len(),
         );
         self.finished.append(&mut self.timed_finished);
+        Self::account_new_notifications(
+            &mut self.pending_notifications, &mut self.credit,
+            &mut self.failed, &mut self.peak_pending_notifications,
+            first_new, completed_tick,
+        )?;
         self.last_published_timed_tick = Some(completed_tick);
         Ok(())
     }
@@ -1444,6 +1619,7 @@ impl NativeLevelEventProcessor {
         Self::reserve_output_records(
             &mut self.pending_notifications, &mut self.failed, new_count,
         )?;
+        let first_new = self.pending_notifications.len();
         for &change in &self.changes {
             self.pending_notifications.push(NativeLevelNotification {
                 tick: completed_tick,
@@ -1520,6 +1696,11 @@ impl NativeLevelEventProcessor {
             &mut self.peak_pending_notifications,
             self.pending_notifications.len(),
         );
+        Self::account_new_notifications(
+            &mut self.pending_notifications, &mut self.credit,
+            &mut self.failed, &mut self.peak_pending_notifications,
+            first_new, completed_tick,
+        )?;
         self.next_tick = self.next_tick.checked_add(1)
             .expect("monotonic native Level tick exhausted");
         self.last_finalized = reward.finalized;
