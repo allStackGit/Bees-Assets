@@ -499,6 +499,30 @@ Existing Hub machine identity, enrollment, GPU bindings, leases and jobs
 remain unchanged; the same capacity planner serves manual allocation,
 automatic CPU-only admission and placement preview.
 
+For a machine that also runs independently owned GPU workloads, **Machines →
+Adjust Hub GPU scheduling budgets** sets `hub_vram_mb` and
+`hub_compute_pct` on each configured GPU. This is a per-device ceiling
+on new Hub GPU **admission**, separate from the physical VRAM and observed
+host utilization; it is not an enforced compute or memory quota. Zero
+disables new GPU placement for that device. Older GPU inventories without
+these fields default to the full nominal VRAM and 100% compute budget.
+A device withheld partially cannot accept a new **exclusive** Hub GPU
+claim; cooperative shared claims can use the remaining budget only where
+the locally approved executor actually supports sharing. Linux ROCm
+jobs currently require one exclusive GPU, so a partial Hub budget
+blocks those jobs rather than silently sharing with Bees.
+
+The administrator route is `POST /api/hub/machines/gpu-budget` with
+`{machine_id, expected_gpus, gpus, confirm_budget:true}`. The two arrays
+are the exact previously displayed GPU configuration and the proposed
+same-ID/same-PCI/same-nominal-VRAM configuration, including the budget
+fields. An out-of-date expected snapshot, an identity change, armed
+automation or any outstanding GPU-bearing lease is rejected.
+The update is one atomic registry write, never a resize, Stop or
+relabeling of an owned GPU. Bind physical GPUs separately and account for
+unmanaged software explicitly; no Hub admission policy controls the
+resource use of unrelated processes.
+
 ## Coordinated resource leases (not process isolation)
 
 The Machines tab can issue a **standalone coordination lease** for a selected
