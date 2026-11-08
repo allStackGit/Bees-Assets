@@ -10,7 +10,14 @@ use std::collections::HashSet;
 
 use bees_hivemind::protocol::{StrategyIdentity, TARGETING_STRATEGIES};
 use bees_hivemind::session::SquadLifetime;
+use bees_sim::combat_world::{CombatWorld, CombatWorldError};
+use bees_sim::ship_assets::ShipAssetCatalog;
 use bees_sim::simulation::RandomStream;
+
+use crate::squad_geometry::{
+    live_squad_bounds_from_catalog, SquadGeometryError,
+};
+use crate::squads::NativeSquadRoster;
 
 /// Current, genuinely observed aggregate values for one non-dead enemy squad.
 /// All sums are source C# double accumulations, with Tsv and FleetShip fields
@@ -148,4 +155,173 @@ pub fn select_matchup_squad(
         if replace { chosen = candidate; }
     }
     Ok(Some(chosen.owner))
+}
+
+
+#[derive(Debug)]
+pub enum LiveMatchupResolutionError {
+    MissingOwner,
+    InvalidAlliedTarget,
+    MissingShip(i64),
+    InvalidWeaponRank(i64),
+    MissingCombatState(i64),
+    SquadGeometry(SquadGeometryError),
+    World(CombatWorldError),
+    Selection(MatchupSelectionError),
+}
+
+impl From<SquadGeometryError> for LiveMatchupResolutionError {
+    fn from(value: SquadGeometryError) -> Self { Self::SquadGeometry(value) }
+}
+
+impl From<CombatWorldError> for LiveMatchupResolutionError {
+    fn from(value: CombatWorldError) -> Self { Self::World(value) }
+}
+
+/// Build a candidate ONLY from current physical and authored source data.
+/// All source metrics are fetched from the real CombatWorld rank store; the
+/// Level's original ship sprite catalog provides the same Squad.GetPosition
+/// as rendered gameplay. No target property is inferred from squad type.
+fn live_candidate(
+    world: &CombatWorld,
+    roster: &NativeSquadRoster,
+    catalog: &ShipAssetCatalog,
+    target: SquadLifetime,
+    own_center: bees_sim::geometry::Vec2,
+    needs_combat_state: bool,
+    in_combat: &mut impl FnMut(i64) -> Option<bool>,
+) -> Result<Option<NativeMatchupCandidate>, LiveMatchupResolutionError> {
+    let squad = roster.get(target).ok_or(LiveMatchupResolutionError::MissingOwner)?;
+    let mut candidate = NativeMatchupCandidate {
+        owner: target,
+        largest_last_killed: 0.0,
+        fleet_damage_done: 0.0,
+        health: 0.0,
+        firepower: 0.0,
+        max_range: 0,
+        speed: 0.0,
+        tsv: 0.0,
+        in_combat: false,
+        distance_to_own_center: 0.0,
+        type_counts: [0; 23],
+    };
+    let mut living_count = 0u32;
+    for &id in &squad.members {
+        let ship = world.ship(id)
+            .ok_or(LiveMatchupResolutionError::MissingShip(id))?;
+        if ship.vitals.is_dead() { continue; }
+        living_count += 1;
+        let ranking = world.weapon_target_rank_stats(id)
+            .map_err(LiveMatchupResolutionError::World)?;
+        if !ranking.valid() {
+            return Err(LiveMatchupResolutionError::InvalidWeaponRank(id));
+        }
+        candidate.largest_last_killed =
+            candidate.largest_last_killed.max(f64::from(ranking.last_killed));
+        candidate.fleet_damage_done += ranking.fleet_damage_done as f64;
+        candidate.health += f64::from(ship.vitals.health());
+        candidate.firepower += f64::from(ranking.firepower);
+        candidate.max_range = candidate.max_range.max(ranking.max_range);
+        candidate.speed += f64::from(ranking.speed);
+        candidate.tsv += f64::from(ship.vitals.tsv());
+        if ranking.ship_type_letter < 23 {
+            candidate.type_counts[usize::from(ranking.ship_type_letter)] += 1;
+        }
+        if needs_combat_state {
+            candidate.in_combat |= in_combat(id)
+                .ok_or(LiveMatchupResolutionError::MissingCombatState(id))?;
+        }
+    }
+    if living_count == 0 {
+        return Ok(None);
+    }
+    let center = live_squad_bounds_from_catalog(world, squad, catalog)?.center;
+    let dx = center.x - own_center.x;
+    let dy = center.y - own_center.y;
+    candidate.distance_to_own_center = (dx * dx + dy * dy).sqrt();
+    if !candidate.valid() {
+        return Err(LiveMatchupResolutionError::InvalidWeaponRank(
+            squad.members[0],
+        ));
+    }
+    Ok(Some(candidate))
+}
+
+/// One complete, source-grounded matchup choice for the live native world.
+/// Called after a GetMatchupStrategy response; never on the physics hot path.
+/// HiveMind discovery is persistent, so opponents seen earlier remain valid
+/// until actual ship removal. Distinct Squad lifetimes are deduplicated in
+/// first-sighting order, as source MatchupStrategy.BuildVisibleSquadQueue.
+///
+/// The caller supplies the actual player-visibility rule and the first
+/// active allied target for GangUp. Neither is inferred from ship faction.
+/// For InCombat, and GangUp without an allied target, `in_combat` MUST
+/// report Unity Ship.InCombat's current authored timer state. If that state
+/// has not been imported, this returns MissingCombatState, never a guessed
+/// target or fabricated learning credit.
+///
+/// Input `scratch` belongs to the Level's reusable activation buffer,
+/// not a second squad world; all records are rebuilt on this rare server
+/// reply and only the selected live SquadLifetime is returned.
+pub fn select_live_matchup_squad(
+    world: &CombatWorld,
+    roster: &NativeSquadRoster,
+    catalog: &ShipAssetCatalog,
+    owner: SquadLifetime,
+    strategy: StrategyIdentity,
+    player_sees_all_enemies: bool,
+    first_allied_target: Option<SquadLifetime>,
+    mut in_combat: impl FnMut(i64) -> Option<bool>,
+    random: &mut RandomStream,
+    scratch: &mut Vec<NativeMatchupCandidate>,
+) -> Result<Option<SquadLifetime>, LiveMatchupResolutionError> {
+    scratch.clear();
+    let acting = roster.get(owner).ok_or(LiveMatchupResolutionError::MissingOwner)?;
+    let own_center = live_squad_bounds_from_catalog(world, acting, catalog)?.center;
+    if let Some(target) = first_allied_target {
+        let valid = roster.get(target).is_some_and(|enemy|
+            target.level_id == owner.level_id &&
+            enemy.side != acting.side &&
+            enemy.members.iter().any(|&id|
+                world.ship(id).is_some_and(|ship| !ship.vitals.is_dead())
+            )
+        );
+        if !valid {
+            return Err(LiveMatchupResolutionError::InvalidAlliedTarget);
+        }
+    }
+    // Source GangUp selects a previously targeted, live enemy directly
+    // after confirming there is at least one visible enemy squad.
+    let needs_combat = strategy.id == 14 ||
+        (strategy.id == 15 && first_allied_target.is_none());
+    let mut seen = HashSet::new();
+    let mut append = |target: SquadLifetime,
+                      scratch: &mut Vec<NativeMatchupCandidate>|
+        -> Result<(), LiveMatchupResolutionError> {
+        if target == owner || !seen.insert(target) { return Ok(()); }
+        let Some(squad) = roster.get(target) else { return Ok(()); };
+        if target.level_id != owner.level_id || squad.side == acting.side {
+            return Ok(());
+        }
+        if let Some(candidate) = live_candidate(
+            world, roster, catalog, target, own_center,
+            needs_combat, &mut in_combat,
+        )? {
+            scratch.push(candidate);
+        }
+        Ok(())
+    };
+    if player_sees_all_enemies {
+        for &target in roster.source_order() {
+            append(target, scratch)?;
+        }
+    } else {
+        for &ship_id in world.discovery().ship_ids_in_sighting_order(acting.side) {
+            if let Some(target) = roster.owning_squad(ship_id) {
+                append(target, scratch)?;
+            }
+        }
+    }
+    select_matchup_squad(strategy, scratch, first_allied_target, random)
+        .map_err(LiveMatchupResolutionError::Selection)
 }
