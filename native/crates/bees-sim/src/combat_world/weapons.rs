@@ -241,7 +241,9 @@ pub(super) struct GameTurretRuntime {
     /// authoritative Level state. The Level updates the AI command flag.
     pub(super) ai_order_active: bool,
     /// Original RangeCollider enter order per physical weapon slot.
-    pub(super) nearby_enemy_ids: [Vec<i64>; 5],
+    pub(super) nearby_enemy_ids: [std::collections::BTreeMap<i64, (u64, u64)>; 5],
+    pub(super) range_pass: u64,
+    pub(super) entry_sequence: u64,
 }
 
 impl CombatWorld {
@@ -274,7 +276,8 @@ impl CombatWorld {
                 turrets: [None; 5], last_hull_rotation: rotation,
                 cease_fire, manual_target: None,
                 shooting_strategy, ai_order_active: false,
-                nearby_enemy_ids: std::array::from_fn(|_| Vec::new()),
+                nearby_enemy_ids: std::array::from_fn(|_| std::collections::BTreeMap::new()),
+                range_pass: 0, entry_sequence: 0,
             });
         if runtime.cease_fire != cease_fire ||
             runtime.shooting_strategy != shooting_strategy ||
