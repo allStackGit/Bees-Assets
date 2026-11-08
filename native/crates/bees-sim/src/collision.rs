@@ -148,7 +148,7 @@ fn point_on_segment(point: Vec2, a: Vec2, b: Vec2) -> bool {
         && dot(delta, edge) <= length_sq
 }
 
-fn segments_intersect(a: Vec2, b: Vec2, c: Vec2, d: Vec2) -> bool {
+pub(crate) fn segments_intersect(a: Vec2, b: Vec2, c: Vec2, d: Vec2) -> bool {
     let ab = b - a;
     let cd = d - c;
     let ac = c - a;
