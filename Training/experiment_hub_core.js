@@ -2533,23 +2533,34 @@ class ExperimentHub {
             this.state.automation_restart?.machine_ids?.includes(machineId))
             this.disarmUnsafeAutomation(Error(reason));
     }
+    // The worker-only listener uses the same machine-scoped credential
+    // for heartbeat and read-only evaluation scheduling. Never authorize
+    // one enrolled worker to inspect another worker's dispatches.
+    authenticateAgent(machineId,token) {
+        const machine=ID.test(String(machineId||''))
+            ?this.state.machines.find(x=>x.id===machineId):null;
+        if(!machine||!machine.agent_key_sha256||
+            typeof token!=='string'||!/^[0-9a-f]{64}$/.test(token)) {
+            const error=Error('Agent authentication failed.');
+            error.status=401;throw error;
+        }
+        const expected=Buffer.from(machine.agent_key_sha256,'hex');
+        const supplied=Buffer.from(fingerprint(machine.id,token),'hex');
+        if(expected.length!==supplied.length||
+            !crypto.timingSafeEqual(expected,supplied)) {
+            const error=Error('Agent authentication failed.');
+            error.status=401;throw error;
+        }
+        return machine;
+    }
+    authenticatedEvaluationTargets(machineId,token,projectId,suiteId) {
+        const machine=this.authenticateAgent(machineId,token);
+        return this.evaluationTargets(projectId,machine.id,suiteId);
+    }
     heartbeat(value, token) {
         if (!object(value) || !ID.test(String(value.machine_id || '')))
             throw Error('Invalid agent identity.');
-        // Respond generically for unknown IDs and invalid tokens.
-        const machine = this.state.machines.find(x=>x.id===value.machine_id);
-        if (!machine || !machine.agent_key_sha256 ||
-            typeof token !== 'string' || !/^[0-9a-f]{64}$/.test(token)) {
-            const error = Error('Agent authentication failed.');
-            error.status = 401; throw error;
-        }
-        const expected = Buffer.from(machine.agent_key_sha256,'hex');
-        const supplied = Buffer.from(fingerprint(machine.id,token),'hex');
-        if (expected.length !== supplied.length ||
-            !crypto.timingSafeEqual(expected,supplied)) {
-            const error = Error('Agent authentication failed.');
-            error.status = 401; throw error;
-        }
+        const machine=this.authenticateAgent(value.machine_id,token);
         const report = boundedReport(value);
         const received = Date.now();
         const instance=value.agent_instance_id;
