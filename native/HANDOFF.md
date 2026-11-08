@@ -61,6 +61,13 @@ locked, or invalid player authority. The UI reports which actions applied.
 The additional changes were reviewed in source and pushed to GitHub; they
 have NOT been compiled or exercised with the actual native window/Unity
 export on this assistant environment (Rust tooling is unavailable).
+A subsequent pass added one shared CombatWorld outcome-counter helper used by
+both native gameplay and physics-only rule adapters. It aggregates actual
+enemy/friendly HitEvent counts and TSV losses, plus finalized policy shot
+roots/contact/near misses through cumulative Simulation measurements and host
+status intervals. The measurements do NOT settle command/shooting OutcomeIds;
+that persistent delayed-hit accounting remains to be implemented. Avoid
+creating a second per-shot history solely to compute these counters.
 Earlier fixture qualifications below predate these edits.
 
 ## Shared weapons and geometry retained
