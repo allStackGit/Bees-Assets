@@ -50,8 +50,11 @@ capacity claims or native starts are authorized.
   RAM-use samples from reporting Hub-managed native jobs, including the
   number of contributing jobs; these **exclude Bees, the OS, and other
   untracked software**, so they are not total host utilization.
-  GPU inventory remains manually declared; no agent reserves or isolates
-  resources yet.
+  Connected agents also report current host free RAM across all software.
+  This observation does not automatically reserve resources for external
+  workloads; adjust the Hub CPU/RAM budget to account for those workloads.
+  GPU identities are manually declared and must be bound to fresh observations.
+  No agent enforces per-process VRAM or GPU compute quotas.
 
 ## Data ownership
 
@@ -1243,6 +1246,10 @@ A Windows NVIDIA agent reports PCI/VRAM/CUDA UUID through `nvidia-smi`.
 Register the observed PCI GPU in **Machines** and use **Bind physical GPUs**
 to freeze the logical-to-physical mapping. Rebuild the locally reviewed
 Windows owner helper and update both its absolute path and SHA-256 pin.
+When CUDA is enabled, its native preflight proves that a synthetic GPU
+UUID reaches the suspended Job Object child through
+`CUDA_VISIBLE_DEVICES`. Old CPU-only helpers fail this check. This
+proves selector propagation, not driver health or CUDA training readiness.
 Set `EXPERIMENT_HUB_ENABLE_EXECUTION=1` and
 `EXPERIMENT_HUB_ENABLE_CUDA=1` in the private agent environment,
 alongside the existing machine ID/token, approved adapter module,
