@@ -605,7 +605,7 @@ function archiveMeasurement(item) {
     }
 }
 
-function measure(item, status, force = false, boundary = '', deferArchive = false) {
+function measure(item, status, force = false, boundary = '', deferArchive = false, unarchivedSample = false) {
     const learner = getAuthoritativeLearnerStats(item.run_id) || {};
     // Only score workers that have applied the current run revision. Heartbeats
     // from the outgoing run may remain live briefly during a release cutover.
@@ -642,8 +642,11 @@ function measure(item, status, force = false, boundary = '', deferArchive = fals
         // Label it instead of duplicating a reward in rolling averages.
         if (latest.step === step && step != null &&
             Date.now() - Date.parse(latest.at) < 1000) {
-            latest.sample_context = boundary;
-            return;
+            // A previously archived sample cannot be relabelled without
+            // creating a conflicting chart archive entry. Only the fresh
+            // sample captured in this same control poll is still mutable.
+            if (unarchivedSample) latest.sample_context = boundary;
+            return false;
         }
     }
     // A resumed learner can take time to emit its first fresh ML-Agents
@@ -1768,7 +1771,7 @@ async function monitor() {
         // learner is still running, before changing the item to transitioning.
         const boundarySample = measure(item, status, true,
             stageSuiteAtBoundary(item) || periodicEvaluationDue(item)
-                ? 'pre-evaluation' : 'pre-transition', true) === true;
+                ? 'pre-evaluation' : 'pre-transition', true, collected) === true;
         archiveCollected(boundarySample);
         item.status = 'transitioning';
         item.stage_transition_at = now();
@@ -1776,7 +1779,7 @@ async function monitor() {
         save();
         await transitionStage(item, status);
     } else if (periodicEvaluationDue(item)) {
-        const boundarySample = measure(item, status, true, 'pre-evaluation', true) === true;
+        const boundarySample = measure(item, status, true, 'pre-evaluation', true, collected) === true;
         archiveCollected(boundarySample);
         item.status = 'checkpointing';
         item.checkpoint_active_ordinal = item.checkpoint_next_index || 1;
