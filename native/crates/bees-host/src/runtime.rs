@@ -47,12 +47,17 @@ pub enum HostInitError {
 pub enum HostWindowError<Source, Model, Sink> {
     Connection(DurableConnectionError),
     Window(NativeLevelWindowError<Source, Model, Sink>),
+    WindowAndConnection {
+        window: NativeLevelWindowError<Source, Model, Sink>,
+        connection: DurableConnectionError,
+    },
 }
 
 #[derive(Debug)]
 pub enum HostStopError<E> {
     Connection(DurableConnectionError),
     Stop(NativeLevelStopError<E>),
+    StopAndConnection { stop: NativeLevelStopError<E>, connection: DurableConnectionError },
 }
 
 #[derive(Debug)]
@@ -430,11 +435,17 @@ where
         // may already have durably published prepared credits in this window.
         // Checkpoint those before returning either the window result or its
         // failure to the operator.
-        self.checkpoint_prepared_outcomes()
-            .map_err(HostWindowError::Connection)?;
-        let counts = result.map_err(HostWindowError::Window)?;
-        self.sampler.record_window(&counts);
-        Ok(counts)
+        let queued = self.checkpoint_prepared_outcomes();
+        match (result, queued) {
+            (Ok(counts), Ok(())) => {
+                self.sampler.record_window(&counts);
+                Ok(counts)
+            }
+            (Err(window), Ok(())) => Err(HostWindowError::Window(window)),
+            (Ok(_), Err(connection)) => Err(HostWindowError::Connection(connection)),
+            (Err(window), Err(connection)) =>
+                Err(HostWindowError::WindowAndConnection { window, connection }),
+        }
     }
 
     /// Cancel or abort an episode and durably deliver all source-owned
@@ -447,9 +458,14 @@ where
                 &mut self.simulation, index, kind, connection, &mut self.sink,
             )
         ).map_err(HostStopError::Connection)?;
-        self.checkpoint_prepared_outcomes()
-            .map_err(HostStopError::Connection)?;
-        result.map_err(HostStopError::Stop)
+        let queued = self.checkpoint_prepared_outcomes();
+        match (result, queued) {
+            (Ok(delivery), Ok(())) => Ok(delivery),
+            (Err(stop), Ok(())) => Err(HostStopError::Stop(stop)),
+            (Ok(_), Err(connection)) => Err(HostStopError::Connection(connection)),
+            (Err(stop), Err(connection)) =>
+                Err(HostStopError::StopAndConnection { stop, connection }),
+        }
     }
 
     /// Caller must settle earlier notifications and all Squad lifetimes.
