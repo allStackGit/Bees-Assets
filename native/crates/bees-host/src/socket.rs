@@ -392,22 +392,16 @@ impl NativeHiveMindSocket {
         Ok(sent)
     }
 
-    /// After an authenticated reconnect, resend only the exact original
-    /// StoreCommands hashes retained on disk. Terminal 409 reconciliation
-    /// records are intentionally excluded: their successful sibling writes
-    /// have already committed, so replaying the batch would double-credit.
+    /// After an authenticated reconnect, send the exact original
+    /// StoreCommands hashes retained on disk. A fresh socket starts with
+    /// an empty sent-hash set; an accidental repeated reconnect flush
+    /// cannot send the same pending request twice on that socket.
+    /// Terminal 409 reconciliation records are deliberately excluded.
     pub fn replay_pending_stores(
         &mut self,
         connection: &DurableHiveMindConnection,
     ) -> Result<usize, HiveMindSocketError> {
-        self.require_ready()?;
-        let hashes = connection.pending_store_hashes()?;
-        for &hash in &hashes {
-            let original = connection.retry_payload(hash)?
-                .ok_or(HiveMindSocketError::InvalidRequestOwnership)?;
-            self.send_store(connection, original)?;
-        }
-        Ok(hashes.len())
+        self.flush_unsent_stores(connection)
     }
 
     /// Read one non-control message. Ping/pong servicing does not create
