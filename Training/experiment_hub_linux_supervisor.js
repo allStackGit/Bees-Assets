@@ -372,8 +372,8 @@ class LinuxSupervisor {
         return {qualified_at:this.qualifiedAt};
     }
 
-    // This is an on-demand, inert device-cgroup qualification API.
-    // This request verifies device access without starting a workload.
+    // On-demand GPU qualification: the fixed device probe can optionally
+    // run the trusted adapter's bounded HIP identity check, but never trains.
     gpuProbeCleanupPending() {
         return this.gpuPreflightCleanupUnconfirmed===true||
             this.fs.existsSync(this.gpuProbePending);
