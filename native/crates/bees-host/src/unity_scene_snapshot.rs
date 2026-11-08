@@ -799,7 +799,7 @@ impl NativePhysicalScene {
     /// agent must match one previously bound native ship on the same side;
     /// likewise no bound policy ship may lack its source observation route.
     pub fn into_policy_only_level<A>(
-        self,
+        mut self,
         setup: NativePolicyOnlyLevelSetup<A>,
     ) -> Result<NativeAuthoredLevel<NativePolicyOnlyMetadata, A>,
         NativePolicyOnlyLevelError>
@@ -838,6 +838,17 @@ impl NativePhysicalScene {
             }
         }
 
+        // The snapshot retains actual Unity turret mounts even on ships
+        // without a neural controller. Bind those to ordinary gameplay,
+        // not to a fabricated RL policy or a separate visual simulator.
+        for entity in &mut self.entities {
+            if let NativeAuthoredEntity::Ship(ship) = entity {
+                if ship.policy.is_none() {
+                    ship.game_turrets = self.turrets_by_ship
+                        .remove(&ship.entity_id).unwrap_or_default();
+                }
+            }
+        }
         let squads = self.squads_for_level(setup.level_id)
             .map_err(NativePolicyOnlyLevelError::Snapshot)?;
         let beacon_templates = self.entities.iter().filter_map(|entity| match entity {
@@ -1461,6 +1472,8 @@ impl NativePhysicalScene {
                 fleet_ship_id: (ship.fleet_ship_id != 0)
                     .then_some(ship.fleet_ship_id),
                 policy: None,
+                game_turrets: Vec::new(),
+                game_cease_fire: ship.policy_cease_fire,
                 special,
             }));
         }
