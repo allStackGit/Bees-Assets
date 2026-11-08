@@ -29,7 +29,9 @@ use crate::presentation::NativeRenderWorldView;
 use bees_gameplay::player_inputs::{NativeLevelPlayerContext, NativePlayerMove,
     NativePlayerMovePlan, NativePlayerInputError, NativePlayerAuthority,
     NativePlayerSquadMoves, NativePlayerMoveCounts, NativePlayerStop,
-    NativePlayerSquadStops, NativePlayerStopPlan, NativePlayerStopCounts};
+    NativePlayerSquadStops, NativePlayerStopPlan, NativePlayerStopCounts,
+    NativePlayerManualFire, NativePlayerSquadManualFire,
+    NativePlayerManualFirePlan, NativePlayerManualFireCounts};
 
 #[derive(Debug)]
 pub enum HostPlayerInputError {
@@ -328,6 +330,52 @@ where
         for plan in plans {
             self.connection.retire_player_requests(plan.owner())
                 .map_err(HostPlayerInputError::Connection)?;
+            plan.execute(self.simulation.world_mut(index).expect("located world"))
+                .map_err(HostPlayerInputError::Gameplay)?;
+            counts.accepted_squads += 1;
+        }
+        Ok(counts)
+    }
+
+    /// Send point-fire input to real per-ship turret controllers, not
+    /// to an alternate client-side weapon simulation. Unlike Move/Stop,
+    /// manual fire does not replace movement or HiveMind command ownership.
+    pub fn player_manual_fire_squads(
+        &mut self, input: NativePlayerSquadManualFire,
+    ) -> Result<NativePlayerManualFireCounts, HostPlayerInputError>
+    where M: NativeLevelPlayerContext
+    {
+        let index = (0..self.simulation.world_count()).find(|&index|
+            self.simulation.world(index).is_some_and(|world| world.id == input.world_id))
+            .ok_or(HostPlayerInputError::Gameplay(NativePlayerInputError::StaleWorld))?;
+        let world = self.simulation.world(index).expect("located world");
+        if world.episode_revision() != input.episode_revision {
+            return Err(HostPlayerInputError::Gameplay(NativePlayerInputError::StaleWorld));
+        }
+        let mut counts = NativePlayerManualFireCounts::default();
+        let mut seen = std::collections::HashSet::with_capacity(input.squads.len());
+        let mut plans = Vec::with_capacity(input.squads.len());
+        for owner in input.squads {
+            if !seen.insert(owner) { continue; }
+            let Some(selected_ship) = world.state.events.roster().get(owner)
+                .and_then(|squad| squad.members.first()).copied() else {
+                counts.rejected_squads += 1;
+                continue;
+            };
+            match NativePlayerManualFirePlan::prepare(world, NativePlayerManualFire {
+                world_id: input.world_id,
+                episode_revision: input.episode_revision,
+                selected_ship, target: input.target,
+            }) {
+                Ok(plan) => plans.push(plan),
+                Err(error) if error.is_rejection() => counts.rejected_squads += 1,
+                Err(error) => return Err(HostPlayerInputError::Gameplay(error)),
+            }
+        }
+        if plans.is_empty() { return Ok(counts); }
+        self.driver.invalidate_environment(index)
+            .map_err(HostPlayerInputError::Driver)?;
+        for plan in plans {
             plan.execute(self.simulation.world_mut(index).expect("located world"))
                 .map_err(HostPlayerInputError::Gameplay)?;
             counts.accepted_squads += 1;
