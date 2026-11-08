@@ -249,8 +249,15 @@ impl NativeLevelEventProcessor {
     }
 
     fn active_server_command_for_ship(&self, ship_id: i64) -> Option<i64> {
-        self.roster.owning_squad(ship_id)
-            .and_then(|owner| self.commands.current_server_outcome(owner))
+        self.roster.owning_squad(ship_id).and_then(|owner| {
+            self.commands.current_server_outcome(owner).or_else(|| {
+                // Timed command callbacks can finish an order in the same
+                // callback that dealt damage. Its completion has moved to
+                // timed_finished but its impact still belongs to that order.
+                self.timed_finished.iter().find(|finished| finished.owner == owner)
+                    .and_then(|finished| finished.selection.server_outcome())
+            })
+        })
     }
 
     fn damage_command_owners(&self, event: &CombatEvent) -> Option<DamageCommandOwners> {
@@ -1189,15 +1196,24 @@ impl NativeLevelEventProcessor {
                 self.changes.push(change);
             }
             if let CombatEvent::Hit(hit) = event {
+                let owners = self.damage_command_owners(event)
+                    .expect("Hit event always has damage ownership");
                 self.pending_notifications.push(NativeLevelNotification {
                     tick: completed_tick,
-                    kind: NativeLevelNotificationKind::CombatHit(*hit),
+                    kind: NativeLevelNotificationKind::CombatHit(NativeCombatHit {
+                        hit: *hit,
+                        attacker_command_outcome_id: owners.attacker,
+                        defender_command_outcome_id: owners.defender,
+                    }),
                 });
             } else if let CombatEvent::UnattributedDamage { target_id, delta } = event {
+                let owners = self.damage_command_owners(event)
+                    .expect("UnattributedDamage event always has ownership");
                 self.pending_notifications.push(NativeLevelNotification {
                     tick: completed_tick,
                     kind: NativeLevelNotificationKind::UnattributedDamage {
                         target_id: *target_id, delta: *delta,
+                        defender_command_outcome_id: owners.defender,
                     },
                 });
             }
