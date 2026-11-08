@@ -493,6 +493,14 @@ a reserved CPU core set, or a throughput guarantee. For uncertain
 coexistence, use a dedicated host or a much smaller Hub budget instead
 of assuming Bees workers consume only what their status metrics suggest.
 
+The native Linux and Windows supervisors also refuse a new Start if
+locally journaled unresolved Hub workloads plus the requested CPU/RAM
+would exceed the host's physical capacity. A stopped but quarantined
+or unverified job still reserves local admission capacity. This protects
+against an inconsistent coordinator view; it does **not** count Bees
+or other independently started processes, so the operator's smaller Hub
+machine budget and physical free-memory check remain important.
+
 The shared loopback route is `POST /api/hub/machines/budget`, using
 `{machine_id,cpus,ram_mb,expected_cpus,expected_ram_mb,confirm_budget:true}`.
 Existing Hub machine identity, enrollment, GPU bindings, leases and jobs
@@ -915,9 +923,12 @@ project is explicitly excluded to preserve the existing training operator.
 The opt-in Linux backend uses `systemd-run --user` transient services with
 `Type=exec`, `CPUQuota`, `MemoryMax`, group termination and a finite
 stop timeout. CPU quota is total CPU time (100% per CPU), **not dedicated
-cores**. Only **CPU/RAM-only jobs** are supported: any GPU request is rejected,
-including jobs with advisory GPU VRAM or compute budgets. It uses no
-privileged shell, no `sudo` and no Windows process fallback.
+cores**. CPU-only jobs need only the normal native preflight; optional
+single-GPU ROCm jobs additionally require an explicit, current GPU
+qualification for the exact exclusive lease, the systemd device policy
+and the in-cgroup HIP runtime proof documented below. Shared Linux
+GPU claims remain unsupported. The backend uses no privileged shell,
+no `sudo` and no Windows process fallback.
 
 Before dispatch, the supervisor atomically writes a local launch-intent
 record to a separate restricted-permission `supervisor-v1.json` ledger.
