@@ -12,7 +12,8 @@ const crypto=require('node:crypto');
 const {spawn,execFile}=require('node:child_process');
 const {promisify}=require('node:util');
 const runDefault=promisify(execFile);
-const {matchingLeaseBudget}=require('./experiment_hub_resources');
+const {matchingLeaseBudget,startHeadroom}=require('./experiment_hub_resources');
+const {availableMemoryMb}=require('./experiment_hub_host');
 const {discoverNvidiaGpus}=require('./experiment_hub_gpu_inventory');
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const ID=/^[a-z][a-z0-9_-]{0,47}$/;
@@ -63,6 +64,9 @@ function validateInvocation(job,lease,machineId,adapters,hostOs,pathApi,cryptoAp
         throw Error('Windows native job CPU/RAM request is invalid.');
     if(!matchingLeaseBudget(r,lr))
         throw Error('Windows resource budget differs from the acknowledged lease.');
+    const availableRam=availableMemoryMb(hostOs);
+    const ramBlock=startHeadroom(r,availableRam);
+    if(ramBlock)throw Error(ramBlock);
     const adapter=adapters[job.project_id];
     if(!adapter||typeof adapter.args!=='function'||
         adapter.stop_policy!=='terminate-group'||
@@ -92,11 +96,14 @@ function validateInvocation(job,lease,machineId,adapters,hostOs,pathApi,cryptoAp
                 r.gpu_compute_pct<1||r.gpu_compute_pct>100)))
             throw Error('Windows CUDA requires one physically pinned GPU and an approved exclusive or cooperative share.');
         const current=gpuInventory();
-        if(!Array.isArray(current)||!current.some(device=>
+        const selected=Array.isArray(current)?current.find(device=>
             device.pci_address===binding.pci_address&&
             device.cuda_uuid===binding.cuda_uuid&&
-            Number.isSafeInteger(device.vram_mb)&&device.vram_mb>=binding.vram_mb))
+            Number.isSafeInteger(device.vram_mb)&&device.vram_mb>=binding.vram_mb):null;
+        if(!selected)
             throw Error('The CUDA device identity or physical VRAM changed before Start.');
+        const gpuBlock=startHeadroom(r,availableRam,selected);
+        if(gpuBlock)throw Error(gpuBlock);
         gpu={pci_address:binding.pci_address,cuda_uuid:binding.cuda_uuid,
             mode:r.gpu_mode,vram_mb:cooperative?r.gpu_vram_mb:0,
             compute_pct:cooperative?r.gpu_compute_pct:100,
