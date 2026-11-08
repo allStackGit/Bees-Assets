@@ -12,7 +12,8 @@ const crypto=require('node:crypto');
 const {spawn,execFile}=require('node:child_process');
 const {promisify}=require('node:util');
 const runDefault=promisify(execFile);
-const {matchingLeaseBudget,startHeadroom}=require('./experiment_hub_resources');
+const {matchingLeaseBudget,startHeadroom,ensureLocalCpuRamCapacity}=
+    require('./experiment_hub_resources');
 const {availableMemoryMb}=require('./experiment_hub_host');
 const {discoverNvidiaGpus}=require('./experiment_hub_gpu_inventory');
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -431,6 +432,12 @@ class WindowsSupervisor {
         const invocation=validateInvocation(job,lease,this.machineId,
             this.adapters,this.hostOs,this.path,this.crypto,
             this.gpuEnabled,this.gpuInventory);
+        const cpuSlots=Math.min(this.hostOs.cpus().length,
+            typeof this.hostOs.availableParallelism==='function'
+                ?this.hostOs.availableParallelism():this.hostOs.cpus().length);
+        ensureLocalCpuRamCapacity(this.state.records,invocation.cpus,
+            invocation.ramMb,cpuSlots,
+            Math.floor(this.hostOs.totalmem()/1048576));
         ensureLocalGpuCapacity(this.state.records,invocation.gpu);
         if(invocation.predecessor) {
             const parent=this.state.records.find(r=>
