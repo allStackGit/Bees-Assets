@@ -175,6 +175,10 @@ struct UnityShip {
     ship_type: u8,
     #[serde(default)]
     ship_type_letter: Option<u8>,
+    #[serde(default)]
+    last_killed: Option<i32>,
+    #[serde(default)]
+    fleet_damage_done: Option<i32>,
     side: i32,
     health: i32,
     max_health: i32,
@@ -1494,6 +1498,8 @@ impl NativePhysicalScene {
                         ship_type_letter: letter,
                         firepower: ship.firepower,
                         max_range: ship.max_weapon_range,
+                        last_killed: ship.last_killed,
+                        fleet_damage_done: ship.fleet_damage_done,
                     }),
                 special,
             }));
