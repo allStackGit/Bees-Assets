@@ -2192,7 +2192,7 @@ document.addEventListener('DOMContentLoaded', () => {
             (resume?' You explicitly authorize CPU-only scheduling recovery after coordinator or agent restart, after fresh native and lease proof. This does not enable machine boot startup. Uncertain jobs or changed credentials cancel the permission.':'')+
             (adopt?' Previously automated running or completed jobs will be re-adopted ONLY after fresh, same-dispatch native inspection and verified lease ownership. Uncertain jobs block arming; existing native processes will not be relaunched.':'')+
             (gpu?' This session will also start jobs with a currently qualified exclusive GPU.':'')+
-            (gpuClaim?' This session may claim exclusive GPU capacity on armed Linux hosts.':'')+
+            (gpuClaim?' This session may claim exclusive GPU capacity on armed CUDA or ROCm hosts.':'')+
             (gpuProbe?' It may run one inert access probe for each GPU claim it creates.':'')+
             (rebalance?' This session may move its own unstarted claims between armed hosts after a capacity drop.':'')))return;
         try {
