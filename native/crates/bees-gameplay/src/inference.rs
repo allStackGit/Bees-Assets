@@ -86,16 +86,10 @@ pub trait NativePolicyInference {
     fn model_generation(&self) -> u64 { 0 }
 }
 
-
-/**
- * A real game Level need not run neural inference when no policy-controlled
- * ship participates. The shared Level driver already skips the backend on
- * physics ticks with zero due policy agents. Supplying this backend avoids
- * spawning Python or allocating model weights for ordinary game-only battles.
- *
- * A policy controller appearing in that Level is an error, not permission to
- * synthesize zero actions or silently turn it into scripted opposition.
- */
+/// Ordinary game-only Levels can use the canonical fixed-step simulation
+/// without starting a neural policy worker. The batch driver skips forward
+/// calls when no policy agent is due. If a controller actually needs an
+/// action, fail closed instead of inventing a zero-action policy.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct NoPolicyInference;
 
