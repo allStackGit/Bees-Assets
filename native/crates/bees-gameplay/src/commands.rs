@@ -551,10 +551,12 @@ impl NativeSquadCommandDirector {
     /// Source Squad.StopChasing finalizes an Aggressive command only.
     /// Do not treat every active strategy as a chase or install a Hold
     /// command in its place.
+    pub fn current_kind(&self, owner: SquadLifetime) -> Option<LocalCommandKind> {
+        self.active.get(&owner).map(|active| active.selection.kind())
+    }
+
     pub fn is_chasing_command(&self, owner: SquadLifetime) -> bool {
-        self.active.get(&owner).is_some_and(|active|
-            active.selection.kind() == LocalCommandKind::Aggressive
-        )
+        self.current_kind(owner) == Some(LocalCommandKind::Aggressive)
     }
 
     pub fn automatic_weapon_input(&self, owner: SquadLifetime)
