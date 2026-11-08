@@ -21,6 +21,7 @@ pub enum JournalRecoveryError<E> {
     UnsupportedSchema { line: u64 },
     IncorrectRunId { line: u64 },
     InvalidJournalOrder { line: u64 },
+    MissingTerminalBoundary { line: u64 },
     MissingOutcomes { line: u64 },
     InvalidOutcomes { line: u64, error: HiveMindProtocolError },
     Queue { line: u64, error: E },
@@ -69,6 +70,7 @@ pub fn replay_command_outcomes<E>(
     // Source ordering is independent per world. Cross-world journal events
     // can be interleaved, but an individual world cannot go backwards.
     let mut last_completed: BTreeMap<u64, (u64, u64)> = BTreeMap::new();
+    let mut last_terminal: BTreeMap<u64, (u64, u64)> = BTreeMap::new();
 
     loop {
         line.clear();
@@ -96,8 +98,27 @@ pub fn replay_command_outcomes<E>(
                 line: line_number,
             });
         }
+        if record.kind == "episode_final" ||
+            record.kind == "episode_aborted"
+        {
+            last_terminal.insert(record.world_id, (
+                record.episode_revision, record.event_sequence,
+            ));
+            continue;
+        }
         if record.kind != "command_outcomes_ready" {
             continue;
+        }
+        // The producer appends one immutable prepared batch immediately
+        // after the authoritative terminal/abort notification. A detached
+        // outcome payload is never sufficient proof that a match completed.
+        if !last_terminal.get(&record.world_id).is_some_and(|&(episode, sequence)|
+            episode == record.episode_revision &&
+            sequence.checked_add(1) == Some(record.event_sequence)
+        ) {
+            return Err(JournalRecoveryError::MissingTerminalBoundary {
+                line: line_number,
+            });
         }
         let position = (record.episode_revision, record.event_sequence);
         if last_completed.get(&record.world_id)
