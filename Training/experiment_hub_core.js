@@ -189,6 +189,12 @@ function boundedReport(value) {
         gpuProjects.some(project=>!installed.includes(project))||
         (gpuProjects.length&&!['linux','win32'].includes(value.platform)))
         throw Error('GPU execution capability requires installed native adapters.');
+    const gpuShared=value.gpu_shared_projects??[];
+    if(!Array.isArray(gpuShared)||gpuShared.length>gpuProjects.length||
+        gpuShared.some(p=>typeof p!=='string'||!gpuProjects.includes(p))||
+        new Set(gpuShared).size!==gpuShared.length||
+        (gpuShared.length&&value.platform!=='win32'))
+        throw Error('Shared GPU execution requires a trusted, Windows CUDA adapter.');
     const evaluationSuites=Object.fromEntries(Object.entries(evaluators)
         .map(([project,ids])=>[project,suiteIds(ids)]));
     return {cpus:value.cpus,ram_mb:value.ram_mb,
@@ -204,6 +210,7 @@ function boundedReport(value) {
         tinybrains_cuda_profiles:cudaProfiles.slice(),
         tinybrains_imports:imports,
         gpu_projects:gpuProjects.slice(),
+        gpu_shared_projects:gpuShared.slice(),
         installed_projects:['linux','win32'].includes(value.platform)&&
             localExecutor?installed.slice():[]};
 }
@@ -859,6 +866,7 @@ class ExperimentHub {
                 machine.tinybrains_cuda_profiles=report.tinybrains_cuda_profiles.slice();
                 machine.tinybrains_imports=copy(report.tinybrains_imports);
                 machine.gpu_projects = report.gpu_projects.slice();
+                machine.gpu_shared_projects=report.gpu_shared_projects.slice();
             }
             return machine;
         });
