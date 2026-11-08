@@ -1674,12 +1674,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 (overClaimed?' · Claims exceed reported capacity':''));
             if(overClaimed)
                 status.title='Hub claims exceed fresh agent CPU/RAM capacity; new starts require renewed receipts. Existing processes are not stopped.';
-            cell(tr,m.cpus+' configured'+
+            const cpuCell=cell(tr,m.cpus+' configured'+
                 (m.reported_cpus!=null?' / '+m.reported_cpus+' reported':'')+
                 ' / '+claimedCpus+' claimed'+
+                (m.status==='connected'&&m.host_cpu_busy_pct!=null
+                    ?' · '+m.host_cpu_busy_pct.toFixed(1)+'% host busy (all processes)':'')+
                 (sampledCpu.length?' · '+observedCpu.toFixed(2)+
                     ' average cores from '+sampledCpu.length+'/'+activeJobs.length+
                     ' Hub native jobs':''));
+            cpuCell.title='Host busy percentage includes Bees, external training and the OS; Hub native job samples are a subset and must not be added to it.';
             cell(tr,m.ram_mb+' MiB configured'+
                 (m.reported_ram_mb!=null?' / '+m.reported_ram_mb+' MiB reported':'')+
                 ' / '+claimedRam+' MiB claimed'+
