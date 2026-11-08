@@ -79,8 +79,17 @@ unattributed physical damage. This is NOT a StoreCommands accounting sink:
 the next owner must snapshot active victim-command ownership BEFORE death
 retirement, retain delayed projectile-origin credit until safe settlement,
 and persist/reconcile it using the existing connection-owned OutcomeBatch.
-Do not immediately commit FinishedCommand as final TSV. These changes remain
-source-reviewed only and need executable verification.
+Do not immediately commit FinishedCommand as final TSV. The next increment
+captures each damage event's attacker command (original shot ID first,
+impact-time active command fallback for source synchronous damage) and
+defender's current command BEFORE casualty retirement, with a reused
+per-tick scratch vector rather than a second persistent ledger. Timed
+callbacks can attribute to an order in timed_finished after that callback
+completed it. Finished/Aborted command records now durably encode the
+original server strategy and both reservation IDs independently of
+BombingRun/Charge dispatch. These records are evidence for the future
+single StoreCommands accrual/commit path, NOT a committed settlement.
+These changes remain source-reviewed only and need executable verification.
 Earlier fixture qualifications below predate these edits.
 
 ## Shared weapons and geometry retained
