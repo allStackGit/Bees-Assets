@@ -145,7 +145,7 @@ impl NativeCommandCreditLedger {
                     .ok_or(CommandCreditError::IncompleteOutcome(id))?;
                 let shooting = finished.shooting_targeted_enemy
                     .then_some(entry.shooting_tsv);
-                match finished.clone().settle(entry.command_tsv, shooting, None) {
+                match (*finished).clone().settle(entry.command_tsv, shooting, None) {
                     NativeCommandSettlement::HiveMind(outcome) =>
                         batch.add_finalized(outcome)
                             .map_err(CommandCreditError::Protocol)?,
