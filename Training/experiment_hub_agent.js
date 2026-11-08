@@ -339,15 +339,16 @@ async function main() {
     await poll(!once);
     if(once) {
         if(last!=='connected')process.exitCode=1;
-        else if(receipts.length||pendingReports.length||
-            pendingGpuReports.length) {
+        else {
             try {
-                // Final --once flush is report-only. The coordinator must
-                // not persist a second Start offer in a reply we discard.
+                // Always close the one-shot session, even when there are no
+                // native reports or lease receipts. An empty final report
+                // still tells the coordinator that this process will exit:
+                // it must not keep this instance connected for another TTL.
                 await sendHeartbeat(url,id,token,receipts,pendingReports,
                     advertisement,pendingGpuReports,false);
             }catch(error) {
-                console.error('[experiment-hub-agent] Final receipt failed: '+error.message);
+                console.error('[experiment-hub-agent] Final sign-off failed: '+error.message);
                 process.exitCode=1;
             }
         }
