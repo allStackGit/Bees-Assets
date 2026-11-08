@@ -97,6 +97,73 @@ pub struct NativePlayerSquadFire {
     pub target: Option<Vec2>,
 }
 
+/// Player Cease Fire / Attack on Sight changes only the same native weapon
+/// runtime used by headless simulation. It does not replace or settle an
+/// existing movement/strategy command.
+#[derive(Clone, Debug, PartialEq)]
+pub struct NativePlayerSquadCeaseFire {
+    pub world_id: WorldId,
+    pub episode_revision: u64,
+    pub squads: Vec<SquadLifetime>,
+    pub cease_fire: bool,
+}
+
+pub struct NativePlayerCeaseFirePlan {
+    authority: NativePlayerSquadPlan,
+    world_id: WorldId,
+    episode_revision: u64,
+    selected_ship: i64,
+    cease_fire: bool,
+}
+
+impl NativePlayerCeaseFirePlan {
+    pub fn owner(&self) -> SquadLifetime { self.authority.owner }
+
+    pub fn prepare<M: NativeLevelPlayerContext, A>(
+        world: &World<NativeLevelState<M, A>>,
+        world_id: WorldId, episode_revision: u64, selected_ship: i64,
+        cease_fire: bool,
+    ) -> Result<Self, NativePlayerInputError> {
+        let authority = NativePlayerSquadPlan::prepare(
+            world, world_id, episode_revision, selected_ship,
+        )?;
+        // Source SquadActionBox.AttackOnSight skips Heal squads rather than
+        // implicitly canceling their healing command or firing during Heal.
+        if !cease_fire &&
+            world.state.events.commands().current_kind(authority.owner) ==
+                Some(bees_hivemind::dispatch::LocalCommandKind::Heal)
+        {
+            return Err(NativePlayerInputError::InvalidAction);
+        }
+        Ok(Self { authority, world_id, episode_revision, selected_ship, cease_fire })
+    }
+
+    pub fn execute<M: NativeLevelPlayerContext, A>(
+        self, world: &mut World<NativeLevelState<M, A>>,
+    ) -> Result<usize, NativePlayerInputError> {
+        let current = Self::prepare(
+            world, self.world_id, self.episode_revision, self.selected_ship,
+            self.cease_fire,
+        )?;
+        if current.authority != self.authority {
+            return Err(NativePlayerInputError::StaleWorld);
+        }
+        let state = &mut world.state;
+        for member in &self.authority.members {
+            let result = if state.combat.policy_frame(member.ship_id).is_some() {
+                state.combat.set_policy_ship_cease_fire(member.ship_id, self.cease_fire)
+            } else {
+                state.combat.set_ship_cease_fire(member.ship_id, self.cease_fire)
+            };
+            if let Err(error) = result {
+                state.events.fail_player_input();
+                return Err(NativePlayerInputError::Source(error.into()));
+            }
+        }
+        Ok(self.authority.members.len())
+    }
+}
+
 pub struct NativePlayerFirePlan {
     authority: NativePlayerSquadPlan,
     selected_ship: i64,
