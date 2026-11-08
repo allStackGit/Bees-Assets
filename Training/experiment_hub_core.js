@@ -1391,7 +1391,9 @@ class ExperimentHub {
             }
             if(session.probe_exclusive_gpu) {
                 for(const job of pendingClaims) {
-                    if(job.resources.gpu_count!==1||!owned.has(job.lease_id)||
+                    if(job.resources.gpu_count!==1||
+                        job.resources.gpu_mode!=='exclusive'||
+                        !owned.has(job.lease_id)||
                         job.gpu_qualification?.lease_id===job.lease_id||
                         startingMachines.has(job.assigned_machine_id))
                         continue;
