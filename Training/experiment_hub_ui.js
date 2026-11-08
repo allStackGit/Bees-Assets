@@ -830,6 +830,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const tinyBrainsLegend=document.createElement('legend');
     tinyBrainsLegend.textContent='TinyBrains CPU / CUDA job';
     const tinyBrainsSelect=document.createElement('select');
+    const tinyBrainsImport=document.createElement('select');
     const tinyBrainsUpdates=document.createElement('input');
     tinyBrainsUpdates.type='number';
     tinyBrainsUpdates.min='1';
@@ -843,17 +844,25 @@ document.addEventListener('DOMContentLoaded', () => {
             feedback('hub-config-message','Select an approved profile and enter 1–10,000,000 updates.');
             return;
         }
-        $('hub-config-json').value=JSON.stringify({profile,profile_sha256:digest,updates},null,2);
+        const [sourceId,sourceDigest]=tinyBrainsImport.value.split(':');
+        $('hub-config-json').value=JSON.stringify({
+            profile,profile_sha256:digest,updates,
+            ...(sourceId&&sourceDigest?{
+                import_checkpoint:sourceId,
+                import_checkpoint_sha256:sourceDigest,
+            }:{}),
+        },null,2);
         const selected=approvedTinyBrainsProfiles(state?.machines||[])
             .find(([key])=>key===tinyBrainsSelect.value)?.[1];
         feedback('hub-config-message','Profile and update count copied to the draft. '+
             (selected?.cudaWorkers
                 ?'When queueing, request one exclusive GPU and a sufficient CPU/RAM budget. '
                 :'When queueing, request CPU/RAM without GPUs. ')+
-            'To import a preexisting checkpoint, add import_checkpoint with its locally approved ID to the JSON. Save the draft.');
+            (sourceId?'The chosen source checkpoint SHA-256 is frozen in this draft. ':'')+
+            'Save the draft to retain these settings.');
     });
     for(const [caption,control] of [['Approved profile ',tinyBrainsSelect],
-        ['Updates ',tinyBrainsUpdates]]) {
+        ['Updates ',tinyBrainsUpdates],['Approved checkpoint import (optional) ',tinyBrainsImport]]) {
         const label=document.createElement('label');
         label.append(caption,control);
         tinyBrainsPicker.append(label);
@@ -861,6 +870,25 @@ document.addEventListener('DOMContentLoaded', () => {
     tinyBrainsPicker.prepend(tinyBrainsLegend);
     tinyBrainsPicker.append(tinyBrainsUse);
     $('hub-config-form').prepend(tinyBrainsPicker);
+    function displayTinyBrainsImports() {
+        const [profile,digest]=tinyBrainsSelect.value.split(':');
+        const previous=tinyBrainsImport.value;
+        const options=new Map();
+        for(const machine of state?.machines||[]) {
+            if(machine.status!=='connected'||machine.tinybrains_profiles?.[profile]!==digest)
+                continue;
+            for(const [id,source] of Object.entries(machine.tinybrains_imports||{})) {
+                if(source.profile!==profile||!source.sha256)continue;
+                const key=id+':'+source.sha256;
+                options.set(key,id+' · '+source.sha256.slice(0,12));
+            }
+        }
+        tinyBrainsImport.replaceChildren(new Option('Fresh initialization (no import)',''),
+            ...[...options].sort(([a],[b])=>a.localeCompare(b))
+                .map(([key,label])=>new Option(label,key)));
+        if(options.has(previous))tinyBrainsImport.value=previous;
+    }
+    tinyBrainsSelect.addEventListener('change',displayTinyBrainsImports);
     function displayTinyBrainsProfiles() {
         tinyBrainsPicker.hidden=project!=='tinybrains';
         if(tinyBrainsPicker.hidden)return;
@@ -873,6 +901,7 @@ document.addEventListener('DOMContentLoaded', () => {
             :[new Option('No connected worker advertises a profile','')]));
         if(options.some(([key])=>key===prior))tinyBrainsSelect.value=prior;
         tinyBrainsSelect.disabled=tinyBrainsUse.disabled=!options.length;
+        displayTinyBrainsImports();
     }
     function resetEditor() {
         editing=null;
