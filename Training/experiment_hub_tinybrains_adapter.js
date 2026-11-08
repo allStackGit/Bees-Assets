@@ -49,8 +49,8 @@ function supportsTinyBrainsProfile(machine,job) {
         p&&Object.keys(p).every(key=>
             ['profile','profile_sha256','updates','import_checkpoint',
                 'import_checkpoint_sha256'].includes(key))&&
-        (p.import_checkpoint==null
-            ?p.import_checkpoint_sha256==null
+        (p.import_checkpoint===undefined
+            ?p.import_checkpoint_sha256===undefined
             :!job.continuation_of_job_id&&
                 typeof p.import_checkpoint==='string'&&
                 p.import_checkpoint_sha256===imported?.sha256&&
