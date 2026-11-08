@@ -12,7 +12,7 @@ use std::io::{self, Write};
 use std::path::Path;
 
 use bees_gameplay::commands::{NativeCommandOrigin, NativeCommandSelection};
-use bees_hivemind::outcomes::OutcomeBatch;
+use bees_hivemind::outcomes::{JournalOutcomeSource, RecordedOutcomeBatch};
 use bees_gameplay::level_events::{
     NativeLevelNotification, NativeLevelNotificationKind,
 };
@@ -200,7 +200,7 @@ pub struct DurableDiagnosticNotifications {
     measurements: NativeDiagnosticMeasurements,
     // Prepared only AFTER the matching journal chunk has synchronized.
     // The host moves each batch into the connection's durable retry ledger.
-    prepared: VecDeque<OutcomeBatch>,
+    prepared: VecDeque<RecordedOutcomeBatch>,
     unavailable: bool,
 }
 
@@ -415,7 +415,7 @@ impl DurableDiagnosticNotifications {
 impl NativeLevelNotificationSink for DurableDiagnosticNotifications {
     type Error = io::Error;
 
-    fn first_prepared_outcomes(&self) -> Option<&OutcomeBatch> {
+    fn first_prepared_outcomes(&self) -> Option<&RecordedOutcomeBatch> {
         self.prepared.front()
     }
 
@@ -471,10 +471,20 @@ impl NativeLevelNotificationSink for DurableDiagnosticNotifications {
             // A chunk becomes visible to evaluation counters only AFTER
             // the file has synchronized. This matches the exact durable
             // prefix acknowledged by the Level event outbox.
-            for event in &notifications[committed..committed + buffered] {
+            for (offset, event) in notifications[committed..committed + buffered]
+                .iter().enumerate()
+            {
                 self.measurements.record(event);
                 if let NativeLevelNotificationKind::CommandOutcomesReady(batch) = &event.kind {
-                    self.prepared.push_back(batch.clone());
+                    self.prepared.push_back(RecordedOutcomeBatch {
+                        source: JournalOutcomeSource {
+                            run_id: self.run_id.clone(),
+                            world_id: world.0,
+                            episode_revision,
+                            event_sequence: first_sequence + (committed + offset) as u64,
+                        },
+                        batch: batch.clone(),
+                    });
                 }
             }
             committed += buffered;
