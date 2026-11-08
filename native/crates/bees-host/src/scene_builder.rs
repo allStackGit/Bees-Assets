@@ -24,6 +24,7 @@ use bees_sim::navigation::NavigationError;
 use bees_sim::combat_perception_bridge::CombatPerceptionError;
 use bees_sim::control::PolicyFrame;
 use bees_sim::movement::ShipMotion;
+use bees_sim::navigation_movement::GameMovementProfile;
 use bees_sim::map_object::CombatMapObject;
 use bees_sim::physics::ObstacleBody;
 use bees_sim::obstacle::CombatObstacle;
@@ -43,6 +44,9 @@ pub struct NativeAuthoredShip {
     pub motion: ShipMotion,
     pub original_health: i32,
     pub fleet_ship_id: Option<i64>,
+    /// Authored game steering profile for ordinary user/HiveMind motion.
+    /// Never infer sprite extents or turning radius from collider geometry.
+    pub game_movement: Option<GameMovementProfile>,
     pub policy: Option<NativeAuthoredPolicy>,
 }
 
@@ -275,6 +279,10 @@ impl NativeSceneAssets {
                 combat.configure_game_ship_original_health(
                     ship.entity_id, ship.original_health,
                 ).map_err(NativeSceneBuildError::Combat)?;
+                if let Some(profile) = ship.game_movement {
+                    combat.configure_ship_game_movement(ship.entity_id, profile)
+                        .map_err(NativeSceneBuildError::Combat)?;
+                }
                 if let Some(fleet_id) = ship.fleet_ship_id {
                     combat.set_ship_fleet_identity(ship.entity_id, fleet_id)
                         .map_err(NativeSceneBuildError::Combat)?;
