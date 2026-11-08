@@ -51,7 +51,8 @@ function supportsTinyBrainsProfile(machine,job) {
                 'import_checkpoint_sha256'].includes(key))&&
         (p.import_checkpoint==null
             ?p.import_checkpoint_sha256==null
-            :typeof p.import_checkpoint==='string'&&
+            :!job.continuation_of_job_id&&
+                typeof p.import_checkpoint==='string'&&
                 p.import_checkpoint_sha256===imported?.sha256&&
                 imported?.profile===p.profile)&&
         Number.isSafeInteger(p.updates)&&p.updates>=1&&p.updates<=10000000&&
