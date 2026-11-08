@@ -436,6 +436,12 @@ impl CombatWorld {
         Ok(count)
     }
 
+    /// Borrow the actual firing flag shared by ordinary and policy ships.
+    /// Rendering and player UI never maintain a second cease-fire state.
+    pub fn ship_cease_fire(&self, ship_id: i64) -> Option<bool> {
+        self.ship_weapons.get(&ship_id).map(|weapons| weapons.cease_fire)
+    }
+
     pub fn set_ship_cease_fire(&mut self, ship_id: i64, cease_fire: bool)
         -> Result<(), CombatWorldError>
     {
