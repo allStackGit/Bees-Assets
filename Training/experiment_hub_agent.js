@@ -185,9 +185,12 @@ function observedOffers(offers,observation) {
 
 function sendHeartbeat(url,machineId,token,observedLeaseIds=[],
     executionReports=[],advertisement={},gpuQualificationReports=[],
-    requestExecutionOrders=true) {
+    requestExecutionOrders=true,closeAgentSession=false) {
     if(typeof requestExecutionOrders!=='boolean')
         return Promise.reject(Error('Native instruction request preference must be boolean.'));
+    if(typeof closeAgentSession!=='boolean'||
+        (closeAgentSession&&requestExecutionOrders))
+        return Promise.reject(Error('Agent sign-off requires native instruction delivery disabled.'));
     if (typeof token !== 'string' || !TOKEN.test(token))
         return Promise.reject(Error('Missing/invalid EXPERIMENT_HUB_AGENT_TOKEN.'));
     if (!Array.isArray(observedLeaseIds) || observedLeaseIds.length>100 ||
@@ -203,6 +206,7 @@ function sendHeartbeat(url,machineId,token,observedLeaseIds=[],
         ...observations(machineId),host_cpu_busy_pct:hostCpuBusyPct(),
         observed_lease_ids:observedLeaseIds,
         request_execution_orders:requestExecutionOrders,
+        close_agent_session:closeAgentSession,
         execution_reports:executionReports,
         gpu_qualification_reports:gpuQualificationReports,
         local_executor:advertisement.local_executor===true,
@@ -276,11 +280,25 @@ async function main() {
         native_preflight_reason:nativePreflightReason,
         instance_id:crypto.randomUUID(),
     };
-    let active=false,last='initial',receipts=[],pendingReports=[],
-        pendingGpuReports=[];
+    let active=false,executingNative=false,busyHeartbeat=null,
+        last='initial',receipts=[],pendingReports=[],pendingGpuReports=[];
     const once=process.argv.includes('--once');
     const poll=async(expedite=false)=>{
-        if(active)return;
+        if(active) {
+            if(executingNative&&!busyHeartbeat) {
+                // The existing interval must maintain machine liveness while
+                // a bounded systemd/Job Object command is still running.
+                // Do not deliver another instruction or replay an unflushed
+                // report. Its native owner remains the only process authority.
+                const inFlight=sendHeartbeat(url,id,token,receipts,[],
+                    advertisement,[],false)
+                    .catch(error=>console.error('[experiment-hub-agent] Busy heartbeat: '+
+                        String(error.message||error)))
+                    .finally(()=>{if(busyHeartbeat===inFlight)busyHeartbeat=null;});
+                busyHeartbeat=inFlight;
+            }
+            return;
+        }
         active=true;
         try{
             const response=await sendHeartbeat(url,id,token,receipts,
@@ -305,7 +323,17 @@ async function main() {
                 if(!Array.isArray(orders)||orders.length>1)
                     throw Error('Invalid machine execution order batch.');
                 if(orders.length) {
-                    const result=await executor.handle(orders[0]);
+                    let result;
+                    executingNative=true;
+                    try {
+                        result=await executor.handle(orders[0]);
+                    }finally {
+                        executingNative=false;
+                        // A busy keepalive might still be on the wire. Do
+                        // not race a fresh native report against that older
+                        // heartbeat's authenticated machine observation.
+                        if(busyHeartbeat)await busyHeartbeat;
+                    }
                     const gpuResult=result?.kind==='gpu_qualification';
                     if(gpuResult)pendingGpuReports=[result];
                     else pendingReports=[result];
@@ -336,8 +364,13 @@ async function main() {
             last=message;
         }finally{active=false;}
     };
+    // Start the existing heartbeat cadence before a potentially slow native
+    // directive. It now sends an observation-only heartbeat while that
+    // directive is in flight, rather than skipping a whole TTL.
+    const timer=setInterval(()=>poll(true),INTERVAL_MS);
     await poll(!once);
     if(once) {
+        clearInterval(timer);
         if(last!=='connected')process.exitCode=1;
         else {
             try {
@@ -346,7 +379,7 @@ async function main() {
                 // still tells the coordinator that this process will exit:
                 // it must not keep this instance connected for another TTL.
                 await sendHeartbeat(url,id,token,receipts,pendingReports,
-                    advertisement,pendingGpuReports,false);
+                    advertisement,pendingGpuReports,false,true);
             }catch(error) {
                 console.error('[experiment-hub-agent] Final sign-off failed: '+error.message);
                 process.exitCode=1;
@@ -354,7 +387,6 @@ async function main() {
         }
         return;
     }
-    setInterval(()=>poll(true),INTERVAL_MS);
 }
 
 if(require.main===module)main().catch(error=>{
