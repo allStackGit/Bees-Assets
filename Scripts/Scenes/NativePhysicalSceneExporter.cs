@@ -40,6 +40,7 @@ internal static class NativePhysicalSceneExporter
         public float rotation_degrees, rotation_speed;
         public float base_speed, current_speed, height;
         public float turning_radius, half_width, half_height;
+        public float target_front_offset;
         public Vector2 offset_from_center;
         public int path_clearance;
         public bool mobile, cannot_change_orders, user_controlled;
@@ -125,6 +126,7 @@ internal static class NativePhysicalSceneExporter
         public float rate_of_fire, projectile_value;
         public double projectile_speed;
         public string fire_pattern;
+        public bool fire_at_front;
     }
 
     [Serializable]
@@ -377,6 +379,8 @@ internal static class NativePhysicalSceneExporter
                 turning_radius = ConfigData.ShipTurningRadius,
                 half_width = ship.GetHalfWidth(),
                 half_height = ship.GetHalfHeight(),
+                target_front_offset = ship.GetHalfHeight() -
+                    ConfigData.OffsetFromFrontOfShip.GetValueOrDefault(ship.ShipType),
                 offset_from_center = ship.OffsetFromCenter,
                 path_clearance = ship.GetClearance(),
                 mobile = ship.IsMobile,
@@ -1090,7 +1094,8 @@ internal static class NativePhysicalSceneExporter
                 rate_of_fire = turret.RateOfFire,
                 projectile_value = turret.ProjectileValue,
                 projectile_speed = projectile.Speed,
-                fire_pattern = pattern
+                fire_pattern = pattern,
+                fire_at_front = turret.ShouldFireAtFrontOfShip
             });
         }
         return entries;
