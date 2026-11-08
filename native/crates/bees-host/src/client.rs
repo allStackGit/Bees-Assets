@@ -7,11 +7,16 @@ use bees_sim::collision::Aabb;
 use bees_sim::simulation::WorldId;
 use minifb::{Key, KeyRepeat, MouseButton, MouseMode, Window, WindowOptions};
 use crate::presentation::{NativeCamera, NativeRenderWorldView, NativeSoftwareRenderer, NativeSupportMode};
-use bees_gameplay::player_inputs::{NativePlayerSquadMoves, NativePlayerSquadCommands};
+use bees_gameplay::player_inputs::{
+    NativePlayerSquadMoves, NativePlayerSquadCommands, NativePlayerSquadStops,
+};
 use bees_sim::geometry::Vec2;
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum NativeClientAction { Wait, Step, Quit, Move(NativePlayerSquadMoves), Support(NativePlayerSquadCommands) }
+pub enum NativeClientAction {
+    Wait, Step, Quit, Move(NativePlayerSquadMoves),
+    Stop(NativePlayerSquadStops), Support(NativePlayerSquadCommands),
+}
 
 pub struct NativeClient {
     window: Window,
@@ -125,6 +130,26 @@ impl NativeClient {
                 self.input_feedback = "Target selection cancelled";
             }
         }
+        // Source StopMoving is immediate: it cancels an existing attack or
+        // support command and clears every selected ship's real movement
+        // controller. It is not a new AI Hold order.
+        let player_stop = if !changed_world &&
+            self.window.is_key_pressed(Key::S, KeyRepeat::No)
+        {
+            self.support_mode = None;
+            self.selection_drag = None;
+            self.renderer.selection_box = None;
+            if self.renderer.selection.squads().is_empty() {
+                self.input_feedback = "Select squads first";
+                None
+            } else {
+                Some(NativePlayerSquadStops {
+                    world_id: view.world_id,
+                    episode_revision: view.episode_revision,
+                    squads: self.renderer.selection.squads().to_vec(),
+                })
+            }
+        } else { None };
         let right_down = self.window.get_mouse_down(MouseButton::Right);
         let cancel_support = right_down && !self.right_was_down && self.support_mode.is_some();
         if cancel_support {
@@ -197,7 +222,7 @@ impl NativeClient {
                 ship.entity_id, ship.ship_type, ship.side, ship.vitals.health(),
                 ship.vitals.max_health(), ship.vitals.tsv())).unwrap_or_default();
         self.window.set_title(&format!(
-            "Bees native | World {} | Episode {} | Tick {} | {} ships, {} shots | {} squads selected | {}{} | {} | Left select/drag, Ctrl add, right move | G guard, P patrol, M mine, H heal, R retreat, Backspace cancel | Space pause, N step, Tab world, arrows pan, wheel zoom, F fit, Esc exit",
+            "Bees native | World {} | Episode {} | Tick {} | {} ships, {} shots | {} squads selected | {}{} | {} | Left select/drag, Ctrl add, right move | G guard, P patrol, M mine, H heal, R retreat, S stop, Backspace cancel | Space pause, N step, Tab world, arrows pan, wheel zoom, F fit, Esc exit",
             view.world_id.0, view.episode_revision, view.tick, counts.ships, counts.projectiles,
             self.renderer.selection.squads().len(),
             if self.paused { "PAUSED" } else { "RUNNING" }, selected, self.input_feedback,
@@ -206,6 +231,7 @@ impl NativeClient {
         self.rendered_frames += 1;
         self.window.update_with_buffer(self.renderer.pixels(), width, height)?;
         if !self.window.is_open() { return Ok(NativeClientAction::Quit); }
+        if let Some(input) = player_stop { return Ok(NativeClientAction::Stop(input)); }
         if let Some(input) = support_command { return Ok(NativeClientAction::Support(input)); }
         if let Some(input) = player_move { return Ok(NativeClientAction::Move(input)); }
         let after_frame = Instant::now();
