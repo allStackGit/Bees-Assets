@@ -149,6 +149,18 @@ impl NativeClient {
                 squads: self.renderer.selection.squads().to_vec(), target: None })
         } else { None };
         let mut support_command = None;
+        if !changed_world && self.window.is_key_pressed(Key::C, KeyRepeat::No) {
+            if self.renderer.selection.squads().is_empty() {
+                self.input_feedback = "Select squads first";
+            } else {
+                self.support_mode = None;
+                self.selection_drag = None;
+                self.renderer.selection_box = None;
+                support_command = self.renderer.selection.support_command(
+                    &view, bees_gameplay::player_inputs::NativePlayerSupportAction::Hold,
+                );
+            }
+        }
         let left_down = self.window.get_mouse_down(MouseButton::Left);
         if !changed_world && !cancel_support && left_down && !self.left_was_down {
             self.selection_drag = mouse.map(|(x, y)| (
@@ -225,7 +237,7 @@ impl NativeClient {
                 ship.entity_id, ship.ship_type, ship.side, ship.vitals.health(),
                 ship.vitals.max_health(), ship.vitals.tsv())).unwrap_or_default();
         self.window.set_title(&format!(
-            "Bees native | World {} | Episode {} | Tick {} | {} ships, {} shots | {} squads selected | {}{} | {} | range/obstruction {} | Left select/drag, Ctrl add, right move/attack | G guard, P patrol, M mine, H heal, R retreat, T point fire, X stop, B ranges, Backspace cancel | Space pause, N step, Tab world, arrows pan, wheel zoom, F fit, Esc exit",
+            "Bees native | World {} | Episode {} | Tick {} | {} ships, {} shots | {} squads selected | {}{} | {} | range/obstruction {} | Left select/drag, Ctrl add, right move/attack | C stop chase, G guard, P patrol, M mine, H heal, R retreat, T point fire, X stop, B ranges, Backspace cancel | Space pause, N step, Tab world, arrows pan, wheel zoom, F fit, Esc exit",
             view.world_id.0, view.episode_revision, view.tick, counts.ships, counts.projectiles,
             self.renderer.selection.squads().len(),
             if self.paused { "PAUSED" } else { "RUNNING" }, selected, self.input_feedback,
