@@ -255,9 +255,12 @@ impl NativeClient {
         let counts = self.renderer.render(&view, self.bounds);
         let selected = self.renderer.selected_ship.and_then(|id| view.combat.ship(id))
             .filter(|ship| !ship.vitals.is_dead())
-            .map(|ship| format!(" | Ship {} type {} side {} HP {}/{} TSV {}",
+            .map(|ship| format!(" | Ship {} type {} side {} HP {}/{} TSV {} | {}",
                 ship.entity_id, ship.ship_type, ship.side, ship.vitals.health(),
-                ship.vitals.max_health(), ship.vitals.tsv())).unwrap_or_default();
+                ship.vitals.max_health(), ship.vitals.tsv(),
+                view.combat.ship_cease_fire(ship.entity_id)
+                    .map(|paused| if paused { "CEASE FIRE" } else { "ATTACK ON SIGHT" })
+                    .unwrap_or("FIRING STATUS UNKNOWN"))).unwrap_or_default();
         self.window.set_title(&format!(
             "Bees native | World {} | Episode {} | Tick {} | {} ships, {} shots | {} squads selected | {}{} | {} | range/obstruction {} | Left select/drag, Ctrl add, right move/attack | C stop chase, V cease fire, A attack on sight, G guard, P patrol, M mine, H heal, R retreat, T point fire, X stop, B ranges, Backspace cancel | Space pause, N step, Tab world, arrows pan, wheel zoom, F fit, Esc exit",
             view.world_id.0, view.episode_revision, view.tick, counts.ships, counts.projectiles,
