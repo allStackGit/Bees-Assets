@@ -12,6 +12,7 @@
 #![forbid(unsafe_code)]
 
 pub mod commands;
+pub mod command_credit;
 pub mod squads;
 pub mod squad_geometry;
 pub mod squad_composition;
