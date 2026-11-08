@@ -828,7 +828,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const tinyBrainsPicker=document.createElement('fieldset');
     tinyBrainsPicker.hidden=true;
     const tinyBrainsLegend=document.createElement('legend');
-    tinyBrainsLegend.textContent='TinyBrains CPU / CUDA job';
+    tinyBrainsLegend.textContent='TinyBrains CPU / GPU job';
     const tinyBrainsSelect=document.createElement('select');
     const tinyBrainsImport=document.createElement('select');
     const tinyBrainsUpdates=document.createElement('input');
@@ -896,7 +896,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const options=approvedTinyBrainsProfiles(state.machines);
         tinyBrainsSelect.replaceChildren(...(options.length
             ?options.map(([key,{profile,digest,workers,cudaWorkers}])=>new Option(
-                profile+' · '+(cudaWorkers?'CUDA':'CPU')+' · '+digest.slice(0,12)+
+                profile+' · '+(cudaWorkers?'GPU (CUDA/ROCm)':'CPU')+' · '+digest.slice(0,12)+
                 ' · '+workers+(workers===1?' worker':' workers'),key))
             :[new Option('No connected worker advertises a profile','')]));
         if(options.some(([key])=>key===prior))tinyBrainsSelect.value=prior;
