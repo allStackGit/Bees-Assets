@@ -24,7 +24,7 @@ pub struct NativeGameTargetFacts {
     pub firepower: f32,
     pub max_range: f32,
     /// Unity Ship.LastKilled uses Time.frameCount, updated by KilledShip.
-    pub last_killed: Option<i32>,
+    pub last_killed: Option<i64>,
     /// Starting real FleetShip.DamageDone; live values are subsequently
     /// owned by CombatWorld's fleet-ID ledger, not frozen in this copy.
     pub fleet_damage_done: Option<i32>,
@@ -720,6 +720,43 @@ impl CombatWorld {
     /// Advance mounted rotating weapons with the exact turret targeting
     /// passes and shared ScaledTimer, using the post-hull-turn ship pose.
     /// Called from the canonical gameplay step BEFORE projectile physics.
+    /// Actual hit and death events are the only authority for ongoing
+    /// Revenge and MostDangerous ranks. Keep both in their real physical
+    /// fleet/ship lifetime; never sample a stale Unity export each tick.
+    pub(super) fn reconcile_game_target_rank_events(&mut self) {
+        self.game_target_last_kill_epoch =
+            self.game_target_last_kill_epoch.saturating_add(1);
+        let epoch = self.game_target_last_kill_epoch;
+        for event in &self.events {
+            match event {
+                CombatEvent::Hit(hit)
+                    if hit.attacker_side != hit.target_side &&
+                        hit.delta.tsv_loss > 0 =>
+                {
+                    if let Some(fleet_id) =
+                        self.fleet_id_by_ship.get(&hit.attacker_id)
+                    {
+                        if let Some(damage) =
+                            self.game_fleet_damage_done.get_mut(fleet_id)
+                        {
+                            *damage = damage.saturating_add(
+                                i64::from(hit.delta.tsv_loss),
+                            );
+                        }
+                    }
+                }
+                CombatEvent::ShipDied { killer_id, victim_id, .. }
+                    if *killer_id > 0 && killer_id != victim_id =>
+                {
+                    if let Some(facts) = self.game_target_facts.get_mut(killer_id) {
+                        facts.last_killed = Some(epoch);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
     pub(super) fn advance_authored_turrets(
         &mut self, dt: f32,
     ) -> Result<(), CombatWorldError> {
