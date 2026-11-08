@@ -137,8 +137,8 @@ source-authored initial Unity Level, not a resumable match checkpoint.
 Schema 16 and 17 capture the active self-play episode, both team-specific
 movement settings and registered Unity Agent instance group membership,
 including its exact currently bound ship (if any). Schema 17 additionally
-carries the actual game turning radius and sprite half-extents for mobile
-ships using user/ordinary game steering; the same CombatWorld controls their
+carries the actual game turning radius and sprite half-extents for all
+ships using user/ordinary game steering (including stationary squad members); the same CombatWorld controls their
 movement in both rendered and headless execution. Schemas 15 and 16 remain
 readable for policy inference, but do not invent missing game steering data.
 It records original ship/weapon, squad, obstacle, mining and destructible
