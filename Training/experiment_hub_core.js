@@ -1093,7 +1093,7 @@ class ExperimentHub {
             last_action:value.start_qualified_gpu===true
                 ?'Armed for CPU jobs and explicitly qualified GPU claims; no job dispatched yet.'
                 :value.claim_exclusive_gpu===true
-                    ?'Armed for CPU jobs and exclusive GPU claims; GPU Starts require operator approval.'
+                    ?'Armed for CPU jobs and opted-in GPU claims; GPU Starts require operator approval.'
                     :'Armed for qualified CPU-only jobs; no job dispatched yet.',
             last_error:null,last_transition_at:null,waiting_reason:null,
             last_claimed_project_id:null,last_started_project_id:null,
@@ -1333,7 +1333,7 @@ class ExperimentHub {
                 this.authorizeStart({job_id:job.id,confirm_start:true},'automation');
                 session.managed_job_ids.push(job.id);
                 session.last_started_project_id=job.project_id;
-                return transitioned('Authorized '+(job.resources.gpu_count?'qualified GPU':'CPU-only')+
+                return transitioned('Authorized '+(job.resources.gpu_count?job.resources.gpu_mode+' GPU':'CPU-only')+
                     ' Start: '+job.project_id+
                     ' / '+(job.configuration_name||job.id.slice(-8))+'.');
             }
