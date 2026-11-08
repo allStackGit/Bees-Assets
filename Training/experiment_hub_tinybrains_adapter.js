@@ -67,23 +67,6 @@ const TRAIN_ENTRY=[
     "sys.stderr = open(sys.argv.pop(1), 'x', encoding='utf-8', buffering=1)",
     "runpy.run_module('ants_mapoca.cli', run_name='__main__', alter_sys=True)",
 ].join('; ');
-// The native owner selects one CUDA device before Python starts. Verify that
-// the training process sees that exact visibility mask and can execute a
-// small operation; this cannot isolate the GPU from unrelated processes.
-const CUDA_TRAIN_ENTRY=[
-    'import os, runpy, sys',
-    "sys.stdout = open(os.devnull, 'w', encoding='utf-8')",
-    "sys.stderr = open(sys.argv.pop(1), 'x', encoding='utf-8', buffering=1)",
-    'gpu = sys.argv.pop(1)',
-    "if os.environ.get('CUDA_VISIBLE_DEVICES') != gpu: raise RuntimeError('CUDA device identity changed before trainer launch')",
-    'import torch',
-    "if not torch.version.cuda or not torch.cuda.is_available() or torch.cuda.device_count() != 1: raise RuntimeError('One usable CUDA device required')",
-    "probe = torch.ones((16,), device='cuda')",
-    "if float(probe.sum().item()) != 16.0: raise RuntimeError('CUDA compute preflight failed')",
-    'torch.cuda.synchronize()',
-    "runpy.run_module('ants_mapoca.cli', run_name='__main__', alter_sys=True)",
-].join('\n');
-
 function isWithin(parent,child) {
     const relative=path.relative(parent,child);
     return !path.isAbsolute(relative)&&relative!=='..'&&!relative.startsWith('..'+path.sep);
@@ -275,11 +258,10 @@ function createTinyBrainsAdapter({projectRoot,pythonPath,artifactRoot,profiles,
             const stderr=windows?path.join(out,'trainer.stderr.txt'):'-';
             const selectedCuda=windows&&approved.device==='cuda'
                 ?context.gpu_cuda_uuid:null;
-            const entry=enginePath!=null
+            const entry=enginePath!=null||selectedCuda
                 ?[path.join(__dirname,'experiment_hub_tinybrains_runtime.py'),engine,stderr,
                     ...(selectedCuda?['--hub-cuda',selectedCuda]:[])]
-                :['-c',selectedCuda?CUDA_TRAIN_ENTRY:TRAIN_ENTRY,stderr,
-                    ...(selectedCuda?[selectedCuda]:[])];
+                :['-c',TRAIN_ENTRY,stderr];
             return ['-B',...entry,
                 'train','--config',config,'--out',out,
                 '--updates',String(updates),...resume];
