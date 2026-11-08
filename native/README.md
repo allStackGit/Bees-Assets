@@ -18,7 +18,9 @@ Space pauses all worlds; N advances one fixed round while paused; Tab changes
 the inspected world; arrow keys pan; the mouse wheel zooms around the pointer;
 F fits the imported bounds; left-click inspects a nearby ship and selects its
 source-authorized player squad. Ctrl-click adds squads; left-drag selects squads
-whose real hulls overlap the box. Right-click moves the selected squads, once per
+whose real hulls overlap the box. C stops Aggressive chase, V enables Cease Fire,
+and A restores Attack on Sight (except during Heal). These update the same
+squad/weapon state as headless play. Right-click moves the selected squads, once per
 live squad lifetime; locked or unavailable squads are skipped. Move requests carry
 world/episode identity, finalize prior commands through the normal outcome outbox,
 and invalidate pending AI request authority before shared formation/path movement.
@@ -302,7 +304,8 @@ chosen Guard, Patrol, Mining, Heal and FullRetreat actions, scoped to the curren
 world/episode and a live controllable squad. Movement and support commands share
 one permission/membership preflight; pending AI requests retire before activation.
 Source Hold cancels only an active Aggressive chase; pressing C in the window
-leaves other commands and pending requests unchanged.
+leaves other commands and pending requests unchanged. Cease Fire and Attack on
+Sight change the actual mounted-weapon flags without superseding commands.
 The canonical director handles replacement, unavailable targets and settlement.
 `Attack { target }` now accepts a live enemy lifetime for ordinary ranged squads,
 preflights the real Aggressive snapshot, and uses the same local command director.
