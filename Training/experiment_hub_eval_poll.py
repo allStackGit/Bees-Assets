@@ -36,9 +36,24 @@ def exclusive(path: Path):
 
 def targets(port: int, machine: str, suite: str, project: str) -> dict:
     query = urlencode({"project_id": project, "machine_id": machine, "suite_id": suite})
+    # A remote worker needs only the restricted agent-only SSH tunnel.
+    # Never transmit its machine token on the privileged dashboard port,
+    # in a URL, or to a network interface other than local loopback.
+    if port == 7149:
+        token = os.environ.get("EXPERIMENT_HUB_AGENT_TOKEN", "")
+        if not re.fullmatch(r"[a-f0-9]{64}", token):
+            raise ValueError("Restricted evaluator endpoint requires the enrolled machine token.")
+        endpoint = "/api/hub/agent/evaluation/targets"
+        headers = {"X-Hub-Agent-Token": token}
+    elif port == 7148:
+        # Local co-located evaluators retain the historical dashboard path.
+        endpoint = "/api/hub/evaluation/targets"
+        headers = {}
+    else:
+        raise ValueError("Evaluator port must be the local Hub dashboard (7148) or restricted agent port (7149).")
     connection = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
     try:
-        connection.request("GET", f"/api/hub/evaluation/targets?{query}")
+        connection.request("GET", f"{endpoint}?{query}", headers=headers)
         with connection.getresponse() as response:
             data = response.read(524289)
             if response.status != 200 or len(data) > 524288:
