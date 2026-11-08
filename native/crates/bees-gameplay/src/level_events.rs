@@ -353,6 +353,22 @@ impl NativeLevelEventProcessor {
         Ok(())
     }
 
+    /// Unity Squad.StopChasing: Hold cancels only an active Aggressive
+    /// command. Other commands remain in place, and Hold never installs
+    /// a second command or changes physical movement state directly.
+    pub fn stop_player_chasing(
+        &mut self, tick: u64, world: &mut CombatWorld, owner: SquadLifetime,
+    ) -> Result<bool, NativeLevelEventError> {
+        if self.is_failed() || self.completed() {
+            return Err(NativeLevelEventError::FailedLevel);
+        }
+        if !self.commands.is_chasing_command(owner) {
+            return Ok(false);
+        }
+        self.finalize_local_command(tick, world, owner)?;
+        Ok(true)
+    }
+
     pub(crate) fn fail_player_input(&mut self) { self.failed = true; }
 
     /// Local commands acquire a Level-owned identity, never a server
