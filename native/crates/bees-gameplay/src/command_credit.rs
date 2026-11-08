@@ -136,13 +136,16 @@ impl NativeCommandCreditLedger {
             }
         }
         let mut batch = OutcomeBatch::new();
-        for (id, mut entry) in std::mem::take(&mut self.commands) {
+        // Build transactionally from borrowed records. On a duplicate
+        // reservation or invalid selection the original episode accounting
+        // remains available for explicit abort/discard reconciliation.
+        for (&id, entry) in &self.commands {
             if successful {
-                let finished = entry.finished.take()
+                let finished = entry.finished.as_ref()
                     .ok_or(CommandCreditError::IncompleteOutcome(id))?;
                 let shooting = finished.shooting_targeted_enemy
                     .then_some(entry.shooting_tsv);
-                match finished.settle(entry.command_tsv, shooting, None) {
+                match finished.clone().settle(entry.command_tsv, shooting, None) {
                     NativeCommandSettlement::HiveMind(outcome) =>
                         batch.add_finalized(outcome)
                             .map_err(CommandCreditError::Protocol)?,
@@ -161,6 +164,7 @@ impl NativeCommandCreditLedger {
                 ]).map_err(CommandCreditError::Protocol)?;
             }
         }
+        self.commands.clear();
         self.closed = true;
         Ok(batch)
     }
