@@ -234,11 +234,14 @@ function gpuStartBlock(job,lease,machine) {
     const r=job.resources,allocated=lease.resources;
     if(r.gpu_count===0&&allocated.gpu_count===0&&
         !(r.gpus||[]).length&&!(allocated.gpus||[]).length)return null;
+    const sharedWindows=machine.agent_platform==='win32'&&
+        r.gpu_mode==='shared'&&allocated.gpu_mode==='shared'&&
+        machine.gpu_shared_projects?.includes(job.project_id);
     if(r.gpu_count!==1||allocated.gpu_count!==1||
-        r.gpu_mode!=='exclusive'||allocated.gpu_mode!=='exclusive'||
+        !(r.gpu_mode==='exclusive'&&allocated.gpu_mode==='exclusive'||sharedWindows)||
         allocated.gpus?.length!==1||
         (r.gpus?.length&&r.gpus[0]!==allocated.gpus[0]))
-        return 'Native GPU Start requires one exclusively leased GPU.';
+        return 'Native GPU Start requires one exclusive GPU or a locally approved cooperative Windows CUDA share.';
     if(!machine.gpu_projects?.includes(job.project_id))
         return 'The local adapter has not opted into native GPU execution.';
     if(machine.agent_platform==='win32') {
@@ -552,7 +555,9 @@ function nativeStartReadiness(snapshot, job) {
         return block('Requested CPU/RAM exceeds the machine\'s fresh reported capacity.');
     return {eligible:true,reason:r.gpu_count
         ?machine.agent_platform==='win32'
-            ?'Eligible for explicit cooperative CUDA Start; Windows cannot isolate GPU access.'
+            ?r.gpu_mode==='shared'
+                ?'Eligible for cooperative shared CUDA Start: PyTorch allocator VRAM ceiling; GPU compute share is advisory.'
+                :'Eligible for explicit cooperative CUDA Start; Windows cannot isolate GPU access.'
             :'Eligible for explicit exclusive GPU Start with in-service verification.'
         :'Eligible for explicit CPU-only native Start authorization.'};
 }
@@ -659,7 +664,8 @@ function allocationChoice(machines,reservations,job,preferredMachineId=null,
         const r=selected.resources;
         const cpuOnly=r.gpu_count===0&&!(r.gpus||[]).length;
         const exclusiveGpu=r.gpu_count===1&&r.gpu_mode==='exclusive';
-        if(r.ram_mb<128||(!cpuOnly&&!exclusiveGpu))return fits;
+        const nativeGpu=r.gpu_count===1&&['exclusive','shared'].includes(r.gpu_mode);
+        if(r.ram_mb<128||(!cpuOnly&&!nativeGpu))return fits;
         const ready=new Set(eligible.filter(machine=>
             machine.local_executor_enabled===true&&machine.native_preflight_passed===true&&
             machine.installed_projects?.includes(selected.project_id)&&
@@ -669,8 +675,9 @@ function allocationChoice(machines,reservations,job,preferredMachineId=null,
                     machine.execution_capabilities.cgroup_controllers.includes(controller)))&&
             (cpuOnly||machine.gpu_projects?.includes(selected.project_id)&&
                 (machine.agent_platform==='win32'
-                    ?machine.gpu_inventory_source==='nvidia-smi-v1'&&machine.observed_gpus?.length>=1
-                    :machine.observed_gpus?.length>=2))
+                    ?machine.gpu_inventory_source==='nvidia-smi-v1'&&machine.observed_gpus?.length>=1&&
+                        (r.gpu_mode!=='shared'||machine.gpu_shared_projects?.includes(selected.project_id))
+                    :r.gpu_mode==='exclusive'&&machine.observed_gpus?.length>=2))
         ).map(machine=>machine.id));
         const runnable=fits.filter(p=>ready.has(p.machine_id));
         if(runnable.length)return runnable;
@@ -1347,10 +1354,12 @@ class ExperimentHub {
                 (job.resources.gpu_count===0||
                     machine.gpu_projects?.includes(job.project_id)&&
                     (machine.agent_platform==='linux'
-                        ?machine.observed_gpus?.length>=2
+                        ?job.resources.gpu_mode==='exclusive'&&machine.observed_gpus?.length>=2
                         :machine.agent_platform==='win32'&&
                             machine.gpu_inventory_source==='nvidia-smi-v1'&&
-                            machine.observed_gpus?.length>=1));
+                            machine.observed_gpus?.length>=1&&
+                            (job.resources.gpu_mode!=='shared'||
+                                machine.gpu_shared_projects?.includes(job.project_id))));
             const eligibleHosts=job=>capable.filter(machine=>canHostJob(machine,job));
             if(session.rebalance_queued) {
                 for(const job of pendingClaims) {
@@ -1404,7 +1413,8 @@ class ExperimentHub {
                 const r=job.resources;
                 return !job.lease_id&&r.ram_mb>=128&&(
                     r.gpu_count===0&&!(r.gpus||[]).length||
-                    session.claim_exclusive_gpu&&r.gpu_count===1&&r.gpu_mode==='exclusive');
+                    session.claim_exclusive_gpu&&r.gpu_count===1&&
+                        ['exclusive','shared'].includes(r.gpu_mode));
             };
             for(const [index,job] of pendingClaims.entries()) {
                 if(!claimable(job))continue;
@@ -1423,7 +1433,8 @@ class ExperimentHub {
                 if(session.rebalance_queued||job.resources.gpu_count!==0&&session.probe_exclusive_gpu)
                     session.claimed_lease_ids.push(result.results[0].lease_id);
                 session.last_claimed_project_id=job.project_id;
-                return transitioned((job.resources.gpu_count?'Claimed exclusive GPU: ':'Claimed CPU/RAM: ')+
+                return transitioned((job.resources.gpu_count
+                    ?'Claimed '+job.resources.gpu_mode+' GPU: ':'Claimed CPU/RAM: ')+
                     job.project_id+' / '+
                     (job.configuration_name||job.id.slice(-8))+
                     ' on '+chosen.machine_id+'; awaiting agent receipt.');
