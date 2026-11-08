@@ -435,11 +435,12 @@ round-robin order, and checks the installed adapter inventory before
 treating a future host as capable. The manual allocation pass and read-only queue preview
 keep their stable per-project interleave rather than guessing what a
 future armed scheduler session will choose. An agent must first
-acknowledge each fresh claim. CPU-only is the default. Exclusive
-single-GPU jobs can enter this automation only with the explicit claim,
-probe and Start options described in the Linux native supervisor section.
-Shared and multi-GPU requests remain excluded. Existing Bees training
-remains under its own operator.
+acknowledge each fresh claim. CPU-only is the default. Native single-GPU jobs can enter automation
+only after explicit GPU claim and Start authorization. Linux ROCm also
+requires a current device-denial probe for exclusive leases; Windows
+CUDA allows locally approved exclusive or cooperative shared leases
+with a pinned device UUID. Multi-GPU native jobs and unapproved GPU
+sharing remain excluded. Existing Bees training remains under its own operator.
 
 A failed or unverified managed job, disappearing/replaced agent, or
 failed coordinator operation disarms the session without retrying an
@@ -1586,9 +1587,10 @@ next workload. New jobs cannot use this legacy fallback. These
 structural checks do not replace a real trainer resume qualification.
 CPU-only jobs mask common CUDA/HIP/ROCm selector variables. Opted-in
 single-GPU Windows CUDA and Linux ROCm jobs use platform-specific GPU
-selection and checks. The native GPU path still does not enforce
-per-process VRAM or compute shares, and shared-mode GPU Starts remain
-blocked.
+selection and checks. The Windows cooperative TinyBrains CUDA path can apply a PyTorch
+caching-allocator memory ceiling; it does not constrain other CUDA
+allocations, guarantee compute shares or isolate the GPU. Shared Linux
+GPU Starts remain blocked.
 
 The .NET owner and browser-controlled CPU-only lifecycle have passed
 isolated Windows qualifications, including signed terminal recovery.
@@ -1922,7 +1924,11 @@ evaluation-triggered Stop advances the next checkpoint stage only when
 the native supervisor certifies checkpoint-preserving shutdown and
 capacity is released. The continuation loads the last saved checkpoint,
 which can be later than the checkpoint that met the evaluation target.
-Native Windows CUDA profiles are supported through explicit local GPU opt-in and one exclusive pinned device. Shared GPU Starts remain unsupported; CPU/GPU coexistence with other programs is not enforced.
+Native Windows CUDA profiles require explicit local GPU opt-in and
+one PCI/UUID-pinned device. The approved TinyBrains adapter also permits
+cooperative shared GPU Starts using a PyTorch allocator memory ceiling.
+GPU compute shares, access by other programs and VRAM outside the
+PyTorch allocator are not isolated or enforced.
 
 For evaluation-driven stopping, set the adapter's `evaluationRoot` to a
 trusted evaluator-owned directory separate from the checkout and training
