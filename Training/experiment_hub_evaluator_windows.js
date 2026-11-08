@@ -78,10 +78,25 @@ function readConfiguration(file) {
         value.project==='tinybrains'&&(value.project_root||value.snapshot_root))
         throw Error('Configuration contains paths for a different evaluator project.');
     return {project:value.project,machine:value.machine,python,args,
+        port:integer(value.port??7148,1,65535,'Port'),
         interval:integer(value.interval_seconds??180,60,86400,'Interval seconds'),
         timeout:integer(value.timeout_seconds??7200,60,86400,'Timeout seconds'),
         sha256:crypto.createHash('sha256').update(bytes).digest('hex')};
 }
+function validateEvaluatorTransport(config,env=process.env) {
+    // Port 7148 is the trusted coordinator-local administrator listener.
+    // Remote evaluators use only the private machine-agent endpoint,
+    // normally through a local SSH forward (e.g. 17149 -> 7149).
+    // Reject a missing token *before* starting repeated evaluator polls.
+    if(config.port!==7148) {
+        if(!/^[a-f0-9]{64}$/.test(String(env.EXPERIMENT_HUB_AGENT_TOKEN||'')))
+            throw Error('Remote evaluation requires a private machine agent token for the restricted loopback port.');
+        if(env.EXPERIMENT_HUB_MACHINE_ID!=null&&
+            env.EXPERIMENT_HUB_MACHINE_ID!==config.machine)
+            throw Error('Remote evaluator machine ID differs from its enrolled agent identity.');
+    }
+}
+
 async function verifyBudget(env=process.env) {
     if(process.platform!=='win32'||!NAME.test(env.EXPERIMENT_HUB_SERVICE_NAME||''))
         throw Error('Use the Windows service launcher evaluator role for native resource containment.');
@@ -127,8 +142,9 @@ async function main(argv=process.argv.slice(2),env=process.env) {
         return;
     }
     if(positionals.length)throw Error('Unexpected evaluator arguments.');
-    const initial=await verifyBudget(env);
     const config=readConfiguration(env.EXPERIMENT_HUB_EVALUATOR_CONFIG);
+    validateEvaluatorTransport(config,env);
+    const initial=await verifyBudget(env);
     const root=local(env.EXPERIMENT_HUB_SERVICE_LOG_ROOT,'Service state directory',true);
     const status=path.join(root,env.EXPERIMENT_HUB_SERVICE_NAME+'.evaluation.json');
     const context={project:config.project,machine:config.machine,configuration_sha256:config.sha256,
@@ -171,4 +187,4 @@ if(require.main===module)main().catch(error=>{
     // closes its native job and terminates this evaluator's entire tree.
     process.exit(1);
 });
-module.exports={main,readConfiguration,verifyBudget};
+module.exports={main,readConfiguration,validateEvaluatorTransport,verifyBudget};
