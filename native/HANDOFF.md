@@ -130,8 +130,11 @@ CommandOutcomesReady carries (run_id, world_id, episode_revision, sequence).
 The connection now persists a per-run/world source cursor atomically with
 the original StoreCommands Hash/retry payload. After 200 or 409 the cursor
 survives request retirement, so replay does not create a new Hash or credit
-the same reservations twice. Checkpoint schema 1 remains readable (the new
-cursor defaults to empty). A validated read-only replay command is exposed
+the same reservations twice. Old schema-1 checkpoints remain readable, but
+an old run with no checkpointed registration is NOT safe to replay: it could
+already have committed rows without a surviving cursor, so recovery refuses
+it. New run IDs register durably BEFORE writing any journal outcome and may
+not be reused for a different journal. A validated read-only replay command is exposed
 through NativeHostRuntime::recover_prior_outcome_journal, and the headless
 run config accepts `recover_outcome_journals` entries with `run_id` and
 `path`. Use the SAME connection checkpoint as the previous run; never
