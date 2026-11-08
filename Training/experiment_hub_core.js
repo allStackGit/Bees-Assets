@@ -271,7 +271,7 @@ function gpuStartBlock(job,lease,machine) {
     if(!(machine.observed_gpus?.length>=2))
         return 'Native GPU Start requires a second observed GPU to verify access denial.';
     if(job.gpu_qualification?.current!==true)
-        return 'A current device access probe for this exact GPU lease is required.';
+        return 'Current device access and HIP runtime qualification for this exact GPU lease are required.';
     return null;
 }
 function nativeResourceBlock(job,lease) {
@@ -1824,7 +1824,7 @@ class ExperimentHub {
             released_lease_id:source.id,lease_id:replacements.get(job.id).id,
         }))};
     }
-    // Explicitly request an inert GPU device-filter proof, not a launch.
+    // Explicitly request bounded device access and runtime PCI proof, not a trainer launch.
     requestGpuQualification(value,origin='operator') {
         if(!object(value)||value.confirm_qualify!==true||
             !UUID.test(String(value.job_id||'')))
