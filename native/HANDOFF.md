@@ -7,6 +7,29 @@ live training were untouched. Changes have since been pushed directly to the
 rewrite branch on GitHub; reconcile the current branch head before doing further work.
 Unrelated feat/experiment-queue-ui changes were not merged.
 
+## Local executable verification after pulling 73a2c6f7a
+
+Fetched and fast-forwarded 50 commits from 407ffd8c4 to 73a2c6f7a. The earlier
+source-only status below is superseded for these bounded Windows paths:
+- workspace-pulled-73a2.txt: all106 existing sim tests and workspace all-target/
+  all-feature checks passed; headless-pulled-73a2.txt: no-default-feature check passed.
+- player-bombs-pulled-73a2.txt and attack-retirement-pulled-73a2.txt: all4 special
+  player compositions and all5 ranged strategy lifecycles still execute physically.
+- pulled-controls-73a2.txt: actual Hold idle no-op preserves a pending strategy
+  request; cease/resume suppresses/restores automatic shots without retiring that
+  request; Attack followed by Hold ends exactly one Aggressive chase; stale
+  episode input is rejected. No physical keyboard/window interaction was exercised.
+- pulled-durable-73a2.txt and pulled-durable-verification-73a2.txt: the real durable
+  diagnostic sink synchronized actual combat hits and finished-command records
+  for all5 ranged strategies. Read-back checks verified contiguous event sequences,
+  original outcomes101/102, selected strategy IDs, shooting admission and lethal
+  impact ordering before completion. InAndOut completed at tick152, yet an actual
+  hit at tick180 still retained launching command101. Do not settle at completion.
+These disposable fixtures/receipts live under B:\Bees\native-capability-qualification.
+No new committed tests were added. They do not prove production settlement,
+Linux, Unity export or physical input parity. The remaining durable accrual/
+StoreCommands owner is still the highest-value next implementation boundary.
+
 ## Current integrated increment: command activation through physical attack
 
 Source-authored NativePolicyOnlyMetadata now supports actual HiveMind ranged
