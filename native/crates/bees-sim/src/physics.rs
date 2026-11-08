@@ -1280,6 +1280,15 @@ impl KinematicPhysics {
             (body.active && query.overlaps(&body.collider)).then_some(body.id)))
     }
 
+    /// Unity Ship.IsInBounds compares its local point to Level.ForceBounds.
+    /// The authored Level bounds are the same area used for native physics.
+    pub fn point_inside_level_bounds(&self, point: Vec2) -> bool {
+        let bounds = self.grid.area;
+        point.is_finite() &&
+            point.x >= bounds.min.x && point.x <= bounds.max.x &&
+            point.y >= bounds.min.y && point.y <= bounds.max.y
+    }
+
     /// Unity Weapon.HasClearLineOfFire uses Physics2D.Linecast against
     /// ConfigData.ObstaclesLayerMask (layer 19). The source's actual primary
     /// collider, not navigation clearance geometry, blocks the shot. The
