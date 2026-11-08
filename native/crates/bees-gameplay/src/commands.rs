@@ -316,6 +316,11 @@ pub struct FinishedNativeCommand {
     pub owner: SquadLifetime,
     pub selection: NativeCommandSelection,
     pub cause: CommandFinishCause,
+    /// Unity GameState.StoreCommands sends shooting-command credit only
+    /// when the issued command selected an enemy and uses that enemy for
+    /// targeting (Retreat expressly excluded). Snapshot at activation,
+    /// not from a replacement command at finalization.
+    pub shooting_targeted_enemy: bool,
     /// Unity Mining.Mine and Heal.HealShips add their actual minerals or
     /// recovered TSV to Command.Tsv. Physical outcomes are not inferable
     /// from the final ship state at command settlement.
@@ -337,6 +342,9 @@ impl FinishedNativeCommand {
         shooting_tsv: Option<i64>,
         targeting: Option<(&ValidatedTargetingSelection, Option<i64>)>,
     ) -> NativeCommandSettlement {
+        let shooting_tsv = if self.shooting_targeted_enemy {
+            shooting_tsv
+        } else { None };
         let targeting = targeting.map(|(selection, tsv)| match tsv {
             Some(tsv) => OutcomeSettlement::Credit { outcome_id: selection.outcome_id, tsv },
             None => OutcomeSettlement::Discard { outcome_id: selection.outcome_id },
@@ -693,6 +701,7 @@ impl NativeSquadCommandDirector {
         Ok(Some(FinishedNativeCommand {
             owner, selection: active.selection,
             cause: CommandFinishCause::HealingCompleted,
+            shooting_targeted_enemy: active.preferred_weapon_enemy.is_some(),
             capability_command_tsv: Some(earned_tsv),
         }))
     }
@@ -1459,6 +1468,7 @@ impl NativeSquadCommandDirector {
             FinishedNativeCommand {
                 owner: squad.owner, selection: old.selection,
                 cause: CommandFinishCause::Superseded,
+                shooting_targeted_enemy: old.preferred_weapon_enemy.is_some(),
                 capability_command_tsv: old.mining.as_ref()
                     .map(|mining| mining.mined_tsv)
                     .or_else(|| old.heal.as_ref().map(|heal| heal.earned_tsv))
@@ -2105,6 +2115,7 @@ impl NativeSquadCommandDirector {
                 }
                 finished.push(FinishedNativeCommand {
                     owner, selection: active.selection, cause,
+                    shooting_targeted_enemy: active.preferred_weapon_enemy.is_some(),
                     capability_command_tsv: active.mining.as_ref()
                         .map(|mining| mining.mined_tsv)
                         .or_else(|| active.heal.as_ref().map(|heal| heal.earned_tsv))
@@ -2179,6 +2190,7 @@ impl NativeSquadCommandDirector {
             FinishedNativeCommand {
                 owner, selection: active.selection,
                 cause,
+                shooting_targeted_enemy: active.preferred_weapon_enemy.is_some(),
                 capability_command_tsv: active.mining.as_ref()
                     .map(|mining| mining.mined_tsv)
                     .or_else(|| active.heal.as_ref().map(|heal| heal.earned_tsv))
