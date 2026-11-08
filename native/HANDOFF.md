@@ -150,7 +150,25 @@ resolution. On validated HiveMind ingress, retired/declined strategy IDs
 same durable StoreCommands ledger before the response reaches callers. Caller
 still applies returned bans; do NOT queue those discard IDs a second time.
 Accepted targeting still needs a real installation/credit owner—never invent
-its TSV. After authenticating the existing native socket, invoke
+its TSV. The current branch provides
+`bees-gameplay::matchup_targeting::select_live_matchup_squad` and a reusable
+`NativeLevelBatchDriver::resolve_targeting_enemy` /
+`NativeHostRuntime::resolve_targeting_enemy` entrypoint for the validated
+accepted receipt. All 40 BeesServer targeting IDs use the source's strict
+metric comparisons, stable first-squad ties, Random and GangUp priority.
+The candidates are projected from the real CombatWorld weapon-rank history,
+authored sprite bounds, exact roster lifetimes, and the source learned
+first-sighting order (stored alongside HashSet membership with no second
+vision sweep). GangUp reuses actual active allied command targets, including
+Retreat, and skips already-dead targets. This is TARGET SELECTION, not
+MatchupStrategy installation or reservation settlement; no fabricated TSV
+is submitted. Exact Unity Ship.InCombat timer state is not yet exposed by
+this branch: InCombat / unprioritized GangUp require the caller's
+`in_combat` callback and fail closed if any required value is missing.
+The subsequent integration must attach each accepted OutcomeId to the
+real selected command and dispose unused/superseded targeting reservations
+through the same durable episode ledger.
+After authenticating the existing native socket, invoke
 NativeHostRuntime::flush_store_socket from its I/O owner to checkpoint any
 ready batches and send only not-yet-transmitted pending hashes. Subsequent
 polls do not resend unacknowledged requests; a new socket can replay the
