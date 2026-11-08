@@ -82,7 +82,7 @@ const CUDA_TRAIN_ENTRY=[
     "if float(probe.sum().item()) != 16.0: raise RuntimeError('CUDA compute preflight failed')",
     'torch.cuda.synchronize()',
     "runpy.run_module('ants_mapoca.cli', run_name='__main__', alter_sys=True)",
-].join('; ');
+].join('\n');
 
 function isWithin(parent,child) {
     const relative=path.relative(parent,child);
