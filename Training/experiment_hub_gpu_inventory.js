@@ -60,9 +60,17 @@ function discoverAmdGpus(options={}) {
                 // Usage may be absent, inaccessible or momentarily inconsistent.
                 // Never present an invented free-VRAM measurement.
             }
+            let busyPct=null;
+            try {
+                const busy=boundedRead(fsApi,pathApi.join(devicePath,'gpu_busy_percent'));
+                if(/^(?:100|[0-9]{1,2})$/.test(busy))
+                    busyPct=Number(busy);
+            }catch{
+                // Optional host-wide utilization is not a workload quota.
+            }
             seen.add(pci);
             result.push({pci_address:pci,vram_mb:totalMb,
-                used_vram_mb:usedMb});
+                used_vram_mb:usedMb,gpu_busy_pct:busyPct});
         }catch {
             // A missing driver, missing VRAM counter or disappearing DRM
             // device is not evidence of an available and usable GPU.
@@ -77,7 +85,7 @@ const CUDA_UUID=/^GPU-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{1
 function discoverNvidiaGpus(options={}) {
     const run=options.run||spawnSync;
     const result=run('nvidia-smi',[
-        '--query-gpu=pci.bus_id,memory.total,memory.used,uuid',
+        '--query-gpu=pci.bus_id,memory.total,memory.used,utilization.gpu,uuid',
         '--format=csv,noheader,nounits',
     ],{encoding:'utf8',windowsHide:true,timeout:5000,maxBuffer:8192});
     if(result.error?.code==='ENOENT')return [];
@@ -89,22 +97,24 @@ function discoverNvidiaGpus(options={}) {
     const seenPci=new Set(),seenUuid=new Set(),devices=[];
     for(const row of rows) {
         const columns=row.split(',').map(v=>v.trim());
-        if(columns.length!==4)throw Error('Invalid NVIDIA GPU inventory row.');
+        if(columns.length!==5)throw Error('Invalid NVIDIA GPU inventory row.');
         let pci=columns[0].toLowerCase();
         if(/^0000[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]$/.test(pci))
             pci=pci.slice(4);
         const memory=Number(columns[1]);
         const used=columns[2].toUpperCase()==='N/A'?null:Number(columns[2]);
-        const uuid=columns[3];
+        const busy=columns[3].toUpperCase()==='N/A'?null:Number(columns[3]);
+        const uuid=columns[4];
         if(!PCI.test(pci)||!Number.isSafeInteger(memory)||
             memory<1||memory>1000000||
             (used!==null&&(!Number.isSafeInteger(used)||used<0||used>memory))||
+            (busy!==null&&(!Number.isSafeInteger(busy)||busy<0||busy>100))||
             !CUDA_UUID.test(uuid)||
             seenPci.has(pci)||seenUuid.has(uuid.toLowerCase()))
             throw Error('Invalid or duplicate physical NVIDIA GPU identity.');
         seenPci.add(pci);seenUuid.add(uuid.toLowerCase());
         devices.push({pci_address:pci,vram_mb:memory,
-            used_vram_mb:used,cuda_uuid:uuid});
+            used_vram_mb:used,gpu_busy_pct:busy,cuda_uuid:uuid});
     }
     return devices;
 }
