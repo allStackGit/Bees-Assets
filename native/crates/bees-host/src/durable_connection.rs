@@ -183,6 +183,21 @@ impl DurableHiveMindConnection {
         Ok(request)
     }
 
+    /// Establish a crash-safe journal incarnation before creating the
+    /// run's first notification record. This inserts an empty source-cursor
+    /// map and checkpoints it once; previously registered runs are inert.
+    pub fn register_journal_run(
+        &mut self, run_id: &str,
+    ) -> Result<(), DurableConnectionError> {
+        self.ensure_available()?;
+        if self.connection.register_journal_run(run_id)
+            .map_err(DurableConnectionError::Request)?
+        {
+            self.persist_or_poison()?;
+        }
+        Ok(())
+    }
+
     /// Journal replay and live delivery share this checkpoint transaction.
     /// A previously checkpointed source position is not reissued even if
     /// its original StoreCommands request has already been acknowledged.
