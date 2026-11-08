@@ -219,6 +219,10 @@ impl NativeHiveMindSocket {
 
     pub fn game_id(&self) -> Option<i64> { self.game_id }
     pub fn measurements(&self) -> NativeSocketMeasurements { self.measurements }
+    /// A failed transport or rejected server protocol frame must never
+    /// continue with its old transient strategy/targeting correlation
+    /// session. Pending StoreCommands remain durable in the connection.
+    pub fn is_failed(&self) -> bool { self.failed }
 
     fn reject_protocol<T>(
         &mut self, error: HiveMindSocketError,
