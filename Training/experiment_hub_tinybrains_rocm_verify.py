@@ -3,6 +3,7 @@
 Linux systemd applies the Hub's selected render-node device filter before
 running this probe. No request data can select arbitrary Python commands.
 """
+import json
 import os
 import re
 import sys
@@ -39,6 +40,9 @@ def main():
     if float(sample.sum().item()) != 16.0:
         raise SystemExit("Selected ROCm device failed its compute probe.")
     torch.cuda.synchronize()
+    # The native Linux GPU launch checker requires a machine-readable
+    # attestation for the exact PCI identity it handed to this local probe.
+    print(json.dumps({"pci_addresses": [expected]}, separators=(",", ":")))
 
 
 if __name__ == "__main__":
