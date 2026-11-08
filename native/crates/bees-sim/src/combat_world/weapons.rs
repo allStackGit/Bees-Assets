@@ -516,13 +516,29 @@ fn choose_game_weapon_target(
     ship_by_id: &std::collections::HashMap<i64, usize>,
     target_front_offsets: &std::collections::HashMap<i64, f32>,
     game_target_facts: &std::collections::HashMap<i64, NativeGameTargetFacts>,
+    fleet_id_by_ship: &std::collections::HashMap<i64, i64>,
+    game_fleet_damage_done: &std::collections::HashMap<i64, i64>,
     shooter_index: usize, mount: &PolicyTurretMount,
     mount_position: Vec2, strategy: u8,
     reservations: &mut crate::damage_reservations::DamageReservations,
     nearby: &std::collections::BTreeMap<i64, (u64, u64)>,
     random_order: &[i64],
 ) -> Result<Option<(i64, Vec2)>, CombatWorldError> {
-    if !matches!(strategy, 1 | 2 | 5..=40) {
+    if !matches!(strategy, 1..=40) {
+        return Ok(None);
+    }
+    // Old source scenes without original mutable rank baselines cannot
+    // enable these two strategies. All targets must have valid data to
+    // avoid silently changing the server's ranking decision.
+    if strategy == 3 && nearby.keys().any(|id|
+        game_target_facts.get(id).is_none_or(|f| f.last_killed.is_none()))
+    {
+        return Ok(None);
+    }
+    if strategy == 4 && nearby.keys().any(|id|
+        fleet_id_by_ship.get(id).is_none_or(|fleet|
+            !game_fleet_damage_done.contains_key(fleet)))
+    {
         return Ok(None);
     }
     if matches!(strategy, 7 | 8 | 11 | 12 | 17..=40) &&
@@ -569,6 +585,9 @@ fn choose_game_weapon_target(
             ships[shooter_index].side, target_id, target.vitals.health(),
         ).can_select_target();
         let rank = match strategy {
+            3 => game_target_facts[&target_id].last_killed
+                .expect("prevalidated source kill rank") as f64,
+            4 => game_fleet_damage_done[&fleet_id_by_ship[&target_id]] as f64,
             5 | 6 => f64::from(target.vitals.health()),
             7 | 8 => f64::from(game_target_facts[&target_id].firepower),
             9 | 10 => f64::from(hull_distance_sq),
@@ -587,7 +606,8 @@ fn choose_game_weapon_target(
             }
             let compare = rank.total_cmp(&prior.2);
             let preferred = match strategy {
-                5 | 7 | 10 | 11 | 13 | 15 | 17..=40 => compare.is_gt(),
+                3 | 4 | 5 | 7 | 10 | 11 | 13 | 15 | 17..=40 =>
+                    compare.is_gt(),
                 6 | 8 | 9 | 12 | 14 | 16 => compare.is_lt(),
                 _ => false,
             };
@@ -889,6 +909,8 @@ impl CombatWorld {
         let ship_by_id = &self.ship_by_id;
         let target_front_offsets = &self.target_front_offsets;
         let game_target_facts = &self.game_target_facts;
+        let fleet_id_by_ship = &self.fleet_id_by_ship;
+        let game_fleet_damage_done = &self.game_fleet_damage_done;
         let physics = &mut self.physics;
         let reservations = &mut self.reservations;
         for (&ship_id, runtime) in &mut self.game_turrets {
@@ -920,7 +942,7 @@ impl CombatWorld {
                 let auto = manual.is_none() && !runtime.cease_fire &&
                     (user_controlled || runtime.ai_order_active) &&
                     mount.fire_at_front.is_some() &&
-                    matches!(runtime.shooting_strategy, Some(1 | 2 | 5..=40)) &&
+                    matches!(runtime.shooting_strategy, Some(1..=40)) &&
                     (runtime.shooting_strategy != Some(2) || random.is_some());
                 if manual.is_some() {
                     mount.target_ship_id = None;
@@ -1088,6 +1110,7 @@ impl CombatWorld {
                             mount.target_ship_id = choose_game_weapon_target(
                                 physics, ships, ship_by_id, target_front_offsets,
                                 game_target_facts,
+                                fleet_id_by_ship, game_fleet_damage_done,
                                 index, mount, position, strategy,
                                 reservations, nearby,
                                 &runtime.random_target_order[slot],
