@@ -4,7 +4,8 @@
 // a separately installed trusted adapter. This module has no HTTP listener.
 const os=require('node:os');
 const path=require('node:path');
-const {LinuxSupervisor}=require('./experiment_hub_linux_supervisor');
+const crypto=require('node:crypto');
+const {LinuxSupervisor,gpuRuntimeProof}=require('./experiment_hub_linux_supervisor');
 const {WindowsSupervisor}=require('./experiment_hub_windows_supervisor');
 const {inspectHost}=require('./experiment_hub_host');
 const {matchingLeaseBudget}=require('./experiment_hub_resources');
@@ -82,6 +83,12 @@ class LocalExecution {
                     throw Error('A locally installed project adapter is required for GPU qualification.');
                 if(!matchingLeaseBudget(job.resources,lease.resources))
                     throw Error('GPU access probe resource budget differs from its lease.');
+                if(!job.frozen_parameters||typeof job.frozen_parameters!=='object'||
+                    Array.isArray(job.frozen_parameters)||
+                    crypto.createHash('sha256')
+                        .update(JSON.stringify(job.frozen_parameters)).digest('hex')!==
+                            job.configuration_sha256)
+                    throw Error('GPU access probe frozen configuration fingerprint mismatch.');
                 if(typeof this.supervisor.qualifyGpuDeviceAccess!=='function'||
                     !this.supervisor.qualifiedAt||
                     job.status!=='waiting_adapter'||
@@ -96,12 +103,24 @@ class LocalExecution {
                         lease.gpu_bindings[0].id!==job.resources.gpus[0])||
                     lease.gpu_bindings[0].id!==lease.resources.gpus?.[0])
                     throw Error('GPU access probe requires a locally qualified, frozen exclusive Linux lease.');
+                // The bounded device-filter service verifies both allowed /
+                // denied render nodes and the actual installed HIP runtime.
+                // Read-only verifier construction must not create the
+                // trainer's output directory or start the training engine.
+                const runtime=gpuRuntimeProof(localAdapter,job.frozen_parameters,
+                    Object.freeze({
+                        job_id:job.id,project_id:job.project_id,
+                        artifact_lineage_root_id:job.artifact_lineage_root_id||job.id,
+                        continuation_of_job_id:job.continuation_of_job_id||null,
+                        gpu_pci_address:lease.gpu_bindings[0].pci_address,
+                    }));
                 const result=await this.supervisor.qualifyGpuDeviceAccess(
-                    lease.gpu_bindings);
+                    lease.gpu_bindings,{...runtime,ram_mb:job.resources.ram_mb});
                 if(!Array.isArray(result?.selected)||
                     result.selected.length!==1||
-                    result.selected[0]!==lease.gpu_bindings[0].pci_address)
-                    throw Error('GPU preflight returned a different physical device.');
+                    result.selected[0]!==lease.gpu_bindings[0].pci_address||
+                    result.runtime_pci_verified!==true)
+                    throw Error('GPU preflight did not verify the leased HIP runtime device.');
                 return {kind:'gpu_qualification',
                     job_id:job.id,lease_id:lease.id,
                     dispatch_id:order.dispatch_id,
