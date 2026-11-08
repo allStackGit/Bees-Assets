@@ -542,14 +542,15 @@ class LinuxSupervisor {
         catch(error){result={state:'unverified',active:false,
             diagnostic:String(error.message||error).slice(0,220)};}
         // The trainer owns checkpoint boundaries. Once a Stop is durable,
-        // deliver its fixed marker only while the exact service is running
-        // under verified native limits. Reconcile retries an interrupted
-        // delivery across agent/coordinator restarts, without re-signalling
-        // or relaunching the process.
+        // deliver its fixed marker only while the exact systemd unit is
+        // identified and running. A newly degraded kernel-limit observation
+        // must not strand a requested cooperative Stop; service identity and
+        // the configured CPU/RAM properties were still verified by inspectUnit.
+        // Reconcile can repeat delivery without re-signalling or relaunching.
         let markerIssue=null;
         if(record.stop_requested_at&&record.checkpoint_stop_file&&
             !record.quarantined_at&&result.active&&
-            result.kernel_limits_verified===true) {
+            result.unit_exists===true) {
             try {
                 this.fs.writeFileSync(record.checkpoint_stop_file,'',
                     {flag:'wx',mode:0o600});
