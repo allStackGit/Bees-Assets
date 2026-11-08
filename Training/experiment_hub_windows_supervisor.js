@@ -194,6 +194,8 @@ class WindowsSupervisor {
             reply.memory_limit_verified!==true||
             reply.job_process_assignment_verified!==true)
             throw Error('Windows Job Object CPU/RAM and suspended-assignment preflight failed.');
+        if(this.gpuEnabled&&reply.cuda_uuid_selection_supported!==true)
+            throw Error('Installed Windows native owner did not prove CUDA UUID selector propagation; rebuild and re-pin the current helper.');
         // The quota denominator must match the Windows kernel's active
         // processors across all groups. A .NET process-affinity count is
         // not sufficient for a system-wide Job Object CPU percentage.
