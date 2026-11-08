@@ -58,6 +58,8 @@ pub struct NativeAuthoredShip {
     /// opponents share the same turret/projectile physics as policy agents.
     pub game_turrets: Vec<NativeAuthoredTurret>,
     pub game_cease_fire: bool,
+    pub game_shooting_strategy: Option<u8>,
+    pub target_front_offset: Option<f32>,
     pub special: Option<NativeAuthoredShipSpecial>,
 }
 
@@ -83,6 +85,8 @@ pub struct NativeAuthoredPolicyCapabilities {
 pub struct NativeAuthoredTurret {
     pub slot: usize,
     pub spec: NativeTurretSpec,
+    /// None for a legacy snapshot without the original Aim target rule.
+    pub fire_at_front: Option<bool>,
 }
 
 /// A genuine Level/agent policy binding with its actual physical weapon
@@ -327,6 +331,9 @@ impl NativeSceneAssets {
                     combat.set_ship_fleet_identity(ship.entity_id, fleet_id)
                         .map_err(NativeSceneBuildError::Combat)?;
                 }
+                combat.configure_ship_front_aim_offset(
+                    ship.entity_id, ship.target_front_offset,
+                ).map_err(NativeSceneBuildError::Combat)?;
                 if ship.policy.is_some() && !ship.game_turrets.is_empty() {
                     return Err(NativeSceneBuildError::Combat(
                         bees_sim::combat_world::CombatWorldError::InvalidPolicyTurret
@@ -336,7 +343,8 @@ impl NativeSceneAssets {
                     for turret in ship.game_turrets {
                         combat.configure_game_turret(
                             ship.entity_id, turret.slot, turret.spec,
-                            ship.game_cease_fire,
+                            ship.game_cease_fire, ship.game_shooting_strategy,
+                            turret.fire_at_front,
                         ).map_err(NativeSceneBuildError::Combat)?;
                     }
                 }
