@@ -7,6 +7,7 @@
 
 use bees_hivemind::session::{HiveMindSession, SquadLifetime, StrategyReceipt};
 use bees_sim::combat_world::{CombatEvent, CombatWorld};
+use bees_sim::combat::HitEvent;
 use bees_sim::geometry::Vec2;
 use bees_sim::physics::CollisionMatrix;
 use bees_sim::navigation_runtime::NavigationRuntime;
@@ -94,6 +95,11 @@ pub enum NativeLevelNotificationKind {
     /// presentation/command adapter, kept across rollout windows until
     /// acknowledged. The Level never re-simulates these physical actions.
     Gameplay(CombatEvent),
+    /// Immutable source-attributed physical impact, delivered before any
+    /// same-tick command completion. The original OutcomeId remains valid
+    /// after a command is superseded; a consumer must not finalize its
+    /// StoreCommands reservation until delayed projectile credit is safe.
+    CombatHit(HitEvent),
     FinishedCommand(FinishedNativeCommand),
     /// A failed world has no trustworthy final TSV. HiveMind origins must
     /// discard/reconcile their reservations; local origins have none.
@@ -1089,9 +1095,13 @@ impl NativeLevelEventProcessor {
         let minion_count = events.iter().filter(|event|
             matches!(event, CombatEvent::ScoutBeaconDropped { .. })
         ).count();
+        let combat_hit_count = events.iter().filter(|event|
+            matches!(event, CombatEvent::Hit(_))
+        ).count();
         Self::reserve_output_records(
             &mut self.pending_notifications, &mut self.failed,
             capability_count.saturating_add(minion_count)
+                .saturating_add(combat_hit_count)
                 .saturating_add(self.timed_finished.len()),
         )?;
         // Source Mining.Mine mutates the actual rock and fleet before
@@ -1125,6 +1135,12 @@ impl NativeLevelEventProcessor {
                     kind: NativeLevelNotificationKind::SquadChange(change),
                 });
                 self.changes.push(change);
+            }
+            if let CombatEvent::Hit(hit) = event {
+                self.pending_notifications.push(NativeLevelNotification {
+                    tick: completed_tick,
+                    kind: NativeLevelNotificationKind::CombatHit(*hit),
+                });
             }
             if requires_level_capability_delivery(event) {
                 self.pending_notifications.push(NativeLevelNotification {
@@ -1276,9 +1292,13 @@ impl NativeLevelEventProcessor {
         let capability_notifications = world.events().iter()
             .filter(|event| requires_level_capability_delivery(event))
             .count();
+        let combat_hit_notifications = world.events().iter()
+            .filter(|event| matches!(event, CombatEvent::Hit(_)))
+            .count();
         let new_count = self.changes.len()
             .saturating_add(self.finished.len())
             .saturating_add(capability_notifications)
+            .saturating_add(combat_hit_notifications)
             .saturating_add(reward_count)
             .saturating_add(usize::from(reward.finalized.is_some()));
         // Only the notification outbox is mutated here: the reward and
@@ -1291,6 +1311,17 @@ impl NativeLevelEventProcessor {
                 tick: completed_tick,
                 kind: NativeLevelNotificationKind::SquadChange(change),
             });
+        }
+        // A hit that killed a squad must reach the authoritative account
+        // before that squad's command completion; also retain the original
+        // shooter OutcomeId even if its command was already superseded.
+        for event in world.events() {
+            if let CombatEvent::Hit(hit) = event {
+                self.pending_notifications.push(NativeLevelNotification {
+                    tick: completed_tick,
+                    kind: NativeLevelNotificationKind::CombatHit(*hit),
+                });
+            }
         }
         for finished in &self.finished {
             self.pending_notifications.push(NativeLevelNotification {
