@@ -130,14 +130,17 @@ the inference-only TorchScript/ONNX model manifest does not provide
 action log probabilities or a group critic. Loading a replacement model
 can temporarily require space for both the old and new weights.
 
-## Unity scene import (schema 16; schema 15 supported)
+## Unity scene import (schema 17; schemas 15 and 16 supported)
 
 **Bees > Native > Export Selected Level Physical Scene** captures a
 source-authored initial Unity Level, not a resumable match checkpoint.
-Schema 16 captures the active self-play episode, both team-specific
+Schema 16 and 17 capture the active self-play episode, both team-specific
 movement settings and registered Unity Agent instance group membership,
-including its exact currently bound ship (if any). Schema 15 remains
-readable as a legacy physical snapshot.
+including its exact currently bound ship (if any). Schema 17 additionally
+carries the actual game turning radius and sprite half-extents for mobile
+ships using user/ordinary game steering; the same CombatWorld controls their
+movement in both rendered and headless execution. Schemas 15 and 16 remain
+readable for policy inference, but do not invent missing game steering data.
 It records original ship/weapon, squad, obstacle, mining and destructible
 MapObject identities and live collider geometry, plus real policy
 controller/frame/capability inputs, episode starting TSV, discovery
