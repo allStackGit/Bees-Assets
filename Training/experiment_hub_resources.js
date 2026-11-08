@@ -202,6 +202,7 @@ function plan(machines,reservations,jobs) {
             machine_name:chosen?.machine_name||null,
             suggested_gpus:chosen?.suggested_gpus||[],
             capacity_fits:Boolean(chosen),online:Boolean(chosen?.online),
+            observed_headroom_block:chosen?.observed_headroom_block||null,
             executable:false,
             reason:chosen?(chosen.online
                 ?'Advisory only: no enforced reservation or adapter'
