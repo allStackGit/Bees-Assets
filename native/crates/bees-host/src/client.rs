@@ -208,7 +208,7 @@ impl NativeClient {
         let enemy_target = if !changed_world && !cancel_support &&
             right_down && !self.right_was_down
         {
-            mouse.and_then(|(x, y)| self.renderer.pick_enemy_squad(
+            mouse.and_then(|(x, y)| self.renderer.pick_enemy_ship(
                 &view,
                 self.renderer.camera.screen_to_world(x, y, width, height),
             ))
