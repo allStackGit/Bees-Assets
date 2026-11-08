@@ -78,7 +78,8 @@ impl FinalizedCommand {
     }
 }
 
-#[derive(Clone, Debug, Default, Serialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct OutcomeBatch {
     // This is only a duplicate-guard during preparation, not a wire row.
     #[serde(skip)]
@@ -89,8 +90,65 @@ pub struct OutcomeBatch {
     discarded: Vec<i64>,
 }
 
+/// The run/world/episode source position of a durably journaled settlement.
+/// It is not a server reservation or request hash. Persist this position with
+/// the StoreCommands retry payload so journal replay cannot double-credit
+/// an outcome after a server acknowledgement has retired its request.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct JournalOutcomeSource {
+    pub run_id: String,
+    pub world_id: u64,
+    pub episode_revision: u64,
+    pub event_sequence: u64,
+}
+
+#[derive(Clone, Debug)]
+pub struct RecordedOutcomeBatch {
+    pub source: JournalOutcomeSource,
+    pub batch: OutcomeBatch,
+}
+
 impl OutcomeBatch {
     pub fn new() -> Self { Self::default() }
+
+    /// A diagnostic journal serializes the source TSV rows, not the
+    /// transient duplicate guard. Restore that guard only after checking
+    /// every category, row ID, and mirrored discard marker. Corrupt or
+    /// altered journal batches must never become new server credit.
+    pub fn validate_journal(&mut self) -> Result<(), HiveMindProtocolError> {
+        let mut seen = HashSet::new();
+        let mut discards = HashSet::new();
+        for row in self.strategic.iter()
+            .chain(self.shooting.iter())
+            .chain(self.targeting.iter())
+        {
+            if row.outcome_id <= 0 {
+                return Err(HiveMindProtocolError::InvalidReservation);
+            }
+            if !seen.insert(row.outcome_id) {
+                return Err(HiveMindProtocolError::DuplicateReservation);
+            }
+            if row.discard_reservation {
+                if row.tsv != 0 || !self.strategic.iter().any(|candidate|
+                    std::ptr::eq(candidate, row)
+                ) {
+                    return Err(HiveMindProtocolError::InvalidReservation);
+                }
+                discards.insert(row.outcome_id);
+            }
+        }
+        let mut listed_discards = HashSet::new();
+        for &id in &self.discarded {
+            if id <= 0 || !listed_discards.insert(id) {
+                return Err(HiveMindProtocolError::InvalidReservation);
+            }
+        }
+        if discards != listed_discards || seen.is_empty() {
+            return Err(HiveMindProtocolError::InvalidReservation);
+        }
+        self.seen = seen;
+        Ok(())
+    }
 
     pub fn is_empty(&self) -> bool { self.seen.is_empty() }
 
