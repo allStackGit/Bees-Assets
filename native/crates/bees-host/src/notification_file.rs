@@ -27,6 +27,12 @@ pub struct NativeDiagnosticMeasurements {
     pub episodes_aborted: u64,
     pub episodes_timed_out: u64,
     pub draws: u64,
+    /// Attributed physical hits that have actually reached stable storage.
+    /// These remain diagnostics, never optimistic StoreCommands credits.
+    pub enemy_hits: u64,
+    pub friendly_hits: u64,
+    pub enemy_hit_tsv_loss: u64,
+    pub friendly_hit_tsv_loss: u64,
     /// Winner identities are canonical source side IDs, not model teams.
     pub victories_by_side: BTreeMap<i32, u64>,
     pub total_episode_seconds: f64,
@@ -68,6 +74,10 @@ impl NativeDiagnosticMeasurements {
             episodes_timed_out:
                 self.episodes_timed_out.checked_sub(previous.episodes_timed_out)?,
             draws: self.draws.checked_sub(previous.draws)?,
+            enemy_hits: self.enemy_hits.checked_sub(previous.enemy_hits)?,
+            friendly_hits: self.friendly_hits.checked_sub(previous.friendly_hits)?,
+            enemy_hit_tsv_loss: self.enemy_hit_tsv_loss.checked_sub(previous.enemy_hit_tsv_loss)?,
+            friendly_hit_tsv_loss: self.friendly_hit_tsv_loss.checked_sub(previous.friendly_hit_tsv_loss)?,
             victories_by_side,
             total_episode_seconds:
                 self.total_episode_seconds - previous.total_episode_seconds,
@@ -88,6 +98,17 @@ impl NativeDiagnosticMeasurements {
 
     fn record(&mut self, event: &NativeLevelNotification) {
         match &event.kind {
+            NativeLevelNotificationKind::CombatHit(hit) => {
+                let tsv = u64::try_from(hit.delta.tsv_loss)
+                    .expect("physical hit TSV loss cannot be negative");
+                if hit.attacker_side == hit.target_side {
+                    self.friendly_hits = self.friendly_hits.saturating_add(1);
+                    self.friendly_hit_tsv_loss = self.friendly_hit_tsv_loss.saturating_add(tsv);
+                } else {
+                    self.enemy_hits = self.enemy_hits.saturating_add(1);
+                    self.enemy_hit_tsv_loss = self.enemy_hit_tsv_loss.saturating_add(tsv);
+                }
+            }
             NativeLevelNotificationKind::EpisodeFinal(finalized) => {
                 self.episodes_finished = self.episodes_finished.saturating_add(1);
                 self.episodes_timed_out = self.episodes_timed_out
