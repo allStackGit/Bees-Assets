@@ -28,7 +28,8 @@ use crate::status::{NativeHostStatusInterval, NativeStatusSampler};
 use crate::presentation::NativeRenderWorldView;
 use bees_gameplay::player_inputs::{NativeLevelPlayerContext, NativePlayerMove,
     NativePlayerMovePlan, NativePlayerInputError, NativePlayerAuthority,
-    NativePlayerSquadMoves, NativePlayerMoveCounts};
+    NativePlayerSquadMoves, NativePlayerMoveCounts, NativePlayerStop,
+    NativePlayerSquadStops, NativePlayerStopPlan, NativePlayerStopCounts};
 
 #[derive(Debug)]
 pub enum HostPlayerInputError {
@@ -282,6 +283,54 @@ where
                     counts.accepted_squads += 1,
                 _ => counts.unavailable_squads += 1,
             }
+        }
+        Ok(counts)
+    }
+
+    /// Stop each selected, authorized source squad in selection order.
+    /// The source's StopMoving is distinct from the scripted AI Hold
+    /// command. No second movement controller or shadow command is created.
+    pub fn player_stop_squads(
+        &mut self, input: NativePlayerSquadStops,
+    ) -> Result<NativePlayerStopCounts, HostPlayerInputError>
+    where M: NativeLevelPlayerContext
+    {
+        let index = (0..self.simulation.world_count()).find(|&index|
+            self.simulation.world(index).is_some_and(|world| world.id == input.world_id))
+            .ok_or(HostPlayerInputError::Gameplay(NativePlayerInputError::StaleWorld))?;
+        let world = self.simulation.world(index).expect("located world");
+        if world.episode_revision() != input.episode_revision {
+            return Err(HostPlayerInputError::Gameplay(NativePlayerInputError::StaleWorld));
+        }
+        let mut counts = NativePlayerStopCounts::default();
+        let mut seen = std::collections::HashSet::with_capacity(input.squads.len());
+        let mut plans = Vec::with_capacity(input.squads.len());
+        for owner in input.squads {
+            if !seen.insert(owner) { continue; }
+            let Some(selected_ship) = world.state.events.roster().get(owner)
+                .and_then(|squad| squad.members.first()).copied() else {
+                counts.rejected_squads += 1;
+                continue;
+            };
+            match NativePlayerStopPlan::prepare(world, NativePlayerStop {
+                world_id: input.world_id,
+                episode_revision: input.episode_revision,
+                selected_ship,
+            }) {
+                Ok(plan) => plans.push(plan),
+                Err(error) if error.is_rejection() => counts.rejected_squads += 1,
+                Err(error) => return Err(HostPlayerInputError::Gameplay(error)),
+            }
+        }
+        if plans.is_empty() { return Ok(counts); }
+        self.driver.invalidate_environment(index)
+            .map_err(HostPlayerInputError::Driver)?;
+        for plan in plans {
+            self.connection.retire_player_requests(plan.owner())
+                .map_err(HostPlayerInputError::Connection)?;
+            plan.execute(self.simulation.world_mut(index).expect("located world"))
+                .map_err(HostPlayerInputError::Gameplay)?;
+            counts.accepted_squads += 1;
         }
         Ok(counts)
     }
