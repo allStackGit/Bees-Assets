@@ -190,8 +190,10 @@ function differences(groups) {
     return out;
 }
 
-// A threshold is observed at discrete evaluation boundaries. Below-threshold
-// and unevaluated runs are explicitly censored, never assigned zero or infinity.
+// A threshold is observed only at evaluated checkpoints. Track each
+// independent run's latest observed boundary even when it never qualifies.
+// The median below is conditional on reaching the threshold, not a
+// survival-adjusted time-to-success estimate across censored replicates.
 function sampleEfficiency(groups, threshold = 0.5) {
     if (typeof threshold !== 'number' || !Number.isFinite(threshold) ||
         threshold < 0 || threshold > 1) throw Error('Threshold must be 0–1.');
@@ -201,18 +203,33 @@ function sampleEfficiency(groups, threshold = 0.5) {
             continue;
         const key = JSON.stringify([group.comparison_group, group.study_id,
             group.condition_id, group.benchmark_identity, group.scenario]);
-        if (!grouped.has(key)) grouped.set(key, { template: group, runs: new Map() });
+        if (!grouped.has(key))
+            grouped.set(key, { template: group, runs: new Map() });
         const bucket = grouped.get(key);
         for (const run of group.runs) {
-            const earlier = bucket.runs.get(run.run_id);
+            if (typeof run.run_id !== 'string' || !run.run_id ||
+                !Number.isFinite(run.win_rate))
+                continue;
+            const evaluated = Number.isSafeInteger(run.actual_step) && run.actual_step >= 0
+                ? run.actual_step : group.target_step;
+            const record = bucket.runs.get(run.run_id) || {
+                last_evaluated_step: null, first_reached_step: null,
+            };
+            record.last_evaluated_step = Math.max(
+                record.last_evaluated_step ?? 0, evaluated);
             if (run.win_rate >= threshold &&
-                (!earlier || group.target_step < earlier)) {
-                bucket.runs.set(run.run_id, group.target_step);
-            }
+                (record.first_reached_step === null ||
+                    evaluated < record.first_reached_step))
+                record.first_reached_step = evaluated;
+            bucket.runs.set(run.run_id, record);
         }
     }
     return [...grouped.values()].map(({template, runs}) => {
-        const reachedSteps = [...runs.values()].sort((a,b)=>a-b);
+        const observations = [...runs.values()];
+        const reachedSteps = observations.filter(r=>r.first_reached_step!==null)
+            .map(r=>r.first_reached_step).sort((a,b)=>a-b);
+        const censoredSteps = observations.filter(r=>r.first_reached_step===null)
+            .map(r=>r.last_evaluated_step).sort((a,b)=>a-b);
         const median = !reachedSteps.length ? null :
             reachedSteps.length % 2
                 ? reachedSteps[(reachedSteps.length - 1) / 2]
@@ -224,10 +241,15 @@ function sampleEfficiency(groups, threshold = 0.5) {
             condition_id: template.condition_id, beta: template.beta,
             scenario: template.scenario, benchmark_identity: template.benchmark_identity,
             threshold, expected_replicates: template.expected_replicates,
+            observed_runs: observations.length,
             reached_runs: reachedSteps.length,
+            censored_runs: censoredSteps.length,
+            planned_unevaluated_replicates: Math.max(0,
+                template.expected_replicates-observations.length),
             earliest_evaluated_steps: reachedSteps,
+            censored_last_evaluated_steps: censoredSteps,
             median_first_observed_step: median,
-            interpretation: 'First qualifying evaluated checkpoint; not an exact mastery step',
+            interpretation: 'Conditional median among reached runs only; unreached evaluated runs are right-censored at their latest evaluation, and unevaluated planned replicates are separate.',
         };
     });
 }
