@@ -10,6 +10,7 @@ const crypto=require('node:crypto');
 const {inspectHost}=require('./experiment_hub_host');
 const {discoverAmdGpus}=require('./experiment_hub_gpu_inventory');
 const {fromEnvironment}=require('./experiment_hub_execution');
+const {request: resourceRequest}=require('./experiment_hub_resources');
 
 const ID = /^[a-z][a-z0-9_-]{0,47}$/;
 const TOKEN = /^[0-9a-f]{64}$/;
@@ -58,6 +59,10 @@ function observedOffers(offers,observation) {
             !Number.isSafeInteger(r.cpus) || r.cpus<1 ||
             !Number.isSafeInteger(r.ram_mb) || r.ram_mb<1)
             throw Error('Invalid coordination lease offer.');
+        // A malformed persisted GPU intent is not a CPU-only claim,
+        // even when its advertised GPU count is zero.
+        try{resourceRequest(r);}
+        catch{throw Error('Invalid coordination lease resource budget.');}
         ids.add(offer.id);
         claimedCpus+=r.cpus;
         claimedRam+=r.ram_mb;
