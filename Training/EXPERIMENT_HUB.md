@@ -2074,11 +2074,17 @@ durable checkpoint rounds, generation, and active training time. Set a
 CPU/RAM claim appropriate for the worker count and checkpoint workload.
 The trainer's own loopback dashboard uses an OS-assigned port.
 
-Linux requests a checkpoint-aware interrupt. Newly launched Courier jobs on
-Windows use a local checkpoint Stop request. The trainer saves its final
-checkpoint and exits, and the Hub waits for the signed Job Object receipt
-before releasing capacity. A pending request holds capacity while the
-trainer is still active. Older Windows launches use Job Object termination.
+New Courier jobs on **Windows and Linux** use the local
+`hub-stop.request` checkpoint Stop marker through the existing trusted
+Courier wrapper. The wrapper dispatches the trainer's SIGINT handler after
+it is installed, letting Courier save its final checkpoint and exit normally.
+The Hub requires the exact native terminal evidence (a signed Windows
+Job Object receipt or a Linux systemd terminal receipt) and a verified
+resumable checkpoint before releasing capacity for continuation. A pending
+request holds capacity while training is active or the final state remains
+uncertain. Previously launched Linux services without a persisted marker
+keep their systemd interrupt Stop; older Windows launches without a marker
+retain Job Object termination.
 For checkpoint continuation, select a naturally finished predecessor
 with released capacity, or queue a checkpoint pipeline in Train. You
 can also select a Courier job that saved on Stop and released capacity.
