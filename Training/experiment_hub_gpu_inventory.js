@@ -4,6 +4,7 @@
 // not GPU partitioning, kernel device isolation, ROCm readiness, or free VRAM.
 const fs=require('node:fs');
 const path=require('node:path');
+const {spawnSync}=require('node:child_process');
 const PCI=/^[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]$/;
 const CARD=/^card[0-9]{1,3}$/;
 const MAX_DEVICES=32;
@@ -69,4 +70,38 @@ function discoverAmdGpus(options={}) {
     }
     return result;
 }
-module.exports={discoverAmdGpus};
+
+const CUDA_UUID=/^GPU-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+// Read-only physical NVIDIA inventory. CUDA visibility is cooperative;
+// GPU isolation and VRAM/compute quotas are not enforced by this probe.
+function discoverNvidiaGpus(options={}) {
+    const run=options.run||spawnSync;
+    const result=run('nvidia-smi',[
+        '--query-gpu=pci.bus_id,memory.total,uuid',
+        '--format=csv,noheader,nounits',
+    ],{encoding:'utf8',windowsHide:true,timeout:5000,maxBuffer:8192});
+    if(result.error?.code==='ENOENT')return [];
+    if(result.error||result.status!==0)
+        throw Error('NVIDIA GPU inventory unavailable: '+
+            String(result.error?.message||result.stderr||'nvidia-smi failed').trim().slice(0,160));
+    const rows=String(result.stdout||'').trim().split(/\r?\n/).filter(Boolean);
+    if(rows.length>MAX_DEVICES)throw Error('Too many NVIDIA GPUs for the Hub protocol.');
+    const seenPci=new Set(),seenUuid=new Set(),devices=[];
+    for(const row of rows) {
+        const columns=row.split(',').map(v=>v.trim());
+        if(columns.length!==3)throw Error('Invalid NVIDIA GPU inventory row.');
+        let pci=columns[0].toLowerCase();
+        if(/^0000[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]$/.test(pci))
+            pci=pci.slice(4);
+        const memory=Number(columns[1]),uuid=columns[2];
+        if(!PCI.test(pci)||!Number.isSafeInteger(memory)||
+            memory<1||memory>1000000||!CUDA_UUID.test(uuid)||
+            seenPci.has(pci)||seenUuid.has(uuid.toLowerCase()))
+            throw Error('Invalid or duplicate physical NVIDIA GPU identity.');
+        seenPci.add(pci);seenUuid.add(uuid.toLowerCase());
+        devices.push({pci_address:pci,vram_mb:memory,cuda_uuid:uuid});
+    }
+    return devices;
+}
+module.exports={discoverAmdGpus,discoverNvidiaGpus};
+
