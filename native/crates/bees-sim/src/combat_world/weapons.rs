@@ -167,10 +167,14 @@ pub(super) struct PolicyTurretMount {
     /// Unity BeamCannon.IsFiringLaserBeam is set on its single active beam.
     /// Cleared by the canonical CombatWorld::end_projectile on any kill path.
     pub(super) active_beam_projectile_id: Option<i64>,
+    /// Real ordinary weapon's selected TargetShip. Neural mounts do not
+    /// use this field and keep policy point-fire independent.
+    pub(super) target_ship_id: Option<i64>,
+    pub(super) fire_at_front: Option<bool>,
 }
 
 impl PolicyTurretMount {
-    fn new(spec: NativeTurretSpec) -> Self {
+    fn new(spec: NativeTurretSpec, fire_at_front: Option<bool>) -> Self {
         Self {
             state: TurretState::new(
                 spec.initial_rotation_degrees, spec.rotation_rate,
@@ -178,6 +182,8 @@ impl PolicyTurretMount {
             timer: ScaledTimer::new(spec.rate_of_fire / 3.0, true, false),
             charge_elapsed_seconds: None,
             active_beam_projectile_id: None,
+            target_ship_id: None,
+            fire_at_front,
             spec,
         }
     }
@@ -230,6 +236,12 @@ pub(super) struct GameTurretRuntime {
     /// Unity's manual point-fire state, not an autonomous target selection.
     /// None means no current manual fire input.
     pub(super) manual_target: Option<Vec2>,
+    pub(super) shooting_strategy: Option<u8>,
+    /// Source Ship.IsUserControlled OR Squad.HasCommand at the current
+    /// authoritative Level state. The Level updates the AI command flag.
+    pub(super) ai_order_active: bool,
+    /// Original RangeCollider enter order per physical weapon slot.
+    pub(super) nearby_enemy_ids: [Vec<i64>; 5],
 }
 
 impl CombatWorld {
@@ -237,10 +249,14 @@ impl CombatWorld {
     /// merely to make the native client able to launch a projectile.
     pub fn configure_game_turret(
         &mut self, ship_id: i64, slot: usize, spec: NativeTurretSpec,
-        cease_fire: bool,
+        cease_fire: bool, shooting_strategy: Option<u8>,
+        fire_at_front: Option<bool>,
     ) -> Result<(), CombatWorldError> {
         if slot >= 5 { return Err(CombatWorldError::InvalidPolicyTurret); }
         spec.valid(&self.projectile_assets)?;
+        if shooting_strategy.is_some_and(|value| !(1..=40).contains(&value)) {
+            return Err(CombatWorldError::InvalidPolicyTurret);
+        }
         let index = *self.ship_by_id.get(&ship_id)
             .ok_or(CombatWorldError::UnknownShip)?;
         if !self.physics.ships()[index].active ||
@@ -257,11 +273,17 @@ impl CombatWorld {
             .or_insert_with(|| GameTurretRuntime {
                 turrets: [None; 5], last_hull_rotation: rotation,
                 cease_fire, manual_target: None,
+                shooting_strategy, ai_order_active: false,
+                nearby_enemy_ids: std::array::from_fn(|_| Vec::new()),
             });
-        if runtime.cease_fire != cease_fire || runtime.turrets[slot].is_some() {
+        if runtime.cease_fire != cease_fire ||
+            runtime.shooting_strategy != shooting_strategy ||
+            runtime.turrets[slot].is_some()
+        {
             return Err(CombatWorldError::DuplicatePolicyTurret { ship_id, slot });
         }
-        runtime.turrets[slot] = Some(PolicyTurretMount::new(spec));
+        runtime.turrets[slot] =
+            Some(PolicyTurretMount::new(spec, fire_at_front));
         Ok(())
     }
 
@@ -352,7 +374,7 @@ impl CombatWorld {
         runtime.control.bind_turret_aim(
             slot, Vec2::new(-radians.sin(), radians.cos()),
         );
-        runtime.turrets[slot] = Some(PolicyTurretMount::new(spec));
+        runtime.turrets[slot] = Some(PolicyTurretMount::new(spec, None));
         Ok(())
     }
 
