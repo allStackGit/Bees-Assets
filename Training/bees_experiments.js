@@ -616,8 +616,8 @@ function measure(item, status, force = false, boundary = '', deferArchive = fals
         x.build_id === desired.canonical_build_id &&
         x.metrics && Number(x.metrics.window_episodes) > 0);
     // Cross-worker ratios must use their actual event denominators.
-    // An older worker without the necessary counts is omitted rather than
-    // allowing a per-episode weight to bias per-shot or per-aim metrics.
+    // If a reporting worker lacks a required denominator, leave this
+    // aggregate unavailable instead of silently scoring only newer workers.
     const denominatorByMetric = {
         bee_hits_per_shot: 'bee_shots',
         human_hits_per_shot: 'human_shots',
@@ -630,6 +630,9 @@ function measure(item, status, force = false, boundary = '', deferArchive = fals
         let count = 0, total = 0;
         for (const w of workers) {
             const denominator = denominatorByMetric[key] || 'window_episodes';
+            if (w.metrics[key] != null && denominatorByMetric[key] &&
+                (!Number.isSafeInteger(w.metrics[denominator]) ||
+                    w.metrics[denominator] < 0)) return null;
             const n = Number(w.metrics[denominator]), v = Number(w.metrics[key]);
             if (Number.isFinite(n) && n > 0 &&
                 w.metrics[key] != null && Number.isFinite(v)) {
