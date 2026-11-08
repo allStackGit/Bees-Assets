@@ -278,7 +278,8 @@ where
                 .map_err(HostPlayerInputError::Gameplay)? {
                 bees_gameplay::player_inputs::NativePlayerCommandOutcome::Command(
                     bees_gameplay::commands::Activation::Applied { .. }) |
-                bees_gameplay::player_inputs::NativePlayerCommandOutcome::Move { reachable: true } =>
+                bees_gameplay::player_inputs::NativePlayerCommandOutcome::Move { reachable: true } |
+                bees_gameplay::player_inputs::NativePlayerCommandOutcome::StopChasing { .. } =>
                     counts.accepted_squads += 1,
                 _ => counts.unavailable_squads += 1,
             }
