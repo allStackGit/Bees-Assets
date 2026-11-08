@@ -863,34 +863,10 @@ where
         state.metadata.update_observation_memory(
             &state.combat, state.events.normalized_episode_progress(),
         )?;
-        // Account only authoritative, already-delivered physical outcomes.
-        // Scan the final source event slice once: scripted contact/timer
-        // callbacks can emit Hits after the initial combat physics pass.
-        // No separate per-shot or per-command history is maintained here.
-        for event in state.combat.events() {
-            match event {
-                CombatEvent::Hit(hit) => {
-                    let tsv = u64::try_from(hit.delta.tsv_loss)
-                        .expect("physical hit TSV loss cannot be negative");
-                    if hit.attacker_side == hit.target_side {
-                        counts.friendly_hits += 1;
-                        counts.friendly_hit_tsv_loss += tsv;
-                    } else {
-                        counts.enemy_hits += 1;
-                        counts.enemy_hit_tsv_loss += tsv;
-                    }
-                }
-                CombatEvent::ProjectileRootCompleted(outcome) => {
-                    counts.policy_roots_completed += 1;
-                    if outcome.enemy_contact {
-                        counts.policy_roots_contacted += 1;
-                    } else if outcome.near_enemy {
-                        counts.policy_roots_near_missed += 1;
-                    }
-                }
-                _ => {}
-            }
-        }
+        // Count final physical outcomes once after scripted contact/timer
+        // callbacks, using the same combat-world definition as the standalone
+        // game/physics driver. No separate Level hit ledger is kept here.
+        CombatWorld::count_step_outcomes(state.combat.events(), &mut counts);
         // Contact/timer callbacks can detonate a ship or spawn a Beacon after
         // the core physical transaction. Report the final same-tick state.
         // Quiet ticks reuse the core counts without another world scan.
