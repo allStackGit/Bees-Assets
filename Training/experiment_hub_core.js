@@ -2569,6 +2569,11 @@ class ExperimentHub {
         if(value.request_execution_orders!==undefined&&
             typeof value.request_execution_orders!=='boolean')
             throw Error('Invalid native instruction request preference.');
+        if(value.close_agent_session!==undefined&&
+            typeof value.close_agent_session!=='boolean')
+            throw Error('Invalid agent session closure request.');
+        if(value.close_agent_session===true&&value.request_execution_orders!==false)
+            throw Error('Agent may sign off only with native instruction delivery disabled.');
         const machine=this.authenticateAgent(value.machine_id,token);
         const report = boundedReport(value);
         const received = Date.now();
@@ -2726,7 +2731,7 @@ class ExperimentHub {
         }
         if(changedHistory||terminalHistory)
             this.progressHistory.persist(received,terminalHistory);
-        if(value.request_execution_orders===false) {
+        if(value.close_agent_session===true) {
             // The final report of a --once agent closes its native session.
             // It has no further instruction loop. Do not leave a fictitious
             // connected worker, a fresh execution lease receipt or an agent
@@ -2738,6 +2743,9 @@ class ExperimentHub {
                 heartbeat_ttl_seconds:Math.floor(AGENT_HEARTBEAT_TTL_MS/1000),
                 lease_offers:[],execution_orders:[]};
         }
+        // An agent awaiting a slow native Start/Stop/probe can renew
+        // authenticated liveness without receiving a second instruction.
+        // This does not close the session or release native ownership.
         return {machine_id:machine.id,status:'connected',
             heartbeat_ttl_seconds:Math.floor(AGENT_HEARTBEAT_TTL_MS/1000),
             lease_offers:this.state.reservations.filter(x=>
@@ -2749,7 +2757,8 @@ class ExperimentHub {
                 // a process launch token. The agent checks it against sysfs.
                 gpu_bindings:physicalGpuBindings(machine,report,x.resources,x.gpu_bindings)||[],
             })),
-            execution_orders:this.executionOrders(machine.id)};
+            execution_orders:value.request_execution_orders===false
+                ?[]:this.executionOrders(machine.id)};
     }
     project(id) {
         const project = this.state.projects.find(p=>p.id===id);
