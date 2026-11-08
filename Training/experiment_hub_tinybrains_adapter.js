@@ -24,16 +24,36 @@ function tinyBrainsProfiles(value) {
     return Object.fromEntries(Object.entries(value));
 }
 
+function tinyBrainsImports(value) {
+    if(!value||typeof value!=='object'||Array.isArray(value)||
+        Object.keys(value).length>MAX_PROFILES||
+        Object.entries(value).some(([id,pin])=>
+            !PROFILE.test(id)||!pin||typeof pin!=='object'||Array.isArray(pin)||
+            Object.keys(pin).some(key=>!['profile','sha256'].includes(key))||
+            !PROFILE.test(String(pin.profile||''))||
+            !SHA256.test(String(pin.sha256||''))))
+        throw Error('Invalid TinyBrains trusted checkpoint import advertisement.');
+    return Object.fromEntries(Object.entries(value).map(([id,pin])=>[id,{...pin}]));
+}
+
 function supportsTinyBrainsProfile(machine,job) {
     if(job.project_id!=='tinybrains')return true;
     const p=job.frozen_parameters;
     const profiles=machine.tinybrains_profiles;
     const cuda=machine.tinybrains_cuda_profiles?.includes(p?.profile)===true;
     const gpu=job.resources?.gpu_count===1&&job.resources.gpu_mode==='exclusive';
+    const imported=p?.import_checkpoint==null?null:
+        machine.tinybrains_imports?.[p.import_checkpoint];
     return ['win32','linux'].includes(machine.agent_platform)&&
         (cuda?gpu:job.resources?.gpu_count===0)&&
         p&&Object.keys(p).every(key=>
-            ['profile','profile_sha256','updates','import_checkpoint'].includes(key))&&
+            ['profile','profile_sha256','updates','import_checkpoint',
+                'import_checkpoint_sha256'].includes(key))&&
+        (p.import_checkpoint==null
+            ?p.import_checkpoint_sha256==null
+            :typeof p.import_checkpoint==='string'&&
+                p.import_checkpoint_sha256===imported?.sha256&&
+                imported?.profile===p.profile)&&
         Number.isSafeInteger(p.updates)&&p.updates>=1&&p.updates<=10000000&&
         typeof p.profile==='string'&&profiles&&Object.hasOwn(profiles,p.profile)&&
         profiles[p.profile]===p.profile_sha256;
@@ -175,12 +195,16 @@ function createTinyBrainsAdapter({projectRoot,pythonPath,artifactRoot,profiles,
         ...evaluationReader('tinybrains',evaluationRoot,evaluationSuites,[project,artifacts]),
         tinybrains_profiles:Object.fromEntries([...configs].map(([id,item])=>[id,item.sha256])),
         tinybrains_cuda_profiles:[...configs].filter(([,item])=>item.device==='cuda').map(([id])=>id),
+        tinybrains_imports:Object.fromEntries([...imports].map(([id,item])=>
+            [id,{profile:item.profile,sha256:item.sha256}])),
         gpu_execution:[...configs].some(([,item])=>item.device==='cuda')?'cuda':null,
         args(parameters,context) {
-            const {profile,profile_sha256,updates,import_checkpoint}=parameters;
+            const {profile,profile_sha256,updates,import_checkpoint,
+                import_checkpoint_sha256}=parameters;
             const approved=configs.get(profile);
             if(Object.keys(parameters).some(key=>
-                !['profile','profile_sha256','updates','import_checkpoint'].includes(key))||
+                !['profile','profile_sha256','updates','import_checkpoint',
+                    'import_checkpoint_sha256'].includes(key))||
                 !approved||approved.sha256!==profile_sha256||
                 !Number.isSafeInteger(updates)||updates<1||updates>10000000)
                 throw Error('TinyBrains jobs require an approved profile, its SHA-256 and 1–10,000,000 updates.');
@@ -188,10 +212,12 @@ function createTinyBrainsAdapter({projectRoot,pythonPath,artifactRoot,profiles,
                 ?!context.gpu_pci_address||!CUDA_UUID.test(String(context.gpu_cuda_uuid||''))
                 :Boolean(context.gpu_pci_address||context.gpu_cuda_uuid))
                 throw Error('TinyBrains CPU/CUDA profile does not match the locally bound native device.');
-            if(import_checkpoint!==undefined&&
-                (context.continuation_of_job_id||!PROFILE.test(String(import_checkpoint))||
-                    imports.get(import_checkpoint)?.profile!==profile))
-                throw Error('A new TinyBrains lineage may import only its locally approved profile checkpoint.');
+            if(import_checkpoint!==undefined
+                ?context.continuation_of_job_id||!PROFILE.test(String(import_checkpoint))||
+                    imports.get(import_checkpoint)?.profile!==profile||
+                    imports.get(import_checkpoint)?.sha256!==import_checkpoint_sha256
+                :import_checkpoint_sha256!==undefined)
+                throw Error('A new TinyBrains lineage may import only a pinned approved optimizer checkpoint.');
             const out=jobRoot(context);
             let resume=[];
             if(context.continuation_of_job_id) {
@@ -264,4 +290,4 @@ function createTinyBrainsAdapter({projectRoot,pythonPath,artifactRoot,profiles,
         },
     };
 }
-module.exports={createTinyBrainsAdapter,tinyBrainsProfiles,supportsTinyBrainsProfile};
+module.exports={createTinyBrainsAdapter,tinyBrainsProfiles,tinyBrainsImports,supportsTinyBrainsProfile};
