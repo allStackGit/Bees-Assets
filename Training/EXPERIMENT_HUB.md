@@ -1099,7 +1099,7 @@ currently used VRAM MiB. Missing drivers, missing VRAM counters and
 disappearing devices are treated as **unavailable**, not inferred from
 model names or manually registered nominal capacity. PCI slot addresses
 are stable labels only while the machine's hardware topology remains
-unchanged; they are not permanent GPU serial numbers. Windows agents independently discover NVIDIA PCI addresses, physical VRAM and CUDA UUIDs using read-only `nvidia-smi`. Unavailable driver telemetry leaves CUDA GPUs unclaimable without disabling CPU heartbeats.
+unchanged; they are not permanent GPU serial numbers. Windows agents independently discover NVIDIA PCI addresses, total/used VRAM and CUDA UUIDs using read-only `nvidia-smi`. Missing used-VRAM counters remain unknown; unavailable or malformed driver telemetry leaves CUDA GPUs unclaimable without disabling CPU heartbeats. Observed used VRAM is not a safe per-job free-space guarantee and does not enforce a reservation.
 
 Registration may include a GPU's \`pci_address\`, for example:
 
