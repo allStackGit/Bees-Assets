@@ -56,12 +56,14 @@ impl NativeMatchupCandidate {
     pub fn valid(&self) -> bool {
         self.owner.valid() &&
         self.largest_last_killed.is_finite() && self.largest_last_killed >= 0.0 &&
-        self.fleet_damage_done.is_finite() && self.fleet_damage_done >= 0.0 &&
+        // FleetShip.DamageDone is an unchecked C# int and can wrap negative.
+        // Keep the source's signed ranking rather than banning that state.
+        self.fleet_damage_done.is_finite() &&
         self.health.is_finite() && self.health >= 0.0 &&
         self.firepower.is_finite() && self.firepower >= 0.0 &&
         self.max_range >= 0 &&
         self.speed.is_finite() && self.speed >= 0.0 &&
-        self.tsv.is_finite() && self.tsv >= 0.0 &&
+        self.tsv.is_finite() &&
         self.distance_to_own_center.is_finite() &&
         self.distance_to_own_center >= 0.0
     }
@@ -105,7 +107,7 @@ pub fn select_matchup_squad(
             candidate_level = Some(item.owner.level_id);
         }
     }
-    if first_allied_target.is_some_and(|owner|
+    if strategy.id == 15 && first_allied_target.is_some_and(|owner|
         !owner.valid() || candidate_level.is_some_and(|id| owner.level_id != id)
     ) {
         return Err(MatchupSelectionError::InvalidPrioritizedSquad);
@@ -278,7 +280,7 @@ pub fn select_live_matchup_squad(
     scratch.clear();
     let acting = roster.get(owner).ok_or(LiveMatchupResolutionError::MissingOwner)?;
     let own_center = live_squad_bounds_from_catalog(world, acting, catalog)?.center;
-    if let Some(target) = first_allied_target {
+    if let Some(target) = first_allied_target.filter(|_| strategy.id == 15) {
         let valid = roster.get(target).is_some_and(|enemy|
             target.level_id == owner.level_id &&
             enemy.side != acting.side &&
