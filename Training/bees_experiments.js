@@ -595,7 +595,17 @@ function observeWorkerEnvironmentCounts(item, status, step, trainingS, atMs = Da
     return changed;
 }
 
-function measure(item, status, force = false, boundary = '') {
+function archiveMeasurement(item) {
+    try {
+        appendMetricSample(DATA_ROOT, item);
+        delete item.metric_archive_error;
+    } catch (error) {
+        // An archive failure must remain visible without stopping training.
+        item.metric_archive_error = error.message;
+    }
+}
+
+function measure(item, status, force = false, boundary = '', deferArchive = false) {
     const learner = getAuthoritativeLearnerStats(item.run_id) || {};
     // Only score workers that have applied the current run revision. Heartbeats
     // from the outgoing run may remain live briefly during a release cutover.
@@ -680,14 +690,7 @@ function measure(item, status, force = false, boundary = '') {
             ...(running ? { pipeline, ppo } : {}),
         };
         samples.push(observation);
-        try {
-            appendMetricSample(DATA_ROOT, item);
-            delete item.metric_archive_error;
-        } catch (error) {
-            // A measurement-storage failure must be visible but must not
-            // terminate an otherwise healthy distributed training run.
-            item.metric_archive_error = error.message;
-        }
+        if (!deferArchive) archiveMeasurement(item);
         delete item.awaiting_resume_sample_step;
         const stage = stageFor(item);
         const windowTimeout = mean('timeout_pct');
@@ -712,6 +715,7 @@ function measure(item, status, force = false, boundary = '') {
         // This much larger fixed cap keeps weeks of data per experiment
         // without exponential loss of historical resolution.
         if (samples.length > 20000) samples.shift();
+        return true;
     }
 }
 
@@ -1732,12 +1736,18 @@ async function monitor() {
         blocked(item, 'Training was changed outside the experiment manager; queue paused.');
         return;
     }
-    measure(item, status);
     let configurationError = '';
     if (item.trainer_config) {
         try { await verifyEffectiveConfiguration(item); }
         catch (error) { configurationError = error.message; item.error = error.message; state.armed = false; }
     }
+    // A scheduled boundary may immediately label this same observation.
+    // Archive it once, after the final label is known, not midway through
+    // the coordinator's decision about this control poll.
+    const collected = measure(item, status, false, '', true) === true;
+    const archiveCollected = additional => {
+        if (collected || additional) archiveMeasurement(item);
+    };
     const elapsed = Date.now() - Date.parse(item.started_at) - (item.paused_ms || 0);
     const stagnant = Date.now() - Date.parse(item.last_progress);
     const reason = configurationError ? 'configuration_mismatch' : state.stop_requested ? 'manual' :
@@ -1745,6 +1755,7 @@ async function monitor() {
         item.max_minutes != null && elapsed >= item.max_minutes * 60000 ? 'time_limit' :
         item.stall_minutes != null && stagnant >= item.stall_minutes * 60000 ? 'no_progress' : '';
     if (reason) {
+        archiveCollected(false);
         item.status = 'stopping';
         item.end_reason = reason;
         state.message = 'Safely stopping ' + item.name + ' (' + reason + ')';
@@ -1755,15 +1766,18 @@ async function monitor() {
         // The ordinary minute cadence often misses the last training window
         // when a long benchmark evaluation begins. Capture it while the
         // learner is still running, before changing the item to transitioning.
-        measure(item, status, true, stageSuiteAtBoundary(item) || periodicEvaluationDue(item)
-            ? 'pre-evaluation' : 'pre-transition');
+        const boundarySample = measure(item, status, true,
+            stageSuiteAtBoundary(item) || periodicEvaluationDue(item)
+                ? 'pre-evaluation' : 'pre-transition', true) === true;
+        archiveCollected(boundarySample);
         item.status = 'transitioning';
         item.stage_transition_at = now();
         state.message = 'Switching ' + item.name + ' to ' + item.stages[item.stage_index + 1].name;
         save();
         await transitionStage(item, status);
     } else if (periodicEvaluationDue(item)) {
-        measure(item, status, true, 'pre-evaluation');
+        const boundarySample = measure(item, status, true, 'pre-evaluation', true) === true;
+        archiveCollected(boundarySample);
         item.status = 'checkpointing';
         item.checkpoint_active_ordinal = item.checkpoint_next_index || 1;
         state.message = 'Evaluating ' + item.name + ' at ' +
@@ -1771,11 +1785,14 @@ async function monitor() {
             ' learner steps, without changing the curriculum stage.';
         save();
         await checkpointPeriodic(item, status);
-    } else if (Date.now() - lastRoutineSaveMs >= 30000) {
+    } else {
+        archiveCollected(false);
+        if (Date.now() - lastRoutineSaveMs >= 30000) {
         // A 10-second threshold observation should not triple full-history
         // JSON rewrites. Retain the previous ~30-second durable snapshot cadence.
         save();
         lastRoutineSaveMs = Date.now();
+        }
     }
 }
 
