@@ -962,7 +962,7 @@ impl NativePhysicalScene {
             // Old exports remain inference-compatible but cannot acquire
             // invented game controls from collider dimensions.
             let game_movement = if raw.schema_version >= 17 &&
-                ship.mobile && !ship.is_rl_policy_controlled
+                ship.mobile && (!ship.is_rl_policy_controlled || ship.user_controlled)
             {
                 let profile = GameMovementProfile {
                     turning_radius: ship.game_turning_radius
