@@ -133,7 +133,14 @@ function placements(machines,reservations,input) {
         const capacityFits=wanted.cpus<=available.cpus&&
             wanted.ram_mb<=available.ram_mb&&selected.length===wanted.gpu_count;
         const online=machine.status==='connected';
+        const gpuDevice=selected.length===1
+            ?machine.verified_gpus?.find(g=>g.id===selected[0].id):null;
+        // A placement may be sensible for future work even when the
+        // current host cannot safely launch it. Keep those distinct.
+        const observed_headroom_block=online
+            ?startHeadroom(wanted,machine.reported_available_ram_mb,gpuDevice):null;
         return {machine_id:machine.id,machine_name:machine.name,online,available,
+            observed_headroom_block,
             // Heartbeats authenticate a reporting process, not reservation
             // enforcement. No job is executable through this planner yet.
             fits:false,capacity_fits:capacityFits,
