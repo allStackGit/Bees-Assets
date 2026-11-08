@@ -145,6 +145,7 @@ pub fn native_squad_order_from_catalog<'a>(
         });
     }
     let order = NativeSquadOrder {
+        targeting: squad.targeting,
         owner: squad.owner,
         members: members.as_slice(),
         squad_center: geometry.center,

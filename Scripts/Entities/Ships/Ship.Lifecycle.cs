@@ -84,7 +84,6 @@ namespace Assets.Scripts.Entities.Ships
             MaxRange = 0;
             Firepower = HasWeapons ? 0 : SpecialFirePower;
             DamagePerSecond = 0;
-            _maxRateOfFire = HasWeapons ? Weapons[0].RateOfFire : 2;
             for (int i = 0; i < Weapons.Count; i++)
             {
                 Weapon weapon = Weapons[i];
@@ -95,11 +94,10 @@ namespace Assets.Scripts.Entities.Ships
                 }
                 if (weapon.Range > MaxRange) MaxRange = weapon.Range;
                 Firepower += weapon.Firepower;
-                if (weapon.RateOfFire > _maxRateOfFire) _maxRateOfFire = weapon.RateOfFire;
             }
             HasTurrets = Turrets.Count > 0;
             HalfMaxRange = MaxRange / 2;
-            _repeatRate = Mathf.Clamp(5f, _maxRateOfFire + 1, _maxRateOfFire + 2);
+            _repeatRate = CalculateCombatActivityWindow(Weapons);
             _size = ConfigData.ShipSizes[ShipType] / ConfigData.PixelsPerUnit;
             OriginalTsv = Utilities.GetMaxTsv(ShipType);
             SetCurrentSpeed(Speed);

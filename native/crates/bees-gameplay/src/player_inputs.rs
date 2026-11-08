@@ -422,6 +422,7 @@ impl<'a> NativePlayerSupportCommandPlan<'a> {
         let state = &mut world.state;
         let result = (|| {
             let squad = crate::commands::NativeSquadOrder {
+                targeting: state.events.roster().get(owner).and_then(|squad| squad.targeting),
                 owner, members: &self.authority.members, squad_center: self.center,
                 formation: self.authority.options, enemy: self.enemy, scouting: None,
             };

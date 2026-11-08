@@ -276,6 +276,7 @@ impl DurableDiagnosticNotifications {
         notification: &NativeLevelNotification,
     ) -> io::Result<()> {
         let kind = match &notification.kind {
+            NativeLevelNotificationKind::TargetingSelected { .. } => "targeting_selected",
             NativeLevelNotificationKind::SquadChange(_) => "squad_change",
             NativeLevelNotificationKind::Gameplay(_) => "gameplay",
             NativeLevelNotificationKind::CombatHit(_) => "combat_hit",
@@ -293,6 +294,12 @@ impl DurableDiagnosticNotifications {
         // diagnostics. MA-POCA's ELO marker and EndEpisode command must
         // NEVER become PPO reward when this log is inspected or migrated.
         let payload = match &notification.kind {
+            NativeLevelNotificationKind::TargetingSelected { owner, choice } => Some(json!({
+                "owner": {"level_id":owner.level_id,"squad_id":owner.squad_id,"lifecycle_id":owner.lifecycle_id},
+                "strategy_id": choice.selection.strategy.id, "strategy_name": choice.selection.strategy.name,
+                "outcome_id": choice.selection.outcome_id,
+                "enemy": choice.enemy.map(|enemy| json!({"level_id":enemy.level_id,"squad_id":enemy.squad_id,"lifecycle_id":enemy.lifecycle_id})),
+            })),
             NativeLevelNotificationKind::VisionCommandCredit(credit) => Some(json!({
                 "observer_id": credit.observer_id,
                 "target_id": credit.target_id,
@@ -355,6 +362,8 @@ impl DurableDiagnosticNotifications {
                 },
                 "selection": command_identity(&finished.selection),
                 "cause": format!("{:?}", finished.cause),
+                "targeting_outcome_id": finished.targeting.map(|selection| selection.outcome_id),
+                "targeting_targeted_enemy": finished.targeting_targeted_enemy,
                 "shooting_targeted_enemy": finished.shooting_targeted_enemy,
                 "capability_command_tsv": finished.capability_command_tsv,
             })),
@@ -422,6 +431,7 @@ impl DurableDiagnosticNotifications {
             // CombatHit already has a full structured payload; avoid
             // duplicating every hot combat event as a debug string.
             "payload_debug": match &notification.kind {
+                NativeLevelNotificationKind::TargetingSelected { .. } |
                 NativeLevelNotificationKind::CombatHit(_) |
                 NativeLevelNotificationKind::VisionCommandCredit(_) |
                 NativeLevelNotificationKind::UnattributedDamage { .. } |

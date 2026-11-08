@@ -94,6 +94,7 @@ const GUARD_SPEED_MATCH_DISTANCE_SQUARED: f32 = 1.5 * 1.5;
 
 #[derive(Clone, Copy, Debug)]
 pub struct NativeSquadOrder<'a> {
+    pub targeting: Option<crate::squad_targeting::NativeInstalledTargeting>,
     /// Captured exact squad lifecycle (distinct from numeric entity ID).
     pub owner: SquadLifetime,
     pub members: &'a [SquadFormationMember],
@@ -317,6 +318,8 @@ pub enum CommandFinishCause {
 
 #[derive(Clone, Debug)]
 pub struct FinishedNativeCommand {
+    pub targeting: Option<ValidatedTargetingSelection>,
+    pub targeting_targeted_enemy: bool,
     pub owner: SquadLifetime,
     pub selection: NativeCommandSelection,
     pub cause: CommandFinishCause,
@@ -431,6 +434,8 @@ struct FollowingFriendly {
 /// One canonical command's source state. Physics and cargo belong
 /// exclusively to CombatWorld, not to this timer/movement controller.
 struct ActiveNativeCommand {
+    targeting: Option<ValidatedTargetingSelection>,
+    selected_enemy: Option<SquadLifetime>,
     preferred_weapon_enemy: Option<SquadLifetime>,
     selection: NativeCommandSelection,
     // Retreat has no time limit while moving; other commands may have
@@ -452,6 +457,15 @@ struct ActiveNativeCommand {
     /// Authoritative game-owned member snapshot at command issue.
     /// The Level must retire/reissue on squad composition changes.
     member_ids: Vec<i64>,
+}
+
+impl ActiveNativeCommand {
+    fn targeting_eligible(&self) -> bool {
+        self.selected_enemy.is_some() && matches!(self.selection.kind(),
+            LocalCommandKind::Aggressive | LocalCommandKind::BombingRun | LocalCommandKind::Charge |
+            LocalCommandKind::Retreat | LocalCommandKind::CircleSquad | LocalCommandKind::RightSwipe |
+            LocalCommandKind::LeftSwipe | LocalCommandKind::InAndOut)
+    }
 }
 
 /// Cheap command metrics for an experiment dashboard. Cumulative counts and
@@ -590,6 +604,10 @@ impl NativeSquadCommandDirector {
         self.active.get(&owner)?.preferred_weapon_enemy
     }
 
+    pub fn selected_enemy(&self, owner: SquadLifetime) -> Option<SquadLifetime> {
+        self.active.get(&owner)?.selected_enemy
+    }
+
     pub fn current_server_outcome(&self, owner: SquadLifetime) -> Option<i64> {
         self.active.get(&owner)?.selection.server_outcome()
     }
@@ -707,6 +725,8 @@ impl NativeSquadCommandDirector {
             .release_all(world);
         self.measurements.completed += 1;
         Ok(Some(FinishedNativeCommand {
+            targeting: active.targeting,
+            targeting_targeted_enemy: active.targeting_eligible(),
             owner, selection: active.selection,
             cause: CommandFinishCause::HealingCompleted,
             shooting_targeted_enemy: active.preferred_weapon_enemy.is_some(),
@@ -1379,6 +1399,8 @@ impl NativeSquadCommandDirector {
             _ => Some(settings.max_command_seconds),
         };
         let active = ActiveNativeCommand {
+            targeting: squad.targeting.map(|choice| choice.selection),
+            selected_enemy: squad.enemy.map(|enemy| enemy.owner),
             preferred_weapon_enemy: if matches!(selection.kind(), LocalCommandKind::Aggressive |
                 LocalCommandKind::BombingRun | LocalCommandKind::Charge | LocalCommandKind::CircleSquad |
                 LocalCommandKind::RightSwipe | LocalCommandKind::LeftSwipe | LocalCommandKind::InAndOut) {
@@ -1474,6 +1496,8 @@ impl NativeSquadCommandDirector {
         }
         let superseded = replaced.map(|old| {
             FinishedNativeCommand {
+                targeting: old.targeting,
+                targeting_targeted_enemy: old.targeting_eligible(),
                 owner: squad.owner, selection: old.selection,
                 cause: CommandFinishCause::Superseded,
                 shooting_targeted_enemy: old.preferred_weapon_enemy.is_some(),
@@ -2122,6 +2146,8 @@ impl NativeSquadCommandDirector {
                     retreat.release_all(world, None);
                 }
                 finished.push(FinishedNativeCommand {
+                    targeting: active.targeting,
+                    targeting_targeted_enemy: active.targeting_eligible(),
                     owner, selection: active.selection, cause,
                     shooting_targeted_enemy: active.preferred_weapon_enemy.is_some(),
                     capability_command_tsv: active.mining.as_ref()
@@ -2196,6 +2222,8 @@ impl NativeSquadCommandDirector {
                 retreat.release_all(world, None);
             }
             FinishedNativeCommand {
+                targeting: active.targeting,
+                targeting_targeted_enemy: active.targeting_eligible(),
                 owner, selection: active.selection,
                 cause,
                 shooting_targeted_enemy: active.preferred_weapon_enemy.is_some(),

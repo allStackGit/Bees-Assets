@@ -55,6 +55,7 @@ pub enum NativeLevelEventError {
     InvalidRetirementAcknowledgement,
     InvalidOutputAcknowledgement,
     InvalidVisionCredit,
+    InvalidTargetingSelection,
     InconsistentCombatAttribution,
     OutputBackpressure { pending: usize, new_events: usize },
     FailedLevel,
@@ -142,6 +143,7 @@ struct DamageCommandOwners {
 
 #[derive(Clone, Debug)]
 pub enum NativeLevelNotificationKind {
+    TargetingSelected { owner: SquadLifetime, choice: crate::squad_targeting::NativeInstalledTargeting },
     SquadChange(SquadRosterChange),
     /// Sparse, source-authored capability outcomes for the native game's
     /// presentation/command adapter, kept across rollout windows until
@@ -961,6 +963,26 @@ impl NativeLevelEventProcessor {
 
     pub fn group_delivery_mut(&mut self) -> Option<&mut NativeGroupRewardDelivery> {
         self.group_delivery.as_mut()
+    }
+
+    pub fn install_targeting(
+        &mut self, tick: u64, owner: SquadLifetime,
+        selection: bees_hivemind::protocol::ValidatedTargetingSelection, enemy: Option<SquadLifetime>,
+    ) -> Result<(), NativeLevelEventError> {
+        if self.is_failed() || self.completed() { return Err(NativeLevelEventError::FailedLevel); }
+        if tick != self.next_tick.saturating_sub(1) || self.roster.get(owner).is_none() {
+            return Err(NativeLevelEventError::InvalidTargetingSelection);
+        }
+        Self::reserve_output_records(&mut self.pending_notifications, &mut self.failed, 1)?;
+        self.credit.register_targeting(selection.outcome_id).map_err(|error| {
+            self.failed = true; NativeLevelEventError::Credit(error)
+        })?;
+        let choice = crate::squad_targeting::NativeInstalledTargeting { selection, enemy };
+        self.roster.install_targeting(owner, choice).expect("prevalidated canonical owner");
+        self.pending_notifications.push(NativeLevelNotification { tick,
+            kind: NativeLevelNotificationKind::TargetingSelected { owner, choice } });
+        Self::update_output_peak(&mut self.peak_pending_notifications, self.pending_notifications.len());
+        Ok(())
     }
 
     /// Source-verified HiveMind sighting between fixed ticks. It shares

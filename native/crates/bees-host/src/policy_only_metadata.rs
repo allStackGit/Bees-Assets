@@ -113,6 +113,7 @@ pub struct NativeSourceVision {
 /// complete ship source observations, team environments and FleetShip
 /// inventory; commands query those same owners rather than a copied roster.
 pub struct NativePolicyOnlyMetadata {
+    pub targeting_context: Option<bees_gameplay::squad_targeting::NativeTargetingContext>,
     pub bounds: Aabb,
     pub navigation: NavigationRuntime,
     pub activate_collision_asteroids: bool,
@@ -222,6 +223,7 @@ impl NativePolicyOnlyMetadata {
             return Err(PolicyOnlyMetadataError::InvalidSource);
         }
         Ok(Self {
+            targeting_context: None,
             bounds, navigation, activate_collision_asteroids, fleet, ship_catalog,
             authored_ships, effective_vision,
             source_static_discovery_values,
@@ -483,6 +485,9 @@ impl NativeLevelCommandContext for NativePolicyOnlyMetadata {
 }
 
 impl NativeLevelActivationContext for NativePolicyOnlyMetadata {
+    fn targeting_context(&self) -> Option<bees_gameplay::squad_targeting::NativeTargetingContext> { self.targeting_context }
+    fn targeting_ship_catalog(&self) -> &bees_sim::ship_assets::ShipAssetCatalog { &self.ship_catalog }
+
     fn strategy_inputs(
         &self, world: &CombatWorld, roster: &NativeSquadRoster,
         owner: SquadLifetime, enemy: Option<SquadLifetime>,

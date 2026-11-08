@@ -856,7 +856,11 @@ impl CombatWorld {
                         fire
                     };
                     if fire {
-                        if automatic && mount.manual_target.is_none() { target_ship_at_launch = mount.automatic_state().target; }
+                        self.record_combat_activity(ship_id);
+                        if automatic && mount.manual_target.is_none() {
+                            target_ship_at_launch = mount.automatic_state().target;
+                            if let Some(target) = target_ship_at_launch { self.record_combat_activity(target); }
+                        }
                         if !policy_controlled && matches!(mount.spec.fire_pattern, NativeFirePattern::FullShipTurret) {
                             // Source game FullShipTurret.SendProjectile ends
                             // the active clip; its animation event fires the gun.

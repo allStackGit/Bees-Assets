@@ -23,6 +23,7 @@ internal static class NativePhysicalSceneExporter
     [Serializable]
     private sealed class SourceShip
     {
+        public SourceCombatActivity combat_activity;
         public SourceWeaponRank weapon_rank_source;
         public SourceSpecialWeapon special_weapon;
         public SourceShipTargetGeometry target_geometry;
@@ -94,6 +95,7 @@ internal static class NativePhysicalSceneExporter
     [Serializable]
     private sealed class SourceBeaconTemplate
     {
+        public SourceCombatActivity combat_activity;
         public SourceBeaconTarget targeting;
         public int original_health, health, max_tsv, effective_vision_range;
         public float size_class, base_speed, rotation_speed, height, longest_side;
@@ -240,9 +242,23 @@ internal static class NativePhysicalSceneExporter
     }
 
     [Serializable]
+    private sealed class SourceCombatActivity
+    {
+        public bool enabled, active;
+        public float window_seconds, elapsed_seconds;
+    }
+    [Serializable]
+    private sealed class SourceTargetingContext
+    {
+        public bool has_player;
+        public int user_side;
+    }
+
+    [Serializable]
     private sealed class PhysicalScene
     {
-        public int schema_version = 24;
+        public int schema_version = 25;
+        public SourceTargetingContext targeting_context;
         public int source_frame_count = Time.frameCount;
         public string level_name;
         public string stage_name;
@@ -286,6 +302,7 @@ internal static class NativePhysicalSceneExporter
         }
 
         var snapshot = new PhysicalScene {
+            targeting_context = new SourceTargetingContext { has_player = level.HasPlayer, user_side = ConfigData.Configuration.UserSide },
             level_name = !string.IsNullOrEmpty(level.Name)
                 ? level.Name : level.gameObject.name,
             fixed_dt_seconds = level.Stage.FixedDeltaTime,
@@ -402,6 +419,11 @@ internal static class NativePhysicalSceneExporter
                 throw new InvalidOperationException(
                     "Cannot export source game steering profile for ship: " + ship.Id);
             snapshot.ships.Add(new SourceShip {
+                combat_activity = new SourceCombatActivity {
+                    enabled = ship.Stage.ActivateHiveMind, active = ship.InCombat,
+                    window_seconds = ship.CombatActivityWindowSeconds,
+                    elapsed_seconds = ship.CombatActivityElapsedSeconds,
+                },
                 entity_id = ship.Id,
                 ship_type = (int)ship.ShipType,
                 side = ship.Side,
@@ -1006,7 +1028,13 @@ internal static class NativePhysicalSceneExporter
         bool training = RlOneVsOneTrainingBootstrap.IsActiveFor(scout.Stage);
         bool user = scout.Side == ConfigData.Configuration.UserSide && scout.Stage.DoesUserHaveController;
         bool registered = scout.Stage.IsTrainingNueralNetwork || !user;
+        if (beacon.GetComponentsInChildren<Weapon>(true).Length != 0)
+            throw new InvalidOperationException("Beacon combat activity requires initialized source weapon rates.");
         return new SourceBeaconTemplate {
+            combat_activity = new SourceCombatActivity {
+                enabled = scout.Stage.ActivateHiveMind, active = false, elapsed_seconds = 0f,
+                window_seconds = Ship.CalculateCombatActivityWindow(Array.Empty<Weapon>()),
+            },
             targeting = new SourceBeaconTarget {
                 front_offset = size.y * 0.5f - ConfigData.OffsetFromFrontOfShip.GetValueOrDefault(ConfigData.ShipTypes.Beacon),
                 ship_type_letter = (int)Utilities.ConvertShipTypeToShipTypeLetter[ConfigData.ShipTypes.Beacon],

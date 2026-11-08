@@ -19,6 +19,7 @@ pub const SCOUT_TYPE: u8 = 18;
 /// A None side cap is ordinary campaign/Free Play semantics.
 #[derive(Clone, Debug)]
 pub struct ScoutBeaconSpec {
+    pub combat_activity: Option<NativeCombatActivity>,
     pub beacon_asset: ShipAsset,
     pub beacon_vitals: ShipVitals,
     pub beacon_base_speed: f32,
@@ -40,7 +41,8 @@ pub struct NativeBeaconTargetSource {
 
 impl ScoutBeaconSpec {
     fn valid(&self) -> bool {
-        self.beacon_asset.ship_type == BEACON_TYPE &&
+        self.combat_activity.is_none_or(NativeCombatActivity::valid) &&
+            self.beacon_asset.ship_type == BEACON_TYPE &&
             !self.beacon_vitals.is_dead() &&
             self.beacon_original_health > 0 && self.beacon_size_class.is_finite() &&
             self.beacon_size_class >= 0.0 &&
@@ -329,6 +331,7 @@ impl CombatWorld {
         self.spawn_ship(
             &spec.beacon_asset, beacon_id, side, spec.beacon_vitals, motion,
         )?;
+        if let Some(source) = spec.combat_activity { self.configure_combat_activity(beacon_id, source)?; }
         self.set_ship_fleet_identity(beacon_id, parent_fleet_id)?;
         self.configure_game_ship_original_health(beacon_id, spec.beacon_original_health)?;
         self.set_ship_collision_profile(beacon_id, ShipCollisionProfile {
@@ -396,6 +399,7 @@ mod tests {
             state.set_ship_fleet_identity(id, 100 + id).unwrap();
             state.bind_policy_ship(id, PolicyFrame::new(0), false).unwrap();
             state.configure_policy_scout(id, ScoutBeaconSpec {
+                combat_activity: None,
                 beacon_asset: ships.by_type(BEACON_TYPE).unwrap().clone(),
                 beacon_vitals: ShipVitals::new(20, 20, 0, 0).unwrap(),
                 beacon_base_speed: 0.0,

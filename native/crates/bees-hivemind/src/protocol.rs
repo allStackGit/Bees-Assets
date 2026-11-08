@@ -492,7 +492,7 @@ pub struct GetTargetingResponse {
     pub status: Option<i32>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ValidatedTargetingSelection {
     pub strategy: StrategyIdentity,
     pub outcome_id: i64,

@@ -13,7 +13,7 @@ namespace Assets.Scripts.Entities.Ships
     public partial class Ship
     {
         private readonly ScaledTimer _combatTimerScaledTimer = new ScaledTimer();
-        private float _maxRateOfFire, _repeatRate;
+        private float _repeatRate;
         private int _oldTsv, _tsvChange;
         private static int _targetOldTSV, _targetTSVChange;
         private static ShipDamageStatus _shipDamageStatus;
@@ -30,6 +30,17 @@ namespace Assets.Scripts.Entities.Ships
             {
                 Weapons[i].ClearTargets();
             }
+        }
+
+        public float CombatActivityWindowSeconds => _repeatRate;
+        public float CombatActivityElapsedSeconds => InCombat ? _combatTimerScaledTimer.Elapsed : 0f;
+
+        public static float CalculateCombatActivityWindow(IReadOnlyList<Weapon> weapons)
+        {
+            float maxRate = weapons.Count > 0 ? weapons[0].RateOfFire : 2f;
+            for (int i = 0; i < weapons.Count; i++)
+                if (weapons[i].RateOfFire > maxRate) maxRate = weapons[i].RateOfFire;
+            return Mathf.Clamp(5f, maxRate + 1f, maxRate + 2f);
         }
 
         private void CombatTimer()

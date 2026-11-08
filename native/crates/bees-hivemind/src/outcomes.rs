@@ -170,6 +170,16 @@ impl OutcomeBatch {
         Ok(())
     }
 
+    /// Targeting reservations have an independent lifetime and are emitted
+    /// once after aggregating the source commands that actually used them.
+    pub fn add_targeting(&mut self, settlement: OutcomeSettlement) -> Result<(), HiveMindProtocolError> {
+        let id = settlement.outcome_id();
+        if id <= 0 || self.seen.contains(&id) { return Err(HiveMindProtocolError::DuplicateReservation); }
+        self.seen.insert(id);
+        self.push(settlement, OutcomeCategory::Targeting);
+        Ok(())
+    }
+
     /// A response received for a retired or superseded squad may still
     /// contain live server reservations. Instead of dropping them, emit
     /// the same explicit discard marker used by Unity StoreCommands.

@@ -115,6 +115,9 @@ pub struct NativeLevelStrategyInputs {
 /// registry; no guessed formation offsets, path clearance, Bomb weapons
 /// or target rankings are introduced by the host.
 pub trait NativeLevelActivationContext: NativeLevelCommandContext {
+    fn targeting_context(&self) -> Option<crate::squad_targeting::NativeTargetingContext>;
+    fn targeting_ship_catalog(&self) -> &bees_sim::ship_assets::ShipAssetCatalog;
+
     fn strategy_inputs(
         &self, world: &CombatWorld, roster: &NativeSquadRoster,
         owner: SquadLifetime, original_enemy: Option<SquadLifetime>,
@@ -146,6 +149,7 @@ pub struct NativeLevelActivationScratch {
     bomb_weapons: Vec<NativeBombWeapon>,
     target_stats: Vec<NativeEnemyTargetStats>,
     ship_types: Vec<i32>,
+    targeting: crate::squad_targeting::NativeSquadTargetingScratch,
 }
 
 impl NativeLevelActivationScratch {
@@ -239,6 +243,12 @@ where
         {
             return Ok(discard());
         }
+    }
+    if matches!(resolved.local_command, LocalCommandKind::Aggressive | LocalCommandKind::BombingRun |
+        LocalCommandKind::Charge | LocalCommandKind::Retreat | LocalCommandKind::CircleSquad |
+        LocalCommandKind::RightSwipe | LocalCommandKind::LeftSwipe | LocalCommandKind::InAndOut) &&
+        squad.targeting.is_some_and(|choice| choice.enemy != original_enemy) {
+        return Ok(discard());
     }
     let metadata = &mut world.state.metadata;
     let details = metadata.strategy_inputs(&world.state.combat, world.state.events.roster(), owner, original_enemy)
@@ -349,11 +359,19 @@ pub enum NativeLevelStrategyReceiveError {
 #[derive(Debug)]
 pub struct NativeLevelTargetingDelivery {
     pub world_index: Option<usize>,
+    pub selected_enemy: Option<SquadLifetime>,
     pub receipt: TargetingReceipt,
 }
 
 #[derive(Debug)]
+pub enum NativeTargetingApplicationError {
+    Ranking(crate::squad_targeting::NativeTargetingError),
+    Events(crate::level_events::NativeLevelEventError),
+}
+
+#[derive(Debug)]
 pub enum NativeLevelTargetingReceiveError {
+    Application { selection: bees_hivemind::protocol::ValidatedTargetingSelection, cause: NativeTargetingApplicationError },
     Session(HiveMindSessionError),
     Routing(NativeLevelRoutingError),
 }
@@ -716,7 +734,7 @@ impl NativeLevelBatchDriver {
         response: &GetTargetingResponse,
     ) -> Result<NativeLevelTargetingDelivery, NativeLevelTargetingReceiveError>
     where
-        M: NativeLevelRewardMetadata + NativeLevelCommandContext,
+        M: NativeLevelRewardMetadata + NativeLevelActivationContext,
         A: FnMut(SquadLifetime, i64) -> Result<SquadLifetime, SquadRosterError>,
     {
         let owner = connection.requested_targeting_owner(response.hash)
@@ -734,9 +752,24 @@ impl NativeLevelBatchDriver {
             TargetingReceipt::Accepted { .. } =>
                 Some(found.expect("validated accepted live owner")),
         };
-        Ok(NativeLevelTargetingDelivery {
-            world_index, receipt,
-        })
+        let mut selected_enemy = None;
+        if let TargetingReceipt::Accepted { owner, selection } = &receipt {
+            let selection = *selection;
+            let failed = |cause| NativeLevelTargetingReceiveError::Application { selection, cause };
+            let world = simulation.world_mut(world_index.expect("live accepted owner")).expect("registered world");
+            let context = world.state.metadata.targeting_context().ok_or_else(|| failed(
+                NativeTargetingApplicationError::Ranking(crate::squad_targeting::NativeTargetingError::MissingSource)))?;
+            selected_enemy = crate::squad_targeting::select_enemy_squad(
+                &world.state.combat, world.state.events.roster(), world.state.events.commands(),
+                world.state.metadata.targeting_ship_catalog(), context, *owner, selection,
+                &mut world.random, &mut self.worlds[world_index.expect("live owner")].activation.targeting,
+            ).map_err(|error| failed(NativeTargetingApplicationError::Ranking(error)))?;
+            let tick = world.tick();
+            world.state.events.install_targeting(tick, *owner, selection, selected_enemy)
+                .map_err(|error| failed(NativeTargetingApplicationError::Events(error)))?;
+            connection.retire_squad(*owner);
+        }
+        Ok(NativeLevelTargetingDelivery { world_index, selected_enemy, receipt })
     }
 
     /// Complete authenticated-WebSocket JSON ingress for all supported

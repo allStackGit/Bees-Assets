@@ -5,7 +5,7 @@
 
 use std::collections::BTreeMap;
 
-use bees_hivemind::outcomes::OutcomeBatch;
+use bees_hivemind::outcomes::{OutcomeBatch, OutcomeSettlement};
 use bees_hivemind::protocol::HiveMindProtocolError;
 
 use crate::commands::{
@@ -40,6 +40,7 @@ struct CommandCredit {
 pub struct NativeCommandCreditLedger {
     commands: BTreeMap<i64, CommandCredit>,
     closed: bool,
+    targeting: std::collections::BTreeSet<i64>,
 }
 
 impl NativeCommandCreditLedger {
@@ -90,6 +91,12 @@ impl NativeCommandCreditLedger {
         self.credit(command, i64::from(tsv_delta), 0)
     }
 
+    pub fn register_targeting(&mut self, id: i64) -> Result<(), CommandCreditError> {
+        if self.closed { return Err(CommandCreditError::AlreadyClosed); }
+        if id <= 0 || !self.targeting.insert(id) { return Err(CommandCreditError::InvalidOutcomeId(id)); }
+        Ok(())
+    }
+
     pub fn finish(
         &mut self, command: &FinishedNativeCommand,
     ) -> Result<(), CommandCreditError> {
@@ -101,6 +108,9 @@ impl NativeCommandCreditLedger {
         let entry = self.commands.entry(id).or_default();
         if entry.finished.is_some() {
             return Err(CommandCreditError::DuplicateFinished(id));
+        }
+        if command.targeting.is_some_and(|selection| !self.targeting.contains(&selection.outcome_id)) {
+            return Err(CommandCreditError::InvalidOutcomeId(command.targeting.unwrap().outcome_id));
         }
         entry.finished = Some(command.clone());
         Ok(())
@@ -171,7 +181,31 @@ impl NativeCommandCreditLedger {
                 ]).map_err(CommandCreditError::Protocol)?;
             }
         }
+        // Strategic TSV (including source spotting/capability value), never
+        // the shooting-only combat total, trains an actually used matchup.
+        // Several source commands can retain the same copied matchup ID.
+        let mut targeting: BTreeMap<_, Option<i64>> = self.targeting.iter().map(|&id| (id, None)).collect();
+        if successful {
+            for entry in self.commands.values() {
+                let Some(command) = &entry.finished else { continue; };
+                if !command.targeting_targeted_enemy { continue; }
+                let Some(selection) = command.targeting else { continue; };
+                let target = selection.outcome_id;
+                let earned = targeting.get_mut(&target).ok_or(CommandCreditError::InvalidOutcomeId(target))?;
+                let value = entry.command_tsv.checked_add(command.capability_command_tsv.unwrap_or(0))
+                    .ok_or(CommandCreditError::ArithmeticOverflow(target))?;
+                *earned = Some(earned.unwrap_or(0).checked_add(value)
+                    .ok_or(CommandCreditError::ArithmeticOverflow(target))?);
+            }
+        }
+        for (target, earned) in targeting {
+            batch.add_targeting(match earned {
+                Some(tsv) => OutcomeSettlement::Credit { outcome_id: target, tsv },
+                None => OutcomeSettlement::Discard { outcome_id: target },
+            }).map_err(CommandCreditError::Protocol)?;
+        }
         self.commands.clear();
+        self.targeting.clear();
         self.closed = true;
         Ok(batch)
     }

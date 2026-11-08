@@ -70,7 +70,7 @@ use crate::runtime::NativeHostRuntime;
 use crate::ship_specials::{NativeAuthoredShipSpecial, NativeBeaconTemplate};
 use crate::durable_connection::DurableHiveMindConnection;
 
-const SNAPSHOT_VERSION: u32 = 24;
+const SNAPSHOT_VERSION: u32 = 25;
 
 #[derive(Deserialize, Clone, Copy)]
 struct UnityVec2 { x: f32, y: f32 }
@@ -117,6 +117,7 @@ impl UnityVec2 {
 
 #[derive(Deserialize)]
 struct UnitySnapshot {
+    targeting_context: Option<UnityTargetingContext>,
     source_frame_count: Option<i32>,
     schema_version: u32,
     level_name: String,
@@ -171,7 +172,31 @@ struct UnityGroupParticipant {
 }
 
 #[derive(Deserialize)]
+struct UnityTargetingContext { has_player: bool, user_side: i32 }
+
+#[derive(Deserialize)]
+struct UnityCombatActivity {
+    enabled: bool,
+    window_seconds: f32,
+    active: bool,
+    elapsed_seconds: f32,
+}
+impl UnityCombatActivity {
+    fn convert(self) -> Result<bees_sim::combat_world::NativeCombatActivity, NativeSnapshotError> {
+        let source = bees_sim::combat_world::NativeCombatActivity {
+            enabled: self.enabled, window_seconds: self.window_seconds,
+            elapsed_seconds: self.active.then_some(self.elapsed_seconds),
+        };
+        if !source.valid() || !self.elapsed_seconds.is_finite() || self.elapsed_seconds < 0.0 {
+            return Err(NativeSnapshotError::InvalidLevelBounds);
+        }
+        Ok(source)
+    }
+}
+
+#[derive(Deserialize)]
 struct UnityShip {
+    combat_activity: Option<UnityCombatActivity>,
     special_weapon: Option<UnitySpecialWeapon>,
     weapon_rank_source: Option<UnityWeaponRankSource>,
     target_geometry: Option<UnityShipTargetGeometry>,
@@ -264,6 +289,7 @@ struct UnityShipSpecial {
 
 #[derive(Deserialize)]
 struct UnityBeaconTemplate {
+    combat_activity: Option<UnityCombatActivity>,
     targeting: Option<UnityBeaconTargetSource>,
     original_health: i32,
     health: i32,
@@ -327,6 +353,7 @@ impl UnityShipSpecial {
                 { return Err(invalid()); }
                 NativeAuthoredShipSpecial::Scout { enabled: self.scout_enabled, beacon: Arc::new(NativeBeaconTemplate {
                     physical: ScoutBeaconSpec {
+                        combat_activity: source.combat_activity.map(UnityCombatActivity::convert).transpose()?,
                         beacon_asset: catalog.by_type(BEACON_TYPE).ok_or_else(invalid)?.clone(),
                         beacon_vitals: ShipVitals::new(source.health, source.health, source.max_tsv, 0)
                             .map_err(NativeSnapshotError::Combat)?,
@@ -528,6 +555,7 @@ pub enum NativeSnapshotError {
     UnsupportedSchema(u32),
     InvalidLevelBounds,
     MissingWeaponRankingClock,
+    MissingTargetingSource,
     InvalidCommandSettings,
     InvalidShip(i64),
     MismatchedShipTsv(i64),
@@ -558,6 +586,7 @@ pub enum NativeSnapshotError {
 /// Records are owned, but shared immutable prefab geometry stays in the
 /// existing NativeSceneAssets Arc catalogs.
 pub struct NativePhysicalScene {
+    pub targeting_context: Option<bees_gameplay::squad_targeting::NativeTargetingContext>,
     pub human_side: i32,
     pub source_frame_count: Option<i32>,
     pub schema_version: u32,
@@ -919,7 +948,7 @@ impl NativePhysicalScene {
             },
             _ => None,
         }).collect();
-        let metadata = NativePolicyOnlyMetadata::new(
+        let mut metadata = NativePolicyOnlyMetadata::new(
             self.bounds,
             setup.navigation,
             self.activate_collision_asteroids,
@@ -944,6 +973,7 @@ impl NativePhysicalScene {
                     .map(|(source, squad)| (squad.owner, source.player_permissions)).collect(),
             },
         ).map_err(NativePolicyOnlyLevelError::Metadata)?;
+        metadata.targeting_context = self.targeting_context;
         Ok(NativeAuthoredLevel {
             weapon_rank_frame: if self.schema_version >= 23 { self.source_frame_count } else { None },
             level_geometry: (self.schema_version >= 22).then_some(NativeLevelGeometry {
@@ -1071,6 +1101,15 @@ impl NativePhysicalScene {
             .map_err(NativeSnapshotError::Malformed)?;
         if !(20..=SNAPSHOT_VERSION).contains(&raw.schema_version) {
             return Err(NativeSnapshotError::UnsupportedSchema(raw.schema_version));
+        }
+        if raw.schema_version >= 25 && (raw.targeting_context.is_none() || raw.ships.iter().any(|ship|
+            ship.combat_activity.is_none() || ship.special.beacon.as_ref().is_some_and(|beacon| beacon.combat_activity.is_none()))) {
+            return Err(NativeSnapshotError::MissingTargetingSource);
+        }
+        let targeting_context = raw.targeting_context.map(|context|
+            bees_gameplay::squad_targeting::NativeTargetingContext { has_player: context.has_player, user_side: context.user_side });
+        if targeting_context.is_some_and(|context| context.has_player && context.user_side <= 0) {
+            return Err(NativeSnapshotError::MissingTargetingSource);
         }
         if raw.schema_version >= 23 && raw.source_frame_count.is_none() {
             return Err(NativeSnapshotError::MissingWeaponRankingClock);
@@ -1566,6 +1605,7 @@ impl NativePhysicalScene {
                 _ => return Err(NativeSnapshotError::InvalidShip(ship.entity_id)),
             };
             entities.push(NativeAuthoredEntity::Ship(NativeAuthoredShip {
+                combat_activity: ship.combat_activity.map(UnityCombatActivity::convert).transpose()?,
                 special_weapon,
                 target_geometry, weapon_rank_source,
                 entity_id: ship.entity_id, ship_type: ship.ship_type,
@@ -1905,6 +1945,7 @@ impl NativePhysicalScene {
         Ok(Self {
             human_side: raw.human_side,
             source_frame_count: raw.source_frame_count,
+            targeting_context,
             schema_version: raw.schema_version,
             level_name: raw.level_name,
             stage_name: raw.stage_name,

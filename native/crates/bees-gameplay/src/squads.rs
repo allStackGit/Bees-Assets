@@ -82,6 +82,7 @@ pub struct SquadRosterMeasurements {
 /// vision and abilities are deliberately not duplicated here.
 #[derive(Clone, Debug)]
 pub struct NativeSquadEntry {
+    pub targeting: Option<crate::squad_targeting::NativeInstalledTargeting>,
     pub owner: SquadLifetime,
     pub side: i32,
     pub members: Vec<i64>,
@@ -143,6 +144,13 @@ impl NativeSquadRoster {
         self.owner_by_ship.len() == world.total_living_ships()
     }
 
+    pub fn install_targeting(&mut self, owner: SquadLifetime, choice: crate::squad_targeting::NativeInstalledTargeting)
+        -> Result<(), SquadRosterError>
+    {
+        self.active.get_mut(&owner).ok_or(SquadRosterError::MissingSquad)?.targeting = Some(choice);
+        Ok(())
+    }
+
     pub fn get(&self, owner: SquadLifetime) -> Option<&NativeSquadEntry> {
         self.active.get(&owner)
     }
@@ -179,6 +187,7 @@ impl NativeSquadRoster {
             }
         }
         let entry = NativeSquadEntry {
+            targeting: None,
             owner, side, members: members.to_vec(), mother_squad: None,
         };
         self.active.insert(owner, entry);
@@ -272,6 +281,7 @@ impl NativeSquadRoster {
             return Err(SquadRosterError::InvalidBeaconEvent);
         }
         let entry = NativeSquadEntry {
+            targeting: None,
             owner: minion_owner,
             side: beacon.side,
             members: vec![*beacon_id],

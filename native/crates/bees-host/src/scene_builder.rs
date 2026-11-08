@@ -38,6 +38,7 @@ use crate::scene_assets::NativeSceneAssets;
 /// health can differ from a training-adjusted MaxHealth. A controller
 /// and its frame are registered ONLY if the source supplies the binding.
 pub struct NativeAuthoredShip {
+    pub combat_activity: Option<bees_sim::combat_world::NativeCombatActivity>,
     pub special_weapon: Option<bees_sim::combat_world::NativeSpecialWeaponSpec>,
     pub weapon_rank_source: Option<NativeWeaponRankSource>,
     pub target_geometry: Option<NativeShipTargetGeometry>,
@@ -317,6 +318,10 @@ impl NativeSceneAssets {
                 combat.spawn_ship(
                     asset, ship.entity_id, ship.side, ship.vitals, ship.motion,
                 ).map_err(NativeSceneBuildError::Combat)?;
+                if let Some(source) = ship.combat_activity {
+                    combat.configure_combat_activity(ship.entity_id, source)
+                        .map_err(NativeSceneBuildError::Combat)?;
+                }
                 combat.configure_ship_game_movement(ship.entity_id, ship.game_movement)
                     .map_err(NativeSceneBuildError::Combat)?;
                 combat.configure_game_ship_original_health(

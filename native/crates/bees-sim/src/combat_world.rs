@@ -81,6 +81,8 @@ mod special_weapon_contacts;
 pub use special_weapon_contacts::{NativeSpecialWeaponSpec, SpecialWeaponMeasurements};
 mod weapon_target_geometry;
 mod weapon_rank_history;
+mod combat_activity;
+pub use self::combat_activity::NativeCombatActivity;
 mod automatic_weapons;
 pub use self::automatic_weapons::{NativeAutomaticWeaponInputs, NativeAutomaticWeaponContext, NativeAutomaticTurretStatus, AutomaticWeaponMeasurements};
 pub use self::weapon_rank_history::NativeWeaponRankSource;
@@ -758,6 +760,7 @@ pub struct CombatWorld {
     automatic_rank_candidates: Vec<crate::targeting::NativeEnemyTargetStats>,
     automatic_distance_keys: HashMap<i64, f32>,
     weapon_rank_history: weapon_rank_history::WeaponRankHistory,
+    combat_activity: HashMap<i64, NativeCombatActivity>,
     level_geometry: Option<NativeLevelGeometry>,
     ship_target_front_offsets: HashMap<i64, f32>,
     pending_weapon_range_exits: u64,
@@ -916,6 +919,7 @@ impl CombatWorld {
             automatic_weapon_measurements: AutomaticWeaponMeasurements::default(),
             automatic_rank_candidates: Vec::new(), automatic_distance_keys: HashMap::new(),
             weapon_rank_history: weapon_rank_history::WeaponRankHistory::default(),
+            combat_activity: HashMap::new(),
             level_geometry: None, ship_target_front_offsets: HashMap::new(),
             pending_weapon_range_exits: 0,
             weapon_range_candidates: Vec::new(), weapon_range_entering_ids: Vec::new(),
@@ -3840,6 +3844,7 @@ impl CombatWorld {
                 ..StepCounts::default()
             });
         }
+        self.advance_combat_activity(dt);
         self.begin_weapon_rank_tick();
         self.apply_pending_game_warps()?;
         self.apply_pending_game_fire_barges()?;
