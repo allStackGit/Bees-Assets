@@ -174,7 +174,7 @@ function boundedReport(value) {
         throw Error('CUDA/ROCm TinyBrains profiles require an installed native adapter.');
     const imports=tinyBrainsImports(value.tinybrains_imports??{});
     if(Object.keys(imports).length&&!installed.includes('tinybrains')||
-        Object.values(imports).some(item=>profiles[item.profile]==null))
+        Object.values(imports).some(item=>!Object.hasOwn(profiles,item.profile)))
         throw Error('Trusted TinyBrains checkpoint imports require an approved profile.');
     const gpuProjects=value.gpu_projects??[];
     if(!Array.isArray(gpuProjects)||new Set(gpuProjects).size!==gpuProjects.length||
@@ -522,7 +522,7 @@ function nativeStartReadiness(snapshot, job) {
                 machine.execution_capabilities?.cgroup_controllers.includes(c))))
         return block('Linux cgroup v2 CPU and memory controllers are unavailable.');
     if(!supportsTinyBrainsProfile(machine,job))
-        return block('The assigned worker does not approve this TinyBrains CPU profile and update count.');
+        return block('The assigned worker does not approve this TinyBrains profile, GPU mode, checkpoint import and update count.');
     if(!supportsEvaluation(machine.evaluation_suites,job))
         return block('The assigned adapter does not advertise all required evaluation suites.');
     const r=job.resources;
@@ -629,7 +629,7 @@ function allocationBlockReason(machines,job,preferredMachineId=null) {
             :'No worker is connected.';
     if(job.project_id==='tinybrains'&&
         !candidates.some(machine=>supportsTinyBrainsProfile(machine,job)))
-        return 'No eligible worker advertises this TinyBrains CPU profile and digest, or the update count is invalid.';
+        return 'No eligible worker approves this TinyBrains profile, GPU mode, checkpoint import and update count.';
     return 'No eligible connected worker has enough remaining capacity.';
 }
 function allocationChoice(machines,reservations,job,preferredMachineId=null,
