@@ -53,6 +53,8 @@ pub struct NativePlayerCommand<'a> {
 /// owns its ordered ID list so input can cross the window's borrowed frame.
 #[derive(Clone, Debug, PartialEq)]
 pub enum NativePlayerSupportAction {
+    /// Source Hold button: stop an active Aggressive chase, not a new order.
+    Hold,
     Attack { target: SquadLifetime },
     Guard { target: SquadLifetime },
     Patrol { top_left: Vec2, bottom_right: Vec2 },
@@ -65,6 +67,7 @@ impl NativePlayerSupportAction {
     pub fn as_local_action(&self) -> crate::commands::NativeLocalCommandAction<'_> {
         use crate::commands::NativeLocalCommandAction as Action;
         match self {
+            Self::Hold => Action::Hold,
             Self::Attack { target } => Action::TargetEnemy { target: *target },
             Self::Guard { target } => Action::Guard { target: *target },
             Self::Patrol { top_left, bottom_right } => Action::Patrol {
@@ -153,6 +156,7 @@ pub struct NativePlayerCommandCounts {
 pub enum NativePlayerCommandOutcome {
     Command(crate::commands::Activation),
     Move { reachable: bool },
+    StopChasing { stopped: bool },
 }
 
 pub struct NativePlayerCommandPlan<'a> {
@@ -160,6 +164,7 @@ pub struct NativePlayerCommandPlan<'a> {
 }
 
 enum NativePlayerCommandExecution<'a> {
+    Hold { authority: NativePlayerSquadPlan, input: NativePlayerCommand<'a> },
     Command(NativePlayerSupportCommandPlan<'a>),
     Move { plan: NativePlayerMovePlan, asteroid_id: i64 },
 }
@@ -167,6 +172,7 @@ enum NativePlayerCommandExecution<'a> {
 impl<'a> NativePlayerCommandPlan<'a> {
     pub fn owner(&self) -> SquadLifetime {
         match &self.execution {
+            NativePlayerCommandExecution::Hold { authority, .. } => authority.owner,
             NativePlayerCommandExecution::Command(plan) => plan.owner(),
             NativePlayerCommandExecution::Move { plan, .. } => plan.owner(),
         }
@@ -178,6 +184,9 @@ impl<'a> NativePlayerCommandPlan<'a> {
         use crate::commands::NativeLocalCommandAction as Action;
         let authority = NativePlayerSquadPlan::prepare(world, input.world_id,
             input.episode_revision, input.selected_ship)?;
+        if matches!(input.action, Action::Hold) {
+            return Ok(Self { execution: NativePlayerCommandExecution::Hold { authority, input } });
+        }
         if let Action::Mining { asteroid_id } = input.action {
             let has_miner = authority.members.iter().any(|member|
                 world.state.combat.ship(member.ship_id).is_some_and(|ship|
@@ -207,6 +216,18 @@ impl<'a> NativePlayerCommandPlan<'a> {
         world: &mut World<NativeLevelState<M, A>>,
     ) -> Result<NativePlayerCommandOutcome, NativePlayerInputError> {
         match self.execution {
+            NativePlayerCommandExecution::Hold { authority, input } => {
+                let current = NativePlayerSquadPlan::prepare(
+                    world, input.world_id, input.episode_revision, input.selected_ship,
+                )?;
+                if current != authority { return Err(NativePlayerInputError::StaleWorld); }
+                let state = &mut world.state;
+                let result = state.events.stop_player_chasing(
+                    authority.tick, &mut state.combat, authority.owner,
+                ).map_err(NativePlayerInputError::Finalization);
+                if result.is_err() { state.events.fail_player_input(); }
+                result.map(|stopped| NativePlayerCommandOutcome::StopChasing { stopped })
+            }
             NativePlayerCommandExecution::Command(plan) =>
                 plan.execute(world).map(NativePlayerCommandOutcome::Command),
             NativePlayerCommandExecution::Move { plan, asteroid_id } => {
