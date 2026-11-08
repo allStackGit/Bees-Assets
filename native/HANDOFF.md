@@ -124,12 +124,29 @@ StoreCommands hash/retry payload before the sink retires it. The host queues
 completed batches even when a later window step fails, and also on stop/reset.
 **Queued is not transmitted or acknowledged**: a real socket still has to send
 pending_store_hashes/retry_payload and process 200/409 acknowledgements.
-Explicit targeting-result credit and stale-reply discard actions still need
-their real input/settlement path. The gap between journal fsync and connection
-checkpoint also needs restart-time replay/reconciliation before autonomous
-crash recovery can be claimed. No added shot history, made-up target TSV or
-premature per-command StoreCommands credit was introduced. This code remains
-source-reviewed only; native Rust compilation/runtime were not available.
+The separate `rewrite/native-outcome-recovery-20261108` branch closes
+the completed-batch journal/checkpoint crash gap: each synchronized
+CommandOutcomesReady carries (run_id, world_id, episode_revision, sequence).
+The connection now persists a per-run/world source cursor atomically with
+the original StoreCommands Hash/retry payload. After 200 or 409 the cursor
+survives request retirement, so replay does not create a new Hash or credit
+the same reservations twice. Checkpoint schema 1 remains readable (the new
+cursor defaults to empty). A validated read-only replay command is exposed
+through NativeHostRuntime::recover_prior_outcome_journal, and the headless
+run config accepts `recover_outcome_journals` entries with `run_id` and
+`path`. Use the SAME connection checkpoint as the previous run; never
+invent a new prefix when retrying existing server requests. Recovery only
+accepts complete `command_outcomes_ready` records, rejects an invalid or
+unterminated tail, and reports queued vs already-queued batches. For example:
+`"recover_outcome_journals": [{"run_id":"old-run","path":"old.jsonl"}]`.
+Prior unfinished in-flight games or uncorrelated strategy replies are
+not reconstructible from this terminal-outcome journal and need separate
+resolution. Explicit targeting-result credit and stale-reply discard
+actions still need their real input/settlement path; an actual socket must
+still send the checkpointed retry payloads and reconcile 200/409 responses.
+No extra shot history, invented target TSV, or premature command settlement
+was introduced. New code remains source-reviewed only; Rust compilation
+and runtime were not available.
 Earlier fixture qualifications below predate these edits.
 
 ## Shared weapons and geometry retained
