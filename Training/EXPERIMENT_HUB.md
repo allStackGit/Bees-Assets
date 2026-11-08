@@ -1277,8 +1277,10 @@ checkpointImports: {
 ```
 
 This example path and digest are placeholders; they must be replaced
-with verified local values. Add `"import_checkpoint":"previous"`
-to the first saved Hub TinyBrains configuration alongside its approved
+with verified local values. In Design, choose the locally approved
+checkpoint import in the TinyBrains profile picker. The saved configuration
+freezes both `"import_checkpoint":"previous"` and
+`"import_checkpoint_sha256":"<the actual digest>"` alongside its approved
 `profile`, `profile_sha256`, and `updates`. The local adapter verifies
 the source digest, copies it into an exclusive new Hub-owned job directory,
 verifies the copy, and invokes TinyBrains' optimizer `--resume`. It never
