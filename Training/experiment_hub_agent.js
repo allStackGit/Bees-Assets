@@ -223,7 +223,17 @@ async function main() {
             // crash is reconciled using the native service journal.
             pendingReports=[];
             pendingGpuReports=[];
-            receipts=observedOffers(response.lease_offers||[],observations(id));
+            // A corrupt advisory offer must not prevent this worker from
+            // executing an independent native Stop or Inspect instruction.
+            // Reject all lease receipts for this poll, but keep native
+            // ownership reconciliation available.
+            try {
+                receipts=observedOffers(response.lease_offers||[],observations(id));
+            }catch(error) {
+                receipts=[];
+                console.error('[experiment-hub-agent] Lease offers rejected: '+
+                    String(error.message||error));
+            }
             if(executor) {
                 const orders=response.execution_orders||[];
                 if(!Array.isArray(orders)||orders.length>1)
