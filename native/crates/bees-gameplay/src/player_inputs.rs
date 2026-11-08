@@ -112,12 +112,8 @@ impl NativePlayerFirePlan {
             if world.state.combat.policy_frame(member.ship_id).is_some() {
                 return Err(NativePlayerInputError::NotControllable);
             }
-            world.state.combat.validate_game_manual_fire(member.ship_id, target).map_err(|error|
-                match error {
-                    bees_sim::combat_world::CombatWorldError::UnsupportedGameManualTurret { .. } =>
-                        NativePlayerInputError::UnsupportedWeapon,
-                    error => NativePlayerInputError::Source(error.into()),
-                })?;
+            world.state.combat.validate_game_manual_fire(member.ship_id, target)
+                .map_err(|error| NativePlayerInputError::Source(error.into()))?;
         }
         Ok(Self { authority, world_id, episode_revision, selected_ship, target })
     }
@@ -335,7 +331,6 @@ pub enum NativePlayerInputError {
     NotControllable,
     InvalidDestination,
     InvalidAction,
-    UnsupportedWeapon,
     Source(GameCommandError),
     Finalization(NativeLevelEventError),
 }
@@ -345,7 +340,7 @@ impl NativePlayerInputError {
     /// terminate the caller's window and follow normal abort settlement.
     pub fn is_rejection(&self) -> bool {
         matches!(self, Self::StaleWorld | Self::InactiveWorld | Self::MissingSquad |
-            Self::NotControllable | Self::InvalidDestination | Self::InvalidAction | Self::UnsupportedWeapon)
+            Self::NotControllable | Self::InvalidDestination | Self::InvalidAction)
     }
 }
 

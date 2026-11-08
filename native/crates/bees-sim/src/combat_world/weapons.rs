@@ -28,9 +28,9 @@ pub enum NativeFirePattern {
     /// LaserBuilder.SendProjectile starts the Leaf Cutter Shot Form clip;
     /// LaserBuilderControl.Fire calls ActuallyShoot at the clip event 0.8s.
     LaserBuilder,
-    /// FullShipTurret derives from LaserBuilder, queues until the Flagship
-    /// Laser Charging clip event at 2.75s, then fires along its current
-    /// physical heading (regardless of earlier policy aim).
+    /// Flagship Laser Charging fires at its authored 2.75s event. Policy
+    /// control samples the physical heading at launch; game control uses
+    /// its aligned target point and can pause the clip while turning.
     FullShipTurret,
     /// BeamCannon.SendProjectile creates one persistent LaserBeam (type 8).
     /// A second firing pass cannot spawn another until its Kill clears the
@@ -161,9 +161,12 @@ pub(super) struct MountedTurret {
     pub(super) spec: NativeTurretSpec,
     pub(super) state: TurretState,
     pub(super) timer: ScaledTimer,
-    /// None until an accepted policy shot starts the authored charging clip.
-    /// A second targeting pass cannot restart an already charging clip.
+    /// Active authored charging clip, shared by game and policy control.
+    /// A policy targeting pass cannot restart an already queued clip.
     pub(super) charge_elapsed_seconds: Option<f32>,
+    /// Source FullShipTurret pauses Animator.speed while unaligned. Cease-fire
+    /// skips Aim and therefore retains the last animation speed until its event.
+    game_charge_paused: bool,
     /// Unity BeamCannon.IsFiringLaserBeam is set on its single active beam.
     /// Cleared by the canonical CombatWorld::end_projectile on any kill path.
     pub(super) active_beam_projectile_id: Option<i64>,
@@ -194,6 +197,7 @@ impl MountedTurret {
             ),
             timer: ScaledTimer::new(spec.rate_of_fire / 3.0, true, false),
             charge_elapsed_seconds: None,
+            game_charge_paused: false,
             active_beam_projectile_id: None,
             manual_target: None,
             spec,
@@ -248,6 +252,14 @@ fn rotate_around_ship(pivot: Vec2, muzzle: Vec2, degrees: f32) -> Vec2 {
                       delta.x * sin + delta.y * cos)
 }
 
+/// Read-only world diagnostics for an actual active animation clip.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct NativeWeaponCharge {
+    pub elapsed_seconds: f32,
+    pub event_seconds: f32,
+    pub paused: bool,
+}
+
 /// A scheduled shot is snapshot before mutating projectile storage. This
 /// permits the turret timer to reuse its per-ship state while all projectiles
 /// are spawned in deterministic ship-ID and exact weapon-slot order.
@@ -267,9 +279,7 @@ pub(super) struct PendingTurretShot {
 }
 
 impl CombatWorld {
-    /// Register real game mounts independently of a policy controller. Charged
-    /// game weapons remain registered for observations but manual admission
-    /// rejects them until their different animation/rotation lifecycle is ported.
+    /// Register real game mounts independently of a policy controller.
     pub fn configure_game_turret(&mut self, ship_id: i64, slot: usize,
         spec: NativeTurretSpec,
     ) -> Result<(), CombatWorldError> {
@@ -300,18 +310,6 @@ impl CombatWorld {
             .ok_or(CombatWorldError::UnknownShip)?;
         if self.ship(ship_id).is_none_or(|ship| ship.vitals.is_dead()) {
             return Err(CombatWorldError::UnknownShip);
-        }
-        if target.is_some() {
-            if let Some(weapons) = self.ship_weapons.get(&ship_id) {
-                for mount in weapons.turrets.iter().flatten() {
-                    if matches!(mount.spec.fire_pattern,
-                        NativeFirePattern::LaserBuilder | NativeFirePattern::FullShipTurret) {
-                        return Err(CombatWorldError::UnsupportedGameManualTurret {
-                            weapon_type: mount.spec.weapon_type,
-                        });
-                    }
-                }
-            }
         }
         Ok(())
     }
@@ -385,10 +383,9 @@ impl CombatWorld {
     /// Read the same active charging state used by gameplay. A renderer
     /// can animate the real Leafcutter/flagship charge without owning a
     /// second timer; a headless runner reads precisely the same state.
-    /// Returns (elapsed_seconds, Fire animation event time).
-    pub fn policy_weapon_charge(
+    pub fn weapon_charge(
         &self, ship_id: i64, slot: usize,
-    ) -> Result<Option<(f32, f32)>, CombatWorldError> {
+    ) -> Result<Option<NativeWeaponCharge>, CombatWorldError> {
         if slot >= 5 {
             return Err(CombatWorldError::InvalidPolicyTurret);
         }
@@ -397,7 +394,10 @@ impl CombatWorld {
         Ok(runtime.turrets[slot].as_ref().and_then(|mount| {
             mount.charge_elapsed_seconds.and_then(|elapsed|
                 mount.spec.fire_pattern.fire_event_seconds()
-                    .map(|event| (elapsed, event)))
+                    .map(|event| NativeWeaponCharge {
+                        elapsed_seconds: elapsed, event_seconds: event,
+                        paused: mount.game_charge_paused,
+                    }))
         }))
     }
 
@@ -450,24 +450,74 @@ impl CombatWorld {
                 continue;
             }
             let pose = body.motion.position;
-            let heading = body.motion.rotation_degrees;
+            let initial_heading = body.motion.rotation_degrees;
+            let moving = body.motion.is_moving;
+            let mut heading = initial_heading;
+            let mut full_alignment = [false; 5];
+            if !policy_controlled && !runtime.cease_fire {
+                for (slot, mount) in runtime.turrets.iter().enumerate() {
+                    let Some(mount) = mount else { continue };
+                    if !matches!(mount.spec.fire_pattern, NativeFirePattern::FullShipTurret) {
+                        continue;
+                    }
+                    let Some(target) = mount.manual_target else { continue };
+                    let position = mount.position(pose, heading);
+                    let desired = heading_towards(target - position);
+                    if moving {
+                        let rotation = mount.state.rotation_degrees + initial_heading - runtime.last_hull_rotation;
+                        full_alignment[slot] = delta_angle(rotation, desired).abs() <= 3.0;
+                    } else {
+                        let (next, aligned) = crate::geometry::timed_turret_rotation(
+                            heading, desired, mount.spec.rotation_rate, dt);
+                        heading = next;
+                        full_alignment[slot] = aligned;
+                    }
+                }
+                if heading != initial_heading {
+                    self.physics.ships_mut()[index].motion.rotation_degrees = heading;
+                }
+            }
             let hull_delta = heading - runtime.last_hull_rotation;
             runtime.last_hull_rotation = heading;
             for (slot, turret) in runtime.turrets.iter_mut().enumerate() {
                 let Some(mount) = turret else { continue };
                 let position = mount.position(pose, heading);
                 mount.state.apply_hull_turn(hull_delta);
-                if !policy_controlled && !runtime.cease_fire &&
-                    !matches!(mount.spec.fire_pattern,
-                        NativeFirePattern::LaserBuilder | NativeFirePattern::FullShipTurret) {
-                    if let Some(target) = mount.manual_target {
-                        mount.state.target_world = target;
-                        mount.state.aim_at_point(position, dt);
-                    } else {
-                        let (rotation, _) = crate::geometry::timed_turret_rotation(
-                            mount.state.rotation_degrees, heading, mount.spec.rotation_rate, dt);
-                        mount.state.rotation_degrees = rotation;
-                        mount.state.is_aligned_with_target = false;
+                if !policy_controlled && !runtime.cease_fire {
+                    match mount.spec.fire_pattern {
+                        NativeFirePattern::LaserBuilder => {
+                            if let Some(target) = mount.manual_target {
+                                mount.state.target_world = target;
+                                mount.state.is_aligned_with_target = true;
+                                mount.charge_elapsed_seconds.get_or_insert(0.0);
+                            } else {
+                                mount.state.is_aligned_with_target = false;
+                                // LaserBuilder.Aim deactivates its clip when
+                                // there is no manual/automatic target.
+                                mount.charge_elapsed_seconds = None;
+                            }
+                        },
+                        NativeFirePattern::FullShipTurret => {
+                            if let Some(target) = mount.manual_target {
+                                mount.state.target_world = target;
+                            }
+                            mount.state.is_aligned_with_target = full_alignment[slot];
+                            mount.game_charge_paused = !full_alignment[slot];
+                            if full_alignment[slot] {
+                                mount.charge_elapsed_seconds.get_or_insert(0.0);
+                            }
+                        },
+                        _ => {
+                            if let Some(target) = mount.manual_target {
+                                mount.state.target_world = target;
+                                mount.state.aim_at_point(position, dt);
+                            } else {
+                                let (rotation, _) = crate::geometry::timed_turret_rotation(
+                                    mount.state.rotation_degrees, heading, mount.spec.rotation_rate, dt);
+                                mount.state.rotation_degrees = rotation;
+                                mount.state.is_aligned_with_target = false;
+                            }
+                        },
                     }
                 }
                 match mount.spec.fire_pattern {
@@ -499,15 +549,19 @@ impl CombatWorld {
                 }
                 let mut launch_now = false;
                 if let Some(elapsed) = mount.charge_elapsed_seconds {
-                    let next = elapsed + dt;
+                    let advancing = policy_controlled || !mount.game_charge_paused;
+                    let next = elapsed + if advancing { dt } else { 0.0 };
                     if mount.spec.fire_pattern.fire_event_seconds()
                         .is_some_and(|event| next + 0.000001 >= event) {
                         // LaserBuilderControl.Fire -> ActuallyShoot:
                         // the previously queued request survives later
                         // policy fire=false, but cannot fire if ceased.
                         mount.charge_elapsed_seconds = None;
-                        launch_now = !runtime.cease_fire
-                            && mount.state.is_rl_controlled;
+                        launch_now = !runtime.cease_fire && if policy_controlled {
+                            mount.state.is_rl_controlled
+                        } else {
+                            mount.manual_target.is_some() && mount.state.is_aligned_with_target
+                        };
                     } else {
                         mount.charge_elapsed_seconds = Some(next);
                     }
@@ -523,7 +577,14 @@ impl CombatWorld {
                         mount.state.manual_targeting_timer_pass(mount.manual_target.is_some(), runtime.cease_fire)
                     };
                     if fire {
-                        if mount.spec.fire_pattern.fire_event_seconds().is_some() {
+                        if !policy_controlled && matches!(mount.spec.fire_pattern, NativeFirePattern::FullShipTurret) {
+                            // Source game FullShipTurret.SendProjectile ends
+                            // the active clip; its animation event fires the gun.
+                            mount.charge_elapsed_seconds = None;
+                        } else if !policy_controlled && matches!(mount.spec.fire_pattern, NativeFirePattern::LaserBuilder) {
+                            // Game LaserBuilder.SendProjectile is deliberately
+                            // inert. Aim starts its clip independently of cooldown.
+                        } else if mount.spec.fire_pattern.fire_event_seconds().is_some() {
                             // Repeated timer passes during an active
                             // charging clip do not restart the clip.
                             if mount.charge_elapsed_seconds.is_none() {
@@ -543,7 +604,7 @@ impl CombatWorld {
                     // IsFiringLaserBeam is true, even when the targeting
                     // timer grants another firing opportunity.
                     let target_world =
-                        if matches!(mount.spec.fire_pattern,
+                        if policy_controlled && matches!(mount.spec.fire_pattern,
                             NativeFirePattern::FullShipTurret) {
                             // FullShipTurret.GetRlForwardFirePoint samples
                             // its physical rotation at the Fire event,
@@ -959,7 +1020,8 @@ mod tests {
             world.advance_mounted_turrets(0.02, None).unwrap();
         }
         assert_eq!(world.projectile_storage_metrics().active_projectiles, 0);
-        let (elapsed, event) = world.policy_weapon_charge(1, 0).unwrap().unwrap();
+        let charge = world.weapon_charge(1, 0).unwrap().unwrap();
+        let (elapsed, event) = (charge.elapsed_seconds, charge.event_seconds);
         assert!(elapsed > 0.0 && elapsed < event);
         assert_eq!(event, 0.8);
         for _ in 0..30 {
@@ -1013,7 +1075,8 @@ mod tests {
             world.advance_mounted_turrets(0.02, None).unwrap();
         }
         assert_eq!(world.projectile_storage_metrics().active_projectiles, 0);
-        let (elapsed, event) = world.policy_weapon_charge(1, 0).unwrap().unwrap();
+        let charge = world.weapon_charge(1, 0).unwrap().unwrap();
+        let (elapsed, event) = (charge.elapsed_seconds, charge.event_seconds);
         assert!(elapsed < event);
         assert_eq!(event, 2.75);
 

@@ -100,11 +100,10 @@ pub use self::policy::PolicySpecialObservations;
 pub use self::policy::WARP_GATE_TYPE;
 pub use self::healing::BEEHIVE_TYPE;
 use self::weapons::{PendingTurretShot, ShipWeapons};
-pub use self::weapons::{NativeFirePattern, NativeTurretSpec};
+pub use self::weapons::{NativeFirePattern, NativeTurretSpec, NativeWeaponCharge};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CombatWorldError {
-    UnsupportedGameManualTurret { weapon_type: u8 },
     InvalidCommandAttribution,
     Physics(PhysicsError),
     Combat(CombatError),

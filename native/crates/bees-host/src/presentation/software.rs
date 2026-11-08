@@ -162,6 +162,15 @@ impl NativeSoftwareRenderer {
                 .is_some_and(|owner| self.selection.squads().contains(&owner)) {
                 self.line(x - 14.0, y - 17.0, x + 14.0, y - 17.0, 0xffffff);
                 self.line(x - 14.0, y + 14.0, x + 14.0, y + 14.0, 0xffffff);
+                for slot in 0..5 {
+                    if let Ok(Some(charge)) = view.combat.weapon_charge(ship.entity_id, slot) {
+                        let progress = (charge.elapsed_seconds / charge.event_seconds).clamp(0.0, 1.0);
+                        let cy = y + 18.0 + slot as f32 * 3.0;
+                        self.line(x - 10.0, cy, x + 10.0, cy, 0x34435a);
+                        self.line(x - 10.0, cy, x - 10.0 + 20.0 * progress, cy,
+                            if charge.paused { 0xe1a34b } else { 0x62b9ff });
+                    }
+                }
                 if let Some(destination) = view.combat.ship_game_destination(ship.entity_id) {
                     let (tx, ty) = self.project(destination);
                     self.line(x, y, tx, ty, 0x526a8a);

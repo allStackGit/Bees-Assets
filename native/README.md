@@ -181,10 +181,19 @@ schema20 `policy_cease_fire` field already records Ship.IsCeaseFire for every sh
 lifetimes and an optional point. A point sets continuous manual fire; None releases
 it without resetting targeting cadence or ending the current squad command.
 The window uses T then left-click for point-fire and X to release selected weapons.
-Permissions, pooled identities, unsupported weapons and policy ownership are
-preflighted; duplicate squads execute once. This currently supports ordinary
-single rotating turrets, DualCannon and BeamCannon. LaserBuilder/FullShipTurret game
-manual input is rejected pending their different animation/hull-aiming lifecycle.
+Permissions, pooled identities and policy ownership are preflighted; duplicate
+squads execute once. Ordinary Single, DualCannon, BeamCannon, LaserBuilder and
+FullShipTurret use the same mounted scheduler. Game LaserBuilder charges directly
+from manual aim and cancels its clip on release; the flagship pauses/resumes its
+clip while unaligned and rotates its true hull/all attached mounts only when
+stopped. Moving flagship aim does not steer the ship. Its source targeting timer
+can deactivate the animation; no substituted cooldown is introduced.
+
+`CombatWorld::weapon_charge` returns NativeWeaponCharge (elapsed_seconds,
+event_seconds, paused), replacing the policy-only tuple getter. Selected ships
+show world-owned charge progress, blue while advancing and orange while paused.
+These are simulation-clock phases using the authored 0.8s and 2.75s Fire events;
+actual Unity render-frame timing and physical T/X interaction remain unqualified.
 
 Manual cooldown uses the source game targeting passes, including missed unaligned
 opportunities; it does not inherit RL readiness latching. The shared scheduler,
@@ -193,7 +202,7 @@ GameWeaponFired is separate from PolicyWeaponFired, and manual shots do not ente
 policy root-outcome tracking. The Level resolves current command attribution only
 when a game shot launches, preserving its ID for the projectile's remaining life.
 Automatic targeting/ranking, game firing statistics/combat timers and full-game
-weapon parity remain incomplete. Physical T/X interaction is not yet qualified.
+visual/weapon parity remain incomplete.
 
 ## Unity scene import (schema 20)
 
@@ -942,14 +951,14 @@ FullShipTurret, and BeamCannon using their authored projectile types.
 `NativeFirePattern::DualCannon` requires the two authored barrel offsets;
 each volley launches two HumanSmall shots with integer `Power / 2`, both
 aimed from the ship center, each with its own shot-root ID.
-LaserBuilder/SplitShot and FullShipTurret use their actual Unity clip
+Under policy control, LaserBuilder/SplitShot and FullShipTurret use their actual Unity clip
 `Fire` animation event times (Leaf Cutter Shot Form: 0.8 seconds;
 Flagship Laser Charging: 2.75 seconds), after the normal three targeting
 passes. Shots remain queued after the policy stops requesting fire;
 cease-fire prevents actual launch. FullShipTurret never turns the hull on
 the policy's behalf and samples the current physical cannon heading at
-the Fire event, not the earlier aim command. `policy_weapon_charge`
-reports that same world-owned charge progress to a renderer.
+the Fire event, not the earlier aim command. `weapon_charge`
+reports that same world-owned charge progress and pause state to a renderer.
 BeamCannon creates just one active type-8 LaserBeam per mount. Its
 authored prefab has Speed=0, a 2x2 BoxCollider2D and initial scale
 (1, 0.5). After contact processing, each subsequent fixed update expands
