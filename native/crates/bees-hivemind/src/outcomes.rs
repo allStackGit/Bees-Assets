@@ -118,10 +118,7 @@ impl OutcomeBatch {
     pub fn validate_journal(&mut self) -> Result<(), HiveMindProtocolError> {
         let mut seen = HashSet::new();
         let mut discards = HashSet::new();
-        for row in self.strategic.iter()
-            .chain(self.shooting.iter())
-            .chain(self.targeting.iter())
-        {
+        for row in &self.strategic {
             if row.outcome_id <= 0 {
                 return Err(HiveMindProtocolError::InvalidReservation);
             }
@@ -129,12 +126,18 @@ impl OutcomeBatch {
                 return Err(HiveMindProtocolError::DuplicateReservation);
             }
             if row.discard_reservation {
-                if row.tsv != 0 || !self.strategic.iter().any(|candidate|
-                    std::ptr::eq(candidate, row)
-                ) {
+                if row.tsv != 0 {
                     return Err(HiveMindProtocolError::InvalidReservation);
                 }
                 discards.insert(row.outcome_id);
+            }
+        }
+        for row in self.shooting.iter().chain(self.targeting.iter()) {
+            if row.outcome_id <= 0 || row.discard_reservation {
+                return Err(HiveMindProtocolError::InvalidReservation);
+            }
+            if !seen.insert(row.outcome_id) {
+                return Err(HiveMindProtocolError::DuplicateReservation);
             }
         }
         let mut listed_discards = HashSet::new();
