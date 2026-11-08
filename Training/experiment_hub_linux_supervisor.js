@@ -120,8 +120,14 @@ function validateLocalInput(job,lease,machineId,adapters,hostOs=os,gpuEnabled=fa
             throw Error('Trusted adapter returned an unsafe invocation.');
         return args;
     };
+    const stopFile=adapter.checkpoint_stop_file?.(context)??null;
+    if(stopFile!==null&&(stopPolicy!=='interrupt-main'||
+        typeof stopFile!=='string'||!path.isAbsolute(stopFile)||
+        !SAFE_ARG.test(stopFile)))
+        throw Error('Cooperative checkpoint Stop requires an absolute trusted Linux marker path and interrupt-capable fallback.');
     return {executable:adapter.executable,args:argsFor(adapter.args),cwd:adapter.cwd||null,
         cpus:r.cpus,ram_mb:r.ram_mb,stop_policy:stopPolicy,
+        stopFile,
         gpu:cpuOnly?null:{binding,verifyArgs:argsFor(adapter.gpu_verify_args)}};
 }
 function verifyUnconfinedDeviceAccess(plan,fsApi) {
@@ -227,7 +233,12 @@ class LinuxSupervisor {
         if(this.state?.version!==1||!Number.isSafeInteger(this.state.revision)||
             !Array.isArray(this.state.records)||this.state.records.length>MAX_RECORDS||
             this.state.records.some(r=>!r||!UUID.test(String(r.job_id))||
-                r.unit!==unitFor(r.job_id))||
+                r.unit!==unitFor(r.job_id)||
+                (r.checkpoint_stop_file!=null&&
+                    (r.stop_policy!=='interrupt-main'||
+                        typeof r.checkpoint_stop_file!=='string'||
+                        !path.isAbsolute(r.checkpoint_stop_file)||
+                        !SAFE_ARG.test(r.checkpoint_stop_file))))||
             new Set(this.state.records.map(r=>r.job_id)).size!==this.state.records.length)
             throw Error('Invalid local supervisor ledger; refusing to start.');
     }
@@ -530,13 +541,31 @@ class LinuxSupervisor {
         try{result=await this.inspectUnit(record);}
         catch(error){result={state:'unverified',active:false,
             diagnostic:String(error.message||error).slice(0,220)};}
+        // The trainer owns checkpoint boundaries. Once a Stop is durable,
+        // deliver its fixed marker only while the exact service is running
+        // under verified native limits. Reconcile retries an interrupted
+        // delivery across agent/coordinator restarts, without re-signalling
+        // or relaunching the process.
+        let markerIssue=null;
+        if(record.stop_requested_at&&record.checkpoint_stop_file&&
+            !record.quarantined_at&&result.active&&
+            result.kernel_limits_verified===true) {
+            try {
+                this.fs.writeFileSync(record.checkpoint_stop_file,'',
+                    {flag:'wx',mode:0o600});
+            }catch(error) {
+                if(error.code!=='EEXIST')
+                    markerIssue='Checkpoint Stop delivery pending: '+
+                        String(error.message||error).slice(0,175);
+            }
+        }
         const state=record.quarantined_at?'unverified'
             :record.stop_requested_at&&result.active?'stop_requested'
             :record.stop_requested_at&&!result.active&&
                 result.state==='finished'?'stopped':result.state;
         const updated={...record,state,
             observed_at:new Date().toISOString(),
-            diagnostic:result.diagnostic||null};
+            diagnostic:markerIssue||result.diagnostic||null};
         if(state==='stopped'&&result.checkpoint_stop_verified===true)
             updated.checkpoint_stop_verified=true;
         if(!record.native_verified_at&&result.active&&result.kernel_limits_verified)
@@ -651,6 +680,7 @@ class LinuxSupervisor {
             unit:unitFor(job.id),state:'launch_requested',
             cpus:invocation.cpus,ram_mb:invocation.ram_mb,
             stop_policy:invocation.stop_policy,
+            ...(invocation.stopFile?{checkpoint_stop_file:invocation.stopFile}:{}),
             requested_at:new Date().toISOString(),observed_at:null,diagnostic:null,
         };
         record.receipt_path=path.resolve(this.root,'job-'+job.id+'.linux-receipt.json');
@@ -702,6 +732,11 @@ class LinuxSupervisor {
         const updated={...record,state:'stop_requested',
             stop_requested_at:new Date().toISOString()};
         this.commit(this.state.records.map(r=>r.job_id===jobId?updated:r));
+        // A checkpoint-aware adapter receives a STOP marker instead of a
+        // systemd SIGINT. Its normal successful exit is verified by the
+        // existing signed-by-service terminal receipt and adapter checkpoint
+        // contract. A marker failure remains pending for reconciliation.
+        if(updated.checkpoint_stop_file)return this.reconcile(jobId);
         await this.runner(SYSTEMCTL,['--user','stop','--no-block',record.unit],
             {timeout:12000,maxBuffer:16384,windowsHide:true});
         return this.reconcile(jobId);
