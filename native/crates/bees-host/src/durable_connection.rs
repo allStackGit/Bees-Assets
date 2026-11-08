@@ -24,7 +24,7 @@ use bees_hivemind::connection::{
     NativeConnectionError, NativeHiveMindConnection,
 };
 use bees_hivemind::outcomes::{
-    OutcomeBatch, StoreAcknowledgement,
+    OutcomeBatch, RecordedOutcomeBatch, StoreAcknowledgement,
 };
 use bees_hivemind::protocol::{
     GetStrategyRequest, GetTargetingRequest, HiveMindProtocolError,
@@ -180,6 +180,21 @@ impl DurableHiveMindConnection {
         let request = self.connection.queue_outcomes(batch)
             .map_err(DurableConnectionError::Request)?;
         self.persist_or_poison()?;
+        Ok(request)
+    }
+
+    /// Journal replay and live delivery share this checkpoint transaction.
+    /// A previously checkpointed source position is not reissued even if
+    /// its original StoreCommands request has already been acknowledged.
+    pub fn queue_journal_outcomes(
+        &mut self, recorded: &RecordedOutcomeBatch,
+    ) -> Result<Option<StoreCommandsRequest>, DurableConnectionError> {
+        self.ensure_available()?;
+        let request = self.connection.queue_journal_outcomes(recorded)
+            .map_err(DurableConnectionError::Request)?;
+        if request.is_some() {
+            self.persist_or_poison()?;
+        }
         Ok(request)
     }
 
