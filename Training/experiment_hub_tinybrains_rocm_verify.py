@@ -10,7 +10,7 @@ import re
 import sys
 
 
-PCI = re.compile(r"[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\\.[0-7]")
+PCI = re.compile(r"[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]")
 
 
 def runtime_pci_bus_id():
