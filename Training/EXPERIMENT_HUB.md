@@ -1262,8 +1262,12 @@ alongside the existing machine ID/token, approved adapter module,
 private supervisor root and pinned helper values.
 
 Only a locally approved adapter advertising `gpu_execution:'cuda'`
-can receive Windows CUDA jobs. A native job must request one exclusive
-GPU; its lease pins the physical PCI address and CUDA UUID. The worker
+can receive Windows CUDA jobs. Each job requests one physical GPU,
+either exclusively or through a locally opted-in
+`gpu_sharing:'cooperative-pytorch'` adapter. Shared jobs specify positive
+`gpu_vram_mb` and `gpu_compute_pct` budgets; these are cooperative
+scheduler reservations, not OS GPU quotas. Its lease pins the physical
+PCI address, CUDA UUID, and exact budgets. The worker
 validates that identity at acknowledgement and immediately before Start.
 The Windows owner creates the child suspended under kernel CPU/RAM limits
 and sets `CUDA_VISIBLE_DEVICES` to the pinned UUID. Before the trainer
@@ -1271,11 +1275,17 @@ starts, TinyBrains' Python child verifies that the selector matches the
 pinned UUID, sees exactly one CUDA-capable PyTorch device, and executes a
 small CUDA operation. CUDA jobs use the fixed, locally installed
 TinyBrains runtime wrapper; the CPU-only inline entry remains unchanged.
-This child-side readiness check is not GPU isolation. Competing Hub-owned
-native GPU jobs on the same device are refused. **This visibility mask is
-cooperative, not GPU isolation:** other local processes can still use the
-device, and no actual compute share or VRAM cap is enforced.
-Do not allow simultaneous external training on an allocated GPU.
+This child-side readiness check is not GPU isolation. An exclusive
+Hub-owned job refuses all unresolved local owners on the same GPU. Multiple
+cooperative shared TinyBrains jobs may run concurrently on that device
+only when their *durably recorded* VRAM and compute budgets fit its
+physical capacity. TinyBrains applies a per-process PyTorch caching
+allocator VRAM ceiling before importing the trainer. This ceiling is
+cooperative, not a kernel GPU memory limit; non-PyTorch allocations
+and other unrelated programs remain outside it. GPU compute percent
+is an admission target, **not a processing-time guarantee**. Hardware
+or OS GPU isolation is not established. Do not assume independently
+running training processes honor Hub allocations.
 Automatic GPU allocation and Start require separate explicit Arm options
 and are not restored unattended after a coordinator restart.
 
@@ -1851,8 +1861,12 @@ connected worker, enter the update count, and select **Use profile
 and update count**. The picker fills the draft without saving or starting it.
 For API callers, set `profile`, `profile_sha256`, and `updates` (a positive
 integer up to 10,000,000). CPU profiles need a CPU/RAM claim without a GPU;
-CUDA profiles require one exclusive GPU plus CPU/RAM. The worker advertises
-profile device modes alongside immutable digests.
+CUDA/ROCm profiles require one GPU plus CPU/RAM. Linux ROCm still
+requires an exclusive, kernel-filtered GPU and its access probe.
+Windows TinyBrains may instead request a `shared` GPU with explicit
+`gpu_vram_mb` and `gpu_compute_pct` when the approved adapter
+advertises cooperative PyTorch sharing. The worker advertises
+profile device modes and sharing capability alongside immutable digests.
 The worker advertises approved profile names and digests. The Hub matches
 them before claiming capacity and checks again before dispatch. Install
 the updated worker before enabling placement on the updated coordinator.
@@ -2076,8 +2090,9 @@ worker's artifact retention policy.
 
 Production installation and qualification of project-specific adapters,
 real-machine Windows CUDA and Linux systemd/ROCm qualification,
-enforceable GPU compute and VRAM quotas, shared-GPU execution,
-seamless adoption of independently running trainers,
+enforceable OS GPU compute and VRAM quotas, Linux shared-GPU execution,
+independent non-PyTorch shared GPU adapters, seamless adoption of
+independently running trainers,
 production coexistence qualification of the
 CPU-only scheduler, production independent evaluators for non-Bees adapters,
 trusted production-source metrics adapters for additional
