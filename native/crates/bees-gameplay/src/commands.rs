@@ -431,6 +431,10 @@ struct FollowingFriendly {
 /// One canonical command's source state. Physics and cargo belong
 /// exclusively to CombatWorld, not to this timer/movement controller.
 struct ActiveNativeCommand {
+    /// The source Command.EnemySquad, independently of whether this command
+    /// is permitted to auto-target weapons (Retreat can still have an enemy).
+    /// Needed for GameState.GetTargetedSquads / GangUp without a new registry.
+    source_enemy_owner: Option<SquadLifetime>,
     preferred_weapon_enemy: Option<SquadLifetime>,
     selection: NativeCommandSelection,
     // Retreat has no time limit while moving; other commands may have
@@ -588,6 +592,28 @@ impl NativeSquadCommandDirector {
 
     pub fn preferred_weapon_enemy(&self, owner: SquadLifetime) -> Option<SquadLifetime> {
         self.active.get(&owner)?.preferred_weapon_enemy
+    }
+
+    /// Source GameState.GetTargetedSquads(side) returns live enemy squads
+    /// already selected by other active allied commands, in original
+    /// Squad registry order. Retreat counts as HasEnemy even though it does
+    /// not auto-target weapons. The first entry is GangUp's priority.
+    /// A caller must also validate actual current ship vitality.
+    pub fn first_targeted_enemy(
+        &self, roster: &NativeSquadRoster, side: i32,
+    ) -> Option<SquadLifetime> {
+        for &owner in roster.source_order() {
+            let Some(ally) = roster.get(owner) else { continue; };
+            if ally.side != side { continue; }
+            let Some(target) = self.active.get(&owner)
+                .and_then(|command| command.source_enemy_owner) else {
+                continue;
+            };
+            if roster.get(target).is_some_and(|enemy| enemy.side != side) {
+                return Some(target);
+            }
+        }
+        None
     }
 
     pub fn current_server_outcome(&self, owner: SquadLifetime) -> Option<i64> {
@@ -1375,6 +1401,7 @@ impl NativeSquadCommandDirector {
             _ => Some(settings.max_command_seconds),
         };
         let active = ActiveNativeCommand {
+            source_enemy_owner: squad.enemy.map(|enemy| enemy.owner),
             preferred_weapon_enemy: if matches!(selection.kind(), LocalCommandKind::Aggressive |
                 LocalCommandKind::BombingRun | LocalCommandKind::Charge | LocalCommandKind::CircleSquad |
                 LocalCommandKind::RightSwipe | LocalCommandKind::LeftSwipe | LocalCommandKind::InAndOut) {
