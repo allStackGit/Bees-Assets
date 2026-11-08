@@ -494,6 +494,7 @@ fn choose_game_weapon_target(
     game_target_facts: &std::collections::HashMap<i64, NativeGameTargetFacts>,
     shooter_index: usize, mount: &PolicyTurretMount,
     mount_position: Vec2, strategy: u8,
+    reservations: &mut crate::damage_reservations::DamageReservations,
     nearby: &std::collections::BTreeMap<i64, (u64, u64)>,
     random_order: &[i64],
 ) -> Result<Option<(i64, Vec2)>, CombatWorldError> {
@@ -510,6 +511,7 @@ fn choose_game_weapon_target(
         // Unity Shuffle is cached across ordinary targeting passes.
         // Process its actual retained order, not a fresh random winner
         // sampled independently for every shot.
+        let mut first_valid = None;
         for &target_id in random_order {
             if !nearby.contains_key(&target_id) { continue; }
             let Some(&target_index) = ship_by_id.get(&target_id) else { continue; };
@@ -517,12 +519,19 @@ fn choose_game_weapon_target(
                 physics, ships, target_front_offsets,
                 shooter_index, target_index, mount, mount_position,
             )? {
-                return Ok(Some((target_id, point)));
+                let health = ships[target_index].vitals.health();
+                let status = reservations.status(
+                    ships[shooter_index].side, target_id, health,
+                );
+                first_valid.get_or_insert((target_id, point));
+                if status.can_select_target() {
+                    return Ok(Some((target_id, point)));
+                }
             }
         }
-        return Ok(None);
+        return Ok(first_valid);
     }
-    let mut best: Option<(i64, Vec2, f64, u64)> = None;
+    let mut best: Option<(i64, Vec2, f64, u64, bool)> = None;
     for (&target_id, &(first_seen, _)) in nearby {
         let Some(&target_index) = ship_by_id.get(&target_id) else { continue; };
         let Some((target_point, hull_distance_sq)) =
@@ -532,6 +541,9 @@ fn choose_game_weapon_target(
             )?
         else { continue; };
         let target = &ships[target_index];
+        let has_damage_budget = reservations.status(
+            ships[shooter_index].side, target_id, target.vitals.health(),
+        ).can_select_target();
         let rank = match strategy {
             5 | 6 => f64::from(target.vitals.health()),
             7 | 8 => f64::from(game_target_facts[&target_id].firepower),
@@ -546,6 +558,9 @@ fn choose_game_weapon_target(
             _ => 0.0,
         };
         let better = best.is_none_or(|prior| {
+            if has_damage_budget != prior.4 {
+                return has_damage_budget;
+            }
             let compare = rank.total_cmp(&prior.2);
             let preferred = match strategy {
                 5 | 7 | 10 | 11 | 13 | 15 | 17..=40 => compare.is_gt(),
@@ -554,9 +569,13 @@ fn choose_game_weapon_target(
             };
             preferred || (compare.is_eq() && first_seen < prior.3)
         });
-        if better { best = Some((target_id, target_point, rank, first_seen)); }
+        if better {
+            best = Some((
+                target_id, target_point, rank, first_seen, has_damage_budget,
+            ));
+        }
     }
-    Ok(best.map(|(id, point, _, _)| (id, point)))
+    Ok(best.map(|(id, point, _, _, _)| (id, point)))
 }
 
 /// A scheduled shot is snapshot before mutating projectile storage. This
@@ -574,6 +593,9 @@ pub(super) struct PendingTurretShot {
     target_world: Vec2,
     spec: NativeTurretSpec,
     is_policy: bool,
+    /// Original TargetShip held by this physical shot at launch, never
+    /// read again from a later command or reused pooled wrapper.
+    target_ship_id: Option<i64>,
 }
 
 impl CombatWorld {
@@ -790,6 +812,7 @@ impl CombatWorld {
                         target_world,
                         spec: mount.spec,
                         is_policy: true,
+                        target_ship_id: None,
                     });
                 }
             }
@@ -806,6 +829,7 @@ impl CombatWorld {
         let target_front_offsets = &self.target_front_offsets;
         let game_target_facts = &self.game_target_facts;
         let physics = &mut self.physics;
+        let reservations = &mut self.reservations;
         for (&ship_id, runtime) in &mut self.game_turrets {
             let Some(&index) = ship_by_id.get(&ship_id) else { continue };
             let ship = &ships[index];
@@ -904,6 +928,7 @@ impl CombatWorld {
                                 turret_rotation: mount.state.rotation_degrees,
                                 target_world: mount.state.target_world,
                                 spec: mount.spec, is_policy: false,
+                                target_ship_id: mount.target_ship_id,
                             });
                             mount.charge_elapsed_seconds = None;
                         } else {
@@ -1001,7 +1026,8 @@ impl CombatWorld {
                             mount.target_ship_id = choose_game_weapon_target(
                                 physics, ships, ship_by_id, target_front_offsets,
                                 game_target_facts,
-                                index, mount, position, strategy, nearby,
+                                index, mount, position, strategy,
+                                reservations, nearby,
                                 &runtime.random_target_order[slot],
                             )?.map(|(target_id, _)| target_id);
                         }
