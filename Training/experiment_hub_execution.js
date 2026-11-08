@@ -42,7 +42,12 @@ class LocalExecution {
                 this.supervisor.gpuEnabled===true&&
                 (this.supervisor.gpuExecution==='cuda'
                     ?this.supervisor.adapters?.[project]?.gpu_execution==='cuda'
-                    :typeof this.supervisor.adapters?.[project]?.gpu_verify_args==='function'))};
+                    :typeof this.supervisor.adapters?.[project]?.gpu_verify_args==='function')),
+            gpu_shared_projects:this.projects.filter(project=>
+                this.supervisor.gpuEnabled===true&&
+                this.supervisor.gpuExecution==='cuda'&&
+                this.supervisor.adapters?.[project]?.gpu_execution==='cuda'&&
+                this.supervisor.adapters?.[project]?.gpu_sharing==='cooperative-pytorch')};
     }
     async handle(order) {
         if(!order||!['start','stop','inspect','qualify_gpu'].includes(order.action)||
