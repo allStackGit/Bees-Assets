@@ -139,8 +139,9 @@ through NativeHostRuntime::recover_prior_outcome_journal, and the headless
 run config accepts `recover_outcome_journals` entries with `run_id` and
 `path`. Use the SAME connection checkpoint as the previous run; never
 invent a new prefix when retrying existing server requests. Recovery only
-accepts complete `command_outcomes_ready` records, rejects an invalid or
-unterminated tail, and reports queued vs already-queued batches. For example:
+accepts complete `command_outcomes_ready` records immediately following
+the same world's authoritative EpisodeFinal/EpisodeAborted, rejects an
+invalid or unterminated tail, and reports queued vs already-queued batches. For example:
 `"recover_outcome_journals": [{"run_id":"old-run","path":"old.jsonl"}]`.
 Prior unfinished in-flight games or uncorrelated strategy replies are
 not reconstructible from this terminal-outcome journal and need separate
