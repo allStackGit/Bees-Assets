@@ -9,8 +9,9 @@ const path=require('node:path');
 const crypto=require('node:crypto');
 const {promisify}=require('node:util');
 const {execFile}=require('node:child_process');
-const {inspectHost}=require('./experiment_hub_host');
-const {matchingLeaseBudget}=require('./experiment_hub_resources');
+const {inspectHost,availableMemoryMb}=require('./experiment_hub_host');
+const {discoverAmdGpus}=require('./experiment_hub_gpu_inventory');
+const {matchingLeaseBudget,startHeadroom}=require('./experiment_hub_resources');
 const {verifyKernelLimits}=require('./experiment_hub_linux_cgroup');
 const {resolveRocmDevices,deviceIdentity}=require('./experiment_hub_linux_gpu_devices');
 const runDefault=promisify(execFile);
@@ -599,6 +600,9 @@ class LinuxSupervisor {
             throw Error('Job already has a local launch record; reconcile rather than restart.');
         const invocation=validateLocalInput(job,lease,this.machineId,
             this.adapters,this.hostOs,this.gpuEnabled);
+        const availableRam=availableMemoryMb(this.hostOs,this.fs);
+        const ramBlock=startHeadroom(job.resources,availableRam);
+        if(ramBlock)throw Error(ramBlock);
         if(job.continuation_of_job_id) {
             const parent=this.state.records.find(r=>
                 r.job_id===job.continuation_of_job_id);
@@ -633,6 +637,12 @@ class LinuxSupervisor {
                 !['finished','stopped','failed'].includes(r.state))))
             throw Error('GPU launch requires excluded-device evidence and unambiguous local PCI ownership.');
         if(gpuPlan)verifyUnconfinedDeviceAccess(gpuPlan,this.fs);
+        if(gpuPlan) {
+            const physical=discoverAmdGpus({fsApi:this.fs}).find(device=>
+                device.pci_address===invocation.gpu.binding.pci_address);
+            const gpuBlock=startHeadroom(job.resources,availableRam,physical);
+            if(gpuBlock)throw Error(gpuBlock);
+        }
         const record={
             job_id:job.id,lease_id:lease.id,project_id:job.project_id,
             ...(gpuPlan?{gpu_pci_address:invocation.gpu.binding.pci_address}:{}),
