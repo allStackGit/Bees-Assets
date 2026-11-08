@@ -245,6 +245,15 @@ where
     if !details.formation.valid() || !details.settings.valid() {
         return Err(fail(GameCommandError::InvalidSettings));
     }
+    // Older exported scenes have no genuine Squad.MaxSight. A Scouting
+    // receipt cannot be accepted without it; discard its actual server
+    // reservations rather than failing the entire live Level or inventing
+    // a sight radius from model observations.
+    if resolved.local_command == LocalCommandKind::Scouting &&
+        details.scouting.is_none()
+    {
+        return Ok(discard());
+    }
     if targeted && (original_enemy.is_none() ||
         details.enemy.map(|enemy| enemy.owner) != original_enemy)
     {
