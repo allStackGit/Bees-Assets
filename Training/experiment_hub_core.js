@@ -2060,6 +2060,11 @@ class ExperimentHub {
                     try {
                         evaluation=evaluationEvidence(
                             report.evaluation,job.evaluation_stop,job.dispatch_id);
+                        // A suite name alone cannot authorize a training Stop.
+                        // Keep single-suite receipts as strictly identified as
+                        // all-of batches before pinning or acting on results.
+                        if(!evaluation.suite_sha256)
+                            throw Error('Single-suite evaluations require suite SHA-256 fingerprints.');
                         const prior=job.evaluation_suite_definitions?.[evaluation.suite_id];
                         if(prior&&prior!==evaluation.suite_sha256)
                             throw Error('Evaluation suite '+evaluation.suite_id+
