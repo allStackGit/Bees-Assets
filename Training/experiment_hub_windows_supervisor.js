@@ -13,9 +13,12 @@ const {spawn,execFile}=require('node:child_process');
 const {promisify}=require('node:util');
 const runDefault=promisify(execFile);
 const {matchingLeaseBudget}=require('./experiment_hub_resources');
+const {discoverNvidiaGpus}=require('./experiment_hub_gpu_inventory');
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const ID=/^[a-z][a-z0-9_-]{0,47}$/;
 const SHA=/^[a-f0-9]{64}$/;
+const PCI=/^[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]$/;
+const CUDA_UUID=/^GPU-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const terminal=new Set(['finished','failed','stopped']);
 const noControls=s=>typeof s==='string'&&s.length>0&&s.length<=1024&&
     !/[\0\r\n]/.test(s);
@@ -28,7 +31,8 @@ function writeAtomic(fsApi,file,value,cryptoApi=crypto) {
         if(fsApi.existsSync(temp))fsApi.unlinkSync(temp);
     }
 }
-function validateInvocation(job,lease,machineId,adapters,hostOs,pathApi,cryptoApi) {
+function validateInvocation(job,lease,machineId,adapters,hostOs,pathApi,cryptoApi,
+    gpuEnabled=false,gpuInventory=discoverNvidiaGpus) {
     if(!job||!lease||!UUID.test(String(job.id))||
         !UUID.test(String(lease.id))||job.status!=='waiting_adapter'||
         job.adapter!=='unconfigured'||job.project_id==='bees'||
@@ -55,9 +59,8 @@ function validateInvocation(job,lease,machineId,adapters,hostOs,pathApi,cryptoAp
         r.cpus>available||r.cpus>cores||r.cpus!==lr.cpus||
         !Number.isSafeInteger(r.ram_mb)||r.ram_mb<128||
         r.ram_mb>Math.floor(hostOs.totalmem()/1048576)||
-        r.ram_mb!==lr.ram_mb||r.gpu_count!==0||lr.gpu_count!==0||
-        (r.gpus||[]).length||(lr.gpus||[]).length)
-        throw Error('Windows Job Objects currently support CPU/RAM-only budgets.');
+        r.ram_mb!==lr.ram_mb)
+        throw Error('Windows native job CPU/RAM request is invalid.');
     if(!matchingLeaseBudget(r,lr))
         throw Error('Windows resource budget differs from the acknowledged lease.');
     const adapter=adapters[job.project_id];
@@ -68,6 +71,28 @@ function validateInvocation(job,lease,machineId,adapters,hostOs,pathApi,cryptoAp
         (adapter.cwd!=null&&
             (!noControls(adapter.cwd)||!pathApi.isAbsolute(adapter.cwd))))
         throw Error('Install a Windows-local adapter explicitly allowing force-stop only.');
+    let gpu=null;
+    if(r.gpu_count!==0) {
+        const binding=lease.gpu_bindings?.[0];
+        if(!gpuEnabled||adapter.gpu_execution!=='cuda'||
+            r.gpu_count!==1||lr.gpu_count!==1||
+            r.gpu_mode!=='exclusive'||lr.gpu_mode!=='exclusive'||
+            lr.gpus?.length!==1||!Array.isArray(lease.gpu_bindings)||
+            lease.gpu_bindings.length!==1||
+            (r.gpus?.length>0&&r.gpus[0]!==lr.gpus[0])||
+            binding?.id!==lr.gpus[0]||
+            !PCI.test(String(binding.pci_address||''))||
+            !CUDA_UUID.test(String(binding.cuda_uuid||'')))
+            throw Error('Windows CUDA requires one exclusively claimed, physically pinned GPU and local opt-in.');
+        const current=gpuInventory();
+        if(!Array.isArray(current)||!current.some(device=>
+            device.pci_address===binding.pci_address&&
+            device.cuda_uuid===binding.cuda_uuid&&
+            Number.isSafeInteger(device.vram_mb)&&device.vram_mb>=binding.vram_mb))
+            throw Error('The CUDA device identity or physical VRAM changed before Start.');
+        gpu={pci_address:binding.pci_address,cuda_uuid:binding.cuda_uuid};
+    }else if(lr.gpu_count!==0||(r.gpus||[]).length||(lr.gpus||[]).length)
+        throw Error('Unexpected GPU resources in a CPU-only Windows lease.');
     const predecessor=job.continuation_of_job_id||null,
         root=job.artifact_lineage_root_id||job.id;
     if(!UUID.test(String(root))||
@@ -82,6 +107,7 @@ function validateInvocation(job,lease,machineId,adapters,hostOs,pathApi,cryptoAp
         artifact_lineage_root_id:root,continuation_of_job_id:predecessor,
         ...(job.expected_parent_model_sha256?
             {expected_parent_model_sha256:job.expected_parent_model_sha256}:{}),
+        ...(gpu?{gpu_pci_address:gpu.pci_address,gpu_cuda_uuid:gpu.cuda_uuid}:{}),
     });
     const stopFile=adapter.checkpoint_stop_file?.(context)??null;
     if(stopFile!==null&&(!noControls(stopFile)||!pathApi.isAbsolute(stopFile)))
@@ -92,10 +118,11 @@ function validateInvocation(job,lease,machineId,adapters,hostOs,pathApi,cryptoAp
         throw Error('Windows adapter returned unsafe native arguments.');
     return {executable:adapter.executable,args:argv,cwd:adapter.cwd||'',
         cpus:r.cpus,hostCpus:cores,ramMb:r.ram_mb,
-        root,predecessor,stopFile};
+        root,predecessor,stopFile,gpu};
 }
 class WindowsSupervisor {
     constructor({root,machineId,adapters,helperPath,helperSha256,
+        gpuEnabled=false,gpuInventory=discoverNvidiaGpus,
         fsApi=fs,pathApi=path.win32,hostOs=os,cryptoApi=crypto,
         run=runDefault,spawnProcess=spawn,netApi=net}={}) {
         if(hostOs.platform()!=='win32'||!pathApi.isAbsolute(root||'')||
@@ -106,6 +133,8 @@ class WindowsSupervisor {
         this.helperPath=helperPath;this.helperSha256=helperSha256;
         this.fs=fsApi;this.path=pathApi;this.hostOs=hostOs;
         this.crypto=cryptoApi;this.run=run;
+        this.gpuEnabled=gpuEnabled===true;this.gpuExecution='cuda';
+        this.gpuInventory=gpuInventory;
         this.spawnProcess=spawnProcess;this.net=netApi;
         this.file=pathApi.join(root,'windows-supervisor-v1.json');
         this.lock=pathApi.join(root,'windows-supervisor.lock');
@@ -354,7 +383,12 @@ class WindowsSupervisor {
         if(this.state.records.some(x=>x.job_id===job?.id))
             throw Error('Windows job already has a durable local launch record.');
         const invocation=validateInvocation(job,lease,this.machineId,
-            this.adapters,this.hostOs,this.path,this.crypto);
+            this.adapters,this.hostOs,this.path,this.crypto,
+            this.gpuEnabled,this.gpuInventory);
+        if(invocation.gpu&&this.state.records.some(record=>
+            record.gpu_pci_address===invocation.gpu.pci_address&&
+            !terminal.has(record.state)))
+            throw Error('Another native job retains the claimed Windows CUDA device.');
         if(invocation.predecessor) {
             const parent=this.state.records.find(r=>
                 r.job_id===invocation.predecessor);
@@ -381,6 +415,7 @@ class WindowsSupervisor {
             executable:invocation.executable,args:invocation.args,
             cwd:invocation.cwd,cpus:invocation.cpus,
             hostCpus:invocation.hostCpus,ramMb:invocation.ramMb,
+            ...(invocation.gpu?{gpuUuid:invocation.gpu.cuda_uuid}:{}),
             receiptPath};
         // Persist the exact locally approved job request *before* creating
         // any owner process. A crash leaves an inspectable, non-repeatable job.
@@ -391,7 +426,10 @@ class WindowsSupervisor {
             artifact_lineage_root_id:invocation.root,
             ...(invocation.stopFile?{checkpoint_stop_file:invocation.stopFile}:{}),
             token,cpus:invocation.cpus,host_cpus:invocation.hostCpus,
-            ram_mb:invocation.ramMb,state:'launch_requested',
+            ram_mb:invocation.ramMb,
+            ...(invocation.gpu?{gpu_pci_address:invocation.gpu.pci_address,
+                gpu_cuda_uuid:invocation.gpu.cuda_uuid}:{}),
+            state:'launch_requested',
             requested_at:new Date().toISOString(),diagnostic:null};
         this.commit([...this.state.records,record]);
         try {
