@@ -624,6 +624,27 @@ fn main() -> Result<(), Box<dyn Error>> {
                     }
                     continue;
                 },
+                Ok(bees_host::client::NativeClientAction::ManualFire(input)) => {
+                    let firing = input.target.is_some();
+                    match host.player_manual_fire_squads(input) {
+                        Ok(counts) if counts.accepted_squads > 0 &&
+                            counts.rejected_squads == 0 =>
+                            client.report_move(if firing {
+                                "Manual point-fire accepted"
+                            } else { "Manual fire released" }),
+                        Ok(counts) if counts.accepted_squads > 0 =>
+                            client.report_move("Eligible cannons updated; some squads unavailable"),
+                        Ok(_) => client.report_move("No selected squads have manual cannons"),
+                        Err(bees_host::runtime::HostPlayerInputError::Gameplay(error))
+                            if error.is_rejection() =>
+                            client.report_move("Squad cannot accept manual fire"),
+                        Err(error) => {
+                            failed_window = Some(format!("native manual fire: {error:?}"));
+                            break;
+                        },
+                    }
+                    continue;
+                },
                 Ok(bees_host::client::NativeClientAction::Stop(input)) => {
                     match host.player_stop_squads(input) {
                         Ok(counts) if counts.accepted_squads > 0 &&
