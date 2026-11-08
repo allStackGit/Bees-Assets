@@ -657,7 +657,7 @@ impl NativeLevelBatchDriver {
         let source_side = roster.get(*owner)
             .ok_or(LiveMatchupResolutionError::MissingOwner)?.side;
         let preferred = world.state.events.commands()
-            .first_targeted_enemy(roster, source_side);
+            .first_targeted_enemy(&world.state.combat, roster, source_side);
         let catalog = world.state.metadata.ship_asset_catalog()
             .ok_or(LiveMatchupResolutionError::MissingAssetCatalog)?;
         select_live_matchup_squad(
