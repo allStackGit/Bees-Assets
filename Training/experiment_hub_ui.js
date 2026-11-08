@@ -2382,6 +2382,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const cpus=integer('hub-build-cpus',1,4096);
             const ram_mb=integer('hub-build-ram',128,100000000);
             const gpu_count=integer('hub-build-gpu-count',0,32);
+            if(gpu_count>1)
+                throw Error('Native Start currently supports at most one GPU per job. Use separate jobs for multiple devices.');
             const mode=builderMode.value;
             const min_gpu_vram_mb=integer('hub-build-gpu-min-vram',0,1000000);
             const raw=$('hub-build-gpu-ids').value.trim();
