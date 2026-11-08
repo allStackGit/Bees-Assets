@@ -25,7 +25,7 @@ use bees_hivemind::protocol::{
 use bees_hivemind::session::SquadLifetime;
 use bees_sim::simulation::{RandomStream, Simulation, World};
 use crate::durable_connection::{DurableConnectionError, DurableHiveMindConnection};
-use crate::socket::{HiveMindSocketError, NativeHiveMindSocket};
+use crate::socket::{HiveMindSocketError, HiveMindSocketEvent, NativeHiveMindSocket};
 use crate::journal_recovery::{
     replay_command_outcomes, JournalRecoveryCounts, JournalRecoveryError,
 };
@@ -34,6 +34,15 @@ use crate::presentation::NativeRenderWorldView;
 use bees_gameplay::player_inputs::{NativeLevelPlayerContext, NativePlayerMove,
     NativePlayerMovePlan, NativePlayerInputError, NativePlayerAuthority,
     NativePlayerSquadMoves, NativePlayerMoveCounts};
+
+/// Results from one authenticated socket event on the explicit I/O thread.
+/// A received accepted targeting strategy still requires an authored
+/// gameplay installation; a StoreCommands receipt is already checkpointed.
+#[derive(Debug)]
+pub enum NativeHostSocketDelivery {
+    SetupAccepted { request_hash: i64, server_game_id: i64 },
+    HiveMind(Option<NativeHiveMindFrameDelivery>),
+}
 
 #[derive(Debug)]
 pub enum HostPlayerInputError {
@@ -454,6 +463,37 @@ where
         self.checkpoint_prepared_outcomes()
             .map_err(HiveMindSocketError::Durability)?;
         socket.flush_unsent_stores(&self.connection)
+    }
+
+    /// Read and dispatch exactly one authenticated socket event. This is
+    /// blocking I/O and must be invoked by the socket owner, never from
+    /// the rendering or simulation thread. The durable connection persists
+    /// every StoreCommands acknowledgement and every late-reservation
+    /// discard before any accepted response is returned to the caller.
+    ///
+    /// After ingress, flush newly prepared outcomes and newly durable
+    /// discards through the same socket; the per-socket sent-hash guard
+    /// prevents repeated sends until connection loss, and the connection's
+    /// checkpoint remains authoritative across a restart.
+    pub fn service_socket_event(
+        &mut self, socket: &mut NativeHiveMindSocket,
+    ) -> Result<NativeHostSocketDelivery, HiveMindSocketError> {
+        match socket.read_event()? {
+            HiveMindSocketEvent::SetupAccepted {
+                request_hash, server_game_id,
+            } => {
+                self.flush_store_socket(socket)?;
+                Ok(NativeHostSocketDelivery::SetupAccepted {
+                    request_hash, server_game_id,
+                })
+            }
+            HiveMindSocketEvent::ServerFrame(frame) => {
+                let delivery = self.receive_frame(&frame)
+                    .map_err(HiveMindSocketError::Durability)?;
+                self.flush_store_socket(socket)?;
+                Ok(NativeHostSocketDelivery::HiveMind(delivery))
+            }
+        }
     }
 
     /// Actual multi-Level model inference, fixed-step combat and ordered
