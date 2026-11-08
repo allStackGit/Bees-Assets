@@ -3907,6 +3907,10 @@ impl CombatWorld {
         if let Some(random) = random {
             self.spawn_pending_asteroid_fragments(random)?;
         }
+        // The just-completed physical event transaction is the source of
+        // truth for mutable per-ship kill order and FleetShip damage.
+        // New targets at the following weapon step observe these ranks.
+        self.reconcile_game_target_rank_events();
 
         let physics_counts = self.physics.counts();
         Ok(StepCounts {
