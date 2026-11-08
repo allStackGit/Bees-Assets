@@ -161,6 +161,13 @@ function boundedReport(value) {
     const profiles=tinyBrainsProfiles(value.tinybrains_profiles??{});
     if(Object.keys(profiles).length&&(!installed.includes('tinybrains')||!['win32','linux'].includes(value.platform)))
         throw Error('TinyBrains profiles require an installed native adapter.');
+    const cudaProfiles=value.tinybrains_cuda_profiles??[];
+    if(!Array.isArray(cudaProfiles)||cudaProfiles.length>Object.keys(profiles).length||
+        cudaProfiles.some(id=>typeof id!=='string'||!Object.hasOwn(profiles,id))||
+        new Set(cudaProfiles).size!==cudaProfiles.length||
+        (cudaProfiles.length&&(!installed.includes('tinybrains')||
+            value.platform!=='win32')))
+        throw Error('CUDA TinyBrains profiles require an installed Windows adapter.');
     const gpuProjects=value.gpu_projects??[];
     if(!Array.isArray(gpuProjects)||new Set(gpuProjects).size!==gpuProjects.length||
         gpuProjects.length>installed.length||
@@ -178,6 +185,7 @@ function boundedReport(value) {
         native_preflight_reason:reason||null,
         evaluation_suites:localExecutor?evaluationSuites:{},
         tinybrains_profiles:profiles,
+        tinybrains_cuda_profiles:cudaProfiles.slice(),
         gpu_projects:gpuProjects.slice(),
         installed_projects:['linux','win32'].includes(value.platform)&&
             localExecutor?installed.slice():[]};
@@ -828,6 +836,7 @@ class ExperimentHub {
                 machine.installed_projects = report.installed_projects.slice();
                 machine.evaluation_suites = copy(report.evaluation_suites);
                 machine.tinybrains_profiles = copy(report.tinybrains_profiles||{});
+                machine.tinybrains_cuda_profiles=report.tinybrains_cuda_profiles.slice();
                 machine.gpu_projects = report.gpu_projects.slice();
             }
             return machine;
