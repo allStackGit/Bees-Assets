@@ -240,6 +240,18 @@ document.addEventListener('DOMContentLoaded', () => {
         return data;
     };
     const feedback=(id,message)=>{ $(id).textContent=message; };
+    function placementObservedLoad(place) {
+        if(!place.capacity_fits)return '';
+        if(place.suggested_gpus?.length===1) {
+            const vram=Number.isSafeInteger(place.observed_gpu_free_vram_mb)
+                ?' · '+place.observed_gpu_free_vram_mb+' MiB physical GPU free':'';
+            const activity=Number.isFinite(place.observed_gpu_busy_pct)
+                ?' · '+place.observed_gpu_busy_pct+'% GPU busy':'';
+            return vram+activity;
+        }
+        return Number.isFinite(place.observed_host_cpu_busy_pct)
+            ?' · '+place.observed_host_cpu_busy_pct.toFixed(1)+'% host CPU busy':'';
+    }
     function allocationBlocks(results) {
         const blocked=results.filter(item=>item.status==='insufficient_capacity');
         const counts=new Map();
@@ -2257,6 +2269,7 @@ document.addEventListener('DOMContentLoaded', () => {
             feedback('hub-placements',(data.placements||[]).map(p=>
                 p.machine_name+': '+(p.capacity_fits?'Advisory capacity fits':'Unavailable')+
                 (p.suggested_gpus?.length?' · GPUs '+p.suggested_gpus.join(', '):'')+
+                placementObservedLoad(p)+
                 (p.observed_headroom_block?' · Current Start blocked: '+p.observed_headroom_block:'')+
                 ' — '+p.reason
             ).join('\n')||'No registered machines.');
@@ -2372,6 +2385,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     ?p.machine_name+(p.suggested_gpus.length
                         ?' · '+p.suggested_gpus.join(', '):'')
                     :'No fit')+
+                placementObservedLoad(p)+
                 (p.observed_headroom_block?' · Current Start blocked: '+p.observed_headroom_block:'')+
                 ' — '+p.reason
             ).join('\n')||'No workloads entered. No changes made.');
