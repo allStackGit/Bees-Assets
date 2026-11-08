@@ -184,7 +184,10 @@ function observedOffers(offers,observation) {
 }
 
 function sendHeartbeat(url,machineId,token,observedLeaseIds=[],
-    executionReports=[],advertisement={},gpuQualificationReports=[]) {
+    executionReports=[],advertisement={},gpuQualificationReports=[],
+    requestExecutionOrders=true) {
+    if(typeof requestExecutionOrders!=='boolean')
+        return Promise.reject(Error('Native instruction request preference must be boolean.'));
     if (typeof token !== 'string' || !TOKEN.test(token))
         return Promise.reject(Error('Missing/invalid EXPERIMENT_HUB_AGENT_TOKEN.'));
     if (!Array.isArray(observedLeaseIds) || observedLeaseIds.length>100 ||
@@ -199,6 +202,7 @@ function sendHeartbeat(url,machineId,token,observedLeaseIds=[],
     const payload=JSON.stringify({
         ...observations(machineId),host_cpu_busy_pct:hostCpuBusyPct(),
         observed_lease_ids:observedLeaseIds,
+        request_execution_orders:requestExecutionOrders,
         execution_reports:executionReports,
         gpu_qualification_reports:gpuQualificationReports,
         local_executor:advertisement.local_executor===true,
@@ -338,8 +342,10 @@ async function main() {
         else if(receipts.length||pendingReports.length||
             pendingGpuReports.length) {
             try {
+                // Final --once flush is report-only. The coordinator must
+                // not persist a second Start offer in a reply we discard.
                 await sendHeartbeat(url,id,token,receipts,pendingReports,
-                    advertisement,pendingGpuReports);
+                    advertisement,pendingGpuReports,false);
             }catch(error) {
                 console.error('[experiment-hub-agent] Final receipt failed: '+error.message);
                 process.exitCode=1;
