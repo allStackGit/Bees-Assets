@@ -395,6 +395,19 @@ where
         Ok(counts)
     }
 
+    /// A notification sink exposes only batches already journaled to stable
+    /// storage. Checkpoint each original batch into the connection's one
+    /// StoreCommands retry ledger BEFORE the sink releases it. The socket
+    /// uses pending_store_hashes/retry_payload to transmit those exact
+    /// hashes; this method never equates queueing with server commit.
+    fn checkpoint_prepared_outcomes(&mut self) -> Result<(), DurableConnectionError> {
+        while let Some(batch) = self.sink.first_prepared_outcomes() {
+            self.connection.queue_outcomes(batch.clone())?;
+            self.sink.prepared_outcomes_queued();
+        }
+        Ok(())
+    }
+
     /// Actual multi-Level model inference, fixed-step combat and ordered
     /// durable notification delivery. A partial-step error is returned,
     /// never silently retried as a valid PPO trajectory.
@@ -413,6 +426,12 @@ where
                 &mut self.sink, rounds, delivery_every,
             )
         ).map_err(HostWindowError::Connection)?;
+        // Even when a later world step failed, earlier completed episodes
+        // may already have durably published prepared credits in this window.
+        // Checkpoint those before returning either the window result or its
+        // failure to the operator.
+        self.checkpoint_prepared_outcomes()
+            .map_err(HostWindowError::Connection)?;
         let counts = result.map_err(HostWindowError::Window)?;
         self.sampler.record_window(&counts);
         Ok(counts)
@@ -428,6 +447,8 @@ where
                 &mut self.simulation, index, kind, connection, &mut self.sink,
             )
         ).map_err(HostStopError::Connection)?;
+        self.checkpoint_prepared_outcomes()
+            .map_err(HostStopError::Connection)?;
         result.map_err(HostStopError::Stop)
     }
 
@@ -438,6 +459,8 @@ where
         if !self.connection.is_available() {
             return Err(HostResetError::Connection(DurableConnectionError::Unavailable));
         }
+        self.checkpoint_prepared_outcomes()
+            .map_err(HostResetError::Connection)?;
         self.driver.reset_world_after_delivery(
             &mut self.simulation, index, seed, replacement,
         ).map_err(HostResetError::Reset)
