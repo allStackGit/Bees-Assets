@@ -139,6 +139,15 @@ function placements(machines,reservations,input) {
         const capacityFits=wanted.cpus<=available.cpus&&
             wanted.ram_mb<=available.ram_mb&&selected.length===wanted.gpu_count;
         const online=machine.status==='connected';
+        // This sample includes Bees, Hub jobs, desktop activity and other
+        // external processes. It guides CPU-only placement between machines
+        // that already fit; it never changes claimed capacity or licenses
+        // CPU oversubscription. Absent/stale samples have no preference.
+        const observedHostCpuBusy=online&&
+            typeof machine.host_cpu_busy_pct==='number'&&
+            Number.isFinite(machine.host_cpu_busy_pct)&&
+            machine.host_cpu_busy_pct>=0&&machine.host_cpu_busy_pct<=100
+                ?machine.host_cpu_busy_pct:null;
         const gpuDevice=selected.length===1
             ?machine.verified_gpus?.find(g=>g.id===selected[0].id):null;
         // A placement may be sensible for future work even when the
@@ -146,7 +155,7 @@ function placements(machines,reservations,input) {
         const observed_headroom_block=online
             ?startHeadroom(wanted,machine.reported_available_ram_mb,gpuDevice):null;
         return {machine_id:machine.id,machine_name:machine.name,online,available,
-            observed_headroom_block,
+            observed_headroom_block,observed_host_cpu_busy_pct:observedHostCpuBusy,
             // Heartbeats authenticate a reporting process, not reservation
             // enforcement. No job is executable through this planner yet.
             fits:false,capacity_fits:capacityFits,
@@ -157,6 +166,15 @@ function placements(machines,reservations,input) {
                     ?'No physical GPU matched registered PCI identity on this connected agent'
                     :'Insufficient CPU, RAM, verified GPU VRAM, or advisory GPU compute budget'};
     });
+}
+
+// Lower observed host CPU load breaks placement ties for CPU-only work.
+ // Unknown usage is not proof of idle capacity. GPU selection keeps its
+ // existing physical device and VRAM priority.
+function cpuLoadRank(placement,resourceBudget) {
+    return resourceBudget.gpu_count===0&&
+        Number.isFinite(placement.observed_host_cpu_busy_pct)
+        ?placement.observed_host_cpu_busy_pct:100;
 }
 
 // Greedy what-if placements for simultaneous jobs. Never write reservations,
@@ -198,7 +216,10 @@ function plan(machines,reservations,jobs) {
         const eligible=placements(machines,claimed,item.resources)
             .filter(p=>p.capacity_fits&&
                 (!item.machine_id||p.machine_id===item.machine_id))
-            .sort((a,b)=>a.available.cpus-b.available.cpus||
+            .sort((a,b)=>Number(Boolean(a.observed_headroom_block))-
+                    Number(Boolean(b.observed_headroom_block))||
+                cpuLoadRank(a,item.resources)-cpuLoadRank(b,item.resources)||
+                a.available.cpus-b.available.cpus||
                 a.available.ram_mb-b.available.ram_mb||
                 a.machine_id.localeCompare(b.machine_id));
         const chosen=eligible[0];
@@ -268,4 +289,4 @@ function ensureLocalCpuRamCapacity(records,cpus,ramMb,hostCpus,hostRamMb) {
     }
 }
 module.exports={request,matchingLeaseBudget,remaining,placements,plan,startHeadroom,
-    ensureLocalCpuRamCapacity};
+    cpuLoadRank,ensureLocalCpuRamCapacity};
