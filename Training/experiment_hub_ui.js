@@ -1313,8 +1313,24 @@ document.addEventListener('DOMContentLoaded', () => {
 
             statusCell.title=readiness?.reason||
                 proof?.diagnostic||detail||j.status_reason||status;
-            cell(tr,j.resources.cpus+' CPU / '+j.resources.ram_mb+' MiB / '+
-                j.resources.gpu_count+' GPUs');
+            const pinnedGpuDevices=(linked?.gpu_bindings||[])
+                .map(binding=>{
+                    const physical=(machine?.observed_gpus||[])
+                        .find(device=>device.pci_address===binding.pci_address);
+                    const description=binding.id+' @ '+binding.pci_address;
+                    const observed=physical?.used_vram_mb;
+                    return description+(observed==null?''
+                        :' · '+observed+' MiB host GPU used');
+                });
+            const resourceText=j.resources.cpus+' CPU / '+j.resources.ram_mb+
+                ' MiB / '+j.resources.gpu_count+' GPUs'+
+                (j.resources.gpu_count
+                    ?' ('+j.resources.gpu_mode+
+                        (pinnedGpuDevices.length?' · '+pinnedGpuDevices.join(', '):' · awaiting binding')+')'
+                    :'');
+            const resourceCell=cell(tr,resourceText);
+            if(pinnedGpuDevices.length)
+                resourceCell.title='Pinned physical devices. Observed GPU memory is host-wide, not isolated to this job.';
             const policy=j.evaluation_stop;
             const multi=policy?.all_of||null;
             const evidence=j.evaluation_stop_evidence||j.last_evaluation;
