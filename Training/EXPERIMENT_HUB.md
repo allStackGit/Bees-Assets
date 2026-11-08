@@ -519,7 +519,9 @@ same-ID/same-PCI/same-nominal-VRAM configuration, including the budget
 fields. An out-of-date expected snapshot, an identity change, armed
 automation or any outstanding GPU-bearing lease is rejected.
 The update is one atomic registry write, never a resize, Stop or
-relabeling of an owned GPU. Bind physical GPUs separately and account for
+relabeling of an owned GPU. Rebinding an existing logical GPU ID retains its
+prior Hub admission ceiling (clamped to any smaller new nominal VRAM), even
+when an older caller omits these budget fields. Bind physical GPUs separately and account for
 unmanaged software explicitly; no Hub admission policy controls the
 resource use of unrelated processes.
 
