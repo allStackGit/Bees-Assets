@@ -502,10 +502,14 @@ where
     /// every StoreCommands acknowledgement and every late-reservation
     /// discard before any accepted response is returned to the caller.
     ///
-    /// After ingress, flush newly prepared outcomes and newly durable
-    /// discards through the same socket; the per-socket sent-hash guard
-    /// prevents repeated sends until connection loss, and the connection's
-    /// checkpoint remains authoritative across a restart.
+    /// Intentionally do NOT send pending stores after consuming a server
+    /// frame here. An outbound socket write can fail after an accepted
+    /// targeting reply has already been removed from the request session;
+    /// combining those operations would lose the accepted gameplay
+    /// decision on the error return. The socket owner applies the returned
+    /// gameplay/banning result, then explicitly calls flush_store_socket.
+    /// Queueing, replay and outbound transmission remain separate from
+    /// this authoritative inbound handoff.
     pub fn service_socket_event(
         &mut self, socket: &mut NativeHiveMindSocket,
     ) -> Result<NativeHostSocketDelivery, HostSocketError> {
@@ -513,16 +517,12 @@ where
             match socket.read_event()? {
                 HiveMindSocketEvent::SetupAccepted {
                     request_hash, server_game_id,
-                } => {
-                    self.flush_store_socket(socket)?;
-                    Ok(NativeHostSocketDelivery::SetupAccepted {
-                        request_hash, server_game_id,
-                    })
-                }
+                } => Ok(NativeHostSocketDelivery::SetupAccepted {
+                    request_hash, server_game_id,
+                }),
                 HiveMindSocketEvent::ServerFrame(frame) => {
                     let delivery = self.receive_frame(&frame)
                         .map_err(HiveMindSocketError::Durability)?;
-                    self.flush_store_socket(socket)?;
                     Ok(NativeHostSocketDelivery::HiveMind(delivery))
                 }
             }
