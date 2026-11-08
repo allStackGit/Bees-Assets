@@ -961,6 +961,7 @@ impl CombatWorld {
                                 turret_rotation: mount.state.rotation_degrees,
                                 target_world: mount.state.target_world,
                                 spec: mount.spec, is_policy: false,
+                                target_ship_id: mount.target_ship_id,
                             });
                         }
                         // Non-RL ready-to-fire is only latched when a
