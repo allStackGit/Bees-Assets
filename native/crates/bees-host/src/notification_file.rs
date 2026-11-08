@@ -313,6 +313,7 @@ impl DurableDiagnosticNotifications {
                 },
                 "selection": command_identity(&finished.selection),
                 "cause": format!("{:?}", finished.cause),
+                "shooting_targeted_enemy": finished.shooting_targeted_enemy,
                 "capability_command_tsv": finished.capability_command_tsv,
             })),
             NativeLevelNotificationKind::AbortedCommand { owner, selection } => Some(json!({
