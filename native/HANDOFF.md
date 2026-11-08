@@ -161,7 +161,12 @@ checkpointed results without manually sequencing two distinct paths.
 Blocking socket I/O stays off the render/physics thread. Direct
 send_store, flush_unsent_stores and reconnect replay share one at-most-once
 transmission guard per authenticated socket session; it resets after an
-accepted reconnect-level even if the WebSocket object is reused. On socket
+accepted reconnect-level even if the WebSocket object is reused. On a
+verified lost-ack/timeout condition, the socket owner may explicitly invoke
+NativeHostRuntime::retry_store_socket to retransmit only still-pending
+original hashes without changing their durable payload. This is distinct
+from normal flush and does not create a timer, new request hash or ledger.
+On socket
 protocol or transport failure service_socket_event retires transient
 strategy/targeting requests and returns their unresolved original hashes
 in HostSocketError::Disconnected; outstanding durable StoreCommands requests
