@@ -2975,6 +2975,10 @@ class ExperimentHub {
         const afterId=value.after_job_id==null?null:value.after_job_id;
         if(afterId!==null&&ancestorId!==null)
             throw Error('A job cannot both depend on an independent predecessor and continue its checkpoint.');
+        if(ancestorId!==null&&project.id==='tinybrains'&&
+            (Object.hasOwn(frozen,'import_checkpoint')||
+                Object.hasOwn(frozen,'import_checkpoint_sha256')))
+            throw Error('TinyBrains checkpoint imports initialize a new lineage only. Select a continuation configuration without import_checkpoint.');
         let parent=null,dependency=null,waitingPredecessor=false;
         let dependencyReady=false;
         if(ancestorId!==null) {
