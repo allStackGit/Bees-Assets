@@ -7,7 +7,7 @@
 
 use bees_hivemind::session::{HiveMindSession, SquadLifetime, StrategyReceipt};
 use bees_sim::combat_world::{CombatEvent, CombatWorld};
-use bees_sim::combat::HitEvent;
+use bees_sim::combat::{DamageDelta, HitEvent};
 use bees_sim::geometry::Vec2;
 use bees_sim::physics::CollisionMatrix;
 use bees_sim::navigation_runtime::NavigationRuntime;
@@ -100,6 +100,9 @@ pub enum NativeLevelNotificationKind {
     /// after a command is superseded; a consumer must not finalize its
     /// StoreCommands reservation until delayed projectile credit is safe.
     CombatHit(HitEvent),
+    /// Health/TSV loss with no validated attacker, including collisions
+    /// and stale pooled shooter identities. Never give it attacker TSV.
+    UnattributedDamage { target_id: i64, delta: DamageDelta },
     FinishedCommand(FinishedNativeCommand),
     /// A failed world has no trustworthy final TSV. HiveMind origins must
     /// discard/reconcile their reservations; local origins have none.
@@ -1089,16 +1092,17 @@ impl NativeLevelEventProcessor {
                 got: completed_tick,
             });
         }
-        let (capability_count, minion_count, combat_hit_count) = events.iter()
-            .fold((0usize, 0usize, 0usize), |(caps, minions, hits), event| (
+        let (capability_count, minion_count, combat_damage_count) = events.iter()
+            .fold((0usize, 0usize, 0usize), |(caps, minions, damage), event| (
                 caps + usize::from(requires_level_capability_delivery(event)),
                 minions + usize::from(matches!(event, CombatEvent::ScoutBeaconDropped { .. })),
-                hits + usize::from(matches!(event, CombatEvent::Hit(_))),
+                damage + usize::from(matches!(event,
+                    CombatEvent::Hit(_) | CombatEvent::UnattributedDamage { .. })),
             ));
         Self::reserve_output_records(
             &mut self.pending_notifications, &mut self.failed,
             capability_count.saturating_add(minion_count)
-                .saturating_add(combat_hit_count)
+                .saturating_add(combat_damage_count)
                 .saturating_add(self.timed_finished.len()),
         )?;
         // Source Mining.Mine mutates the actual rock and fleet before
@@ -1137,6 +1141,13 @@ impl NativeLevelEventProcessor {
                 self.pending_notifications.push(NativeLevelNotification {
                     tick: completed_tick,
                     kind: NativeLevelNotificationKind::CombatHit(*hit),
+                });
+            } else if let CombatEvent::UnattributedDamage { target_id, delta } = event {
+                self.pending_notifications.push(NativeLevelNotification {
+                    tick: completed_tick,
+                    kind: NativeLevelNotificationKind::UnattributedDamage {
+                        target_id: *target_id, delta: *delta,
+                    },
                 });
             }
             if requires_level_capability_delivery(event) {
@@ -1286,15 +1297,16 @@ impl NativeLevelEventProcessor {
         let reward_count = group_events.map_or(
             reward.emissions.len(), |events| events.len(),
         );
-        let (capability_notifications, combat_hit_notifications) = world.events()
-            .iter().fold((0usize, 0usize), |(caps, hits), event| (
+        let (capability_notifications, combat_damage_notifications) = world.events()
+            .iter().fold((0usize, 0usize), |(caps, damage), event| (
                 caps + usize::from(requires_level_capability_delivery(event)),
-                hits + usize::from(matches!(event, CombatEvent::Hit(_))),
+                damage + usize::from(matches!(event,
+                    CombatEvent::Hit(_) | CombatEvent::UnattributedDamage { .. })),
             ));
         let new_count = self.changes.len()
             .saturating_add(self.finished.len())
             .saturating_add(capability_notifications)
-            .saturating_add(combat_hit_notifications)
+            .saturating_add(combat_damage_notifications)
             .saturating_add(reward_count)
             .saturating_add(usize::from(reward.finalized.is_some()));
         // Only the notification outbox is mutated here: the reward and
@@ -1319,6 +1331,13 @@ impl NativeLevelEventProcessor {
                 self.pending_notifications.push(NativeLevelNotification {
                     tick: completed_tick,
                     kind: NativeLevelNotificationKind::CombatHit(*hit),
+                });
+            } else if let CombatEvent::UnattributedDamage { target_id, delta } = event {
+                self.pending_notifications.push(NativeLevelNotification {
+                    tick: completed_tick,
+                    kind: NativeLevelNotificationKind::UnattributedDamage {
+                        target_id: *target_id, delta: *delta,
+                    },
                 });
             } else if requires_level_capability_delivery(event) {
                 self.pending_notifications.push(NativeLevelNotification {
