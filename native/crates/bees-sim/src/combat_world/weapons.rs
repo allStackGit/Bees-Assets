@@ -157,7 +157,7 @@ impl NativeTurretSpec {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub(super) struct PolicyTurretMount {
+pub(super) struct MountedTurret {
     pub(super) spec: NativeTurretSpec,
     pub(super) state: TurretState,
     pub(super) timer: ScaledTimer,
@@ -169,7 +169,23 @@ pub(super) struct PolicyTurretMount {
     pub(super) active_beam_projectile_id: Option<i64>,
 }
 
-impl PolicyTurretMount {
+/// Physical weapon state belongs to a ship, independently of the policy
+/// controller that supplies its current requests. Beam teardown and mounted
+/// rotation read this same owner through every projectile lifecycle path.
+#[derive(Clone, Debug)]
+pub(super) struct ShipWeapons {
+    pub(super) turrets: [Option<MountedTurret>; 5],
+    pub(super) last_hull_rotation: f32,
+    pub(super) cease_fire: bool,
+}
+
+impl ShipWeapons {
+    pub(super) fn new(rotation: f32) -> Self {
+        Self { turrets: [None; 5], last_hull_rotation: rotation, cease_fire: false }
+    }
+}
+
+impl MountedTurret {
     fn new(spec: NativeTurretSpec) -> Self {
         Self {
             state: TurretState::new(
@@ -264,16 +280,17 @@ impl CombatWorld {
             self.ships[index].vitals.is_dead() {
             return Err(CombatWorldError::UnknownShip);
         }
-        let runtime = self.policy_ship_runtime.get_mut(&ship_id)
+        let runtime = self.ship_weapons.get_mut(&ship_id)
             .ok_or(CombatWorldError::UnknownShip)?;
         if runtime.turrets[slot].is_some() {
             return Err(CombatWorldError::DuplicatePolicyTurret { ship_id, slot });
         }
         let radians = spec.initial_rotation_degrees.to_radians();
-        runtime.control.bind_turret_aim(
+        self.policy_ship_runtime.get_mut(&ship_id)
+            .ok_or(CombatWorldError::UnknownShip)?.control.bind_turret_aim(
             slot, Vec2::new(-radians.sin(), radians.cos()),
         );
-        runtime.turrets[slot] = Some(PolicyTurretMount::new(spec));
+        runtime.turrets[slot] = Some(MountedTurret::new(spec));
         Ok(())
     }
 
@@ -283,7 +300,7 @@ impl CombatWorld {
     pub fn set_policy_ship_cease_fire(
         &mut self, ship_id: i64, cease_fire: bool,
     ) -> Result<(), CombatWorldError> {
-        let runtime = self.policy_ship_runtime.get_mut(&ship_id)
+        let runtime = self.ship_weapons.get_mut(&ship_id)
             .ok_or(CombatWorldError::UnknownShip)?;
         runtime.cease_fire = cease_fire;
         Ok(())
@@ -299,7 +316,7 @@ impl CombatWorld {
         if slot >= 5 {
             return Err(CombatWorldError::InvalidPolicyTurret);
         }
-        let runtime = self.policy_ship_runtime.get(&ship_id)
+        let runtime = self.ship_weapons.get(&ship_id)
             .ok_or(CombatWorldError::UnknownShip)?;
         Ok(runtime.turrets[slot].as_ref().and_then(|mount| {
             mount.charge_elapsed_seconds.and_then(|elapsed|
@@ -311,7 +328,7 @@ impl CombatWorld {
     pub fn policy_self_weapons(
         &self, ship_id: i64,
     ) -> Result<[Option<SelfWeapon>; 5], CombatWorldError> {
-        let runtime = self.policy_ship_runtime.get(&ship_id)
+        let runtime = self.ship_weapons.get(&ship_id)
             .ok_or(CombatWorldError::UnknownShip)?;
         let body = self.ship_body(ship_id)
             .ok_or(CombatWorldError::UnknownShip)?;
@@ -333,7 +350,7 @@ impl CombatWorld {
     pub fn policy_observed_weapons(
         &self, ship_id: i64,
     ) -> Option<[Option<ObservedWeapon>; 5]> {
-        let runtime = self.policy_ship_runtime.get(&ship_id)?;
+        let runtime = self.ship_weapons.get(&ship_id)?;
         Some(std::array::from_fn(|slot| {
             runtime.turrets[slot].as_ref().map(|mount|
                 mount.observed_weapon()
@@ -348,7 +365,7 @@ impl CombatWorld {
         &mut self, dt: f32,
     ) -> Result<(), CombatWorldError> {
         self.policy_pending_shots.clear();
-        for (&ship_id, runtime) in &mut self.policy_ship_runtime {
+        for (&ship_id, runtime) in &mut self.ship_weapons {
             let Some(&index) = self.ship_by_id.get(&ship_id) else { continue };
             let ship = &self.ships[index];
             let body = &self.physics.ships()[index];
@@ -541,7 +558,7 @@ impl CombatWorld {
                 // Emit once per actual shot so reward and telemetry counts
                 // match the physical projectiles, not timer passes.
                 if matches!(shot.spec.fire_pattern, NativeFirePattern::BeamCannon) {
-                    let runtime = self.policy_ship_runtime.get_mut(&shot.ship_id)
+                    let runtime = self.ship_weapons.get_mut(&shot.ship_id)
                         .expect("prevalidated live beam cannon");
                     let mount = runtime.turrets[usize::from(shot.slot)].as_mut()
                         .expect("prevalidated beam cannon mount");
@@ -604,7 +621,7 @@ impl CombatWorld {
                 continue;
             }
             let Some(turret_rotation) =
-                self.policy_ship_runtime.get(&owner_id).and_then(|runtime|
+                self.ship_weapons.get(&owner_id).and_then(|runtime|
                     runtime.turrets.iter().flatten().find_map(|turret|
                         (turret.active_beam_projectile_id == Some(beam_id))
                             .then_some(turret.state.rotation_degrees)))
@@ -665,7 +682,7 @@ impl CombatWorld {
         let &index = self.ship_by_id.get(&ship_id)
             .expect("prevalidated live policy ship");
         let motion = &self.physics.ships()[index].motion;
-        let runtime = self.policy_ship_runtime.get_mut(&ship_id)
+        let runtime = self.ship_weapons.get_mut(&ship_id)
             .expect("prevalidated policy runtime");
         for (slot, request) in requests.iter().enumerate() {
             if let Some(mount) = runtime.turrets[slot].as_mut() {
@@ -748,7 +765,7 @@ mod tests {
         let index = *world.projectile_by_id.get(&id).unwrap();
         assert_eq!(world.projectiles()[index].projectile_type, 8);
         assert_eq!(world.physics().projectiles()[index].motion.velocity, Vec2::ZERO);
-        assert_eq!(world.policy_ship_runtime.get(&1).unwrap().turrets[0]
+        assert_eq!(world.ship_weapons.get(&1).unwrap().turrets[0]
             .as_ref().unwrap().active_beam_projectile_id, Some(id));
         // The first simulation frame after spawn uses the prefab's
         // initial 1x0.5 box; subsequent frames extend X by two.
@@ -769,7 +786,7 @@ mod tests {
         world.physics.ships_mut()[0].motion.rotation_degrees = 45.0;
         world.advance_policy_turrets(0.02).unwrap();
         world.advance_beam_projectiles().unwrap();
-        let rotation = world.policy_ship_runtime.get(&1).unwrap().turrets[0]
+        let rotation = world.ship_weapons.get(&1).unwrap().turrets[0]
             .as_ref().unwrap().state.rotation_degrees.to_radians();
         let expected_center = Vec2::new(3.0, 2.0) +
             Vec2::new(-rotation.sin(), rotation.cos()) * 5.0;
@@ -801,7 +818,7 @@ mod tests {
             .unwrap();
         assert_eq!(world.ship(3).unwrap().vitals.health(), 90);
         assert!(!world.physics().projectiles()[index].active);
-        assert_eq!(world.policy_ship_runtime.get(&1).unwrap().turrets[0]
+        assert_eq!(world.ship_weapons.get(&1).unwrap().turrets[0]
             .as_ref().unwrap().active_beam_projectile_id, None);
     }
 

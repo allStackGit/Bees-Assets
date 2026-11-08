@@ -9,7 +9,7 @@
 
 use super::*;
 use crate::policy_batch::PolicyActionMask;
-use super::weapons::PolicyTurretMount;
+use super::weapons::ShipWeapons;
 use super::striker::PolicyStrikerRuntime;
 use super::barge::PolicyBargeCharge;
 use super::scout::PolicyScoutRuntime;
@@ -54,12 +54,6 @@ pub(super) struct PolicyShipRuntime {
     pub(super) bind_revision: u64,
     pub(super) movement_disabled: bool,
     pub(super) control: PolicyControl,
-    /// Real physical turret mounts, in the exact five authored weapon slots.
-    pub(super) turrets: [Option<PolicyTurretMount>; 5],
-    /// Last physical hull angle used to rotate attached turrets.
-    pub(super) last_hull_rotation: f32,
-    /// Forwarded from the live gameplay ship's cease-fire state.
-    pub(super) cease_fire: bool,
     /// This is a single native owner, not overlapping optional subclasses.
     pub(super) special: Option<PolicyShipSpecial>,
     /// Healing is its own action branch, and can coexist with a
@@ -138,12 +132,10 @@ impl CombatWorld {
         }
         let rotation = self.physics.ships()[index].motion.rotation_degrees;
         self.bump_policy_roster_revision();
+        self.ship_weapons.insert(ship_id, ShipWeapons::new(rotation));
         self.policy_ship_runtime.insert(ship_id, PolicyShipRuntime {
             frame, bind_revision: self.policy_roster_revision,
             movement_disabled, control: PolicyControl::new(),
-            turrets: [None; 5],
-            last_hull_rotation: rotation,
-            cease_fire: false,
             special: None,
             healing: None,
             mining: None,
@@ -245,8 +237,10 @@ impl CombatWorld {
         }
         let runtime = self.policy_ship_runtime.get(&ship_id)
             .expect("validated bound policy ship");
+        let weapons = self.ship_weapons.get(&ship_id)
+            .expect("bound policy ship owns mounted weapon state");
         Ok(PolicyActionMask {
-            fire: std::array::from_fn(|slot| runtime.turrets[slot].is_some()),
+            fire: std::array::from_fn(|slot| weapons.turrets[slot].is_some()),
             special: [
                 true,
                 match runtime.special {
@@ -320,8 +314,10 @@ impl CombatWorld {
             let (decoded, disabled) = {
                 let runtime = self.policy_ship_runtime.get_mut(&id)
                     .expect("prevalidated policy controller");
+                let weapons = self.ship_weapons.get(&id)
+                    .expect("prevalidated mounted ship weapons");
                 let available = std::array::from_fn(|slot|
-                    runtime.turrets[slot].is_some());
+                    weapons.turrets[slot].is_some());
                 (
                     runtime.control.decode(
                         &decision.action, runtime.frame, &available,

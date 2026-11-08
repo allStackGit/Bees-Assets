@@ -6,7 +6,29 @@ Prior host/support source settings: `c266ade64`; chosen targets: `34881ba6b`;
 origins: `aeb1bc9f7`; player selection/movement: `fcabe9599` / `8d76006dd`.
 Original `B:\Bees\Assets` and live training untouched.
 
-## Latest integrated work
+## Latest weapon ownership increment
+
+Physical mounted weapons now live in CombatWorld.ship_weapons, separate from
+PolicyShipRuntime's decision frame/control/special actions. The one ShipWeapons
+owner holds turret slots, cooldown/charging state, last hull rotation, cease-fire
+and active beam identity. Configuration, observation, policy masks/requests,
+firing, beam growth/teardown and ship death all use it. Policy bind still performs
+the same fresh mount reset as before; ordinary non-policy registration/targeting
+is NOT enabled by this increment. No second firing controller was added.
+
+Verified: workspace-weapons-owner.txt contains all-target/all-feature compilation
+and 106 passing existing tests (including charged/dual/beam weapon paths). Headless
+check passed. External src/bin/weapons_owner.rs / weapons-owner.txt exercised
+public CombatWorld stepping, five emitted shots, target health100->40, real
+weapon observations/action mask and subsequent cease-fire. This supplied-action
+probe is not a trained-policy, full Level, live server or Unity parity result.
+
+Highest-value next weapon work: register source non-policy mounts against this
+physical owner; port ordinary target eligibility/ranking, aim points and the
+non-policy TargetingSequence cadence into the same scheduler. Preserve source
+manual/automatic behavior rather than labeling game ships as policy agents.
+
+## Prior integrated window work
 
 - Optional window keys G/P/M/H/R arm Guard/Patrol/Mining/Heal/retreat.
   Left-click targets, left-drag sets Patrol; Backspace/right-click cancels.

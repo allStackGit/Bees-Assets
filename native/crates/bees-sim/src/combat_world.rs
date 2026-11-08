@@ -99,7 +99,7 @@ use self::policy::{PolicyShipRuntime, PolicyShipSpecial};
 pub use self::policy::PolicySpecialObservations;
 pub use self::policy::WARP_GATE_TYPE;
 pub use self::healing::BEEHIVE_TYPE;
-use self::weapons::PendingPolicyShot;
+use self::weapons::{PendingPolicyShot, ShipWeapons};
 pub use self::weapons::{NativeFirePattern, NativeTurretSpec};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -725,6 +725,7 @@ pub struct CombatWorld {
     /// state for each bound ship; no secondary training-only movement world.
     // Stable ship-ID iteration is necessary for reproducible shot IDs.
     policy_ship_runtime: BTreeMap<i64, PolicyShipRuntime>,
+    ship_weapons: BTreeMap<i64, ShipWeapons>,
     /// Updated only when a policy controller is bound or retired.
     /// Decision cadence checks this revision instead of rescanning the
     /// entire controller roster on every fixed physics step.
@@ -871,6 +872,7 @@ impl CombatWorld {
             navigation_requests: NavigationRequests::new(),
             game_ship_steering: HashMap::new(),
             policy_ship_runtime: BTreeMap::new(),
+            ship_weapons: BTreeMap::new(),
             policy_roster_revision: 0,
             policy_decision_seen: HashSet::new(),
             policy_pending_shots: Vec::new(),
@@ -1092,6 +1094,7 @@ impl CombatWorld {
         self.scout_beacon_specs.remove(&victim_id);
         self.game_scout_runtime.remove(&victim_id);
         self.discovery.retire(DiscoveryKind::Ship, victim_id);
+        self.ship_weapons.remove(&victim_id);
         if self.policy_ship_runtime.remove(&victim_id).is_some() {
             self.bump_policy_roster_revision();
         }
@@ -2711,7 +2714,7 @@ impl CombatWorld {
         if matches!(&self.projectiles[index].behavior, ImpactBehavior::Beam { .. }) {
             let shooter_id = self.projectiles[index].owner.shooter_id;
             let id = self.projectiles[index].entity_id;
-            if let Some(runtime) = self.policy_ship_runtime.get_mut(&shooter_id) {
+            if let Some(runtime) = self.ship_weapons.get_mut(&shooter_id) {
                 for mount in runtime.turrets.iter_mut().flatten() {
                     if mount.active_beam_projectile_id == Some(id) {
                         mount.active_beam_projectile_id = None;
