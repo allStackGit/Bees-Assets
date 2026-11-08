@@ -33,6 +33,9 @@ pub struct NativeDiagnosticMeasurements {
     pub friendly_hits: u64,
     pub enemy_hit_tsv_loss: u64,
     pub friendly_hit_tsv_loss: u64,
+    /// Real damage without a valid shooter, kept out of attacker credit.
+    pub unattributed_damage_events: u64,
+    pub unattributed_tsv_loss: u64,
     /// Winner identities are canonical source side IDs, not model teams.
     pub victories_by_side: BTreeMap<i32, u64>,
     pub total_episode_seconds: f64,
@@ -78,6 +81,10 @@ impl NativeDiagnosticMeasurements {
             friendly_hits: self.friendly_hits.checked_sub(previous.friendly_hits)?,
             enemy_hit_tsv_loss: self.enemy_hit_tsv_loss.checked_sub(previous.enemy_hit_tsv_loss)?,
             friendly_hit_tsv_loss: self.friendly_hit_tsv_loss.checked_sub(previous.friendly_hit_tsv_loss)?,
+            unattributed_damage_events: self.unattributed_damage_events
+                .checked_sub(previous.unattributed_damage_events)?,
+            unattributed_tsv_loss: self.unattributed_tsv_loss
+                .checked_sub(previous.unattributed_tsv_loss)?,
             victories_by_side,
             total_episode_seconds:
                 self.total_episode_seconds - previous.total_episode_seconds,
@@ -108,6 +115,13 @@ impl NativeDiagnosticMeasurements {
                     self.enemy_hits = self.enemy_hits.saturating_add(1);
                     self.enemy_hit_tsv_loss = self.enemy_hit_tsv_loss.saturating_add(tsv);
                 }
+            }
+            NativeLevelNotificationKind::UnattributedDamage { delta, .. } => {
+                self.unattributed_damage_events = self.unattributed_damage_events.saturating_add(1);
+                self.unattributed_tsv_loss = self.unattributed_tsv_loss.saturating_add(
+                    u64::try_from(delta.tsv_loss)
+                        .expect("physical damage TSV loss cannot be negative"),
+                );
             }
             NativeLevelNotificationKind::EpisodeFinal(finalized) => {
                 self.episodes_finished = self.episodes_finished.saturating_add(1);
@@ -217,6 +231,7 @@ impl DurableDiagnosticNotifications {
             NativeLevelNotificationKind::SquadChange(_) => "squad_change",
             NativeLevelNotificationKind::Gameplay(_) => "gameplay",
             NativeLevelNotificationKind::CombatHit(_) => "combat_hit",
+            NativeLevelNotificationKind::UnattributedDamage { .. } => "unattributed_damage",
             NativeLevelNotificationKind::FinishedCommand(_) => "finished_command",
             NativeLevelNotificationKind::AbortedCommand { .. } => "aborted_command",
             NativeLevelNotificationKind::Reward(_) => "reward",
@@ -246,6 +261,16 @@ impl DurableDiagnosticNotifications {
                 "applied_damage": hit.delta.applied_damage,
                 "tsv_loss": hit.delta.tsv_loss,
                 "killed": hit.delta.killed,
+            })),
+            NativeLevelNotificationKind::UnattributedDamage { target_id, delta } => Some(json!({
+                "target_id": target_id,
+                "health_before": delta.health_before,
+                "health_after": delta.health_after,
+                "tsv_before": delta.tsv_before,
+                "tsv_after": delta.tsv_after,
+                "applied_damage": delta.applied_damage,
+                "tsv_loss": delta.tsv_loss,
+                "killed": delta.killed,
             })),
             NativeLevelNotificationKind::Reward(value) => Some(json!({
                 "side": value.side, "reward": value.amount,
@@ -301,7 +326,8 @@ impl DurableDiagnosticNotifications {
             // CombatHit already has a full structured payload; avoid
             // duplicating every hot combat event as a debug string.
             "payload_debug": match &notification.kind {
-                NativeLevelNotificationKind::CombatHit(_) => None,
+                NativeLevelNotificationKind::CombatHit(_) |
+                NativeLevelNotificationKind::UnattributedDamage { .. } => None,
                 _ => Some(format!("{:?}", notification.kind)),
             },
         });
