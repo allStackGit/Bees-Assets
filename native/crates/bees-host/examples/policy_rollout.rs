@@ -24,6 +24,7 @@ use bees_gameplay::level_host::NativeLevelStopKind;
 use bees_gameplay::squads::SquadRosterError;
 use bees_hivemind::session::SquadLifetime;
 use bees_host::durable_connection::DurableHiveMindConnection;
+use bees_host::journal_recovery::replay_command_outcomes;
 use bees_host::notification_file::DurableDiagnosticNotifications;
 use bees_host::policy_process::ResidentPolicyProcess;
 use bees_host::presentation::NativeSoftwareRenderer;
@@ -99,6 +100,15 @@ struct ModelUpdateConfig {
     manifest: PathBuf,
 }
 
+/// A completed prior-run journal whose terminal commands may have reached
+/// stable storage just before a crash interrupted connection checkpointing.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PriorOutcomeJournalConfig {
+    run_id: String,
+    path: PathBuf,
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RunConfig {
@@ -112,6 +122,8 @@ struct RunConfig {
     model_manifest: PathBuf,
     connection_checkpoint: PathBuf,
     notifications: PathBuf,
+    #[serde(default)]
+    recover_outcome_journals: Vec<PriorOutcomeJournalConfig>,
     next_squad_item_id: i64,
     broadphase_cell_size: f32,
     decision_period: u32,
@@ -333,6 +345,19 @@ fn main() -> Result<(), Box<dyn Error>> {
     if checkpoint == notifications {
         return Err(invalid("checkpoint and notification log must be distinct").into());
     }
+    let mut recovery_paths = HashSet::new();
+    for previous in &config.recover_outcome_journals {
+        let path = resolve(root, &previous.path);
+        if previous.run_id.trim().is_empty() ||
+            previous.run_id == config.run_id ||
+            path == checkpoint || path == notifications ||
+            !recovery_paths.insert(path)
+        {
+            return Err(invalid(
+                "recover_outcome_journals must name distinct prior runs and journals, never the live checkpoint or output",
+            ).into());
+        }
+    }
     let bounds = &config.fragment_spawn.map_bounds;
     let fragment_settings = FragmentSpawnSettings {
         map_bounds: Aabb {
@@ -553,11 +578,32 @@ fn main() -> Result<(), Box<dyn Error>> {
             "model manifest changed between route preflight and authenticated worker startup",
         ).into());
     }
+    let mut connection = DurableHiveMindConnection::open(checkpoint)
+        .map_err(|error| contextual("HiveMind checkpoint", error))?;
+    // Recover prior terminal outcomes before creating this run's
+    // exclusive journal. Every replayed row is idempotently checkpointed
+    // under its original journal identity and existing connection prefix.
+    for previous in &config.recover_outcome_journals {
+        let path = resolve(root, &previous.path);
+        let counts = replay_command_outcomes(&path, &previous.run_id, |recorded|
+            connection.queue_journal_outcomes(recorded)
+                .map(|queued| queued.is_some())
+        ).map_err(|error| contextual(
+            &format!("outcome journal recovery {}", path.display()), error,
+        ))?;
+        println!("{}", json!({
+            "kind": "outcome_journal_recovered",
+            "source_run_id": previous.run_id,
+            "journal": path,
+            "records_scanned": counts.journal_records,
+            "completed_batches": counts.completed_batches,
+            "newly_checkpointed": counts.newly_checkpointed,
+            "already_checkpointed": counts.already_checkpointed,
+        }));
+    }
     let sink = DurableDiagnosticNotifications::create_new(
         &notifications, config.run_id.clone(),
     )?;
-    let connection = DurableHiveMindConnection::open(checkpoint)
-        .map_err(|error| contextual("HiveMind checkpoint", error))?;
     let mut host = assets.build_imported_policy_runtime(
         launches, model, connection, sink,
     ).map_err(|error| contextual("native Level construction", error))?;
