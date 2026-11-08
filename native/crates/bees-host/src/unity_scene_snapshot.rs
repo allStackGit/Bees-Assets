@@ -404,6 +404,10 @@ struct UnitySquad {
     can_accept_input: bool,
     locked_on: bool,
     shooting_strategy: String,
+    /// Optional in previously exported schema-20 scenes. A native
+    /// Scouting order cannot run without this authentic source value.
+    #[serde(default)]
+    max_sight: Option<f32>,
 }
 
 #[derive(Deserialize)]
@@ -612,6 +616,9 @@ pub struct NativeSourceSquad {
     pub members: Vec<i64>,
     pub player_permissions: bees_gameplay::player_inputs::NativePlayerPermissions,
     pub shooting: bees_hivemind::protocol::StrategyIdentity,
+    /// Original Squad.MaxSight and ConfigData.HumanSide, not the
+    /// model's effective 21x21 sight memory or estimated weapon range.
+    pub scouting: Option<bees_gameplay::commands::NativeScoutingContext>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -841,6 +848,21 @@ impl NativePhysicalScene {
             },
             _ => None,
         }).collect();
+        // Only authentic non-player HiveMind squads lacking a bound
+        // policy controller may accept a source-authored server command.
+        // Ship.IsHiveMindControlled is captured independently of merely
+        // being on an AI faction, so scripted minions are not promoted.
+        let hivemind_squads = self.source_squads.iter().zip(&squads)
+            .filter(|(source, squad)|
+                !source.player_permissions.user_controlled &&
+                squad.members.iter().all(|id|
+                    self.source_vision.get(id).is_some_and(|vision|
+                        vision.registered
+                    ) && !self.source_policy_bindings.contains_key(id)
+                )
+            )
+            .map(|(_, squad)| squad.owner)
+            .collect();
         let metadata = NativePolicyOnlyMetadata::new(
             self.bounds,
             setup.navigation,
@@ -856,6 +878,11 @@ impl NativePhysicalScene {
             NativeSourcePlayerInputs {
                 has_obstacles: self.has_obstacles,
                 ships: self.source_formation,
+                hivemind_squads,
+                scouting: self.source_squads.iter().zip(&squads)
+                    .filter_map(|(source, squad)|
+                        source.scouting.map(|values| (squad.owner, values))
+                    ).collect(),
                 commands: self.source_squads.iter().zip(&squads).map(|(source, squad)|
                     (squad.owner, bees_gameplay::player_inputs::NativePlayerCommandInputs {
                         shooting: source.shooting, settings: self.command_settings,
@@ -1683,7 +1710,17 @@ impl NativePhysicalScene {
             let shooting_index = bees_hivemind::protocol::SHOOTING_STRATEGIES.iter()
                 .position(|&name| name == squad.shooting_strategy)
                 .ok_or(NativeSnapshotError::InvalidSquad(squad.item_id))?;
+            let scouting = match squad.max_sight {
+                Some(value) if value.is_finite() && value >= 0.0 =>
+                    Some(bees_gameplay::commands::NativeScoutingContext {
+                        max_sight: value,
+                        human_side: raw.human_side,
+                    }),
+                Some(_) => return Err(NativeSnapshotError::InvalidSquad(squad.item_id)),
+                None => None,
+            };
             source_squads.push(NativeSourceSquad {
+                scouting,
                 shooting: bees_hivemind::protocol::StrategyIdentity {
                     id: (shooting_index + 1) as u8,
                     name: bees_hivemind::protocol::SHOOTING_STRATEGIES[shooting_index],
