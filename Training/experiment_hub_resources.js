@@ -204,4 +204,25 @@ function plan(machines,reservations,jobs) {
     }
     return results.sort((a,b)=>a.index-b.index).map(({index,...row})=>row);
 }
-module.exports={request,matchingLeaseBudget,remaining,placements,plan};
+// A last-mile admission check against observed *host-wide* consumption.
+// The scheduler's forward-looking leases remain authoritative for planned
+// capacity; these observations detect competing unmanaged applications.
+// GPU memory here is physical device usage, not GPU compute isolation.
+function startHeadroom(resources,availableRamMb,device=null) {
+    const wanted=request(resources);
+    if(Number.isSafeInteger(availableRamMb)&&availableRamMb>=0&&
+        availableRamMb<wanted.ram_mb)
+        return 'Available host memory is below the requested native job RAM limit.';
+    const requiredVram=wanted.gpu_count===1
+        ?wanted.gpu_mode==='shared'
+            ?wanted.gpu_vram_mb:wanted.min_gpu_vram_mb
+        :0;
+    if(requiredVram>0&&device&&
+        Number.isSafeInteger(device.vram_mb)&&device.vram_mb>0&&
+        Number.isSafeInteger(device.used_vram_mb)&&
+        device.used_vram_mb>=0&&device.used_vram_mb<=device.vram_mb&&
+        device.vram_mb-device.used_vram_mb<requiredVram)
+        return 'Observed physical free VRAM is below the requested native GPU memory budget.';
+    return null;
+}
+module.exports={request,matchingLeaseBudget,remaining,placements,plan,startHeadroom};
