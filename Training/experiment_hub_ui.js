@@ -1330,11 +1330,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 ' MiB / '+j.resources.gpu_count+' GPUs'+
                 (j.resources.gpu_count
                     ?' ('+j.resources.gpu_mode+
+                        (j.resources.gpu_mode==='shared'
+                            ?' · '+j.resources.gpu_vram_mb+' MiB PyTorch budget / '+
+                                j.resources.gpu_compute_pct+'% advisory compute':'')+
                         (pinnedGpuDevices.length?' · '+pinnedGpuDevices.join(', '):' · awaiting binding')+')'
                     :'');
             const resourceCell=cell(tr,resourceText);
-            if(pinnedGpuDevices.length)
-                resourceCell.title='Pinned physical devices. Observed GPU memory is host-wide, not isolated to this job.';
+            if(j.resources.gpu_count)
+                resourceCell.title='GPU budget reservations and observed host telemetry are separate. Shared Windows PyTorch limits do not enforce GPU compute time or non-PyTorch memory.';
             const policy=j.evaluation_stop;
             const multi=policy?.all_of||null;
             const evidence=j.evaluation_stop_evidence||j.last_evaluation;
