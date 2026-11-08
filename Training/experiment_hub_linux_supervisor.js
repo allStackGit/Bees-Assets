@@ -49,6 +49,39 @@ function quotaUsec(value) {
     const amount=Number(match[1])*scale;
     return Number.isSafeInteger(amount)?amount:null;
 }
+function checkedAdapterArgs(adapter,fn,parameters,context) {
+    if(typeof fn!=='function')
+        throw Error('Installed native adapter is missing an approved argument builder.');
+    const args=fn.call(adapter,JSON.parse(JSON.stringify(parameters)),context);
+    if(!Array.isArray(args)||args.length>64||
+        args.some(a=>typeof a!=='string'||a.length>1024||!SAFE_ARG.test(a)))
+        throw Error('Trusted adapter returned an unsafe invocation.');
+    return args;
+}
+function gpuRuntimeProof(adapter,parameters,context) {
+    if(!adapter||typeof adapter.executable!=='string'||
+        !path.isAbsolute(adapter.executable)||
+        !SAFE_ARG.test(adapter.executable)||
+        !/^[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\\.[0-7]$/.test(
+            String(context?.gpu_pci_address||'')))
+        throw Error('Invalid local ROCm runtime or leased PCI identity.');
+    const rocrUuid=Object.hasOwn(adapter.rocr_gpu_uuids||{},context.gpu_pci_address)
+        ?adapter.rocr_gpu_uuids[context.gpu_pci_address]:null;
+    if(rocrUuid!==null&&
+        (typeof rocrUuid!=='string'||!ROCM_UUID.test(rocrUuid)))
+        throw Error('Invalid locally approved ROCr GPU UUID selector.');
+    return {executable:adapter.executable,
+        verifyArgs:checkedAdapterArgs(adapter,adapter.gpu_verify_args,parameters,context),
+        rocrUuid};
+}
+function gpuSelectorArgs(rocrUuid) {
+    if(rocrUuid!=null&&
+        (typeof rocrUuid!=='string'||!ROCM_UUID.test(rocrUuid)))
+        throw Error('Invalid locally pinned ROCr GPU selector.');
+    return [...(rocrUuid?['--setenv=ROCR_VISIBLE_DEVICES='+rocrUuid]:[]),
+        '--property=UnsetEnvironment=CUDA_VISIBLE_DEVICES HIP_VISIBLE_DEVICES'+
+            (rocrUuid?'':' ROCR_VISIBLE_DEVICES')+' GPU_DEVICE_ORDINAL'];
+}
 function validateLocalInput(job,lease,machineId,adapters,hostOs=os,gpuEnabled=false) {
     if(!job||!lease||job.status!=='waiting_adapter'||
         job.project_id==='bees'||job.adapter!=='unconfigured'||
@@ -94,15 +127,6 @@ function validateLocalInput(job,lease,machineId,adapters,hostOs=os,gpuEnabled=fa
         lr.gpus?.length!==1||binding.id!==lr.gpus[0]||
         (r.gpus?.length&&r.gpus[0]!==binding.id)))
         throw Error('Native GPU launch needs a locally enabled adapter and one exclusive PCI binding.');
-    // Physical GPU selection is an administrator-installed adapter mapping,
-    // never a model parameter or a guessed HIP device ordinal. The kernel
-    // device policy and runtime PCI attestation still provide the proof.
-    const rocrUuid=cpuOnly?null:
-        Object.hasOwn(adapter.rocr_gpu_uuids||{},binding.pci_address)
-            ?adapter.rocr_gpu_uuids[binding.pci_address]:null;
-    if(rocrUuid!==null&&
-        (typeof rocrUuid!=='string'||!ROCM_UUID.test(rocrUuid)))
-        throw Error('Invalid locally approved ROCr GPU UUID selector.');
     const stopPolicy=adapter.stop_policy||'terminate-group';
     if(!['terminate-group','interrupt-main'].includes(stopPolicy))
         throw Error('Unknown locally installed native stop policy.');
@@ -123,13 +147,8 @@ function validateLocalInput(job,lease,machineId,adapters,hostOs=os,gpuEnabled=fa
             {expected_parent_model_sha256:job.expected_parent_model_sha256}:{}),
         ...(!cpuOnly?{gpu_pci_address:binding.pci_address}:{}),
     });
-    const argsFor=fn=>{
-        const args=fn.call(adapter,JSON.parse(JSON.stringify(job.frozen_parameters)),context);
-        if(!Array.isArray(args)||args.length>64||
-            args.some(a=>typeof a!=='string'||a.length>1024||!SAFE_ARG.test(a)))
-            throw Error('Trusted adapter returned an unsafe invocation.');
-        return args;
-    };
+    const argsFor=fn=>checkedAdapterArgs(adapter,fn,job.frozen_parameters,context);
+    const runtimeProof=cpuOnly?null:gpuRuntimeProof(adapter,job.frozen_parameters,context);
     const stopFile=adapter.checkpoint_stop_file?.(context)??null;
     if(stopFile!==null&&(stopPolicy!=='interrupt-main'||
         typeof stopFile!=='string'||!path.isAbsolute(stopFile)||
@@ -138,8 +157,7 @@ function validateLocalInput(job,lease,machineId,adapters,hostOs=os,gpuEnabled=fa
     return {executable:adapter.executable,args:argsFor(adapter.args),cwd:adapter.cwd||null,
         cpus:r.cpus,ram_mb:r.ram_mb,stop_policy:stopPolicy,
         stopFile,
-        gpu:cpuOnly?null:{binding,verifyArgs:argsFor(adapter.gpu_verify_args),
-            rocrUuid}};
+        gpu:cpuOnly?null:{binding,...runtimeProof}};
 }
 function verifyUnconfinedDeviceAccess(plan,fsApi) {
     for(const device of [plan.kfd,...plan.selected,...plan.unselected]) {
@@ -183,17 +201,12 @@ function launchArguments(record,invocation,gpuPlan) {
         '--property=CPUAccounting=yes','--property=MemoryAccounting=yes'];
     if(gpuPlan) {
         const {binding,verifyArgs,rocrUuid}=invocation.gpu;
-        if(rocrUuid!=null&&
-            (typeof rocrUuid!=='string'||!ROCM_UUID.test(rocrUuid)))
-            throw Error('Invalid locally pinned ROCr GPU selector.');
         const check=path.join(__dirname,'experiment_hub_linux_gpu_launch_check.js');
         if(!SAFE_ARG.test(process.execPath)||!SAFE_ARG.test(check))
             throw Error('GPU pre-start verifier requires unambiguous local executable paths.');
         args.push(...gpuPlan.device_properties.map(p=>'--property='+p),
             '--property=TimeoutStartSec=25s',
-            ...(rocrUuid?['--setenv=ROCR_VISIBLE_DEVICES='+rocrUuid]:[]),
-            '--property=UnsetEnvironment=CUDA_VISIBLE_DEVICES HIP_VISIBLE_DEVICES'+
-                (rocrUuid?'':' ROCR_VISIBLE_DEVICES')+' GPU_DEVICE_ORDINAL',
+            ...gpuSelectorArgs(rocrUuid),
             '--property=ExecStartPre='+[process.execPath,check,binding.id,
                 binding.pci_address,binding.vram_mb,deviceIdentity(gpuPlan),
                 invocation.executable,...verifyArgs].join(' '));
