@@ -716,6 +716,12 @@ impl CombatWorld {
                         slot: shot.slot,
                         projectile_id,
                     });
+                } else {
+                    self.events.push(CombatEvent::GameWeaponFired {
+                        ship_id: shot.ship_id,
+                        slot: shot.slot,
+                        projectile_id,
+                    });
                 }
             }
         }
