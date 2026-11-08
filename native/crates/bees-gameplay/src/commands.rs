@@ -283,6 +283,7 @@ pub enum StrategyReceiptFailureCause {
     /// A completed predecessor cannot be safely replaced unless its
     /// settlement obligation fits in the owning Level's durable outbox.
     OutputBackpressure,
+    Credit(crate::command_credit::CommandCreditError),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
