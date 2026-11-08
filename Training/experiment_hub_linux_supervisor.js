@@ -70,8 +70,19 @@ function gpuRuntimeProof(adapter,parameters,context) {
     if(rocrUuid!==null&&
         (typeof rocrUuid!=='string'||!ROCM_UUID.test(rocrUuid)))
         throw Error('Invalid locally approved ROCr GPU UUID selector.');
+    // The verifier's inputs must be identical during an unstarted
+    // qualification and a later native Start. Dispatch IDs and evaluation
+    // states legitimately differ across those phases, but have no bearing
+    // on a frozen model profile's physical GPU selection.
+    const verifierContext=Object.freeze({
+        job_id:context.job_id,project_id:context.project_id,
+        artifact_lineage_root_id:context.artifact_lineage_root_id,
+        continuation_of_job_id:context.continuation_of_job_id||null,
+        gpu_pci_address:context.gpu_pci_address,
+    });
     return {executable:adapter.executable,
-        verifyArgs:checkedAdapterArgs(adapter,adapter.gpu_verify_args,parameters,context),
+        verifyArgs:checkedAdapterArgs(adapter,adapter.gpu_verify_args,
+            parameters,verifierContext),
         rocrUuid};
 }
 function gpuSelectorArgs(rocrUuid) {
