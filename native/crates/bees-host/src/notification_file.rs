@@ -11,6 +11,7 @@ use std::fs::{File, OpenOptions};
 use std::io::{self, Write};
 use std::path::Path;
 
+use bees_gameplay::commands::{NativeCommandOrigin, NativeCommandSelection};
 use bees_gameplay::level_events::{
     NativeLevelNotification, NativeLevelNotificationKind,
 };
@@ -19,6 +20,29 @@ use bees_gameplay::group_rewards::GroupRewardKind;
 use bees_sim::simulation::WorldId;
 use serde::Serialize;
 use serde_json::json;
+
+/// Stable, machine-readable command identity for eventual outcome-ledger
+/// replay. The server reservation IDs never come from the command's locally
+/// executed strategy after a composition redirect (BombingRun/Charge).
+fn command_identity(selection: &NativeCommandSelection) -> serde_json::Value {
+    match selection.origin() {
+        NativeCommandOrigin::HiveMind(source) => json!({
+            "origin": "hivemind",
+            "command_outcome_id": source.command_outcome_id,
+            "shooting_outcome_id": source.shooting_outcome_id,
+            "selected_strategy_id": source.server_strategy.id,
+            "executed_command": format!("{:?}", selection.kind()),
+            "selected_shooting_id": source.selected_shooting.id,
+            "effective_shooting_id": source.effective_shooting.id,
+        }),
+        NativeCommandOrigin::Local(local) => json!({
+            "origin": format!("{:?}", local.source),
+            "local_sequence": local.sequence,
+            "executed_command": format!("{:?}", selection.kind()),
+            "effective_shooting_id": selection.shooting().id,
+        }),
+    }
+}
 
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct NativeDiagnosticMeasurements {
@@ -281,6 +305,24 @@ impl DurableDiagnosticNotifications {
                 "tsv_loss": delta.tsv_loss,
                 "killed": delta.killed,
             })),
+            NativeLevelNotificationKind::FinishedCommand(finished) => Some(json!({
+                "owner": {
+                    "level_id": finished.owner.level_id,
+                    "squad_id": finished.owner.squad_id,
+                    "lifecycle_id": finished.owner.lifecycle_id,
+                },
+                "selection": command_identity(&finished.selection),
+                "cause": format!("{:?}", finished.cause),
+                "capability_command_tsv": finished.capability_command_tsv,
+            })),
+            NativeLevelNotificationKind::AbortedCommand { owner, selection } => Some(json!({
+                "owner": {
+                    "level_id": owner.level_id,
+                    "squad_id": owner.squad_id,
+                    "lifecycle_id": owner.lifecycle_id,
+                },
+                "selection": command_identity(selection),
+            })),
             NativeLevelNotificationKind::Reward(value) => Some(json!({
                 "side": value.side, "reward": value.amount,
             })),
@@ -336,7 +378,9 @@ impl DurableDiagnosticNotifications {
             // duplicating every hot combat event as a debug string.
             "payload_debug": match &notification.kind {
                 NativeLevelNotificationKind::CombatHit(_) |
-                NativeLevelNotificationKind::UnattributedDamage { .. } => None,
+                NativeLevelNotificationKind::UnattributedDamage { .. } |
+                NativeLevelNotificationKind::FinishedCommand(_) |
+                NativeLevelNotificationKind::AbortedCommand { .. } => None,
                 _ => Some(format!("{:?}", notification.kind)),
             },
         });
