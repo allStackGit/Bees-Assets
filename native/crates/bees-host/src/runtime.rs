@@ -345,6 +345,56 @@ where
         Ok(counts)
     }
 
+    /// Player Cease Fire / Attack on Sight sets the SAME ship weapon flag
+    /// consumed by the canonical projectile scheduler, without replacing
+    /// an active squad command or touching HiveMind reservation authority.
+    pub fn player_cease_fire_squads(
+        &mut self, input: &bees_gameplay::player_inputs::NativePlayerSquadCeaseFire,
+    ) -> Result<bees_gameplay::player_inputs::NativePlayerCommandCounts, HostPlayerInputError>
+    where M: NativeLevelPlayerContext
+    {
+        use bees_gameplay::player_inputs::{
+            NativePlayerCeaseFirePlan, NativePlayerCommandCounts,
+        };
+        let index = (0..self.simulation.world_count()).find(|&index|
+            self.simulation.world(index).is_some_and(|world| world.id == input.world_id))
+            .ok_or(HostPlayerInputError::Gameplay(NativePlayerInputError::StaleWorld))?;
+        let world = self.simulation.world(index).expect("located world");
+        if world.episode_revision() != input.episode_revision {
+            return Err(HostPlayerInputError::Gameplay(NativePlayerInputError::StaleWorld));
+        }
+        let mut counts = NativePlayerCommandCounts::default();
+        let mut plans = Vec::with_capacity(input.squads.len());
+        let mut seen = std::collections::HashSet::with_capacity(input.squads.len());
+        for &owner in &input.squads {
+            if !seen.insert(owner) { continue; }
+            let Some(selected_ship) = world.state.events.roster().get(owner)
+                .and_then(|squad| squad.members.first()).copied() else {
+                counts.rejected_squads += 1;
+                continue;
+            };
+            match NativePlayerCeaseFirePlan::prepare(
+                world, input.world_id, input.episode_revision,
+                selected_ship, input.cease_fire,
+            ) {
+                Ok(plan) => plans.push(plan),
+                Err(error) if error.is_rejection() => counts.rejected_squads += 1,
+                Err(error) => return Err(HostPlayerInputError::Gameplay(error)),
+            }
+        }
+        if plans.is_empty() { return Ok(counts); }
+        self.driver.invalidate_environment(index).map_err(HostPlayerInputError::Driver)?;
+        for plan in plans {
+            if plan.execute(self.simulation.world_mut(index).expect("located world"))
+                .map_err(HostPlayerInputError::Gameplay)? > 0 {
+                counts.accepted_squads += 1;
+            } else {
+                counts.unavailable_squads += 1;
+            }
+        }
+        Ok(counts)
+    }
+
     /// Actual multi-Level model inference, fixed-step combat and ordered
     /// durable notification delivery. A partial-step error is returned,
     /// never silently retried as a valid PPO trajectory.
