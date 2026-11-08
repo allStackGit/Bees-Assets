@@ -1233,8 +1233,10 @@ document.addEventListener('DOMContentLoaded', () => {
             const tr=document.createElement('tr');
             cell(tr,(j.configuration_name||j.configuration_id)+trialBatchLabel(j));
             cell(tr,j.configuration_revision);
-            const linked=state.reservations.find(l=>l.id===j.lease_id &&
-                ['offered','acknowledged'].includes(l.status));
+            const provenanceLease=state.reservations.find(l=>l.id===j.lease_id);
+            const linked=provenanceLease&&
+                ['offered','acknowledged'].includes(provenanceLease.status)
+                ?provenanceLease:null;
             const machine=state.machines.find(m=>m.id===j.assigned_machine_id);
             const labels={
                 start_requested:'Start requested',launch_requested:'Starting',
@@ -1313,7 +1315,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             statusCell.title=readiness?.reason||
                 proof?.diagnostic||detail||j.status_reason||status;
-            const pinnedGpuDevices=(linked?.gpu_bindings||[])
+            const pinnedGpuDevices=(provenanceLease?.gpu_bindings||[])
                 .map(binding=>{
                     const physical=(machine?.observed_gpus||[])
                         .find(device=>device.pci_address===binding.pci_address);
