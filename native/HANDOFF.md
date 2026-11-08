@@ -160,8 +160,11 @@ receive_frame (durable 200/409 and discard processing). The caller MUST
 consume the returned validated strategy/targeting/banning decision BEFORE
 calling flush_store_socket for outbound results. These operations are
 deliberately separate: a failed outgoing socket write must not hide an
-already-consumed accepted targeting reply. Blocking socket I/O stays off
-the render/physics thread. Direct
+already-consumed accepted targeting reply. Any authenticated frame outside
+the Level decoder's ownership is returned unchanged as
+NativeHostSocketDelivery::UnhandledServerFrame for its actual feature owner,
+never silently discarded. Blocking socket I/O stays off the render/physics
+thread. Direct
 send_store, flush_unsent_stores and reconnect replay share one at-most-once
 transmission guard per authenticated socket session; it resets after an
 accepted reconnect-level even if the WebSocket object is reused. On a
