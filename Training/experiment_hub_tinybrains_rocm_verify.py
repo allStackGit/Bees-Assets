@@ -37,6 +37,28 @@ def runtime_pci_bus_id():
     return result
 
 
+def verify_runtime_device(expected):
+    # Reuse this exact runtime proof in ExecStartPre and the final training
+    # Python process. A successful pre-start child alone is insufficient
+    # evidence that the separately launched trainer selected the same GPU.
+    if PCI.fullmatch(expected) is None:
+        raise SystemExit("Invalid leased ROCm PCI identity.")
+    import torch
+
+    if not torch.version.hip or not torch.cuda.is_available():
+        raise SystemExit("PyTorch ROCm is unavailable in the approved Python environment.")
+    if torch.cuda.device_count() != 1:
+        raise SystemExit("ROCm must expose exactly the single selected GPU.")
+    observed = runtime_pci_bus_id()
+    if observed != expected:
+        raise SystemExit("HIP selected GPU PCI identity differs from the Hub lease.")
+    sample = torch.ones((16,), device="cuda")
+    if float(sample.sum().item()) != 16.0:
+        raise SystemExit("Selected ROCm device failed its compute probe.")
+    torch.cuda.synchronize()
+    return observed
+
+
 def main():
     if len(sys.argv) != 2 or re.fullmatch(
         r"[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]", sys.argv[1]
@@ -56,23 +78,9 @@ def main():
             break
     if not found:
         raise SystemExit("Selected physical AMD GPU disappeared.")
-    import torch
-
-    if not torch.version.hip or not torch.cuda.is_available():
-        raise SystemExit("PyTorch ROCm is unavailable in the approved Python environment.")
-    # Conservative: when HIP still enumerates excluded devices, refuse to
-    # train rather than guess which ordinal the policy will use.
-    if torch.cuda.device_count() != 1:
-        raise SystemExit("ROCm must expose exactly the single selected GPU.")
-    observed = runtime_pci_bus_id()
-    if observed != expected:
-        raise SystemExit("HIP selected GPU PCI identity differs from the Hub lease.")
-    sample = torch.ones((16,), device="cuda")
-    if float(sample.sum().item()) != 16.0:
-        raise SystemExit("Selected ROCm device failed its compute probe.")
-    torch.cuda.synchronize()
+    observed = verify_runtime_device(expected)
     # The native Linux GPU launch checker requires a machine-readable
-    # attestation for the exact PCI identity it handed to this local probe.
+    # attestation for the exact PCI identity reported by the HIP runtime.
     print(json.dumps({"pci_addresses": [observed]}, separators=(",", ":")))
 
 
