@@ -514,6 +514,16 @@ impl NativeSquadCommandDirector {
         self.active.contains_key(&owner)
     }
 
+    /// None: no live command. Some(None): local/scripted command. A
+    /// server command carries the real outcome ID assigned by HiveMind,
+    /// which an outgoing projectile must capture at launch.
+    pub fn live_firing_command_outcome(
+        &self, owner: SquadLifetime,
+    ) -> Option<Option<i64>> {
+        self.active.get(&owner).map(|active|
+            active.selection.server_outcome())
+    }
+
     /// Observations use the true MiningAsteroid.SquadsMining cardinality:
     /// count unique live command-owning squads already enrolled by an
     /// actual collider contact. The active BTreeMap has one command per
