@@ -1160,14 +1160,13 @@ pub trait NativeLevelNotificationSink {
     /// Durable command-credit sinks expose only batches that they have
     /// already committed to their own journal. The host then checkpoints
     /// each batch in the one connection-owned StoreCommands retry ledger.
-    /// Rendering-only sinks have no prepared outcomes to forward.
-    fn first_prepared_outcomes(&self) -> Option<&bees_hivemind::outcomes::OutcomeBatch> {
-        None
-    }
+    /// A sink that deliberately does not store outcomes must make that
+    /// choice explicit rather than silently accepting valid credit.
+    fn first_prepared_outcomes(&self) -> Option<&bees_hivemind::outcomes::OutcomeBatch>;
 
     /// Called only AFTER the corresponding StoreCommands payload was
     /// persisted in the connection. It must not release an unqueued batch.
-    fn prepared_outcomes_queued(&mut self) {}
+    fn prepared_outcomes_queued(&mut self);
 
     fn accept(
         &mut self,
