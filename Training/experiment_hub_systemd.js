@@ -116,9 +116,8 @@ function evaluatorDefinition({
     const script=localPath(path.join(directory,
         'experiment_hub_'+project+'_eval_poll.py'),'Evaluator entrypoint');
     const targetPort=positiveInt(port??(environmentFile?'7149':'7148'),1,65535,'Port');
-    if(![7148,7149].includes(targetPort)||
-        (targetPort===7149)!==Boolean(environmentFile))
-        throw Error('Restricted evaluator port 7149 needs a private machine --env-file; dashboard port 7148 is local-only.');
+    if((targetPort===7148)===Boolean(environmentFile))
+        throw Error('Restricted evaluator ports need a private machine --env-file; dashboard port 7148 is local-only.');
     const localEnv=environmentFile?privateEnvironmentFile(environmentFile):null;
     const args=['-B',script,'--machine',machine,'--port',
         String(targetPort)];
