@@ -1322,7 +1322,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     const description=binding.id+' @ '+binding.pci_address;
                     const observed=physical?.used_vram_mb;
                     return description+(observed==null?''
-                        :' · '+observed+' MiB host GPU used');
+                        :' · '+observed+' MiB host GPU used')+
+                        (physical?.gpu_busy_pct==null?''
+                            :' · '+physical.gpu_busy_pct+'% host GPU busy');
                 });
             const resourceText=j.resources.cpus+' CPU / '+j.resources.ram_mb+
                 ' MiB / '+j.resources.gpu_count+' GPUs'+
@@ -1702,7 +1704,8 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             const discovered=(m.observed_gpus||[]).map(g=>
                 g.pci_address+' ('+g.vram_mb+' MiB'+
-                (g.used_vram_mb==null?'':', '+g.used_vram_mb+' MiB used')+')');
+                (g.used_vram_mb==null?'':', '+g.used_vram_mb+' MiB used')+
+                (g.gpu_busy_pct==null?'':', '+g.gpu_busy_pct+'% host busy')+')');
             cell(tr,(configured.join(' / ')||'No configured GPUs')+
                 (discovered.length?' · Detected '+(m.agent_platform==='win32'?'NVIDIA':'AMD')+' GPUs: '+
                     discovered.join(', '):''));
