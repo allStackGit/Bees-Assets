@@ -173,6 +173,8 @@ struct UnityGroupParticipant {
 struct UnityShip {
     entity_id: i64,
     ship_type: u8,
+    #[serde(default)]
+    ship_type_letter: Option<u8>,
     side: i32,
     health: i32,
     max_health: i32,
@@ -1487,6 +1489,12 @@ impl NativePhysicalScene {
                 game_cease_fire: ship.policy_cease_fire,
                 game_shooting_strategy: None,
                 target_front_offset: ship.target_front_offset,
+                game_target_facts: ship.ship_type_letter.map(|letter|
+                    bees_sim::combat_world::NativeGameTargetFacts {
+                        ship_type_letter: letter,
+                        firepower: ship.firepower,
+                        max_range: ship.max_weapon_range,
+                    }),
                 special,
             }));
         }
