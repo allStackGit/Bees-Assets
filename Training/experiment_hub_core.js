@@ -166,8 +166,8 @@ function boundedReport(value) {
         cudaProfiles.some(id=>typeof id!=='string'||!Object.hasOwn(profiles,id))||
         new Set(cudaProfiles).size!==cudaProfiles.length||
         (cudaProfiles.length&&(!installed.includes('tinybrains')||
-            value.platform!=='win32')))
-        throw Error('CUDA TinyBrains profiles require an installed Windows adapter.');
+            !['linux','win32'].includes(value.platform))))
+        throw Error('CUDA/ROCm TinyBrains profiles require an installed native adapter.');
     const imports=tinyBrainsImports(value.tinybrains_imports??{});
     if(Object.keys(imports).length&&!installed.includes('tinybrains')||
         Object.values(imports).some(item=>profiles[item.profile]==null))
