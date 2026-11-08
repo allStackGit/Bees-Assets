@@ -1280,6 +1280,67 @@ impl KinematicPhysics {
             (body.active && query.overlaps(&body.collider)).then_some(body.id)))
     }
 
+    /// Unity Weapon.HasClearLineOfFire uses Physics2D.Linecast against
+    /// ConfigData.ObstaclesLayerMask (layer 19). The source's actual primary
+    /// collider, not navigation clearance geometry, blocks the shot. The
+    /// native fixed-step physics keeps this collider at its current pose.
+    /// No allocation, synthetic ray-collision body or alternate registry.
+    pub fn game_weapon_linecast_blocked(
+        &self, start: Vec2, end: Vec2,
+    ) -> Result<bool, PhysicsError> {
+        if !start.is_finite() || !end.is_finite() {
+            return Err(PhysicsError::InvalidCollider);
+        }
+        let min_x = start.x.min(end.x);
+        let max_x = start.x.max(end.x);
+        let min_y = start.y.min(end.y);
+        let max_y = start.y.max(end.y);
+        for obstacle in &self.obstacles {
+            if !obstacle.active || obstacle.layer != 19 { continue; }
+            let collider = &obstacle.collider;
+            if !collider.bounds.is_some_and(|bounds|
+                bounds.min.x <= max_x && bounds.max.x >= min_x &&
+                bounds.min.y <= max_y && bounds.max.y >= min_y)
+            {
+                continue;
+            }
+            if collider.contains_point(start) || collider.contains_point(end) {
+                return Ok(true);
+            }
+            match &collider.shape {
+                ShipShape::Circle { radius, .. } => {
+                    let travel = end - start;
+                    let length_sq = travel.length_squared();
+                    let t = if length_sq > 0.0 {
+                        let delta = collider.circle_world - start;
+                        ((delta.x * travel.x + delta.y * travel.y) / length_sq)
+                            .clamp(0.0, 1.0)
+                    } else { 0.0 };
+                    if (start + travel * t - collider.circle_world)
+                        .length_squared() <= radius * radius
+                    {
+                        return Ok(true);
+                    }
+                }
+                _ => {
+                    let vertices = &collider.polygon_world;
+                    if vertices.is_empty() { continue; }
+                    let mut previous = *vertices.last()
+                        .expect("nonempty authoritative polygon collider");
+                    for &next in vertices {
+                        if crate::collision::segments_intersect(
+                            start, end, previous, next,
+                        ) {
+                            return Ok(true);
+                        }
+                        previous = next;
+                    }
+                }
+            }
+        }
+        Ok(false)
+    }
+
     fn box_query(bounds: Aabb) -> Result<WorldCollider, PhysicsError> {
         if !bounds.min.is_finite() || !bounds.max.is_finite() ||
             bounds.min.x >= bounds.max.x || bounds.min.y >= bounds.max.y {
