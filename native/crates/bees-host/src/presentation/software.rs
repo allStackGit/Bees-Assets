@@ -83,12 +83,13 @@ impl NativeSoftwareRenderer {
 
     /// Source right-click prioritizes an enemy's actual input collider,
     /// then the LevelInputManager's 10-world-unit proximity fallback.
-    /// A click on an enemy must NEVER become a plain move order merely
-    /// because the native attack-command adapter is not implemented yet.
-    /// Return a pooled-lifetime-safe squad identity, not a guessed point.
-    pub fn pick_enemy_squad(
+    /// An enemy click must never silently become a plain move, even if
+    /// the ship has not yet been registered in the native squad roster.
+    /// A future attack adapter must resolve this real ship ID to its
+    /// authoritative squad lifetime before issuing the actual command.
+    pub fn pick_enemy_ship(
         &self, view: &NativeRenderWorldView<'_>, point: Vec2,
-    ) -> Option<bees_hivemind::session::SquadLifetime> {
+    ) -> Option<i64> {
         if !point.is_finite() { return None; }
         let selected_side = self.selection.squads().first()
             .and_then(|owner| view.roster.get(*owner))?.side;
@@ -104,26 +105,18 @@ impl NativeSoftwareRenderer {
                 {
                     return None;
                 }
-                let owner = view.roster.owning_squad(id)?;
-                Some(((body.motion.position - point).length_squared(), id, owner))
+                Some(((body.motion.position - point).length_squared(), id))
             })
             .min_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
-        if let Some((_, _, owner)) = overlapping {
-            return Some(owner);
-        }
-        // The authored fallback checks enemy ship centers within 10 units.
-        // This is UI target resolution only; command admission remains the
-        // owning Level's responsibility.
+        if let Some((_, id)) = overlapping { return Some(id); }
         view.combat.render_ships().filter_map(|(ship, body)| {
             if ship.side == selected_side || ship.vitals.is_dead() {
                 return None;
             }
             let distance_squared = (body.motion.position - point).length_squared();
-            if distance_squared > 100.0 { return None; }
-            let owner = view.roster.owning_squad(ship.entity_id)?;
-            Some((distance_squared, ship.entity_id, owner))
+            (distance_squared <= 100.0).then_some((distance_squared, ship.entity_id))
         }).min_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)))
-            .map(|(_, _, owner)| owner)
+            .map(|(_, id)| id)
     }
 
     /// Target selection uses cached authored hull overlap, with a small screen
