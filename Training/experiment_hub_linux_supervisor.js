@@ -11,7 +11,8 @@ const {promisify}=require('node:util');
 const {execFile}=require('node:child_process');
 const {inspectHost,availableMemoryMb}=require('./experiment_hub_host');
 const {discoverAmdGpus}=require('./experiment_hub_gpu_inventory');
-const {matchingLeaseBudget,startHeadroom}=require('./experiment_hub_resources');
+const {matchingLeaseBudget,startHeadroom,ensureLocalCpuRamCapacity}=
+    require('./experiment_hub_resources');
 const {verifyKernelLimits}=require('./experiment_hub_linux_cgroup');
 const {resolveRocmDevices,deviceIdentity}=require('./experiment_hub_linux_gpu_devices');
 const runDefault=promisify(execFile);
@@ -700,6 +701,11 @@ class LinuxSupervisor {
             throw Error('Job already has a local launch record; reconcile rather than restart.');
         const invocation=validateLocalInput(job,lease,this.machineId,
             this.adapters,this.hostOs,this.gpuEnabled);
+        const cpuSlots=typeof this.hostOs.availableParallelism==='function'
+            ?this.hostOs.availableParallelism():this.hostOs.cpus().length;
+        ensureLocalCpuRamCapacity(this.state.records,invocation.cpus,
+            invocation.ram_mb,cpuSlots,
+            Math.floor(this.hostOs.totalmem()/1048576));
         const availableRam=availableMemoryMb(this.hostOs,this.fs);
         const ramBlock=startHeadroom(job.resources,availableRam);
         if(ramBlock)throw Error(ramBlock);
