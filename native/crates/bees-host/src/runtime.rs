@@ -177,9 +177,11 @@ where
         let plan = bees_gameplay::player_inputs::NativePlayerCommandPlan::prepare(
             self.simulation.world_mut(index).expect("located world"), input)
             .map_err(HostPlayerInputError::Gameplay)?;
-        self.driver.invalidate_environment(index).map_err(HostPlayerInputError::Driver)?;
-        self.connection.retire_player_requests(plan.owner())
-            .map_err(HostPlayerInputError::Connection)?;
+        if plan.retires_pending_authority() {
+            self.driver.invalidate_environment(index).map_err(HostPlayerInputError::Driver)?;
+            self.connection.retire_player_requests(plan.owner())
+                .map_err(HostPlayerInputError::Connection)?;
+        }
         plan.execute(self.simulation.world_mut(index).expect("located world"))
             .map_err(HostPlayerInputError::Gameplay)
     }
@@ -270,10 +272,14 @@ where
             }
         }
         if plans.is_empty() { return Ok(counts); }
-        self.driver.invalidate_environment(index).map_err(HostPlayerInputError::Driver)?;
+        if plans.iter().any(|plan| plan.retires_pending_authority()) {
+            self.driver.invalidate_environment(index).map_err(HostPlayerInputError::Driver)?;
+        }
         for plan in plans {
-            self.connection.retire_player_requests(plan.owner())
-                .map_err(HostPlayerInputError::Connection)?;
+            if plan.retires_pending_authority() {
+                self.connection.retire_player_requests(plan.owner())
+                    .map_err(HostPlayerInputError::Connection)?;
+            }
             match plan.execute(self.simulation.world_mut(index).expect("located world"))
                 .map_err(HostPlayerInputError::Gameplay)? {
                 bees_gameplay::player_inputs::NativePlayerCommandOutcome::Command(
