@@ -51,6 +51,7 @@ pub enum NativeLevelEventError {
     InvalidGroupConfiguration,
     InvalidRetirementAcknowledgement,
     InvalidOutputAcknowledgement,
+    InconsistentCombatAttribution,
     OutputBackpressure { pending: usize, new_events: usize },
     FailedLevel,
 }
@@ -1267,6 +1268,16 @@ impl NativeLevelEventProcessor {
                 expected: self.next_tick, got: completed_tick,
             });
         }
+        // Record ownership before roster reconciliation removes commands
+        // of ships killed by this very same physical event batch. The
+        // retained shooter ID from a projectile is authoritative even if
+        // its owner was retired in an earlier tick.
+        self.core_damage_owners.clear();
+        for event in world.events() {
+            if let Some(owners) = self.damage_command_owners(event) {
+                self.core_damage_owners.push(owners);
+            }
+        }
         // A queued game WarpGate return now became a real ShipWarped
         // followed by ShipDied. Capture FullRetreat's Striker/Drone TSV
         // adjustment BEFORE roster death retirement removes the command.
@@ -1353,6 +1364,10 @@ impl NativeLevelEventProcessor {
                 damage + usize::from(matches!(event,
                     CombatEvent::Hit(_) | CombatEvent::UnattributedDamage { .. })),
             ));
+        if combat_damage_notifications != self.core_damage_owners.len() {
+            self.failed = true;
+            return Err(NativeLevelEventError::InconsistentCombatAttribution);
+        }
         let new_count = self.changes.len()
             .saturating_add(self.finished.len())
             .saturating_add(capability_notifications)
@@ -1376,17 +1391,27 @@ impl NativeLevelEventProcessor {
         // before observing the damage/mining that caused its completion.
         // A delayed projectile can still arrive in a LATER tick; finishing
         // the command is not a safe StoreCommands commit by itself.
+        let mut damage_index = 0usize;
         for event in world.events() {
             if let CombatEvent::Hit(hit) = event {
+                let owners = self.core_damage_owners[damage_index];
+                damage_index += 1;
                 self.pending_notifications.push(NativeLevelNotification {
                     tick: completed_tick,
-                    kind: NativeLevelNotificationKind::CombatHit(*hit),
+                    kind: NativeLevelNotificationKind::CombatHit(NativeCombatHit {
+                        hit: *hit,
+                        attacker_command_outcome_id: owners.attacker,
+                        defender_command_outcome_id: owners.defender,
+                    }),
                 });
             } else if let CombatEvent::UnattributedDamage { target_id, delta } = event {
+                let owners = self.core_damage_owners[damage_index];
+                damage_index += 1;
                 self.pending_notifications.push(NativeLevelNotification {
                     tick: completed_tick,
                     kind: NativeLevelNotificationKind::UnattributedDamage {
                         target_id: *target_id, delta: *delta,
+                        defender_command_outcome_id: owners.defender,
                     },
                 });
             } else if requires_level_capability_delivery(event) {
