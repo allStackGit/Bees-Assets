@@ -210,6 +210,9 @@ impl<S, R: GameRules<S>> Simulation<S, R> {
         self.sample_every = every;
     }
 
+    /// Borrow the authoritative configuration without exposing mutation.
+    pub fn rules(&self) -> &R { &self.rules }
+
     /// Common sampling policy for per-world step timing and the host's
     /// batched rollout timings. None disables both timing paths.
     pub fn timing_sample_period(&self) -> Option<NonZeroU32> {

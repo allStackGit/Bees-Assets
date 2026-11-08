@@ -105,7 +105,7 @@ The single JSON configuration file requires:
   model_slots, groups?}`. Each scene is an exported **initial** Level;
   both IDs must be unique and positive, and `model_slots` maps exact
   Unity policy-team IDs (`"0"`/`"1"`) to verified manifest slots.
-  Current schema-20 exports record actual participating Unity Agent instance
+  Current schema-21 exports record actual participating Unity Agent instance
   IDs, source ship bindings and episode number; the runner derives `groups`
   automatically. If supplied, `groups` must match that source record exactly.
   Participants are never inferred from hull IDs. Scripted opponents may have
@@ -204,13 +204,24 @@ when a game shot launches, preserving its ID for the projectile's remaining life
 Automatic targeting/ranking, game firing statistics/combat timers and full-game
 visual/weapon parity remain incomplete.
 
-## Unity scene import (schema 20)
+## Unity scene import (schema 21)
 
 **Bees > Native > Export Selected Level Physical Scene** captures a
-source-authored initial Unity Level, not a resumable match checkpoint.
+source-authored initial Unity Level, not a resumable match checkpoint. Schema 21
+adds the actual turret child range circle, offset, collision layer and enabled
+state. Schema 20 remains usable for manual/policy fire; range queries reject
+missing geometry rather than deriving it from nominal weapon range.
+
+In the client, B toggles selected weapons' range/obstruction inspection. Blue
+lines reach overlapping enemy hulls with no primary obstacle in the way; orange
+lines are obstructed. The title counts queries, overlaps, obstructions and missing
+source data. This view does not imply firing eligibility: source range-contact
+history, latched bounds, target ranking and final aim-point selection remain
+incomplete. Inspection is disabled by default and adds no headless query work.
+
 The scene captures the active self-play episode, both team-specific
 movement settings and registered Unity Agent instance group membership,
-including its exact currently bound ship (if any). Earlier schemas require
+including its exact currently bound ship (if any). Schemas before 20 require
 a fresh export to supply the additional authored collision and movement data.
 It records original ship/weapon, squad, obstacle, mining and destructible
 MapObject identities and live collider geometry, plus real policy

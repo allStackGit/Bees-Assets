@@ -62,6 +62,13 @@ impl Pose {
         )
     }
 
+    /// Inverse of the same rigid map transform used for collider vertices.
+    pub fn inverse_transform_point(&self, point: Vec2) -> Vec2 {
+        let (sin, cos) = self.rotation_degrees.to_radians().sin_cos();
+        let delta = point - self.position;
+        Vec2::new(delta.x * cos + delta.y * sin, -delta.x * sin + delta.y * cos)
+    }
+
     /// Transform prefab collider vertices into the Level map coordinate frame.
     /// Prefab-specific scale is applied when importing the hull asset.
     pub fn transform_into(&self, local_vertices: &[Vec2], out: &mut Vec<Vec2>) {
@@ -162,6 +169,47 @@ fn segments_intersect(a: Vec2, b: Vec2, c: Vec2, d: Vec2) -> bool {
     let t = cross(ac, cd) / divisor;
     let u = cross(ac, ab) / divisor;
     (0.0..=1.0).contains(&t) && (0.0..=1.0).contains(&u)
+}
+
+/// Closest boundary point after the caller has ruled out containment. Shared
+/// by cached world hulls and read-only queries against a changed rigid pose.
+pub(crate) fn closest_polygon_boundary(point: Vec2, vertices: &[Vec2]) -> Vec2 {
+    let Some(&last) = vertices.last() else { return point };
+    let mut previous = last;
+    let mut closest = previous;
+    let mut best = f32::INFINITY;
+    for &next in vertices {
+        let candidate = closest_segment_point(point, previous, next);
+        let distance = (candidate - point).length_squared();
+        if distance < best { best = distance; closest = candidate; }
+        previous = next;
+    }
+    closest
+}
+
+fn closest_segment_point(point: Vec2, start: Vec2, end: Vec2) -> Vec2 {
+    let edge = end - start;
+    let offset = point - start;
+    let length = edge.length_squared();
+    let t = if length > 0.0 { (dot(offset, edge) / length).clamp(0.0, 1.0) } else { 0.0 };
+    start + edge * t
+}
+
+/// Exact inclusive segment query on the same concave outlines used by contacts.
+pub(crate) fn segment_overlaps_polygon(start: Vec2, end: Vec2, vertices: &[Vec2]) -> bool {
+    if circle_overlaps_polygon(start, 0.0, vertices) ||
+        circle_overlaps_polygon(end, 0.0, vertices) { return true; }
+    let Some(&last) = vertices.last() else { return false };
+    let mut previous = last;
+    for &next in vertices {
+        if segments_intersect(start, end, previous, next) { return true; }
+        previous = next;
+    }
+    false
+}
+
+pub(crate) fn segment_overlaps_circle(start: Vec2, end: Vec2, center: Vec2, radius: f32) -> bool {
+    (closest_segment_point(center, start, end) - center).length_squared() <= radius * radius
 }
 
 /// Outline-vs-outline overlap for concave polygons without assuming SAT

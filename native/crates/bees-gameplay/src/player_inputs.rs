@@ -16,6 +16,8 @@ pub struct NativePlayerPermissions {
 
 /// Object-safe read-only authority, also borrowed by native presentation.
 pub trait NativePlayerAuthority {
+    /// Actual Level.HasObstacles; None means range/line inspection is unavailable.
+    fn weapon_obstacles_enabled(&self) -> Option<bool> { None }
     fn player_permissions(&self, owner: SquadLifetime) -> Option<NativePlayerPermissions>;
 }
 

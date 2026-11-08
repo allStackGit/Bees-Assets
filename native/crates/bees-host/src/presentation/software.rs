@@ -42,6 +42,10 @@ pub struct NativeRenderCounts {
     pub obstacles: usize,
     pub projectiles: usize,
     pub pieces: usize,
+    pub range_queries: usize,
+    pub range_overlaps: usize,
+    pub obstructed_ranges: usize,
+    pub missing_range_data: usize,
 }
 
 pub struct NativeSoftwareRenderer {
@@ -53,6 +57,8 @@ pub struct NativeSoftwareRenderer {
     pub selected_ship: Option<i64>,
     pub selection: NativeSquadSelection,
     pub selection_box: Option<Aabb>,
+    /// Optional inspection only. Disabled means no range or linecast work.
+    pub show_weapon_ranges: bool,
 }
 
 impl NativeSoftwareRenderer {
@@ -64,7 +70,7 @@ impl NativeSoftwareRenderer {
         }
         Ok(Self { width, height, pixels: vec![0; width * height],
             camera: NativeCamera::fit(bounds, width, height), selected_ship: None,
-            selection: NativeSquadSelection::default(), selection_box: None })
+            selection: NativeSquadSelection::default(), selection_box: None, show_weapon_ranges: false })
     }
 
     pub fn size(&self) -> (usize, usize) { (self.width, self.height) }
@@ -169,6 +175,37 @@ impl NativeSoftwareRenderer {
                         self.line(x - 10.0, cy, x + 10.0, cy, 0x34435a);
                         self.line(x - 10.0, cy, x - 10.0 + 20.0 * progress, cy,
                             if charge.paused { 0xe1a34b } else { 0x62b9ff });
+                    }
+                }
+                if self.show_weapon_ranges {
+                    for slot in 0..5 {
+                        let range = match view.combat.weapon_range(ship.entity_id, slot) {
+                            Ok(Some(range)) => range,
+                            Ok(None) => continue,
+                            Err(_) => { counts.missing_range_data += 1; continue; },
+                        };
+                        self.shape(&ShipShape::Circle { offset: Vec2::ZERO, radius: range.radius },
+                            Pose { position: range.center, rotation_degrees: 0.0 },
+                            if range.enabled { 0x355b80 } else { 0x555555 });
+                        let Some(has_obstacles) = view.player_authority.weapon_obstacles_enabled()
+                            else { counts.missing_range_data += 1; continue; };
+                        for (target, _) in view.combat.render_ships() {
+                            if target.side == ship.side { continue; }
+                            counts.range_queries += 1;
+                            match view.combat.query_weapon_target_geometry(ship.entity_id, slot,
+                                target.entity_id, view.collision_matrix, has_obstacles) {
+                                Ok(Some(geometry)) if geometry.enemy_hull_overlaps_range => {
+                                    counts.range_overlaps += 1;
+                                    counts.obstructed_ranges += usize::from(geometry.line_obstructed);
+                                    let (ox, oy) = self.project(range.origin);
+                                    let (tx, ty) = self.project(geometry.closest_hull_point);
+                                    self.line(ox, oy, tx, ty,
+                                        if geometry.line_obstructed { 0xe1a34b } else { 0x62b9ff });
+                                },
+                                Ok(_) => (),
+                                Err(_) => counts.missing_range_data += 1,
+                            }
+                        }
                     }
                 }
                 if let Some(destination) = view.combat.ship_game_destination(ship.entity_id) {

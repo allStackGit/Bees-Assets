@@ -76,6 +76,38 @@ pub struct NativeTurretSpec {
     pub fire_pattern: NativeFirePattern,
 }
 
+/// The real authored child circle, relative to the turret piece origin and rotation.
+#[derive(Clone, Copy, Debug)]
+pub struct NativeTurretRangeSpec {
+    pub offset: Vec2,
+    pub radius: f32,
+    pub layer: u8,
+    pub enabled: bool,
+}
+
+impl NativeTurretRangeSpec {
+    pub fn valid(self) -> bool {
+        self.offset.is_finite() && self.radius.is_finite() && self.radius > 0.0 && self.layer < 32
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct NativeWeaponRange {
+    pub origin: Vec2,
+    pub center: Vec2,
+    pub radius: f32,
+    pub layer: u8,
+    pub enabled: bool,
+}
+
+/// Geometric facts, deliberately separate from complete target eligibility.
+#[derive(Clone, Copy, Debug)]
+pub struct NativeWeaponTargetGeometry {
+    pub closest_hull_point: Vec2,
+    pub enemy_hull_overlaps_range: bool,
+    pub line_obstructed: bool,
+}
+
 impl NativeTurretSpec {
     fn valid(self, catalog: &ProjectileAssetCatalog) -> Result<(), CombatWorldError> {
         let valid_pattern = match self.weapon_type {
@@ -159,6 +191,7 @@ impl NativeTurretSpec {
 #[derive(Clone, Copy, Debug)]
 pub(super) struct MountedTurret {
     pub(super) spec: NativeTurretSpec,
+    range_collider: Option<NativeTurretRangeSpec>,
     pub(super) state: TurretState,
     pub(super) timer: ScaledTimer,
     /// Active authored charging clip, shared by game and policy control.
@@ -200,6 +233,7 @@ impl MountedTurret {
             game_charge_paused: false,
             active_beam_projectile_id: None,
             manual_target: None,
+            range_collider: None,
             spec,
         }
     }
@@ -279,6 +313,66 @@ pub(super) struct PendingTurretShot {
 }
 
 impl CombatWorld {
+    /// Actual child trigger, in turret coordinates. Nominal weapon range is
+    /// insufficient (Frigate, for example, shortens this collider by seven).
+    pub fn configure_turret_range(&mut self, ship_id: i64, slot: usize,
+        range: NativeTurretRangeSpec,
+    ) -> Result<(), CombatWorldError> {
+        if !range.valid() { return Err(CombatWorldError::InvalidWeaponRangeGeometry); }
+        let mount = self.ship_weapons.get_mut(&ship_id)
+            .and_then(|weapons| weapons.turrets.get_mut(slot))
+            .and_then(Option::as_mut)
+            .ok_or(CombatWorldError::InvalidWeaponRangeGeometry)?;
+        mount.range_collider = Some(range);
+        Ok(())
+    }
+
+    /// Read-only geometry for both presentation and future automatic targeting.
+    /// Legacy scenes may fire manually but must not invent a range collider.
+    pub fn weapon_range(&self, ship_id: i64, slot: usize)
+        -> Result<Option<NativeWeaponRange>, CombatWorldError>
+    {
+        if slot >= 5 { return Err(CombatWorldError::InvalidWeaponRangeGeometry); }
+        let body = self.ship_body(ship_id).filter(|body| body.active)
+            .ok_or(CombatWorldError::UnknownShip)?;
+        let Some(mount) = self.ship_weapons.get(&ship_id)
+            .and_then(|weapons| weapons.turrets[slot].as_ref()) else { return Ok(None) };
+        let range = mount.range_collider.ok_or(CombatWorldError::MissingWeaponRangeGeometry)?;
+        let origin = mount.position(body.motion.position, body.motion.rotation_degrees);
+        // A hull can be edited between fixed steps. Include its pending delta,
+        // exactly as the mounted scheduler will when next advancing the weapon.
+        let weapons = &self.ship_weapons[&ship_id];
+        let rotation = mount.state.rotation_degrees +
+            delta_angle(weapons.last_hull_rotation, body.motion.rotation_degrees);
+        let center = Pose { position: origin, rotation_degrees: rotation }
+            .transform_point(range.offset);
+        Ok(Some(NativeWeaponRange { origin, center, radius: range.radius,
+            layer: range.layer, enabled: range.enabled }))
+    }
+
+    /// Current range overlap and primary-obstacle line of fire only. This is
+    /// NOT IsShipValidTarget: source trigger history, latched IsInBounds,
+    /// strategy ranking and front-of-ship aiming belong to the target controller.
+    pub fn query_weapon_target_geometry(&self, ship_id: i64, slot: usize,
+        target_id: i64, collisions: &CollisionMatrix, has_obstacles: bool,
+    ) -> Result<Option<NativeWeaponTargetGeometry>, CombatWorldError> {
+        let Some(range) = self.weapon_range(ship_id, slot)? else { return Ok(None) };
+        let own = self.ship(ship_id).ok_or(CombatWorldError::UnknownShip)?;
+        let target = self.ship(target_id).ok_or(CombatWorldError::UnknownShip)?;
+        let body = self.ship_body(target_id).ok_or(CombatWorldError::UnknownShip)?;
+        let closest_hull_point = body.primary_closest_point_readonly(range.origin);
+        let nearest_range_point = body.primary_closest_point_readonly(range.center);
+        let enemy_hull_overlaps_range = range.enabled && body.active &&
+            !own.vitals.is_dead() && !target.vitals.is_dead() && own.side != target.side &&
+            collisions.allows(range.layer, body.layer) &&
+            (nearest_range_point - range.center).length_squared() <= range.radius * range.radius;
+        // ConfigData.ObstaclesLayerMask, independent of the contact matrix.
+        let line_obstructed = has_obstacles && self.physics.primary_obstacle_linecast(
+            range.origin, closest_hull_point, 1u32 << 19)?;
+        Ok(Some(NativeWeaponTargetGeometry { closest_hull_point,
+            enemy_hull_overlaps_range, line_obstructed }))
+    }
+
     /// Register real game mounts independently of a policy controller.
     pub fn configure_game_turret(&mut self, ship_id: i64, slot: usize,
         spec: NativeTurretSpec,

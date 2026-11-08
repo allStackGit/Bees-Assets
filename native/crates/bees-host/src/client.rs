@@ -79,6 +79,9 @@ impl NativeClient {
             self.paused = !self.paused;
             self.next_step = now;
         }
+        if self.window.is_key_pressed(Key::B, KeyRepeat::No) {
+            self.renderer.show_weapon_ranges = !self.renderer.show_weapon_ranges;
+        }
         let single_step = self.paused && self.window.is_key_pressed(Key::N, KeyRepeat::No);
         let changed_world = self.window.is_key_pressed(Key::Tab, KeyRepeat::No) && world_count > 0;
         if changed_world {
@@ -216,10 +219,13 @@ impl NativeClient {
                 ship.entity_id, ship.ship_type, ship.side, ship.vitals.health(),
                 ship.vitals.max_health(), ship.vitals.tsv())).unwrap_or_default();
         self.window.set_title(&format!(
-            "Bees native | World {} | Episode {} | Tick {} | {} ships, {} shots | {} squads selected | {}{} | {} | Left select/drag, Ctrl add, right move | G guard, P patrol, M mine, H heal, R retreat, T point fire, X stop, Backspace cancel | Space pause, N step, Tab world, arrows pan, wheel zoom, F fit, Esc exit",
+            "Bees native | World {} | Episode {} | Tick {} | {} ships, {} shots | {} squads selected | {}{} | {} | range/obstruction {} | Left select/drag, Ctrl add, right move | G guard, P patrol, M mine, H heal, R retreat, T point fire, X stop, B ranges, Backspace cancel | Space pause, N step, Tab world, arrows pan, wheel zoom, F fit, Esc exit",
             view.world_id.0, view.episode_revision, view.tick, counts.ships, counts.projectiles,
             self.renderer.selection.squads().len(),
             if self.paused { "PAUSED" } else { "RUNNING" }, selected, self.input_feedback,
+            if self.renderer.show_weapon_ranges { format!("{}/{} blocked, {} queries, {} missing",
+                counts.obstructed_ranges, counts.range_overlaps, counts.range_queries, counts.missing_range_data) }
+            else { "off".to_owned() },
         ));
         self.render_wall_seconds += render_started.elapsed().as_secs_f64();
         self.rendered_frames += 1;

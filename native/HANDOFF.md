@@ -5,6 +5,45 @@ Latest fetch found no newer upstream than `3c76c78a3`, merged in `f7261843e`.
 Prior manual weapons `961189b94`; owner split `23c1c442d`; support `ea5ddd1a9`.
 Original `B:\Bees\Assets` and live training untouched.
 
+## Latest range/line inspection increment
+
+Schema21 exports each turret's actual child CircleCollider2D offset/radius in
+its logical turret frame, collision layer and enabled state. Import/builder
+register it on the physical mount for game and policy ships. Schema20 remains
+accepted for existing manual/policy execution; missing range queries return an
+explicit error. No range is guessed from the nominal weapon range.
+
+CombatWorld exposes read-only weapon_range / query_weapon_target_geometry.
+They use the actual hull closest point, authored range overlap, real collision
+matrix and Level.HasObstacles with source layer19 primary-obstacle linecasts.
+Cached closest-hull math is shared; same-tick changed poses use local geometry
+without allocating another polygon or mutating state from presentation.
+
+Client B toggles selected weapons' range circles and clear-blue/blocked-orange
+lines. Title counters expose queries, overlaps, obstructions and missing source
+inputs. Disabled by default; headless execution performs none of this inspection.
+This is geometric inspection, NOT full IsShipValidTarget or automatic targeting.
+
+Executed in B:\Bees\native-capability-qualification:
+- weapon-geometry.txt: rotated/concave/inside/edited-pose closest hulls; exact
+  concave, circle/tangent, rotated-box and zero-length linecasts; layer/active
+  filtering, navigation-only collider exclusion, actual turret offsets, hull-edge
+  range overlap, disabled ranges, collision masks and Level.HasObstacles.
+- weapon-range-host.txt: schema21 fixture through real no-policy host and software
+  renderer: clear 2 queries/1 overlap/0 blocked; blocked 2/1/1; legacy schema20
+  0 queries/1 missing mount. Missing schema21 layer rejected. Rendered blue/orange
+  pixels checked; weapon-range.png visually inspected. Host tick advances afterward.
+- game-manual-after-range.txt: all five existing manual weapon fixtures still fire
+  at ticks31/31/31/40/175, damage enemies and preserve admission/release behavior.
+- workspace-weapon-geometry.txt: all106 existing tests/all-target/all-feature pass;
+  headless-weapon-geometry.txt: no-default-feature check passes; six asset verifiers
+  pass. No committed new tests. No performance improvement claimed.
+
+These are supplied contract scenes, not authentic Unity exports. C# exporter
+execution, physical B-key interaction and Linux execution remain unverified.
+Source range-contact history/order, latched Ship.IsInBounds, target ranking,
+front-of-ship aim points and automatic firing still require integrated work.
+
 ## Latest integrated work
 
 - NativeAuthoredShip now owns actual turret slots and cease_fire. Policy binding
@@ -94,8 +133,9 @@ was left running. Do not turn narrower checks into full parity/readiness claims.
 
 ## Highest-value next work / full objective remains incomplete
 
-Port ordinary range contacts, target queue/ranking, actual hull/obstacle aim-point
-eligibility and automatic TargetingSequence into the SAME mounted scheduler;
+Build on the shared geometric queries: port ordinary range contact history,
+latched bounds, target queue/ranking, source final aim-point selection and automatic
+TargetingSequence into the SAME mounted scheduler;
 then wire chosen-target attack commands. Complete visual sprite animation/audio,
 per-weapon statistics/combat timers and persistent game accounting.
 Manual point firing supplies no missing automatic targeting semantics.

@@ -453,6 +453,7 @@ impl NativeLevelActivationContext for NativePolicyOnlyMetadata {
 }
 
 impl NativePlayerAuthority for NativePolicyOnlyMetadata {
+    fn weapon_obstacles_enabled(&self) -> Option<bool> { Some(self.player.has_obstacles) }
     fn player_permissions(&self, owner: SquadLifetime) -> Option<NativePlayerPermissions> {
         self.player.squads.get(&owner).copied()
     }

@@ -17,7 +17,7 @@ use bees_gameplay::squads::SquadRosterError;
 use bees_hivemind::session::SquadLifetime;
 use bees_sim::collision::{Aabb, Pose};
 use bees_sim::combat::ShipVitals;
-use bees_sim::combat_world::{CombatWorld, CombatWorldError, NativeTurretSpec, ShipCollisionProfile};
+use bees_sim::combat_world::{CombatWorld, CombatWorldError, NativeTurretSpec, NativeTurretRangeSpec, ShipCollisionProfile};
 use bees_sim::asteroid_spawn::FullAsteroidPrototype;
 use bees_sim::geometry::Vec2;
 use bees_sim::navigation::NavigationError;
@@ -79,6 +79,7 @@ pub struct NativeAuthoredPolicyCapabilities {
 /// Complete, real native rotating-turret configuration supplied by the
 /// original Unity weapon instances, never guessed from ship class.
 pub struct NativeAuthoredTurret {
+    pub range_collider: Option<NativeTurretRangeSpec>,
     pub slot: usize,
     pub spec: NativeTurretSpec,
 }
@@ -349,6 +350,10 @@ impl NativeSceneAssets {
                     } else {
                         combat.configure_game_turret(ship.entity_id, turret.slot, turret.spec)
                     }.map_err(NativeSceneBuildError::Combat)?;
+                    if let Some(range) = turret.range_collider {
+                        combat.configure_turret_range(ship.entity_id, turret.slot, range)
+                            .map_err(NativeSceneBuildError::Combat)?;
+                    }
                 }
                 }
                 NativeAuthoredEntity::BoxObstacle {

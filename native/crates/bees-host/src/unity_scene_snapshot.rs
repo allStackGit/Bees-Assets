@@ -18,7 +18,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use bees_sim::asteroid_spawn::FullAsteroidPrototype;
-use bees_sim::combat_world::{NativeFirePattern, NativeTurretSpec, GameStrikerCarrier, ScoutBeaconSpec};
+use bees_sim::combat_world::{NativeFirePattern, NativeTurretSpec, NativeTurretRangeSpec, GameStrikerCarrier, ScoutBeaconSpec};
 use bees_sim::perception_entities::ObservedWeapon;
 use bees_sim::control::PolicyFrame;
 use bees_hivemind::session::SquadLifetime;
@@ -70,7 +70,7 @@ use crate::runtime::NativeHostRuntime;
 use crate::ship_specials::{NativeAuthoredShipSpecial, NativeBeaconTemplate};
 use crate::durable_connection::DurableHiveMindConnection;
 
-const SNAPSHOT_VERSION: u32 = 20;
+const SNAPSHOT_VERSION: u32 = 21;
 
 #[derive(Deserialize, Clone, Copy)]
 struct UnityVec2 { x: f32, y: f32 }
@@ -356,6 +356,9 @@ struct UnityObservedWeapon {
 
 #[derive(Deserialize)]
 struct UnityTurret {
+    range_collider: Option<UnitySupportCollider>,
+    range_layer: Option<u8>,
+    range_enabled: Option<bool>,
     slot: usize,
     weapon_type: u8,
     projectile_type: u8,
@@ -982,7 +985,7 @@ impl NativePhysicalScene {
     pub fn parse_with_ship_catalog(json: &str, catalog: &ShipAssetCatalog) -> Result<Self, NativeSnapshotError> {
         let raw: UnitySnapshot = serde_json::from_str(json)
             .map_err(NativeSnapshotError::Malformed)?;
-        if raw.schema_version != SNAPSHOT_VERSION {
+        if raw.schema_version != 20 && raw.schema_version != SNAPSHOT_VERSION {
             return Err(NativeSnapshotError::UnsupportedSchema(raw.schema_version));
         }
         let command_settings: bees_gameplay::commands::HiveMindCommandSettings = raw.command_settings.into();
@@ -1296,7 +1299,19 @@ impl NativePhysicalScene {
                     "beam" => NativeFirePattern::BeamCannon,
                     _ => return Err(invalid(weapon.slot)),
                 };
+                let range_collider = match (weapon.range_collider, weapon.range_layer, weapon.range_enabled) {
+                    (None, None, None) if raw.schema_version == 20 => None,
+                    (Some(collider), Some(layer), Some(enabled)) => {
+                        let ShipShape::Circle { offset, radius } = collider.into_shape(ship.entity_id)
+                            .map_err(|_| invalid(weapon.slot))? else { return Err(invalid(weapon.slot)) };
+                        let range = NativeTurretRangeSpec { offset, radius, layer, enabled };
+                        if !range.valid() { return Err(invalid(weapon.slot)); }
+                        Some(range)
+                    },
+                    _ => return Err(invalid(weapon.slot)),
+                };
                 authored_turrets.push(NativeAuthoredTurret {
+                    range_collider,
                     slot: weapon.slot,
                     spec: NativeTurretSpec {
                         weapon_type: weapon.weapon_type,

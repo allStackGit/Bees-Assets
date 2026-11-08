@@ -118,6 +118,9 @@ internal static class NativePhysicalSceneExporter
     [Serializable]
     private sealed class SourceTurret
     {
+        public SourceCollider range_collider;
+        public int range_layer;
+        public bool range_enabled;
         public int slot;
         public int weapon_type, projectile_type, power;
         public Vector2 mount_offset, left_offset, right_offset;
@@ -195,7 +198,7 @@ internal static class NativePhysicalSceneExporter
     [Serializable]
     private sealed class PhysicalScene
     {
-        public int schema_version = 20;
+        public int schema_version = 21;
         public string level_name;
         public string stage_name;
         public float fixed_dt_seconds;
@@ -1081,7 +1084,15 @@ internal static class NativePhysicalSceneExporter
             }
             Vector3 localMount = ship.Transform.InverseTransformPoint(
                 turret.PieceTransform.position);
+            CircleCollider2D range = turret.RangeCollider == null ? null : turret.RangeCollider.Collider;
+            if (range == null)
+                throw new InvalidOperationException("Missing actual turret range collider on ship " + ship.Id);
+            SourceCollider rangeShape = ExportColliderShape(
+                ship.Level.Map.Transform, range, turret.GetPosition(), turret.Rotation);
             entries.Add(new SourceTurret {
+                range_collider = rangeShape,
+                range_layer = range.gameObject.layer,
+                range_enabled = range.enabled && range.gameObject.activeInHierarchy,
                 slot = slot,
                 weapon_type = (int)turret.Type,
                 projectile_type = (int)turret.ProjectileType,

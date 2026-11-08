@@ -178,6 +178,36 @@ impl From<Arc<[Vec2]>> for ShipShape {
 }
 
 impl ShipShape {
+    fn closest_local_point(&self, point: Vec2) -> Vec2 {
+        match self {
+            Self::Circle { offset, radius } => {
+                let delta = point - *offset;
+                if delta.length_squared() <= radius * radius { point }
+                else { *offset + delta.normalized_or_zero() * *radius }
+            },
+            Self::Box { offset, half_extents } => *offset + Vec2::new(
+                (point.x - offset.x).clamp(-half_extents.x, half_extents.x),
+                (point.y - offset.y).clamp(-half_extents.y, half_extents.y)),
+            Self::Polygon(vertices) => {
+                if circle_overlaps_polygon(point, 0.0, vertices) { point }
+                else { crate::collision::closest_polygon_boundary(point, vertices) }
+            },
+        }
+    }
+
+    fn overlaps_local_segment(&self, start: Vec2, end: Vec2) -> bool {
+        match self {
+            Self::Circle { offset, radius } =>
+                crate::collision::segment_overlaps_circle(start, end, *offset, *radius),
+            Self::Polygon(vertices) => crate::collision::segment_overlaps_polygon(start, end, vertices),
+            Self::Box { offset: o, half_extents: h } => {
+                let vertices = [*o + Vec2::new(-h.x,-h.y), *o + Vec2::new(h.x,-h.y),
+                    *o + Vec2::new(h.x,h.y), *o + Vec2::new(-h.x,h.y)];
+                crate::collision::segment_overlaps_polygon(start, end, &vertices)
+            },
+        }
+    }
+
     /// Conservative radius about the local origin; invariant under rotation.
     fn maximum_extent(&self) -> f32 {
         match self {
@@ -332,27 +362,7 @@ impl WorldCollider {
                     (point - self.circle_world).normalized_or_zero() * *radius
             }
             _ => {
-                if self.polygon_world.is_empty() { return point; }
-                let mut previous = *self.polygon_world.last()
-                    .expect("nonempty polygon hull");
-                let mut closest = previous;
-                let mut best_distance = f32::INFINITY;
-                for &next in &self.polygon_world {
-                    let edge = next - previous;
-                    let offset = point - previous;
-                    let length_sq = edge.length_squared();
-                    let t = if length_sq > 0.0 {
-                        ((offset.x * edge.x + offset.y * edge.y) / length_sq).clamp(0.0, 1.0)
-                    } else { 0.0 };
-                    let candidate = previous + edge * t;
-                    let distance = (candidate - point).length_squared();
-                    if distance < best_distance {
-                        best_distance = distance;
-                        closest = candidate;
-                    }
-                    previous = next;
-                }
-                closest
+                crate::collision::closest_polygon_boundary(point, &self.polygon_world)
             }
         }
     }
@@ -545,6 +555,15 @@ impl ShipBody {
     pub fn primary_closest_point(&mut self, point: Vec2) -> Vec2 {
         self.update_hull();
         self.collider.closest_point(point)
+    }
+
+    /// Read-only primary-hull query. Prefer cached world geometry; an edit
+    /// between fixed steps uses the actual current pose without a stale cache,
+    /// temporary polygon allocation, or mutation from presentation.
+    pub fn primary_closest_point_readonly(&self, point: Vec2) -> Vec2 {
+        let pose = Pose { position: self.motion.position, rotation_degrees: self.motion.rotation_degrees };
+        if self.collider.cached_pose == Some(pose) { self.collider.closest_point(point) }
+        else { pose.transform_point(self.collider.shape.closest_local_point(pose.inverse_transform_point(point))) }
     }
 
     /// Invalidates cached geometry before the next fixed step.
@@ -1266,6 +1285,24 @@ impl KinematicPhysics {
             (ship.active && (query.overlaps(&ship.collider) ||
                 ship.healing_zone.as_ref().is_some_and(|zone| query.overlaps(zone))))
                 .then_some(ship.id)))
+    }
+
+    /// Registered primary obstacle linecast, including exact circle, rotated
+    /// box and concave polygon geometry. Navigation-only mapping colliders are
+    /// deliberately not substituted for the physical hull.
+    pub fn primary_obstacle_linecast(&self, start: Vec2, end: Vec2, layer_mask: u32)
+        -> Result<bool, PhysicsError>
+    {
+        if !start.is_finite() || !end.is_finite() { return Err(PhysicsError::InvalidCollider); }
+        let bounds = Aabb { min: Vec2::new(start.x.min(end.x), start.y.min(end.y)),
+            max: Vec2::new(start.x.max(end.x), start.y.max(end.y)) };
+        Ok(self.obstacles.iter().any(|body| {
+            if !body.active || body.layer >= 32 || layer_mask & (1u32 << body.layer) == 0 { return false; }
+            if body.collider.cached_pose == Some(body.pose) &&
+                body.collider.bounds.is_some_and(|hull| !hull.overlaps(bounds)) { return false; }
+            body.shape().overlaps_local_segment(body.pose.inverse_transform_point(start),
+                body.pose.inverse_transform_point(end))
+        }))
     }
 
     pub fn ships_mut(&mut self) -> &mut [ShipBody] { &mut self.ships }

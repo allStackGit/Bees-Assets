@@ -431,6 +431,7 @@ where
             episode_revision: world.episode_revision(),
             tick: world.tick(),
             combat: &world.state.combat,
+            collision_matrix: &self.simulation.rules().collision_matrix,
             roster: world.state.events.roster(),
             player_authority: &world.state.metadata,
             pending_notifications:

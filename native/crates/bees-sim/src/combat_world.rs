@@ -101,6 +101,7 @@ pub use self::policy::WARP_GATE_TYPE;
 pub use self::healing::BEEHIVE_TYPE;
 use self::weapons::{PendingTurretShot, ShipWeapons};
 pub use self::weapons::{NativeFirePattern, NativeTurretSpec, NativeWeaponCharge};
+pub use self::weapons::{NativeTurretRangeSpec, NativeWeaponRange, NativeWeaponTargetGeometry};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CombatWorldError {
@@ -138,6 +139,8 @@ pub enum CombatWorldError {
     UnknownPolicyAgent(u64),
     DuplicatePolicyAgent(u64),
     InvalidPolicyTurret,
+    InvalidWeaponRangeGeometry,
+    MissingWeaponRangeGeometry,
     InvalidPolicyStriker,
     InvalidGameStriker,
     InvalidPolicyFireBarge,
