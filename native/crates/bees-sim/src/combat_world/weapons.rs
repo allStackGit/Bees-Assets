@@ -383,7 +383,8 @@ impl CombatWorld {
     /// from the owning command director every gameplay step, not stored
     /// in an independent client-side command registry.
     pub fn refresh_game_auto_fire_authority(
-        &mut self, mut live_command: impl FnMut(i64) -> Option<Option<i64>>,
+        &mut self, mut live_command:
+            impl FnMut(i64) -> Option<(Option<i64>, u8)>,
     ) {
         for (&id, runtime) in &mut self.game_turrets {
             let user = self.ship_by_id.get(&id)
@@ -392,7 +393,21 @@ impl CombatWorld {
             let current = live_command(id);
             runtime.ai_order_active = !user && current.is_some();
             runtime.command_outcome_id =
-                if user { 0 } else { current.flatten().unwrap_or(0) };
+                if user { 0 } else { current.and_then(|(id, _)| id).unwrap_or(0) };
+            // Source Command.Execute calls Squad.SetShootingStrategy
+            // when HiveMind selects a new order. Ship weapons must see
+            // that real strategy, not the one from the initial scene.
+            if let Some((_, strategy)) = current {
+                if !user && runtime.shooting_strategy != Some(strategy) {
+                    runtime.shooting_strategy = Some(strategy);
+                    for mount in runtime.turrets.iter_mut().flatten() {
+                        mount.target_ship_id = None;
+                    }
+                    for order in &mut runtime.random_target_order {
+                        order.clear();
+                    }
+                }
+            }
         }
     }
 
