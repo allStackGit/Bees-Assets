@@ -486,11 +486,18 @@ fn choose_game_weapon_target(
     ships: &[CombatShip],
     ship_by_id: &std::collections::HashMap<i64, usize>,
     target_front_offsets: &std::collections::HashMap<i64, f32>,
+    game_target_facts: &std::collections::HashMap<i64, NativeGameTargetFacts>,
     shooter_index: usize, mount: &PolicyTurretMount,
     mount_position: Vec2, strategy: u8,
     nearby: &std::collections::BTreeMap<i64, (u64, u64)>,
 ) -> Result<Option<(i64, Vec2)>, CombatWorldError> {
-    if !matches!(strategy, 1 | 5 | 6 | 9 | 10 | 13 | 14 | 15 | 16) {
+    if !matches!(strategy, 1 | 5..=40) {
+        return Ok(None);
+    }
+    if matches!(strategy, 7 | 8 | 11 | 12 | 17..=40) &&
+        nearby.keys().any(|id| !game_target_facts.contains_key(id))
+    {
+        // Never rank only those ships with a legacy partial snapshot.
         return Ok(None);
     }
     let mut best: Option<(i64, Vec2, f64, u64)> = None;
@@ -505,17 +512,22 @@ fn choose_game_weapon_target(
         let target = &ships[target_index];
         let rank = match strategy {
             5 | 6 => f64::from(target.vitals.health()),
+            7 | 8 => f64::from(game_target_facts[&target_id].firepower),
             9 | 10 => f64::from(hull_distance_sq),
+            11 | 12 => f64::from(game_target_facts[&target_id].max_range),
             13 | 14 => f64::from(
                 physics.ships()[target_index].motion.base_speed),
             15 | 16 => f64::from(target.vitals.tsv()),
+            17..=40 => f64::from(u8::from(
+                game_target_facts[&target_id].ship_type_letter ==
+                    strategy - 17)),
             _ => 0.0,
         };
         let better = best.is_none_or(|prior| {
             let compare = rank.total_cmp(&prior.2);
             let preferred = match strategy {
-                5 | 10 | 13 | 15 => compare.is_gt(),
-                6 | 9 | 14 | 16 => compare.is_lt(),
+                5 | 7 | 10 | 11 | 13 | 15 | 17..=40 => compare.is_gt(),
+                6 | 8 | 9 | 12 | 14 | 16 => compare.is_lt(),
                 _ => false,
             };
             preferred || (compare.is_eq() && first_seen < prior.3)
@@ -764,6 +776,7 @@ impl CombatWorld {
         let ships = &self.ships;
         let ship_by_id = &self.ship_by_id;
         let target_front_offsets = &self.target_front_offsets;
+        let game_target_facts = &self.game_target_facts;
         let physics = &mut self.physics;
         for (&ship_id, runtime) in &mut self.game_turrets {
             let Some(&index) = ship_by_id.get(&ship_id) else { continue };
@@ -793,8 +806,7 @@ impl CombatWorld {
                 let auto = manual.is_none() && !runtime.cease_fire &&
                     (user_controlled || runtime.ai_order_active) &&
                     mount.fire_at_front.is_some() &&
-                    matches!(runtime.shooting_strategy,
-                        Some(1 | 5 | 6 | 9 | 10 | 13 | 14 | 15 | 16));
+                    matches!(runtime.shooting_strategy, Some(1 | 5..=40));
                 if manual.is_some() {
                     mount.target_ship_id = None;
                 }
@@ -895,6 +907,7 @@ impl CombatWorld {
                         if let Some(strategy) = runtime.shooting_strategy {
                             mount.target_ship_id = choose_game_weapon_target(
                                 physics, ships, ship_by_id, target_front_offsets,
+                                game_target_facts,
                                 index, mount, position, strategy, nearby,
                             )?.map(|(target_id, _)| target_id);
                         }
