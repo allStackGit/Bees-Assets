@@ -601,6 +601,11 @@ fn main() -> Result<(), Box<dyn Error>> {
             "already_checkpointed": counts.already_checkpointed,
         }));
     }
+    // Registration is checkpointed before this run can write any journal
+    // notification. Pre-upgrade journals with no registered source cannot
+    // be replayed ambiguously under a fresh StoreCommands hash.
+    connection.register_journal_run(&config.run_id)
+        .map_err(|error| contextual("new journal registration", error))?;
     let sink = DurableDiagnosticNotifications::create_new(
         &notifications, config.run_id.clone(),
     )?;
