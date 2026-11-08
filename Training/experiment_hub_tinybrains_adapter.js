@@ -198,7 +198,7 @@ function createTinyBrainsAdapter({projectRoot,pythonPath,artifactRoot,profiles,
         tinybrains_imports:Object.fromEntries([...imports].map(([id,item])=>
             [id,{profile:item.profile,sha256:item.sha256}])),
         gpu_execution:[...configs].some(([,item])=>item.device==='cuda')?'cuda':null,
-        ...(windows?{}:{
+        ...(windows||![...configs].some(([,item])=>item.device==='cuda')?{}:{
             gpu_verify_args(parameters,context) {
                 const approved=configs.get(parameters?.profile);
                 if(approved?.device!=='cuda'||approved.sha256!==parameters.profile_sha256||
