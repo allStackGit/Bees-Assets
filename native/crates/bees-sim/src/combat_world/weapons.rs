@@ -265,6 +265,9 @@ pub(super) struct GameTurretRuntime {
     /// Source Ship.IsUserControlled OR Squad.HasCommand at the current
     /// authoritative Level state. The Level updates the AI command flag.
     pub(super) ai_order_active: bool,
+    /// Actual server command OutcomeId as of shot launch; local/scripted
+    /// commands and ordinary player fire use 0, never a fabricated ID.
+    pub(super) command_outcome_id: i64,
     /// Original RangeCollider enter order per physical weapon slot.
     pub(super) nearby_enemy_ids: [std::collections::BTreeMap<i64, (u64, u64)>; 5],
     pub(super) range_pass: u64,
@@ -304,6 +307,7 @@ impl CombatWorld {
                 turrets: [None; 5], last_hull_rotation: rotation,
                 cease_fire, manual_target: None,
                 shooting_strategy, ai_order_active: false,
+                command_outcome_id: 0,
                 nearby_enemy_ids: std::array::from_fn(|_| std::collections::BTreeMap::new()),
                 range_pass: 0, entry_sequence: 0,
                 random_target_order: std::array::from_fn(|_| Vec::new()),
@@ -379,13 +383,16 @@ impl CombatWorld {
     /// from the owning command director every gameplay step, not stored
     /// in an independent client-side command registry.
     pub fn refresh_game_auto_fire_authority(
-        &mut self, mut has_live_squad_command: impl FnMut(i64) -> bool,
+        &mut self, mut live_command: impl FnMut(i64) -> Option<Option<i64>>,
     ) {
         for (&id, runtime) in &mut self.game_turrets {
             let user = self.ship_by_id.get(&id)
                 .and_then(|&index| self.physics.ships().get(index))
                 .is_some_and(|body| body.motion.user_controlled);
-            runtime.ai_order_active = !user && has_live_squad_command(id);
+            let current = live_command(id);
+            runtime.ai_order_active = !user && current.is_some();
+            runtime.command_outcome_id =
+                if user { 0 } else { current.flatten().unwrap_or(0) };
         }
     }
 
@@ -640,6 +647,7 @@ pub(super) struct PendingTurretShot {
     /// Original TargetShip held by this physical shot at launch, never
     /// read again from a later command or reused pooled wrapper.
     target_ship_id: Option<i64>,
+    command_outcome_id: i64,
 }
 
 impl CombatWorld {
@@ -894,6 +902,7 @@ impl CombatWorld {
                         spec: mount.spec,
                         is_policy: true,
                         target_ship_id: None,
+                        command_outcome_id: 0,
                     });
                 }
             }
@@ -1012,6 +1021,7 @@ impl CombatWorld {
                                 target_world: mount.state.target_world,
                                 spec: mount.spec, is_policy: false,
                                 target_ship_id: mount.target_ship_id,
+                                command_outcome_id: runtime.command_outcome_id,
                             });
                             mount.charge_elapsed_seconds = None;
                         } else {
@@ -1045,6 +1055,7 @@ impl CombatWorld {
                                 target_world: mount.state.target_world,
                                 spec: mount.spec, is_policy: false,
                                 target_ship_id: mount.target_ship_id,
+                                command_outcome_id: runtime.command_outcome_id,
                             });
                         }
                         // Non-RL ready-to-fire is only latched when a
@@ -1213,7 +1224,7 @@ impl CombatWorld {
                     angle,
                     shot.spec.range,
                     projectile_id, // each shot is its own RL root
-                    0, // policy shot has no Hive Mind command outcome
+                    shot.command_outcome_id, // immutable firing-command snapshot
                 );
                 self.spawn_projectile(
                     asset, projectile_id,
