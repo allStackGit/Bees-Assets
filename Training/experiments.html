@@ -554,6 +554,20 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
     <p id="hub-budget-message" class="hub-notice" role="status"></p>
   </div>
   <div class="hub-standalone">
+    <h3>Adjust Hub GPU scheduling budgets</h3>
+    <p class="muted">Limit how much of each GPU the Hub may admit while leaving capacity for independently running Bees or other software. Set hub_vram_mb (0 to nominal VRAM MiB) and hub_compute_pct (0–100); zero disables new Hub GPU placements on that device. The limits are advisory accounting, not memory or compute isolation. Exclusive GPU jobs need the full Hub device budget; cooperative shared GPU jobs can use smaller budgets where their trusted adapter permits sharing. Disarm automation and release outstanding GPU-bearing leases before changing these values. No running process is resized or stopped.</p>
+    <form id="hub-gpu-budget-form">
+      <div class="formgrid">
+        <label>Registered GPU machine<select id="hub-gpu-budget-machine"></select></label>
+        <label class="wide">GPU budget configuration (JSON; keep IDs, nominal VRAM and PCI addresses unchanged)
+          <textarea id="hub-gpu-budget-json" rows="5">[]</textarea>
+        </label>
+      </div>
+      <button type="submit" id="hub-gpu-budget-save">Save GPU admission budgets</button>
+    </form>
+    <p id="hub-gpu-budget-message" class="hub-notice" role="status"></p>
+  </div>
+  <div class="hub-standalone">
     <h3>Bind physical GPUs</h3>
     <p class="muted">Connected Linux AMDGPU and Windows NVIDIA agents can bind registered logical GPU IDs to observed PCI addresses. Windows NVIDIA leases additionally pin the CUDA GPU UUID. Existing GPU leases must be released before rebinding. A Windows CUDA launch requires explicit local opt-in and a trusted CUDA adapter; the Job Object enforces CPU/RAM but cannot isolate or quota a GPU.</p>
     <form id="hub-gpu-bind-form">
