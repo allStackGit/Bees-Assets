@@ -48,7 +48,7 @@ function observations(machineId) {
 function observedOffers(offers,observation) {
     if (!Array.isArray(offers)||offers.length>100)
         throw Error('Invalid coordination lease offer list.');
-    const ids=new Set();
+    const ids=new Set(),budgets=new Map();
     let claimedCpus=0,claimedRam=0;
     for (const offer of offers) {
         const r=offer?.resources;
@@ -61,8 +61,10 @@ function observedOffers(offers,observation) {
             throw Error('Invalid coordination lease offer.');
         // A malformed persisted GPU intent is not a CPU-only claim,
         // even when its advertised GPU count is zero.
-        try{resourceRequest(r);}
+        let budget;
+        try{budget=resourceRequest(r);}
         catch{throw Error('Invalid coordination lease resource budget.');}
+        budgets.set(offer.id,budget);
         ids.add(offer.id);
         claimedCpus+=r.cpus;
         claimedRam+=r.ram_mb;
@@ -75,8 +77,10 @@ function observedOffers(offers,observation) {
         .map(g=>[g.pci_address,g]));
     const gpuClaims=new Map(),approved=[];
     for(const offer of offers) {
-        const r=offer.resources;
-        if(r.gpu_count===0&&!r.gpus?.length) {
+        // Use the already-validated canonical budget. Older CPU-only
+        // leases can legitimately omit gpu_count and gpus altogether.
+        const r=budgets.get(offer.id);
+        if(r.gpu_count===0) {
             approved.push(offer.id);
             continue;
         }
