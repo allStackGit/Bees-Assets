@@ -1108,6 +1108,21 @@ impl CombatWorld {
                 .atan2(origin.y - shot.target_world.y);
             for &position in positions[..barrels].iter() {
                 let projectile_id = self.next_entity_id;
+                if !shot.is_policy {
+                    if let Some(target_id) = shot.target_ship_id {
+                        let health = self.ship(target_id)
+                            .ok_or(CombatWorldError::UnknownShip)?
+                            .vitals.health();
+                        // Unity Weapon.SendProjectile reserves once at
+                        // launch. The resulting real projectile ID owns
+                        // the lease through impact, split/transfer and
+                        // the canonical end_projectile release.
+                        self.reservations.reserve(
+                            projectile_id, shot.shooter_side,
+                            target_id, health, power,
+                        )?;
+                    }
+                }
                 let motion = ProjectileMotion::new(
                     position,
                     shot.spec.projectile_speed,
