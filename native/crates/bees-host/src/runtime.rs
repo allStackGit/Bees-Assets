@@ -44,6 +44,23 @@ pub enum NativeHostSocketDelivery {
     HiveMind(Option<NativeHiveMindFrameDelivery>),
 }
 
+/// Distinguish ordinary socket/ownership errors from a physically lost
+/// connection. On loss, transient strategy and targeting correlations are
+/// retired once and their unresolved original hashes are reported. Durable
+/// StoreCommands are deliberately NOT retired.
+#[derive(Debug)]
+pub enum HostSocketError {
+    Socket(HiveMindSocketError),
+    Disconnected {
+        cause: HiveMindSocketError,
+        unresolved_request_hashes: Vec<i64>,
+    },
+    DisconnectRetirementFailed {
+        cause: HiveMindSocketError,
+        retirement: DurableConnectionError,
+    },
+}
+
 #[derive(Debug)]
 pub enum HostPlayerInputError {
     Gameplay(NativePlayerInputError),
@@ -477,23 +494,52 @@ where
     /// checkpoint remains authoritative across a restart.
     pub fn service_socket_event(
         &mut self, socket: &mut NativeHiveMindSocket,
-    ) -> Result<NativeHostSocketDelivery, HiveMindSocketError> {
-        match socket.read_event()? {
-            HiveMindSocketEvent::SetupAccepted {
-                request_hash, server_game_id,
-            } => {
-                self.flush_store_socket(socket)?;
-                Ok(NativeHostSocketDelivery::SetupAccepted {
+    ) -> Result<NativeHostSocketDelivery, HostSocketError> {
+        let result = (|| -> Result<NativeHostSocketDelivery, HiveMindSocketError> {
+            match socket.read_event()? {
+                HiveMindSocketEvent::SetupAccepted {
                     request_hash, server_game_id,
-                })
+                } => {
+                    self.flush_store_socket(socket)?;
+                    Ok(NativeHostSocketDelivery::SetupAccepted {
+                        request_hash, server_game_id,
+                    })
+                }
+                HiveMindSocketEvent::ServerFrame(frame) => {
+                    let delivery = self.receive_frame(&frame)
+                        .map_err(HiveMindSocketError::Durability)?;
+                    self.flush_store_socket(socket)?;
+                    Ok(NativeHostSocketDelivery::HiveMind(delivery))
+                }
             }
-            HiveMindSocketEvent::ServerFrame(frame) => {
-                let delivery = self.receive_frame(&frame)
-                    .map_err(HiveMindSocketError::Durability)?;
-                self.flush_store_socket(socket)?;
-                Ok(NativeHostSocketDelivery::HiveMind(delivery))
+        })();
+        match result {
+            Ok(delivery) => Ok(delivery),
+            Err(cause) if socket.is_failed() => {
+                match self.connection.retire_socket() {
+                    Ok(unresolved_request_hashes) =>
+                        Err(HostSocketError::Disconnected {
+                            cause, unresolved_request_hashes,
+                        }),
+                    Err(retirement) =>
+                        Err(HostSocketError::DisconnectRetirementFailed {
+                            cause, retirement,
+                        }),
+                }
             }
+            Err(cause) => Err(HostSocketError::Socket(cause)),
         }
+    }
+
+    /// On intentional close or an externally detected disconnect, retire
+    /// transient request hashes once before admitting a new socket. A
+    /// discarded strategy reply has no known OutcomeIds until the old
+    /// connection delivers it; never invent a StoreCommands discard for
+    /// unresolved in-flight requests. Outstanding StoreCommands survive.
+    pub fn retire_socket_session(&mut self)
+        -> Result<Vec<i64>, DurableConnectionError>
+    {
+        self.connection.retire_socket()
     }
 
     /// Actual multi-Level model inference, fixed-step combat and ordered
