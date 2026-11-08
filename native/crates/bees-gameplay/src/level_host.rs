@@ -353,9 +353,9 @@ pub enum NativeLevelStrategyReceiveError {
 }
 
 /// Targeting choices are independent server reservations. This delivery
-/// routes the validated response to the correct live Level but leaves the
-/// actual ship/weapon targeting installation and TSV attribution with
-/// its authored Level adapter. Do not credit targeting until installed.
+/// installs the validated matchup against the owning Level's live world.
+/// The selected enemy and reservation are captured by subsequent commands;
+/// episode finalization settles earned TSV or discards unused selections.
 #[derive(Debug)]
 pub struct NativeLevelTargetingDelivery {
     pub world_index: Option<usize>,
@@ -758,7 +758,7 @@ impl NativeLevelBatchDriver {
             let failed = |cause| NativeLevelTargetingReceiveError::Application { selection, cause };
             let world = simulation.world_mut(world_index.expect("live accepted owner")).expect("registered world");
             let context = world.state.metadata.targeting_context().ok_or_else(|| failed(
-                NativeTargetingApplicationError::Ranking(crate::squad_targeting::NativeTargetingError::MissingSource)))?;
+                NativeTargetingApplicationError::Ranking(crate::squad_targeting::NativeTargetingError::MissingSourceContext)))?;
             selected_enemy = crate::squad_targeting::select_enemy_squad(
                 &world.state.combat, world.state.events.roster(), world.state.events.commands(),
                 world.state.metadata.targeting_ship_catalog(), context, *owner, selection,

@@ -118,28 +118,72 @@ impl<'de> Deserialize<'de> for OutcomeBatch {
             discarded: Vec<i64>,
         }
         let rows = Rows::deserialize(deserializer)?;
-        let mut seen = HashSet::new();
-        let mut markers = HashSet::new();
-        for (rows, strategic) in [(&rows.strategic, true), (&rows.shooting, false), (&rows.targeting, false)] {
-            for row in rows {
-                if row.outcome_id <= 0 || !seen.insert(row.outcome_id) ||
-                    (row.discard_reservation && (!strategic || row.tsv != 0)) {
-                    return Err(serde::de::Error::custom("invalid or duplicate journal outcome"));
-                }
-                if row.discard_reservation { markers.insert(row.outcome_id); }
-            }
-        }
-        let discarded: HashSet<_> = rows.discarded.iter().copied().collect();
-        if discarded.len() != rows.discarded.len() || discarded != markers {
-            return Err(serde::de::Error::custom("journal discard identities disagree"));
-        }
-        Ok(Self { seen, strategic: rows.strategic, shooting: rows.shooting,
-            targeting: rows.targeting, discarded: rows.discarded })
+        let mut batch = Self { seen: HashSet::new(), strategic: rows.strategic,
+            shooting: rows.shooting, targeting: rows.targeting, discarded: rows.discarded };
+        batch.validate_journal().map_err(|error| serde::de::Error::custom(format!("{error:?}")))?;
+        Ok(batch)
     }
+}
+
+/// The run/world/episode source position of a durably journaled settlement.
+/// It is not a server reservation or request hash. Persist this position with
+/// the StoreCommands retry payload so journal replay cannot double-credit
+/// an outcome after a server acknowledgement has retired its request.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct JournalOutcomeSource {
+    pub run_id: String,
+    pub world_id: u64,
+    pub episode_revision: u64,
+    pub event_sequence: u64,
+}
+
+#[derive(Clone, Debug)]
+pub struct RecordedOutcomeBatch {
+    pub source: JournalOutcomeSource,
+    pub batch: OutcomeBatch,
 }
 
 impl OutcomeBatch {
     pub fn new() -> Self { Self::default() }
+
+    pub fn validate_journal(&mut self) -> Result<(), HiveMindProtocolError> {
+        let mut seen = HashSet::new();
+        let mut discards = HashSet::new();
+        for row in &self.strategic {
+            if row.outcome_id <= 0 {
+                return Err(HiveMindProtocolError::InvalidReservation);
+            }
+            if !seen.insert(row.outcome_id) {
+                return Err(HiveMindProtocolError::DuplicateReservation);
+            }
+            if row.discard_reservation {
+                if row.tsv != 0 {
+                    return Err(HiveMindProtocolError::InvalidReservation);
+                }
+                discards.insert(row.outcome_id);
+            }
+        }
+        for row in self.shooting.iter().chain(self.targeting.iter()) {
+            if row.outcome_id <= 0 || row.discard_reservation {
+                return Err(HiveMindProtocolError::InvalidReservation);
+            }
+            if !seen.insert(row.outcome_id) {
+                return Err(HiveMindProtocolError::DuplicateReservation);
+            }
+        }
+        let mut listed_discards = HashSet::new();
+        for &id in &self.discarded {
+            if id <= 0 || !listed_discards.insert(id) {
+                return Err(HiveMindProtocolError::InvalidReservation);
+            }
+        }
+        if discards != listed_discards || seen.is_empty() {
+            return Err(HiveMindProtocolError::InvalidReservation);
+        }
+        self.seen = seen;
+        Ok(())
+    }
+
 
     pub fn is_empty(&self) -> bool { self.seen.is_empty() }
 

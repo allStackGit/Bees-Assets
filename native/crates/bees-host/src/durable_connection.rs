@@ -24,7 +24,7 @@ use bees_hivemind::connection::{
     NativeConnectionError, NativeHiveMindConnection,
 };
 use bees_hivemind::outcomes::{
-    OutcomeBatch, PreparedOutcomeBatch, StoreAcknowledgement,
+    OutcomeBatch, PreparedOutcomeBatch, StoreAcknowledgement, RecordedOutcomeBatch,
 };
 use bees_hivemind::protocol::{
     GetStrategyRequest, GetTargetingRequest, HiveMindProtocolError,
@@ -42,6 +42,7 @@ pub enum DurableConnectionError {
     /// Checkpoint durability is unknown after a write error. Restart and
     /// reload before transmitting another request or accepting a reply.
     Unavailable,
+    PreviouslyRegisteredJournalRun,
     Persistence(CheckpointFileError),
     Request(NativeConnectionError),
     Protocol(HiveMindProtocolError),
@@ -58,6 +59,7 @@ pub struct DurableHiveMindConnection {
     connection: NativeHiveMindConnection,
     checkpoint: ConnectionCheckpointFile,
     unavailable: bool,
+    active_journal_runs: std::collections::HashSet<String>,
 }
 
 impl DurableHiveMindConnection {
@@ -82,7 +84,7 @@ impl DurableHiveMindConnection {
             checkpoint.persist(&fresh)?;
             fresh
         };
-        Ok(Self { connection, checkpoint, unavailable: false })
+        Ok(Self { connection, checkpoint, unavailable: false, active_journal_runs: Default::default() })
     }
 
     /// Recovery must never silently create a new connection identity when
@@ -96,7 +98,7 @@ impl DurableHiveMindConnection {
             CheckpointFileError::Io(std::io::Error::new(
                 std::io::ErrorKind::NotFound, "journal recovery requires its original connection checkpoint",
             )))?;
-        Ok(Self { connection, checkpoint, unavailable: false })
+        Ok(Self { connection, checkpoint, unavailable: false, active_journal_runs: Default::default() })
     }
 
     /// Read-only access for NativeLevelBatchDriver::runtime_status.
@@ -211,6 +213,35 @@ impl DurableHiveMindConnection {
             .map_err(DurableConnectionError::Request)?;
         if queued { self.persist_or_poison()?; }
         Ok(queued)
+    }
+
+    pub fn register_journal_run(
+        &mut self, run_id: &str,
+    ) -> Result<(), DurableConnectionError> {
+        self.ensure_available()?;
+        if self.active_journal_runs.contains(run_id) {
+            return Ok(());
+        }
+        if !self.connection.register_journal_run(run_id)
+            .map_err(DurableConnectionError::Request)?
+        {
+            return Err(DurableConnectionError::PreviouslyRegisteredJournalRun);
+        }
+        self.persist_or_poison()?;
+        self.active_journal_runs.insert(run_id.to_owned());
+        Ok(())
+    }
+
+    pub fn queue_journal_outcomes(
+        &mut self, recorded: &RecordedOutcomeBatch,
+    ) -> Result<Option<StoreCommandsRequest>, DurableConnectionError> {
+        self.ensure_available()?;
+        let request = self.connection.queue_journal_outcomes(recorded)
+            .map_err(DurableConnectionError::Request)?;
+        if request.is_some() {
+            self.persist_or_poison()?;
+        }
+        Ok(request)
     }
 
     /// A raw authenticated server frame is first routed by its original

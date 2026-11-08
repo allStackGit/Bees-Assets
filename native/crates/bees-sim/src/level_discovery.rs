@@ -37,6 +37,10 @@ pub struct DiscoveryCounts {
 #[derive(Default)]
 struct SideDiscovery {
     ships: HashSet<i64>,
+    /// HashSet membership is O(1), while the authored game enumerates its
+    /// learned ship cache to build a MatchupStrategy target queue. Preserve
+    /// first-sighting order without a second sighting/physics calculation.
+    ship_sighting_order: Vec<i64>,
     obstacles: HashSet<i64>,
     mining: HashSet<i64>,
     map_objects: HashSet<i64>,
@@ -69,7 +73,11 @@ impl LevelDiscovery {
         if entity_id <= 0 { return Err(DiscoveryError::InvalidEntityId); }
         let side = self.sides.entry(observer_side).or_default();
         let first = match kind {
-            DiscoveryKind::Ship => side.ships.insert(entity_id),
+            DiscoveryKind::Ship => {
+                let first = side.ships.insert(entity_id);
+                if first { side.ship_sighting_order.push(entity_id); }
+                first
+            },
             DiscoveryKind::Obstacle => side.obstacles.insert(entity_id),
             DiscoveryKind::MiningAsteroid => {
                 side.obstacles.insert(entity_id);
@@ -104,6 +112,16 @@ impl LevelDiscovery {
         self.sides.get(&observer_side).map(|side| &side.ships)
     }
 
+    /// Insertion-ordered learned enemy ship identities for source
+    /// MatchupStrategy.BuildVisibleSquadQueue. The server strategy chooses
+    /// the FIRST equally ranked squad, so this is intentionally distinct
+    /// from the unordered membership view used by physics and observations.
+    /// A removed ship cannot reappear in a later episode from stale cache.
+    pub fn ship_ids_in_sighting_order(&self, observer_side: i32) -> &[i64] {
+        self.sides.get(&observer_side)
+            .map_or(&[], |side| side.ship_sighting_order.as_slice())
+    }
+
     pub fn obstacle_ids(&self, observer_side: i32) -> Option<&HashSet<i64>> {
         self.sides.get(&observer_side).map(|side| &side.obstacles)
     }
@@ -124,7 +142,13 @@ impl LevelDiscovery {
         let mut forgotten = 0;
         for side in self.sides.values_mut() {
             let removed = match kind {
-                DiscoveryKind::Ship => side.ships.remove(&entity_id),
+                DiscoveryKind::Ship => {
+                    let removed = side.ships.remove(&entity_id);
+                    if removed {
+                        side.ship_sighting_order.retain(|&id| id != entity_id);
+                    }
+                    removed
+                },
                 DiscoveryKind::Obstacle => {
                     let general = side.obstacles.remove(&entity_id);
                     let mining = side.mining.remove(&entity_id);

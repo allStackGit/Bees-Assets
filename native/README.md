@@ -250,10 +250,22 @@ cargo run --manifest-path native/Cargo.toml --offline -p bees-host \
 Both paths require the original existing checkpoint and exclusive file ownership.
 Replay ignores a torn final line, rejects altered accepted prefixes or invalid
 outcome rows, and never requeues already imported batches. It recovers completed
-outcomes, not an interrupted world. Schema1 journals lack the required recovery
-identity and are rejected. See HANDOFF.md for bounded Windows qualifications.
+outcomes, not an interrupted world. Incoming schema1 journals can instead use
+`recover_outcome_journals: [{"run_id": "original-run", "path": "old.jsonl"}]`.
+Their run must already be registered in the original connection checkpoint;
+the saved per-world acknowledgement frontier is retained. Unregistered runs
+are rejected. Both readers require authoritative terminal boundaries and use
+the same retry ledger. New journals remain schema2. See HANDOFF.md for scope.
 
-## Unity scene import (schema 23)
+## Unity scene import (schema 25)
+
+Schema25 additionally exports source `targeting_context` and each ship's real
+`combat_activity` timer. Targeting replies select and install an enemy using the
+shared 40-way matchup selector, ordered learned sightings and authored metrics.
+Commands capture the installed reservation and actual enemy; final episodes
+aggregate strategic TSV for selections used against an enemy and discard unused
+reservations. Retreat eligibility is independent of shooting credit. These fields
+are required for schema25; older scenes cannot invent missing source state.
 
 Schema23 captures Time.frameCount, each actual Ship's ranking inputs and shared
 FleetShip reference alias. Ordinary mounts use all40 shooting strategies, preferred
@@ -575,9 +587,9 @@ neural network. `NativeLevelBatchDriver` now owns per-world v26 observation
 assemblers, genuine batched model inference/step dispatch and guarded episode
 reset, and routes BeesServer strategy replies through the shared
 `HiveMindSession` by exact source SquadLifetime. Retired replies return
-explicit StoreCommands discards; accepted targeting selections are routed
-to their authentic Level but still require Level-side installation and
-credit attribution. `deliver_all_level_notifications` acknowledges only
+explicit StoreCommands discards; accepted targeting selections are installed
+in their authentic Level and retained by its episode credit owner.
+`deliver_all_level_notifications` acknowledges only
 the durable, source-ordered prefix accepted by the user's output sink.
 The rendered game and headless worker must provide the SAME
 `NativeLevelCommandContext`, `NativeLevelObservationContext` and
@@ -597,8 +609,8 @@ connection-owned `NativeHiveMindConnection` (which owns the shared
 1 for rendered gameplay or larger for bounded headless windows. Incoming
 strategy/targeting replies use `receive_strategy_response` and
 `receive_targeting_response` to route by the original Squad lifetime;
-the latter returns the still-uninstalled targeting reservation to the
-source Level. On a failed step or intentional stop, call
+the latter returns the installed selection's actual enemy to its caller.
+On a failed step or intentional stop, call
 `stop_world_and_deliver` with the proper failed/normal stop kind,
 then `reset_world_after_delivery` only after every notification and
 connection retirement has been handled. No method retries an ambiguous

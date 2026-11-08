@@ -12,12 +12,19 @@
 
 use serde::{Deserialize, Serialize};
 use std::io::Write;
-use std::collections::HashMap;
+use std::collections::{HashMap, BTreeMap};
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+struct JournalPosition {
+    episode_revision: u64,
+    event_sequence: u64,
+}
+
 
 const CONNECTION_CHECKPOINT_VERSION: u32 = 1;
 
 use crate::outcomes::{
-    OutcomeBatch, PendingStoreCommands, PreparedOutcomeBatch, StoreAcknowledgement,
+    OutcomeBatch, PendingStoreCommands, PreparedOutcomeBatch, StoreAcknowledgement, RecordedOutcomeBatch,
 };
 use crate::protocol::{
     GetStrategyRequest, GetTargetingRequest, HiveMindProtocolError,
@@ -52,6 +59,8 @@ pub struct NativeConnectionCheckpoint {
     /// One append frontier per immutable journal, retained after 200/409.
     #[serde(default)]
     journal_cursors: HashMap<String, JournalCursor>,
+    #[serde(default)]
+    journal_progress: BTreeMap<String, BTreeMap<u64, JournalPosition>>,
 }
 
 /// Borrowed serialization view: large StoreCommands queues are streamed
@@ -62,6 +71,7 @@ struct NativeConnectionCheckpointView<'a> {
     hashes: &'a RequestHashAllocator,
     stores: &'a PendingStoreCommands,
     journal_cursors: &'a HashMap<String, JournalCursor>,
+    journal_progress: &'a BTreeMap<String, BTreeMap<u64, JournalPosition>>,
 }
 
 impl NativeConnectionCheckpoint {
@@ -92,6 +102,7 @@ pub enum NativeConnectionError {
     Protocol(HiveMindProtocolError),
     Session(HiveMindSessionError),
     EmptyOutcomeBatch,
+    InvalidJournalIdentity,
 }
 
 impl From<HiveMindProtocolError> for NativeConnectionError {
@@ -109,6 +120,7 @@ pub struct NativeHiveMindConnection {
     session: HiveMindSession,
     stores: PendingStoreCommands,
     journal_cursors: HashMap<String, JournalCursor>,
+    journal_progress: BTreeMap<String, BTreeMap<u64, JournalPosition>>,
 }
 
 impl NativeHiveMindConnection {
@@ -121,6 +133,7 @@ impl NativeHiveMindConnection {
             session: HiveMindSession::new(),
             stores: PendingStoreCommands::new(),
             journal_cursors: HashMap::new(),
+            journal_progress: BTreeMap::new(),
         })
     }
 
@@ -135,6 +148,9 @@ impl NativeHiveMindConnection {
             return Err(HiveMindProtocolError::InvalidRequest);
         }
         snapshot.hashes.validate()?;
+        if snapshot.journal_progress.keys().any(|run| run.trim().is_empty()) {
+            return Err(HiveMindProtocolError::InvalidRequest);
+        }
         if snapshot.journal_cursors.iter().any(|(id, cursor)|
             !PreparedOutcomeBatch::valid_journal_id(id) || !valid_prefix_digest(&cursor.prefix_sha256)) {
             return Err(HiveMindProtocolError::InvalidRequest);
@@ -149,6 +165,7 @@ impl NativeHiveMindConnection {
             session: HiveMindSession::new(),
             stores: snapshot.stores,
             journal_cursors: snapshot.journal_cursors,
+            journal_progress: snapshot.journal_progress,
         })
     }
 
@@ -162,6 +179,7 @@ impl NativeHiveMindConnection {
             hashes: self.hashes.clone(),
             stores: self.stores.clone(),
             journal_cursors: self.journal_cursors.clone(),
+            journal_progress: self.journal_progress.clone(),
         }
     }
 
@@ -178,6 +196,7 @@ impl NativeHiveMindConnection {
             hashes: &self.hashes,
             stores: &self.stores,
             journal_cursors: &self.journal_cursors,
+            journal_progress: &self.journal_progress,
         })
     }
 
@@ -270,6 +289,49 @@ impl NativeHiveMindConnection {
     pub fn journal_cursor(&self, id: &str) -> Option<(u64, &str)> {
         self.journal_cursors.get(id).map(|cursor|
             (cursor.sequence, cursor.prefix_sha256.as_str()))
+    }
+
+    // Compatibility for schema1 journals: the original run must already
+    // be registered in this checkpoint. No retry payload/allocator is copied.
+    pub fn register_journal_run(
+        &mut self, run_id: &str,
+    ) -> Result<bool, NativeConnectionError> {
+        if run_id.trim().is_empty() {
+            return Err(NativeConnectionError::InvalidJournalIdentity);
+        }
+        if self.journal_progress.contains_key(run_id) {
+            return Ok(false);
+        }
+        self.journal_progress.insert(run_id.to_owned(), BTreeMap::new());
+        Ok(true)
+    }
+
+    pub fn queue_journal_outcomes(
+        &mut self, recorded: &RecordedOutcomeBatch,
+    ) -> Result<Option<StoreCommandsRequest>, NativeConnectionError> {
+        let source = &recorded.source;
+        if source.run_id.trim().is_empty() ||
+            !self.journal_progress.contains_key(&source.run_id)
+        {
+            // An old unregistered journal may have been committed and
+            // acknowledged before this version recorded source cursors.
+            // Never reconstruct a second request under a new hash.
+            return Err(NativeConnectionError::InvalidJournalIdentity);
+        }
+        let position = JournalPosition {
+            episode_revision: source.episode_revision,
+            event_sequence: source.event_sequence,
+        };
+        if self.journal_progress.get(&source.run_id)
+            .and_then(|worlds| worlds.get(&source.world_id))
+            .is_some_and(|previous| position <= *previous)
+        {
+            return Ok(None);
+        }
+        let request = self.queue_outcomes(recorded.batch.clone())?;
+        self.journal_progress.entry(source.run_id.clone()).or_default()
+            .insert(source.world_id, position);
+        Ok(Some(request))
     }
 
     pub fn retry_store(&self, hash: i64) -> Option<&StoreCommandsRequest> {

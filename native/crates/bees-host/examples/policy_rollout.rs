@@ -121,6 +121,10 @@ fn default_flush_seconds() -> u32 { 5 }
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
+struct PriorOutcomeJournalConfig { run_id: String, path: PathBuf }
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct RunConfig {
     run_id: String,
     stage_name: String,
@@ -136,6 +140,8 @@ struct RunConfig {
     /// starting a new incarnation. No previous world is resumed.
     #[serde(default)]
     recover_notifications: Vec<PathBuf>,
+    #[serde(default)]
+    recover_outcome_journals: Vec<PriorOutcomeJournalConfig>,
     hivemind: Option<HiveMindConfig>,
     next_squad_item_id: i64,
     broadphase_cell_size: f32,
@@ -640,7 +646,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         ));
     }
 
-    let mut connection = if config.recover_notifications.is_empty() {
+    let mut connection = if config.recover_notifications.is_empty() && config.recover_outcome_journals.is_empty() {
         DurableHiveMindConnection::open(&checkpoint)
     } else { DurableHiveMindConnection::open_existing(&checkpoint) }
         .map_err(|error| contextual("HiveMind checkpoint", error))?;
@@ -653,6 +659,18 @@ fn main() -> Result<(), Box<dyn Error>> {
             .map_err(|error| contextual("outcome journal recovery", error))?;
         println!("{}", json!({ "kind": "outcome_journal_recovered", "journal": path,
             "recovery": recovered }));
+    }
+
+    for previous in &config.recover_outcome_journals {
+        let path = resolve(root, &previous.path);
+        if path == notifications || path == checkpoint {
+            return Err(invalid("recovery journals must be distinct from new outputs").into());
+        }
+        let recovered = bees_host::journal_recovery::replay_command_outcomes(&path, &previous.run_id,
+            |recorded| connection.queue_journal_outcomes(recorded).map(|request| request.is_some()))
+            .map_err(|error| contextual("schema1 outcome journal recovery", error))?;
+        println!("{}", json!({"kind":"outcome_journal_recovered","journal":path,
+            "newly_checkpointed":recovered.newly_checkpointed,"already_checkpointed":recovered.already_checkpointed}));
     }
 
     let model = ResidentPolicyProcess::python_worker(

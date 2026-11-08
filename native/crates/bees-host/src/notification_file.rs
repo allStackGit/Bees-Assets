@@ -588,6 +588,7 @@ pub fn recover_command_outcomes(
     let mut line = Vec::new();
     let mut identity = None;
     let mut digest = Sha256::new();
+    let mut terminal = BTreeMap::<u64, (u64, u64)>::new();
     let mut sequences = BTreeMap::<u64, (u64, u64)>::new();
     let mut recovery = OutcomeJournalRecovery::default();
     loop {
@@ -630,7 +631,14 @@ pub fn recover_command_outcomes(
                 return Err(invalid("journal differs from its checkpointed prefix").into());
             }
         }
+        if matches!(row.kind.as_str(), "episode_final" | "episode_aborted") {
+            terminal.insert(row.world_id, (row.episode_revision, row.event_sequence));
+        }
         if row.kind == "command_outcomes_ready" {
+            if !terminal.get(&row.world_id).is_some_and(|&(revision, sequence)|
+                revision == row.episode_revision && sequence.checked_add(1) == Some(row.event_sequence)) {
+                return Err(invalid("outcomes are detached from the authoritative terminal boundary").into());
+            }
             let batch: OutcomeBatch = serde_json::from_value(row.payload)
                 .map_err(|error| invalid(&error.to_string()))?;
             if batch.is_empty() { return Err(invalid("empty journal outcome batch").into()); }

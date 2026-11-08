@@ -608,6 +608,28 @@ impl NativeSquadCommandDirector {
         self.active.get(&owner)?.selected_enemy
     }
 
+    pub fn first_targeted_enemy(
+        &self, world: &CombatWorld, roster: &NativeSquadRoster, side: i32,
+    ) -> Option<SquadLifetime> {
+        for &owner in roster.source_order() {
+            let Some(ally) = roster.get(owner) else { continue; };
+            if ally.side != side { continue; }
+            let Some(target) = self.active.get(&owner)
+                .and_then(|command| command.selected_enemy) else {
+                continue;
+            };
+            if roster.get(target).is_some_and(|enemy|
+                enemy.side != side &&
+                enemy.members.iter().any(|&id| world.ship(id).is_some_and(|ship|
+                    !ship.vitals.is_dead()
+                ))
+            ) {
+                return Some(target);
+            }
+        }
+        None
+    }
+
     pub fn current_server_outcome(&self, owner: SquadLifetime) -> Option<i64> {
         self.active.get(&owner)?.selection.server_outcome()
     }

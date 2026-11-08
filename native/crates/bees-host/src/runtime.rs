@@ -425,6 +425,16 @@ where
         Ok(counts)
     }
 
+    /// Schema1 compatibility: only runs registered in the original
+    /// connection checkpoint may be replayed. Normal journals use schema2.
+    pub fn recover_prior_outcome_journal(
+        &mut self, path: &std::path::Path, expected_run_id: &str,
+    ) -> Result<crate::journal_recovery::JournalRecoveryCounts,
+        crate::journal_recovery::JournalRecoveryError<DurableConnectionError>> {
+        crate::journal_recovery::replay_command_outcomes(path, expected_run_id, |recorded|
+            self.connection.queue_journal_outcomes(recorded).map(|request| request.is_some()))
+    }
+
     /// A notification sink exposes only batches already journaled to stable
     /// storage. Checkpoint each original batch into the connection's one
     /// StoreCommands retry ledger BEFORE the sink releases it. The socket

@@ -39,6 +39,7 @@ pub struct NativeSocketMeasurements {
     pub incoming_frames: u64,
     pub incoming_json_bytes: u64,
     pub setup_accepted: u64,
+    pub store_transmissions: u64,
     pub transport_errors: u64,
     pub protocol_rejections: u64,
 }
@@ -303,6 +304,8 @@ impl NativeHiveMindSocket {
         Err(error)
     }
 
+    pub fn is_failed(&self) -> bool { self.failed }
+
     pub fn ready(&self) -> bool {
         !self.failed && self.game_id.is_some() && self.pending_setup.is_none()
     }
@@ -405,7 +408,9 @@ impl NativeHiveMindSocket {
     ) -> Result<(), HiveMindSocketError> {
         self.require_ready()?;
         validate_store(connection, request)?;
-        self.send(request)
+        self.send(request)?;
+        self.measurements.store_transmissions += 1;
+        Ok(())
     }
 
     /// After an authenticated reconnect, resend only the exact original
@@ -458,7 +463,10 @@ impl NativeHiveMindSocket {
             }
             PreparedSocketRequest::Strategy(request) => { self.require_ready()?; self.send(&request) }
             PreparedSocketRequest::Targeting(request) => { self.require_ready()?; self.send(&request) }
-            PreparedSocketRequest::Store(request) => { self.require_ready()?; self.send(&request) }
+            PreparedSocketRequest::Store(request) => {
+                self.require_ready()?; self.send(&request)?;
+                self.measurements.store_transmissions += 1; Ok(())
+            }
         }
     }
 
