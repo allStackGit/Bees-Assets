@@ -488,6 +488,50 @@ impl NativeLevelEventProcessor {
         })
     }
 
+    /// Preserve an old command's finalization inside the Level outbox
+    /// before a new accepted HiveMind selection replaces it. The raw
+    /// command director returns superseded as a value, but that value must
+    /// not disappear at the asynchronous server-reply boundary.
+    fn preflight_strategy_supersession(
+        &mut self, receipt: &StrategyReceipt,
+    ) -> Result<(), StrategyReceiptFailure> {
+        if let StrategyReceipt::Accepted { owner, selection, .. } = receipt {
+            if self.commands.has_active(*owner) {
+                if self.pending_notifications.len() >= MAX_PENDING_NOTIFICATIONS {
+                    self.failed = true;
+                    return Err(StrategyReceiptFailure {
+                        selection: selection.clone(),
+                        cause: crate::commands::StrategyReceiptFailureCause::OutputBackpressure,
+                    });
+                }
+                self.pending_notifications.reserve(1);
+            }
+        }
+        Ok(())
+    }
+
+    fn publish_superseded_strategy(
+        &mut self, mut action: StrategyReceiptAction,
+    ) -> StrategyReceiptAction {
+        if let StrategyReceiptAction::Applied(Activation::Applied {
+            superseded, ..
+        }) = &mut action {
+            if let Some(finished) = superseded.take() {
+                // The result no longer exposes a second settlement owner:
+                // the same Level outbox now carries the predecessor.
+                self.pending_notifications.push(NativeLevelNotification {
+                    tick: self.next_tick.saturating_sub(1),
+                    kind: NativeLevelNotificationKind::FinishedCommand(finished),
+                });
+                Self::update_output_peak(
+                    &mut self.peak_pending_notifications,
+                    self.pending_notifications.len(),
+                );
+            }
+        }
+        action
+    }
+
     /// Apply any non-bomb strategy receipt to the SAME owning Level,
     /// preserving the same terminal/abort discard behavior as the Bomb
     /// activation path. The connection still owns all OutcomeIds.
@@ -510,9 +554,11 @@ impl NativeLevelEventProcessor {
             };
             return Ok(StrategyReceiptAction::DiscardReservations(ids));
         }
-        self.commands.apply_strategy_receipt(
+        self.preflight_strategy_supersession(&receipt)?;
+        let action = self.commands.apply_strategy_receipt(
             world, navigation, random, squad, friendlies, settings, receipt,
-        )
+        )?;
+        Ok(self.publish_superseded_strategy(action))
     }
 
     /// Apply a HiveMind receipt using this Level's SAME live roster,
@@ -550,10 +596,12 @@ impl NativeLevelEventProcessor {
             roster: &self.roster, enemy_owner, is_carrier_squad,
             weapons, enemies,
         };
-        self.commands.apply_strategy_receipt_with_bombing(
+        self.preflight_strategy_supersession(&receipt)?;
+        let action = self.commands.apply_strategy_receipt_with_bombing(
             world, navigation, random, squad, friendlies,
             settings, receipt, Some(bombing),
-        )
+        )?;
+        Ok(self.publish_superseded_strategy(action))
     }
 
     /// Called after the owning world's fixed step but before
