@@ -594,6 +594,10 @@ impl NativeSquadCommandDirector {
         self.active.get(&owner)?.selection.server_outcome()
     }
 
+    pub fn current_selection(&self, owner: SquadLifetime) -> Option<&NativeCommandSelection> {
+        self.active.get(&owner).map(|command| &command.selection)
+    }
+
     pub fn current_kind_and_guarded_target(&self, owner: SquadLifetime)
         -> (Option<LocalCommandKind>, Option<SquadLifetime>)
     {

@@ -83,6 +83,13 @@ impl NativeCommandCreditLedger {
         self.credit(defender_command, -i64::from(tsv_loss), 0)
     }
 
+    /// First-sighting TSV belongs only to the command, never its shooting choice.
+    pub fn record_sighting(
+        &mut self, command: Option<i64>, tsv_delta: i32,
+    ) -> Result<(), CommandCreditError> {
+        self.credit(command, i64::from(tsv_delta), 0)
+    }
+
     pub fn finish(
         &mut self, command: &FinishedNativeCommand,
     ) -> Result<(), CommandCreditError> {

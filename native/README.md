@@ -206,6 +206,14 @@ when a game shot launches, preserving its ID for the projectile's remaining life
 Schema23 ordinary weapons now select and fire through this same mounted scheduler.
 Game firing statistics/combat timers and full-game visual/weapon parity remain incomplete.
 
+Source first-sighting strategic TSV uses the actual target value and canonical
+squad/MotherSquad command, independently of PPO shaping. Structured sighting and
+Fire Barge secondary credit feed the same episode-owned command ledger. Episode
+finalization durably prepares the existing StoreCommands batch and checkpoints its
+retry payload; queued outcomes still require real server acknowledgement. Restart
+reconciliation between journal synchronization and connection checkpoint remains
+incomplete. See HANDOFF.md for bounded executable qualifications.
+
 ## Unity scene import (schema 23)
 
 Schema23 captures Time.frameCount, each actual Ship's ranking inputs and shared

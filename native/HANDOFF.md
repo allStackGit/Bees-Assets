@@ -7,62 +7,58 @@ live training were untouched. Changes have since been pushed directly to the
 rewrite branch on GitHub; reconcile the current branch head before doing further work.
 Unrelated feat/experiment-queue-ui changes were not merged.
 
-## Latest source-backed Fire Barge command credit
+## Latest integrated continuation and executable qualification
 
-CombatHit now includes optional fire_barge_killer_credit. Source FireBarge.Kill
-captures the killer's ACTIVE HiveMind command at death, distinct from the command
-that launched the lethal shot. Source Ship.LogHitStats later adds positive TSV
-for that killer when the dead Barge's blast harms its own side; the Barge's own
-negative friendly-fire delta and the defender delta remain independent. A zero
-captured outcome falls back to the killer's active command at blast impact.
+Fetched and merged 24 incoming rewrite commits through ae92cf5be, retaining local
+Fire Barge attribution and unfinished vision work. Resolved the two-field merge
+conflict by preserving both the immutable killer attribution and the one episode
+credit ledger. Fixed incoming bombing admission's Rust borrow conflict by doing
+outbox preflight before borrowing the roster for activation.
 
-The shared Level event processor captures this immutable death attribution in
-source event order before retirement, for both core and late timer slices. The
-same CombatHit outbox and durable diagnostic file carry the optional killer ship,
-command outcome and exact positive TSV. No new physical hit, damage simulation,
-fleet-credit ledger or StoreCommands submission is introduced.
+Real faction-first ship sightings now emit structured VisionCommandCredit with
+actual observer, target TSV, full owning lifetime and original command identity.
+Source float multiply/clamp/truncation produces 3..40 strategic TSV, independently
+of PPO shaping and shooting eligibility. Repeated observers/visibility cannot
+re-credit, and first seen without an active command never credits a later one.
+Beacons use their canonical stored MotherSquad even after the parent Scout dies;
+a physically dead MotherSquad cannot receive credit before roster reconciliation.
 
-Executed external B:\Bees\native-capability-qualification receipts:
-- chain-credit.txt / chain-credit-readback.txt: real shot101 kills a Fire Barge
-  while killer command201 is active; switching to301 before the delayed friendly
-  blast retains201. If no command was active at death, the later301 fallback is
-  recorded. Exact positive TSV equals physical loss, the original friendly
-  penalty stays negative, and unrelated/enemy hits have no chain credit.
-- The native probe also asserts synchronized diagnostic enemy+friendly hit counts
-  equal actual common-world Hit events, without duplicating physical hits.
-- workspace-chain-credit.txt: all106 existing sim tests and workspace all-target/
-  all-feature checks pass. headless-chain-credit.txt: no-default-feature check passes.
-These are supplied fixtures and read-back journal records, not live Unity/server
-receipts. C# runtime parity, Linux and final settlement remain unverified.
+The incoming episode-owned NativeCommandCreditLedger now consumes these sightings
+(command TSV only), and Fire Barge secondary killer credit (command and shooting
+TSV), before the same authoritative episode final prepares StoreCommands. No new
+physical hits, shot history or competing outcome ledger were added. The death-time
+killer command is retained across replacement; an absent death-time command uses
+the killer's active command at the later friendly blast, matching source.
 
-Before full command TSV parity, also connect first-sighting strategic vision TSV:
-HivemindVision.cs credits a clamped value to the actual squad/MotherSquad command;
-the current native discovery path emits shaping/sighting state, not that source
-command-TSV delta. Keep it distinct from PPO reward while building the durable
-accrual/StoreCommands owner. The complete rewrite goal remains incomplete.
+Executed under B:\Bees\native-capability-qualification on integrated source:
+- workspace-integrated-ae92.txt: workspace all-target/all-feature checks and all106
+  existing simulation tests pass. headless-integrated-ae92.txt: no-default check passes.
+- vision_credit-integrated-ae92.txt: eight host scenarios cover actual0/20/399/400/
+  1000 TSV, duplicate observers, no initial command and local player commands.
+  Replacement and re-entry do not duplicate credit. Actual episode finals queue
+  one retry request with correct original strategic values and unused shooting
+  reservations discarded; reopening the checkpoint returns the identical payload.
+- vision_mother-integrated-ae92.txt: actual Scouting Beacon spawn, physical Scout
+  death with living MotherSquad, total retirement, and same-tick total death pass.
+- chain-credit-settlement-ae92.txt: lethal shot101, death-time command201, later301
+  replacement and commandless-death fallback retain exact secondary credit through
+  episode final and an identical reopened StoreCommands retry payload.
+- pulled_durable-integrated-ae92.txt: all5 ranged commands still shoot, physically
+  kill the original enemy and durably preserve original damage/command identities.
+- integrated-credit-readback-ae92.txt: contiguous journal sequences and every final
+  chain scenario command/shooting row match actual immutable physical credit;
+  exact first-sighting values and MotherSquad identities are verified on readback.
 
-## Local executable verification after pulling 73a2c6f7a
+No new committed tests. These are supplied executable fixtures, not live Unity
+exports/server acknowledgements. Existing warnings remain. Rust compilation/runtime
+claims below that predate this continuation are historical and superseded only
+for the bounded paths above. Earlier local qualification receipts remain external.
 
-Fetched and fast-forwarded 50 commits from 407ffd8c4 to 73a2c6f7a. The earlier
-source-only status below is superseded for these bounded Windows paths:
-- workspace-pulled-73a2.txt: all106 existing sim tests and workspace all-target/
-  all-feature checks passed; headless-pulled-73a2.txt: no-default-feature check passed.
-- player-bombs-pulled-73a2.txt and attack-retirement-pulled-73a2.txt: all4 special
-  player compositions and all5 ranged strategy lifecycles still execute physically.
-- pulled-controls-73a2.txt: actual Hold idle no-op preserves a pending strategy
-  request; cease/resume suppresses/restores automatic shots without retiring that
-  request; Attack followed by Hold ends exactly one Aggressive chase; stale
-  episode input is rejected. No physical keyboard/window interaction was exercised.
-- pulled-durable-73a2.txt and pulled-durable-verification-73a2.txt: the real durable
-  diagnostic sink synchronized actual combat hits and finished-command records
-  for all5 ranged strategies. Read-back checks verified contiguous event sequences,
-  original outcomes101/102, selected strategy IDs, shooting admission and lethal
-  impact ordering before completion. InAndOut completed at tick152, yet an actual
-  hit at tick180 still retained launching command101. Do not settle at completion.
-These disposable fixtures/receipts live under B:\Bees\native-capability-qualification.
-No new committed tests were added. They do not prove production settlement,
-Linux, Unity export or physical input parity. The remaining durable accrual/
-StoreCommands owner is still the highest-value next implementation boundary.
+Highest-value next work is restart-time reconciliation across journal fsync and
+connection checkpoint, followed by actual transport/200/409 handling and explicit
+targeting/stale-reply settlement. Queued remains unacknowledged. Linux, real Unity
+export, physical window/input, live distributed learning and measured speedup were
+not exercised. The complete replacement remains incomplete.
 
 ## Current integrated increment: command activation through physical attack
 
@@ -221,10 +217,9 @@ performance improvement and distributed training remain unverified.
 BombingRun/Charge physical activation, source proximity/charging-range
 inputs and player composition redirects are now present; their live Unity
 behavior remains unverified. Add remaining asteroid/MapObject weapon fallback
-and authored dynamic factories. Supply game-owned combat/shot statistics and
-TSV settlement through the existing outcome and durable notification/
-StoreCommands boundaries; never invent shooting credit or count a pending
-store request as committed.
+and authored dynamic factories. Complete restart-time journal/connection
+reconciliation and real transport acknowledgements through the existing outcome
+owner; never invent shooting credit or count a pending store request as committed.
 
 The complete goal still requires the ordinary scene/game launcher and game modes,
 full presentation/sprites/animation/audio/input, scripted queues and Carrier/Drone

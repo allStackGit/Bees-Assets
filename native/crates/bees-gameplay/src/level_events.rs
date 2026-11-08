@@ -54,6 +54,7 @@ pub enum NativeLevelEventError {
     InvalidGroupConfiguration,
     InvalidRetirementAcknowledgement,
     InvalidOutputAcknowledgement,
+    InvalidVisionCredit,
     InconsistentCombatAttribution,
     OutputBackpressure { pending: usize, new_events: usize },
     FailedLevel,
@@ -114,6 +115,18 @@ pub struct NativeFireBargeKillerCredit {
     pub tsv_delta: i32,
 }
 
+/// Strategic command credit, separate from bounded PPO discovery shaping.
+/// HivemindVision.OnTriggerEnter2D / ConfigData.Gameplay constants.
+#[derive(Clone, Debug)]
+pub struct NativeVisionCommandCredit {
+    pub observer_id: i64,
+    pub target_id: i64,
+    pub target_tsv: i32,
+    pub owner: SquadLifetime,
+    pub selection: NativeCommandSelection,
+    pub tsv_delta: i32,
+}
+
 #[derive(Clone, Copy, Debug)]
 struct FireBargeKiller {
     ship_id: i64,
@@ -139,6 +152,7 @@ pub enum NativeLevelNotificationKind {
     /// after a command is superseded; a consumer must not finalize its
     /// StoreCommands reservation until delayed projectile credit is safe.
     CombatHit(NativeCombatHit),
+    VisionCommandCredit(NativeVisionCommandCredit),
     /// Health/TSV loss with no validated attacker, including collisions
     /// and stale pooled shooter identities. Never give it attacker TSV.
     UnattributedDamage {
@@ -672,11 +686,11 @@ impl NativeLevelEventProcessor {
             };
             return Ok(StrategyReceiptAction::DiscardReservations(ids));
         }
+        self.preflight_strategy_supersession(&receipt)?;
         let bombing = NativeBombingActivation {
             roster: &self.roster, enemy_owner, is_carrier_squad,
             weapons, enemies,
         };
-        self.preflight_strategy_supersession(&receipt)?;
         let source = match &receipt {
             StrategyReceipt::Accepted { selection, .. } => Some(selection.clone()),
             _ => None,
@@ -831,7 +845,13 @@ impl NativeLevelEventProcessor {
                         hit_credit.attacker_command_outcome_id,
                         hit_credit.defender_command_outcome_id,
                         hit_credit.hit.command_tsv_delta, hit_credit.hit.delta.tsv_loss,
-                    ),
+                    ).and_then(|()| {
+                        if let Some(killer) = &hit_credit.fire_barge_killer_credit {
+                            credit.record_hit(killer.command_outcome_id, None, killer.tsv_delta, 0)
+                        } else { Ok(()) }
+                    }),
+                NativeLevelNotificationKind::VisionCommandCredit(sighting) =>
+                    credit.record_sighting(sighting.selection.server_outcome(), sighting.tsv_delta),
                 NativeLevelNotificationKind::UnattributedDamage {
                     delta, defender_command_outcome_id, ..
                 } => credit.record_unattributed(
@@ -976,23 +996,54 @@ impl NativeLevelEventProcessor {
     /// discovery cache and is recorded here exactly once for reward and
     /// potential Scouting command completion.
     pub fn record_verified_vision_sighting(
-        &mut self, tick: u64, side: i32, kind: DiscoveryKind,
-        entity_id: i64, authored_value: i32,
-        reward_squad: Option<SquadLifetime>,
+        &mut self, tick: u64, sighting: bees_sim::vision::VisionFirstSighting,
+        kind: DiscoveryKind, authored_value: i32,
+        reward_squad: Option<SquadLifetime>, target_ship_tsv: Option<i32>,
     ) -> Result<(), NativeLevelEventError> {
         if tick != self.next_tick && tick != self.next_tick.saturating_sub(1) {
             return Err(NativeLevelEventError::MissingOrRepeatedTick {
                 expected: self.next_tick, got: tick,
             });
         }
+        let is_ship = kind == DiscoveryKind::EnemyShip;
+        if sighting.observer_id <= 0 ||
+            is_ship != (sighting.kind == bees_sim::level_discovery::DiscoveryKind::Ship) ||
+            is_ship != target_ship_tsv.is_some() || target_ship_tsv.is_some_and(|tsv| tsv < 0) {
+            return Err(NativeLevelEventError::InvalidVisionCredit);
+        }
+        let credit = if let (true, Some(owner), Some(target_tsv)) = (is_ship, reward_squad, target_ship_tsv) {
+            if self.roster.get(owner).is_some_and(|squad| squad.side == sighting.side) {
+                self.commands.current_selection(owner).map(|selection| NativeVisionCommandCredit {
+                    observer_id: sighting.observer_id, target_id: sighting.target_id, target_tsv,
+                    owner, selection: selection.clone(),
+                    // C# casts the clamped float to int (truncation), not rounding.
+                    tsv_delta: (target_tsv as f32 * 0.1_f32).clamp(3.0, 40.0) as i32,
+                })
+            } else { None }
+        } else { None };
+        if credit.is_some() {
+            // Reserve reward + command credit before discovery freshness changes.
+            Self::reserve_output_records(&mut self.pending_notifications, &mut self.failed, 2)?;
+        }
         let first = self.record_verified_discovery_at_tick(
-            tick, side, kind, entity_id, authored_value,
+            tick, sighting.side, kind, sighting.target_id, authored_value,
         )?;
+        let first_new = self.pending_notifications.len();
         if first && kind == DiscoveryKind::EnemyShip {
+            if let Some(credit) = credit {
+                self.pending_notifications.push(NativeLevelNotification {
+                    tick, kind: NativeLevelNotificationKind::VisionCommandCredit(credit),
+                });
+                Self::update_output_peak(&mut self.peak_pending_notifications, self.pending_notifications.len());
+            }
             if let Some(squad) = reward_squad {
-                self.commands.record_first_ship_sighting(squad, side);
+                self.commands.record_first_ship_sighting(squad, sighting.side);
             }
         }
+        Self::account_new_notifications(
+            &mut self.pending_notifications, &mut self.credit,
+            &mut self.failed, &mut self.peak_pending_notifications, first_new, tick,
+        )?;
         Ok(())
     }
 

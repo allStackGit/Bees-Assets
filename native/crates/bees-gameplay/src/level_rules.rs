@@ -547,14 +547,25 @@ impl<M: NativeLevelRewardMetadata, A> NativeLevelState<M, A> {
             let (kind, value) = self.metadata.verified_discovery_reward(
                 &self.combat, sighting,
             )?;
-            let credited_ship = self.combat
-                .scout_beacon_parent(sighting.observer_id)
-                .unwrap_or(sighting.observer_id);
-            let reward_squad = self.events.roster()
-                .owning_squad(credited_ship);
+            let roster = self.events.roster();
+            let reward_squad = roster.owning_squad(sighting.observer_id).and_then(|owner| {
+                // Source Beacon.MotherSquad survives its parent Scout's death
+                // when the original squad still has other living members.
+                if self.combat.ship(sighting.observer_id).is_some_and(|ship|
+                    ship.ship_type == bees_sim::ship_assets::BEACON_TYPE) {
+                    roster.get(owner).and_then(|squad| squad.mother_squad).or(Some(owner))
+                } else { Some(owner) }
+            }).filter(|owner| roster.get(*owner).is_some_and(|squad|
+                // Vision runs before this tick's casualty/roster pass.
+                // A still-registered MotherSquad may already be physically dead.
+                squad.members.iter().any(|&id| self.combat.ship(id).is_some_and(|ship| !ship.vitals.is_dead()) &&
+                    self.combat.ship_body(id).is_some_and(|body| body.active))));
+            let target_ship_tsv = if sighting.kind == bees_sim::level_discovery::DiscoveryKind::Ship {
+                Some(self.combat.ship(sighting.target_id)
+                    .ok_or(CombatPerceptionError::MissingShip(sighting.target_id))?.vitals.tsv())
+            } else { None };
             self.events.record_verified_vision_sighting(
-                tick, sighting.side, kind, sighting.target_id,
-                value, reward_squad,
+                tick, sighting, kind, value, reward_squad, target_ship_tsv,
             )?;
         }
         Ok(())

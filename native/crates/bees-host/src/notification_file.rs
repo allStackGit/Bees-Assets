@@ -58,6 +58,8 @@ pub struct NativeDiagnosticMeasurements {
     pub friendly_hits: u64,
     pub enemy_hit_tsv_loss: u64,
     pub friendly_hit_tsv_loss: u64,
+    pub vision_command_credits: u64,
+    pub vision_command_tsv: i64,
     /// Real damage without a valid shooter, kept out of attacker credit.
     pub unattributed_damage_events: u64,
     pub unattributed_tsv_loss: u64,
@@ -106,6 +108,8 @@ impl NativeDiagnosticMeasurements {
             friendly_hits: self.friendly_hits.checked_sub(previous.friendly_hits)?,
             enemy_hit_tsv_loss: self.enemy_hit_tsv_loss.checked_sub(previous.enemy_hit_tsv_loss)?,
             friendly_hit_tsv_loss: self.friendly_hit_tsv_loss.checked_sub(previous.friendly_hit_tsv_loss)?,
+            vision_command_credits: self.vision_command_credits.checked_sub(previous.vision_command_credits)?,
+            vision_command_tsv: self.vision_command_tsv.checked_sub(previous.vision_command_tsv)?,
             unattributed_damage_events: self.unattributed_damage_events
                 .checked_sub(previous.unattributed_damage_events)?,
             unattributed_tsv_loss: self.unattributed_tsv_loss
@@ -130,6 +134,10 @@ impl NativeDiagnosticMeasurements {
 
     fn record(&mut self, event: &NativeLevelNotification) {
         match &event.kind {
+            NativeLevelNotificationKind::VisionCommandCredit(credit) => {
+                self.vision_command_credits = self.vision_command_credits.saturating_add(1);
+                self.vision_command_tsv = self.vision_command_tsv.saturating_add(i64::from(credit.tsv_delta));
+            }
             NativeLevelNotificationKind::CombatHit(credit) => {
                 let hit = &credit.hit;
                 let tsv = u64::try_from(hit.delta.tsv_loss)
@@ -261,6 +269,7 @@ impl DurableDiagnosticNotifications {
             NativeLevelNotificationKind::SquadChange(_) => "squad_change",
             NativeLevelNotificationKind::Gameplay(_) => "gameplay",
             NativeLevelNotificationKind::CombatHit(_) => "combat_hit",
+            NativeLevelNotificationKind::VisionCommandCredit(_) => "vision_command_credit",
             NativeLevelNotificationKind::UnattributedDamage { .. } => "unattributed_damage",
             NativeLevelNotificationKind::FinishedCommand(_) => "finished_command",
             NativeLevelNotificationKind::CommandOutcomesReady(_) => "command_outcomes_ready",
@@ -274,6 +283,15 @@ impl DurableDiagnosticNotifications {
         // diagnostics. MA-POCA's ELO marker and EndEpisode command must
         // NEVER become PPO reward when this log is inspected or migrated.
         let payload = match &notification.kind {
+            NativeLevelNotificationKind::VisionCommandCredit(credit) => Some(json!({
+                "observer_id": credit.observer_id,
+                "target_id": credit.target_id,
+                "target_tsv": credit.target_tsv,
+                "owner": { "level_id": credit.owner.level_id, "squad_id": credit.owner.squad_id,
+                    "lifecycle_id": credit.owner.lifecycle_id },
+                "selection": command_identity(&credit.selection),
+                "tsv_delta": credit.tsv_delta,
+            })),
             NativeLevelNotificationKind::CombatHit(credit) => {
                 let hit = &credit.hit;
                 Some(json!({
@@ -393,6 +411,7 @@ impl DurableDiagnosticNotifications {
             // duplicating every hot combat event as a debug string.
             "payload_debug": match &notification.kind {
                 NativeLevelNotificationKind::CombatHit(_) |
+                NativeLevelNotificationKind::VisionCommandCredit(_) |
                 NativeLevelNotificationKind::UnattributedDamage { .. } |
                 NativeLevelNotificationKind::FinishedCommand(_) |
                 NativeLevelNotificationKind::AbortedCommand { .. } |
