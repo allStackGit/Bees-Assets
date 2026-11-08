@@ -119,6 +119,20 @@ pub trait NativeLevelActivationContext: NativeLevelCommandContext {
         &self, owner: SquadLifetime, original_enemy: Option<SquadLifetime>,
     ) -> Result<NativeLevelStrategyInputs, GameCommandError>;
 
+    /// Source-authoritative target context at the exact command admission
+    /// boundary. Unlike static source metadata, current enemy geometry and
+    /// pooled lifetime must be read from the owning CombatWorld and roster.
+    /// Existing full-game adapters may continue using strategy_inputs;
+    /// adapters with only partial attack support can admit Retreat without
+    /// manufacturing weapon-target eligibility for Aggressive/BombingRun.
+    fn strategy_inputs_for_command(
+        &self, _combat: &CombatWorld, _roster: &NativeSquadRoster,
+        owner: SquadLifetime, original_enemy: Option<SquadLifetime>,
+        _command: LocalCommandKind,
+    ) -> Result<NativeLevelStrategyInputs, GameCommandError> {
+        self.strategy_inputs(owner, original_enemy)
+    }
+
     fn stored_formation_offset(&self, ship_id: i64) -> Option<Vec2>;
 
     fn current_path_clearance(&self, ship_id: i64) -> Option<i32>;
@@ -240,8 +254,10 @@ where
         }
     }
     let metadata = &mut world.state.metadata;
-    let details = metadata.strategy_inputs(owner, original_enemy)
-        .map_err(&fail)?;
+    let details = metadata.strategy_inputs_for_command(
+        &world.state.combat, world.state.events.roster(),
+        owner, original_enemy, resolved.local_command,
+    ).map_err(&fail)?;
     if !details.formation.valid() || !details.settings.valid() {
         return Err(fail(GameCommandError::InvalidSettings));
     }
