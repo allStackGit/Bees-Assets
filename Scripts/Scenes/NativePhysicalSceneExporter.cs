@@ -271,7 +271,7 @@ internal static class NativePhysicalSceneExporter
             float gameHalfHeight = ship.GetHalfHeight();
             // User control overrides a bound RL controller at the shared
             // ShipMotion fixed-step boundary; it still needs game steering.
-            if (ship.IsMobile && (!ship.IsRlPolicyControlled || ship.IsUserControlled) &&
+            if ((!ship.IsRlPolicyControlled || ship.IsUserControlled) &&
                 (!IsFinite(gameTurningRadius) || gameTurningRadius <= 0f ||
                  !IsFinite(gameHalfWidth) || gameHalfWidth <= 0f ||
                  !IsFinite(gameHalfHeight) || gameHalfHeight <= 0f))
