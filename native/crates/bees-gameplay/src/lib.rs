@@ -13,6 +13,7 @@
 
 pub mod commands;
 pub mod command_credit;
+pub mod matchup_targeting;
 pub mod squads;
 pub mod squad_geometry;
 pub mod squad_composition;
