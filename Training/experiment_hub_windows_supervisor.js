@@ -74,23 +74,33 @@ function validateInvocation(job,lease,machineId,adapters,hostOs,pathApi,cryptoAp
     let gpu=null;
     if(r.gpu_count!==0) {
         const binding=lease.gpu_bindings?.[0];
+        const cooperative=r.gpu_mode==='shared';
         if(!gpuEnabled||adapter.gpu_execution!=='cuda'||
             r.gpu_count!==1||lr.gpu_count!==1||
-            r.gpu_mode!=='exclusive'||lr.gpu_mode!=='exclusive'||
+            lr.gpu_mode!==r.gpu_mode||
+            !(r.gpu_mode==='exclusive'||
+                cooperative&&adapter.gpu_sharing==='cooperative-pytorch')||
             lr.gpus?.length!==1||!Array.isArray(lease.gpu_bindings)||
             lease.gpu_bindings.length!==1||
             (r.gpus?.length>0&&r.gpus[0]!==lr.gpus[0])||
             binding?.id!==lr.gpus[0]||
             !PCI.test(String(binding.pci_address||''))||
-            !CUDA_UUID.test(String(binding.cuda_uuid||'')))
-            throw Error('Windows CUDA requires one exclusively claimed, physically pinned GPU and local opt-in.');
+            !CUDA_UUID.test(String(binding.cuda_uuid||''))||
+            (cooperative&&(!Number.isSafeInteger(r.gpu_vram_mb)||
+                r.gpu_vram_mb<1||r.gpu_vram_mb>binding.vram_mb||
+                !Number.isSafeInteger(r.gpu_compute_pct)||
+                r.gpu_compute_pct<1||r.gpu_compute_pct>100)))
+            throw Error('Windows CUDA requires one physically pinned GPU and an approved exclusive or cooperative share.');
         const current=gpuInventory();
         if(!Array.isArray(current)||!current.some(device=>
             device.pci_address===binding.pci_address&&
             device.cuda_uuid===binding.cuda_uuid&&
             Number.isSafeInteger(device.vram_mb)&&device.vram_mb>=binding.vram_mb))
             throw Error('The CUDA device identity or physical VRAM changed before Start.');
-        gpu={pci_address:binding.pci_address,cuda_uuid:binding.cuda_uuid};
+        gpu={pci_address:binding.pci_address,cuda_uuid:binding.cuda_uuid,
+            mode:r.gpu_mode,vram_mb:cooperative?r.gpu_vram_mb:0,
+            compute_pct:cooperative?r.gpu_compute_pct:100,
+            total_vram_mb:binding.vram_mb};
     }else if(lr.gpu_count!==0||(r.gpus||[]).length||(lr.gpus||[]).length)
         throw Error('Unexpected GPU resources in a CPU-only Windows lease.');
     const predecessor=job.continuation_of_job_id||null,
@@ -107,7 +117,10 @@ function validateInvocation(job,lease,machineId,adapters,hostOs,pathApi,cryptoAp
         artifact_lineage_root_id:root,continuation_of_job_id:predecessor,
         ...(job.expected_parent_model_sha256?
             {expected_parent_model_sha256:job.expected_parent_model_sha256}:{}),
-        ...(gpu?{gpu_pci_address:gpu.pci_address,gpu_cuda_uuid:gpu.cuda_uuid}:{}),
+        ...(gpu?{gpu_pci_address:gpu.pci_address,gpu_cuda_uuid:gpu.cuda_uuid,
+            gpu_mode:gpu.mode,gpu_vram_mb:gpu.vram_mb,
+            gpu_total_vram_mb:gpu.total_vram_mb,
+            gpu_compute_pct:gpu.compute_pct}:{}),
     });
     const stopFile=adapter.checkpoint_stop_file?.(context)??null;
     if(stopFile!==null&&(!noControls(stopFile)||!pathApi.isAbsolute(stopFile)))
@@ -387,10 +400,24 @@ class WindowsSupervisor {
         const invocation=validateInvocation(job,lease,this.machineId,
             this.adapters,this.hostOs,this.path,this.crypto,
             this.gpuEnabled,this.gpuInventory);
-        if(invocation.gpu&&this.state.records.some(record=>
-            record.gpu_pci_address===invocation.gpu.pci_address&&
-            !terminal.has(record.state)))
-            throw Error('Another native job retains the claimed Windows CUDA device.');
+        if(invocation.gpu) {
+            const gpu=invocation.gpu;
+            let reservedVram=gpu.mode==='shared'?gpu.vram_mb:gpu.total_vram_mb;
+            let reservedCompute=gpu.compute_pct;
+            for(const record of this.state.records) {
+                if(terminal.has(record.state)||
+                    record.gpu_pci_address!==gpu.pci_address)continue;
+                if(gpu.mode!=='shared'||record.gpu_mode!=='shared'||
+                    record.gpu_cuda_uuid!==gpu.cuda_uuid||
+                    !Number.isSafeInteger(record.gpu_vram_mb)||
+                    !Number.isSafeInteger(record.gpu_compute_pct))
+                    throw Error('Another native job retains exclusive or unverified Windows CUDA ownership.');
+                reservedVram+=record.gpu_vram_mb;
+                reservedCompute+=record.gpu_compute_pct;
+            }
+            if(reservedVram>gpu.total_vram_mb||reservedCompute>100)
+                throw Error('Shared native CUDA capacity exceeds the physical device budget.');
+        }
         if(invocation.predecessor) {
             const parent=this.state.records.find(r=>
                 r.job_id===invocation.predecessor);
@@ -430,7 +457,10 @@ class WindowsSupervisor {
             token,cpus:invocation.cpus,host_cpus:invocation.hostCpus,
             ram_mb:invocation.ramMb,
             ...(invocation.gpu?{gpu_pci_address:invocation.gpu.pci_address,
-                gpu_cuda_uuid:invocation.gpu.cuda_uuid}:{}),
+                gpu_cuda_uuid:invocation.gpu.cuda_uuid,
+                gpu_mode:invocation.gpu.mode,
+                gpu_vram_mb:invocation.gpu.vram_mb,
+                gpu_compute_pct:invocation.gpu.compute_pct}:{}),
             state:'launch_requested',
             requested_at:new Date().toISOString(),diagnostic:null};
         this.commit([...this.state.records,record]);
