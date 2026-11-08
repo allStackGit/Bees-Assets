@@ -1842,6 +1842,18 @@ native TinyBrains 0.5.0 executable. The adapter probes its version before
 advertising profiles. Use the same engine with `--engine-path` for both
 evaluation commands. Linux Stop uses the existing systemd interrupt policy
 and requires a successful native exit and verified checkpoint for resume.
+Linux also accepts approved `runtime.device: "cuda"` profiles when the
+installed Python environment uses ROCm-enabled PyTorch. Configure
+`EXPERIMENT_HUB_ENABLE_ROCM=1` and use the existing Linux exclusive
+single-GPU device-filter and access-denial qualification path. At native
+Start the trusted TinyBrains adapter's fixed ROCm pre-start verifier
+checks that the selected PCI GPU remains AMD, PyTorch identifies its HIP
+runtime, exactly one GPU is visible to the service, and a tiny GPU
+operation succeeds. It fails closed rather than guessing the device
+ordinal. The Linux device-filter qualification requires a second physical
+AMD GPU to prove access denial and remains mandatory; the profile does
+not bypass it. This is not an enforced GPU compute/VRAM partition and
+has not been exercised on Halifax.
 Native Linux TinyBrains training, evaluation and Stop still need runtime
 qualification. Windows can keep using the bundled executable or select
 an explicit `enginePath`.
