@@ -1365,7 +1365,11 @@ class ExperimentHub {
                         continue;
                     const machine=capable.find(m=>m.id===job.assigned_machine_id);
                     const lease=snapshot.reservations.find(l=>l.id===job.lease_id);
-                    if(!machine?.gpu_projects?.includes(job.project_id)||
+                    // Linux alone has a kernel device-denial probe.
+                    // Windows CUDA uses a PCI/UUID-pinned cooperative lease
+                    // and must never dispatch a Linux-only probe.
+                    if(machine?.agent_platform!=='linux'||
+                        !machine.gpu_projects?.includes(job.project_id)||
                         (machine.observed_gpus?.length||0)<2||!lease?.receipt_fresh)
                         continue;
                     this.requestGpuQualification({job_id:job.id,confirm_qualify:true},'automation');
