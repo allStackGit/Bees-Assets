@@ -575,7 +575,7 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
     <div id="hub-placements" class="hub-notice" role="status">Resource placement does not start a workload.</div>
     <div class="hub-standalone">
       <h3>Coordinate a resource lease</h3>
-      <p class="muted">Uses the CPU, RAM and GPU requirements above. Only connected machines may receive a lease. Issuing a lease blocks capacity for other Hub requests; the agent acknowledges its receipt but does not enforce isolation, reserve actual GPU memory, or start training. Existing untracked processes may still conflict. You must release a lease explicitly.</p>
+      <p class="muted">Uses the CPU, RAM and GPU requirements above. Only connected machines may receive a lease. Issuing a lease blocks capacity for other Hub requests; the agent acknowledges its receipt but does not enforce isolation, reserve actual GPU memory, or start training. For an independently running Bees learner or another external workload, you can select its registered project and deliberately hold a standalone lease for its estimated resource budget. This is a manual accounting reservation, not automatic detection; release it when that outside workload has stopped. Untracked processes without such a reservation can still conflict.</p>
       <div class="formgrid">
         <label>Project<select id="hub-lease-project"></select></label>
         <label>Connected machine<select id="hub-lease-machine"></select></label>
