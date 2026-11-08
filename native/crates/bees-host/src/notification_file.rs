@@ -105,7 +105,8 @@ impl NativeDiagnosticMeasurements {
 
     fn record(&mut self, event: &NativeLevelNotification) {
         match &event.kind {
-            NativeLevelNotificationKind::CombatHit(hit) => {
+            NativeLevelNotificationKind::CombatHit(credit) => {
+                let hit = &credit.hit;
                 let tsv = u64::try_from(hit.delta.tsv_loss)
                     .expect("physical hit TSV loss cannot be negative");
                 if hit.attacker_side == hit.target_side {
@@ -243,7 +244,9 @@ impl DurableDiagnosticNotifications {
         // diagnostics. MA-POCA's ELO marker and EndEpisode command must
         // NEVER become PPO reward when this log is inspected or migrated.
         let payload = match &notification.kind {
-            NativeLevelNotificationKind::CombatHit(hit) => Some(json!({
+            NativeLevelNotificationKind::CombatHit(credit) => {
+                let hit = &credit.hit;
+                Some(json!({
                 "projectile_id": hit.projectile_id,
                 "root_shot_id": hit.root_shot_id,
                 "attacker_id": hit.attacker_id,
@@ -251,6 +254,8 @@ impl DurableDiagnosticNotifications {
                 "attacker_side": hit.attacker_side,
                 "target_side": hit.target_side,
                 "command_outcome_id": hit.command_outcome_id,
+                "attacker_credit_outcome_id": credit.attacker_command_outcome_id,
+                "defender_credit_outcome_id": credit.defender_command_outcome_id,
                 "source": format!("{:?}", hit.source),
                 "command_tsv_delta": hit.command_tsv_delta,
                 "self_inflicted": hit.self_inflicted,
@@ -261,9 +266,13 @@ impl DurableDiagnosticNotifications {
                 "applied_damage": hit.delta.applied_damage,
                 "tsv_loss": hit.delta.tsv_loss,
                 "killed": hit.delta.killed,
-            })),
-            NativeLevelNotificationKind::UnattributedDamage { target_id, delta } => Some(json!({
+                }))
+            },
+            NativeLevelNotificationKind::UnattributedDamage {
+                target_id, delta, defender_command_outcome_id,
+            } => Some(json!({
                 "target_id": target_id,
+                "defender_credit_outcome_id": defender_command_outcome_id,
                 "health_before": delta.health_before,
                 "health_after": delta.health_after,
                 "tsv_before": delta.tsv_before,
