@@ -615,11 +615,24 @@ function measure(item, status, force = false, boundary = '', deferArchive = fals
         Number(x.applied_revision) >= Number(desired.revision) &&
         x.build_id === desired.canonical_build_id &&
         x.metrics && Number(x.metrics.window_episodes) > 0);
+    // Cross-worker ratios must use their actual event denominators.
+    // An older worker without the necessary counts is omitted rather than
+    // allowing a per-episode weight to bias per-shot or per-aim metrics.
+    const denominatorByMetric = {
+        bee_hits_per_shot: 'bee_shots',
+        human_hits_per_shot: 'human_shots',
+        bee_aim_error_deg: 'bee_aim_samples',
+        human_aim_error_deg: 'human_aim_samples',
+        bee_near_miss_pct: 'bee_completed_shots',
+        human_near_miss_pct: 'human_completed_shots',
+    };
     const mean = key => {
         let count = 0, total = 0;
         for (const w of workers) {
-            const n = Number(w.metrics.window_episodes), v = Number(w.metrics[key]);
-            if (n > 0 && w.metrics[key] != null && Number.isFinite(v)) {
+            const denominator = denominatorByMetric[key] || 'window_episodes';
+            const n = Number(w.metrics[denominator]), v = Number(w.metrics[key]);
+            if (Number.isFinite(n) && n > 0 &&
+                w.metrics[key] != null && Number.isFinite(v)) {
                 count += n; total += n * v;
             }
         }
