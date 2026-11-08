@@ -99,7 +99,7 @@ use self::policy::{PolicyShipRuntime, PolicyShipSpecial};
 pub use self::policy::PolicySpecialObservations;
 pub use self::policy::WARP_GATE_TYPE;
 pub use self::healing::BEEHIVE_TYPE;
-use self::weapons::PendingPolicyShot;
+use self::weapons::{PendingPolicyShot, GameTurretRuntime};
 pub use self::weapons::{NativeFirePattern, NativeTurretSpec};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -2717,6 +2717,13 @@ impl CombatWorld {
             let shooter_id = self.projectiles[index].owner.shooter_id;
             let id = self.projectiles[index].entity_id;
             if let Some(runtime) = self.policy_ship_runtime.get_mut(&shooter_id) {
+                for mount in runtime.turrets.iter_mut().flatten() {
+                    if mount.active_beam_projectile_id == Some(id) {
+                        mount.active_beam_projectile_id = None;
+                    }
+                }
+            }
+            if let Some(runtime) = self.game_turrets.get_mut(&shooter_id) {
                 for mount in runtime.turrets.iter_mut().flatten() {
                     if mount.active_beam_projectile_id == Some(id) {
                         mount.active_beam_projectile_id = None;
