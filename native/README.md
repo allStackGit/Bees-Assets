@@ -212,11 +212,20 @@ adds the actual turret child range circle, offset, collision layer and enabled
 state. Schema 20 remains usable for manual/policy fire; range queries reject
 missing geometry rather than deriving it from nominal weapon range.
 
+Authored range triggers now maintain ordered enemy entry/exit history after
+shared physics, with revisions for target-cache invalidation. Continuing contacts
+keep their order; simultaneous new contacts use native entity creation order.
+Owned projectiles that previously overlapped their range trigger end on exit,
+including split children, through the existing reservation/beam/root cleanup.
+Shooter death preserves surviving shots; rocket/fire-tank explosions are excluded.
+Nominal projectile-distance expiry still operates independently. Host status counts
+grid rebuilds, candidates, ship/projectile hull checks, entries/exits and ended shots.
+
 In the client, B toggles selected weapons' range/obstruction inspection. Blue
 lines reach overlapping enemy hulls with no primary obstacle in the way; orange
 lines are obstructed. The title counts queries, overlaps, obstructions and missing
-source data. This view does not imply firing eligibility: source range-contact
-history, latched bounds, target ranking and final aim-point selection remain
+source data. This view does not imply firing eligibility: latched bounds, target ranking
+and final aim-point selection remain
 incomplete. Inspection is disabled by default and adds no headless query work.
 
 The scene captures the active self-play episode, both team-specific

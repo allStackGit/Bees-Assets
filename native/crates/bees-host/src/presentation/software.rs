@@ -43,6 +43,7 @@ pub struct NativeRenderCounts {
     pub projectiles: usize,
     pub pieces: usize,
     pub range_queries: usize,
+    pub range_contacts: usize,
     pub range_overlaps: usize,
     pub obstructed_ranges: usize,
     pub missing_range_data: usize,
@@ -184,6 +185,9 @@ impl NativeSoftwareRenderer {
                             Ok(None) => continue,
                             Err(_) => { counts.missing_range_data += 1; continue; },
                         };
+                        if let Ok(Some(contacts)) = view.combat.weapon_range_contacts(ship.entity_id, slot) {
+                            counts.range_contacts += contacts.ship_ids.len();
+                        }
                         self.shape(&ShipShape::Circle { offset: Vec2::ZERO, radius: range.radius },
                             Pose { position: range.center, rotation_degrees: 0.0 },
                             if range.enabled { 0x355b80 } else { 0x555555 });

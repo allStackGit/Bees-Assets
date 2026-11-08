@@ -223,8 +223,8 @@ impl NativeClient {
             view.world_id.0, view.episode_revision, view.tick, counts.ships, counts.projectiles,
             self.renderer.selection.squads().len(),
             if self.paused { "PAUSED" } else { "RUNNING" }, selected, self.input_feedback,
-            if self.renderer.show_weapon_ranges { format!("{}/{} blocked, {} queries, {} missing",
-                counts.obstructed_ranges, counts.range_overlaps, counts.range_queries, counts.missing_range_data) }
+            if self.renderer.show_weapon_ranges { format!("{} contacts, {}/{} blocked, {} queries, {} missing",
+                counts.range_contacts, counts.obstructed_ranges, counts.range_overlaps, counts.range_queries, counts.missing_range_data) }
             else { "off".to_owned() },
         ));
         self.render_wall_seconds += render_started.elapsed().as_secs_f64();

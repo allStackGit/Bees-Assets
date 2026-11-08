@@ -5,6 +5,51 @@ Latest fetch found no newer upstream than `3c76c78a3`, merged in `f7261843e`.
 Prior manual weapons `961189b94`; owner split `23c1c442d`; support `ea5ddd1a9`.
 Original `B:\Bees\Assets` and live training untouched.
 
+## Latest authoritative range lifecycle
+
+Mounted weapons now keep ordered enemy range contacts in the physical world,
+with an exposed revision for target-cache invalidation. After shared physics,
+all authored ranges reuse one lazy ship-grid rebuild (also reusable by Barge and
+near-pass queries), layer-filter candidates and test the actual hull. Continuing
+contacts retain history; only new simultaneous entrants are sorted by creation
+ID. Membership stamps avoid sorting every stable range on every tick. Death,
+range disable/reconfiguration, leaving and re-entry are handled on this sweep.
+
+Every mounted shot records its actual source slot. Split children and rocket
+continuations inherit it. Previously overlapping projectiles end on source range
+exit using their full collider, the same end/reservation/beam/root path as other
+causes. Shooter death preserves shots; RocketExplosion/FireTankExplosion remain
+excluded. Nominal distance expiry is unchanged. Legacy scenes without authored
+ranges do not build the range grid or perform range projectile checks.
+
+StepCounts -> Measurements -> host interval status now carries range grid,
+candidate, ship/projectile exact-test, enter/exit and ended-projectile counters.
+The optional B overlay title reads actual cached contacts as well as current
+geometry. No separate window-owned history or training-only mechanics.
+
+Executed external probes in B:\Bees\native-capability-qualification:
+- weapon-range-lifecycle.txt: retained/re-entry order/revisions, friend exclusion,
+  independent/disabled slots, target death, layer masks and overflow hulls; Single
+  and Beam exit cleanup/reservation release, re-fired beam, surviving shot after
+  shooter death, four real split continuations, one policy root completion, growing
+  beam collider vs center, and real rocket impact/explosion range exemption.
+- Same probe: 1024 mounted ranges yielded10404 broadphase candidates and6324 exact
+  enemy-hull tests vs1048576 full pairs; one rebuild and zero steady-sweep cache
+  changes. Query-work evidence, NOT a measured throughput improvement.
+- weapon-range-host-lifecycle.txt: schema21 clear/blocked and legacy20 through real
+  host ticks, cumulative telemetry, sampled status and renderer contact count.
+- game-manual-after-range-lifecycle.txt: all five manual patterns still fire at
+  ticks31/31/31/40/175 through legacy source-contract scenes.
+- workspace-range-lifecycle.txt: all106 existing tests/all-feature/all-target pass;
+  headless-range-lifecycle.txt: no-default-feature check passes; six asset verifiers
+  pass. No committed new tests. Original Unity checkout/live training untouched.
+
+These remain supplied scenarios, not authentic Unity exports. Unity callback
+ordering/timing, physical controls and Linux execution are unverified. MapObject
+visibility contributions from RangeCollider are not implemented by this sweep.
+Automatic target selection/firing, source bounds latching and final aim points
+remain next; this is the actual contact lifecycle those controllers must consume.
+
 ## Latest range/line inspection increment
 
 Schema21 exports each turret's actual child CircleCollider2D offset/radius in
@@ -41,8 +86,8 @@ Executed in B:\Bees\native-capability-qualification:
 
 These are supplied contract scenes, not authentic Unity exports. C# exporter
 execution, physical B-key interaction and Linux execution remain unverified.
-Source range-contact history/order, latched Ship.IsInBounds, target ranking,
-front-of-ship aim points and automatic firing still require integrated work.
+Latched Ship.IsInBounds, target ranking, front-of-ship aim points and automatic
+firing still require integrated work; contact history is now implemented above.
 
 ## Latest integrated work
 
@@ -133,8 +178,8 @@ was left running. Do not turn narrower checks into full parity/readiness claims.
 
 ## Highest-value next work / full objective remains incomplete
 
-Build on the shared geometric queries: port ordinary range contact history,
-latched bounds, target queue/ranking, source final aim-point selection and automatic
+Build on the shared geometry AND authoritative range history: port latched
+bounds, target queue/ranking, source final aim-point selection and automatic
 TargetingSequence into the SAME mounted scheduler;
 then wire chosen-target attack commands. Complete visual sprite animation/audio,
 per-weapon statistics/combat timers and persistent game accounting.

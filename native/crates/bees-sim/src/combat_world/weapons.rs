@@ -214,11 +214,13 @@ pub(super) struct ShipWeapons {
     pub(super) turrets: [Option<MountedTurret>; 5],
     pub(super) last_hull_rotation: f32,
     pub(super) cease_fire: bool,
+    pub(super) range_contacts: [super::weapon_ranges::WeaponRangeContacts; 5],
 }
 
 impl ShipWeapons {
     pub(super) fn new(rotation: f32) -> Self {
-        Self { turrets: [None; 5], last_hull_rotation: rotation, cease_fire: false }
+        Self { turrets: [None; 5], last_hull_rotation: rotation, cease_fire: false,
+            range_contacts: std::array::from_fn(|_| super::weapon_ranges::WeaponRangeContacts::default()) }
     }
 }
 
@@ -246,6 +248,16 @@ impl MountedTurret {
             local.x * cosine - local.y * sine,
             local.x * sine + local.y * cosine,
         )
+    }
+
+    pub(super) fn world_range(&self, position: Vec2, hull_rotation: f32, last_hull_rotation: f32)
+        -> Result<NativeWeaponRange, CombatWorldError>
+    {
+        let range = self.range_collider.ok_or(CombatWorldError::MissingWeaponRangeGeometry)?;
+        let origin = self.position(position, hull_rotation);
+        let rotation = self.state.rotation_degrees + delta_angle(last_hull_rotation, hull_rotation);
+        let center = Pose { position: origin, rotation_degrees: rotation }.transform_point(range.offset);
+        Ok(NativeWeaponRange { origin, center, radius: range.radius, layer: range.layer, enabled: range.enabled })
     }
 
     fn self_observation(&self, ship_position: Vec2, hull_rotation: f32) -> SelfWeapon {
@@ -337,17 +349,8 @@ impl CombatWorld {
             .ok_or(CombatWorldError::UnknownShip)?;
         let Some(mount) = self.ship_weapons.get(&ship_id)
             .and_then(|weapons| weapons.turrets[slot].as_ref()) else { return Ok(None) };
-        let range = mount.range_collider.ok_or(CombatWorldError::MissingWeaponRangeGeometry)?;
-        let origin = mount.position(body.motion.position, body.motion.rotation_degrees);
-        // A hull can be edited between fixed steps. Include its pending delta,
-        // exactly as the mounted scheduler will when next advancing the weapon.
-        let weapons = &self.ship_weapons[&ship_id];
-        let rotation = mount.state.rotation_degrees +
-            delta_angle(weapons.last_hull_rotation, body.motion.rotation_degrees);
-        let center = Pose { position: origin, rotation_degrees: rotation }
-            .transform_point(range.offset);
-        Ok(Some(NativeWeaponRange { origin, center, radius: range.radius,
-            layer: range.layer, enabled: range.enabled }))
+        Ok(Some(mount.world_range(body.motion.position, body.motion.rotation_degrees,
+            self.ship_weapons[&ship_id].last_hull_rotation)?))
     }
 
     /// Current range overlap and primary-obstacle line of fire only. This is
@@ -808,6 +811,8 @@ impl CombatWorld {
                     },
                     power, motion, -angle.to_degrees(),
                 )?;
+                let projectile_index = self.projectile_by_id[&projectile_id];
+                self.projectiles[projectile_index].source_turret_slot = Some(shot.slot);
                 // Source DualCannon increments FleetShip.ShotsFired twice.
                 // Emit once per actual shot so reward and telemetry counts
                 // match the physical projectiles, not timer passes.

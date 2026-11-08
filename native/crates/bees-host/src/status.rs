@@ -93,6 +93,13 @@ pub struct NativeHostStatusInterval {
     pub physics_obstacle_grid_overflow_bodies: u64,
     pub physics_narrowphase_tests: u64,
     pub physics_trigger_enters: u64,
+    pub weapon_range_grid_rebuilds: u64,
+    pub weapon_range_candidates: u64,
+    pub weapon_range_exact_tests: u64,
+    pub weapon_range_projectile_tests: u64,
+    pub weapon_range_enters: u64,
+    pub weapon_range_exits: u64,
+    pub weapon_range_projectile_exits: u64,
     /// Number of successful sampled fixed steps in this interval.
     pub sampled_physics_steps: u64,
     /// Approximate upper nanosecond bound of the sampled p95 bucket.
@@ -227,6 +234,13 @@ impl NativeStatusSampler {
                 physics_trigger_enters: diff(
                     s.trigger_enters, p.trigger_enters,
                 )?,
+                weapon_range_grid_rebuilds: diff(s.weapon_range_grid_rebuilds, p.weapon_range_grid_rebuilds)?,
+                weapon_range_candidates: diff(s.weapon_range_candidates, p.weapon_range_candidates)?,
+                weapon_range_exact_tests: diff(s.weapon_range_exact_tests, p.weapon_range_exact_tests)?,
+                weapon_range_projectile_tests: diff(s.weapon_range_projectile_tests, p.weapon_range_projectile_tests)?,
+                weapon_range_enters: diff(s.weapon_range_enters, p.weapon_range_enters)?,
+                weapon_range_exits: diff(s.weapon_range_exits, p.weapon_range_exits)?,
+                weapon_range_projectile_exits: diff(s.weapon_range_projectile_exits, p.weapon_range_projectile_exits)?,
                 sampled_physics_steps,
                 sampled_physics_p95_upper_nanos:
                     sampled_percentile_upper(&histogram, sampled_physics_steps, 95),

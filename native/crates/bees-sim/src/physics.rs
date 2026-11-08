@@ -330,6 +330,16 @@ impl WorldCollider {
         }
     }
 
+    fn overlaps_circle(&self, center: Vec2, radius: f32) -> bool {
+        let bounds = Aabb { min: center - Vec2::new(radius, radius),
+            max: center + Vec2::new(radius, radius) };
+        if self.bounds.is_none_or(|hull| !hull.overlaps(bounds)) { return false; }
+        match &self.shape {
+            ShipShape::Circle { radius: own, .. } => circles_overlap(self.circle_world, *own, center, radius),
+            _ => circle_overlaps_polygon(center, radius, &self.polygon_world),
+        }
+    }
+
     /// Unity HiveMindVision.CanSee uses Collider2D.ClosestPoint, not a
     /// target-center approximation. The cached broadphase AABB can cheaply
     /// reject targets beyond range, without changing the exact test for
@@ -641,6 +651,11 @@ impl ProjectileBody {
 
     pub fn shape(&self) -> Option<&ShipShape> {
         self.collider.as_ref().map(|collider| &collider.shape)
+    }
+
+    /// Uses the actual post-physics projectile hull, including a growing beam.
+    pub(crate) fn primary_overlaps_circle(&self, center: Vec2, radius: f32) -> bool {
+        self.active && self.collider.as_ref().is_some_and(|collider| collider.overlaps_circle(center, radius))
     }
 
     /// Shapes can change at runtime: LaserBeam stretches, explosions grow.
@@ -1145,6 +1160,28 @@ impl KinematicPhysics {
         self.grid.candidates(bounds, output);
         output.sort_unstable();
         rebuilt
+    }
+
+    /// Post-physics weapon range queries reuse the ship grid with Barge contact
+    /// queries. Rebuild lazily once, preserve overflow hulls, reuse caller storage.
+    pub(crate) fn circle_ship_contact_candidates(&mut self, center: Vec2, radius: f32,
+        output: &mut Vec<usize>,
+    ) -> bool {
+        let rebuilt = !self.grid_contains_ships;
+        if rebuilt {
+            self.grid.rebuild_with(self.ships.len(), |index| {
+                let ship = &self.ships[index];
+                if ship.active { ship.collider.bounds } else { None }
+            });
+            self.grid_contains_ships = true;
+        }
+        self.grid.candidates(Aabb { min: center - Vec2::new(radius, radius),
+            max: center + Vec2::new(radius, radius) }, output);
+        rebuilt
+    }
+
+    pub(crate) fn ship_primary_overlaps_circle(&self, index: usize, center: Vec2, radius: f32) -> bool {
+        self.ships.get(index).is_some_and(|ship| ship.active && ship.collider.overlaps_circle(center, radius))
     }
 
     /// On-demand contact queries can run before physics.step(), including
@@ -1774,6 +1811,7 @@ impl crate::simulation::GameRules<KinematicPhysics> for KinematicPhysicsRules {
                 counts.obstacle_pair_enters + counts.obstacle_pair_exits +
                 counts.proximity_ship_enters + counts.proximity_ship_exits +
                 counts.proximity_obstacle_enters + counts.proximity_obstacle_exits,
+            ..crate::telemetry::StepCounts::default()
         })
     }
 }

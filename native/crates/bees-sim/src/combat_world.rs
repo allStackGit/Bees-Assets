@@ -76,6 +76,8 @@ mod vision;
 mod map_object;
 mod policy;
 mod weapons;
+mod weapon_ranges;
+pub use self::weapon_ranges::NativeWeaponRangeContacts;
 mod striker;
 mod fire_barge;
 mod yellow_jacket;
@@ -443,6 +445,10 @@ pub struct CombatProjectile {
     /// Exact shooter's shot-root and Hive Mind command identity live in the
     /// paired ProjectileBody.motion.attribution.
     pub ignored_ships: HashSet<i64>,
+    /// Source Weapon reference, scoped by ShotOwner.shooter_id and mount slot.
+    /// Inherited by continuations; never inferred from projectile type or roots.
+    source_turret_slot: Option<u8>,
+    within_source_range: bool,
     behavior: ImpactBehavior,
 }
 
@@ -462,7 +468,7 @@ impl CombatProjectile {
         )?;
         Ok(Self {
             entity_id, projectile_type, owner, power,
-            ignored_ships: HashSet::new(), behavior,
+            ignored_ships: HashSet::new(), source_turret_slot: None, within_source_range: false, behavior,
         })
     }
 
@@ -485,6 +491,7 @@ impl CombatProjectile {
             owner,
             power,
             ignored_ships: HashSet::new(),
+            source_turret_slot: None, within_source_range: false,
             behavior: ImpactBehavior::StrikerBomb(
                 StrikerBombFuse::new(contacted_ship_id, shooter_fleet_id),
             ),
@@ -732,6 +739,8 @@ pub struct CombatWorld {
     // Stable ship-ID iteration is necessary for reproducible shot IDs.
     policy_ship_runtime: BTreeMap<i64, PolicyShipRuntime>,
     ship_weapons: BTreeMap<i64, ShipWeapons>,
+    weapon_range_candidates: Vec<usize>,
+    weapon_range_entering_ids: Vec<i64>,
     /// Updated only when a policy controller is bound or retired.
     /// Decision cadence checks this revision instead of rescanning the
     /// entire controller roster on every fixed physics step.
@@ -879,6 +888,7 @@ impl CombatWorld {
             game_ship_steering: HashMap::new(),
             policy_ship_runtime: BTreeMap::new(),
             ship_weapons: BTreeMap::new(),
+            weapon_range_candidates: Vec::new(), weapon_range_entering_ids: Vec::new(),
             policy_roster_revision: 0,
             policy_decision_seen: HashSet::new(),
             pending_turret_shots: Vec::new(),
@@ -2755,6 +2765,7 @@ impl CombatWorld {
         let origin = parent_body.motion.position;
         let attribution = parent_body.motion.attribution;
         let owner = rocket.owner;
+        let source_turret_slot = rocket.source_turret_slot;
         let power = rocket.power;
         let continuation_id = self.next_entity_id;
         if continuation_id == i64::MAX {
@@ -2769,6 +2780,7 @@ impl CombatWorld {
             attribution.root_shot_id, attribution.command_outcome_id,
         );
         self.spawn_projectile(&asset, continuation_id, owner, power, motion, 0.0)?;
+        self.projectiles[self.projectile_by_id[&continuation_id]].source_turret_slot = source_turret_slot;
         self.reservations.transfer(parent_id, continuation_id)?;
         self.events.push(CombatEvent::ProjectileContinued {
             parent_id, continuation_id,
@@ -2800,6 +2812,7 @@ impl CombatWorld {
         let owner = self.projectiles[parent_index].owner;
         let power = self.projectiles[parent_index].power;
         let parent_id = self.projectiles[parent_index].entity_id;
+        let source_turret_slot = self.projectiles[parent_index].source_turret_slot;
         let child_asset = self.projectile_assets.by_type(1)
             .ok_or(CombatWorldError::InvalidProjectileType(1))?.clone();
         let speed = child_asset.shot_speed
@@ -2816,6 +2829,7 @@ impl CombatWorld {
                 &child_asset, child_id, owner, fragment.power, motion,
                 -fragment.angle_radians.to_degrees(),
             )?;
+            self.projectiles[self.projectile_by_id[&child_id]].source_turret_slot = source_turret_slot;
             if let Some(ignored_ship) = fragment.ignore_ship_id {
                 if let Some(&index) = self.projectile_by_id.get(&child_id) {
                     self.projectiles[index].ignored_ships.insert(ignored_ship);
@@ -3871,6 +3885,7 @@ impl CombatWorld {
         self.update_explosion_timelines(dt)?;
         let new_contacts = self.physics.step(dt, collision_matrix)?;
         self.pending_contacts.extend_from_slice(new_contacts);
+        let weapon_range_counts = self.refresh_weapon_range_contacts(collision_matrix);
         self.update_policy_projectile_near_passes(dt);
         // Source MapBorder.OnTriggerEnter2D can end Barge.ChargeForward
         // immediately. Reuse the physics ship/obstacle entry stream before
@@ -3908,7 +3923,7 @@ impl CombatWorld {
                 physics_counts.obstacle_pair_enters +
                 physics_counts.proximity_ship_enters +
                 physics_counts.proximity_obstacle_enters,
-            ..StepCounts::default()
+            ..weapon_range_counts
         })
     }
 }
