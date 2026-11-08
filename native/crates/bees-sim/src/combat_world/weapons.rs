@@ -497,7 +497,7 @@ fn choose_game_weapon_target(
     nearby: &std::collections::BTreeMap<i64, (u64, u64)>,
     random_order: &[i64],
 ) -> Result<Option<(i64, Vec2)>, CombatWorldError> {
-    if !matches!(strategy, 1..=40) {
+    if !matches!(strategy, 1 | 2 | 5..=40) {
         return Ok(None);
     }
     if matches!(strategy, 7 | 8 | 11 | 12 | 17..=40) &&
@@ -835,7 +835,7 @@ impl CombatWorld {
                 let auto = manual.is_none() && !runtime.cease_fire &&
                     (user_controlled || runtime.ai_order_active) &&
                     mount.fire_at_front.is_some() &&
-                    matches!(runtime.shooting_strategy, Some(1..=40)) &&
+                    matches!(runtime.shooting_strategy, Some(1 | 2 | 5..=40)) &&
                     (runtime.shooting_strategy != Some(2) || random.is_some());
                 if manual.is_some() {
                     mount.target_ship_id = None;
