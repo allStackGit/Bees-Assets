@@ -88,6 +88,23 @@ pub struct NativeLocalBombingTargets<'a> {
     pub is_carrier_squad: bool,
 }
 
+/// Source-side strategic attribution captured at the instant damage occurred.
+/// A delayed projectile keeps its launching command's OutcomeId. Damage to a
+/// defender is charged to the command active at impact, *before* death can
+/// retire the squad; neither mapping is reconstructed by the notification sink.
+#[derive(Clone, Copy, Debug)]
+pub struct NativeCombatHit {
+    pub hit: HitEvent,
+    pub attacker_command_outcome_id: Option<i64>,
+    pub defender_command_outcome_id: Option<i64>,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct DamageCommandOwners {
+    attacker: Option<i64>,
+    defender: Option<i64>,
+}
+
 #[derive(Clone, Debug)]
 pub enum NativeLevelNotificationKind {
     SquadChange(SquadRosterChange),
@@ -99,10 +116,13 @@ pub enum NativeLevelNotificationKind {
     /// same-tick command completion. The original OutcomeId remains valid
     /// after a command is superseded; a consumer must not finalize its
     /// StoreCommands reservation until delayed projectile credit is safe.
-    CombatHit(HitEvent),
+    CombatHit(NativeCombatHit),
     /// Health/TSV loss with no validated attacker, including collisions
     /// and stale pooled shooter identities. Never give it attacker TSV.
-    UnattributedDamage { target_id: i64, delta: DamageDelta },
+    UnattributedDamage {
+        target_id: i64, delta: DamageDelta,
+        defender_command_outcome_id: Option<i64>,
+    },
     FinishedCommand(FinishedNativeCommand),
     /// A failed world has no trustworthy final TSV. HiveMind origins must
     /// discard/reconcile their reservations; local origins have none.
@@ -187,6 +207,9 @@ pub struct NativeLevelEventProcessor {
     finished: Vec<FinishedNativeCommand>,
     /// Reused for timer completions; death-retirement output remains intact.
     timed_finished: Vec<FinishedNativeCommand>,
+    /// Core-physics damage owners are snapshotted before death retirement.
+    /// Reused every tick, never retained as a parallel command ledger.
+    core_damage_owners: Vec<DamageCommandOwners>,
 }
 
 impl NativeLevelEventProcessor {
@@ -210,6 +233,7 @@ impl NativeLevelEventProcessor {
             changes: Vec::new(),
             finished: Vec::new(),
             timed_finished: Vec::new(),
+            core_damage_owners: Vec::new(),
         }
     }
 
@@ -221,6 +245,32 @@ impl NativeLevelEventProcessor {
 
     pub fn roster(&self) -> &NativeSquadRoster {
         &self.roster
+    }
+
+    fn active_server_command_for_ship(&self, ship_id: i64) -> Option<i64> {
+        self.roster.owning_squad(ship_id)
+            .and_then(|owner| self.commands.current_server_outcome(owner))
+    }
+
+    fn damage_command_owners(&self, event: &CombatEvent) -> Option<DamageCommandOwners> {
+        match event {
+            CombatEvent::Hit(hit) => Some(DamageCommandOwners {
+                attacker: if hit.command_outcome_id > 0 {
+                    Some(hit.command_outcome_id)
+                } else {
+                    // Unity's synchronous/no-projectile credit falls back to
+                    // the attacker command active at the physical impact.
+                    self.active_server_command_for_ship(hit.attacker_id)
+                },
+                defender: self.active_server_command_for_ship(hit.target_id),
+            }),
+            CombatEvent::UnattributedDamage { target_id, .. } =>
+                Some(DamageCommandOwners {
+                    attacker: None,
+                    defender: self.active_server_command_for_ship(*target_id),
+                }),
+            _ => None,
+        }
     }
 
     pub fn has_active_commands(&self) -> bool {
