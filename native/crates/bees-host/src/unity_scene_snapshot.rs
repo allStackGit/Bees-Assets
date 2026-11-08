@@ -199,6 +199,8 @@ struct UnityShip {
     turning_radius: f32,
     half_width: f32,
     half_height: f32,
+    #[serde(default)]
+    target_front_offset: Option<f32>,
     offset_from_center: UnityVec2,
     path_clearance: i32,
     mobile: bool,
@@ -370,6 +372,8 @@ struct UnityTurret {
     projectile_value: f32,
     projectile_speed: f64,
     fire_pattern: String,
+    #[serde(default)]
+    fire_at_front: Option<bool>,
 }
 
 #[derive(Deserialize)]
@@ -838,12 +842,18 @@ impl NativePhysicalScene {
             }
         }
 
+        let game_shooting_by_ship: HashMap<i64, u8> = self.source_squads.iter()
+            .flat_map(|source| source.members.iter()
+                .map(move |&ship_id| (ship_id, source.shooting.id)))
+            .collect();
         // The snapshot retains actual Unity turret mounts even on ships
         // without a neural controller. Bind those to ordinary gameplay,
         // not to a fabricated RL policy or a separate visual simulator.
         for entity in &mut self.entities {
             if let NativeAuthoredEntity::Ship(ship) = entity {
                 if ship.policy.is_none() {
+                    ship.game_shooting_strategy =
+                        game_shooting_by_ship.get(&ship.entity_id).copied();
                     ship.game_turrets = self.turrets_by_ship
                         .remove(&ship.entity_id).unwrap_or_default();
                 }
@@ -1340,6 +1350,7 @@ impl NativePhysicalScene {
                 };
                 authored_turrets.push(NativeAuthoredTurret {
                     slot: weapon.slot,
+                    fire_at_front: weapon.fire_at_front,
                     spec: NativeTurretSpec {
                         weapon_type: weapon.weapon_type,
                         projectile_type: weapon.projectile_type,
@@ -1474,6 +1485,8 @@ impl NativePhysicalScene {
                 policy: None,
                 game_turrets: Vec::new(),
                 game_cease_fire: ship.policy_cease_fire,
+                game_shooting_strategy: None,
+                target_front_offset: ship.target_front_offset,
                 special,
             }));
         }
