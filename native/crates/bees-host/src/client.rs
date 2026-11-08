@@ -205,7 +205,22 @@ impl NativeClient {
             self.renderer.selection_box = None;
         }
         self.left_was_down = left_down;
-        let player_move = if !changed_world && !cancel_support && support_command.is_none() &&
+        let enemy_target = if !changed_world && !cancel_support &&
+            right_down && !self.right_was_down
+        {
+            mouse.and_then(|(x, y)| self.renderer.pick_enemy_squad(
+                &view,
+                self.renderer.camera.screen_to_world(x, y, width, height),
+            ))
+        } else { None };
+        if enemy_target.is_some() {
+            // Source right-click dispatches Aggressive/Charge/BombingRun,
+            // NEVER a point move. Without live authored enemy and weapon
+            // snapshots, the attack command must remain unavailable.
+            self.input_feedback = "Enemy attack requires native combat command adapter";
+        }
+        let player_move = if !changed_world && !cancel_support &&
+            enemy_target.is_none() && support_command.is_none() &&
             right_down && !self.right_was_down {
             mouse.filter(|_| !self.renderer.selection.squads().is_empty()).map(|(x, y)|
                 NativePlayerSquadMoves { world_id: view.world_id,
