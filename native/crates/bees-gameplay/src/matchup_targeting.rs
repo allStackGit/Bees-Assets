@@ -183,15 +183,17 @@ impl From<CombatWorldError> for LiveMatchupResolutionError {
 }
 
 /// Build a candidate ONLY from current physical and authored source data.
-/// All source metrics are fetched from the real CombatWorld rank store; the
-/// Level's original ship sprite catalog provides the same Squad.GetPosition
-/// as rendered gameplay. No target property is inferred from squad type.
+/// Query rank history and authored sprite bounds only when the selected
+/// strategy uses them: Random or a health-only selection must not fail
+/// because an unrelated ship lacks weapon-rank metadata. No missing field
+/// is silently invented for a strategy that actually needs it.
 fn live_candidate(
     world: &CombatWorld,
     roster: &NativeSquadRoster,
     catalog: &ShipAssetCatalog,
     target: SquadLifetime,
-    own_center: bees_sim::geometry::Vec2,
+    own_center: Option<bees_sim::geometry::Vec2>,
+    strategy_id: u8,
     needs_combat_state: bool,
     in_combat: &mut impl FnMut(i64) -> Option<bool>,
 ) -> Result<Option<NativeMatchupCandidate>, LiveMatchupResolutionError> {
@@ -215,21 +217,28 @@ fn live_candidate(
             .ok_or(LiveMatchupResolutionError::MissingShip(id))?;
         if ship.vitals.is_dead() { continue; }
         living_count += 1;
-        let ranking = world.weapon_target_rank_stats(id)
-            .map_err(LiveMatchupResolutionError::World)?;
-        if !ranking.valid() {
-            return Err(LiveMatchupResolutionError::InvalidWeaponRank(id));
-        }
-        candidate.largest_last_killed =
-            candidate.largest_last_killed.max(f64::from(ranking.last_killed));
-        candidate.fleet_damage_done += ranking.fleet_damage_done as f64;
+        // Both physical totals are cheap; the source's weapon ranking
+        // history is optional for policies with no automatic weapons.
         candidate.health += f64::from(ship.vitals.health());
-        candidate.firepower += f64::from(ranking.firepower);
-        candidate.max_range = candidate.max_range.max(ranking.max_range);
-        candidate.speed += f64::from(ranking.speed);
         candidate.tsv += f64::from(ship.vitals.tsv());
-        if ranking.ship_type_letter < 23 {
-            candidate.type_counts[usize::from(ranking.ship_type_letter)] += 1;
+        let needs_rank = matches!(strategy_id,
+            2 | 3 | 6 | 7 | 10 | 11 | 12 | 13 | 18..=40
+        ) || needs_combat_state;
+        if needs_rank {
+            let ranking = world.weapon_target_rank_stats(id)
+                .map_err(LiveMatchupResolutionError::World)?;
+            if !ranking.valid() {
+                return Err(LiveMatchupResolutionError::InvalidWeaponRank(id));
+            }
+            candidate.largest_last_killed =
+                candidate.largest_last_killed.max(f64::from(ranking.last_killed));
+            candidate.fleet_damage_done += ranking.fleet_damage_done as f64;
+            candidate.firepower += f64::from(ranking.firepower);
+            candidate.max_range = candidate.max_range.max(ranking.max_range);
+            candidate.speed += f64::from(ranking.speed);
+            if ranking.ship_type_letter < 23 {
+                candidate.type_counts[usize::from(ranking.ship_type_letter)] += 1;
+            }
         }
         if needs_combat_state {
             candidate.in_combat |= in_combat(id)
@@ -239,10 +248,12 @@ fn live_candidate(
     if living_count == 0 {
         return Ok(None);
     }
-    let center = live_squad_bounds_from_catalog(world, squad, catalog)?.center;
-    let dx = center.x - own_center.x;
-    let dy = center.y - own_center.y;
-    candidate.distance_to_own_center = (dx * dx + dy * dy).sqrt();
+    if let Some(own_center) = own_center {
+        let center = live_squad_bounds_from_catalog(world, squad, catalog)?.center;
+        let dx = center.x - own_center.x;
+        let dy = center.y - own_center.y;
+        candidate.distance_to_own_center = (dx * dx + dy * dy).sqrt();
+    }
     if !candidate.valid() {
         return Err(LiveMatchupResolutionError::InvalidWeaponRank(
             squad.members[0],
@@ -281,7 +292,11 @@ pub fn select_live_matchup_squad(
 ) -> Result<Option<SquadLifetime>, LiveMatchupResolutionError> {
     scratch.clear();
     let acting = roster.get(owner).ok_or(LiveMatchupResolutionError::MissingOwner)?;
-    let own_center = live_squad_bounds_from_catalog(world, acting, catalog)?.center;
+    let own_center = if matches!(strategy.id, 8 | 9) {
+        Some(live_squad_bounds_from_catalog(world, acting, catalog)?.center)
+    } else {
+        None
+    };
     if let Some(target) = first_allied_target.filter(|_| strategy.id == 15) {
         let valid = roster.get(target).is_some_and(|enemy|
             target.level_id == owner.level_id &&
@@ -309,7 +324,7 @@ pub fn select_live_matchup_squad(
         }
         if let Some(candidate) = live_candidate(
             world, roster, catalog, target, own_center,
-            needs_combat, &mut in_combat,
+            strategy.id, needs_combat, &mut in_combat,
         )? {
             scratch.push(candidate);
         }
