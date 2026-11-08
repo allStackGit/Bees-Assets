@@ -562,6 +562,11 @@ class EpisodeLogMetrics:
                 human_hits / human_shots, 3) if human_shots else 0.0,
             "bee_shots_per_episode": round(bee_shots / count, 2),
             "human_shots_per_episode": round(human_shots / count, 2),
+            # Exact rolling denominators for aggregation across workers.
+            "bee_shots": bee_shots,
+            "human_shots": human_shots,
+            "bee_completed_shots": bee_completed,
+            "human_completed_shots": human_completed,
             "bee_missed_shots": bee_missed,
             "human_missed_shots": human_missed,
             "bee_near_missed_shots": bee_near,
