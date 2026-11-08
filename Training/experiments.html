@@ -432,7 +432,7 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
     <thead><tr><th>Job</th><th>Native state</th><th>Learning progress</th><th>Summary timestamp</th><th>Host use</th></tr></thead>
     <tbody id="hub-monitor-rows"></tbody>
   </table></div>
-  <p class="muted">Native CPU-only service status and CPU/RAM observations appear when an approved Linux or Windows agent reports them. The isolated Windows Job Object lifecycle has passed real-hardware qualification; production project adapters and Linux host execution still need separate verification. Unknown service states require manual review; GPU isolation and cross-project GPU execution are not available.</p>
+  <p class="muted">Native service status and CPU/RAM observations appear when an approved Linux or Windows agent reports them. A pinned GPU identity and host-wide VRAM observation are shown for eligible CUDA/ROCm jobs; these are not isolated per-job GPU usage or enforceable compute shares. The isolated Windows CPU-only Job Object lifecycle has passed hardware qualification, but the new Windows CUDA and Linux ROCm trainer paths still need live qualification. Unknown service states require manual review.</p>
 </section>
 <section data-hub-tab="compare" data-project="other">
   <h2>Project comparisons</h2>
