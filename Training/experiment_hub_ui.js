@@ -1735,7 +1735,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     (g.hub_vram_mb??g.vram_mb)+' MiB / '+
                     (g.hub_compute_pct??100)+'% compute) · '+
                     (matched?'PCI '+matched.pci_address+' verified, '+
-                        matched.vram_mb+' MiB physically available for advisory claims'
+                        matched.vram_mb+' MiB verified device capacity'
                         :g.pci_address?'PCI '+g.pci_address+' not observed':
                             'No PCI binding');
             });
