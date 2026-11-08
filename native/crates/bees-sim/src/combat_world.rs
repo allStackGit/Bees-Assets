@@ -733,6 +733,9 @@ pub struct CombatWorld {
     /// Same physical weapon mounts and projectile lifecycle, but without
     /// binding an ordinary user-controlled ship to a neural policy.
     game_turrets: BTreeMap<i64, GameTurretRuntime>,
+    /// Source GetHalfHeight minus ConfigData.OffsetFromFrontOfShip, for
+    /// aim-at-front weapons. Positions and rotation stay physical/live.
+    target_front_offsets: HashMap<i64, f32>,
     /// Updated only when a policy controller is bound or retired.
     /// Decision cadence checks this revision instead of rescanning the
     /// entire controller roster on every fixed physics step.
@@ -880,6 +883,7 @@ impl CombatWorld {
             game_ship_steering: HashMap::new(),
             policy_ship_runtime: BTreeMap::new(),
             game_turrets: BTreeMap::new(),
+            target_front_offsets: HashMap::new(),
             policy_roster_revision: 0,
             policy_decision_seen: HashSet::new(),
             turret_pending_shots: Vec::new(),
@@ -1105,6 +1109,7 @@ impl CombatWorld {
             self.bump_policy_roster_revision();
         }
         self.game_turrets.remove(&victim_id);
+        self.target_front_offsets.remove(&victim_id);
         self.retire_support_zone(self.ships[index].ship_type, side, victim_id);
         self.release_beehive_healing_slot(victim_id);
         self.release_game_warp_participant(victim_id);
