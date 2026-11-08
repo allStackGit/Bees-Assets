@@ -552,22 +552,25 @@ fn choose_game_weapon_target(
     // Old source scenes without original mutable rank baselines cannot
     // enable these two strategies. All targets must have valid data to
     // avoid silently changing the server's ranking decision.
-    if strategy == 3 && nearby.keys().any(|id|
-        game_target_facts.get(id).is_none_or(|f| f.last_killed.is_none()))
-    {
-        return Ok(None);
-    }
-    if strategy == 4 && nearby.keys().any(|id|
-        fleet_id_by_ship.get(id).is_none_or(|fleet|
-            !game_fleet_damage_done.contains_key(fleet)))
-    {
-        return Ok(None);
-    }
-    if matches!(strategy, 7 | 8 | 11 | 12 | 17..=40) &&
-        nearby.keys().any(|id| !game_target_facts.contains_key(id))
-    {
-        // Never rank only those ships with a legacy partial snapshot.
-        return Ok(None);
+    // RangeCollider can retain a just-retired target until its next
+    // membership refresh. Missing ranks on a *dead* ship must not
+    // suppress firing at eligible survivors. A live unsourced target,
+    // however, must fail closed for the affected rank strategy.
+    let has_live_source_gap = nearby.keys()
+        .filter_map(|id| ship_by_id.get(id).map(|&index| (*id, index)))
+        .filter(|(_, index)| physics.ships()[*index].active &&
+            !ships[*index].vitals.is_dead());
+    for (id, _) in has_live_source_gap {
+        let missing = match strategy {
+            3 => game_target_facts.get(&id)
+                .is_none_or(|facts| facts.last_killed.is_none()),
+            4 => fleet_id_by_ship.get(&id).is_none_or(|fleet|
+                !game_fleet_damage_done.contains_key(fleet)),
+            7 | 8 | 11 | 12 | 17..=40 =>
+                !game_target_facts.contains_key(&id),
+            _ => false,
+        };
+        if missing { return Ok(None); }
     }
     if strategy == 2 {
         // Unity Shuffle is cached across ordinary targeting passes.
