@@ -548,6 +548,15 @@ impl NativeSquadCommandDirector {
         self.active.contains_key(&owner)
     }
 
+    /// Source Squad.StopChasing finalizes an Aggressive command only.
+    /// Do not treat every active strategy as a chase or install a Hold
+    /// command in its place.
+    pub fn is_chasing_command(&self, owner: SquadLifetime) -> bool {
+        self.active.get(&owner).is_some_and(|active|
+            active.selection.kind() == LocalCommandKind::Aggressive
+        )
+    }
+
     pub fn automatic_weapon_input(&self, owner: SquadLifetime)
         -> Option<bees_sim::combat_world::NativeAutomaticWeaponInputs>
     {
