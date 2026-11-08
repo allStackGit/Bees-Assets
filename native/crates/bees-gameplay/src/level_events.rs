@@ -765,6 +765,7 @@ impl NativeLevelEventProcessor {
         &mut self, first: usize, tick: u64,
     ) -> Result<(), NativeLevelEventError> {
         let mut terminal = None;
+        let mut accounting_error = None;
         for notification in &self.pending_notifications[first..] {
             let result = match &notification.kind {
                 NativeLevelNotificationKind::CombatHit(credit) =>
@@ -793,13 +794,16 @@ impl NativeLevelEventProcessor {
                 _ => Ok(()),
             };
             if let Err(error) = result {
-                // Do not leave a successful terminal result or a partly
-                // attributed command in the deliverable outbox when the
-                // episode accounting transaction has failed.
-                self.pending_notifications.truncate(first);
-                self.failed = true;
-                return Err(NativeLevelEventError::Credit(error));
+                accounting_error = Some(error);
+                break;
             }
+        }
+        if let Some(error) = accounting_error {
+            // The input slice borrow is now over, so the failed suffix
+            // can be discarded without risking contradictory EpisodeFinal.
+            self.pending_notifications.truncate(first);
+            self.failed = true;
+            return Err(NativeLevelEventError::Credit(error));
         }
         if let Some(successful) = terminal {
             // Preflight the entire terminal publication before consuming
