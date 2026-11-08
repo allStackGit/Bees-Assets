@@ -2196,7 +2196,9 @@ document.addEventListener('DOMContentLoaded', () => {
             if(!r.ok)throw Error(data.error||'No placement result.');
             feedback('hub-placements',(data.placements||[]).map(p=>
                 p.machine_name+': '+(p.capacity_fits?'Advisory capacity fits':'Unavailable')+
-                (p.suggested_gpus?.length?' · GPUs '+p.suggested_gpus.join(', '):'')+' — '+p.reason
+                (p.suggested_gpus?.length?' · GPUs '+p.suggested_gpus.join(', '):'')+
+                (p.observed_headroom_block?' · Current Start blocked: '+p.observed_headroom_block:'')+
+                ' — '+p.reason
             ).join('\n')||'No registered machines.');
         }catch(e){feedback('hub-placements',e.message);}
     });
@@ -2309,7 +2311,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 p.id+': '+(p.capacity_fits
                     ?p.machine_name+(p.suggested_gpus.length
                         ?' · '+p.suggested_gpus.join(', '):'')
-                    :'No fit')+' — '+p.reason
+                    :'No fit')+
+                (p.observed_headroom_block?' · Current Start blocked: '+p.observed_headroom_block:'')+
+                ' — '+p.reason
             ).join('\n')||'No workloads entered. No changes made.');
         }catch(e){feedback('hub-plan-result',e.message);}
     });
