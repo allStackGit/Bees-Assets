@@ -9,6 +9,17 @@ pub struct StepCounts {
     pub active_ships: u32,
     pub active_projectiles: u32,
     pub events: u64,
+    /// Physical HitEvent callbacks, not launched shots or estimated damage.
+    pub enemy_hits: u64,
+    pub friendly_hits: u64,
+    /// Actual TSV removed by attributed hits. Unattributed collisions and
+    /// economic rewards are deliberately excluded.
+    pub enemy_hit_tsv_loss: u64,
+    pub friendly_hit_tsv_loss: u64,
+    /// Final policy projectile roots, counted once after all continuations.
+    pub policy_roots_completed: u64,
+    pub policy_roots_contacted: u64,
+    pub policy_roots_near_missed: u64,
     /// Physics already computes these counts during each fixed step.
     /// Export them without extra collision queries or clock reads.
     pub integrated_bodies: u64,
@@ -43,6 +54,13 @@ pub struct Measurements {
     pub ticks: u64,
     pub decisions: u64,
     pub events: u64,
+    pub enemy_hits: u64,
+    pub friendly_hits: u64,
+    pub enemy_hit_tsv_loss: u64,
+    pub friendly_hit_tsv_loss: u64,
+    pub policy_roots_completed: u64,
+    pub policy_roots_contacted: u64,
+    pub policy_roots_near_missed: u64,
     pub integrated_bodies: u64,
     pub broadphase_candidates: u64,
     pub ship_grid_overflow_bodies: u64,
@@ -92,6 +110,13 @@ impl Default for Measurements {
             ticks: 0,
             decisions: 0,
             events: 0,
+            enemy_hits: 0,
+            friendly_hits: 0,
+            enemy_hit_tsv_loss: 0,
+            friendly_hit_tsv_loss: 0,
+            policy_roots_completed: 0,
+            policy_roots_contacted: 0,
+            policy_roots_near_missed: 0,
             integrated_bodies: 0,
             broadphase_candidates: 0,
             ship_grid_overflow_bodies: 0,
@@ -134,6 +159,13 @@ impl Measurements {
         self.ticks += 1;
         self.decisions += counts.decisions;
         self.events += counts.events;
+        self.enemy_hits += counts.enemy_hits;
+        self.friendly_hits += counts.friendly_hits;
+        self.enemy_hit_tsv_loss += counts.enemy_hit_tsv_loss;
+        self.friendly_hit_tsv_loss += counts.friendly_hit_tsv_loss;
+        self.policy_roots_completed += counts.policy_roots_completed;
+        self.policy_roots_contacted += counts.policy_roots_contacted;
+        self.policy_roots_near_missed += counts.policy_roots_near_missed;
         self.integrated_bodies += counts.integrated_bodies;
         self.broadphase_candidates += counts.broadphase_candidates;
         self.ship_grid_overflow_bodies += counts.ship_grid_overflow_bodies;
@@ -190,6 +222,13 @@ impl Measurements {
         self.ticks += other.ticks;
         self.decisions += other.decisions;
         self.events += other.events;
+        self.enemy_hits += other.enemy_hits;
+        self.friendly_hits += other.friendly_hits;
+        self.enemy_hit_tsv_loss += other.enemy_hit_tsv_loss;
+        self.friendly_hit_tsv_loss += other.friendly_hit_tsv_loss;
+        self.policy_roots_completed += other.policy_roots_completed;
+        self.policy_roots_contacted += other.policy_roots_contacted;
+        self.policy_roots_near_missed += other.policy_roots_near_missed;
         self.integrated_bodies += other.integrated_bodies;
         self.broadphase_candidates += other.broadphase_candidates;
         self.ship_grid_overflow_bodies += other.ship_grid_overflow_bodies;
