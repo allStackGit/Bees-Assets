@@ -1665,6 +1665,8 @@ document.addEventListener('DOMContentLoaded', () => {
             cell(tr,m.ram_mb+' MiB configured'+
                 (m.reported_ram_mb!=null?' / '+m.reported_ram_mb+' MiB reported':'')+
                 ' / '+claimedRam+' MiB claimed'+
+                (m.status==='connected'&&m.reported_free_ram_mb!=null
+                    ?' · '+m.reported_free_ram_mb+' MiB host free (all processes)':'')+
                 (sampledRam.length?' · '+Math.round(observedRam).toLocaleString()+
                     ' MiB observed from '+sampledRam.length+'/'+activeJobs.length+
                     ' Hub native jobs':''));
@@ -1681,7 +1683,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 g.pci_address+' ('+g.vram_mb+' MiB'+
                 (g.used_vram_mb==null?'':', '+g.used_vram_mb+' MiB used')+')');
             cell(tr,(configured.join(' / ')||'No configured GPUs')+
-                (discovered.length?' · Detected AMD GPUs: '+
+                (discovered.length?' · Detected '+(m.agent_platform==='win32'?'NVIDIA':'AMD')+' GPUs: '+
                     discovered.join(', '):''));
             const capability=m.execution_capabilities;
             const recoveryOnly=m.local_executor_enabled&&!m.installed_projects?.length;
