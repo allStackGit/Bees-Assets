@@ -415,6 +415,10 @@ impl DurableDiagnosticNotifications {
 impl NativeLevelNotificationSink for DurableDiagnosticNotifications {
     type Error = io::Error;
 
+    fn journal_run_id(&self) -> Option<&str> {
+        Some(&self.run_id)
+    }
+
     fn first_prepared_outcomes(&self) -> Option<&RecordedOutcomeBatch> {
         self.prepared.front()
     }
