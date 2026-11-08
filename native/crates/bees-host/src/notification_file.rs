@@ -258,6 +258,7 @@ impl DurableDiagnosticNotifications {
             NativeLevelNotificationKind::CombatHit(_) => "combat_hit",
             NativeLevelNotificationKind::UnattributedDamage { .. } => "unattributed_damage",
             NativeLevelNotificationKind::FinishedCommand(_) => "finished_command",
+            NativeLevelNotificationKind::CommandOutcomesReady(_) => "command_outcomes_ready",
             NativeLevelNotificationKind::AbortedCommand { .. } => "aborted_command",
             NativeLevelNotificationKind::Reward(_) => "reward",
             NativeLevelNotificationKind::GroupReward(_) => "group_reward",
@@ -305,6 +306,9 @@ impl DurableDiagnosticNotifications {
                 "tsv_loss": delta.tsv_loss,
                 "killed": delta.killed,
             })),
+            NativeLevelNotificationKind::CommandOutcomesReady(batch) => Some(
+                serde_json::to_value(batch).map_err(io::Error::other)?
+            ),
             NativeLevelNotificationKind::FinishedCommand(finished) => Some(json!({
                 "owner": {
                     "level_id": finished.owner.level_id,
@@ -381,7 +385,8 @@ impl DurableDiagnosticNotifications {
                 NativeLevelNotificationKind::CombatHit(_) |
                 NativeLevelNotificationKind::UnattributedDamage { .. } |
                 NativeLevelNotificationKind::FinishedCommand(_) |
-                NativeLevelNotificationKind::AbortedCommand { .. } => None,
+                NativeLevelNotificationKind::AbortedCommand { .. } |
+                NativeLevelNotificationKind::CommandOutcomesReady(_) => None,
                 _ => Some(format!("{:?}", notification.kind)),
             },
         });
