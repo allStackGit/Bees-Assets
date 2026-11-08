@@ -1788,10 +1788,10 @@ async function monitor() {
     } else {
         archiveCollected(false);
         if (Date.now() - lastRoutineSaveMs >= 30000) {
-        // A 10-second threshold observation should not triple full-history
-        // JSON rewrites. Retain the previous ~30-second durable snapshot cadence.
-        save();
-        lastRoutineSaveMs = Date.now();
+            // A 10-second threshold observation should not triple full-history
+            // JSON rewrites. Retain the previous ~30-second durable snapshot cadence.
+            save();
+            lastRoutineSaveMs = Date.now();
         }
     }
 }
