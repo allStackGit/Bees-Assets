@@ -594,7 +594,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         println!("{}", json!({
             "kind": "outcome_journal_recovered",
             "source_run_id": previous.run_id,
-            "journal": path,
+            "journal": path.display().to_string(),
             "records_scanned": counts.journal_records,
             "completed_batches": counts.completed_batches,
             "newly_checkpointed": counts.newly_checkpointed,
