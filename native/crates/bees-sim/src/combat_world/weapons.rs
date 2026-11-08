@@ -262,6 +262,9 @@ pub(super) struct GameTurretRuntime {
     pub(super) nearby_enemy_ids: [std::collections::BTreeMap<i64, (u64, u64)>; 5],
     pub(super) range_pass: u64,
     pub(super) entry_sequence: u64,
+    /// Unity's cached Random shooting queue, re-shuffled only when
+    /// physical RangeCollider membership changes.
+    pub(super) random_target_order: [Vec<i64>; 5],
 }
 
 impl CombatWorld {
@@ -296,6 +299,7 @@ impl CombatWorld {
                 shooting_strategy, ai_order_active: false,
                 nearby_enemy_ids: std::array::from_fn(|_| std::collections::BTreeMap::new()),
                 range_pass: 0, entry_sequence: 0,
+                random_target_order: std::array::from_fn(|_| Vec::new()),
             });
         if runtime.cease_fire != cease_fire ||
             runtime.shooting_strategy != shooting_strategy ||
@@ -491,14 +495,31 @@ fn choose_game_weapon_target(
     shooter_index: usize, mount: &PolicyTurretMount,
     mount_position: Vec2, strategy: u8,
     nearby: &std::collections::BTreeMap<i64, (u64, u64)>,
+    random_order: &[i64],
 ) -> Result<Option<(i64, Vec2)>, CombatWorldError> {
-    if !matches!(strategy, 1 | 5..=40) {
+    if !matches!(strategy, 1..=40) {
         return Ok(None);
     }
     if matches!(strategy, 7 | 8 | 11 | 12 | 17..=40) &&
         nearby.keys().any(|id| !game_target_facts.contains_key(id))
     {
         // Never rank only those ships with a legacy partial snapshot.
+        return Ok(None);
+    }
+    if strategy == 2 {
+        // Unity Shuffle is cached across ordinary targeting passes.
+        // Process its actual retained order, not a fresh random winner
+        // sampled independently for every shot.
+        for &target_id in random_order {
+            if !nearby.contains_key(&target_id) { continue; }
+            let Some(&target_index) = ship_by_id.get(&target_id) else { continue; };
+            if let Some((point, _)) = game_weapon_live_target(
+                physics, ships, target_front_offsets,
+                shooter_index, target_index, mount, mount_position,
+            )? {
+                return Ok(Some((target_id, point)));
+            }
+        }
         return Ok(None);
     }
     let mut best: Option<(i64, Vec2, f64, u64)> = None;
@@ -656,6 +677,12 @@ impl CombatWorld {
     pub(super) fn advance_authored_turrets(
         &mut self, dt: f32,
     ) -> Result<(), CombatWorldError> {
+        self.advance_authored_turrets_with_random(dt, None)
+    }
+
+    pub(super) fn advance_authored_turrets_with_random(
+        &mut self, dt: f32, mut random: Option<&mut RandomStream>,
+    ) -> Result<(), CombatWorldError> {
         self.turret_pending_shots.clear();
         for (&ship_id, runtime) in &mut self.policy_ship_runtime {
             let Some(&index) = self.ship_by_id.get(&ship_id) else { continue };
@@ -808,7 +835,8 @@ impl CombatWorld {
                 let auto = manual.is_none() && !runtime.cease_fire &&
                     (user_controlled || runtime.ai_order_active) &&
                     mount.fire_at_front.is_some() &&
-                    matches!(runtime.shooting_strategy, Some(1 | 5..=40));
+                    matches!(runtime.shooting_strategy, Some(1..=40)) &&
+                    (runtime.shooting_strategy != Some(2) || random.is_some());
                 if manual.is_some() {
                     mount.target_ship_id = None;
                 }
