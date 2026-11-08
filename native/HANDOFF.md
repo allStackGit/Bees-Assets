@@ -75,21 +75,20 @@ Level notification outbox. Core fixed-step events are placed before the
 same-tick FinishedCommand; later timer events retain their own tick order.
 The durable diagnostic sink serializes structured damage and counts only
 synchronized records, while Simulation/status count the same attributed and
-unattributed physical damage. This is NOT a StoreCommands accounting sink:
-the next owner must snapshot active victim-command ownership BEFORE death
-retirement, retain delayed projectile-origin credit until safe settlement,
-and persist/reconcile it using the existing connection-owned OutcomeBatch.
-Do not immediately commit FinishedCommand as final TSV. The next increment
-captures each damage event's attacker command (original shot ID first,
-impact-time active command fallback for source synchronous damage) and
-defender's current command BEFORE casualty retirement, with a reused
-per-tick scratch vector rather than a second persistent ledger. Timed
-callbacks can attribute to an order in timed_finished after that callback
-completed it. Finished/Aborted command records now durably encode the
-original server strategy and both reservation IDs independently of
-BombingRun/Charge dispatch. These records are evidence for the future
-single StoreCommands accrual/commit path, NOT a committed settlement.
-These changes remain source-reviewed only and need executable verification.
+unattributed physical damage. This is NOT a StoreCommands accounting sink.
+The Level now captures each damage event's attacker command (original shot ID
+first, impact-time command fallback for synchronous damage) and defender's
+active command BEFORE casualty retirement, using reusable per-tick scratch.
+Timed callbacks can attribute an impact to a just-finished command.
+Finished/Aborted command records durably encode the original server strategy
+and both reservation IDs independently of BombingRun/Charge dispatch.
+Finished commands also retain the source-selected enemy-shooting admission;
+the settlement helper cannot credit an ineligible shooting reservation.
+The next boundary is a single, durable command/shooting TSV accrual and
+StoreCommands submission/reconciliation owner. Delayed projectile credit must
+be fully accounted before an outcome is committed. These records are
+evidence for that path, NOT committed server settlements. This new code
+remains source-reviewed only and needs executable verification.
 Earlier fixture qualifications below predate these edits.
 
 ## Shared weapons and geometry retained
