@@ -609,7 +609,7 @@ Older agents without the installed execution bridge remain observation-only.
 A heartbeat, detected cgroup or coordination lease alone **never**
 permits execution. A locally opted-in installed project adapter, explicit
 administrator start authorization, and successful native service/limit
-verification are all required. Native Windows execution is CPU-only. The Job Object backend has
+verification are all required. Native Windows execution may explicitly opt into one cooperative CUDA device; Windows Job Objects still enforce only CPU/RAM. The Job Object backend has
 been exercised in isolated Windows runs, but those results do not
 establish qualified production workloads or the latest helper build.
 
@@ -1099,16 +1099,15 @@ currently used VRAM MiB. Missing drivers, missing VRAM counters and
 disappearing devices are treated as **unavailable**, not inferred from
 model names or manually registered nominal capacity. PCI slot addresses
 are stable labels only while the machine's hardware topology remains
-unchanged; they are not permanent GPU serial numbers. Windows GPU
-discovery is not implemented by this Linux-specific probe.
+unchanged; they are not permanent GPU serial numbers. Windows agents independently discover NVIDIA PCI addresses, physical VRAM and CUDA UUIDs using read-only `nvidia-smi`. Unavailable driver telemetry leaves CUDA GPUs unclaimable without disabling CPU heartbeats.
 
 Registration may include a GPU's \`pci_address\`, for example:
 
     [{"id":"gpu0","vram_mb":32768,"pci_address":"0000:03:00.0"}]
 
 For an already registered machine, the Machines tab provides
-**Bind physical AMD GPUs**. The operator selects a connected Linux
-machine, reviews the actual observed PCI addresses, and confirms a
+**Bind physical GPUs**. The operator selects a connected Linux AMDGPU or Windows NVIDIA
+machine, reviews observed PCI addresses, and confirms a
 complete logical-ID-to-PCI mapping. The server rejects unknown,
 duplicate or malformed addresses and refuses to rebind a machine while
 it has outstanding GPU-bearing leases. It never silently changes a
@@ -1121,12 +1120,12 @@ because a machine registration was edited later. The frozen device
 binding survives coordinator restarts and must still match the
 current authenticated hardware report for each acknowledgement.
 
-Only connected machines with a fresh matching AMDGPU report expose
+Only connected machines with a fresh matching physical GPU report expose
 \`verified_gpus\` to the Hub's capacity planner. The available per-device
 budget is capped at the **smaller** of registered and reported VRAM;
 manual names without matching PCI evidence contribute **zero GPU
 allocation capacity**. Each lease freezes its selected logical GPU IDs.
-The coordinator sends their expected physical PCI mapping back to the
+The coordinator sends the expected physical PCI mapping (and on Windows the CUDA UUID) back to the
 authenticated agent, which independently verifies the requested device
 and tracks exclusive/shared claim budgets before acknowledging. A
 missing, moved or mismatched device invalidates the coordinator's
@@ -1221,7 +1220,7 @@ the adapter's ROCm visibility, execution and stop behavior. The planner
 accounts for Hub claims. The device policy provides no per-process VRAM
 quota, compute share, or exclusivity from unrelated host workloads.
 
-## Windows native Job Object owner (opt-in, CPU/RAM only)
+## Windows native Job Object owner (CPU/RAM, opt-in cooperative CUDA)
 
 The Windows backend is provided as **source only** under
 \`Training/experiment_hub_windows_owner/\` (a self-contained .NET 8 project).
@@ -1237,6 +1236,61 @@ Compute the local published executable's SHA-256, and set
 hash. The existing machine-local execution opt-in, adapter module
 and private journal root settings remain required. There is **no
 PowerShell dependency** in the Windows process supervisor.
+
+### Opt-in Windows CUDA and existing TinyBrains optimizer checkpoints
+
+A Windows NVIDIA agent reports PCI/VRAM/CUDA UUID through `nvidia-smi`.
+Register the observed PCI GPU in **Machines** and use **Bind physical GPUs**
+to freeze the logical-to-physical mapping. Rebuild the locally reviewed
+Windows owner helper and update both its absolute path and SHA-256 pin.
+Set `EXPERIMENT_HUB_ENABLE_EXECUTION=1` and
+`EXPERIMENT_HUB_ENABLE_CUDA=1` in the private agent environment,
+alongside the existing machine ID/token, approved adapter module,
+private supervisor root and pinned helper values.
+
+Only a locally approved adapter advertising `gpu_execution:'cuda'`
+can receive Windows CUDA jobs. A native job must request one exclusive
+GPU; its lease pins the physical PCI address and CUDA UUID. The worker
+validates that identity at acknowledgement and immediately before Start.
+The Windows owner creates the child suspended under kernel CPU/RAM limits
+and sets `CUDA_VISIBLE_DEVICES` to the pinned UUID. Competing Hub-owned
+native GPU jobs on the same device are refused. **This visibility mask is
+cooperative, not GPU isolation:** other local processes can still use the
+device, and no actual compute share or VRAM cap is enforced.
+Do not allow simultaneous external training on an allocated GPU.
+Automatic GPU allocation and Start require separate explicit Arm options
+and are not restored unattended after a coordinator restart.
+
+For a previously standalone TinyBrains run, **stop the old trainer first**.
+Identify and fingerprint its complete optimizer checkpoint (usually
+`latest.pt`; verify its actual location). Configure an operator-approved
+source on the **machine-local** TinyBrains adapter, for example:
+
+```js
+checkpointImports: {
+    previous: {
+        profile: 'mini_cuda',
+        checkpoint: 'B:/actual/verified/checkpoint/latest.pt',
+        sha256: 'replace-with-the-real-64-character-lowercase-sha256',
+    },
+},
+```
+
+This example path and digest are placeholders; they must be replaced
+with verified local values. Add `"import_checkpoint":"previous"`
+to the first saved Hub TinyBrains configuration alongside its approved
+`profile`, `profile_sha256`, and `updates`. The local adapter verifies
+the source digest, copies it into an exclusive new Hub-owned job directory,
+verifies the copy, and invokes TinyBrains' optimizer `--resume`. It never
+modifies the original checkpoint. The imported job creates a new Hub
+lineage; subsequent queued continuation stages use its Hub checkpoint.
+The approved profile must be compatible with the checkpoint, or the
+trainer can reject the resume. This is not in-place adoption of an
+independently running trainer.
+
+**Windows CUDA Start, checkpoint import, stop and cross-project
+coexistence are not yet validated on a live NVIDIA host.** CPU-only
+isolated qualification does not establish those behaviors.
 
 ### Browser dashboard + local Windows agent qualification
 
@@ -1742,7 +1796,7 @@ Deploy the updated supervisor before updating the pinned Windows owner.
 ## TinyBrains Ants-MAPOCA adapter
 
 `Training/experiment_hub_tinybrains_adapter.js` provides
-`createTinyBrainsAdapter` for native CPU training jobs. Prepare a
+`createTinyBrainsAdapter` for native Windows CPU or CUDA and Linux CPU training jobs. Prepare a
 TinyBrains Ants-MAPOCA checkout with its native engine and cartridge,
 and install the package into the Python environment the worker will use.
 Use a dedicated, existing artifact directory outside the checkout.
@@ -1763,7 +1817,8 @@ module.exports = {
 ```
 
 The operator prepares each approved profile as a JSON equivalent of a
-TinyBrains YAML configuration with `runtime.device` set to `cpu`. The
+TinyBrains YAML configuration with `runtime.device` set to `cpu`, or on
+Windows with local CUDA opt-in, `cuda`. The
 adapter runs TinyBrains' own validator before advertising profiles. An
 invalid profile prevents adapter startup and names the rejected profile.
 Compute
@@ -1772,7 +1827,9 @@ after parsing that JSON. In Design, choose an approved profile from a
 connected worker, enter the update count, and select **Use profile
 and update count**. The picker fills the draft without saving or starting it.
 For API callers, set `profile`, `profile_sha256`, and `updates` (a positive
-integer up to 10,000,000). Use a CPU/RAM claim on the configured worker.
+integer up to 10,000,000). CPU profiles need a CPU/RAM claim without a GPU;
+CUDA profiles require one exclusive GPU plus CPU/RAM. The worker advertises
+profile device modes alongside immutable digests.
 The worker advertises approved profile names and digests. The Hub matches
 them before claiming capacity and checks again before dispatch. Install
 the updated worker before enabling placement on the updated coordinator.
@@ -1816,7 +1873,7 @@ evaluation-triggered Stop advances the next checkpoint stage only when
 the native supervisor certifies checkpoint-preserving shutdown and
 capacity is released. The continuation loads the last saved checkpoint,
 which can be later than the checkpoint that met the evaluation target.
-GPU execution remains outside this adapter's contract.
+Native Windows CUDA profiles are supported through explicit local GPU opt-in and one exclusive pinned device. Shared GPU Starts remain unsupported; CPU/GPU coexistence with other programs is not enforced.
 
 For evaluation-driven stopping, set the adapter's `evaluationRoot` to a
 trusted evaluator-owned directory separate from the checkout and training
@@ -1983,8 +2040,10 @@ worker's artifact retention policy.
 ## Not yet implemented
 
 Production installation and qualification of project-specific adapters,
-real-machine Linux systemd and ROCm qualification, GPU compute and VRAM
-quotas, production coexistence qualification of the
+real-machine Windows CUDA and Linux systemd/ROCm qualification,
+enforceable GPU compute and VRAM quotas, shared-GPU execution,
+seamless adoption of independently running trainers,
+production coexistence qualification of the
 CPU-only scheduler, production independent evaluators for non-Bees adapters,
 trusted production-source metrics adapters for additional
 projects, safe live rebalancing, and comprehensive
