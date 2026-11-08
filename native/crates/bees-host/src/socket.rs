@@ -11,6 +11,7 @@
 //! receive_frame, where the canonical StoreCommands ledger is persisted.
 
 use std::net::TcpStream;
+use std::time::Duration;
 
 use bees_hivemind::protocol::{
     GetStrategyRequest, GetTargetingRequest, StoreCommandsRequest,
@@ -31,7 +32,7 @@ const SUBPROTOCOL: &str = "game";
 
 /// O(1) connection-level counters; sampled between rollout/network windows,
 /// never an extra per-agent or fixed-step telemetry event.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
 pub struct NativeSocketMeasurements {
     pub outgoing_frames: u64,
     pub outgoing_json_bytes: u64,
@@ -120,7 +121,7 @@ pub enum HiveMindSocketEvent {
     },
     /// Always deliver to NativeHostRuntime::receive_frame or the other
     /// authenticated server-message owner. Never silently discard replies.
-    ServerFrame(Vec<u8>),
+    ServerFrame { request_hash: i64, frame: Vec<u8> },
 }
 
 #[derive(Debug)]
@@ -152,6 +153,88 @@ impl From<serde_json::Error> for HiveMindSocketError {
 }
 impl From<DurableConnectionError> for HiveMindSocketError {
     fn from(error: DurableConnectionError) -> Self { Self::Durability(error) }
+}
+
+// Created only after validation against the canonical connection owner.
+// The I/O thread owns bytes, never a cloned correlation or outcome ledger.
+pub(crate) enum PreparedSocketRequest {
+    Setup { hash: i64, kind: SetupKind, level_id: i32, server_game_id: i64,
+        user_id: u64, auth_ticket: Option<String>, version: f32 },
+    Strategy(GetStrategyRequest),
+    Targeting(GetTargetingRequest),
+    Store(StoreCommandsRequest),
+}
+
+impl PreparedSocketRequest {
+    pub(crate) fn setup(connection: &mut DurableHiveMindConnection, identity: SetupLevelIdentity<'_>)
+        -> Result<Self, HiveMindSocketError>
+    {
+        validate_setup(&identity)?;
+        Ok(Self::Setup { hash: connection.next_hash()?, kind: identity.kind,
+            level_id: identity.level_id, server_game_id: identity.server_game_id,
+            user_id: identity.user_id, auth_ticket: identity.auth_ticket.map(str::to_owned),
+            version: identity.version })
+    }
+
+    pub(crate) fn strategy(connection: &DurableHiveMindConnection, request: &GetStrategyRequest)
+        -> Result<Self, HiveMindSocketError>
+    {
+        validate_strategy(connection, request)?;
+        Ok(Self::Strategy(request.clone()))
+    }
+
+    pub(crate) fn targeting(connection: &DurableHiveMindConnection, request: &GetTargetingRequest)
+        -> Result<Self, HiveMindSocketError>
+    {
+        validate_targeting(connection, request)?;
+        Ok(Self::Targeting(request.clone()))
+    }
+
+    pub(crate) fn store(connection: &DurableHiveMindConnection, request: &StoreCommandsRequest)
+        -> Result<Self, HiveMindSocketError>
+    {
+        validate_store(connection, request)?;
+        Ok(Self::Store(request.clone()))
+    }
+}
+
+fn validate_setup(identity: &SetupLevelIdentity<'_>) -> Result<(), HiveMindSocketError> {
+    if identity.user_id == 0 || !identity.version.is_finite() ||
+        identity.server_game_id < 0 || identity.server_game_id > MAX_SAFE_REQUEST_HASH ||
+        (identity.kind == SetupKind::Reconnect && identity.server_game_id == 0) ||
+        (identity.kind == SetupKind::Initial && identity.server_game_id != 0) {
+        return Err(HiveMindSocketError::InvalidSetup);
+    }
+    Ok(())
+}
+
+fn validate_strategy(connection: &DurableHiveMindConnection, request: &GetStrategyRequest)
+    -> Result<(), HiveMindSocketError>
+{
+    if !connection.is_available() { return Err(DurableConnectionError::Unavailable.into()); }
+    if !connection.connection().matches_live_strategy_request(request) {
+        return Err(HiveMindSocketError::InvalidRequestOwnership);
+    }
+    Ok(())
+}
+
+fn validate_targeting(connection: &DurableHiveMindConnection, request: &GetTargetingRequest)
+    -> Result<(), HiveMindSocketError>
+{
+    if !connection.is_available() { return Err(DurableConnectionError::Unavailable.into()); }
+    if !connection.connection().matches_live_targeting_request(request) {
+        return Err(HiveMindSocketError::InvalidRequestOwnership);
+    }
+    Ok(())
+}
+
+fn validate_store(connection: &DurableHiveMindConnection, request: &StoreCommandsRequest)
+    -> Result<(), HiveMindSocketError>
+{
+    if connection.retry_payload(request.hash)? != Some(request) {
+        return Err(HiveMindSocketError::InvalidRequestOwnership);
+    }
+    Ok(())
 }
 
 pub struct NativeHiveMindSocket {
@@ -264,21 +347,9 @@ impl NativeHiveMindSocket {
         if self.pending_setup.is_some() {
             return Err(HiveMindSocketError::SetupAlreadyPending);
         }
-        if identity.user_id == 0 ||
-            !identity.version.is_finite() ||
-            identity.server_game_id < 0 ||
-            identity.server_game_id > MAX_SAFE_REQUEST_HASH ||
-            (identity.kind == SetupKind::Reconnect && identity.server_game_id == 0)
-        {
-            return Err(HiveMindSocketError::InvalidSetup);
-        }
-        if self.secure &&
-            identity.auth_ticket.map_or(true, |ticket| ticket.is_empty())
-        {
+        validate_setup(&identity)?;
+        if self.secure && identity.auth_ticket.map_or(true, str::is_empty) {
             return Err(HiveMindSocketError::AuthenticationRequired);
-        }
-        if identity.kind == SetupKind::Initial && identity.server_game_id != 0 {
-            return Err(HiveMindSocketError::InvalidSetup);
         }
         let hash = connection.next_hash()?;
         let payload = SetupLevelWire {
@@ -311,14 +382,7 @@ impl NativeHiveMindSocket {
         request: &GetStrategyRequest,
     ) -> Result<(), HiveMindSocketError> {
         self.require_ready()?;
-        if !connection.is_available() {
-            return Err(HiveMindSocketError::Durability(
-                DurableConnectionError::Unavailable,
-            ));
-        }
-        if !connection.connection().matches_live_strategy_request(request) {
-            return Err(HiveMindSocketError::InvalidRequestOwnership);
-        }
+        validate_strategy(connection, request)?;
         self.send(request)
     }
 
@@ -328,14 +392,7 @@ impl NativeHiveMindSocket {
         request: &GetTargetingRequest,
     ) -> Result<(), HiveMindSocketError> {
         self.require_ready()?;
-        if !connection.is_available() {
-            return Err(HiveMindSocketError::Durability(
-                DurableConnectionError::Unavailable,
-            ));
-        }
-        if !connection.connection().matches_live_targeting_request(request) {
-            return Err(HiveMindSocketError::InvalidRequestOwnership);
-        }
+        validate_targeting(connection, request)?;
         self.send(request)
     }
 
@@ -347,9 +404,7 @@ impl NativeHiveMindSocket {
         request: &StoreCommandsRequest,
     ) -> Result<(), HiveMindSocketError> {
         self.require_ready()?;
-        if connection.retry_payload(request.hash)? != Some(request) {
-            return Err(HiveMindSocketError::InvalidRequestOwnership);
-        }
+        validate_store(connection, request)?;
         self.send(request)
     }
 
@@ -371,15 +426,58 @@ impl NativeHiveMindSocket {
         Ok(hashes.len())
     }
 
+    /// Bound worker read/write waits; timeout preserves tungstenite's partial
+    /// receive state. The caller must still treat failed writes as ambiguous.
+    pub(crate) fn set_io_timeout(&self, read: Duration, write: Duration) -> Result<(), HiveMindSocketError> {
+        let tcp = match self.socket.get_ref() {
+            MaybeTlsStream::Plain(stream) => stream,
+            MaybeTlsStream::Rustls(stream) => &stream.sock,
+            _ => return Err(HiveMindSocketError::InvalidEndpoint),
+        };
+        tcp.set_read_timeout(Some(read)).map_err(tungstenite::Error::Io)?;
+        tcp.set_write_timeout(Some(write)).map_err(tungstenite::Error::Io)?;
+        Ok(())
+    }
+
+    pub(crate) fn send_prepared(&mut self, request: PreparedSocketRequest)
+        -> Result<(), HiveMindSocketError>
+    {
+        match request {
+            PreparedSocketRequest::Setup { hash, kind, level_id, server_game_id,
+                user_id, auth_ticket, version } => {
+                self.check_available()?;
+                if self.pending_setup.is_some() { return Err(HiveMindSocketError::SetupAlreadyPending); }
+                if self.secure && auth_ticket.as_deref().map_or(true, str::is_empty) {
+                    return Err(HiveMindSocketError::AuthenticationRequired);
+                }
+                self.send(&SetupLevelWire { message_type: kind.message_type(), hash,
+                    level_id, server_game_id, user_id: user_id.to_string(),
+                    auth_ticket: auth_ticket.as_deref(), version })?;
+                self.pending_setup = Some(PendingSetup { hash, kind });
+                Ok(())
+            }
+            PreparedSocketRequest::Strategy(request) => { self.require_ready()?; self.send(&request) }
+            PreparedSocketRequest::Targeting(request) => { self.require_ready()?; self.send(&request) }
+            PreparedSocketRequest::Store(request) => { self.require_ready()?; self.send(&request) }
+        }
+    }
+
     /// Read one non-control message. Ping/pong servicing does not create
     /// application events. Setup responses are validated before unlocking
     /// the ordinary request stream. All other messages must be handed to
     /// NativeHostRuntime::receive_frame and/or their separate feature owner.
     pub fn read_event(&mut self) -> Result<HiveMindSocketEvent, HiveMindSocketError> {
+        loop { if let Some(event) = self.poll_event()? { return Ok(event); } }
+    }
+
+    /// None is an idle read timeout, not a disconnect or a retry trigger.
+    pub(crate) fn poll_event(&mut self) -> Result<Option<HiveMindSocketEvent>, HiveMindSocketError> {
         self.check_available()?;
         loop {
             let message = match self.socket.read() {
                 Ok(message) => message,
+                Err(tungstenite::Error::Io(ref error)) if matches!(error.kind(),
+                    std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut) => return Ok(None),
                 Err(error) => {
                     self.failed = true;
                     self.measurements.transport_errors += 1;
@@ -457,11 +555,11 @@ impl NativeHiveMindSocket {
                 self.pending_setup = None;
                 self.game_id = Some(id);
                 self.measurements.setup_accepted += 1;
-                return Ok(HiveMindSocketEvent::SetupAccepted {
+                return Ok(Some(HiveMindSocketEvent::SetupAccepted {
                     request_hash: pending.hash, server_game_id: id,
-                });
+                }));
             }
-            return Ok(HiveMindSocketEvent::ServerFrame(frame));
+            return Ok(Some(HiveMindSocketEvent::ServerFrame { request_hash: response.hash, frame }));
         }
     }
 

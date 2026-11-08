@@ -24,6 +24,10 @@ use bees_gameplay::level_host::NativeLevelStopKind;
 use bees_gameplay::squads::SquadRosterError;
 use bees_hivemind::session::SquadLifetime;
 use bees_host::durable_connection::DurableHiveMindConnection;
+use bees_host::socket_worker::NativeSocketWorker;
+use bees_host::socket::{SetupKind, SetupLevelIdentity};
+use bees_host::runtime::{NativeHostRuntime, NativeHostSocketEvent};
+use bees_host::policy_only_metadata::NativePolicyOnlyMetadata;
 use bees_host::notification_file::{DurableDiagnosticNotifications, recover_command_outcomes};
 use bees_host::policy_process::ResidentPolicyProcess;
 use bees_host::presentation::NativeSoftwareRenderer;
@@ -101,6 +105,22 @@ struct ModelUpdateConfig {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
+struct HiveMindConfig {
+    endpoint: String,
+    user_id: u64,
+    version: f32,
+    /// Credentials stay in the environment; never in run files/checkpoints.
+    auth_ticket_env: Option<String>,
+    #[serde(default)]
+    allow_insecure_loopback: bool,
+    reconnect_game_id: Option<i64>,
+    #[serde(default = "default_flush_seconds")]
+    shutdown_flush_seconds: u32,
+}
+fn default_flush_seconds() -> u32 { 5 }
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct RunConfig {
     run_id: String,
     stage_name: String,
@@ -116,6 +136,7 @@ struct RunConfig {
     /// starting a new incarnation. No previous world is resumed.
     #[serde(default)]
     recover_notifications: Vec<PathBuf>,
+    hivemind: Option<HiveMindConfig>,
     next_squad_item_id: i64,
     broadphase_cell_size: f32,
     decision_period: u32,
@@ -279,6 +300,78 @@ fn make_setup(
         model_slots: level.model_slots.clone(),
         allocate_minion: allocate_from_stage(next_id),
     })
+}
+
+type RolloutHost = NativeHostRuntime<NativePolicyOnlyMetadata, MinionAllocator,
+    ResidentPolicyProcess, DurableDiagnosticNotifications>;
+
+struct RunNetwork {
+    worker: NativeSocketWorker,
+    levels: Vec<i32>,
+    next_level: usize,
+    user_id: u64,
+    version: f32,
+    auth_ticket: Option<String>,
+    flush_seconds: u32,
+}
+
+impl RunNetwork {
+    fn start(config: &HiveMindConfig, levels: &[LevelConfig], connection: &mut DurableHiveMindConnection)
+        -> io::Result<Self>
+    {
+        let auth_ticket = config.auth_ticket_env.as_ref().map(|name|
+            env::var(name).map_err(|_| invalid("configured HiveMind auth ticket environment variable is unavailable")))
+            .transpose()?;
+        let levels = levels.iter().map(|level| i32::try_from(level.level_id)
+            .map_err(|_| invalid("HiveMind server LevelId must fit int32"))).collect::<Result<Vec<_>,_>>()?;
+        let mut network = Self {
+            worker: NativeSocketWorker::start(config.endpoint.clone(), config.allow_insecure_loopback)
+                .map_err(|error| contextual("HiveMind network startup", error))?,
+            levels, next_level: 0, user_id: config.user_id, version: config.version,
+            auth_ticket, flush_seconds: config.shutdown_flush_seconds,
+        };
+        let (kind, server_game_id) = config.reconnect_game_id
+            .map_or((SetupKind::Initial, 0), |game| (SetupKind::Reconnect, game));
+        network.setup_next(connection, kind, server_game_id)?;
+        Ok(network)
+    }
+
+    fn setup_next(&mut self, connection: &mut DurableHiveMindConnection, kind: SetupKind, server_game_id: i64)
+        -> io::Result<()>
+    {
+        self.worker.send_setup(connection, SetupLevelIdentity {
+            kind, level_id: self.levels[self.next_level], server_game_id,
+            user_id: self.user_id, auth_ticket: self.auth_ticket.as_deref(), version: self.version,
+        }).map_err(|error| contextual("HiveMind Level setup", error))
+    }
+
+    fn poll(&mut self, host: &mut RolloutHost) -> io::Result<()> {
+        for _ in 0..16 {
+            let Some(event) = host.poll_network(&mut self.worker)
+                .map_err(|error| contextual("HiveMind network", error))? else { break; };
+            match event {
+                NativeHostSocketEvent::SetupAccepted { request_hash, server_game_id } => {
+                    println!("{}", json!({"kind": "hivemind_setup", "request_hash": request_hash,
+                        "game_id": server_game_id, "level_id": self.levels[self.next_level]}));
+                    self.next_level += 1;
+                    if self.next_level < self.levels.len() {
+                        self.setup_next(host.connection_mut(), SetupKind::Initial, 0)?;
+                    }
+                }
+                NativeHostSocketEvent::ServerFrame { request_hash,
+                    delivery: Some(bees_gameplay::level_host::NativeHiveMindFrameDelivery::StoreCommands(ack)), .. } => {
+                    println!("{}", json!({"kind": "hivemind_store_ack", "request_hash": request_hash,
+                        "acknowledgement": format!("{ack:?}")}));
+                }
+                // This policy runner emits no strategy/targeting requests.
+                // A future game feature must supply its actual reply owner;
+                // never silently drop an accepted reservation or settings frame.
+                NativeHostSocketEvent::ServerFrame { request_hash, delivery, .. } =>
+                    return Err(invalid(format!("unowned HiveMind feature reply {request_hash}: {delivery:?}"))),
+            }
+        }
+        Ok(())
+    }
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -579,6 +672,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         launches, model, connection, sink,
     ).map_err(|error| contextual("native Level construction", error))?;
     host.set_timing_sample_period(timing);
+    let mut network = config.hivemind.as_ref().map(|settings|
+        RunNetwork::start(settings, &config.levels, host.connection_mut())).transpose()?;
     println!("{}", json!({
         "kind": "run_started",
         "run_id": config.run_id,
@@ -616,6 +711,14 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut counted_revisions = vec![None::<u64>; config.levels.len()];
     let mut next_model_update = 0usize;
     while rounds < config.max_rounds {
+        // Poll before view pacing/input continues, so idle graphical frames
+        // cannot starve acknowledgement or setup delivery.
+        if let Some(network) = &mut network {
+            if let Err(error) = network.poll(&mut host) {
+                failed_window = Some(error.to_string());
+                break;
+            }
+        }
         #[cfg(feature = "client")]
         if let Some(client) = &mut client {
             let Some(current) = host.render_world(client.selected_world()) else {
@@ -995,6 +1098,22 @@ fn main() -> Result<(), Box<dyn Error>> {
     if let Err(error) = host.sink_mut().sync() {
         cleanup_errors.push(format!("final notification sync: {error}"));
     }
+    let mut socket_flush_timed_out = false;
+    if let Some(network) = &mut network {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(u64::from(network.flush_seconds));
+        while failed_window.is_none() && host.connection_mut().pending_store_hashes()
+            .map_err(|error| contextual("final pending outcomes", error))?.len() > 0 {
+            if std::time::Instant::now() >= deadline { socket_flush_timed_out = true; break; }
+            if let Err(error) = network.poll(&mut host) {
+                cleanup_errors.push(error.to_string());
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+        // A bounded wait ending is not an acknowledgement. All remaining
+        // original hashes stay in the checkpoint for a later connection.
+        let _ = network.worker.request_close();
+    }
     let status = host.runtime_status()
         .map_err(|error| contextual("final native host status", error))?;
     let evaluation = host.sink_mut().measurements().clone();
@@ -1019,6 +1138,13 @@ fn main() -> Result<(), Box<dyn Error>> {
         "running_worlds": status.running_worlds,
         "pending_notifications": status.queued_notifications,
         "pending_store_commands": status.pending_store_commands,
+        "pending_store_reconciliations": status.pending_store_reconciliations,
+        "socket_flush_timed_out": socket_flush_timed_out,
+        "network": network.as_ref().map(|network| json!({
+            "measurements": network.worker.measurements(),
+            "queue_backpressure": network.worker.queue_backpressure(),
+            "setups_remaining": network.levels.len() - network.next_level,
+        })),
         "model_updates_applied": next_model_update,
         "model_updates_remaining": config.model_updates.len() - next_model_update,
         "evaluation": evaluation,

@@ -46,6 +46,35 @@ captures the killer's active command for later friendly-blast secondary credit;
 an absent death-time command uses the killer's later active command. Original
 friendly-fire penalties and defender losses remain separate physical credit.
 
+## Latest: nonblocking socket integration and retired replies
+
+NativeSocketWorker now owns blocking DNS/TLS/socket I/O on a dedicated thread,
+with16-entry inbound/outbound queues. Only opaque requests validated against the
+one DurableHiveMindConnection cross the thread boundary. No connection/session/
+outcome ledger is cloned. Idle read timeouts preserve partial tungstenite frames;
+ambiguous write failures terminate the worker and leave original durable requests.
+Transient in-flight store hashes prevent per-frame duplicate sends. Nonterminal
+failures require explicit retry_store(hash); a replacement worker replays only
+pending original requests after successful setup, excluding terminal409 batches.
+
+NativeHostRuntime.poll_network checkpoints prepared outcomes, queues eligible
+stored payloads and returns one routed event at a time. It preserves request hashes,
+accepted targeting/ban obligations and exact bytes for unowned server features.
+Transport failure retires transient correlation and returns unresolved request
+hashes without dropping durable stores. Retired strategy/targeting reservations
+now queue durable discard before returning; callers must not discard them again.
+A discard persistence failure retains exact reservation IDs in UnsettledReservations
+and poisons transmission instead of losing the original obligation.
+
+The existing policy_rollout and --view launcher has optional hivemind settings:
+endpoint, user_id, version, auth_ticket_env (name only), reconnect_game_id,
+allow_insecure_loopback (false by default), shutdown_flush_seconds (default5).
+All Levels set up serially on one Game, with network polling before UI pacing.
+The runner submits recovered/final outcomes, reports counters and bounded final
+flush status, and preserves pending disk requests on timeout. It emits no automatic
+strategic/targeting requests for policy-controlled agents. Actual game targeting,
+authored ban installation and additional server feature owners remain incomplete.
+
 ## Durable episode outcomes and recovery
 
 EpisodeFinal/Aborted prepares one CommandOutcomesReady batch. The diagnostic sink
@@ -83,6 +112,21 @@ checkpoints fail rather than silently allocating another connection identity.
 ## Executed qualification
 
 External disposable fixtures/receipts under B:\Bees\native-capability-qualification:
+- network-host.txt and its network-host-*/wire-requests.json: actual TCP/WebSocket
+  "game" handshake and shared Level requests/replies, physical ticks advancing
+  through delayed/fragmented responses crossing20ms read timeouts; no idle errors.
+  Every StoreCommands wire payload is asserted identical to the already-written
+  checkpoint. Retired strategy and targeting responses discard actual IDs; accepted
+  targeting reaches its caller (the fixture explicitly discards uninstalled credit).
+  Other feature bytes are returned intact.503 does not automatically resend; explicit
+  retry uses the same hash/payload. After a deliberate unacknowledged disconnect,
+  a setup-accepted replacement sends the identical terminal batch and409 persists
+  the exact stale IDs without requeueing. A deliberate atomic-replace failure
+  preserves the last checkpoint and returns unsettled reservation701.
+  network-host-readback.txt verifies all13 wire requests, six StoreCommands
+  transmissions/four original hashes, TSV3 and exact final reconciliation state.
+- workspace-socket-worker.txt: workspace all-target/all-feature tests, including
+  all106 existing simulation tests pass. headless-socket-worker.txt passes.
 - journal-recovery-crash.txt: actual native Level completed with sighting credit;
   child exited73 after CommandOutcomesReady synchronized, before host checkpoint.
   Its checkpoint had no pending store request.
@@ -104,20 +148,23 @@ External disposable fixtures/receipts under B:\Bees\native-capability-qualificat
   all106 existing simulation tests pass. headless-journal-recovery.txt passes.
 No new committed tests; existing warnings remain. Earlier MotherSquad and all5
 ranged-command qualifications are in vision_mother-integrated-ae92.txt and
-pulled_durable-integrated-ae92.txt; these predate only the journal recovery edits.
+pulled_durable-integrated-ae92.txt; these predate the journal recovery and socket adapter edits.
 
-These are supplied executable fixtures, not authentic Unity exports, learned-policy
-or live server receipts. Windows process exit/local disk recovery is qualified;
+These are supplied executable fixtures and a loopback server, not authentic Unity
+exports, learned-policy or production Steam/WSS/database receipts. Windows process
+exit/local disk recovery is qualified;
 power loss, Linux execution, physical input/window timing and live distributed
-learning/performance gains remain unverified. The configured runner recovery
-startup is source-connected/compiled; its full model-worker startup was not run.
+learning/performance gains remain unverified. The configured launcher network/
+recovery startup is source-connected/compiled;
+its complete resident-model startup and physical-window interaction were not run.
 No interrupted world/unfinished command is reconstructed. Omitted recovery journals
 are not automatically discovered; unattended full-game recovery is incomplete.
 
 ## Highest-value next work and complete objective
 
-Connect actual socket submission/200/409 handling plus explicit targeting and
-stale-reply settlement to this one retry owner. Preserve source eligibility and
+Complete authored targeting-result installation/accounting and ban application
+through this retry owner; qualify the configured launcher against real server auth.
+Preserve source eligibility and
 original IDs; never settle delayed projectiles at command completion. Then close
 asteroid/MapObject targeting fallback and authored dynamic factories.
 

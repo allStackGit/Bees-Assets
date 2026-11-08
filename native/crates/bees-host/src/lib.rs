@@ -11,6 +11,7 @@ pub mod runtime;
 pub mod policy_process;
 
 pub mod socket;
+pub mod socket_worker;
 pub mod scene_assets;
 pub mod scene_builder;
 pub mod ship_specials;

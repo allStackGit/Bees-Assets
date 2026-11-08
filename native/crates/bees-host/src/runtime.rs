@@ -72,6 +72,31 @@ pub enum HostResetError {
     Reset(NativeLevelDriverResetError),
 }
 
+/// Every recognized non-setup frame has already reached the authoritative
+/// Level/connection. Targeting and ban application still return to their
+/// gameplay owner; automatic stale-reservation discard is already durable.
+#[derive(Debug)]
+pub enum NativeHostSocketEvent {
+    SetupAccepted { request_hash: i64, server_game_id: i64 },
+    ServerFrame {
+        request_hash: i64,
+        delivery: Option<NativeHiveMindFrameDelivery>,
+        /// Recognized replies are already routed. Other authenticated
+        /// features retain their exact bytes for the caller's real owner.
+        unhandled_frame: Option<Vec<u8>>,
+    },
+}
+
+#[derive(Debug)]
+pub enum HostNetworkError {
+    Connection(DurableConnectionError),
+    Transport {
+        error: crate::socket_worker::NativeSocketWorkerError,
+        unresolved_requests: Vec<i64>,
+        retirement_error: Option<DurableConnectionError>,
+    },
+}
+
 /// Accepts actual authored Level metadata and a loaded, real inference
 /// backend. Its one notification sink must commit accepted notifications
 /// durably before returning Ok to the shared Level driver.
@@ -480,6 +505,41 @@ where
         self.driver.reset_world_after_delivery(
             &mut self.simulation, index, seed, replacement,
         ).map_err(HostResetError::Reset)
+    }
+
+    /// Nonblocking socket pump for BOTH graphical and headless callers.
+    /// Call between shared simulation windows, with a caller-bounded event
+    /// budget. Network I/O stays on the worker; outcome ownership stays here.
+    /// Returning one event at a time preserves targeting/ban obligations even
+    /// if the next frame or output operation fails.
+    pub fn poll_network(
+        &mut self, worker: &mut crate::socket_worker::NativeSocketWorker,
+    ) -> Result<Option<NativeHostSocketEvent>, HostNetworkError> {
+        self.checkpoint_prepared_outcomes().map_err(HostNetworkError::Connection)?;
+        let transport = (|| {
+            worker.queue_pending_stores(&self.connection)?;
+            worker.poll_event()
+        })();
+        let event = match transport {
+            Ok(event) => event,
+            Err(error) => {
+                let (unresolved_requests, retirement_error) = match self.connection.retire_socket() {
+                    Ok(hashes) => (hashes, None),
+                    Err(error) => (Vec::new(), Some(error)),
+                };
+                return Err(HostNetworkError::Transport { error, unresolved_requests, retirement_error });
+            }
+        };
+        match event {
+            None => Ok(None),
+            Some(crate::socket::HiveMindSocketEvent::SetupAccepted { request_hash, server_game_id }) =>
+                Ok(Some(NativeHostSocketEvent::SetupAccepted { request_hash, server_game_id })),
+            Some(crate::socket::HiveMindSocketEvent::ServerFrame { request_hash, frame }) => {
+                let delivery = self.receive_frame(&frame).map_err(HostNetworkError::Connection)?;
+                let unhandled_frame = delivery.is_none().then_some(frame);
+                Ok(Some(NativeHostSocketEvent::ServerFrame { request_hash, delivery, unhandled_frame }))
+            }
+        }
     }
 
     /// Pass only authenticated WebSocket frames. StoreCommands 200/409

@@ -206,6 +206,32 @@ when a game shot launches, preserving its ID for the projectile's remaining life
 Schema23 ordinary weapons now select and fire through this same mounted scheduler.
 Game firing statistics/combat timers and full-game visual/weapon parity remain incomplete.
 
+The same runtime now supports `NativeSocketWorker` and `poll_network`: bounded
+wire queues and a dedicated I/O thread keep DNS/TLS/socket waits off the gameplay
+thread. Request preparation validates the one durable connection's ownership;
+only its original checkpointed StoreCommands payloads enter the wire queue.
+One host event is returned at a time, including the request hash; unrelated
+server features retain their exact unhandled bytes. Caller-owned targeting and
+ban application are not silently consumed. Retired strategy/targeting replies
+already queue their explicit discard in the durable connection before returning;
+callers must not submit those reservation IDs again. A failed discard checkpoint
+returns `UnsettledReservations` with the original IDs and persistence cause.
+
+Optional run-config `hivemind` enables this path in both ordinary `policy_rollout`
+and `--view`: supply `endpoint`, `user_id`, `version`, optional `auth_ticket_env`
+(environment variable name, never ticket contents), optional `reconnect_game_id`,
+`allow_insecure_loopback` (default false), and `shutdown_flush_seconds` (default5).
+The runner sets up all configured Levels serially on one server Game, polls before
+view pacing/input, submits pending outcomes, and reports socket/queue measurements.
+It does not originate strategic/targeting requests for policy-controlled agents.
+Unowned feature replies fail explicitly. Final flushing is bounded; a timeout
+leaves the original pending hashes on disk and is reported separately from an
+acknowledgement. Nonterminal server failures retain the same payload/hash; the
+worker's explicit `retry_store(hash)` admits a retry without inventing a per-frame
+resend loop. A new worker replays pending requests after setup; terminal409 batches
+stay in reconciliation. Production uses certificate-verified WSS and source setup
+authentication; plaintext requires explicit loopback-only opt-in.
+
 Source first-sighting strategic TSV uses the actual target value and canonical
 squad/MotherSquad command, independently of PPO shaping. Structured sighting and
 Fire Barge secondary credit feed the same episode-owned command ledger. Episode

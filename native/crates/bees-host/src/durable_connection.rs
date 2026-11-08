@@ -46,6 +46,9 @@ pub enum DurableConnectionError {
     Request(NativeConnectionError),
     Protocol(HiveMindProtocolError),
     Inbound(NativeHiveMindFrameError),
+    /// Ingress consumed these real reservations but their discard could not
+    /// be committed. Preserve the exact IDs for explicit reconciliation.
+    UnsettledReservations { reservation_ids: Vec<i64>, cause: Box<DurableConnectionError> },
 }
 
 /// Single owner of one live correlation session, the canonical pending
@@ -213,8 +216,10 @@ impl DurableHiveMindConnection {
     /// A raw authenticated server frame is first routed by its original
     /// SquadLifetime. On StoreCommands 200/409, persist the modified retry
     /// ledger before returning the acknowledgement to the socket owner.
-    /// Strategy/targeting receipts still require explicit application and
-    /// subsequent durable outcome settlement by the caller.
+    /// Retired strategy/targeting reservations are queued for explicit
+    /// discard before returning; callers must not submit those IDs again.
+    /// Accepted targeting and authored ban installation still belong to the
+    /// gameplay owner. Applied commands settle only at episode completion.
     pub fn receive_frame<M, A>(
         &mut self,
         driver: &mut NativeLevelBatchDriver,
@@ -229,6 +234,33 @@ impl DurableHiveMindConnection {
         let delivery = driver.receive_hivemind_frame(
             simulation, &mut self.connection, frame,
         ).map_err(DurableConnectionError::Inbound)?;
+        let discarded: &[i64] = match &delivery {
+            Some(NativeHiveMindFrameDelivery::Strategy(strategy)) => match &strategy.action {
+                bees_gameplay::commands::StrategyReceiptAction::DiscardReservations(ids) |
+                bees_gameplay::commands::StrategyReceiptAction::BanAndDiscardReservations { reservation_ids: ids, .. } => ids,
+                _ => &[],
+            },
+            Some(NativeHiveMindFrameDelivery::Targeting(targeting)) => match &targeting.receipt {
+                bees_hivemind::session::TargetingReceipt::Retired { reservation_id, .. } =>
+                    std::slice::from_ref(reservation_id),
+                _ => &[],
+            },
+            _ => &[],
+        };
+        if !discarded.is_empty() {
+            let settled = (|| {
+                let mut batch = OutcomeBatch::new();
+                batch.discard_reservations(discarded.iter().copied())
+                    .map_err(DurableConnectionError::Protocol)?;
+                self.queue_outcomes(batch)?;
+                Ok(())
+            })();
+            if let Err(cause) = settled {
+                return Err(DurableConnectionError::UnsettledReservations {
+                    reservation_ids: discarded.to_vec(), cause: Box::new(cause),
+                });
+            }
+        }
         if matches!(
             &delivery,
             Some(NativeHiveMindFrameDelivery::StoreCommands(
