@@ -145,12 +145,20 @@ invalid or unterminated tail, and reports queued vs already-queued batches. For 
 `"recover_outcome_journals": [{"run_id":"old-run","path":"old.jsonl"}]`.
 Prior unfinished in-flight games or uncorrelated strategy replies are
 not reconstructible from this terminal-outcome journal and need separate
-resolution. Explicit targeting-result credit and stale-reply discard
-actions still need their real input/settlement path; an actual socket must
-still send the checkpointed retry payloads and reconcile 200/409 responses.
-No extra shot history, invented target TSV, or premature command settlement
-was introduced. New code remains source-reviewed only; Rust compilation
-and runtime were not available.
+resolution. On validated HiveMind ingress, retired/declined strategy IDs
+(including authored bans) and retired targeting IDs are now queued into the
+same durable StoreCommands ledger before the response reaches callers. Caller
+still applies returned bans; do NOT queue those discard IDs a second time.
+Accepted targeting still needs a real installation/credit owner—never invent
+its TSV. After authenticating the existing native socket, invoke
+NativeHostRuntime::flush_store_socket from its I/O owner to checkpoint any
+ready batches and send only not-yet-transmitted pending hashes. Subsequent
+polls do not resend unacknowledged requests; a new socket can replay the
+original outstanding hashes. On a server frame, invoke runtime.receive_frame
+to durably accept 200/409 responses and discards. No synthetic target TSV,
+new per-shot histories or prematurely committed command settlements were
+introduced. New code remains source-reviewed only; Rust compilation and
+runtime were not available.
 Earlier fixture qualifications below predate these edits.
 
 ## Shared weapons and geometry retained
