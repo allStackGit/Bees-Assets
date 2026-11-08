@@ -285,11 +285,14 @@ function createTinyBrainsAdapter({projectRoot,pythonPath,artifactRoot,profiles,
             const stderr=windows?path.join(out,'trainer.stderr.txt'):'-';
             const selectedCuda=windows&&approved.device==='cuda'
                 ?context.gpu_cuda_uuid:null;
-            const entry=enginePath!=null||selectedCuda
+            const selectedRocm=!windows&&approved.device==='cuda'
+                ?context.gpu_pci_address:null;
+            const entry=enginePath!=null||selectedCuda||selectedRocm
                 ?[path.join(__dirname,'experiment_hub_tinybrains_runtime.py'),engine,stderr,
                     ...(selectedCuda?['--hub-cuda',selectedCuda,
                         ...(context.gpu_mode==='shared'
-                            ?['--hub-gpu-vram-mb',String(context.gpu_vram_mb)]:[])]:[])]
+                            ?['--hub-gpu-vram-mb',String(context.gpu_vram_mb)]:[])]:[]),
+                    ...(selectedRocm?['--hub-rocm-pci',selectedRocm]:[])]
                 :['-c',TRAIN_ENTRY,stderr];
             return ['-B',...entry,
                 'train','--config',config,'--out',out,
