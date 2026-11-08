@@ -362,6 +362,12 @@ impl NativeHiveMindSocket {
         if connection.retry_payload(request.hash)? != Some(request) {
             return Err(HiveMindSocketError::InvalidRequestOwnership);
         }
+        // Direct sends and bulk flushes share the same connection-local
+        // admission. A second call on this open socket is a no-op, not a
+        // second server write; reconnect creates a fresh send session.
+        if self.sent_store_hashes.contains(&request.hash) {
+            return Ok(());
+        }
         self.send(request)?;
         self.sent_store_hashes.insert(request.hash);
         self.measurements.store_transmissions += 1;
