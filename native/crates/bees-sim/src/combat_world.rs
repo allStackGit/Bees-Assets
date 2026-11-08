@@ -4014,6 +4014,39 @@ impl CombatWorld {
     }
 }
 
+impl CombatWorld {
+    /// Record the actual outcome events in a successfully completed fixed
+    /// step. Both the physics-only and full Level drivers use this one
+    /// definition; only the latter can append late command callbacks.
+    /// No independent damage ledger or per-projectile history is created.
+    pub fn count_step_outcomes(events: &[CombatEvent], counts: &mut StepCounts) {
+        for event in events {
+            match event {
+                CombatEvent::Hit(hit) => {
+                    let tsv = u64::try_from(hit.delta.tsv_loss)
+                        .expect("physical hit TSV loss cannot be negative");
+                    if hit.attacker_side == hit.target_side {
+                        counts.friendly_hits += 1;
+                        counts.friendly_hit_tsv_loss += tsv;
+                    } else {
+                        counts.enemy_hits += 1;
+                        counts.enemy_hit_tsv_loss += tsv;
+                    }
+                }
+                CombatEvent::ProjectileRootCompleted(outcome) => {
+                    counts.policy_roots_completed += 1;
+                    if outcome.enemy_contact {
+                        counts.policy_roots_contacted += 1;
+                    } else if outcome.near_enemy {
+                        counts.policy_roots_near_missed += 1;
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+}
+
 /// Shared native gameplay adapter. Valid policy actions drive real
 /// movement and supported authored rotating turrets in this same world;
 /// unported weapon subclasses and special abilities remain masked.
@@ -4031,10 +4064,12 @@ impl GameRules<CombatWorld> for CombatWorldRules {
         decisions: &[Decision],
         dt_seconds: f32,
     ) -> Result<StepCounts, Self::Error> {
-        world.state.step_policy_combat_with_random(
+        let mut counts = world.state.step_policy_combat_with_random(
             decisions, dt_seconds, &self.collision_matrix,
             &mut world.random,
-        )
+        )?;
+        CombatWorld::count_step_outcomes(world.state.events(), &mut counts);
+        Ok(counts)
     }
 }
 
