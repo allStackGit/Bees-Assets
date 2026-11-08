@@ -2562,6 +2562,13 @@ class ExperimentHub {
     heartbeat(value, token) {
         if (!object(value) || !ID.test(String(value.machine_id || '')))
             throw Error('Invalid agent identity.');
+        // A one-shot agent's final report can durably acknowledge native
+        // results, but must not receive a new instruction it will not run.
+        // In particular, constructing a Start order persists its first-offer
+        // point of no return even if the final response is discarded.
+        if(value.request_execution_orders!==undefined&&
+            typeof value.request_execution_orders!=='boolean')
+            throw Error('Invalid native instruction request preference.');
         const machine=this.authenticateAgent(value.machine_id,token);
         const report = boundedReport(value);
         const received = Date.now();
@@ -2730,7 +2737,8 @@ class ExperimentHub {
                 // a process launch token. The agent checks it against sysfs.
                 gpu_bindings:physicalGpuBindings(machine,report,x.resources,x.gpu_bindings)||[],
             })),
-            execution_orders:this.executionOrders(machine.id)};
+            execution_orders:value.request_execution_orders===false
+                ?[]:this.executionOrders(machine.id)};
     }
     project(id) {
         const project = this.state.projects.find(p=>p.id===id);
