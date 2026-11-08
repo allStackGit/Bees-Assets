@@ -38,6 +38,7 @@ use crate::scene_assets::NativeSceneAssets;
 /// health can differ from a training-adjusted MaxHealth. A controller
 /// and its frame are registered ONLY if the source supplies the binding.
 pub struct NativeAuthoredShip {
+    pub special_weapon: Option<bees_sim::combat_world::NativeSpecialWeaponSpec>,
     pub weapon_rank_source: Option<NativeWeaponRankSource>,
     pub target_geometry: Option<NativeShipTargetGeometry>,
     pub entity_id: i64,
@@ -302,10 +303,12 @@ impl NativeSceneAssets {
         // original IDs once at setup, never in the simulation hot path.
         let mut entities = authored.entities;
         let mut specials = Vec::new();
+        let mut special_weapons = Vec::new();
         entities.sort_unstable_by_key(NativeAuthoredEntity::entity_id);
         for entity in entities {
             match entity {
                 NativeAuthoredEntity::Ship(ship) => {
+                if let Some(spec) = ship.special_weapon { special_weapons.push((ship.entity_id, spec)); }
                 if let Some(special) = ship.special {
                     specials.push((ship.entity_id, ship.policy.is_some(), special));
                 }
@@ -432,6 +435,9 @@ impl NativeSceneAssets {
         }
         // Carrier links can point forward in source creation order. Install
         // specials only after every authored ship and fleet identity exists.
+        for (id, spec) in special_weapons {
+            combat.configure_special_weapon(id, spec).map_err(NativeSceneBuildError::Combat)?;
+        }
         for (id, policy, special) in specials {
             special.configure(&mut combat, id, policy)
                 .map_err(NativeSceneBuildError::Combat)?;

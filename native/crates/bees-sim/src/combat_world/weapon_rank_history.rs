@@ -64,7 +64,10 @@ impl CombatWorld {
         history.consumed_events = 0;
     }
 
-    pub(super) fn consume_weapon_rank_events(&mut self) -> Result<(), CombatWorldError> {
+    /// Incremental reconciliation after physical callbacks, including Level
+    /// contact/timer callbacks that extend the current fixed tick's event stream.
+    /// The cursor prevents repeated credit; it does not advance the frame clock.
+    pub fn consume_weapon_rank_events(&mut self) -> Result<(), CombatWorldError> {
         let history = &mut self.weapon_rank_history;
         let Some(frame) = history.frame else { return Ok(()) };
         for event in &self.events[history.consumed_events..] {

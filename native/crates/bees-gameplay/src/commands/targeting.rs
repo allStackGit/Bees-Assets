@@ -145,8 +145,8 @@ pub fn select_native_game_bomb_target(
     if bomber.vitals.is_dead() || !matches!(bomber.ship_type, 0 | 10 | 19 | 22) {
         return Err(GameCommandError::InvalidSquad);
     }
-    let origin = world.ship_body(bomber_id)
-        .ok_or(GameCommandError::InvalidSquad)?.motion.position;
+    let origin = world.special_weapon_origin(bomber_id).unwrap_or(
+        world.ship_body(bomber_id).ok_or(GameCommandError::InvalidSquad)?.motion.position);
     sort_native_game_bomb_targets(
         world, roster, enemy_owner, origin, strategy, random, candidates,
     )?;
@@ -390,10 +390,6 @@ impl NativeAttackTarget {
     }
 
     pub(super) fn owner(&self) -> SquadLifetime { self.lifetime }
-
-    pub(super) fn squad_id(&self) -> i64 {
-        self.lifetime.squad_id
-    }
 
     pub(super) fn validate(
         &self, owner: SquadLifetime, enemy_owner: SquadLifetime,

@@ -77,6 +77,8 @@ mod map_object;
 mod policy;
 mod weapons;
 mod weapon_ranges;
+mod special_weapon_contacts;
+pub use special_weapon_contacts::{NativeSpecialWeaponSpec, SpecialWeaponMeasurements};
 mod weapon_target_geometry;
 mod weapon_rank_history;
 mod automatic_weapons;
@@ -761,6 +763,9 @@ pub struct CombatWorld {
     pending_weapon_range_exits: u64,
     weapon_range_candidates: Vec<usize>,
     weapon_range_entering_ids: Vec<i64>,
+    special_weapons: BTreeMap<i64, special_weapon_contacts::SpecialWeaponContacts>,
+    special_body_entries: Vec<(i64, i64)>,
+    special_weapon_measurements: SpecialWeaponMeasurements,
     /// Updated only when a policy controller is bound or retired.
     /// Decision cadence checks this revision instead of rescanning the
     /// entire controller roster on every fixed physics step.
@@ -914,6 +919,8 @@ impl CombatWorld {
             level_geometry: None, ship_target_front_offsets: HashMap::new(),
             pending_weapon_range_exits: 0,
             weapon_range_candidates: Vec::new(), weapon_range_entering_ids: Vec::new(),
+            special_weapons: BTreeMap::new(), special_body_entries: Vec::new(),
+            special_weapon_measurements: SpecialWeaponMeasurements::default(),
             policy_roster_revision: 0,
             policy_decision_seen: HashSet::new(),
             pending_turret_shots: Vec::new(),
@@ -3940,6 +3947,7 @@ impl CombatWorld {
         // projectile bodies before the subsequent shared physics step.
         self.consume_weapon_rank_events()?;
         let automatic_before = self.automatic_weapon_measurements;
+        let special_before = self.special_weapon_measurements;
         self.advance_mounted_turrets(dt, command, random.as_deref_mut(), context)?;
         // LaserBeam.ExtendBeam follows the same real shooter/turret and
         // resizes the physical beam collider before the native broadphase.
@@ -3950,6 +3958,7 @@ impl CombatWorld {
         let new_contacts = self.physics.step(dt, collision_matrix)?;
         self.pending_contacts.extend_from_slice(new_contacts);
         let weapon_range_counts = self.refresh_weapon_range_contacts(collision_matrix);
+        self.refresh_special_weapon_contacts(collision_matrix);
         self.update_policy_projectile_near_passes(dt);
         // Source MapBorder.OnTriggerEnter2D can end Barge.ChargeForward
         // immediately. Reuse the physics ship/obstacle entry stream before
@@ -3980,6 +3989,13 @@ impl CombatWorld {
             automatic_weapon_target_queries: self.automatic_weapon_measurements.target_queries - automatic_before.target_queries,
             automatic_weapon_queue_builds: self.automatic_weapon_measurements.queue_builds - automatic_before.queue_builds,
             automatic_weapon_distance_queries: self.automatic_weapon_measurements.distance_queries - automatic_before.distance_queries,
+            special_weapon_grid_rebuilds: self.special_weapon_measurements.grid_rebuilds - special_before.grid_rebuilds,
+            special_weapon_candidates: self.special_weapon_measurements.candidates - special_before.candidates,
+            special_weapon_trigger_hull_tests: self.special_weapon_measurements.trigger_hull_tests - special_before.trigger_hull_tests,
+            special_weapon_trigger_entries: self.special_weapon_measurements.trigger_entries - special_before.trigger_entries,
+            special_weapon_trigger_exits: self.special_weapon_measurements.trigger_exits - special_before.trigger_exits,
+            special_weapon_body_hull_tests: self.special_weapon_measurements.body_hull_tests - special_before.body_hull_tests,
+            special_weapon_body_entries: self.special_weapon_measurements.body_entries - special_before.body_entries,
             automatic_weapon_shots: self.automatic_weapon_measurements.shots - automatic_before.shots,
             integrated_bodies: physics_counts.integrated_bodies,
             broadphase_candidates: physics_counts.broadphase_candidates,

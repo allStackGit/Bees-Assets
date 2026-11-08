@@ -35,6 +35,7 @@ pub trait NativeLevelPlayerContext: NativeLevelActivationContext + NativePlayerA
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct NativePlayerCommandInputs {
+    pub is_carrier_squad: Option<bool>,
     pub shooting: bees_hivemind::protocol::StrategyIdentity,
     pub settings: crate::commands::HiveMindCommandSettings,
 }
@@ -224,6 +225,8 @@ struct NativePlayerSupportCommandPlan<'a> {
     source: NativePlayerCommandInputs,
     center: Vec2,
     enemy: Option<crate::commands::NativeEnemySquad>,
+    action: crate::commands::NativeLocalCommandAction<'a>,
+    bombing: Option<(bool, Vec<crate::commands::NativeBombWeapon>, Vec<crate::commands::NativeEnemyTargetStats>)>,
     friendlies: Vec<crate::commands::NativeFriendlySquad>,
 }
 
@@ -245,6 +248,8 @@ impl<'a> NativePlayerSupportCommandPlan<'a> {
         }
         let authority = NativePlayerSquadPlan::prepare(world, input.world_id,
             input.episode_revision, input.selected_ship)?;
+        let mut action = input.action;
+        let mut bombing = None;
         let enemy = if let Action::TargetEnemy { target } = input.action {
             let roster = world.state.events.roster();
             let own = roster.get(authority.owner).ok_or(NativePlayerInputError::MissingSquad)?;
@@ -254,18 +259,20 @@ impl<'a> NativePlayerSupportCommandPlan<'a> {
             }
             let composition = bees_hivemind::dispatch::SquadCommandComposition::from_unity_ship_types(
                 own.members.iter().filter_map(|&id| world.state.combat.ship(id).map(|ship| i32::from(ship.ship_type))));
-            // Source UserTargetEnemy redirects these to Charge/BombingRun.
-            // Do not strand them in the ranged Aggressive loop without their
-            // authored Bomb weapon activation/proximity adapter.
-            if composition.only_barges || composition.only_bombers {
-                return Err(NativePlayerInputError::InvalidAction);
-            }
             let details = world.state.metadata.strategy_inputs(&world.state.combat,
                 roster, authority.owner, Some(target)).map_err(NativePlayerInputError::Source)?;
             let enemy = details.enemy.filter(|enemy| enemy.owner == target && enemy.is_alive)
                 .ok_or(NativePlayerInputError::InvalidAction)?;
-            world.state.metadata.aggressive_command_snapshot(&mut world.state.combat, roster,
-                authority.owner, target, false).map_err(NativePlayerInputError::Source)?;
+            if composition.only_barges || composition.only_bombers {
+                action = if composition.only_barges { Action::Charge } else { Action::BombingRun };
+                let mut weapons = Vec::new(); let mut enemies = Vec::new();
+                let carrier = world.state.metadata.collect_bomb_activation(&world.state.combat, roster,
+                    authority.owner, target, &mut weapons, &mut enemies).map_err(NativePlayerInputError::Source)?;
+                bombing = Some((carrier, weapons, enemies));
+            } else {
+                world.state.metadata.aggressive_command_snapshot(&mut world.state.combat, roster,
+                    authority.owner, target, false).map_err(NativePlayerInputError::Source)?;
+            }
             Some(enemy)
         } else { None };
         let source = world.state.metadata.player_command_inputs(authority.owner)
@@ -277,7 +284,7 @@ impl<'a> NativePlayerSupportCommandPlan<'a> {
         crate::commands::NativeCommandSelection::local(
             crate::commands::NativeLocalCommandIdentity {
                 source: crate::commands::NativeLocalCommandSource::Player, sequence: 0,
-            }, input.action.kind(), source.shooting)
+            }, action.kind(), source.shooting)
             .map_err(NativePlayerInputError::Source)?;
         let state = &mut world.state;
         let center = crate::squad_geometry::live_squad_bounds_from_catalog(
@@ -292,7 +299,7 @@ impl<'a> NativePlayerSupportCommandPlan<'a> {
                 state.events.commands(), &mut friendlies)
                 .map_err(NativePlayerInputError::Source)?;
         }
-        Ok(Self { input, authority, source, center, enemy, friendlies })
+        Ok(Self { input, authority, source, center, enemy, action, bombing, friendlies })
     }
 
     pub fn execute<M: NativeLevelPlayerContext, A>(self,
@@ -319,8 +326,12 @@ impl<'a> NativePlayerSupportCommandPlan<'a> {
                 .map_err(|error| NativePlayerInputError::Source(error.into()))?;
             state.events.activate_local_command(tick, &mut state.combat, navigation,
                 &mut world.random, squad, &current.friendlies, self.source.settings,
-                crate::commands::NativeLocalCommandSource::Player, self.input.action,
-                self.source.shooting, None).map_err(NativePlayerInputError::Finalization)
+                crate::commands::NativeLocalCommandSource::Player, current.action,
+                self.source.shooting, current.bombing.as_ref().map(|(carrier, weapons, enemies)|
+                    crate::level_events::NativeLocalBombingTargets {
+                        enemy_owner: self.enemy.expect("targeted special command").owner,
+                        weapons, enemies, is_carrier_squad: *carrier,
+                    })).map_err(NativePlayerInputError::Finalization)
         })();
         if result.is_err() { state.events.fail_player_input(); }
         result

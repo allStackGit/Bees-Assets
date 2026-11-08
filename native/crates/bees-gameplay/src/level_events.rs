@@ -936,8 +936,8 @@ impl NativeLevelEventProcessor {
         self.advance_timed_commands_with_bombing(
             completed_tick, world, navigation, friendlies, random, dt,
             circle_snapshot, swipe_snapshot, aggressive_snapshot,
-            |_, _, _, _| Err(GameCommandError::MissingCombatSnapshot),
-            |_, _, _, _| Err(GameCommandError::MissingCombatSnapshot),
+            |_, _, _, _, _| Err(GameCommandError::MissingCombatSnapshot),
+            |_, _, _, _, _| Err(GameCommandError::MissingCombatSnapshot),
         )
     }
 
@@ -961,10 +961,10 @@ impl NativeLevelEventProcessor {
             SquadLifetime, SquadLifetime, &mut CombatWorld, &NativeSquadRoster, bool,
         ) -> Result<NativeAggressiveCommandSnapshot, GameCommandError>,
         bombing_snapshot: impl FnMut(
-            SquadLifetime, i64, &CombatWorld, bool,
+            SquadLifetime, SquadLifetime, &CombatWorld, &NativeSquadRoster, bool,
         ) -> Result<NativeBombingTimerSnapshot, GameCommandError>,
         charge_snapshot: impl FnMut(
-            SquadLifetime, i64, &CombatWorld, bool,
+            SquadLifetime, SquadLifetime, &CombatWorld, &NativeSquadRoster, bool,
         ) -> Result<NativeChargeTimerSnapshot, GameCommandError>,
     ) -> Result<(), NativeLevelEventError> {
         self.advance_timed_commands_with_scouting_center(
@@ -996,10 +996,10 @@ impl NativeLevelEventProcessor {
             SquadLifetime, SquadLifetime, &mut CombatWorld, &NativeSquadRoster, bool,
         ) -> Result<NativeAggressiveCommandSnapshot, GameCommandError>,
         bombing_snapshot: impl FnMut(
-            SquadLifetime, i64, &CombatWorld, bool,
+            SquadLifetime, SquadLifetime, &CombatWorld, &NativeSquadRoster, bool,
         ) -> Result<NativeBombingTimerSnapshot, GameCommandError>,
         charge_snapshot: impl FnMut(
-            SquadLifetime, i64, &CombatWorld, bool,
+            SquadLifetime, SquadLifetime, &CombatWorld, &NativeSquadRoster, bool,
         ) -> Result<NativeChargeTimerSnapshot, GameCommandError>,
         scouting_center: impl FnMut(
             SquadLifetime, &CombatWorld, &crate::squads::NativeSquadEntry,
@@ -1026,12 +1026,15 @@ impl NativeLevelEventProcessor {
         let mut circle_snapshot = circle_snapshot;
         let mut swipe_snapshot = swipe_snapshot;
         let mut aggressive_snapshot = aggressive_snapshot;
+        let mut bombing_snapshot = bombing_snapshot;
+        let mut charge_snapshot = charge_snapshot;
         if let Err(error) = self.commands.advance_into_with_scouting_center(
             world, navigation, Some(&self.roster), friendlies, random, dt,
             |owner, enemy, world| circle_snapshot(owner, enemy, world, roster),
             |owner, enemy, world, need| swipe_snapshot(owner, enemy, world, roster, need),
             |owner, enemy, world, need| aggressive_snapshot(owner, enemy, world, roster, need),
-            bombing_snapshot, charge_snapshot, scouting_center,
+            |owner, enemy, world, need| bombing_snapshot(owner, enemy, world, roster, need),
+            |owner, enemy, world, need| charge_snapshot(owner, enemy, world, roster, need), scouting_center,
             &mut self.timed_finished,
         ) {
             self.failed = true;

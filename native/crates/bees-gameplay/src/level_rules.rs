@@ -198,8 +198,8 @@ pub trait NativeLevelCommandContext {
     /// weapons for replacement target selection. There is no fabricated
     /// collider-center proximity or stale activation-time weapon power.
     fn bombing_command_snapshot(
-        &self, _world: &CombatWorld, _owner: SquadLifetime,
-        _enemy_squad_id: i64, _need_retarget: bool,
+        &self, _world: &CombatWorld, _roster: &NativeSquadRoster, _owner: SquadLifetime,
+        _enemy_owner: SquadLifetime, _need_retarget: bool,
     ) -> Result<NativeBombingTimerSnapshot, GameCommandError> {
         Err(GameCommandError::MissingCombatSnapshot)
     }
@@ -209,8 +209,8 @@ pub trait NativeLevelCommandContext {
     /// weapon ShipsWithinRange membership. The Level supplies this exact
     /// predicate and optionally the live lost-target data.
     fn charge_command_snapshot(
-        &self, _world: &CombatWorld, _owner: SquadLifetime,
-        _enemy_squad_id: i64, _need_retarget: bool,
+        &self, _world: &CombatWorld, _roster: &NativeSquadRoster, _owner: SquadLifetime,
+        _enemy_owner: SquadLifetime, _need_retarget: bool,
     ) -> Result<NativeChargeTimerSnapshot, GameCommandError> {
         Err(GameCommandError::MissingCombatSnapshot)
     }
@@ -709,7 +709,7 @@ where
         // No independent policy/physics rules in gameplay or training:
         // both adapters invoke CombatWorld's one canonical transaction.
         let events = &state.events;
-        let counts = state.combat.step_combat_with_weapon_targeting(
+        let mut counts = state.combat.step_combat_with_weapon_targeting(
             decisions, dt_seconds, &self.collision_matrix,
             &mut world.random, &|ship_id| events.roster().owning_squad(ship_id)
                 .and_then(|owner| events.commands().current_server_outcome(owner)),
@@ -737,6 +737,7 @@ where
                 )?;
             }
         }
+        state.combat.consume_weapon_rank_events()?;
         state.metadata.register_scout_beacons(&state.combat, state.combat.events())?;
         state.refresh_vision_and_rewards(completed_tick)
             .map_err(NativeLevelStepError::Vision)?;
@@ -825,14 +826,14 @@ where
                         combat, roster, owner, enemy_id, need_all,
                     )
                 },
-                |owner, enemy_id, combat, need_retarget| {
+                |owner, enemy_id, combat, roster, need_retarget| {
                     metadata.bombing_command_snapshot(
-                        combat, owner, enemy_id, need_retarget,
+                        combat, roster, owner, enemy_id, need_retarget,
                     )
                 },
-                |owner, enemy_id, combat, need_retarget| {
+                |owner, enemy_id, combat, roster, need_retarget| {
                     metadata.charge_command_snapshot(
-                        combat, owner, enemy_id, need_retarget,
+                        combat, roster, owner, enemy_id, need_retarget,
                     )
                 },
                 |owner, combat, squad| {
@@ -858,9 +859,18 @@ where
         // sample after physical movement and combat events, never via
         // an unrelated UI or inference tick. Fixed-step failures are
         // reported to the caller and the world is not reused as valid PPO.
+        state.combat.consume_weapon_rank_events()?;
         state.metadata.update_observation_memory(
             &state.combat, state.events.normalized_episode_progress(),
         )?;
+        // Contact/timer callbacks can detonate a ship or spawn a Beacon after
+        // the core physical transaction. Report the final same-tick state.
+        // Quiet ticks reuse the core counts without another world scan.
+        if counts.events != state.combat.events().len() as u64 {
+            counts.events = state.combat.events().len() as u64;
+            counts.active_ships = state.combat.physics().ships().iter().filter(|body| body.active).count() as u32;
+            counts.active_projectiles = state.combat.physics().projectiles().iter().filter(|body| body.active).count() as u32;
+        }
         Ok(counts)
     }
 }

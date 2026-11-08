@@ -70,7 +70,7 @@ use crate::runtime::NativeHostRuntime;
 use crate::ship_specials::{NativeAuthoredShipSpecial, NativeBeaconTemplate};
 use crate::durable_connection::DurableHiveMindConnection;
 
-const SNAPSHOT_VERSION: u32 = 23;
+const SNAPSHOT_VERSION: u32 = 24;
 
 #[derive(Deserialize, Clone, Copy)]
 struct UnityVec2 { x: f32, y: f32 }
@@ -172,6 +172,7 @@ struct UnityGroupParticipant {
 
 #[derive(Deserialize)]
 struct UnityShip {
+    special_weapon: Option<UnitySpecialWeapon>,
     weapon_rank_source: Option<UnityWeaponRankSource>,
     target_geometry: Option<UnityShipTargetGeometry>,
     entity_id: i64,
@@ -391,6 +392,34 @@ struct UnityWeaponRankSource {
 }
 
 #[derive(Deserialize)]
+struct UnitySpecialTrigger {
+    collider: UnitySupportCollider,
+    layer: u8,
+    enabled: bool,
+}
+
+impl UnitySpecialTrigger {
+    fn into_native(self, id: i64) -> Result<NativeTurretRangeSpec, NativeSnapshotError> {
+        let ShipShape::Circle { offset, radius } = self.collider.into_shape(id)? else {
+            return Err(NativeSnapshotError::InvalidShip(id));
+        };
+        let spec = NativeTurretRangeSpec { offset, radius, layer: self.layer, enabled: self.enabled };
+        if !spec.valid() { return Err(NativeSnapshotError::InvalidShip(id)); }
+        Ok(spec)
+    }
+}
+
+#[derive(Deserialize)]
+struct UnitySpecialWeapon {
+    weapon_id: i64,
+    slot: usize,
+    power: i32,
+    mount_offset: UnityVec2,
+    charge_range: Option<UnitySpecialTrigger>,
+    proximity: Option<UnitySpecialTrigger>,
+}
+
+#[derive(Deserialize)]
 struct UnityShipTargetGeometry {
     front_offset: f32,
     bounds_latched: bool,
@@ -443,6 +472,7 @@ impl From<UnityCommandSettings> for bees_gameplay::commands::HiveMindCommandSett
 
 #[derive(Deserialize)]
 struct UnitySquad {
+    is_carrier_squad: Option<bool>,
     item_id: i64,
     side: i32,
     member_ids: Vec<i64>,
@@ -654,6 +684,7 @@ struct NativeSourcePolicyInputs {
 /// Runtime source Squad.ItemId is allocated once per Squad.Setup by the
 /// Stage-wide monotonic Pool.ItemCount, even for reused pooled wrappers.
 pub struct NativeSourceSquad {
+    pub is_carrier_squad: Option<bool>,
     pub item_id: i64,
     pub side: i32,
     pub members: Vec<i64>,
@@ -906,6 +937,7 @@ impl NativePhysicalScene {
                 ships: self.source_formation,
                 commands: self.source_squads.iter().zip(&squads).map(|(source, squad)|
                     (squad.owner, bees_gameplay::player_inputs::NativePlayerCommandInputs {
+                        is_carrier_squad: source.is_carrier_squad,
                         shooting: source.shooting, settings: self.command_settings,
                     })).collect(),
                 squads: self.source_squads.iter().zip(&squads)
@@ -1272,6 +1304,7 @@ impl NativePhysicalScene {
                 }),
                 warp_human_side: can_warp.then_some(raw.human_side),
             };
+            let source_special_power = ship.special.power;
             let special = ship.special.into_native(ship.entity_id, ship.ship_type, raw.schema_version, catalog)?;
             if ship.has_bound_policy && ship.has_special_action != special.is_some() {
                 return Err(NativeSnapshotError::InvalidPolicySource(ship.entity_id));
@@ -1515,7 +1548,25 @@ impl NativePhysicalScene {
                 None if raw.schema_version < 22 => None,
                 _ => return Err(NativeSnapshotError::InvalidShip(ship.entity_id)),
             };
+            let special_weapon = match ship.special_weapon {
+                Some(source) if matches!(ship.ship_type, 0 | 10 | 19 | 22) &&
+                    source.weapon_id > 0 && source.slot < 5 && source.power == source_special_power &&
+                    source.power >= 0 && source.mount_offset.into_vec().is_finite() => {
+                    let charge_range = source.charge_range.map(|value| value.into_native(ship.entity_id)).transpose()?;
+                    let proximity = source.proximity.map(|value| value.into_native(ship.entity_id)).transpose()?;
+                    if (ship.ship_type == 0 && charge_range.is_none()) || (ship.ship_type != 0 && proximity.is_none()) {
+                        return Err(NativeSnapshotError::InvalidShip(ship.entity_id));
+                    }
+                    Some(bees_sim::combat_world::NativeSpecialWeaponSpec {
+                        weapon_id: source.weapon_id, slot: source.slot, power: source.power, mount_offset: source.mount_offset.into_vec(),
+                        charge_range, proximity,
+                    })
+                },
+                None if raw.schema_version < 24 || !matches!(ship.ship_type, 0 | 10 | 19 | 22) => None,
+                _ => return Err(NativeSnapshotError::InvalidShip(ship.entity_id)),
+            };
             entities.push(NativeAuthoredEntity::Ship(NativeAuthoredShip {
+                special_weapon,
                 target_geometry, weapon_rank_source,
                 entity_id: ship.entity_id, ship_type: ship.ship_type,
                 cease_fire: ship.policy_cease_fire, turrets: authored_turrets,
@@ -1775,7 +1826,11 @@ impl NativePhysicalScene {
             let shooting_index = bees_hivemind::protocol::SHOOTING_STRATEGIES.iter()
                 .position(|&name| name == squad.shooting_strategy)
                 .ok_or(NativeSnapshotError::InvalidSquad(squad.item_id))?;
+            if raw.schema_version >= 24 && squad.is_carrier_squad.is_none() {
+                return Err(NativeSnapshotError::InvalidSquad(squad.item_id));
+            }
             source_squads.push(NativeSourceSquad {
+                is_carrier_squad: squad.is_carrier_squad,
                 shooting: bees_hivemind::protocol::StrategyIdentity {
                     id: (shooting_index + 1) as u8,
                     name: bees_hivemind::protocol::SHOOTING_STRATEGIES[shooting_index],

@@ -420,8 +420,8 @@ impl NativeBombingRun {
         }))
     }
 
-    pub fn enemy_squad_id(&self) -> i64 {
-        self.target.squad_id()
+    pub fn enemy_owner(&self) -> SquadLifetime {
+        self.target.owner()
     }
 
     /// A returning/completed Striker cannot drop twice in one run, and

@@ -392,6 +392,30 @@ impl NativeLevelRewardMetadata for NativePolicyOnlyMetadata {
 }
 
 impl NativeLevelCommandContext for NativePolicyOnlyMetadata {
+    fn collect_bomber_contacts(&mut self, world: &CombatWorld, roster: &NativeSquadRoster,
+        output: &mut Vec<bees_gameplay::level_rules::NativeBomberContact>,
+    ) -> Result<(), GameCommandError> {
+        output.clear();
+        for &(bomber_id, contacted_target_id) in world.bomber_body_entries() {
+            if roster.owning_squad(bomber_id).is_some() && roster.owning_squad(contacted_target_id).is_some() {
+                output.push(bees_gameplay::level_rules::NativeBomberContact { bomber_id, contacted_target_id });
+            }
+        }
+        Ok(())
+    }
+
+    fn bombing_command_snapshot(&self, world: &CombatWorld, roster: &NativeSquadRoster,
+        owner: SquadLifetime, enemy: SquadLifetime, need_retarget: bool,
+    ) -> Result<bees_gameplay::commands::NativeBombingTimerSnapshot, GameCommandError> {
+        self.live_bombing_snapshot(world, roster, owner, enemy, need_retarget)
+    }
+
+    fn charge_command_snapshot(&self, world: &CombatWorld, roster: &NativeSquadRoster,
+        owner: SquadLifetime, enemy: SquadLifetime, need_retarget: bool,
+    ) -> Result<bees_gameplay::commands::NativeChargeTimerSnapshot, GameCommandError> {
+        self.live_charge_snapshot(world, roster, owner, enemy, need_retarget)
+    }
+
     fn circle_command_snapshot(&self, world: &mut CombatWorld, roster: &NativeSquadRoster,
         owner: SquadLifetime, enemy: SquadLifetime,
     ) -> Result<bees_gameplay::commands::NativeCircleCommandSnapshot, GameCommandError> {
@@ -487,12 +511,23 @@ impl NativeLevelActivationContext for NativePolicyOnlyMetadata {
     }
 
     fn collect_bomb_activation(
-        &self, _world: &CombatWorld, _roster: &NativeSquadRoster,
-        _owner: SquadLifetime, _enemy: SquadLifetime,
-        _weapons: &mut Vec<NativeBombWeapon>,
-        _enemies: &mut Vec<NativeEnemyTargetStats>,
+        &self, world: &CombatWorld, roster: &NativeSquadRoster,
+        owner: SquadLifetime, enemy: SquadLifetime,
+        weapons: &mut Vec<NativeBombWeapon>,
+        enemies: &mut Vec<NativeEnemyTargetStats>,
     ) -> Result<bool, GameCommandError> {
-        Err(GameCommandError::MissingCombatSnapshot)
+        weapons.clear(); enemies.clear();
+        self.live_enemy(world, roster, owner, enemy)?;
+        let carrier = self.player.commands.get(&owner).and_then(|source| source.is_carrier_squad)
+            .ok_or(GameCommandError::MissingCombatSnapshot)?;
+        for &id in &roster.get(owner).ok_or(GameCommandError::InvalidSquad)?.members {
+            let spec = world.special_weapon_spec(id).ok_or(GameCommandError::MissingCombatSnapshot)?;
+            weapons.push(NativeBombWeapon { ship_id: id, weapon_id: spec.weapon_id, power: spec.power });
+        }
+        for &id in &roster.get(enemy).ok_or(GameCommandError::InvalidEnemy)?.members {
+            enemies.push(world.weapon_target_rank_stats(id)?);
+        }
+        Ok(carrier)
     }
 }
 

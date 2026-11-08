@@ -1554,10 +1554,10 @@ impl NativeSquadCommandDirector {
             SquadLifetime, SquadLifetime, &mut CombatWorld, bool,
         ) -> Result<NativeAggressiveCommandSnapshot, GameCommandError>,
         mut bombing_snapshot: impl FnMut(
-            SquadLifetime, i64, &CombatWorld, bool,
+            SquadLifetime, SquadLifetime, &CombatWorld, bool,
         ) -> Result<NativeBombingTimerSnapshot, GameCommandError>,
         mut charge_snapshot: impl FnMut(
-            SquadLifetime, i64, &CombatWorld, bool,
+            SquadLifetime, SquadLifetime, &CombatWorld, bool,
         ) -> Result<NativeChargeTimerSnapshot, GameCommandError>,
         finished: &mut Vec<FinishedNativeCommand>,
     ) -> Result<(), GameCommandError> {
@@ -1591,10 +1591,10 @@ impl NativeSquadCommandDirector {
             SquadLifetime, SquadLifetime, &mut CombatWorld, bool,
         ) -> Result<NativeAggressiveCommandSnapshot, GameCommandError>,
         mut bombing_snapshot: impl FnMut(
-            SquadLifetime, i64, &CombatWorld, bool,
+            SquadLifetime, SquadLifetime, &CombatWorld, bool,
         ) -> Result<NativeBombingTimerSnapshot, GameCommandError>,
         mut charge_snapshot: impl FnMut(
-            SquadLifetime, i64, &CombatWorld, bool,
+            SquadLifetime, SquadLifetime, &CombatWorld, bool,
         ) -> Result<NativeChargeTimerSnapshot, GameCommandError>,
         mut scouting_center: impl FnMut(
             SquadLifetime, &CombatWorld, &NativeSquadEntry,
@@ -1842,7 +1842,7 @@ impl NativeSquadCommandDirector {
                         self.measurements.command_timer_callbacks += 1;
                         let need_retarget = charge.needs_retarget(world);
                         let mut snapshot = charge_snapshot(
-                            owner, charge.enemy_squad_id(), world,
+                            owner, charge.enemy_owner(), world,
                             need_retarget,
                         )?;
                         self.measurements.charge_snapshot_requests += 1;
@@ -1881,7 +1881,7 @@ impl NativeSquadCommandDirector {
                         self.measurements.command_timer_callbacks += 1;
                         let need_retarget = bombing.needs_retarget(world);
                         let mut snapshot = bombing_snapshot(
-                            owner, bombing.enemy_squad_id(), world,
+                            owner, bombing.enemy_owner(), world,
                             need_retarget,
                         )?;
                         self.measurements.bombing_snapshot_requests += 1;

@@ -20,6 +20,13 @@ pub struct StepCounts {
     pub automatic_weapon_target_queries: u64,
     pub automatic_weapon_queue_builds: u64,
     pub automatic_weapon_distance_queries: u64,
+    pub special_weapon_grid_rebuilds: u64,
+    pub special_weapon_candidates: u64,
+    pub special_weapon_trigger_hull_tests: u64,
+    pub special_weapon_trigger_entries: u64,
+    pub special_weapon_trigger_exits: u64,
+    pub special_weapon_body_hull_tests: u64,
+    pub special_weapon_body_entries: u64,
     pub automatic_weapon_shots: u64,
     /// Authored RangeCollider work; separate from projectile collision pairs.
     pub weapon_range_grid_rebuilds: u64,
@@ -45,6 +52,13 @@ pub struct Measurements {
     pub automatic_weapon_target_queries: u64,
     pub automatic_weapon_queue_builds: u64,
     pub automatic_weapon_distance_queries: u64,
+    pub special_weapon_grid_rebuilds: u64,
+    pub special_weapon_candidates: u64,
+    pub special_weapon_trigger_hull_tests: u64,
+    pub special_weapon_trigger_entries: u64,
+    pub special_weapon_trigger_exits: u64,
+    pub special_weapon_body_hull_tests: u64,
+    pub special_weapon_body_entries: u64,
     pub automatic_weapon_shots: u64,
     /// Authored RangeCollider work; separate from projectile collision pairs.
     pub weapon_range_grid_rebuilds: u64,
@@ -87,6 +101,13 @@ impl Default for Measurements {
             automatic_weapon_target_queries: 0,
             automatic_weapon_queue_builds: 0,
             automatic_weapon_distance_queries: 0,
+            special_weapon_grid_rebuilds: 0,
+            special_weapon_candidates: 0,
+            special_weapon_trigger_hull_tests: 0,
+            special_weapon_trigger_entries: 0,
+            special_weapon_trigger_exits: 0,
+            special_weapon_body_hull_tests: 0,
+            special_weapon_body_entries: 0,
             automatic_weapon_shots: 0,
             weapon_range_grid_rebuilds: 0,
             weapon_range_candidates: 0,
@@ -122,6 +143,13 @@ impl Measurements {
         self.automatic_weapon_target_queries += counts.automatic_weapon_target_queries;
         self.automatic_weapon_queue_builds += counts.automatic_weapon_queue_builds;
         self.automatic_weapon_distance_queries += counts.automatic_weapon_distance_queries;
+        self.special_weapon_grid_rebuilds += counts.special_weapon_grid_rebuilds;
+        self.special_weapon_candidates += counts.special_weapon_candidates;
+        self.special_weapon_trigger_hull_tests += counts.special_weapon_trigger_hull_tests;
+        self.special_weapon_trigger_entries += counts.special_weapon_trigger_entries;
+        self.special_weapon_trigger_exits += counts.special_weapon_trigger_exits;
+        self.special_weapon_body_hull_tests += counts.special_weapon_body_hull_tests;
+        self.special_weapon_body_entries += counts.special_weapon_body_entries;
         self.automatic_weapon_shots += counts.automatic_weapon_shots;
         self.weapon_range_grid_rebuilds += counts.weapon_range_grid_rebuilds;
         self.weapon_range_candidates += counts.weapon_range_candidates;
@@ -171,6 +199,13 @@ impl Measurements {
         self.automatic_weapon_target_queries += other.automatic_weapon_target_queries;
         self.automatic_weapon_queue_builds += other.automatic_weapon_queue_builds;
         self.automatic_weapon_distance_queries += other.automatic_weapon_distance_queries;
+        self.special_weapon_grid_rebuilds += other.special_weapon_grid_rebuilds;
+        self.special_weapon_candidates += other.special_weapon_candidates;
+        self.special_weapon_trigger_hull_tests += other.special_weapon_trigger_hull_tests;
+        self.special_weapon_trigger_entries += other.special_weapon_trigger_entries;
+        self.special_weapon_trigger_exits += other.special_weapon_trigger_exits;
+        self.special_weapon_body_hull_tests += other.special_weapon_body_hull_tests;
+        self.special_weapon_body_entries += other.special_weapon_body_entries;
         self.automatic_weapon_shots += other.automatic_weapon_shots;
         self.weapon_range_grid_rebuilds += other.weapon_range_grid_rebuilds;
         self.weapon_range_candidates += other.weapon_range_candidates;

@@ -61,48 +61,9 @@ impl CombatWorld {
                 let Ok(range) = mount.world_range(position, rotation, weapons.last_hull_rotation)
                     else { continue };
                 has_ranges = true;
-                self.weapon_range_entering_ids.clear();
-                let contacts = &mut weapons.range_contacts[slot];
-                contacts.sweep = contacts.sweep.wrapping_add(1);
-                if contacts.sweep == 0 {
-                    // A stamp wrap must not resurrect a contact from an old sweep.
-                    contacts.sweep = 1;
-                    for stamp in contacts.membership.values_mut() { *stamp = 0; }
-                }
-                if active && range.enabled {
-                    counts.weapon_range_grid_rebuilds += u64::from(self.physics.circle_ship_contact_candidates(
-                        range.center, range.radius, &mut self.weapon_range_candidates));
-                    counts.weapon_range_candidates += self.weapon_range_candidates.len() as u64;
-                    for &index in &self.weapon_range_candidates {
-                        let target = &self.ships[index];
-                        let hull = &self.physics.ships()[index];
-                        if target.side == side || target.vitals.is_dead() ||
-                            !collisions.allows(range.layer, hull.layer) { continue; }
-                        counts.weapon_range_exact_tests += 1;
-                        if self.physics.ship_primary_overlaps_circle(index, range.center, range.radius) {
-                            if contacts.membership.insert(target.entity_id, contacts.sweep).is_none() {
-                                self.weapon_range_entering_ids.push(target.entity_id);
-                            }
-                        }
-                    }
-                }
-                // Stamp existing contacts rather than sorting the whole live
-                // range every tick. Sort only new simultaneous entries; preserve
-                // the history of every continuing contact.
-                let old_len = contacts.ships.len();
-                contacts.ships.retain(|id| {
-                    if contacts.membership.get(id) == Some(&contacts.sweep) { true }
-                    else { contacts.membership.remove(id); false }
-                });
-                let exits = old_len - contacts.ships.len();
-                self.weapon_range_entering_ids.sort_unstable();
-                let enters = self.weapon_range_entering_ids.len() as u64;
-                contacts.ships.extend_from_slice(&self.weapon_range_entering_ids);
-                if exits > 0 || enters > 0 {
-                    contacts.revision = contacts.revision.saturating_add(1);
-                }
-                counts.weapon_range_enters += enters;
-                counts.weapon_range_exits += exits as u64;
+                refresh_circle_contacts(&mut self.physics, &self.ships, side, active, range,
+                    &mut weapons.range_contacts[slot], &mut self.weapon_range_candidates,
+                    &mut self.weapon_range_entering_ids, collisions, &mut counts);
             }
         }
 
@@ -134,4 +95,53 @@ impl CombatWorld {
         }
         counts
     }
+}
+
+// Shared exact trigger membership; only newly entering IDs are sorted.
+pub(super) fn refresh_circle_contacts(physics: &mut KinematicPhysics, ships: &[CombatShip],
+    side: i32, active: bool, range: NativeWeaponRange, contacts: &mut WeaponRangeContacts,
+    candidates: &mut Vec<usize>, entering: &mut Vec<i64>, collisions: &CollisionMatrix,
+    counts: &mut StepCounts,
+) {
+    entering.clear();
+    contacts.sweep = contacts.sweep.wrapping_add(1);
+    if contacts.sweep == 0 {
+        // A stamp wrap must not resurrect a contact from an old sweep.
+        contacts.sweep = 1;
+        for stamp in contacts.membership.values_mut() { *stamp = 0; }
+    }
+    if active && range.enabled {
+        counts.weapon_range_grid_rebuilds += u64::from(physics.circle_ship_contact_candidates(
+            range.center, range.radius, candidates));
+        counts.weapon_range_candidates += candidates.len() as u64;
+        for &index in candidates.iter() {
+            let target = &ships[index];
+            let hull = &physics.ships()[index];
+            if target.side == side || target.vitals.is_dead() ||
+                !collisions.allows(range.layer, hull.layer) { continue; }
+            counts.weapon_range_exact_tests += 1;
+            if physics.ship_primary_overlaps_circle(index, range.center, range.radius) {
+                if contacts.membership.insert(target.entity_id, contacts.sweep).is_none() {
+                    entering.push(target.entity_id);
+                }
+            }
+        }
+    }
+    // Stamp existing contacts rather than sorting the whole live
+    // range every tick. Sort only new simultaneous entries; preserve
+    // the history of every continuing contact.
+    let old_len = contacts.ships.len();
+    contacts.ships.retain(|id| {
+        if contacts.membership.get(id) == Some(&contacts.sweep) { true }
+        else { contacts.membership.remove(id); false }
+    });
+    let exits = old_len - contacts.ships.len();
+    entering.sort_unstable();
+    let enters = entering.len() as u64;
+    contacts.ships.extend_from_slice(entering);
+    if exits > 0 || enters > 0 {
+        contacts.revision = contacts.revision.saturating_add(1);
+    }
+    counts.weapon_range_enters += enters;
+    counts.weapon_range_exits += exits as u64;
 }

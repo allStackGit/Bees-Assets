@@ -24,6 +24,7 @@ internal static class NativePhysicalSceneExporter
     private sealed class SourceShip
     {
         public SourceWeaponRank weapon_rank_source;
+        public SourceSpecialWeapon special_weapon;
         public SourceShipTargetGeometry target_geometry;
         public long entity_id;
         public int ship_type;
@@ -135,6 +136,22 @@ internal static class NativePhysicalSceneExporter
     }
 
     [Serializable]
+    private sealed class SourceTrigger
+    {
+        public SourceCollider collider;
+        public int layer;
+        public bool enabled;
+    }
+
+    [Serializable]
+    private sealed class SourceSpecialWeapon
+    {
+        public int weapon_id, power, slot;
+        public Vector2 mount_offset;
+        public SourceTrigger charge_range, proximity;
+    }
+
+    [Serializable]
     private sealed class SourceShipTargetGeometry
     {
         public float front_offset;
@@ -191,7 +208,7 @@ internal static class NativePhysicalSceneExporter
         public long item_id;
         public int side;
         public List<long> member_ids = new List<long>();
-        public bool user_controlled, can_accept_input, locked_on;
+        public bool user_controlled, can_accept_input, locked_on, is_carrier_squad;
         public string shooting_strategy;
     }
 
@@ -225,7 +242,7 @@ internal static class NativePhysicalSceneExporter
     [Serializable]
     private sealed class PhysicalScene
     {
-        public int schema_version = 23;
+        public int schema_version = 24;
         public int source_frame_count = Time.frameCount;
         public string level_name;
         public string stage_name;
@@ -419,6 +436,7 @@ internal static class NativePhysicalSceneExporter
                     max_range = ship.MaxRange,
                     speed = ship.Speed,
                 },
+                special_weapon = ExportSpecialWeapon(ship),
                 target_geometry = new SourceShipTargetGeometry {
                     front_offset = halfHeight - ConfigData.OffsetFromFrontOfShip.GetValueOrDefault(ship.ShipType),
                     bounds_latched = ship.IsInBoundsLatched
@@ -581,6 +599,7 @@ internal static class NativePhysicalSceneExporter
                 user_controlled = squad.IsUserControlled,
                 can_accept_input = squad.CanAcceptUserInput,
                 locked_on = squad.IsLockedOn,
+                is_carrier_squad = squad.IsCarrierSquad,
                 shooting_strategy = Utilities.ConvertShootingStrategyTypeToName[squad.GetShootingStrategy()]
             };
             if (squad.HasCommand || squad.HasCommandQueue || squad.CommandQueue.Count > 0)
@@ -881,6 +900,40 @@ internal static class NativePhysicalSceneExporter
     {
         if (collider == null || !collider.isActiveAndEnabled) return new SourceCollider();
         return ExportColliderShape(level.Map.Transform, collider, ship.GetPosition(), ship.Rotation);
+    }
+
+    private static SourceSpecialWeapon ExportSpecialWeapon(Ship ship)
+    {
+        Weapon weapon = ship is Barge barge ? barge.Charge :
+            ship is Striker striker ? striker.Bomb : ship is FireBarge fire ? fire.Bomb :
+            ship is YellowJacket jacket ? jacket.Bomb : null;
+        if (weapon == null)
+        {
+            if (ship is Barge || ship is Striker || ship is FireBarge || ship is YellowJacket)
+                throw new InvalidOperationException("Missing actual special weapon: " + ship.Id);
+            return null;
+        }
+        int slot = ship.Weapons.IndexOf(weapon);
+        if (!(weapon is Bomb) || weapon.Id <= 0 || weapon.Power < 0 || slot < 0 || slot >= 5)
+            throw new InvalidOperationException("Invalid actual special weapon: " + ship.Id);
+        SourceTrigger Capture(CircleCollider2D collider)
+        {
+            if (collider == null) throw new InvalidOperationException("Missing special trigger: " + ship.Id);
+            return new SourceTrigger {
+                collider = ExportColliderShape(ship.Level.Map.Transform, collider, ship.GetPosition(), ship.Rotation),
+                layer = collider.gameObject.layer,
+                enabled = collider.enabled && collider.gameObject.activeInHierarchy,
+            };
+        }
+        return new SourceSpecialWeapon {
+            weapon_id = weapon.Id, power = weapon.Power,
+            slot = slot,
+            // Weapon.GetPosition is authoritative; Bomb inherits the ship
+            // origin even when its visual piece has an offset.
+            mount_offset = Quaternion.Euler(0f, 0f, -ship.Rotation) * (weapon.GetPosition() - ship.GetPosition()),
+            charge_range = ship is Barge ? Capture(weapon.RangeCollider?.Collider) : null,
+            proximity = ship is Barge ? null : Capture(ship.ProximityCollider?.Collider),
+        };
     }
 
     private static SourceShipSpecial ExportShipSpecial(Ship ship)

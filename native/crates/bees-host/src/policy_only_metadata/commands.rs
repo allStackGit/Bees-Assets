@@ -7,6 +7,45 @@ use bees_gameplay::{commands::{NativeEnemySquad, NativeCircleCommandSnapshot,
     squad_geometry::live_squad_bounds_from_catalog};
 
 impl NativePolicyOnlyMetadata {
+    pub(super) fn live_bombing_snapshot(&self, world: &CombatWorld, roster: &NativeSquadRoster,
+        owner: SquadLifetime, enemy: SquadLifetime, need_retarget: bool,
+    ) -> Result<bees_gameplay::commands::NativeBombingTimerSnapshot, GameCommandError> {
+        let own = roster.get(owner).ok_or(GameCommandError::InvalidSquad)?;
+        let enemy_alive = roster.get(enemy).is_some();
+        let mut nearby_targets = Vec::new();
+        for &id in &own.members {
+            if let Some(target) = world.game_bomb_current_target(id) {
+                if world.bomb_target_is_nearby(id, target)? { nearby_targets.push((id, target)); }
+            }
+        }
+        let mut retarget_weapons = Vec::new(); let mut retarget_enemies = Vec::new();
+        if enemy_alive && need_retarget {
+            self.collect_bomb_activation(world, roster, owner, enemy, &mut retarget_weapons, &mut retarget_enemies)?;
+        }
+        Ok(bees_gameplay::commands::NativeBombingTimerSnapshot { enemy_owner: enemy, enemy_alive,
+            nearby_targets, retarget_weapons, retarget_enemies })
+    }
+
+    pub(super) fn live_charge_snapshot(&self, world: &CombatWorld, roster: &NativeSquadRoster,
+        owner: SquadLifetime, enemy: SquadLifetime, need_retarget: bool,
+    ) -> Result<bees_gameplay::commands::NativeChargeTimerSnapshot, GameCommandError> {
+        let own = roster.get(owner).ok_or(GameCommandError::InvalidSquad)?;
+        let enemy_alive = roster.get(enemy).is_some();
+        let mut eligible_barges = Vec::new();
+        for &id in &own.members {
+            if let Some(target) = world.game_bomb_current_target(id) {
+                if world.barge_target_within_charging_range(id, target)? { eligible_barges.push(id); }
+            }
+        }
+        eligible_barges.sort_unstable();
+        let mut retarget_weapons = Vec::new(); let mut retarget_enemies = Vec::new();
+        if enemy_alive && need_retarget {
+            self.collect_bomb_activation(world, roster, owner, enemy, &mut retarget_weapons, &mut retarget_enemies)?;
+        }
+        Ok(bees_gameplay::commands::NativeChargeTimerSnapshot { enemy_owner: enemy, enemy_alive,
+            eligible_barges, retarget_weapons, retarget_enemies })
+    }
+
     fn command_center(&self, world: &CombatWorld, roster: &NativeSquadRoster,
         owner: SquadLifetime,
     ) -> Result<Vec2, GameCommandError> {
@@ -42,6 +81,9 @@ impl NativePolicyOnlyMetadata {
     {
         let source = self.authored_ships.get(&own).ok_or(GameCommandError::MissingCombatSnapshot)?;
         for slot in 0..5 {
+            if world.special_weapon_spec(own).is_some_and(|spec| spec.slot == slot) {
+                return Ok(world.ship(enemy).is_some_and(|ship| !ship.vitals.is_dead()));
+            }
             // Unsupported Bomb/Charge subclasses cannot masquerade as unarmed
             // or use turret eligibility. Their real adapter remains required.
             if source.observed_weapons[slot].is_some() && world.weapon_range(own, slot)?.is_none() {

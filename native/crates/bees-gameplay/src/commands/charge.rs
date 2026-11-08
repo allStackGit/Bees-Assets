@@ -77,8 +77,8 @@ impl NativeChargeRun {
         }))
     }
 
-    pub fn enemy_squad_id(&self) -> i64 {
-        self.target.squad_id()
+    pub fn enemy_owner(&self) -> SquadLifetime {
+        self.target.owner()
     }
 
     pub fn needs_retarget(&self, world: &CombatWorld) -> bool {
