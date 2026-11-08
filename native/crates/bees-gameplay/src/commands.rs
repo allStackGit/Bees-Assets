@@ -508,6 +508,12 @@ impl NativeSquadCommandDirector {
 
     pub fn active_count(&self) -> usize { self.active.len() }
 
+    /// Unity Squad.HasCommand: a real active source command, not merely
+    /// HiveMind registration or the existence of a queued server request.
+    pub fn has_active_squad_command(&self, owner: SquadLifetime) -> bool {
+        self.active.contains_key(&owner)
+    }
+
     /// Observations use the true MiningAsteroid.SquadsMining cardinality:
     /// count unique live command-owning squads already enrolled by an
     /// actual collider contact. The active BTreeMap has one command per
