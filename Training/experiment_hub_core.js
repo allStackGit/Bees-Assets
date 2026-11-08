@@ -15,6 +15,7 @@ const ID = /^[a-z][a-z0-9_-]{0,47}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const SHA256 = /^[0-9a-f]{64}$/;
 const PCI = /^[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]$/;
+const CUDA_UUID = /^GPU-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const now = () => new Date().toISOString();
 const AGENT_HEARTBEAT_TTL_MS = 45000;
 const FINAL_EVALUATION_GRACE_MS = 24 * 60 * 60 * 1000;
@@ -50,7 +51,7 @@ function physicalGpuBindings(machine,report,resources,pinned) {
     if(!Number.isSafeInteger(resources.gpu_count)||resources.gpu_count<1||
         !Array.isArray(ids)||ids.length!==resources.gpu_count||
         !Array.isArray(pinned)||pinned.length!==ids.length||
-        report.gpu_inventory_source!=='amdgpu-sysfs-v1')
+        !['amdgpu-sysfs-v1','nvidia-smi-v1'].includes(report.gpu_inventory_source))
         return null;
     const bindings=[];
     for(const id of ids) {
@@ -65,12 +66,17 @@ function physicalGpuBindings(machine,report,resources,pinned) {
         const physical=report.gpu_devices.find(g=>
             g.pci_address===bound.pci_address);
         if(!physical||physical.vram_mb<bound.vram_mb||
+            (report.gpu_inventory_source==='nvidia-smi-v1'&&
+                (!CUDA_UUID.test(String(bound.cuda_uuid||''))||
+                    bound.cuda_uuid!==physical.cuda_uuid))||
             bound.vram_mb<(resources.min_gpu_vram_mb||0)||
             (resources.gpu_mode==='shared'&&
                 bound.vram_mb<(resources.gpu_vram_mb||0)))
             return null;
         bindings.push({id,pci_address:bound.pci_address,
-            vram_mb:bound.vram_mb});
+            vram_mb:bound.vram_mb,
+            ...(report.gpu_inventory_source==='nvidia-smi-v1'
+                ?{cuda_uuid:bound.cuda_uuid}:{})});
     }
     return bindings;
 }
@@ -113,21 +119,27 @@ function boundedReport(value) {
     }
     const gpuSource=value.gpu_inventory_source||'none';
     const devices=value.gpu_devices==null?[]:value.gpu_devices;
-    if(!['none','amdgpu-sysfs-v1'].includes(gpuSource)||
+    if(!['none','amdgpu-sysfs-v1','nvidia-smi-v1'].includes(gpuSource)||
         (gpuSource==='amdgpu-sysfs-v1'&&value.platform!=='linux')||
+        (gpuSource==='nvidia-smi-v1'&&value.platform!=='win32')||
         !Array.isArray(devices)||devices.length>32||
         (gpuSource==='none'&&devices.length)||
         devices.some(g=>!object(g)||!PCI.test(String(g.pci_address||''))||
+            (gpuSource==='nvidia-smi-v1'
+                ?!CUDA_UUID.test(String(g.cuda_uuid||'')):g.cuda_uuid!=null)||
             !Number.isSafeInteger(g.vram_mb)||g.vram_mb<1||
             g.vram_mb>1000000||
             (g.used_vram_mb!=null&&
                 (!Number.isSafeInteger(g.used_vram_mb)||
                     g.used_vram_mb<0||g.used_vram_mb>g.vram_mb)))||
-        new Set(devices.map(g=>g.pci_address)).size!==devices.length)
+        new Set(devices.map(g=>g.pci_address)).size!==devices.length||
+        (gpuSource==='nvidia-smi-v1'&&
+            new Set(devices.map(g=>g.cuda_uuid.toLowerCase())).size!==devices.length))
         throw Error('Invalid bounded physical GPU inventory.');
     const observedGpus=devices.map(g=>({
         pci_address:g.pci_address,vram_mb:g.vram_mb,
         used_vram_mb:g.used_vram_mb??null,
+        ...(gpuSource==='nvidia-smi-v1'?{cuda_uuid:g.cuda_uuid}:{}),
     }));
     const localExecutor=value.local_executor===true;
     const preflight=value.native_preflight_passed===true;
@@ -153,8 +165,8 @@ function boundedReport(value) {
     if(!Array.isArray(gpuProjects)||new Set(gpuProjects).size!==gpuProjects.length||
         gpuProjects.length>installed.length||
         gpuProjects.some(project=>!installed.includes(project))||
-        (gpuProjects.length&&value.platform!=='linux'))
-        throw Error('GPU execution capability requires installed Linux adapters.');
+        (gpuProjects.length&&!['linux','win32'].includes(value.platform)))
+        throw Error('GPU execution capability requires installed native adapters.');
     const evaluationSuites=Object.fromEntries(Object.entries(evaluators)
         .map(([project,ids])=>[project,suiteIds(ids)]));
     return {cpus:value.cpus,ram_mb:value.ram_mb,
@@ -195,8 +207,19 @@ function gpuStartBlock(job,lease,machine) {
         allocated.gpus?.length!==1||
         (r.gpus?.length&&r.gpus[0]!==allocated.gpus[0]))
         return 'Native GPU Start requires one exclusively leased GPU.';
-    if(machine.agent_platform!=='linux'||!machine.gpu_projects?.includes(job.project_id))
-        return 'The Linux host and local adapter have not opted into native GPU execution.';
+    if(!machine.gpu_projects?.includes(job.project_id))
+        return 'The local adapter has not opted into native GPU execution.';
+    if(machine.agent_platform==='win32') {
+        if(machine.gpu_inventory_source!=='nvidia-smi-v1'||
+            physicalGpuBindings(machine,{
+                gpu_inventory_source:machine.gpu_inventory_source,
+                gpu_devices:machine.observed_gpus||[],
+            },allocated,lease.gpu_bindings)?.length!==1)
+            return 'Windows CUDA Start requires a fresh PCI/UUID-pinned NVIDIA lease.';
+        return null; // Cooperative CUDA visibility, not kernel GPU isolation.
+    }
+    if(machine.agent_platform!=='linux')
+        return 'Native GPU execution is unavailable on this operating system.';
     if(!(machine.observed_gpus?.length>=2))
         return 'Native GPU Start requires a second observed GPU to verify access denial.';
     if(job.gpu_qualification?.current!==true)
@@ -496,7 +519,9 @@ function nativeStartReadiness(snapshot, job) {
     if(r.cpus>machine.reported_cpus||r.ram_mb>machine.reported_ram_mb)
         return block('Requested CPU/RAM exceeds the machine\'s fresh reported capacity.');
     return {eligible:true,reason:r.gpu_count
-        ?'Eligible for explicit exclusive GPU Start with in-service verification.'
+        ?machine.agent_platform==='win32'
+            ?'Eligible for explicit cooperative CUDA Start; Windows cannot isolate GPU access.'
+            :'Eligible for explicit exclusive GPU Start with in-service verification.'
         :'Eligible for explicit CPU-only native Start authorization.'};
 }
 // Match the operator's cross-project FIFO fairness in both the read-only
@@ -611,7 +636,9 @@ function allocationChoice(machines,reservations,job,preferredMachineId=null,
                 ['cpu','memory'].every(controller=>
                     machine.execution_capabilities.cgroup_controllers.includes(controller)))&&
             (cpuOnly||machine.gpu_projects?.includes(selected.project_id)&&
-                machine.observed_gpus?.length>=2)
+                (machine.agent_platform==='win32'
+                    ?machine.gpu_inventory_source==='nvidia-smi-v1'&&machine.observed_gpus?.length>=1
+                    :machine.observed_gpus?.length>=2))
         ).map(machine=>machine.id));
         const runnable=fits.filter(p=>ready.has(p.machine_id));
         if(runnable.length)return runnable;
@@ -786,6 +813,7 @@ class ExperimentHub {
                     vram_mb:Math.min(configured.vram_mb,actual.vram_mb),
                     observed_vram_mb:actual.vram_mb,
                     used_vram_mb:actual.used_vram_mb,
+                    ...(actual.cuda_uuid?{cuda_uuid:actual.cuda_uuid}:{}),
                 }]:[];
             }):[];
             if (fresh) {
@@ -1461,7 +1489,8 @@ class ExperimentHub {
                 if(!observed||!PCI.test(observed.pci_address))
                     throw Error('Cannot freeze physical GPU identity at lease allocation.');
                 return {id,pci_address:observed.pci_address,
-                    vram_mb:observed.vram_mb};
+                    vram_mb:observed.vram_mb,
+                    ...(observed.cuda_uuid?{cuda_uuid:observed.cuda_uuid}:{})};
             }),
         };
         if(jobId!==null)lease.job_id=jobId;
@@ -2308,8 +2337,8 @@ class ExperimentHub {
         const snapshot=this.snapshot();
         const machine=snapshot.machines.find(m=>m.id===value.machine_id);
         if(!machine||machine.status!=='connected'||
-            machine.gpu_inventory_source!=='amdgpu-sysfs-v1')
-            throw Error('A fresh authenticated Linux AMDGPU inventory is required to bind physical GPUs.');
+            !['amdgpu-sysfs-v1','nvidia-smi-v1'].includes(machine.gpu_inventory_source))
+            throw Error('A fresh authenticated physical GPU inventory is required to bind GPUs.');
         if(gpu.some(g=>!machine.observed_gpus.some(actual=>
             actual.pci_address===g.pci_address)))
             throw Error('Configured PCI GPU does not match a currently observed physical device.');
