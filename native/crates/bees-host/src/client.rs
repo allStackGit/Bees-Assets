@@ -9,6 +9,7 @@ use minifb::{Key, KeyRepeat, MouseButton, MouseMode, Window, WindowOptions};
 use crate::presentation::{NativeCamera, NativeRenderWorldView, NativeSoftwareRenderer, NativeSupportMode};
 use bees_gameplay::player_inputs::{
     NativePlayerSquadMoves, NativePlayerSquadCommands, NativePlayerSquadStops,
+    NativePlayerSquadManualFire,
 };
 use bees_sim::geometry::Vec2;
 
@@ -16,6 +17,7 @@ use bees_sim::geometry::Vec2;
 pub enum NativeClientAction {
     Wait, Step, Quit, Move(NativePlayerSquadMoves),
     Stop(NativePlayerSquadStops), Support(NativePlayerSquadCommands),
+    ManualFire(NativePlayerSquadManualFire),
 }
 
 pub struct NativeClient {
@@ -150,6 +152,23 @@ impl NativeClient {
                 })
             }
         } else { None };
+        // J arms persistent source-style manual point-fire at the
+        // cursor. K releases it. This changes turret input only: existing
+        // formation and HiveMind movement commands continue unmodified.
+        let manual_fire = if !changed_world && !self.renderer.selection.squads().is_empty() {
+            let clear = self.window.is_key_pressed(Key::K, KeyRepeat::No);
+            let aim = self.window.is_key_pressed(Key::J, KeyRepeat::No);
+            if clear || aim {
+                let target = if clear { Some(None) } else {
+                    mouse.map(|(x, y)| Some(self.renderer.camera
+                        .screen_to_world(x, y, width, height)))
+                };
+                target.map(|target| NativePlayerSquadManualFire {
+                    world_id: view.world_id, episode_revision: view.episode_revision,
+                    squads: self.renderer.selection.squads().to_vec(), target,
+                })
+            } else { None }
+        } else { None };
         let right_down = self.window.get_mouse_down(MouseButton::Right);
         let cancel_support = right_down && !self.right_was_down && self.support_mode.is_some();
         if cancel_support {
@@ -237,7 +256,7 @@ impl NativeClient {
                 ship.entity_id, ship.ship_type, ship.side, ship.vitals.health(),
                 ship.vitals.max_health(), ship.vitals.tsv())).unwrap_or_default();
         self.window.set_title(&format!(
-            "Bees native | World {} | Episode {} | Tick {} | {} ships, {} shots | {} squads selected | {}{} | {} | Left select/drag, Ctrl add, right move | G guard, P patrol, M mine, H heal, R retreat, S stop, Backspace cancel | Space pause, N step, Tab world, arrows pan, wheel zoom, F fit, Esc exit",
+            "Bees native | World {} | Episode {} | Tick {} | {} ships, {} shots | {} squads selected | {}{} | {} | Left select/drag, Ctrl add, right move | G guard, P patrol, M mine, H heal, R retreat, S stop, J fire cursor, K cease manual fire, Backspace cancel | Space pause, N step, Tab world, arrows pan, wheel zoom, F fit, Esc exit",
             view.world_id.0, view.episode_revision, view.tick, counts.ships, counts.projectiles,
             self.renderer.selection.squads().len(),
             if self.paused { "PAUSED" } else { "RUNNING" }, selected, self.input_feedback,
@@ -247,6 +266,7 @@ impl NativeClient {
         self.window.update_with_buffer(self.renderer.pixels(), width, height)?;
         if !self.window.is_open() { return Ok(NativeClientAction::Quit); }
         if let Some(input) = player_stop { return Ok(NativeClientAction::Stop(input)); }
+        if let Some(input) = manual_fire { return Ok(NativeClientAction::ManualFire(input)); }
         if let Some(input) = support_command { return Ok(NativeClientAction::Support(input)); }
         if let Some(input) = player_move { return Ok(NativeClientAction::Move(input)); }
         let after_frame = Instant::now();
