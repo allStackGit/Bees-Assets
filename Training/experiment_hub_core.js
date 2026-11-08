@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const {request: resourceRequest,matchingLeaseBudget,placements: resourcePlacements,
-    startHeadroom} = require('./experiment_hub_resources');
+    startHeadroom,cpuLoadRank} = require('./experiment_hub_resources');
 const {validateProgress}=require('./experiment_hub_progress');
 const {tinyBrainsProfiles,tinyBrainsImports,supportsTinyBrainsProfile}=require('./experiment_hub_tinybrains_adapter');
 const {evaluationPolicy,evaluationEvidence,evaluationRules,evaluationComplete,suiteIds,supportsEvaluation}=
@@ -711,6 +711,7 @@ function allocationChoice(machines,reservations,job,preferredMachineId=null,
         .sort((a,b)=>
             Number(Boolean(a.observed_headroom_block))-
                 Number(Boolean(b.observed_headroom_block))||
+            cpuLoadRank(a,job.resources)-cpuLoadRank(b,job.resources)||
             a.available.cpus-b.available.cpus||
             a.available.ram_mb-b.available.ram_mb||
             a.machine_id.localeCompare(b.machine_id));
@@ -746,7 +747,8 @@ function allocationChoice(machines,reservations,job,preferredMachineId=null,
     options.sort((a,b)=>
         Number(Boolean(a.observed_headroom_block))-
             Number(Boolean(b.observed_headroom_block))||
-        loss.get(a.machine_id)-loss.get(b.machine_id));
+        loss.get(a.machine_id)-loss.get(b.machine_id)||
+        cpuLoadRank(a,job.resources)-cpuLoadRank(b,job.resources));
     return options[0];
 }
 function writeAtomic(file, value) {
