@@ -420,7 +420,7 @@ internal static class Program
             spec.Cpus>spec.HostCpus||
             spec.HostCpus!=Native.SystemLogicalProcessors()||
             spec.RamMb<128||spec.RamMb>100000000||
-            (spec.GpuUuid.Length>0&&!Regex.IsMatch(spec.GpuUuid,
+            (!string.IsNullOrEmpty(spec.GpuUuid)&&!Regex.IsMatch(spec.GpuUuid,
                 @"^GPU-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
                 RegexOptions.IgnoreCase))||
             !Path.IsPathFullyQualified(spec.ReceiptPath)||
