@@ -11,7 +11,7 @@ function verify([id,pci,vramMb,expected,executable,...args]) {
     const plan=resolveRocmDevices([binding]);
     if(deviceIdentity(plan)!==expected)
         throw Error('GPU topology changed before native workload startup.');
-    probe(plan.kfd.node,plan.selected[0].node,
+    const access=probe(plan.kfd.node,plan.selected[0].node,
         ...plan.unselected.map(device=>device.node));
     const result=JSON.parse(execFileSync(executable,args,{
         encoding:'utf8',timeout:12000,maxBuffer:4096,killSignal:'SIGKILL',
@@ -20,9 +20,16 @@ function verify([id,pci,vramMb,expected,executable,...args]) {
     if(!Array.isArray(result?.pci_addresses)||result.pci_addresses.length!==1||
         result.pci_addresses[0]!==pci)
         throw Error('Adapter runtime did not expose exactly the leased ROCm GPU.');
+    // The exact same bound device-access and runtime verifier can be used
+    // both for an inert qualification service and ExecStartPre. A valid
+    // result contains proof only, never an executable training command.
+    return {...access,pci_addresses:[pci]};
 }
 if(require.main===module) {
-    try{verify(process.argv.slice(2));}
+    try{
+        const proof=verify(process.argv.slice(2));
+        process.stdout.write(JSON.stringify(proof)+'\n');
+    }
     catch(error){
         console.error('GPU startup verification failed: '+String(error.message||error).slice(0,180));
         process.exitCode=1;
