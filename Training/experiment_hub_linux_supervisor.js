@@ -368,11 +368,28 @@ class LinuxSupervisor {
             this.fs.existsSync(this.gpuProbePending);
     }
 
-    async qualifyGpuDeviceAccess(bindings) {
+    async qualifyGpuDeviceAccess(bindings,runtimeProof=null) {
         if(!this.qualifiedAt)
             throw Error('CPU/RAM preflight must pass before GPU device checks.');
         if(this.gpuProbeCleanupPending())
             throw Error('Previous GPU access probe cleanup unconfirmed; inspect the recorded local service before retry.');
+        // A real native Start would create a durable ownership journal. Do
+        // the same tiny HIP runtime attestation here *before* that Start,
+        // within the short-lived, device-restricted qualification service.
+        // The executable and arguments come only from the locally installed
+        // project adapter, never from the Hub or experiment JSON.
+        if(runtimeProof!==null&&(
+            !runtimeProof||typeof runtimeProof.executable!=='string'||
+            !path.isAbsolute(runtimeProof.executable)||
+            !SAFE_ARG.test(runtimeProof.executable)||
+            !Array.isArray(runtimeProof.verifyArgs)||
+            runtimeProof.verifyArgs.length>64||
+            runtimeProof.verifyArgs.some(a=>typeof a!=='string'||
+                a.length>1024||!SAFE_ARG.test(a))||
+            !Number.isSafeInteger(runtimeProof.ram_mb)||
+            runtimeProof.ram_mb<128||runtimeProof.ram_mb>1000000))
+            throw Error('Invalid trusted Linux GPU runtime qualification request.');
+        const proofArgs=runtimeProof===null?[]:gpuSelectorArgs(runtimeProof.rocrUuid);
         const plan=resolveRocmDevices(bindings,{fsApi:this.fs});
         // A proof of denial requires a second GPU render node that the same
         // unconfined account can open. Do not mistake a UNIX ACL failure for
@@ -400,20 +417,27 @@ class LinuxSupervisor {
             '--service-type=exec','--unit='+unit,
             '--description='+description,
             '--property=CPUQuota=100%',
-            '--property=MemoryMax=268435456',
+            '--property=MemoryMax='+(runtimeProof===null?268435456:
+                Math.min(runtimeProof.ram_mb,4096)*1048576),
             // Bound the native service even if the agent or systemd-run exits.
-            '--property=TimeoutStartSec=5s',
-            '--property=RuntimeMaxSec=10s',
+            '--property=TimeoutStartSec='+(runtimeProof===null?'5s':'25s'),
+            '--property=RuntimeMaxSec='+(runtimeProof===null?'10s':'35s'),
             '--property=TimeoutStopSec=3s',
             '--property=KillMode=control-group',
             ...plan.device_properties.map(p=>'--property='+p),
+            ...proofArgs,
             '--',process.execPath,
-            path.join(__dirname,'experiment_hub_linux_gpu_probe.js'),
-            plan.kfd.node,plan.selected[0].node,...denied];
+            ...(runtimeProof===null
+                ?[path.join(__dirname,'experiment_hub_linux_gpu_probe.js'),
+                    plan.kfd.node,plan.selected[0].node,...denied]
+                :[path.join(__dirname,'experiment_hub_linux_gpu_launch_check.js'),
+                    bindings[0].id,bindings[0].pci_address,bindings[0].vram_mb,
+                    deviceIdentity(plan),runtimeProof.executable,...runtimeProof.verifyArgs])];
         let failure=null;
         try {
             const response=await this.runner(SYSTEMD_RUN,args,
-                {timeout:20000,maxBuffer:8192,windowsHide:true});
+                {timeout:runtimeProof===null?20000:45000,
+                    maxBuffer:8192,windowsHide:true});
             const actual=JSON.parse(response.stdout.trim());
             if(actual.kfd!==plan.kfd.node||
                 actual.allowed!==plan.selected[0].node||
@@ -425,6 +449,11 @@ class LinuxSupervisor {
                 actual.denied_access.length!==denied.length||
                 actual.denied_access.some(access=>access!==false))
                 throw Error('Linux device filter did not prove allowed and denied GPU access.');
+            if(runtimeProof!==null&&
+                (!Array.isArray(actual.pci_addresses)||
+                    actual.pci_addresses.length!==1||
+                    actual.pci_addresses[0]!==bindings[0].pci_address))
+                throw Error('Linux GPU runtime preflight did not attest the leased PCI device.');
         }catch(error){failure=error;}
         // A timed-out device probe may still be running. Only control the
         // uniquely named, exactly matching service, never an arbitrary PID.
@@ -478,7 +507,8 @@ class LinuxSupervisor {
         if(deviceIdentity(plan)!==deviceIdentity(observed))
             throw Error('GPU device identity changed during the access probe.');
         return {qualified_at:new Date().toISOString(),
-            selected:plan.selected.map(g=>g.pci_address)};
+            selected:plan.selected.map(g=>g.pci_address),
+            runtime_pci_verified:runtimeProof!==null};
     }
 
     terminalAfterUnload(record) {
