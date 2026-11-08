@@ -11,6 +11,7 @@ const {evaluationReader,modelFileSha256}=require('./experiment_hub_evaluation');
 const UUID=/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
 const PROFILE=/^[a-z][a-z0-9_-]{0,47}$/;
 const SHA256=/^[0-9a-f]{64}$/;
+const CUDA_UUID=/^GPU-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MAX_PROFILES=32;
 const TAIL_BYTES=256*1024;
 
@@ -27,8 +28,12 @@ function supportsTinyBrainsProfile(machine,job) {
     if(job.project_id!=='tinybrains')return true;
     const p=job.frozen_parameters;
     const profiles=machine.tinybrains_profiles;
-    return ['win32','linux'].includes(machine.agent_platform)&&job.resources?.gpu_count===0&&
-        p&&Object.keys(p).every(key=>['profile','profile_sha256','updates'].includes(key))&&
+    const cuda=machine.tinybrains_cuda_profiles?.includes(p?.profile)===true;
+    const gpu=job.resources?.gpu_count===1&&job.resources.gpu_mode==='exclusive';
+    return ['win32','linux'].includes(machine.agent_platform)&&
+        (cuda?gpu:job.resources?.gpu_count===0)&&
+        p&&Object.keys(p).every(key=>
+            ['profile','profile_sha256','updates','import_checkpoint'].includes(key))&&
         Number.isSafeInteger(p.updates)&&p.updates>=1&&p.updates<=10000000&&
         typeof p.profile==='string'&&profiles&&Object.hasOwn(profiles,p.profile)&&
         profiles[p.profile]===p.profile_sha256;
@@ -72,7 +77,7 @@ function validateApprovedProfiles(executable,project,configs) {
 }
 
 function createTinyBrainsAdapter({projectRoot,pythonPath,artifactRoot,profiles,
-    evaluationRoot,evaluationSuites,enginePath}) {
+    evaluationRoot,evaluationSuites,enginePath,checkpointImports={}}) {
     for(const target of [projectRoot,pythonPath,artifactRoot]) {
         if(typeof target!=='string'||!path.isAbsolute(target))
             throw Error('TinyBrains requires absolute local project, Python and artifact paths.');
@@ -96,17 +101,34 @@ function createTinyBrainsAdapter({projectRoot,pythonPath,artifactRoot,profiles,
     }
     if(!profiles||typeof profiles!=='object'||Array.isArray(profiles)||!Object.keys(profiles).length||
         Object.keys(profiles).length>MAX_PROFILES)
-        throw Error('Configure at least one locally approved TinyBrains CPU profile.');
+        throw Error('Configure at least one locally approved TinyBrains profile.');
     const configs=new Map(Object.entries(profiles).map(([id,config])=>{
-        if(!PROFILE.test(id)||config?.runtime?.device!=='cpu'||
+        if(!PROFILE.test(id)||!['cpu','cuda'].includes(config?.runtime?.device)||
             !Number.isSafeInteger(config.runtime.threads)||config.runtime.threads<1)
-            throw Error('TinyBrains profiles require a valid ID and explicit CPU runtime.');
+            throw Error('TinyBrains profiles require an approved CPU or CUDA device and thread count.');
         const content=JSON.stringify(config,null,2)+'\n';
         const sha256=crypto.createHash('sha256').update(content).digest('hex');
-        return [id,{content,sha256}];
+        return [id,{content,sha256,device:config.runtime.device}];
     }));
 
     validateApprovedProfiles(executable,project,configs);
+    if(!checkpointImports||typeof checkpointImports!=='object'||
+        Array.isArray(checkpointImports)||Object.keys(checkpointImports).length>32)
+        throw Error('Invalid trusted TinyBrains checkpoint import map.');
+    // Import locations are installed by the machine operator, not supplied
+    // as executable paths by the coordinator. Source checkpoints remain untouched.
+    const imports=new Map(Object.entries(checkpointImports).map(([id,entry])=>{
+        if(!PROFILE.test(id)||!entry||!PROFILE.test(String(entry.profile||''))||
+            !configs.has(entry.profile)||!SHA256.test(String(entry.sha256||''))||
+            typeof entry.checkpoint!=='string'||!path.isAbsolute(entry.checkpoint))
+            throw Error('Invalid operator-approved TinyBrains checkpoint import.');
+        const checkpoint=fs.realpathSync(entry.checkpoint);
+        if(!fs.statSync(checkpoint).isFile()||
+            isWithin(artifacts,checkpoint)||isWithin(checkpoint,artifacts)||
+            modelFileSha256(checkpoint)!==entry.sha256)
+            throw Error('Trusted TinyBrains checkpoint import changed or points into Hub artifacts.');
+        return [id,{profile:entry.profile,checkpoint,sha256:entry.sha256}];
+    }));
 
     function jobRoot(context) {
         if(context.project_id!=='tinybrains'||!UUID.test(context.job_id)||
@@ -115,9 +137,8 @@ function createTinyBrainsAdapter({projectRoot,pythonPath,artifactRoot,profiles,
                 ?!UUID.test(context.continuation_of_job_id)||
                     context.continuation_of_job_id===context.job_id||
                     context.artifact_lineage_root_id===context.job_id
-                :context.artifact_lineage_root_id!==context.job_id)||
-            context.gpu_pci_address)
-            throw Error('Invalid TinyBrains CPU job or checkpoint lineage.');
+                :context.artifact_lineage_root_id!==context.job_id))
+            throw Error('Invalid TinyBrains job or checkpoint lineage.');
         return path.join(artifacts,context.job_id);
     }
 
@@ -153,13 +174,24 @@ function createTinyBrainsAdapter({projectRoot,pythonPath,artifactRoot,profiles,
         },
         ...evaluationReader('tinybrains',evaluationRoot,evaluationSuites,[project,artifacts]),
         tinybrains_profiles:Object.fromEntries([...configs].map(([id,item])=>[id,item.sha256])),
+        tinybrains_cuda_profiles:[...configs].filter(([,item])=>item.device==='cuda').map(([id])=>id),
+        gpu_execution:[...configs].some(([,item])=>item.device==='cuda')?'cuda':null,
         args(parameters,context) {
-            const {profile,profile_sha256,updates}=parameters;
+            const {profile,profile_sha256,updates,import_checkpoint}=parameters;
             const approved=configs.get(profile);
-            if(Object.keys(parameters).some(key=>!['profile','profile_sha256','updates'].includes(key))||
+            if(Object.keys(parameters).some(key=>
+                !['profile','profile_sha256','updates','import_checkpoint'].includes(key))||
                 !approved||approved.sha256!==profile_sha256||
                 !Number.isSafeInteger(updates)||updates<1||updates>10000000)
                 throw Error('TinyBrains jobs require an approved profile, its SHA-256 and 1–10,000,000 updates.');
+            if(approved.device==='cuda'
+                ?!context.gpu_pci_address||!CUDA_UUID.test(String(context.gpu_cuda_uuid||''))
+                :Boolean(context.gpu_pci_address||context.gpu_cuda_uuid))
+                throw Error('TinyBrains CPU/CUDA profile does not match the locally bound native device.');
+            if(import_checkpoint!==undefined&&
+                (context.continuation_of_job_id||!PROFILE.test(String(import_checkpoint))||
+                    imports.get(import_checkpoint)?.profile!==profile))
+                throw Error('A new TinyBrains lineage may import only its locally approved profile checkpoint.');
             const out=jobRoot(context);
             let resume=[];
             if(context.continuation_of_job_id) {
@@ -172,6 +204,16 @@ function createTinyBrainsAdapter({projectRoot,pythonPath,artifactRoot,profiles,
             }
             // An existing directory may belong to a prior launch. Never reuse it.
             fs.mkdirSync(out,{mode:0o700});
+            if(import_checkpoint!==undefined) {
+                const imported=imports.get(import_checkpoint);
+                if(modelFileSha256(imported.checkpoint)!==imported.sha256)
+                    throw Error('Original TinyBrains checkpoint changed before import.');
+                const dest=path.join(out,'imported-checkpoint.pt');
+                fs.copyFileSync(imported.checkpoint,dest,fs.constants.COPYFILE_EXCL);
+                if(modelFileSha256(dest)!==imported.sha256)
+                    throw Error('Copied TinyBrains optimizer checkpoint did not match the pinned source.');
+                resume=['--resume',dest];
+            }
             const config=path.join(out,'hub-profile.json');
             fs.writeFileSync(config,approved.content,{flag:'wx',mode:0o600});
             const stderr=windows?path.join(out,'trainer.stderr.txt'):'-';
