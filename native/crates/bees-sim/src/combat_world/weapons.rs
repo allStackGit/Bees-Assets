@@ -951,6 +951,7 @@ impl CombatWorld {
                         runtime.range_pass = runtime.range_pass.saturating_add(1);
                         let current_pass = runtime.range_pass;
                         let nearby = &mut runtime.nearby_enemy_ids[slot];
+                        let mut membership_changed = false;
                         for target_index in 0..ships.len() {
                             if !game_weapon_candidate_in_range(
                                 physics, ships, index, target_index,
@@ -965,18 +966,43 @@ impl CombatWorld {
                                     entry.get_mut().1 = current_pass;
                                 }
                                 Entry::Vacant(entry) => {
+                                    membership_changed = true;
                                     runtime.entry_sequence =
                                         runtime.entry_sequence.saturating_add(1);
                                     entry.insert((runtime.entry_sequence, current_pass));
                                 }
                             }
                         }
+                        let old_count = nearby.len();
                         nearby.retain(|_, (_, last_seen)| *last_seen == current_pass);
+                        membership_changed |= nearby.len() != old_count;
+                        if runtime.shooting_strategy == Some(2) &&
+                            (membership_changed ||
+                                runtime.random_target_order[slot].is_empty())
+                        {
+                            if let Some(rng) = random.as_deref_mut() {
+                                let mut entered: Vec<(u64, i64)> = nearby.iter()
+                                    .map(|(&id, &(sequence, _))| (sequence, id))
+                                    .collect();
+                                entered.sort_unstable_by_key(|&(sequence, _)| sequence);
+                                let order = &mut runtime.random_target_order[slot];
+                                order.clear();
+                                order.extend(entered.into_iter().map(|(_, id)| id));
+                                // Unity Utilities.Shuffle: Fisher-Yates
+                                // from the final index down. The sole
+                                // world RNG supplies real episode entropy.
+                                for i in (1..order.len()).rev() {
+                                    let j = rng.next_below((i + 1) as u64) as usize;
+                                    order.swap(i, j);
+                                }
+                            }
+                        }
                         if let Some(strategy) = runtime.shooting_strategy {
                             mount.target_ship_id = choose_game_weapon_target(
                                 physics, ships, ship_by_id, target_front_offsets,
                                 game_target_facts,
                                 index, mount, position, strategy, nearby,
+                                &runtime.random_target_order[slot],
                             )?.map(|(target_id, _)| target_id);
                         }
                     }
