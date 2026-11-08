@@ -1126,9 +1126,14 @@ The agent sends a native report only after its local systemd supervisor
 inspects exact service identity, systemd `CPUQuota`/`MemoryMax`
 properties, kernel `cpu.max`/`memory.max` limits, and process membership.
 For the intentional `experiment_hub_agent.js --once` mode, the final
-heartbeat uses `request_execution_orders:false`: it acknowledges completed
-work and lease receipts but cannot trigger a fresh native instruction or
-persist a Start-offered marker that this exiting process would discard.
+heartbeat uses `request_execution_orders:false` even when there is no
+new work. It acknowledges completed work, closes that native agent session
+immediately, revokes ephemeral lease-receipt freshness, and cannot persist
+another Start offer. Durable native jobs and lease claims are **not**
+released or restarted. A replacement process may enroll immediately
+without waiting for heartbeat expiry, but it must freshly reconcile any
+previously owned native work. One-shot sign-off disarms armed native
+automation; unattended scheduling requires a continuous agent.
 Continuous agents retain normal instruction delivery.
 Repeated launch instructions are reconciled against the durable local
 journal, never executed twice. One directive is delivered per heartbeat:
