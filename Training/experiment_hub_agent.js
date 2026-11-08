@@ -32,8 +32,16 @@ function observations(machineId) {
     if (typeof machineId !== 'string' || !ID.test(machineId))
         throw Error('EXPERIMENT_HUB_MACHINE_ID must match a registered machine ID.');
     const platform=os.platform();
-    const gpus=platform==='linux'?discoverAmdGpus():
-        platform==='win32'?discoverNvidiaGpus():[];
+    // Missing or temporarily unreadable NVIDIA telemetry blocks new CUDA
+    // claims, but must not disconnect healthy CPU-only native services.
+    let gpus=[];
+    if(platform==='linux')gpus=discoverAmdGpus();
+    else if(platform==='win32') {
+        try{gpus=discoverNvidiaGpus();}
+        catch(error){
+            gpus=[];
+        }
+    }
     return {
         machine_id:machineId,
         cpus:Math.max(1,typeof os.availableParallelism==='function'
