@@ -41,7 +41,11 @@ use bees_gameplay::player_inputs::{NativeLevelPlayerContext, NativePlayerMove,
 #[derive(Debug)]
 pub enum NativeHostSocketDelivery {
     SetupAccepted { request_hash: i64, server_game_id: i64 },
-    HiveMind(Option<NativeHiveMindFrameDelivery>),
+    HiveMind(NativeHiveMindFrameDelivery),
+    /// The shared Level decoder does not own this valid authenticated
+    /// message type (e.g. another protocol feature). Return its original
+    /// frame untouched to the caller rather than silently dropping it.
+    UnhandledServerFrame(Vec<u8>),
 }
 
 /// Distinguish ordinary socket/ownership errors from a physically lost
@@ -552,7 +556,10 @@ where
                 HiveMindSocketEvent::ServerFrame(frame) => {
                     let delivery = self.receive_frame(&frame)
                         .map_err(HiveMindSocketError::Durability)?;
-                    Ok(NativeHostSocketDelivery::HiveMind(delivery))
+                    Ok(match delivery {
+                        Some(delivery) => NativeHostSocketDelivery::HiveMind(delivery),
+                        None => NativeHostSocketDelivery::UnhandledServerFrame(frame),
+                    })
                 }
             }
         })();
