@@ -7,7 +7,7 @@
 const http = require('node:http');
 const os = require('node:os');
 const crypto=require('node:crypto');
-const {inspectHost}=require('./experiment_hub_host');
+const {inspectHost,availableMemoryMb}=require('./experiment_hub_host');
 const {discoverAmdGpus,discoverNvidiaGpus}=require('./experiment_hub_gpu_inventory');
 const {fromEnvironment}=require('./experiment_hub_execution');
 const {request: resourceRequest}=require('./experiment_hub_resources');
@@ -85,6 +85,7 @@ function observations(machineId) {
             ?os.availableParallelism():os.cpus().length),
         ram_mb:Math.max(128,Math.floor(os.totalmem()/1048576)),
         free_ram_mb:Math.max(0,Math.floor(os.freemem()/1048576)),
+        available_ram_mb:availableMemoryMb(),
         platform,
         execution:inspectHost(),
         // Both inventories are physical observations, not execution quotas.
