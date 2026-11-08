@@ -509,10 +509,6 @@ async function invokeRuntime(options = {}) {
 
 async function invokeServer() {
     const config = loadConfig();
-    if (options.experimentConfig && !options.newRun) throw Error('Experiment configuration requires a fresh run.');
-    if (options.experimentConfig && sha256File(options.experimentConfig.path) !== options.experimentConfig.sha256) {
-        throw Error('Frozen experiment trainer configuration changed.');
-    }
     const worker = ensureTokenFile(paths.workerTokenPath);
     const admin = ensureTokenFile(paths.adminTokenPath);
     await startBeesServerIfNeeded(config, worker, admin);
@@ -525,6 +521,11 @@ async function invokeServer() {
 
 async function invokeStart(options = {}) {
     const config = loadConfig();
+    if (options.experimentConfig && !options.newRun)
+        throw Error('Experiment configuration requires a fresh run.');
+    if (options.experimentConfig &&
+        sha256File(options.experimentConfig.path) !== options.experimentConfig.sha256)
+        throw Error('Frozen experiment trainer configuration changed.');
     const worker = ensureTokenFile(paths.workerTokenPath);
     const admin = ensureTokenFile(paths.adminTokenPath);
     ensureTokenFile(paths.wanTokenPath);
