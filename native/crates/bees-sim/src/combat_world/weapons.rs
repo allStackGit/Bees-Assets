@@ -1082,10 +1082,12 @@ impl CombatWorld {
                             !mount.state.is_aligned_with_target;
                         mount.state.targeting_passes = 0;
                     }
-                    if auto && (!due_to_fire || mount.target_ship_id.is_none()) {
-                        // Source Targeting() refreshes its enemy list on
-                        // ordinary cooldown passes. Range membership is
-                        // distinct from obstacle/visibility eligibility.
+                    if auto {
+                        // Source RangeCollider updates membership regardless
+                        // of whether this targeting timer was also a firing
+                        // pass. Reconcile physical overlaps first; only
+                        // select a new target on a source targeting pass
+                        // or when the previous target became unavailable.
                         runtime.range_pass = runtime.range_pass.saturating_add(1);
                         let current_pass = runtime.range_pass;
                         let nearby = &mut runtime.nearby_enemy_ids[slot];
@@ -1135,15 +1137,17 @@ impl CombatWorld {
                                 }
                             }
                         }
-                        if let Some(strategy) = runtime.shooting_strategy {
-                            mount.target_ship_id = choose_game_weapon_target(
-                                physics, ships, ship_by_id, target_front_offsets,
-                                game_target_facts,
-                                fleet_id_by_ship, game_fleet_damage_done,
-                                index, mount, position, strategy,
-                                reservations, nearby,
-                                &runtime.random_target_order[slot],
-                            )?.map(|(target_id, _)| target_id);
+                        if !due_to_fire || mount.target_ship_id.is_none() {
+                            if let Some(strategy) = runtime.shooting_strategy {
+                                mount.target_ship_id = choose_game_weapon_target(
+                                    physics, ships, ship_by_id, target_front_offsets,
+                                    game_target_facts,
+                                    fleet_id_by_ship, game_fleet_damage_done,
+                                    index, mount, position, strategy,
+                                    reservations, nearby,
+                                    &runtime.random_target_order[slot],
+                                )?.map(|(target_id, _)| target_id);
+                            }
                         }
                     }
                     mount.timer.finish_update(due);
