@@ -78,7 +78,7 @@ impl FinalizedCommand {
     }
 }
 
-#[derive(Default)]
+#[derive(Clone, Debug, Default)]
 pub struct OutcomeBatch {
     seen: HashSet<i64>,
     strategic: Vec<StoredOutcome>,
