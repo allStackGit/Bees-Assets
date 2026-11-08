@@ -36,6 +36,7 @@ class LocalExecution {
         return {local_executor:true,installed_projects:this.projects.slice(),
             evaluation_suites:structuredClone(this.evaluationSuites),
             tinybrains_profiles:{...this.supervisor.adapters?.tinybrains?.tinybrains_profiles},
+            tinybrains_cuda_profiles:[...(this.supervisor.adapters?.tinybrains?.tinybrains_cuda_profiles||[])],
             gpu_projects:this.projects.filter(project=>
                 this.supervisor.gpuEnabled===true&&
                 (this.supervisor.gpuExecution==='cuda'
