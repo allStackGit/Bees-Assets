@@ -163,6 +163,8 @@ pub fn select_matchup_squad(
 #[derive(Debug)]
 pub enum LiveMatchupResolutionError {
     MissingOwner,
+    StaleWorld,
+    MissingAssetCatalog,
     InvalidAlliedTarget,
     MissingShip(i64),
     InvalidWeaponRank(i64),
