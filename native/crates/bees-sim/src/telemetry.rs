@@ -16,6 +16,9 @@ pub struct StepCounts {
     /// economic rewards are deliberately excluded.
     pub enemy_hit_tsv_loss: u64,
     pub friendly_hit_tsv_loss: u64,
+    /// Real damage with no valid shooter; never included in attacker TSV.
+    pub unattributed_damage_events: u64,
+    pub unattributed_damage_tsv_loss: u64,
     /// Final policy projectile roots, counted once after all continuations.
     pub policy_roots_completed: u64,
     pub policy_roots_contacted: u64,
@@ -58,6 +61,8 @@ pub struct Measurements {
     pub friendly_hits: u64,
     pub enemy_hit_tsv_loss: u64,
     pub friendly_hit_tsv_loss: u64,
+    pub unattributed_damage_events: u64,
+    pub unattributed_damage_tsv_loss: u64,
     pub policy_roots_completed: u64,
     pub policy_roots_contacted: u64,
     pub policy_roots_near_missed: u64,
@@ -114,6 +119,8 @@ impl Default for Measurements {
             friendly_hits: 0,
             enemy_hit_tsv_loss: 0,
             friendly_hit_tsv_loss: 0,
+            unattributed_damage_events: 0,
+            unattributed_damage_tsv_loss: 0,
             policy_roots_completed: 0,
             policy_roots_contacted: 0,
             policy_roots_near_missed: 0,
@@ -163,6 +170,8 @@ impl Measurements {
         self.friendly_hits += counts.friendly_hits;
         self.enemy_hit_tsv_loss += counts.enemy_hit_tsv_loss;
         self.friendly_hit_tsv_loss += counts.friendly_hit_tsv_loss;
+        self.unattributed_damage_events += counts.unattributed_damage_events;
+        self.unattributed_damage_tsv_loss += counts.unattributed_damage_tsv_loss;
         self.policy_roots_completed += counts.policy_roots_completed;
         self.policy_roots_contacted += counts.policy_roots_contacted;
         self.policy_roots_near_missed += counts.policy_roots_near_missed;
@@ -226,6 +235,8 @@ impl Measurements {
         self.friendly_hits += other.friendly_hits;
         self.enemy_hit_tsv_loss += other.enemy_hit_tsv_loss;
         self.friendly_hit_tsv_loss += other.friendly_hit_tsv_loss;
+        self.unattributed_damage_events += other.unattributed_damage_events;
+        self.unattributed_damage_tsv_loss += other.unattributed_damage_tsv_loss;
         self.policy_roots_completed += other.policy_roots_completed;
         self.policy_roots_contacted += other.policy_roots_contacted;
         self.policy_roots_near_missed += other.policy_roots_near_missed;
