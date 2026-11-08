@@ -858,7 +858,9 @@ document.addEventListener('DOMContentLoaded', () => {
             (selected?.cudaWorkers
                 ?'When queueing, request one GPU (exclusive, or a cooperative Windows share) and sufficient CPU/RAM. '
                 :'When queueing, request CPU/RAM without GPUs. ')+
-            (sourceId?'The chosen source checkpoint SHA-256 is frozen in this draft. ':'')+
+            (sourceId
+                ?'The source checkpoint SHA-256 is frozen; this draft can initialize a new lineage, not a continuation stage. '
+                :'Use a configuration without an import for checkpoint-continuation stages. ')+
             'Save the draft to retain these settings.');
     });
     for(const [caption,control] of [['Approved profile ',tinyBrainsSelect],
