@@ -312,7 +312,7 @@ fn rotate_around_ship(pivot: Vec2, muzzle: Vec2, degrees: f32) -> Vec2 {
 /// permits the turret timer to reuse its per-ship state while all projectiles
 /// are spawned in deterministic ship-ID and exact weapon-slot order.
 #[derive(Clone, Copy, Debug)]
-pub(super) struct PendingPolicyShot {
+pub(super) struct PendingTurretShot {
     ship_id: i64,
     slot: u8,
     shooter_side: i32,
@@ -423,10 +423,10 @@ impl CombatWorld {
     /// Advance mounted rotating weapons with the exact turret targeting
     /// passes and shared ScaledTimer, using the post-hull-turn ship pose.
     /// Called from the canonical gameplay step BEFORE projectile physics.
-    pub(super) fn advance_policy_turrets(
+    pub(super) fn advance_authored_turrets(
         &mut self, dt: f32,
     ) -> Result<(), CombatWorldError> {
-        self.policy_pending_shots.clear();
+        self.turret_pending_shots.clear();
         for (&ship_id, runtime) in &mut self.policy_ship_runtime {
             let Some(&index) = self.ship_by_id.get(&ship_id) else { continue };
             let ship = &self.ships[index];
@@ -522,7 +522,7 @@ impl CombatWorld {
                         } else {
                             mount.state.target_world
                         };
-                    self.policy_pending_shots.push(PendingPolicyShot {
+                    self.turret_pending_shots.push(PendingTurretShot {
                         ship_id,
                         slot: slot as u8,
                         shooter_side: ship.side,
@@ -600,7 +600,7 @@ impl CombatWorld {
                                 NativeFirePattern::BeamCannon) &&
                                 mount.active_beam_projectile_id.is_some())
                         {
-                            self.policy_pending_shots.push(PendingPolicyShot {
+                            self.turret_pending_shots.push(PendingTurretShot {
                                 ship_id, slot: slot as u8, shooter_side: ship.side,
                                 shooter_is_fire_barge: ship.ship_type == 10,
                                 turret_position: position, ship_position: pose,
@@ -618,7 +618,7 @@ impl CombatWorld {
         // Reserve enough monotonic entity IDs for complete volleys before
         // creating any projectiles. DualCannon must not spawn only its first
         // barrel if the shared ID space is exhausted.
-        let shot_count: usize = self.policy_pending_shots.iter()
+        let shot_count: usize = self.turret_pending_shots.iter()
             .map(|shot| match shot.spec.fire_pattern {
                 NativeFirePattern::DualCannon { .. } => 2,
                 _ => 1,
@@ -631,8 +631,8 @@ impl CombatWorld {
         // Every projectile uses the SAME catalog, entity allocator and
         // collision/damage path as ordinary native gameplay.
         let catalog = Arc::clone(&self.projectile_assets);
-        for index in 0..self.policy_pending_shots.len() {
-            let shot = self.policy_pending_shots[index];
+        for index in 0..self.turret_pending_shots.len() {
+            let shot = self.turret_pending_shots[index];
             let asset = catalog.by_type(shot.spec.projectile_type)
                 .ok_or(CombatWorldError::InvalidProjectileType(
                     shot.spec.projectile_type,
@@ -719,7 +719,7 @@ impl CombatWorld {
                 }
             }
         }
-        self.policy_pending_shots.clear();
+        self.turret_pending_shots.clear();
         Ok(())
     }
 
@@ -901,7 +901,7 @@ mod tests {
             .unwrap();
         let mut shot_id = None;
         for _ in 0..16 {
-            world.advance_policy_turrets(0.02).unwrap();
+            world.advance_authored_turrets(0.02).unwrap();
             world.advance_beam_projectiles().unwrap();
             shot_id = world.events().iter().find_map(|event| match event {
                 CombatEvent::PolicyWeaponFired {
@@ -934,7 +934,7 @@ mod tests {
         world.physics.ships_mut()[0].motion.position = Vec2::new(3.0, 2.0);
         world.physics.ships_mut()[0].motion.body_velocity = Vec2::new(2.0, 1.0);
         world.physics.ships_mut()[0].motion.rotation_degrees = 45.0;
-        world.advance_policy_turrets(0.02).unwrap();
+        world.advance_authored_turrets(0.02).unwrap();
         world.advance_beam_projectiles().unwrap();
         let rotation = world.policy_ship_runtime.get(&1).unwrap().turrets[0]
             .as_ref().unwrap().state.rotation_degrees.to_radians();
@@ -948,7 +948,7 @@ mod tests {
         // A second policy fire request cannot launch another projectile
         // until LaserBeam.Kill releases BeamCannon.IsFiringLaserBeam.
         for _ in 0..20 {
-            world.advance_policy_turrets(0.02).unwrap();
+            world.advance_authored_turrets(0.02).unwrap();
         }
         assert_eq!(world.events().iter().filter(|event|
             matches!(event, CombatEvent::PolicyWeaponFired { .. })
@@ -1005,14 +1005,14 @@ mod tests {
         // Targeting completes after three source-defined passes, but the
         // real Leaf Cutter Shot Form animation fires only at 0.8 seconds.
         for _ in 0..45 {
-            world.advance_policy_turrets(0.02).unwrap();
+            world.advance_authored_turrets(0.02).unwrap();
         }
         assert_eq!(world.projectile_storage_metrics().active_projectiles, 0);
         let (elapsed, event) = world.policy_weapon_charge(1, 0).unwrap().unwrap();
         assert!(elapsed > 0.0 && elapsed < event);
         assert_eq!(event, 0.8);
         for _ in 0..30 {
-            world.advance_policy_turrets(0.02).unwrap();
+            world.advance_authored_turrets(0.02).unwrap();
         }
         let fired: Vec<i64> = world.events().iter().filter_map(|event| {
             if let CombatEvent::PolicyWeaponFired {
@@ -1059,7 +1059,7 @@ mod tests {
         world.apply_policy_decisions(&[Decision { agent_id: 1, action }])
             .unwrap();
         for _ in 0..20 {
-            world.advance_policy_turrets(0.02).unwrap();
+            world.advance_authored_turrets(0.02).unwrap();
         }
         assert_eq!(world.projectile_storage_metrics().active_projectiles, 0);
         let (elapsed, event) = world.policy_weapon_charge(1, 0).unwrap().unwrap();
@@ -1073,7 +1073,7 @@ mod tests {
             .unwrap();
         world.physics.ships_mut()[0].motion.rotation_degrees = 90.0;
         for _ in 0..155 {
-            world.advance_policy_turrets(0.02).unwrap();
+            world.advance_authored_turrets(0.02).unwrap();
         }
         let fired: Vec<i64> = world.events().iter().filter_map(|event| {
             if let CombatEvent::PolicyWeaponFired {
@@ -1339,7 +1339,7 @@ mod tests {
         world.apply_policy_decisions(&[Decision { agent_id: 1, action }])
             .unwrap();
         for _ in 0..100 {
-            world.advance_policy_turrets(0.02).unwrap();
+            world.advance_authored_turrets(0.02).unwrap();
         }
         assert_eq!(world.projectile_storage_metrics().active_projectiles, 0);
         assert!(world.policy_self_weapons(1).unwrap()[3]
