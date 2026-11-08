@@ -99,7 +99,7 @@ use self::policy::{PolicyShipRuntime, PolicyShipSpecial};
 pub use self::policy::PolicySpecialObservations;
 pub use self::policy::WARP_GATE_TYPE;
 pub use self::healing::BEEHIVE_TYPE;
-use self::weapons::{PendingPolicyShot, GameTurretRuntime};
+use self::weapons::{PendingTurretShot, GameTurretRuntime};
 pub use self::weapons::{NativeFirePattern, NativeTurretSpec};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -733,7 +733,7 @@ pub struct CombatWorld {
     /// entire controller roster on every fixed physics step.
     policy_roster_revision: u64,
     policy_decision_seen: HashSet<u64>,
-    policy_pending_shots: Vec<PendingPolicyShot>,
+    turret_pending_shots: Vec<PendingTurretShot>,
     /// Validated ship specials use one queue across different authored ships.
     /// Commit after event clearing and before physics, in stable ship-ID order.
     policy_pending_ship_specials: Vec<i64>,
@@ -877,7 +877,7 @@ impl CombatWorld {
             game_turrets: BTreeMap::new(),
             policy_roster_revision: 0,
             policy_decision_seen: HashSet::new(),
-            policy_pending_shots: Vec::new(),
+            turret_pending_shots: Vec::new(),
             policy_pending_ship_specials: Vec::new(),
             policy_pending_mining: Vec::new(),
             policy_pending_healing: Vec::new(),
@@ -3855,7 +3855,7 @@ impl CombatWorld {
         }
         // Turrets use the same ship pose updated above, and create real
         // projectile bodies before the subsequent shared physics step.
-        self.advance_policy_turrets(dt)?;
+        self.advance_authored_turrets(dt)?;
         // LaserBeam.ExtendBeam follows the same real shooter/turret and
         // resizes the physical beam collider before the native broadphase.
         self.advance_beam_projectiles()?;
