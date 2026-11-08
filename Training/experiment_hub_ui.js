@@ -226,7 +226,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let pipelineStageProject = null;
     let pipelineStageKind = null;
     let envArgsTouched = false;
-    let lastGpuBindingMachine = null, budgetDraft = null;
+    let lastGpuBindingMachine = null, budgetDraft = null, gpuBudgetDraft = null;
     const stagedMoves=new Map();
     let applyingMoves=false;
     const action = async (route, payload) => {
@@ -1636,10 +1636,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 ?selected.gpus.map(g=>({
                     id:g.id,vram_mb:g.vram_mb,
                     pci_address:g.pci_address||'',
+                    hub_vram_mb:g.hub_vram_mb??g.vram_mb,
+                    hub_compute_pct:g.hub_compute_pct??100,
                 }))
                 :(selected?.observed_gpus||[]).map((g,index)=>({
                     id:'gpu'+index,vram_mb:g.vram_mb,
                     pci_address:g.pci_address,
+                    hub_vram_mb:g.vram_mb,hub_compute_pct:100,
                 }));
             $('hub-gpu-bind-json').value=JSON.stringify(inventory,null,2);
             lastGpuBindingMachine=physical.value;
@@ -1661,6 +1664,28 @@ document.addEventListener('DOMContentLoaded', () => {
             $('hub-budget-ram').value=budgetSelected?.ram_mb??'';
         }
         $('hub-budget-save').disabled=!budgetSelected;
+        const gpuBudgetMachine=$('hub-gpu-budget-machine');
+        const priorGpuBudgetId=gpuBudgetMachine.value;
+        const budgetCandidates=state.machines.filter(m=>(m.gpus||[]).length>0);
+        gpuBudgetMachine.replaceChildren(new Option('Select GPU machine',''),
+            ...budgetCandidates.map(m=>new Option(m.name+' ('+m.id+')',m.id)));
+        const chosenGpuBudget=budgetCandidates.some(m=>m.id===priorGpuBudgetId)
+            ?priorGpuBudgetId:budgetCandidates[0]?.id||'';
+        gpuBudgetMachine.value=chosenGpuBudget;
+        const selectedGpuBudget=budgetCandidates.find(m=>m.id===chosenGpuBudget);
+        if(!gpuBudgetDraft||gpuBudgetDraft.machine_id!==chosenGpuBudget) {
+            gpuBudgetDraft=selectedGpuBudget?{
+                machine_id:chosenGpuBudget,gpus:structuredClone(selectedGpuBudget.gpus),
+            }:null;
+            $('hub-gpu-budget-json').value=JSON.stringify(
+                (selectedGpuBudget?.gpus||[]).map(g=>({
+                    id:g.id,vram_mb:g.vram_mb,
+                    ...(g.pci_address?{pci_address:g.pci_address}:{}),
+                    hub_vram_mb:g.hub_vram_mb??g.vram_mb,
+                    hub_compute_pct:g.hub_compute_pct??100,
+                })),null,2);
+        }
+        $('hub-gpu-budget-save').disabled=!selectedGpuBudget;
         $('hub-machine-rows').replaceChildren();
         for(const m of state.machines) {
             const tr=document.createElement('tr');
@@ -1709,9 +1734,11 @@ document.addEventListener('DOMContentLoaded', () => {
             const verified=new Map((m.verified_gpus||[]).map(g=>[g.id,g]));
             const configured=(m.gpus||[]).map(g=>{
                 const matched=verified.get(g.id);
-                return g.id+' ('+g.vram_mb+' MiB configured) · '+
+                return g.id+' ('+g.vram_mb+' MiB configured; Hub budget '+
+                    (g.hub_vram_mb??g.vram_mb)+' MiB / '+
+                    (g.hub_compute_pct??100)+'% compute) · '+
                     (matched?'PCI '+matched.pci_address+' verified, '+
-                        matched.vram_mb+' MiB available for advisory claims'
+                        matched.vram_mb+' MiB physically available for advisory claims'
                         :g.pci_address?'PCI '+g.pci_address+' not observed':
                             'No PCI binding');
             });
@@ -2108,6 +2135,40 @@ document.addEventListener('DOMContentLoaded', () => {
                 result.claimed_ram_mb+' MiB. No processes changed.');
             await reload();
         }catch(error){feedback('hub-budget-message',error.message);}
+    });
+    $('hub-gpu-budget-machine').addEventListener('change',()=>{
+        gpuBudgetDraft=null;
+        display();
+    });
+    $('hub-gpu-budget-form').addEventListener('submit',async event=>{
+        event.preventDefault();
+        const machine=state?.machines.find(m=>
+            m.id===$('hub-gpu-budget-machine').value);
+        if(!machine||!gpuBudgetDraft||gpuBudgetDraft.machine_id!==machine.id) {
+            feedback('hub-gpu-budget-message','Select a registered GPU machine.');
+            return;
+        }
+        let requested;
+        try{requested=JSON.parse($('hub-gpu-budget-json').value);}
+        catch(error){feedback('hub-gpu-budget-message',error.message);return;}
+        if(!confirm('Change Hub GPU scheduling budgets on '+machine.name+
+            '? This leaves capacity for unmanaged training only in the Hub ledger; '+
+            'it does not enforce GPU memory or compute quotas. Disarm automation '+
+            'and release outstanding GPU-bearing leases first.'))return;
+        try {
+            const result=await action('hub/machines/gpu-budget',{
+                machine_id:machine.id,expected_gpus:gpuBudgetDraft.gpus,
+                gpus:requested,confirm_budget:true,
+            });
+            gpuBudgetDraft=null;
+            lastGpuBindingMachine=null;
+            feedback('hub-gpu-budget-message',
+                result.changed?'GPU admission budgets saved. No existing processes changed.':
+                    'GPU admission budgets unchanged.');
+            await reload();
+        }catch(error){
+            feedback('hub-gpu-budget-message',error.message);
+        }
     });
     $('hub-gpu-bind-machine').addEventListener('change',()=>{
         lastGpuBindingMachine=null;
