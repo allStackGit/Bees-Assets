@@ -12,6 +12,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use bees_gameplay::commands::{
     GameCommandError, NativeBombWeapon, NativeEnemyTargetStats,
+    NativeEnemySquad,
 };
 use bees_gameplay::level_host::{
     NativeLevelObservationContext, NativeLevelActivationContext,
@@ -23,6 +24,7 @@ use bees_gameplay::level_rules::{
 use bees_gameplay::perception_world::NativeLevelPerceptionInputs;
 use bees_gameplay::squads::NativeSquadRoster;
 use bees_hivemind::session::SquadLifetime;
+use bees_hivemind::dispatch::LocalCommandKind;
 use bees_sim::collision::Aabb;
 use bees_sim::combat_perception_bridge::{
     AuthoredShipPerception, ControlledShipPerception,
@@ -460,6 +462,57 @@ impl NativeLevelActivationContext for NativePolicyOnlyMetadata {
             scouting: self.player.scouting.get(&owner).copied(),
             settings: inputs.settings,
         })
+    }
+
+    fn strategy_inputs_for_command(
+        &self, combat: &CombatWorld, roster: &NativeSquadRoster,
+        owner: SquadLifetime, original_enemy: Option<SquadLifetime>,
+        command: LocalCommandKind,
+    ) -> Result<NativeLevelStrategyInputs, GameCommandError> {
+        let mut details = self.strategy_inputs(owner, original_enemy)?;
+        if command != LocalCommandKind::Retreat {
+            // Other enemy-dependent commands need authentic current
+            // weapon-target and contact adapters. Leaving enemy=None
+            // makes the shared receipt router discard their reservations
+            // before an unsupported timer can be installed.
+            return Ok(details);
+        }
+        let Some(enemy_owner) = original_enemy else { return Ok(details); };
+        let own = roster.get(owner).ok_or(GameCommandError::InvalidSquad)?;
+        let Some(enemy) = roster.get(enemy_owner) else { return Ok(details); };
+        if enemy.side == own.side || enemy_owner.level_id != owner.level_id {
+            return Ok(details);
+        }
+        let bounds = bees_gameplay::squad_geometry::live_squad_bounds_from_catalog(
+            combat, enemy, &self.ship_catalog,
+        ).map_err(GameCommandError::SquadGeometry)?;
+        let mut max_range = 0.0_f32;
+        let mut is_alive = false;
+        for &ship_id in &enemy.members {
+            let ship = combat.ship(ship_id).ok_or(GameCommandError::InvalidEnemy)?;
+            let body = combat.ship_body(ship_id)
+                .ok_or(GameCommandError::InvalidEnemy)?;
+            if ship.side != enemy.side {
+                return Err(GameCommandError::InvalidEnemy);
+            }
+            if ship.vitals.is_dead() || !body.active { continue; }
+            let source = self.authored_ships.get(&ship_id)
+                .ok_or(GameCommandError::MissingCombatSnapshot)?;
+            if !source.max_weapon_range.is_finite() ||
+                source.max_weapon_range < 0.0
+            {
+                return Err(GameCommandError::InvalidCombatSnapshot);
+            }
+            max_range = max_range.max(source.max_weapon_range);
+            is_alive = true;
+        }
+        details.enemy = Some(NativeEnemySquad {
+            owner: enemy_owner,
+            position: bounds.center,
+            max_range,
+            is_alive,
+        });
+        Ok(details)
     }
 
     fn stored_formation_offset(
