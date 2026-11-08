@@ -17,7 +17,7 @@ use bees_gameplay::squads::SquadRosterError;
 use bees_hivemind::session::SquadLifetime;
 use bees_sim::collision::{Aabb, Pose};
 use bees_sim::combat::ShipVitals;
-use bees_sim::combat_world::{CombatWorld, CombatWorldError, NativeTurretSpec, NativeTurretRangeSpec, NativeShipTargetGeometry, NativeLevelGeometry, ShipCollisionProfile};
+use bees_sim::combat_world::{CombatWorld, CombatWorldError, NativeTurretSpec, NativeTurretRangeSpec, NativeShipTargetGeometry, NativeLevelGeometry, NativeWeaponRankSource, ShipCollisionProfile};
 use bees_sim::asteroid_spawn::FullAsteroidPrototype;
 use bees_sim::geometry::Vec2;
 use bees_sim::navigation::NavigationError;
@@ -38,6 +38,7 @@ use crate::scene_assets::NativeSceneAssets;
 /// health can differ from a training-adjusted MaxHealth. A controller
 /// and its frame are registered ONLY if the source supplies the binding.
 pub struct NativeAuthoredShip {
+    pub weapon_rank_source: Option<NativeWeaponRankSource>,
     pub target_geometry: Option<NativeShipTargetGeometry>,
     pub entity_id: i64,
     pub ship_type: u8,
@@ -169,6 +170,7 @@ pub struct NativeAuthoredGroups {
 }
 
 pub struct NativeAuthoredLevel<M, A> {
+    pub weapon_rank_frame: Option<i32>,
     pub level_geometry: Option<NativeLevelGeometry>,
     pub world_id: WorldId,
     pub seed: u64,
@@ -288,6 +290,9 @@ impl NativeSceneAssets {
         )
             .map_err(NativeSceneBuildError::Combat)?;
         combat.shots_harmless = authored.shots_harmless;
+        if let Some(frame) = authored.weapon_rank_frame {
+            combat.enable_automatic_weapon_targeting(frame).map_err(NativeSceneBuildError::Combat)?;
+        }
         if let Some(geometry) = authored.level_geometry {
             combat.configure_level_geometry(geometry).map_err(NativeSceneBuildError::Combat)?;
         }
@@ -347,6 +352,9 @@ impl NativeSceneAssets {
                         combat.configure_policy_warp(ship.entity_id, side)
                             .map_err(NativeSceneBuildError::Combat)?;
                     }
+                }
+                if let Some(source) = ship.weapon_rank_source {
+                    combat.configure_weapon_rank_source(source).map_err(NativeSceneBuildError::Combat)?;
                 }
                 if let Some(geometry) = ship.target_geometry {
                     combat.configure_ship_target_geometry(ship.entity_id, geometry)

@@ -14,6 +14,14 @@ pub(super) struct WeaponRangeContacts {
 }
 
 impl WeaponRangeContacts {
+    pub(super) fn remove(&mut self, ship_id: i64) -> bool {
+        if self.membership.remove(&ship_id).is_none() { return false; }
+        self.ships.retain(|&id| id != ship_id);
+        self.revision = self.revision.saturating_add(1);
+        true
+    }
+    pub(super) fn ids(&self) -> &[i64] { &self.ships }
+    pub(super) fn revision(&self) -> u64 { self.revision }
     pub(super) fn contains(&self, ship_id: i64) -> bool { self.membership.contains_key(&ship_id) }
 }
 
@@ -37,7 +45,7 @@ impl CombatWorld {
     pub(super) fn refresh_weapon_range_contacts(&mut self, collisions: &CollisionMatrix)
         -> StepCounts
     {
-        let mut counts = StepCounts::default();
+        let mut counts = StepCounts { weapon_range_exits: std::mem::take(&mut self.pending_weapon_range_exits), ..StepCounts::default() };
         let mut has_ranges = false;
         for (&ship_id, weapons) in &mut self.ship_weapons {
             let owner_index = self.ship_by_id[&ship_id];

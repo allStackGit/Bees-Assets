@@ -94,12 +94,19 @@ impl CombatWorld {
     pub fn is_weapon_ship_target_valid(&mut self, ship_id: i64, slot: usize, target_id: i64)
         -> Result<bool, CombatWorldError>
     {
-        let geometry = self.level_geometry.ok_or(CombatWorldError::MissingLevelGeometry)?;
         let Some(range) = self.weapon_range(ship_id, slot)? else { return Ok(false) };
+        let contact = self.ship_weapons[&ship_id].range_contacts[slot].contains(target_id);
+        self.is_ship_target_valid_in_range(ship_id, range, contact, target_id)
+    }
+
+    pub(super) fn is_ship_target_valid_in_range(&mut self, ship_id: i64, range: NativeWeaponRange,
+        contact: bool, target_id: i64) -> Result<bool, CombatWorldError>
+    {
+        let geometry = self.level_geometry.ok_or(CombatWorldError::MissingLevelGeometry)?;
         let own = self.ship(ship_id).ok_or(CombatWorldError::UnknownShip)?;
         let target = self.ship(target_id).ok_or(CombatWorldError::UnknownShip)?;
         if own.vitals.is_dead() || target.vitals.is_dead() || own.side == target.side ||
-            !self.ship_weapons[&ship_id].range_contacts[slot].contains(target_id) {
+            !contact {
             return Ok(false);
         }
         if !self.ship_is_in_bounds(target_id)? { return Ok(false); }
@@ -120,6 +127,12 @@ impl CombatWorld {
         let aim_at_front = self.ship_weapons[&ship_id].turrets[slot].as_ref()
             .and_then(|mount| mount.aim_at_front_of_ship)
             .ok_or(CombatWorldError::MissingWeaponTargetingGeometry)?;
+        self.target_point_for_range(range, aim_at_front, target_id)
+    }
+
+    pub(super) fn target_point_for_range(&self, range: NativeWeaponRange, aim_at_front: bool, target_id: i64)
+        -> Result<Vec2, CombatWorldError>
+    {
         let target = self.ship_body(target_id).filter(|body| body.active)
             .ok_or(CombatWorldError::UnknownShip)?;
         let mut point = target.motion.position;

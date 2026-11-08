@@ -5,6 +5,60 @@ Latest fetch found no newer upstream than `3c76c78a3`, merged in `f7261843e`.
 Prior manual weapons `961189b94`; owner split `23c1c442d`; support `ea5ddd1a9`.
 Original `B:\Bees\Assets` and live training untouched.
 
+## Latest shared automatic weapons
+
+Schema23 ordinary weapons now use the authoritative mounted scheduler for all40
+shooting strategies and all5 firing patterns. The Level lends its actual roster,
+current strategy and command identity/preferred enemy; no independent roster or
+training controller is introduced. Manual point fire takes priority. Actual policy
+bindings bypass automatic selection. Full combat command snapshot activation and
+asteroid/MapObject targeting fallback remain incomplete.
+
+Target queues retain IDs only and invalidate on range revision, strategy, actual
+new command or owner kill. Shared reusable scratch computes hull distance only
+for Closest/Furthest. Source three-pass targeting, readiness/alignment, charge
+clips and existing projectile/beam lifecycle remain in one scheduler. Outgoing
+TSV-damage reservations are visible to later weapons in the same transaction,
+using their eventual real projectile IDs, including dual barrels.
+
+Exporter captures genuine type letter, LastKilled, FleetShip.DamageDone, firepower,
+range, speed, shared FleetShip reference aliases and Time.frameCount. TSV-loss
+credit preserves C# int32 wrapping, shared aliases, per-Ship kills and Fire Barge
+external-killer credit. Native fixed ticks advance captured frame history; this
+does not establish Unity render-frame callback ordering. Scout prefab targeting
+inputs are exported and installed by the common physical Beacon spawn before
+range discovery, with current parent fleet damage and fresh newborn kill/bounds.
+Older20–22 scenes keep their prior supported mechanics without guessed inputs.
+
+Executed Windows source-contract fixtures outside the repo under
+B:\Bees\native-capability-qualification:
+- automatic-control-final.txt: all40 actual timer/ranking paths, deterministic
+  cached RNG, command/user/cease gates, alignment latch, preferred enemy/blocked
+  preferred group, reservations including same-transaction multi-mount selection,
+  policy/manual separation, real lethal/shared/Fire Barge/overflow damage history,
+  temporal FirstSeen and actual Scout-spawned Beacon targeting.
+- automatic-host-final.txt: schema23 importer -> canonical NoPolicy host -> all5
+  real firing patterns, actual enemy damage/history, zero policy roots, interval
+  counters and selected renderer. Single7/Dual14/Beam7/Leaf2/Full2 physical shots
+  in bounded fixture windows. Missing clock/rank/letter imports rejected.
+- beacon-import-automatic.txt: schema23 Scout prefab import accepts supplied
+  targeting metadata and rejects missing/out-of-range prototype data.
+- workspace-automatic-final.txt: all106 existing sim tests and workspace all-target/
+  all-feature checks pass; headless-automatic-final.txt: no-default-feature check
+  passes. Six authored asset verifiers pass. No new committed tests.
+- game-manual-after-automatic.txt and range-after-automatic.txt: previous manual
+  all5 pattern and range-lifecycle/scaling executable probes pass.
+- automatic-single.png visually inspected: actual range, LOS and yellow aim mark
+  remain visible on the selected scene; renderer reads physical controller status.
+
+These are supplied source-contract fixtures, not authentic Unity export receipts.
+Unity C# compilation/export execution, physical window/input, Linux and distributed
+training execution remain unverified. Highest-value next: supply the richer real
+Level combat snapshots so actual HiveMind/player attacking commands activate end
+to end, then connect remaining target kinds and authored dynamic ship factories.
+The full Unity replacement goal remains incomplete. Latest fetch found no newer
+rewrite-branch commits; unrelated feat/experiment-queue-ui changes were not merged.
+
 ## Latest shared target geometry and bounds
 
 Schema22 adds actual source Ship.IsInBoundsLatched (read-only getter, no capture
@@ -49,9 +103,8 @@ Executed external B:\Bees\native-capability-qualification probes:
 
 These are supplied source-contract fixtures, not authentic Unity exports. Unity
 C# compilation/export execution, physical input and Linux execution are unverified.
-Automatic ranking/timer/fire selection remains NOT connected. Dynamic spawn
-adapters also need authored front offsets before front-target-point queries can
-use those new units. Original Unity checkout and live training untouched.
+This earlier geometry qualification predates automatic weapon integration above.
+Dynamic factories other than Scout still need authored targeting inputs. Original Unity checkout and live training untouched.
 
 ## Latest authoritative range lifecycle
 
@@ -226,18 +279,12 @@ was left running. Do not turn narrower checks into full parity/readiness claims.
 
 ## Highest-value next work / full objective remains incomplete
 
-Build on shared validity/aim-point queries AND authoritative range history: port
-target queue/ranking and automatic TargetingSequence into the SAME mounted
-scheduler;
-then wire chosen-target attack commands. Complete visual sprite animation/audio,
-per-weapon statistics/combat timers and persistent game accounting.
-Manual point firing supplies no missing automatic targeting semantics. All40
-rankings already exist in bees-gameplay/src/commands/targeting.rs for commands and
-Bombs, but ordinary weapons must share that ordering rather than duplicate it or
-substitute nearest-only targets. Their source LastKilled/FleetShip.DamageDone,
-current strategy and preferred enemy squad need real authoritative inputs; do not
-invent zeros or copy the canonical roster into metadata. Include source timer
-ReadyToFire/GetAimedAtTarget/FireNext semantics and real reservation ownership.
+Wire actual chosen-target attack commands into the shared automatic scheduler
+using richer real Level command snapshots. All40 rankings now share bees-sim's
+targeting module across commands/Bombs/ordinary weapons. Keep actual roster,
+fleet-credit and projectile-reservation authority in those existing owners.
+Complete asteroid/MapObject fallback, visual sprite animation/audio, per-weapon
+statistics/combat timers and persistent game accounting.
 
 NativePolicyOnlyMetadata still rejects HiveMind activation until its source
 strategy/per-command snapshots exist. A no-model game-only Level works via the

@@ -23,6 +23,7 @@ internal static class NativePhysicalSceneExporter
     [Serializable]
     private sealed class SourceShip
     {
+        public SourceWeaponRank weapon_rank_source;
         public SourceShipTargetGeometry target_geometry;
         public long entity_id;
         public int ship_type;
@@ -92,11 +93,19 @@ internal static class NativePhysicalSceneExporter
     [Serializable]
     private sealed class SourceBeaconTemplate
     {
+        public SourceBeaconTarget targeting;
         public int original_health, health, max_tsv, effective_vision_range;
         public float size_class, base_speed, rotation_speed, height, longest_side;
         public bool hivemind_registered, hivemind_vision_enabled;
         // Zero is the ordinary game with no training population cap.
         public int max_living_ships_per_side;
+    }
+
+    [Serializable]
+    private sealed class SourceBeaconTarget
+    {
+        public float front_offset, firepower;
+        public int ship_type_letter;
     }
 
     [Serializable]
@@ -114,6 +123,15 @@ internal static class NativePhysicalSceneExporter
     {
         public int slot, weapon_type;
         public float range, power, rate_of_fire;
+    }
+
+    [Serializable]
+    private sealed class SourceWeaponRank
+    {
+        public long fleet_owner_ship_id;
+        public int fleet_damage_done;
+        public int ship_type_letter, last_killed, max_range;
+        public float firepower, speed;
     }
 
     [Serializable]
@@ -207,7 +225,8 @@ internal static class NativePhysicalSceneExporter
     [Serializable]
     private sealed class PhysicalScene
     {
-        public int schema_version = 22;
+        public int schema_version = 23;
+        public int source_frame_count = Time.frameCount;
         public string level_name;
         public string stage_name;
         public float fixed_dt_seconds;
@@ -391,6 +410,15 @@ internal static class NativePhysicalSceneExporter
                 base_speed = ship.Speed,
                 current_speed = ship.CurrentSpeed,
                 body_velocity = ship.Body.linearVelocity,
+                weapon_rank_source = new SourceWeaponRank {
+                    fleet_owner_ship_id = FindRankFleetOwner(ship),
+                    ship_type_letter = (int)ship.ShipTypeLetter,
+                    last_killed = ship.LastKilled,
+                    fleet_damage_done = ship.FleetShip.DamageDone,
+                    firepower = ship.Firepower,
+                    max_range = ship.MaxRange,
+                    speed = ship.Speed,
+                },
                 target_geometry = new SourceShipTargetGeometry {
                     front_offset = halfHeight - ConfigData.OffsetFromFrontOfShip.GetValueOrDefault(ship.ShipType),
                     bounds_latched = ship.IsInBoundsLatched
@@ -925,6 +953,11 @@ internal static class NativePhysicalSceneExporter
         bool user = scout.Side == ConfigData.Configuration.UserSide && scout.Stage.DoesUserHaveController;
         bool registered = scout.Stage.IsTrainingNueralNetwork || !user;
         return new SourceBeaconTemplate {
+            targeting = new SourceBeaconTarget {
+                front_offset = size.y * 0.5f - ConfigData.OffsetFromFrontOfShip.GetValueOrDefault(ConfigData.ShipTypes.Beacon),
+                ship_type_letter = (int)Utilities.ConvertShipTypeToShipTypeLetter[ConfigData.ShipTypes.Beacon],
+                firepower = beacon.SpecialFirePower,
+            },
             original_health = stats.Health,
             health = training ? RlOneVsOneTrainingDurabilityGuard.CalculateTrainingHealth(stats.Health) : stats.Health,
             max_tsv = stats.Tsv,
@@ -1060,6 +1093,18 @@ internal static class NativePhysicalSceneExporter
             });
         }
         return entries;
+    }
+
+    private static long FindRankFleetOwner(Ship ship)
+    {
+        // Preserve actual FleetShip reference sharing, including transient
+        // objects without a persistent database ID. The alias is a REAL ship.
+        long owner = ship.Id;
+        foreach (Ship candidate in ship.Level.State.Ships)
+            if (candidate != null && !candidate.IsDead &&
+                ReferenceEquals(candidate.FleetShip, ship.FleetShip))
+                owner = Math.Min(owner, candidate.Id);
+        return owner;
     }
 
     private static List<SourceTurret> ExportTurrets(Ship ship)

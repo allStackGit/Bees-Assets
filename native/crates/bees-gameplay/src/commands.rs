@@ -419,6 +419,7 @@ struct FollowingFriendly {
 /// One canonical command's source state. Physics and cargo belong
 /// exclusively to CombatWorld, not to this timer/movement controller.
 struct ActiveNativeCommand {
+    preferred_weapon_enemy: Option<SquadLifetime>,
     selection: NativeCommandSelection,
     // Retreat has no time limit while moving; other commands may have
     // their own one-shot timeout or delayed finalization timer.
@@ -545,6 +546,25 @@ impl NativeSquadCommandDirector {
 
     pub fn has_active(&self, owner: SquadLifetime) -> bool {
         self.active.contains_key(&owner)
+    }
+
+    pub fn automatic_weapon_input(&self, owner: SquadLifetime)
+        -> Option<bees_sim::combat_world::NativeAutomaticWeaponInputs>
+    {
+        let selection = &self.active.get(&owner)?.selection;
+        let key = match selection.origin() {
+            NativeCommandOrigin::HiveMind(value) => (0, value.command_outcome_id as u64),
+            NativeCommandOrigin::Local(value) => (match value.source {
+                NativeLocalCommandSource::Player => 1, NativeLocalCommandSource::Scripted => 2,
+            }, value.sequence),
+        };
+        Some(bees_sim::combat_world::NativeAutomaticWeaponInputs {
+            strategy_id: selection.shooting().id, has_command: true, command_key: Some(key),
+        })
+    }
+
+    pub fn preferred_weapon_enemy(&self, owner: SquadLifetime) -> Option<SquadLifetime> {
+        self.active.get(&owner)?.preferred_weapon_enemy
     }
 
     pub fn current_server_outcome(&self, owner: SquadLifetime) -> Option<i64> {
@@ -1326,6 +1346,11 @@ impl NativeSquadCommandDirector {
             _ => Some(settings.max_command_seconds),
         };
         let active = ActiveNativeCommand {
+            preferred_weapon_enemy: if matches!(selection.kind(), LocalCommandKind::Aggressive |
+                LocalCommandKind::BombingRun | LocalCommandKind::Charge | LocalCommandKind::CircleSquad |
+                LocalCommandKind::RightSwipe | LocalCommandKind::LeftSwipe | LocalCommandKind::InAndOut) {
+                squad.enemy.map(|enemy| enemy.owner)
+            } else { None },
             timeout: timeout_seconds.map(|seconds|
                 ScaledTimer::new(seconds, false, false)),
             command_poll: if matches!(

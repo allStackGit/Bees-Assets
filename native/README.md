@@ -105,7 +105,7 @@ The single JSON configuration file requires:
   model_slots, groups?}`. Each scene is an exported **initial** Level;
   both IDs must be unique and positive, and `model_slots` maps exact
   Unity policy-team IDs (`"0"`/`"1"`) to verified manifest slots.
-  Current schema-22 exports record actual participating Unity Agent instance
+  Current schema-23 exports record actual participating Unity Agent instance
   IDs, source ship bindings and episode number; the runner derives `groups`
   automatically. If supplied, `groups` must match that source record exactly.
   Participants are never inferred from hull IDs. Scripted opponents may have
@@ -201,10 +201,30 @@ projectile allocator, geometry, beam lifecycle and damage path execute every sho
 GameWeaponFired is separate from PolicyWeaponFired, and manual shots do not enter
 policy root-outcome tracking. The Level resolves current command attribution only
 when a game shot launches, preserving its ID for the projectile's remaining life.
-Automatic targeting/ranking, game firing statistics/combat timers and full-game
-visual/weapon parity remain incomplete.
+Schema23 ordinary weapons now select and fire through this same mounted scheduler.
+Game firing statistics/combat timers and full-game visual/weapon parity remain incomplete.
 
-## Unity scene import (schema 22)
+## Unity scene import (schema 23)
+
+Schema23 captures Time.frameCount, each actual Ship's ranking inputs and shared
+FleetShip reference alias. Ordinary mounts use all40 shooting strategies, preferred
+commanded enemy squads, source targeting passes, readiness, alignment, cease-fire,
+and outgoing-damage reservations. Policy mounts keep explicit policy control;
+manual point fire takes priority and releases back to automatic selection.
+DamageDone tracks actual TSV loss with source int32 arithmetic; LastKilled belongs
+to the physical killer. The common native fixed clock advances captured frame
+history; exact Unity render-frame ordering remains unqualified.
+
+Only target IDs persist per mount; ranking and optional collider-distance scratch
+are reused across the world. Stable caches consume no further sorting/RNG work.
+Status reports target queries, queue builds, distance queries and actual shots.
+Scout prefab exports include genuine letter/front/firepower inputs; the shared
+spawn transaction installs newborn geometry/history before range discovery,
+sharing current parent fleet damage while resetting the newborn kill clock.
+Missing schema23 clock/rank/prefab inputs are rejected. Schemas20–22 retain their
+previous manual/policy behavior without invented automatic-targeting data.
+Asteroid/MapObject targeting fallback and complete combat command activation
+remain incomplete.
 
 **Bees > Native > Export Selected Level Physical Scene** captures a
 source-authored initial Unity Level, not a resumable match checkpoint. Schema 21
@@ -234,9 +254,8 @@ In the client, B toggles selected weapons' range/obstruction inspection. Blue
 lines reach overlapping enemy hulls with no primary obstacle in the way; orange
 lines are obstructed. Yellow crosses show source aim points, distinct from the
 obstruction lines. The title counts queries, contacts, obstructions, aim points
-and missing source data. This
-view does not choose targets or fire weapons; automatic ranking and firing remain
-incomplete. Inspection is disabled by default and adds no headless query work.
+and missing source data, plus current automatic targets borrowed from the actual
+mounted controller. Inspection is disabled by default and adds no headless query work.
 
 The scene captures the active self-play episode, both team-specific
 movement settings and registered Unity Agent instance group membership,

@@ -45,6 +45,7 @@ pub struct NativeRenderCounts {
     pub range_queries: usize,
     pub range_contacts: usize,
     pub aim_points: usize,
+    pub automatic_targets: usize,
     pub missing_aim_data: usize,
     pub range_overlaps: usize,
     pub obstructed_ranges: usize,
@@ -187,6 +188,9 @@ impl NativeSoftwareRenderer {
                             Ok(None) => continue,
                             Err(_) => { counts.missing_range_data += 1; continue; },
                         };
+                        if let Ok(Some(automatic)) = view.combat.weapon_automatic_status(ship.entity_id, slot) {
+                            counts.automatic_targets += usize::from(automatic.target_ship.is_some());
+                        }
                         if let Ok(Some(contacts)) = view.combat.weapon_range_contacts(ship.entity_id, slot) {
                             counts.range_contacts += contacts.ship_ids.len();
                         }

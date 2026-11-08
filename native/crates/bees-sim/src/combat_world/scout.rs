@@ -26,7 +26,16 @@ pub struct ScoutBeaconSpec {
     pub beacon_height: f32,
     pub beacon_original_health: i32,
     pub beacon_size_class: f32,
+    pub targeting: Option<NativeBeaconTargetSource>,
     pub max_living_ships_per_side: Option<usize>,
+}
+
+/// Actual prefab inputs for newly created Beacons, independent of presentation.
+#[derive(Clone, Copy, Debug)]
+pub struct NativeBeaconTargetSource {
+    pub front_offset: f32,
+    pub ship_type_letter: u8,
+    pub firepower: f32,
 }
 
 impl ScoutBeaconSpec {
@@ -40,6 +49,8 @@ impl ScoutBeaconSpec {
             self.beacon_rotation_speed.is_finite() &&
             self.beacon_rotation_speed >= 0.0 &&
             self.beacon_height.is_finite() && self.beacon_height > 0.0 &&
+            self.targeting.is_none_or(|source| source.front_offset.is_finite() &&
+                source.ship_type_letter < 24 && source.firepower.is_finite() && source.firepower >= 0.0) &&
             self.max_living_ships_per_side != Some(0)
     }
 }
@@ -290,6 +301,23 @@ impl CombatWorld {
         if beacon_id == i64::MAX {
             return Err(CombatWorldError::EntityIdExhausted);
         }
+        // Preflight before physical creation: source23 cannot introduce an
+        // enemy with missing rank/aim inputs into another weapon's range.
+        let targeting = if self.weapon_rank_history.frame.is_some() {
+            let source = spec.targeting.ok_or(CombatWorldError::MissingAutomaticTargetingInputs)?;
+            let parent = self.weapon_rank_history.ships.get(&scout_id)
+                .ok_or(CombatWorldError::MissingAutomaticTargetingInputs)?;
+            let mut stats = self.weapon_target_rank_stats(scout_id)?;
+            stats.ship_id = beacon_id;
+            stats.ship_type_letter = source.ship_type_letter;
+            stats.last_killed = 0; // Source newborn Ship.ClearData.
+            stats.firepower = source.firepower;
+            stats.max_range = 0; // Export requires the actual unarmed Beacon prefab.
+            stats.speed = spec.beacon_base_speed;
+            Some((source.front_offset, NativeWeaponRankSource {
+                stats, fleet_owner_ship_id: parent.fleet_owner_ship_id,
+            }))
+        } else { None };
         let mother_motion = &self.physics.ships()[index].motion;
         let motion = ShipMotion::new(
             // Pool.CreatePooledBeacon uses Quaternion.identity; Setup restores
@@ -306,6 +334,12 @@ impl CombatWorld {
         self.set_ship_collision_profile(beacon_id, ShipCollisionProfile {
             original_health: spec.beacon_original_health, size_class: spec.beacon_size_class,
         })?;
+        if let Some((front_offset, source)) = targeting {
+            self.configure_ship_target_geometry(beacon_id, NativeShipTargetGeometry {
+                front_offset, bounds_latched: false,
+            })?;
+            self.configure_weapon_rank_source(source)?;
+        }
         self.beacon_parent_by_id.insert(beacon_id, scout_id);
 
         self.events.push(CombatEvent::ScoutBeaconDropped {
@@ -369,6 +403,7 @@ mod tests {
                 beacon_height: 2.0,
                 beacon_original_health: 20,
                 beacon_size_class: 0.0,
+                targeting: None,
                 max_living_ships_per_side: Some(3),
             }).unwrap();
             assert!(state.policy_action_mask(id).unwrap().special[1]);

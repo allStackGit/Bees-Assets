@@ -11,7 +11,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::num::NonZeroU32;
 
 use bees_hivemind::session::SquadLifetime;
-use bees_sim::combat_world::{CombatEvent, CombatWorld, CombatWorldError};
+use bees_sim::combat_world::{CombatEvent, CombatWorld, CombatWorldError, NativeAutomaticWeaponContext, NativeAutomaticWeaponInputs};
 use bees_sim::combat_perception_bridge::CombatPerceptionError;
 use bees_sim::vision::{HiveMindObserver, VisionFirstSighting, VisionError};
 use bees_sim::rl_discovery::DiscoveryKind as RewardDiscoveryKind;
@@ -113,6 +113,12 @@ pub struct NativeBomberContact {
     /// geometry, preserving Level.State.Squads order. Command activation
     /// and timer callbacks use this same authoritative view.
 pub trait NativeLevelCommandContext {
+    /// Current source squad strategy and native command identity. A Level with
+    /// authored automatic weapons must provide these genuine values.
+    fn automatic_weapon_inputs(&self, _ship_id: i64, _roster: &NativeSquadRoster,
+        _commands: &crate::commands::NativeSquadCommandDirector,
+    ) -> Result<Option<NativeAutomaticWeaponInputs>, CombatWorldError> { Ok(None) }
+
     /// Deliver source-order, real OnTriggerEnter2D contacts for active
     /// Striker and Yellow Jacket BombingRuns. Called only when a live,
     /// ready contact bomber has an active target, after the physics fixed
@@ -634,8 +640,25 @@ impl From<NativeLevelEventError> for NativeLevelStepError {
     }
 }
 
-/// Stateless immutable collision settings; world scratch, game state,
-/// HiveMind session and rewards are isolated per World<NativeLevelState>.
+/// Borrow the canonical Level owners for physical automatic weapons.
+struct LevelAutomaticWeapons<'a, M> {
+    metadata: &'a M,
+    roster: &'a NativeSquadRoster,
+    commands: &'a crate::commands::NativeSquadCommandDirector,
+}
+
+impl<M: NativeLevelCommandContext> NativeAutomaticWeaponContext for LevelAutomaticWeapons<'_, M> {
+    fn inputs(&self, ship_id: i64) -> Result<NativeAutomaticWeaponInputs, CombatWorldError> {
+        self.metadata.automatic_weapon_inputs(ship_id, self.roster, self.commands)?
+            .ok_or(CombatWorldError::MissingAutomaticTargetingInputs)
+    }
+    fn prefers(&self, ship_id: i64, target_id: i64) -> bool {
+        self.roster.owning_squad(ship_id).and_then(|owner| self.commands.preferred_weapon_enemy(owner))
+            .is_some_and(|enemy| self.roster.owning_squad(target_id) == Some(enemy))
+    }
+}
+
+/// Stateless collision settings; mutable state remains isolated per world.
 pub struct NativeLevelRules {
     pub collision_matrix: CollisionMatrix,
 }
@@ -686,10 +709,11 @@ where
         // No independent policy/physics rules in gameplay or training:
         // both adapters invoke CombatWorld's one canonical transaction.
         let events = &state.events;
-        let counts = state.combat.step_combat_with_command_attribution(
+        let counts = state.combat.step_combat_with_weapon_targeting(
             decisions, dt_seconds, &self.collision_matrix,
             &mut world.random, &|ship_id| events.roster().owning_squad(ship_id)
                 .and_then(|owner| events.commands().current_server_outcome(owner)),
+            &LevelAutomaticWeapons { metadata: &state.metadata, roster: events.roster(), commands: events.commands() },
         )?;
         // Unity's YellowJacket.OnTriggerEnter2D is independent of the
         // command timer. Consume these source-ordered contacts INSIDE the

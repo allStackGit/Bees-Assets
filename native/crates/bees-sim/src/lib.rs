@@ -60,3 +60,5 @@ pub mod telemetry;
 pub mod vision;
 pub mod timer;
 pub mod turret;
+
+pub mod targeting;

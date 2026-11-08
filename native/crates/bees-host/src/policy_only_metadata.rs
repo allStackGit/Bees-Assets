@@ -1,4 +1,4 @@
-//! Source-authored metadata for Levels driven solely by a real v26 policy.
+//! Source-authored metadata for real v26 policies and ordinary game weapons.
 //! The SAME native CombatWorld performs physical gameplay; this only
 //! supplies absent Unity ship/episode/observation values. No fake agent,
 //! placeholder observations or inferred weapon statistics are allowed.
@@ -27,7 +27,7 @@ use bees_sim::collision::Aabb;
 use bees_sim::combat_perception_bridge::{
     AuthoredShipPerception, ControlledShipPerception,
 };
-use bees_sim::combat_world::{CombatWorld, CombatEvent};
+use bees_sim::combat_world::{CombatWorld, CombatWorldError, CombatEvent};
 use bees_sim::navigation_runtime::NavigationRuntime;
 use bees_sim::perception::CapabilitySource;
 use bees_sim::combat_perception_bridge::{
@@ -389,6 +389,18 @@ impl NativeLevelRewardMetadata for NativePolicyOnlyMetadata {
 }
 
 impl NativeLevelCommandContext for NativePolicyOnlyMetadata {
+    fn automatic_weapon_inputs(&self, ship_id: i64,
+        roster: &bees_gameplay::squads::NativeSquadRoster,
+        commands: &bees_gameplay::commands::NativeSquadCommandDirector,
+    ) -> Result<Option<bees_sim::combat_world::NativeAutomaticWeaponInputs>, CombatWorldError> {
+        let owner = roster.owning_squad(ship_id).ok_or(CombatWorldError::MissingAutomaticTargetingInputs)?;
+        if let Some(input) = commands.automatic_weapon_input(owner) { return Ok(Some(input)); }
+        let source = self.player.commands.get(&owner).ok_or(CombatWorldError::MissingAutomaticTargetingInputs)?;
+        Ok(Some(bees_sim::combat_world::NativeAutomaticWeaponInputs {
+            strategy_id: source.shooting.id, has_command: false, command_key: None,
+        }))
+    }
+
     fn update_survivor_formation(
         &mut self, _owner: SquadLifetime, offsets: &[SquadMemberOffset],
     ) -> Result<(), GameCommandError> {

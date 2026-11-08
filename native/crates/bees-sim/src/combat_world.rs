@@ -78,6 +78,10 @@ mod policy;
 mod weapons;
 mod weapon_ranges;
 mod weapon_target_geometry;
+mod weapon_rank_history;
+mod automatic_weapons;
+pub use self::automatic_weapons::{NativeAutomaticWeaponInputs, NativeAutomaticWeaponContext, NativeAutomaticTurretStatus, AutomaticWeaponMeasurements};
+pub use self::weapon_rank_history::NativeWeaponRankSource;
 pub use self::weapon_target_geometry::{NativeLevelGeometry, NativeShipTargetGeometry};
 pub use self::weapon_ranges::NativeWeaponRangeContacts;
 mod striker;
@@ -97,7 +101,7 @@ pub use self::warp::WARP_GATE_OPENING_SECONDS;
 pub use self::mining::{is_mining_ship_type, MINING_FACTORY_TYPE, MINING_CARPENTER_BEE_TYPE};
 pub use self::shot_outcomes::{ProjectileRootOutcome, ProjectileOutcomeMeasurements};
 use self::shot_outcomes::{ProjectileOutcomeTracker, NEAR_MISS_DISTANCE};
-pub use self::scout::{ScoutBeaconSpec, ScoutBeaconStatus, SCOUT_TYPE};
+pub use self::scout::{NativeBeaconTargetSource, ScoutBeaconSpec, ScoutBeaconStatus, SCOUT_TYPE};
 use self::scout::PolicyScoutRuntime;
 use self::policy::{PolicyShipRuntime, PolicyShipSpecial};
 pub use self::policy::PolicySpecialObservations;
@@ -149,6 +153,8 @@ pub enum CombatWorldError {
     InvalidLevelGeometry,
     MissingWeaponTargetingGeometry,
     InvalidWeaponTargetingGeometry,
+    InvalidAutomaticTargeting,
+    MissingAutomaticTargetingInputs,
     MissingShipTargetGeometry,
     InvalidPolicyStriker,
     InvalidGameStriker,
@@ -746,8 +752,13 @@ pub struct CombatWorld {
     // Stable ship-ID iteration is necessary for reproducible shot IDs.
     policy_ship_runtime: BTreeMap<i64, PolicyShipRuntime>,
     ship_weapons: BTreeMap<i64, ShipWeapons>,
+    automatic_weapon_measurements: AutomaticWeaponMeasurements,
+    automatic_rank_candidates: Vec<crate::targeting::NativeEnemyTargetStats>,
+    automatic_distance_keys: HashMap<i64, f32>,
+    weapon_rank_history: weapon_rank_history::WeaponRankHistory,
     level_geometry: Option<NativeLevelGeometry>,
     ship_target_front_offsets: HashMap<i64, f32>,
+    pending_weapon_range_exits: u64,
     weapon_range_candidates: Vec<usize>,
     weapon_range_entering_ids: Vec<i64>,
     /// Updated only when a policy controller is bound or retired.
@@ -897,7 +908,11 @@ impl CombatWorld {
             game_ship_steering: HashMap::new(),
             policy_ship_runtime: BTreeMap::new(),
             ship_weapons: BTreeMap::new(),
+            automatic_weapon_measurements: AutomaticWeaponMeasurements::default(),
+            automatic_rank_candidates: Vec::new(), automatic_distance_keys: HashMap::new(),
+            weapon_rank_history: weapon_rank_history::WeaponRankHistory::default(),
             level_geometry: None, ship_target_front_offsets: HashMap::new(),
+            pending_weapon_range_exits: 0,
             weapon_range_candidates: Vec::new(), weapon_range_entering_ids: Vec::new(),
             policy_roster_revision: 0,
             policy_decision_seen: HashSet::new(),
@@ -1121,6 +1136,13 @@ impl CombatWorld {
         self.game_scout_runtime.remove(&victim_id);
         self.discovery.retire(DiscoveryKind::Ship, victim_id);
         self.ship_weapons.remove(&victim_id);
+        // Source Kill removes the victim from every weapon cache BEFORE later
+        // targeting callbacks, not only on the next physical trigger sweep.
+        for weapons in self.ship_weapons.values_mut() {
+            for contacts in &mut weapons.range_contacts {
+                self.pending_weapon_range_exits += u64::from(contacts.remove(victim_id));
+            }
+        }
         self.ship_target_front_offsets.remove(&victim_id);
         if self.policy_ship_runtime.remove(&victim_id).is_some() {
             self.bump_policy_roster_revision();
@@ -3725,7 +3747,7 @@ impl CombatWorld {
         dt: f32,
         collision_matrix: &CollisionMatrix,
     ) -> Result<StepCounts, CombatWorldError> {
-        self.step_fixed_inner(dt, collision_matrix, None, None)
+        self.step_fixed_inner(dt, collision_matrix, None, None, None)
     }
 
     /// The shared multi-world scheduler owns the deterministic RNG. Fragment
@@ -3737,7 +3759,7 @@ impl CombatWorld {
         collision_matrix: &CollisionMatrix,
         random: &mut RandomStream,
     ) -> Result<StepCounts, CombatWorldError> {
-        self.step_fixed_inner(dt, collision_matrix, Some(random), None)
+        self.step_fixed_inner(dt, collision_matrix, Some(random), None, None)
     }
 
     /// One source of truth for policy decisions and the shared fixed-step
@@ -3761,11 +3783,24 @@ impl CombatWorld {
         &mut self, decisions: &[Decision], dt: f32, collision_matrix: &CollisionMatrix,
         random: &mut RandomStream, command: &dyn Fn(i64) -> Option<i64>,
     ) -> Result<StepCounts, CombatWorldError> {
+        self.step_combat_with_targeting_inner(decisions, dt, collision_matrix, random, command, None)
+    }
+
+    pub fn step_combat_with_weapon_targeting(&mut self, decisions: &[Decision], dt: f32,
+        collision_matrix: &CollisionMatrix, random: &mut RandomStream,
+        command: &dyn Fn(i64) -> Option<i64>, context: &dyn NativeAutomaticWeaponContext,
+    ) -> Result<StepCounts, CombatWorldError> {
+        self.step_combat_with_targeting_inner(decisions, dt, collision_matrix, random, command, Some(context))
+    }
+
+    fn step_combat_with_targeting_inner(&mut self, decisions: &[Decision], dt: f32,
+        collision_matrix: &CollisionMatrix, random: &mut RandomStream,
+        command: &dyn Fn(i64) -> Option<i64>, context: Option<&dyn NativeAutomaticWeaponContext>,
+    ) -> Result<StepCounts, CombatWorldError> {
         if !self.frozen_after_elimination {
             self.apply_policy_decisions(decisions)?;
         }
-        let mut counts =
-            self.step_fixed_inner(dt, collision_matrix, Some(random), Some(command))?;
+        let mut counts = self.step_fixed_inner(dt, collision_matrix, Some(random), Some(command), context)?;
         counts.decisions = if self.frozen_after_elimination {
             0
         } else {
@@ -3778,8 +3813,9 @@ impl CombatWorld {
         &mut self,
         dt: f32,
         collision_matrix: &CollisionMatrix,
-        random: Option<&mut RandomStream>,
+        mut random: Option<&mut RandomStream>,
         command: Option<&dyn Fn(i64) -> Option<i64>>,
+        context: Option<&dyn NativeAutomaticWeaponContext>,
     ) -> Result<StepCounts, CombatWorldError> {
         // Reject bad deltas before advancing delayed timers or modifying
         // health. Physics validates dt too, but that is too late here.
@@ -3797,6 +3833,7 @@ impl CombatWorld {
                 ..StepCounts::default()
             });
         }
+        self.begin_weapon_rank_tick();
         self.apply_pending_game_warps()?;
         self.apply_pending_game_fire_barges()?;
         self.advance_policy_capability_cooldowns(dt);
@@ -3901,7 +3938,9 @@ impl CombatWorld {
         }
         // Turrets use the same ship pose updated above, and create real
         // projectile bodies before the subsequent shared physics step.
-        self.advance_mounted_turrets(dt, command)?;
+        self.consume_weapon_rank_events()?;
+        let automatic_before = self.automatic_weapon_measurements;
+        self.advance_mounted_turrets(dt, command, random.as_deref_mut(), context)?;
         // LaserBeam.ExtendBeam follows the same real shooter/turret and
         // resizes the physical beam collider before the native broadphase.
         self.advance_beam_projectiles()?;
@@ -3932,11 +3971,16 @@ impl CombatWorld {
             self.spawn_pending_asteroid_fragments(random)?;
         }
 
+        self.consume_weapon_rank_events()?;
         let physics_counts = self.physics.counts();
         Ok(StepCounts {
             active_ships: self.physics.ships().iter().filter(|ship| ship.active).count() as u32,
             active_projectiles: self.physics.projectiles().iter().filter(|shot| shot.active).count() as u32,
             events: self.events.len() as u64,
+            automatic_weapon_target_queries: self.automatic_weapon_measurements.target_queries - automatic_before.target_queries,
+            automatic_weapon_queue_builds: self.automatic_weapon_measurements.queue_builds - automatic_before.queue_builds,
+            automatic_weapon_distance_queries: self.automatic_weapon_measurements.distance_queries - automatic_before.distance_queries,
+            automatic_weapon_shots: self.automatic_weapon_measurements.shots - automatic_before.shots,
             integrated_bodies: physics_counts.integrated_bodies,
             broadphase_candidates: physics_counts.broadphase_candidates,
             ship_grid_overflow_bodies: physics_counts.ship_grid_overflow_bodies,
@@ -3948,6 +3992,7 @@ impl CombatWorld {
                 physics_counts.obstacle_pair_enters +
                 physics_counts.proximity_ship_enters +
                 physics_counts.proximity_obstacle_enters,
+            weapon_range_exits: weapon_range_counts.weapon_range_exits + std::mem::take(&mut self.pending_weapon_range_exits),
             ..weapon_range_counts
         })
     }

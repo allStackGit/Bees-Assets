@@ -18,7 +18,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use bees_sim::asteroid_spawn::FullAsteroidPrototype;
-use bees_sim::combat_world::{NativeFirePattern, NativeTurretSpec, NativeTurretRangeSpec, NativeShipTargetGeometry, NativeLevelGeometry, GameStrikerCarrier, ScoutBeaconSpec};
+use bees_sim::combat_world::{NativeFirePattern, NativeTurretSpec, NativeTurretRangeSpec, NativeShipTargetGeometry, NativeLevelGeometry, NativeWeaponRankSource, GameStrikerCarrier, ScoutBeaconSpec};
 use bees_sim::perception_entities::ObservedWeapon;
 use bees_sim::control::PolicyFrame;
 use bees_hivemind::session::SquadLifetime;
@@ -70,7 +70,7 @@ use crate::runtime::NativeHostRuntime;
 use crate::ship_specials::{NativeAuthoredShipSpecial, NativeBeaconTemplate};
 use crate::durable_connection::DurableHiveMindConnection;
 
-const SNAPSHOT_VERSION: u32 = 22;
+const SNAPSHOT_VERSION: u32 = 23;
 
 #[derive(Deserialize, Clone, Copy)]
 struct UnityVec2 { x: f32, y: f32 }
@@ -117,6 +117,7 @@ impl UnityVec2 {
 
 #[derive(Deserialize)]
 struct UnitySnapshot {
+    source_frame_count: Option<i32>,
     schema_version: u32,
     level_name: String,
     stage_name: String,
@@ -171,6 +172,7 @@ struct UnityGroupParticipant {
 
 #[derive(Deserialize)]
 struct UnityShip {
+    weapon_rank_source: Option<UnityWeaponRankSource>,
     target_geometry: Option<UnityShipTargetGeometry>,
     entity_id: i64,
     ship_type: u8,
@@ -260,6 +262,7 @@ struct UnityShipSpecial {
 
 #[derive(Deserialize)]
 struct UnityBeaconTemplate {
+    targeting: Option<UnityBeaconTargetSource>,
     original_health: i32,
     health: i32,
     max_tsv: i32,
@@ -274,8 +277,15 @@ struct UnityBeaconTemplate {
     max_living_ships_per_side: i32,
 }
 
+#[derive(Deserialize)]
+struct UnityBeaconTargetSource {
+    front_offset: f32,
+    ship_type_letter: u8,
+    firepower: f32,
+}
+
 impl UnityShipSpecial {
-    fn into_native(self, id: i64, ship_type: u8, catalog: &ShipAssetCatalog)
+    fn into_native(self, id: i64, ship_type: u8, schema: u32, catalog: &ShipAssetCatalog)
         -> Result<Option<NativeAuthoredShipSpecial>, NativeSnapshotError>
     {
         let invalid = || NativeSnapshotError::InvalidShip(id);
@@ -295,6 +305,16 @@ impl UnityShipSpecial {
                 } },
             ("scout", 18) => {
                 let source = self.beacon.ok_or_else(invalid)?;
+                let targeting = match source.targeting {
+                    Some(value) if value.front_offset.is_finite() && value.ship_type_letter < 24 &&
+                        value.firepower.is_finite() && value.firepower >= 0.0 =>
+                        Some(bees_sim::combat_world::NativeBeaconTargetSource {
+                            front_offset: value.front_offset, ship_type_letter: value.ship_type_letter,
+                            firepower: value.firepower,
+                        }),
+                    None if schema < 23 => None,
+                    _ => return Err(invalid()),
+                };
                 if source.original_health <= 0 || source.health <= 0 ||
                     source.health > source.original_health || source.max_tsv < 0 ||
                     !source.size_class.is_finite() || source.size_class < 0.0 ||
@@ -311,11 +331,13 @@ impl UnityShipSpecial {
                         beacon_base_speed: source.base_speed, beacon_rotation_speed: source.rotation_speed,
                         beacon_height: source.height, beacon_original_health: source.original_health,
                         beacon_size_class: source.size_class,
+                        targeting,
                         max_living_ships_per_side: (source.max_living_ships_per_side > 0)
                             .then_some(source.max_living_ships_per_side as usize),
                     },
                     perception: AuthoredShipPerception {
-                        longest_side: source.longest_side, max_weapon_range: 0.0, firepower: 0.0,
+                        longest_side: source.longest_side, max_weapon_range: 0.0,
+                        firepower: targeting.map_or(0.0, |value| value.firepower),
                         is_bomber: false, is_carrier_ship: false, minerals_mined_this_level: 0,
                         observed_weapons: [None; 5], allied_communication: None,
                     },
@@ -353,6 +375,17 @@ struct UnityObservedWeapon {
     range: f32,
     power: f32,
     rate_of_fire: f32,
+}
+
+#[derive(Deserialize)]
+struct UnityWeaponRankSource {
+    fleet_owner_ship_id: i64,
+    ship_type_letter: u8,
+    last_killed: i32,
+    fleet_damage_done: i32,
+    firepower: f32,
+    max_range: i32,
+    speed: f32,
 }
 
 #[derive(Deserialize)]
@@ -462,6 +495,7 @@ pub enum NativeSnapshotError {
     Malformed(serde_json::Error),
     UnsupportedSchema(u32),
     InvalidLevelBounds,
+    MissingWeaponRankingClock,
     InvalidCommandSettings,
     InvalidShip(i64),
     MismatchedShipTsv(i64),
@@ -492,6 +526,7 @@ pub enum NativeSnapshotError {
 /// Records are owned, but shared immutable prefab geometry stays in the
 /// existing NativeSceneAssets Arc catalogs.
 pub struct NativePhysicalScene {
+    pub source_frame_count: Option<i32>,
     pub schema_version: u32,
     pub level_name: String,
     /// Source Stage identity for validating the loaded prefab palette.
@@ -874,6 +909,7 @@ impl NativePhysicalScene {
             },
         ).map_err(NativePolicyOnlyLevelError::Metadata)?;
         Ok(NativeAuthoredLevel {
+            weapon_rank_frame: if self.schema_version >= 23 { self.source_frame_count } else { None },
             level_geometry: (self.schema_version >= 22).then_some(NativeLevelGeometry {
                 map_bounds: self.bounds, has_obstacles: self.has_obstacles,
             }),
@@ -999,6 +1035,9 @@ impl NativePhysicalScene {
             .map_err(NativeSnapshotError::Malformed)?;
         if !(20..=SNAPSHOT_VERSION).contains(&raw.schema_version) {
             return Err(NativeSnapshotError::UnsupportedSchema(raw.schema_version));
+        }
+        if raw.schema_version >= 23 && raw.source_frame_count.is_none() {
+            return Err(NativeSnapshotError::MissingWeaponRankingClock);
         }
         let command_settings: bees_gameplay::commands::HiveMindCommandSettings = raw.command_settings.into();
         if !command_settings.valid() { return Err(NativeSnapshotError::InvalidCommandSettings); }
@@ -1228,7 +1267,7 @@ impl NativePhysicalScene {
                 }),
                 warp_human_side: can_warp.then_some(raw.human_side),
             };
-            let special = ship.special.into_native(ship.entity_id, ship.ship_type, catalog)?;
+            let special = ship.special.into_native(ship.entity_id, ship.ship_type, raw.schema_version, catalog)?;
             if ship.has_bound_policy && ship.has_special_action != special.is_some() {
                 return Err(NativeSnapshotError::InvalidPolicySource(ship.entity_id));
             }
@@ -1449,6 +1488,21 @@ impl NativePhysicalScene {
                 has_persistent_fleet_value: ship.persistent_fleet,
                 minerals_mined_this_level: ship.mined_cargo,
             });
+            let weapon_rank_source = match ship.weapon_rank_source {
+                Some(source) => {
+                    let stats = bees_sim::targeting::NativeEnemyTargetStats {
+                        ship_id: ship.entity_id, ship_type_letter: source.ship_type_letter,
+                        last_killed: source.last_killed, fleet_damage_done: i64::from(source.fleet_damage_done),
+                        firepower: source.firepower, max_range: source.max_range, speed: source.speed,
+                    };
+                    if !stats.valid() || source.fleet_owner_ship_id <= 0 {
+                        return Err(NativeSnapshotError::InvalidShip(ship.entity_id));
+                    }
+                    Some(NativeWeaponRankSource { stats, fleet_owner_ship_id: source.fleet_owner_ship_id })
+                },
+                None if raw.schema_version < 23 => None,
+                _ => return Err(NativeSnapshotError::InvalidShip(ship.entity_id)),
+            };
             let target_geometry = match ship.target_geometry {
                 Some(source) if source.front_offset.is_finite() => Some(NativeShipTargetGeometry {
                     front_offset: source.front_offset, bounds_latched: source.bounds_latched,
@@ -1457,7 +1511,7 @@ impl NativePhysicalScene {
                 _ => return Err(NativeSnapshotError::InvalidShip(ship.entity_id)),
             };
             entities.push(NativeAuthoredEntity::Ship(NativeAuthoredShip {
-                target_geometry,
+                target_geometry, weapon_rank_source,
                 entity_id: ship.entity_id, ship_type: ship.ship_type,
                 cease_fire: ship.policy_cease_fire, turrets: authored_turrets,
                 side: ship.side, vitals, motion, game_movement,
@@ -1789,6 +1843,7 @@ impl NativePhysicalScene {
         let fleet = NativeFleetInventory::from_source(fleet_values)
             .map_err(NativeSnapshotError::Fleet)?;
         Ok(Self {
+            source_frame_count: raw.source_frame_count,
             schema_version: raw.schema_version,
             level_name: raw.level_name,
             stage_name: raw.stage_name,

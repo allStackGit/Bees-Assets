@@ -17,6 +17,10 @@ pub struct StepCounts {
     pub obstacle_grid_overflow_bodies: u64,
     pub narrowphase_tests: u64,
     pub trigger_enters: u64,
+    pub automatic_weapon_target_queries: u64,
+    pub automatic_weapon_queue_builds: u64,
+    pub automatic_weapon_distance_queries: u64,
+    pub automatic_weapon_shots: u64,
     /// Authored RangeCollider work; separate from projectile collision pairs.
     pub weapon_range_grid_rebuilds: u64,
     pub weapon_range_candidates: u64,
@@ -38,6 +42,10 @@ pub struct Measurements {
     pub obstacle_grid_overflow_bodies: u64,
     pub narrowphase_tests: u64,
     pub trigger_enters: u64,
+    pub automatic_weapon_target_queries: u64,
+    pub automatic_weapon_queue_builds: u64,
+    pub automatic_weapon_distance_queries: u64,
+    pub automatic_weapon_shots: u64,
     /// Authored RangeCollider work; separate from projectile collision pairs.
     pub weapon_range_grid_rebuilds: u64,
     pub weapon_range_candidates: u64,
@@ -76,6 +84,10 @@ impl Default for Measurements {
             obstacle_grid_overflow_bodies: 0,
             narrowphase_tests: 0,
             trigger_enters: 0,
+            automatic_weapon_target_queries: 0,
+            automatic_weapon_queue_builds: 0,
+            automatic_weapon_distance_queries: 0,
+            automatic_weapon_shots: 0,
             weapon_range_grid_rebuilds: 0,
             weapon_range_candidates: 0,
             weapon_range_exact_tests: 0,
@@ -107,6 +119,10 @@ impl Measurements {
         self.obstacle_grid_overflow_bodies += counts.obstacle_grid_overflow_bodies;
         self.narrowphase_tests += counts.narrowphase_tests;
         self.trigger_enters += counts.trigger_enters;
+        self.automatic_weapon_target_queries += counts.automatic_weapon_target_queries;
+        self.automatic_weapon_queue_builds += counts.automatic_weapon_queue_builds;
+        self.automatic_weapon_distance_queries += counts.automatic_weapon_distance_queries;
+        self.automatic_weapon_shots += counts.automatic_weapon_shots;
         self.weapon_range_grid_rebuilds += counts.weapon_range_grid_rebuilds;
         self.weapon_range_candidates += counts.weapon_range_candidates;
         self.weapon_range_exact_tests += counts.weapon_range_exact_tests;
@@ -152,6 +168,10 @@ impl Measurements {
         self.obstacle_grid_overflow_bodies += other.obstacle_grid_overflow_bodies;
         self.narrowphase_tests += other.narrowphase_tests;
         self.trigger_enters += other.trigger_enters;
+        self.automatic_weapon_target_queries += other.automatic_weapon_target_queries;
+        self.automatic_weapon_queue_builds += other.automatic_weapon_queue_builds;
+        self.automatic_weapon_distance_queries += other.automatic_weapon_distance_queries;
+        self.automatic_weapon_shots += other.automatic_weapon_shots;
         self.weapon_range_grid_rebuilds += other.weapon_range_grid_rebuilds;
         self.weapon_range_candidates += other.weapon_range_candidates;
         self.weapon_range_exact_tests += other.weapon_range_exact_tests;
