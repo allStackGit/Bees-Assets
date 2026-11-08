@@ -683,6 +683,15 @@ where
         }
         state.navigation_jobs_completed +=
             state.metadata.advance_navigation(&mut state.combat)?;
+        // Unity ordinary turret Targeting() runs for player-controlled
+        // ships or a HiveMind squad WITH an active command. Reconcile
+        // that predicate from the same command registry before the one
+        // shared physics/weapon step, including after supersede/death.
+        state.combat.refresh_game_auto_fire_authority(|ship_id| {
+            state.events.roster().owning_squad(ship_id)
+                .is_some_and(|owner|
+                    state.events.commands().has_active_squad_command(owner))
+        });
         // No independent policy/physics rules in gameplay or training:
         // both adapters invoke CombatWorld's one canonical transaction.
         let counts = state.combat.step_policy_combat_with_random(
