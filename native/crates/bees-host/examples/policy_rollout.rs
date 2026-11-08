@@ -626,13 +626,13 @@ fn main() -> Result<(), Box<dyn Error>> {
                 },
                 Ok(bees_host::client::NativeClientAction::Support(input)) => {
                     match host.player_command_squads(&input) {
-                        Ok(counts) if matches!(input.action,
+                        Ok(counts) if matches!(&input.action,
                             bees_gameplay::player_inputs::NativePlayerSupportAction::Hold
                         ) && counts.stopped_chases > 0 => client.report_move("Chase stopped"),
-                        Ok(counts) if matches!(input.action,
+                        Ok(counts) if matches!(&input.action,
                             bees_gameplay::player_inputs::NativePlayerSupportAction::Hold
                         ) && counts.accepted_squads > 0 => client.report_move("No active chase"),
-                        Ok(_) if matches!(input.action,
+                        Ok(_) if matches!(&input.action,
                             bees_gameplay::player_inputs::NativePlayerSupportAction::Hold
                         ) => client.report_move("Selected squads cannot stop chase"),
                         Ok(counts) if counts.accepted_squads > 0 && counts.rejected_squads == 0 &&
