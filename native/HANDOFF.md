@@ -158,11 +158,17 @@ original outstanding hashes. NativeHostRuntime::service_socket_event now
 reads one authenticated event, routes every server reply through
 receive_frame (durable 200/409 and discard processing), and flushes newly
 checkpointed results without manually sequencing two distinct paths.
-Blocking socket I/O stays off the render/physics thread. On socket protocol
-or transport failure the same API retires transient strategy/targeting
-requests and reports the unresolved original hashes; outstanding durable
-StoreCommands requests persist for later authenticated replay. Intentional
-close callers explicitly use retire_socket_session. No synthetic target TSV,
+Blocking socket I/O stays off the render/physics thread. Direct
+send_store, flush_unsent_stores and reconnect replay share one at-most-once
+transmission guard per authenticated socket session; it resets after an
+accepted reconnect-level even if the WebSocket object is reused. On socket
+protocol or transport failure service_socket_event retires transient
+strategy/targeting requests and returns their unresolved original hashes
+in HostSocketError::Disconnected; outstanding durable StoreCommands requests
+persist for later authenticated replay. Intentional close callers explicitly
+use retire_socket_session. Callers must still consume accepted targeting and
+authored ban actions; the returned response is not proof that target selection
+was installed. No synthetic target TSV,
 new per-shot histories or prematurely committed command settlements were
 introduced. New code remains source-reviewed only; Rust compilation and
 runtime were not available.
