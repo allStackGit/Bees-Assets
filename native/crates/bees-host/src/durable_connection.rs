@@ -21,6 +21,7 @@ use bees_gameplay::level_rules::{
     NativeLevelRewardMetadata, NativeLevelRules, NativeLevelState,
 };
 use bees_gameplay::squads::SquadRosterError;
+use bees_gameplay::commands::StrategyReceiptAction;
 use bees_hivemind::connection::{
     NativeConnectionError, NativeHiveMindConnection,
 };
@@ -31,7 +32,7 @@ use bees_hivemind::protocol::{
     GetStrategyRequest, GetTargetingRequest, HiveMindProtocolError,
     StoreCommandsRequest, StoreCommandsResponse,
 };
-use bees_hivemind::session::SquadLifetime;
+use bees_hivemind::session::{SquadLifetime, TargetingReceipt};
 use bees_sim::simulation::Simulation;
 
 use crate::checkpoint_file::{
@@ -245,6 +246,37 @@ impl DurableHiveMindConnection {
         let delivery = driver.receive_hivemind_frame(
             simulation, &mut self.connection, frame,
         ).map_err(DurableConnectionError::Inbound)?;
+        // The Level driver has consumed the validated server response.
+        // An unexecuted reservation is now a real settlement obligation,
+        // not merely an instruction that a socket caller may forget.
+        // Append it to the SAME canonical StoreCommands ledger and persist
+        // its original request hash before handing the reply back.
+        let discarded: Option<&[i64]> = match &delivery {
+            Some(NativeHiveMindFrameDelivery::Strategy(strategy)) => match &strategy.action {
+                StrategyReceiptAction::DiscardReservations(ids) |
+                StrategyReceiptAction::BanAndDiscardReservations {
+                    reservation_ids: ids, ..
+                } => Some(ids.as_slice()),
+                StrategyReceiptAction::Applied(_) => None,
+            },
+            _ => None,
+        };
+        if let Some(ids) = discarded {
+            let mut batch = OutcomeBatch::new();
+            batch.discard_reservations(ids.iter().copied())
+                .map_err(DurableConnectionError::Protocol)?;
+            if !batch.is_empty() {
+                self.queue_outcomes(batch)?;
+            }
+        }
+        if let Some(NativeHiveMindFrameDelivery::Targeting(targeting)) = &delivery {
+            if let TargetingReceipt::Retired { reservation_id, .. } = &targeting.receipt {
+                let mut batch = OutcomeBatch::new();
+                batch.discard_reservations([*reservation_id])
+                    .map_err(DurableConnectionError::Protocol)?;
+                self.queue_outcomes(batch)?;
+            }
+        }
         if matches!(
             &delivery,
             Some(NativeHiveMindFrameDelivery::StoreCommands(
