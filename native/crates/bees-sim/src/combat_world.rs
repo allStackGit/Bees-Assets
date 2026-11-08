@@ -77,6 +77,8 @@ mod map_object;
 mod policy;
 mod weapons;
 mod weapon_ranges;
+mod weapon_target_geometry;
+pub use self::weapon_target_geometry::{NativeLevelGeometry, NativeShipTargetGeometry};
 pub use self::weapon_ranges::NativeWeaponRangeContacts;
 mod striker;
 mod fire_barge;
@@ -143,6 +145,11 @@ pub enum CombatWorldError {
     InvalidPolicyTurret,
     InvalidWeaponRangeGeometry,
     MissingWeaponRangeGeometry,
+    MissingLevelGeometry,
+    InvalidLevelGeometry,
+    MissingWeaponTargetingGeometry,
+    InvalidWeaponTargetingGeometry,
+    MissingShipTargetGeometry,
     InvalidPolicyStriker,
     InvalidGameStriker,
     InvalidPolicyFireBarge,
@@ -739,6 +746,8 @@ pub struct CombatWorld {
     // Stable ship-ID iteration is necessary for reproducible shot IDs.
     policy_ship_runtime: BTreeMap<i64, PolicyShipRuntime>,
     ship_weapons: BTreeMap<i64, ShipWeapons>,
+    level_geometry: Option<NativeLevelGeometry>,
+    ship_target_front_offsets: HashMap<i64, f32>,
     weapon_range_candidates: Vec<usize>,
     weapon_range_entering_ids: Vec<i64>,
     /// Updated only when a policy controller is bound or retired.
@@ -888,6 +897,7 @@ impl CombatWorld {
             game_ship_steering: HashMap::new(),
             policy_ship_runtime: BTreeMap::new(),
             ship_weapons: BTreeMap::new(),
+            level_geometry: None, ship_target_front_offsets: HashMap::new(),
             weapon_range_candidates: Vec::new(), weapon_range_entering_ids: Vec::new(),
             policy_roster_revision: 0,
             policy_decision_seen: HashSet::new(),
@@ -1111,6 +1121,7 @@ impl CombatWorld {
         self.game_scout_runtime.remove(&victim_id);
         self.discovery.retire(DiscoveryKind::Ship, victim_id);
         self.ship_weapons.remove(&victim_id);
+        self.ship_target_front_offsets.remove(&victim_id);
         if self.policy_ship_runtime.remove(&victim_id).is_some() {
             self.bump_policy_roster_revision();
         }
@@ -1618,7 +1629,8 @@ impl CombatWorld {
         ship_id: i64,
         order: GamePointOrder,
     ) -> Result<GamePointOrderResult, CombatWorldError> {
-        if !order.valid() {
+        if !order.valid() || self.level_geometry.is_some_and(|geometry|
+            geometry.map_bounds != order.map_bounds || geometry.has_obstacles != order.has_obstacles) {
             return Err(CombatWorldError::InvalidGameMovementOrder);
         }
         let &index = self.ship_by_id.get(&ship_id)
@@ -1659,7 +1671,12 @@ impl CombatWorld {
         }
 
         let origin = self.physics.ships()[index].motion.position;
-        if order.has_obstacles && order.position_in_bounds(origin) {
+        let in_bounds = if order.has_obstacles {
+            if self.level_geometry.is_some() {
+                self.ship_is_in_bounds(ship_id)?
+            } else { order.position_in_bounds(origin) }
+        } else { false };
+        if in_bounds {
             let target = self.physics.ships()[index].motion.target_coordinates;
             if !order.newly_found_obstacle &&
                 (destination - target).length_squared() < 1.5 * 1.5 {
@@ -1695,7 +1712,8 @@ impl CombatWorld {
         ship_id: i64,
         order: GamePointOrder,
     ) -> Result<GamePointOrderResult, CombatWorldError> {
-        if !order.valid() {
+        if !order.valid() || self.level_geometry.is_some_and(|geometry|
+            geometry.map_bounds != order.map_bounds || geometry.has_obstacles != order.has_obstacles) {
             return Err(CombatWorldError::InvalidGameMovementOrder);
         }
         self.validate_ship_game_order(ship_id)?;
@@ -1940,7 +1958,14 @@ impl CombatWorld {
         if body.is_policy_controlled && !body.user_controlled {
             return Err(CombatWorldError::UnsupportedPolicyActions);
         }
-        let position = body.position;
+        let mut position = body.position;
+        if self.physics.ships()[index].has_latched_target_bounds {
+            if let Some(geometry) = self.level_geometry.filter(|geometry| geometry.has_obstacles) {
+                // Source MoveToPoint uses ForceBounds(_startPosition) even
+                // after a previously entered ship has left the map again.
+                position = geometry.force_bounds(position);
+            }
+        }
         let disposition = self.navigation_requests.request(
             ship_id, position, destination, ship_clearance,
             newly_found_obstacle,

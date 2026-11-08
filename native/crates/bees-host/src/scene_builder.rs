@@ -17,7 +17,7 @@ use bees_gameplay::squads::SquadRosterError;
 use bees_hivemind::session::SquadLifetime;
 use bees_sim::collision::{Aabb, Pose};
 use bees_sim::combat::ShipVitals;
-use bees_sim::combat_world::{CombatWorld, CombatWorldError, NativeTurretSpec, NativeTurretRangeSpec, ShipCollisionProfile};
+use bees_sim::combat_world::{CombatWorld, CombatWorldError, NativeTurretSpec, NativeTurretRangeSpec, NativeShipTargetGeometry, NativeLevelGeometry, ShipCollisionProfile};
 use bees_sim::asteroid_spawn::FullAsteroidPrototype;
 use bees_sim::geometry::Vec2;
 use bees_sim::navigation::NavigationError;
@@ -38,6 +38,7 @@ use crate::scene_assets::NativeSceneAssets;
 /// health can differ from a training-adjusted MaxHealth. A controller
 /// and its frame are registered ONLY if the source supplies the binding.
 pub struct NativeAuthoredShip {
+    pub target_geometry: Option<NativeShipTargetGeometry>,
     pub entity_id: i64,
     pub ship_type: u8,
     pub side: i32,
@@ -79,6 +80,7 @@ pub struct NativeAuthoredPolicyCapabilities {
 /// Complete, real native rotating-turret configuration supplied by the
 /// original Unity weapon instances, never guessed from ship class.
 pub struct NativeAuthoredTurret {
+    pub aim_at_front_of_ship: Option<bool>,
     pub range_collider: Option<NativeTurretRangeSpec>,
     pub slot: usize,
     pub spec: NativeTurretSpec,
@@ -167,6 +169,7 @@ pub struct NativeAuthoredGroups {
 }
 
 pub struct NativeAuthoredLevel<M, A> {
+    pub level_geometry: Option<NativeLevelGeometry>,
     pub world_id: WorldId,
     pub seed: u64,
     pub broadphase_bounds: Aabb,
@@ -285,6 +288,9 @@ impl NativeSceneAssets {
         )
             .map_err(NativeSceneBuildError::Combat)?;
         combat.shots_harmless = authored.shots_harmless;
+        if let Some(geometry) = authored.level_geometry {
+            combat.configure_level_geometry(geometry).map_err(NativeSceneBuildError::Combat)?;
+        }
 
         // Unity assigns GameState entity IDs from a monotonic Stage pool.
         // Imported ship/obstacle lists arrive separately; sort their
@@ -342,6 +348,10 @@ impl NativeSceneAssets {
                             .map_err(NativeSceneBuildError::Combat)?;
                     }
                 }
+                if let Some(geometry) = ship.target_geometry {
+                    combat.configure_ship_target_geometry(ship.entity_id, geometry)
+                        .map_err(NativeSceneBuildError::Combat)?;
+                }
                 combat.set_ship_cease_fire(ship.entity_id, ship.cease_fire)
                     .map_err(NativeSceneBuildError::Combat)?;
                 for turret in ship.turrets {
@@ -350,6 +360,10 @@ impl NativeSceneAssets {
                     } else {
                         combat.configure_game_turret(ship.entity_id, turret.slot, turret.spec)
                     }.map_err(NativeSceneBuildError::Combat)?;
+                    if let Some(front) = turret.aim_at_front_of_ship {
+                        combat.configure_turret_target_geometry(ship.entity_id, turret.slot, front)
+                            .map_err(NativeSceneBuildError::Combat)?;
+                    }
                     if let Some(range) = turret.range_collider {
                         combat.configure_turret_range(ship.entity_id, turret.slot, range)
                             .map_err(NativeSceneBuildError::Combat)?;

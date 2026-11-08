@@ -457,6 +457,7 @@ pub struct ShipBody {
     pub active: bool,
     /// Authored shape extent, recomputed only when the hull changes.
     hull_radius_bound: f32,
+    pub(crate) has_latched_target_bounds: bool,
     collider: WorldCollider,
     /// Optional Beehive.HealCollider, explicitly imported from the
     /// authored child trigger. The primary hull is NEVER enlarged to
@@ -484,6 +485,7 @@ impl ShipBody {
         let mut body = Self {
             id, motion, layer, active: true,
             hull_radius_bound: radius * 1.0001 + 0.001,
+            has_latched_target_bounds: false,
             collider,
             healing_zone: None,
             warp_zone: None,

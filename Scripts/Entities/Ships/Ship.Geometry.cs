@@ -177,6 +177,8 @@ namespace Assets.Scripts.Entities.Ships
             return _clearance;
         }
 
+        public bool IsInBoundsLatched => _isInBounds;
+
         public bool IsInBounds()
         {
             if (!_isInBounds)

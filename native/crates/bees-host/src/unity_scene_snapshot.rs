@@ -18,7 +18,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use bees_sim::asteroid_spawn::FullAsteroidPrototype;
-use bees_sim::combat_world::{NativeFirePattern, NativeTurretSpec, NativeTurretRangeSpec, GameStrikerCarrier, ScoutBeaconSpec};
+use bees_sim::combat_world::{NativeFirePattern, NativeTurretSpec, NativeTurretRangeSpec, NativeShipTargetGeometry, NativeLevelGeometry, GameStrikerCarrier, ScoutBeaconSpec};
 use bees_sim::perception_entities::ObservedWeapon;
 use bees_sim::control::PolicyFrame;
 use bees_hivemind::session::SquadLifetime;
@@ -70,7 +70,7 @@ use crate::runtime::NativeHostRuntime;
 use crate::ship_specials::{NativeAuthoredShipSpecial, NativeBeaconTemplate};
 use crate::durable_connection::DurableHiveMindConnection;
 
-const SNAPSHOT_VERSION: u32 = 21;
+const SNAPSHOT_VERSION: u32 = 22;
 
 #[derive(Deserialize, Clone, Copy)]
 struct UnityVec2 { x: f32, y: f32 }
@@ -171,6 +171,7 @@ struct UnityGroupParticipant {
 
 #[derive(Deserialize)]
 struct UnityShip {
+    target_geometry: Option<UnityShipTargetGeometry>,
     entity_id: i64,
     ship_type: u8,
     side: i32,
@@ -355,7 +356,14 @@ struct UnityObservedWeapon {
 }
 
 #[derive(Deserialize)]
+struct UnityShipTargetGeometry {
+    front_offset: f32,
+    bounds_latched: bool,
+}
+
+#[derive(Deserialize)]
 struct UnityTurret {
+    aim_at_front_of_ship: Option<bool>,
     range_collider: Option<UnitySupportCollider>,
     range_layer: Option<u8>,
     range_enabled: Option<bool>,
@@ -484,6 +492,7 @@ pub enum NativeSnapshotError {
 /// Records are owned, but shared immutable prefab geometry stays in the
 /// existing NativeSceneAssets Arc catalogs.
 pub struct NativePhysicalScene {
+    pub schema_version: u32,
     pub level_name: String,
     /// Source Stage identity for validating the loaded prefab palette.
     pub stage_name: String,
@@ -865,6 +874,9 @@ impl NativePhysicalScene {
             },
         ).map_err(NativePolicyOnlyLevelError::Metadata)?;
         Ok(NativeAuthoredLevel {
+            level_geometry: (self.schema_version >= 22).then_some(NativeLevelGeometry {
+                map_bounds: self.bounds, has_obstacles: self.has_obstacles,
+            }),
             world_id: setup.world_id,
             seed: setup.seed,
             broadphase_bounds: self.bounds,
@@ -985,7 +997,7 @@ impl NativePhysicalScene {
     pub fn parse_with_ship_catalog(json: &str, catalog: &ShipAssetCatalog) -> Result<Self, NativeSnapshotError> {
         let raw: UnitySnapshot = serde_json::from_str(json)
             .map_err(NativeSnapshotError::Malformed)?;
-        if raw.schema_version != 20 && raw.schema_version != SNAPSHOT_VERSION {
+        if !(20..=SNAPSHOT_VERSION).contains(&raw.schema_version) {
             return Err(NativeSnapshotError::UnsupportedSchema(raw.schema_version));
         }
         let command_settings: bees_gameplay::commands::HiveMindCommandSettings = raw.command_settings.into();
@@ -1310,7 +1322,11 @@ impl NativePhysicalScene {
                     },
                     _ => return Err(invalid(weapon.slot)),
                 };
+                if raw.schema_version >= 22 && weapon.aim_at_front_of_ship.is_none() {
+                    return Err(invalid(weapon.slot));
+                }
                 authored_turrets.push(NativeAuthoredTurret {
+                    aim_at_front_of_ship: weapon.aim_at_front_of_ship,
                     range_collider,
                     slot: weapon.slot,
                     spec: NativeTurretSpec {
@@ -1433,7 +1449,15 @@ impl NativePhysicalScene {
                 has_persistent_fleet_value: ship.persistent_fleet,
                 minerals_mined_this_level: ship.mined_cargo,
             });
+            let target_geometry = match ship.target_geometry {
+                Some(source) if source.front_offset.is_finite() => Some(NativeShipTargetGeometry {
+                    front_offset: source.front_offset, bounds_latched: source.bounds_latched,
+                }),
+                None if raw.schema_version < 22 => None,
+                _ => return Err(NativeSnapshotError::InvalidShip(ship.entity_id)),
+            };
             entities.push(NativeAuthoredEntity::Ship(NativeAuthoredShip {
+                target_geometry,
                 entity_id: ship.entity_id, ship_type: ship.ship_type,
                 cease_fire: ship.policy_cease_fire, turrets: authored_turrets,
                 side: ship.side, vitals, motion, game_movement,
@@ -1765,6 +1789,7 @@ impl NativePhysicalScene {
         let fleet = NativeFleetInventory::from_source(fleet_values)
             .map_err(NativeSnapshotError::Fleet)?;
         Ok(Self {
+            schema_version: raw.schema_version,
             level_name: raw.level_name,
             stage_name: raw.stage_name,
             bounds: Aabb { min, max },

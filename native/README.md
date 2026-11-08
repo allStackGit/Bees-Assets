@@ -105,7 +105,7 @@ The single JSON configuration file requires:
   model_slots, groups?}`. Each scene is an exported **initial** Level;
   both IDs must be unique and positive, and `model_slots` maps exact
   Unity policy-team IDs (`"0"`/`"1"`) to verified manifest slots.
-  Current schema-21 exports record actual participating Unity Agent instance
+  Current schema-22 exports record actual participating Unity Agent instance
   IDs, source ship bindings and episode number; the runner derives `groups`
   automatically. If supplied, `groups` must match that source record exactly.
   Participants are never inferred from hull IDs. Scripted opponents may have
@@ -204,7 +204,7 @@ when a game shot launches, preserving its ID for the projectile's remaining life
 Automatic targeting/ranking, game firing statistics/combat timers and full-game
 visual/weapon parity remain incomplete.
 
-## Unity scene import (schema 21)
+## Unity scene import (schema 22)
 
 **Bees > Native > Export Selected Level Physical Scene** captures a
 source-authored initial Unity Level, not a resumable match checkpoint. Schema 21
@@ -221,11 +221,21 @@ Shooter death preserves surviving shots; rocket/fire-tank explosions are exclude
 Nominal projectile-distance expiry still operates independently. Host status counts
 grid rebuilds, candidates, ship/projectile hull checks, entries/exits and ended shots.
 
+Schema 22 additionally records each ship's existing bounds latch and exact
+front-of-ship aim offset, plus each turret's front/center aiming choice. Shared
+NativeLevelGeometry owns actual bounds/HasObstacles. Movement and
+is_weapon_ship_target_valid use the same lazily acquired, monotonic body latch;
+weapon_target_point implements source range/hull/inside-hull fallback. Legacy
+20/21 scenes still run their previous supported mechanics, but missing target
+geometry is an explicit error for these new target queries. Newly spawned units
+start with a fresh false latch; front aiming needs their authored offset.
+
 In the client, B toggles selected weapons' range/obstruction inspection. Blue
 lines reach overlapping enemy hulls with no primary obstacle in the way; orange
-lines are obstructed. The title counts queries, overlaps, obstructions and missing
-source data. This view does not imply firing eligibility: latched bounds, target ranking
-and final aim-point selection remain
+lines are obstructed. Yellow crosses show source aim points, distinct from the
+obstruction lines. The title counts queries, contacts, obstructions, aim points
+and missing source data. This
+view does not choose targets or fire weapons; automatic ranking and firing remain
 incomplete. Inspection is disabled by default and adds no headless query work.
 
 The scene captures the active self-play episode, both team-specific

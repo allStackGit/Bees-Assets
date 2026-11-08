@@ -36,6 +36,13 @@ impl Vec2 {
         Self::new(self.x / magnitude, self.y / magnitude)
     }
 
+    /// Unity Vector2.operator==, distinct from exact Rust PartialEq/Equals.
+    /// UnityCsReference Runtime/Export/Math/Vector2.cs uses kEpsilon squared.
+    #[inline]
+    pub fn unity_equal(self, other: Self) -> bool {
+        (self - other).length_squared() < 0.00001_f32 * 0.00001_f32
+    }
+
     #[inline]
     pub fn is_finite(self) -> bool {
         self.x.is_finite() && self.y.is_finite()

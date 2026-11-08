@@ -1,9 +1,57 @@
-# Unified native rewrite handoff - 2026-11-07
+# Unified native rewrite handoff - 2026-11-08
 
 Worktree `B:\Bees\unified-native`, branch `rewrite/unified-native`.
 Latest fetch found no newer upstream than `3c76c78a3`, merged in `f7261843e`.
 Prior manual weapons `961189b94`; owner split `23c1c442d`; support `ea5ddd1a9`.
 Original `B:\Bees\Assets` and live training untouched.
+
+## Latest shared target geometry and bounds
+
+Schema22 adds actual source Ship.IsInBoundsLatched (read-only getter, no capture
+side effects), GetHalfHeight-minus-configured-front-offset and each turret's
+ShouldFireAtFrontOfShip. Reader accepts20/21/22, requires all new data for22 and
+passes it through authored entities/builder. NativePhysicalScene exposes its real
+schema_version; no guessed geometry or version-independent defaults.
+
+NativeLevelGeometry owns actual bounds/HasObstacles. The lazy monotonic bounds
+latch is on the real ShipBody, initially false for newly spawned native bodies;
+source capture can set it true, never clear a latch already acquired in native.
+Movement and is_weapon_ship_target_valid consume that same state. Real point
+orders query it only with obstacles active; previously entered outside ships
+still run obstacle/path decisions with ForceBounds path START, while newly
+outside ships move directly. Configured Level/order geometry must agree before
+mutation. No renderer can latch state through an immutable view.
+
+is_weapon_ship_target_valid follows source enemy/live -> cached range contact ->
+lazy bounds -> LOS ordering, independently of cease-fire/aim/cooldown.
+weapon_target_point implements rotated authored front/center, actual range-circle
+point containment, nearest hull fallback and center fallback when turret is inside
+target hull. Vec2.unity_equal preserves Unity's approximate operator rather than
+changing Rust PartialEq. Reference checked at:
+[Unity Vector2 reference](https://raw.githubusercontent.com/Unity-Technologies/UnityCsReference/master/Runtime/Export/Math/Vector2.cs)
+The optional B overlay now draws yellow aim crosses separately from LOS lines;
+legacy scenes report missing aim data rather than plotting a fabricated point.
+
+Executed external B:\Bees\native-capability-qualification probes:
+- weapon-target-geometry.txt: rotated front/center, exact range boundary/fallback,
+  turret inside hull, no latch mutation on inspection/noncontacts/friendlies,
+  latch BEFORE blocked LOS rejection, captured false/true outside bounds, actual
+  displacement outside after latch, Unity epsilon strict boundary, real point
+  orders and bounded path starts, inconsistent orders/missing geometry rejection.
+- weapon-target-host.txt: schema22 fixture -> importer -> builder -> NoPolicy host
+  -> yellow aim marker and real player movement latch. Partial/nonfinite metadata
+  rejected. weapon-target.png visually inspected and marker pixels checked.
+- weapon-range-after-target-geometry.txt: prior range lifecycle/scaling probe passes;
+  game-manual-after-target-geometry.txt: all5 manual firing fixtures still pass.
+- workspace-target-geometry.txt: all106 existing tests/all-target/all-feature pass;
+  headless-target-geometry.txt: no-default-feature build passes; six asset verifiers
+  pass. No new committed tests. Latest fetch still no newer rewrite commits.
+
+These are supplied source-contract fixtures, not authentic Unity exports. Unity
+C# compilation/export execution, physical input and Linux execution are unverified.
+Automatic ranking/timer/fire selection remains NOT connected. Dynamic spawn
+adapters also need authored front offsets before front-target-point queries can
+use those new units. Original Unity checkout and live training untouched.
 
 ## Latest authoritative range lifecycle
 
@@ -47,8 +95,8 @@ Executed external probes in B:\Bees\native-capability-qualification:
 These remain supplied scenarios, not authentic Unity exports. Unity callback
 ordering/timing, physical controls and Linux execution are unverified. MapObject
 visibility contributions from RangeCollider are not implemented by this sweep.
-Automatic target selection/firing, source bounds latching and final aim points
-remain next; this is the actual contact lifecycle those controllers must consume.
+Automatic selection/firing remains next; shared bounds and final aim-point queries
+are now implemented above for those controllers to consume.
 
 ## Latest range/line inspection increment
 
@@ -86,8 +134,8 @@ Executed in B:\Bees\native-capability-qualification:
 
 These are supplied contract scenes, not authentic Unity exports. C# exporter
 execution, physical B-key interaction and Linux execution remain unverified.
-Latched Ship.IsInBounds, target ranking, front-of-ship aim points and automatic
-firing still require integrated work; contact history is now implemented above.
+Target ranking and automatic firing still require integration; contact history,
+source bounds and final aim-point queries are now implemented above.
 
 ## Latest integrated work
 
@@ -178,12 +226,18 @@ was left running. Do not turn narrower checks into full parity/readiness claims.
 
 ## Highest-value next work / full objective remains incomplete
 
-Build on the shared geometry AND authoritative range history: port latched
-bounds, target queue/ranking, source final aim-point selection and automatic
-TargetingSequence into the SAME mounted scheduler;
+Build on shared validity/aim-point queries AND authoritative range history: port
+target queue/ranking and automatic TargetingSequence into the SAME mounted
+scheduler;
 then wire chosen-target attack commands. Complete visual sprite animation/audio,
 per-weapon statistics/combat timers and persistent game accounting.
-Manual point firing supplies no missing automatic targeting semantics.
+Manual point firing supplies no missing automatic targeting semantics. All40
+rankings already exist in bees-gameplay/src/commands/targeting.rs for commands and
+Bombs, but ordinary weapons must share that ordering rather than duplicate it or
+substitute nearest-only targets. Their source LastKilled/FleetShip.DamageDone,
+current strategy and preferred enemy squad need real authoritative inputs; do not
+invent zeros or copy the canonical roster into metadata. Include source timer
+ReadyToFire/GetAimedAtTarget/FireNext semantics and real reservation ownership.
 
 NativePolicyOnlyMetadata still rejects HiveMind activation until its source
 strategy/per-command snapshots exist. A no-model game-only Level works via the

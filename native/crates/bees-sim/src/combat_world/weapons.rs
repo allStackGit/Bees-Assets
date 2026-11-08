@@ -192,6 +192,7 @@ impl NativeTurretSpec {
 pub(super) struct MountedTurret {
     pub(super) spec: NativeTurretSpec,
     range_collider: Option<NativeTurretRangeSpec>,
+    pub(super) aim_at_front_of_ship: Option<bool>,
     pub(super) state: TurretState,
     pub(super) timer: ScaledTimer,
     /// Active authored charging clip, shared by game and policy control.
@@ -235,7 +236,7 @@ impl MountedTurret {
             game_charge_paused: false,
             active_beam_projectile_id: None,
             manual_target: None,
-            range_collider: None,
+            range_collider: None, aim_at_front_of_ship: None,
             spec,
         }
     }

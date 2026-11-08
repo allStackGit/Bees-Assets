@@ -13,6 +13,10 @@ pub(super) struct WeaponRangeContacts {
     revision: u64,
 }
 
+impl WeaponRangeContacts {
+    pub(super) fn contains(&self, ship_id: i64) -> bool { self.membership.contains_key(&ship_id) }
+}
+
 /// Borrowed authoritative enemy cache, not a newly sorted geometric preview.
 /// Revision changes only on actual entries/exits, for target-queue invalidation.
 #[derive(Clone, Copy, Debug)]

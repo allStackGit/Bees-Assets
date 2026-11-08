@@ -23,6 +23,7 @@ internal static class NativePhysicalSceneExporter
     [Serializable]
     private sealed class SourceShip
     {
+        public SourceShipTargetGeometry target_geometry;
         public long entity_id;
         public int ship_type;
         public int side;
@@ -116,9 +117,17 @@ internal static class NativePhysicalSceneExporter
     }
 
     [Serializable]
+    private sealed class SourceShipTargetGeometry
+    {
+        public float front_offset;
+        public bool bounds_latched;
+    }
+
+    [Serializable]
     private sealed class SourceTurret
     {
         public SourceCollider range_collider;
+        public bool aim_at_front_of_ship;
         public int range_layer;
         public bool range_enabled;
         public int slot;
@@ -198,7 +207,7 @@ internal static class NativePhysicalSceneExporter
     [Serializable]
     private sealed class PhysicalScene
     {
-        public int schema_version = 21;
+        public int schema_version = 22;
         public string level_name;
         public string stage_name;
         public float fixed_dt_seconds;
@@ -382,6 +391,10 @@ internal static class NativePhysicalSceneExporter
                 base_speed = ship.Speed,
                 current_speed = ship.CurrentSpeed,
                 body_velocity = ship.Body.linearVelocity,
+                target_geometry = new SourceShipTargetGeometry {
+                    front_offset = halfHeight - ConfigData.OffsetFromFrontOfShip.GetValueOrDefault(ship.ShipType),
+                    bounds_latched = ship.IsInBoundsLatched
+                },
                 height = ship.GetHeight(),
                 turning_radius = turningRadius,
                 half_width = halfWidth,
@@ -1091,6 +1104,7 @@ internal static class NativePhysicalSceneExporter
                 ship.Level.Map.Transform, range, turret.GetPosition(), turret.Rotation);
             entries.Add(new SourceTurret {
                 range_collider = rangeShape,
+                aim_at_front_of_ship = turret.ShouldFireAtFrontOfShip,
                 range_layer = range.gameObject.layer,
                 range_enabled = range.enabled && range.gameObject.activeInHierarchy,
                 slot = slot,

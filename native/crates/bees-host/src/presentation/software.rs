@@ -44,6 +44,8 @@ pub struct NativeRenderCounts {
     pub pieces: usize,
     pub range_queries: usize,
     pub range_contacts: usize,
+    pub aim_points: usize,
+    pub missing_aim_data: usize,
     pub range_overlaps: usize,
     pub obstructed_ranges: usize,
     pub missing_range_data: usize,
@@ -200,6 +202,10 @@ impl NativeSoftwareRenderer {
                                 target.entity_id, view.collision_matrix, has_obstacles) {
                                 Ok(Some(geometry)) if geometry.enemy_hull_overlaps_range => {
                                     counts.range_overlaps += 1;
+                                    match view.combat.weapon_target_point(ship.entity_id, slot, target.entity_id) {
+                                        Ok(point) => { self.cross(point, 2.5, 0xf6df85); counts.aim_points += 1; },
+                                        Err(_) => counts.missing_aim_data += 1,
+                                    }
                                     counts.obstructed_ranges += usize::from(geometry.line_obstructed);
                                     let (ox, oy) = self.project(range.origin);
                                     let (tx, ty) = self.project(geometry.closest_hull_point);
