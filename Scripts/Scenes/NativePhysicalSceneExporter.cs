@@ -25,6 +25,7 @@ internal static class NativePhysicalSceneExporter
     {
         public long entity_id;
         public int ship_type;
+        public int ship_type_letter;
         public int side;
         public int health, max_health, max_tsv, current_tsv;
         public int mined_cargo, original_health;
@@ -352,6 +353,7 @@ internal static class NativePhysicalSceneExporter
             snapshot.ships.Add(new SourceShip {
                 entity_id = ship.Id,
                 ship_type = (int)ship.ShipType,
+                ship_type_letter = (int)Utilities.ConvertShipTypeToShipTypeLetter[ship.ShipType],
                 side = ship.Side,
                 health = ship.Health,
                 max_health = ship.MaxHealth,
