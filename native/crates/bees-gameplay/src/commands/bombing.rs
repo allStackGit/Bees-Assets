@@ -184,7 +184,7 @@ fn assign_initial_special_bomb_targets(
         }
         Ok(Some(()))
     });
-    if !matches!(assigned, Ok(Some(_))) {
+    if !matches!(assigned.as_ref(), Ok(Some(_))) {
         *random = RandomStream::new(random_before);
     }
     Ok(assigned?.is_some())
