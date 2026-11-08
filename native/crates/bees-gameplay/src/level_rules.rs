@@ -689,8 +689,8 @@ where
         // shared physics/weapon step, including after supersede/death.
         state.combat.refresh_game_auto_fire_authority(|ship_id| {
             state.events.roster().owning_squad(ship_id)
-                .is_some_and(|owner|
-                    state.events.commands().has_active_squad_command(owner))
+                .and_then(|owner|
+                    state.events.commands().live_firing_command_outcome(owner))
         });
         // No independent policy/physics rules in gameplay or training:
         // both adapters invoke CombatWorld's one canonical transaction.
