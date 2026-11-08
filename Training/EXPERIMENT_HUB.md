@@ -50,10 +50,16 @@ capacity claims or native starts are authorized.
   RAM-use samples from reporting Hub-managed native jobs, including the
   number of contributing jobs; these **exclude Bees, the OS, and other
   untracked software**, so they are not total host utilization.
-  Connected agents also report current host free RAM across all software.
-  This observation does not automatically reserve resources for external
-  workloads; adjust the Hub CPU/RAM budget to account for those workloads.
-  GPU identities are manually declared and must be bound to fresh observations.
+  Connected agents also report current host free RAM and sampled host CPU
+  busy percentage across **all** software, including Bees, standalone
+  trainers and the OS. GPU inventory reports observed host VRAM use and,
+  when the driver provides it, GPU busy percentage. These readings are
+  separate from Hub-native process counters and must not be summed with them.
+  They expose competing workloads, but are neither attribution to individual
+  processes nor guaranteed spare capacity. External workload usage is
+  observational; reserve its expected CPU/RAM/GPU capacity explicitly in
+  the Hub budget or a standalone lease before scheduling competing work.
+  GPU identities are manually declared and must match fresh observations.
   No agent enforces per-process VRAM or GPU compute quotas.
 
 ## Data ownership
