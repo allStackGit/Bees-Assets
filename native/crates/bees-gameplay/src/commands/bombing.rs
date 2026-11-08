@@ -138,6 +138,14 @@ fn assign_initial_special_bomb_targets(
             !ids.insert(weapon.weapon_id) {
             return Err(GameCommandError::InvalidSquad);
         }
+        // The Level's Bomb activation must name the physical weapon
+        // installed on this ship. Otherwise a caller could reserve damage
+        // with an invented ID or power that the world can never deliver.
+        let installed = world.special_weapon_spec(ship_id)
+            .ok_or(GameCommandError::MissingCombatSnapshot)?;
+        if installed.weapon_id != weapon.weapon_id || installed.power != weapon.power {
+            return Err(GameCommandError::MissingCombatSnapshot);
+        }
         world.validate_ship_game_order(ship_id)?;
         let ship = world.ship(ship_id).ok_or(GameCommandError::InvalidSquad)?;
         let eligible = match expected_command {
