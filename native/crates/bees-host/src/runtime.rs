@@ -567,6 +567,8 @@ where
         matchup: String, shooting: String, opponent: u64,
         banned: impl IntoIterator<Item=String>,
     ) -> Result<GetStrategyRequest, DurableConnectionError> {
+        let banned = self.driver.strategy_request_bans(&self.simulation, owner, banned)
+            .map_err(DurableConnectionError::GameplayRequest)?;
         self.connection.request_strategy(
             owner, enemy, matchup, shooting, opponent, banned,
         )

@@ -81,17 +81,27 @@ pub fn composition_command_bans(
     })
 }
 
+/// Source composition changes overwrite exactly their six owned bans,
+/// preserving failure/campaign bans on all other command kinds.
+pub fn refresh_composition_bans(banned: &mut Vec<LocalCommandKind>, snapshot: CompositionCommandBans) {
+    const OWNED: [LocalCommandKind; 6] = [LocalCommandKind::Aggressive,
+        LocalCommandKind::CircleSquad, LocalCommandKind::RightSwipe,
+        LocalCommandKind::LeftSwipe, LocalCommandKind::InAndOut, LocalCommandKind::Hold];
+    banned.retain(|kind| !OWNED.contains(kind));
+    banned.extend(OWNED.into_iter().filter(|&kind| snapshot.disallows(kind)));
+}
+
 /// Build the deployed BeesServer `BannedStrats` names for one strategy
-/// request. The Level keeps its other bans (campaign conditions, temporary
-/// command failure, etc.). This function adds or removes nothing from those:
-/// it only appends the six source composition restrictions.
+/// request from the one squad-owned collection and explicit request restrictions.
+/// Composition refresh and command failures update that collection at their
+/// source gameplay boundaries; retransmissions never rebuild the names.
 ///
 /// Use COMMAND_STRATEGIES, not Rust enum names, so CircleSquad is sent as
 /// "Circle", MoveToRandom as "Random", and other wire names stay compatible
 /// with the deployed Node backend. No additional allocation is needed in a
 /// physics tick; this is called only when issuing a strategy request.
 pub fn banned_strategy_names(
-    bans: CompositionCommandBans,
+    bans: &[LocalCommandKind],
     existing: impl IntoIterator<Item = String>,
 ) -> Vec<String> {
     let mut result: Vec<String> = existing.into_iter().collect();
@@ -99,7 +109,7 @@ pub fn banned_strategy_names(
         let kind = LocalCommandKind::from_server_strategy_id(
             (index + 1) as u8,
         ).expect("fixed server strategy table has 15 supported IDs");
-        if bans.disallows(kind) &&
+        if bans.contains(&kind) &&
             !result.iter().any(|existing| existing == name) {
             result.push(name.to_owned());
         }

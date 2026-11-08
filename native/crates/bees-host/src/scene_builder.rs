@@ -158,6 +158,7 @@ impl NativeAuthoredEntity {
 }
 
 pub struct NativeAuthoredSquad {
+    pub command_bans: Option<Vec<bees_hivemind::dispatch::LocalCommandKind>>,
     pub owner: SquadLifetime,
     pub side: i32,
     pub members: Vec<i64>,
@@ -463,6 +464,10 @@ impl NativeSceneAssets {
             events.roster_mut().register_squad(
                 &combat, squad.owner, squad.side, &squad.members,
             ).map_err(NativeSceneBuildError::Squad)?;
+            if let Some(bans) = squad.command_bans {
+                events.roster_mut().set_command_bans(squad.owner, bans)
+                    .map_err(NativeSceneBuildError::Squad)?;
+            }
         }
         if !events.roster().covers_live_roster(&combat) {
             return Err(NativeSceneBuildError::IncompleteSquadRoster);

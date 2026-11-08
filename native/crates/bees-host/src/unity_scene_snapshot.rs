@@ -70,7 +70,7 @@ use crate::runtime::NativeHostRuntime;
 use crate::ship_specials::{NativeAuthoredShipSpecial, NativeBeaconTemplate};
 use crate::durable_connection::DurableHiveMindConnection;
 
-const SNAPSHOT_VERSION: u32 = 25;
+const SNAPSHOT_VERSION: u32 = 26;
 
 #[derive(Deserialize, Clone, Copy)]
 struct UnityVec2 { x: f32, y: f32 }
@@ -499,6 +499,7 @@ impl From<UnityCommandSettings> for bees_gameplay::commands::HiveMindCommandSett
 
 #[derive(Deserialize)]
 struct UnitySquad {
+    banned_strategies: Option<Vec<String>>,
     is_carrier_squad: Option<bool>,
     item_id: i64,
     side: i32,
@@ -713,6 +714,7 @@ struct NativeSourcePolicyInputs {
 /// Runtime source Squad.ItemId is allocated once per Squad.Setup by the
 /// Stage-wide monotonic Pool.ItemCount, even for reused pooled wrappers.
 pub struct NativeSourceSquad {
+    pub command_bans: Option<Vec<bees_hivemind::dispatch::LocalCommandKind>>,
     pub is_carrier_squad: Option<bool>,
     pub item_id: i64,
     pub side: i32,
@@ -1013,6 +1015,7 @@ impl NativePhysicalScene {
         }
         Ok(self.source_squads.iter().map(|source|
             NativeAuthoredSquad {
+                command_bans: source.command_bans.clone(),
                 owner: SquadLifetime {
                     level_id, squad_id: source.item_id,
                     lifecycle_id: source.item_id as u64,
@@ -1869,7 +1872,24 @@ impl NativePhysicalScene {
             if raw.schema_version >= 24 && squad.is_carrier_squad.is_none() {
                 return Err(NativeSnapshotError::InvalidSquad(squad.item_id));
             }
+            if raw.schema_version >= 26 && squad.banned_strategies.is_none() {
+                return Err(NativeSnapshotError::InvalidSquad(squad.item_id));
+            }
+            let command_bans = squad.banned_strategies.map(|names| {
+                let mut bans = Vec::with_capacity(names.len());
+                for name in names {
+                    let index = bees_hivemind::protocol::COMMAND_STRATEGIES.iter()
+                        .position(|&candidate| candidate == name)
+                        .ok_or(NativeSnapshotError::InvalidSquad(squad.item_id))?;
+                    let kind = bees_hivemind::dispatch::LocalCommandKind::from_server_strategy_id((index + 1) as u8)
+                        .expect("canonical command table");
+                    if bans.contains(&kind) { return Err(NativeSnapshotError::InvalidSquad(squad.item_id)); }
+                    bans.push(kind);
+                }
+                Ok(bans)
+            }).transpose()?;
             source_squads.push(NativeSourceSquad {
+                command_bans,
                 is_carrier_squad: squad.is_carrier_squad,
                 shooting: bees_hivemind::protocol::StrategyIdentity {
                     id: (shooting_index + 1) as u8,

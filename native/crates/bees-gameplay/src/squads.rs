@@ -82,6 +82,8 @@ pub struct SquadRosterMeasurements {
 /// vision and abilities are deliberately not duplicated here.
 #[derive(Clone, Debug)]
 pub struct NativeSquadEntry {
+    /// None means the source collection was not captured. Never guess an empty set.
+    pub command_bans: Option<Vec<bees_hivemind::dispatch::LocalCommandKind>>,
     pub targeting: Option<crate::squad_targeting::NativeInstalledTargeting>,
     pub owner: SquadLifetime,
     pub side: i32,
@@ -151,6 +153,18 @@ impl NativeSquadRoster {
         Ok(())
     }
 
+    pub fn set_command_bans(&mut self, owner: SquadLifetime,
+        bans: Vec<bees_hivemind::dispatch::LocalCommandKind>,
+    ) -> Result<(), SquadRosterError> {
+        self.active.get_mut(&owner).ok_or(SquadRosterError::MissingSquad)?.command_bans = Some(bans);
+        Ok(())
+    }
+
+    pub fn command_bans_mut(&mut self, owner: SquadLifetime)
+        -> Option<&mut Vec<bees_hivemind::dispatch::LocalCommandKind>> {
+        self.active.get_mut(&owner)?.command_bans.as_mut()
+    }
+
     pub fn get(&self, owner: SquadLifetime) -> Option<&NativeSquadEntry> {
         self.active.get(&owner)
     }
@@ -187,6 +201,7 @@ impl NativeSquadRoster {
             }
         }
         let entry = NativeSquadEntry {
+            command_bans: None,
             targeting: None,
             owner, side, members: members.to_vec(), mother_squad: None,
         };
@@ -281,6 +296,7 @@ impl NativeSquadRoster {
             return Err(SquadRosterError::InvalidBeaconEvent);
         }
         let entry = NativeSquadEntry {
+            command_bans: None,
             targeting: None,
             owner: minion_owner,
             side: beacon.side,

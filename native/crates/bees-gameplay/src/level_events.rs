@@ -594,9 +594,18 @@ impl NativeLevelEventProcessor {
     }
 
     fn publish_superseded_strategy(
-        &mut self, mut action: StrategyReceiptAction,
+        &mut self, owner: SquadLifetime, mut action: StrategyReceiptAction,
         accepted_selection: Option<bees_hivemind::protocol::ValidatedStrategySelection>,
     ) -> Result<StrategyReceiptAction, StrategyReceiptFailure> {
+        if let StrategyReceiptAction::BanAndDiscardReservations { strategies, .. } = &action {
+            let Some(bans) = self.roster.command_bans_mut(owner) else {
+                return Err(StrategyReceiptFailure {
+                    selection: accepted_selection.expect("accepted ban reply"),
+                    cause: crate::commands::StrategyReceiptFailureCause::InvalidSquad(GameCommandError::MissingCombatSnapshot),
+                });
+            };
+            for &kind in strategies { if !bans.contains(&kind) { bans.push(kind); } }
+        }
         if let StrategyReceiptAction::Applied(Activation::Applied {
             superseded, ..
         }) = &mut action {
@@ -651,10 +660,11 @@ impl NativeLevelEventProcessor {
             StrategyReceipt::Accepted { selection, .. } => Some(selection.clone()),
             _ => None,
         };
+        let owner = squad.owner;
         let action = self.commands.apply_strategy_receipt(
             world, navigation, random, squad, friendlies, settings, receipt,
         )?;
-        self.publish_superseded_strategy(action, source)
+        self.publish_superseded_strategy(owner, action, source)
     }
 
     /// Apply a HiveMind receipt using this Level's SAME live roster,
@@ -697,11 +707,12 @@ impl NativeLevelEventProcessor {
             StrategyReceipt::Accepted { selection, .. } => Some(selection.clone()),
             _ => None,
         };
+        let owner = squad.owner;
         let action = self.commands.apply_strategy_receipt_with_bombing(
             world, navigation, random, squad, friendlies,
             settings, receipt, Some(bombing),
         )?;
-        self.publish_superseded_strategy(action, source)
+        self.publish_superseded_strategy(owner, action, source)
     }
 
     /// Called after the owning world's fixed step but before

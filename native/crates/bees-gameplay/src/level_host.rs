@@ -315,6 +315,13 @@ where
 }
 
 #[derive(Debug)]
+pub enum NativeStrategyRequestError {
+    Routing(NativeLevelRoutingError),
+    MissingOwner,
+    MissingSourceBans,
+}
+
+#[derive(Debug)]
 pub enum NativeLevelSourceError<E> {
     MissingRegisteredWorld,
     UnregisteredWorldCount,
@@ -665,6 +672,24 @@ impl NativeLevelBatchDriver {
             found = Some(index);
         }
         Ok(found)
+    }
+
+    /// Add the owning squad's authored/failure bans at request creation only.
+    /// Retransmission always uses the original connection-owned request.
+    pub fn strategy_request_bans<M, A>(
+        &self, simulation: &Simulation<NativeLevelState<M, A>, NativeLevelRules>,
+        owner: SquadLifetime, existing: impl IntoIterator<Item=String>,
+    ) -> Result<Vec<String>, NativeStrategyRequestError>
+    where M: NativeLevelRewardMetadata + NativeLevelCommandContext,
+          A: FnMut(SquadLifetime, i64) -> Result<SquadLifetime, SquadRosterError>,
+    {
+        let index = self.locate_live_owner(simulation, owner)
+            .map_err(NativeStrategyRequestError::Routing)?
+            .ok_or(NativeStrategyRequestError::MissingOwner)?;
+        let bans = simulation.world(index).expect("located world").state.events.roster()
+            .get(owner).expect("located squad").command_bans.as_ref()
+            .ok_or(NativeStrategyRequestError::MissingSourceBans)?;
+        Ok(crate::squad_composition::banned_strategy_names(bans, existing))
     }
 
     /// Correlate one real BeesServer GetStrategyResponse to the connection's

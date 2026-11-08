@@ -785,6 +785,13 @@ where
             live_squad_geometry_from_catalog(
                 &state.combat, squad, catalog, &mut state.survivor_offsets,
             ).map_err(GameCommandError::SquadGeometry)?;
+            if squad.command_bans.is_some() {
+                let bans = crate::squad_composition::composition_command_bans(
+                    &state.combat, squad, |id| state.combat.weapon_target_rank_stats(id).ok().map(|rank| rank.firepower),
+                ).map_err(|_| GameCommandError::MissingCombatSnapshot)?;
+                crate::squad_composition::refresh_composition_bans(
+                    state.events.roster_mut().command_bans_mut(owner).expect("captured bans"), bans);
+            }
             // Store the same authored formation and composition bans that
             // Unity's actual Level uses for later strategy activations.
             state.metadata.update_survivor_formation(

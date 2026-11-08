@@ -211,6 +211,7 @@ internal static class NativePhysicalSceneExporter
         public int side;
         public List<long> member_ids = new List<long>();
         public bool user_controlled, can_accept_input, locked_on, is_carrier_squad;
+        public List<string> banned_strategies = new List<string>();
         public string shooting_strategy;
     }
 
@@ -257,7 +258,7 @@ internal static class NativePhysicalSceneExporter
     [Serializable]
     private sealed class PhysicalScene
     {
-        public int schema_version = 25;
+        public int schema_version = 26;
         public SourceTargetingContext targeting_context;
         public int source_frame_count = Time.frameCount;
         public string level_name;
@@ -638,6 +639,9 @@ internal static class NativePhysicalSceneExporter
                 }
                 sourceSquad.member_ids.Add(ship.Id);
             }
+            foreach (var banned in squad.BannedStrats)
+                sourceSquad.banned_strategies.Add(Utilities.ConvertCommandTypeToName[banned]);
+            sourceSquad.banned_strategies.Sort(StringComparer.Ordinal);
             snapshot.squads.Add(sourceSquad);
         }
         if (registered.Count != liveIds.Count)
