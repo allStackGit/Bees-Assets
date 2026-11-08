@@ -1125,6 +1125,11 @@ worker-only endpoint also enforces a 32-KiB request byte limit.
 The agent sends a native report only after its local systemd supervisor
 inspects exact service identity, systemd `CPUQuota`/`MemoryMax`
 properties, kernel `cpu.max`/`memory.max` limits, and process membership.
+For the intentional `experiment_hub_agent.js --once` mode, the final
+heartbeat uses `request_execution_orders:false`: it acknowledges completed
+work and lease receipts but cannot trigger a fresh native instruction or
+persist a Start-offered marker that this exiting process would discard.
+Continuous agents retain normal instruction delivery.
 Repeated launch instructions are reconciled against the durable local
 journal, never executed twice. One directive is delivered per heartbeat:
 stops take priority, then starts, then GPU device probes, then
