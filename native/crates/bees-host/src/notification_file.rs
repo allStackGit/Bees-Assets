@@ -195,6 +195,7 @@ impl DurableDiagnosticNotifications {
         let kind = match &notification.kind {
             NativeLevelNotificationKind::SquadChange(_) => "squad_change",
             NativeLevelNotificationKind::Gameplay(_) => "gameplay",
+            NativeLevelNotificationKind::CombatHit(_) => "combat_hit",
             NativeLevelNotificationKind::FinishedCommand(_) => "finished_command",
             NativeLevelNotificationKind::AbortedCommand { .. } => "aborted_command",
             NativeLevelNotificationKind::Reward(_) => "reward",
@@ -206,6 +207,25 @@ impl DurableDiagnosticNotifications {
         // diagnostics. MA-POCA's ELO marker and EndEpisode command must
         // NEVER become PPO reward when this log is inspected or migrated.
         let payload = match &notification.kind {
+            NativeLevelNotificationKind::CombatHit(hit) => Some(json!({
+                "projectile_id": hit.projectile_id,
+                "root_shot_id": hit.root_shot_id,
+                "attacker_id": hit.attacker_id,
+                "target_id": hit.target_id,
+                "attacker_side": hit.attacker_side,
+                "target_side": hit.target_side,
+                "command_outcome_id": hit.command_outcome_id,
+                "source": format!("{:?}", hit.source),
+                "command_tsv_delta": hit.command_tsv_delta,
+                "self_inflicted": hit.self_inflicted,
+                "health_before": hit.delta.health_before,
+                "health_after": hit.delta.health_after,
+                "tsv_before": hit.delta.tsv_before,
+                "tsv_after": hit.delta.tsv_after,
+                "applied_damage": hit.delta.applied_damage,
+                "tsv_loss": hit.delta.tsv_loss,
+                "killed": hit.delta.killed,
+            })),
             NativeLevelNotificationKind::Reward(value) => Some(json!({
                 "side": value.side, "reward": value.amount,
             })),
@@ -257,7 +277,12 @@ impl DurableDiagnosticNotifications {
             "tick": notification.tick,
             "kind": kind,
             "payload": payload,
-            "payload_debug": format!("{:?}", notification.kind),
+            // CombatHit already has a full structured payload; avoid
+            // duplicating every hot combat event as a debug string.
+            "payload_debug": match &notification.kind {
+                NativeLevelNotificationKind::CombatHit(_) => None,
+                _ => Some(format!("{:?}", notification.kind)),
+            },
         });
         serde_json::to_writer(&mut self.pending, &record)
             .map_err(io::Error::other)?;
