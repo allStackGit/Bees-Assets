@@ -482,6 +482,20 @@ where
         socket.flush_unsent_stores(&self.connection)
     }
 
+    /// Explicit retry after the transport owner observes a lost response
+    /// or acknowledgement timeout. Persist newly ready outcomes first,
+    /// then retransmit the exact original pending StoreCommands requests.
+    /// This is not a periodic retry worker: the caller determines whether
+    /// a live request has timed out. A previously committed 200/409 request
+    /// has already been removed from the retry ledger and cannot be sent.
+    pub fn retry_store_socket(
+        &mut self, socket: &mut NativeHiveMindSocket,
+    ) -> Result<usize, HiveMindSocketError> {
+        self.checkpoint_prepared_outcomes()
+            .map_err(HiveMindSocketError::Durability)?;
+        socket.retry_pending_stores(&self.connection)
+    }
+
     /// Read and dispatch exactly one authenticated socket event. This is
     /// blocking I/O and must be invoked by the socket owner, never from
     /// the rendering or simulation thread. The durable connection persists
