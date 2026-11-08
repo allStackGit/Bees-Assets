@@ -33,10 +33,13 @@ their respective physical firing/animation timing. Ordinary non-policy turrets
 also acquire enemy hulls automatically when source player authority or an active
 HiveMind command permits it, using the original shooting-strategy ranking,
 physical range checks, obstacle linecasts and in-flight damage reservations.
-All 40 shooting-strategy rankings are connected. Revenge and MostDangerous
-use source kill-frame and FleetShip damage baselines, then advance from the
-same real native death/hit events that update physics and rewards; older exports
-without these baselines cannot activate those two rankings. Fixed FullShipTurret's independent hull-turn/charge animation and
+All 40 shooting-strategy rankings are connected. The current HiveMind
+command's actual selected shooting strategy overrides the initial squad
+strategy, and its server OutcomeId is captured on each outgoing physical
+projectile so subsequent hits cannot attach to a newer command. Revenge and
+MostDangerous use source kill-frame and FleetShip damage baselines, then advance
+from the same real native death/hit events that update physics and rewards;
+older exports without these baselines cannot activate those two rankings. Fixed FullShipTurret's independent hull-turn/charge animation and
 collision-asteroid targeting are not yet implemented. New Unity exports include
 each turret's front-aim flag and the ship's authored aim offset/type letter;
 older snapshots lacking them fail closed for automatic targeting. No neural
