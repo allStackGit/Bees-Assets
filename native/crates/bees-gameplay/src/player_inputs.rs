@@ -522,8 +522,13 @@ impl NativePlayerManualFirePlan {
             world, input.world_id, input.episode_revision, input.selected_ship,
         )?;
         let armed_ships: Vec<_> = authority.members.iter()
-            .filter(|member| world.state.combat
-                .game_ship_has_manual_weapon(member.ship_id))
+            .filter(|member| {
+                world.state.combat.game_ship_has_manual_weapon(member.ship_id) &&
+                    world.state.combat.ship_body(member.ship_id)
+                        .is_some_and(|body| body.active &&
+                            body.motion.user_controlled &&
+                            !body.motion.is_policy_controlled)
+            })
             .map(|member| member.ship_id).collect();
         if armed_ships.is_empty() {
             return Err(NativePlayerInputError::NotControllable);
