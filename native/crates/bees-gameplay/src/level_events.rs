@@ -1089,15 +1089,12 @@ impl NativeLevelEventProcessor {
                 got: completed_tick,
             });
         }
-        let capability_count = events.iter()
-            .filter(|event| requires_level_capability_delivery(event))
-            .count();
-        let minion_count = events.iter().filter(|event|
-            matches!(event, CombatEvent::ScoutBeaconDropped { .. })
-        ).count();
-        let combat_hit_count = events.iter().filter(|event|
-            matches!(event, CombatEvent::Hit(_))
-        ).count();
+        let (capability_count, minion_count, combat_hit_count) = events.iter()
+            .fold((0usize, 0usize, 0usize), |(caps, minions, hits), event| (
+                caps + usize::from(requires_level_capability_delivery(event)),
+                minions + usize::from(matches!(event, CombatEvent::ScoutBeaconDropped { .. })),
+                hits + usize::from(matches!(event, CombatEvent::Hit(_))),
+            ));
         Self::reserve_output_records(
             &mut self.pending_notifications, &mut self.failed,
             capability_count.saturating_add(minion_count)
@@ -1289,12 +1286,11 @@ impl NativeLevelEventProcessor {
         let reward_count = group_events.map_or(
             reward.emissions.len(), |events| events.len(),
         );
-        let capability_notifications = world.events().iter()
-            .filter(|event| requires_level_capability_delivery(event))
-            .count();
-        let combat_hit_notifications = world.events().iter()
-            .filter(|event| matches!(event, CombatEvent::Hit(_)))
-            .count();
+        let (capability_notifications, combat_hit_notifications) = world.events()
+            .iter().fold((0usize, 0usize), |(caps, hits), event| (
+                caps + usize::from(requires_level_capability_delivery(event)),
+                hits + usize::from(matches!(event, CombatEvent::Hit(_))),
+            ));
         let new_count = self.changes.len()
             .saturating_add(self.finished.len())
             .saturating_add(capability_notifications)
@@ -1312,14 +1308,22 @@ impl NativeLevelEventProcessor {
                 kind: NativeLevelNotificationKind::SquadChange(change),
             });
         }
-        // A hit that killed a squad must reach the authoritative account
-        // before that squad's command completion; also retain the original
-        // shooter OutcomeId even if its command was already superseded.
+        // Physical hits and successful capabilities occurred before the
+        // roster/command finalization callbacks. Keep their source ordering
+        // in the durable outbox so a sink never settles a same-tick command
+        // before observing the damage/mining that caused its completion.
+        // A delayed projectile can still arrive in a LATER tick; finishing
+        // the command is not a safe StoreCommands commit by itself.
         for event in world.events() {
             if let CombatEvent::Hit(hit) = event {
                 self.pending_notifications.push(NativeLevelNotification {
                     tick: completed_tick,
                     kind: NativeLevelNotificationKind::CombatHit(*hit),
+                });
+            } else if requires_level_capability_delivery(event) {
+                self.pending_notifications.push(NativeLevelNotification {
+                    tick: completed_tick,
+                    kind: NativeLevelNotificationKind::Gameplay((*event).clone()),
                 });
             }
         }
@@ -1330,17 +1334,6 @@ impl NativeLevelEventProcessor {
                     finished.clone(),
                 ),
             });
-        }
-        // Keep source event details for UI effects, resource diagnostics
-        // and mining-target cleanup. The owning Level determines which
-        // live command needs finalization; no synthetic command is created.
-        for event in world.events() {
-            if requires_level_capability_delivery(event) {
-                self.pending_notifications.push(NativeLevelNotification {
-                    tick: completed_tick,
-                    kind: NativeLevelNotificationKind::Gameplay((*event).clone()),
-                });
-            }
         }
         if let Some(group) = group_events {
             for &event in group {
