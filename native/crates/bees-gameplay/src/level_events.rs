@@ -98,12 +98,30 @@ pub struct NativeCombatHit {
     pub hit: HitEvent,
     pub attacker_command_outcome_id: Option<i64>,
     pub defender_command_outcome_id: Option<i64>,
+    /// Ship.LogHitStats separately rewards the killer of an exploding Fire
+    /// Barge for same-side blast damage. This does not replace the Barge's
+    /// own friendly-fire penalty or create another physical hit.
+    pub fire_barge_killer_credit: Option<NativeFireBargeKillerCredit>,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct NativeFireBargeKillerCredit {
+    pub killer_ship_id: i64,
+    pub command_outcome_id: Option<i64>,
+    pub tsv_delta: i32,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct FireBargeKiller {
+    ship_id: i64,
+    command_at_kill: Option<i64>,
 }
 
 #[derive(Clone, Copy, Debug)]
 struct DamageCommandOwners {
     attacker: Option<i64>,
     defender: Option<i64>,
+    fire_barge_killer: Option<NativeFireBargeKillerCredit>,
 }
 
 #[derive(Clone, Debug)]
@@ -211,6 +229,9 @@ pub struct NativeLevelEventProcessor {
     /// Core-physics damage owners are snapshotted before death retirement.
     /// Reused every tick, never retained as a parallel command ledger.
     core_damage_owners: Vec<DamageCommandOwners>,
+    /// Immutable death-time credit, retained while the dead ship's blast can
+    /// still cause damage. Physical ownership and fleet credit stay in sim.
+    fire_barge_killers: std::collections::HashMap<i64, FireBargeKiller>,
 }
 
 impl NativeLevelEventProcessor {
@@ -235,6 +256,7 @@ impl NativeLevelEventProcessor {
             finished: Vec::new(),
             timed_finished: Vec::new(),
             core_damage_owners: Vec::new(),
+            fire_barge_killers: std::collections::HashMap::new(),
         }
     }
 
@@ -260,6 +282,19 @@ impl NativeLevelEventProcessor {
         })
     }
 
+    fn observe_fire_barge_death(&mut self, world: &CombatWorld, event: &CombatEvent) {
+        if let CombatEvent::ShipDied { victim_id, killer_id, .. } = event {
+            if *killer_id > 0 && world.ship(*victim_id).is_some_and(|ship| ship.ship_type == 10) {
+                // FireBarge.Kill snapshots the killer's ACTIVE HiveMind
+                // command, not the command that launched the lethal shot.
+                self.fire_barge_killers.insert(*victim_id, FireBargeKiller {
+                    ship_id: *killer_id,
+                    command_at_kill: self.active_server_command_for_ship(*killer_id),
+                });
+            }
+        }
+    }
+
     fn damage_command_owners(&self, event: &CombatEvent) -> Option<DamageCommandOwners> {
         match event {
             CombatEvent::Hit(hit) => Some(DamageCommandOwners {
@@ -271,11 +306,22 @@ impl NativeLevelEventProcessor {
                     self.active_server_command_for_ship(hit.attacker_id)
                 },
                 defender: self.active_server_command_for_ship(hit.target_id),
+                fire_barge_killer: if hit.attacker_side == hit.target_side {
+                    self.fire_barge_killers.get(&hit.attacker_id).map(|killer| NativeFireBargeKillerCredit {
+                        killer_ship_id: killer.ship_id,
+                        // A zero source KillerCommandOutcomeId falls back to
+                        // the killer's command active at the later impact.
+                        command_outcome_id: killer.command_at_kill.or_else(||
+                            self.active_server_command_for_ship(killer.ship_id)),
+                        tsv_delta: hit.delta.tsv_loss,
+                    })
+                } else { None },
             }),
             CombatEvent::UnattributedDamage { target_id, .. } =>
                 Some(DamageCommandOwners {
                     attacker: None,
                     defender: self.active_server_command_for_ship(*target_id),
+                    fire_barge_killer: None,
                 }),
             _ => None,
         }
@@ -1167,6 +1213,7 @@ impl NativeLevelEventProcessor {
         // SetFinalize publishes its command outcome. Preserve that
         // relative order even across large asynchronous rollout windows.
         for event in events {
+            self.observe_fire_barge_death(world, event);
             if let CombatEvent::ScoutBeaconDropped {
                 scout_id, beacon_id, ..
             } = event {
@@ -1204,6 +1251,7 @@ impl NativeLevelEventProcessor {
                         hit: *hit,
                         attacker_command_outcome_id: owners.attacker,
                         defender_command_outcome_id: owners.defender,
+                        fire_barge_killer_credit: owners.fire_barge_killer,
                     }),
                 });
             } else if let CombatEvent::UnattributedDamage { target_id, delta } = event {
@@ -1290,6 +1338,7 @@ impl NativeLevelEventProcessor {
         // its owner was retired in an earlier tick.
         self.core_damage_owners.clear();
         for event in world.events() {
+            self.observe_fire_barge_death(world, event);
             if let Some(owners) = self.damage_command_owners(event) {
                 self.core_damage_owners.push(owners);
             }
@@ -1418,6 +1467,7 @@ impl NativeLevelEventProcessor {
                         hit: *hit,
                         attacker_command_outcome_id: owners.attacker,
                         defender_command_outcome_id: owners.defender,
+                        fire_barge_killer_credit: owners.fire_barge_killer,
                     }),
                 });
             } else if let CombatEvent::UnattributedDamage { target_id, delta } = event {

@@ -601,6 +601,13 @@ reconnect/authenticate, then inspect pending StoreCommands for safe
 original-hash retries. Connection transport does not replace server
 outcome persistence or claim a completed gameplay runner.
 
+CombatHit's optional `fire_barge_killer_credit` preserves the separate source
+chain-reaction command reward: the killer's command captured at Barge death,
+with impact-time fallback only when that captured outcome was zero. It carries
+positive physical TSV loss alongside the original friendly-fire penalty and
+defender attribution, through the same durable notification journal. This is
+accounting input; final accrual and StoreCommands settlement remain incomplete.
+
 ## Hive Mind / server migration boundary
 
 The native workspace now also contains `bees-hivemind`, a separate,
