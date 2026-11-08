@@ -369,6 +369,127 @@ fn rotate_around_ship(pivot: Vec2, muzzle: Vec2, degrees: f32) -> Vec2 {
                       delta.x * sin + delta.y * cos)
 }
 
+/// Source RangeCollider maintains hostile hull overlaps, independently
+/// of line of sight, aiming direction and whether the owning squad has an
+/// active order. A Frigate's authored trigger uses Range-7.
+fn game_weapon_candidate_in_range(
+    physics: &mut crate::physics::KinematicPhysics,
+    ships: &[CombatShip], shooter_index: usize, target_index: usize,
+    mount: &PolicyTurretMount, mount_position: Vec2,
+) -> bool {
+    let shooter = &ships[shooter_index];
+    let target = &ships[target_index];
+    if shooter.side == target.side || shooter.entity_id == target.entity_id ||
+        target.vitals.is_dead() ||
+        !physics.ships()[target_index].active
+    {
+        return false;
+    }
+    let radius = if shooter.ship_type == 12 {
+        (mount.spec.range - 7.0).max(0.0)
+    } else { mount.spec.range };
+    let closest = physics.ships_mut()[target_index]
+        .primary_closest_point(mount_position);
+    (closest - mount_position).length_squared() <= radius * radius
+}
+
+/// Source Turret.IsShipValidTarget / Turret.GetTargetPoint on the live
+/// imported hull. The range cache already admits the real enemy collider;
+/// this enforces in-bounds, obstacle linecast and the original front-of-ship
+/// fallback without using approximated sprite centers for range.
+fn game_weapon_live_target(
+    physics: &mut crate::physics::KinematicPhysics,
+    ships: &[CombatShip],
+    target_front_offsets: &std::collections::HashMap<i64, f32>,
+    shooter_index: usize, target_index: usize,
+    mount: &PolicyTurretMount, mount_position: Vec2,
+) -> Result<Option<(Vec2, f32)>, CombatWorldError> {
+    if mount.fire_at_front.is_none() ||
+        !game_weapon_candidate_in_range(
+            physics, ships, shooter_index, target_index,
+            mount, mount_position,
+        )
+    {
+        return Ok(None);
+    }
+    let target_body = &physics.ships()[target_index];
+    let target_position = target_body.motion.position;
+    let rotation = target_body.motion.rotation_degrees;
+    if !physics.point_inside_level_bounds(target_position) {
+        return Ok(None);
+    }
+    let hull = physics.ships_mut()[target_index]
+        .primary_closest_point(mount_position);
+    if physics.game_weapon_linecast_blocked(mount_position, hull)? {
+        return Ok(None);
+    }
+    let candidate_point = if mount.fire_at_front == Some(true) {
+        let Some(&offset) =
+            target_front_offsets.get(&ships[target_index].entity_id)
+        else { return Ok(None); };
+        rotate_around_ship(
+            target_position, target_position + Vec2::new(0.0, offset),
+            rotation,
+        )
+    } else { target_position };
+    let radius = if ships[shooter_index].ship_type == 12 {
+        (mount.spec.range - 7.0).max(0.0)
+    } else { mount.spec.range };
+    let aimed_point =
+        if (candidate_point - mount_position).length_squared() <= radius * radius {
+            candidate_point
+        } else { hull };
+    Ok(Some((aimed_point, (hull - mount_position).length_squared())))
+}
+
+/// Rankings from Unity Weapon.MakeSortedTargetingList that can be read from
+/// current physical/vitals state without fabricated FleetShip counters or
+/// process-global randomness. Other strategies remain unavailable until
+/// their genuine mutable metadata/RNG contracts are connected.
+fn choose_game_weapon_target(
+    physics: &mut crate::physics::KinematicPhysics,
+    ships: &[CombatShip],
+    ship_by_id: &std::collections::HashMap<i64, usize>,
+    target_front_offsets: &std::collections::HashMap<i64, f32>,
+    shooter_index: usize, mount: &PolicyTurretMount,
+    mount_position: Vec2, strategy: u8,
+    nearby: &std::collections::BTreeMap<i64, (u64, u64)>,
+) -> Result<Option<(i64, Vec2)>, CombatWorldError> {
+    if !matches!(strategy, 1 | 5 | 6 | 9 | 10 | 13 | 14 | 15 | 16) {
+        return Ok(None);
+    }
+    let mut best: Option<(i64, Vec2, f64, u64)> = None;
+    for (&target_id, &(first_seen, _)) in nearby {
+        let Some(&target_index) = ship_by_id.get(&target_id) else { continue; };
+        let Some((target_point, hull_distance_sq)) =
+            game_weapon_live_target(
+                physics, ships, target_front_offsets,
+                shooter_index, target_index, mount, mount_position,
+            )?
+        else { continue; };
+        let target = &ships[target_index];
+        let rank = match strategy {
+            5 | 6 => f64::from(target.vitals.health()),
+            9 | 10 => f64::from(hull_distance_sq),
+            13 | 14 => f64::from(
+                physics.ships()[target_index].motion.base_speed),
+            15 | 16 => f64::from(target.vitals.tsv()),
+            _ => 0.0,
+        };
+        let better = best.is_none_or(|prior| {
+            let compare = rank.total_cmp(&prior.2);
+            let preferred = match strategy {
+                5 | 10 | 13 | 15 => compare.is_gt(),
+                6 | 9 | 14 | 16 => compare.is_lt(),
+                _ => false,
+            };
+            preferred || (compare.is_eq() && first_seen < prior.3)
+        });
+        if better { best = Some((target_id, target_point, rank, first_seen)); }
+    }
+    Ok(best.map(|(id, point, _, _)| (id, point)))
+}
+
 /// A scheduled shot is snapshot before mutating projectile storage. This
 /// permits the turret timer to reuse its per-ship state while all projectiles
 /// are spawned in deterministic ship-ID and exact weapon-slot order.
