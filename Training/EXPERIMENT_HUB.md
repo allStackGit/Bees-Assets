@@ -1260,7 +1260,11 @@ can receive Windows CUDA jobs. A native job must request one exclusive
 GPU; its lease pins the physical PCI address and CUDA UUID. The worker
 validates that identity at acknowledgement and immediately before Start.
 The Windows owner creates the child suspended under kernel CPU/RAM limits
-and sets `CUDA_VISIBLE_DEVICES` to the pinned UUID. Competing Hub-owned
+and sets `CUDA_VISIBLE_DEVICES` to the pinned UUID. Before the trainer
+starts, TinyBrains' Python child verifies that the selector matches the
+pinned UUID, sees exactly one CUDA-capable PyTorch device, and executes a
+small CUDA operation. Both supported Windows trainer entry paths perform
+this child-side readiness check; it is not GPU isolation. Competing Hub-owned
 native GPU jobs on the same device are refused. **This visibility mask is
 cooperative, not GPU isolation:** other local processes can still use the
 device, and no actual compute share or VRAM cap is enforced.
