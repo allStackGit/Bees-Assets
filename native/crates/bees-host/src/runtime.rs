@@ -4,6 +4,7 @@
 //! physics, or shadow command queues live here.
 
 use std::num::NonZeroU32;
+use std::path::Path;
 use bees_gameplay::inference::NativePolicyInference;
 use bees_gameplay::level_host::{
     NativeHiveMindFrameDelivery, NativeLevelActivationContext,
@@ -24,6 +25,9 @@ use bees_hivemind::protocol::{
 use bees_hivemind::session::SquadLifetime;
 use bees_sim::simulation::{RandomStream, Simulation, World};
 use crate::durable_connection::{DurableConnectionError, DurableHiveMindConnection};
+use crate::journal_recovery::{
+    replay_command_outcomes, JournalRecoveryCounts, JournalRecoveryError,
+};
 use crate::status::{NativeHostStatusInterval, NativeStatusSampler};
 use crate::presentation::NativeRenderWorldView;
 use bees_gameplay::player_inputs::{NativeLevelPlayerContext, NativePlayerMove,
@@ -398,6 +402,20 @@ where
             }
         }
         Ok(counts)
+    }
+
+    /// Recover completed command outcomes from a previous immutable run
+    /// journal before starting new gameplay or resending pending requests.
+    /// The connection's durable source cursor makes this idempotent across
+    /// restarts and after a server acknowledgement. Incomplete episodes
+    /// and transient strategy reservations cannot be recovered from a log.
+    pub fn recover_prior_outcome_journal(
+        &mut self, path: &Path, expected_run_id: &str,
+    ) -> Result<JournalRecoveryCounts, JournalRecoveryError<DurableConnectionError>> {
+        replay_command_outcomes(path, expected_run_id, |recorded| {
+            self.connection.queue_journal_outcomes(recorded)
+                .map(|queued| queued.is_some())
+        })
     }
 
     /// A notification sink exposes only batches already journaled to stable
