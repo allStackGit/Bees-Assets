@@ -169,12 +169,13 @@ verified lost-ack/timeout condition, the socket owner may explicitly invoke
 NativeHostRuntime::retry_store_socket to retransmit only still-pending
 original hashes without changing their durable payload. This is distinct
 from normal flush and does not create a timer, new request hash or ledger.
-On socket
-protocol or transport failure service_socket_event retires transient
-strategy/targeting requests and returns their unresolved original hashes
-in HostSocketError::Disconnected; outstanding durable StoreCommands requests
-persist for later authenticated replay. Intentional close callers explicitly
-use retire_socket_session. Callers must still consume accepted targeting and
+All three host socket entry points (service_socket_event,
+flush_store_socket, retry_store_socket) now use the same
+HostSocketError/retirement boundary: an unusable socket retires transient
+strategy/targeting correlations and returns their unresolved original hashes
+in HostSocketError::Disconnected, while the checkpointed StoreCommands
+requests survive. Intentional close callers explicitly use
+retire_socket_session. Callers must still consume accepted targeting and
 authored ban actions; the returned response is not proof that target selection
 was installed. No synthetic target TSV,
 new per-shot histories or prematurely committed command settlements were
