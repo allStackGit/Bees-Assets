@@ -93,11 +93,11 @@ impl NativeSoftwareRenderer {
         if !point.is_finite() { return None; }
         let selected_side = self.selection.squads().first()
             .and_then(|owner| view.roster.get(*owner))?.side;
-        let inside = Vec2::new(f32::EPSILON, f32::EPSILON);
+        let inside = Vec2::new(0.05, 0.05);
         let bounds = Aabb { min: point - inside, max: point + inside };
         let overlapping = view.combat.physics()
-            .input_ship_ids_overlapping_box(bounds).ok()?
-            .filter_map(|id| {
+            .input_ship_ids_overlapping_box(bounds).ok()
+            .and_then(|ids| ids.filter_map(|id| {
                 let ship = view.combat.ship(id)?;
                 let body = view.combat.ship_body(id)?;
                 if ship.side == selected_side || ship.vitals.is_dead() ||
@@ -106,8 +106,7 @@ impl NativeSoftwareRenderer {
                     return None;
                 }
                 Some(((body.motion.position - point).length_squared(), id))
-            })
-            .min_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
+            }).min_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1))));
         if let Some((_, id)) = overlapping { return Some(id); }
         view.combat.render_ships().filter_map(|(ship, body)| {
             if ship.side == selected_side || ship.vitals.is_dead() {
