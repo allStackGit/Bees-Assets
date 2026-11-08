@@ -27,6 +27,12 @@ function configuredGpus(input,requirePci=false) {
         input.some(g=>!object(g)||!ID.test(String(g.id||''))||
             !Number.isSafeInteger(g.vram_mb)||g.vram_mb<1||
             g.vram_mb>1000000||
+            (g.hub_vram_mb!=null&&
+                (!Number.isSafeInteger(g.hub_vram_mb)||g.hub_vram_mb<0||
+                    g.hub_vram_mb>g.vram_mb))||
+            (g.hub_compute_pct!=null&&
+                (!Number.isSafeInteger(g.hub_compute_pct)||g.hub_compute_pct<0||
+                    g.hub_compute_pct>100))||
             (requirePci&&!PCI.test(String(g.pci_address||'')))||
             (g.pci_address!=null&&!PCI.test(String(g.pci_address))))||
         new Set(input.map(g=>g.id)).size!==input.length||
@@ -36,6 +42,8 @@ function configuredGpus(input,requirePci=false) {
     return input.map(g=>({
         id:g.id,vram_mb:g.vram_mb,
         ...(g.pci_address?{pci_address:g.pci_address}:{}),
+        hub_vram_mb:g.hub_vram_mb??g.vram_mb,
+        hub_compute_pct:g.hub_compute_pct??100,
     }));
 }
 function physicalGpuBindings(machine,report,resources,pinned) {
@@ -866,6 +874,9 @@ class ExperimentHub {
                 return actual?[{
                     id:configured.id,pci_address:configured.pci_address,
                     vram_mb:Math.min(configured.vram_mb,actual.vram_mb),
+                    hub_vram_mb:Math.min(configured.hub_vram_mb??configured.vram_mb,
+                        configured.vram_mb,actual.vram_mb),
+                    hub_compute_pct:configured.hub_compute_pct??100,
                     observed_vram_mb:actual.vram_mb,
                     used_vram_mb:actual.used_vram_mb,
                     gpu_busy_pct:actual.gpu_busy_pct,
@@ -2409,6 +2420,41 @@ class ExperimentHub {
             }];
         }
         return [];
+    }
+    // Withhold physical GPU admission capacity for existing Bees or other
+    // independently owned jobs. These limits only constrain new Hub leases.
+    // No native GPU quotas are created, and an issued lease is never resized.
+    updateMachineGpuBudget(value) {
+        if(!object(value)||value.confirm_budget!==true||
+            !ID.test(String(value.machine_id||'')))
+            throw Error('Explicitly confirm the machine whose Hub GPU budget will change.');
+        if(this.automation.enabled)
+            throw Error('Disarm native queue automation before changing GPU budgets.');
+        const machine=this.state.machines.find(m=>m.id===value.machine_id);
+        if(!machine)throw Error('Machine not registered.');
+        if(!Array.isArray(value.expected_gpus)||
+            JSON.stringify(value.expected_gpus)!==JSON.stringify(machine.gpus))
+            throw Error('Machine GPU configuration changed; refresh before saving its budget.');
+        const before=configuredGpus(machine.gpus);
+        if(!before.length)throw Error('Configure physical GPUs before setting their admission budgets.');
+        const requested=configuredGpus(value.gpus);
+        if(requested.length!==before.length||requested.some((g,i)=>
+            g.id!==before[i].id||g.vram_mb!==before[i].vram_mb||
+            g.pci_address!==before[i].pci_address))
+            throw Error('GPU budgets cannot change device identity, PCI address or nominal VRAM.');
+        if(this.state.reservations.some(lease=>{
+            if(lease.machine_id!==machine.id||
+                !['active','offered','acknowledged'].includes(lease.status))return false;
+            try{return resourceRequest(lease.resources).gpu_count!==0;}
+            catch{return true;} // Unreconciled leases may own the entire GPU.
+        }))
+            throw Error('Release or finish existing GPU-bearing leases before changing GPU budgets.');
+        if(JSON.stringify(before)===JSON.stringify(requested))
+            return {machine_id:machine.id,gpus:before,changed:false};
+        const next=copy(this.state);
+        next.machines.find(m=>m.id===machine.id).gpus=requested;
+        this.commit(next);
+        return {machine_id:machine.id,gpus:copy(requested),changed:true};
     }
     bindMachineGpus(value) {
         if(!object(value)||value.confirm_bind!==true||
