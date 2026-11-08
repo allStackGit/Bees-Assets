@@ -739,6 +739,10 @@ pub struct CombatWorld {
     /// Immutable source target-rank data not present in ShipVitals or
     /// live movement. Combat outcomes still read authoritative state.
     game_target_facts: HashMap<i64, NativeGameTargetFacts>,
+    /// Same FleetShip.Id may belong to multiple current/previous ship
+    /// wrappers. Keep its current damage score once per real fleet owner.
+    game_fleet_damage_done: HashMap<i64, i64>,
+    game_target_last_kill_epoch: i64,
     /// Updated only when a policy controller is bound or retired.
     /// Decision cadence checks this revision instead of rescanning the
     /// entire controller roster on every fixed physics step.
@@ -888,6 +892,8 @@ impl CombatWorld {
             game_turrets: BTreeMap::new(),
             target_front_offsets: HashMap::new(),
             game_target_facts: HashMap::new(),
+            game_fleet_damage_done: HashMap::new(),
+            game_target_last_kill_epoch: 0,
             policy_roster_revision: 0,
             policy_decision_seen: HashSet::new(),
             turret_pending_shots: Vec::new(),
