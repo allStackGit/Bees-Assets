@@ -802,5 +802,5 @@ class LinuxSupervisor {
         return this.reconcile(jobId);
     }
 }
-module.exports={LinuxSupervisor,validateLocalInput,unitFor,launchArguments,
-    parseShow,quotaUsec};
+module.exports={LinuxSupervisor,validateLocalInput,gpuRuntimeProof,
+    unitFor,launchArguments,parseShow,quotaUsec};
