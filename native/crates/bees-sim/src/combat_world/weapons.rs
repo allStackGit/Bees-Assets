@@ -15,6 +15,24 @@ use crate::perception_weapons::{SelfWeapon, TurretObservation};
 use crate::perception_entities::ObservedWeapon;
 use crate::turret::TurretState;
 
+/// Authored, immutable Unity Ship rank fields that cannot be derived
+/// from the canonical physical motion/vitals. No duplicated mutable health,
+/// velocity or damage ledger is maintained here.
+#[derive(Clone, Copy, Debug)]
+pub struct NativeGameTargetFacts {
+    pub ship_type_letter: u8,
+    pub firepower: f32,
+    pub max_range: f32,
+}
+
+impl NativeGameTargetFacts {
+    pub fn valid(self) -> bool {
+        self.ship_type_letter < 24 &&
+            self.firepower.is_finite() && self.firepower >= 0.0 &&
+            self.max_range.is_finite() && self.max_range >= 0.0
+    }
+}
+
 /// One ordinary shot, or the two exact DualCannon muzzle offsets from its
 /// authored Unity weapon instance. Never approximate the two barrels from
 /// ship hull geometry.
@@ -287,6 +305,23 @@ impl CombatWorld {
         }
         runtime.turrets[slot] =
             Some(PolicyTurretMount::new(spec, fire_at_front));
+        Ok(())
+    }
+
+    /// Original source rank metadata is imported once for each live ship.
+    /// It remains separate from constantly changing health, TSV and motion.
+    pub fn configure_game_target_facts(
+        &mut self, ship_id: i64, facts: NativeGameTargetFacts,
+    ) -> Result<(), CombatWorldError> {
+        if !facts.valid() { return Err(CombatWorldError::InvalidPolicyTurret); }
+        let index = *self.ship_by_id.get(&ship_id)
+            .ok_or(CombatWorldError::UnknownShip)?;
+        if self.ships[index].vitals.is_dead() ||
+            !self.physics.ships()[index].active
+        {
+            return Err(CombatWorldError::UnknownShip);
+        }
+        self.game_target_facts.insert(ship_id, facts);
         Ok(())
     }
 
