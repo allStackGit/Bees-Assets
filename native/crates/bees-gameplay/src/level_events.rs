@@ -385,7 +385,11 @@ impl NativeLevelEventProcessor {
             &mut self.peak_pending_notifications,
             self.pending_notifications.len(),
         );
-        self.account_new_notifications(first_new, self.next_tick.saturating_sub(1))?;
+        Self::account_new_notifications(
+            &mut self.pending_notifications, &mut self.credit,
+            &mut self.failed, &mut self.peak_pending_notifications,
+            first_new, self.next_tick.saturating_sub(1),
+        )?;
         self.failed_commands_drained = true;
         Ok(active)
     }
@@ -429,7 +433,11 @@ impl NativeLevelEventProcessor {
                 &mut self.peak_pending_notifications, self.pending_notifications.len(),
             );
         }
-        self.account_new_notifications(first_new, tick)?;
+        Self::account_new_notifications(
+            &mut self.pending_notifications, &mut self.credit,
+            &mut self.failed, &mut self.peak_pending_notifications,
+            first_new, tick,
+        )?;
         Ok(())
     }
 
@@ -762,27 +770,31 @@ impl NativeLevelEventProcessor {
     /// acknowledgements may remove the outbox prefix, but do not remove
     /// accrued credit for an already-finished command with delayed shots.
     fn account_new_notifications(
-        &mut self, first: usize, tick: u64,
+        pending: &mut Vec<NativeLevelNotification>,
+        credit: &mut NativeCommandCreditLedger,
+        failed: &mut bool,
+        peak: &mut usize,
+        first: usize, tick: u64,
     ) -> Result<(), NativeLevelEventError> {
         let mut terminal = None;
         let mut accounting_error = None;
-        for notification in &self.pending_notifications[first..] {
+        for notification in &pending[first..] {
             let result = match &notification.kind {
                 NativeLevelNotificationKind::CombatHit(credit) =>
-                    self.credit.record_hit(
+                    credit.record_hit(
                         credit.attacker_command_outcome_id,
                         credit.defender_command_outcome_id,
                         credit.hit.command_tsv_delta, credit.hit.delta.tsv_loss,
                     ),
                 NativeLevelNotificationKind::UnattributedDamage {
                     delta, defender_command_outcome_id, ..
-                } => self.credit.record_unattributed(
+                } => credit.record_unattributed(
                     *defender_command_outcome_id, delta.tsv_loss,
                 ),
                 NativeLevelNotificationKind::FinishedCommand(finished) =>
-                    self.credit.finish(finished),
+                    credit.finish(finished),
                 NativeLevelNotificationKind::AbortedCommand { selection, .. } =>
-                    self.credit.abort(selection),
+                    credit.abort(selection),
                 NativeLevelNotificationKind::EpisodeFinal(_) => {
                     terminal = Some(true);
                     Ok(())
@@ -801,8 +813,8 @@ impl NativeLevelEventProcessor {
         if let Some(error) = accounting_error {
             // The input slice borrow is now over, so the failed suffix
             // can be discarded without risking contradictory EpisodeFinal.
-            self.pending_notifications.truncate(first);
-            self.failed = true;
+            pending.truncate(first);
+            *failed = true;
             return Err(NativeLevelEventError::Credit(error));
         }
         if let Some(successful) = terminal {
@@ -810,26 +822,26 @@ impl NativeLevelEventProcessor {
             // the credit projection. A failed append must never strand the
             // already-closed OutcomeBatch outside a durable notification.
             if let Err(error) = Self::reserve_output_records(
-                &mut self.pending_notifications, &mut self.failed, 1,
+                pending, failed, 1,
             ) {
-                self.pending_notifications.truncate(first);
+                pending.truncate(first);
                 return Err(error);
             }
-            let batch = match self.credit.close_episode(successful) {
+            let batch = match credit.close_episode(successful) {
                 Ok(batch) => batch,
                 Err(error) => {
-                    self.pending_notifications.truncate(first);
-                    self.failed = true;
+                    pending.truncate(first);
+                    *failed = true;
                     return Err(NativeLevelEventError::Credit(error));
                 }
             };
             if !batch.is_empty() {
-                self.pending_notifications.push(NativeLevelNotification {
+                pending.push(NativeLevelNotification {
                     tick, kind: NativeLevelNotificationKind::CommandOutcomesReady(batch),
                 });
                 Self::update_output_peak(
-                    &mut self.peak_pending_notifications,
-                    self.pending_notifications.len(),
+                    peak,
+                    pending.len(),
                 );
             }
         }
@@ -1395,7 +1407,11 @@ impl NativeLevelEventProcessor {
             self.pending_notifications.len(),
         );
         self.finished.append(&mut self.timed_finished);
-        self.account_new_notifications(first_new, completed_tick)?;
+        Self::account_new_notifications(
+            &mut self.pending_notifications, &mut self.credit,
+            &mut self.failed, &mut self.peak_pending_notifications,
+            first_new, completed_tick,
+        )?;
         self.last_published_timed_tick = Some(completed_tick);
         Ok(())
     }
@@ -1630,7 +1646,11 @@ impl NativeLevelEventProcessor {
             &mut self.peak_pending_notifications,
             self.pending_notifications.len(),
         );
-        self.account_new_notifications(first_new, completed_tick)?;
+        Self::account_new_notifications(
+            &mut self.pending_notifications, &mut self.credit,
+            &mut self.failed, &mut self.peak_pending_notifications,
+            first_new, completed_tick,
+        )?;
         self.next_tick = self.next_tick.checked_add(1)
             .expect("monotonic native Level tick exhausted");
         self.last_finalized = reward.finalized;
