@@ -138,7 +138,10 @@ function boundedReport(value) {
             g.vram_mb>1000000||
             (g.used_vram_mb!=null&&
                 (!Number.isSafeInteger(g.used_vram_mb)||
-                    g.used_vram_mb<0||g.used_vram_mb>g.vram_mb)))||
+                    g.used_vram_mb<0||g.used_vram_mb>g.vram_mb))||
+            (g.gpu_busy_pct!=null&&
+                (!Number.isSafeInteger(g.gpu_busy_pct)||
+                    g.gpu_busy_pct<0||g.gpu_busy_pct>100)))||
         new Set(devices.map(g=>g.pci_address)).size!==devices.length||
         (gpuSource==='nvidia-smi-v1'&&
             new Set(devices.map(g=>g.cuda_uuid.toLowerCase())).size!==devices.length))
@@ -146,6 +149,7 @@ function boundedReport(value) {
     const observedGpus=devices.map(g=>({
         pci_address:g.pci_address,vram_mb:g.vram_mb,
         used_vram_mb:g.used_vram_mb??null,
+        gpu_busy_pct:g.gpu_busy_pct??null,
         ...(gpuSource==='nvidia-smi-v1'?{cuda_uuid:g.cuda_uuid}:{}),
     }));
     const localExecutor=value.local_executor===true;
@@ -834,6 +838,7 @@ class ExperimentHub {
                     vram_mb:Math.min(configured.vram_mb,actual.vram_mb),
                     observed_vram_mb:actual.vram_mb,
                     used_vram_mb:actual.used_vram_mb,
+                    gpu_busy_pct:actual.gpu_busy_pct,
                     ...(actual.cuda_uuid?{cuda_uuid:actual.cuda_uuid}:{}),
                 }]:[];
             }):[];
