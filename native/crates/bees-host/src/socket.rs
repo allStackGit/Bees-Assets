@@ -11,6 +11,7 @@
 //! receive_frame, where the canonical StoreCommands ledger is persisted.
 
 use std::net::TcpStream;
+use std::collections::HashSet;
 
 use bees_hivemind::protocol::{
     GetStrategyRequest, GetTargetingRequest, StoreCommandsRequest,
@@ -38,6 +39,8 @@ pub struct NativeSocketMeasurements {
     pub incoming_frames: u64,
     pub incoming_json_bytes: u64,
     pub setup_accepted: u64,
+    /// Actual StoreCommands transmissions, not server acknowledgements.
+    pub store_transmissions: u64,
     pub transport_errors: u64,
     pub protocol_rejections: u64,
 }
@@ -162,6 +165,10 @@ pub struct NativeHiveMindSocket {
     pending_setup: Option<PendingSetup>,
     failed: bool,
     measurements: NativeSocketMeasurements,
+    /// Only the hashes transmitted on THIS socket. Pending request payloads,
+    /// retry authority and acknowledgement remain in the durable connection.
+    /// Recreated empty on reconnect and pruned after 200/409 acknowledgements.
+    sent_store_hashes: HashSet<i64>,
 }
 
 impl NativeHiveMindSocket {
@@ -206,6 +213,7 @@ impl NativeHiveMindSocket {
             socket, secure, game_id: None,
             pending_setup: None, failed: false,
             measurements: NativeSocketMeasurements::default(),
+            sent_store_hashes: HashSet::new(),
         })
     }
 
@@ -350,7 +358,38 @@ impl NativeHiveMindSocket {
         if connection.retry_payload(request.hash)? != Some(request) {
             return Err(HiveMindSocketError::InvalidRequestOwnership);
         }
-        self.send(request)
+        self.send(request)?;
+        self.sent_store_hashes.insert(request.hash);
+        self.measurements.store_transmissions += 1;
+        Ok(())
+    }
+
+    /// Transmit only not-yet-sent pending StoreCommands on this authenticated
+    /// socket. Each payload is fetched from the connection's DURABLE retry
+    /// ledger and keeps its original hash. Poll after checkpointing newly
+    /// prepared outcomes. Repeated polls do not spam unacknowledged requests;
+    /// a new socket starts empty and sends all still-pending hashes.
+    ///
+    /// This is deliberately a caller-driven socket-I/O operation, not an
+    /// implicit blocking send on the rendering or simulation thread.
+    pub fn flush_unsent_stores(
+        &mut self,
+        connection: &DurableHiveMindConnection,
+    ) -> Result<usize, HiveMindSocketError> {
+        self.require_ready()?;
+        let hashes = connection.pending_store_hashes()?;
+        self.sent_store_hashes.retain(|hash|
+            hashes.binary_search(hash).is_ok()
+        );
+        let mut sent = 0usize;
+        for hash in hashes {
+            if self.sent_store_hashes.contains(&hash) { continue; }
+            let original = connection.retry_payload(hash)?
+                .ok_or(HiveMindSocketError::InvalidRequestOwnership)?;
+            self.send_store(connection, original)?;
+            sent += 1;
+        }
+        Ok(sent)
     }
 
     /// After an authenticated reconnect, resend only the exact original
