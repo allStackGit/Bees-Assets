@@ -100,7 +100,7 @@ pub use self::policy::PolicySpecialObservations;
 pub use self::policy::WARP_GATE_TYPE;
 pub use self::healing::BEEHIVE_TYPE;
 use self::weapons::{PendingTurretShot, GameTurretRuntime};
-pub use self::weapons::{NativeFirePattern, NativeTurretSpec};
+pub use self::weapons::{NativeFirePattern, NativeTurretSpec, NativeGameTargetFacts};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CombatWorldError {
@@ -736,6 +736,9 @@ pub struct CombatWorld {
     /// Source GetHalfHeight minus ConfigData.OffsetFromFrontOfShip, for
     /// aim-at-front weapons. Positions and rotation stay physical/live.
     target_front_offsets: HashMap<i64, f32>,
+    /// Immutable source target-rank data not present in ShipVitals or
+    /// live movement. Combat outcomes still read authoritative state.
+    game_target_facts: HashMap<i64, NativeGameTargetFacts>,
     /// Updated only when a policy controller is bound or retired.
     /// Decision cadence checks this revision instead of rescanning the
     /// entire controller roster on every fixed physics step.
@@ -884,6 +887,7 @@ impl CombatWorld {
             policy_ship_runtime: BTreeMap::new(),
             game_turrets: BTreeMap::new(),
             target_front_offsets: HashMap::new(),
+            game_target_facts: HashMap::new(),
             policy_roster_revision: 0,
             policy_decision_seen: HashSet::new(),
             turret_pending_shots: Vec::new(),
@@ -1110,6 +1114,7 @@ impl CombatWorld {
         }
         self.game_turrets.remove(&victim_id);
         self.target_front_offsets.remove(&victim_id);
+        self.game_target_facts.remove(&victim_id);
         self.retire_support_zone(self.ships[index].ship_type, side, victim_id);
         self.release_beehive_healing_slot(victim_id);
         self.release_game_warp_participant(victim_id);
