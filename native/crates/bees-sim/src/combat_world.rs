@@ -378,6 +378,11 @@ pub enum CombatEvent {
     PolicyWeaponFired {
         ship_id: i64, slot: u8, projectile_id: i64,
     },
+    /// Actual non-policy turret projectile, using the same native
+    /// physical launcher. Keep this distinct from model shot rewards.
+    GameWeaponFired {
+        ship_id: i64, slot: u8, projectile_id: i64,
+    },
 }
 
 enum ImpactBehavior {
