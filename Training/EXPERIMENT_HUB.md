@@ -1941,8 +1941,13 @@ single-GPU device-filter and access-denial qualification path. At native
 Start the trusted TinyBrains adapter's fixed ROCm pre-start verifier
 checks that the selected PCI GPU remains AMD, PyTorch identifies its HIP
 runtime, exactly one GPU is visible to the service, and a tiny GPU
-operation succeeds. It fails closed rather than guessing the device
-ordinal. The Linux device-filter qualification requires a second physical
+operation succeeds. It also queries HIP's `hipDeviceGetPCIBusId` for
+runtime device ordinal zero and requires the returned PCI address to match
+the leased GPU. Merely seeing the expected DRM device in sysfs and one
+PyTorch GPU is not sufficient: an absent HIP identity API, mismatched PCI
+address or ambiguous enumeration blocks native Start. The approved Python
+environment must expose the ROCm HIP runtime library (`libamdhip64.so`).
+The Linux device-filter qualification requires a second physical
 AMD GPU to prove access denial and remains mandatory; the profile does
 not bypass it. This is not an enforced GPU compute/VRAM partition and
 has not been exercised on Halifax.
