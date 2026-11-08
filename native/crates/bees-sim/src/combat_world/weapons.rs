@@ -615,6 +615,15 @@ impl CombatWorld {
             }
         }
 
+        // Policy and ordinary turrets share a single world ID allocator.
+        // Do not group shots by controller type: mixed-player/headless
+        // battles must produce the same physical ID order as a single
+        // source ship/weapon traversal. Policy-only order is unchanged.
+        if self.turret_pending_shots.len() > 1 {
+            self.turret_pending_shots.sort_unstable_by_key(|shot|
+                (shot.ship_id, shot.slot));
+        }
+
         // Reserve enough monotonic entity IDs for complete volleys before
         // creating any projectiles. DualCannon must not spawn only its first
         // barrel if the shared ID space is exhausted.
