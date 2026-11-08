@@ -30,6 +30,7 @@ use bees_sim::physics::{ObstacleBody, ShipShape};
 use bees_sim::map_object::CombatMapObject;
 use bees_sim::obstacle::{CombatObstacle, ObstacleKind, ObstacleVitals};
 use bees_sim::movement::ShipMotion;
+use bees_sim::navigation_movement::GameMovementProfile;
 use bees_sim::simulation::WorldId;
 use bees_sim::ship_assets::ShipAssetCatalog;
 use bees_sim::combat_perception_bridge::{
@@ -69,9 +70,9 @@ use crate::scene_assets::NativeSceneAssets;
 use crate::runtime::NativeHostRuntime;
 use crate::durable_connection::DurableHiveMindConnection;
 
-// Schema 15 exports remain readable; schema 16 adds source-owned
-// group participation without changing physical game-state semantics.
-const SNAPSHOT_VERSION: u32 = 16;
+// Schema 15 and 16 exports remain readable. Schema 17 additionally
+// captures source-owned steering profiles for real game-controlled ships.
+const SNAPSHOT_VERSION: u32 = 17;
 
 #[derive(Deserialize, Clone, Copy)]
 struct UnityVec2 { x: f32, y: f32 }
@@ -149,6 +150,13 @@ struct UnityShip {
     rotation_speed: f32,
     base_speed: f32,
     current_speed: f32,
+    // Absent only in legacy schema 15/16 initial scenes.
+    #[serde(default)]
+    game_turning_radius: Option<f32>,
+    #[serde(default)]
+    game_half_width: Option<f32>,
+    #[serde(default)]
+    game_half_height: Option<f32>,
     body_velocity: UnityVec2,
     height: f32,
     mobile: bool,
@@ -790,7 +798,7 @@ impl NativePhysicalScene {
     pub fn parse(json: &str) -> Result<Self, NativeSnapshotError> {
         let raw: UnitySnapshot = serde_json::from_str(json)
             .map_err(NativeSnapshotError::Malformed)?;
-        if raw.schema_version != 15 && raw.schema_version != SNAPSHOT_VERSION {
+        if !(15..=SNAPSHOT_VERSION).contains(&raw.schema_version) {
             return Err(NativeSnapshotError::UnsupportedSchema(raw.schema_version));
         }
         let (source_episode, source_policy_group) = if raw.has_policy_episode {
@@ -950,6 +958,25 @@ impl NativePhysicalScene {
             {
                 return Err(NativeSnapshotError::InvalidShip(ship.entity_id));
             }
+            // Only the true game-controlled ships require normal steering.
+            // Old exports remain inference-compatible but cannot acquire
+            // invented game controls from collider dimensions.
+            let game_movement = if raw.schema_version >= 17 &&
+                ship.mobile && !ship.is_rl_policy_controlled
+            {
+                let profile = GameMovementProfile {
+                    turning_radius: ship.game_turning_radius
+                        .ok_or(NativeSnapshotError::InvalidShip(ship.entity_id))?,
+                    half_width: ship.game_half_width
+                        .ok_or(NativeSnapshotError::InvalidShip(ship.entity_id))?,
+                    half_height: ship.game_half_height
+                        .ok_or(NativeSnapshotError::InvalidShip(ship.entity_id))?,
+                };
+                if !profile.valid() {
+                    return Err(NativeSnapshotError::InvalidShip(ship.entity_id));
+                }
+                Some(profile)
+            } else { None };
             let mut motion = ShipMotion::new(
                 pos, ship.rotation_degrees, ship.rotation_speed,
                 ship.base_speed, ship.height,
@@ -1167,6 +1194,7 @@ impl NativePhysicalScene {
                 original_health: ship.original_health,
                 fleet_ship_id: (ship.fleet_ship_id > 0)
                     .then_some(ship.fleet_ship_id),
+                game_movement,
                 policy: None,
             }));
         }
