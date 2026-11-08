@@ -23,11 +23,18 @@ pub struct NativeGameTargetFacts {
     pub ship_type_letter: u8,
     pub firepower: f32,
     pub max_range: f32,
+    /// Unity Ship.LastKilled uses Time.frameCount, updated by KilledShip.
+    pub last_killed: Option<i32>,
+    /// Starting real FleetShip.DamageDone; live values are subsequently
+    /// owned by CombatWorld's fleet-ID ledger, not frozen in this copy.
+    pub fleet_damage_done: Option<i32>,
 }
 
 impl NativeGameTargetFacts {
     pub fn valid(self) -> bool {
         self.ship_type_letter < 24 &&
+            self.last_killed.is_none_or(|frame| frame >= 0) &&
+            self.fleet_damage_done.is_none_or(|damage| damage >= 0) &&
             self.firepower.is_finite() && self.firepower >= 0.0 &&
             self.max_range.is_finite() && self.max_range >= 0.0
     }
@@ -324,6 +331,23 @@ impl CombatWorld {
             !self.physics.ships()[index].active
         {
             return Err(CombatWorldError::UnknownShip);
+        }
+        let fleet_id = self.fleet_id_by_ship.get(&ship_id).copied();
+        if let (Some(fleet_id), Some(damage)) =
+            (fleet_id, facts.fleet_damage_done)
+        {
+            use std::collections::hash_map::Entry;
+            match self.game_fleet_damage_done.entry(fleet_id) {
+                Entry::Vacant(entry) => { entry.insert(i64::from(damage)); }
+                Entry::Occupied(entry) if *entry.get() == i64::from(damage) => {}
+                Entry::Occupied(_) => return Err(
+                    CombatWorldError::InvalidPolicyTurret,
+                ),
+            }
+        }
+        if let Some(frame) = facts.last_killed {
+            self.game_target_last_kill_epoch = self.game_target_last_kill_epoch
+                .max(i64::from(frame));
         }
         self.game_target_facts.insert(ship_id, facts);
         Ok(())
