@@ -2726,6 +2726,18 @@ class ExperimentHub {
         }
         if(changedHistory||terminalHistory)
             this.progressHistory.persist(received,terminalHistory);
+        if(value.request_execution_orders===false) {
+            // The final report of a --once agent closes its native session.
+            // It has no further instruction loop. Do not leave a fictitious
+            // connected worker, a fresh execution lease receipt or an agent
+            // instance lock until the heartbeat TTL expires. Persisted job
+            // ownership and native service journals remain untouched.
+            this.invalidateAgentIdentity(machine.id,
+                'One-shot native agent signed off; review and re-arm automation with a continuously running agent.');
+            return {machine_id:machine.id,status:'connected',
+                heartbeat_ttl_seconds:Math.floor(AGENT_HEARTBEAT_TTL_MS/1000),
+                lease_offers:[],execution_orders:[]};
+        }
         return {machine_id:machine.id,status:'connected',
             heartbeat_ttl_seconds:Math.floor(AGENT_HEARTBEAT_TTL_MS/1000),
             lease_offers:this.state.reservations.filter(x=>
@@ -2737,8 +2749,7 @@ class ExperimentHub {
                 // a process launch token. The agent checks it against sysfs.
                 gpu_bindings:physicalGpuBindings(machine,report,x.resources,x.gpu_bindings)||[],
             })),
-            execution_orders:value.request_execution_orders===false
-                ?[]:this.executionOrders(machine.id)};
+            execution_orders:this.executionOrders(machine.id)};
     }
     project(id) {
         const project = this.state.projects.find(p=>p.id===id);
