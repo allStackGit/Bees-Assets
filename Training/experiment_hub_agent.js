@@ -8,7 +8,7 @@ const http = require('node:http');
 const os = require('node:os');
 const crypto=require('node:crypto');
 const {inspectHost}=require('./experiment_hub_host');
-const {discoverAmdGpus}=require('./experiment_hub_gpu_inventory');
+const {discoverAmdGpus,discoverNvidiaGpus}=require('./experiment_hub_gpu_inventory');
 const {fromEnvironment}=require('./experiment_hub_execution');
 const {request: resourceRequest}=require('./experiment_hub_resources');
 
@@ -31,17 +31,20 @@ function endpoint(input) {
 function observations(machineId) {
     if (typeof machineId !== 'string' || !ID.test(machineId))
         throw Error('EXPERIMENT_HUB_MACHINE_ID must match a registered machine ID.');
+    const platform=os.platform();
+    const gpus=platform==='linux'?discoverAmdGpus():
+        platform==='win32'?discoverNvidiaGpus():[];
     return {
         machine_id:machineId,
         cpus:Math.max(1,typeof os.availableParallelism==='function'
             ?os.availableParallelism():os.cpus().length),
         ram_mb:Math.max(128,Math.floor(os.totalmem()/1048576)),
-        platform:os.platform(),
+        platform,
         execution:inspectHost(),
-        // Physical PCI identity observed through AMDGPU sysfs only.
-        // Discovery alone neither authorizes GPU execution nor enforces VRAM.
-        gpu_inventory_source:os.platform()==='linux'?'amdgpu-sysfs-v1':'none',
-        gpu_devices:os.platform()==='linux'?discoverAmdGpus():[],
+        // Both inventories are physical observations, not execution quotas.
+        gpu_inventory_source:platform==='linux'?'amdgpu-sysfs-v1':
+            platform==='win32'?'nvidia-smi-v1':'none',
+        gpu_devices:gpus,
     };
 }
 
@@ -84,7 +87,7 @@ function observedOffers(offers,observation) {
             approved.push(offer.id);
             continue;
         }
-        if(observation.gpu_inventory_source!=='amdgpu-sysfs-v1'||
+        if(!['amdgpu-sysfs-v1','nvidia-smi-v1'].includes(observation.gpu_inventory_source)||
             !Number.isSafeInteger(r.gpu_count)||r.gpu_count<1||
             !Array.isArray(r.gpus)||r.gpus.length!==r.gpu_count||
             !Array.isArray(offer.gpu_bindings)||
@@ -96,6 +99,8 @@ function observedOffers(offers,observation) {
             const binding=offer.gpu_bindings.find(g=>g?.id===id);
             const physical=deviceByPci.get(binding?.pci_address);
             if(!binding||!physical||
+                (observation.gpu_inventory_source==='nvidia-smi-v1'&&
+                    (!binding.cuda_uuid||binding.cuda_uuid!==physical.cuda_uuid))||
                 !Number.isSafeInteger(binding.vram_mb)||
                 binding.vram_mb<1||binding.vram_mb>physical.vram_mb||
                 binding.vram_mb<(r.min_gpu_vram_mb||0)||
