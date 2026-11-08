@@ -71,6 +71,7 @@ function remaining(machine,reservations) {
     const verified=machine.status==='connected'&&
         Array.isArray(machine.verified_gpus)?machine.verified_gpus:[];
     const capacity=verified.map(g=>({id:g.id,vram_mb:g.vram_mb,
+        observed_gpu_busy_pct:Number.isSafeInteger(g.gpu_busy_pct)?g.gpu_busy_pct:null,
         available_vram_mb:g.vram_mb,available_compute_pct:100,exclusive:false}));
     const indexed=new Map(capacity.map(g=>[g.id,g]));
     for(const claim of claimed) {
@@ -126,7 +127,8 @@ function placements(machines,reservations,input) {
                 :g.available_vram_mb>=wanted.gpu_vram_mb&&
                     g.available_compute_pct>=wanted.gpu_compute_pct)
         ).sort((a,b)=>a.available_vram_mb-b.available_vram_mb||
-            a.available_compute_pct-b.available_compute_pct);
+            a.available_compute_pct-b.available_compute_pct||
+            (a.observed_gpu_busy_pct??100)-(b.observed_gpu_busy_pct??100));
         const selected=wanted.gpus.length
             ?wanted.gpus.map(id=>eligible.find(g=>g.id===id)).filter(Boolean)
             :eligible.slice(0,wanted.gpu_count);
