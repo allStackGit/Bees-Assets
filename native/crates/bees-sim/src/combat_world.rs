@@ -725,6 +725,9 @@ pub struct CombatWorld {
     /// state for each bound ship; no secondary training-only movement world.
     // Stable ship-ID iteration is necessary for reproducible shot IDs.
     policy_ship_runtime: BTreeMap<i64, PolicyShipRuntime>,
+    /// Same physical weapon mounts and projectile lifecycle, but without
+    /// binding an ordinary user-controlled ship to a neural policy.
+    game_turrets: BTreeMap<i64, GameTurretRuntime>,
     /// Updated only when a policy controller is bound or retired.
     /// Decision cadence checks this revision instead of rescanning the
     /// entire controller roster on every fixed physics step.
@@ -871,6 +874,7 @@ impl CombatWorld {
             navigation_requests: NavigationRequests::new(),
             game_ship_steering: HashMap::new(),
             policy_ship_runtime: BTreeMap::new(),
+            game_turrets: BTreeMap::new(),
             policy_roster_revision: 0,
             policy_decision_seen: HashSet::new(),
             policy_pending_shots: Vec::new(),
@@ -1095,6 +1099,7 @@ impl CombatWorld {
         if self.policy_ship_runtime.remove(&victim_id).is_some() {
             self.bump_policy_roster_revision();
         }
+        self.game_turrets.remove(&victim_id);
         self.retire_support_zone(self.ships[index].ship_type, side, victim_id);
         self.release_beehive_healing_slot(victim_id);
         self.release_game_warp_participant(victim_id);
