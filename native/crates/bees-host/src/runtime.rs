@@ -407,7 +407,11 @@ where
     /// hashes; this method never equates queueing with server commit.
     fn checkpoint_prepared_outcomes(&mut self) -> Result<(), DurableConnectionError> {
         while let Some(batch) = self.sink.first_prepared_outcomes() {
-            self.connection.queue_outcomes(batch.clone())?;
+            // Persist both the original StoreCommands request and its
+            // source cursor before releasing the synchronized journal row.
+            // A previous checkpointed position returns None, including
+            // after the server already acknowledged that request.
+            self.connection.queue_journal_outcomes(batch)?;
             self.sink.prepared_outcomes_queued();
         }
         Ok(())
