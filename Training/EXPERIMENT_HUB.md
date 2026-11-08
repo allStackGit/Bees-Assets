@@ -1263,6 +1263,24 @@ adapter must inspect actual runtime devices and use the same runtime and
 device selection in its workload. Both adapter hooks receive the leased
 `context.gpu_pci_address`. The agent removes inherited accelerator selectors
 so the runtime probe and workload start with the same device visibility.
+On a multi-GPU ROCm machine, the **locally installed** TinyBrains adapter may
+also supply `rocrGpuUuids`, a map from canonical physical PCI addresses to
+operator-verified ROCr GPU UUIDs, for example
+`{"0000:03:00.0":"GPU-0123456789abcdef"}` (replace both example values
+with the actual matching GPU). Obtain the PCI-to-ROCr identity from trusted
+host-local ROCm/AMD-SMI inventory; do not assume the host's GPU zero is
+the leased device or derive the UUID from a guessed sysfs serial number.
+AMD recommends `ROCR_VISIBLE_DEVICES` for Linux and supports GPU UUIDs
+(see https://rocm.docs.amd.com/en/latest/reference/environment-variables/index.html).
+For a matching lease, systemd sets `ROCR_VISIBLE_DEVICES` to the pinned
+local UUID **for both** `ExecStartPre` and the trainer's process, while
+clearing the other accelerator selectors. The strict in-cgroup kernel
+device-denial probe and HIP/PyTorch PCI attestation still apply; a stale,
+incorrect or unsupported UUID blocks Start. If the local adapter supplies
+no matching UUID, existing selector-clearing behavior is retained and
+the native launch must independently demonstrate exactly one visible
+correct PCI GPU. No enrollment token or saved experiment configuration
+may override this operator-owned mapping.
 
 Queue placement prefers fitting hosts advertising the adapter's GPU capability.
 Train requires explicit Start and a current access probe for the same
