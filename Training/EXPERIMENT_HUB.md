@@ -56,8 +56,14 @@ capacity claims or native starts are authorized.
   when the driver provides it, GPU busy percentage. These readings are
   separate from Hub-native process counters and must not be summed with them.
   They expose competing workloads, but are neither attribution to individual
-  processes nor guaranteed spare capacity. External workload usage is
-  observational; reserve its expected CPU/RAM/GPU capacity explicitly in
+  processes nor guaranteed spare capacity. Before native Start, the Hub uses
+  the latest available-memory observation (including reclaimable Linux cache)
+  and a shared job's requested free VRAM budget to warn or block a launch.
+  Windows and Linux workers recheck locally immediately before launch.
+  Minimum VRAM for an exclusive device is a total-capacity selection
+  constraint, not a requirement for an entirely idle graphics card.
+  These observations can change after Start and are not an isolation limit.
+  External workload usage is observational; reserve its expected CPU/RAM/GPU capacity explicitly in
   the Hub budget or a standalone lease before scheduling competing work.
   GPU identities are manually declared and must match fresh observations.
   No agent enforces per-process VRAM or GPU compute quotas.
