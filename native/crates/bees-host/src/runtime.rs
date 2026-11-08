@@ -467,6 +467,33 @@ where
         Ok(())
     }
 
+    /// All socket entry points share this same transient-session retirement
+    /// boundary. A failed transport cannot leave pending GetStrategy /
+    /// GetTargeting correlations attached to a newly authenticated socket,
+    /// while original-hash StoreCommands requests survive untouched.
+    fn complete_socket_operation<T>(
+        &mut self,
+        socket: &NativeHiveMindSocket,
+        result: Result<T, HiveMindSocketError>,
+    ) -> Result<T, HostSocketError> {
+        match result {
+            Ok(value) => Ok(value),
+            Err(cause) if socket.is_failed() => {
+                match self.connection.retire_socket() {
+                    Ok(unresolved_request_hashes) =>
+                        Err(HostSocketError::Disconnected {
+                            cause, unresolved_request_hashes,
+                        }),
+                    Err(retirement) =>
+                        Err(HostSocketError::DisconnectRetirementFailed {
+                            cause, retirement,
+                        }),
+                }
+            }
+            Err(cause) => Err(HostSocketError::Socket(cause)),
+        }
+    }
+
     /// Explicit, non-render-thread socket I/O boundary. First persist any
     /// synchronized but not-yet-checkpointed Level outcome batches, then
     /// transmit only request hashes not already sent on this socket.
@@ -476,10 +503,11 @@ where
     /// 200/409 handling.
     pub fn flush_store_socket(
         &mut self, socket: &mut NativeHiveMindSocket,
-    ) -> Result<usize, HiveMindSocketError> {
-        self.checkpoint_prepared_outcomes()
-            .map_err(HiveMindSocketError::Durability)?;
-        socket.flush_unsent_stores(&self.connection)
+    ) -> Result<usize, HostSocketError> {
+        let result = self.checkpoint_prepared_outcomes()
+            .map_err(HiveMindSocketError::Durability)
+            .and_then(|()| socket.flush_unsent_stores(&self.connection));
+        self.complete_socket_operation(socket, result)
     }
 
     /// Explicit retry after the transport owner observes a lost response
@@ -490,10 +518,11 @@ where
     /// has already been removed from the retry ledger and cannot be sent.
     pub fn retry_store_socket(
         &mut self, socket: &mut NativeHiveMindSocket,
-    ) -> Result<usize, HiveMindSocketError> {
-        self.checkpoint_prepared_outcomes()
-            .map_err(HiveMindSocketError::Durability)?;
-        socket.retry_pending_stores(&self.connection)
+    ) -> Result<usize, HostSocketError> {
+        let result = self.checkpoint_prepared_outcomes()
+            .map_err(HiveMindSocketError::Durability)
+            .and_then(|()| socket.retry_pending_stores(&self.connection));
+        self.complete_socket_operation(socket, result)
     }
 
     /// Read and dispatch exactly one authenticated socket event. This is
@@ -527,22 +556,7 @@ where
                 }
             }
         })();
-        match result {
-            Ok(delivery) => Ok(delivery),
-            Err(cause) if socket.is_failed() => {
-                match self.connection.retire_socket() {
-                    Ok(unresolved_request_hashes) =>
-                        Err(HostSocketError::Disconnected {
-                            cause, unresolved_request_hashes,
-                        }),
-                    Err(retirement) =>
-                        Err(HostSocketError::DisconnectRetirementFailed {
-                            cause, retirement,
-                        }),
-                }
-            }
-            Err(cause) => Err(HostSocketError::Socket(cause)),
-        }
+        self.complete_socket_operation(socket, result)
     }
 
     /// On intentional close or an externally detected disconnect, retire
