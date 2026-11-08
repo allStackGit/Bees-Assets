@@ -60,6 +60,7 @@ pub struct NativeAuthoredShip {
     pub game_cease_fire: bool,
     pub game_shooting_strategy: Option<u8>,
     pub target_front_offset: Option<f32>,
+    pub game_target_facts: Option<bees_sim::combat_world::NativeGameTargetFacts>,
     pub special: Option<NativeAuthoredShipSpecial>,
 }
 
@@ -334,6 +335,11 @@ impl NativeSceneAssets {
                 combat.configure_ship_front_aim_offset(
                     ship.entity_id, ship.target_front_offset,
                 ).map_err(NativeSceneBuildError::Combat)?;
+                if let Some(facts) = ship.game_target_facts {
+                    combat.configure_game_target_facts(
+                        ship.entity_id, facts,
+                    ).map_err(NativeSceneBuildError::Combat)?;
+                }
                 if ship.policy.is_some() && !ship.game_turrets.is_empty() {
                     return Err(NativeSceneBuildError::Combat(
                         bees_sim::combat_world::CombatWorldError::InvalidPolicyTurret
