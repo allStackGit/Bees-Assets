@@ -1316,9 +1316,12 @@ class ExperimentHub {
                 supportsEvaluation(machine.evaluation_suites,job)&&
                 supportsTinyBrainsProfile(machine,job)&&
                 (job.resources.gpu_count===0||
-                    machine.agent_platform==='linux'&&
                     machine.gpu_projects?.includes(job.project_id)&&
-                    machine.observed_gpus?.length>=2);
+                    (machine.agent_platform==='linux'
+                        ?machine.observed_gpus?.length>=2
+                        :machine.agent_platform==='win32'&&
+                            machine.gpu_inventory_source==='nvidia-smi-v1'&&
+                            machine.observed_gpus?.length>=1));
             const eligibleHosts=job=>capable.filter(machine=>canHostJob(machine,job));
             if(session.rebalance_queued) {
                 for(const job of pendingClaims) {
@@ -1402,7 +1405,7 @@ class ExperimentHub {
                     ?'Outstanding claims exceed CPU/RAM capacity on '+[...overcommitted].join(', ')+
                         '; move idle claims or release verified capacity.'
                     :session.start_qualified_gpu||session.claim_exclusive_gpu
-                        ?'Awaiting capacity, agent receipts or an operator GPU access probe.'
+                        ?'Awaiting capacity, agent receipts or a platform-specific GPU authorization.'
                         :'No eligible CPU-only transition; awaiting agent receipts or available capacity.';
             return this.automationStatus();
         }catch(error) {
