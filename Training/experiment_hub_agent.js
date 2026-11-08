@@ -72,8 +72,10 @@ function observations(machineId) {
     // Missing or temporarily unreadable NVIDIA telemetry blocks new CUDA
     // claims, but must not disconnect healthy CPU-only native services.
     let gpus=[];
-    if(platform==='linux')gpus=discoverAmdGpus();
-    else if(platform==='win32') {
+    if(platform==='linux') {
+        try{gpus=discoverAmdGpus();}
+        catch{gpus=[];}
+    }else if(platform==='win32') {
         try{gpus=discoverNvidiaGpus();}
         catch(error){
             gpus=[];
