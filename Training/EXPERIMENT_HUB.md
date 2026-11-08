@@ -865,11 +865,25 @@ EXPERIMENT_HUB_EVALUATOR_CONFIG=C:\Hub\Private\tinybrains-evaluator.json
 All paths must already exist. The artifact, scratch and receipt directories
 must be separate. For Courier, use `"project":"courier"` and add
 `project_root` and `snapshot_root`, also separate; omit `engine_path`.
-The optional loopback `port` defaults to 7148. Supply 1–8 distinct suite
-paths; multiple suites run in one same-checkpoint batch. Intervals and
-timeouts accept 60–86,400 seconds. A new poll waits until the previous poll
-has finished, then waits the configured interval. Configuration is read once
-at startup and its exact file hash is recorded; restart to apply edits.
+The optional loopback `port` defaults to 7148 **only for a trusted
+evaluator running beside the coordinator**. For a Windows worker on a
+separate machine, set `"port":17149` (or the worker's actual local SSH
+forward to the coordinator's restricted agent listener on 7149), and
+include `EXPERIMENT_HUB_AGENT_TOKEN=<that worker's enrolled token>` in
+the private service environment file. An `EXPERIMENT_HUB_MACHINE_ID`
+entry, if present, must match the evaluator JSON's `machine`. The
+Windows evaluator checks the token's format and machine identity
+before beginning its polling loop; the coordinator independently
+authenticates every worklist query and returns only that worker's
+eligible jobs. Never forward the privileged 7148 dashboard listener to
+ordinary worker hosts. The service account needs access to its private
+environment file and the existing SSH forward, not the dashboard.
+
+Supply 1–8 distinct suite paths; multiple suites run in one
+same-checkpoint batch. Intervals and timeouts accept 60–86,400 seconds.
+A new poll waits until the previous poll has finished, then waits the
+configured interval. Configuration is read once at startup and its
+exact file hash is recorded; restart to apply edits.
 
 ```powershell
 .\Training\experiment_hub_windows_service.ps1 -Role evaluator -Name Bees-ExperimentHub-evaluator-tinybrains -Cpus 1 -RamMb 3072 -ServiceExecutable C:\Hub\Service\ExperimentHubWindowsService.exe -ConfigurationFile C:\Hub\Private\evaluator-service.json -StateDirectory C:\Hub\Private -EnvironmentFile C:\Hub\Private\evaluator.env
