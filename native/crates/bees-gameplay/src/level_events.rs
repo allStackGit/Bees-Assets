@@ -780,11 +780,11 @@ impl NativeLevelEventProcessor {
         let mut accounting_error = None;
         for notification in &pending[first..] {
             let result = match &notification.kind {
-                NativeLevelNotificationKind::CombatHit(credit) =>
+                NativeLevelNotificationKind::CombatHit(hit_credit) =>
                     credit.record_hit(
-                        credit.attacker_command_outcome_id,
-                        credit.defender_command_outcome_id,
-                        credit.hit.command_tsv_delta, credit.hit.delta.tsv_loss,
+                        hit_credit.attacker_command_outcome_id,
+                        hit_credit.defender_command_outcome_id,
+                        hit_credit.hit.command_tsv_delta, hit_credit.hit.delta.tsv_loss,
                     ),
                 NativeLevelNotificationKind::UnattributedDamage {
                     delta, defender_command_outcome_id, ..
