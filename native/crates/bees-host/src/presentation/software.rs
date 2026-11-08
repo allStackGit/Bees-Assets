@@ -81,6 +81,51 @@ impl NativeSoftwareRenderer {
             .map(|(_, id)| id)
     }
 
+    /// Source right-click prioritizes an enemy's actual input collider,
+    /// then the LevelInputManager's 10-world-unit proximity fallback.
+    /// A click on an enemy must NEVER become a plain move order merely
+    /// because the native attack-command adapter is not implemented yet.
+    /// Return a pooled-lifetime-safe squad identity, not a guessed point.
+    pub fn pick_enemy_squad(
+        &self, view: &NativeRenderWorldView<'_>, point: Vec2,
+    ) -> Option<bees_hivemind::session::SquadLifetime> {
+        if !point.is_finite() { return None; }
+        let selected_side = self.selection.squads().first()
+            .and_then(|owner| view.roster.get(*owner))?.side;
+        let inside = Vec2::new(f32::EPSILON, f32::EPSILON);
+        let bounds = Aabb { min: point - inside, max: point + inside };
+        let overlapping = view.combat.physics()
+            .input_ship_ids_overlapping_box(bounds).ok()?
+            .filter_map(|id| {
+                let ship = view.combat.ship(id)?;
+                let body = view.combat.ship_body(id)?;
+                if ship.side == selected_side || ship.vitals.is_dead() ||
+                    !body.active
+                {
+                    return None;
+                }
+                let owner = view.roster.owning_squad(id)?;
+                Some(((body.motion.position - point).length_squared(), id, owner))
+            })
+            .min_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
+        if let Some((_, _, owner)) = overlapping {
+            return Some(owner);
+        }
+        // The authored fallback checks enemy ship centers within 10 units.
+        // This is UI target resolution only; command admission remains the
+        // owning Level's responsibility.
+        view.combat.render_ships().filter_map(|(ship, body)| {
+            if ship.side == selected_side || ship.vitals.is_dead() {
+                return None;
+            }
+            let distance_squared = (body.motion.position - point).length_squared();
+            if distance_squared > 100.0 { return None; }
+            let owner = view.roster.owning_squad(ship.entity_id)?;
+            Some((distance_squared, ship.entity_id, owner))
+        }).min_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)))
+            .map(|(_, _, owner)| owner)
+    }
+
     /// Target selection uses cached authored hull overlap, with a small screen
     /// tolerance. This emits only identities; the host revalidates every action.
     pub fn pick_support_action(&self, view: &NativeRenderWorldView<'_>,
