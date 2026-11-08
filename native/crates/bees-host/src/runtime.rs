@@ -7,7 +7,8 @@ use std::num::NonZeroU32;
 use std::path::Path;
 use bees_gameplay::inference::NativePolicyInference;
 use bees_gameplay::level_host::{
-    NativeHiveMindFrameDelivery, NativeLevelActivationContext,
+    NativeHiveMindFrameDelivery, NativeLevelTargetingDelivery,
+    NativeLevelActivationContext,
     NativeLevelBatchDriver, NativeLevelDriverError, NativeLevelDriverResetError,
     NativeLevelNotificationSink, NativeLevelObservationContext,
     NativeLevelRoutingError, NativeLevelStopDelivery, NativeLevelStopError,
@@ -18,6 +19,7 @@ use bees_gameplay::level_rules::{
     NativeLevelRewardMetadata, NativeLevelRules, NativeLevelState,
 };
 use bees_gameplay::squads::SquadRosterError;
+use bees_gameplay::matchup_targeting::LiveMatchupResolutionError;
 use bees_hivemind::outcomes::OutcomeBatch;
 use bees_hivemind::protocol::{
     GetStrategyRequest, GetTargetingRequest, StoreCommandsRequest,
@@ -452,6 +454,26 @@ where
             self.connection.queue_journal_outcomes(recorded)
                 .map(|queued| queued.is_some())
         })
+    }
+
+    /// Source-grounded squad choice for an accepted targeting reply, with
+    /// the same world identity/episode guards as strategy activation.
+    /// Call immediately after service_socket_event returns the targeting
+    /// delivery. The caller supplies actual player visibility and the
+    /// authoritative Ship.InCombat state; no guessed enemy data is used.
+    ///
+    /// Choosing a squad does NOT install/settle MatchupStrategy. The caller
+    /// must retain this targeting reservation and explicitly issue the
+    /// next GetStrategy with the selected squad's exact lifetime. No TSV is
+    /// sent merely because this method returned an enemy.
+    pub fn resolve_targeting_enemy(
+        &mut self, delivery: &NativeLevelTargetingDelivery,
+        player_sees_all_enemies: bool,
+        in_combat: impl FnMut(i64) -> Option<bool>,
+    ) -> Result<Option<SquadLifetime>, LiveMatchupResolutionError> {
+        self.driver.resolve_targeting_enemy(
+            &mut self.simulation, delivery, player_sees_all_enemies, in_combat,
+        )
     }
 
     /// A notification sink exposes only batches already journaled to stable
