@@ -7,7 +7,7 @@ const crypto = require('node:crypto');
 const {request: resourceRequest,matchingLeaseBudget,placements: resourcePlacements} =
     require('./experiment_hub_resources');
 const {validateProgress}=require('./experiment_hub_progress');
-const {tinyBrainsProfiles,supportsTinyBrainsProfile}=require('./experiment_hub_tinybrains_adapter');
+const {tinyBrainsProfiles,tinyBrainsImports,supportsTinyBrainsProfile}=require('./experiment_hub_tinybrains_adapter');
 const {evaluationPolicy,evaluationEvidence,evaluationRules,evaluationComplete,suiteIds,supportsEvaluation}=
     require('./experiment_hub_evaluation');
 const {ProgressHistory}=require('./experiment_hub_history');
@@ -168,6 +168,10 @@ function boundedReport(value) {
         (cudaProfiles.length&&(!installed.includes('tinybrains')||
             value.platform!=='win32')))
         throw Error('CUDA TinyBrains profiles require an installed Windows adapter.');
+    const imports=tinyBrainsImports(value.tinybrains_imports??{});
+    if(Object.keys(imports).length&&!installed.includes('tinybrains')||
+        Object.values(imports).some(item=>profiles[item.profile]==null))
+        throw Error('Trusted TinyBrains checkpoint imports require an approved profile.');
     const gpuProjects=value.gpu_projects??[];
     if(!Array.isArray(gpuProjects)||new Set(gpuProjects).size!==gpuProjects.length||
         gpuProjects.length>installed.length||
@@ -186,6 +190,7 @@ function boundedReport(value) {
         evaluation_suites:localExecutor?evaluationSuites:{},
         tinybrains_profiles:profiles,
         tinybrains_cuda_profiles:cudaProfiles.slice(),
+        tinybrains_imports:imports,
         gpu_projects:gpuProjects.slice(),
         installed_projects:['linux','win32'].includes(value.platform)&&
             localExecutor?installed.slice():[]};
@@ -837,6 +842,7 @@ class ExperimentHub {
                 machine.evaluation_suites = copy(report.evaluation_suites);
                 machine.tinybrains_profiles = copy(report.tinybrains_profiles||{});
                 machine.tinybrains_cuda_profiles=report.tinybrains_cuda_profiles.slice();
+                machine.tinybrains_imports=copy(report.tinybrains_imports);
                 machine.gpu_projects = report.gpu_projects.slice();
             }
             return machine;
