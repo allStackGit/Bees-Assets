@@ -1697,8 +1697,10 @@ document.addEventListener('DOMContentLoaded', () => {
             cell(tr,m.ram_mb+' MiB configured'+
                 (m.reported_ram_mb!=null?' / '+m.reported_ram_mb+' MiB reported':'')+
                 ' / '+claimedRam+' MiB claimed'+
-                (m.status==='connected'&&m.reported_free_ram_mb!=null
-                    ?' · '+m.reported_free_ram_mb+' MiB host free (all processes)':'')+
+                (m.status==='connected'&&m.reported_available_ram_mb!=null
+                    ?' · '+m.reported_available_ram_mb+' MiB currently available (all processes)':
+                    m.status==='connected'&&m.reported_free_ram_mb!=null
+                        ?' · '+m.reported_free_ram_mb+' MiB host free (all processes)':'')+
                 (sampledRam.length?' · '+Math.round(observedRam).toLocaleString()+
                     ' MiB observed from '+sampledRam.length+'/'+activeJobs.length+
                     ' Hub native jobs':''));
