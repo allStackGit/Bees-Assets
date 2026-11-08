@@ -75,6 +75,11 @@ function remaining(machine,reservations) {
     // ledger limits, not VRAM or compute isolation.
     const capacity=verified.map(g=>({id:g.id,vram_mb:g.vram_mb,
         observed_gpu_busy_pct:Number.isSafeInteger(g.gpu_busy_pct)?g.gpu_busy_pct:null,
+        observed_physical_free_vram_mb:
+            Number.isSafeInteger(g.used_vram_mb)&&g.used_vram_mb>=0&&
+            Number.isSafeInteger(g.observed_vram_mb??g.vram_mb)&&
+            g.used_vram_mb<=(g.observed_vram_mb??g.vram_mb)
+                ?(g.observed_vram_mb??g.vram_mb)-g.used_vram_mb:null,
         available_vram_mb:Math.min(g.vram_mb,g.hub_vram_mb??g.vram_mb),
         available_compute_pct:g.hub_compute_pct??100,exclusive:false}));
     const indexed=new Map(capacity.map(g=>[g.id,g]));
@@ -132,6 +137,8 @@ function placements(machines,reservations,input) {
                     g.available_compute_pct>=wanted.gpu_compute_pct)
         ).sort((a,b)=>a.available_vram_mb-b.available_vram_mb||
             a.available_compute_pct-b.available_compute_pct||
+            (b.observed_physical_free_vram_mb??-1)-
+                (a.observed_physical_free_vram_mb??-1)||
             (a.observed_gpu_busy_pct??100)-(b.observed_gpu_busy_pct??100));
         const selected=wanted.gpus.length
             ?wanted.gpus.map(id=>eligible.find(g=>g.id===id)).filter(Boolean)
@@ -156,6 +163,10 @@ function placements(machines,reservations,input) {
             ?startHeadroom(wanted,machine.reported_available_ram_mb,gpuDevice):null;
         return {machine_id:machine.id,machine_name:machine.name,online,available,
             observed_headroom_block,observed_host_cpu_busy_pct:observedHostCpuBusy,
+            observed_gpu_busy_pct:selected.length===1?
+                selected[0].observed_gpu_busy_pct:null,
+            observed_gpu_free_vram_mb:selected.length===1?
+                selected[0].observed_physical_free_vram_mb:null,
             // Heartbeats authenticate a reporting process, not reservation
             // enforcement. No job is executable through this planner yet.
             fits:false,capacity_fits:capacityFits,
@@ -168,13 +179,28 @@ function placements(machines,reservations,input) {
     });
 }
 
-// Lower observed host CPU load breaks placement ties for CPU-only work.
- // Unknown usage is not proof of idle capacity. GPU selection keeps its
- // existing physical device and VRAM priority.
-function cpuLoadRank(placement,resourceBudget) {
-    return resourceBudget.gpu_count===0&&
-        Number.isFinite(placement.observed_host_cpu_busy_pct)
-        ?placement.observed_host_cpu_busy_pct:100;
+// Observed pressure breaks ties only *after* feasibility/headroom, never
+// creates capacity. CPU-only jobs prefer hosts with less current total CPU
+// activity (including Bees). Single-GPU jobs favor more physical free VRAM,
+ // then lower measured GPU activity. Unknown measurements do not claim
+// that a device is idle or available.
+function observedLoadPreference(a,b,resources) {
+    const cpuOnly=resources.gpu_count===0;
+    if(cpuOnly) {
+        const busy=x=>Number.isFinite(x.observed_host_cpu_busy_pct)
+            ?x.observed_host_cpu_busy_pct:100;
+        return busy(a)-busy(b);
+    }
+    if(resources.gpu_count===1) {
+        const free=x=>Number.isSafeInteger(x.observed_gpu_free_vram_mb)
+            ?x.observed_gpu_free_vram_mb:-1;
+        const freeDelta=free(b)-free(a);
+        if(freeDelta)return freeDelta;
+        const busy=x=>Number.isFinite(x.observed_gpu_busy_pct)
+            ?x.observed_gpu_busy_pct:100;
+        return busy(a)-busy(b);
+    }
+    return 0;
 }
 
 // Greedy what-if placements for simultaneous jobs. Never write reservations,
@@ -218,7 +244,7 @@ function plan(machines,reservations,jobs) {
                 (!item.machine_id||p.machine_id===item.machine_id))
             .sort((a,b)=>Number(Boolean(a.observed_headroom_block))-
                     Number(Boolean(b.observed_headroom_block))||
-                cpuLoadRank(a,item.resources)-cpuLoadRank(b,item.resources)||
+                observedLoadPreference(a,b,item.resources)||
                 a.available.cpus-b.available.cpus||
                 a.available.ram_mb-b.available.ram_mb||
                 a.machine_id.localeCompare(b.machine_id));
@@ -289,4 +315,4 @@ function ensureLocalCpuRamCapacity(records,cpus,ramMb,hostCpus,hostRamMb) {
     }
 }
 module.exports={request,matchingLeaseBudget,remaining,placements,plan,startHeadroom,
-    cpuLoadRank,ensureLocalCpuRamCapacity};
+    observedLoadPreference,ensureLocalCpuRamCapacity};
