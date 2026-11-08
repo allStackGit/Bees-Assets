@@ -210,9 +210,22 @@ Source first-sighting strategic TSV uses the actual target value and canonical
 squad/MotherSquad command, independently of PPO shaping. Structured sighting and
 Fire Barge secondary credit feed the same episode-owned command ledger. Episode
 finalization durably prepares the existing StoreCommands batch and checkpoints its
-retry payload; queued outcomes still require real server acknowledgement. Restart
-reconciliation between journal synchronization and connection checkpoint remains
-incomplete. See HANDOFF.md for bounded executable qualifications.
+retry payload; queued outcomes still require real server acknowledgement.
+Schema2 journal identity, append position and prefix checksum enter the same
+connection checkpoint as the retry request and survive acknowledgement. The
+optional run-config `recover_notifications` list replays stopped journals into the
+original checkpoint before starting the new model/world. Standalone recovery is:
+
+```sh
+cargo run --manifest-path native/Cargo.toml --offline -p bees-host \
+  --example recover_outcomes -- checkpoint.json journal.jsonl
+```
+
+Both paths require the original existing checkpoint and exclusive file ownership.
+Replay ignores a torn final line, rejects altered accepted prefixes or invalid
+outcome rows, and never requeues already imported batches. It recovers completed
+outcomes, not an interrupted world. Schema1 journals lack the required recovery
+identity and are rejected. See HANDOFF.md for bounded Windows qualifications.
 
 ## Unity scene import (schema 23)
 
@@ -469,11 +482,11 @@ HiveMind Scouting now uses source five-second movement polls, the
 authoritative squad sprite-extents center, ten-second Scout beacon polls,
 a 300-second timeout, and five-second completion after first verified
 side-wide enemy-ship discovery. The owning Level must supply
-`NativeScoutingContext` with actual `Squad.MaxSight` and
+`NativeScoutingContext` with actual source `Ship.Sight` and
 `ConfigData.Configuration.HumanSide`, configure each game Scout's
 authored Beacon via `configure_game_scout`, and call
-`record_verified_scouting_sighting` with the true reward squad lifecycle
-(including a Beacon's MotherSquad). Game Scouts retain Beacon charges and
+the full verified-vision path with the actual observer, target TSV and reward
+squad lifecycle (including a Beacon's MotherSquad). Game Scouts retain Beacon charges and
 cooldowns when commands change; both game and RL Scouts use the same
 world-owned physical Beacon spawn. `ScoutBeaconDropped` is durably
 published after immediate native minion-squad registration using the

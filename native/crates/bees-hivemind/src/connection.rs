@@ -12,11 +12,12 @@
 
 use serde::{Deserialize, Serialize};
 use std::io::Write;
+use std::collections::HashMap;
 
 const CONNECTION_CHECKPOINT_VERSION: u32 = 1;
 
 use crate::outcomes::{
-    OutcomeBatch, PendingStoreCommands, StoreAcknowledgement,
+    OutcomeBatch, PendingStoreCommands, PreparedOutcomeBatch, StoreAcknowledgement,
 };
 use crate::protocol::{
     GetStrategyRequest, GetTargetingRequest, HiveMindProtocolError,
@@ -25,6 +26,17 @@ use crate::protocol::{
 use crate::session::{
     HiveMindSession, HiveMindSessionError, SquadLifetime,
 };
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct JournalCursor {
+    sequence: u64,
+    prefix_sha256: String,
+}
+
+fn valid_prefix_digest(digest: &str) -> bool {
+    digest.len() == 64 && digest.bytes().all(|byte| byte.is_ascii_hexdigit())
+}
 
 /// Only state that remains meaningful after a process restart. Strategy
 /// and targeting replies still in flight cannot be reconstructed as valid
@@ -37,6 +49,9 @@ pub struct NativeConnectionCheckpoint {
     schema_version: u32,
     hashes: RequestHashAllocator,
     stores: PendingStoreCommands,
+    /// One append frontier per immutable journal, retained after 200/409.
+    #[serde(default)]
+    journal_cursors: HashMap<String, JournalCursor>,
 }
 
 /// Borrowed serialization view: large StoreCommands queues are streamed
@@ -46,6 +61,7 @@ struct NativeConnectionCheckpointView<'a> {
     schema_version: u32,
     hashes: &'a RequestHashAllocator,
     stores: &'a PendingStoreCommands,
+    journal_cursors: &'a HashMap<String, JournalCursor>,
 }
 
 impl NativeConnectionCheckpoint {
@@ -92,6 +108,7 @@ pub struct NativeHiveMindConnection {
     hashes: RequestHashAllocator,
     session: HiveMindSession,
     stores: PendingStoreCommands,
+    journal_cursors: HashMap<String, JournalCursor>,
 }
 
 impl NativeHiveMindConnection {
@@ -103,6 +120,7 @@ impl NativeHiveMindConnection {
             hashes: RequestHashAllocator::new(client_prefix)?,
             session: HiveMindSession::new(),
             stores: PendingStoreCommands::new(),
+            journal_cursors: HashMap::new(),
         })
     }
 
@@ -117,6 +135,10 @@ impl NativeHiveMindConnection {
             return Err(HiveMindProtocolError::InvalidRequest);
         }
         snapshot.hashes.validate()?;
+        if snapshot.journal_cursors.iter().any(|(id, cursor)|
+            !PreparedOutcomeBatch::valid_journal_id(id) || !valid_prefix_digest(&cursor.prefix_sha256)) {
+            return Err(HiveMindProtocolError::InvalidRequest);
+        }
         if !snapshot.stores.owned_request_hashes()
             .all(|hash| snapshot.hashes.has_issued(hash))
         {
@@ -126,6 +148,7 @@ impl NativeHiveMindConnection {
             hashes: snapshot.hashes,
             session: HiveMindSession::new(),
             stores: snapshot.stores,
+            journal_cursors: snapshot.journal_cursors,
         })
     }
 
@@ -138,6 +161,7 @@ impl NativeHiveMindConnection {
             schema_version: CONNECTION_CHECKPOINT_VERSION,
             hashes: self.hashes.clone(),
             stores: self.stores.clone(),
+            journal_cursors: self.journal_cursors.clone(),
         }
     }
 
@@ -153,6 +177,7 @@ impl NativeHiveMindConnection {
             schema_version: CONNECTION_CHECKPOINT_VERSION,
             hashes: &self.hashes,
             stores: &self.stores,
+            journal_cursors: &self.journal_cursors,
         })
     }
 
@@ -215,6 +240,36 @@ impl NativeHiveMindConnection {
         let request = batch.into_request(hash)?;
         self.stores.queue(request.clone())?;
         Ok(request)
+    }
+
+    /// Import synchronized batches in journal order. The frontier and request
+    /// enter ONE checkpoint; replay after a server acknowledgement cannot
+    /// allocate a new hash for an already imported record.
+    pub fn queue_prepared_outcomes(
+        &mut self, prepared: &PreparedOutcomeBatch,
+    ) -> Result<bool, NativeConnectionError> {
+        if !PreparedOutcomeBatch::valid_journal_id(&prepared.journal_id) ||
+            !valid_prefix_digest(&prepared.prefix_sha256) {
+            return Err(HiveMindProtocolError::InvalidRequest.into());
+        }
+        if let Some(cursor) = self.journal_cursors.get(&prepared.journal_id) {
+            if prepared.sequence == cursor.sequence && prepared.prefix_sha256 != cursor.prefix_sha256 {
+                return Err(HiveMindProtocolError::RequestIdentityMismatch.into());
+            }
+            if prepared.sequence <= cursor.sequence { return Ok(false); }
+        }
+        self.queue_outcomes(prepared.batch.clone())?;
+        self.journal_cursors.insert(prepared.journal_id.clone(), JournalCursor {
+            sequence: prepared.sequence, prefix_sha256: prepared.prefix_sha256.clone(),
+        });
+        Ok(true)
+    }
+
+    /// Used by streaming replay to verify the entire previously accepted
+    /// prefix before importing any new suffix from an immutable journal.
+    pub fn journal_cursor(&self, id: &str) -> Option<(u64, &str)> {
+        self.journal_cursors.get(id).map(|cursor|
+            (cursor.sequence, cursor.prefix_sha256.as_str()))
     }
 
     pub fn retry_store(&self, hash: i64) -> Option<&StoreCommandsRequest> {

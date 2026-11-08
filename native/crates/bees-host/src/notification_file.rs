@@ -8,19 +8,20 @@
 
 use std::collections::{BTreeMap, VecDeque};
 use std::fs::{File, OpenOptions};
-use std::io::{self, Write};
+use std::io::{self, BufRead, BufReader, Read, Write};
 use std::path::Path;
 
 use bees_gameplay::commands::{NativeCommandOrigin, NativeCommandSelection};
-use bees_hivemind::outcomes::OutcomeBatch;
+use bees_hivemind::outcomes::{OutcomeBatch, PreparedOutcomeBatch};
 use bees_gameplay::level_events::{
     NativeLevelNotification, NativeLevelNotificationKind,
 };
 use bees_gameplay::level_host::NativeLevelNotificationSink;
 use bees_gameplay::group_rewards::GroupRewardKind;
 use bees_sim::simulation::WorldId;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
+use sha2::{Digest, Sha256};
 
 /// Stable, machine-readable command identity for eventual outcome-ledger
 /// replay. The server reservation IDs never come from the command's locally
@@ -202,18 +203,23 @@ impl NativeDiagnosticMeasurements {
 pub struct DurableDiagnosticNotifications {
     file: File,
     run_id: String,
+    journal_id: String,
+    next_journal_sequence: u64,
+    journal_digest: Sha256,
+    pending_prepared: Vec<PreparedOutcomeBatch>,
     // Reused serialization buffer; disk sync happens per bounded chunk,
     // not per individual battle event.
     pending: Vec<u8>,
     measurements: NativeDiagnosticMeasurements,
     // Prepared only AFTER the matching journal chunk has synchronized.
     // The host moves each batch into the connection's durable retry ledger.
-    prepared: VecDeque<OutcomeBatch>,
+    prepared: VecDeque<PreparedOutcomeBatch>,
     unavailable: bool,
 }
 
 const MAX_SYNC_EVENTS: usize = 128;
 const MAX_SYNC_BYTES: usize = 256 * 1024;
+const MAX_RECORD_BYTES: u64 = 64 * 1024 * 1024;
 
 impl DurableDiagnosticNotifications {
     /// Never append to an existing run or overwrite another incarnation.
@@ -226,6 +232,9 @@ impl DurableDiagnosticNotifications {
                 io::ErrorKind::InvalidInput, "run_id must not be empty",
             ));
         }
+        let mut random = [0_u8; 16];
+        getrandom::getrandom(&mut random).map_err(io::Error::other)?;
+        let journal_id: String = random.iter().map(|byte| format!("{byte:02x}")).collect();
         let file = OpenOptions::new().create_new(true).write(true).open(path)?;
         // On Unix, sync the parent entry as well as subsequent file data.
         // Otherwise power loss could forget the newly created file name
@@ -237,7 +246,8 @@ impl DurableDiagnosticNotifications {
             File::open(parent)?.sync_all()?;
         }
         Ok(Self {
-            file, run_id, pending: Vec::new(),
+            file, run_id, journal_id, next_journal_sequence: 0, journal_digest: Sha256::new(),
+            pending_prepared: Vec::new(), pending: Vec::new(),
             measurements: NativeDiagnosticMeasurements::default(),
             prepared: VecDeque::new(),
             unavailable: false,
@@ -399,7 +409,9 @@ impl DurableDiagnosticNotifications {
             _ => None,
         };
         let record = json!({
-            "schema_version": 1,
+            "schema_version": 2,
+            "journal_id": self.journal_id,
+            "journal_sequence": self.next_journal_sequence,
             "run_id": self.run_id,
             "world_id": world.0,
             "episode_revision": episode_revision,
@@ -419,9 +431,23 @@ impl DurableDiagnosticNotifications {
                 _ => Some(format!("{:?}", notification.kind)),
             },
         });
+        let record_start = self.pending.len();
         serde_json::to_writer(&mut self.pending, &record)
             .map_err(io::Error::other)?;
         self.pending.push(b'\n');
+        if (self.pending.len() - record_start) as u64 > MAX_RECORD_BYTES {
+            return Err(io::Error::other("journal record too large"));
+        }
+        self.journal_digest.update(&self.pending[record_start..]);
+        if let NativeLevelNotificationKind::CommandOutcomesReady(batch) = &notification.kind {
+            self.pending_prepared.push(PreparedOutcomeBatch {
+                journal_id: self.journal_id.clone(), sequence: self.next_journal_sequence,
+                prefix_sha256: format!("{:x}", self.journal_digest.clone().finalize()),
+                batch: batch.clone(),
+            });
+        }
+        self.next_journal_sequence = self.next_journal_sequence.checked_add(1)
+            .ok_or_else(|| io::Error::other("journal sequence exhausted"))?;
         Ok(())
     }
 
@@ -439,7 +465,7 @@ impl DurableDiagnosticNotifications {
 impl NativeLevelNotificationSink for DurableDiagnosticNotifications {
     type Error = io::Error;
 
-    fn first_prepared_outcomes(&self) -> Option<&OutcomeBatch> {
+    fn first_prepared_outcomes(&self) -> Option<&PreparedOutcomeBatch> {
         self.prepared.front()
     }
 
@@ -497,12 +523,121 @@ impl NativeLevelNotificationSink for DurableDiagnosticNotifications {
             // prefix acknowledged by the Level event outbox.
             for event in &notifications[committed..committed + buffered] {
                 self.measurements.record(event);
-                if let NativeLevelNotificationKind::CommandOutcomesReady(batch) = &event.kind {
-                    self.prepared.push_back(batch.clone());
-                }
             }
+            self.prepared.extend(self.pending_prepared.drain(..));
             committed += buffered;
         }
         Ok(())
     }
+}
+
+/// Recovery imports only complete, newline-terminated records from a stopped
+/// run. It never reconstructs a world or appends to the previous incarnation.
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct OutcomeJournalRecovery {
+    pub complete_records: u64,
+    pub queued_batches: u64,
+    pub previously_queued_batches: u64,
+    pub incomplete_tail: bool,
+}
+
+#[derive(Debug)]
+pub enum OutcomeJournalRecoveryError {
+    Journal(io::Error),
+    Connection(crate::durable_connection::DurableConnectionError),
+}
+
+impl From<io::Error> for OutcomeJournalRecoveryError {
+    fn from(error: io::Error) -> Self { Self::Journal(error) }
+}
+
+/// One append-only journal must always be replayed from its beginning into
+/// its original connection checkpoint, in source order. The caller must keep
+/// exclusive ownership of both files. Already imported prefixes remain known
+/// after 200 acknowledgement or terminal 409 reconciliation.
+pub fn recover_command_outcomes(
+    path: &Path,
+    connection: &mut crate::durable_connection::DurableHiveMindConnection,
+) -> Result<OutcomeJournalRecovery, OutcomeJournalRecoveryError> {
+    #[derive(Deserialize)]
+    struct Row {
+        schema_version: u32,
+        journal_id: String,
+        journal_sequence: u64,
+        run_id: String,
+        world_id: u64,
+        episode_revision: u64,
+        event_sequence: u64,
+        kind: String,
+        payload: serde_json::Value,
+    }
+    fn invalid(message: &str) -> io::Error {
+        io::Error::new(io::ErrorKind::InvalidData, message)
+    }
+    let mut reader = BufReader::new(File::open(path)?);
+    let mut line = Vec::new();
+    let mut identity = None;
+    let mut digest = Sha256::new();
+    let mut sequences = BTreeMap::<u64, (u64, u64)>::new();
+    let mut recovery = OutcomeJournalRecovery::default();
+    loop {
+        line.clear();
+        // Bound malformed input without retaining a whole journal in memory.
+        let bytes = (&mut reader).take(MAX_RECORD_BYTES + 1).read_until(b'\n', &mut line)?;
+        if bytes == 0 { break; }
+        if bytes as u64 > MAX_RECORD_BYTES { return Err(invalid("journal record too large").into()); }
+        if !line.ends_with(b"\n") {
+            recovery.incomplete_tail = true;
+            break;
+        }
+        digest.update(&line);
+        let row: Row = serde_json::from_slice(&line).map_err(|error| invalid(&error.to_string()))?;
+        if row.schema_version != 2 || !PreparedOutcomeBatch::valid_journal_id(&row.journal_id) ||
+            row.run_id.trim().is_empty() || row.journal_sequence != recovery.complete_records {
+            return Err(invalid("unsupported journal or inconsistent append sequence").into());
+        }
+        let row_identity = (row.journal_id.clone(), row.run_id);
+        if identity.as_ref().is_some_and(|original| original != &row_identity) {
+            return Err(invalid("mixed journal incarnations").into());
+        }
+        identity = Some(row_identity);
+        // Retain one cursor per world, not one allocation per training episode.
+        let (revision, sequence) = sequences.entry(row.world_id)
+            .or_insert((row.episode_revision, 0));
+        if row.episode_revision < *revision {
+            return Err(invalid("repeated retired world episode").into());
+        }
+        if row.episode_revision > *revision {
+            *revision = row.episode_revision;
+            *sequence = 0;
+        }
+        if *sequence != row.event_sequence {
+            return Err(invalid("missing or repeated world notification").into());
+        }
+        *sequence = sequence.checked_add(1).ok_or_else(|| invalid("event sequence exhausted"))?;
+        if let Some((sequence, original_digest)) = connection.connection().journal_cursor(&row.journal_id) {
+            if row.journal_sequence == sequence && format!("{:x}", digest.clone().finalize()) != original_digest {
+                return Err(invalid("journal differs from its checkpointed prefix").into());
+            }
+        }
+        if row.kind == "command_outcomes_ready" {
+            let batch: OutcomeBatch = serde_json::from_value(row.payload)
+                .map_err(|error| invalid(&error.to_string()))?;
+            if batch.is_empty() { return Err(invalid("empty journal outcome batch").into()); }
+            let queued = connection.queue_prepared_outcomes(&PreparedOutcomeBatch {
+                journal_id: row.journal_id, sequence: row.journal_sequence,
+                prefix_sha256: format!("{:x}", digest.clone().finalize()), batch,
+            }).map_err(OutcomeJournalRecoveryError::Connection)?;
+            if queued { recovery.queued_batches += 1; }
+            else { recovery.previously_queued_batches += 1; }
+        }
+        recovery.complete_records += 1;
+    }
+    if let Some((id, _)) = identity {
+        if connection.connection().journal_cursor(&id)
+            .is_some_and(|(sequence, _)| sequence >= recovery.complete_records) {
+            return Err(invalid("journal is shorter than its checkpointed prefix").into());
+        }
+    }
+    Ok(recovery)
 }

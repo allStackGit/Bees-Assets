@@ -24,7 +24,7 @@ use bees_hivemind::connection::{
     NativeConnectionError, NativeHiveMindConnection,
 };
 use bees_hivemind::outcomes::{
-    OutcomeBatch, StoreAcknowledgement,
+    OutcomeBatch, PreparedOutcomeBatch, StoreAcknowledgement,
 };
 use bees_hivemind::protocol::{
     GetStrategyRequest, GetTargetingRequest, HiveMindProtocolError,
@@ -79,6 +79,20 @@ impl DurableHiveMindConnection {
             checkpoint.persist(&fresh)?;
             fresh
         };
+        Ok(Self { connection, checkpoint, unavailable: false })
+    }
+
+    /// Recovery must never silently create a new connection identity when
+    /// its original checkpoint is absent: acknowledged journal cursors would
+    /// be lost and old reservations could be submitted under another hash.
+    pub fn open_existing(
+        checkpoint_path: impl Into<PathBuf>,
+    ) -> Result<Self, CheckpointFileError> {
+        let checkpoint = ConnectionCheckpointFile::new(checkpoint_path);
+        let connection = checkpoint.load()?.ok_or_else(||
+            CheckpointFileError::Io(std::io::Error::new(
+                std::io::ErrorKind::NotFound, "journal recovery requires its original connection checkpoint",
+            )))?;
         Ok(Self { connection, checkpoint, unavailable: false })
     }
 
@@ -181,6 +195,19 @@ impl DurableHiveMindConnection {
             .map_err(DurableConnectionError::Request)?;
         self.persist_or_poison()?;
         Ok(request)
+    }
+
+    /// Cursor and retry request are synchronized by the same atomic commit.
+    /// A false return means this journal prefix already belongs to the
+    /// connection, including batches acknowledged by the server long ago.
+    pub fn queue_prepared_outcomes(
+        &mut self, prepared: &PreparedOutcomeBatch,
+    ) -> Result<bool, DurableConnectionError> {
+        self.ensure_available()?;
+        let queued = self.connection.queue_prepared_outcomes(prepared)
+            .map_err(DurableConnectionError::Request)?;
+        if queued { self.persist_or_poison()?; }
+        Ok(queued)
     }
 
     /// A raw authenticated server frame is first routed by its original

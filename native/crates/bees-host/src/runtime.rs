@@ -407,7 +407,7 @@ where
     /// hashes; this method never equates queueing with server commit.
     fn checkpoint_prepared_outcomes(&mut self) -> Result<(), DurableConnectionError> {
         while let Some(batch) = self.sink.first_prepared_outcomes() {
-            self.connection.queue_outcomes(batch.clone())?;
+            self.connection.queue_prepared_outcomes(batch)?;
             self.sink.prepared_outcomes_queued();
         }
         Ok(())

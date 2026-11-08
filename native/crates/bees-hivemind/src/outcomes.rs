@@ -89,6 +89,55 @@ pub struct OutcomeBatch {
     discarded: Vec<i64>,
 }
 
+/// A synchronized journal record, in its original append order. The random
+/// journal identity and sequence survive every connection acknowledgement.
+#[derive(Clone, Debug)]
+pub struct PreparedOutcomeBatch {
+    pub journal_id: String,
+    pub sequence: u64,
+    pub prefix_sha256: String,
+    pub batch: OutcomeBatch,
+}
+
+impl PreparedOutcomeBatch {
+    pub fn valid_journal_id(id: &str) -> bool {
+        id.len() == 32 && id.bytes().all(|byte| byte.is_ascii_hexdigit())
+    }
+}
+
+// Rebuild the duplicate guard from actual rows, rather than deserializing
+// an empty `seen` set and silently dropping recovered outcomes.
+impl<'de> Deserialize<'de> for OutcomeBatch {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Rows {
+            strategic: Vec<StoredOutcome>,
+            shooting: Vec<StoredOutcome>,
+            targeting: Vec<StoredOutcome>,
+            discarded: Vec<i64>,
+        }
+        let rows = Rows::deserialize(deserializer)?;
+        let mut seen = HashSet::new();
+        let mut markers = HashSet::new();
+        for (rows, strategic) in [(&rows.strategic, true), (&rows.shooting, false), (&rows.targeting, false)] {
+            for row in rows {
+                if row.outcome_id <= 0 || !seen.insert(row.outcome_id) ||
+                    (row.discard_reservation && (!strategic || row.tsv != 0)) {
+                    return Err(serde::de::Error::custom("invalid or duplicate journal outcome"));
+                }
+                if row.discard_reservation { markers.insert(row.outcome_id); }
+            }
+        }
+        let discarded: HashSet<_> = rows.discarded.iter().copied().collect();
+        if discarded.len() != rows.discarded.len() || discarded != markers {
+            return Err(serde::de::Error::custom("journal discard identities disagree"));
+        }
+        Ok(Self { seen, strategic: rows.strategic, shooting: rows.shooting,
+            targeting: rows.targeting, discarded: rows.discarded })
+    }
+}
+
 impl OutcomeBatch {
     pub fn new() -> Self { Self::default() }
 

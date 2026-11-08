@@ -24,7 +24,7 @@ use bees_gameplay::level_host::NativeLevelStopKind;
 use bees_gameplay::squads::SquadRosterError;
 use bees_hivemind::session::SquadLifetime;
 use bees_host::durable_connection::DurableHiveMindConnection;
-use bees_host::notification_file::DurableDiagnosticNotifications;
+use bees_host::notification_file::{DurableDiagnosticNotifications, recover_command_outcomes};
 use bees_host::policy_process::ResidentPolicyProcess;
 use bees_host::presentation::NativeSoftwareRenderer;
 use bees_host::scene_assets::NativeSceneAssets;
@@ -112,6 +112,10 @@ struct RunConfig {
     model_manifest: PathBuf,
     connection_checkpoint: PathBuf,
     notifications: PathBuf,
+    /// Stopped run journals, replayed into the ORIGINAL connection before
+    /// starting a new incarnation. No previous world is resumed.
+    #[serde(default)]
+    recover_notifications: Vec<PathBuf>,
     next_squad_item_id: i64,
     broadphase_cell_size: f32,
     decision_period: u32,
@@ -543,6 +547,21 @@ fn main() -> Result<(), Box<dyn Error>> {
         ));
     }
 
+    let mut connection = if config.recover_notifications.is_empty() {
+        DurableHiveMindConnection::open(&checkpoint)
+    } else { DurableHiveMindConnection::open_existing(&checkpoint) }
+        .map_err(|error| contextual("HiveMind checkpoint", error))?;
+    for previous in &config.recover_notifications {
+        let path = resolve(root, previous);
+        if path == notifications || path == checkpoint {
+            return Err(invalid("recovery journals must be distinct from new outputs").into());
+        }
+        let recovered = recover_command_outcomes(&path, &mut connection)
+            .map_err(|error| contextual("outcome journal recovery", error))?;
+        println!("{}", json!({ "kind": "outcome_journal_recovered", "journal": path,
+            "recovery": recovered }));
+    }
+
     let model = ResidentPolicyProcess::python_worker(
         &resolve_interpreter(root, &config.python),
         &resolve(root, &config.policy_worker),
@@ -556,8 +575,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     let sink = DurableDiagnosticNotifications::create_new(
         &notifications, config.run_id.clone(),
     )?;
-    let connection = DurableHiveMindConnection::open(checkpoint)
-        .map_err(|error| contextual("HiveMind checkpoint", error))?;
     let mut host = assets.build_imported_policy_runtime(
         launches, model, connection, sink,
     ).map_err(|error| contextual("native Level construction", error))?;
