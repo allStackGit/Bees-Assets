@@ -32,6 +32,17 @@ function localPath(input,kind) {
         throw Error(kind+' is not a '+(directory?'directory.':'regular file.'));
     return canonical;
 }
+function privateEnvironmentFile(input) {
+    // Evaluator and agent share the private machine enrollment file.
+    // Its token stays outside unit-file arguments and URLs.
+    if(fs.lstatSync(input).isSymbolicLink())
+        throw Error('Service environment file must not be a symbolic link.');
+    const file=localPath(input,'Service environment file');
+    const stat=fs.statSync(file);
+    if(stat.uid!==process.getuid()||(stat.mode&0o077)!==0)
+        throw Error('Service environment file must be owned by this user and inaccessible to group/others.');
+    return file;
+}
 function serviceDefinition(kind,{trainingDir=__dirname,nodePath=process.execPath,
     environmentFile=null}={}) {
     if(process.platform!=='linux')
@@ -46,14 +57,7 @@ function serviceDefinition(kind,{trainingDir=__dirname,nodePath=process.execPath
     if(kind==='agent'&&!environmentFile)
         throw Error('Agent service needs --env-file containing its machine ID and enrollment token.');
     if(environmentFile) {
-        // The machine administrator owns this file, not the checkout.
-        if(fs.lstatSync(environmentFile).isSymbolicLink())
-            throw Error('Service environment file must not be a symbolic link.');
-        const file=localPath(environmentFile,'Service environment file');
-        const stat=fs.statSync(file);
-        if(stat.uid!==process.getuid()||(stat.mode&0o077)!==0)
-            throw Error('Service environment file must be owned by this user and inaccessible to group/others.');
-        envLine='EnvironmentFile='+file+'\n';
+        envLine='EnvironmentFile='+privateEnvironmentFile(environmentFile)+'\n';
     }
     const title=kind==='coordinator'
         ?'Bees experiment coordinator':'Experiment Hub native machine agent';
@@ -97,9 +101,9 @@ function positiveInt(input,min,max,label) {
     return value;
 }
 function evaluatorDefinition({
-    project,machine,trainingDir=__dirname,pythonPath,port='7148',suites,
+    project,machine,trainingDir=__dirname,pythonPath,port=null,suites,
     projectRoot,artifactRoot,snapshotRoot,scratch,receiptRoot,enginePath,
-    cpus,ramMb,interval='180',timeout='7200',
+    environmentFile=null,cpus,ramMb,interval='180',timeout='7200',
 }={}) {
     if(process.platform!=='linux')throw Error('Evaluator timers are Linux-only.');
     if(!['courier','tinybrains'].includes(project)||!/^[a-z][a-z0-9_-]{0,47}$/.test(machine||''))
@@ -111,8 +115,13 @@ function evaluatorDefinition({
     const python=localPath(pythonPath,'Python executable');
     const script=localPath(path.join(directory,
         'experiment_hub_'+project+'_eval_poll.py'),'Evaluator entrypoint');
+    const targetPort=positiveInt(port??(environmentFile?'7149':'7148'),1,65535,'Port');
+    if(![7148,7149].includes(targetPort)||
+        (targetPort===7149)!==Boolean(environmentFile))
+        throw Error('Restricted evaluator port 7149 needs a private machine --env-file; dashboard port 7148 is local-only.');
+    const localEnv=environmentFile?privateEnvironmentFile(environmentFile):null;
     const args=['-B',script,'--machine',machine,'--port',
-        String(positiveInt(port,1,65535,'Port'))];
+        String(targetPort)];
     for(const suite of suites)
         args.push('--suite',localPath(suite,'Benchmark suite'));
     if(project==='courier') {
@@ -133,6 +142,7 @@ function evaluatorDefinition({
         '[Unit]','Description=Independent '+project+' evaluation for '+machine,
         'After=network.target','',
         '[Service]','Type=oneshot','WorkingDirectory='+directory,
+        ...(localEnv?['EnvironmentFile='+localEnv]:[]),
         'ExecStart='+[python,...args].join(' '),
         'CPUQuota='+(cpuBudget*100)+'%',
         'MemoryMax='+memoryBudget+'M',
@@ -194,7 +204,8 @@ function main(argv=process.argv.slice(2)) {
         const result=evaluatorDefinition({
             project:values.project,machine:values.machine,
             trainingDir:values['training-dir']||__dirname,
-            pythonPath:values.python,port:values.port||'7148',
+            pythonPath:values.python,port:values.port||null,
+            environmentFile:values['env-file']||null,
             suites:values.suite,projectRoot:values['project-root'],
             artifactRoot:values['artifact-root'],snapshotRoot:values['snapshot-root'],
             scratch:values.scratch,receiptRoot:values['receipt-root'],
