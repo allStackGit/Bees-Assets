@@ -69,7 +69,7 @@ function observations(machineId) {
     if (typeof machineId !== 'string' || !ID.test(machineId))
         throw Error('EXPERIMENT_HUB_MACHINE_ID must match a registered machine ID.');
     const platform=os.platform();
-    // Missing or temporarily unreadable NVIDIA telemetry blocks new CUDA
+    // Missing or temporarily unreadable GPU telemetry blocks new GPU
     // claims, but must not disconnect healthy CPU-only native services.
     let gpus=[];
     if(platform==='linux') {
