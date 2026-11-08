@@ -1909,8 +1909,16 @@ The adapter independently verifies the digest at launch.
 On Linux, set `enginePath` to the absolute path of a locally installed
 native TinyBrains 0.5.0 executable. The adapter probes its version before
 advertising profiles. Use the same engine with `--engine-path` for both
-evaluation commands. Linux Stop uses the existing systemd interrupt policy
-and requires a successful native exit and verified checkpoint for resume.
+evaluation commands. Newly launched Linux TinyBrains jobs use the same
+checkpoint-aware `STOP` marker as Windows instead of interrupting the
+trainer at an arbitrary update. The native supervisor durably records the
+Stop request, retries marker delivery on the exact verified running service
+after agent restart, and waits for a successful systemd terminal receipt
+and a verified resumable checkpoint before marking a checkpoint Stop.
+A pending marker request holds its resource claim until native completion
+is confirmed. Previously launched Linux jobs without the stored marker
+retain the original systemd SIGINT Stop behavior; no old job is silently
+adopted or relaunched.
 Linux also accepts approved `runtime.device: "cuda"` profiles when the
 installed Python environment uses ROCm-enabled PyTorch. Configure
 `EXPERIMENT_HUB_ENABLE_ROCM=1` and use the existing Linux exclusive
