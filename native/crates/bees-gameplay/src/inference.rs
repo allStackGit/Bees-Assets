@@ -86,6 +86,38 @@ pub trait NativePolicyInference {
     fn model_generation(&self) -> u64 { 0 }
 }
 
+
+/**
+ * A real game Level need not run neural inference when no policy-controlled
+ * ship participates. The shared Level driver already skips the backend on
+ * physics ticks with zero due policy agents. Supplying this backend avoids
+ * spawning Python or allocating model weights for ordinary game-only battles.
+ *
+ * A policy controller appearing in that Level is an error, not permission to
+ * synthesize zero actions or silently turn it into scripted opposition.
+ */
+#[derive(Clone, Copy, Debug, Default)]
+pub struct NoPolicyInference;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PolicyInferenceRequired;
+
+impl NativePolicyInference for NoPolicyInference {
+    type Error = PolicyInferenceRequired;
+
+    fn forward(
+        &mut self,
+        _keys: &[PolicyAgentKey],
+        _routes: &[NativePolicyRoute],
+        _observations: &[f32],
+        _action_masks: &[PolicyActionMask],
+        _continuous: &mut [f32],
+        _discrete: &mut [u8],
+    ) -> Result<(), Self::Error> {
+        Err(PolicyInferenceRequired)
+    }
+}
+
 #[derive(Debug)]
 pub enum NativePocaExportError {
     Boundary(NativeInferenceError),
