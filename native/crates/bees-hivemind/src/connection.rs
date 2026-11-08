@@ -237,6 +237,24 @@ impl NativeHiveMindConnection {
         Ok(request)
     }
 
+    /// Register a NEW run before its first journal event is written.
+    /// An empty per-run cursor map is a durable proof that the run began
+    /// with journal-aware checkpoint ownership. Pre-upgrade runs absent
+    /// from this map cannot be replayed safely: their StoreCommands may
+    /// already have been acknowledged with no surviving local evidence.
+    pub fn register_journal_run(
+        &mut self, run_id: &str,
+    ) -> Result<bool, NativeConnectionError> {
+        if run_id.trim().is_empty() {
+            return Err(NativeConnectionError::InvalidJournalIdentity);
+        }
+        if self.journal_progress.contains_key(run_id) {
+            return Ok(false);
+        }
+        self.journal_progress.insert(run_id.to_owned(), BTreeMap::new());
+        Ok(true)
+    }
+
     /// Atomically associate a journal's source position with a request
     /// inside the canonical connection checkpoint. The host must persist
     /// this connection before transmitting. On recovery, a source position
@@ -249,7 +267,12 @@ impl NativeHiveMindConnection {
         &mut self, recorded: &RecordedOutcomeBatch,
     ) -> Result<Option<StoreCommandsRequest>, NativeConnectionError> {
         let source = &recorded.source;
-        if source.run_id.trim().is_empty() {
+        if source.run_id.trim().is_empty() ||
+            !self.journal_progress.contains_key(&source.run_id)
+        {
+            // An old unregistered journal may have been committed and
+            // acknowledged before this version recorded source cursors.
+            // Never reconstruct a second request under a new hash.
             return Err(NativeConnectionError::InvalidJournalIdentity);
         }
         let position = JournalPosition {
