@@ -720,28 +720,32 @@ impl CombatWorld {
             }
         }
 
-        // Ordinary manual point-fire is the native source Turret's
-        // non-RL branch. It uses the SAME physical mount, ScaledTimer,
-        // shot queue and projectile path as the neural-controller branch.
-        // The normal automatic enemy Targeting()/TargetShip lifecycle is
-        // separate and is not approximated by pointing at the nearest hull.
+        // Ordinary player and HiveMind turrets use the SAME mount,
+        // cooldown, shot queue, projectile physics and damage path as
+        // policy-controlled turrets. Auto-targeting follows the original
+        // RangeCollider candidate lifecycle; AI only acquires while its
+        // source squad owns a real command, player ships may always acquire.
+        // Manual point-fire has priority and never creates TargetShip.
+        let ships = &self.ships;
+        let ship_by_id = &self.ship_by_id;
+        let target_front_offsets = &self.target_front_offsets;
+        let physics = &mut self.physics;
         for (&ship_id, runtime) in &mut self.game_turrets {
-            let Some(&index) = self.ship_by_id.get(&ship_id) else { continue };
-            let ship = &self.ships[index];
-            let body = &self.physics.ships()[index];
+            let Some(&index) = ship_by_id.get(&ship_id) else { continue };
+            let ship = &ships[index];
+            let body = &physics.ships()[index];
             if !body.active || ship.vitals.is_dead() { continue; }
             let pose = body.motion.position;
             let heading = body.motion.rotation_degrees;
+            let user_controlled = body.motion.user_controlled;
             let hull_delta = heading - runtime.last_hull_rotation;
             runtime.last_hull_rotation = heading;
             for (slot, turret) in runtime.turrets.iter_mut().enumerate() {
                 let Some(mount) = turret else { continue };
                 mount.state.apply_hull_turn(hull_delta);
-                // FullShipTurret requires native hull-turn ownership; the
-                // charged LaserBuilder's manual animation event requires
-                // separate source lifecycle. Neither is faked as a normal
-                // rotating cannon. Ordinary, dual and beam cannons are
-                // faithfully controlled by the authored three-pass timer.
+                // Charged LaserBuilder and fixed FullShipTurret use
+                // different source animation/ship-turn controls; never
+                // substitute ordinary turret rotation for those weapons.
                 if !matches!(mount.spec.fire_pattern,
                     NativeFirePattern::Single |
                     NativeFirePattern::DualCannon { .. } |
@@ -750,7 +754,29 @@ impl CombatWorld {
                     continue;
                 }
                 let position = mount.position(pose, heading);
-                let aim = runtime.manual_target.filter(|_| !runtime.cease_fire);
+                let manual = runtime.manual_target.filter(|_| !runtime.cease_fire);
+                let auto = manual.is_none() && !runtime.cease_fire &&
+                    (user_controlled || runtime.ai_order_active) &&
+                    mount.fire_at_front.is_some() &&
+                    matches!(runtime.shooting_strategy,
+                        Some(1 | 5 | 6 | 9 | 10 | 13 | 14 | 15 | 16));
+                if manual.is_some() {
+                    mount.target_ship_id = None;
+                }
+                let auto_point = if auto {
+                    if let Some(target_id) = mount.target_ship_id {
+                        if let Some(&target_index) = ship_by_id.get(&target_id) {
+                            game_weapon_live_target(
+                                physics, ships, target_front_offsets,
+                                index, target_index, mount, position,
+                            )?.map(|(point, _)| point)
+                        } else { None }
+                    } else { None }
+                } else { None };
+                if auto && auto_point.is_none() {
+                    mount.target_ship_id = None;
+                }
+                let aim = manual.or(auto_point);
                 if let Some(point) = aim {
                     mount.state.target_world = point;
                     let desired = heading_towards(point - position);
@@ -762,26 +788,32 @@ impl CombatWorld {
                     mount.state.is_aligned_with_target = aligned;
                 } else {
                     mount.state.is_aligned_with_target = false;
-                    // Source Turret.Aim returns to hull heading when the
-                    // weapon has no valid target or is cease-fired.
-                    let (rotation, _) = timed_turret_rotation(
-                        mount.state.rotation_degrees, heading,
-                        mount.spec.rotation_rate, dt,
-                    );
-                    mount.state.rotation_degrees = rotation;
+                    // Turret.FixedUpdate never aims during cease-fire.
+                    // Otherwise return to the hull only without a live
+                    // target, as Unity Turret.Aim does.
+                    if !runtime.cease_fire {
+                        let (rotation, _) = timed_turret_rotation(
+                            mount.state.rotation_degrees, heading,
+                            mount.spec.rotation_rate, dt,
+                        );
+                        mount.state.rotation_degrees = rotation;
+                    }
                 }
                 if let Some(due) = mount.timer.begin_update(dt) {
-                    mount.state.targeting_passes =
-                        mount.state.targeting_passes.saturating_add(1);
-                    if mount.state.targeting_passes >=
-                        crate::turret::TARGETING_PASSES_PER_SHOT
-                    {
-                        mount.state.targeting_passes = 0;
-                        if aim.is_some() && mount.state.is_aligned_with_target &&
+                    let passes = mount.state.targeting_passes.saturating_add(1);
+                    mount.state.targeting_passes = passes;
+                    let due_to_fire = passes >=
+                        crate::turret::TARGETING_PASSES_PER_SHOT ||
+                        (mount.state.ready_to_fire &&
+                            mount.state.is_aligned_with_target);
+                    if due_to_fire {
+                        let launch_now = aim.is_some() &&
+                            mount.state.is_aligned_with_target &&
+                            !runtime.cease_fire &&
                             !(matches!(mount.spec.fire_pattern,
                                 NativeFirePattern::BeamCannon) &&
-                                mount.active_beam_projectile_id.is_some())
-                        {
+                                mount.active_beam_projectile_id.is_some());
+                        if launch_now {
                             self.turret_pending_shots.push(PendingTurretShot {
                                 ship_id, slot: slot as u8, shooter_side: ship.side,
                                 shooter_is_fire_barge: ship.ship_type == 10,
@@ -790,6 +822,46 @@ impl CombatWorld {
                                 target_world: mount.state.target_world,
                                 spec: mount.spec, is_policy: false,
                             });
+                        }
+                        // Non-RL ready-to-fire is only latched when a
+                        // valid automatic TargetShip was not yet aligned.
+                        mount.state.ready_to_fire = auto && aim.is_some() &&
+                            !mount.state.is_aligned_with_target;
+                        mount.state.targeting_passes = 0;
+                    }
+                    if auto && (!due_to_fire || mount.target_ship_id.is_none()) {
+                        // Source Targeting() refreshes its enemy list on
+                        // ordinary cooldown passes. Range membership is
+                        // distinct from obstacle/visibility eligibility.
+                        runtime.range_pass = runtime.range_pass.saturating_add(1);
+                        let current_pass = runtime.range_pass;
+                        let nearby = &mut runtime.nearby_enemy_ids[slot];
+                        for target_index in 0..ships.len() {
+                            if !game_weapon_candidate_in_range(
+                                physics, ships, index, target_index,
+                                mount, position,
+                            ) {
+                                continue;
+                            }
+                            let target_id = ships[target_index].entity_id;
+                            use std::collections::btree_map::Entry;
+                            match nearby.entry(target_id) {
+                                Entry::Occupied(mut entry) => {
+                                    entry.get_mut().1 = current_pass;
+                                }
+                                Entry::Vacant(entry) => {
+                                    runtime.entry_sequence =
+                                        runtime.entry_sequence.saturating_add(1);
+                                    entry.insert((runtime.entry_sequence, current_pass));
+                                }
+                            }
+                        }
+                        nearby.retain(|_, (_, last_seen)| *last_seen == current_pass);
+                        if let Some(strategy) = runtime.shooting_strategy {
+                            mount.target_ship_id = choose_game_weapon_target(
+                                physics, ships, ship_by_id, target_front_offsets,
+                                index, mount, position, strategy, nearby,
+                            )?.map(|(target_id, _)| target_id);
                         }
                     }
                     mount.timer.finish_update(due);
