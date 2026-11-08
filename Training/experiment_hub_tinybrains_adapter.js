@@ -12,6 +12,8 @@ const UUID=/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
 const PROFILE=/^[a-z][a-z0-9_-]{0,47}$/;
 const SHA256=/^[0-9a-f]{64}$/;
 const CUDA_UUID=/^GPU-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const ROCM_UUID=/^GPU-(?:[0-9a-f]{16}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
+const PCI=/^[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]$/;
 const MAX_PROFILES=32;
 const TAIL_BYTES=256*1024;
 
@@ -100,7 +102,8 @@ function validateApprovedProfiles(executable,project,configs) {
 }
 
 function createTinyBrainsAdapter({projectRoot,pythonPath,artifactRoot,profiles,
-    evaluationRoot,evaluationSuites,enginePath,checkpointImports={}}) {
+    evaluationRoot,evaluationSuites,enginePath,checkpointImports={},
+    rocrGpuUuids={}}) {
     for(const target of [projectRoot,pythonPath,artifactRoot]) {
         if(typeof target!=='string'||!path.isAbsolute(target))
             throw Error('TinyBrains requires absolute local project, Python and artifact paths.');
@@ -109,6 +112,19 @@ function createTinyBrainsAdapter({projectRoot,pythonPath,artifactRoot,profiles,
     const artifacts=fs.realpathSync(artifactRoot);
     const executable=fs.realpathSync(pythonPath);
     const windows=process.platform==='win32';
+    // The operator supplies a physical PCI -> ROCr UUID mapping from the
+    // installed machine inventory. Never infer a runtime ordinal from a
+    // PCI address, and never accept a selector from saved experiment JSON.
+    if(!rocrGpuUuids||typeof rocrGpuUuids!=='object'||
+        Array.isArray(rocrGpuUuids)||
+        Object.keys(rocrGpuUuids).length>32||
+        Object.entries(rocrGpuUuids).some(([pci,uuid])=>
+            !PCI.test(pci)||typeof uuid!=='string'||!ROCM_UUID.test(uuid))||
+        new Set(Object.values(rocrGpuUuids).map(uuid=>uuid.toLowerCase())).size!==
+            Object.keys(rocrGpuUuids).length||
+        (windows&&Object.keys(rocrGpuUuids).length))
+        throw Error('Invalid or duplicate operator-approved Linux ROCm PCI-to-UUID bindings.');
+    const pinnedRocrUuids=Object.freeze({...rocrGpuUuids});
     if((!windows||enginePath!=null)&&(typeof enginePath!=='string'||!path.isAbsolute(enginePath)))
         throw Error('Specify the absolute path to the installed native TinyBrains engine.');
     const engine=fs.realpathSync(enginePath??path.join(project,'tools','tinybrains-0.5.0','tinybrains.exe'));
@@ -211,6 +227,7 @@ function createTinyBrainsAdapter({projectRoot,pythonPath,artifactRoot,profiles,
         tinybrains_imports:Object.fromEntries([...imports].map(([id,item])=>
             [id,{profile:item.profile,sha256:item.sha256}])),
         gpu_execution:[...configs].some(([,item])=>item.device==='cuda')?'cuda':null,
+        ...(windows?{}:{rocr_gpu_uuids:pinnedRocrUuids}),
         gpu_sharing:windows&&[...configs].some(([,item])=>item.device==='cuda')
             ?'cooperative-pytorch':null,
         ...(windows||![...configs].some(([,item])=>item.device==='cuda')?{}:{
