@@ -93,9 +93,16 @@ VRAM and compute budgets fit.
 "gpu_vram_mb":8192,"gpu_compute_pct":40}}]}` and returns a placement preview,
 **not** a queued job. The planner uses a bounded, capability-scarcity-first greedy order,
 protecting exact machine affinity and uniquely capable large-VRAM hosts
-before assigning flexible workloads. It is not an exhaustive global
-optimizer and does not mutate persistent jobs, reservations, or machines.
-It may preview physically registered but unverified machines.
+before assigning flexible workloads. Among otherwise eligible placements,
+CPU-only jobs favor hosts reporting lower **host-wide** CPU activity (including
+Bees), while single-GPU jobs favor greater observed physical free VRAM and
+then lower GPU activity. The worker's fresh heartbeat provides these
+observations; absent values never imply that a host or GPU is idle. The
+Machines preview shows the relevant load alongside proposed placements.
+These are rankings, **not** admission credits, performance guarantees or
+automatic external workload reservations. The planner is not an exhaustive
+global optimizer and does not mutate persistent jobs, reservations, or
+machines. It may preview physically registered but unverified machines.
 
 **Capacity budgets are not performance guarantees.** Compute percentages
 do not enforce GPU execution time, prevent kernel contention, or establish
@@ -486,8 +493,11 @@ CPU/RAM values, and **disarmed native queue automation**. Stale updates are
 rejected. A reduction below outstanding Hub claims is refused; the
 change neither resizes nor stops any running native process. Claims
 remain durable across agent disconnects and coordinator restarts. This
-feature does not map Bees trainer IDs to physical machines, measure
-their host usage, or automatically adjust when Bees or other training activity changes.
+feature does not map Bees trainer IDs to physical machines, attribute
+individual resource usage, or automatically change the Hub's reserved
+budget when Bees or other training activity changes. Observed aggregate
+host CPU/GPU activity can influence the relative order of eligible placements
+but cannot prove or reserve spare execution capacity.
 It is a conservative *operator-chosen admission budget*, not isolation,
 a reserved CPU core set, or a throughput guarantee. For uncertain
 coexistence, use a dedicated host or a much smaller Hub budget instead
