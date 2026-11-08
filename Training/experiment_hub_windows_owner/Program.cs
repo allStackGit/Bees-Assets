@@ -27,6 +27,7 @@ internal sealed class JobSpec
     public int Cpus { get; set; }
     public int HostCpus { get; set; }
     public int RamMb { get; set; }
+    public string GpuUuid { get; set; } = "";
     public string ReceiptPath { get; set; } = "";
 }
 internal sealed class PipeRequest
@@ -260,7 +261,8 @@ internal sealed class OwnedJob : IDisposable
     private void LaunchSuspendedAndAssign()
     {
         // The target cannot execute before successful Job Object assignment.
-        // Environment masks GPUs on a best-effort basis, not device isolation.
+        // CUDA_VISIBLE_DEVICES pins a cooperative CUDA allocation by stable GPU
+        // UUID. Windows Job Objects do not enforce GPU access or VRAM limits.
         var env=new SortedDictionary<string,string>(StringComparer.OrdinalIgnoreCase);
         foreach(DictionaryEntry pair in Environment.GetEnvironmentVariables())
         {
@@ -271,6 +273,7 @@ internal sealed class OwnedJob : IDisposable
         foreach(var key in new[]{"CUDA_VISIBLE_DEVICES","HIP_VISIBLE_DEVICES",
             "ROCR_VISIBLE_DEVICES","GPU_DEVICE_ORDINAL"})
             env[key]="";
+        if(spec.GpuUuid.Length>0)env["CUDA_VISIBLE_DEVICES"]=spec.GpuUuid;
         var block=new StringBuilder();
         foreach(var pair in env)block.Append(pair.Key).Append('=').Append(pair.Value).Append('\0');
         block.Append('\0');
@@ -417,6 +420,9 @@ internal static class Program
             spec.Cpus>spec.HostCpus||
             spec.HostCpus!=Native.SystemLogicalProcessors()||
             spec.RamMb<128||spec.RamMb>100000000||
+            (spec.GpuUuid.Length>0&&!Regex.IsMatch(spec.GpuUuid,
+                @"^GPU-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                RegexOptions.IgnoreCase))||
             !Path.IsPathFullyQualified(spec.ReceiptPath)||
             !string.Equals(
                 Path.GetDirectoryName(Path.GetFullPath(spec.ReceiptPath)),
