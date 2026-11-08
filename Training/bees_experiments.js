@@ -662,7 +662,11 @@ function measure(item, status, force = false, boundary = '', deferArchive = fals
         const prior = samples.length ? samples[samples.length - 1] : null;
         // Preserve the last observed live worker metrics at finalization, when
         // workers may already be stopped and their rolling windows unavailable.
-        const last = key => mean(key) ?? (prior ? prior[key] : null);
+        // A curriculum change starts a different comparison cohort. If its
+        // workers have not yet reported episodes, do not carry the outgoing
+        // stage's win, hit, aim or timeout metrics into the new stage.
+        const last = key => mean(key) ??
+            (prior?.stage_index === (item.stage_index || 0) ? prior[key] : null);
         const running = item.status === 'running' && Boolean(status.desired?.training_enabled);
         const ppo = running ? latestPpoMetrics(item.run_id) : null;
         if (running) performanceReading(item, pipeline, ppo);
