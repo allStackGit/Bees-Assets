@@ -19,9 +19,12 @@ the inspected world; arrow keys pan; the mouse wheel zooms around the pointer;
 F fits the imported bounds; left-click inspects a nearby ship and selects its
 source-authorized player squad. Ctrl-click adds squads; left-drag selects squads
 whose real hulls overlap the box. Right-click moves the selected squads, once per
-live squad lifetime; locked or unavailable squads are skipped. Move requests carry
-world/episode identity, finalize prior commands through the normal outcome outbox,
-and invalidate pending AI request authority before shared formation/path movement.
+live squad lifetime; locked or unavailable squads are skipped. Press S to stop
+the selected squads using their real movement controllers; this finalizes
+existing commands, including tracked pursuits, without installing an AI Hold.
+Move and stop requests carry world/episode identity, finalize prior commands
+through the normal outcome outbox, and invalidate pending AI request authority
+before shared movement operations.
 Escape or closing the window cancels unfinished episodes through the existing
 durable abort/delivery boundary. The configured step duration
 is preserved; a slow model slows playback rather than skipping battle ticks.
@@ -219,7 +222,9 @@ world/episode and a live controllable squad. Movement and support commands share
 one permission/membership preflight; pending AI requests retire before activation.
 The canonical director handles replacement, unavailable targets and settlement.
 Attack commands and UI Hold are rejected by this API; they need their own source
-semantics. In the window, G/P/M/H/R arm Guard/Patrol/Mining/Heal/retreat;
+semantics and authentic enemy/weapon snapshots. The separate StopMoving action
+does not toggle the source Hold/Chase behavior. In the window, S stops every
+selected eligible squad and G/P/M/H/R arm Guard/Patrol/Mining/Heal/retreat;
 left-click chooses a target, or left-drag supplies the Patrol rectangle.
 Backspace or right-click cancels targeting without issuing a move. Commands
 preserve selected squad order, deduplicate lifetimes and skip unavailable owners.
