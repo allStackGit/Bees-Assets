@@ -519,9 +519,11 @@ impl NativeSquadCommandDirector {
     /// which an outgoing projectile must capture at launch.
     pub fn live_firing_command_outcome(
         &self, owner: SquadLifetime,
-    ) -> Option<Option<i64>> {
-        self.active.get(&owner).map(|active|
-            active.selection.server_outcome())
+    ) -> Option<(Option<i64>, u8)> {
+        self.active.get(&owner).map(|active| (
+            active.selection.server_outcome(),
+            active.selection.shooting().id,
+        ))
     }
 
     /// Observations use the true MiningAsteroid.SquadsMining cardinality:
