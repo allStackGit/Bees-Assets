@@ -4033,6 +4033,12 @@ impl CombatWorld {
                         counts.enemy_hit_tsv_loss += tsv;
                     }
                 }
+                CombatEvent::UnattributedDamage { delta, .. } => {
+                    counts.unattributed_damage_events += 1;
+                    counts.unattributed_damage_tsv_loss +=
+                        u64::try_from(delta.tsv_loss)
+                            .expect("physical damage TSV loss cannot be negative");
+                }
                 CombatEvent::ProjectileRootCompleted(outcome) => {
                     counts.policy_roots_completed += 1;
                     if outcome.enemy_contact {
