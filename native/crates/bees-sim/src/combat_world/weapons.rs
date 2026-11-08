@@ -221,6 +221,84 @@ impl PolicyTurretMount {
     }
 }
 
+/// Authored non-policy turrets share PolicyTurretMount's actual rotation,
+/// cooldown, charge and beam state without registering a phantom neural agent.
+pub(super) struct GameTurretRuntime {
+    pub(super) turrets: [Option<PolicyTurretMount>; 5],
+    pub(super) last_hull_rotation: f32,
+    pub(super) cease_fire: bool,
+    /// Unity's manual point-fire state, not an autonomous target selection.
+    /// None means no current manual fire input.
+    pub(super) manual_target: Option<Vec2>,
+}
+
+impl CombatWorld {
+    /// One real ordinary weapon slot. Never borrow a neural policy route
+    /// merely to make the native client able to launch a projectile.
+    pub fn configure_game_turret(
+        &mut self, ship_id: i64, slot: usize, spec: NativeTurretSpec,
+        cease_fire: bool,
+    ) -> Result<(), CombatWorldError> {
+        if slot >= 5 { return Err(CombatWorldError::InvalidPolicyTurret); }
+        spec.valid(&self.projectile_assets)?;
+        let index = *self.ship_by_id.get(&ship_id)
+            .ok_or(CombatWorldError::UnknownShip)?;
+        if !self.physics.ships()[index].active ||
+            self.ships[index].vitals.is_dead() {
+            return Err(CombatWorldError::UnknownShip);
+        }
+        if self.policy_ship_runtime.contains_key(&ship_id) ||
+            self.physics.ships()[index].motion.is_policy_controlled
+        {
+            return Err(CombatWorldError::UnsupportedPolicyActions);
+        }
+        let rotation = self.physics.ships()[index].motion.rotation_degrees;
+        let runtime = self.game_turrets.entry(ship_id)
+            .or_insert_with(|| GameTurretRuntime {
+                turrets: [None; 5], last_hull_rotation: rotation,
+                cease_fire, manual_target: None,
+            });
+        if runtime.cease_fire != cease_fire || runtime.turrets[slot].is_some() {
+            return Err(CombatWorldError::DuplicatePolicyTurret { ship_id, slot });
+        }
+        runtime.turrets[slot] = Some(PolicyTurretMount::new(spec));
+        Ok(())
+    }
+
+    /// Read-only readiness for an authorized local manual-point order. The
+    /// gameplay layer still verifies source squad lifetime and permissions.
+    pub fn game_ship_has_manual_weapon(&self, ship_id: i64) -> bool {
+        self.game_turrets.get(&ship_id).is_some_and(|runtime|
+            runtime.turrets.iter().flatten().any(|mount|
+                matches!(mount.spec.fire_pattern,
+                    NativeFirePattern::Single |
+                    NativeFirePattern::DualCannon { .. } |
+                    NativeFirePattern::BeamCannon)
+            )
+        )
+    }
+
+    pub fn set_game_ship_manual_target(
+        &mut self, ship_id: i64, target: Option<Vec2>,
+    ) -> Result<(), CombatWorldError> {
+        if target.is_some_and(|point| !point.is_finite()) {
+            return Err(CombatWorldError::InvalidPolicyTurret);
+        }
+        let index = *self.ship_by_id.get(&ship_id)
+            .ok_or(CombatWorldError::UnknownShip)?;
+        let body = &self.physics.ships()[index];
+        if !body.active || self.ships[index].vitals.is_dead() ||
+            !body.motion.user_controlled || body.motion.is_policy_controlled
+        {
+            return Err(CombatWorldError::UnsupportedPolicyActions);
+        }
+        let runtime = self.game_turrets.get_mut(&ship_id)
+            .ok_or(CombatWorldError::UnsupportedPolicyActions)?;
+        runtime.manual_target = target;
+        Ok(())
+    }
+}
+
 /// Exact Utilities.RotatePointAroundPoint(ship, muzzle, turret rotation).
 /// Rotation is around Ship.GetPosition(), not the turret or muzzle center.
 fn rotate_around_ship(pivot: Vec2, muzzle: Vec2, degrees: f32) -> Vec2 {
@@ -244,6 +322,7 @@ pub(super) struct PendingPolicyShot {
     turret_rotation: f32,
     target_world: Vec2,
     spec: NativeTurretSpec,
+    is_policy: bool,
 }
 
 impl CombatWorld {
@@ -453,6 +532,7 @@ impl CombatWorld {
                         turret_rotation: mount.state.rotation_degrees,
                         target_world,
                         spec: mount.spec,
+                        is_policy: true,
                     });
                 }
             }
