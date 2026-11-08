@@ -216,7 +216,17 @@ casualties through the shared Level rules. The fresh-scene exporter rejects
 existing commands and scripted queues; this format does not restore that history.
 
 Schema 20 adds the loaded command timing/distance settings and each squad's
-actual chosen shooting strategy. `NativeHostRuntime::player_command` accepts
+actual chosen shooting strategy. New exports also preserve genuine
+`Squad.MaxSight` for native Scouting; older schema-20 files remain readable
+but cannot admit a Scouting receipt lacking that value. Source-verified
+non-player HiveMind squads with no neural controller can now execute shared
+Hold, movement, Patrol, Guard/ClosestFriendly, Mining, Heal and Scouting
+orders from real server strategy receipts. Retreat uses the current enemy
+squad lifetime, source-authoritative weapon ranges and the live hull bounds
+at admission. Other target-dependent attacks are still discarded before
+activation until the native adapter can supply authentic weapon eligibility
+and targeting snapshots. This is a server *receipt* execution path, not an
+automatic server-request generator or a fully connected native game client. `NativeHostRuntime::player_command` accepts
 chosen Guard, Patrol, Mining, Heal and FullRetreat actions, scoped to the current
 world/episode and a live controllable squad. Movement and support commands share
 one permission/membership preflight; pending AI requests retire before activation.
