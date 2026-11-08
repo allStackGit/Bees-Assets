@@ -1,120 +1,79 @@
 # Unified native rewrite handoff - 2026-11-07
 
 Worktree `B:\Bees\unified-native`, branch `rewrite/unified-native`.
-Merged 13 newer upstream rewrite commits through `3c76c78a3` after fresh fetch.
-Prior host/support source settings: `c266ade64`; chosen targets: `34881ba6b`;
-origins: `aeb1bc9f7`; player selection/movement: `fcabe9599` / `8d76006dd`.
+Latest fetch found no newer upstream than `3c76c78a3`, merged in `f7261843e`.
+Prior weapon-owner split `23c1c442d`; selection/support `ea5ddd1a9` / `c266ade64`.
 Original `B:\Bees\Assets` and live training untouched.
 
-## Latest upstream reconciliation
+## Latest integrated work
 
-Upstream source steering additions overlapped the already integrated schema20
-movement/support export. Retained the schema20 wire fields, required validated
-profiles for all squad members (including stationary ships and user overrides),
-original-health collision profiles, support zones and fresh-scene checks. Kept
-upstream export-time finite/positive steering validation using those wire fields;
-there is no duplicate optional steering profile or legacy-schema promise.
-
-Retained upstream NoPolicyInference in bees-gameplay::inference. Existing shared
-host and batch driver can run ordinary Levels without a model worker or invented
-actions. Policy inference requests explicitly fail with PolicyInferenceRequired.
-
-Executed after merge: workspace-merged-game.txt: all-target/all-feature build,
-106 tests and headless check passed. External no-model-game.txt proves two Patrols
-through the shared runtime with NoPolicyInference and no bound agents, including
-navigation and canonical endpoints over ten ticks. no-model-refusal.txt proves
-that a genuinely policy-controlled Level fails on inference demand. This used a
-supplied schema20 scene and its supplied episode metadata, composed through
-NativePolicyOnlyLevelSetup; it does not add a general ordinary-game launcher or
-claim an authentic Unity export. Existing player support picker/host scenarios
-were re-executed in player-support-ui-merged.txt. C# source was inspected, not
-compiled or executed. Ordinary weapon targeting/firing remains the next work.
-
-## Latest weapon ownership increment
-
-Physical mounted weapons now live in CombatWorld.ship_weapons, separate from
-PolicyShipRuntime's decision frame/control/special actions. The one ShipWeapons
-owner holds turret slots, cooldown/charging state, last hull rotation, cease-fire
-and active beam identity. Configuration, observation, policy masks/requests,
-firing, beam growth/teardown and ship death all use it. Policy bind still performs
-the same fresh mount reset as before; ordinary non-policy registration/targeting
-is NOT enabled by this increment. No second firing controller was added.
-
-Verified: workspace-weapons-owner.txt contains all-target/all-feature compilation
-and 106 passing existing tests (including charged/dual/beam weapon paths). Headless
-check passed. External src/bin/weapons_owner.rs / weapons-owner.txt exercised
-public CombatWorld stepping, five emitted shots, target health100->40, real
-weapon observations/action mask and subsequent cease-fire. This supplied-action
-probe is not a trained-policy, full Level, live server or Unity parity result.
-
-Highest-value next weapon work: register source non-policy mounts against this
-physical owner; port ordinary target eligibility/ranking, aim points and the
-non-policy TargetingSequence cadence into the same scheduler. Preserve source
-manual/automatic behavior rather than labeling game ships as policy agents.
-
-## Prior integrated window work
-
-- Optional window keys G/P/M/H/R arm Guard/Patrol/Mining/Heal/retreat.
-  Left-click targets, left-drag sets Patrol; Backspace/right-click cancels.
-  Targeting does not replace squad selection. World/episode switches clear it.
-  The executable policy runner handles Support through the real shared host.
-- Owned NativePlayerSquadCommands contains only chosen identities/region and
-  selection order. NativeHostRuntime::player_command_squads preflights each
-  distinct lifetime before issuing the first command. Locked/non-player/stale
-  owners skip; real AI requests retire and the canonical command outbox settles.
-  Shared resource availability is re-read between activations.
-- UI queries cached real hulls, live mining obstacles and Beehive HealCollider
-  children (also source-clickable). Heal sends the clicked squad's Beehives in
-  actual member order. Friendly targeting uses the selected side; final per-squad
-  admission remains authoritative. Combat hulls/contact events are unchanged.
-- Source UserMining's non-miner behavior uses existing ordinary movement; it
-  does not invent a persistent Mining command. Entirely WarpGate squads skip
-  retreat. player_command now returns NativePlayerCommandOutcome::Command or
-  ::Move { reachable }, keeping both execution forms explicit.
-- Selected ship destination lines read CombatWorld::ship_game_destination,
-  the actual installed endpoint, rather than drawing a separate UI order cache.
-- Schema20 and source-loaded command settings/shooting remain as before.
+- NativeAuthoredShip now owns actual turret slots and cease_fire. Policy binding
+  contains only frame/movement_disabled. Removed the extra turrets_by_ship map;
+  importer/builder installs every physical mount once, including non-policy ships.
+  No policy frame or fake action is assigned to those game ships. Schema20 unchanged:
+  its historical policy_cease_fire field already captures every Ship.IsCeaseFire.
+- CombatWorld's ONE mounted scheduler now executes ordinary manual Single,
+  DualCannon and BeamCannon fire. Source manual targeting cycles reset missed
+  unaligned opportunities instead of inheriting policy readiness latching. Shared
+  rotation math, projectile creation, beam ownership/kill, collision and damage
+  are reused. Unsupported game charged weapons remain registered but manual
+  admission rejects them explicitly; no fabricated charged firing behavior.
+- GameWeaponFired is distinct from PolicyWeaponFired; game shots do not enter
+  policy root tracking. LevelRules provides a borrowed current-command resolver
+  at launch. Projectiles retain the exact server outcome (or unattributed zero
+  for local commands), without a second command registry or per-frame copy.
+- NativeHostRuntime::player_fire_squads preflights world/episode, permissions,
+  membership, policy ownership and game weapon eligibility. It deduplicates
+  selection; no-gun owners are unavailable, unauthorized/unsupported ones reject.
+  Weapon control leaves current squad commands and pending strategic requests
+  intact. None releases manual fire without resetting its clock.
+- Window T arms point-fire, left-click supplies a world point; X releases selected
+  weapons. Existing G/P/M/H/R support, batch movement and destination display remain.
+  This is latched point-fire; following the moving mouse while a button is held is
+  not implemented. Physical mouse/key interaction remains unverified.
 
 ## Executed evidence and limits
 
-Windows GNU toolchain: `B:\Bees\Runtime\Toolchains\rust-native`.
-Rustup/cargo homes there; cargo/bin and w64devkit/bin on PATH;
-RUSTUP_TOOLCHAIN=stable-x86_64-pc-windows-gnu,
-RUSTFLAGS=-C link-self-contained=yes. System PATH unchanged.
+Toolchain: `B:\Bees\Runtime\Toolchains\rust-native` GNU Rust on Windows.
+RUSTUP_HOME=<toolchain>/rustup; CARGO_HOME=<toolchain>/cargo; add cargo/bin and
+w64devkit/bin to PATH; RUSTUP_TOOLCHAIN=stable-x86_64-pc-windows-gnu;
+RUSTFLAGS=-C link-self-contained=yes. No system PATH changes.
 
-External qualification: `B:\Bees\native-capability-qualification`.
-- player-support-ui.txt / src/bin/player_support_ui.rs: actual presentation
-  target picker and selection request builder -> host batch -> run_window.
-  Mining6 leaves nearer5 untouched; clicked Heal squad passes [6,2], reserving6;
-  Guard chooses14; Patrol honors corners; selected gate6 really warps at tick202.
-  Duplicated owner executes once, enemy/stale owners reject, stale revision
-  rejects; late strategy9001/9002 discards for every supported command.
-- player-support-batch.txt / -locked.txt: two actual Patrols installed; duplicate,
-  enemy and stale identities handled, locked owner skipped. Ten Level ticks
-  complete navigation and retain canonical first endpoint (50,50) for each.
-- player-mining-fallback.txt: non-mining Barge moves toward clicked asteroid
-  endpoint(30,0) with no Mining command; source-authorized all-gate squad skips
-  retreat. Ten actual host steps advance the ship.
-- workspace-support-ui.txt: all-target/all-feature build and 106 existing sim
-  tests passed; headless check passed. Other crates have no enabled tests.
-- Rendered ui-support-patrol.png from the real software renderer inspected;
-  tactical hulls, map, selected endpoint line/cross visible. This is an external
-  supplied scene capture, not a window/mouse interaction qualification.
+External qualification folder: `B:\Bees\native-capability-qualification`.
+- game-manual-fire.txt / src/bin/game_manual_fire.rs: schema20 import/builder ->
+  NoPolicyInference -> host manual admission -> 120 real host ticks per supported
+  pattern. A deliberately unaligned starting turret misses a firing cycle and
+  first fires on tick31. Single:4 shots/target health88; Dual:8/health76;
+  Beam:4/health84. No policy binding, PolicyWeaponFired or policy root completions.
+  Duplicate/stale/enemy/no-gun handling and release verified. Charged manual input
+  rejects without failing the Level. All three use the same canonical scheduler.
+- game-manual-attribution.txt: same three paths with supplied server-origin Hold
+  IDs8001/8002. Manual fire retains Hold; 3/6/4 actual hits retain command8001.
+  IDs are fixture inputs, not actual live server reservations.
+- workspace-game-manual.txt: all-target/all-feature build, 106 existing sim tests
+  and headless check passed. Other crates have no enabled tests.
+- player-support-ui-manual.txt re-executes five existing support picker/host
+  scenarios. weapons-owner-manual.txt re-executes policy shots/damage/cease-fire.
 
-Scenarios/actions/identities and in-memory sink are supplied fixtures, not trained
-inference, authentic Unity exports or actual server reservations. Physical mouse
-input, C# export execution, Unity/Box2D parity, authentic model switching/learning,
-Linux execution and multi-machine behavior remain unverified. The earlier window
-control attempt ended at Computer Use app approval timeout.
+These are supplied scenarios, weapon inputs and an in-memory notification sink,
+not authentic Unity exports, learned policies or live server/distributed runs.
+The full collision matrix is a deliberate fixture. C# export execution, exact
+Unity/Box2D timing, Linux runtime, physical T/X input and performance unverified.
+Earlier desktop-control attempt stopped at app approval timeout; no live fixture
+was left running. Do not turn narrower checks into full parity/readiness claims.
 
 ## Highest-value next work / full objective remains incomplete
 
-Exercise actual window controls when desktop access is available. Complete
-source attack inputs and ordinary non-policy weapon targeting/firing,
-Chase/StopChasing and scripted queues. PolicyOnlyMetadata still deliberately
-rejects HiveMind activation pending full strategy/per-command snapshot adapters.
+Port ordinary range contacts, target queue/ranking, actual hull/obstacle aim-point
+eligibility and automatic TargetingSequence into the SAME mounted scheduler;
+then wire chosen-target attack commands. Complete game charged animations/hull
+rotation, per-weapon statistics/combat timers and persistent game accounting.
+Manual point firing supplies no missing automatic targeting semantics.
 
-Full replacement also requires complete game/modes/sprites/audio/UI, Carrier/Drone
-lifecycle and remaining parity, connected optimizer/trajectory/checkpoint pipeline,
-distributed learning, evaluation/experiments and measured performance. Keep the
-same authoritative gameplay for rendered, headless, training and evaluation.
+NativePolicyOnlyMetadata still rejects HiveMind activation until its source
+strategy/per-command snapshots exist. A no-model game-only Level works via the
+shared runtime/NoPolicyInference and explicit source setup, but a general ordinary
+scene launcher, full game/mode/UI/sprite/audio parity, Chase/StopChasing, scripted
+queues and Carrier/Drone lifecycle remain incomplete. The full goal also requires
+connected optimizer/trajectory/checkpoint, distributed learning, evaluation and
+experiments plus measured performance. Preserve one authoritative gameplay path.

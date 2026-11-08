@@ -99,11 +99,13 @@ use self::policy::{PolicyShipRuntime, PolicyShipSpecial};
 pub use self::policy::PolicySpecialObservations;
 pub use self::policy::WARP_GATE_TYPE;
 pub use self::healing::BEEHIVE_TYPE;
-use self::weapons::{PendingPolicyShot, ShipWeapons};
+use self::weapons::{PendingTurretShot, ShipWeapons};
 pub use self::weapons::{NativeFirePattern, NativeTurretSpec};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CombatWorldError {
+    UnsupportedGameManualTurret { weapon_type: u8 },
+    InvalidCommandAttribution,
     Physics(PhysicsError),
     Combat(CombatError),
     Reservation(ReservationError),
@@ -378,6 +380,8 @@ pub enum CombatEvent {
     PolicyWeaponFired {
         ship_id: i64, slot: u8, projectile_id: i64,
     },
+    /// Ordinary manually controlled turret; no policy trajectory attribution.
+    GameWeaponFired { ship_id: i64, slot: u8, projectile_id: i64 },
 }
 
 enum ImpactBehavior {
@@ -731,7 +735,7 @@ pub struct CombatWorld {
     /// entire controller roster on every fixed physics step.
     policy_roster_revision: u64,
     policy_decision_seen: HashSet<u64>,
-    policy_pending_shots: Vec<PendingPolicyShot>,
+    pending_turret_shots: Vec<PendingTurretShot>,
     /// Validated ship specials use one queue across different authored ships.
     /// Commit after event clearing and before physics, in stable ship-ID order.
     policy_pending_ship_specials: Vec<i64>,
@@ -875,7 +879,7 @@ impl CombatWorld {
             ship_weapons: BTreeMap::new(),
             policy_roster_revision: 0,
             policy_decision_seen: HashSet::new(),
-            policy_pending_shots: Vec::new(),
+            pending_turret_shots: Vec::new(),
             policy_pending_ship_specials: Vec::new(),
             policy_pending_mining: Vec::new(),
             policy_pending_healing: Vec::new(),
@@ -3680,7 +3684,7 @@ impl CombatWorld {
         dt: f32,
         collision_matrix: &CollisionMatrix,
     ) -> Result<StepCounts, CombatWorldError> {
-        self.step_fixed_inner(dt, collision_matrix, None)
+        self.step_fixed_inner(dt, collision_matrix, None, None)
     }
 
     /// The shared multi-world scheduler owns the deterministic RNG. Fragment
@@ -3692,7 +3696,7 @@ impl CombatWorld {
         collision_matrix: &CollisionMatrix,
         random: &mut RandomStream,
     ) -> Result<StepCounts, CombatWorldError> {
-        self.step_fixed_inner(dt, collision_matrix, Some(random))
+        self.step_fixed_inner(dt, collision_matrix, Some(random), None)
     }
 
     /// One source of truth for policy decisions and the shared fixed-step
@@ -3707,11 +3711,20 @@ impl CombatWorld {
         collision_matrix: &CollisionMatrix,
         random: &mut RandomStream,
     ) -> Result<StepCounts, CombatWorldError> {
+        self.step_combat_with_command_attribution(decisions, dt, collision_matrix, random, &|_| None)
+    }
+
+    /// The owning Level resolves an ordinary shot's current command at launch
+    /// time. No command copy is stored in weapon state or refreshed per frame.
+    pub fn step_combat_with_command_attribution(
+        &mut self, decisions: &[Decision], dt: f32, collision_matrix: &CollisionMatrix,
+        random: &mut RandomStream, command: &dyn Fn(i64) -> Option<i64>,
+    ) -> Result<StepCounts, CombatWorldError> {
         if !self.frozen_after_elimination {
             self.apply_policy_decisions(decisions)?;
         }
         let mut counts =
-            self.step_fixed_with_random(dt, collision_matrix, random)?;
+            self.step_fixed_inner(dt, collision_matrix, Some(random), Some(command))?;
         counts.decisions = if self.frozen_after_elimination {
             0
         } else {
@@ -3725,6 +3738,7 @@ impl CombatWorld {
         dt: f32,
         collision_matrix: &CollisionMatrix,
         random: Option<&mut RandomStream>,
+        command: Option<&dyn Fn(i64) -> Option<i64>>,
     ) -> Result<StepCounts, CombatWorldError> {
         // Reject bad deltas before advancing delayed timers or modifying
         // health. Physics validates dt too, but that is too late here.
@@ -3846,7 +3860,7 @@ impl CombatWorld {
         }
         // Turrets use the same ship pose updated above, and create real
         // projectile bodies before the subsequent shared physics step.
-        self.advance_policy_turrets(dt)?;
+        self.advance_mounted_turrets(dt, command)?;
         // LaserBeam.ExtendBeam follows the same real shooter/turret and
         // resizes the physical beam collider before the native broadphase.
         self.advance_beam_projectiles()?;

@@ -73,6 +73,12 @@ impl TurretState {
             // Turret.FixedUpdate does not call Aim() at all while cease-fired.
             return true;
         }
+        self.aim_at_point(turret_position, dt_seconds);
+        true
+    }
+
+    /// Both source manual and policy aiming use the same physical rotation.
+    pub fn aim_at_point(&mut self, turret_position: Vec2, dt_seconds: f32) {
         let heading = heading_towards(self.target_world - turret_position);
         let (updated, aligned) = timed_turret_rotation(
             self.rotation_degrees,
@@ -82,7 +88,18 @@ impl TurretState {
         );
         self.rotation_degrees = updated;
         self.is_aligned_with_target = aligned;
-        true
+    }
+
+    /// Ordinary manual Turret.TargetingSequence does not latch a missed
+    /// firing opportunity like RL. Every third pass resets even when unaligned.
+    pub fn manual_targeting_timer_pass(&mut self, manual: bool, cease_fire: bool) -> bool {
+        self.targeting_passes += 1;
+        if (self.ready_to_fire && self.is_aligned_with_target) ||
+            self.targeting_passes == TARGETING_PASSES_PER_SHOT {
+            self.targeting_passes = 0;
+            return manual && self.is_aligned_with_target && !cease_fire;
+        }
+        false
     }
 
     /// The Level scheduler calls this at the authored TargetingRate interval

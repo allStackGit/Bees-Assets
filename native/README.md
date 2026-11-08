@@ -170,6 +170,31 @@ the inference-only TorchScript/ONNX model manifest does not provide
 action log probabilities or a group critic. Loading a replacement model
 can temporarily require space for both the old and new weights.
 
+## Ordinary manual weapon control
+
+Imported `NativeAuthoredShip` owns its real turret slots and cease-fire state;
+`NativeAuthoredPolicy` supplies only an actual agent frame/movement binding.
+Ordinary game ships retain mounts without becoming policy agents. The historical
+schema20 `policy_cease_fire` field already records Ship.IsCeaseFire for every ship.
+
+`NativeHostRuntime::player_fire_squads` accepts world/revision, selected squad
+lifetimes and an optional point. A point sets continuous manual fire; None releases
+it without resetting targeting cadence or ending the current squad command.
+The window uses T then left-click for point-fire and X to release selected weapons.
+Permissions, pooled identities, unsupported weapons and policy ownership are
+preflighted; duplicate squads execute once. This currently supports ordinary
+single rotating turrets, DualCannon and BeamCannon. LaserBuilder/FullShipTurret game
+manual input is rejected pending their different animation/hull-aiming lifecycle.
+
+Manual cooldown uses the source game targeting passes, including missed unaligned
+opportunities; it does not inherit RL readiness latching. The shared scheduler,
+projectile allocator, geometry, beam lifecycle and damage path execute every shot.
+GameWeaponFired is separate from PolicyWeaponFired, and manual shots do not enter
+policy root-outcome tracking. The Level resolves current command attribution only
+when a game shot launches, preserving its ID for the projectile's remaining life.
+Automatic targeting/ranking, game firing statistics/combat timers and full-game
+weapon parity remain incomplete. Physical T/X interaction is not yet qualified.
+
 ## Unity scene import (schema 20)
 
 **Bees > Native > Export Selected Level Physical Scene** captures a

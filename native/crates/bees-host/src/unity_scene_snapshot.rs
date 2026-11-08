@@ -497,9 +497,6 @@ pub struct NativePhysicalScene {
     pub source_policy_group: Option<NativeSourcePolicyGroup>,
     source_navigation: NativeSourceNavigation,
     pub fleet: NativeFleetInventory,
-    // Real authored physical mounts retained even for non-policy ships.
-    // A Level must bind its own policy/route; the snapshot never invents one.
-    pub turrets_by_ship: HashMap<i64, Vec<NativeAuthoredTurret>>,
     /// Exact source ship, weapon and private communication metadata.
     pub authored_ship_perceptions: HashMap<i64, AuthoredShipPerception>,
     /// A physical Unity controller was active when captured. The caller
@@ -962,9 +959,9 @@ impl NativePhysicalScene {
         if ship.policy.is_some() {
             return Err(NativeSnapshotError::AlreadyBound(ship_id));
         }
+        ship.cease_fire = cease_fire;
         ship.policy = Some(NativeAuthoredPolicy {
-            frame, movement_disabled, cease_fire,
-            turrets: self.turrets_by_ship.remove(&ship_id).unwrap_or_default(),
+            frame, movement_disabled,
         });
         Ok(())
     }
@@ -1099,7 +1096,6 @@ impl NativePhysicalScene {
                 .saturating_add(raw.map_objects.len())
         );
         let mut fleet_values = Vec::with_capacity(raw.ships.len());
-        let mut turrets_by_ship = HashMap::with_capacity(raw.ships.len());
         let mut authored_ship_perceptions = HashMap::with_capacity(raw.ships.len());
         let mut active_policy_ship_ids = Vec::new();
         let mut source_policy_bindings = HashMap::new();
@@ -1317,9 +1313,6 @@ impl NativePhysicalScene {
                     },
                 });
             }
-            if !authored_turrets.is_empty() {
-                turrets_by_ship.insert(ship.entity_id, authored_turrets);
-            }
             if ship.has_bound_policy {
                 if !ship.is_rl_policy_controlled ||
                     ship.effective_vision_range < 0 ||
@@ -1427,6 +1420,7 @@ impl NativePhysicalScene {
             });
             entities.push(NativeAuthoredEntity::Ship(NativeAuthoredShip {
                 entity_id: ship.entity_id, ship_type: ship.ship_type,
+                cease_fire: ship.policy_cease_fire, turrets: authored_turrets,
                 side: ship.side, vitals, motion, game_movement,
                 original_health: ship.original_health,
                 size_class: ship.size_class,
@@ -1769,7 +1763,6 @@ impl NativePhysicalScene {
             source_policy_group,
             source_navigation,
             fleet,
-            turrets_by_ship,
             authored_ship_perceptions,
             active_policy_ship_ids,
             source_squads,

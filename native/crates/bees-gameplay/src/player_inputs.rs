@@ -80,6 +80,68 @@ pub struct NativePlayerSquadCommands {
     pub action: NativePlayerSupportAction,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct NativePlayerSquadFire {
+    pub world_id: WorldId,
+    pub episode_revision: u64,
+    pub squads: Vec<SquadLifetime>,
+    /// Manual point-fire, or None to release it. Does not replace movement or
+    /// the squad's current command and never manufactures a policy decision.
+    pub target: Option<Vec2>,
+}
+
+pub struct NativePlayerFirePlan {
+    authority: NativePlayerSquadPlan,
+    selected_ship: i64,
+    world_id: WorldId,
+    episode_revision: u64,
+    target: Option<Vec2>,
+}
+
+impl NativePlayerFirePlan {
+    pub fn owner(&self) -> SquadLifetime { self.authority.owner }
+
+    pub fn prepare<M: NativeLevelPlayerContext, A>(world: &World<NativeLevelState<M, A>>,
+        world_id: WorldId, episode_revision: u64, selected_ship: i64, target: Option<Vec2>,
+    ) -> Result<Self, NativePlayerInputError> {
+        if target.is_some_and(|point| !point.is_finite()) {
+            return Err(NativePlayerInputError::InvalidAction);
+        }
+        let authority = NativePlayerSquadPlan::prepare(world, world_id, episode_revision, selected_ship)?;
+        for member in &authority.members {
+            if world.state.combat.policy_frame(member.ship_id).is_some() {
+                return Err(NativePlayerInputError::NotControllable);
+            }
+            world.state.combat.validate_game_manual_fire(member.ship_id, target).map_err(|error|
+                match error {
+                    bees_sim::combat_world::CombatWorldError::UnsupportedGameManualTurret { .. } =>
+                        NativePlayerInputError::UnsupportedWeapon,
+                    error => NativePlayerInputError::Source(error.into()),
+                })?;
+        }
+        Ok(Self { authority, world_id, episode_revision, selected_ship, target })
+    }
+
+    pub fn execute<M: NativeLevelPlayerContext, A>(self, world: &mut World<NativeLevelState<M, A>>)
+        -> Result<usize, NativePlayerInputError>
+    {
+        let current = Self::prepare(world, self.world_id, self.episode_revision,
+            self.selected_ship, self.target)?;
+        if current.authority != self.authority { return Err(NativePlayerInputError::StaleWorld); }
+        let mut weapons = 0;
+        for member in &self.authority.members {
+            match world.state.combat.set_game_manual_fire(member.ship_id, self.target) {
+                Ok(count) => weapons += count,
+                Err(error) => {
+                    world.state.events.fail_player_input();
+                    return Err(NativePlayerInputError::Source(error.into()));
+                },
+            }
+        }
+        Ok(weapons)
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct NativePlayerCommandCounts {
     pub accepted_squads: usize,
@@ -273,6 +335,7 @@ pub enum NativePlayerInputError {
     NotControllable,
     InvalidDestination,
     InvalidAction,
+    UnsupportedWeapon,
     Source(GameCommandError),
     Finalization(NativeLevelEventError),
 }
@@ -282,7 +345,7 @@ impl NativePlayerInputError {
     /// terminate the caller's window and follow normal abort settlement.
     pub fn is_rejection(&self) -> bool {
         matches!(self, Self::StaleWorld | Self::InactiveWorld | Self::MissingSquad |
-            Self::NotControllable | Self::InvalidDestination | Self::InvalidAction)
+            Self::NotControllable | Self::InvalidDestination | Self::InvalidAction | Self::UnsupportedWeapon)
     }
 }
 

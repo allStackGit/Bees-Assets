@@ -547,6 +547,10 @@ impl NativeSquadCommandDirector {
         self.active.contains_key(&owner)
     }
 
+    pub fn current_server_outcome(&self, owner: SquadLifetime) -> Option<i64> {
+        self.active.get(&owner)?.selection.server_outcome()
+    }
+
     pub fn current_kind_and_guarded_target(&self, owner: SquadLifetime)
         -> (Option<LocalCommandKind>, Option<SquadLifetime>)
     {

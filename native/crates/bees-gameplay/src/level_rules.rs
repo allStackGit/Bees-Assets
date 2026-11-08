@@ -685,9 +685,11 @@ where
             state.metadata.advance_navigation(&mut state.combat)?;
         // No independent policy/physics rules in gameplay or training:
         // both adapters invoke CombatWorld's one canonical transaction.
-        let counts = state.combat.step_policy_combat_with_random(
+        let events = &state.events;
+        let counts = state.combat.step_combat_with_command_attribution(
             decisions, dt_seconds, &self.collision_matrix,
-            &mut world.random,
+            &mut world.random, &|ship_id| events.roster().owning_squad(ship_id)
+                .and_then(|owner| events.commands().current_server_outcome(owner)),
         )?;
         // Unity's YellowJacket.OnTriggerEnter2D is independent of the
         // command timer. Consume these source-ordered contacts INSIDE the

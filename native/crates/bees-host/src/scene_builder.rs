@@ -54,6 +54,8 @@ pub struct NativeAuthoredShip {
     pub policy_capabilities: NativeAuthoredPolicyCapabilities,
     pub fleet_ship_id: Option<i64>,
     pub policy: Option<NativeAuthoredPolicy>,
+    pub cease_fire: bool,
+    pub turrets: Vec<NativeAuthoredTurret>,
     pub special: Option<NativeAuthoredShipSpecial>,
 }
 
@@ -81,14 +83,11 @@ pub struct NativeAuthoredTurret {
     pub spec: NativeTurretSpec,
 }
 
-/// A genuine Level/agent policy binding with its actual physical weapon
-/// slots and source cease-fire state. No implicit policy for non-agent
-/// ships, and no simulated aiming without a registered real turret.
+/// Genuine Level/agent binding. Physical mounts and cease-fire remain on
+/// NativeAuthoredShip, so ordinary ships need no fabricated policy controller.
 pub struct NativeAuthoredPolicy {
     pub frame: PolicyFrame,
     pub movement_disabled: bool,
-    pub cease_fire: bool,
-    pub turrets: Vec<NativeAuthoredTurret>,
 }
 
 /// Real authored world entities with original source IDs. Unity allocates
@@ -323,18 +322,11 @@ impl NativeSceneAssets {
                     combat.set_ship_fleet_identity(ship.entity_id, fleet_id)
                         .map_err(NativeSceneBuildError::Combat)?;
                 }
+                let is_policy = ship.policy.is_some();
                 if let Some(policy) = ship.policy {
                     combat.bind_policy_ship(
                         ship.entity_id, policy.frame, policy.movement_disabled,
                     ).map_err(NativeSceneBuildError::Combat)?;
-                    combat.set_policy_ship_cease_fire(
-                        ship.entity_id, policy.cease_fire,
-                    ).map_err(NativeSceneBuildError::Combat)?;
-                    for turret in policy.turrets {
-                        combat.configure_policy_turret(
-                            ship.entity_id, turret.slot, turret.spec,
-                        ).map_err(NativeSceneBuildError::Combat)?;
-                    }
                     if ship.policy_capabilities.mining {
                         combat.configure_policy_mining(ship.entity_id)
                             .map_err(NativeSceneBuildError::Combat)?;
@@ -348,6 +340,15 @@ impl NativeSceneAssets {
                         combat.configure_policy_warp(ship.entity_id, side)
                             .map_err(NativeSceneBuildError::Combat)?;
                     }
+                }
+                combat.set_ship_cease_fire(ship.entity_id, ship.cease_fire)
+                    .map_err(NativeSceneBuildError::Combat)?;
+                for turret in ship.turrets {
+                    if is_policy {
+                        combat.configure_policy_turret(ship.entity_id, turret.slot, turret.spec)
+                    } else {
+                        combat.configure_game_turret(ship.entity_id, turret.slot, turret.spec)
+                    }.map_err(NativeSceneBuildError::Combat)?;
                 }
                 }
                 NativeAuthoredEntity::BoxObstacle {

@@ -7,11 +7,14 @@ use bees_sim::collision::Aabb;
 use bees_sim::simulation::WorldId;
 use minifb::{Key, KeyRepeat, MouseButton, MouseMode, Window, WindowOptions};
 use crate::presentation::{NativeCamera, NativeRenderWorldView, NativeSoftwareRenderer, NativeSupportMode};
-use bees_gameplay::player_inputs::{NativePlayerSquadMoves, NativePlayerSquadCommands};
+use bees_gameplay::player_inputs::{NativePlayerSquadMoves, NativePlayerSquadCommands, NativePlayerSquadFire};
 use bees_sim::geometry::Vec2;
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum NativeClientAction { Wait, Step, Quit, Move(NativePlayerSquadMoves), Support(NativePlayerSquadCommands) }
+pub enum NativeClientAction { Wait, Step, Quit, Move(NativePlayerSquadMoves), Support(NativePlayerSquadCommands), Fire(NativePlayerSquadFire) }
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum NativeTargetMode { Support(NativeSupportMode), ManualFire }
 
 pub struct NativeClient {
     window: Window,
@@ -26,7 +29,7 @@ pub struct NativeClient {
     right_was_down: bool,
     input_feedback: &'static str,
     selection_drag: Option<(Vec2, Vec2)>,
-    support_mode: Option<NativeSupportMode>,
+    support_mode: Option<NativeTargetMode>,
     pub rendered_frames: u64,
     pub render_wall_seconds: f64,
 }
@@ -101,11 +104,12 @@ impl NativeClient {
         }
         if !changed_world {
             for (key, mode, prompt) in [
-                (Key::G, NativeSupportMode::Guard, "Guard: click a friendly ship"),
-                (Key::P, NativeSupportMode::Patrol, "Patrol: drag the patrol area"),
-                (Key::M, NativeSupportMode::Mining, "Mine: click a mining asteroid"),
-                (Key::H, NativeSupportMode::Heal, "Heal: click a friendly Beehive"),
-                (Key::R, NativeSupportMode::FullRetreat, "Retreat: click a friendly WarpGate"),
+                (Key::G, NativeTargetMode::Support(NativeSupportMode::Guard), "Guard: click a friendly ship"),
+                (Key::P, NativeTargetMode::Support(NativeSupportMode::Patrol), "Patrol: drag the patrol area"),
+                (Key::M, NativeTargetMode::Support(NativeSupportMode::Mining), "Mine: click a mining asteroid"),
+                (Key::H, NativeTargetMode::Support(NativeSupportMode::Heal), "Heal: click a friendly Beehive"),
+                (Key::R, NativeTargetMode::Support(NativeSupportMode::FullRetreat), "Retreat: click a friendly WarpGate"),
+                (Key::T, NativeTargetMode::ManualFire, "Point fire: click a point; X stops selected weapons"),
             ] {
                 if self.window.is_key_pressed(key, KeyRepeat::No) {
                     self.selection_drag = None;
@@ -133,6 +137,14 @@ impl NativeClient {
             self.renderer.selection_box = None;
             self.input_feedback = "Target selection cancelled";
         }
+        let mut manual_fire = if !changed_world && self.window.is_key_pressed(Key::X, KeyRepeat::No) &&
+            !self.renderer.selection.squads().is_empty() {
+            self.support_mode = None;
+            self.selection_drag = None;
+            self.renderer.selection_box = None;
+            Some(NativePlayerSquadFire { world_id: view.world_id, episode_revision: view.episode_revision,
+                squads: self.renderer.selection.squads().to_vec(), target: None })
+        } else { None };
         let mut support_command = None;
         let left_down = self.window.get_mouse_down(MouseButton::Left);
         if !changed_world && !cancel_support && left_down && !self.left_was_down {
@@ -148,14 +160,21 @@ impl NativeClient {
                     max: Vec2::new(start.x.max(end.x), start.y.max(end.y)),
                 };
                 self.renderer.selection_box = (left_down && dragging &&
-                    (self.support_mode.is_none() || self.support_mode == Some(NativeSupportMode::Patrol)))
+                    (self.support_mode.is_none() || self.support_mode == Some(NativeTargetMode::Support(NativeSupportMode::Patrol))))
                     .then_some(rectangle);
                 if !left_down && self.left_was_down {
                     if let Some(mode) = self.support_mode {
-                        if let Some(action) = self.renderer.pick_support_action(&view, mode, end, Some(start)) {
-                            support_command = self.renderer.selection.support_command(&view, action);
+                        if mode == NativeTargetMode::ManualFire {
+                            manual_fire = Some(NativePlayerSquadFire { world_id: view.world_id,
+                                episode_revision: view.episode_revision,
+                                squads: self.renderer.selection.squads().to_vec(), target: Some(end) });
                             self.support_mode = None;
-                        } else { self.input_feedback = "Choose a valid target; Backspace cancels"; }
+                        } else if let NativeTargetMode::Support(mode) = mode {
+                            if let Some(action) = self.renderer.pick_support_action(&view, mode, end, Some(start)) {
+                                support_command = self.renderer.selection.support_command(&view, action);
+                                self.support_mode = None;
+                            } else { self.input_feedback = "Choose a valid target; Backspace cancels"; }
+                        }
                     } else if dragging {
                         if rectangle.min.x < rectangle.max.x && rectangle.min.y < rectangle.max.y {
                             if self.renderer.selection.select_box(&view, rectangle).is_err() {
@@ -180,7 +199,7 @@ impl NativeClient {
             self.renderer.selection_box = None;
         }
         self.left_was_down = left_down;
-        let player_move = if !changed_world && !cancel_support && support_command.is_none() &&
+        let player_move = if !changed_world && !cancel_support && support_command.is_none() && manual_fire.is_none() &&
             right_down && !self.right_was_down {
             mouse.filter(|_| !self.renderer.selection.squads().is_empty()).map(|(x, y)|
                 NativePlayerSquadMoves { world_id: view.world_id,
@@ -197,7 +216,7 @@ impl NativeClient {
                 ship.entity_id, ship.ship_type, ship.side, ship.vitals.health(),
                 ship.vitals.max_health(), ship.vitals.tsv())).unwrap_or_default();
         self.window.set_title(&format!(
-            "Bees native | World {} | Episode {} | Tick {} | {} ships, {} shots | {} squads selected | {}{} | {} | Left select/drag, Ctrl add, right move | G guard, P patrol, M mine, H heal, R retreat, Backspace cancel | Space pause, N step, Tab world, arrows pan, wheel zoom, F fit, Esc exit",
+            "Bees native | World {} | Episode {} | Tick {} | {} ships, {} shots | {} squads selected | {}{} | {} | Left select/drag, Ctrl add, right move | G guard, P patrol, M mine, H heal, R retreat, T point fire, X stop, Backspace cancel | Space pause, N step, Tab world, arrows pan, wheel zoom, F fit, Esc exit",
             view.world_id.0, view.episode_revision, view.tick, counts.ships, counts.projectiles,
             self.renderer.selection.squads().len(),
             if self.paused { "PAUSED" } else { "RUNNING" }, selected, self.input_feedback,
@@ -206,6 +225,7 @@ impl NativeClient {
         self.rendered_frames += 1;
         self.window.update_with_buffer(self.renderer.pixels(), width, height)?;
         if !self.window.is_open() { return Ok(NativeClientAction::Quit); }
+        if let Some(input) = manual_fire { return Ok(NativeClientAction::Fire(input)); }
         if let Some(input) = support_command { return Ok(NativeClientAction::Support(input)); }
         if let Some(input) = player_move { return Ok(NativeClientAction::Move(input)); }
         let after_frame = Instant::now();
