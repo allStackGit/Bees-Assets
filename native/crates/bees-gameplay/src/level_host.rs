@@ -51,6 +51,10 @@ use crate::commands::{
 };
 use crate::level_inputs::native_squad_order_from_catalog;
 use crate::squads::NativeSquadRoster;
+use crate::matchup_targeting::{
+    NativeMatchupCandidate, LiveMatchupResolutionError,
+    select_live_matchup_squad,
+};
 use crate::level_events::{
     NativeLevelEventError, NativeLevelNotification,
 };
@@ -146,6 +150,9 @@ pub struct NativeLevelActivationScratch {
     bomb_weapons: Vec<NativeBombWeapon>,
     target_stats: Vec<NativeEnemyTargetStats>,
     ship_types: Vec<i32>,
+    /// Rare server GetMatchupStrategy replies reuse this list; no new
+    /// persistent targeting registry or per-step matching state.
+    matchup_candidates: Vec<NativeMatchupCandidate>,
 }
 
 impl NativeLevelActivationScratch {
@@ -607,6 +614,57 @@ impl NativeLevelBatchDriver {
         }
         apply_native_level_strategy_receipt(
             world, receipt, &mut slot.activation,
+        )
+    }
+
+    /// Resolve the actual validated GetMatchupStrategy choice against the
+    /// SAME live squad registry, physical ships, learned HiveMind sighting
+    /// cache and Unity sprite bounds used by the game. This is a pure
+    /// *resolution* step: the caller must still install the returned
+    /// selected enemy into source-owned Squad.MatchupStrategy state and
+    /// retain/discard its reservation before issuing GetStrategy.
+    ///
+    /// Combat-state-dependent strategies require the caller's exact
+    /// Ship.InCombat timer state. Returning None from `in_combat` for such
+    /// a ship fails closed, never substitutes sight or weapon range.
+    pub fn resolve_targeting_enemy<M, A>(
+        &mut self,
+        simulation: &mut Simulation<NativeLevelState<M, A>, NativeLevelRules>,
+        delivery: &NativeLevelTargetingDelivery,
+        player_sees_all_enemies: bool,
+        in_combat: impl FnMut(i64) -> Option<bool>,
+    ) -> Result<Option<SquadLifetime>, LiveMatchupResolutionError>
+    where
+        M: NativeLevelRewardMetadata + NativeLevelCommandContext,
+        A: FnMut(SquadLifetime, i64) -> Result<SquadLifetime, SquadRosterError>,
+    {
+        let TargetingReceipt::Accepted { owner, selection } = &delivery.receipt else {
+            return Ok(None);
+        };
+        let index = delivery.world_index
+            .ok_or(LiveMatchupResolutionError::StaleWorld)?;
+        let slot = self.worlds.get_mut(index)
+            .ok_or(LiveMatchupResolutionError::StaleWorld)?;
+        let world = simulation.world_mut(index)
+            .ok_or(LiveMatchupResolutionError::StaleWorld)?;
+        if slot.id != world.id || slot.revision != world.episode_revision() ||
+            world.is_failed() || world.state.events.is_failed() ||
+            world.state.events.completed() || world.state.events.was_aborted()
+        {
+            return Err(LiveMatchupResolutionError::StaleWorld);
+        }
+        let roster = world.state.events.roster();
+        let source_side = roster.get(*owner)
+            .ok_or(LiveMatchupResolutionError::MissingOwner)?.side;
+        let preferred = world.state.events.commands()
+            .first_targeted_enemy(roster, source_side);
+        let catalog = world.state.metadata.ship_asset_catalog()
+            .ok_or(LiveMatchupResolutionError::MissingAssetCatalog)?;
+        select_live_matchup_squad(
+            &world.state.combat, roster, catalog, *owner,
+            selection.strategy, player_sees_all_enemies, preferred,
+            in_combat, &mut world.random,
+            &mut slot.activation.matchup_candidates,
         )
     }
 
