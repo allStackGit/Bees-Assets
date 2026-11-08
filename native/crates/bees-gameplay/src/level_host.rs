@@ -1162,7 +1162,7 @@ pub trait NativeLevelNotificationSink {
     /// each batch in the one connection-owned StoreCommands retry ledger.
     /// A sink that deliberately does not store outcomes must make that
     /// choice explicit rather than silently accepting valid credit.
-    fn first_prepared_outcomes(&self) -> Option<&bees_hivemind::outcomes::OutcomeBatch>;
+    fn first_prepared_outcomes(&self) -> Option<&bees_hivemind::outcomes::RecordedOutcomeBatch>;
 
     /// Called only AFTER the corresponding StoreCommands payload was
     /// persisted in the connection. It must not release an unqueued batch.
