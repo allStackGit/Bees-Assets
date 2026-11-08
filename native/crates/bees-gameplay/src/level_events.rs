@@ -365,6 +365,7 @@ impl NativeLevelEventProcessor {
             &mut self.pending_notifications, &mut self.failed,
             active.saturating_add(1),
         )?;
+        let first_new = self.pending_notifications.len();
         for owner in self.roster.active_lifetimes() {
             self.pending_session_retirements.push(owner);
         }
@@ -384,6 +385,7 @@ impl NativeLevelEventProcessor {
             &mut self.peak_pending_notifications,
             self.pending_notifications.len(),
         );
+        self.account_new_notifications(first_new, self.next_tick.saturating_sub(1))?;
         self.failed_commands_drained = true;
         Ok(active)
     }
@@ -413,6 +415,7 @@ impl NativeLevelEventProcessor {
         Self::reserve_output_records(
             &mut self.pending_notifications, &mut self.failed, 1,
         )?;
+        let first_new = self.pending_notifications.len();
         let finished = self.commands.supersede_for_local_command(world, owner)
             .map_err(|error| {
                 self.failed = true;
@@ -426,6 +429,7 @@ impl NativeLevelEventProcessor {
                 &mut self.peak_pending_notifications, self.pending_notifications.len(),
             );
         }
+        self.account_new_notifications(first_new, tick)?;
         Ok(())
     }
 
@@ -1298,6 +1302,7 @@ impl NativeLevelEventProcessor {
                 .saturating_add(combat_damage_count)
                 .saturating_add(self.timed_finished.len()),
         )?;
+        let first_new = self.pending_notifications.len();
         // Source Mining.Mine mutates the actual rock and fleet before
         // SetFinalize publishes its command outcome. Preserve that
         // relative order even across large asynchronous rollout windows.
@@ -1372,6 +1377,7 @@ impl NativeLevelEventProcessor {
             self.pending_notifications.len(),
         );
         self.finished.append(&mut self.timed_finished);
+        self.account_new_notifications(first_new, completed_tick)?;
         self.last_published_timed_tick = Some(completed_tick);
         Ok(())
     }
@@ -1530,6 +1536,7 @@ impl NativeLevelEventProcessor {
         Self::reserve_output_records(
             &mut self.pending_notifications, &mut self.failed, new_count,
         )?;
+        let first_new = self.pending_notifications.len();
         for &change in &self.changes {
             self.pending_notifications.push(NativeLevelNotification {
                 tick: completed_tick,
@@ -1605,6 +1612,7 @@ impl NativeLevelEventProcessor {
             &mut self.peak_pending_notifications,
             self.pending_notifications.len(),
         );
+        self.account_new_notifications(first_new, completed_tick)?;
         self.next_tick = self.next_tick.checked_add(1)
             .expect("monotonic native Level tick exhausted");
         self.last_finalized = reward.finalized;
