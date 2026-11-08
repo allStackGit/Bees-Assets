@@ -54,7 +54,7 @@ impl NativeSwipeCommandSnapshot {
 /// implementation or a center-distance approximation. Remaining metrics
 /// come from the current authored Level and FleetShip, not copied physics.
 pub fn assemble_swipe_snapshot_from_live_weapons(
-    world: &CombatWorld,
+    world: &mut CombatWorld,
     roster: &NativeSquadRoster,
     owner: SquadLifetime,
     enemy_owner: SquadLifetime,
@@ -62,8 +62,8 @@ pub fn assemble_swipe_snapshot_from_live_weapons(
     enemy_center: Vec2,
     enemy_max_range: f32,
     candidates: Vec<NativeEnemyTargetStats>,
-    ship_max_range: impl FnMut(i64) -> Result<f32, GameCommandError>,
-    weapon_valid_target: impl FnMut(i64, i64)
+    ship_max_range: impl FnMut(&CombatWorld, i64) -> Result<f32, GameCommandError>,
+    weapon_valid_target: impl FnMut(&mut CombatWorld, i64, i64)
         -> Result<bool, GameCommandError>,
 ) -> Result<NativeSwipeCommandSnapshot, GameCommandError> {
     let common = assemble_circle_snapshot_from_live_weapons(
@@ -123,8 +123,8 @@ impl SwipeRun {
         }))
     }
 
-    pub(super) fn enemy_squad_id(&self) -> i64 {
-        self.target.squad_id()
+    pub(super) fn enemy_owner(&self) -> SquadLifetime {
+        self.target.owner()
     }
 
     pub(super) fn needs_target_candidates(&self) -> bool {

@@ -389,6 +389,8 @@ impl NativeAttackTarget {
         Self { lifetime }
     }
 
+    pub(super) fn owner(&self) -> SquadLifetime { self.lifetime }
+
     pub(super) fn squad_id(&self) -> i64 {
         self.lifetime.squad_id
     }

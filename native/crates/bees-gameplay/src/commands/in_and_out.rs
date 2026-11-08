@@ -66,8 +66,8 @@ impl InAndOutRun {
         }))
     }
 
-    pub(super) fn enemy_squad_id(&self) -> i64 {
-        self.target.squad_id()
+    pub(super) fn enemy_owner(&self) -> SquadLifetime {
+        self.target.owner()
     }
 
     pub(super) fn needs_target_candidates(&self) -> bool {

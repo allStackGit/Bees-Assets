@@ -122,7 +122,7 @@ impl NativeScoutingContext {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct NativeEnemySquad {
     /// Exact enemy lifecycle captured at command activation, not the
     /// numeric pooled Squad ID alone. This prevents target substitution
@@ -953,6 +953,11 @@ impl NativeSquadCommandDirector {
         if selection.local_command != action.kind() {
             return Err(GameCommandError::InvalidCommandOrigin);
         }
+        if let NativeLocalCommandAction::TargetEnemy { target } = action {
+            if squad.enemy.map(|enemy| enemy.owner) != Some(target) {
+                return Err(GameCommandError::InvalidEnemy);
+            }
+        }
         if selection.local_command == LocalCommandKind::Hold &&
             identity.source != NativeLocalCommandSource::Scripted {
             self.measurements.unsupported += 1;
@@ -1509,13 +1514,13 @@ impl NativeSquadCommandDirector {
         random: &mut RandomStream,
         dt: f32,
         mut circle_snapshot: impl FnMut(
-            SquadLifetime, i64, &CombatWorld,
+            SquadLifetime, SquadLifetime, &mut CombatWorld,
         ) -> Result<NativeCircleCommandSnapshot, GameCommandError>,
         mut swipe_snapshot: impl FnMut(
-            SquadLifetime, i64, &CombatWorld, bool,
+            SquadLifetime, SquadLifetime, &mut CombatWorld, bool,
         ) -> Result<NativeSwipeCommandSnapshot, GameCommandError>,
         aggressive_snapshot: impl FnMut(
-            SquadLifetime, i64, &CombatWorld, bool,
+            SquadLifetime, SquadLifetime, &mut CombatWorld, bool,
         ) -> Result<NativeAggressiveCommandSnapshot, GameCommandError>,
         finished: &mut Vec<FinishedNativeCommand>,
     ) -> Result<(), GameCommandError> {
@@ -1540,13 +1545,13 @@ impl NativeSquadCommandDirector {
         random: &mut RandomStream,
         dt: f32,
         mut circle_snapshot: impl FnMut(
-            SquadLifetime, i64, &CombatWorld,
+            SquadLifetime, SquadLifetime, &mut CombatWorld,
         ) -> Result<NativeCircleCommandSnapshot, GameCommandError>,
         mut swipe_snapshot: impl FnMut(
-            SquadLifetime, i64, &CombatWorld, bool,
+            SquadLifetime, SquadLifetime, &mut CombatWorld, bool,
         ) -> Result<NativeSwipeCommandSnapshot, GameCommandError>,
         mut aggressive_snapshot: impl FnMut(
-            SquadLifetime, i64, &CombatWorld, bool,
+            SquadLifetime, SquadLifetime, &mut CombatWorld, bool,
         ) -> Result<NativeAggressiveCommandSnapshot, GameCommandError>,
         mut bombing_snapshot: impl FnMut(
             SquadLifetime, i64, &CombatWorld, bool,
@@ -1577,13 +1582,13 @@ impl NativeSquadCommandDirector {
         random: &mut RandomStream,
         dt: f32,
         mut circle_snapshot: impl FnMut(
-            SquadLifetime, i64, &CombatWorld,
+            SquadLifetime, SquadLifetime, &mut CombatWorld,
         ) -> Result<NativeCircleCommandSnapshot, GameCommandError>,
         mut swipe_snapshot: impl FnMut(
-            SquadLifetime, i64, &CombatWorld, bool,
+            SquadLifetime, SquadLifetime, &mut CombatWorld, bool,
         ) -> Result<NativeSwipeCommandSnapshot, GameCommandError>,
         mut aggressive_snapshot: impl FnMut(
-            SquadLifetime, i64, &CombatWorld, bool,
+            SquadLifetime, SquadLifetime, &mut CombatWorld, bool,
         ) -> Result<NativeAggressiveCommandSnapshot, GameCommandError>,
         mut bombing_snapshot: impl FnMut(
             SquadLifetime, i64, &CombatWorld, bool,
@@ -1719,7 +1724,7 @@ impl NativeSquadCommandDirector {
                         self.measurements.command_timer_callbacks += 1;
                         let roster = roster.ok_or(GameCommandError::MissingCombatSnapshot)?;
                         let snapshot = swipe_snapshot(
-                            owner, swipe.enemy_squad_id(), world,
+                            owner, swipe.enemy_owner(), world,
                             swipe.needs_target_candidates(),
                         )?;
                         completed = swipe.on_poll(
@@ -1750,7 +1755,7 @@ impl NativeSquadCommandDirector {
                         self.measurements.command_timer_callbacks += 1;
                         let roster = roster.ok_or(GameCommandError::MissingCombatSnapshot)?;
                         let snapshot = swipe_snapshot(
-                            owner, in_and_out.enemy_squad_id(), world,
+                            owner, in_and_out.enemy_owner(), world,
                             in_and_out.needs_target_candidates(),
                         )?;
                         completed = in_and_out.on_poll(
@@ -1787,7 +1792,7 @@ impl NativeSquadCommandDirector {
                         self.measurements.aggressive_all_target_snapshot_requests +=
                             u64::from(need_all);
                         let snapshot = aggressive_snapshot(
-                            owner, aggressive.enemy_squad_id(), world, need_all,
+                            owner, aggressive.enemy_owner(), world, need_all,
                         )?;
                         completed = aggressive.on_poll(
                             world, navigation, timer, owner, &snapshot,
@@ -1804,7 +1809,7 @@ impl NativeSquadCommandDirector {
                             None => {
                                 self.measurements.aggressive_snapshot_requests += 1;
                                 aggressive_snapshot(
-                                    owner, aggressive.enemy_squad_id(), world, false,
+                                    owner, aggressive.enemy_owner(), world, false,
                                 )?
                             }
                         })
@@ -1929,7 +1934,7 @@ impl NativeSquadCommandDirector {
                     if let Some(due) = timer.begin_update(dt) {
                         self.measurements.command_timer_callbacks += 1;
                         let snapshot = circle_snapshot(
-                            owner, circle.enemy_squad_id(), world,
+                            owner, circle.enemy_owner(), world,
                         )?;
                         completed = circle.on_poll(
                             world, navigation, timer, owner, snapshot,

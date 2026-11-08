@@ -3,10 +3,10 @@
 //! supplies absent Unity ship/episode/observation values. No fake agent,
 //! placeholder observations or inferred weapon statistics are allowed.
 //!
-//! This mode intentionally has NO HiveMind command activation. If an
-//! operator sends a strategy to it, the Level fails closed instead of
-//! pretending an invented order is valid. Full game Levels supply a
-//! richer metadata implementation of the same shared traits.
+//! Commands borrow the real roster and mounted weapons. Commands whose
+//! physical weapon subclass is not implemented still fail explicitly.
+
+mod commands;
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -54,6 +54,7 @@ pub struct NativeSourceFormation {
 }
 
 pub struct NativeSourcePlayerInputs {
+    pub human_side: i32,
     pub has_obstacles: bool,
     pub commands: HashMap<SquadLifetime, bees_gameplay::player_inputs::NativePlayerCommandInputs>,
     pub squads: HashMap<SquadLifetime, NativePlayerPermissions>,
@@ -99,16 +100,18 @@ pub struct AuthoredPolicySide {
 /// HiveMindVision's CircleCollider2D holds its original Create-time Range.
 #[derive(Clone, Copy, Debug)]
 pub struct NativeSourceVision {
+    /// Actual Ship.Sight, distinct from HiveMind's zero-sight range fallback.
+    pub source_sight: Option<i32>,
     pub effective_range: i32,
     pub trigger_range: i32,
     pub registered: bool,
     pub enabled: bool,
 }
 
-/// For policy-only native matches. The owner provides the real
+/// Source-authored native matches. The owner provides the real
 /// NavigationRuntime (the same object used by gameplay pathfinding),
 /// complete ship source observations, team environments and FleetShip
-/// inventory. Do not use for command-capable HiveMind game Levels.
+/// inventory; commands query those same owners rather than a copied roster.
 pub struct NativePolicyOnlyMetadata {
     pub bounds: Aabb,
     pub navigation: NavigationRuntime,
@@ -144,7 +147,7 @@ impl NativePolicyOnlyMetadata {
         beacon_templates: HashMap<i64, Arc<NativeBeaconTemplate>>,
         player: NativeSourcePlayerInputs,
     ) -> Result<Self, PolicyOnlyMetadataError> {
-        if !bounds.min.is_finite() || !bounds.max.is_finite() ||
+        if player.human_side <= 0 || !bounds.min.is_finite() || !bounds.max.is_finite() ||
             bounds.min.x >= bounds.max.x || bounds.min.y >= bounds.max.y {
             return Err(PolicyOnlyMetadataError::InvalidSource);
         }
@@ -159,7 +162,7 @@ impl NativePolicyOnlyMetadata {
         }
         let mut effective_vision = HashMap::new();
         for (id, source) in vision {
-            if id <= 0 || source.effective_range < 0 ||
+            if id <= 0 || source.source_sight.is_some_and(|sight| sight < 0) || source.effective_range < 0 ||
                 source.trigger_range < 0 ||
                 (source.enabled &&
                     (!source.registered || source.trigger_range == 0)) ||
@@ -389,6 +392,24 @@ impl NativeLevelRewardMetadata for NativePolicyOnlyMetadata {
 }
 
 impl NativeLevelCommandContext for NativePolicyOnlyMetadata {
+    fn circle_command_snapshot(&self, world: &mut CombatWorld, roster: &NativeSquadRoster,
+        owner: SquadLifetime, enemy: SquadLifetime,
+    ) -> Result<bees_gameplay::commands::NativeCircleCommandSnapshot, GameCommandError> {
+        self.live_circle_snapshot(world, roster, owner, enemy)
+    }
+
+    fn swipe_command_snapshot(&self, world: &mut CombatWorld, roster: &NativeSquadRoster,
+        owner: SquadLifetime, enemy: SquadLifetime, need_candidates: bool,
+    ) -> Result<bees_gameplay::commands::NativeSwipeCommandSnapshot, GameCommandError> {
+        self.live_swipe_snapshot(world, roster, owner, enemy, need_candidates)
+    }
+
+    fn aggressive_command_snapshot(&self, world: &mut CombatWorld, roster: &NativeSquadRoster,
+        owner: SquadLifetime, enemy: SquadLifetime, need_all: bool,
+    ) -> Result<bees_gameplay::commands::NativeAggressiveCommandSnapshot, GameCommandError> {
+        self.live_aggressive_snapshot(world, roster, owner, enemy, need_all)
+    }
+
     fn automatic_weapon_inputs(&self, ship_id: i64,
         roster: &bees_gameplay::squads::NativeSquadRoster,
         commands: &bees_gameplay::commands::NativeSquadCommandDirector,
@@ -439,9 +460,20 @@ impl NativeLevelCommandContext for NativePolicyOnlyMetadata {
 
 impl NativeLevelActivationContext for NativePolicyOnlyMetadata {
     fn strategy_inputs(
-        &self, _owner: SquadLifetime, _enemy: Option<SquadLifetime>,
+        &self, world: &CombatWorld, roster: &NativeSquadRoster,
+        owner: SquadLifetime, enemy: Option<SquadLifetime>,
     ) -> Result<NativeLevelStrategyInputs, GameCommandError> {
-        Err(GameCommandError::MissingCombatSnapshot)
+        let source = self.player.commands.get(&owner).ok_or(GameCommandError::MissingCombatSnapshot)?;
+        let own = roster.get(owner).ok_or(GameCommandError::InvalidSquad)?;
+        let max_sight = own.members.iter().try_fold(0, |value, id|
+            self.effective_vision.get(id)?.source_sight.map(|sight| value.max(sight)));
+        Ok(NativeLevelStrategyInputs {
+            formation: self.player_formation_options(), settings: source.settings,
+            enemy: enemy.map(|target| self.live_enemy(world, roster, owner, target)).transpose()?,
+            scouting: max_sight.map(|sight| bees_gameplay::commands::NativeScoutingContext {
+                max_sight: sight as f32, human_side: self.player.human_side,
+            }),
+        })
     }
 
     fn stored_formation_offset(

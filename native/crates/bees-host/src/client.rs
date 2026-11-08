@@ -204,11 +204,17 @@ impl NativeClient {
         self.left_was_down = left_down;
         let player_move = if !changed_world && !cancel_support && support_command.is_none() && manual_fire.is_none() &&
             right_down && !self.right_was_down {
-            mouse.filter(|_| !self.renderer.selection.squads().is_empty()).map(|(x, y)|
-                NativePlayerSquadMoves { world_id: view.world_id,
+            mouse.filter(|_| !self.renderer.selection.squads().is_empty()).and_then(|(x, y)| {
+                let destination = self.renderer.camera.screen_to_world(x, y, width, height);
+                if let Some(action) = self.renderer.pick_support_action(&view, NativeSupportMode::Attack, destination, None) {
+                    support_command = self.renderer.selection.support_command(&view, action);
+                    return None;
+                }
+                Some(NativePlayerSquadMoves { world_id: view.world_id,
                     episode_revision: view.episode_revision,
                     squads: self.renderer.selection.squads().to_vec(),
-                    destination: self.renderer.camera.screen_to_world(x, y, width, height) })
+                    destination })
+            })
         } else { None };
         self.right_was_down = right_down;
         let render_started = Instant::now();
@@ -219,7 +225,7 @@ impl NativeClient {
                 ship.entity_id, ship.ship_type, ship.side, ship.vitals.health(),
                 ship.vitals.max_health(), ship.vitals.tsv())).unwrap_or_default();
         self.window.set_title(&format!(
-            "Bees native | World {} | Episode {} | Tick {} | {} ships, {} shots | {} squads selected | {}{} | {} | range/obstruction {} | Left select/drag, Ctrl add, right move | G guard, P patrol, M mine, H heal, R retreat, T point fire, X stop, B ranges, Backspace cancel | Space pause, N step, Tab world, arrows pan, wheel zoom, F fit, Esc exit",
+            "Bees native | World {} | Episode {} | Tick {} | {} ships, {} shots | {} squads selected | {}{} | {} | range/obstruction {} | Left select/drag, Ctrl add, right move/attack | G guard, P patrol, M mine, H heal, R retreat, T point fire, X stop, B ranges, Backspace cancel | Space pause, N step, Tab world, arrows pan, wheel zoom, F fit, Esc exit",
             view.world_id.0, view.episode_revision, view.tick, counts.ships, counts.projectiles,
             self.renderer.selection.squads().len(),
             if self.paused { "PAUSED" } else { "RUNNING" }, selected, self.input_feedback,

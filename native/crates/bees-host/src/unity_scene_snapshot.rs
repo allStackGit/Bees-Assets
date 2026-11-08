@@ -225,6 +225,7 @@ struct UnityShip {
     policy_movement_disabled: bool,
     policy_cease_fire: bool,
     observed_weapons: Vec<UnityObservedWeapon>,
+    source_sight: Option<i32>,
     effective_vision_range: i32,
     hivemind_registered: bool,
     hivemind_vision_enabled: bool,
@@ -342,6 +343,7 @@ impl UnityShipSpecial {
                         observed_weapons: [None; 5], allied_communication: None,
                     },
                     vision: NativeSourceVision {
+                        source_sight: Some(source.effective_vision_range),
                         effective_range: source.effective_vision_range, trigger_range: source.effective_vision_range,
                         registered: source.hivemind_registered, enabled: source.hivemind_vision_enabled,
                     },
@@ -526,6 +528,7 @@ pub enum NativeSnapshotError {
 /// Records are owned, but shared immutable prefab geometry stays in the
 /// existing NativeSceneAssets Arc catalogs.
 pub struct NativePhysicalScene {
+    pub human_side: i32,
     pub source_frame_count: Option<i32>,
     pub schema_version: u32,
     pub level_name: String,
@@ -898,6 +901,7 @@ impl NativePhysicalScene {
             setup.sides,
             beacon_templates,
             NativeSourcePlayerInputs {
+                human_side: self.human_side,
                 has_obstacles: self.has_obstacles,
                 ships: self.source_formation,
                 commands: self.source_squads.iter().zip(&squads).map(|(source, squad)|
@@ -1176,7 +1180,7 @@ impl NativePhysicalScene {
             if !seen.insert(ship.entity_id) {
                 return Err(NativeSnapshotError::DuplicateEntity(ship.entity_id));
             }
-            if ship.effective_vision_range < 0 ||
+            if ship.source_sight.is_some_and(|sight| sight < 0) || ship.effective_vision_range < 0 ||
                 ship.hivemind_sight_range < 0 ||
                 (ship.hivemind_vision_enabled &&
                     (!ship.hivemind_registered ||
@@ -1185,6 +1189,7 @@ impl NativePhysicalScene {
                 return Err(NativeSnapshotError::InvalidShip(ship.entity_id));
             }
             source_vision.insert(ship.entity_id, NativeSourceVision {
+                source_sight: ship.source_sight,
                 effective_range: ship.effective_vision_range,
                 trigger_range: ship.hivemind_sight_range,
                 registered: ship.hivemind_registered,
@@ -1843,6 +1848,7 @@ impl NativePhysicalScene {
         let fleet = NativeFleetInventory::from_source(fleet_values)
             .map_err(NativeSnapshotError::Fleet)?;
         Ok(Self {
+            human_side: raw.human_side,
             source_frame_count: raw.source_frame_count,
             schema_version: raw.schema_version,
             level_name: raw.level_name,

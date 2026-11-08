@@ -907,9 +907,9 @@ impl NativeLevelEventProcessor {
     ) -> Result<(), NativeLevelEventError> {
         self.advance_timed_commands_with_combat(
             completed_tick, world, navigation, friendlies, random, dt,
-            |_, _, _| Err(GameCommandError::MissingCombatSnapshot),
             |_, _, _, _| Err(GameCommandError::MissingCombatSnapshot),
-            |_, _, _, _| Err(GameCommandError::MissingCombatSnapshot),
+            |_, _, _, _, _| Err(GameCommandError::MissingCombatSnapshot),
+            |_, _, _, _, _| Err(GameCommandError::MissingCombatSnapshot),
         )
     }
 
@@ -924,13 +924,13 @@ impl NativeLevelEventProcessor {
         random: &mut RandomStream,
         dt: f32,
         circle_snapshot: impl FnMut(
-            SquadLifetime, i64, &CombatWorld,
+            SquadLifetime, SquadLifetime, &mut CombatWorld, &NativeSquadRoster,
         ) -> Result<NativeCircleCommandSnapshot, GameCommandError>,
         swipe_snapshot: impl FnMut(
-            SquadLifetime, i64, &CombatWorld, bool,
+            SquadLifetime, SquadLifetime, &mut CombatWorld, &NativeSquadRoster, bool,
         ) -> Result<NativeSwipeCommandSnapshot, GameCommandError>,
         aggressive_snapshot: impl FnMut(
-            SquadLifetime, i64, &CombatWorld, bool,
+            SquadLifetime, SquadLifetime, &mut CombatWorld, &NativeSquadRoster, bool,
         ) -> Result<NativeAggressiveCommandSnapshot, GameCommandError>,
     ) -> Result<(), NativeLevelEventError> {
         self.advance_timed_commands_with_bombing(
@@ -952,13 +952,13 @@ impl NativeLevelEventProcessor {
         random: &mut RandomStream,
         dt: f32,
         circle_snapshot: impl FnMut(
-            SquadLifetime, i64, &CombatWorld,
+            SquadLifetime, SquadLifetime, &mut CombatWorld, &NativeSquadRoster,
         ) -> Result<NativeCircleCommandSnapshot, GameCommandError>,
         swipe_snapshot: impl FnMut(
-            SquadLifetime, i64, &CombatWorld, bool,
+            SquadLifetime, SquadLifetime, &mut CombatWorld, &NativeSquadRoster, bool,
         ) -> Result<NativeSwipeCommandSnapshot, GameCommandError>,
         aggressive_snapshot: impl FnMut(
-            SquadLifetime, i64, &CombatWorld, bool,
+            SquadLifetime, SquadLifetime, &mut CombatWorld, &NativeSquadRoster, bool,
         ) -> Result<NativeAggressiveCommandSnapshot, GameCommandError>,
         bombing_snapshot: impl FnMut(
             SquadLifetime, i64, &CombatWorld, bool,
@@ -987,13 +987,13 @@ impl NativeLevelEventProcessor {
         random: &mut RandomStream,
         dt: f32,
         circle_snapshot: impl FnMut(
-            SquadLifetime, i64, &CombatWorld,
+            SquadLifetime, SquadLifetime, &mut CombatWorld, &NativeSquadRoster,
         ) -> Result<NativeCircleCommandSnapshot, GameCommandError>,
         swipe_snapshot: impl FnMut(
-            SquadLifetime, i64, &CombatWorld, bool,
+            SquadLifetime, SquadLifetime, &mut CombatWorld, &NativeSquadRoster, bool,
         ) -> Result<NativeSwipeCommandSnapshot, GameCommandError>,
         aggressive_snapshot: impl FnMut(
-            SquadLifetime, i64, &CombatWorld, bool,
+            SquadLifetime, SquadLifetime, &mut CombatWorld, &NativeSquadRoster, bool,
         ) -> Result<NativeAggressiveCommandSnapshot, GameCommandError>,
         bombing_snapshot: impl FnMut(
             SquadLifetime, i64, &CombatWorld, bool,
@@ -1022,9 +1022,15 @@ impl NativeLevelEventProcessor {
         if self.completed() || self.commands.active_count() == 0 {
             return Ok(());
         }
+        let roster = &self.roster;
+        let mut circle_snapshot = circle_snapshot;
+        let mut swipe_snapshot = swipe_snapshot;
+        let mut aggressive_snapshot = aggressive_snapshot;
         if let Err(error) = self.commands.advance_into_with_scouting_center(
             world, navigation, Some(&self.roster), friendlies, random, dt,
-            circle_snapshot, swipe_snapshot, aggressive_snapshot,
+            |owner, enemy, world| circle_snapshot(owner, enemy, world, roster),
+            |owner, enemy, world, need| swipe_snapshot(owner, enemy, world, roster, need),
+            |owner, enemy, world, need| aggressive_snapshot(owner, enemy, world, roster, need),
             bombing_snapshot, charge_snapshot, scouting_center,
             &mut self.timed_finished,
         ) {

@@ -6,7 +6,7 @@ use bees_sim::{collision::Aabb, physics::PhysicsError, simulation::WorldId};
 use super::NativeRenderWorldView;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum NativeSupportMode { Guard, Patrol, Mining, Heal, FullRetreat }
+pub enum NativeSupportMode { Attack, Guard, Patrol, Mining, Heal, FullRetreat }
 
 #[derive(Default)]
 pub struct NativeSquadSelection {

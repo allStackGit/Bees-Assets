@@ -121,7 +121,8 @@ impl NativeSoftwareRenderer {
         let id = view.combat.physics().input_ship_ids_overlapping_box(bounds).ok()?
             .filter_map(|id| {
                 let ship = view.combat.ship(id)?;
-                if ship.vitals.is_dead() || selected_side.is_some_and(|side| ship.side != side) ||
+                if ship.vitals.is_dead() || selected_side.is_none() ||
+                    selected_side.is_some_and(|side| if mode == Mode::Attack { ship.side == side } else { ship.side != side }) ||
                     (mode == Mode::Heal && ship.ship_type != bees_sim::combat_world::BEEHIVE_TYPE) ||
                     (mode == Mode::FullRetreat && ship.ship_type != bees_sim::combat_world::WARP_GATE_TYPE) {
                     return None;
@@ -130,6 +131,7 @@ impl NativeSoftwareRenderer {
                 Some(((position - point).length_squared(), id))
             }).min_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)))?.1;
         match mode {
+            Mode::Attack => Some(Action::Attack { target: view.roster.owning_squad(id)? }),
             Mode::Guard => Some(Action::Guard { target: view.roster.owning_squad(id)? }),
             // Source input sends every Beehive in the clicked squad, in
             // GetShips order, rather than silently restricting it to one hull.

@@ -53,7 +53,7 @@ internal static class NativePhysicalSceneExporter
         public int policy_team_id, policy_quarter_turns;
         // Frozen source v26 controller/capability observations.
         // Model slot remains a separately authenticated host decision.
-        public int effective_vision_range;
+        public int source_sight, effective_vision_range;
         public bool has_weapons, has_turrets, has_special_action, special_ready;
         public float special_resource_fraction, special_cooldown_fraction, special_phase;
         public bool mining_possible, healing_possible, warp_possible;
@@ -448,6 +448,7 @@ internal static class NativePhysicalSceneExporter
                 policy_quarter_turns = policyQuarterTurns,
                 policy_movement_disabled = movementDisabled,
                 policy_cease_fire = ship.IsCeaseFire,
+                source_sight = ship.Sight,
                 effective_vision_range = HiveMindVision.GetEffectiveRange(ship),
                 hivemind_registered = ship.IsHiveMindControlled,
                 hivemind_vision_enabled = ship.HiveMindVision != null &&

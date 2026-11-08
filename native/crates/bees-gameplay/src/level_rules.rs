@@ -158,8 +158,8 @@ pub trait NativeLevelCommandContext {
     /// and squad membership; no geometric or fabricated fallback exists.
     /// The default fails closed for Levels without this command adapter.
     fn circle_command_snapshot(
-        &self, _world: &CombatWorld, _owner: SquadLifetime,
-        _enemy_squad_id: i64,
+        &self, _world: &mut CombatWorld, _roster: &NativeSquadRoster, _owner: SquadLifetime,
+        _enemy_owner: SquadLifetime,
     ) -> Result<NativeCircleCommandSnapshot, GameCommandError> {
         Err(GameCommandError::MissingCombatSnapshot)
     }
@@ -172,8 +172,8 @@ pub trait NativeLevelCommandContext {
     /// gather the candidate list; current enemy lifetime/range remains
     /// authoritative regardless.
     fn swipe_command_snapshot(
-        &self, _world: &CombatWorld, _owner: SquadLifetime,
-        _enemy_squad_id: i64, _need_target_candidates: bool,
+        &self, _world: &mut CombatWorld, _roster: &NativeSquadRoster, _owner: SquadLifetime,
+        _enemy_owner: SquadLifetime, _need_target_candidates: bool,
     ) -> Result<NativeSwipeCommandSnapshot, GameCommandError> {
         Err(GameCommandError::MissingCombatSnapshot)
     }
@@ -185,8 +185,8 @@ pub trait NativeLevelCommandContext {
     /// 3s/0.25s command timer itself is not due. Missing authored weapon
     /// and ship composition data fails closed.
     fn aggressive_command_snapshot(
-        &self, _world: &CombatWorld, _owner: SquadLifetime,
-        _enemy_squad_id: i64, _need_all_target_range: bool,
+        &self, _world: &mut CombatWorld, _roster: &NativeSquadRoster, _owner: SquadLifetime,
+        _enemy_owner: SquadLifetime, _need_all_target_range: bool,
     ) -> Result<NativeAggressiveCommandSnapshot, GameCommandError> {
         Err(GameCommandError::MissingCombatSnapshot)
     }
@@ -812,17 +812,17 @@ where
                 completed_tick, &mut state.combat,
                 metadata.navigation(),
                 &state.command_friendlies, &mut world.random, dt_seconds,
-                |owner, enemy_id, combat| {
-                    metadata.circle_command_snapshot(combat, owner, enemy_id)
+                |owner, enemy_id, combat, roster| {
+                    metadata.circle_command_snapshot(combat, roster, owner, enemy_id)
                 },
-                |owner, enemy_id, combat, need_candidates| {
+                |owner, enemy_id, combat, roster, need_candidates| {
                     metadata.swipe_command_snapshot(
-                        combat, owner, enemy_id, need_candidates,
+                        combat, roster, owner, enemy_id, need_candidates,
                     )
                 },
-                |owner, enemy_id, combat, need_all| {
+                |owner, enemy_id, combat, roster, need_all| {
                     metadata.aggressive_command_snapshot(
-                        combat, owner, enemy_id, need_all,
+                        combat, roster, owner, enemy_id, need_all,
                     )
                 },
                 |owner, enemy_id, combat, need_retarget| {

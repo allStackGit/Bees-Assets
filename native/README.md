@@ -223,8 +223,15 @@ spawn transaction installs newborn geometry/history before range discovery,
 sharing current parent fleet damage while resetting the newborn kill clock.
 Missing schema23 clock/rank/prefab inputs are rejected. Schemas20–22 retain their
 previous manual/policy behavior without invented automatic-targeting data.
-Asteroid/MapObject targeting fallback and complete combat command activation
-remain incomplete.
+The source-authored Level now supplies live Aggressive/Circle/Swipe/InAndOut
+snapshots from the canonical roster and mounted weapon eligibility. Command
+callbacks borrow the mutable physical world because querying bounds can latch
+state. Exact enemy lifetimes travel through activation and every timer poll;
+retired targets never resolve to a newer squad with the same numeric ID.
+Asteroid/MapObject targeting fallback and BombingRun/Charge adapters remain incomplete.
+Exports also capture actual `source_sight`: Scouting uses Ship.Sight, whereas
+HiveMind vision substitutes weapon range when Sight is zero. Older captures
+without this field cannot supply Scouting context.
 
 **Bees > Native > Export Selected Level Physical Scene** captures a
 source-authored initial Unity Level, not a resumable match checkpoint. Schema 21
@@ -295,8 +302,12 @@ chosen Guard, Patrol, Mining, Heal and FullRetreat actions, scoped to the curren
 world/episode and a live controllable squad. Movement and support commands share
 one permission/membership preflight; pending AI requests retire before activation.
 The canonical director handles replacement, unavailable targets and settlement.
-Attack commands and UI Hold are rejected by this API; they need their own source
-semantics. In the window, G/P/M/H/R arm Guard/Patrol/Mining/Heal/retreat;
+`Attack { target }` now accepts a live enemy lifetime for ordinary ranged squads,
+preflights the real Aggressive snapshot, and uses the same local command director.
+In the window, right-clicking an enemy hull issues Attack; other right-clicks
+issue movement. Friendly/stale targets are rejected. Bomber-only and Barge-only
+player attacks remain unavailable until their source BombingRun/Charge adapters
+are connected; UI Hold remains unavailable. G/P/M/H/R arm Guard/Patrol/Mining/Heal/retreat;
 left-click chooses a target, or left-drag supplies the Patrol rectangle.
 Backspace or right-click cancels targeting without issuing a move. Commands
 preserve selected squad order, deduplicate lifetimes and skip unavailable owners.
@@ -681,7 +692,8 @@ override. A center-distance test would change command behavior.
 `assemble_circle_snapshot_from_live_weapons` implements the source's
 per-ship/target-squad predicate over the authoritative live roster, while
 the host supplies actual authored weapon validity and squad geometry.
-The live adapter and executable parity qualification remain pending.
+The source-authored host now supplies that adapter from actual mounted range
+contacts, bounds and LOS, with bounded Windows executable qualification.
 
 **RightSwipe** and **LeftSwipe** also use the canonical command timer, shared
 tracked movement and the source command's ranked target FIFO. The Level's
@@ -689,8 +701,9 @@ tracked movement and the source command's ranked target FIFO. The Level's
 bounds, and GetShips-ordered targeting metadata only when a swipe timer fires.
 `assemble_swipe_snapshot_from_live_weapons` reuses CircleSquad's exact
 per-weapon range predicate. This port deliberately rejects missing adapter
-data rather than fabricating a shooting target. The real Level adapter,
-weapon/squad targeting integration and executable qualification remain pending.
+data rather than fabricating a shooting target. The source-authored host now
+connects this adapter, ranked approach and automatic fire through real strategy
+requests/replies; bounded Windows fixtures exercise both Swipe directions.
 
 **InAndOut** uses the same source-backed target FIFO and tracked approach as
 Swipe, with no duplicate targeting algorithm. It chooses Unity's random
@@ -700,8 +713,8 @@ formation Move back to that requested point and completes when all squad
 members have reached their destination. It shares the existing
 `swipe_command_snapshot` Level adapter because both commands require
 identical live enemy membership, weapon validity and targeting metadata.
-The missing authored Level adapter still fails closed rather than treating
-distance as weapon eligibility.
+The source-authored host supplies this adapter; missing physical weapon subclass
+inputs still fail explicitly rather than treating distance as eligibility.
 
 Commands now carry `NativeCommandOrigin::HiveMind` or a Level-owned local
 player/scripted identity through the same director, timers and completion/abort
@@ -716,7 +729,8 @@ and scripted Hold use the same director as before. Local replacement finalizes
 the old command first, including when the new target is unavailable. Local Guard,
 Patrol, Mining and Heal omit the source's AI-only timeout. Friendly projections
 use the canonical roster's registration order and director state for every origin.
-Host/player UI routing and complete scripted queues remain unfinished.
+Host/player routing supports movement, chosen support actions and ranged Attack;
+complete scripted queues remain unfinished.
 
 **Aggressive** uses the shared ranked target queue and authoritative
 tracked ship orders, but unlike Swipe or InAndOut advances its attack
@@ -733,7 +747,7 @@ due timer enters the position-hold phase; the snapshot uses `None`
 for unrequested values, never invented `false` results. The helper
 `assemble_aggressive_snapshot_from_live_weapons` computes the stronger
 all-target range predicate using the original Level roster and authoritative
-per-weapon validity. The Level still needs that adapter. Unity's coroutine
+per-weapon validity. The source-authored host now supplies that adapter. Unity's coroutine
 resumes on *render frames* rather than simulation fixed steps; exact timing
 parity across variable render rates is not established by this port.
 

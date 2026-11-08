@@ -9,6 +9,7 @@ use bees_sim::geometry::Vec2;
 #[derive(Clone, Copy, Debug)]
 pub enum NativeLocalCommandAction<'a> {
     Aggressive,
+    TargetEnemy { target: SquadLifetime },
     BombingRun,
     Charge,
     Hold,
@@ -22,7 +23,7 @@ pub enum NativeLocalCommandAction<'a> {
 impl NativeLocalCommandAction<'_> {
     pub fn kind(self) -> LocalCommandKind {
         match self {
-            Self::Aggressive => LocalCommandKind::Aggressive,
+            Self::Aggressive | Self::TargetEnemy { .. } => LocalCommandKind::Aggressive,
             Self::BombingRun => LocalCommandKind::BombingRun,
             Self::Charge => LocalCommandKind::Charge,
             Self::Hold => LocalCommandKind::Hold,

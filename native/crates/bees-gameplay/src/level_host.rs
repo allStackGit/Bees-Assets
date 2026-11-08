@@ -116,7 +116,8 @@ pub struct NativeLevelStrategyInputs {
 /// or target rankings are introduced by the host.
 pub trait NativeLevelActivationContext: NativeLevelCommandContext {
     fn strategy_inputs(
-        &self, owner: SquadLifetime, original_enemy: Option<SquadLifetime>,
+        &self, world: &CombatWorld, roster: &NativeSquadRoster,
+        owner: SquadLifetime, original_enemy: Option<SquadLifetime>,
     ) -> Result<NativeLevelStrategyInputs, GameCommandError>;
 
     fn stored_formation_offset(&self, ship_id: i64) -> Option<Vec2>;
@@ -240,7 +241,7 @@ where
         }
     }
     let metadata = &mut world.state.metadata;
-    let details = metadata.strategy_inputs(owner, original_enemy)
+    let details = metadata.strategy_inputs(&world.state.combat, world.state.events.roster(), owner, original_enemy)
         .map_err(&fail)?;
     if !details.formation.valid() || !details.settings.valid() {
         return Err(fail(GameCommandError::InvalidSettings));

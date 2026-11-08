@@ -54,13 +54,13 @@ impl NativeAggressiveCommandSnapshot {
 /// Returning false on a missing target is legitimate; substituting
 /// estimated center-distance or an assumed defenseless flag is not.
 pub fn assemble_aggressive_snapshot_from_live_weapons(
-    world: &CombatWorld,
+    world: &mut CombatWorld,
     roster: &NativeSquadRoster,
     owner: SquadLifetime,
     attack: NativeSwipeCommandSnapshot,
     evaluate_all_targets: bool,
     all_enemies_defenseless: Option<bool>,
-    mut weapon_valid_target: impl FnMut(i64, i64)
+    mut weapon_valid_target: impl FnMut(&mut CombatWorld, i64, i64)
         -> Result<bool, GameCommandError>,
 ) -> Result<NativeAggressiveCommandSnapshot, GameCommandError> {
     if !attack.valid_for_combat() || owner.level_id != attack.enemy_owner.level_id {
@@ -97,7 +97,7 @@ pub fn assemble_aggressive_snapshot_from_live_weapons(
             {
                 return Err(GameCommandError::InvalidEnemy);
             }
-            if !weapon_valid_target(own_id, enemy_id)? {
+            if !weapon_valid_target(world, own_id, enemy_id)? {
                 every_member_has_all_targets_in_range = false;
                 break 'own_ships;
             }
@@ -149,8 +149,8 @@ impl AggressiveRun {
         }))
     }
 
-    pub(super) fn enemy_squad_id(&self) -> i64 {
-        self.target.squad_id()
+    pub(super) fn enemy_owner(&self) -> SquadLifetime {
+        self.target.owner()
     }
 
     pub(super) fn has_pending_coroutine(&self) -> bool {

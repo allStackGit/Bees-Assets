@@ -60,14 +60,14 @@ impl NativeCircleCommandSnapshot {
 /// squad which reused its numeric ID. Callers supply actual GetPosition
 /// bounds centers and original Ship.MaxRange values on each poll.
 pub fn assemble_circle_snapshot_from_live_weapons(
-    world: &CombatWorld,
+    world: &mut CombatWorld,
     roster: &NativeSquadRoster,
     owner: SquadLifetime,
     enemy_owner: SquadLifetime,
     squad_center: Vec2,
     enemy_center: Vec2,
-    mut ship_max_range: impl FnMut(i64) -> Result<f32, GameCommandError>,
-    mut weapon_valid_target: impl FnMut(i64, i64)
+    mut ship_max_range: impl FnMut(&CombatWorld, i64) -> Result<f32, GameCommandError>,
+    mut weapon_valid_target: impl FnMut(&mut CombatWorld, i64, i64)
         -> Result<bool, GameCommandError>,
 ) -> Result<NativeCircleCommandSnapshot, GameCommandError> {
     let squad = roster.get(owner).ok_or(GameCommandError::InvalidSquad)?;
@@ -98,7 +98,7 @@ pub fn assemble_circle_snapshot_from_live_weapons(
         {
             return Err(GameCommandError::InvalidSquad);
         }
-        let range = ship_max_range(own_id)?;
+        let range = ship_max_range(world, own_id)?;
         if !range.is_finite() || range < 0.0 {
             return Err(GameCommandError::InvalidCombatSnapshot);
         }
@@ -117,7 +117,7 @@ pub fn assemble_circle_snapshot_from_live_weapons(
             {
                 return Err(GameCommandError::InvalidEnemy);
             }
-            if weapon_valid_target(own_id, enemy_id)? {
+            if weapon_valid_target(world, own_id, enemy_id)? {
                 has_target = true;
                 break;
             }
@@ -172,8 +172,8 @@ impl CircleRun {
         }))
     }
 
-    pub(super) fn enemy_squad_id(&self) -> i64 {
-        self.target.squad_id()
+    pub(super) fn enemy_owner(&self) -> SquadLifetime {
+        self.target.owner()
     }
 
     /// Exactly one Unity CircleSquad.Timer callback. The caller owns the
