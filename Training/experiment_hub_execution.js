@@ -71,7 +71,8 @@ class LocalExecution {
         if(order.action==='start'&&!supportsEvaluation(this.evaluationSuites,job))
             throw Error('Local adapter does not support the requested evaluation suite.');
         if(order.action==='qualify_gpu') {
-            // Report local eligibility failures for authenticated orders.
+            // Report local qualification failures for authenticated orders.
+            // A small, bounded HIP probe is permitted, never a trainer Start.
             // Native ownership must be ruled out before a rejection can
             // confirm that the coordinator may release the claim.
             let jobUnowned=false;
