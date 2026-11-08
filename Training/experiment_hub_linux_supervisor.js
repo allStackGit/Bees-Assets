@@ -62,7 +62,7 @@ function gpuRuntimeProof(adapter,parameters,context) {
     if(!adapter||typeof adapter.executable!=='string'||
         !path.isAbsolute(adapter.executable)||
         !SAFE_ARG.test(adapter.executable)||
-        !/^[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\\.[0-7]$/.test(
+        !/^[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]$/.test(
             String(context?.gpu_pci_address||'')))
         throw Error('Invalid local ROCm runtime or leased PCI identity.');
     const rocrUuid=Object.hasOwn(adapter.rocr_gpu_uuids||{},context.gpu_pci_address)
