@@ -59,7 +59,7 @@ The single JSON configuration file requires:
   model_slots, groups?}`. Each scene is an exported **initial** Level;
   both IDs must be unique and positive, and `model_slots` maps exact
   Unity policy-team IDs (`"0"`/`"1"`) to verified manifest slots.
-  For schema-16 exports, the actual participating Unity Agent instance
+  For schema-16/17 exports, the actual participating Unity Agent instance
   IDs, source ship bindings and episode number are recorded in the scene
   itself; the runner derives `groups` automatically. If manually supplied,
   `groups` must match that source record exactly. Legacy schema-15 scenes
@@ -70,7 +70,7 @@ The single JSON configuration file requires:
   single-episode only: they lack the per-team movement settings required
   to replay alternating policy ownership safely. A source controller
   whose initial team disagrees with the configured episode rejects
-  the run. On subsequent schema-16 episodes, the native Level advances
+  the run. On subsequent schema-16/17 episodes, the native Level advances
   the episode number, alternates team routes and source movement limits,
   and selects fresh source-equivalent distinct policy coordinate frames
   from a world-specific reproducible seed.
