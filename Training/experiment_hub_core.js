@@ -234,6 +234,8 @@ function gpuProbeBlock(job,lease,machine) {
             gpu_devices:machine.observed_gpus,
         },lease.resources,lease.gpu_bindings)?.length!==1)
         return 'GPU access probe needs a fresh exclusive single-GPU lease on a qualified Linux agent.';
+    const resourceBlock=nativeResourceBlock(job,lease);
+    if(resourceBlock)return resourceBlock;
     if(!(machine.observed_gpus?.length>=2))
         return 'GPU access probe requires a second observed GPU to verify access denial.';
     return null;

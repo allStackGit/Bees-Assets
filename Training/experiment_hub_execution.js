@@ -7,6 +7,7 @@ const path=require('node:path');
 const {LinuxSupervisor}=require('./experiment_hub_linux_supervisor');
 const {WindowsSupervisor}=require('./experiment_hub_windows_supervisor');
 const {inspectHost}=require('./experiment_hub_host');
+const {matchingLeaseBudget}=require('./experiment_hub_resources');
 const {validateProgress}=require('./experiment_hub_progress');
 const {evaluationEvidence,evaluationRules,suiteIds,supportsEvaluation}=
     require('./experiment_hub_evaluation');
@@ -70,6 +71,8 @@ class LocalExecution {
                     throw Error('GPU access probe refused for an already owned native service.');
                 if(!this.projects.includes(job.project_id))
                     throw Error('A locally installed project adapter is required for GPU qualification.');
+                if(!matchingLeaseBudget(job.resources,lease.resources))
+                    throw Error('GPU access probe resource budget differs from its lease.');
                 if(typeof this.supervisor.qualifyGpuDeviceAccess!=='function'||
                     !this.supervisor.qualifiedAt||
                     job.status!=='waiting_adapter'||
