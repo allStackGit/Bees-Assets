@@ -154,8 +154,15 @@ its TSV. After authenticating the existing native socket, invoke
 NativeHostRuntime::flush_store_socket from its I/O owner to checkpoint any
 ready batches and send only not-yet-transmitted pending hashes. Subsequent
 polls do not resend unacknowledged requests; a new socket can replay the
-original outstanding hashes. On a server frame, invoke runtime.receive_frame
-to durably accept 200/409 responses and discards. No synthetic target TSV,
+original outstanding hashes. NativeHostRuntime::service_socket_event now
+reads one authenticated event, routes every server reply through
+receive_frame (durable 200/409 and discard processing), and flushes newly
+checkpointed results without manually sequencing two distinct paths.
+Blocking socket I/O stays off the render/physics thread. On socket protocol
+or transport failure the same API retires transient strategy/targeting
+requests and reports the unresolved original hashes; outstanding durable
+StoreCommands requests persist for later authenticated replay. Intentional
+close callers explicitly use retire_socket_session. No synthetic target TSV,
 new per-shot histories or prematurely committed command settlements were
 introduced. New code remains source-reviewed only; Rust compilation and
 runtime were not available.
