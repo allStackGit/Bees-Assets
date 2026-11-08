@@ -856,7 +856,7 @@ document.addEventListener('DOMContentLoaded', () => {
             .find(([key])=>key===tinyBrainsSelect.value)?.[1];
         feedback('hub-config-message','Profile and update count copied to the draft. '+
             (selected?.cudaWorkers
-                ?'When queueing, request one exclusive GPU and a sufficient CPU/RAM budget. '
+                ?'When queueing, request one GPU (exclusive, or a cooperative Windows share) and sufficient CPU/RAM. '
                 :'When queueing, request CPU/RAM without GPUs. ')+
             (sourceId?'The chosen source checkpoint SHA-256 is frozen in this draft. ':'')+
             'Save the draft to retain these settings.');
@@ -1412,12 +1412,18 @@ document.addEventListener('DOMContentLoaded', () => {
                     const windows=machine.agent_platform==='win32';
                     const gpu=j.resources.gpu_count===1;
                     const autoRelease=$('hub-native-release-on-terminal').checked;
-                    if(!confirm((gpu?'Authorize native execution on the exclusively leased GPU for ':
+                    if(!confirm((gpu?'Authorize native '+(j.resources.gpu_mode==='shared'
+                            ?'cooperative shared':'exclusive')+' GPU execution for ':
                         'Authorize native CPU/RAM-limited execution of ')+
                         j.configuration_name+' on '+machine.name+
                         '? Only locally installed adapter code selects the executable. '+
                         (gpu?(windows
-                            ?'Windows CUDA selects the pinned physical UUID cooperatively; other local processes are not isolated and no GPU share or VRAM cap is enforced. '
+                            ?'Windows CUDA selects the pinned UUID cooperatively; other programs are not isolated. '+
+                                (j.resources.gpu_mode==='shared'
+                                    ?'TinyBrains limits PyTorch allocator memory to '+j.resources.gpu_vram_mb+
+                                        ' MiB; its '+j.resources.gpu_compute_pct+
+                                        '% GPU compute budget is advisory, not enforced. '
+                                    :'No GPU share or VRAM cap is enforced. ')
                             :'The Linux service verifies device access and ROCm visibility before training. '):'')+
                         (windows?'Windows Stop requests checkpoint-preserving shutdown when the local adapter supports it; otherwise it force-terminates the Job Object process tree. ':
                             'Linux uses the locally selected service stop policy. ')+
@@ -2204,7 +2210,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const gpuClaim=$('hub-automation-gpu-claim').checked;
         const gpuProbe=$('hub-automation-gpu-probe').checked;
         if(gpuProbe&&!gpuClaim) {
-            feedback('hub-automation-status','Enable exclusive GPU claims to automate their access probes.');
+            feedback('hub-automation-status','Enable GPU claims to automate Linux exclusive-device access probes.');
             return;
         }
         if(resume&&(gpu||gpuClaim||gpuProbe)) {
