@@ -3748,7 +3748,7 @@ impl CombatWorld {
         &mut self,
         dt: f32,
         collision_matrix: &CollisionMatrix,
-        random: Option<&mut RandomStream>,
+        mut random: Option<&mut RandomStream>,
     ) -> Result<StepCounts, CombatWorldError> {
         // Reject bad deltas before advancing delayed timers or modifying
         // health. Physics validates dt too, but that is too late here.
@@ -3870,7 +3870,9 @@ impl CombatWorld {
         }
         // Turrets use the same ship pose updated above, and create real
         // projectile bodies before the subsequent shared physics step.
-        self.advance_authored_turrets(dt)?;
+        self.advance_authored_turrets_with_random(
+            dt, random.as_deref_mut(),
+        )?;
         // LaserBeam.ExtendBeam follows the same real shooter/turret and
         // resizes the physical beam collider before the native broadphase.
         self.advance_beam_projectiles()?;
