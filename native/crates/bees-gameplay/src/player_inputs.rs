@@ -150,6 +150,9 @@ pub struct NativePlayerCommandCounts {
     pub accepted_squads: usize,
     pub unavailable_squads: usize,
     pub rejected_squads: usize,
+    /// Source Hold finalized this many actual Aggressive commands.
+    /// A harmless click on another command is still an accepted input.
+    pub stopped_chases: usize,
 }
 
 #[derive(Debug)]
