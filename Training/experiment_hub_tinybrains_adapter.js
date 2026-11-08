@@ -41,7 +41,10 @@ function supportsTinyBrainsProfile(machine,job) {
     const p=job.frozen_parameters;
     const profiles=machine.tinybrains_profiles;
     const cuda=machine.tinybrains_cuda_profiles?.includes(p?.profile)===true;
-    const gpu=job.resources?.gpu_count===1&&job.resources.gpu_mode==='exclusive';
+    const gpu=job.resources?.gpu_count===1&&
+        (job.resources.gpu_mode==='exclusive'||
+            job.resources.gpu_mode==='shared'&&machine.agent_platform==='win32'&&
+                machine.gpu_shared_projects?.includes('tinybrains'));
     const imported=p?.import_checkpoint==null?null:
         machine.tinybrains_imports?.[p.import_checkpoint];
     return ['win32','linux'].includes(machine.agent_platform)&&
@@ -208,6 +211,8 @@ function createTinyBrainsAdapter({projectRoot,pythonPath,artifactRoot,profiles,
         tinybrains_imports:Object.fromEntries([...imports].map(([id,item])=>
             [id,{profile:item.profile,sha256:item.sha256}])),
         gpu_execution:[...configs].some(([,item])=>item.device==='cuda')?'cuda':null,
+        gpu_sharing:windows&&[...configs].some(([,item])=>item.device==='cuda')
+            ?'cooperative-pytorch':null,
         ...(windows||![...configs].some(([,item])=>item.device==='cuda')?{}:{
             gpu_verify_args(parameters,context) {
                 const approved=configs.get(parameters?.profile);
@@ -235,6 +240,14 @@ function createTinyBrainsAdapter({projectRoot,pythonPath,artifactRoot,profiles,
                         :Boolean(context.gpu_cuda_uuid))
                 :Boolean(context.gpu_pci_address||context.gpu_cuda_uuid))
                 throw Error('TinyBrains CPU/CUDA profile does not match the locally bound native device.');
+            if(windows&&approved.device==='cuda'&&context.gpu_mode==='shared'&&
+                (!Number.isSafeInteger(context.gpu_vram_mb)||
+                    context.gpu_vram_mb<1||
+                    !Number.isSafeInteger(context.gpu_total_vram_mb)||
+                    context.gpu_vram_mb>context.gpu_total_vram_mb||
+                    !Number.isSafeInteger(context.gpu_compute_pct)||
+                    context.gpu_compute_pct<1||context.gpu_compute_pct>100))
+                throw Error('Shared Windows CUDA requires a pinned positive PyTorch VRAM ceiling.');
             if(import_checkpoint!==undefined
                 ?context.continuation_of_job_id||!PROFILE.test(String(import_checkpoint))||
                     imports.get(import_checkpoint)?.profile!==profile||
@@ -270,7 +283,9 @@ function createTinyBrainsAdapter({projectRoot,pythonPath,artifactRoot,profiles,
                 ?context.gpu_cuda_uuid:null;
             const entry=enginePath!=null||selectedCuda
                 ?[path.join(__dirname,'experiment_hub_tinybrains_runtime.py'),engine,stderr,
-                    ...(selectedCuda?['--hub-cuda',selectedCuda]:[])]
+                    ...(selectedCuda?['--hub-cuda',selectedCuda,
+                        ...(context.gpu_mode==='shared'
+                            ?['--hub-gpu-vram-mb',String(context.gpu_vram_mb)]:[])]:[])]
                 :['-c',TRAIN_ENTRY,stderr];
             return ['-B',...entry,
                 'train','--config',config,'--out',out,
