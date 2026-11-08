@@ -3,12 +3,12 @@
 //! supplies absent Unity ship/episode/observation values. No fake agent,
 //! placeholder observations or inferred weapon statistics are allowed.
 //!
-//! This mode intentionally has NO HiveMind command activation. If an
-//! operator sends a strategy to it, the Level fails closed instead of
-//! pretending an invented order is valid. Full game Levels supply a
-//! richer metadata implementation of the same shared traits.
+//! Source-backed HiveMind squads can execute ordinary movement/resource
+//! commands through the shared command director. Attack commands still
+//! fail closed: this adapter has no authentic enemy-weapon timing/target
+//! snapshots yet. A fully interactive game adapter will extend it.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use bees_gameplay::commands::{
     GameCommandError, NativeBombWeapon, NativeEnemyTargetStats,
@@ -58,6 +58,10 @@ pub struct NativeSourcePlayerInputs {
     pub commands: HashMap<SquadLifetime, bees_gameplay::player_inputs::NativePlayerCommandInputs>,
     pub squads: HashMap<SquadLifetime, NativePlayerPermissions>,
     pub ships: HashMap<i64, NativeSourceFormation>,
+    /// Verified original non-player, non-policy HiveMind ownership.
+    pub hivemind_squads: HashSet<SquadLifetime>,
+    /// Some only when the original source Squad.MaxSight was exported.
+    pub scouting: HashMap<SquadLifetime, bees_gameplay::commands::NativeScoutingContext>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -215,7 +219,15 @@ impl NativePolicyOnlyMetadata {
             !authored_ships.contains_key(id) || !template.perception.valid()
         ) { return Err(PolicyOnlyMetadataError::InvalidSource); }
         if authored_ships.keys().any(|id| !player.ships.get(id)
-            .is_some_and(|data| data.offset.is_finite() && data.clearance >= 0)) {
+            .is_some_and(|data| data.offset.is_finite() && data.clearance >= 0)) ||
+            player.hivemind_squads.iter().any(|owner|
+                !player.commands.contains_key(owner) ||
+                player.squads.get(owner).is_none_or(|value| value.user_controlled)
+            ) ||
+            player.scouting.iter().any(|(owner, context)|
+                !context.valid() || !player.commands.contains_key(owner)
+            )
+        {
             return Err(PolicyOnlyMetadataError::InvalidSource);
         }
         Ok(Self {
@@ -427,9 +439,27 @@ impl NativeLevelCommandContext for NativePolicyOnlyMetadata {
 
 impl NativeLevelActivationContext for NativePolicyOnlyMetadata {
     fn strategy_inputs(
-        &self, _owner: SquadLifetime, _enemy: Option<SquadLifetime>,
+        &self, owner: SquadLifetime, _enemy: Option<SquadLifetime>,
     ) -> Result<NativeLevelStrategyInputs, GameCommandError> {
-        Err(GameCommandError::MissingCombatSnapshot)
+        if !self.player.hivemind_squads.contains(&owner) {
+            return Err(GameCommandError::MissingCombatSnapshot);
+        }
+        let inputs = self.player.commands.get(&owner)
+            .ok_or(GameCommandError::MissingCombatSnapshot)?;
+        // These are the imported GameState settings and real formation
+        // contract for the SAME canonical CombatWorld. No target-dependent
+        // command can activate without an exact enemy lifetime, range and
+        // weapon snapshot; enemy=None explicitly prevents that admission.
+        Ok(NativeLevelStrategyInputs {
+            formation: SquadFormationOptions {
+                map_bounds: self.bounds,
+                has_obstacles: self.player.has_obstacles,
+                can_override_bounds: false,
+            },
+            enemy: None,
+            scouting: self.player.scouting.get(&owner).copied(),
+            settings: inputs.settings,
+        })
     }
 
     fn stored_formation_offset(
