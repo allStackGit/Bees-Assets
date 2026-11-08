@@ -198,6 +198,16 @@ function createTinyBrainsAdapter({projectRoot,pythonPath,artifactRoot,profiles,
         tinybrains_imports:Object.fromEntries([...imports].map(([id,item])=>
             [id,{profile:item.profile,sha256:item.sha256}])),
         gpu_execution:[...configs].some(([,item])=>item.device==='cuda')?'cuda':null,
+        ...(windows?{}:{
+            gpu_verify_args(parameters,context) {
+                const approved=configs.get(parameters?.profile);
+                if(approved?.device!=='cuda'||approved.sha256!==parameters.profile_sha256||
+                    !context.gpu_pci_address||context.gpu_cuda_uuid)
+                    throw Error('ROCm verification requires a pinned GPU training profile and PCI device.');
+                return ['-B',path.join(__dirname,'experiment_hub_tinybrains_rocm_verify.py'),
+                    context.gpu_pci_address];
+            },
+        }),
         args(parameters,context) {
             const {profile,profile_sha256,updates,import_checkpoint,
                 import_checkpoint_sha256}=parameters;
@@ -209,7 +219,10 @@ function createTinyBrainsAdapter({projectRoot,pythonPath,artifactRoot,profiles,
                 !Number.isSafeInteger(updates)||updates<1||updates>10000000)
                 throw Error('TinyBrains jobs require an approved profile, its SHA-256 and 1–10,000,000 updates.');
             if(approved.device==='cuda'
-                ?!context.gpu_pci_address||!CUDA_UUID.test(String(context.gpu_cuda_uuid||''))
+                ?!context.gpu_pci_address||
+                    (windows
+                        ?!CUDA_UUID.test(String(context.gpu_cuda_uuid||''))
+                        :Boolean(context.gpu_cuda_uuid))
                 :Boolean(context.gpu_pci_address||context.gpu_cuda_uuid))
                 throw Error('TinyBrains CPU/CUDA profile does not match the locally bound native device.');
             if(import_checkpoint!==undefined
