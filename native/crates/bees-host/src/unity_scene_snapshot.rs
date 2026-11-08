@@ -1498,7 +1498,7 @@ impl NativePhysicalScene {
                         ship_type_letter: letter,
                         firepower: ship.firepower,
                         max_range: ship.max_weapon_range,
-                        last_killed: ship.last_killed,
+                        last_killed: ship.last_killed.map(i64::from),
                         fleet_damage_done: ship.fleet_damage_done,
                     }),
                 special,
