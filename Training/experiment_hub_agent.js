@@ -47,6 +47,7 @@ function observations(machineId) {
         cpus:Math.max(1,typeof os.availableParallelism==='function'
             ?os.availableParallelism():os.cpus().length),
         ram_mb:Math.max(128,Math.floor(os.totalmem()/1048576)),
+        free_ram_mb:Math.max(0,Math.floor(os.freemem()/1048576)),
         platform,
         execution:inspectHost(),
         // Both inventories are physical observations, not execution quotas.
