@@ -521,13 +521,22 @@ impl NativeLevelEventProcessor {
 
     fn publish_superseded_strategy(
         &mut self, mut action: StrategyReceiptAction,
-    ) -> StrategyReceiptAction {
+        accepted_selection: Option<bees_hivemind::protocol::ValidatedStrategySelection>,
+    ) -> Result<StrategyReceiptAction, StrategyReceiptFailure> {
         if let StrategyReceiptAction::Applied(Activation::Applied {
             superseded, ..
         }) = &mut action {
             if let Some(finished) = superseded.take() {
-                // The result no longer exposes a second settlement owner:
-                // the same Level outbox now carries the predecessor.
+                if let Err(error) = self.credit.finish(&finished) {
+                    self.failed = true;
+                    return Err(StrategyReceiptFailure {
+                        selection: accepted_selection
+                            .expect("an applied strategy came from an accepted reply"),
+                        cause: crate::commands::StrategyReceiptFailureCause::Credit(error),
+                    });
+                }
+                // No second settlement owner is returned to the socket:
+                // the Level outbox now carries the completed predecessor.
                 self.pending_notifications.push(NativeLevelNotification {
                     tick: self.next_tick.saturating_sub(1),
                     kind: NativeLevelNotificationKind::FinishedCommand(finished),
@@ -538,7 +547,7 @@ impl NativeLevelEventProcessor {
                 );
             }
         }
-        action
+        Ok(action)
     }
 
     /// Apply any non-bomb strategy receipt to the SAME owning Level,
@@ -564,10 +573,14 @@ impl NativeLevelEventProcessor {
             return Ok(StrategyReceiptAction::DiscardReservations(ids));
         }
         self.preflight_strategy_supersession(&receipt)?;
+        let source = match &receipt {
+            StrategyReceipt::Accepted { selection, .. } => Some(selection.clone()),
+            _ => None,
+        };
         let action = self.commands.apply_strategy_receipt(
             world, navigation, random, squad, friendlies, settings, receipt,
         )?;
-        Ok(self.publish_superseded_strategy(action))
+        self.publish_superseded_strategy(action, source)
     }
 
     /// Apply a HiveMind receipt using this Level's SAME live roster,
@@ -606,11 +619,15 @@ impl NativeLevelEventProcessor {
             weapons, enemies,
         };
         self.preflight_strategy_supersession(&receipt)?;
+        let source = match &receipt {
+            StrategyReceipt::Accepted { selection, .. } => Some(selection.clone()),
+            _ => None,
+        };
         let action = self.commands.apply_strategy_receipt_with_bombing(
             world, navigation, random, squad, friendlies,
             settings, receipt, Some(bombing),
         )?;
-        Ok(self.publish_superseded_strategy(action))
+        self.publish_superseded_strategy(action, source)
     }
 
     /// Called after the owning world's fixed step but before
