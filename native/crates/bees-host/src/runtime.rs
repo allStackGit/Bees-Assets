@@ -25,6 +25,7 @@ use bees_hivemind::protocol::{
 use bees_hivemind::session::SquadLifetime;
 use bees_sim::simulation::{RandomStream, Simulation, World};
 use crate::durable_connection::{DurableConnectionError, DurableHiveMindConnection};
+use crate::socket::{HiveMindSocketError, NativeHiveMindSocket};
 use crate::journal_recovery::{
     replay_command_outcomes, JournalRecoveryCounts, JournalRecoveryError,
 };
@@ -438,6 +439,21 @@ where
             self.sink.prepared_outcomes_queued();
         }
         Ok(())
+    }
+
+    /// Explicit, non-render-thread socket I/O boundary. First persist any
+    /// synchronized but not-yet-checkpointed Level outcome batches, then
+    /// transmit only request hashes not already sent on this socket.
+    /// After reconnect, a fresh NativeHiveMindSocket sends all still-pending
+    /// requests with their original durable hashes. A send is NOT an ack:
+    /// pass incoming ServerFrame events to receive_frame for checkpointed
+    /// 200/409 handling.
+    pub fn flush_store_socket(
+        &mut self, socket: &mut NativeHiveMindSocket,
+    ) -> Result<usize, HiveMindSocketError> {
+        self.checkpoint_prepared_outcomes()
+            .map_err(HiveMindSocketError::Durability)?;
+        socket.flush_unsent_stores(&self.connection)
     }
 
     /// Actual multi-Level model inference, fixed-step combat and ordered
