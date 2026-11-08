@@ -2476,10 +2476,21 @@ class ExperimentHub {
             catch { return true; } // Unreconciled claims may own a GPU.
         }))
             throw Error('Release all GPU-bearing leases before rebinding machine GPU identities.');
+        // Rebinding is a physical identity operation, not permission to
+        // increase Hub GPU admission. Preserve configured budgets for the
+        // same logical ID even when an older client omits the new fields.
+        const retained=gpu.map(g=>{
+            const previous=machine.gpus.find(old=>old.id===g.id);
+            return previous?{...g,
+                hub_vram_mb:Math.min(g.vram_mb,
+                    previous.hub_vram_mb??previous.vram_mb),
+                hub_compute_pct:previous.hub_compute_pct??100,
+            }:g;
+        });
         const next=copy(this.state);
-        next.machines.find(m=>m.id===machine.id).gpus=gpu;
+        next.machines.find(m=>m.id===machine.id).gpus=retained;
         this.commit(next);
-        return {machine_id:machine.id,gpus:copy(gpu)};
+        return {machine_id:machine.id,gpus:copy(retained)};
     }
     enrollMachine(value) {
         if (!object(value) || !ID.test(String(value.machine_id || '')))
