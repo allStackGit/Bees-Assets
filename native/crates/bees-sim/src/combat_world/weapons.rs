@@ -287,6 +287,42 @@ impl CombatWorld {
         Ok(())
     }
 
+    /// Source-only aim-at-front offset, registered for ALL physical ships
+    /// because an ordinary cannon may target a neural-policy opponent.
+    pub fn configure_ship_front_aim_offset(
+        &mut self, ship_id: i64, offset: Option<f32>,
+    ) -> Result<(), CombatWorldError> {
+        if offset.is_some_and(|value| !value.is_finite()) {
+            return Err(CombatWorldError::InvalidPolicyTurret);
+        }
+        let index = *self.ship_by_id.get(&ship_id)
+            .ok_or(CombatWorldError::UnknownShip)?;
+        if self.ships[index].vitals.is_dead() ||
+            !self.physics.ships()[index].active
+        {
+            return Err(CombatWorldError::UnknownShip);
+        }
+        if let Some(value) = offset {
+            self.target_front_offsets.insert(ship_id, value);
+        }
+        Ok(())
+    }
+
+    /// Source Weapon.Targeting requires a live squad command for AI ships,
+    /// but always runs for player-controlled ships. This flag is derived
+    /// from the owning command director every gameplay step, not stored
+    /// in an independent client-side command registry.
+    pub fn refresh_game_auto_fire_authority(
+        &mut self, mut has_live_squad_command: impl FnMut(i64) -> bool,
+    ) {
+        for (&id, runtime) in &mut self.game_turrets {
+            let user = self.ship_by_id.get(&id)
+                .and_then(|&index| self.physics.ships().get(index))
+                .is_some_and(|body| body.motion.user_controlled);
+            runtime.ai_order_active = !user && has_live_squad_command(id);
+        }
+    }
+
     /// Read-only readiness for an authorized local manual-point order. The
     /// gameplay layer still verifies source squad lifetime and permissions.
     pub fn game_ship_has_manual_weapon(&self, ship_id: i64) -> bool {
