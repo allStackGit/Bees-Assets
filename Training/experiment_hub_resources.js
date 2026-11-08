@@ -70,9 +70,13 @@ function remaining(machine,reservations) {
     // This remains advisory; it does NOT enforce GPU isolation or free VRAM.
     const verified=machine.status==='connected'&&
         Array.isArray(machine.verified_gpus)?machine.verified_gpus:[];
+    // An operator can withhold a portion of a physical GPU's admission
+    // budget for independently owned training (including Bees). These are
+    // ledger limits, not VRAM or compute isolation.
     const capacity=verified.map(g=>({id:g.id,vram_mb:g.vram_mb,
         observed_gpu_busy_pct:Number.isSafeInteger(g.gpu_busy_pct)?g.gpu_busy_pct:null,
-        available_vram_mb:g.vram_mb,available_compute_pct:100,exclusive:false}));
+        available_vram_mb:Math.min(g.vram_mb,g.hub_vram_mb??g.vram_mb),
+        available_compute_pct:g.hub_compute_pct??100,exclusive:false}));
     const indexed=new Map(capacity.map(g=>[g.id,g]));
     for(const claim of claimed) {
         const resources=claim.resources||{};
