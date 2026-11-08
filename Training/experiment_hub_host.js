@@ -41,4 +41,27 @@ function inspectHost(osApi=os,fsApi=fs) {
         reason,
     };
 }
-module.exports={inspectHost};
+// Report memory that can be supplied to a new process without relying on
+// configured machine capacity. Linux MemAvailable includes reclaimable cache;
+// os.freemem() alone excludes it. These are observations, not reservations.
+function availableMemoryMb(osApi=os,fsApi=fs) {
+    const total=typeof osApi.totalmem==='function'?osApi.totalmem():null;
+    if(!Number.isSafeInteger(total)||total<=0)return null;
+    let available=null;
+    if(osApi.platform()==='linux') {
+        try {
+            const data=fsApi.readFileSync('/proc/meminfo','utf8');
+            if(typeof data==='string'&&data.length<=16384) {
+                const match=data.match(/^MemAvailable:\s+([0-9]+)\s+kB\s*$/m);
+                if(match)available=Number(match[1])*1024;
+            }
+        }catch {
+            // An inaccessible or malformed /proc value is not an estimate.
+        }
+    }
+    if(available===null&&typeof osApi.freemem==='function')
+        available=osApi.freemem();
+    if(!Number.isSafeInteger(available)||available<0)return null;
+    return Math.floor(Math.min(total,available)/1048576);
+}
+module.exports={inspectHost,availableMemoryMb};
