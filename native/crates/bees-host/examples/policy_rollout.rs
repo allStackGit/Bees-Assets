@@ -662,6 +662,23 @@ fn main() -> Result<(), Box<dyn Error>> {
                     }
                     continue;
                 },
+                Ok(bees_host::client::NativeClientAction::CeaseFire(input)) => {
+                    match host.player_cease_fire_squads(&input) {
+                        Ok(counts) if counts.accepted_squads > 0 &&
+                            counts.rejected_squads == 0 => client.report_move(
+                            if input.cease_fire { "Cease fire enabled" } else { "Attack on sight enabled" }),
+                        Ok(counts) if counts.accepted_squads > 0 => client.report_move(
+                            "Firing mode updated; some squads unavailable"),
+                        Ok(_) => client.report_move("Selected squads cannot change firing mode"),
+                        Err(bees_host::runtime::HostPlayerInputError::Gameplay(error))
+                            if error.is_rejection() => client.report_move("Cannot change firing mode"),
+                        Err(error) => {
+                            failed_window = Some(format!("native firing mode: {error:?}"));
+                            break;
+                        },
+                    }
+                    continue;
+                },
                 Ok(bees_host::client::NativeClientAction::Quit) => { user_closed = true; break; },
                 Err(error) => { failed_window = Some(format!("native window: {error}")); break; },
             }
