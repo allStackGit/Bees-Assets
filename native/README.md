@@ -855,7 +855,11 @@ denominators and an explicitly approximate, *sample-only* physics latency p95.
 The sampler rejects counter resets rather than producing false throughput
 spikes. Sampling runs between rollout windows, never per ship or per tick,
 and does not claim to measure GPU execution time when the model backend
-does not synchronize.
+does not synchronize. The same intervals include attributed enemy/friendly
+HitEvent counts and actual ship TSV loss, plus completed/contact/near-missed
+policy projectile roots. A split shot is counted only on root completion;
+unattributed collisions are excluded from attributed hit TSV. These are
+observations, not command/shooting StoreCommands credits.
 
 
 
