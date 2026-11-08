@@ -38,7 +38,9 @@ class LocalExecution {
             tinybrains_profiles:{...this.supervisor.adapters?.tinybrains?.tinybrains_profiles},
             gpu_projects:this.projects.filter(project=>
                 this.supervisor.gpuEnabled===true&&
-                typeof this.supervisor.adapters?.[project]?.gpu_verify_args==='function')};
+                (this.supervisor.gpuExecution==='cuda'
+                    ?this.supervisor.adapters?.[project]?.gpu_execution==='cuda'
+                    :typeof this.supervisor.adapters?.[project]?.gpu_verify_args==='function'))};
     }
     async handle(order) {
         if(!order||!['start','stop','inspect','qualify_gpu'].includes(order.action)||
@@ -297,10 +299,11 @@ function fromEnvironment(env=process.env,options={}) {
         if(typeof helperPath!=='string'||!path.isAbsolute(helperPath)||
             !/^[a-f0-9]{64}$/.test(String(helperSha256||'')))
             throw Error('Specify a locally installed absolute Windows owner path and its SHA-256.');
+        const local={root,machineId,adapters,helperPath,helperSha256,
+            gpuEnabled:env.EXPERIMENT_HUB_ENABLE_CUDA==='1'};
         supervisor=options.createSupervisor
-            ?options.createSupervisor({root,machineId,adapters,helperPath,helperSha256})
-            :new WindowsSupervisor({root,machineId,adapters,
-                helperPath,helperSha256});
+            ?options.createSupervisor(local)
+            :new WindowsSupervisor(local);
     }
     return new LocalExecution({machineId,supervisor,
         projects:Object.keys(adapters)});
