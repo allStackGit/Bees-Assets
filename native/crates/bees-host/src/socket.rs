@@ -499,6 +499,14 @@ impl NativeHiveMindSocket {
                 }
                 self.pending_setup = None;
                 self.game_id = Some(id);
+                if pending.kind == SetupKind::Reconnect {
+                    // The same TCP/WebSocket object can authenticate a
+                    // renewed server Game session. Requests transmitted
+                    // before that new session are not considered sent on
+                    // the new one. Ordinary setup-level on the same socket
+                    // must NOT trigger a duplicate StoreCommands replay.
+                    self.sent_store_hashes.clear();
+                }
                 self.measurements.setup_accepted += 1;
                 return Ok(HiveMindSocketEvent::SetupAccepted {
                     request_hash: pending.hash, server_game_id: id,
