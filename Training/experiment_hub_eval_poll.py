@@ -50,7 +50,12 @@ def targets(port: int, machine: str, suite: str, project: str) -> dict:
         if not re.fullmatch(r"[a-f0-9]{64}", token):
             raise ValueError("Restricted evaluator endpoint requires the enrolled machine token.")
         endpoint = "/api/hub/agent/evaluation/targets"
-        headers = {"X-Hub-Agent-Token": token}
+        headers = {
+            "X-Hub-Agent-Token": token,
+            # The coordinator checks its own listener Host, not the local
+            # SSH-forwarded port (which may be 17149 on this worker).
+            "Host": "127.0.0.1:7149",
+        }
     else:
         raise ValueError("Invalid local evaluator port.")
     connection = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
