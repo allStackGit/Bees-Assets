@@ -2224,9 +2224,9 @@ document.addEventListener('DOMContentLoaded', () => {
             '? This will start eligible CPU jobs and release verified completed capacity. You confirm that unmanaged host workloads have been accounted for. Restart disarms automation by default.'+
             (resume?' You explicitly authorize CPU-only scheduling recovery after coordinator or agent restart, after fresh native and lease proof. This does not enable machine boot startup. Uncertain jobs or changed credentials cancel the permission.':'')+
             (adopt?' Previously automated running or completed jobs will be re-adopted ONLY after fresh, same-dispatch native inspection and verified lease ownership. Uncertain jobs block arming; existing native processes will not be relaunched.':'')+
-            (gpu?' This session will also start jobs with a currently qualified exclusive GPU.':'')+
-            (gpuClaim?' This session may claim exclusive GPU capacity on armed CUDA or ROCm hosts.':'')+
-            (gpuProbe?' It may run one inert access probe for each GPU claim it creates.':'')+
+            (gpu?' This session may also start eligible Linux exclusive GPU or Windows exclusive/cooperative CUDA jobs.':'')+
+            (gpuClaim?' This session may claim exclusive GPU or locally approved cooperative Windows shared capacity.':'')+
+            (gpuProbe?' It may run inert Linux device-denial probes for exclusive GPU claims only.':'')+
             (rebalance?' This session may move its own unstarted claims between armed hosts after a capacity drop.':'')))return;
         try {
             await action('hub/automation',{
@@ -2360,6 +2360,52 @@ document.addEventListener('DOMContentLoaded', () => {
             await reload();
         }catch(error){
             feedback('hub-pipeline-message',String(error.message||error));
+        }
+    });
+    // Optional resource builder: author only the existing frozen resource
+    // request. No lease or native execution is implied by filling the JSON.
+    const builderMode=$('hub-build-gpu-mode');
+    const updateBuilder=()=>{
+        const shared=builderMode.value==='shared';
+        $('hub-build-share-vram').disabled=!shared;
+        $('hub-build-share-compute').disabled=!shared;
+    };
+    builderMode.addEventListener('change',updateBuilder);
+    $('hub-build-resources').addEventListener('click',()=>{
+        try {
+            const integer=(id,min,max)=>{
+                const value=Number($(id).value);
+                if(!Number.isSafeInteger(value)||value<min||value>max)
+                    throw Error('Enter a whole number between '+min+' and '+max+' for '+id.replace('hub-build-','')+'.');
+                return value;
+            };
+            const cpus=integer('hub-build-cpus',1,4096);
+            const ram_mb=integer('hub-build-ram',128,100000000);
+            const gpu_count=integer('hub-build-gpu-count',0,32);
+            const mode=builderMode.value;
+            const min_gpu_vram_mb=integer('hub-build-gpu-min-vram',0,1000000);
+            const raw=$('hub-build-gpu-ids').value.trim();
+            const gpus=raw?raw.split(',').map(s=>s.trim()):[];
+            if(gpus.some(id=>!/^[a-z][a-z0-9_-]{0,47}$/.test(id))||
+                new Set(gpus).size!==gpus.length||
+                (gpus.length&&gpus.length!==gpu_count))
+                throw Error('GPU IDs must be unique registered identifiers matching the requested GPU count.');
+            if(!gpu_count&&(mode==='shared'||min_gpu_vram_mb||gpus.length))
+                throw Error('Zero-GPU jobs cannot request GPU memory, IDs or shared allocation.');
+            const resources={cpus,ram_mb,gpu_count};
+            if(gpu_count){
+                resources.gpu_mode=mode;
+                if(min_gpu_vram_mb)resources.min_gpu_vram_mb=min_gpu_vram_mb;
+                if(gpus.length)resources.gpus=gpus;
+                if(mode==='shared') {
+                    resources.gpu_vram_mb=integer('hub-build-share-vram',1,1000000);
+                    resources.gpu_compute_pct=integer('hub-build-share-compute',1,100);
+                }
+            }
+            $('hub-job-resources').value=JSON.stringify(resources,null,2);
+            feedback('hub-build-message','Resource JSON filled. Review it before queueing; no work was started.');
+        }catch(error){
+            feedback('hub-build-message',String(error.message||error));
         }
     });
     $('hub-job-queue').addEventListener('click',async()=>{
