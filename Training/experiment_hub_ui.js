@@ -1636,13 +1636,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 ?selected.gpus.map(g=>({
                     id:g.id,vram_mb:g.vram_mb,
                     pci_address:g.pci_address||'',
-                    hub_vram_mb:g.hub_vram_mb??g.vram_mb,
-                    hub_compute_pct:g.hub_compute_pct??100,
                 }))
                 :(selected?.observed_gpus||[]).map((g,index)=>({
                     id:'gpu'+index,vram_mb:g.vram_mb,
                     pci_address:g.pci_address,
-                    hub_vram_mb:g.vram_mb,hub_compute_pct:100,
                 }));
             $('hub-gpu-bind-json').value=JSON.stringify(inventory,null,2);
             lastGpuBindingMachine=physical.value;
