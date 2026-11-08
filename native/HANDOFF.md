@@ -155,10 +155,13 @@ NativeHostRuntime::flush_store_socket from its I/O owner to checkpoint any
 ready batches and send only not-yet-transmitted pending hashes. Subsequent
 polls do not resend unacknowledged requests; a new socket can replay the
 original outstanding hashes. NativeHostRuntime::service_socket_event now
-reads one authenticated event, routes every server reply through
-receive_frame (durable 200/409 and discard processing), and flushes newly
-checkpointed results without manually sequencing two distinct paths.
-Blocking socket I/O stays off the render/physics thread. Direct
+reads one authenticated event and routes every server reply through
+receive_frame (durable 200/409 and discard processing). The caller MUST
+consume the returned validated strategy/targeting/banning decision BEFORE
+calling flush_store_socket for outbound results. These operations are
+deliberately separate: a failed outgoing socket write must not hide an
+already-consumed accepted targeting reply. Blocking socket I/O stays off
+the render/physics thread. Direct
 send_store, flush_unsent_stores and reconnect replay share one at-most-once
 transmission guard per authenticated socket session; it resets after an
 accepted reconnect-level even if the WebSocket object is reused. On a
