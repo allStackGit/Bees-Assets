@@ -32,11 +32,32 @@ def configure_engine(engine):
     runtime.CLI = engine
 
 
+def verify_cuda(uuid):
+    # The parent Windows owner already pinned CUDA_VISIBLE_DEVICES to this
+    # physical GPU UUID before creating the suspended job-owned child.
+    if os.environ.get("CUDA_VISIBLE_DEVICES") != uuid:
+        raise RuntimeError("CUDA device identity changed before trainer launch.")
+    import torch
+
+    if not torch.version.cuda or not torch.cuda.is_available() or torch.cuda.device_count() != 1:
+        raise RuntimeError("One usable CUDA device is required.")
+    probe = torch.ones((16,), device="cuda")
+    if float(probe.sum().item()) != 16.0:
+        raise RuntimeError("CUDA compute preflight failed.")
+    torch.cuda.synchronize()
+
+
 if __name__ == "__main__":
     engine, stderr = sys.argv[1:3]
     if stderr != "-":
         sys.stdout = open(os.devnull, "w", encoding="utf-8")
         sys.stderr = open(stderr, "x", encoding="utf-8", buffering=1)
+    args = sys.argv[3:]
+    if args[:1] == ["--hub-cuda"]:
+        if len(args) < 3:
+            raise RuntimeError("Missing pinned CUDA UUID or training command.")
+        verify_cuda(args[1])
+        args = args[2:]
     configure_engine(Path(engine))
-    sys.argv = [sys.argv[0], *sys.argv[3:]]
+    sys.argv = [sys.argv[0], *args]
     runpy.run_module("ants_mapoca.cli", run_name="__main__", alter_sys=True)
