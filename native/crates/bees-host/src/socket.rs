@@ -414,6 +414,34 @@ impl NativeHiveMindSocket {
         self.flush_unsent_stores(connection)
     }
 
+    /// Explicitly retransmit still-unacknowledged StoreCommands requests
+    /// when the socket owner has established a lost response or timeout.
+    /// Unlike routine flush_unsent_stores this deliberately resends hashes
+    /// already transmitted on this socket. The ONE durable connection ledger
+    /// supplies the unchanged original payload; 200/409-acknowledged requests
+    /// have left that ledger and can never be retransmitted here.
+    ///
+    /// The caller chooses the retry policy. Do not call this continuously or
+    /// invent a new request Hash for an existing reservation settlement.
+    pub fn retry_pending_stores(
+        &mut self,
+        connection: &DurableHiveMindConnection,
+    ) -> Result<usize, HiveMindSocketError> {
+        self.require_ready()?;
+        let hashes = connection.pending_store_hashes()?;
+        for hash in &hashes {
+            let original = connection.retry_payload(*hash)?
+                .ok_or(HiveMindSocketError::InvalidRequestOwnership)?;
+            // The payload has already been durably checkpointed and may
+            // have been sent. This is the only intentional repeat-send
+            // entrypoint on the same authenticated socket.
+            self.send(original)?;
+            self.sent_store_hashes.insert(*hash);
+            self.measurements.store_transmissions += 1;
+        }
+        Ok(hashes.len())
+    }
+
     /// Read one non-control message. Ping/pong servicing does not create
     /// application events. Setup responses are validated before unlocking
     /// the ordinary request stream. All other messages must be handed to
