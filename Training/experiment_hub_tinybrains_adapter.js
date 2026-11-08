@@ -131,6 +131,16 @@ function createTinyBrainsAdapter({projectRoot,pythonPath,artifactRoot,profiles,
         return [id,{content,sha256,device:config.runtime.device}];
     }));
 
+    // CUDA uses the trusted runtime wrapper even with the bundled Windows
+    // engine. Verify that binary at adapter installation time instead of
+    // advertising a GPU profile that can only fail after native launch.
+    if(windows&&enginePath==null&&[...configs].some(([,item])=>item.device==='cuda')) {
+        const probe=spawnSync(engine,['--version'],{
+            cwd:project,encoding:'utf8',windowsHide:true,timeout:5000,maxBuffer:4096,
+        });
+        if(probe.status!==0||probe.stdout?.trim()!=='tinybrains 0.5.0')
+            throw Error('Windows CUDA profiles require the installed TinyBrains 0.5.0 engine.');
+    }
     validateApprovedProfiles(executable,project,configs);
     if(!checkpointImports||typeof checkpointImports!=='object'||
         Array.isArray(checkpointImports)||Object.keys(checkpointImports).length>32)
