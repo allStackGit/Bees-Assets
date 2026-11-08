@@ -33,6 +33,8 @@ internal static class NativePhysicalSceneExporter
         public Vector2 position, body_velocity, target_coordinates;
         public float rotation_degrees, rotation_speed;
         public float base_speed, current_speed, height;
+        // Exact Unity game movement parameters, not hull-derived estimates.
+        public float game_turning_radius, game_half_width, game_half_height;
         public bool mobile, cannot_change_orders, user_controlled;
         public bool has_target_coordinates, is_rl_policy_controlled, is_moving;
         public int movement_direction;
@@ -146,7 +148,7 @@ internal static class NativePhysicalSceneExporter
     [Serializable]
     private sealed class PhysicalScene
     {
-        public int schema_version = 16;
+        public int schema_version = 17;
         public string level_name;
         public string stage_name;
         public float fixed_dt_seconds;
@@ -264,6 +266,17 @@ internal static class NativePhysicalSceneExporter
                 throw new InvalidOperationException(
                     "Bound policy ship has no configured source episode TSV: " + ship.Id);
             }
+            float gameTurningRadius = ConfigData.ShipTurningRadius;
+            float gameHalfWidth = ship.GetHalfWidth();
+            float gameHalfHeight = ship.GetHalfHeight();
+            if (ship.IsMobile && !ship.IsRlPolicyControlled &&
+                (!IsFinite(gameTurningRadius) || gameTurningRadius <= 0f ||
+                 !IsFinite(gameHalfWidth) || gameHalfWidth <= 0f ||
+                 !IsFinite(gameHalfHeight) || gameHalfHeight <= 0f))
+            {
+                throw new InvalidOperationException(
+                    "Cannot export source game steering profile for ship: " + ship.Id);
+            }
             snapshot.ships.Add(new SourceShip {
                 entity_id = ship.Id,
                 ship_type = (int)ship.ShipType,
@@ -282,6 +295,9 @@ internal static class NativePhysicalSceneExporter
                 rotation_speed = ship.RotationSpeed,
                 base_speed = ship.Speed,
                 current_speed = ship.CurrentSpeed,
+                game_turning_radius = gameTurningRadius,
+                game_half_width = gameHalfWidth,
+                game_half_height = gameHalfHeight,
                 body_velocity = ship.Body.linearVelocity,
                 height = ship.GetHeight(),
                 mobile = ship.IsMobile,
