@@ -181,6 +181,13 @@ qualification has not been performed.
 
 ## Native Level and inference integration (development status)
 
+An ordinary game-only Level may use `bees_gameplay::inference::NoPolicyInference`
+with `NativeSceneAssets::build_runtime` to run the identical fixed-step
+CombatWorld and command lifecycle **without starting a neural-model worker**.
+The batch driver skips model execution when no policy agents are due; if a
+policy agent actually requires an action, the no-model backend fails instead
+of generating fake actions. This does not itself provide a graphical game.
+
 `bees-gameplay::level_rules::NativeLevelRules` is the current canonical
 gameplay-to-simulator adapter. A `NativeLevelState` owns the real
 `CombatWorld`, one `NativeLevelEventProcessor`, and Level-supplied
