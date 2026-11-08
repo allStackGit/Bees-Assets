@@ -1362,7 +1362,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         await reload();
                     }catch(e){feedback('hub-job-message',e.message);}
                 }));
-            if(j.gpu_probe_block&&
+            if(j.gpu_probe_block&&machine?.agent_platform==='linux'&&
                 (proof?.status!=='requested'||proof.first_offered_at===null||proof.automation_paused))
                 actions.append(document.createTextNode(j.gpu_probe_block+' '));
             if(j.gpu_probe_cleanup_ready)
@@ -1396,7 +1396,9 @@ document.addEventListener('DOMContentLoaded', () => {
                         'Authorize native CPU/RAM-limited execution of ')+
                         j.configuration_name+' on '+machine.name+
                         '? Only locally installed adapter code selects the executable. '+
-                        (gpu?'The service will verify device access and ROCm visibility before training. ':'')+
+                        (gpu?(windows
+                            ?'Windows CUDA selects the pinned physical UUID cooperatively; other local processes are not isolated and no GPU share or VRAM cap is enforced. '
+                            :'The Linux service verifies device access and ROCm visibility before training. '):'')+
                         (windows?'Windows Stop requests checkpoint-preserving shutdown when the local adapter supports it; otherwise it force-terminates the Job Object process tree. ':
                             'Linux uses the locally selected service stop policy. ')+
                         (autoRelease?'The Hub will release this claim after verified finish or Stop. ':'')+
