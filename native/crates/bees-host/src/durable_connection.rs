@@ -11,6 +11,7 @@
 //! remain outside this module.
 
 use std::path::PathBuf;
+use std::collections::HashSet;
 
 use bees_gameplay::level_host::{
     NativeHiveMindFrameDelivery, NativeHiveMindFrameError,
@@ -42,6 +43,7 @@ pub enum DurableConnectionError {
     /// Checkpoint durability is unknown after a write error. Restart and
     /// reload before transmitting another request or accepting a reply.
     Unavailable,
+    PreviouslyRegisteredJournalRun,
     Persistence(CheckpointFileError),
     Request(NativeConnectionError),
     Protocol(HiveMindProtocolError),
@@ -55,6 +57,9 @@ pub struct DurableHiveMindConnection {
     connection: NativeHiveMindConnection,
     checkpoint: ConnectionCheckpointFile,
     unavailable: bool,
+    /// Process-local admission: a previously checkpointed run_id cannot
+    /// silently be reused for a different newly created journal.
+    active_journal_runs: HashSet<String>,
 }
 
 impl DurableHiveMindConnection {
@@ -79,7 +84,10 @@ impl DurableHiveMindConnection {
             checkpoint.persist(&fresh)?;
             fresh
         };
-        Ok(Self { connection, checkpoint, unavailable: false })
+        Ok(Self {
+            connection, checkpoint, unavailable: false,
+            active_journal_runs: HashSet::new(),
+        })
     }
 
     /// Read-only access for NativeLevelBatchDriver::runtime_status.
@@ -190,11 +198,16 @@ impl DurableHiveMindConnection {
         &mut self, run_id: &str,
     ) -> Result<(), DurableConnectionError> {
         self.ensure_available()?;
-        if self.connection.register_journal_run(run_id)
+        if self.active_journal_runs.contains(run_id) {
+            return Ok(());
+        }
+        if !self.connection.register_journal_run(run_id)
             .map_err(DurableConnectionError::Request)?
         {
-            self.persist_or_poison()?;
+            return Err(DurableConnectionError::PreviouslyRegisteredJournalRun);
         }
+        self.persist_or_poison()?;
+        self.active_journal_runs.insert(run_id.to_owned());
         Ok(())
     }
 
