@@ -206,8 +206,10 @@ function approvedTinyBrainsProfiles(machines) {
         for(const [profile,digest] of Object.entries(machine.tinybrains_profiles||{})) {
             const key=profile+':'+digest;
             if(!profiles.has(key))
-                profiles.set(key,{profile,digest,workers:0});
+                profiles.set(key,{profile,digest,workers:0,cudaWorkers:0});
             profiles.get(key).workers++;
+            if(machine.tinybrains_cuda_profiles?.includes(profile))
+                profiles.get(key).cudaWorkers++;
         }
     }
     return [...profiles.entries()].sort(([a],[b])=>a.localeCompare(b));
@@ -826,7 +828,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const tinyBrainsPicker=document.createElement('fieldset');
     tinyBrainsPicker.hidden=true;
     const tinyBrainsLegend=document.createElement('legend');
-    tinyBrainsLegend.textContent='TinyBrains CPU job';
+    tinyBrainsLegend.textContent='TinyBrains CPU / CUDA job';
     const tinyBrainsSelect=document.createElement('select');
     const tinyBrainsUpdates=document.createElement('input');
     tinyBrainsUpdates.type='number';
@@ -842,7 +844,13 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         $('hub-config-json').value=JSON.stringify({profile,profile_sha256:digest,updates},null,2);
-        feedback('hub-config-message','Profile and update count copied to the draft. Save to retain them.');
+        const selected=approvedTinyBrainsProfiles(state?.machines||[])
+            .find(([key])=>key===tinyBrainsSelect.value)?.[1];
+        feedback('hub-config-message','Profile and update count copied to the draft. '+
+            (selected?.cudaWorkers
+                ?'When queueing, request one exclusive GPU and a sufficient CPU/RAM budget. '
+                :'When queueing, request CPU/RAM without GPUs. ')+
+            'To import a preexisting checkpoint, add import_checkpoint with its locally approved ID to the JSON. Save the draft.');
     });
     for(const [caption,control] of [['Approved profile ',tinyBrainsSelect],
         ['Updates ',tinyBrainsUpdates]]) {
@@ -859,8 +867,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const prior=tinyBrainsSelect.value;
         const options=approvedTinyBrainsProfiles(state.machines);
         tinyBrainsSelect.replaceChildren(...(options.length
-            ?options.map(([key,{profile,digest,workers}])=>new Option(
-                profile+' · '+digest.slice(0,12)+' · '+workers+(workers===1?' worker':' workers'),key))
+            ?options.map(([key,{profile,digest,workers,cudaWorkers}])=>new Option(
+                profile+' · '+(cudaWorkers?'CUDA':'CPU')+' · '+digest.slice(0,12)+
+                ' · '+workers+(workers===1?' worker':' workers'),key))
             :[new Option('No connected worker advertises a profile','')]));
         if(options.some(([key])=>key===prior))tinyBrainsSelect.value=prior;
         tinyBrainsSelect.disabled=tinyBrainsUse.disabled=!options.length;
@@ -1551,9 +1560,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const physical=$('hub-gpu-bind-machine');
         const previousGpuMachine=physical.value;
         const candidates=state.machines.filter(m=>
-            m.status==='connected'&&m.agent_platform==='linux'&&
-            m.gpu_inventory_source==='amdgpu-sysfs-v1');
-        physical.replaceChildren(new Option('Select Linux machine',''),
+            m.status==='connected'&&
+            (m.agent_platform==='linux'&&m.gpu_inventory_source==='amdgpu-sysfs-v1'||
+             m.agent_platform==='win32'&&m.gpu_inventory_source==='nvidia-smi-v1'));
+        physical.replaceChildren(new Option('Select machine with physical GPUs',''),
             ...candidates.map(m=>new Option(m.name+' ('+m.id+')',m.id)));
         if(candidates.some(m=>m.id===previousGpuMachine))
             physical.value=previousGpuMachine;
@@ -2039,7 +2049,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const machine=state?.machines.find(m=>m.id===machineId);
         if(!machine){
             feedback('hub-gpu-bind-message',
-                'Select a connected Linux machine with a fresh physical AMDGPU report.');
+                'Select a connected machine with a fresh AMDGPU or NVIDIA report.');
             return;
         }
         let desired;
