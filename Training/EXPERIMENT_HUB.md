@@ -601,7 +601,8 @@ per-device measurement and platform-level isolation are implemented.
 4. The Hub administrator dashboard listens at `127.0.0.1:7148` but
    **machine agents connect only to the separate `127.0.0.1:7149` listener**.
    This agent-only port accepts authenticated heartbeat/lease-receipt POSTs
-   and cannot access any administrator or training route. A remote worker
+   plus a machine-scoped, read-only independent-evaluation worklist GET.
+   It cannot access any administrator or training route. A remote worker
    needs a trusted SSH local forwarding tunnel, for example mapping its
    local port 17149 to the coordinator's `127.0.0.1:7149`. Set
    `EXPERIMENT_HUB_URL=http://127.0.0.1:17149` on the worker. The agent
@@ -707,7 +708,7 @@ re-arming is authorized by this service setup. This source-only Linux
 integration is **not yet qualified on Halifax**.
 
 The same generator can install a separately budgeted **periodic independent
-evaluator** on a trusted Linux coordinator host, without adding any native
+evaluator** on a trusted Linux host, without adding any native
 training authority. Use `evaluator --project courier|tinybrains --machine
 MACHINE_ID --python /absolute/python --suite /absolute/suite.json
 --artifact-root /absolute/artifacts --scratch /absolute/scratch
@@ -722,10 +723,24 @@ explicitly start the generated `...-evaluator.timer` for this machine session. U
 exclusive-create and not automatically enabled. systemd prevents overlapping
 runs of the same one-shot service and enforces the specified CPU and RAM caps.
 The evaluator still needs its approved project dependencies and access to
-the model/receipt directories, and its port reaches only loopback; do not
-expose the Hub administrator listener to ordinary remote workers. CPU
-quotas are not exclusive cores and this timer is not a substitute for
-production coexistence qualification.
+the model/receipt directories. On a coordinator-local machine the generator
+defaults to the historical dashboard loopback port 7148; this must **never**
+be forwarded to a remote worker. For a remote worker, add
+`--env-file /absolute/private/hub-agent.env --port 17149` (the port of
+the already established, trusted SSH forward to the coordinator's agent
+listener at 7149). The file must be owned by the service user, mode 0600,
+and contain that worker's enrolled `EXPERIMENT_HUB_AGENT_TOKEN`. The
+generator passes the file through the systemd `EnvironmentFile` directive;
+the Python evaluator sends the token only as an HTTP request header to the
+restricted agent endpoint, never in its URL, command line or unit contents.
+With `--env-file`, the generator defaults to port 7149 if the worker
+is co-located with the Hub. The port 7148 dashboard route remains available
+for already-installed coordinator-local evaluators without an environment file.
+The agent endpoint returns only this machine's current eligible independent
+evaluation targets, and native ownership and checkpoint verification remain
+separate. A token alone cannot start, stop or promote work through this route.
+CPU quotas are not exclusive cores, and these timers are not a substitute
+for production coexistence qualification.
 
 ### Opt-in Windows service recovery, with manual startup
 
@@ -2001,8 +2016,12 @@ evaluates one explicit checkpoint. For scheduled evaluation, run
 `--artifact-root`, `--suite`, `--scratch`, and `--receipt-root`.
 For a multi-suite gate, pass `--suite short.json --suite long.json`
 in one invocation instead of launching independent pollers. The poller
-queries the local coordinator (port 7148 by default), selects a completed
-numbered checkpoint for an eligible running dispatch, and evaluates at most
+queries the local coordinator (port 7148 by default when running beside
+the coordinator). On a remote worker, use `--port 17149` and provide
+`EXPERIMENT_HUB_AGENT_TOKEN` from the private agent environment through
+the scheduled evaluator's `--env-file`; only the restricted 7149 agent
+port should be forwarded. It selects a completed numbered checkpoint for
+an eligible running dispatch, and evaluates at most
 one checkpoint batch per invocation. Set the profile's `training.checkpoint_every` so a
 numbered checkpoint appears while the job is still running. The poller
 leaves the changing `latest.pt` alone. Use persistent scratch to retain
