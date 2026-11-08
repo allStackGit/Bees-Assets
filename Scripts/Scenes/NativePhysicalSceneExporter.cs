@@ -163,6 +163,8 @@ internal static class NativePhysicalSceneExporter
         public List<long> member_ids = new List<long>();
         public bool user_controlled, can_accept_input, locked_on;
         public string shooting_strategy;
+        // Real Squad.MaxSight for the native HiveMind Scouting command.
+        public int max_sight;
     }
 
     [Serializable]
@@ -528,7 +530,8 @@ internal static class NativePhysicalSceneExporter
                 user_controlled = squad.IsUserControlled,
                 can_accept_input = squad.CanAcceptUserInput,
                 locked_on = squad.IsLockedOn,
-                shooting_strategy = Utilities.ConvertShootingStrategyTypeToName[squad.GetShootingStrategy()]
+                shooting_strategy = Utilities.ConvertShootingStrategyTypeToName[squad.GetShootingStrategy()],
+                max_sight = squad.MaxSight
             };
             if (squad.HasCommand || squad.HasCommandQueue || squad.CommandQueue.Count > 0)
                 throw new InvalidOperationException(
