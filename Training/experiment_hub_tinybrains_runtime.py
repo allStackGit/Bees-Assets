@@ -73,6 +73,13 @@ if __name__ == "__main__":
             vram_mb = int(args[1])
             args = args[2:]
         verify_cuda(uuid, vram_mb)
+    if args[:1] == ["--hub-rocm-pci"]:
+        if os.name == "nt" or len(args) < 3:
+            raise RuntimeError("Linux ROCm launch needs one pinned physical PCI address.")
+        from experiment_hub_tinybrains_rocm_verify import verify_runtime_device
+
+        verify_runtime_device(args[1])
+        args = args[2:]
     configure_engine(Path(engine))
     sys.argv = [sys.argv[0], *args]
     runpy.run_module("ants_mapoca.cli", run_name="__main__", alter_sys=True)
