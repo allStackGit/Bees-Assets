@@ -68,6 +68,19 @@ roots/contact/near misses through cumulative Simulation measurements and host
 status intervals. The measurements do NOT settle command/shooting OutcomeIds;
 that persistent delayed-hit accounting remains to be implemented. Avoid
 creating a second per-shot history solely to compute these counters.
+
+A newer commit forwards immutable CombatHit and UnattributedDamage records
+from the authoritative physical events through the same ordered, acknowledged
+Level notification outbox. Core fixed-step events are placed before the
+same-tick FinishedCommand; later timer events retain their own tick order.
+The durable diagnostic sink serializes structured damage and counts only
+synchronized records, while Simulation/status count the same attributed and
+unattributed physical damage. This is NOT a StoreCommands accounting sink:
+the next owner must snapshot active victim-command ownership BEFORE death
+retirement, retain delayed projectile-origin credit until safe settlement,
+and persist/reconcile it using the existing connection-owned OutcomeBatch.
+Do not immediately commit FinishedCommand as final TSV. These changes remain
+source-reviewed only and need executable verification.
 Earlier fixture qualifications below predate these edits.
 
 ## Shared weapons and geometry retained
