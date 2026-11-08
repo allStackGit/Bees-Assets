@@ -3,7 +3,8 @@
 
 use bees_hivemind::session::SquadLifetime;
 use bees_sim::{geometry::Vec2, simulation::{World, WorldId},
-    squad_movement::{SquadFormationMember, SquadFormationOptions, issue_squad_move}};
+    squad_movement::{SquadFormationMember, SquadFormationOptions,
+        issue_squad_move, stop_squad_game_movement}};
 use crate::{commands::GameCommandError, level_events::NativeLevelEventError,
     level_host::NativeLevelActivationContext, level_rules::NativeLevelState};
 
@@ -394,6 +395,77 @@ impl NativePlayerMovePlan {
             issue_squad_move(&mut state.combat, navigation, &self.authority.members,
                 self.input.destination, self.authority.options)
                 .map(|result| result.is_some())
+                .map_err(|error| NativePlayerInputError::Source(error.into()))
+        })();
+        if result.is_err() { state.events.fail_player_input(); }
+        result
+    }
+}
+
+
+/// One explicit player StopMoving intent. Stopping is not the AI Hold
+/// command, and never fabricates a learned shooting strategy or reservation.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct NativePlayerStop {
+    pub world_id: WorldId,
+    pub episode_revision: u64,
+    pub selected_ship: i64,
+}
+
+/// Selected source-lifetime squads, retaining the player's selection order.
+/// The host resolves each owner to live members and deduplicates identities.
+#[derive(Clone, Debug, PartialEq)]
+pub struct NativePlayerSquadStops {
+    pub world_id: WorldId,
+    pub episode_revision: u64,
+    pub squads: Vec<SquadLifetime>,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct NativePlayerStopCounts {
+    pub accepted_squads: usize,
+    pub rejected_squads: usize,
+}
+
+/// Preflight before retiring outstanding AI requests. Stop uses the same
+/// authenticated world/episode/squad roster as Move and support commands.
+pub struct NativePlayerStopPlan {
+    input: NativePlayerStop,
+    authority: NativePlayerSquadPlan,
+}
+
+impl NativePlayerStopPlan {
+    pub fn owner(&self) -> SquadLifetime { self.authority.owner }
+
+    pub fn prepare<M: NativeLevelPlayerContext, A>(
+        world: &World<NativeLevelState<M, A>>, input: NativePlayerStop,
+    ) -> Result<Self, NativePlayerInputError> {
+        let authority = NativePlayerSquadPlan::prepare(
+            world, input.world_id, input.episode_revision, input.selected_ship,
+        )?;
+        Ok(Self { input, authority })
+    }
+
+    pub fn execute<M: NativeLevelPlayerContext, A>(
+        self, world: &mut World<NativeLevelState<M, A>>,
+    ) -> Result<(), NativePlayerInputError> {
+        let current = Self::prepare(world, self.input)?;
+        if current.authority != self.authority {
+            return Err(NativePlayerInputError::StaleWorld);
+        }
+        let state = &mut world.state;
+        let result = (|| {
+            state.metadata.cancel_player_scripted_queue(self.authority.owner)
+                .map_err(NativePlayerInputError::Source)?;
+            // One canonical command finalization, including prior server
+            // reservations and actual timed command completion.
+            state.events.finalize_local_command(
+                self.authority.tick, &mut state.combat, self.authority.owner,
+            ).map_err(NativePlayerInputError::Finalization)?;
+            // This clears actual tracked waypoints/A* steering on every
+            // mobile member. A zero-distance Move would not do that.
+            stop_squad_game_movement(&mut state.combat, &self.authority.members)
+                .map(|_| ())
                 .map_err(|error| NativePlayerInputError::Source(error.into()))
         })();
         if result.is_err() { state.events.fail_player_input(); }
