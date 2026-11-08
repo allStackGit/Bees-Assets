@@ -28,10 +28,18 @@ before shared movement operations. J targets the cursor for continuous manual
 point-fire from selected source-controlled ships; K releases manual fire.
 This leaves movement/command ownership unchanged and uses the canonical turret
 cooldown, hull pose, projectile physics and damage. The source's Single,
-DualCannon and BeamCannon mounts support manual fire; LaserBuilder and
-FullShipTurret manual animations still require their authored game-control
-lifecycle. Non-policy automatic enemy acquisition is not implemented. No
-neural policy agent is fabricated to operate an ordinary ship's weapons.
+DualCannon, BeamCannon and LaserBuilder mounts support manual fire using
+their respective physical firing/animation timing. Ordinary non-policy turrets
+also acquire enemy hulls automatically when source player authority or an active
+HiveMind command permits it, using the original shooting-strategy ranking,
+physical range checks, obstacle linecasts and in-flight damage reservations.
+FirstSeen, Random and all rankings except Revenge and MostDangerous are
+supported; the remaining two need live killer-frame and FleetShip damage
+statistics. Fixed FullShipTurret's independent hull-turn/charge animation and
+collision-asteroid targeting are not yet implemented. New Unity exports include
+each turret's front-aim flag and the ship's authored aim offset/type letter;
+older snapshots lacking them fail closed for automatic targeting. No neural
+policy agent is fabricated to operate an ordinary ship's weapons.
 Escape or closing the window cancels unfinished episodes through the existing
 durable abort/delivery boundary. The configured step duration
 is preserved; a slow model slows playback rather than skipping battle ticks.
