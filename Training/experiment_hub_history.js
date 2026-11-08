@@ -165,7 +165,6 @@ class ProgressHistory {
         if(!this.file||!this.dirty||this.storageBlocked)return;
         if(!force&&this.last_saved_ms&&
             receivedMs-this.last_saved_ms<MIN_SAMPLE_INTERVAL_MS)return;
-        this.last_saved_ms=receivedMs;
         const pending=this.file+'.'+crypto.randomBytes(8).toString('hex')+'.tmp';
         try {
             const saved={version:1,samples:[...this.byJob].map(([jobId,e])=>({
@@ -180,6 +179,7 @@ class ProgressHistory {
                 throw Error('Chart archive exceeds size cap.');
             fs.writeFileSync(pending,body,{flag:'wx',mode:0o600});
             fs.renameSync(pending,this.file);
+            this.last_saved_ms=receivedMs;
             this.dirty=false;
             this.persistError=null;
         }catch(error) {
