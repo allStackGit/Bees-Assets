@@ -15,6 +15,43 @@ const {request: resourceRequest}=require('./experiment_hub_resources');
 const ID = /^[a-z][a-z0-9_-]{0,47}$/;
 const TOKEN = /^[0-9a-f]{64}$/;
 const INTERVAL_MS = 15000;
+let lastCpuSample=null;
+let lastCpuBusyPct=null;
+
+// Read global host counters, including Bees and independently started
+// programs. A native job's CPU accounting is separate and must not be
+// added to this figure. Samples closer than 5 seconds retain the last rate.
+function hostCpuBusyPct(hostOs=os,nowMs=Date.now()) {
+    const cores=hostOs.cpus();
+    if(!Array.isArray(cores)||!cores.length)return null;
+    let total=0,idle=0;
+    for(const core of cores) {
+        const times=core?.times;
+        if(!times)return null;
+        for(const key of ['user','nice','sys','idle','irq']) {
+            const value=times[key];
+            if(!Number.isFinite(value)||value<0)return null;
+            total+=value;
+        }
+        idle+=times.idle;
+    }
+    const next={at:nowMs,cores:cores.length,total,idle};
+    if(!lastCpuSample||lastCpuSample.cores!==next.cores||
+        nowMs<=lastCpuSample.at) {
+        lastCpuSample=next;
+        lastCpuBusyPct=null;
+        return null;
+    }
+    if(nowMs-lastCpuSample.at<5000)return lastCpuBusyPct;
+    const elapsed=total-lastCpuSample.total,notBusy=idle-lastCpuSample.idle;
+    lastCpuSample=next;
+    if(elapsed<=0||notBusy<0||notBusy>elapsed) {
+        lastCpuBusyPct=null;
+        return null;
+    }
+    lastCpuBusyPct=Math.round((1-notBusy/elapsed)*10000)/100;
+    return lastCpuBusyPct;
+}
 
 function endpoint(input) {
     const url = new URL(input || 'http://127.0.0.1:7149');
@@ -157,7 +194,8 @@ function sendHeartbeat(url,machineId,token,observedLeaseIds=[],
         !advertisement||typeof advertisement!=='object')
         return Promise.reject(Error('Invalid local execution report batch.'));
     const payload=JSON.stringify({
-        ...observations(machineId),observed_lease_ids:observedLeaseIds,
+        ...observations(machineId),host_cpu_busy_pct:hostCpuBusyPct(),
+        observed_lease_ids:observedLeaseIds,
         execution_reports:executionReports,
         gpu_qualification_reports:gpuQualificationReports,
         local_executor:advertisement.local_executor===true,
