@@ -43,11 +43,38 @@ function createAgentServer(getHub) {
         throw Error('Agent endpoint requires a local Hub provider.');
     return http.createServer(async(req,res)=>{
         const host=req.headers.host;
-        if(req.method!=='POST'||
-            req.url!=='/api/hub/agent/heartbeat'||
-            (host!==AGENT_HOST+':'+AGENT_PORT&&
-                host!=='localhost:'+AGENT_PORT)||
-            req.headers.origin)
+        if((host!==AGENT_HOST+':'+AGENT_PORT&&
+            host!=='localhost:'+AGENT_PORT)||req.headers.origin)
+            return respond(res,404,{error:'Agent endpoint only.'});
+        if(req.method==='GET') {
+            // Only an enrolled machine may inspect its own evaluator
+            // worklist. Never expose the privileged /api/hub dashboard
+            // routes or accept a machine identity without its token.
+            let url;
+            try{url=new URL(req.url,'http://'+AGENT_HOST+':'+AGENT_PORT);}
+            catch{return respond(res,404,{error:'Agent endpoint only.'});}
+            const keys=[...url.searchParams.keys()];
+            if(req.url.length>512||url.pathname!=='/api/hub/agent/evaluation/targets'||
+                url.hash||keys.length!==3||
+                new Set(keys).size!==3||
+                !['machine_id','project_id','suite_id'].every(key=>
+                    url.searchParams.has(key))||
+                Number(req.headers['content-length']||0)!==0)
+                return respond(res,404,{error:'Agent endpoint only.'});
+            try {
+                const targets=getHub().authenticatedEvaluationTargets(
+                    url.searchParams.get('machine_id'),
+                    req.headers['x-hub-agent-token'],
+                    url.searchParams.get('project_id'),
+                    url.searchParams.get('suite_id'));
+                return respond(res,200,{targets});
+            }catch(error) {
+                return respond(res,[401,409].includes(error.status)?error.status:400,{
+                    error:String(error.message||error),
+                });
+            }
+        }
+        if(req.method!=='POST'||req.url!=='/api/hub/agent/heartbeat')
             return respond(res,404,{error:'Agent endpoint only.'});
         try {
             const size=Number(req.headers['content-length']||0);
