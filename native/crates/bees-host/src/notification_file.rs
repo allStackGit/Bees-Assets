@@ -6,12 +6,13 @@
 //! Each record therefore reaches stable storage before its source outbox
 //! entry is retired. A distinct, exclusive file is required for each run.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 use std::fs::{File, OpenOptions};
 use std::io::{self, Write};
 use std::path::Path;
 
 use bees_gameplay::commands::{NativeCommandOrigin, NativeCommandSelection};
+use bees_hivemind::outcomes::OutcomeBatch;
 use bees_gameplay::level_events::{
     NativeLevelNotification, NativeLevelNotificationKind,
 };
@@ -197,6 +198,9 @@ pub struct DurableDiagnosticNotifications {
     // not per individual battle event.
     pending: Vec<u8>,
     measurements: NativeDiagnosticMeasurements,
+    // Prepared only AFTER the matching journal chunk has synchronized.
+    // The host moves each batch into the connection's durable retry ledger.
+    prepared: VecDeque<OutcomeBatch>,
     unavailable: bool,
 }
 
@@ -227,6 +231,7 @@ impl DurableDiagnosticNotifications {
         Ok(Self {
             file, run_id, pending: Vec::new(),
             measurements: NativeDiagnosticMeasurements::default(),
+            prepared: VecDeque::new(),
             unavailable: false,
         })
     }
@@ -410,6 +415,14 @@ impl DurableDiagnosticNotifications {
 impl NativeLevelNotificationSink for DurableDiagnosticNotifications {
     type Error = io::Error;
 
+    fn first_prepared_outcomes(&self) -> Option<&OutcomeBatch> {
+        self.prepared.front()
+    }
+
+    fn prepared_outcomes_queued(&mut self) {
+        self.prepared.pop_front();
+    }
+
     fn accept(
         &mut self,
         world: WorldId,
@@ -460,6 +473,9 @@ impl NativeLevelNotificationSink for DurableDiagnosticNotifications {
             // prefix acknowledged by the Level event outbox.
             for event in &notifications[committed..committed + buffered] {
                 self.measurements.record(event);
+                if let NativeLevelNotificationKind::CommandOutcomesReady(batch) = &event.kind {
+                    self.prepared.push_back(batch.clone());
+                }
             }
             committed += buffered;
         }
