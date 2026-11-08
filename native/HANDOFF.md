@@ -3,8 +3,9 @@
 Worktree `B:\Bees\unified-native`, branch `rewrite/unified-native`.
 Read the attached goal and root AGENTS.md before continuing. The full Unity
 replacement goal remains active and incomplete. Original `B:\Bees\Assets` and
-live training were untouched. Latest fetch found no newer rewrite commits;
-unrelated feat/experiment-queue-ui changes were not merged. No push performed.
+live training were untouched. Changes have since been pushed directly to the
+rewrite branch on GitHub; reconcile the current branch head before doing further work.
+Unrelated feat/experiment-queue-ui changes were not merged.
 
 ## Current integrated increment: command activation through physical attack
 
@@ -31,15 +32,36 @@ Player Attack carries an explicit enemy lifetime, validates enemy side/liveness
 and real snapshot inputs before retiring requests, and activates the same local
 Aggressive command. Selected lifetimes deduplicate through existing batch logic.
 Renderer hull picking now recognizes enemy targets; the native window right-click
-routes enemies to Attack and other locations to movement. Bomber-only/Barge-only
-player Attack is explicitly unavailable pending their proper source adapters,
-rather than stranding melee ships in the ranged positioning loop.
+routes enemies to Attack and other locations to movement. Subsequent
+commits connected player-only Bomber and Barge composition redirects to the real
+BombingRun/Charge activation adapters, failing closed on missing weapon inputs.
 
 Exports now additionally capture Ship.Sight as optional source_sight. Scouting
 uses that exact value: HiveMindVision.GetEffectiveRange falls back to MaxRange
 when Sight==0 and is not Squad.MaxSight. Missing sight keeps Scouting context
 unavailable; negative sight is rejected. The already-exported human_side is passed
 through the scene/player authority. New Beacon templates have genuine Sight.
+
+## Further integrated changes (GitHub continuation)
+
+Bomb/Charge activation now validates weapon identity and power against the
+actual mounted special weapon before reserving any damage. Failed multi-bomber
+assignment restores both the shared reservation ledger and the per-world RNG,
+so an unavailable command cannot influence future target selection.
+
+The graphical native client now supports source-style Hold (C): stop an
+active Aggressive chase through the normal command finalization/outbox,
+without installing a fictitious Hold command. Non-Aggressive Hold is a no-op,
+including for pending HiveMind requests. V enables Cease Fire and A restores
+Attack on Sight for selected user-controlled squads, except while Heal is
+active. Both modes set the existing CombatWorld weapon flags on game or
+policy ships, preserve the command/session lifecycle, and reject stale,
+locked, or invalid player authority. The UI reports which actions applied.
+
+The additional changes were reviewed in source and pushed to GitHub; they
+have NOT been compiled or exercised with the actual native window/Unity
+export on this assistant environment (Rust tooling is unavailable).
+Earlier fixture qualifications below predate these edits.
 
 ## Shared weapons and geometry retained
 
@@ -93,12 +115,13 @@ performance improvement and distributed training remain unverified.
 
 ## Highest-value next work / complete original objective
 
-Connect actual BombingRun/Charge activation, proximity and charging-range inputs
-using their real common-world special controllers, including player composition
-redirects. Add remaining asteroid/MapObject weapon fallback and authored dynamic
-factories. Supply game-owned combat/shot statistics and TSV settlement through the
-existing outcome and durable notification/StoreCommands boundaries; never invent
-shooting credit or count a pending store request as committed.
+BombingRun/Charge physical activation, source proximity/charging-range
+inputs and player composition redirects are now present; their live Unity
+behavior remains unverified. Add remaining asteroid/MapObject weapon fallback
+and authored dynamic factories. Supply game-owned combat/shot statistics and
+TSV settlement through the existing outcome and durable notification/
+StoreCommands boundaries; never invent shooting credit or count a pending
+store request as committed.
 
 The complete goal still requires the ordinary scene/game launcher and game modes,
 full presentation/sprites/animation/audio/input, scripted queues and Carrier/Drone
