@@ -597,10 +597,10 @@ impl NativeSquadCommandDirector {
     /// Source GameState.GetTargetedSquads(side) returns live enemy squads
     /// already selected by other active allied commands, in original
     /// Squad registry order. Retreat counts as HasEnemy even though it does
-    /// not auto-target weapons. The first entry is GangUp's priority.
-    /// A caller must also validate actual current ship vitality.
+    /// not auto-target weapons. The first surviving enemy is GangUp's
+    /// priority; an enemy killed before this server reply is skipped.
     pub fn first_targeted_enemy(
-        &self, roster: &NativeSquadRoster, side: i32,
+        &self, world: &CombatWorld, roster: &NativeSquadRoster, side: i32,
     ) -> Option<SquadLifetime> {
         for &owner in roster.source_order() {
             let Some(ally) = roster.get(owner) else { continue; };
@@ -609,7 +609,12 @@ impl NativeSquadCommandDirector {
                 .and_then(|command| command.source_enemy_owner) else {
                 continue;
             };
-            if roster.get(target).is_some_and(|enemy| enemy.side != side) {
+            if roster.get(target).is_some_and(|enemy|
+                enemy.side != side &&
+                enemy.members.iter().any(|&id| world.ship(id).is_some_and(|ship|
+                    !ship.vitals.is_dead()
+                ))
+            ) {
                 return Some(target);
             }
         }
