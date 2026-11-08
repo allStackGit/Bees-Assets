@@ -539,7 +539,7 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
     <p class="muted">Connected Linux AMDGPU and Windows NVIDIA agents can bind registered logical GPU IDs to observed PCI addresses. Windows NVIDIA leases additionally pin the CUDA GPU UUID. Existing GPU leases must be released before rebinding. A Windows CUDA launch requires explicit local opt-in and a trusted CUDA adapter; the Job Object enforces CPU/RAM but cannot isolate or quota a GPU.</p>
     <form id="hub-gpu-bind-form">
       <div class="formgrid">
-        <label>Connected Linux machine<select id="hub-gpu-bind-machine"></select></label>
+        <label>Connected GPU-capable machine<select id="hub-gpu-bind-machine"></select></label>
         <label class="wide">Logical GPU IDs, nominal VRAM MiB and exact observed PCI addresses (JSON)
           <textarea id="hub-gpu-bind-json" rows="4">[]</textarea>
         </label>
