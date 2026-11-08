@@ -316,8 +316,10 @@ pub enum NativeLevelSourceError<E> {
 
 
 /// One decoded, connection-correlated strategy result. A retired reply
-/// belongs to no live world and its two server OutcomeIds must be explicitly
-/// discarded by the existing durable StoreCommands pipeline.
+/// belongs to no live world. When received through DurableHiveMindConnection,
+/// its discarded OutcomeIds are ALREADY durably queued in StoreCommands.
+/// The caller must still apply authored bans for BanAndDiscardReservations,
+/// but must not queue those same discarded IDs a second time.
 #[derive(Debug)]
 pub struct NativeLevelStrategyDelivery {
     pub world_index: Option<usize>,
@@ -343,9 +345,10 @@ pub enum NativeLevelStrategyReceiveError {
 }
 
 /// Targeting choices are independent server reservations. This delivery
-/// routes the validated response to the correct live Level but leaves the
-/// actual ship/weapon targeting installation and TSV attribution with
-/// its authored Level adapter. Do not credit targeting until installed.
+/// routes an accepted response to the correct live Level; actual installation
+/// and TSV attribution still belong to the authored targeting adapter.
+/// Retired targeting OutcomeIds are already queued for discard when received
+/// through DurableHiveMindConnection. Never credit targeting until installed.
 #[derive(Debug)]
 pub struct NativeLevelTargetingDelivery {
     pub world_index: Option<usize>,
