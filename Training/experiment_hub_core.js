@@ -700,7 +700,10 @@ function allocationChoice(machines,reservations,job,preferredMachineId=null,
         return fits;
     };
     const options=eligibleOptions(job,machines,preferredMachineId)
-        .sort((a,b)=>a.available.cpus-b.available.cpus||
+        .sort((a,b)=>
+            Number(Boolean(a.observed_headroom_block))-
+                Number(Boolean(b.observed_headroom_block))||
+            a.available.cpus-b.available.cpus||
             a.available.ram_mb-b.available.ram_mb||
             a.machine_id.localeCompare(b.machine_id));
     if(options.length<2||!following.length)return options[0]||null;
@@ -732,7 +735,10 @@ function allocationChoice(machines,reservations,job,preferredMachineId=null,
     const loss=new Map(options.map(option=>[
         option.machine_id,remainingOptionLoss(option),
     ]));
-    options.sort((a,b)=>loss.get(a.machine_id)-loss.get(b.machine_id));
+    options.sort((a,b)=>
+        Number(Boolean(a.observed_headroom_block))-
+            Number(Boolean(b.observed_headroom_block))||
+        loss.get(a.machine_id)-loss.get(b.machine_id));
     return options[0];
 }
 function writeAtomic(file, value) {
@@ -1386,12 +1392,18 @@ class ExperimentHub {
                         gpu_inventory_source:source.gpu_inventory_source,
                         gpu_devices:source.observed_gpus,
                     },lease.resources,lease.gpu_bindings)===null;
-                    if(!overcommitted.has(source.id)&&!gpuUnavailable&&canHostJob(source,job))
+                    const currentBinding=lease.gpu_bindings?.[0];
+                    const observedGpu=currentBinding?source.observed_gpus?.find(g=>
+                        g.pci_address===currentBinding.pci_address):null;
+                    const physicalBlock=startHeadroom(job.resources,
+                        source.reported_available_ram_mb,observedGpu);
+                    if(!overcommitted.has(source.id)&&!gpuUnavailable&&
+                        !physicalBlock&&canHostJob(source,job))
                         continue;
                     const eligible=eligibleHosts(job).filter(m=>
                         m.id!==source.id&&!overcommitted.has(m.id));
                     const chosen=allocationChoice(eligible,snapshot.reservations,job);
-                    if(!chosen)continue;
+                    if(!chosen||chosen.observed_headroom_block)continue;
                     const moved=this.moveJobClaim({job_id:job.id,expected_lease_id:job.lease_id,
                         machine_id:chosen.machine_id,confirm_move:true});
                     session.claimed_lease_ids=session.claimed_lease_ids
