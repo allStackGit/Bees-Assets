@@ -168,7 +168,20 @@ impl NativeClient {
                     squads: self.renderer.selection.squads().to_vec(), target,
                 })
             } else { None }
-        } else { None };
+        } else {
+            if !changed_world &&
+                (self.window.is_key_pressed(Key::J, KeyRepeat::No) ||
+                 self.window.is_key_pressed(Key::K, KeyRepeat::No))
+            {
+                self.input_feedback = "Select squads first";
+            }
+            None
+        };
+        if manual_fire.is_some() {
+            self.support_mode = None;
+            self.selection_drag = None;
+            self.renderer.selection_box = None;
+        }
         let right_down = self.window.get_mouse_down(MouseButton::Right);
         let cancel_support = right_down && !self.right_was_down && self.support_mode.is_some();
         if cancel_support {
