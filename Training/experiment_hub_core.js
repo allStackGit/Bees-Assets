@@ -2884,6 +2884,10 @@ class ExperimentHub {
         const selected=this.state.configurations.find(c=>c.id===value.configuration_id&&
             c.revision===value.expected_revision&&c.project_id===jobs[0].project_id);
         if(!selected)throw Error('Select a current saved continuation configuration in the same project.');
+        if(jobs[0].project_id==='tinybrains'&&
+            (Object.hasOwn(selected.parameters,'import_checkpoint')||
+                Object.hasOwn(selected.parameters,'import_checkpoint_sha256')))
+            throw Error('Candidate winner continuation needs a TinyBrains configuration without an external checkpoint import.');
         const pin=jobs[0].project_id==='courier'?'config_sha256':'profile_sha256';
         if(!SHA256.test(String(selected.parameters?.[pin]||''))||
             jobs.some(j=>j.frozen_parameters?.[pin]!==selected.parameters[pin]))
