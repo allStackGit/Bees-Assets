@@ -1197,29 +1197,37 @@ current sysfs PCI address, driver/vendor, exact character-device
 major/minor, and current total VRAM. Missing nodes, ambiguous GPU
 partitions, moved PCI devices and insufficient VRAM are rejected.
 
-The Linux supervisor now has an optional, **locally invoked**
-`qualifyGpuDeviceAccess(bindings)` method. It first proves that the
-same ordinary user account can open the selected render device,
-every resolved excluded AMD render device, and /dev/kfd. It then starts an inert,
-uniquely named systemd user service with DevicePolicy=closed and
-DeviceAllow entries for only /dev/kfd and the selected render node.
-The fixed Node probe must demonstrate that /dev/kfd and the
-selected render device remain openable **while every baseline-openable
-excluded AMD render device becomes inaccessible**. The supervisor checks
-the PCI and character-device mapping again after cleanup to reject
-reenumeration during the probe. Failure, unavailable
-systemd eBPF device filtering, an ambiguous unit or unconfirmed
-cleanup leaves qualification blocked. The probe opens and closes
-device files but does not submit GPU work or run training. Every
-explicit job request runs a **fresh** device-access proof, not a
-cached pass from a different job. Before launching a probe, the local
-supervisor records its unique systemd unit and description in
-`<EXPERIMENT_HUB_LOCAL_ROOT>/gpu-preflight-pending.json`. The systemd
-service has a 5-second start timeout, a 10-second runtime
-limit, and a 3-second stop timeout. The agent still requires cleanup
-evidence before releasing the probe record. A confirmed stopped or absent
-unit clears this record; ambiguous cleanup or an agent
-crash leaves it in place and blocks further probes **across agent restarts**.
+The Linux supervisor has an explicitly invoked
+`qualifyGpuDeviceAccess(bindings, runtimeProof)` method. It first proves that
+the same ordinary user can open the selected render device, every resolved
+excluded AMD render device, and /dev/kfd. A uniquely named systemd user
+service then applies DevicePolicy=closed and DeviceAllow entries for only
+/dev/kfd and the selected render node. The in-cgroup probe requires
+the selected device and /dev/kfd to remain accessible while every
+baseline-openable excluded GPU is inaccessible.
+
+For a native job, the agent constructs `runtimeProof` solely from the
+installed trusted adapter and the frozen job/lease. The same short-lived
+service also invokes that adapter's fixed ROCm verifier under the pinned
+`ROCR_VISIBLE_DEVICES` selector, requiring the HIP/PyTorch device PCI
+identity to match the leased GPU. It performs only a tiny compute operation:
+**no trainer or optimizer starts and no training artifacts are created**.
+An old direct call with just `bindings` still runs an access-only device
+probe; the machine agent explicitly rejects that narrower result as native
+Start qualification. A wrong/unsupported selector is rejected before a
+training ownership journal is written.
+
+The supervisor rechecks PCI and character-device identity after cleanup.
+Unavailable device filtering, a mismatched runtime, ambiguous unit, or
+uncertain cleanup blocks qualification. Each job needs a fresh proof.
+Before dispatching, the supervisor writes the unique unit identity to
+`<EXPERIMENT_HUB_LOCAL_ROOT>/gpu-preflight-pending.json`. Device-only
+probes retain a 5-second start and 10-second runtime bound; native job
+probes use a 25-second start and 35-second runtime bound with memory
+limited to the requested job RAM (maximum 4 GiB). Both use a 3-second
+stop bound. The record is cleared only after the exact service is
+confirmed stopped or absent; uncertain cleanup or an agent crash holds
+the record across restarts.
 To recover, inspect the recorded unit with `systemctl --user show <unit>`
 from the same Linux account, verify its exact identity and that it is
 stopped/absent (stop the matching unit if necessary), and only then
@@ -1227,10 +1235,12 @@ remove the pending JSON record manually. Never clear it on the strength
 of a stale agent heartbeat. This first version requires at least two
 openable AMD render nodes and one selected GPU per proof.
 
-The Train tab now offers **Check GPU device access** for an unstarted
+The Train tab offers **Check GPU device access** for an unstarted
 non-Bees job with an acknowledged, exclusive single-GPU lease on a
-qualified Linux agent. The operator must explicitly confirm the
-action. `POST /api/hub/jobs/qualify-gpu` records a request identity
+qualified Linux agent. This action now verifies device denial **and** the
+installed HIP runtime's physical GPU identity without running training.
+The operator must explicitly confirm the action.
+`POST /api/hub/jobs/qualify-gpu` records a request identity
 bound to that job, lease and machine; the authenticated agent receives
 `qualify_gpu` as a separate non-executable order with the lease's
 frozen PCI mapping. The agent sends a bounded
@@ -1283,10 +1293,11 @@ correct PCI GPU. No enrollment token or saved experiment configuration
 may override this operator-owned mapping.
 
 Queue placement prefers fitting hosts advertising the adapter's GPU capability.
-Train requires explicit Start and a current access probe for the same
-acknowledged exclusive single-GPU lease. The native service resolves the PCI
-mapping again and runs the device access and runtime checks in its own
-systemd cgroup before the training executable can start. The local journal
+Train requires explicit Start and a current device-access **plus runtime**
+probe for the same acknowledged exclusive single-GPU lease. Native Start
+resolves the PCI mapping again and repeats the access and runtime checks
+within the owned training service's cgroup. The trainer then re-verifies
+the HIP PCI identity in its own Python process before loading the model. The local journal
 also rejects unresolved ownership of the same PCI GPU. CPU-only automation remains the default. A GPU authorization that loses its proof
 before delivery holds its claim for operator inspection.
 
