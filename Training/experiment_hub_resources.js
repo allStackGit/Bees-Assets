@@ -213,10 +213,12 @@ function startHeadroom(resources,availableRamMb,device=null) {
     if(Number.isSafeInteger(availableRamMb)&&availableRamMb>=0&&
         availableRamMb<wanted.ram_mb)
         return 'Available host memory is below the requested native job RAM limit.';
-    const requiredVram=wanted.gpu_count===1
-        ?wanted.gpu_mode==='shared'
-            ?wanted.gpu_vram_mb:wanted.min_gpu_vram_mb
-        :0;
+    // min_gpu_vram_mb selects a device by total capacity. Only a shared
+    // gpu_vram_mb field promises a specific per-job free-memory budget.
+    // Requiring full device capacity to be unused would incorrectly reject
+    // an exclusive GPU that is also serving a Windows desktop.
+    const requiredVram=wanted.gpu_count===1&&wanted.gpu_mode==='shared'
+        ?wanted.gpu_vram_mb:0;
     if(requiredVram>0&&device&&
         Number.isSafeInteger(device.vram_mb)&&device.vram_mb>0&&
         Number.isSafeInteger(device.used_vram_mb)&&
