@@ -121,6 +121,9 @@ function boundedReport(value) {
     if(freeRam!==null&&
         (!Number.isSafeInteger(freeRam)||freeRam<0||freeRam>value.ram_mb))
         throw Error('Invalid host free RAM observation.');
+    const cpuBusy=value.host_cpu_busy_pct??null;
+    if(cpuBusy!==null&&(!Number.isFinite(cpuBusy)||cpuBusy<0||cpuBusy>100))
+        throw Error('Invalid host-wide CPU utilization sample.');
     const gpuSource=value.gpu_inventory_source||'none';
     const devices=value.gpu_devices==null?[]:value.gpu_devices;
     if(!['none','amdgpu-sysfs-v1','nvidia-smi-v1'].includes(gpuSource)||
@@ -185,7 +188,7 @@ function boundedReport(value) {
     const evaluationSuites=Object.fromEntries(Object.entries(evaluators)
         .map(([project,ids])=>[project,suiteIds(ids)]));
     return {cpus:value.cpus,ram_mb:value.ram_mb,
-        free_ram_mb:freeRam,
+        free_ram_mb:freeRam,host_cpu_busy_pct:cpuBusy,
         platform:value.platform,execution,
         gpu_inventory_source:gpuSource,gpu_devices:observedGpus,
         local_executor:localExecutor&&['linux','win32'].includes(value.platform),
@@ -838,6 +841,7 @@ class ExperimentHub {
                 machine.reported_cpus = report.cpus;
                 machine.reported_ram_mb = report.ram_mb;
                 machine.reported_free_ram_mb = report.free_ram_mb;
+                machine.host_cpu_busy_pct = report.host_cpu_busy_pct;
                 machine.capacity_overcommitted=!claimsFitCpuRam(snapshot.reservations,machine,report.cpus,report.ram_mb);
                 machine.agent_platform = report.platform;
                 machine.execution_capabilities = copy(report.execution);
