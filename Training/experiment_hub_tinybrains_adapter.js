@@ -189,7 +189,7 @@ function createTinyBrainsAdapter({projectRoot,pythonPath,artifactRoot,profiles,
 
     return {
         executable,cwd:project,stop_policy:windows?'terminate-group':'interrupt-main',
-        ...(windows?{checkpoint_stop_file:context=>path.join(jobRoot(context),'STOP')}:{}),
+        checkpoint_stop_file:context=>path.join(jobRoot(context),'STOP'),
         checkpoint_ready(context) {
             const pinned=context.frozen_parameters||{};
             const approved=configs.get(pinned.profile);
