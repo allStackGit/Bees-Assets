@@ -24,7 +24,14 @@ the selected squads using their real movement controllers; this finalizes
 existing commands, including tracked pursuits, without installing an AI Hold.
 Move and stop requests carry world/episode identity, finalize prior commands
 through the normal outcome outbox, and invalidate pending AI request authority
-before shared movement operations.
+before shared movement operations. J targets the cursor for continuous manual
+point-fire from selected source-controlled ships; K releases manual fire.
+This leaves movement/command ownership unchanged and uses the canonical turret
+cooldown, hull pose, projectile physics and damage. The source's Single,
+DualCannon and BeamCannon mounts support manual fire; LaserBuilder and
+FullShipTurret manual animations still require their authored game-control
+lifecycle. Non-policy automatic enemy acquisition is not implemented. No
+neural policy agent is fabricated to operate an ordinary ship's weapons.
 Escape or closing the window cancels unfinished episodes through the existing
 durable abort/delivery boundary. The configured step duration
 is preserved; a slow model slows playback rather than skipping battle ticks.
