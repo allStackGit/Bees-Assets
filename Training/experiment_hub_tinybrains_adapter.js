@@ -264,12 +264,16 @@ function createTinyBrainsAdapter({projectRoot,pythonPath,artifactRoot,profiles,
                     throw Error('TinyBrains promoted checkpoint no longer matches its evaluated model.');
                 resume=['--resume',checkpoint];
             }
+            // Validate the external source before creating any new job
+            // artifacts. A stale import must not strand an otherwise
+            // unlaunched job behind an empty output directory.
+            const imported=import_checkpoint===undefined
+                ?null:imports.get(import_checkpoint);
+            if(imported&&modelFileSha256(imported.checkpoint)!==imported.sha256)
+                throw Error('Original TinyBrains checkpoint changed before import.');
             // An existing directory may belong to a prior launch. Never reuse it.
             fs.mkdirSync(out,{mode:0o700});
-            if(import_checkpoint!==undefined) {
-                const imported=imports.get(import_checkpoint);
-                if(modelFileSha256(imported.checkpoint)!==imported.sha256)
-                    throw Error('Original TinyBrains checkpoint changed before import.');
+            if(imported) {
                 const dest=path.join(out,'imported-checkpoint.pt');
                 fs.copyFileSync(imported.checkpoint,dest,fs.constants.COPYFILE_EXCL);
                 if(modelFileSha256(dest)!==imported.sha256)
