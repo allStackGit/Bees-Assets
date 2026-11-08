@@ -1157,6 +1157,12 @@ impl NativeLevelBatchDriver {
 pub trait NativeLevelNotificationSink {
     type Error;
 
+    /// A journal-bearing sink must register this unique run with the
+    /// connection checkpoint before publishing its first outcome record.
+    /// Other sinks explicitly return None and cannot safely queue journal
+    /// outcomes without providing their own durable registration.
+    fn journal_run_id(&self) -> Option<&str>;
+
     /// Durable command-credit sinks expose only batches that they have
     /// already committed to their own journal. The host then checkpoints
     /// each batch in the one connection-owned StoreCommands retry ledger.
