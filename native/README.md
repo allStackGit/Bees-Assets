@@ -301,13 +301,16 @@ actual chosen shooting strategy. `NativeHostRuntime::player_command` accepts
 chosen Guard, Patrol, Mining, Heal and FullRetreat actions, scoped to the current
 world/episode and a live controllable squad. Movement and support commands share
 one permission/membership preflight; pending AI requests retire before activation.
+Source Hold cancels only an active Aggressive chase; pressing C in the window
+leaves other commands and pending requests unchanged.
 The canonical director handles replacement, unavailable targets and settlement.
 `Attack { target }` now accepts a live enemy lifetime for ordinary ranged squads,
 preflights the real Aggressive snapshot, and uses the same local command director.
 In the window, right-clicking an enemy hull issues Attack; other right-clicks
-issue movement. Friendly/stale targets are rejected. Bomber-only and Barge-only
-player attacks remain unavailable until their source BombingRun/Charge adapters
-are connected; UI Hold remains unavailable. G/P/M/H/R arm Guard/Patrol/Mining/Heal/retreat;
+issue movement. Friendly/stale targets are rejected. All-bomber and all-Barge
+player attacks use the same authored BombingRun/Charge adapters as HiveMind
+strategies; missing special-weapon configuration fails explicitly.
+G/P/M/H/R arm Guard/Patrol/Mining/Heal/retreat;
 left-click chooses a target, or left-drag supplies the Patrol rectangle.
 Backspace or right-click cancels targeting without issuing a move. Commands
 preserve selected squad order, deduplicate lifetimes and skip unavailable owners.
