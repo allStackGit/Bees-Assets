@@ -793,19 +793,33 @@ impl NativeLevelEventProcessor {
                 _ => Ok(()),
             };
             if let Err(error) = result {
+                // Do not leave a successful terminal result or a partly
+                // attributed command in the deliverable outbox when the
+                // episode accounting transaction has failed.
+                self.pending_notifications.truncate(first);
                 self.failed = true;
                 return Err(NativeLevelEventError::Credit(error));
             }
         }
         if let Some(successful) = terminal {
-            let batch = self.credit.close_episode(successful).map_err(|error| {
-                self.failed = true;
-                NativeLevelEventError::Credit(error)
-            })?;
+            // Preflight the entire terminal publication before consuming
+            // the credit projection. A failed append must never strand the
+            // already-closed OutcomeBatch outside a durable notification.
+            if let Err(error) = Self::reserve_output_records(
+                &mut self.pending_notifications, &mut self.failed, 1,
+            ) {
+                self.pending_notifications.truncate(first);
+                return Err(error);
+            }
+            let batch = match self.credit.close_episode(successful) {
+                Ok(batch) => batch,
+                Err(error) => {
+                    self.pending_notifications.truncate(first);
+                    self.failed = true;
+                    return Err(NativeLevelEventError::Credit(error));
+                }
+            };
             if !batch.is_empty() {
-                Self::reserve_output_records(
-                    &mut self.pending_notifications, &mut self.failed, 1,
-                )?;
                 self.pending_notifications.push(NativeLevelNotification {
                     tick, kind: NativeLevelNotificationKind::CommandOutcomesReady(batch),
                 });
