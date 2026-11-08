@@ -93,6 +93,8 @@ pub struct NativeHostStatusInterval {
     /// Attributed ship TSV damage; no estimated health-to-TSV conversion.
     pub enemy_hit_tsv_loss: u64,
     pub friendly_hit_tsv_loss: u64,
+    pub unattributed_damage_events: u64,
+    pub unattributed_damage_tsv_loss: u64,
     /// Finalized policy projectile roots, not individual split children.
     pub policy_roots_completed: u64,
     pub policy_roots_contacted: u64,
@@ -241,6 +243,8 @@ impl NativeStatusSampler {
                 friendly_hits: diff(s.friendly_hits, p.friendly_hits)?,
                 enemy_hit_tsv_loss: diff(s.enemy_hit_tsv_loss, p.enemy_hit_tsv_loss)?,
                 friendly_hit_tsv_loss: diff(s.friendly_hit_tsv_loss, p.friendly_hit_tsv_loss)?,
+                unattributed_damage_events: diff(s.unattributed_damage_events, p.unattributed_damage_events)?,
+                unattributed_damage_tsv_loss: diff(s.unattributed_damage_tsv_loss, p.unattributed_damage_tsv_loss)?,
                 policy_roots_completed: diff(s.policy_roots_completed, p.policy_roots_completed)?,
                 policy_roots_contacted: diff(s.policy_roots_contacted, p.policy_roots_contacted)?,
                 policy_roots_near_missed: diff(s.policy_roots_near_missed, p.policy_roots_near_missed)?,
