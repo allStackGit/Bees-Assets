@@ -133,6 +133,30 @@ function validateInvocation(job,lease,machineId,adapters,hostOs,pathApi,cryptoAp
         cpus:r.cpus,hostCpus:cores,ramMb:r.ram_mb,
         root,predecessor,stopFile,gpu};
 }
+// The coordinator and agent both budget shares. Recheck the private
+// Windows native journal before launching so unresolved local owners
+// cannot be oversubscribed after a coordinator restart.
+function ensureLocalGpuCapacity(records,gpu) {
+    if(!gpu)return;
+    let reservedVram=gpu.mode==='shared'?gpu.vram_mb:gpu.total_vram_mb;
+    let reservedCompute=gpu.compute_pct;
+    for(const record of records) {
+        if(terminal.has(record.state)||
+            record.gpu_pci_address!==gpu.pci_address)continue;
+        if(gpu.mode!=='shared'||record.gpu_mode!=='shared'||
+            record.gpu_cuda_uuid!==gpu.cuda_uuid||
+            !Number.isSafeInteger(record.gpu_vram_mb)||
+            record.gpu_vram_mb<1||
+            !Number.isSafeInteger(record.gpu_compute_pct)||
+            record.gpu_compute_pct<1)
+            throw Error('Another native job retains exclusive or unverified Windows CUDA ownership.');
+        reservedVram+=record.gpu_vram_mb;
+        reservedCompute+=record.gpu_compute_pct;
+    }
+    if(reservedVram>gpu.total_vram_mb||reservedCompute>100)
+        throw Error('Shared native CUDA capacity exceeds the physical device budget.');
+}
+
 class WindowsSupervisor {
     constructor({root,machineId,adapters,helperPath,helperSha256,
         gpuEnabled=false,gpuInventory=discoverNvidiaGpus,
@@ -400,24 +424,7 @@ class WindowsSupervisor {
         const invocation=validateInvocation(job,lease,this.machineId,
             this.adapters,this.hostOs,this.path,this.crypto,
             this.gpuEnabled,this.gpuInventory);
-        if(invocation.gpu) {
-            const gpu=invocation.gpu;
-            let reservedVram=gpu.mode==='shared'?gpu.vram_mb:gpu.total_vram_mb;
-            let reservedCompute=gpu.compute_pct;
-            for(const record of this.state.records) {
-                if(terminal.has(record.state)||
-                    record.gpu_pci_address!==gpu.pci_address)continue;
-                if(gpu.mode!=='shared'||record.gpu_mode!=='shared'||
-                    record.gpu_cuda_uuid!==gpu.cuda_uuid||
-                    !Number.isSafeInteger(record.gpu_vram_mb)||
-                    !Number.isSafeInteger(record.gpu_compute_pct))
-                    throw Error('Another native job retains exclusive or unverified Windows CUDA ownership.');
-                reservedVram+=record.gpu_vram_mb;
-                reservedCompute+=record.gpu_compute_pct;
-            }
-            if(reservedVram>gpu.total_vram_mb||reservedCompute>100)
-                throw Error('Shared native CUDA capacity exceeds the physical device budget.');
-        }
+        ensureLocalGpuCapacity(this.state.records,invocation.gpu);
         if(invocation.predecessor) {
             const parent=this.state.records.find(r=>
                 r.job_id===invocation.predecessor);
