@@ -836,7 +836,7 @@ survival scenarios under a 1-CPU / 3-GiB budget with pinned receipts and no
 owned workspace left. These checks did not install a service or qualify its
 deployed account, production coexistence, long-duration operation or Linux.
 
-## Linux native supervisor and authenticated dispatch (CPU-only)
+## Linux native supervisor and authenticated dispatch (CPU/RAM, opt-in ROCm)
 
 `experiment_hub_linux_supervisor.js` now provides a **locally invoked**
 `LinuxSupervisor` API for executing a trusted adapter inside a transient
@@ -1556,9 +1556,11 @@ existing continuation behavior: the local adapter must verify the
 checkpoint and pinned configuration at native Start before creating the
 next workload. New jobs cannot use this legacy fallback. These
 structural checks do not replace a real trainer resume qualification.
-CPU-only jobs mask
-common CUDA/HIP/ROCm selector environment variables, but do not
-provide enforceable GPU isolation; GPU requests remain blocked.
+CPU-only jobs mask common CUDA/HIP/ROCm selector variables. Opted-in
+single-GPU Windows CUDA and Linux ROCm jobs use platform-specific GPU
+selection and checks. The native GPU path still does not enforce
+per-process VRAM or compute shares, and shared-mode GPU Starts remain
+blocked.
 
 The .NET owner and browser-controlled CPU-only lifecycle have passed
 isolated Windows qualifications, including signed terminal recovery.
@@ -1798,7 +1800,8 @@ Deploy the updated supervisor before updating the pinned Windows owner.
 ## TinyBrains Ants-MAPOCA adapter
 
 `Training/experiment_hub_tinybrains_adapter.js` provides
-`createTinyBrainsAdapter` for native Windows CPU or CUDA and Linux CPU training jobs. Prepare a
+`createTinyBrainsAdapter` for native Windows CPU/CUDA and Linux CPU/ROCm
+training jobs. Prepare a
 TinyBrains Ants-MAPOCA checkout with its native engine and cartridge,
 and install the package into the Python environment the worker will use.
 Use a dedicated, existing artifact directory outside the checkout.
@@ -1819,8 +1822,8 @@ module.exports = {
 ```
 
 The operator prepares each approved profile as a JSON equivalent of a
-TinyBrains YAML configuration with `runtime.device` set to `cpu`, or on
-Windows with local CUDA opt-in, `cuda`. The
+TinyBrains YAML configuration with `runtime.device` set to `cpu`, or with
+Windows CUDA or Linux ROCm opt-in, `cuda`. The
 adapter runs TinyBrains' own validator before advertising profiles. An
 invalid profile prevents adapter startup and names the rejected profile.
 Compute
