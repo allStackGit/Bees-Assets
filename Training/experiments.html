@@ -352,13 +352,32 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
 </section>
 <section data-hub-tab="train" data-project="other">
   <h2>Project job queue</h2>
-  <p class="hub-notice">Queue frozen configurations, coordinate resource claims, and explicitly start or stop CPU-only jobs on supported Linux or Windows machines with a locally installed, opted-in trusted adapter. Real-host native execution still requires qualification. Workloads cannot execute from configuration JSON alone. GPU jobs, disconnected agents, and unverified native limits remain blocked. Bees training stays under its existing operator.</p>
+  <p class="hub-notice">Queue frozen configurations, coordinate resource claims, and explicitly start or stop native jobs on supported Linux or Windows machines with a locally installed, opted-in trusted adapter. Real-host native execution requires qualification. CPU jobs can use enforced CPU/RAM limits; opted-in single-GPU CUDA/ROCm execution requires verified device identity and platform-specific authorization. Cooperative Windows GPU sharing does not enforce compute shares or full GPU isolation. Bees training stays under its existing operator.</p>
   <div class="hub-standalone">
     <h3>Queue a saved configuration</h3>
     <div class="formgrid">
       <label>Saved configuration<select id="hub-job-configuration"></select></label>
       <label>Continue previous job (optional)<select id="hub-job-predecessor"></select></label>
       <label class="wide">Requested resources (JSON)<textarea id="hub-job-resources" rows="5">{"cpus":2,"ram_mb":2048,"gpu_count":0}</textarea></label>
+      <fieldset class="wide">
+        <legend>Resource allocation builder (optional)</legend>
+        <div class="formgrid">
+          <label>CPU slots<input id="hub-build-cpus" type="number" min="1" max="4096" step="1" value="2"></label>
+          <label>RAM MiB<input id="hub-build-ram" type="number" min="128" max="100000000" step="1" value="2048"></label>
+          <label>GPU count<input id="hub-build-gpu-count" type="number" min="0" max="32" step="1" value="0"></label>
+          <label>GPU mode<select id="hub-build-gpu-mode">
+            <option value="exclusive">Exclusive</option>
+            <option value="shared">Cooperative share (Windows CUDA only)</option>
+          </select></label>
+          <label>Minimum VRAM per GPU (MiB)<input id="hub-build-gpu-min-vram" type="number" min="0" max="1000000" step="1" value="0"></label>
+          <label>Exact GPU IDs (optional, comma-separated)<input id="hub-build-gpu-ids" placeholder="gpu0,gpu1"></label>
+          <label>Shared VRAM per GPU (MiB)<input id="hub-build-share-vram" type="number" min="1" max="1000000" step="1" value="2048" disabled></label>
+          <label>Shared GPU compute budget (%)<input id="hub-build-share-compute" type="number" min="1" max="100" step="1" value="50" disabled></label>
+        </div>
+        <button type="button" id="hub-build-resources">Fill resource JSON</button>
+        <p class="muted">This replaces only the editable JSON above; it does not queue, reserve or start anything. Exact GPU IDs must match the connected machine registration. Shared compute budgets are advisory, not enforced performance guarantees.</p>
+        <p class="hub-notice" id="hub-build-message" role="status"></p>
+      </fieldset>
     </div>
     <button type="button" id="hub-job-queue">Queue job</button>
     <button type="button" id="hub-job-preview">Preview queued placements</button>
