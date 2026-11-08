@@ -399,6 +399,7 @@ internal sealed class OwnedJob : IDisposable
 }
 internal static class Program
 {
+    private const string ProbeGpuUuid="GPU-00000000-0000-0000-0000-000000000000";
     private static readonly JsonSerializerOptions JsonOptions=
         new(){PropertyNameCaseInsensitive=true};
     private static JobSpec Load(string file)
@@ -497,6 +498,7 @@ internal static class Program
         var spec=new JobSpec{
             JobId=Guid.NewGuid().ToString("D"),Token=new string('a',64),
             Executable=executable,Args=new[]{"--probe-child"},
+            GpuUuid=ProbeGpuUuid,
             Cpus=1,HostCpus=Native.SystemLogicalProcessors(),
             RamMb=256,ReceiptPath=Path.Combine(Path.GetTempPath(),
                 "unused-"+Guid.NewGuid().ToString("N")+".json")};
@@ -509,6 +511,7 @@ internal static class Program
         Console.WriteLine(JsonSerializer.Serialize(new {
             passed=true,cpu_hard_cap_verified=true,memory_limit_verified=true,
             job_process_assignment_verified=true,
+            cuda_uuid_selection_supported=true,
             system_logical_processors=spec.HostCpus
         }));
         return 0;
@@ -522,7 +525,12 @@ internal static class Program
         }
         try
         {
-            if(args.Length==1&&args[0]=="--probe-child")return 0;
+            if(args.Length==1&&args[0]=="--probe-child")
+                return Environment.GetEnvironmentVariable("CUDA_VISIBLE_DEVICES")==ProbeGpuUuid &&
+                    new[]{"HIP_VISIBLE_DEVICES","ROCR_VISIBLE_DEVICES",
+                        "GPU_DEVICE_ORDINAL"}.All(key=>
+                            string.IsNullOrEmpty(Environment.GetEnvironmentVariable(key)))
+                    ?0:3;
             // Fixed inert workload for an explicitly invoked, isolated
             // Windows native Start/Stop smoke. No arguments, file I/O,
             // network work or project runner are permitted in this mode.
