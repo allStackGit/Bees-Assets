@@ -472,3 +472,82 @@ impl NativePlayerStopPlan {
         result
     }
 }
+
+
+/// Persistent manual point-fire for real user-controlled turret ships.
+/// Source Turret.IsFiringManually targets this world point while enabled;
+/// the canonical turret cooldown and projectile physics own every shot.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct NativePlayerManualFire {
+    pub world_id: WorldId,
+    pub episode_revision: u64,
+    pub selected_ship: i64,
+    pub target: Option<Vec2>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct NativePlayerSquadManualFire {
+    pub world_id: WorldId,
+    pub episode_revision: u64,
+    pub squads: Vec<SquadLifetime>,
+    /// Some(point) begins or retargets manual fire; None clears it.
+    pub target: Option<Vec2>,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct NativePlayerManualFireCounts {
+    pub accepted_squads: usize,
+    pub rejected_squads: usize,
+}
+
+/// Weapon input neither replaces movement commands nor retires server
+/// strategies. It is a parallel, authorized input into the SAME physical
+/// ship turrets already used by gameplay and policy projectile collisions.
+pub struct NativePlayerManualFirePlan {
+    input: NativePlayerManualFire,
+    authority: NativePlayerSquadPlan,
+    armed_ships: Vec<i64>,
+}
+
+impl NativePlayerManualFirePlan {
+    pub fn owner(&self) -> SquadLifetime { self.authority.owner }
+
+    pub fn prepare<M: NativeLevelPlayerContext, A>(
+        world: &World<NativeLevelState<M, A>>, input: NativePlayerManualFire,
+    ) -> Result<Self, NativePlayerInputError> {
+        if input.target.is_some_and(|point| !point.is_finite()) {
+            return Err(NativePlayerInputError::InvalidDestination);
+        }
+        let authority = NativePlayerSquadPlan::prepare(
+            world, input.world_id, input.episode_revision, input.selected_ship,
+        )?;
+        let armed_ships: Vec<_> = authority.members.iter()
+            .filter(|member| world.state.combat
+                .game_ship_has_manual_weapon(member.ship_id))
+            .map(|member| member.ship_id).collect();
+        if armed_ships.is_empty() {
+            return Err(NativePlayerInputError::NotControllable);
+        }
+        Ok(Self { input, authority, armed_ships })
+    }
+
+    pub fn execute<M: NativeLevelPlayerContext, A>(
+        self, world: &mut World<NativeLevelState<M, A>>,
+    ) -> Result<(), NativePlayerInputError> {
+        let current = Self::prepare(world, self.input)?;
+        if current.authority != self.authority ||
+            current.armed_ships != self.armed_ships
+        {
+            return Err(NativePlayerInputError::StaleWorld);
+        }
+        for ship_id in self.armed_ships {
+            if let Err(error) = world.state.combat
+                .set_game_ship_manual_target(ship_id, self.input.target)
+            {
+                world.state.events.fail_player_input();
+                return Err(NativePlayerInputError::Source(error.into()));
+            }
+        }
+        Ok(())
+    }
+}
