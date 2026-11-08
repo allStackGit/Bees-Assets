@@ -164,7 +164,7 @@ pub struct NativePlayerCommandPlan<'a> {
 }
 
 enum NativePlayerCommandExecution<'a> {
-    Hold { authority: NativePlayerSquadPlan, input: NativePlayerCommand<'a> },
+    Hold { authority: NativePlayerSquadPlan, input: NativePlayerCommand<'a>, was_chasing: bool },
     Command(NativePlayerSupportCommandPlan<'a>),
     Move { plan: NativePlayerMovePlan, asteroid_id: i64 },
 }
@@ -178,6 +178,16 @@ impl<'a> NativePlayerCommandPlan<'a> {
         }
     }
 
+    /// A Hold click on a non-Aggressive squad is source-defined as a
+    /// no-op. It must not retire an unrelated pending HiveMind request or
+    /// invalidate the policy environment.
+    pub fn retires_pending_authority(&self) -> bool {
+        match &self.execution {
+            NativePlayerCommandExecution::Hold { was_chasing, .. } => *was_chasing,
+            _ => true,
+        }
+    }
+
     pub fn prepare<M: NativeLevelPlayerContext, A>(
         world: &mut World<NativeLevelState<M, A>>, input: NativePlayerCommand<'a>,
     ) -> Result<Self, NativePlayerInputError> {
@@ -185,7 +195,10 @@ impl<'a> NativePlayerCommandPlan<'a> {
         let authority = NativePlayerSquadPlan::prepare(world, input.world_id,
             input.episode_revision, input.selected_ship)?;
         if matches!(input.action, Action::Hold) {
-            return Ok(Self { execution: NativePlayerCommandExecution::Hold { authority, input } });
+            let was_chasing = world.state.events.commands().is_chasing_command(authority.owner);
+            return Ok(Self { execution: NativePlayerCommandExecution::Hold {
+                authority, input, was_chasing,
+            } });
         }
         if let Action::Mining { asteroid_id } = input.action {
             let has_miner = authority.members.iter().any(|member|
@@ -216,11 +229,14 @@ impl<'a> NativePlayerCommandPlan<'a> {
         world: &mut World<NativeLevelState<M, A>>,
     ) -> Result<NativePlayerCommandOutcome, NativePlayerInputError> {
         match self.execution {
-            NativePlayerCommandExecution::Hold { authority, input } => {
+            NativePlayerCommandExecution::Hold { authority, input, was_chasing } => {
                 let current = NativePlayerSquadPlan::prepare(
                     world, input.world_id, input.episode_revision, input.selected_ship,
                 )?;
-                if current != authority { return Err(NativePlayerInputError::StaleWorld); }
+                if current != authority ||
+                    world.state.events.commands().is_chasing_command(authority.owner) != was_chasing {
+                    return Err(NativePlayerInputError::StaleWorld);
+                }
                 let state = &mut world.state;
                 let result = state.events.stop_player_chasing(
                     authority.tick, &mut state.combat, authority.owner,
