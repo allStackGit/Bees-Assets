@@ -241,4 +241,31 @@ function startHeadroom(resources,availableRamMb,device=null) {
         return 'Observed physical free VRAM is below the requested native GPU memory budget.';
     return null;
 }
-module.exports={request,matchingLeaseBudget,remaining,placements,plan,startHeadroom};
+// Defense in depth at the native process owner, not a replacement for
+// coordinator leases or observed free-memory checks. A supervisor restored
+// from disk must count all unresolved local services before accepting another
+// physical CPU/RAM commitment. "Unverified" and quarantined records still
+// own their budget until their exact native owner is reconciled.
+function ensureLocalCpuRamCapacity(records,cpus,ramMb,hostCpus,hostRamMb) {
+    if(!Array.isArray(records)||
+        [cpus,ramMb,hostCpus,hostRamMb].some(n=>
+            !Number.isSafeInteger(n)||n<1)||
+        cpus>hostCpus||ramMb>hostRamMb)
+        throw Error('Native job CPU/RAM commitment exceeds the physical host budget.');
+    let usedCpus=0,usedRam=0;
+    for(const record of records) {
+        if(!record||typeof record!=='object')
+            throw Error('Invalid persisted native ownership record.');
+        if(['finished','failed','stopped'].includes(record.state)&&
+            !record.quarantined_at)continue;
+        if(!Number.isSafeInteger(record.cpus)||record.cpus<1||
+            !Number.isSafeInteger(record.ram_mb)||record.ram_mb<1)
+            throw Error('Unresolved native ownership has no trustworthy CPU/RAM budget.');
+        usedCpus+=record.cpus;
+        usedRam+=record.ram_mb;
+        if(usedCpus+cpus>hostCpus||usedRam+ramMb>hostRamMb)
+            throw Error('Unresolved native workloads already reserve the remaining physical CPU/RAM capacity.');
+    }
+}
+module.exports={request,matchingLeaseBudget,remaining,placements,plan,startHeadroom,
+    ensureLocalCpuRamCapacity};
