@@ -369,7 +369,8 @@ impl CombatWorld {
                 matches!(mount.spec.fire_pattern,
                     NativeFirePattern::Single |
                     NativeFirePattern::DualCannon { .. } |
-                    NativeFirePattern::BeamCannon)
+                    NativeFirePattern::BeamCannon |
+                    NativeFirePattern::LaserBuilder)
             )
         )
     }
@@ -791,13 +792,14 @@ impl CombatWorld {
             for (slot, turret) in runtime.turrets.iter_mut().enumerate() {
                 let Some(mount) = turret else { continue };
                 mount.state.apply_hull_turn(hull_delta);
-                // Charged LaserBuilder and fixed FullShipTurret use
-                // different source animation/ship-turn controls; never
-                // substitute ordinary turret rotation for those weapons.
+                // Fixed FullShipTurret owns hull turning and a distinct
+                // charge. LaserBuilder uses animation-event firing below,
+                // rather than the rotating cannon's cooldown trigger.
                 if !matches!(mount.spec.fire_pattern,
                     NativeFirePattern::Single |
                     NativeFirePattern::DualCannon { .. } |
-                    NativeFirePattern::BeamCannon)
+                    NativeFirePattern::BeamCannon |
+                    NativeFirePattern::LaserBuilder)
                 {
                     continue;
                 }
@@ -826,24 +828,61 @@ impl CombatWorld {
                 let aim = manual.or(auto_point);
                 if let Some(point) = aim {
                     mount.state.target_world = point;
-                    let desired = heading_towards(point - position);
-                    let (rotation, aligned) = timed_turret_rotation(
-                        mount.state.rotation_degrees, desired,
-                        mount.spec.rotation_rate, dt,
-                    );
-                    mount.state.rotation_degrees = rotation;
-                    mount.state.is_aligned_with_target = aligned;
+                    if matches!(mount.spec.fire_pattern, NativeFirePattern::LaserBuilder) {
+                        // LaserBuilder.Aim never physically rotates the
+                        // cannon; the firing animation controls readiness.
+                        mount.state.is_aligned_with_target = true;
+                    } else {
+                        let desired = heading_towards(point - position);
+                        let (rotation, aligned) = timed_turret_rotation(
+                            mount.state.rotation_degrees, desired,
+                            mount.spec.rotation_rate, dt,
+                        );
+                        mount.state.rotation_degrees = rotation;
+                        mount.state.is_aligned_with_target = aligned;
+                    }
                 } else {
                     mount.state.is_aligned_with_target = false;
                     // Turret.FixedUpdate never aims during cease-fire.
                     // Otherwise return to the hull only without a live
                     // target, as Unity Turret.Aim does.
-                    if !runtime.cease_fire {
+                    if !runtime.cease_fire &&
+                        !matches!(mount.spec.fire_pattern, NativeFirePattern::LaserBuilder)
+                    {
                         let (rotation, _) = timed_turret_rotation(
                             mount.state.rotation_degrees, heading,
                             mount.spec.rotation_rate, dt,
                         );
                         mount.state.rotation_degrees = rotation;
+                    }
+                }
+                // Unity LaserBuilder.SetTargetShip / Aim activates its
+                // animation on real target acquisition. The animation
+                // event ActuallyShoot occurs at 0.8s and revalidates the
+                // live target. Unlike RL fire, ordinary gameplay does not
+                // start this charge from a cooldown request.
+                if matches!(mount.spec.fire_pattern, NativeFirePattern::LaserBuilder) {
+                    if aim.is_none() || runtime.cease_fire {
+                        mount.charge_elapsed_seconds = None;
+                    } else if let Some(elapsed) = mount.charge_elapsed_seconds {
+                        let next = elapsed + dt;
+                        if mount.spec.fire_pattern.fire_event_seconds()
+                            .is_some_and(|event| next + 0.000001 >= event)
+                        {
+                            self.turret_pending_shots.push(PendingTurretShot {
+                                ship_id, slot: slot as u8, shooter_side: ship.side,
+                                shooter_is_fire_barge: ship.ship_type == 10,
+                                turret_position: position, ship_position: pose,
+                                turret_rotation: mount.state.rotation_degrees,
+                                target_world: mount.state.target_world,
+                                spec: mount.spec, is_policy: false,
+                            });
+                            mount.charge_elapsed_seconds = None;
+                        } else {
+                            mount.charge_elapsed_seconds = Some(next);
+                        }
+                    } else {
+                        mount.charge_elapsed_seconds = Some(0.0);
                     }
                 }
                 if let Some(due) = mount.timer.begin_update(dt) {
@@ -857,6 +896,7 @@ impl CombatWorld {
                         let launch_now = aim.is_some() &&
                             mount.state.is_aligned_with_target &&
                             !runtime.cease_fire &&
+                            !matches!(mount.spec.fire_pattern, NativeFirePattern::LaserBuilder) &&
                             !(matches!(mount.spec.fire_pattern,
                                 NativeFirePattern::BeamCannon) &&
                                 mount.active_beam_projectile_id.is_some());
