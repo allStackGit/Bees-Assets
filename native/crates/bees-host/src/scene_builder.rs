@@ -54,6 +54,10 @@ pub struct NativeAuthoredShip {
     pub policy_capabilities: NativeAuthoredPolicyCapabilities,
     pub fleet_ship_id: Option<i64>,
     pub policy: Option<NativeAuthoredPolicy>,
+    /// Real non-policy weapon mounts: player/manual gameplay and headless
+    /// opponents share the same turret/projectile physics as policy agents.
+    pub game_turrets: Vec<NativeAuthoredTurret>,
+    pub game_cease_fire: bool,
     pub special: Option<NativeAuthoredShipSpecial>,
 }
 
@@ -322,6 +326,19 @@ impl NativeSceneAssets {
                 if let Some(fleet_id) = ship.fleet_ship_id {
                     combat.set_ship_fleet_identity(ship.entity_id, fleet_id)
                         .map_err(NativeSceneBuildError::Combat)?;
+                }
+                if ship.policy.is_some() && !ship.game_turrets.is_empty() {
+                    return Err(NativeSceneBuildError::Combat(
+                        bees_sim::combat_world::CombatWorldError::InvalidPolicyTurret
+                    ));
+                }
+                if ship.policy.is_none() {
+                    for turret in ship.game_turrets {
+                        combat.configure_game_turret(
+                            ship.entity_id, turret.slot, turret.spec,
+                            ship.game_cease_fire,
+                        ).map_err(NativeSceneBuildError::Combat)?;
+                    }
                 }
                 if let Some(policy) = ship.policy {
                     combat.bind_policy_ship(
