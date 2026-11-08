@@ -78,8 +78,10 @@ impl FinalizedCommand {
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Serialize)]
 pub struct OutcomeBatch {
+    // This is only a duplicate-guard during preparation, not a wire row.
+    #[serde(skip)]
     seen: HashSet<i64>,
     strategic: Vec<StoredOutcome>,
     shooting: Vec<StoredOutcome>,
