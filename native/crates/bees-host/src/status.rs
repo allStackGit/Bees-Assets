@@ -87,6 +87,16 @@ pub struct NativeHostStatusInterval {
     pub model_backend_failures: u64,
     pub invalid_model_batches: u64,
     pub game_failed_steps: u64,
+    /// Physical hits (not attempts), separated by relative faction.
+    pub enemy_hits: u64,
+    pub friendly_hits: u64,
+    /// Attributed ship TSV damage; no estimated health-to-TSV conversion.
+    pub enemy_hit_tsv_loss: u64,
+    pub friendly_hit_tsv_loss: u64,
+    /// Finalized policy projectile roots, not individual split children.
+    pub policy_roots_completed: u64,
+    pub policy_roots_contacted: u64,
+    pub policy_roots_near_missed: u64,
     pub physics_integrated_bodies: u64,
     pub physics_broadphase_candidates: u64,
     pub physics_ship_grid_overflow_bodies: u64,
@@ -227,6 +237,13 @@ impl NativeStatusSampler {
                     m.invalid_action_batches, q.invalid_action_batches,
                 )?,
                 game_failed_steps: diff(s.failed_steps, p.failed_steps)?,
+                enemy_hits: diff(s.enemy_hits, p.enemy_hits)?,
+                friendly_hits: diff(s.friendly_hits, p.friendly_hits)?,
+                enemy_hit_tsv_loss: diff(s.enemy_hit_tsv_loss, p.enemy_hit_tsv_loss)?,
+                friendly_hit_tsv_loss: diff(s.friendly_hit_tsv_loss, p.friendly_hit_tsv_loss)?,
+                policy_roots_completed: diff(s.policy_roots_completed, p.policy_roots_completed)?,
+                policy_roots_contacted: diff(s.policy_roots_contacted, p.policy_roots_contacted)?,
+                policy_roots_near_missed: diff(s.policy_roots_near_missed, p.policy_roots_near_missed)?,
                 physics_integrated_bodies: diff(
                     s.integrated_bodies, p.integrated_bodies,
                 )?,
