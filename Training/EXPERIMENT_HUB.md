@@ -1125,16 +1125,23 @@ worker-only endpoint also enforces a 32-KiB request byte limit.
 The agent sends a native report only after its local systemd supervisor
 inspects exact service identity, systemd `CPUQuota`/`MemoryMax`
 properties, kernel `cpu.max`/`memory.max` limits, and process membership.
-For the intentional `experiment_hub_agent.js --once` mode, the final
-heartbeat uses `request_execution_orders:false` even when there is no
-new work. It acknowledges completed work, closes that native agent session
-immediately, revokes ephemeral lease-receipt freshness, and cannot persist
-another Start offer. Durable native jobs and lease claims are **not**
-released or restarted. A replacement process may enroll immediately
-without waiting for heartbeat expiry, but it must freshly reconcile any
-previously owned native work. One-shot sign-off disarms armed native
-automation; unattended scheduling requires a continuous agent.
-Continuous agents retain normal instruction delivery.
+While an agent awaits a bounded, long-running native command (including
+ROCm qualification), its existing 15-second heartbeat interval continues
+with `request_execution_orders:false`. That busy heartbeat refreshes
+machine liveness and acknowledged lease receipts but cannot issue another
+Start, Stop or GPU probe. The currently executing command retains exclusive
+local ownership, and its result is reported only after any in-flight busy
+heartbeat completes.
+
+For `experiment_hub_agent.js --once`, the final heartbeat uses both
+`request_execution_orders:false` and `close_agent_session:true`, even when
+there is no new work. It acknowledges completed work, closes that native
+agent session immediately, revokes ephemeral lease-receipt freshness and
+cannot persist another Start offer. Durable native jobs and lease claims
+are **not** released or restarted. A replacement process may enroll
+immediately without waiting for heartbeat expiry, but must freshly
+reconcile previously owned native work. One-shot sign-off disarms armed
+native automation; unattended scheduling requires a continuous agent.
 Repeated launch instructions are reconciled against the durable local
 journal, never executed twice. One directive is delivered per heartbeat:
 stops take priority, then starts, then GPU device probes, then
