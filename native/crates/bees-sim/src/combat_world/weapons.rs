@@ -10,7 +10,7 @@
 
 use super::*;
 use crate::control::WeaponRequest;
-use crate::geometry::{delta_angle, heading_towards, Vec2};
+use crate::geometry::{delta_angle, heading_towards, timed_turret_rotation, Vec2};
 use crate::perception_weapons::{SelfWeapon, TurretObservation};
 use crate::perception_entities::ObservedWeapon;
 use crate::turret::TurretState;
@@ -538,6 +538,83 @@ impl CombatWorld {
             }
         }
 
+        // Ordinary manual point-fire is the native source Turret's
+        // non-RL branch. It uses the SAME physical mount, ScaledTimer,
+        // shot queue and projectile path as the neural-controller branch.
+        // The normal automatic enemy Targeting()/TargetShip lifecycle is
+        // separate and is not approximated by pointing at the nearest hull.
+        for (&ship_id, runtime) in &mut self.game_turrets {
+            let Some(&index) = self.ship_by_id.get(&ship_id) else { continue };
+            let ship = &self.ships[index];
+            let body = &self.physics.ships()[index];
+            if !body.active || ship.vitals.is_dead() { continue; }
+            let pose = body.motion.position;
+            let heading = body.motion.rotation_degrees;
+            let hull_delta = heading - runtime.last_hull_rotation;
+            runtime.last_hull_rotation = heading;
+            for (slot, turret) in runtime.turrets.iter_mut().enumerate() {
+                let Some(mount) = turret else { continue };
+                mount.state.apply_hull_turn(hull_delta);
+                // FullShipTurret requires native hull-turn ownership; the
+                // charged LaserBuilder's manual animation event requires
+                // separate source lifecycle. Neither is faked as a normal
+                // rotating cannon. Ordinary, dual and beam cannons are
+                // faithfully controlled by the authored three-pass timer.
+                if !matches!(mount.spec.fire_pattern,
+                    NativeFirePattern::Single |
+                    NativeFirePattern::DualCannon { .. } |
+                    NativeFirePattern::BeamCannon)
+                {
+                    continue;
+                }
+                let position = mount.position(pose, heading);
+                let aim = runtime.manual_target.filter(|_| !runtime.cease_fire);
+                if let Some(point) = aim {
+                    mount.state.target_world = point;
+                    let desired = heading_towards(point - position);
+                    let (rotation, aligned) = timed_turret_rotation(
+                        mount.state.rotation_degrees, desired,
+                        mount.spec.rotation_rate, dt,
+                    );
+                    mount.state.rotation_degrees = rotation;
+                    mount.state.is_aligned_with_target = aligned;
+                } else {
+                    mount.state.is_aligned_with_target = false;
+                    // Source Turret.Aim returns to hull heading when the
+                    // weapon has no valid target or is cease-fired.
+                    let (rotation, _) = timed_turret_rotation(
+                        mount.state.rotation_degrees, heading,
+                        mount.spec.rotation_rate, dt,
+                    );
+                    mount.state.rotation_degrees = rotation;
+                }
+                if let Some(due) = mount.timer.begin_update(dt) {
+                    mount.state.targeting_passes =
+                        mount.state.targeting_passes.saturating_add(1);
+                    if mount.state.targeting_passes >=
+                        crate::turret::TARGETING_PASSES_PER_SHOT
+                    {
+                        mount.state.targeting_passes = 0;
+                        if aim.is_some() && mount.state.is_aligned_with_target &&
+                            !(matches!(mount.spec.fire_pattern,
+                                NativeFirePattern::BeamCannon) &&
+                                mount.active_beam_projectile_id.is_some())
+                        {
+                            self.policy_pending_shots.push(PendingPolicyShot {
+                                ship_id, slot: slot as u8, shooter_side: ship.side,
+                                shooter_is_fire_barge: ship.ship_type == 10,
+                                turret_position: position, ship_position: pose,
+                                turret_rotation: mount.state.rotation_degrees,
+                                target_world: mount.state.target_world,
+                                spec: mount.spec, is_policy: false,
+                            });
+                        }
+                    }
+                    mount.timer.finish_update(due);
+                }
+            }
+        }
+
         // Reserve enough monotonic entity IDs for complete volleys before
         // creating any projectiles. DualCannon must not spawn only its first
         // barrel if the shared ID space is exhausted.
@@ -621,18 +698,25 @@ impl CombatWorld {
                 // Emit once per actual shot so reward and telemetry counts
                 // match the physical projectiles, not timer passes.
                 if matches!(shot.spec.fire_pattern, NativeFirePattern::BeamCannon) {
-                    let runtime = self.policy_ship_runtime.get_mut(&shot.ship_id)
-                        .expect("prevalidated live beam cannon");
-                    let mount = runtime.turrets[usize::from(shot.slot)].as_mut()
-                        .expect("prevalidated beam cannon mount");
+                    let mount = if shot.is_policy {
+                        self.policy_ship_runtime.get_mut(&shot.ship_id)
+                            .and_then(|runtime| runtime.turrets[usize::from(shot.slot)].as_mut())
+                    } else {
+                        self.game_turrets.get_mut(&shot.ship_id)
+                            .and_then(|runtime| runtime.turrets[usize::from(shot.slot)].as_mut())
+                    }.expect("validated physical beam cannon mount");
                     mount.active_beam_projectile_id = Some(projectile_id);
                 }
-                self.track_policy_projectile_root(projectile_id)?;
-                self.events.push(CombatEvent::PolicyWeaponFired {
-                    ship_id: shot.ship_id,
-                    slot: shot.slot,
-                    projectile_id,
-                });
+                if shot.is_policy {
+                    // Policy root/near-miss rewards cannot be attributed
+                    // to a non-policy ship's manual point-fire.
+                    self.track_policy_projectile_root(projectile_id)?;
+                    self.events.push(CombatEvent::PolicyWeaponFired {
+                        ship_id: shot.ship_id,
+                        slot: shot.slot,
+                        projectile_id,
+                    });
+                }
             }
         }
         self.policy_pending_shots.clear();
@@ -683,12 +767,15 @@ impl CombatWorld {
                 self.end_projectile(index);
                 continue;
             }
-            let Some(turret_rotation) =
-                self.policy_ship_runtime.get(&owner_id).and_then(|runtime|
+            let turret_rotation = self.policy_ship_runtime.get(&owner_id)
+                .and_then(|runtime| runtime.turrets.iter().flatten().find_map(|turret|
+                    (turret.active_beam_projectile_id == Some(beam_id))
+                        .then_some(turret.state.rotation_degrees)))
+                .or_else(|| self.game_turrets.get(&owner_id).and_then(|runtime|
                     runtime.turrets.iter().flatten().find_map(|turret|
                         (turret.active_beam_projectile_id == Some(beam_id))
-                            .then_some(turret.state.rotation_degrees)))
-            else {
+                            .then_some(turret.state.rotation_degrees))));
+            let Some(turret_rotation) = turret_rotation else {
                 // A beam without an owning real cannon cannot be allowed to
                 // survive as a permanently active synthetic collider.
                 self.end_projectile(index);
