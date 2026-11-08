@@ -163,6 +163,10 @@ fn assign_initial_special_bomb_targets(
     // activation. The Level retains its old command and old OutcomeIds
     // until the replacement is fully installed. This is one short-lived
     // transaction over the canonical world ledger, not another ledger.
+    // A rejected replacement must preserve BOTH the prior Bomb leases and
+    // the per-world random stream. Sorting Random or choosing an over-reserved
+    // fallback consumes RNG even when a later bomber fails assignment.
+    let random_before = random.state();
     let assigned = world.with_atomic_game_bomb_assignments(|world| -> Result<_, GameCommandError> {
         // Each Bomb.GetTarget rebuilds its own sorted GetShips copy.
         // Reusing the preceding bomber's ranking changes FirstSeen,
@@ -179,8 +183,11 @@ fn assign_initial_special_bomb_targets(
             }
         }
         Ok(Some(()))
-    })?;
-    Ok(assigned.is_some())
+    });
+    if !matches!(assigned, Ok(Some(_))) {
+        *random = RandomStream::new(random_before);
+    }
+    Ok(assigned?.is_some())
 }
 
 /// Source Ship.HasTargetEnemyShipToFollow: the selected target is
