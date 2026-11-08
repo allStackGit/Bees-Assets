@@ -6,6 +6,7 @@
 //! All mutable scratch is reused per Level, never process-global.
 
 use bees_hivemind::session::{HiveMindSession, SquadLifetime, StrategyReceipt};
+use bees_hivemind::outcomes::OutcomeBatch;
 use bees_sim::combat_world::{CombatEvent, CombatWorld};
 use bees_sim::combat::{DamageDelta, HitEvent};
 use bees_sim::geometry::Vec2;
@@ -15,6 +16,7 @@ use bees_sim::simulation::RandomStream;
 use bees_sim::rl_shaping::{DamageRewardMetadata, RewardEmission};
 use bees_sim::rl_discovery::DiscoveryKind;
 
+use crate::command_credit::{CommandCreditError, NativeCommandCreditLedger};
 use crate::commands::{
     CommandFinishCause, CommandMeasurements, FinishedNativeCommand,
     GameCommandError, NativeAggressiveCommandSnapshot,
@@ -47,6 +49,7 @@ pub enum NativeLevelEventError {
     Roster(SquadEventBridgeError),
     Rewards(NativeEpisodeRewardError),
     Commands(GameCommandError),
+    Credit(CommandCreditError),
     Group(GroupRewardError),
     InvalidGroupConfiguration,
     InvalidRetirementAcknowledgement,
@@ -125,6 +128,10 @@ pub enum NativeLevelNotificationKind {
         defender_command_outcome_id: Option<i64>,
     },
     FinishedCommand(FinishedNativeCommand),
+    /// Final, source-accrued TSV values from one completed/aborted episode.
+    /// This is a PREPARED OutcomeBatch; durable StoreCommands request hash,
+    /// retry and server commit still belong to the connection.
+    CommandOutcomesReady(OutcomeBatch),
     /// A failed world has no trustworthy final TSV. HiveMind origins must
     /// discard/reconcile their reservations; local origins have none.
     AbortedCommand {
@@ -211,6 +218,7 @@ pub struct NativeLevelEventProcessor {
     /// Core-physics damage owners are snapshotted before death retirement.
     /// Reused every tick, never retained as a parallel command ledger.
     core_damage_owners: Vec<DamageCommandOwners>,
+    credit: NativeCommandCreditLedger,
 }
 
 impl NativeLevelEventProcessor {
@@ -235,6 +243,7 @@ impl NativeLevelEventProcessor {
             finished: Vec::new(),
             timed_finished: Vec::new(),
             core_damage_owners: Vec::new(),
+            credit: NativeCommandCreditLedger::new(),
         }
     }
 
