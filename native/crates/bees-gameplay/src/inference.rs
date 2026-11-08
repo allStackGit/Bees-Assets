@@ -86,6 +86,32 @@ pub trait NativePolicyInference {
     fn model_generation(&self) -> u64 { 0 }
 }
 
+/// Ordinary game-only Levels can use the canonical fixed-step simulation
+/// without starting a neural policy worker. The batch driver skips forward
+/// calls when no policy agent is due. If a controller actually needs an
+/// action, fail closed instead of inventing a zero-action policy.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct NoPolicyInference;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PolicyInferenceRequired;
+
+impl NativePolicyInference for NoPolicyInference {
+    type Error = PolicyInferenceRequired;
+
+    fn forward(
+        &mut self,
+        _keys: &[PolicyAgentKey],
+        _routes: &[NativePolicyRoute],
+        _observations: &[f32],
+        _action_masks: &[PolicyActionMask],
+        _continuous: &mut [f32],
+        _discrete: &mut [u8],
+    ) -> Result<(), Self::Error> {
+        Err(PolicyInferenceRequired)
+    }
+}
+
 #[derive(Debug)]
 pub enum NativePocaExportError {
     Boundary(NativeInferenceError),

@@ -345,6 +345,14 @@ internal static class NativePhysicalSceneExporter
                 throw new InvalidOperationException(
                     "Export a fresh scene before game movement starts; active routes are not checkpoints: " + ship.Id);
             }
+            float turningRadius = ConfigData.ShipTurningRadius;
+            float halfWidth = ship.GetHalfWidth();
+            float halfHeight = ship.GetHalfHeight();
+            if (!IsFinite(turningRadius) || turningRadius <= 0f ||
+                !IsFinite(halfWidth) || halfWidth <= 0f ||
+                !IsFinite(halfHeight) || halfHeight <= 0f)
+                throw new InvalidOperationException(
+                    "Cannot export source game steering profile for ship: " + ship.Id);
             snapshot.ships.Add(new SourceShip {
                 entity_id = ship.Id,
                 ship_type = (int)ship.ShipType,
@@ -372,9 +380,9 @@ internal static class NativePhysicalSceneExporter
                 current_speed = ship.CurrentSpeed,
                 body_velocity = ship.Body.linearVelocity,
                 height = ship.GetHeight(),
-                turning_radius = ConfigData.ShipTurningRadius,
-                half_width = ship.GetHalfWidth(),
-                half_height = ship.GetHalfHeight(),
+                turning_radius = turningRadius,
+                half_width = halfWidth,
+                half_height = halfHeight,
                 offset_from_center = ship.OffsetFromCenter,
                 path_clearance = ship.GetClearance(),
                 mobile = ship.IsMobile,

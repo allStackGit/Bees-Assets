@@ -105,21 +105,15 @@ The single JSON configuration file requires:
   model_slots, groups?}`. Each scene is an exported **initial** Level;
   both IDs must be unique and positive, and `model_slots` maps exact
   Unity policy-team IDs (`"0"`/`"1"`) to verified manifest slots.
-  For schema-16 exports, the actual participating Unity Agent instance
-  IDs, source ship bindings and episode number are recorded in the scene
-  itself; the runner derives `groups` automatically. If manually supplied,
-  `groups` must match that source record exactly. Legacy schema-15 scenes
-  can still supply `{"episode_number": 1, "participants":
-  [{"side": 1, "agent_id": 123}]}` from actual external group ownership,
-  never inferred hull IDs. Scripted opponents may have no group
-  participants on their side. Legacy schema-15 group scenes are
-  single-episode only: they lack the per-team movement settings required
-  to replay alternating policy ownership safely. A source controller
-  whose initial team disagrees with the configured episode rejects
-  the run. On subsequent schema-16 episodes, the native Level advances
-  the episode number, alternates team routes and source movement limits,
-  and selects fresh source-equivalent distinct policy coordinate frames
-  from a world-specific reproducible seed.
+  Current schema-20 exports record actual participating Unity Agent instance
+  IDs, source ship bindings and episode number; the runner derives `groups`
+  automatically. If supplied, `groups` must match that source record exactly.
+  Participants are never inferred from hull IDs. Scripted opponents may have
+  no group participants on their side. A source controller whose initial team
+  disagrees with the configured episode rejects the run. Subsequent episodes
+  advance the episode number, alternate team routes and source movement limits,
+  and select fresh source-equivalent distinct policy coordinate frames from a
+  world-specific reproducible seed. Earlier schemas require a fresh export.
   Omit `groups` only for non-group gameplay.
 
 
@@ -288,6 +282,13 @@ qualification has not been performed.
   workers. Native development must work without the Unity editor.
 
 ## Native Level and inference integration (development status)
+
+An ordinary game-only Level may use `bees_gameplay::inference::NoPolicyInference`
+with `NativeSceneAssets::build_runtime` to run the identical fixed-step
+CombatWorld and command lifecycle **without starting a neural-model worker**.
+The batch driver skips model execution when no policy agents are due; if a
+policy agent actually requires an action, the no-model backend fails instead
+of generating fake actions. This does not itself provide a graphical game.
 
 `bees-gameplay::level_rules::NativeLevelRules` is the current canonical
 gameplay-to-simulator adapter. A `NativeLevelState` owns the real
