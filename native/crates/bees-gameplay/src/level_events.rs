@@ -753,6 +753,67 @@ impl NativeLevelEventProcessor {
         Ok(())
     }
 
+    /// Consume only the newly emitted authoritative notification suffix.
+    /// This one command-scoped projection works across rollover windows:
+    /// acknowledgements may remove the outbox prefix, but do not remove
+    /// accrued credit for an already-finished command with delayed shots.
+    fn account_new_notifications(
+        &mut self, first: usize, tick: u64,
+    ) -> Result<(), NativeLevelEventError> {
+        let mut terminal = None;
+        for notification in &self.pending_notifications[first..] {
+            let result = match &notification.kind {
+                NativeLevelNotificationKind::CombatHit(credit) =>
+                    self.credit.record_hit(
+                        credit.attacker_command_outcome_id,
+                        credit.defender_command_outcome_id,
+                        credit.hit.command_tsv_delta, credit.hit.delta.tsv_loss,
+                    ),
+                NativeLevelNotificationKind::UnattributedDamage {
+                    delta, defender_command_outcome_id, ..
+                } => self.credit.record_unattributed(
+                    *defender_command_outcome_id, delta.tsv_loss,
+                ),
+                NativeLevelNotificationKind::FinishedCommand(finished) =>
+                    self.credit.finish(finished),
+                NativeLevelNotificationKind::AbortedCommand { selection, .. } =>
+                    self.credit.abort(selection),
+                NativeLevelNotificationKind::EpisodeFinal(_) => {
+                    terminal = Some(true);
+                    Ok(())
+                }
+                NativeLevelNotificationKind::EpisodeAborted => {
+                    terminal = Some(false);
+                    Ok(())
+                }
+                _ => Ok(()),
+            };
+            if let Err(error) = result {
+                self.failed = true;
+                return Err(NativeLevelEventError::Credit(error));
+            }
+        }
+        if let Some(successful) = terminal {
+            let batch = self.credit.close_episode(successful).map_err(|error| {
+                self.failed = true;
+                NativeLevelEventError::Credit(error)
+            })?;
+            if !batch.is_empty() {
+                Self::reserve_output_records(
+                    &mut self.pending_notifications, &mut self.failed, 1,
+                )?;
+                self.pending_notifications.push(NativeLevelNotification {
+                    tick, kind: NativeLevelNotificationKind::CommandOutcomesReady(batch),
+                });
+                Self::update_output_peak(
+                    &mut self.peak_pending_notifications,
+                    self.pending_notifications.len(),
+                );
+            }
+        }
+        Ok(())
+    }
+
     fn reserve_output_records(
         pending: &mut Vec<NativeLevelNotification>,
         failed: &mut bool,
