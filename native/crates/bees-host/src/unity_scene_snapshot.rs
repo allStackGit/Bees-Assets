@@ -70,7 +70,7 @@ use crate::runtime::NativeHostRuntime;
 use crate::ship_specials::{NativeAuthoredShipSpecial, NativeBeaconTemplate};
 use crate::durable_connection::DurableHiveMindConnection;
 
-const SNAPSHOT_VERSION: u32 = 26;
+const SNAPSHOT_VERSION: u32 = 27;
 
 #[derive(Deserialize, Clone, Copy)]
 struct UnityVec2 { x: f32, y: f32 }
@@ -126,6 +126,7 @@ struct UnitySnapshot {
     shots_harmless: bool,
     activate_collision_asteroids: bool,
     activate_mining: Option<bool>,
+    activate_hivemind: Option<bool>,
     has_obstacles: bool,
     command_settings: UnityCommandSettings,
     bee_side: i32,
@@ -502,6 +503,9 @@ impl From<UnityCommandSettings> for bees_gameplay::commands::HiveMindCommandSett
 struct UnitySquad {
     banned_strategies: Option<Vec<String>>,
     is_carrier_squad: Option<bool>,
+    is_hivemind_controlled: Option<bool>,
+    is_immobile: Option<bool>,
+    opponent_id_decimal: Option<String>,
     item_id: i64,
     side: i32,
     member_ids: Vec<i64>,
@@ -558,6 +562,7 @@ pub enum NativeSnapshotError {
     InvalidLevelBounds,
     MissingWeaponRankingClock,
     MissingTargetingSource,
+    MissingHiveMindSource,
     InvalidCommandSettings,
     InvalidShip(i64),
     MismatchedShipTsv(i64),
@@ -601,6 +606,10 @@ pub struct NativePhysicalScene {
     pub activate_collision_asteroids: bool,
     /// Optional only for legacy schema26 exports predating request bans.
     pub activate_mining: Option<bool>,
+    /// Source Stage.ActivateHiveMind, required for autonomous native
+    /// command requests. Legacy imports remain runnable but cannot
+    /// silently assume gameplay AI eligibility.
+    pub activate_hivemind: Option<bool>,
     pub has_obstacles: bool,
     pub command_settings: bees_gameplay::commands::HiveMindCommandSettings,
     pub entities: Vec<NativeAuthoredEntity>,
@@ -719,6 +728,7 @@ struct NativeSourcePolicyInputs {
 pub struct NativeSourceSquad {
     pub command_bans: Option<Vec<bees_hivemind::dispatch::LocalCommandKind>>,
     pub is_carrier_squad: Option<bool>,
+    pub hivemind: Option<bees_gameplay::level_host::NativeHiveMindSquadSource>,
     pub item_id: i64,
     pub side: i32,
     pub members: Vec<i64>,
@@ -980,6 +990,10 @@ impl NativePhysicalScene {
         ).map_err(NativePolicyOnlyLevelError::Metadata)?;
         metadata.targeting_context = self.targeting_context;
         metadata.activate_mining = self.activate_mining;
+        metadata.hivemind_active = self.activate_hivemind;
+        metadata.hivemind_squads = self.source_squads.iter().zip(&squads)
+            .filter_map(|(source, squad)| source.hivemind.map(|inputs| (squad.owner, inputs)))
+            .collect();
         Ok(NativeAuthoredLevel {
             weapon_rank_frame: if self.schema_version >= 23 { self.source_frame_count } else { None },
             level_geometry: (self.schema_version >= 22).then_some(NativeLevelGeometry {
@@ -1117,6 +1131,10 @@ impl NativePhysicalScene {
             bees_gameplay::squad_targeting::NativeTargetingContext { has_player: context.has_player, user_side: context.user_side });
         if targeting_context.is_some_and(|context| context.has_player && context.user_side <= 0) {
             return Err(NativeSnapshotError::MissingTargetingSource);
+        }
+        if raw.schema_version >= 27 &&
+            (raw.activate_hivemind.is_none() || raw.activate_mining.is_none()) {
+            return Err(NativeSnapshotError::MissingHiveMindSource);
         }
         if raw.schema_version >= 23 && raw.source_frame_count.is_none() {
             return Err(NativeSnapshotError::MissingWeaponRankingClock);
@@ -1892,8 +1910,27 @@ impl NativePhysicalScene {
                 }
                 Ok(bans)
             }).transpose()?;
+            let hivemind = match (
+                squad.is_hivemind_controlled, squad.is_immobile,
+                squad.opponent_id_decimal,
+            ) {
+                (Some(hivemind_controlled), Some(immobile), Some(id)) => {
+                    let opponent_id = id.parse::<u64>()
+                        .map_err(|_| NativeSnapshotError::InvalidSquad(squad.item_id))?;
+                    if opponent_id.to_string() != id ||
+                        hivemind_controlled == squad.user_controlled {
+                        return Err(NativeSnapshotError::InvalidSquad(squad.item_id));
+                    }
+                    Some(bees_gameplay::level_host::NativeHiveMindSquadSource {
+                        opponent_id, hivemind_controlled, immobile,
+                    })
+                },
+                (None, None, None) if raw.schema_version < 27 => None,
+                _ => return Err(NativeSnapshotError::MissingHiveMindSource),
+            };
             source_squads.push(NativeSourceSquad {
                 command_bans,
+                hivemind,
                 is_carrier_squad: squad.is_carrier_squad,
                 shooting: bees_hivemind::protocol::StrategyIdentity {
                     id: (shooting_index + 1) as u8,
@@ -1978,6 +2015,7 @@ impl NativePhysicalScene {
             shots_harmless: raw.shots_harmless,
             activate_collision_asteroids: raw.activate_collision_asteroids,
             activate_mining: raw.activate_mining,
+            activate_hivemind: raw.activate_hivemind,
             has_obstacles: raw.has_obstacles,
             command_settings,
             entities,
