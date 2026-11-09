@@ -42,10 +42,11 @@ function stageFile(source,target) {
 }
 function createTinyBrainsPersistentDockerAdapter({
     projectRoot,hubRoot,artifactRoot,sourceRunRoot,engineCacheRoot,
-    seedCheckpointSha256,profiles,
+    seedCheckpointSha256,seedPpoUpdates,profiles,
     image='tinybrains-rocm:halifax',sourceWindowsRoot='B:/TinyBrains/Ants-MAPOCA',
 }) {
-    if(process.platform!=='linux'||!SHA.test(String(seedCheckpointSha256||'')))
+    if(process.platform!=='linux'||!SHA.test(String(seedCheckpointSha256||''))||
+        !Number.isSafeInteger(seedPpoUpdates)||seedPpoUpdates<1)
         throw Error('Persistent TinyBrains Docker import requires Linux and a pinned checkpoint hash.');
     const project=fullDir(projectRoot),hub=fullDir(hubRoot),
         artifacts=fullDir(artifactRoot),source=fullDir(sourceRunRoot),
@@ -110,9 +111,11 @@ function createTinyBrainsPersistentDockerAdapter({
             !fs.readFileSync(path.join(out,'run-spec.json')).equals(frozen))
             throw Error('Finished TinyBrains job does not have its original frozen lineage and checkpoint.');
         const status=JSON.parse(fs.readFileSync(path.join(out,'status.json'),'utf8'));
-        if(!['stopped','self_play_paused','self_play_completed'].includes(status.phase)||
-            !Number.isSafeInteger(status.ppo_updates)||status.ppo_updates<1)
-            throw Error('TinyBrains job has no finished checkpoint-boundary status.');
+        const start=JSON.parse(fs.readFileSync(path.join(out,'hub-start-update.json'),'utf8'));
+        if(!Number.isSafeInteger(start.update)||start.update<1||
+            !['stopped','self_play_paused','self_play_completed'].includes(status.phase)||
+            !Number.isSafeInteger(status.ppo_updates)||status.ppo_updates<start.update)
+            throw Error('TinyBrains job has no valid checkpoint-boundary status.');
         return latest;
     }
     const docker={
@@ -170,9 +173,12 @@ function createTinyBrainsPersistentDockerAdapter({
                     import_checkpoint_sha256!==seedCheckpointSha256)
                 throw Error('A new run must import the pinned Exeter lineage or explicitly continue its parent.');
             let sourceCheckpoint=original;
+            let startingUpdate=seedPpoUpdates;
             if(parent) {
                 const predecessor=path.join(artifacts,parent);
                 sourceCheckpoint=checkpointReady(predecessor,item.text);
+                startingUpdate=JSON.parse(fs.readFileSync(
+                    path.join(predecessor,'status.json'),'utf8')).ppo_updates;
                 if(context.expected_parent_model_sha256&&
                     modelFileSha256(sourceCheckpoint)!==context.expected_parent_model_sha256)
                     throw Error('Continuation checkpoint identity changed.');
@@ -182,7 +188,8 @@ function createTinyBrainsPersistentDockerAdapter({
             if(fs.existsSync(out)) {
                 if(fs.existsSync(path.join(out,'status.json'))||
                     fs.readFileSync(path.join(out,'hub-profile.json'),'utf8')!==item.text||
-                    modelFileSha256(path.join(out,'self-play/latest.pt'))!==sourceHash)
+                    modelFileSha256(path.join(out,'self-play/latest.pt'))!==sourceHash||
+                    JSON.parse(fs.readFileSync(path.join(out,'hub-start-update.json'),'utf8')).update!==startingUpdate)
                     throw Error('Previously launched or changed Hub training output cannot be re-used.');
             }else{
                 fs.mkdirSync(out,{mode:0o700});
@@ -191,6 +198,8 @@ function createTinyBrainsPersistentDockerAdapter({
                 stageFile(path.join(source,'gate-passed.json'),path.join(out,'gate-passed.json'));
                 stageFile(candidate,runRelative(out,gate.checkpoint));
                 fs.writeFileSync(path.join(out,'hub-profile.json'),item.text,{flag:'wx',mode:0o600});
+                fs.writeFileSync(path.join(out,'hub-start-update.json'),
+                    JSON.stringify({update:startingUpdate})+'\n',{flag:'wx',mode:0o600});
             }
             return ['-B',runner,'--run',JOBS_IN+'/'+context.job_id,
                 '--updates',String(updates),'--threads',String(item.profile.threads),
@@ -232,10 +241,15 @@ function createTinyBrainsPersistentDockerAdapter({
                     !Number.isFinite(row.wall_seconds)||row.wall_seconds<=0||
                     !Number.isSafeInteger(row.engine_steps)||row.engine_steps<0)
                     throw Error('Invalid TinyBrains completed-update telemetry.');
+                const start=JSON.parse(fs.readFileSync(
+                    path.join(targetFor(context),'hub-start-update.json'),'utf8')).update;
+                if(!Number.isSafeInteger(start)||row.update<start)
+                    throw Error('Progress precedes the pinned imported PPO checkpoint.');
                 return validateProgress({
                     schema_version:1,source:'hub-metrics-v1',experiment_id:context.job_id,
                     segment_id:'training',source_modified_at:stat.mtime.toISOString(),
-                    steps_completed:row.update,metrics:{
+                    steps_completed:row.update-start,metrics:{
+                        total_ppo_updates:{value:row.update,unit:'count'},
                         update_wall_time:{value:row.wall_seconds,unit:'seconds'},
                         engine_steps_per_second:{value:row.engine_steps/row.wall_seconds,unit:'rate'},
                     },
