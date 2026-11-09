@@ -15,10 +15,11 @@ Live owner, complete roster and source metadata are preflighted before the
 durable request hash is allocated. The original socket worker sends that
 request; ordinary in-bounds/AI-eligible command queue cadence is still missing.
 
-A targeting reply consumed by the session but rejected at game application
-now persists its exact unused targeting reservation for discard. An accepted
-strategy reply whose activation fails surfaces both unresolved IDs rather
-than claiming a safe discard after possible partial command mutation.
+A targeting reply rejected at ranking before game mutation durably
+discards its unused reservation. Failure during installation can have
+partially changed the Level credit ledger; it instead surfaces its exact
+unresolved targeting ID. Likewise, an accepted strategy reply whose
+activation fails surfaces both IDs, never guessing a safe discard.
 The existing connection-owned StoreCommands ledger remains the only writer.
 These new paths were source/cross-interface inspected but not compiled or run
 in this environment. Earlier handoff runtime receipts refer to earlier code
