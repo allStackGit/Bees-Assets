@@ -645,8 +645,11 @@ where
                 if issue.len() == max_new_requests { break 'levels; }
             }
         }
+        // Reuse one formation buffer across all home moves on this pulse.
+        // A large battle should not allocate one Vec per squad requeue.
+        let mut home_members = Vec::new();
         for (index, owner) in home {
-            if self.issue_source_return_home(index, owner)? {
+            if self.issue_source_return_home(index, owner, &mut home_members)? {
                 counts.home_moves += 1;
             } else {
                 counts.home_unreachable += 1;
@@ -666,6 +669,7 @@ where
     /// or substitute a synthetic arena-center destination.
     fn issue_source_return_home(
         &mut self, index: usize, owner: SquadLifetime,
+        members: &mut Vec<bees_sim::squad_movement::SquadFormationMember>,
     ) -> Result<bool, HostSourceCommandError> {
         let world = self.simulation.world_mut(index)
             .expect("preflighted live world index");
@@ -678,13 +682,12 @@ where
         let inputs = state.metadata.strategy_inputs(
             &state.combat, state.events.roster(), owner, None,
         ).map_err(fail)?;
-        let mut members = Vec::with_capacity(squad.members.len());
         let order = bees_gameplay::level_inputs::native_squad_order_from_catalog(
             &state.combat, squad, state.metadata.targeting_ship_catalog(),
             inputs.formation, None, None,
             |id| state.metadata.stored_formation_offset(id),
             |id| state.metadata.current_path_clearance(id),
-            &mut members,
+            members,
         ).map_err(fail)?;
         let asteroids = state.metadata.collision_asteroids_enabled();
         let navigation = state.metadata.navigation_mut();
