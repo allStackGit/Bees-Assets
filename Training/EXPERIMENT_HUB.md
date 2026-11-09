@@ -1357,6 +1357,46 @@ reappears and the lease is reacknowledged.
 A fresh explicit probe is required to obtain current evidence for a
 different job; a result for one job never qualifies another.
 
+### Halifax TinyBrains persistent PPO through Docker (opt-in)
+
+The Linux agent can use `EXPERIMENT_HUB_LINUX_BACKEND=docker` instead of the
+native systemd owner when **only** the approved TinyBrains Docker adapter is
+installed. Existing native jobs must be terminal and native GPU proofs cleared
+before switching owners; Docker and native jobs cannot coexist under this
+agent owner. The backend uses Docker's cgroup-v2 CPU/memory controls, a
+single leased AMD render device plus `/dev/kfd`, verified physical HIP PCI
+identity, read-only source mounts and a persistent, named container per job.
+The host's Docker service, not a systemd client process, owns the workload.
+The local journal and unresolved GPU proof are retained across restarts;
+ambiguous operations are never automatically retried or removed.
+
+For Halifax, create the dedicated
+`~/ai/experiments/experiment-hub/tinybrains-jobs` directory and use
+`Training/experiment_hub_tinybrains_halifax_adapter.example.js` as the
+locally approved `EXPERIMENT_HUB_LOCAL_ADAPTERS` module. It pins the
+verified imported 7,199-update checkpoint, original run evidence and
+persistent PPO profile. The original
+`~/ai/experiments/tinybrains/mini-learning` is mounted read-only; the
+source checkout is read-only; each Hub job copies only its initial
+`self-play/latest.pt`, frozen spec and gate checkpoint to its own writable
+job directory. The original STOP file stays in the source run and is never
+removed by the Hub. A staged Hub continuation uses a new job ID and retains
+the previous job's frozen opponent files.
+
+The agent needs *noninteractive* Docker permission: direct access to the
+Docker Unix socket or, only after explicit administrator approval, a working
+`sudo -n /usr/bin/docker info` with
+`EXPERIMENT_HUB_DOCKER_SUDO=1`. Docker permission is effectively host-root
+authority; do not enable it casually, and never pass images, bind mounts or
+commands from remote job data. Set `EXPERIMENT_HUB_ENABLE_EXECUTION=1` and
+`EXPERIMENT_HUB_ENABLE_ROCM=1` only for the approved local adapter. A
+Docker CPU/memory limit does not impose a GPU VRAM or compute-time cap.
+The Hub must still qualify the selected physical GPU and the operator must
+explicitly Start each first GPU job. Stop writes the fixed job STOP marker,
+waits for the trainer to flush a checkpoint and exit, and does not kill
+unfinished PPO updates. Containers remain available for inspect/recovery;
+the supervisor does not delete a container whose ownership is ambiguous.
+
 #### Opt-in native Linux GPU launch
 
 After deployment qualification, a Linux agent can set
