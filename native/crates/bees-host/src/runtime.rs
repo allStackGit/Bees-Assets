@@ -579,13 +579,12 @@ where
     /// enemy lifecycle come from the canonical live Level, never a
     /// host-supplied string or recycled Squad.ItemId.
     ///
-    /// The driver supplies composition and live-world restrictions:
-    /// ClosestFriendly occupancy, warp-gate availability, Beehive healing
-    /// slots, and miner/asteroid availability. The caller MUST still add
-    /// source-only restrictions not captured in the native world, notably
-    /// Level.ActivateMining, using `authored_bans`. The no-target restrictions
-    /// are included here too. Missing source restrictions must NOT be
-    /// silently inferred or omitted before issuing the request.
+    /// The driver supplies all source bans from canonical Level state:
+    /// composition, ClosestFriendly occupancy, live warp-gates, shared
+    /// Beehive healing slots, miner/asteroid availability, and the original
+    /// exported Level.ActivateMining flag. The no-target bans are included.
+    /// Legacy scene exports without that flag fail closed before allocating
+    /// a request hash rather than silently changing server strategy choices.
     /// The exact returned durable request goes to send_strategy on the
     /// existing socket worker; retries must use its original Hash.
     ///
@@ -593,16 +592,21 @@ where
     /// matching Unity's requeue-without-command behavior.
     pub fn request_live_strategy(
         &mut self, owner: SquadLifetime, opponent: u64,
-        authored_bans: impl IntoIterator<Item=String>,
     ) -> Result<Option<GetStrategyRequest>, DurableConnectionError> {
-        let Some(matchup) = self.driver.source_strategy_matchup_inputs(
+        let Some(source) = self.driver.source_strategy_matchup_inputs(
             &mut self.simulation, owner,
         ).map_err(DurableConnectionError::GameplayRequest)? else {
             return Ok(None);
         };
+        let matchup = source.matchup;
         let mut bans = self.driver.strategy_request_bans(
-            &self.simulation, owner, authored_bans,
+            &self.simulation, owner, std::iter::empty::<String>(),
         ).map_err(DurableConnectionError::GameplayRequest)?;
+        if !source.activate_mining {
+            bans = bees_gameplay::squad_composition::banned_strategy_names(
+                &[bees_hivemind::dispatch::LocalCommandKind::Mining], bans,
+            );
+        }
         if matchup.enemy.is_none() {
             use bees_hivemind::dispatch::LocalCommandKind as Kind;
             bans = bees_gameplay::squad_composition::banned_strategy_names(
