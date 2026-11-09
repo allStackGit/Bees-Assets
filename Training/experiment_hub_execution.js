@@ -222,7 +222,9 @@ class LocalExecution {
             }
         }
         const checkpointProject=['courier','tinybrains'].includes(job.project_id);
-        if(checkpointProject&&(lease.status!=='released'||report.evaluation||report.evaluations)&&
+        if(checkpointProject&&(lease.status!=='released'||
+            order.action==='inspect'&&job.reverify_checkpoint===true||
+            report.evaluation||report.evaluations)&&
             (state==='finished'||state==='stopped'&&observed.checkpoint_stop_verified===true)) {
             // A successful native exit, including natural completion, does
             // not establish that a resumable checkpoint exists. Reuse the
