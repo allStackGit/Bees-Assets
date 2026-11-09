@@ -33,6 +33,12 @@ def main():
         raise SystemExit("Hub-seeded TinyBrains run is incomplete.")
     if (run / "STOP").exists() or (run / "self-play" / "STOP").exists():
         raise SystemExit("Existing STOP marker prevents any trainer restart.")
+    import json
+    import torch
+    start = json.loads((run / "hub-start-update.json").read_text())["update"]
+    state = torch.load(checkpoint, map_location="cpu", weights_only=False)
+    if type(start) is not int or start < 1 or state.get("update") != start:
+        raise SystemExit("Hub PPO starting update differs from imported checkpoint.")
     from experiment_hub_tinybrains_rocm_verify import verify_runtime_device
     verify_runtime_device(args.rocm_pci)
     sys.argv = [
