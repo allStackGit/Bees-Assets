@@ -733,7 +733,38 @@ impl NativeLevelBatchDriver {
                 &[LocalCommandKind::ClosestFriendly], names,
             );
         }
-        Ok(names)
+        let combat = &simulation.world(index).expect("located world").state.combat;
+        let [bee_side, human_side] = events.sides();
+        let mut dynamic = Vec::with_capacity(3);
+        use bees_sim::combat_world::{
+            BEEHIVE_TYPE, WARP_GATE_TYPE, is_mining_ship_type,
+        };
+        let has_gate = combat.ships().iter().any(|ship|
+            ship.ship_type == WARP_GATE_TYPE && !ship.vitals.is_dead()
+        );
+        if acting.side != human_side || !has_gate ||
+            acting.members.iter().all(|&id| combat.ship(id)
+                .is_some_and(|ship| ship.ship_type == WARP_GATE_TYPE))
+        {
+            dynamic.push(LocalCommandKind::FullRetreat);
+        }
+        if acting.side != bee_side ||
+            acting.members.iter().all(|&id| combat.ship(id)
+                .is_some_and(|ship| ship.ship_type == BEEHIVE_TYPE)) ||
+            !combat.has_available_beehive_healing_slot(bee_side)
+        {
+            dynamic.push(LocalCommandKind::Heal);
+        }
+        let owns_miner = acting.members.iter().any(|&id| combat.ship(id)
+            .is_some_and(|ship| is_mining_ship_type(ship.ship_type)));
+        let has_mining_target = combat.obstacles().iter().any(|obstacle|
+            obstacle.kind == bees_sim::obstacle::ObstacleKind::MiningAsteroid &&
+            obstacle.live()
+        );
+        if !owns_miner || !has_mining_target {
+            dynamic.push(LocalCommandKind::Mining);
+        }
+        Ok(crate::squad_composition::banned_strategy_names(&dynamic, names))
     }
 
     /// Prepare the actual Unity Squad.MakeMatchupStrat request from its live
