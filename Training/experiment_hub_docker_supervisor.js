@@ -85,6 +85,8 @@ class DockerSupervisor {
         this.lock=path.join(this.root,'docker-owner.lock');
         this.probeFile=path.join(this.root,'docker-gpu-probe.json');
         const native=path.join(this.root,'supervisor-v1.json');
+        if(fs.existsSync(path.join(this.root,'gpu-preflight-pending.json')))
+            throw Error('Unresolved native GPU preflight blocks Docker backend adoption.');
         if(fs.existsSync(native)) {
             const existing=JSON.parse(fs.readFileSync(native,'utf8'));
             if(!Array.isArray(existing.records)||
