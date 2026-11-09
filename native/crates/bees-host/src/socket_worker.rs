@@ -143,20 +143,31 @@ impl NativeSocketWorker {
         if !self.ready { return Ok(0); }
         let session = connection.connection().session();
         self.queued_requests.retain(|hash| session.is_live_request_hash(*hash));
+        // Unity allocates every request hash on ONE WebSocket in
+        // enqueue order. Do not send all targetings before strategies
+        // merely because they use separate session maps: that can starve
+        // the strategy following a prior targeting response. A temporary
+        // sorted set of keys changes no durable state and keeps lookup,
+        // owner validity and the original payload inside the session.
+        let mut due = Vec::new();
+        due.extend(session.live_targeting_requests()
+            .map(|request| (request.hash, true)));
+        due.extend(session.live_strategy_requests()
+            .map(|request| (request.hash, false)));
+        due.sort_unstable_by_key(|&(hash, _)| hash);
         let mut queued = 0;
-        for request in session.live_targeting_requests() {
-            if self.queued_requests.contains(&request.hash) { continue; }
-            let prepared = PreparedSocketRequest::targeting(connection, request)?;
-            match self.enqueue_hivemind(request.hash, prepared) {
-                Ok(()) => queued += 1,
-                Err(NativeSocketWorkerError::Backpressure) => return Ok(queued),
-                Err(error) => return Err(error),
-            }
-        }
-        for request in session.live_strategy_requests() {
-            if self.queued_requests.contains(&request.hash) { continue; }
-            let prepared = PreparedSocketRequest::strategy(connection, request)?;
-            match self.enqueue_hivemind(request.hash, prepared) {
+        for (hash, is_targeting) in due {
+            if self.queued_requests.contains(&hash) { continue; }
+            let prepared = if is_targeting {
+                let request = session.resend_targeting_request(hash)
+                    .ok_or(HiveMindSocketError::InvalidRequestOwnership)?;
+                PreparedSocketRequest::targeting(connection, request)?
+            } else {
+                let request = session.resend_request(hash)
+                    .ok_or(HiveMindSocketError::InvalidRequestOwnership)?;
+                PreparedSocketRequest::strategy(connection, request)?
+            };
+            match self.enqueue_hivemind(hash, prepared) {
                 Ok(()) => queued += 1,
                 Err(NativeSocketWorkerError::Backpressure) => break,
                 Err(error) => return Err(error),
