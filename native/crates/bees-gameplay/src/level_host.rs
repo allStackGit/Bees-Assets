@@ -397,6 +397,9 @@ pub enum NativeLevelStrategyReceiveError {
 pub struct NativeLevelTargetingDelivery {
     pub world_index: Option<usize>,
     pub selected_enemy: Option<SquadLifetime>,
+    /// Copied from the ORIGINAL targeting request before correlation
+    /// consumes its hash. GetStrategy must retain that exact opponent.
+    pub opponent_id: u64,
     pub receipt: TargetingReceipt,
 }
 
@@ -923,6 +926,10 @@ impl NativeLevelBatchDriver {
             .ok_or(NativeLevelTargetingReceiveError::Session(
                 HiveMindSessionError::UnknownRequest,
             ))?;
+        let opponent_id = connection.targeting_request_opponent(response.hash)
+            .ok_or(NativeLevelTargetingReceiveError::Session(
+                HiveMindSessionError::UnknownRequest,
+            ))?;
         let found = self.locate_live_owner(simulation, owner)
             .map_err(NativeLevelTargetingReceiveError::Routing)?;
         flush_all_squad_retirements(simulation, connection);
@@ -951,7 +958,9 @@ impl NativeLevelBatchDriver {
                 .map_err(|error| failed(NativeTargetingApplicationError::Events(error)))?;
             connection.retire_squad(*owner);
         }
-        Ok(NativeLevelTargetingDelivery { world_index, selected_enemy, receipt })
+        Ok(NativeLevelTargetingDelivery {
+            world_index, selected_enemy, opponent_id, receipt,
+        })
     }
 
     /// Complete authenticated-WebSocket JSON ingress for all supported
