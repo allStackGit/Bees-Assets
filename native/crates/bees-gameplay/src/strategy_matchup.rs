@@ -17,6 +17,8 @@ use crate::squads::NativeSquadRoster;
 pub struct NativeSourceStrategyMatchup {
     pub matchup: String,
     pub shooting_matchup: String,
+    /// Exact selected enemy lifecycle, never its reusable numeric SquadId.
+    pub enemy: Option<SquadLifetime>,
 }
 
 #[derive(Clone, Copy)]
@@ -112,6 +114,7 @@ pub fn build_source_strategy_matchup(
         return Ok(Some(NativeSourceStrategyMatchup {
             shooting_matchup: format!("{own_letters}||"),
             matchup: format!("{own_letters}||0|0"),
+            enemy: None,
         }));
     };
     let enemy = roster.get(enemy_owner).ok_or(GameCommandError::InvalidEnemy)?;
@@ -214,5 +217,6 @@ pub fn build_source_strategy_matchup(
         shooting_matchup: format!("{own_letters}|{enemy_letters}|"),
         matchup: format!("{own_letters}{ally_letters}|{enemy_letters}|{}|{bucket}",
             u8::from(enemy_in_range)),
+        enemy: Some(enemy_owner),
     }))
 }
