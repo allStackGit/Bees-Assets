@@ -1323,7 +1323,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 ?' · Selected winner '+j.candidate_selection.winner_job_id.slice(-8)+
                     ' · pinned evaluated model '+j.candidate_selection.checkpoint_sha256.slice(0,12)
                 :'';
+            const checkpointRecovery=j.checkpoint_reinspected_at
+                ?' · Resumable checkpoint reverified'
+                :j.checkpoint_reinspection_requested_at?' · Checkpoint recheck pending':'';
             const statusCell=cell(tr,status+lineage+promoted+gpuProof+readinessText+
+                checkpointRecovery+
                 (hasSuccessor&&['waiting_adapter','waiting_predecessor'].includes(j.status)
                     ?' · Cancel downstream stage first':''));
 
