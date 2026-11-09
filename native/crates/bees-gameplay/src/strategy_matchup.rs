@@ -53,10 +53,11 @@ fn average_health(
         if ship.vitals.is_dead() {
             return Err(GameCommandError::MissingCombatSnapshot);
         }
-        let original = ship.vitals.max_health();
-        if original > 0 {
-            total += f64::from(ship.vitals.health()) / f64::from(original) * 100.0;
-        }
+        // Unity uses immutable Ship.OriginalHealth, not MaxHealth:
+        // training health overrides may lower the latter drastically.
+        let original = world.game_ship_original_health(id)
+            .ok_or(GameCommandError::MissingCombatSnapshot)?;
+        total += f64::from(ship.vitals.health()) / f64::from(original) * 100.0;
     }
     Ok(total / ships.len() as f64)
 }
