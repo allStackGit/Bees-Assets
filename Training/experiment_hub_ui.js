@@ -1031,8 +1031,15 @@ document.addEventListener('DOMContentLoaded', () => {
         const predecessorSelect=$('hub-job-predecessor');
         const previousParent=predecessorSelect.value;
         const successors=new Set((state.jobs||[])
-            .filter(j=>j.status!=='cancelled'&&
-                (j.continuation_of_job_id||j.after_job_id))
+            .filter(j=>{
+                if(j.status==='cancelled')return false;
+                if(j.status==='failed'&&j.prelaunch_absence_verified===true&&
+                    j.capacity_released_at&&
+                    !(state.jobs||[]).some(child=>child.status!=='cancelled'&&
+                        (child.continuation_of_job_id===j.id||child.after_job_id===j.id)))
+                    return false;
+                return Boolean(j.continuation_of_job_id||j.after_job_id);
+            })
             .map(j=>j.continuation_of_job_id||j.after_job_id));
         const availableParents=(state.jobs||[]).filter(j=>
             ['tinybrains','courier'].includes(project)&&j.project_id===project&&!successors.has(j.id)&&(
