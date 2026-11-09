@@ -18,6 +18,7 @@ module.exports={
         engineCacheRoot:path.join(ai,'projects/tinybrains/Ants-MAPOCA/cache'),
         // User verified that the Exeter and Halifax files have this same SHA.
         seedCheckpointSha256:'fae407ef8db3fab7620b1407b17380e2eea0f616c8d4d8816d3924cac6e005d7',
+        seedPpoUpdates:7199,
         profiles:{
             halifax_rocm:{
                 device:'cuda',threads:12,live_matches:16,waves:16,
