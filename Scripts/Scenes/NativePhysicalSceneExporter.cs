@@ -211,6 +211,10 @@ internal static class NativePhysicalSceneExporter
         public int side;
         public List<long> member_ids = new List<long>();
         public bool user_controlled, can_accept_input, locked_on, is_carrier_squad;
+        public bool is_hivemind_controlled, is_immobile;
+        // Preserve ulong exactly; JsonUtility's numeric roundtrips can
+        // lose 64-bit client identity through JavaScript intermediaries.
+        public string opponent_id_decimal;
         public List<string> banned_strategies = new List<string>();
         public string shooting_strategy;
     }
@@ -258,7 +262,7 @@ internal static class NativePhysicalSceneExporter
     [Serializable]
     private sealed class PhysicalScene
     {
-        public int schema_version = 26;
+        public int schema_version = 27;
         public SourceTargetingContext targeting_context;
         public int source_frame_count = Time.frameCount;
         public string level_name;
@@ -267,6 +271,7 @@ internal static class NativePhysicalSceneExporter
         public bool shots_harmless;
         public bool activate_collision_asteroids;
         public bool activate_mining;
+        public bool activate_hivemind;
         public bool has_obstacles;
         public SourceCommandSettings command_settings;
         public int bee_side, human_side;
@@ -312,6 +317,7 @@ internal static class NativePhysicalSceneExporter
             shots_harmless = level.Stage.MakeShotsHarmless,
             activate_collision_asteroids = level.ActivateCollisionAsteroids,
             activate_mining = level.ActivateMining,
+            activate_hivemind = level.Stage.ActivateHiveMind,
             has_obstacles = level.HasObstacles,
             command_settings = new SourceCommandSettings {
                 max_command_seconds = ConfigData.StandardMaxCommandTime,
@@ -625,6 +631,9 @@ internal static class NativePhysicalSceneExporter
                 can_accept_input = squad.CanAcceptUserInput,
                 locked_on = squad.IsLockedOn,
                 is_carrier_squad = squad.IsCarrierSquad,
+                is_hivemind_controlled = squad.IsHiveMindControlled,
+                is_immobile = squad.IsImmobile,
+                opponent_id_decimal = squad.OpponentId.ToString(System.Globalization.CultureInfo.InvariantCulture),
                 shooting_strategy = Utilities.ConvertShootingStrategyTypeToName[squad.GetShootingStrategy()]
             };
             if (squad.HasCommand || squad.HasCommandQueue || squad.CommandQueue.Count > 0)
