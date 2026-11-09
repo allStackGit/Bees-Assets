@@ -127,6 +127,7 @@ struct UnitySnapshot {
     activate_collision_asteroids: bool,
     activate_mining: Option<bool>,
     activate_hivemind: Option<bool>,
+    hivemind_initial_command_delay_seconds: Option<i32>,
     has_obstacles: bool,
     command_settings: UnityCommandSettings,
     bee_side: i32,
@@ -613,6 +614,7 @@ pub struct NativePhysicalScene {
     /// command requests. Legacy imports remain runnable but cannot
     /// silently assume gameplay AI eligibility.
     pub activate_hivemind: Option<bool>,
+    pub hivemind_initial_command_delay_seconds: Option<i32>,
     pub has_obstacles: bool,
     pub command_settings: bees_gameplay::commands::HiveMindCommandSettings,
     pub entities: Vec<NativeAuthoredEntity>,
@@ -994,6 +996,7 @@ impl NativePhysicalScene {
         metadata.targeting_context = self.targeting_context;
         metadata.activate_mining = self.activate_mining;
         metadata.hivemind_active = self.activate_hivemind;
+        metadata.hivemind_initial_delay_seconds = self.hivemind_initial_command_delay_seconds;
         metadata.hivemind_starting_positions = self.starting_positions;
         metadata.hivemind_squads = self.source_squads.iter().zip(&squads)
             .filter_map(|(source, squad)| source.hivemind.map(|inputs| (squad.owner, inputs)))
@@ -1138,6 +1141,7 @@ impl NativePhysicalScene {
         }
         if raw.schema_version >= 27 &&
             (raw.activate_hivemind.is_none() || raw.activate_mining.is_none() ||
+             raw.hivemind_initial_command_delay_seconds.is_none() ||
              raw.starting_positions.is_none()) {
             return Err(NativeSnapshotError::MissingHiveMindSource);
         }
@@ -2033,6 +2037,7 @@ impl NativePhysicalScene {
             activate_collision_asteroids: raw.activate_collision_asteroids,
             activate_mining: raw.activate_mining,
             activate_hivemind: raw.activate_hivemind,
+            hivemind_initial_command_delay_seconds: raw.hivemind_initial_command_delay_seconds,
             has_obstacles: raw.has_obstacles,
             command_settings,
             entities,
