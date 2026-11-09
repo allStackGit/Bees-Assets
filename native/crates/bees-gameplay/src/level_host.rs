@@ -114,9 +114,35 @@ pub struct NativeLevelStrategyInputs {
 /// These are supplied by the real Level's current Squad/FleetShip/weapon
 /// registry; no guessed formation offsets, path clearance, Bomb weapons
 /// or target rankings are introduced by the host.
+/// Authored Squad.Setup inputs only. The current command, members, movement,
+/// targeting and request state remain owned by the live Level and socket.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct NativeHiveMindSquadSource {
+    pub opponent_id: u64,
+    pub hivemind_controlled: bool,
+    pub immobile: bool,
+}
+
+impl NativeHiveMindSquadSource {
+    pub fn can_request(self) -> bool {
+        self.hivemind_controlled && !self.immobile
+    }
+}
+
 pub trait NativeLevelActivationContext: NativeLevelCommandContext {
     fn targeting_context(&self) -> Option<crate::squad_targeting::NativeTargetingContext>;
     fn targeting_ship_catalog(&self) -> &bees_sim::ship_assets::ShipAssetCatalog;
+
+    /// Source Stage.ActivateHiveMind; None means an older export with no
+    /// authorization to autonomously issue command reservations.
+    fn source_hivemind_active(&self) -> Option<bool> { None }
+
+    /// Per-Squad source authority, not a second gameplay roster. Dynamic
+    /// native-created minions without such source inputs are ineligible
+    /// until the Level explicitly registers their command authority.
+    fn source_hivemind_squad(
+        &self, _owner: SquadLifetime,
+    ) -> Option<NativeHiveMindSquadSource> { None }
 
     /// Request-bound source matchup over the same canonical CombatWorld.
     /// A renderer/headless adapter MUST provide authentic source weapon
