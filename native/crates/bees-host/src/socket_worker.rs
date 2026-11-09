@@ -32,6 +32,9 @@ pub struct NativeSocketWorker {
     ready: bool,
     // Flow control only. Actual requests/retries remain in the connection.
     queued_stores: HashSet<i64>,
+    // Socket-local flow control only; all pending request identity and
+    // outcome correlation stays inside DurableHiveMindConnection.session.
+    queued_requests: HashSet<i64>,
     measurements: NativeSocketMeasurements,
     queue_backpressure: u64,
 }
@@ -76,6 +79,7 @@ impl NativeSocketWorker {
             }
         }).map_err(NativeSocketWorkerError::Spawn)?;
         Ok(Self { outgoing, incoming, ready: false, queued_stores: HashSet::new(),
+            queued_requests: HashSet::new(),
             measurements: NativeSocketMeasurements::default(), queue_backpressure: 0 })
     }
 
@@ -104,18 +108,67 @@ impl NativeSocketWorker {
         Ok(())
     }
 
+    fn enqueue_hivemind(&mut self, hash: i64, prepared: PreparedSocketRequest)
+        -> Result<(), NativeSocketWorkerError>
+    {
+        if self.queued_requests.contains(&hash) { return Ok(()); }
+        self.enqueue(prepared)?;
+        self.queued_requests.insert(hash);
+        Ok(())
+    }
+
     pub fn send_strategy(&mut self, connection: &DurableHiveMindConnection, request: &GetStrategyRequest)
         -> Result<(), NativeSocketWorkerError>
     {
         if !self.ready { return Err(HiveMindSocketError::SetupRequired.into()); }
-        self.enqueue(PreparedSocketRequest::strategy(connection, request)?)
+        let prepared = PreparedSocketRequest::strategy(connection, request)?;
+        self.enqueue_hivemind(request.hash, prepared)
     }
 
     pub fn send_targeting(&mut self, connection: &DurableHiveMindConnection, request: &GetTargetingRequest)
         -> Result<(), NativeSocketWorkerError>
     {
         if !self.ready { return Err(HiveMindSocketError::SetupRequired.into()); }
-        self.enqueue(PreparedSocketRequest::targeting(connection, request)?)
+        let prepared = PreparedSocketRequest::targeting(connection, request)?;
+        self.enqueue_hivemind(request.hash, prepared)
+    }
+
+    /// Drain eligible pending requests without allocating NEW request hashes.
+    /// A full I/O channel stops this bounded pass; the original session
+    /// retains unqueued requests for the next pump. This is not a game
+    /// command queue, retry authority or additional outcome registry.
+    pub fn queue_pending_hivemind_requests(
+        &mut self, connection: &DurableHiveMindConnection,
+    ) -> Result<usize, NativeSocketWorkerError> {
+        if !self.ready { return Ok(0); }
+        let session = connection.connection().session();
+        self.queued_requests.retain(|hash| session.is_live_request_hash(*hash));
+        let mut queued = 0;
+        for request in session.live_targeting_requests() {
+            if self.queued_requests.contains(&request.hash) { continue; }
+            let prepared = PreparedSocketRequest::targeting(connection, request)?;
+            match self.enqueue_hivemind(request.hash, prepared) {
+                Ok(()) => queued += 1,
+                Err(NativeSocketWorkerError::Backpressure) => return Ok(queued),
+                Err(error) => return Err(error),
+            }
+        }
+        for request in session.live_strategy_requests() {
+            if self.queued_requests.contains(&request.hash) { continue; }
+            let prepared = PreparedSocketRequest::strategy(connection, request)?;
+            match self.enqueue_hivemind(request.hash, prepared) {
+                Ok(()) => queued += 1,
+                Err(NativeSocketWorkerError::Backpressure) => break,
+                Err(error) => return Err(error),
+            }
+        }
+        Ok(queued)
+    }
+
+    /// Deliberate retry of the exact pending hash after a nonterminal
+    /// server failure. Do not create a new learning reservation.
+    pub fn retry_hivemind(&mut self, hash: i64) {
+        self.queued_requests.remove(&hash);
     }
 
     /// Queue original durable requests once on this socket. Backpressure
