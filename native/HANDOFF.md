@@ -6,6 +6,43 @@ Unity replacement remains incomplete; the experiment-queue branch is separate.
 
 ## 2026-11-09 continuation
 
+## 2026-11-09 strategy-matchup continuation
+
+The native gameplay crate now prepares source-shaped strategic and request-local
+shooting matchup keys from the SAME live CombatWorld, canonical squad roster,
+per-side retained HiveMind discoveries, immutable source ship letters, and
+authored sprite bounds. It implements source priority of selected enemy ships
+before other in-range visible enemies, first-64 ship caps, nearby ally choice,
+source distance/type/ID tie ordering, reciprocal weapon range flag, immutable
+Ship.OriginalHealth percentages and C# ties-to-even health buckets. Shooting
+identity is deliberately acting squad + selected enemies + trailing delimiter:
+nearby allies appear ONLY in the strategic key, preserving prior learning
+attribution under concurrent Level requests.
+
+The source policy-only metadata adapter uses real turret
+IsShipValidTarget/RangeCollider membership, target bounds latching and world
+obstacle linecast. Unsupported Bomb/Charge subclass target-validity queries
+fail closed; no nominal range approximations or fabricated target observations
+are introduced. A no-visible-enemy selection returns None so it is not sent
+as a false strategy matchup. An empty targeting choice uses the source
+no-target key and command bans.
+
+NativeLevelBatchDriver can now prepare these two keys from one accepted
+targeting lifecycle; NativeHostRuntime.request_live_strategy combines them,
+the captured source composition bans, source no-target bans and explicit
+caller-supplied remaining dynamic bans, then persists a GetStrategy through
+the EXISTING DurableHiveMindConnection. The caller must still provide the
+source's mining/healing/retreat/ClosestFriendly restrictions and send the
+returned exact request on the existing socket worker; this is a building
+block, NOT yet automatic source request cadence or full gameplay parity.
+
+No Rust toolchain or runnable source scene was available in the present
+execution environment. Changes were reviewed against the current Unity
+source and GitHub revisions but have NOT been compiled or run. Do not use
+earlier executable qualification as proof of this new path. Next: implement
+the remaining dynamic-bans adapter and automatic source request/retargeting
+cadence, then qualify against real Unity exports, including special weapons.
+
 The common host can now issue `request_source_targeting`: the single live
 Squad and imported authored ship-letter sources generate the first 64 sorted
 ship letters, while all current enemy-side hull types determine Type A-X bans.
