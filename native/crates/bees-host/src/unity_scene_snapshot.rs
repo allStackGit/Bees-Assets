@@ -136,6 +136,7 @@ struct UnitySnapshot {
     policy_episode: Option<UnityPolicyEpisode>,
     min: UnityVec2,
     max: UnityVec2,
+    starting_positions: Option<Vec<UnityVec2>>,
     navigation_map_width: i32,
     navigation_map_height: i32,
     navigation_origin_world: UnityVec2,
@@ -601,6 +602,8 @@ pub struct NativePhysicalScene {
     /// Source Stage identity for validating the loaded prefab palette.
     pub stage_name: String,
     pub bounds: Aabb,
+    /// Exact Stage-owned home coordinates indexed by source Side-1.
+    pub starting_positions: Option<[Vec2; 2]>,
     pub fixed_dt_seconds: f32,
     pub shots_harmless: bool,
     pub activate_collision_asteroids: bool,
@@ -991,6 +994,7 @@ impl NativePhysicalScene {
         metadata.targeting_context = self.targeting_context;
         metadata.activate_mining = self.activate_mining;
         metadata.hivemind_active = self.activate_hivemind;
+        metadata.hivemind_starting_positions = self.starting_positions;
         metadata.hivemind_squads = self.source_squads.iter().zip(&squads)
             .filter_map(|(source, squad)| source.hivemind.map(|inputs| (squad.owner, inputs)))
             .collect();
@@ -1133,9 +1137,21 @@ impl NativePhysicalScene {
             return Err(NativeSnapshotError::MissingTargetingSource);
         }
         if raw.schema_version >= 27 &&
-            (raw.activate_hivemind.is_none() || raw.activate_mining.is_none()) {
+            (raw.activate_hivemind.is_none() || raw.activate_mining.is_none() ||
+             raw.starting_positions.is_none()) {
             return Err(NativeSnapshotError::MissingHiveMindSource);
         }
+        let starting_positions = match raw.starting_positions.as_deref() {
+            Some([first, second]) => {
+                let pair = [first.into_vec(), second.into_vec()];
+                if pair.iter().any(|position| !position.is_finite()) {
+                    return Err(NativeSnapshotError::MissingHiveMindSource);
+                }
+                Some(pair)
+            },
+            None if raw.schema_version < 27 => None,
+            _ => return Err(NativeSnapshotError::MissingHiveMindSource),
+        };
         if raw.schema_version >= 23 && raw.source_frame_count.is_none() {
             return Err(NativeSnapshotError::MissingWeaponRankingClock);
         }
@@ -2011,6 +2027,7 @@ impl NativePhysicalScene {
             level_name: raw.level_name,
             stage_name: raw.stage_name,
             bounds: Aabb { min, max },
+            starting_positions,
             fixed_dt_seconds: raw.fixed_dt_seconds,
             shots_harmless: raw.shots_harmless,
             activate_collision_asteroids: raw.activate_collision_asteroids,
