@@ -491,6 +491,8 @@ impl NativeLevelActivationContext for NativePolicyOnlyMetadata {
     fn targeting_context(&self) -> Option<bees_gameplay::squad_targeting::NativeTargetingContext> { self.targeting_context }
     fn targeting_ship_catalog(&self) -> &bees_sim::ship_assets::ShipAssetCatalog { &self.ship_catalog }
 
+    fn source_mining_enabled(&self) -> Option<bool> { self.activate_mining }
+
     fn source_strategy_matchup(
         &self, world: &mut CombatWorld, roster: &NativeSquadRoster,
         owner: SquadLifetime, enemy: Option<SquadLifetime>,
