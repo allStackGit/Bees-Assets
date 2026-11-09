@@ -389,6 +389,9 @@ impl NativeHiveMindConnection {
         self.stores.finish_reconciliation(hash)
     }
 
+    /// Read-only transport view of the one pending request registry.
+    pub fn session(&self) -> &HiveMindSession { &self.session }
+
     /// The one connection-owned strategy/targeting registry, borrowed by
     /// the native driver during its original-lifetime response handoff.
     pub fn session_mut(&mut self) -> &mut HiveMindSession {
