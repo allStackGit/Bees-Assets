@@ -120,6 +120,7 @@ pub struct NativePolicyOnlyMetadata {
     /// Source Stage command-authority gate, distinct from game physics
     /// and not inferred from whether a model controller is present.
     pub hivemind_active: Option<bool>,
+    pub hivemind_starting_positions: Option<[Vec2; 2]>,
     /// Immutable per-squad source eligibility/opponent. The live roster
     /// and command director still own membership and active requests.
     pub hivemind_squads: HashMap<SquadLifetime, bees_gameplay::level_host::NativeHiveMindSquadSource>,
@@ -233,7 +234,8 @@ impl NativePolicyOnlyMetadata {
         }
         Ok(Self {
             targeting_context: None, activate_mining: None,
-            hivemind_active: None, hivemind_squads: HashMap::new(),
+            hivemind_active: None, hivemind_starting_positions: None,
+            hivemind_squads: HashMap::new(),
             bounds, navigation, activate_collision_asteroids, fleet, ship_catalog,
             authored_ships, effective_vision,
             source_static_discovery_values,
@@ -502,6 +504,11 @@ impl NativeLevelActivationContext for NativePolicyOnlyMetadata {
 
     fn source_hivemind_active(&self) -> Option<bool> {
         self.hivemind_active
+    }
+
+    fn source_hivemind_starting_position(&self, side: i32) -> Option<Vec2> {
+        let index = usize::try_from(side.checked_sub(1)?).ok()?;
+        self.hivemind_starting_positions?.get(index).copied()
     }
 
     fn source_hivemind_squad(
