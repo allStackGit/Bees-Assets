@@ -703,14 +703,13 @@ impl NativeLevelBatchDriver {
     /// World, roster, authored ShipTypeLetter and user-progress roster.
     /// Request creation remains outside the physics step and outside this
     /// driver: the host's durable connection owns the one hash namespace.
-    /// The caller supplies the Level's configured enemy side and the
-    /// UserProgressData.AllShipTypes snapshot; neither is guessed here.
+    /// The caller supplies the configured enemy side; the full Type A-X
+    /// ban universe is fixed in source UserProgressData.SetShipTypes.
     pub fn targeting_request_inputs<M, A>(
         &self,
         simulation: &Simulation<NativeLevelState<M, A>, NativeLevelRules>,
         owner: SquadLifetime,
         enemy_side: i32,
-        all_ship_types: &[u8],
     ) -> Result<crate::squad_targeting::NativeTargetingRequestInputs, NativeTargetingRequestSourceError>
     where
         M: NativeLevelRewardMetadata + NativeLevelCommandContext,
@@ -722,7 +721,7 @@ impl NativeLevelBatchDriver {
         let world = simulation.world(index).expect("located live world");
         crate::squad_targeting::build_source_targeting_request(
             &world.state.combat, world.state.events.roster(),
-            owner, enemy_side, all_ship_types,
+            owner, enemy_side,
         ).map_err(NativeTargetingRequestSourceError::Source)
     }
 
