@@ -100,6 +100,11 @@ class DockerSupervisor {
             !Number.isSafeInteger(this.journal.revision)||
             !Array.isArray(this.journal.records)||
             this.journal.records.some(r=>!UUID.test(r.job_id)||!UUID.test(r.lease_id)||
+                (r.artifact_lineage_root_id!==undefined&&
+                    !UUID.test(r.artifact_lineage_root_id))||
+                (r.continuation_of_job_id!==undefined&&
+                    r.continuation_of_job_id!==null&&
+                    !UUID.test(r.continuation_of_job_id))||
                 !STATES.has(r.state)||r.container_name!==containerName(r.job_id)))
             throw Error('Invalid durable Docker supervisor journal.');
         this.state=this.journal.records;
@@ -302,6 +307,8 @@ class DockerSupervisor {
             throw Error('Deterministic Docker job name already exists outside the ownership journal.');
         const record={
             job_id:job.id,lease_id:lease.id,project_id:job.project_id,
+            artifact_lineage_root_id:job.artifact_lineage_root_id||job.id,
+            continuation_of_job_id:job.continuation_of_job_id||null,
             container_name:name,container_id:null,
             image_id:imageId,cpus:invocation.cpus,ram_mb:invocation.ram_mb,
             mounts:d.mounts.map(m=>[m.host,m.target,m.readonly]),
