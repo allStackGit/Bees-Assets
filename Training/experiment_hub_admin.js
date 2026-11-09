@@ -36,6 +36,7 @@ const POST_ACTIONS={
     '/api/hub/jobs/start':[200,'authorizeStart'],
     '/api/hub/jobs/withdraw-start':[200,'withdrawStart'],
     '/api/hub/jobs/stop':[200,'authorizeStop'],
+    '/api/hub/jobs/reinspect-checkpoint':[200,'requestCheckpointReinspection'],
 };
 const GET_PATHS=new Set([
     '/api/hub/jobs/plan','/api/hub/automation','/api/hub/progress',
