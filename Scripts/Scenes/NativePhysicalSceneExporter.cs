@@ -279,6 +279,9 @@ internal static class NativePhysicalSceneExporter
         public bool has_policy_episode;
         public SourcePolicyEpisode policy_episode = new SourcePolicyEpisode();
         public Vector2 min, max;
+        // Source Level.StartingPositions[Side-1] for a squad returning
+        // in bounds before requesting its next HiveMind target.
+        public Vector2[] starting_positions;
         // Exact Pathfinder grid dimensions and map-to-Unity affine frame,
         // not approximations from gameplay ForceBounds or broadphase.
         public int navigation_map_width, navigation_map_height;
@@ -308,6 +311,17 @@ internal static class NativePhysicalSceneExporter
                 "Select a fully initialized live Level with valid source bounds.");
         }
 
+        if (level.StartingPositions == null ||
+            level.StartingPositions.Length != 2 ||
+            !IsFinite(level.StartingPositions[0].x) ||
+            !IsFinite(level.StartingPositions[0].y) ||
+            !IsFinite(level.StartingPositions[1].x) ||
+            !IsFinite(level.StartingPositions[1].y))
+        {
+            throw new InvalidOperationException(
+                "Native source squad return positions must be finite and complete.");
+        }
+
         var snapshot = new PhysicalScene {
             targeting_context = new SourceTargetingContext { has_player = level.HasPlayer, user_side = ConfigData.Configuration.UserSide },
             level_name = !string.IsNullOrEmpty(level.Name)
@@ -332,6 +346,7 @@ internal static class NativePhysicalSceneExporter
             beehive_size_pixels = ConfigData.ShipSizes[ConfigData.ShipTypes.Beehive],
             min = new Vector2(level.MinX, level.MinY),
             max = new Vector2(level.MaxX, level.MaxY),
+            starting_positions = (Vector2[])level.StartingPositions.Clone(),
             navigation_map_width = level.MapWidth,
             navigation_map_height = level.MapHeight,
             navigation_origin_world = level.Map.Transform.TransformPoint(
