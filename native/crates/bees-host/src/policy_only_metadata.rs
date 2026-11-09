@@ -117,6 +117,12 @@ pub struct NativePolicyOnlyMetadata {
     /// Exact Level.ActivateMining from the source scene; unavailable for
     /// older physical exports, never inferred from present asteroids.
     pub activate_mining: Option<bool>,
+    /// Source Stage command-authority gate, distinct from game physics
+    /// and not inferred from whether a model controller is present.
+    pub hivemind_active: Option<bool>,
+    /// Immutable per-squad source eligibility/opponent. The live roster
+    /// and command director still own membership and active requests.
+    pub hivemind_squads: HashMap<SquadLifetime, bees_gameplay::level_host::NativeHiveMindSquadSource>,
     pub bounds: Aabb,
     pub navigation: NavigationRuntime,
     pub activate_collision_asteroids: bool,
@@ -227,6 +233,7 @@ impl NativePolicyOnlyMetadata {
         }
         Ok(Self {
             targeting_context: None, activate_mining: None,
+            hivemind_active: None, hivemind_squads: HashMap::new(),
             bounds, navigation, activate_collision_asteroids, fleet, ship_catalog,
             authored_ships, effective_vision,
             source_static_discovery_values,
@@ -492,6 +499,16 @@ impl NativeLevelActivationContext for NativePolicyOnlyMetadata {
     fn targeting_ship_catalog(&self) -> &bees_sim::ship_assets::ShipAssetCatalog { &self.ship_catalog }
 
     fn source_mining_enabled(&self) -> Option<bool> { self.activate_mining }
+
+    fn source_hivemind_active(&self) -> Option<bool> {
+        self.hivemind_active
+    }
+
+    fn source_hivemind_squad(
+        &self, owner: SquadLifetime,
+    ) -> Option<bees_gameplay::level_host::NativeHiveMindSquadSource> {
+        self.hivemind_squads.get(&owner).copied()
+    }
 
     fn source_strategy_matchup(
         &self, world: &mut CombatWorld, roster: &NativeSquadRoster,
