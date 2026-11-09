@@ -574,6 +574,48 @@ where
         )
     }
 
+    /// Continue an accepted GetMatchupStrategy reply into a real
+    /// GetStrategy request. Both request-local learning keys and the
+    /// enemy lifecycle come from the canonical live Level, never a
+    /// host-supplied string or recycled Squad.ItemId.
+    ///
+    /// The caller MUST provide the remaining source-derived dynamic
+    /// restrictions (mining, healing, full retreat and ClosestFriendly)
+    /// in `authored_bans`. The captured squad composition bans and the
+    /// no-target restrictions are included here. Until those authored
+    /// values are available the caller must not issue this request.
+    /// The exact returned durable request goes to send_strategy on the
+    /// existing socket worker; retries must use its original Hash.
+    ///
+    /// None means the selected enemy had no visible potential ships,
+    /// matching Unity's requeue-without-command behavior.
+    pub fn request_live_strategy(
+        &mut self, owner: SquadLifetime, opponent: u64,
+        authored_bans: impl IntoIterator<Item=String>,
+    ) -> Result<Option<GetStrategyRequest>, DurableConnectionError> {
+        let Some(matchup) = self.driver.source_strategy_matchup_inputs(
+            &mut self.simulation, owner,
+        ).map_err(DurableConnectionError::GameplayRequest)? else {
+            return Ok(None);
+        };
+        let mut bans = self.driver.strategy_request_bans(
+            &self.simulation, owner, authored_bans,
+        ).map_err(DurableConnectionError::GameplayRequest)?;
+        if matchup.enemy.is_none() {
+            use bees_hivemind::dispatch::LocalCommandKind as Kind;
+            bans = bees_gameplay::squad_composition::banned_strategy_names(
+                &[Kind::Aggressive, Kind::Retreat, Kind::CircleSquad,
+                    Kind::RightSwipe, Kind::LeftSwipe, Kind::InAndOut,
+                    Kind::FullRetreat, Kind::Hold],
+                bans,
+            );
+        }
+        self.connection.request_strategy(
+            owner, matchup.enemy, matchup.matchup,
+            matchup.shooting_matchup, opponent, bans,
+        ).map(Some)
+    }
+
     pub fn request_targeting(
         &mut self, owner: SquadLifetime, ships: String, opponent: u64,
         banned: impl IntoIterator<Item=String>,
