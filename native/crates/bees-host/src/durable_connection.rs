@@ -246,6 +246,25 @@ impl DurableHiveMindConnection {
         Ok(request)
     }
 
+    /// One authoritative discard path for late or unusable server replies.
+    /// Persistence failure leaves exact reservations with the caller and
+    /// poisons the connection instead of pretending they were settled.
+    fn persist_discard_reservations(
+        &mut self, ids: &[i64],
+    ) -> Result<(), DurableConnectionError> {
+        if ids.is_empty() { return Ok(()); }
+        let result = (|| {
+            let mut batch = OutcomeBatch::new();
+            batch.discard_reservations(ids.iter().copied())
+                .map_err(DurableConnectionError::Protocol)?;
+            self.queue_outcomes(batch)?;
+            Ok(())
+        })();
+        result.map_err(|cause| DurableConnectionError::UnsettledReservations {
+            reservation_ids: ids.to_vec(), cause: Box::new(cause),
+        })
+    }
+
     /// A raw authenticated server frame is first routed by its original
     /// SquadLifetime. On StoreCommands 200/409, persist the modified retry
     /// ledger before returning the acknowledgement to the socket owner.
@@ -264,9 +283,41 @@ impl DurableHiveMindConnection {
         A: FnMut(SquadLifetime, i64) -> Result<SquadLifetime, SquadRosterError>,
     {
         self.ensure_available()?;
-        let delivery = driver.receive_hivemind_frame(
+        let delivery = match driver.receive_hivemind_frame(
             simulation, &mut self.connection, frame,
-        ).map_err(DurableConnectionError::Inbound)?;
+        ) {
+            Ok(delivery) => delivery,
+            Err(error) => {
+                // Session.receive_targeting already removed the validated
+                // request by the time game-side ranking/installation fails.
+                // No command can earn this targeting reservation; persist a
+                // discard before reporting the application failure.
+                if let NativeHiveMindFrameError::Targeting(
+                    bees_gameplay::level_host::NativeLevelTargetingReceiveError::Application {
+                        selection, ..
+                    },
+                ) = &error {
+                    self.persist_discard_reservations(&[selection.outcome_id])?;
+                }
+                // A strategy activation can have partially mutated its
+                // command director before it fails (e.g. supersession
+                // credit). Never guess that both outcomes were unused.
+                // Surface their identities so the owning Level can abort
+                // and reconcile its authoritative command ledger.
+                if let NativeHiveMindFrameError::Strategy(
+                    bees_gameplay::level_host::NativeLevelStrategyReceiveError::Activation(failure),
+                ) = &error {
+                    return Err(DurableConnectionError::UnsettledReservations {
+                        reservation_ids: vec![
+                            failure.selection.command_outcome_id,
+                            failure.selection.shooting_outcome_id,
+                        ],
+                        cause: Box::new(DurableConnectionError::Inbound(error)),
+                    });
+                }
+                return Err(DurableConnectionError::Inbound(error));
+            }
+        };
         let discarded: &[i64] = match &delivery {
             Some(NativeHiveMindFrameDelivery::Strategy(strategy)) => match &strategy.action {
                 bees_gameplay::commands::StrategyReceiptAction::DiscardReservations(ids) |
@@ -280,20 +331,7 @@ impl DurableHiveMindConnection {
             },
             _ => &[],
         };
-        if !discarded.is_empty() {
-            let settled = (|| {
-                let mut batch = OutcomeBatch::new();
-                batch.discard_reservations(discarded.iter().copied())
-                    .map_err(DurableConnectionError::Protocol)?;
-                self.queue_outcomes(batch)?;
-                Ok(())
-            })();
-            if let Err(cause) = settled {
-                return Err(DurableConnectionError::UnsettledReservations {
-                    reservation_ids: discarded.to_vec(), cause: Box::new(cause),
-                });
-            }
-        }
+        self.persist_discard_reservations(discarded)?;
         if matches!(
             &delivery,
             Some(NativeHiveMindFrameDelivery::StoreCommands(
