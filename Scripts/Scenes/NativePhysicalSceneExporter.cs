@@ -272,6 +272,7 @@ internal static class NativePhysicalSceneExporter
         public bool activate_collision_asteroids;
         public bool activate_mining;
         public bool activate_hivemind;
+        public int hivemind_initial_command_delay_seconds;
         public bool has_obstacles;
         public SourceCommandSettings command_settings;
         public int bee_side, human_side;
@@ -332,6 +333,7 @@ internal static class NativePhysicalSceneExporter
             activate_collision_asteroids = level.ActivateCollisionAsteroids,
             activate_mining = level.ActivateMining,
             activate_hivemind = level.Stage.ActivateHiveMind,
+            hivemind_initial_command_delay_seconds = level.Stage.InitialCommandDelay,
             has_obstacles = level.HasObstacles,
             command_settings = new SourceCommandSettings {
                 max_command_seconds = ConfigData.StandardMaxCommandTime,
