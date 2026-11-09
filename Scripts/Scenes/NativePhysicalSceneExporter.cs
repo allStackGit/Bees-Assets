@@ -266,6 +266,7 @@ internal static class NativePhysicalSceneExporter
         public float fixed_dt_seconds;
         public bool shots_harmless;
         public bool activate_collision_asteroids;
+        public bool activate_mining;
         public bool has_obstacles;
         public SourceCommandSettings command_settings;
         public int bee_side, human_side;
@@ -310,6 +311,7 @@ internal static class NativePhysicalSceneExporter
             stage_name = level.Stage.gameObject.name,
             shots_harmless = level.Stage.MakeShotsHarmless,
             activate_collision_asteroids = level.ActivateCollisionAsteroids,
+            activate_mining = level.ActivateMining,
             has_obstacles = level.HasObstacles,
             command_settings = new SourceCommandSettings {
                 max_command_seconds = ConfigData.StandardMaxCommandTime,
