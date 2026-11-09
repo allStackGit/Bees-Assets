@@ -488,6 +488,16 @@ impl NativeLevelActivationContext for NativePolicyOnlyMetadata {
     fn targeting_context(&self) -> Option<bees_gameplay::squad_targeting::NativeTargetingContext> { self.targeting_context }
     fn targeting_ship_catalog(&self) -> &bees_sim::ship_assets::ShipAssetCatalog { &self.ship_catalog }
 
+    fn source_strategy_matchup(
+        &self, world: &mut CombatWorld, roster: &NativeSquadRoster,
+        owner: SquadLifetime, enemy: Option<SquadLifetime>,
+    ) -> Result<Option<bees_gameplay::strategy_matchup::NativeSourceStrategyMatchup>, GameCommandError> {
+        bees_gameplay::strategy_matchup::build_source_strategy_matchup(
+            world, roster, &self.ship_catalog, owner, enemy,
+            |world, own, target| self.source_ship_valid_target(world, own, target),
+        )
+    }
+
     fn strategy_inputs(
         &self, world: &CombatWorld, roster: &NativeSquadRoster,
         owner: SquadLifetime, enemy: Option<SquadLifetime>,
