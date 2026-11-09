@@ -583,6 +583,16 @@ class LinuxSupervisor {
                 !['SIGINT','2'].includes(p.KillSignal)))
             throw Error('Systemd did not confirm checkpoint-aware interrupt semantics.');
         if(p.ActiveState==='active'||p.ActiveState==='deactivating') {
+            // systemctl stop --no-block can leave a loaded unit in its
+            // teardown phase after the verified main PID has exited.
+            // Only a previously kernel-verified service with a *durable*
+            // Stop intent may wait for terminal evidence without a PID.
+            // A missing PID during normal running remains unverified.
+            if(record.stop_requested_at&&record.native_verified_at&&
+                p.MainPID==='0') {
+                return {state:'stop_requested',active:false,unit_exists:true,
+                    pid:null,cpu_time_ns:numeric(p.CPUUsageNSec)};
+            }
             const kernel=requireKernel
                 ?verifyKernelLimits(p,record.cpus,record.ram_mb,this.fs):null;
             const memoryBytes=numeric(p.MemoryCurrent);
