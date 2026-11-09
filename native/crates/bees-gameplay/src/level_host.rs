@@ -118,6 +118,16 @@ pub trait NativeLevelActivationContext: NativeLevelCommandContext {
     fn targeting_context(&self) -> Option<crate::squad_targeting::NativeTargetingContext>;
     fn targeting_ship_catalog(&self) -> &bees_sim::ship_assets::ShipAssetCatalog;
 
+    /// Request-bound source matchup over the same canonical CombatWorld.
+    /// A renderer/headless adapter MUST provide authentic source weapon
+    /// validity. The default is an error, never fabricated training data.
+    fn source_strategy_matchup(
+        &self, _world: &mut CombatWorld, _roster: &NativeSquadRoster,
+        _owner: SquadLifetime, _selected_enemy: Option<SquadLifetime>,
+    ) -> Result<Option<crate::strategy_matchup::NativeSourceStrategyMatchup>, GameCommandError> {
+        Err(GameCommandError::MissingCombatSnapshot)
+    }
+
     fn strategy_inputs(
         &self, world: &CombatWorld, roster: &NativeSquadRoster,
         owner: SquadLifetime, original_enemy: Option<SquadLifetime>,
@@ -319,6 +329,8 @@ pub enum NativeStrategyRequestError {
     Routing(NativeLevelRoutingError),
     MissingOwner,
     MissingSourceBans,
+    UnmatchedTargeting,
+    Source(GameCommandError),
 }
 
 #[derive(Debug)]
@@ -723,6 +735,44 @@ impl NativeLevelBatchDriver {
             &world.state.combat, world.state.events.roster(),
             owner, enemy_side,
         ).map_err(NativeTargetingRequestSourceError::Source)
+    }
+
+    /// Prepare the actual Unity Squad.MakeMatchupAndGetCommand identity
+    /// from the accepted source targeting reservation, not from caller
+    /// strings. A selected enemy with no visible potential ship yields None
+    /// and must be requeued without requesting a command.
+    ///
+    /// This only builds the two learning keys; dynamic command bans still
+    /// belong to their source gameplay owner and must be supplied separately.
+    pub fn source_strategy_matchup_inputs<M, A>(
+        &self,
+        simulation: &mut Simulation<NativeLevelState<M, A>, NativeLevelRules>,
+        owner: SquadLifetime,
+    ) -> Result<Option<crate::strategy_matchup::NativeSourceStrategyMatchup>, NativeStrategyRequestError>
+    where
+        M: NativeLevelRewardMetadata + NativeLevelActivationContext,
+        A: FnMut(SquadLifetime, i64) -> Result<SquadLifetime, SquadRosterError>,
+    {
+        let index = self.locate_live_owner(simulation, owner)
+            .map_err(NativeStrategyRequestError::Routing)?
+            .ok_or(NativeStrategyRequestError::MissingOwner)?;
+        let world = simulation.world_mut(index).expect("located live world");
+        let state = &mut world.state;
+        let selection = state.events.roster().get(owner)
+            .and_then(|entry| entry.targeting)
+            .ok_or(NativeStrategyRequestError::UnmatchedTargeting)?;
+        if selection.enemy.is_some_and(|enemy|
+            state.events.roster().get(enemy).is_none_or(|target|
+                target.side == state.events.roster().get(owner)
+                    .expect("verified owner").side || enemy.level_id != owner.level_id
+            )
+        ) {
+            return Err(NativeStrategyRequestError::UnmatchedTargeting);
+        }
+        state.metadata.source_strategy_matchup(
+            &mut state.combat, state.events.roster(), owner,
+            selection.enemy,
+        ).map_err(NativeStrategyRequestError::Source)
     }
 
     /// Correlate one real BeesServer GetStrategyResponse to the connection's
