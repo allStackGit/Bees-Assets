@@ -1333,8 +1333,10 @@ document.addEventListener('DOMContentLoaded', () => {
             const checkpointRecovery=j.checkpoint_reinspected_at
                 ?' · Resumable checkpoint reverified'
                 :j.checkpoint_reinspection_requested_at?' · Checkpoint recheck pending':'';
+            const noTrainer=j.prelaunch_absence_verified===true
+                ?' · No trainer started':'';
             const statusCell=cell(tr,status+lineage+promoted+gpuProof+readinessText+
-                checkpointRecovery+
+                checkpointRecovery+noTrainer+
                 (hasSuccessor&&['waiting_adapter','waiting_predecessor'].includes(j.status)
                     ?' · Cancel downstream stage first':''));
 
