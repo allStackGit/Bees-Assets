@@ -128,6 +128,11 @@ pub trait NativeLevelActivationContext: NativeLevelCommandContext {
         Err(GameCommandError::MissingCombatSnapshot)
     }
 
+    /// Actual exported Level.ActivateMining, needed for source strategy
+    /// eligibility; older snapshots return None and cannot safely issue
+    /// automatic native HiveMind strategy requests.
+    fn source_mining_enabled(&self) -> Option<bool> { None }
+
     fn strategy_inputs(
         &self, world: &CombatWorld, roster: &NativeSquadRoster,
         owner: SquadLifetime, original_enemy: Option<SquadLifetime>,
@@ -322,6 +327,12 @@ where
             order, &scratch.friendlies, details.settings, receipt,
         )
     }
+}
+
+#[derive(Clone, Debug)]
+pub struct NativeSourceStrategyRequestInputs {
+    pub matchup: crate::strategy_matchup::NativeSourceStrategyMatchup,
+    pub activate_mining: bool,
 }
 
 #[derive(Debug)]
@@ -804,7 +815,7 @@ impl NativeLevelBatchDriver {
         &self,
         simulation: &mut Simulation<NativeLevelState<M, A>, NativeLevelRules>,
         owner: SquadLifetime,
-    ) -> Result<Option<crate::strategy_matchup::NativeSourceStrategyMatchup>, NativeStrategyRequestError>
+    ) -> Result<Option<NativeSourceStrategyRequestInputs>, NativeStrategyRequestError>
     where
         M: NativeLevelRewardMetadata + NativeLevelActivationContext,
         A: FnMut(SquadLifetime, i64) -> Result<SquadLifetime, SquadRosterError>,
@@ -825,10 +836,17 @@ impl NativeLevelBatchDriver {
         ) {
             return Err(NativeStrategyRequestError::UnmatchedTargeting);
         }
-        state.metadata.source_strategy_matchup(
+        // Must know the actual Level.ActivateMining value before
+        // emitting any server request, even when no miners are present.
+        let activate_mining = state.metadata.source_mining_enabled()
+            .ok_or(NativeStrategyRequestError::MissingSourceBans)?;
+        let matchup = state.metadata.source_strategy_matchup(
             &mut state.combat, state.events.roster(), owner,
             selection.enemy,
-        ).map_err(NativeStrategyRequestError::Source)
+        ).map_err(NativeStrategyRequestError::Source)?;
+        Ok(matchup.map(|matchup| NativeSourceStrategyRequestInputs {
+            matchup, activate_mining,
+        }))
     }
 
     /// Correlate one real BeesServer GetStrategyResponse to the connection's
