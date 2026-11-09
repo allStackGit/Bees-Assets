@@ -97,6 +97,29 @@ pub enum HostNetworkError {
     },
 }
 
+/// Source Hive Mind's 0.25s queue-timer handoff. Counters are aggregated
+/// only on timer pulses, not during per-ship physics or inference steps.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct NativeSourceCommandPulse {
+    pub eligible: usize,
+    pub issued: usize,
+    pub out_of_bounds: usize,
+    pub unauthored_minions: usize,
+}
+
+#[derive(Debug)]
+pub enum HostSourceCommandError {
+    MissingStageAuthorization { index: usize },
+    MissingSquadAuthorization(SquadLifetime),
+    InvalidSquadSide(SquadLifetime),
+    Geometry {
+        owner: SquadLifetime,
+        error: bees_sim::combat_world::CombatWorldError,
+    },
+    Connection(DurableConnectionError),
+    Driver(NativeLevelRoutingError),
+}
+
 /// Accepts actual authored Level metadata and a loaded, real inference
 /// backend. Its one notification sink must commit accepted notifications
 /// durably before returning Ok to the shared Level driver.
@@ -515,6 +538,104 @@ where
         self.driver.reset_world_after_delivery(
             &mut self.simulation, index, seed, replacement,
         ).map_err(HostResetError::Reset)
+    }
+
+    /// Invoke at the owning Stage's SOURCE 0.25-second HiveMind timer
+    /// pulse, after its InitialCommandDelay. A paused Level or socket
+    /// without accepted setup is not eligible; no new request is invented.
+    ///
+    /// This inspects ONLY the canonical roster, command director, imported
+    /// source authorization and connection's in-flight session. It does not
+    /// allocate a second gameplay queue or rerun selection during physics.
+    /// Newly issued requests are already durably persisted; use
+    /// poll_network_and_continue_source_commands to transmit them and
+    /// chain their exact matching strategy response.
+    ///
+    /// Source out-of-bounds squads are not sent to the Hive Mind. Their
+    /// original move-to-start-position behavior still needs the actual
+    /// Stage starting-position/path adapter; this method does not invent
+    /// positions or silently count them as successful orders.
+    pub fn issue_due_source_targeting(
+        &mut self,
+        worker: &crate::socket_worker::NativeSocketWorker,
+        paused: bool,
+        max_new_requests: usize,
+    ) -> Result<NativeSourceCommandPulse, HostSourceCommandError> {
+        let mut counts = NativeSourceCommandPulse::default();
+        if paused || !worker.ready() || max_new_requests == 0 {
+            return Ok(counts);
+        }
+        if self.driver.registered_world_count() != self.simulation.world_count() {
+            return Err(HostSourceCommandError::Driver(
+                NativeLevelRoutingError::UnregisteredWorldCount,
+            ));
+        }
+        // Only (lifetime, opponent, enemy side) crosses the preflight:
+        // commands, combat positions and source authorization stay in the
+        // owning Level; requests use their ORIGINAL connection allocator.
+        let mut issue = Vec::with_capacity(max_new_requests.min(64));
+        'levels: for index in 0..self.simulation.world_count() {
+            let world = self.simulation.world_mut(index)
+                .expect("validated number of registered native worlds");
+            if world.is_failed() || world.state.events.is_failed() ||
+                world.state.events.completed() || world.state.events.was_aborted()
+            {
+                continue;
+            }
+            let stage_enabled = world.state.metadata.source_hivemind_active()
+                .ok_or(HostSourceCommandError::MissingStageAuthorization { index })?;
+            if !stage_enabled { continue; }
+            let state = &mut world.state;
+            let [bee_side, human_side] = state.events.sides();
+            let roster = state.events.roster();
+            for &owner in roster.source_order() {
+                let squad = roster.get(owner)
+                    .ok_or(HostSourceCommandError::MissingSquadAuthorization(owner))?;
+                let Some(source) = state.metadata.source_hivemind_squad(owner) else {
+                    if squad.mother_squad.is_some() {
+                        // Dynamic Beacon children are not source-authored
+                        // movable command squads; do not infer their orders.
+                        counts.unauthored_minions += 1;
+                        continue;
+                    }
+                    return Err(HostSourceCommandError::MissingSquadAuthorization(owner));
+                };
+                if !source.can_request() ||
+                    state.events.commands().has_active(owner) ||
+                    self.connection.connection().session().has_live_request_for(owner)
+                {
+                    continue;
+                }
+                counts.eligible += 1;
+                // Squad.IsInBounds calls each real Ship.IsInBounds, which
+                // performs lazy persistent bounds latching in CombatWorld.
+                let mut in_bounds = true;
+                for &ship_id in &squad.members {
+                    if !state.combat.ship_is_in_bounds(ship_id)
+                        .map_err(|error| HostSourceCommandError::Geometry {
+                            owner, error,
+                        })? {
+                        in_bounds = false;
+                        break;
+                    }
+                }
+                if !in_bounds {
+                    counts.out_of_bounds += 1;
+                    continue;
+                }
+                let enemy_side = if squad.side == bee_side { human_side }
+                    else if squad.side == human_side { bee_side }
+                    else { return Err(HostSourceCommandError::InvalidSquadSide(owner)); };
+                issue.push((owner, source.opponent_id, enemy_side));
+                if issue.len() == max_new_requests { break 'levels; }
+            }
+        }
+        for (owner, opponent_id, enemy_side) in issue {
+            self.request_source_targeting(owner, opponent_id, enemy_side)
+                .map_err(HostSourceCommandError::Connection)?;
+            counts.issued += 1;
+        }
+        Ok(counts)
     }
 
     /// Nonblocking socket pump for BOTH graphical and headless callers.
