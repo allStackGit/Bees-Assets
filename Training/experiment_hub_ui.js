@@ -1487,6 +1487,27 @@ document.addEventListener('DOMContentLoaded', () => {
                         await reload();
                     }catch(e){feedback('hub-job-message',e.message);}
                 }));
+            if(j.project_id==='tinybrains'&&j.status==='finished'&&
+                j.checkpoint_proof_required===true&&j.checkpoint_ready_verified!==true) {
+                if(j.checkpoint_reinspection_requested_at) {
+                    actions.append(document.createTextNode('Checkpoint recheck pending'));
+                }else {
+                    actions.append(button('Recheck finished checkpoint',async()=>{
+                        if(!confirm('Ask the original authenticated Halifax agent to inspect '+
+                            'the existing finished TinyBrains container and verify its '+
+                            'resumable checkpoint? This does not restart training or '+
+                            'modify the checkpoint. Restore frozen lineage bytes first.'))return;
+                        try{
+                            await action('hub/jobs/reinspect-checkpoint',{
+                                job_id:j.id,confirm_reinspect:true,
+                            });
+                            feedback('hub-job-message',
+                                'Checkpoint reinspection requested from the original worker.');
+                            await reload();
+                        }catch(e){feedback('hub-job-message',e.message);}
+                    }));
+                }
+            }
             if(['finished','failed','stopped'].includes(j.status)&&linked)
                 actions.append(button('Release completed capacity',async()=>{
                     if(!confirm('Release the native job’s Hub capacity after its terminal service report? The job history is preserved. This does not stop a process.'))return;
