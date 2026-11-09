@@ -188,6 +188,8 @@ class LocalExecution {
         const report={
             job_id:job.id,lease_id:lease.id,
             dispatch_id:order.dispatch_id,state,
+            ...(state==='failed'&&observed.prelaunch_absence_verified===true
+                ?{prelaunch_absence_verified:true}:{}),
             ...(diagnostic?{diagnostic}:{}),
             ...(Number.isSafeInteger(observed.memory_current_mb)&&
                 observed.memory_current_mb>=0
