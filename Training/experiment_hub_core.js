@@ -333,6 +333,18 @@ function checkpointContinuationComplete(job) {
             job.checkpoint_proof_required!==true
         :job.status==='stopped'&&job.checkpoint_stop_verified===true;
 }
+// A failed dispatch occupies no checkpoint lineage slot only after the
+// original worker has verified that no Docker trainer was ever created,
+// the capacity is released, and no live successor depends on the attempt.
+function occupiesSuccessorSlot(job,jobs) {
+    if(job.status==='cancelled')return false;
+    if(job.status==='failed'&&job.prelaunch_absence_verified===true&&
+        Boolean(job.capacity_released_at)&&
+        !jobs.some(child=>child.status!=='cancelled'&&
+            (child.continuation_of_job_id===job.id||child.after_job_id===job.id)))
+        return false;
+    return true;
+}
 // A finished native job may lack checkpoint proof even though the trainer exited
 // successfully. Only an explicit administrator request may authorize another
 // authenticated inspection. The existing owner and dispatch must attest the
@@ -2081,6 +2093,8 @@ class ExperimentHub {
                 !['launch_requested','running','stop_requested','finished','failed','stopped','unverified']
                     .includes(report.state)||
                 seen.has(report.job_id)||
+                (report.prelaunch_absence_verified!=null&&
+                    (report.prelaunch_absence_verified!==true||report.state!=='failed'))||
                 (report.diagnostic!=null&&
                     (typeof report.diagnostic!=='string'||report.diagnostic.length>220))||
                 (report.progress_issue!=null&&
@@ -2247,6 +2261,11 @@ class ExperimentHub {
                         evaluationIssue=error.message;
                     }
                 }
+            }
+            if(state==='failed'&&report.prelaunch_absence_verified===true&&
+                job.prelaunch_absence_verified!==true) {
+                job.prelaunch_absence_verified=true;
+                changed=true;
             }
             const previous=this.executionTelemetry.get(job.id);
             const resources=summarizeResourceSample(
@@ -3160,8 +3179,8 @@ class ExperimentHub {
                 throw Error('Continuation requires a verified resumable checkpoint and released capacity (or an eligible active or prequeued predecessor).');
             if(next.jobs.some(j=>
                 (j.continuation_of_job_id===parent.id||
-                 j.after_job_id===parent.id)&&j.status!=='cancelled'))
-                throw Error('This predecessor already has a non-cancelled successor.');
+                 j.after_job_id===parent.id)&&occupiesSuccessorSlot(j,next.jobs)))
+                throw Error('This predecessor already has an active or unresolved successor.');
         }
         if(parent) {
             const digestField=project.id==='courier'?'config_sha256':'profile_sha256';
@@ -3184,8 +3203,8 @@ class ExperimentHub {
                 throw Error('Independent dependency needs an eligible non-Bees predecessor.');
             if(next.jobs.some(j=>
                 (j.continuation_of_job_id===afterId||
-                 j.after_job_id===afterId)&&j.status!=='cancelled'))
-                throw Error('This predecessor already has a non-cancelled successor.');
+                 j.after_job_id===afterId)&&occupiesSuccessorSlot(j,next.jobs)))
+                throw Error('This predecessor already has an active or unresolved successor.');
             waitingPredecessor=!completed||!dependency.capacity_released_at;
             if(!waitingPredecessor) {
                 // A dependency selected after its parent was released must
