@@ -38,7 +38,8 @@ pub fn select_enemy_squad(
  * boundary, not from the selected enemy or a previously cached matchup.
  * Squad.GetShipsForMatchup takes the first 64 members in Squad.GetShips order,
  * then AddToMatchup sorts their authored ShipTypeLetter characters. The bans
- * come from UserProgressData.AllShipTypes minus the CURRENT enemy-side ships
+ * come from UserProgressData.AllShipTypes (source's fixed Type A-X set)
+ * minus the CURRENT enemy-side ships
  * in Level.State.Ships, not from visibility or the opponent's last selection.
  */
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -50,7 +51,6 @@ pub struct NativeTargetingRequestInputs {
 #[derive(Debug)]
 pub enum NativeTargetingSourceError {
     MissingOwner,
-    MissingSourceShipTypes,
     InvalidEnemySide,
     IncompleteRoster,
     EmptySquad,
@@ -91,9 +91,9 @@ const SOURCE_TYPE_LETTERS: [u8; bees_sim::ship_assets::SHIP_TYPE_COUNT] = [
 ];
 
 /// Construct one source-authored GetMatchupStrategy payload before touching
-/// the connection's persistent request counter. 'all_ship_types' is the
-/// current UserProgressData.AllShipTypes snapshot supplied by the Level;
-/// it is intentionally NOT inferred from the 24-type collider catalog.
+/// the connection's persistent request counter. UserProgressData.SetShipTypes
+/// builds AllShipTypes from the fixed Type A-X shooting strategy registry,
+/// so the canonical source table above is the entire ban universe.
 /// 'enemy_side' is the Level's configured opposing Bee/Human side, not any
 /// arbitrary non-own faction. No independent fleet state is retained.
 pub fn build_source_targeting_request(
@@ -101,16 +101,12 @@ pub fn build_source_targeting_request(
     roster: &NativeSquadRoster,
     owner: SquadLifetime,
     enemy_side: i32,
-    all_ship_types: &[u8],
 ) -> Result<NativeTargetingRequestInputs, NativeTargetingSourceError> {
     use NativeTargetingSourceError as Error;
 
     let squad = roster.get(owner).ok_or(Error::MissingOwner)?;
     if enemy_side <= 0 || enemy_side == squad.side {
         return Err(Error::InvalidEnemySide);
-    }
-    if all_ship_types.is_empty() {
-        return Err(Error::MissingSourceShipTypes);
     }
     if !roster.covers_live_roster(world) {
         return Err(Error::IncompleteRoster);
@@ -158,19 +154,9 @@ pub fn build_source_targeting_request(
         }
     }
 
-    let mut listed = [false; bees_sim::ship_assets::SHIP_TYPE_COUNT];
-    let mut banned = Vec::new();
-    for &ship_type in all_ship_types {
-        let index = usize::from(ship_type);
-        let Some(&letter) = SOURCE_TYPE_LETTERS.get(index) else {
-            return Err(Error::InvalidShipType(ship_type));
-        };
-        if !listed[index] {
-            listed[index] = true;
-            if !current_enemy_types[index] {
-                banned.push(format!("Type {}", char::from(letter)));
-            }
-        }
-    }
+    let banned = SOURCE_TYPE_LETTERS.iter().enumerate()
+        .filter(|(kind, _)| !current_enemy_types[*kind])
+        .map(|(_, letter)| format!("Type {}", char::from(*letter)))
+        .collect();
     Ok(NativeTargetingRequestInputs { ships, banned })
 }
