@@ -322,6 +322,13 @@ pub enum NativeStrategyRequestError {
 }
 
 #[derive(Debug)]
+pub enum NativeTargetingRequestSourceError {
+    Routing(NativeLevelRoutingError),
+    MissingOwner,
+    Source(crate::squad_targeting::NativeTargetingSourceError),
+}
+
+#[derive(Debug)]
 pub enum NativeLevelSourceError<E> {
     MissingRegisteredWorld,
     UnregisteredWorldCount,
@@ -690,6 +697,33 @@ impl NativeLevelBatchDriver {
             .get(owner).expect("located squad").command_bans.as_ref()
             .ok_or(NativeStrategyRequestError::MissingSourceBans)?;
         Ok(crate::squad_composition::banned_strategy_names(bans, existing))
+    }
+
+    /// Prepare the actual Unity Squad.MakeMatchupStrat request from its live
+    /// World, roster, authored ShipTypeLetter and user-progress roster.
+    /// Request creation remains outside the physics step and outside this
+    /// driver: the host's durable connection owns the one hash namespace.
+    /// The caller supplies the Level's configured enemy side and the
+    /// UserProgressData.AllShipTypes snapshot; neither is guessed here.
+    pub fn targeting_request_inputs<M, A>(
+        &self,
+        simulation: &Simulation<NativeLevelState<M, A>, NativeLevelRules>,
+        owner: SquadLifetime,
+        enemy_side: i32,
+        all_ship_types: &[u8],
+    ) -> Result<crate::squad_targeting::NativeTargetingRequestInputs, NativeTargetingRequestSourceError>
+    where
+        M: NativeLevelRewardMetadata + NativeLevelCommandContext,
+        A: FnMut(SquadLifetime, i64) -> Result<SquadLifetime, SquadRosterError>,
+    {
+        let index = self.locate_live_owner(simulation, owner)
+            .map_err(NativeTargetingRequestSourceError::Routing)?
+            .ok_or(NativeTargetingRequestSourceError::MissingOwner)?;
+        let world = simulation.world(index).expect("located live world");
+        crate::squad_targeting::build_source_targeting_request(
+            &world.state.combat, world.state.events.roster(),
+            owner, enemy_side, all_ship_types,
+        ).map_err(NativeTargetingRequestSourceError::Source)
     }
 
     /// Correlate one real BeesServer GetStrategyResponse to the connection's
