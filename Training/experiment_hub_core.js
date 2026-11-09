@@ -333,6 +333,29 @@ function checkpointContinuationComplete(job) {
             job.checkpoint_proof_required!==true
         :job.status==='stopped'&&job.checkpoint_stop_verified===true;
 }
+// A finished native job may lack checkpoint proof even though the trainer exited
+// successfully. Only an explicit administrator request may authorize another
+// authenticated inspection. The existing owner and dispatch must attest the
+// artifact; this routine never promotes based on filesystem guesses.
+function finishCheckpointReinspection(job,report,observedAt) {
+    if(!job.checkpoint_reinspection_requested_at||
+        job.project_id!=='tinybrains'||job.status!=='finished')
+        return false;
+    const fingerprint=String(report.checkpoint_model_sha256||'');
+    if(report.state==='finished'&&report.checkpoint_ready_verified===true&&
+        SHA256.test(fingerprint)&&
+        (!job.checkpoint_model_sha256||job.checkpoint_model_sha256===fingerprint)) {
+        job.checkpoint_ready_verified=true;
+        job.checkpoint_model_sha256=fingerprint;
+        job.checkpoint_reinspected_at=observedAt;
+        job.status_reason='Resumable checkpoint verified by operator-requested authenticated inspection; original Finish report retained.';
+    }else {
+        job.status_reason=('Checkpoint reinspection could not verify resumable artifacts: '+
+            (report.diagnostic||report.state||'missing proof')).slice(0,220);
+    }
+    job.checkpoint_reinspection_requested_at=null;
+    return true;
+}
 // Preserve a bounded set of independent evaluation receipts by exact model
 // identity for both single-suite and multi-suite gates. A final resumable
 // checkpoint may differ from the last observed intermediate checkpoint.
@@ -2021,6 +2044,27 @@ class ExperimentHub {
         this.commit(next);
         return {id:job.id,status:job.status};
     }
+    requestCheckpointReinspection(value) {
+        if(!object(value)||value.confirm_reinspect!==true||
+            !UUID.test(String(value.job_id||'')))
+            throw Error('Explicitly confirm the finished checkpoint job to reinspect.');
+        const next=copy(this.state);
+        const job=next.jobs.find(j=>j.id===value.job_id);
+        const lease=next.reservations.find(l=>l.id===job?.lease_id&&
+            l.job_id===job.id&&l.machine_id===job.assigned_machine_id&&
+            l.project_id===job.project_id&&
+            (l.status==='acknowledged'||l.status==='released'));
+        if(!job||job.project_id!=='tinybrains'||job.status!=='finished'||
+            job.checkpoint_proof_required!==true||
+            job.checkpoint_ready_verified===true||!job.dispatch_id||
+            !job.start_first_offered_at||!lease)
+            throw Error('Only a finished, authenticated TinyBrains job lacking checkpoint proof can be reinspected.');
+        if(job.checkpoint_reinspection_requested_at)
+            throw Error('Checkpoint reinspection is already pending.');
+        job.checkpoint_reinspection_requested_at=now();
+        this.commit(next);
+        return {id:job.id,status:job.status,reinspection:'requested'};
+    }
     // The report is authenticated by the machine-token heartbeat. A second
     // machine, retired dispatch ID or unrelated lease cannot update the job.
     recordExecution(next,machine,items,accepted=new Map(),evaluationSuites={},
@@ -2060,6 +2104,7 @@ class ExperimentHub {
             if(lease.status==='released'&&lease.released_at&&
                 job.capacity_released_at&&
                 ['finished','failed','stopped'].includes(job.status)) {
+                if(finishCheckpointReinspection(job,report,observedAt))changed=true;
                 if(report.state===job.status&&supportsEvaluation(evaluationSuites,job)&&
                     retainFinalEvaluations(job,report))changed=true;
                 continue;
@@ -2075,8 +2120,10 @@ class ExperimentHub {
                 // an exact model identity missing from an older terminal
                 // record. Never rewrite previously pinned bytes, native
                 // status, or checkpoint ownership on a repeated report.
+                const reinspected=finishCheckpointReinspection(job,report,observedAt);
+                if(reinspected)changed=true;
                 if(report.state===job.status) {
-                    if(report.checkpoint_model_sha256!=null) {
+                    if(!reinspected&&report.checkpoint_model_sha256!=null) {
                         const verified=job.status==='finished'
                             ?job.checkpoint_ready_verified===true&&
                                 report.checkpoint_ready_verified===true
@@ -2297,6 +2344,8 @@ class ExperimentHub {
                 ['finished','stopped'].includes(j.status)||
              j.dispatch_id&&supportsEvaluation(machine.evaluation_suites,j)&&
                 finalEvaluationPending(snapshot,j,observedAt)||
+             j.dispatch_id&&j.status==='finished'&&
+                Boolean(j.checkpoint_reinspection_requested_at)||
              j.status==='waiting_adapter'&&
                 j.gpu_qualification?.status==='requested'));
         // A native Stop acknowledgement means the local supervisor has
@@ -2310,6 +2359,7 @@ class ExperimentHub {
         const priority=j=>{
             const action=actionFor(j);
             if(action!=='inspect')return {stop:0,start:1,qualify_gpu:2}[action];
+            if(j.checkpoint_reinspection_requested_at)return 3;
             // Reserve time to refresh native observations before they expire.
             // Final receipt collection can share the normal rotation while
             // the worker's unreleased jobs have fresh observations.
@@ -2335,7 +2385,8 @@ class ExperimentHub {
                 l.job_id===job.id&&l.project_id===job.project_id&&
                 l.machine_id===machineId&&(l.status==='acknowledged'||
                     (l.status==='released'&&l.released_at&&
-                        finalEvaluationPending(snapshot,job,observedAt))));
+                        (finalEvaluationPending(snapshot,job,observedAt)||
+                         Boolean(job.checkpoint_reinspection_requested_at)))));
             if(!lease)continue;
             const adapterInstalled=machine.installed_projects.includes(job.project_id);
             let action=actionFor(job);
@@ -2407,6 +2458,8 @@ class ExperimentHub {
                     continuation_of_job_id:job.continuation_of_job_id||null,
                     artifact_lineage_root_id:job.artifact_lineage_root_id||job.id,
                     resources:copy(job.resources),
+                    ...(action==='inspect'&&job.checkpoint_reinspection_requested_at
+                        ?{reverify_checkpoint:true}:{}),
                     ...(job.evaluation_stop?{evaluation_stop:copy(job.evaluation_stop)}:{}),
                     ...(lease.status==='released'?{final_checkpoint_sha256:job.checkpoint_model_sha256}:{}),
                     ...(job.expected_parent_model_sha256
