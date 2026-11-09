@@ -7,6 +7,30 @@ use bees_gameplay::{commands::{NativeEnemySquad, NativeCircleCommandSnapshot,
     squad_geometry::live_squad_bounds_from_catalog};
 
 impl NativePolicyOnlyMetadata {
+    /// Exact source Weapon.IsShipValidTarget for imported ordinary turrets:
+    /// source collider membership, lazy target-bounds latch and obstacle
+    /// linecast are all owned by CombatWorld. Unsupported native special
+    /// weapons have no equivalent source validity query yet; fail closed.
+    pub(super) fn source_ship_valid_target(
+        &self, world: &mut CombatWorld, attacker: i64, target: i64,
+    ) -> Result<bool, GameCommandError> {
+        let source = self.authored_ships.get(&attacker)
+            .ok_or(GameCommandError::MissingCombatSnapshot)?;
+        if world.special_weapon_spec(attacker).is_some() {
+            return Err(GameCommandError::MissingCombatSnapshot);
+        }
+        for slot in 0..5 {
+            if world.weapon_range(attacker, slot)?.is_some() {
+                if world.is_weapon_ship_target_valid(attacker, slot, target)? {
+                    return Ok(true);
+                }
+            } else if source.observed_weapons[slot].is_some() {
+                return Err(GameCommandError::MissingCombatSnapshot);
+            }
+        }
+        Ok(false)
+    }
+
     pub(super) fn live_bombing_snapshot(&self, world: &CombatWorld, roster: &NativeSquadRoster,
         owner: SquadLifetime, enemy: SquadLifetime, need_retarget: bool,
     ) -> Result<bees_gameplay::commands::NativeBombingTimerSnapshot, GameCommandError> {
