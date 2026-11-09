@@ -27,14 +27,18 @@ are introduced. A no-visible-enemy selection returns None so it is not sent
 as a false strategy matchup. An empty targeting choice uses the source
 no-target key and command bans.
 
-NativeLevelBatchDriver can now prepare these two keys from one accepted
-targeting lifecycle; NativeHostRuntime.request_live_strategy combines them,
-the captured source composition bans, source no-target bans and explicit
-caller-supplied remaining dynamic bans, then persists a GetStrategy through
-the EXISTING DurableHiveMindConnection. The caller must still provide the
-source's mining/healing/retreat/ClosestFriendly restrictions and send the
-returned exact request on the existing socket worker; this is a building
-block, NOT yet automatic source request cadence or full gameplay parity.
+NativeLevelBatchDriver can prepare both keys from the accepted
+targeting lifecycle. Source command bans now combine the imported
+composition bans, no-target bans, live ClosestFriendly occupancy, warp-gate
+eligibility, shared Beehive healing capacity, and mining ship/asteroid
+availability. The Unity physical exporter now also supplies the original
+Level.ActivateMining flag; native strategy issuance REQUIRES this field
+(legacy snapshots without it fail closed). NativeHostRuntime.request_live_strategy
+now constructs both identities and every source ban without caller-built
+matchups/bans and durably allocates GetStrategy through the EXISTING
+DurableHiveMindConnection. The caller must still send that exact request
+through the original socket worker; automatic command queue cadence,
+response-to-request chaining and retargeting remain incomplete.
 
 No Rust toolchain or runnable source scene was available in the present
 execution environment. Changes were reviewed against the current Unity
