@@ -102,13 +102,18 @@ function createTinyBrainsPersistentDockerAdapter({
             throw Error('Invalid Hub TinyBrains lineage identity.');
         return path.join(artifacts,context.job_id);
     }
+    function frozenEvidenceIntact(folder) {
+        return fs.readFileSync(path.join(folder,'run-spec.json')).equals(frozen)&&
+            fs.readFileSync(path.join(folder,'gate-passed.json')).equals(evidence)&&
+            modelFileSha256(runRelative(folder,gate.checkpoint))===gate.checkpoint_sha256;
+    }
     function checkpointReady(out,text) {
         const profile=path.join(out,'hub-profile.json');
         const latest=path.join(out,'self-play/latest.pt');
         const stat=fs.statSync(latest);
         if(!stat.isFile()||stat.size<1||
             fs.readFileSync(profile,'utf8')!==text||
-            !fs.readFileSync(path.join(out,'run-spec.json')).equals(frozen))
+            !frozenEvidenceIntact(out))
             throw Error('Finished TinyBrains job does not have its original frozen lineage and checkpoint.');
         const status=JSON.parse(fs.readFileSync(path.join(out,'status.json'),'utf8'));
         const start=JSON.parse(fs.readFileSync(path.join(out,'hub-start-update.json'),'utf8'));
@@ -184,12 +189,15 @@ function createTinyBrainsPersistentDockerAdapter({
                     throw Error('Continuation checkpoint identity changed.');
             }
             const sourceHash=modelFileSha256(sourceCheckpoint);
+            if(!frozenEvidenceIntact(source))
+                throw Error('Original TinyBrains frozen run evidence changed after adapter installation.');
             const out=targetFor(context);
             if(fs.existsSync(out)) {
                 if(fs.existsSync(path.join(out,'status.json'))||
                     fs.readFileSync(path.join(out,'hub-profile.json'),'utf8')!==item.text||
                     modelFileSha256(path.join(out,'self-play/latest.pt'))!==sourceHash||
-                    JSON.parse(fs.readFileSync(path.join(out,'hub-start-update.json'),'utf8')).update!==startingUpdate)
+                    JSON.parse(fs.readFileSync(path.join(out,'hub-start-update.json'),'utf8')).update!==startingUpdate||
+                    !frozenEvidenceIntact(out))
                     throw Error('Previously launched or changed Hub training output cannot be re-used.');
             }else{
                 fs.mkdirSync(out,{mode:0o700});
