@@ -39,6 +39,9 @@ def main():
     state = torch.load(checkpoint, map_location="cpu", weights_only=False)
     if type(start) is not int or start < 1 or state.get("update") != start:
         raise SystemExit("Hub PPO starting update differs from imported checkpoint.")
+    # Hub's frozen `updates` is a per-job increment, while TinyBrains
+    # accepts an absolute limit across the whole persistent optimizer lineage.
+    target_update = start + args.updates
     from experiment_hub_tinybrains_rocm_verify import verify_runtime_device
     verify_runtime_device(args.rocm_pci)
     sys.argv = [
@@ -51,7 +54,7 @@ def main():
         "--live-matches", str(args.live_matches),
         "--waves", str(args.waves),
         "--rollout-actions", str(args.actions),
-        "--max-ppo-updates", str(args.updates),
+        "--max-ppo-updates", str(target_update),
     ]
     runpy.run_module("ants_mapoca.learning_path", run_name="__main__", alter_sys=True)
 
