@@ -151,10 +151,16 @@ class LocalExecution {
                     ?await this.supervisor.reconcile(job.id)
                     :await this.supervisor.start({...job,dispatch_id:order.dispatch_id},lease);
             }else if(!record) {
-                // No journal is not proof that no process exists. The
-                // operator must inspect the deterministic native service.
-                observed={state:'unverified'};
-                diagnostic='Missing local ownership record; inspect the native supervisor before recovery.';
+                // Only the Docker backend can verify an absent deterministic
+                // container after excluding a concurrent journal/GPU probe.
+                // Native Linux and Windows keep missing ownership unverified.
+                if(order.action==='inspect'&&
+                    typeof this.supervisor.reconcileAbsent==='function')
+                    observed=await this.supervisor.reconcileAbsent(job.id);
+                else {
+                    observed={state:'unverified'};
+                    diagnostic='Missing local ownership record; inspect the native supervisor before recovery.';
+                }
             }else if(order.action==='stop') {
                 observed=await this.supervisor.stop(job.id);
             }else {
@@ -165,6 +171,12 @@ class LocalExecution {
             const record=this.supervisor.snapshot().find(r=>r.job_id===job.id);
             if(record&&record.lease_id===lease.id&&record.project_id===job.project_id) {
                 try{observed=await this.supervisor.reconcile(job.id);}
+                catch{observed=null;}
+            }else if(!record&&order.action==='start'&&
+                typeof this.supervisor.reconcileAbsent==='function') {
+                // Preserve the actual pre-launch rejection when Docker proves
+                // that no owned container could have started.
+                try{observed=await this.supervisor.reconcileAbsent(job.id);}
                 catch{observed=null;}
             }
             if(!observed)observed={state:'unverified'};
