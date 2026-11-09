@@ -579,11 +579,13 @@ where
     /// enemy lifecycle come from the canonical live Level, never a
     /// host-supplied string or recycled Squad.ItemId.
     ///
-    /// The caller MUST provide the remaining source-derived dynamic
-    /// restrictions (mining, healing, full retreat and ClosestFriendly)
-    /// in `authored_bans`. The captured squad composition bans and the
-    /// no-target restrictions are included here. Until those authored
-    /// values are available the caller must not issue this request.
+    /// The driver supplies composition and live-world restrictions:
+    /// ClosestFriendly occupancy, warp-gate availability, Beehive healing
+    /// slots, and miner/asteroid availability. The caller MUST still add
+    /// source-only restrictions not captured in the native world, notably
+    /// Level.ActivateMining, using `authored_bans`. The no-target restrictions
+    /// are included here too. Missing source restrictions must NOT be
+    /// silently inferred or omitted before issuing the request.
     /// The exact returned durable request goes to send_strategy on the
     /// existing socket worker; retries must use its original Hash.
     ///
