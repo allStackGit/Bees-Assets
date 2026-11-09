@@ -150,7 +150,7 @@ class DockerSupervisor {
         if(container)
             return {state:'unverified',diagnostic:
                 'Docker container exists without a matching ownership record; manual inspection required.'};
-        return {state:'failed',diagnostic:
+        return {state:'failed',prelaunch_absence_verified:true,diagnostic:
             'Pre-launch failure confirmed: no Docker owner record, container, or pending GPU proof.'};
     }
     async qualify(){
