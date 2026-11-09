@@ -25,7 +25,7 @@ def runtime_pci_bus_id():
         loaded = {
             fields[-1] for line in mappings
             if (fields := line.rstrip().split(maxsplit=5)) and len(fields) == 6
-            and re.fullmatch(r"libamdhip64\\.so(?:\\.[0-9]+)*",
+            and re.fullmatch(r"libamdhip64\.so(?:\.[0-9]+)*",
                              os.path.basename(fields[-1]))
             and os.path.isabs(fields[-1])
         }
