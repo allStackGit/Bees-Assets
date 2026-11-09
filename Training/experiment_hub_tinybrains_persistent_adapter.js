@@ -43,7 +43,7 @@ function stageFile(source,target) {
 function createTinyBrainsPersistentDockerAdapter({
     projectRoot,hubRoot,artifactRoot,sourceRunRoot,engineCacheRoot,
     seedCheckpointSha256,seedPpoUpdates,profiles,
-    image='tinybrains-rocm:halifax',sourceWindowsRoot='B:/TinyBrains/Ants-MAPOCA',
+    image='tinybrains-rocm:halifax-node',sourceWindowsRoot='B:/TinyBrains/Ants-MAPOCA',
 }) {
     if(process.platform!=='linux'||!SHA.test(String(seedCheckpointSha256||''))||
         !Number.isSafeInteger(seedPpoUpdates)||seedPpoUpdates<1)
