@@ -82,16 +82,25 @@ class DockerSupervisor {
         this.command=dockerSudo?'/usr/bin/sudo':'/usr/bin/docker';
         this.prefix=dockerSudo?['-n','/usr/bin/docker']:[];
         this.file=path.join(this.root,'docker-owner.json');
+        this.lock=path.join(this.root,'docker-owner.lock');
         this.probeFile=path.join(this.root,'docker-gpu-probe.json');
-        if(fs.existsSync(this.file)) {
-            const data=JSON.parse(fs.readFileSync(this.file,'utf8'));
-            if(data.version!==1||data.machine_id!==this.machineId||
-                !Array.isArray(data.records)||
-                data.records.some(r=>!UUID.test(r.job_id)||!UUID.test(r.lease_id)||
-                    !STATES.has(r.state)||r.container_name!==containerName(r.job_id)))
-                throw Error('Invalid durable Docker supervisor journal.');
-            this.state=data.records;
-        }else this.state=[];
+        const native=path.join(this.root,'supervisor-v1.json');
+        if(fs.existsSync(native)) {
+            const existing=JSON.parse(fs.readFileSync(native,'utf8'));
+            if(!Array.isArray(existing.records)||
+                existing.records.some(r=>ACTIVE.has(r.state)))
+                throw Error('An unresolved native supervisor owner blocks Docker adoption.');
+        }
+        this.journal=fs.existsSync(this.file)
+            ?JSON.parse(fs.readFileSync(this.file,'utf8'))
+            :{version:1,machine_id:this.machineId,revision:0,records:[]};
+        if(this.journal.version!==1||this.journal.machine_id!==this.machineId||
+            !Number.isSafeInteger(this.journal.revision)||
+            !Array.isArray(this.journal.records)||
+            this.journal.records.some(r=>!UUID.test(r.job_id)||!UUID.test(r.lease_id)||
+                !STATES.has(r.state)||r.container_name!==containerName(r.job_id)))
+            throw Error('Invalid durable Docker supervisor journal.');
+        this.state=this.journal.records;
         this.qualifiedAt=null;
     }
     async call(args,timeout=20000) {
@@ -100,8 +109,24 @@ class DockerSupervisor {
         return response.stdout.trim();
     }
     commit(records) {
-        writeAtomic(this.file,{version:1,machine_id:this.machineId,records});
-        this.state=records;
+        let fd;
+        try{fd=fs.openSync(this.lock,'wx',0o600);}
+        catch{throw Error('Docker supervisor journal is locked; inspect ownership before recovery.');}
+        try{
+            const current=fs.existsSync(this.file)
+                ?JSON.parse(fs.readFileSync(this.file,'utf8'))
+                :{version:1,machine_id:this.machineId,revision:0,records:[]};
+            if(current.version!==1||current.machine_id!==this.machineId||
+                current.revision!==this.journal.revision)
+                throw Error('Docker journal changed concurrently; reopen supervisor.');
+            this.journal={version:1,machine_id:this.machineId,
+                revision:current.revision+1,records};
+            writeAtomic(this.file,this.journal);
+            this.state=records;
+        }finally{
+            fs.closeSync(fd);
+            fs.unlinkSync(this.lock);
+        }
     }
     snapshot(){return JSON.parse(JSON.stringify(this.state));}
     gpuProbeCleanupPending(){return fs.existsSync(this.probeFile);}
@@ -141,6 +166,7 @@ class DockerSupervisor {
             '--memory-swap='+invocation.ram_mb+'m',
             '--pids-limit=512','--network=none','--restart=no',
             '--read-only','--cap-drop=ALL','--security-opt=no-new-privileges',
+            '--tmpfs=/tmp:rw,size=64m,mode=1777',
             '--shm-size=1g','--user='+d.uid+':'+d.gid,
             '--workdir='+d.workdir];
         for(const m of d.mounts)
@@ -212,6 +238,7 @@ class DockerSupervisor {
         const probeName='bees-hub-proof-'+crypto.randomBytes(8).toString('hex');
         const flags=['run','--rm','--name='+probeName,'--network=none',
             '--read-only','--cap-drop=ALL','--security-opt=no-new-privileges',
+            '--tmpfs=/tmp:rw,size=64m,mode=1777',
             '--cpus=1','--memory=4096m','--memory-swap=4096m',
             '--user='+d.uid+':'+d.gid,
             '--device=/dev/kfd:/dev/kfd:rwm',
