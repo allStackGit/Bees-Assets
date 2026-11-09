@@ -18,8 +18,21 @@ def runtime_pci_bus_id():
     # device ordinal zero after the runtime's visibility rules are applied.
     # A correct-looking DRM node plus device_count()==1 is not sufficient
     # evidence of the selected policy's physical PCI identity.
+    # The ROCm PyTorch wheel can bundle a versioned HIP library without an
+    # unversioned system linker name. Load the exact library already mapped
+    # into this process by PyTorch, rather than guessing an installation path.
+    with open("/proc/self/maps", encoding="utf-8") as mappings:
+        loaded = {
+            fields[-1] for line in mappings
+            if (fields := line.rstrip().split(maxsplit=5)) and len(fields) == 6
+            and re.fullmatch(r"libamdhip64\\.so(?:\\.[0-9]+)*",
+                             os.path.basename(fields[-1]))
+            and os.path.isabs(fields[-1])
+        }
+    if len(loaded) != 1:
+        raise SystemExit("Expected one loaded HIP shared library for device identity.")
     try:
-        hip = ctypes.CDLL("libamdhip64.so")
+        hip = ctypes.CDLL(loaded.pop())
         get_pci = hip.hipDeviceGetPCIBusId
     except (OSError, AttributeError) as exc:
         raise SystemExit("HIP runtime PCI identity API is unavailable.") from exc
