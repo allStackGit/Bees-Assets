@@ -388,6 +388,100 @@ impl RunNetwork {
         }).map_err(|error| contextual("HiveMind Level setup", error))
     }
 
+    fn ensure_source_clock(&mut self, index: usize, revision: u64,
+        first_delay: i32, fixed_dt: f32,
+    ) -> io::Result<()> {
+        if self.command_clocks[index].is_none_or(|clock|
+            clock.revision != revision
+        ) {
+            // SetupHivemind schedules a one-off delay of (InitialDelay -
+            // 0.25) before starting its 0.25-second recurring timer.
+            // A zero/negative initial delay still waits for the first
+            // recurring timer callback, rather than issuing at tick zero.
+            let initial_seconds = f64::from(first_delay.max(0)).max(0.25);
+            self.command_clocks[index] = Some(SourceCommandClock {
+                revision,
+                next_due_tick: source_command_ticks(initial_seconds, fixed_dt)?,
+            });
+        }
+        Ok(())
+    }
+
+    /// Scheduler state is solely the per-Level timer and episode revision.
+    /// The authoritative gameplay roster decides which squads may request.
+    /// Already-missed timer beats do not become bursts of duplicate orders.
+    fn issue_due_source_commands(&mut self, host: &mut RolloutHost,
+        fixed_dt: f32,
+    ) -> io::Result<()> {
+        if !self.issue_source_commands { return Ok(()); }
+        let ready = self.worker.ready() && self.next_level == self.levels.len();
+        let mut due_levels = HashSet::new();
+        for index in 0..self.levels.len() {
+            let world = host.simulation().world(index)
+                .ok_or_else(|| invalid("registered native Level disappeared"))?;
+            let initial = world.state.metadata.hivemind_initial_delay_seconds
+                .ok_or_else(|| invalid("source HiveMind delay missing from Level"))?;
+            let tick = world.tick();
+            self.ensure_source_clock(index, world.episode_revision(), initial, fixed_dt)?;
+            let clock = self.command_clocks[index].as_mut()
+                .expect("source clock initialized");
+            if tick >= clock.next_due_tick {
+                if ready && world.state.metadata.hivemind_active == Some(true) &&
+                    !world.is_failed() && !world.state.events.is_failed() &&
+                    !world.state.events.completed() && !world.state.events.was_aborted()
+                {
+                    due_levels.insert(i64::from(self.levels[index]));
+                }
+                let elapsed = tick.saturating_sub(clock.next_due_tick);
+                let periods = elapsed / self.command_period_ticks + 1;
+                clock.next_due_tick = clock.next_due_tick.saturating_add(
+                    periods.saturating_mul(self.command_period_ticks),
+                );
+            }
+        }
+        if due_levels.is_empty() { return Ok(()); }
+        let result = host.issue_due_source_targeting(
+            &self.worker, usize::MAX,
+            |level_id| due_levels.contains(&level_id),
+        ).map_err(|error| contextual("source HiveMind command pulse", error))?;
+        self.command_measurements.eligible += result.eligible;
+        self.command_measurements.issued += result.issued;
+        self.command_measurements.out_of_bounds += result.out_of_bounds;
+        self.command_measurements.home_moves += result.home_moves;
+        self.command_measurements.home_unreachable += result.home_unreachable;
+        self.command_measurements.unauthored_minions += result.unauthored_minions;
+        Ok(())
+    }
+
+    /// Prevent large headless inference windows from stepping straight
+    /// past a source HiveMind 0.25-second pulse. Graphical mode already
+    /// advances a single fixed tick at a time.
+    fn rounds_until_next_source_pulse(&mut self, host: &RolloutHost,
+        fixed_dt: f32,
+    ) -> io::Result<u64> {
+        if !self.issue_source_commands || !self.worker.ready() ||
+            self.next_level != self.levels.len() {
+            return Ok(u64::MAX);
+        }
+        let mut limit = u64::MAX;
+        for index in 0..self.levels.len() {
+            let world = host.simulation().world(index)
+                .ok_or_else(|| invalid("registered native Level disappeared"))?;
+            if world.is_failed() || world.state.events.is_failed() ||
+                world.state.events.completed() || world.state.events.was_aborted() ||
+                world.state.metadata.hivemind_active != Some(true) {
+                continue;
+            }
+            let initial = world.state.metadata.hivemind_initial_delay_seconds
+                .ok_or_else(|| invalid("source HiveMind delay missing from Level"))?;
+            self.ensure_source_clock(index, world.episode_revision(), initial, fixed_dt)?;
+            let due = self.command_clocks[index]
+                .expect("source clock initialized").next_due_tick;
+            limit = limit.min(due.saturating_sub(world.tick()).max(1));
+        }
+        Ok(limit)
+    }
+
     fn poll(&mut self, host: &mut RolloutHost) -> io::Result<()> {
         for _ in 0..16 {
             let event = if self.issue_source_commands {
