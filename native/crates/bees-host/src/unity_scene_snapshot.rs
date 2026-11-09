@@ -125,6 +125,7 @@ struct UnitySnapshot {
     fixed_dt_seconds: f32,
     shots_harmless: bool,
     activate_collision_asteroids: bool,
+    activate_mining: Option<bool>,
     has_obstacles: bool,
     command_settings: UnityCommandSettings,
     bee_side: i32,
@@ -598,6 +599,8 @@ pub struct NativePhysicalScene {
     pub fixed_dt_seconds: f32,
     pub shots_harmless: bool,
     pub activate_collision_asteroids: bool,
+    /// Optional only for legacy schema26 exports predating request bans.
+    pub activate_mining: Option<bool>,
     pub has_obstacles: bool,
     pub command_settings: bees_gameplay::commands::HiveMindCommandSettings,
     pub entities: Vec<NativeAuthoredEntity>,
@@ -976,6 +979,7 @@ impl NativePhysicalScene {
             },
         ).map_err(NativePolicyOnlyLevelError::Metadata)?;
         metadata.targeting_context = self.targeting_context;
+        metadata.activate_mining = self.activate_mining;
         Ok(NativeAuthoredLevel {
             weapon_rank_frame: if self.schema_version >= 23 { self.source_frame_count } else { None },
             level_geometry: (self.schema_version >= 22).then_some(NativeLevelGeometry {
@@ -1973,6 +1977,7 @@ impl NativePhysicalScene {
             fixed_dt_seconds: raw.fixed_dt_seconds,
             shots_harmless: raw.shots_harmless,
             activate_collision_asteroids: raw.activate_collision_asteroids,
+            activate_mining: raw.activate_mining,
             has_obstacles: raw.has_obstacles,
             command_settings,
             entities,
