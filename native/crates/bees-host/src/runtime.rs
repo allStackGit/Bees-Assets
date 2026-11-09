@@ -547,8 +547,9 @@ where
     }
 
     /// Invoke at the owning Stage's SOURCE 0.25-second HiveMind timer
-    /// pulse, after its InitialCommandDelay. A paused Level or socket
-    /// without accepted setup is not eligible; no new request is invented.
+    /// pulse, after its InitialCommandDelay. The caller supplies the
+    /// real per-Level (IsLevelSetupOnServer && !State.IsPaused) condition.
+    /// A shared socket setup does NOT imply every native Level is setup.
     ///
     /// This inspects ONLY the canonical roster, command director, imported
     /// source authorization and connection's in-flight session. It does not
@@ -564,11 +565,11 @@ where
     pub fn issue_due_source_targeting(
         &mut self,
         worker: &crate::socket_worker::NativeSocketWorker,
-        paused: bool,
         max_new_requests: usize,
+        mut level_is_ready: impl FnMut(i64) -> bool,
     ) -> Result<NativeSourceCommandPulse, HostSourceCommandError> {
         let mut counts = NativeSourceCommandPulse::default();
-        if paused || !worker.ready() || max_new_requests == 0 {
+        if !worker.ready() || max_new_requests == 0 {
             return Ok(counts);
         }
         if self.driver.registered_world_count() != self.simulation.world_count() {
@@ -607,7 +608,7 @@ where
                     }
                     return Err(HostSourceCommandError::MissingSquadAuthorization(owner));
                 };
-                if !source.can_request() ||
+                if !source.can_request() || !level_is_ready(owner.level_id) ||
                     state.events.commands().has_active(owner) ||
                     self.connection.connection().session().has_live_request_for(owner)
                 {
