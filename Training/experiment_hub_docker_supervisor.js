@@ -221,8 +221,24 @@ class DockerSupervisor {
             throw Error('Docker accelerator device allowance changed.');
         if(record.container_id&&doc.Id!==record.container_id)
             throw Error('Deterministic Docker container name was rebound to a different object.');
-        const binds=(doc.HostConfig.Mounts||[]).map(m=>[m.Source,m.Target,m.ReadOnly]);
-        if(JSON.stringify(binds)!==JSON.stringify(record.mounts))
+        // Docker can report ReadOnly:null for a writable --mount. Compare
+        // the requested bind identity and the effective mount permissions;
+        // neither omitted defaults nor presentation order confer trust.
+        const binds=doc.HostConfig.Mounts;
+        const effective=doc.Mounts;
+        if(!Array.isArray(binds)||!Array.isArray(effective)||
+            binds.length!==record.mounts.length||
+            effective.length!==record.mounts.length||
+            record.mounts.some(([source,target,readonly])=>{
+                const configured=binds.find(m=>m.Type==='bind'&&
+                    m.Source===source&&m.Target===target);
+                const mounted=effective.find(m=>m.Type==='bind'&&
+                    m.Source===source&&m.Destination===target);
+                return typeof readonly!=='boolean'||!configured||!mounted||
+                    (readonly?configured.ReadOnly!==true:
+                        configured.ReadOnly!==false&&configured.ReadOnly!=null)||
+                    mounted.RW!==!readonly;
+            }))
             throw Error('Docker bind-mount permissions or targets changed.');
         const env=doc.Config.Env||[];
         if(Object.entries(record.env).some(([k,v])=>!env.includes(k+'='+v)))
