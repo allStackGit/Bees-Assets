@@ -147,10 +147,6 @@ pub fn build_source_strategy_matchup(
             if roster.owning_squad(candidate.ship_id) == Some(enemy_owner) {
                 continue;
             }
-            if own.members.iter().any(|&id| {
-                // Evaluated below without swallowing source errors.
-                id == candidate.ship_id
-            }) { continue; }
             let mut eligible = false;
             for &id in &own.members {
                 if can_target(world, candidate.ship_id, id)? {
