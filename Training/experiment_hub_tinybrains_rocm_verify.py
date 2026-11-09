@@ -62,6 +62,8 @@ def verify_runtime_device(expected):
         raise SystemExit("PyTorch ROCm is unavailable in the approved Python environment.")
     if torch.cuda.device_count() != 1:
         raise SystemExit("ROCm must expose exactly the single selected GPU.")
+    # Ensure HIP has loaded before locating its mapped shared library.
+    torch.cuda.init()
     observed = runtime_pci_bus_id()
     if observed != expected:
         raise SystemExit("HIP selected GPU PCI identity differs from the Hub lease.")
