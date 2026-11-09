@@ -119,6 +119,53 @@ impl HiveMindSession {
         self.pending_targeting.get(&hash).map(|pending| pending.owner)
     }
 
+    /// Read the original opponent context before consuming a targeting
+    /// response. The request-local value must be reused for the ensuing
+    /// GetStrategy, never recomputed from a mutable user/session setting.
+    pub fn targeting_request_opponent(&self, hash: i64) -> Option<u64> {
+        self.pending_targeting.get(&hash).map(|entry| entry.request.opponent_id)
+    }
+
+    /// One correlation owner, including requests from all native Levels.
+    /// A retired hash remains in the session for late-response settlement,
+    /// but is NEVER eligible for network transmission or duplicate polling.
+    pub fn has_live_request_for(&self, owner: SquadLifetime) -> bool {
+        self.latest_by_squad.get(&owner)
+            .and_then(|hash| self.pending.get(hash))
+            .is_some_and(|request| !request.retired) ||
+        self.latest_targeting_by_squad.get(&owner)
+            .and_then(|hash| self.pending_targeting.get(hash))
+            .is_some_and(|request| !request.retired)
+    }
+
+    /// Transport-only read views; never create another pending-hash map.
+    /// The worker sends these ORIGINAL requests once per socket, deferring
+    /// backpressured sends without changing the request identity.
+    pub fn live_strategy_requests(&self) -> impl Iterator<Item = &GetStrategyRequest> {
+        self.pending.iter().filter_map(|(hash, pending)| {
+            (!pending.retired &&
+                self.latest_by_squad.get(&pending.owner) == Some(hash))
+                .then_some(&pending.request)
+        })
+    }
+
+    pub fn live_targeting_requests(&self) -> impl Iterator<Item = &GetTargetingRequest> {
+        self.pending_targeting.iter().filter_map(|(hash, pending)| {
+            (!pending.retired &&
+                self.latest_targeting_by_squad.get(&pending.owner) == Some(hash))
+                .then_some(&pending.request)
+        })
+    }
+
+    pub fn is_live_request_hash(&self, hash: i64) -> bool {
+        self.pending.get(&hash).is_some_and(|pending|
+            !pending.retired &&
+            self.latest_by_squad.get(&pending.owner) == Some(&hash)) ||
+        self.pending_targeting.get(&hash).is_some_and(|pending|
+            !pending.retired &&
+            self.latest_targeting_by_squad.get(&pending.owner) == Some(&hash))
+    }
+
     /// The socket sends only the exact prepared request still owned by
     /// this live session. This also excludes superseded/retired requests:
     /// the server must never reserve new outcomes for a canceled choice.
