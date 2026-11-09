@@ -581,6 +581,28 @@ where
         self.connection.request_targeting(owner, ships, opponent, banned)
     }
 
+    /// Source Squad.MakeMatchupStrat request: never trust a caller-built
+    /// Ships/Banned pair for ordinary gameplay. The Level has already
+    /// determined that this squad is eligible and in bounds; preflight
+    /// confirms its live lifecycle, complete roster, authored type letters
+    /// and current enemy-side type bans BEFORE allocating/persisting a hash.
+    /// The source user-progress type universe and opposite faction side
+    /// must come from the actual game configuration, not the asset catalog.
+    ///
+    /// Send the returned persisted request using NativeSocketWorker::send_targeting.
+    /// Transport retries must reuse the original request/hash.
+    pub fn request_source_targeting(
+        &mut self, owner: SquadLifetime, opponent: u64,
+        enemy_side: i32, all_ship_types: &[u8],
+    ) -> Result<GetTargetingRequest, DurableConnectionError> {
+        let inputs = self.driver.targeting_request_inputs(
+            &self.simulation, owner, enemy_side, all_ship_types,
+        ).map_err(DurableConnectionError::GameplayTargetingRequest)?;
+        self.connection.request_targeting(
+            owner, inputs.ships, opponent, inputs.banned,
+        )
+    }
+
     pub fn queue_outcomes(
         &mut self, batch: OutcomeBatch,
     ) -> Result<StoreCommandsRequest, DurableConnectionError> {
