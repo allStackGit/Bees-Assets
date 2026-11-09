@@ -157,14 +157,14 @@ async function main(argv=process.argv.slice(2)) {
             worker.listen(AGENT_PORT,AGENT_HOST,resolve);
         });
     }catch(error) {
-        admin.close();
-        worker.close();
+        if(admin.listening)admin.close();
+        if(worker.listening)worker.close();
         throw error;
     }
     const automationTimer=setInterval(()=>{
-        const current=hub.automationStatus();
-        if(!current.enabled&&!current.restart_rearm_pending)return;
         try {
+            const current=hub.automationStatus();
+            if(!current.enabled&&!current.restart_rearm_pending)return;
             const status=hub.tickAutomation();
             if(status.last_error)
                 console.error('[hub] Native automation disarmed: '+status.last_error);
