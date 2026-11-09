@@ -286,6 +286,11 @@ impl DurableDiagnosticNotifications {
                 "command_outcome_id": hit.command_outcome_id,
                 "attacker_credit_outcome_id": credit.attacker_command_outcome_id,
                 "defender_credit_outcome_id": credit.defender_command_outcome_id,
+                "fire_barge_killer_credit": credit.fire_barge_killer_credit.map(|value| json!({
+                    "killer_ship_id": value.killer_ship_id,
+                    "command_outcome_id": value.command_outcome_id,
+                    "tsv_delta": value.tsv_delta,
+                })),
                 "source": format!("{:?}", hit.source),
                 "command_tsv_delta": hit.command_tsv_delta,
                 "self_inflicted": hit.self_inflicted,

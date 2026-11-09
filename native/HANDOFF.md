@@ -7,6 +7,40 @@ live training were untouched. Changes have since been pushed directly to the
 rewrite branch on GitHub; reconcile the current branch head before doing further work.
 Unrelated feat/experiment-queue-ui changes were not merged.
 
+## Latest source-backed Fire Barge command credit
+
+CombatHit now includes optional fire_barge_killer_credit. Source FireBarge.Kill
+captures the killer's ACTIVE HiveMind command at death, distinct from the command
+that launched the lethal shot. Source Ship.LogHitStats later adds positive TSV
+for that killer when the dead Barge's blast harms its own side; the Barge's own
+negative friendly-fire delta and the defender delta remain independent. A zero
+captured outcome falls back to the killer's active command at blast impact.
+
+The shared Level event processor captures this immutable death attribution in
+source event order before retirement, for both core and late timer slices. The
+same CombatHit outbox and durable diagnostic file carry the optional killer ship,
+command outcome and exact positive TSV. No new physical hit, damage simulation,
+fleet-credit ledger or StoreCommands submission is introduced.
+
+Executed external B:\Bees\native-capability-qualification receipts:
+- chain-credit.txt / chain-credit-readback.txt: real shot101 kills a Fire Barge
+  while killer command201 is active; switching to301 before the delayed friendly
+  blast retains201. If no command was active at death, the later301 fallback is
+  recorded. Exact positive TSV equals physical loss, the original friendly
+  penalty stays negative, and unrelated/enemy hits have no chain credit.
+- The native probe also asserts synchronized diagnostic enemy+friendly hit counts
+  equal actual common-world Hit events, without duplicating physical hits.
+- workspace-chain-credit.txt: all106 existing sim tests and workspace all-target/
+  all-feature checks pass. headless-chain-credit.txt: no-default-feature check passes.
+These are supplied fixtures and read-back journal records, not live Unity/server
+receipts. C# runtime parity, Linux and final settlement remain unverified.
+
+Before full command TSV parity, also connect first-sighting strategic vision TSV:
+HivemindVision.cs credits a clamped value to the actual squad/MotherSquad command;
+the current native discovery path emits shaping/sighting state, not that source
+command-TSV delta. Keep it distinct from PPO reward while building the durable
+accrual/StoreCommands owner. The complete rewrite goal remains incomplete.
+
 ## Local executable verification after pulling 73a2c6f7a
 
 Fetched and fast-forwarded 50 commits from 407ffd8c4 to 73a2c6f7a. The earlier
