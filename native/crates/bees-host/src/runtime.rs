@@ -21,7 +21,7 @@ use bees_hivemind::outcomes::OutcomeBatch;
 use bees_hivemind::protocol::{
     GetStrategyRequest, GetTargetingRequest, StoreCommandsRequest,
 };
-use bees_hivemind::session::SquadLifetime;
+use bees_hivemind::session::{SquadLifetime, TargetingReceipt};
 use bees_sim::simulation::{RandomStream, Simulation, World};
 use crate::durable_connection::{DurableConnectionError, DurableHiveMindConnection};
 use crate::status::{NativeHostStatusInterval, NativeStatusSampler};
@@ -532,13 +532,7 @@ where
         })();
         let event = match transport {
             Ok(event) => event,
-            Err(error) => {
-                let (unresolved_requests, retirement_error) = match self.connection.retire_socket() {
-                    Ok(hashes) => (hashes, None),
-                    Err(error) => (Vec::new(), Some(error)),
-                };
-                return Err(HostNetworkError::Transport { error, unresolved_requests, retirement_error });
-            }
+            Err(error) => return Err(self.retire_transport_after_error(error)),
         };
         match event {
             None => Ok(None),
@@ -550,6 +544,52 @@ where
                 Ok(Some(NativeHostSocketEvent::ServerFrame { request_hash, delivery, unhandled_frame }))
             }
         }
+    }
+
+    fn retire_transport_after_error(
+        &mut self, error: crate::socket_worker::NativeSocketWorkerError,
+    ) -> HostNetworkError {
+        let (unresolved_requests, retirement_error) =
+            match self.connection.retire_socket() {
+                Ok(hashes) => (hashes, None),
+                Err(error) => (Vec::new(), Some(error)),
+            };
+        HostNetworkError::Transport {
+            error, unresolved_requests, retirement_error,
+        }
+    }
+
+    /// Native gameplay network pump. An accepted GetMatchupStrategy reply
+    /// continues to source-built GetStrategy with the ORIGINAL opponent
+    /// identity. The one connection still owns its hashes and reservations;
+    /// the socket worker holds only bounded send flow-control.
+    ///
+    /// Call between simulation windows in lieu of poll_network when using
+    /// source-imported ordinary gameplay. The legacy poll_network remains
+    /// a lower-level receive-only adapter for explicit host-controlled
+    /// request sequences and independent protocol qualification.
+    ///
+    /// Pending requests that cannot enter a full send channel remain
+    /// correlation-owned by the original session; subsequent pumps retry
+    /// without minting new hashes. A source-validation failure is surfaced
+    /// and must be handled by the operator, not treated as a successful
+    /// strategy selection or fabricated StoreCommands credit.
+    pub fn poll_network_and_continue_source_commands(
+        &mut self,
+        worker: &mut crate::socket_worker::NativeSocketWorker,
+    ) -> Result<Option<NativeHostSocketEvent>, HostNetworkError> {
+        let event = self.poll_network(worker)?;
+        if let Some(NativeHostSocketEvent::ServerFrame {
+            delivery: Some(NativeHiveMindFrameDelivery::Targeting(targeting)), ..
+        }) = event.as_ref() {
+            if let TargetingReceipt::Accepted { owner, .. } = &targeting.receipt {
+                self.request_live_strategy(*owner, targeting.opponent_id)
+                    .map_err(HostNetworkError::Connection)?;
+            }
+        }
+        worker.queue_pending_hivemind_requests(&self.connection)
+            .map_err(|error| self.retire_transport_after_error(error))?;
+        Ok(event)
     }
 
     /// Pass only authenticated WebSocket frames. StoreCommands 200/409
