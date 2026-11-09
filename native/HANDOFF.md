@@ -1,9 +1,28 @@
-# Unified native rewrite handoff - 2026-11-08
+# Unified native rewrite handoff - 2026-11-09
 
 Worktree `B:\Bees\unified-native`, branch `rewrite/unified-native`.
-Read the attached goal and root AGENTS.md before continuing. The complete Unity
-replacement remains incomplete. Original `B:\Bees\Assets` and live training
-were untouched. Work is local; no push or unrelated experiment-queue merge.
+Read the full goal and fresh root AGENTS.md before further work. The complete
+Unity replacement remains incomplete; the experiment-queue branch is separate.
+
+## 2026-11-09 continuation
+
+The common host can now issue `request_source_targeting`: the single live
+Squad and imported authored ship-letter sources generate the first 64 sorted
+ship letters, while all current enemy-side hull types determine Type A-X bans.
+Unity `UserProgressData.SetShipTypes` derives that ban universe from the
+fixed shooting-strategy table, so no guessed or duplicated unlock list is used.
+Live owner, complete roster and source metadata are preflighted before the
+durable request hash is allocated. The original socket worker sends that
+request; ordinary in-bounds/AI-eligible command queue cadence is still missing.
+
+A targeting reply consumed by the session but rejected at game application
+now persists its exact unused targeting reservation for discard. An accepted
+strategy reply whose activation fails surfaces both unresolved IDs rather
+than claiming a safe discard after possible partial command mutation.
+The existing connection-owned StoreCommands ledger remains the only writer.
+These new paths were source/cross-interface inspected but not compiled or run
+in this environment. Earlier handoff runtime receipts refer to earlier code
+and do not qualify these changes.
 
 ## Merge and ownership
 
