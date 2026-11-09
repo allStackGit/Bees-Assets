@@ -6,6 +6,7 @@ const os=require('node:os');
 const path=require('node:path');
 const crypto=require('node:crypto');
 const {LinuxSupervisor,gpuRuntimeProof}=require('./experiment_hub_linux_supervisor');
+const {DockerSupervisor}=require('./experiment_hub_docker_supervisor');
 const {WindowsSupervisor}=require('./experiment_hub_windows_supervisor');
 const {inspectHost}=require('./experiment_hub_host');
 const {matchingLeaseBudget}=require('./experiment_hub_resources');
@@ -315,11 +316,16 @@ function fromEnvironment(env=process.env,options={}) {
                 !['cpu','memory'].every(c=>capabilities.cgroup_controllers.includes(c)))
                 throw Error('Required Linux CPU and memory controllers are not available.');
         }
+        const docker=env.EXPERIMENT_HUB_LINUX_BACKEND==='docker';
+        if(env.EXPERIMENT_HUB_LINUX_BACKEND!==undefined&&
+            !['native','docker'].includes(env.EXPERIMENT_HUB_LINUX_BACKEND))
+            throw Error('Unknown local Linux execution backend.');
         const local={root,machineId,adapters,
-            gpuEnabled:env.EXPERIMENT_HUB_ENABLE_ROCM==='1'};
+            gpuEnabled:env.EXPERIMENT_HUB_ENABLE_ROCM==='1',
+            dockerSudo:docker&&env.EXPERIMENT_HUB_DOCKER_SUDO==='1'};
         supervisor=options.createSupervisor
             ?options.createSupervisor(local)
-            :new LinuxSupervisor(local);
+            :docker?new DockerSupervisor(local):new LinuxSupervisor(local);
     }else {
         const helperPath=env.EXPERIMENT_HUB_WINDOWS_HELPER;
         const helperSha256=env.EXPERIMENT_HUB_WINDOWS_HELPER_SHA256;
