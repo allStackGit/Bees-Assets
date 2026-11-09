@@ -44,6 +44,7 @@ pub enum DurableConnectionError {
     Unavailable,
     PreviouslyRegisteredJournalRun,
     GameplayRequest(bees_gameplay::level_host::NativeStrategyRequestError),
+    GameplayTargetingRequest(bees_gameplay::level_host::NativeTargetingRequestSourceError),
     Persistence(CheckpointFileError),
     Request(NativeConnectionError),
     Protocol(HiveMindProtocolError),
