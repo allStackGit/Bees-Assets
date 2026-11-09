@@ -3,6 +3,7 @@
 // Machine-local bridge from authenticated, machine-bound job directives to
 // a separately installed trusted adapter. This module has no HTTP listener.
 const os=require('node:os');
+const fs=require('node:fs');
 const path=require('node:path');
 const crypto=require('node:crypto');
 const {LinuxSupervisor,gpuRuntimeProof}=require('./experiment_hub_linux_supervisor');
@@ -320,6 +321,17 @@ function fromEnvironment(env=process.env,options={}) {
         if(env.EXPERIMENT_HUB_LINUX_BACKEND!==undefined&&
             !['native','docker'].includes(env.EXPERIMENT_HUB_LINUX_BACKEND))
             throw Error('Unknown local Linux execution backend.');
+        if(!docker) {
+            const journal=path.join(root,'docker-owner.json');
+            if(fs.existsSync(journal)) {
+                const saved=JSON.parse(fs.readFileSync(journal,'utf8'));
+                if(!Array.isArray(saved.records)||
+                    saved.records.some(r=>!['finished','stopped','failed'].includes(r.state)))
+                    throw Error('Unresolved Docker job ownership blocks native backend activation.');
+            }
+            if(fs.existsSync(path.join(root,'docker-gpu-probe.json')))
+                throw Error('Unresolved Docker GPU proof blocks native backend activation.');
+        }
         const local={root,machineId,adapters,
             gpuEnabled:env.EXPERIMENT_HUB_ENABLE_ROCM==='1',
             dockerSudo:docker&&env.EXPERIMENT_HUB_DOCKER_SUDO==='1'};
