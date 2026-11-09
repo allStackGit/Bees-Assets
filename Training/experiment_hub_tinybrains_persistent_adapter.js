@@ -242,9 +242,9 @@ function createTinyBrainsPersistentDockerAdapter({
                 const str=buffer.toString('utf8');
                 const end=str.lastIndexOf('\n');
                 if(end<0)return null;
-                const start=str.lastIndexOf('\n',end-1);
-                if(start<0&&offset>0)return null;
-                const row=JSON.parse(str.slice(start+1,end));
+                const lineStart=str.lastIndexOf('\n',end-1);
+                if(lineStart<0&&offset>0)return null;
+                const row=JSON.parse(str.slice(lineStart+1,end));
                 if(!Number.isSafeInteger(row.update)||row.update<1||
                     !Number.isFinite(row.wall_seconds)||row.wall_seconds<=0||
                     !Number.isSafeInteger(row.engine_steps)||row.engine_steps<0)
