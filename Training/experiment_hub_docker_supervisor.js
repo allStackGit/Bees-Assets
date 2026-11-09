@@ -137,6 +137,22 @@ class DockerSupervisor {
     }
     snapshot(){return JSON.parse(JSON.stringify(this.state));}
     gpuProbeCleanupPending(){return fs.existsSync(this.probeFile);}
+    // The journal is written before Docker creates any training container.
+    // Only the absence of BOTH durable ownership and the deterministic
+    // container, with no journal/probe operation in progress, can establish
+    // that an offered Start failed before a trainer was launched.
+    async reconcileAbsent(jobId) {
+        if(this.state.some(record=>record.job_id===jobId)||
+            fs.existsSync(this.lock)||this.gpuProbeCleanupPending())
+            return {state:'unverified',diagnostic:
+                'Docker ownership or GPU proof may still be in progress; inspect before recovery.'};
+        const container=await this.inspect(containerName(jobId));
+        if(container)
+            return {state:'unverified',diagnostic:
+                'Docker container exists without a matching ownership record; manual inspection required.'};
+        return {state:'failed',diagnostic:
+            'Pre-launch failure confirmed: no Docker owner record, container, or pending GPU proof.'};
+    }
     async qualify(){
         if(this.gpuProbeCleanupPending())
             throw Error('An earlier Docker GPU proof requires operator cleanup.');
