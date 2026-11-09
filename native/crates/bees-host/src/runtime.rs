@@ -586,17 +586,17 @@ where
     /// determined that this squad is eligible and in bounds; preflight
     /// confirms its live lifecycle, complete roster, authored type letters
     /// and current enemy-side type bans BEFORE allocating/persisting a hash.
-    /// The source user-progress type universe and opposite faction side
-    /// must come from the actual game configuration, not the asset catalog.
+    /// The opposite faction side comes from the actual Level configuration;
+    /// the banned type universe is the fixed source Type A-X registry.
     ///
     /// Send the returned persisted request using NativeSocketWorker::send_targeting.
     /// Transport retries must reuse the original request/hash.
     pub fn request_source_targeting(
         &mut self, owner: SquadLifetime, opponent: u64,
-        enemy_side: i32, all_ship_types: &[u8],
+        enemy_side: i32,
     ) -> Result<GetTargetingRequest, DurableConnectionError> {
         let inputs = self.driver.targeting_request_inputs(
-            &self.simulation, owner, enemy_side, all_ship_types,
+            &self.simulation, owner, enemy_side,
         ).map_err(DurableConnectionError::GameplayTargetingRequest)?;
         self.connection.request_targeting(
             owner, inputs.ships, opponent, inputs.banned,
