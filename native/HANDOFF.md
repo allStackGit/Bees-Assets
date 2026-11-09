@@ -6,6 +6,44 @@ Unity replacement remains incomplete; the experiment-queue branch is separate.
 
 ## 2026-11-09 continuation
 
+## 2026-11-09 command-cycle integration
+
+A source-owned native HiveMind command cycle has been added WITHOUT another
+gameplay/world/command queue. HiveMindSession exposes read-only live pending
+requests and original targeting OpponentId. NativeSocketWorker transmits exact
+pending targeting and strategy payloads once per authenticated socket, with
+bounded backpressure and explicit same-hash retry. The opt-in host
+`poll_network_and_continue_source_commands` consumes validated targeting
+receipts and immediately creates source-built strategy requests using the
+ORIGINAL targeting opponent, while native-level command activation and
+StoreCommands still use their existing authoritative paths.
+
+Fresh Unity physical-scene schema27 exports Stage.ActivateHiveMind,
+Level.StartingPositions, and each Squad's HiveMind-controlled/immobile flags
+plus exact decimal ulong OpponentId. The importer requires these for schema27
+and keeps older scene parsing, but older exports cannot silently enable new
+autonomous command issuance. Policy-only metadata is an immutable authorization
+adapter, NOT another roster.
+
+`NativeHostRuntime.issue_due_source_targeting` is called on the Stage's
+existing quarter-second command timer after InitialCommandDelay; the caller
+supplies each Level's real (setup accepted && not paused) predicate. It
+checks the single live roster/command director and the socket's pending
+hashes before issuing requests. Out-of-bounds squads with no current
+destination use the source side's imported StartingPosition and the SAME
+native formation planner, A* navigation and CombatWorld movement controller.
+A reused per-pulse formation buffer avoids per-squad temporary allocation.
+Newborn non-authored Beacon minions are conservatively excluded; other
+unknown squad authorities are surfaced, never guessed.
+
+**This is an uncompiled integration milestone**, not full playable/native
+launch parity. No Rust/Unity execution or performance measurements were
+possible from this GitHub-only environment. The rendered/headless owning
+Stage still needs to invoke its timer pulse and opt-in socket pump; actual
+server setup/status must be supplied per Level. Dynamic factory/child squad
+authorization, real exports across schema27, live WSS/Steam/SQL, time-domain
+timer parity and high-density performance remain unverified.
+
 ## 2026-11-09 strategy-matchup continuation
 
 The native gameplay crate now prepares source-shaped strategic and request-local
