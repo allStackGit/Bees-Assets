@@ -114,6 +114,9 @@ pub struct NativeSourceVision {
 /// inventory; commands query those same owners rather than a copied roster.
 pub struct NativePolicyOnlyMetadata {
     pub targeting_context: Option<bees_gameplay::squad_targeting::NativeTargetingContext>,
+    /// Exact Level.ActivateMining from the source scene; unavailable for
+    /// older physical exports, never inferred from present asteroids.
+    pub activate_mining: Option<bool>,
     pub bounds: Aabb,
     pub navigation: NavigationRuntime,
     pub activate_collision_asteroids: bool,
@@ -223,7 +226,7 @@ impl NativePolicyOnlyMetadata {
             return Err(PolicyOnlyMetadataError::InvalidSource);
         }
         Ok(Self {
-            targeting_context: None,
+            targeting_context: None, activate_mining: None,
             bounds, navigation, activate_collision_asteroids, fleet, ship_catalog,
             authored_ships, effective_vision,
             source_static_discovery_values,
