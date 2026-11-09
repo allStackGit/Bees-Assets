@@ -104,6 +104,8 @@ pub struct NativeSourceCommandPulse {
     pub eligible: usize,
     pub issued: usize,
     pub out_of_bounds: usize,
+    pub home_moves: usize,
+    pub home_unreachable: usize,
     pub unauthored_minions: usize,
 }
 
@@ -115,6 +117,10 @@ pub enum HostSourceCommandError {
     Geometry {
         owner: SquadLifetime,
         error: bees_sim::combat_world::CombatWorldError,
+    },
+    SourceOrder {
+        owner: SquadLifetime,
+        error: bees_gameplay::commands::GameCommandError,
     },
     Connection(DurableConnectionError),
     Driver(NativeLevelRoutingError),
@@ -574,6 +580,7 @@ where
         // commands, combat positions and source authorization stay in the
         // owning Level; requests use their ORIGINAL connection allocator.
         let mut issue = Vec::with_capacity(max_new_requests.min(64));
+        let mut home = Vec::new();
         'levels: for index in 0..self.simulation.world_count() {
             let world = self.simulation.world_mut(index)
                 .expect("validated number of registered native worlds");
@@ -621,6 +628,14 @@ where
                 }
                 if !in_bounds {
                     counts.out_of_bounds += 1;
+                    // Source GetHiveMindCommands invokes Squad.Move(home)
+                    // only when no squad member still has target coordinates.
+                    if !squad.members.iter().any(|&ship_id|
+                        state.combat.ship_body(ship_id)
+                            .is_some_and(|body| body.motion.has_target_coordinates)
+                    ) {
+                        home.push((index, owner));
+                    }
                     continue;
                 }
                 let enemy_side = if squad.side == bee_side { human_side }
@@ -630,12 +645,56 @@ where
                 if issue.len() == max_new_requests { break 'levels; }
             }
         }
+        for (index, owner) in home {
+            if self.issue_source_return_home(index, owner)? {
+                counts.home_moves += 1;
+            } else {
+                counts.home_unreachable += 1;
+            }
+        }
         for (owner, opponent_id, enemy_side) in issue {
             self.request_source_targeting(owner, opponent_id, enemy_side)
                 .map_err(HostSourceCommandError::Connection)?;
             counts.issued += 1;
         }
         Ok(counts)
+    }
+
+    /// The actual source Squad.Move(startingPosition), using the same
+    /// reusable authored formations, native navigation and CombatWorld as
+    /// gameplay commands and rendered player movement. Never teleport
+    /// or substitute a synthetic arena-center destination.
+    fn issue_source_return_home(
+        &mut self, index: usize, owner: SquadLifetime,
+    ) -> Result<bool, HostSourceCommandError> {
+        let world = self.simulation.world_mut(index)
+            .expect("preflighted live world index");
+        let state = &mut world.state;
+        let squad = state.events.roster().get(owner)
+            .ok_or(HostSourceCommandError::MissingSquadAuthorization(owner))?;
+        let home = state.metadata.source_hivemind_starting_position(squad.side)
+            .ok_or(HostSourceCommandError::MissingSquadAuthorization(owner))?;
+        let fail = |error| HostSourceCommandError::SourceOrder { owner, error };
+        let inputs = state.metadata.strategy_inputs(
+            &state.combat, state.events.roster(), owner, None,
+        ).map_err(fail)?;
+        let mut members = Vec::with_capacity(squad.members.len());
+        let order = bees_gameplay::level_inputs::native_squad_order_from_catalog(
+            &state.combat, squad, state.metadata.targeting_ship_catalog(),
+            inputs.formation, None, None,
+            |id| state.metadata.stored_formation_offset(id),
+            |id| state.metadata.current_path_clearance(id),
+            &mut members,
+        ).map_err(fail)?;
+        let asteroids = state.metadata.collision_asteroids_enabled();
+        let navigation = state.metadata.navigation_mut();
+        state.combat.refresh_world_navigation(navigation, true, asteroids)
+            .map_err(|error| fail(error.into()))?;
+        bees_sim::squad_movement::issue_squad_move(
+            &mut state.combat, navigation, order.members, home,
+            inputs.formation,
+        ).map(|result| result.is_some())
+            .map_err(|error| fail(error.into()))
     }
 
     /// Nonblocking socket pump for BOTH graphical and headless callers.
