@@ -705,10 +705,35 @@ impl NativeLevelBatchDriver {
         let index = self.locate_live_owner(simulation, owner)
             .map_err(NativeStrategyRequestError::Routing)?
             .ok_or(NativeStrategyRequestError::MissingOwner)?;
-        let bans = simulation.world(index).expect("located world").state.events.roster()
-            .get(owner).expect("located squad").command_bans.as_ref()
+        let events = &simulation.world(index).expect("located world").state.events;
+        let roster = events.roster();
+        let acting = roster.get(owner).expect("located squad");
+        let bans = acting.command_bans.as_ref()
             .ok_or(NativeStrategyRequestError::MissingSourceBans)?;
-        Ok(crate::squad_composition::banned_strategy_names(bans, existing))
+        let mut names = crate::squad_composition::banned_strategy_names(bans, existing);
+        // Source MakeMatchupAndGetCommand forbids ClosestFriendly if no
+        // viable other squad is available. A squad already executing that
+        // order counts among the source's follower total. Read the one
+        // current command director and source roster, not a shadow registry.
+        let mut friendlies = 0usize;
+        let mut followers = 0usize;
+        for &candidate in roster.source_order() {
+            let other = roster.get(candidate)
+                .ok_or(NativeStrategyRequestError::MissingOwner)?;
+            if other.side == acting.side {
+                friendlies += 1;
+                followers += usize::from(
+                    events.commands().current_kind(candidate) ==
+                        Some(LocalCommandKind::ClosestFriendly)
+                );
+            }
+        }
+        if friendlies.saturating_sub(1) <= followers {
+            names = crate::squad_composition::banned_strategy_names(
+                &[LocalCommandKind::ClosestFriendly], names,
+            );
+        }
+        Ok(names)
     }
 
     /// Prepare the actual Unity Squad.MakeMatchupStrat request from its live
