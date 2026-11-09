@@ -1384,9 +1384,9 @@ removed by the Hub. A staged Hub continuation uses a new job ID and retains
 the previous job's frozen opponent files. The TinyBrains checkout mounted into
 Docker must include support for `learning_path --max-ppo-updates` and portable
 frozen-opponent path resolution. Each Hub job's `updates` is an *additional*
-update count: the launcher converts the imported optimizer's saved update plus
-that count into an absolute TinyBrains ceiling. The original frozen run spec
-and imported checkpoint are not rewritten.
+update count: the Linux TinyBrains `--max-ppo-updates` option accepts this
+per-invocation count and can extend training beyond the original frozen run
+spec's ceiling. The source run spec and imported checkpoint are not rewritten.
 
 The agent needs *noninteractive* Docker permission: direct access to the
 Docker Unix socket or, only after explicit administrator approval, a working
