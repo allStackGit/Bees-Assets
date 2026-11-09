@@ -288,16 +288,28 @@ impl DurableHiveMindConnection {
         ) {
             Ok(delivery) => delivery,
             Err(error) => {
-                // Session.receive_targeting already removed the validated
-                // request by the time game-side ranking/installation fails.
-                // No command can earn this targeting reservation; persist a
-                // discard before reporting the application failure.
+                // Targeting response validation has consumed its session hash.
+                // Ranking fails before game mutation, so the unused reservation
+                // can be discarded durably. Installation errors may occur after
+                // the Level registered this reservation or failed partway
+                // through updating its own credit ledger: preserve its exact
+                // identity for authoritative abort/reconciliation instead.
                 if let NativeHiveMindFrameError::Targeting(
                     bees_gameplay::level_host::NativeLevelTargetingReceiveError::Application {
-                        selection, ..
+                        selection, cause,
                     },
                 ) = &error {
-                    self.persist_discard_reservations(&[selection.outcome_id])?;
+                    match cause {
+                        bees_gameplay::level_host::NativeTargetingApplicationError::Ranking(_) =>
+                            self.persist_discard_reservations(&[selection.outcome_id])?,
+                        bees_gameplay::level_host::NativeTargetingApplicationError::Events(_) => {
+                            let reservation_ids = vec![selection.outcome_id];
+                            return Err(DurableConnectionError::UnsettledReservations {
+                                reservation_ids,
+                                cause: Box::new(DurableConnectionError::Inbound(error)),
+                            });
+                        },
+                    }
                 }
                 // A strategy activation can have partially mutated its
                 // command director before it fails (e.g. supersession
