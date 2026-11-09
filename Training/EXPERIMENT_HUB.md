@@ -68,6 +68,49 @@ capacity claims or native starts are authorized.
   GPU identities are manually declared and must match fresh observations.
   No agent enforces per-process VRAM or GPU compute quotas.
 
+## Native-only coordinator on Linux (no Unity)
+
+For machines that should run TinyBrains, Courier or other approved native
+experiments **without starting the legacy Bees operator**, use the dedicated
+native-only coordinator. This is a persistent Hub, not the disposable
+`--run-inert-ui` qualification launcher:
+
+```sh
+cd "$HOME/ai/projects/experiment-hub/Assets"
+node Training/experiment_hub_standalone.js \
+    --data-root "$HOME/ai/experiments/experiment-hub"
+```
+
+The explicit data root must be an absolute private directory (mode 0700)
+outside the checkout. The coordinator binds the administrator dashboard
+only to `127.0.0.1:7148` and the authenticated, machine-scoped agent listener
+only to `127.0.0.1:7149`. It serves the existing Hub Design, Train,
+Monitor, Compare and Machines controls but **does not import Bees training,
+Unity or the Bees manager**, and Bees operator actions are unavailable. A
+fresh registry starts with inert TinyBrains and Courier project definitions;
+a definition is not an installed or authorized execution adapter.
+Native automation starts disarmed. Stop the coordinator with Ctrl+C after
+disarming any live automation. Native owners, claims and checkpoints are
+not released merely because the coordinator exits.
+
+Do not run the legacy Bees coordinator against this same data root, and do
+not copy or merge a prior Hub registry over an active one. The existing
+`experiment_hub_systemd.js coordinator` unit still runs
+`bees_experiments.js`; it is **not** a service unit for this native-only
+entry point. The initial standalone coordinator should be launched
+explicitly in a foreground terminal; its real-machine service recovery
+and multi-host production operation remain to be qualified.
+
+Register and enroll `halifax` under **Machines**, preserving the one-time
+machine token in a private local agent environment. For a co-located agent
+use `EXPERIMENT_HUB_URL=http://127.0.0.1:7149`. Start with observation-only
+agent heartbeats and verify it appears Connected before enabling any local
+native adapter. Native Linux Starts still require explicit
+`EXPERIMENT_HUB_ENABLE_EXECUTION=1`, a locally trusted adapter map, a
+separate private supervisor journal, the current session's systemd preflight,
+and a fresh authenticated Hub lease. Do not treat earlier inert service
+qualification as production job authorization.
+
 ## Data ownership
 
 `experiment_hub_core.js` persists project definitions, drafts, and machine
