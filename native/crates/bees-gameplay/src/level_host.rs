@@ -137,6 +137,10 @@ pub trait NativeLevelActivationContext: NativeLevelCommandContext {
     /// authorization to autonomously issue command reservations.
     fn source_hivemind_active(&self) -> Option<bool> { None }
 
+    /// Level.StartingPositions[side-1], never guessed from the map center
+    /// or a ship's current physical placement.
+    fn source_hivemind_starting_position(&self, _side: i32) -> Option<Vec2> { None }
+
     /// Per-Squad source authority, not a second gameplay roster. Dynamic
     /// native-created minions without such source inputs are ineligible
     /// until the Level explicitly registers their command authority.
