@@ -26,7 +26,9 @@ use bees_hivemind::session::SquadLifetime;
 use bees_host::durable_connection::DurableHiveMindConnection;
 use bees_host::socket_worker::NativeSocketWorker;
 use bees_host::socket::{SetupKind, SetupLevelIdentity};
-use bees_host::runtime::{NativeHostRuntime, NativeHostSocketEvent};
+use bees_host::runtime::{
+    NativeHostRuntime, NativeHostSocketEvent, NativeSourceCommandPulse,
+};
 use bees_host::policy_only_metadata::NativePolicyOnlyMetadata;
 use bees_host::notification_file::{DurableDiagnosticNotifications, recover_command_outcomes};
 use bees_host::policy_process::ResidentPolicyProcess;
@@ -114,6 +116,10 @@ struct HiveMindConfig {
     #[serde(default)]
     allow_insecure_loopback: bool,
     reconnect_game_id: Option<i64>,
+    /// Explicit opt-in: existing network-enabled training runs continue
+    /// to use this socket ONLY for StoreCommands unless requested.
+    #[serde(default)]
+    issue_source_commands: bool,
     #[serde(default = "default_flush_seconds")]
     shutdown_flush_seconds: u32,
 }
@@ -311,6 +317,27 @@ fn make_setup(
 type RolloutHost = NativeHostRuntime<NativePolicyOnlyMetadata, MinionAllocator,
     ResidentPolicyProcess, DurableDiagnosticNotifications>;
 
+#[derive(Clone, Copy, Debug)]
+struct SourceCommandClock {
+    revision: u64,
+    next_due_tick: u64,
+}
+
+/// Converts authored Stage timer lengths to fixed-step handoff points.
+/// Unity's time-scaled 0.25s timer is evaluated in Update; a native
+/// headless runner can only publish it at completed simulation ticks.
+fn source_command_ticks(seconds: f64, fixed_dt: f32) -> io::Result<u64> {
+    if !fixed_dt.is_finite() || fixed_dt <= 0.0 ||
+        !seconds.is_finite() || seconds < 0.0 {
+        return Err(invalid("invalid source HiveMind timer configuration"));
+    }
+    let ticks = (seconds / f64::from(fixed_dt)).ceil().max(1.0);
+    if ticks >= u64::MAX as f64 {
+        return Err(invalid("source HiveMind timer exceeds fixed-step clock range"));
+    }
+    Ok(ticks as u64)
+}
+
 struct RunNetwork {
     worker: NativeSocketWorker,
     levels: Vec<i32>,
@@ -319,10 +346,15 @@ struct RunNetwork {
     version: f32,
     auth_ticket: Option<String>,
     flush_seconds: u32,
+    issue_source_commands: bool,
+    command_period_ticks: u64,
+    command_clocks: Vec<Option<SourceCommandClock>>,
+    command_measurements: NativeSourceCommandPulse,
 }
 
 impl RunNetwork {
-    fn start(config: &HiveMindConfig, levels: &[LevelConfig], connection: &mut DurableHiveMindConnection)
+    fn start(config: &HiveMindConfig, levels: &[LevelConfig], fixed_dt: f32,
+        connection: &mut DurableHiveMindConnection)
         -> io::Result<Self>
     {
         let auth_ticket = config.auth_ticket_env.as_ref().map(|name|
@@ -330,11 +362,16 @@ impl RunNetwork {
             .transpose()?;
         let levels = levels.iter().map(|level| i32::try_from(level.level_id)
             .map_err(|_| invalid("HiveMind server LevelId must fit int32"))).collect::<Result<Vec<_>,_>>()?;
+        let command_period_ticks = source_command_ticks(0.25, fixed_dt)?;
         let mut network = Self {
             worker: NativeSocketWorker::start(config.endpoint.clone(), config.allow_insecure_loopback)
                 .map_err(|error| contextual("HiveMind network startup", error))?,
+            command_clocks: vec![None; levels.len()],
             levels, next_level: 0, user_id: config.user_id, version: config.version,
             auth_ticket, flush_seconds: config.shutdown_flush_seconds,
+            issue_source_commands: config.issue_source_commands,
+            command_period_ticks,
+            command_measurements: NativeSourceCommandPulse::default(),
         };
         let (kind, server_game_id) = config.reconnect_game_id
             .map_or((SetupKind::Initial, 0), |game| (SetupKind::Reconnect, game));
@@ -353,7 +390,12 @@ impl RunNetwork {
 
     fn poll(&mut self, host: &mut RolloutHost) -> io::Result<()> {
         for _ in 0..16 {
-            let Some(event) = host.poll_network(&mut self.worker)
+            let event = if self.issue_source_commands {
+                host.poll_network_and_continue_source_commands(&mut self.worker)
+            } else {
+                host.poll_network(&mut self.worker)
+            };
+            let Some(event) = event
                 .map_err(|error| contextual("HiveMind network", error))? else { break; };
             match event {
                 NativeHostSocketEvent::SetupAccepted { request_hash, server_game_id } => {
@@ -369,9 +411,17 @@ impl RunNetwork {
                     println!("{}", json!({"kind": "hivemind_store_ack", "request_hash": request_hash,
                         "acknowledgement": format!("{ack:?}")}));
                 }
-                // This policy runner emits no strategy/targeting requests.
-                // A future game feature must supply its actual reply owner;
-                // never silently drop an accepted reservation or settings frame.
+                NativeHostSocketEvent::ServerFrame {
+                    delivery: Some(
+                        bees_gameplay::level_host::NativeHiveMindFrameDelivery::Strategy(_) |
+                        bees_gameplay::level_host::NativeHiveMindFrameDelivery::Targeting(_)
+                    ), ..
+                } if self.issue_source_commands => {
+                    // The SAME authoritative Level driver has already
+                    // installed the selection and retained learning credit.
+                }
+                // Reject every other message rather than losing a setting,
+                // unowned response or unresolved server reservation.
                 NativeHostSocketEvent::ServerFrame { request_hash, delivery, .. } =>
                     return Err(invalid(format!("unowned HiveMind feature reply {request_hash}: {delivery:?}"))),
             }
