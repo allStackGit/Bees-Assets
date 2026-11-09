@@ -173,7 +173,9 @@ class DockerSupervisor {
             '--memory-swap='+invocation.ram_mb+'m',
             '--pids-limit=512','--network=none','--restart=no',
             '--read-only','--cap-drop=ALL','--security-opt=no-new-privileges',
-            '--tmpfs=/tmp:rw,size=64m,mode=1777',
+            // Full ROCm training may need substantial LLVM compilation scratch.
+            // tmpfs remains capped and charged to the job's memory cgroup.
+            '--tmpfs=/tmp:rw,size=2g,mode=1777',
             '--shm-size=1g','--user='+d.uid+':'+d.gid,
             '--workdir='+d.workdir];
         for(const m of d.mounts)
