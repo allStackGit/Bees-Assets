@@ -34,50 +34,57 @@ def _frame_layout(field, version):
     return field, ROW
 
 
-def _read_exact(stream, count):
-    payload = stream.read(count)
-    if len(payload) != count:
-        raise ValueError("truncated policy capture")
-    return payload
-
-
 def capture_frames(path, journal_id):
     """Yield (generation, rows), with generation None for terminal observations.
 
     Pass the paired reward journal's ID. Group-agent ID zero means absent.
     The tick is the observation tick, so the action advances tick + 1.
     """
-    with path.open("rb") as stream:
-        header = _read_exact(stream, 40)
-        version = header[:8]
-        if version not in (b"BEESACT1", b"BEESACT2", b"BEESACT3") or header[8:] != journal_id.encode("ascii"):
-            raise ValueError("policy capture header does not match reward journal")
-        end = stream.seek(0, 2)
-        stream.seek(40)
-        total = 0
-        # Check all frame boundaries before exposing even the first batch.
-        while True:
-            field, generation_or_total = FRAME.unpack(_read_exact(stream, FRAME.size))
-            if field == 0:
-                if generation_or_total != total or stream.tell() != end:
-                    raise ValueError("invalid policy capture footer")
-                break
-            rows, dtype = _frame_layout(field, version)
-            size = rows * dtype.itemsize
-            if not 0 < rows <= 65536 or stream.tell() + size + FRAME.size > end:
-                raise ValueError("invalid or incomplete policy capture frame")
-            stream.seek(size, 1)
-            if dtype != TERMINAL_ROW:
-                total += rows
-        footer = end - FRAME.size
-        stream.seek(40)
-        while stream.tell() < footer:
-            field, generation = FRAME.unpack(_read_exact(stream, FRAME.size))
-            rows, dtype = _frame_layout(field, version)
-            if not 0 < rows <= 65536 or stream.tell() + rows * dtype.itemsize > footer:
-                raise ValueError("policy capture changed while reading")
-            yield (None if dtype == TERMINAL_ROW else generation,
-                   np.frombuffer(_read_exact(stream, rows * dtype.itemsize), dtype=dtype))
+    if path.stat().st_size < 40 + FRAME.size:
+        raise ValueError("truncated policy capture")
+    # Borrow immutable frame data from a file-backed mapping rather than
+    # materializing a second potentially huge Python bytes buffer. The
+    # learner still owns copies of the rows retained past each frame.
+    mapped = np.memmap(path, dtype=np.uint8, mode="r")
+    end = len(mapped)
+    header = bytes(mapped[:40])
+    version = header[:8]
+    if version not in (b"BEESACT1", b"BEESACT2", b"BEESACT3") or header[8:] != journal_id.encode("ascii"):
+        raise ValueError("policy capture header does not match reward journal")
+
+    offset = 40
+    total = 0
+    # Check all frame boundaries and the terminal footer before exposing
+    # even the first batch. Mapping the file does not relax this contract.
+    while True:
+        if offset + FRAME.size > end:
+            raise ValueError("truncated policy capture")
+        field, generation_or_total = FRAME.unpack_from(mapped, offset)
+        offset += FRAME.size
+        if field == 0:
+            if generation_or_total != total or offset != end:
+                raise ValueError("invalid policy capture footer")
+            break
+        rows, dtype = _frame_layout(field, version)
+        size = rows * dtype.itemsize
+        if not 0 < rows <= 65536 or offset + size + FRAME.size > end:
+            raise ValueError("invalid or incomplete policy capture frame")
+        offset += size
+        if dtype != TERMINAL_ROW:
+            total += rows
+
+    footer = end - FRAME.size
+    offset = 40
+    while offset < footer:
+        field, generation = FRAME.unpack_from(mapped, offset)
+        offset += FRAME.size
+        rows, dtype = _frame_layout(field, version)
+        size = rows * dtype.itemsize
+        if not 0 < rows <= 65536 or offset + size > footer:
+            raise ValueError("policy capture changed while reading")
+        yield (None if dtype == TERMINAL_ROW else generation,
+               np.frombuffer(mapped, dtype=dtype, count=rows, offset=offset))
+        offset += size
 
 
 def applied_batches(path, journal_id):
