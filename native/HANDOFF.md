@@ -5,6 +5,18 @@ Read the full goal and fresh root AGENTS.md before further work. The complete
 Unity replacement remains incomplete. The latest Experiment Hub and queue
 work has been merged locally.
 
+## 2026-11-10 automatic Windows checkpoint pipeline
+
+The isolated Windows Hub at
+`B:\Bees\native-capability-qualification\hub-automatic-bees-5b45fa18799b4baba7e931e6bdb95678`
+automatically claimed, started and released two native rounds after one
+explicit arm. Both Job Object terminal receipts verified. The successor
+was offered only after the predecessor released capacity and used its
+verified checkpoint and manifest. The rounds supplied 36 learner decisions.
+Both completions survived coordinator reopen. The harness's final disarm
+call omitted its confirmation flag and was refused. Reopening confirmed
+automation was disabled. Linux and multi-machine training remain open.
+
 ## 2026-11-10 supervised Windows native training
 
 The Windows Hub owner ran two actual CPU training rounds in an isolated
