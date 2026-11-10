@@ -385,6 +385,7 @@ pub enum CombatEvent {
         victim_id: i64,
         killer_id: i64,
         command_outcome_id: i64,
+        policy_binding_revision: Option<u64>,
     },
     ProjectileEnded {
         projectile_id: i64,
@@ -1155,7 +1156,9 @@ impl CombatWorld {
             }
         }
         self.ship_target_front_offsets.remove(&victim_id);
-        if self.policy_ship_runtime.remove(&victim_id).is_some() {
+        let policy_binding_revision = self.policy_ship_runtime.remove(&victim_id)
+            .map(|binding| binding.bind_revision);
+        if policy_binding_revision.is_some() {
             self.bump_policy_roster_revision();
         }
         self.retire_support_zone(self.ships[index].ship_type, side, victim_id);
@@ -1177,7 +1180,7 @@ impl CombatWorld {
         self.asteroid_navigation_refresh.remove(&victim_id);
         self.nearby_asteroid_ships.retain(|&(_, id)| id != victim_id);
         self.events.push(CombatEvent::ShipDied {
-            victim_id, killer_id, command_outcome_id,
+            victim_id, killer_id, command_outcome_id, policy_binding_revision,
         });
         Ok(())
     }

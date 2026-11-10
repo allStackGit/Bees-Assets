@@ -5,6 +5,21 @@ Read the full goal and fresh root AGENTS.md before further work. The complete
 Unity replacement remains incomplete. The latest Experiment Hub and queue
 work has been merged locally.
 
+## 2026-11-10 elimination trajectories
+
+The combat death record carries the retired policy binding revision into the
+native journal. On same-tick side elimination, final capture includes the
+retired controller's inactive faction observation so its group terminal
+reward reaches MA-POCA.
+
+The Windows fixture at
+`B:\Bees\native-capability-qualification\elimination-full-matrix-a9eedb5913de40b39984775bf33c7a88`
+verified an asteroid death on tick 1, three terminal transitions, and one
+optimizer minibatch. In the paired run with a surviving ship on the losing
+controller's side, the death was journaled on tick 1 and the episode
+continued until tick 25. The learner rejected that capture pending support
+for individual retirement and survivor bootstrapping.
+
 ## 2026-11-10 native MA-POCA terminal update
 
 The completed-world capture now encodes final observations from the shared

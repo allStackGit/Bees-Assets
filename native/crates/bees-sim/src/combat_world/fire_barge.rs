@@ -358,7 +358,7 @@ mod tests {
         }).expect("ordinary Fire Barge death creates a real explosion");
         assert!(world.events().iter().any(|event| matches!(
             event, CombatEvent::ShipDied {
-                victim_id: 1, killer_id: 2, command_outcome_id: 9,
+                victim_id: 1, killer_id: 2, command_outcome_id: 9, ..
             }
         )));
         let index = *world.projectile_by_id.get(&shot).unwrap();

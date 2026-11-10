@@ -177,11 +177,23 @@ pub enum NativeLevelNotificationKind {
     Reward(RewardEmission),
     /// A ready-to-send group command, including terminal/ELO markers.
     GroupReward(GroupRewardEvent),
+    PolicyControllerRetired { ship_id: i64, binding_revision: u64 },
     EpisodeFinal(NativeEpisodeFinal),
     /// An unfinished, canceled or irrecoverably failed episode. The
     /// transport/learner must discard its partial PPO trajectory and
     /// preserve earlier reward records only as diagnostics.
     EpisodeAborted,
+}
+
+fn policy_retirement(event: &CombatEvent) -> Option<NativeLevelNotificationKind> {
+    if let CombatEvent::ShipDied {
+        victim_id, policy_binding_revision: Some(binding_revision), ..
+    } = *event {
+        return Some(NativeLevelNotificationKind::PolicyControllerRetired {
+            ship_id: victim_id, binding_revision,
+        });
+    }
+    None
 }
 
 /// Prevent unbounded RAM growth when a host neglects the output queue.
@@ -1451,7 +1463,8 @@ impl NativeLevelEventProcessor {
         }
         let (capability_count, minion_count, combat_damage_count) = events.iter()
             .fold((0usize, 0usize, 0usize), |(caps, minions, damage), event| (
-                caps + usize::from(requires_level_capability_delivery(event)),
+                caps + usize::from(requires_level_capability_delivery(event))
+                    + usize::from(policy_retirement(event).is_some()),
                 minions + usize::from(matches!(event, CombatEvent::ScoutBeaconDropped { .. })),
                 damage + usize::from(matches!(event,
                     CombatEvent::Hit(_) | CombatEvent::UnattributedDamage { .. })),
@@ -1523,6 +1536,11 @@ impl NativeLevelEventProcessor {
                 self.pending_notifications.push(NativeLevelNotification {
                     tick: completed_tick,
                     kind: NativeLevelNotificationKind::Gameplay(event.clone()),
+                });
+            }
+            if let Some(kind) = policy_retirement(event) {
+                self.pending_notifications.push(NativeLevelNotification {
+                    tick: completed_tick, kind,
                 });
             }
         }
@@ -1684,7 +1702,8 @@ impl NativeLevelEventProcessor {
         );
         let (capability_notifications, combat_damage_notifications) = world.events()
             .iter().fold((0usize, 0usize), |(caps, damage), event| (
-                caps + usize::from(requires_level_capability_delivery(event)),
+                caps + usize::from(requires_level_capability_delivery(event))
+                    + usize::from(policy_retirement(event).is_some()),
                 damage + usize::from(matches!(event,
                     CombatEvent::Hit(_) | CombatEvent::UnattributedDamage { .. })),
             ));
@@ -1739,6 +1758,10 @@ impl NativeLevelEventProcessor {
                         target_id: *target_id, delta: *delta,
                         defender_command_outcome_id: owners.defender,
                     },
+                });
+            } else if let Some(kind) = policy_retirement(event) {
+                self.pending_notifications.push(NativeLevelNotification {
+                    tick: completed_tick, kind,
                 });
             } else if requires_level_capability_delivery(event) {
                 self.pending_notifications.push(NativeLevelNotification {

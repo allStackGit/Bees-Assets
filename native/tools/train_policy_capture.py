@@ -23,6 +23,7 @@ def completed_rollouts(capture, journal, manifest, checkpoint):
     terminals = {}
     rewards = defaultdict(list)
     ended_teams = defaultdict(dict)
+    retirements = defaultdict(dict)
     journal_id = None
     with journal.open(encoding="utf-8") as stream:
         for sequence, line in enumerate(stream):
@@ -39,6 +40,12 @@ def completed_rollouts(capture, journal, manifest, checkpoint):
                 terminals[key] = row
             elif row["kind"] == "episode_aborted":
                 raise ValueError("aborted episode in training capture")
+            elif row["kind"] == "policy_controller_retired":
+                payload = row["payload"]
+                controller = payload["ship_id"], payload["binding_revision"]
+                if controller in retirements[key]:
+                    raise ValueError("duplicate policy controller retirement")
+                retirements[key][controller] = row["tick"]
             elif row["kind"] == "group_reward":
                 event = row["payload"]
                 if event["group_kind"] in ("immediate", "terminal"):
@@ -98,6 +105,18 @@ def completed_rollouts(capture, journal, manifest, checkpoint):
             agent: (int(row["ship"]), int(row["binding_revision"]))
             for agent, row in ticks[0][1].items()
         }
+        terminal = terminals[key]
+        terminal_tick = terminal["tick"]
+        bee_team = context["group_team_by_side"][str(context["bee_side"])]
+        for agent, controller in identities.items():
+            retired_at = retirements[key].get(controller)
+            if retired_at is None:
+                continue
+            eliminated = terminal["payload"][
+                "bee_side_eliminated" if expected[agent] == bee_team else "human_side_eliminated"
+            ]
+            if retired_at != terminal_tick or not eliminated:
+                raise ValueError("individual policy retirement needs a separate trajectory boundary")
         for index, (tick, frame) in enumerate(ticks, 1):
             if (tick != index * period - 1 or frame.keys() != expected.keys() or
                     any(int(row["team"]) != expected[agent] or
@@ -106,7 +125,6 @@ def completed_rollouts(capture, journal, manifest, checkpoint):
                 raise ValueError("training requires a stable, synchronized MA-POCA cohort")
         if terminals[key]["tick"] - ticks[-1][0] > period:
             raise ValueError("decision capture ends before the final decision interval")
-        terminal_tick = terminals[key]["tick"]
         terminal_rows = final_observations[key]
         if (ended_teams[key] != dict.fromkeys(expected.values(), terminal_tick) or
                 terminal_rows.keys() != expected.keys() or

@@ -347,6 +347,7 @@ impl DurableDiagnosticNotifications {
             NativeLevelNotificationKind::AbortedCommand { .. } => "aborted_command",
             NativeLevelNotificationKind::Reward(_) => "reward",
             NativeLevelNotificationKind::GroupReward(_) => "group_reward",
+            NativeLevelNotificationKind::PolicyControllerRetired { .. } => "policy_controller_retired",
             NativeLevelNotificationKind::EpisodeFinal(_) => "episode_final",
             NativeLevelNotificationKind::EpisodeAborted => "episode_aborted",
         };
@@ -354,6 +355,8 @@ impl DurableDiagnosticNotifications {
         // diagnostics. MA-POCA's ELO marker and EndEpisode command must
         // NEVER become PPO reward when this log is inspected or migrated.
         let payload = match &notification.kind {
+            NativeLevelNotificationKind::PolicyControllerRetired { ship_id, binding_revision } =>
+                Some(json!({"ship_id": ship_id, "binding_revision": binding_revision})),
             NativeLevelNotificationKind::TargetingSelected { owner, choice } => Some(json!({
                 "owner": {"level_id":owner.level_id,"squad_id":owner.squad_id,"lifecycle_id":owner.lifecycle_id},
                 "strategy_id": choice.selection.strategy.id, "strategy_name": choice.selection.strategy.name,
