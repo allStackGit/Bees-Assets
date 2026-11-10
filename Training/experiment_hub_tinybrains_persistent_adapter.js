@@ -74,7 +74,8 @@ function createTinyBrainsPersistentDockerAdapter({
         if(!stat.isFile()||fs.realpathSync(keyFile)!==keyFile||
             (stat.mode&0o077)!==0||stat.size<32||stat.size>4096)
             throw Error('Remote collector rollout.key must be an existing private regular file.');
-        remote={keyDirectory,endpoints:remoteCollectors.endpoints.slice()};
+        remote={keyDirectory,endpoints:remoteCollectors.endpoints.slice(),
+            keyFingerprint:crypto.createHash('sha256').update(fs.readFileSync(keyFile)).digest('hex')};
     }
     if(process.platform!=='linux'||!SHA.test(String(seedCheckpointSha256||''))||
         !Number.isSafeInteger(seedPpoUpdates)||seedPpoUpdates<1)
@@ -193,6 +194,8 @@ function createTinyBrainsPersistentDockerAdapter({
         tinybrains_dual_gpu_profiles:enableDualGpu?[...approved.keys()]:[],
         tinybrains_remote_rollout_profiles:remote?[...approved.keys()]:[],
         tinybrains_remote_rollout_count:remote?remote.endpoints.length:0,
+        tinybrains_remote_rollout_endpoints:remote?remote.endpoints.slice():[],
+        tinybrains_remote_key_fingerprint:remote?remote.keyFingerprint:null,
         ...(enableDualGpu?{gpu_dual_execution:'split-ppo'}:{}),
         tinybrains_imports:Object.fromEntries([...approved.keys()].map(id=>[
             'exeter_'+id,{profile:id,sha256:seedCheckpointSha256},
