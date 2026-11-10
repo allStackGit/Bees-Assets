@@ -15,7 +15,7 @@ class ObservationArchive {
         this.lastByJob=new Map();
         this.error=null;
     }
-    record(job,progress,hostMetrics,receivedMs) {
+    record(job,progress,resourceMetrics,receivedMs) {
         if(!progress)return false;
         try {
             if(!UUID.test(String(job?.id))||
@@ -26,7 +26,8 @@ class ObservationArchive {
                 fs.mkdirSync(this.directory,{mode:0o700});
             const directory=fs.lstatSync(this.directory);
             if(!directory.isDirectory()||directory.isSymbolicLink()||
-                (typeof process.getuid==='function'&&directory.uid!==process.getuid()))
+                (typeof process.getuid==='function'&&(
+                    directory.uid!==process.getuid()||(directory.mode&0o077)!==0)))
                 throw Error('Observation archive directory is redirected or unowned.');
             const file=path.join(this.directory,job.id+'.jsonl');
             const flags=fs.constants.O_CREAT|fs.constants.O_RDWR|
@@ -37,7 +38,8 @@ class ObservationArchive {
                 if(!stat.isFile()||stat.nlink!==1||!current.isFile()||
                     current.isSymbolicLink()||
                     stat.dev!==current.dev||stat.ino!==current.ino||
-                    (typeof process.getuid==='function'&&stat.uid!==process.getuid()))
+                    (typeof process.getuid==='function'&&(
+                        stat.uid!==process.getuid()||(stat.mode&0o077)!==0)))
                     throw Error('Observation archive file is unsafe or redirected.');
                 let last=this.lastByJob.get(job.id);
                 if(last===undefined) {
@@ -69,7 +71,7 @@ class ObservationArchive {
                     experiment_id:progress.experiment_id,
                     segment_id:progress.segment_id,
                     steps_completed:progress.steps_completed,
-                    metrics:progress.metrics,host_metrics:hostMetrics,
+                    metrics:progress.metrics,resource_metrics:resourceMetrics,
                 };
                 const body=Buffer.from(JSON.stringify(observation)+'\n');
                 if(body.length>MAX_RECORD_BYTES)
