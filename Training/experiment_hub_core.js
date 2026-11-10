@@ -3261,6 +3261,20 @@ class ExperimentHub {
         const afterId=value.after_job_id==null?null:value.after_job_id;
         if(afterId!==null&&ancestorId!==null)
             throw Error('A job cannot both depend on an independent predecessor and continue its checkpoint.');
+        if(project.id==='tinybrains_rollout') {
+            const learner=next.jobs.find(j=>j.id===frozen.learner_job_id);
+            if(Object.keys(frozen).length!==1||
+                !UUID.test(String(frozen.learner_job_id||''))||
+                !learner||learner.project_id!=='tinybrains'||
+                learner.frozen_parameters?.remote_rollouts!==true||
+                ['finished','stopped','failed','cancelled'].includes(learner.status)||
+                resources.gpu_count!==0||ancestorId!==null||afterId!==null)
+                throw Error('Remote CPU collector requires one active or queued distributed TinyBrains learner, no GPU, and no separate predecessor.');
+            if(next.jobs.filter(j=>j.project_id==='tinybrains_rollout'&&
+                j.status!=='cancelled'&&
+                j.frozen_parameters?.learner_job_id===learner.id).length>=8)
+                throw Error('Only eight separately leased remote collectors may join a TinyBrains learner.');
+        }
         if(ancestorId!==null&&project.id==='tinybrains'&&
             (Object.hasOwn(frozen,'import_checkpoint')||
                 Object.hasOwn(frozen,'import_checkpoint_sha256')))
