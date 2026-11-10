@@ -2368,7 +2368,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const gpuClaim=$('hub-automation-gpu-claim').checked;
         const gpuProbe=$('hub-automation-gpu-probe').checked;
         if(gpuProbe&&!gpuClaim) {
-            feedback('hub-automation-status','Enable GPU claims to automate Linux exclusive-device access probes.');
+            feedback('hub-automation-status','Enable GPU claims to automate Linux device-access probes.');
             return;
         }
         if(resume&&(gpu||gpuClaim||gpuProbe)) {
@@ -2381,7 +2381,7 @@ document.addEventListener('DOMContentLoaded', () => {
             (adopt?' Previously automated running or completed jobs will be re-adopted ONLY after fresh, same-dispatch native inspection and verified lease ownership. Uncertain jobs block arming; existing native processes will not be relaunched.':'')+
             (gpu?' This session may also start eligible Linux or Windows GPU jobs with separately verified sharing support.':'')+
             (gpuClaim?' This session may claim exclusive GPU or locally approved cooperative CUDA/ROCm shared capacity.':'')+
-            (gpuProbe?' It may run inert Linux device-denial probes for exclusive GPU claims only.':'')+
+            (gpuProbe?' It may run inert Linux device-denial probes for qualified exclusive or shared GPU claims.':'')+
             (rebalance?' This session may move its own unstarted claims between armed hosts after a capacity drop.':'')))return;
         try {
             await action('hub/automation',{
