@@ -242,12 +242,16 @@ def read_reused(reader, storage: bytearray, count: int):
     return storage, view
 
 
-def file_sha256(path: Path) -> str:
+def stream_sha256(artifact) -> str:
     digest = hashlib.sha256()
-    with path.open("rb") as artifact:
-        for chunk in iter(lambda: artifact.read(1024 * 1024), b""):
-            digest.update(chunk)
+    for chunk in iter(lambda: artifact.read(1024 * 1024), b""):
+        digest.update(chunk)
     return digest.hexdigest()
+
+
+def file_sha256(path: Path) -> str:
+    with path.open("rb") as artifact:
+        return stream_sha256(artifact)
 
 
 def checked_manifest(path: Path, expected_digest: bytes | None = None):

@@ -11,15 +11,12 @@ import time
 
 import numpy as np
 
-from policy_worker import file_sha256, install_bees_actor, mlagents_behavior_spec
+from policy_worker import file_sha256, install_bees_actor, mlagents_behavior_spec, stream_sha256
 from read_policy_capture import capture_frames
 
 
-def completed_rollouts(capture, journal, manifest, checkpoint, learner_slot=None):
-    manifest_bytes = manifest.read_bytes()
-    manifest_sha = hashlib.sha256(manifest_bytes).hexdigest()
-    checkpoint_sha = file_sha256(checkpoint)
-    models = {entry["slot"]: entry for entry in json.loads(manifest_bytes)["models"]}
+def completed_rollouts(capture, journal, manifest, manifest_sha, checkpoint_sha, learner_slot=None):
+    models = {entry["slot"]: entry for entry in manifest["models"]}
     matching = {
         slot for slot, entry in models.items()
         if entry["backend"] == "mlagents" and entry["sha256"] == checkpoint_sha
@@ -295,7 +292,23 @@ def main():
             network.memory is not None or not network.normalize or
             (network.hidden_units, network.num_layers) != (128, 3) or settings.time_horizon <= 0):
         parser.error("expected a feed-forward structured v26 MA-POCA trainer configuration")
-    checkpoint = torch.load(args.checkpoint, map_location="cpu", weights_only=True)
+    inputs = [
+        (capture, journal, manifest.resolve(strict=True))
+        for capture, journal, manifest in [(args.capture, args.journal, args.manifest), *args.rollout]
+    ]
+    manifests = {}
+    for _, _, path in inputs:
+        if path not in manifests:
+            content = path.read_bytes()
+            manifests[path] = json.loads(content), hashlib.sha256(content).hexdigest()
+    primary_manifest, primary_manifest_sha = manifests[inputs[0][2]]
+    with args.checkpoint.open("rb") as source:
+        input_sha = stream_sha256(source)
+        source.seek(0)
+        checkpoint = torch.load(source, map_location="cpu", weights_only=True)
+        source.seek(0)
+        if stream_sha256(source) != input_sha:
+            raise ValueError("optimizer input checkpoint changed while loading")
     args.output.mkdir()
     trainer = POCATrainer(behavior.brain_name, 100, settings, True, False, 0, str(args.output))
     policy = trainer.create_policy(behavior, mlagents_behavior_spec())
@@ -310,8 +323,11 @@ def main():
     terminal_steps = 0
     episode_keys = set()
     opponent_steps = 0
-    for paths in [(args.capture, args.journal, args.manifest), *args.rollout]:
-        for rollout in completed_rollouts(*paths, args.checkpoint, args.learner_slot):
+    for capture, journal, path in inputs:
+        manifest, manifest_sha = manifests[path]
+        for rollout in completed_rollouts(
+            capture, journal, manifest, manifest_sha, input_sha, args.learner_slot,
+        ):
             key, _, ticks, _, _, _, learning_agents = rollout
             if key in episode_keys:
                 parser.error("the same completed episode was supplied more than once")
@@ -341,8 +357,7 @@ def main():
         os.fsync(output.fileno())
 
     # Keep the source ABI and every opponent slot. Only update the learner.
-    manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
-    input_sha = file_sha256(args.checkpoint)
+    manifest = primary_manifest
     if args.learner_slot is None:
         learner_slots = {
             entry["slot"] for entry in manifest["models"]
@@ -376,7 +391,7 @@ def main():
         "schema_version": 1,
         "source": "bees-native-ma-poca-v1",
         "input_checkpoint_sha256": input_sha,
-        "input_manifest_sha256": file_sha256(args.manifest),
+        "input_manifest_sha256": primary_manifest_sha,
         "learner_slot": args.learner_slot,
         "next_checkpoint": str(next_checkpoint.resolve()),
         "next_checkpoint_sha256": next_sha,
