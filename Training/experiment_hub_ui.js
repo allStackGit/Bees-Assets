@@ -584,7 +584,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     :comparisonData?.ephemeral
                         ?'Live chart samples are held in memory only. Final summaries remain available.'
                         :'Bounded chart history is saved separately from the training registry. For detailed investigation export the complete project-owned job history.';
-        feedback('hub-compare-notice',note);
+        feedback('hub-compare-notice',
+            (state?.hub_observation_archive_issue
+                ?state.hub_observation_archive_issue+' '
+                :'')+note);
         const knownRoots=new Set(runs.map(r=>
             r.job.artifact_lineage_root_id||r.job.id));
         const warnings=[];
