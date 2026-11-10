@@ -14,6 +14,8 @@ const { freezePlan: freezeEvaluator, supportsPurpose: evaluatorSupportsPurpose }
 const { selectedRoot, copyAndSelect } = require('./bees_experiment_storage');
 const { normalizeTarget, scoreTarget } = require('./bees_experiment_benchmark_target');
 const { ExperimentHub } = require('./experiment_hub_core');
+const { JobExporter } = require('./experiment_hub_job_export');
+const { comparison: beesComparison, summary: beesComparisonJob } = require('./experiment_hub_bees_comparison');
 const { createAgentServer, AGENT_PORT, AGENT_HOST } =
     require('./experiment_hub_agent_listener');
 const { route: hubAdminRoute } = require('./experiment_hub_admin');
@@ -50,6 +52,30 @@ function requireHub() {
     if (!hub) throw Error('Experiment Hub unavailable: ' + hubInitializationError);
     return hub;
 }
+const jobExporter=hub?new JobExporter(DATA_ROOT,hub,{
+    jobs:()=>state.items.map(beesComparisonJob),
+    progress:()=>beesComparison(state.items),
+    sources:jobs=>jobs.flatMap(job=>{
+        const source=state.items.find(item=>item.id===job.id);
+        const run=source?.run_id;
+        const result=[{
+            job_id:job.id,label:'metrics',
+            path:path.join(DATA_ROOT,'Metrics',job.id+'.jsonl'),
+        }];
+        if(typeof run!=='string'||!(/^[A-Za-z0-9._-]{1,128}$/.test(run))||
+            run==='.'||run==='..')return result;
+        const folders=[
+            ['workers',path.join(paths.beesRoot,'Training','TrainerLogs',run)],
+            ['learner',path.join(paths.beesRoot,'ManagedBuilds','central-learner','logs',run)],
+            ['trainer-results',path.join(paths.beesRoot,'Training','trainer-results',run)],
+            ['continual-service',path.join(paths.beesRoot,'Training','metadata','continuous-service',run)],
+            ['server-upload',path.join(paths.assetsRoot,'BeesServer~','training-logs',run)],
+        ];
+        return result.concat(folders.map(([label,sourcePath])=>({
+            job_id:job.id,label,path:sourcePath,
+        })));
+    }),
+},()=>resolvePython(loadConfig())):null;
 
 if (!state || state.version !== 1 || !Array.isArray(state.items) || typeof state.armed !== 'boolean') {
     throw Error('Invalid experiment data; no training started: ' + DB);
@@ -459,6 +485,7 @@ function latestPpoMetrics(runId) {
     const record = getLatestPpoUpdate(runId);
     if (!record) return null;
     const update = record.update || {}, hardware = record.hardware || {};
+    const variability=record.variability||{};
     const minibatches = Number(String(update.minibatches || '').split('/')[0]);
     const seconds = finite(update.seconds);
     if (seconds == null || seconds <= 0) return null;
@@ -474,6 +501,18 @@ function latestPpoMetrics(runId) {
         cpu_prepare_wait_s: finite(update.cpu_prepare_wait),
         cpu_pct: finite(hardware.process_cpu_avg),
         gpu_pct: finite(hardware.gpu_util_avg),
+        system_cpu_pct:finite(hardware.system_cpu_avg),
+        vram_used_max_mib:finite(hardware.vram_used_max_mib),
+        rss_max_mib:finite(hardware.rss_max_mib),
+        avg_minibatch_s:finite(update.avg_minibatch),
+        optimizer_work_per_minibatch_s:finite(update.optimizer_total),
+        optimizer_work_estimated_s:Number.isFinite(minibatches)&&minibatches>0&&
+            finite(update.optimizer_total)!==null
+                ?minibatches*finite(update.optimizer_total):null,
+        diagnostic_profile_s:finite(update.diagnostic_profile),
+        minibatch_p50_s:finite(variability.minibatch_p50),
+        minibatch_p90_s:finite(variability.minibatch_p90),
+        minibatch_max_s:finite(variability.minibatch_max),
     };
 }
 
@@ -1977,8 +2016,16 @@ async function definition(input, original = null) {
         developmentSeeds.has(scenario.seed))) {
         throw Error('Held-out benchmarks must use different recipes and evaluation seeds from development.');
     }
+    const metricSelection=input.metric_selection===undefined
+        ?(original?.metric_selection||[]):input.metric_selection;
+    if(!Array.isArray(metricSelection)||metricSelection.length>96||
+        metricSelection.some(key=>typeof key!=='string'||
+            !/^[a-z][a-z0-9_]{0,39}$/.test(key))||
+        new Set(metricSelection).size!==metricSelection.length)
+        throw Error('Choose up to 96 distinct Bees comparison metric names.');
     return {
         id: crypto.randomUUID(), name, group, status: 'queued', created_at: now(),
+        ...(metricSelection.length?{metric_selection:metricSelection.slice()}:{}),
         max_steps: input.unlimited_steps === true ? null : stages[stages.length - 1].end_step,
         first_stage_steps: firstSteps, unlimited_steps: input.unlimited_steps === true,
         max_minutes: maxMinutes, stall_minutes: stallMinutes,
@@ -2059,6 +2106,7 @@ function editableDefinition(item) {
             (item.stage_benchmarks ? 'each_stage' : item.benchmark ? 'final' : 'none'),
         benchmark_target:item.benchmark_target||null,
         reserve_heldout: Boolean(item.heldout_benchmarks),
+        metric_selection:item.metric_selection||[],
         trainer: {
             hyperparameters: Object.fromEntries(
                 ['beta', 'lambd', 'learning_rate', 'batch_size', 'buffer_size', 'num_epoch']
@@ -2350,6 +2398,16 @@ const server = http.createServer(async (req, res) => {
             }
             return await exportExperimentLogs(item, res, percent);
         }
+        if(req.method==='GET'&&route==='/api/hub/progress'&&
+            url.searchParams.get('project_id')==='bees')
+            return json(res,200,beesComparison(state.items));
+        if(req.method==='GET'&&route.startsWith('/api/hub/exports/')) {
+            if(!jobExporter)throw Error('Experiment Hub export service unavailable.');
+            const status=/^\/api\/hub\/exports\/([0-9a-f-]{36})$/.exec(route);
+            if(status)return json(res,200,jobExporter.status(status[1]));
+            const part=/^\/api\/hub\/exports\/([0-9a-f-]{36})\/part\/([1-9][0-9]*)$/.exec(route);
+            if(part)return jobExporter.download(part[1],Number(part[2]),res);
+        }
         if(req.method==='GET'&&route.startsWith('/api/hub/')&&
             !route.startsWith('/api/hub/bees/')) {
             // Only the full state endpoint needs Bees history. Keep planning
@@ -2357,10 +2415,7 @@ const server = http.createServer(async (req, res) => {
             const bees=route==='/api/hub/state'?{
                 active_id:state.active_id,
                 queue_armed:state.armed,
-                runs:state.items.map(x=>({
-                    id:x.id,name:x.name,status:x.status,
-                    run_id:x.run_id,step:x.step,group:x.group,
-                })),
+                runs:state.items.map(beesComparisonJob),
             }:null;
             const result=hubAdminRoute(requireHub(),'GET',route,
                 url.searchParams,null,bees);
@@ -2494,6 +2549,10 @@ const server = http.createServer(async (req, res) => {
         const value = await body(req);
         if (storageMigrationPending) {
             return json(res, 409, { error: 'Data-location switch prepared. Restart this manager before making other changes.' });
+        }
+        if(route==='/api/hub/exports') {
+            if(!jobExporter)throw Error('Experiment Hub export service unavailable.');
+            return json(res,202,jobExporter.start(value));
         }
         if(route.startsWith('/api/hub/')&&
             !route.startsWith('/api/hub/bees/')) {

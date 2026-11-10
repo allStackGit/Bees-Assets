@@ -44,7 +44,8 @@ function fixedDockerSpec(adapter) {
             !/^[A-Z][A-Z0-9_]{0,63}$/.test(key)||typeof value!=='string'||
             value.length>1024||!SAFE.test(value))||
         typeof d.uid!=='number'||!Number.isSafeInteger(d.uid)||d.uid<0||
-        typeof d.gid!=='number'||!Number.isSafeInteger(d.gid)||d.gid<0)
+        typeof d.gid!=='number'||!Number.isSafeInteger(d.gid)||d.gid<0||
+        (d.remote_host_network!==undefined&&typeof d.remote_host_network!=='boolean'))
         throw Error('Untrusted Docker image, mount or environment configuration.');
     for(const m of d.mounts) {
         if(fs.realpathSync(m.host)!==m.host||!fs.statSync(m.host).isDirectory())
@@ -190,7 +191,7 @@ class DockerSupervisor {
             '--cpus='+invocation.cpus,
             '--memory='+invocation.ram_mb+'m',
             '--memory-swap='+invocation.ram_mb+'m',
-            '--pids-limit=512','--network=none','--restart=no',
+            '--pids-limit=512','--network='+(record.network_mode||'none'),'--restart=no',
             '--read-only','--cap-drop=ALL','--security-opt=no-new-privileges',
             // Full ROCm training may need substantial LLVM compilation scratch.
             // tmpfs remains capped and charged to the job's memory cgroup.
@@ -226,7 +227,7 @@ class DockerSupervisor {
             doc.HostConfig?.NanoCpus!==record.cpus*1000000000||
             doc.HostConfig?.Memory!==record.ram_mb*1048576||
             doc.HostConfig?.MemorySwap!==record.ram_mb*1048576||
-            doc.HostConfig?.NetworkMode!=='none'||
+            doc.HostConfig?.NetworkMode!==(record.network_mode||'none')||
             doc.HostConfig?.ReadonlyRootfs!==true||
             doc.HostConfig?.Privileged!==false||
             doc.HostConfig?.AutoRemove!==false||
@@ -348,6 +349,10 @@ class DockerSupervisor {
         const memoryBlock=startHeadroom(job.resources,freeRam);
         if(memoryBlock)throw Error(memoryBlock);
         const d=fixedDockerSpec(this.adapters[job.project_id]);
+        const remoteNetwork=job.frozen_parameters?.remote_rollouts===true;
+        if(remoteNetwork&&(job.project_id!=='tinybrains'||
+            d.remote_host_network!==true))
+            throw Error('Private tailnet access requires a trusted, opt-in TinyBrains Docker adapter.');
         if(invocation.gpu) {
             // The durable machine-local owner refuses overlaps even if the
             // coordinator's admission ledger has become stale.
@@ -397,6 +402,7 @@ class DockerSupervisor {
             continuation_of_job_id:job.continuation_of_job_id||null,
             container_name:name,container_id:null,
             image_id:imageId,cpus:invocation.cpus,ram_mb:invocation.ram_mb,
+            network_mode:remoteNetwork?'host':'none',
             mounts:d.mounts.map(m=>[m.host,m.target,m.readonly]),
             user:d.uid+':'+d.gid,env:d.env,
             command:[invocation.executable,...invocation.args],

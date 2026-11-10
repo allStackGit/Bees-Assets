@@ -253,6 +253,9 @@ function plan(machines,reservations,jobs) {
                 (!item.machine_id||p.machine_id===item.machine_id))
             .sort((a,b)=>Number(Boolean(a.observed_headroom_block))-
                     Number(Boolean(b.observed_headroom_block))||
+                // Prefer a presently connected worker whenever both fit.
+                // Offline hosts remain visible as future-capacity fallbacks.
+                Number(b.online)-Number(a.online)||
                 observedLoadPreference(a,b,item.resources)||
                 a.available.cpus-b.available.cpus||
                 a.available.ram_mb-b.available.ram_mb||

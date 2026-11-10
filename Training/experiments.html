@@ -341,6 +341,49 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
     <textarea id="hub-bees-env-args" rows="4" placeholder="Current release defaults"></textarea>
   </label>
   <p class="muted">Existing-run starts use these arguments. Changing the environment within the same run requires confirmation and can affect comparability. Actual argument validation is performed against the built Unity release before training starts.</p>
+  <label>Bees experiment metrics to feature in Compare (Ctrl/Shift to select several)
+    <select id="bees-training-metrics" multiple size="8">
+      <option value="reward">Mean reward</option>
+      <option value="group_reward">Mean group reward</option>
+      <option value="bee_win_pct">Bee win percentage</option>
+      <option value="human_win_pct">Human win percentage</option>
+      <option value="timeout_pct">Timeout percentage</option>
+      <option value="steps_per_second">Learner steps per second</option>
+      <option value="effective_steps_per_second">Effective end-to-end steps per second</option>
+      <option value="ppo_busy_pct">PPO busy percentage</option>
+      <option value="pipeline_staged_s">Worker staged experiences per second</option>
+      <option value="pipeline_accepted_s">Accepted experiences per second</option>
+      <option value="pipeline_consumed_s">Learner-consumed experiences per second</option>
+      <option value="pipeline_upload_q">Outstanding worker upload queue</option>
+      <option value="pipeline_broker_q">Learner broker queue</option>
+      <option value="pipeline_broker_capacity">Broker queue capacity</option>
+      <option value="ppo_update_s">Completed PPO update seconds</option>
+      <option value="ppo_minibatches">PPO minibatches per update</option>
+      <option value="ppo_minibatches_s">PPO minibatches per second</option>
+      <option value="ppo_materialize_s">PPO batch materialization seconds</option>
+      <option value="ppo_backward_s">PPO backward seconds</option>
+      <option value="ppo_optimizer_step_s">PPO optimizer-step seconds</option>
+      <option value="ppo_cpu_prepare_wait_s">PPO CPU preparation wait seconds</option>
+      <option value="ppo_cpu_pct">Learner process CPU percentage</option>
+      <option value="ppo_gpu_pct">Observed learner GPU utilization percentage</option>
+      <option value="ppo_system_cpu_pct">Sampled system CPU percentage</option>
+      <option value="ppo_vram_used_max_mib">Sampled GPU VRAM peak (MiB)</option>
+      <option value="ppo_rss_max_mib">Sampled process RAM peak (MiB)</option>
+      <option value="ppo_avg_minibatch_s">Average PPO minibatch seconds</option>
+      <option value="ppo_optimizer_work_per_minibatch_s">Optimizer work per minibatch seconds</option>
+      <option value="ppo_optimizer_work_estimated_s">Estimated total optimizer work seconds</option>
+      <option value="ppo_diagnostic_profile_s">PPO diagnostic profiling seconds</option>
+      <option value="ppo_minibatch_p50_s">PPO minibatch p50 seconds</option>
+      <option value="ppo_minibatch_p90_s">PPO minibatch p90 seconds</option>
+      <option value="ppo_minibatch_max_s">PPO minibatch maximum seconds</option>
+      <option value="bee_hits_per_shot">Bee hits per shot</option>
+      <option value="bee_aim_error_deg">Bee aim error (degrees)</option>
+      <option value="bee_near_miss_pct">Bee near-miss percentage</option>
+      <option value="human_hits_per_shot">Human hits per shot</option>
+      <option value="human_aim_error_deg">Human aim error (degrees)</option>
+    </select>
+    <small>These preferences are used when a new Bees experiment is queued or its draft edited through the Experiment Manager. Ordinary Start/Resume does not create a managed experiment; this selector does not change that existing run. The full Bees history is always recorded.</small>
+  </label>
   <div class="hub-controls">
     <button type="button" id="hub-bees-resume" class="primary">Start / resume existing run</button>
     <button type="button" id="hub-bees-new">Start fresh run</button>
@@ -358,6 +401,10 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
     <div class="formgrid">
       <label>Saved configuration<select id="hub-job-configuration"></select></label>
       <label>Continue previous job (optional)<select id="hub-job-predecessor"></select></label>
+      <label class="wide">Metrics to retain in Hub comparison history (optional; Ctrl/Shift for multiple)
+        <select id="hub-job-metrics" multiple size="9"></select>
+        <small>Leave unselected to retain every metric published by the project's adapter. This does not limit project-owned full history or enable unsupported instrumentation.</small>
+      </label>
       <label class="wide">Requested resources (JSON)<textarea id="hub-job-resources" rows="5">{"cpus":2,"ram_mb":2048,"gpu_count":0}</textarea></label>
       <fieldset class="wide">
         <legend>Resource allocation builder (optional)</legend>
@@ -453,33 +500,31 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
   </table></div>
   <p class="muted">Native service status and CPU/RAM observations appear when an approved Linux or Windows agent reports them. A pinned GPU identity and host-wide VRAM observation are shown for eligible CUDA/ROCm jobs; these are not isolated per-job GPU usage or enforceable compute shares. The isolated Windows CPU-only Job Object lifecycle has passed hardware qualification, but the new Windows CUDA and Linux ROCm trainer paths still need live qualification. Unknown service states require manual review.</p>
 </section>
-<section data-hub-tab="compare" data-project="other">
+<section data-hub-tab="compare" data-project="all">
   <h2>Project comparisons</h2>
   <p id="hub-compare-notice" class="hub-notice">Select two or more jobs to compare reported learning progress. A chart describes progress; it does not establish experimental equivalence.</p>
   <div class="formgrid">
-    <label>Metric
-      <select id="hub-compare-metric">
-        <option value="">Select a reported metric</option>
-      </select>
+    <label>Chart and export metrics (select multiple with Ctrl/Shift)
+      <select id="hub-compare-metric" multiple size="7" aria-label="Metrics to chart and export"></select>
     </label>
     <label>Horizontal axis
       <select id="hub-compare-x-axis">
         <option value="steps_completed">Cumulative project steps</option>
       </select>
     </label>
-    <label>Run A<select id="hub-compare-a"></select></label>
-    <label>Run B<select id="hub-compare-b"></select></label>
-    <label>Run C<select id="hub-compare-c"></select></label>
-    <label>Run D<select id="hub-compare-d"></select></label>
   </div>
+  <div id="hub-compare-run-list" class="formgrid" aria-label="Selected comparison runs"></div>
   <div class="hub-controls">
+    <button type="button" id="hub-compare-add-run">Add run</button>
     <button type="button" id="hub-compare-export-csv" disabled>Export selected CSV</button>
     <button type="button" id="hub-compare-export-json" disabled>Export selected JSON</button>
+    <button type="button" id="hub-compare-export-full" disabled>Export complete job diagnostics (500 MB ZIP parts)</button>
+    <label><input id="hub-compare-export-replays" type="checkbox"> Include raw game replays (may be very large)</label>
   </div>
   <p id="hub-compare-export-message" class="muted" role="status"></p>
-  <div class="hub-standalone">
+  <div class="hub-standalone" id="hub-compare-selection-panel">
     <h3>Promote the best evaluated model</h3>
-    <p class="muted">Choose 2–4 independent candidate jobs above and an approved next-stage configuration below. The Hub compares only identical frozen benchmark suites and promotes only a resumable model whose exact bytes match its evaluation. Active candidates can be scheduled for automatic selection after completion.</p>
+    <p class="muted">Choose 2–16 independent candidate jobs above and an approved next-stage configuration below. The Hub compares only identical frozen benchmark suites and promotes only a resumable model whose exact bytes match its evaluation. Active candidates can be scheduled for automatic selection after completion.</p>
     <div class="formgrid">
       <label>Next-stage saved configuration<select id="hub-compare-selection-config"></select></label>
       <label>Next-stage CPU/RAM request (JSON)<input id="hub-compare-selection-resources" type="text" value='{"cpus":2,"ram_mb":2048,"gpu_count":0}'></label>
@@ -496,17 +541,13 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
     <p id="hub-compare-selection-message" class="muted" role="status"></p>
   </div>
 
-  <div class="hub-progress-plot">
-    <svg id="hub-compare-svg" xmlns="http://www.w3.org/2000/svg"
-      role="img" aria-label="Run progress by cumulative project steps"
-      viewBox="0 0 900 320" preserveAspectRatio="xMidYMid meet"></svg>
-  </div>
+  <div id="hub-compare-plots" aria-label="Selected training metric charts"></div>
   <p id="hub-compare-chart-note" class="muted">Bounded comparison curves are saved separately from training records. Comparisons are observational, not independent evaluations.</p>
   <div class="tablewrap hub-table"><table>
     <thead><tr><th>Run</th><th>Status / host</th><th>Project steps</th><th>Selected metric</th><th>Reported metrics</th><th>Segment</th><th>Latest summary</th></tr></thead>
     <tbody id="hub-compare-rows"></tbody>
   </table></div>
-  <p class="muted">CSV and charts show observed training samples. JSON also includes job provenance and available evaluation receipts.</p>
+  <p class="muted">CSV/JSON contain bounded Hub chart observations. Complete job diagnostics export the locally available project-owned histories and reports without model checkpoints; offline remote-worker artifacts must be exported from their original host.</p>
   <h3>Independent evaluation receipts</h3>
   <p id="hub-compare-evaluation-note" class="muted"></p>
   <div class="tablewrap hub-table"><table>

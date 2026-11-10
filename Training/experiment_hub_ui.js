@@ -28,6 +28,7 @@ function trainingFormPayload() {
             consecutive_passes:Number($('benchmark-target-passes').value),
         }:null,
         reserve_heldout:$('reserve-heldout').checked,
+        metric_selection:[...$('bees-training-metrics').selectedOptions].map(o=>o.value),
         replicates:(typeof editingId === 'undefined' || !editingId) && $('replicate-enabled').checked
             ?Number($('replicate-count').value):1,
         trainer:{
@@ -46,7 +47,7 @@ function trainingFormPayload() {
 // Compare exports remain observational, not benchmark or qualification
 // evidence. Keep transformations independent of browser state.
 function hubComparisonTerminal(job) {
-    return ['finished','failed','stopped'].includes(job.status);
+    return ['finished','failed','stopped','completed','ended_early'].includes(job.status);
 }
 function hubComparisonEvaluation(job) {
     const final=Object.values(hubFinalEvaluationCohort(job)||{})[0];
@@ -83,14 +84,13 @@ function trialBatchLabel(job) {
 function hubComparisonCsv(exported) {
     const fields=[
         'slot','job_id','project_id','configuration_name','configuration_sha256',
-        'selected_x_axis','selected_metric','assigned_machine_id',
+        'selected_x_axis','selected_metric','selected_metrics','assigned_machine_id',
         'artifact_lineage_root_id','continuation_of_job_id','status',
         'observed_at','source_modified_at','experiment_id','segment_id',
         'break_before','steps_completed',
         'trial_batch_id','trial_batch_index','trial_batch_size',
     ];
-    const metrics=new Set(exported.runs.flatMap(run=>
-        run.points.flatMap(point=>Object.keys(point.metrics||{}))));
+    const metrics=new Set(exported.metrics||[]);
     for(const key of [...metrics].sort())
         fields.push('metric_'+key,'unit_'+key);
     const encode=value=>{
@@ -98,7 +98,8 @@ function hubComparisonCsv(exported) {
         let str=String(value);
         // Prevent spreadsheet software from interpreting user-supplied
         // configuration labels as formulas.
-        if(str.trimStart().length&&'=+-@'.includes(str.trimStart()[0]))
+        if(typeof value==='string'&&str.trimStart().length&&
+            '=+-@'.includes(str.trimStart()[0]))
             str="'"+str;
         const quote=str.includes(',')||str.includes('"')||
             str.includes(String.fromCharCode(10))||
@@ -111,6 +112,7 @@ function hubComparisonCsv(exported) {
         configuration_sha256:run.configuration_sha256,
         selected_x_axis:exported.x_axis,
         selected_metric:exported.metric,
+        selected_metrics:(exported.metrics||[]).join('|'),
         assigned_machine_id:run.assigned_machine_id,
         artifact_lineage_root_id:run.artifact_lineage_root_id,
         continuation_of_job_id:run.continuation_of_job_id,
@@ -396,14 +398,36 @@ document.addEventListener('DOMContentLoaded', () => {
         $('bees-controls').hidden=project!=='bees' || !['train','monitor'].includes(tab);
         if(tab==='train'&&project==='bees') loadBeesControl();
         if(tab==='monitor'&&project==='bees') loadMonitorBees();
-        if(tab==='compare'&&project!=='bees')loadComparison();
+        if(tab==='compare')loadComparison();
         if(tab==='machines') loadLiveBeesWorkers();
     }
-    const compareSlots=['a','b','c','d'];
-    const chartPalette=['#1769aa','#ce5a18','#23834b','#8647a8'];
+    const compareSlots=[];
+    let compareSerial=0;
+    const compareColor=i=>'hsl('+((i*137.508+211)%360).toFixed(2)+' 65% 38%)';
+    function addComparisonSlot() {
+        const slot='run'+(++compareSerial);
+        compareSlots.push(slot);
+        const label=document.createElement('label');
+        label.textContent='Run '+compareSerial+' ';
+        const select=document.createElement('select');
+        select.id='hub-compare-'+slot;
+        select.addEventListener('change',renderComparison);
+        const remove=button('Remove',()=>{
+            compareSlots.splice(compareSlots.indexOf(slot),1);
+            label.remove();
+            renderComparison();
+        });
+        remove.title='Remove from comparison (does not modify the job)';
+        label.append(select,remove);
+        $('hub-compare-run-list').append(label);
+        return slot;
+    }
+    function selectedComparisonMetrics() {
+        return [...$('hub-compare-metric').selectedOptions].map(option=>option.value);
+    }
     const chartAxes={steps_completed:{label:'Cumulative project steps'}};
     async function loadComparison() {
-        if(!state||project==='bees')return;
+        if(!state)return;
         const requested=project,serial=++comparisonRequest;
         try {
             const response=await fetch('/api/hub/progress?project_id='+
@@ -428,15 +452,17 @@ document.addEventListener('DOMContentLoaded', () => {
             ?'Cumulative TinyBrains updates':chartAxes[key]?.label;
     }
     function renderComparison() {
-        if(!state||project==='bees')return;
-        const jobs=state.jobs.filter(j=>j.project_id===project);
+        if(!state)return;
+        const jobs=project==='bees'?(state.bees?.runs||[]):
+            state.jobs.filter(j=>j.project_id===project);
         const samples=comparisonProject===project&&comparisonData?.samples||[];
+        $('hub-compare-selection-panel').hidden=project==='bees';
         const history=new Map(samples.map(s=>[s.job_id,s.points||[]]));
         const hasSamples=j=>j.live_execution?.progress||j.final_progress||history.get(j.id)?.length;
         const selectable=jobs.filter(j=>hasSamples(j)||hubComparisonEvaluation(j)||
             hubComparisonTerminal(j)||['waiting_adapter','waiting_predecessor',
                 'start_requested','launch_requested','running','stop_requested']
-                .includes(j.status)).slice(-80).reverse();
+                .includes(j.status)).reverse();
         const chartable=selectable.filter(hasSamples);
         const defaults=[...chartable,...selectable.filter(j=>!hasSamples(j))];
         const previous=compareSlots.map(slot=>$('hub-compare-'+slot).value);
@@ -516,10 +542,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const runs=compareSlots.map((slot,i)=>{
             const id=$('hub-compare-'+slot).value;
             const job=jobs.find(j=>j.id===id);
-            return job?{job,color:chartPalette[i],slot:slot.toUpperCase(),
+            return job?{job,color:compareColor(i),slot:String(i+1),
                 points:history.get(id)||[]}:null;
         }).filter(Boolean);
-        const metricSelect=$('hub-compare-metric'),oldMetric=metricSelect.value;
+        const metricSelect=$('hub-compare-metric');
+        const oldMetrics=selectedComparisonMetrics();
         const metricOptions=hubGenericMetricCatalog(chartable.map(job=>({
             job,points:history.get(job.id)||[],
         }))).map(metric=>({
@@ -528,12 +555,23 @@ document.addEventListener('DOMContentLoaded', () => {
         }));
         metricSelect.replaceChildren(...metricOptions.map(m=>
             new Option(m.label,m.key)));
-        if(metricOptions.some(m=>m.key===oldMetric))metricSelect.value=oldMetric;
+        const keep=oldMetrics.filter(key=>metricOptions.some(m=>m.key===key));
+        const preferred=[...new Set(runs.flatMap(run=>run.job.metric_selection||[]))]
+            .map(key=>'metric:'+key)
+            .filter(key=>metricOptions.some(m=>m.key===key));
+        for(const option of metricSelect.options)
+            option.selected=(keep.length?keep:
+                preferred.length?preferred:[metricOptions[0]?.key]).includes(option.value);
+        const selectedMetrics=selectedComparisonMetrics();
         const axisSelect=$('hub-compare-x-axis'),oldAxis=axisSelect.value;
         axisSelect.replaceChildren(
             new Option(comparisonAxisLabel('steps_completed'),'steps_completed'));
         axisSelect.value='steps_completed';
         const hasExportData=runs.some(run=>hubComparisonPoints(run).length);
+        const legacyBeesCoordinator=project==='bees'&&
+            !document.documentElement.dataset.hubDefaultProject;
+        $('hub-compare-export-full').disabled=!runs.length||
+            (project==='bees'&&!legacyBeesCoordinator);
         $('hub-compare-export-csv').disabled=!hasExportData;
         $('hub-compare-export-json').disabled=!hasExportData&&!runs.some(run=>
             hubComparisonTerminal(run.job)||hubComparisonEvaluation(run.job));
@@ -545,7 +583,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     ?comparisonData.storage_warning+' Live chart samples remain available; saved history may be incomplete.'
                     :comparisonData?.ephemeral
                         ?'Live chart samples are held in memory only. Final summaries remain available.'
-                        :'Bounded chart history is saved separately from the training registry (up to 96 points per job and 24 jobs). Recent unsaved samples may be lost on abrupt shutdown.';
+                        :'Bounded chart history is saved separately from the training registry. For detailed investigation export the complete project-owned job history.';
         feedback('hub-compare-notice',note);
         const knownRoots=new Set(runs.map(r=>
             r.job.artifact_lineage_root_id||r.job.id));
@@ -585,7 +623,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const table=$('hub-compare-rows');
         table.replaceChildren();
         const headings=[...table.closest('table').querySelectorAll('thead th')];
-        const labels=['Run','Status / host','Project steps','Selected metric',
+        const labels=['Run','Status / host','Project steps','Selected metrics',
             'Reported metrics','Segment','Latest summary'];
         labels.forEach((label,i)=>{if(headings[i])headings[i].textContent=label;});
         for(const run of runs) {
@@ -597,9 +635,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 (j.continuation_of_job_id?' (continuation)':''));
             cell(tr,j.status+' · '+(j.assigned_machine_id||'unassigned')+
                 (j.execution_diagnostic?' · '+j.execution_diagnostic:''));
-            const metric=p?.metrics?.[metricSelect.value.slice(7)];
             cell(tr,p?.steps_completed?.toLocaleString()||'—');
-            cell(tr,metric?metric.value.toLocaleString()+' '+metric.unit:'—');
+            cell(tr,selectedMetrics.map(key=>{
+                const metric=p?.metrics?.[key.slice(7)];
+                return metric?key.slice(7)+': '+metric.value.toLocaleString()+' '+metric.unit:null;
+            }).filter(Boolean).join(' · ')||'—');
             cell(tr,Object.keys(p?.metrics||{}).join(', ')||'—');
             cell(tr,p?.segment_id||'—');
             cell(tr,p?.source_modified_at
@@ -613,7 +653,7 @@ document.addEventListener('DOMContentLoaded', () => {
             table.append(tr);
         }
         renderComparisonEvaluations(runs);
-        drawComparisonChart(runs,$('hub-compare-metric').value,
+        drawComparisonCharts(runs,selectedMetrics,
             $('hub-compare-x-axis').value);
     }
     function renderComparisonEvaluations(runs) {
@@ -683,8 +723,37 @@ document.addEventListener('DOMContentLoaded', () => {
             missingDigest?'Some receipts lack a suite fingerprint. A shared suite ID cannot verify matching scenarios.':'',
         ].filter(Boolean).join(' '));
     }
-    function drawComparisonChart(runs,key,xKey) {
-        const svg=$('hub-compare-svg'),axisLabel=comparisonAxisLabel(xKey);
+    function drawComparisonCharts(runs,keys,xKey) {
+        const container=$('hub-compare-plots');
+        container.replaceChildren();
+        for(const key of keys) {
+            const section=document.createElement('div');
+            section.className='hub-progress-plot';
+            const title=document.createElement('h3');
+            title.textContent=key.slice(7);
+            const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
+            svg.setAttribute('role','img');
+            svg.setAttribute('viewBox','0 0 900 320');
+            svg.setAttribute('preserveAspectRatio','xMidYMid meet');
+            svg.style.width='100%';
+            const legend=document.createElement('p');
+            legend.className='muted';
+            for(const run of runs) {
+                const swatch=document.createElement('span');
+                swatch.style.display='inline-block';
+                swatch.style.borderTop='4px solid '+run.color;
+                swatch.style.width='22px';
+                swatch.style.margin='0 5px 3px 12px';
+                legend.append(swatch,document.createTextNode(
+                    run.slot+' · '+run.job.configuration_name+'  '));
+            }
+            section.append(title,svg,legend);
+            container.append(section);
+            drawComparisonChart(runs,key,xKey,svg);
+        }
+    }
+    function drawComparisonChart(runs,key,xKey,svg) {
+        const axisLabel=comparisonAxisLabel(xKey);
         const genericKey=key.startsWith('metric:')?key.slice(7):null;
         const units=genericKey?[...new Set(runs.flatMap(run=>
             hubComparisonPoints(run).map(point=>
@@ -725,10 +794,13 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         const bounds={left:85,right:865,top:64,bottom:265};
-        const xmin=Math.min(...values.map(v=>v.x)),
-            xmax=Math.max(...values.map(v=>v.x));
-        const ymin=metric.rate?0:Math.min(0,...values.map(v=>v.y))*1.05;
-        const ymax=metric.rate?1:Math.max(0.001,...values.map(v=>v.y))*1.05;
+        let xmin=Infinity,xmax=-Infinity,minY=0,maxY=0.001;
+        for(const point of values) {
+            xmin=Math.min(xmin,point.x);xmax=Math.max(xmax,point.x);
+            minY=Math.min(minY,point.y);maxY=Math.max(maxY,point.y);
+        }
+        const ymin=metric.rate?0:minY*1.05;
+        const ymax=metric.rate?1:maxY*1.05;
         const x=v=>bounds.left+(v-xmin)/Math.max(1,xmax-xmin)*
             (bounds.right-bounds.left);
         const y=v=>bounds.bottom-(v-ymin)/Math.max(1e-9,ymax-ymin)*
@@ -752,13 +824,8 @@ document.addEventListener('DOMContentLoaded', () => {
             x2:bounds.left,y2:bounds.bottom,class:'plot-axis'});
         node('text',{x:450,y:313,'text-anchor':'middle'},
             axisLabel);
+        const showPoints=series.reduce((n,run)=>n+run.valid.length,0)<=300;
         for(const run of series) {
-            // Run slots provide stable colors even as selections change.
-            const i=runs.findIndex(r=>r.job.id===run.job.id);
-            node('line',{x1:100+i*195,y1:29,x2:128+i*195,y2:29,
-                stroke:run.color,'stroke-width':4});
-            node('text',{x:133+i*195,y:33},
-                run.slot+' · '+run.job.configuration_name.slice(0,18));
             let part=[];
             const flush=()=>{
                 if(part.length>1)
@@ -766,22 +833,32 @@ document.addEventListener('DOMContentLoaded', () => {
                         x(p[xKey]).toFixed(1)+' '+
                         y(hubMetricValue(p,key)).toFixed(1)).join(' '),
                         stroke:run.color,class:'plot-line'});
+                else if(part.length===1&&!showPoints)
+                    node('circle',{cx:x(part[0][xKey]),
+                        cy:y(hubMetricValue(part[0],key)),r:3.5,
+                        fill:run.color,class:'plot-point'});
                 part=[];
             };
             for(const point of run.valid) {
                 if(point.break_before||!usable(point))flush();
                 if(!usable(point))continue;
                 part.push(point);
-                node('circle',{cx:x(point[xKey]),cy:y(hubMetricValue(point,key)),
-                    r:3.5,fill:run.color,class:'plot-point'});
+                if(showPoints)
+                    node('circle',{cx:x(point[xKey]),cy:y(hubMetricValue(point,key)),
+                        r:3.5,fill:run.color,class:'plot-point'});
             }
             flush();
         }
     }
     function exportComparison(format) {
-        if(!state||project==='bees')
+        if(!state)
             throw Error('Select an available project comparison.');
-        const jobs=state.jobs.filter(job=>job.project_id===project);
+        const metrics=selectedComparisonMetrics().map(key=>key.slice(7));
+        if(format==='csv'&&!metrics.length)
+            throw Error('Select at least one recorded metric for CSV export.');
+        const chosen=new Set(metrics);
+        const jobs=project==='bees'?(state.bees?.runs||[]):
+            state.jobs.filter(job=>job.project_id===project);
         const samples=comparisonProject===project&&comparisonData?.samples||[];
         const byJob=new Map(samples.map(sample=>
             [sample.job_id,sample.points||[]]));
@@ -810,7 +887,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 evaluation_stop_evidence:job.evaluation_stop_evidence||null,
                 evaluation_candidates:job.evaluation_candidates||null,
                 stop_requested_at:job.stop_requested_at||null,
-                points:hubComparisonPoints({job,points:byJob.get(id)||[]}),
+                points:hubComparisonPoints({job,points:byJob.get(id)||[]})
+                    .map(point=>({...point,metrics:Object.fromEntries(
+                        Object.entries(point.metrics||{})
+                            .filter(([name])=>chosen.has(name)))})),
             };
         }).filter(Boolean);
         if(!runs.some(run=>run.points.length||(format==='json'&&
@@ -821,7 +901,7 @@ document.addEventListener('DOMContentLoaded', () => {
             schema_version:1,project_id:project,
             exported_at:new Date().toISOString(),
             x_axis:$('hub-compare-x-axis').value,
-            metric:$('hub-compare-metric').value,
+            metric:selectedComparisonMetrics()[0]||null,metrics,
             source:'Experiment Hub validated project metrics',
             interpretation:'Training curves are observational and use cumulative steps. Compare independent evaluation receipts only across matched suite definitions and scenarios.',
             runs,
@@ -846,6 +926,62 @@ document.addEventListener('DOMContentLoaded', () => {
             ' selected runs as '+format.toUpperCase()+
             '. This is observational progress, not independent evaluation.');
     }
+    // The coordinator invokes only an installed trusted exporter. No browser
+    // request can choose a filesystem path, executable or checkpoint filename.
+    async function exportCompleteComparison() {
+        const ids=compareSlots.map(slot=>$('hub-compare-'+slot).value).filter(Boolean);
+        if(!ids.length||new Set(ids).size!==ids.length)
+            throw Error('Choose at least one distinct managed job.');
+        const button=$('hub-compare-export-full');
+        button.disabled=true;
+        const message=$('hub-compare-export-message');
+        try {
+            feedback('hub-compare-export-message','Preparing complete job archives; no training files will be modified.');
+            const requested=await action('hub/exports',{
+                project_id:project,job_ids:ids,
+                metrics:selectedComparisonMetrics().map(key=>key.slice(7)),
+                include_replays:$('hub-compare-export-replays').checked,
+            });
+            // An export is read-only and asynchronous. Poll its status rather
+            // than attempting a single unbounded HTTP download response.
+            for(let attempt=0;attempt<900;attempt++) {
+                await new Promise(resolve=>setTimeout(resolve,2000));
+                const response=await fetch('/api/hub/exports/'+requested.id,
+                    {cache:'no-store'});
+                const result=await response.json();
+                if(!response.ok)throw Error(result.error||response.statusText);
+                if(result.status==='failed')
+                    throw Error(result.error||'Job archive generation failed.');
+                if(result.status==='ready') {
+                    message.replaceChildren(document.createTextNode(
+                        result.parts.length+' independently downloadable ZIP part(s), each at most 500 MB. '+
+                        (result.missing_artifact_job_ids?.length
+                            ?'Some jobs have no local artifacts: '+
+                              result.missing_artifact_job_ids.join(', ')+'. ':'')+
+                        (result.missing_sources?.length
+                            ?'Unavailable log sources: '+result.missing_sources
+                                .slice(0,8).map(item=>item.job_id.slice(-8)+
+                                    '/'+item.label+' ('+item.reason+')').join(', ')+
+                                ((result.missing_source_count||result.missing_sources.length)>8
+                                    ?' and '+((result.missing_source_count||result.missing_sources.length)-8)+' more':'')+
+                                '. See the ZIP manifest for details. ':'')+
+                        'Select each part: '));
+                    for(const [i,part] of result.parts.entries()) {
+                        const link=document.createElement('a');
+                        link.href='/api/hub/exports/'+requested.id+'/part/'+(i+1);
+                        link.textContent=part.name+' ('+(part.bytes/1e6).toFixed(1)+' MB)';
+                        link.rel='noopener';
+                        link.style.marginRight='12px';
+                        message.append(link);
+                    }
+                    return;
+                }
+                if(attempt%15===0)
+                    feedback('hub-compare-export-message','Preparing ZIP archives; project-owned histories remain untouched.');
+            }
+            throw Error('Export is still preparing. Check the export status before starting another.');
+        }finally { button.disabled=false; }
+    }
     const tinyBrainsPicker=document.createElement('fieldset');
     tinyBrainsPicker.hidden=true;
     const tinyBrainsLegend=document.createElement('legend');
@@ -855,6 +991,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const tinyBrainsUpdates=document.createElement('input');
     const tinyBrainsThreads=document.createElement('input');
     const tinyBrainsDevice=document.createElement('select');
+    const tinyBrainsRemote=document.createElement('input');
+    tinyBrainsRemote.type='checkbox';
     tinyBrainsDevice.append(new Option('Profile default',''),
         new Option('CPU-only fallback (no GPU)','cpu'),
         new Option('Dedicated two-GPU split PPO (ROCm)','dual'));
@@ -875,6 +1013,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const threads=hasThreads?tinyBrainsThreads.valueAsNumber:null;
         const cpuFallback=tinyBrainsDevice.value==='cpu';
         const dualGpu=tinyBrainsDevice.value==='dual';
+        const remoteRollouts=tinyBrainsRemote.checked;
         if(hasThreads&&(!Number.isSafeInteger(threads)||threads<1||threads>256)) {
             feedback('hub-config-message','CPU threads must be a whole number from 1 to 256.');
             return;
@@ -897,6 +1036,13 @@ document.addEventListener('DOMContentLoaded', () => {
             feedback('hub-config-message','No connected ROCm worker approves two-GPU split PPO for this profile.');
             return;
         }
+        if(remoteRollouts&&(cpuFallback||!(state?.machines||[]).some(machine=>
+            machine.status==='connected'&&machine.agent_platform==='linux'&&
+            machine.tinybrains_profiles?.[profile]===digest&&
+            machine.tinybrains_remote_rollout_profiles?.includes(profile)))) {
+            feedback('hub-config-message','Remote CPU rollouts require an approved Linux GPU learner and a locally installed tailnet worker configuration.');
+            return;
+        }
         if(!profile||!digest||!Number.isSafeInteger(updates)||updates<1||updates>10000000) {
             feedback('hub-config-message','Select an approved profile and enter 1–10,000,000 updates.');
             return;
@@ -906,6 +1052,7 @@ document.addEventListener('DOMContentLoaded', () => {
             profile,profile_sha256:digest,updates,
             ...(hasThreads?{threads}:{}),
             ...(cpuFallback?{device:'cpu'}:dualGpu?{device:'dual'}:{}),
+            ...(remoteRollouts?{remote_rollouts:true}:{}),
             ...(sourceId&&sourceDigest?{
                 import_checkpoint:sourceId,
                 import_checkpoint_sha256:sourceDigest,
@@ -923,11 +1070,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 ?'The source checkpoint SHA-256 is frozen; this draft can initialize a new lineage, not a continuation stage. '
                 :'Use a configuration without an import for checkpoint-continuation stages. ')+
             (hasThreads?'The CPU thread override does not change the job CPU quota. ':'')+
+            (remoteRollouts?'In Train, use Queue and reserve entire group to atomically assign learner and approved remote collector CPU/GPU budgets before any Start. ':'')+
             'Save the draft to retain these settings.');
     });
     for(const [caption,control] of [['Approved profile ',tinyBrainsSelect],
         ['Updates ',tinyBrainsUpdates],['CPU threads (optional) ',tinyBrainsThreads],
         ['Execution device ',tinyBrainsDevice],
+        ['Use approved remote CPU rollout collectors ',tinyBrainsRemote],
         ['Approved checkpoint import (optional) ',tinyBrainsImport]]) {
         const label=document.createElement('label');
         label.append(caption,control);
@@ -1029,12 +1178,74 @@ document.addEventListener('DOMContentLoaded', () => {
         return {suite_id:suite,min_trials:Number(trials),min_success_rate:Number(rate),
             ...(digest?{suite_sha256:digest}:{})};
     }
+    let jobMetricSelectionProject=null;
+    // Availability is adapter-driven. These are discoverable requests, not a
+    // promise that every project provides every physical/game measurement.
+    const knownLearningMetrics=[
+        'training_wins','training_losses','training_draws',
+        'training_completed_matches','training_win_rate','training_score_rate',
+        'training_mean_score','training_mean_score_margin',
+        'training_mean_match_turns','food_gathered_exact',
+        'food_disappearances_near_own_ant','visible_food_mean',
+        'combat_kills_exact','births_observed','deaths_observed',
+        'population_mean','population_peak','combat_exposure_fraction',
+        'terminal_rewards','episodes_ended','loss','policy_loss',
+        'value_loss','baseline_loss','entropy','local_elo','mean_reward'];
+    const knownPerformanceMetrics=[
+        'total_ppo_updates','update_wall_time','elapsed_training_seconds',
+        'engine_steps','engine_steps_per_second','ant_decisions',
+        'ant_decisions_per_second','group_states','group_states_per_second',
+        'collection_seconds','optimization_seconds','overlap_seconds',
+        'ppo_microbatches','states_per_microbatch','actor_grad_norm',
+        'group_grad_norm','baseline_grad_norm','policy_lag',
+        'rss_mb','job_memory_mb','job_cpu_cores',
+        'host_cpu_busy_pct','host_gpu_busy_pct','host_gpu_vram_mb',
+        'data_preparation_seconds','inference_seconds','forward_seconds',
+        'backward_seconds','optimizer_step_seconds','cpu_wait_seconds',
+        'gpu_transfer_seconds','network_transfer_seconds',
+        'broker_queue_seconds','serialization_seconds','checkpoint_seconds',
+        'evaluation_seconds','collector_count','collector_0_ant_decisions',
+        'collector_1_ant_decisions','collector_1_roundtrip_seconds'];
+    function renderJobMetricSelection() {
+        const select=$('hub-job-metrics');
+        if(!select)return;
+        const prior=jobMetricSelectionProject===project
+            ?new Set([...select.selectedOptions].map(o=>o.value)):new Set();
+        const observed=new Set();
+        for(const job of state?.jobs||[]) {
+            if(job.project_id!==project)continue;
+            for(const name of Object.keys(job.live_execution?.progress?.metrics||
+                job.final_progress?.metrics||{}))observed.add(name);
+            for(const name of job.metric_selection||[])observed.add(name);
+        }
+        if(comparisonProject===project)
+            for(const item of comparisonData?.samples||[])
+                for(const point of item.points||[])
+                    for(const name of Object.keys(point.metrics||{}))observed.add(name);
+        const all=[...new Set([...knownLearningMetrics,...knownPerformanceMetrics,
+            ...observed])].filter(key=>/^[a-z][a-z0-9_]{0,39}$/.test(key))
+            .sort();
+        select.replaceChildren(...all.map(key=>{
+            const option=new Option(key+(observed.has(key)
+                ?' · recorded':' · not yet observed'),key);
+            option.title=observed.has(key)
+                ?'This metric has been published by a job in this project.'
+                :'Selecting a metric does not install missing project instrumentation.';
+            option.selected=prior.has(key);
+            return option;
+        }));
+        jobMetricSelectionProject=project;
+    }
+    function selectedJobMetrics() {
+        return [...$('hub-job-metrics').selectedOptions].map(o=>o.value);
+    }
     function display() {
         if(!state)return;
         const current=project;
         $('hub-project').replaceChildren(...state.projects.map(p=>new Option(p.name,p.id)));
         project=state.projects.some(p=>p.id===current)?current:'bees';
         $('hub-project').value=project;
+        renderJobMetricSelection();
         $('hub-copy-bees-form').hidden=project!=='bees';
         $('hub-config-evaluation').hidden=project==='bees';
         displayTinyBrainsProfiles();
@@ -1254,6 +1465,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 .map(m=>new Option(m.name+' ('+m.id+')',m.id)));
         if(state.machines.some(m=>m.id===previousMachine&&m.status==='connected'))
             $('hub-job-machine').value=previousMachine;
+        renderDistributedGroup();
         const records=(state.jobs||[]).filter(j=>j.project_id===project);
         $('hub-job-allocate-all').disabled=['bees','ants'].includes(project)||
             !records.some(j=>j.status==='waiting_adapter'&&!j.lease_id);
@@ -1400,8 +1612,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 :j.checkpoint_reinspection_requested_at?' · Checkpoint recheck pending':'';
             const noTrainer=j.prelaunch_absence_verified===true
                 ?' · No trainer started':'';
+            const groupWorkers=j.project_id==='tinybrains'&&
+                j.distributed_rollout_managed===true
+                ?state.jobs.filter(worker=>worker.project_id==='tinybrains_rollout'&&
+                    worker.frozen_parameters?.learner_job_id===j.id):[];
+            const distributedSummary=groupWorkers.length
+                ?' · Distributed collectors: '+groupWorkers.map(worker=>
+                    (worker.assigned_machine_id||'unassigned')+' '+worker.status+
+                    (worker.capacity_released_at?' (released)':'')).join('; ')
+                :'';
             const statusCell=cell(tr,status+lineage+promoted+gpuProof+readinessText+
-                checkpointRecovery+noTrainer+
+                checkpointRecovery+noTrainer+distributedSummary+
                 (hasSuccessor&&['waiting_adapter','waiting_predecessor'].includes(j.status)
                     ?' · Cancel downstream stage first':''));
 
@@ -1994,6 +2215,8 @@ document.addEventListener('DOMContentLoaded', () => {
         $('benchmark-target-matches').value=p.benchmark_target?.min_matches??100;
         $('benchmark-target-passes').value=p.benchmark_target?.consecutive_passes??2;
         $('reserve-heldout').checked=p.reserve_heldout===true;
+        for(const option of $('bees-training-metrics').options)
+            option.selected=(p.metric_selection||[]).includes(option.value);
         $('replicate-enabled').checked=Number(p.replicates||1)>1;
         $('replicate-count').value=p.replicates||3;
         for(const [key,val] of Object.entries(p.trainer.hyperparameters||{})) {
@@ -2007,8 +2230,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     for(const b of document.querySelectorAll('[data-hub-go]'))
         b.addEventListener('click',()=>selectTab(b.dataset.hubGo));
-    for(const slot of compareSlots)
-        $('hub-compare-'+slot).addEventListener('change',renderComparison);
+    addComparisonSlot();
+    addComparisonSlot();
+    $('hub-compare-add-run').addEventListener('click',()=>{
+        addComparisonSlot();
+        renderComparison();
+    });
     $('hub-compare-metric').addEventListener('change',renderComparison);
     $('hub-compare-x-axis').addEventListener('change',renderComparison);
     for(const format of ['csv','json'])
@@ -2018,6 +2245,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 feedback('hub-compare-export-message',String(error.message||error));
             }
         });
+    $('hub-compare-export-full').addEventListener('click',async()=>{
+        try{await exportCompleteComparison();}
+        catch(error){
+            feedback('hub-compare-export-message',String(error.message||error));
+        }
+    });
     function candidateRankingText(decision) {
         if(!Array.isArray(decision.ranked)||!decision.ranked.length)
             throw Error('No comparable independently evaluated candidates.');
@@ -2566,9 +2799,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const cpus=integer('hub-build-cpus',1,4096);
             const ram_mb=integer('hub-build-ram',128,100000000);
             const gpu_count=integer('hub-build-gpu-count',0,2);
+            const mode=builderMode.value;
             if(gpu_count===2&&mode==='shared')
                 throw Error('Two-GPU TinyBrains training requires exclusive GPUs; shared mode supports one GPU.');
-            const mode=builderMode.value;
             const min_gpu_vram_mb=integer('hub-build-gpu-min-vram',0,1000000);
             const raw=$('hub-build-gpu-ids').value.trim();
             const gpus=raw?raw.split(',').map(s=>s.trim()):[];
@@ -2594,6 +2827,115 @@ document.addEventListener('DOMContentLoaded', () => {
             feedback('hub-build-message',String(error.message||error));
         }
     });
+    // Distributed groups are frozen and claimed atomically. The operator
+    // chooses the CPU/RAM/GPU budgets; endpoint-to-machine identity is never
+    // entered by the browser and comes from connected native agents instead.
+    const distributedPanel=document.createElement('fieldset');
+    const distributedLegend=document.createElement('legend');
+    distributedLegend.textContent='Distributed TinyBrains learner + remote collectors';
+    const distributedMachine=document.createElement('select');
+    const distributedBudgets=document.createElement('textarea');
+    distributedBudgets.rows=5;
+    distributedBudgets.placeholder='Worker resource budgets, in endpoint order';
+    const distributedDetails=document.createElement('div');
+    const distributedFeedback=document.createElement('div');
+    const distributedMachineLabel=document.createElement('label');
+    distributedMachineLabel.append('Learner machine ',distributedMachine);
+    const distributedBudgetsLabel=document.createElement('label');
+    distributedBudgetsLabel.append('Remote worker budgets (JSON array) ',distributedBudgets);
+    const distributedQueue=button('Queue and reserve entire group',async()=>{
+        const selected=state?.configurations.find(c=>
+            c.project_id==='tinybrains'&&c.id===$('hub-job-configuration').value);
+        if(!selected||selected.parameters?.remote_rollouts!==true||
+            !distributedMachine.value)return;
+        try {
+            const predecessor=$('hub-job-predecessor').value;
+            if(predecessor) {
+                const parent=state.jobs.find(j=>j.id===predecessor);
+                if(!parent||!parent.capacity_released_at||
+                    parent.assigned_machine_id!==distributedMachine.value||
+                    !(parent.status==='finished'&&parent.checkpoint_ready_verified===true||
+                      parent.status==='stopped'&&parent.checkpoint_stop_verified===true))
+                    throw Error('Distributed continuation requires a released, checkpoint-verified learner on this same machine.');
+                if(selected.parameters.import_checkpoint!==undefined)
+                    throw Error('Save a continuation configuration without the original checkpoint import.');
+            }
+            const budgets=JSON.parse(distributedBudgets.value);
+            const selectedMachine=state.machines.find(m=>m.id===distributedMachine.value);
+            if(!Array.isArray(budgets)||budgets.length!==
+                selectedMachine?.tinybrains_remote_rollout_endpoints?.length)
+                throw Error('Supply one resource budget for each physically approved remote collector.');
+            const resources=JSON.parse($('hub-job-resources').value);
+            if(!confirm('Queue '+(predecessor?'checkpoint continuation':'new TinyBrains learner')+
+                ' on '+distributedMachine.value+
+                ' and '+budgets.length+' remotely pinned collectors? All CPU, RAM and GPU'+
+                ' reservations will be created together, but no process will start.'))return;
+            const result=await action('hub/distributed/tinybrains',{
+                confirm_queue:true,
+                learner:{configuration_id:selected.id,expected_revision:selected.revision,
+                    machine_id:distributedMachine.value,resources,
+                    ...(predecessor?{continuation_of_job_id:predecessor}:{})},
+                collectors:budgets.map(item=>{
+                    if(!item||typeof item!=='object'||Array.isArray(item))
+                        throw Error('Each collector budget must be a JSON object.');
+                    const {threads,...resources}=item;
+                    return {resources,...(threads===undefined?{}:{threads})};
+                }),
+            });
+            distributedFeedback.textContent='Queued learner '+result.learner.id+
+                ' and '+result.collectors.length+' separate collector jobs. All '+
+                result.leases.length+' claims await native receipts and explicit Starts.';
+            await reload();
+        }catch(error){distributedFeedback.textContent=String(error.message||error);}
+    });
+    distributedPanel.append(distributedLegend,distributedMachineLabel,
+        distributedBudgetsLabel,distributedDetails,distributedQueue,distributedFeedback);
+    $('hub-job-queue').insertAdjacentElement('afterend',distributedPanel);
+    let distributedBudgetHost=null;
+    function renderDistributedGroup() {
+        if(!state)return;
+        const selected=state.configurations.find(c=>
+            c.project_id==='tinybrains'&&c.id===$('hub-job-configuration').value);
+        distributedPanel.hidden=project!=='tinybrains'||
+            selected?.parameters?.remote_rollouts!==true;
+        if(distributedPanel.hidden)return;
+        const prior=distributedMachine.value;
+        const machines=state.machines.filter(m=>m.status==='connected'&&
+            m.agent_platform==='linux'&&m.local_executor_enabled&&
+            m.native_preflight_passed&&m.tinybrains_profiles?.[selected.parameters.profile]===
+                selected.parameters.profile_sha256&&
+            m.tinybrains_remote_rollout_profiles?.includes(selected.parameters.profile)&&
+            m.tinybrains_remote_rollout_endpoints?.length);
+        distributedMachine.replaceChildren(...machines.map(m=>new Option(
+            (m.name||m.id)+' ('+m.id+') · '+
+                m.tinybrains_remote_rollout_endpoints.length+' collectors',m.id)));
+        if(machines.some(m=>m.id===prior))distributedMachine.value=prior;
+        const machine=machines.find(m=>m.id===distributedMachine.value);
+        if(distributedBudgetHost!==machine?.id) {
+            distributedBudgetHost=machine?.id||null;
+            distributedBudgets.value=JSON.stringify(
+                (machine?.tinybrains_remote_rollout_endpoints||[]).map(()=>
+                    ({cpus:2,ram_mb:4096,gpu_count:0,threads:2})),null,2);
+        }
+        const endpoints=machine?.tinybrains_remote_rollout_endpoints||[];
+        const workers=endpoints.map(endpoint=>state.machines.filter(m=>
+            m.status==='connected'&&m.id!==machine.id&&
+            m.tinybrains_rollout_endpoint===endpoint&&
+            m.tinybrains_rollout_key_fingerprint===machine.tinybrains_remote_key_fingerprint&&
+            m.installed_projects?.includes('tinybrains_rollout')));
+        const ready=Boolean(machine&&
+            state.projects.some(p=>p.id==='tinybrains_rollout')&&
+            workers.every(m=>m.length===1)&&
+            new Set(workers.map(m=>m[0]?.id)).size===workers.length);
+        distributedQueue.disabled=!ready;
+        distributedDetails.textContent=ready
+            ?'Approved collectors: '+workers.map((items,i)=>
+                endpoints[i]+' on '+items[0].id).join('; ')+
+                '. Modify each CPU/RAM budget, its independent threads setting, or request an exclusive CUDA GPU.'
+            :'Register the tinybrains_rollout project and connect one distinct, matching worker for every approved endpoint.';
+    }
+    $('hub-job-configuration').addEventListener('change',renderDistributedGroup);
+    distributedMachine.addEventListener('change',renderDistributedGroup);
     $('hub-job-queue').addEventListener('click',async()=>{
         const selected=state?.configurations.find(c=>
             c.project_id===project&&c.id===$('hub-job-configuration').value);
@@ -2634,9 +2976,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 :'')+
             'Queueing alone does not authorize execution.'))return;
         try{
+            const metrics=selectedJobMetrics();
             const job=await action('hub/jobs',{
                 configuration_id:selected.id,expected_revision:selected.revision,
                 resources:JSON.parse($('hub-job-resources').value),
+                ...(metrics.length?{metric_selection:metrics}:{}),
                 ...(predecessor?{continuation_of_job_id:predecessor}:{}),
             });
             feedback('hub-job-message',job.status==='waiting_predecessor'

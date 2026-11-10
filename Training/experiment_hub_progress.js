@@ -7,7 +7,7 @@ const safeInt=n=>Number.isSafeInteger(n)&&n>=0;
 // Values and units are explicit; neither metrics nor steps authorize
 // training, benchmark decisions, lease release, or policy promotion.
 const GENERIC_METRIC=/^[a-z][a-z0-9_]{0,39}$/;
-const GENERIC_UNITS=new Set(['scalar','ratio','count','rate','seconds']);
+const GENERIC_UNITS=new Set(['scalar','ratio','count','rate','seconds','mb','bytes','milliseconds']);
 function validateGenericProgress(value,projectId) {
     const metrics=value?.metrics;
     if(!/^[a-z][a-z0-9_-]{0,47}$/.test(String(projectId||''))||
@@ -18,7 +18,7 @@ function validateGenericProgress(value,projectId) {
             'schema_version','source','experiment_id','segment_id',
             'source_modified_at','steps_completed','metrics',
         ].includes(key))||
-        JSON.stringify(value).length>4096||
+        JSON.stringify(value).length>32768||
         typeof value.experiment_id!=='string'||
         !/^[A-Za-z0-9_-]{1,80}$/.test(value.experiment_id)||
         typeof value.segment_id!=='string'||
@@ -30,7 +30,7 @@ function validateGenericProgress(value,projectId) {
         new Date(value.source_modified_at).toISOString()!==value.source_modified_at||
         !safeInt(value.steps_completed)||
         !metrics||typeof metrics!=='object'||Array.isArray(metrics)||
-        Object.keys(metrics).length<1||Object.keys(metrics).length>12)
+        Object.keys(metrics).length<1||Object.keys(metrics).length>96)
         throw Error('Invalid project-neutral progress report.');
     const normalized={};
     for(const [key,item] of Object.entries(metrics).sort(([a],[b])=>
@@ -42,7 +42,7 @@ function validateGenericProgress(value,projectId) {
             !Number.isFinite(item.value)||Math.abs(item.value)>1e12||
             (item.unit==='ratio'&&(item.value<0||item.value>1))||
             (item.unit==='count'&&!safeInt(item.value))||
-            (['rate','seconds'].includes(item.unit)&&item.value<0))
+            (['rate','seconds','mb','bytes','milliseconds'].includes(item.unit)&&item.value<0))
             throw Error('Invalid project-neutral progress measurement: '+key);
         normalized[key]={value:item.value,unit:item.unit};
     }

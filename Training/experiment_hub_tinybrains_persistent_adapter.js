@@ -15,11 +15,138 @@ const PROFILE=/^[a-z][a-z0-9_-]{0,47}$/;
 const SHA=/^[0-9a-f]{64}$/;
 const PCI=/^[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]$/;
 const TAIL=256*1024;
+const MAX_PROGRESS_ROW_TAIL=8*1024*1024;
 const PROJECT_IN='/workspace/projects/tinybrains/Ants-MAPOCA';
 const HUB_IN='/workspace/projects/experiment-hub/Assets';
 const JOBS_IN='/workspace/experiments/experiment-hub/tinybrains-jobs';
 const SOURCE_IN='/workspace/experiments/tinybrains/mini-learning';
 const CACHE_IN='/workspace/cache/tinybrains';
+const REMOTE_KEY_IN='/workspace/private/tinybrains-rollouts';
+
+// Derive bounded, project-neutral chart measurements from the trainer's
+// committed update, not from GPU utilization guesses or incomplete rollouts.
+// Keep exact game events distinct from observation-based food/combat proxies.
+function recordedTinyBrainsMetrics(row,updateWall) {
+    const metrics={};
+    function add(name,value,unit) {
+        if(!Number.isFinite(value)||Math.abs(value)>1e12||
+            (unit==='count'&&(!Number.isSafeInteger(value)||value<0))||
+            (['rate','seconds','mb'].includes(unit)&&value<0)||
+            (unit==='ratio'&&(value<0||value>1)))return;
+        metrics[name]={value,unit};
+    }
+    add('total_ppo_updates',row.update,'count');
+    add('engine_steps',row.engine_steps,'count');
+    if(updateWall!==null&&updateWall>0) {
+        add('update_wall_time',updateWall,'seconds');
+        add('engine_steps_per_second',row.engine_steps/updateWall,'rate');
+        add('ant_decisions_per_second',row.ant_decisions/updateWall,'rate');
+        add('group_states_per_second',row.group_states/updateWall,'rate');
+    }
+    for(const name of ['collection_seconds','optimization_seconds',
+        'overlap_seconds'])add(name,row[name],'seconds');
+    for(const name of ['ant_decisions','group_states','births','deaths',
+        'episodes_ended','multi_ant_states','terminal_rewards',
+        'carried_matches','open_matches','peak_live_matches',
+        'truncated_groups','terminal_groups','collector_count',
+        'ppo_microbatches','policy_lag','action_target'])add(name,row[name],'count');
+    // These optimizer observations can be negative; they are scalar values,
+    // never performance or strength certification.
+    for(const name of ['loss','policy_loss','value_loss','baseline_loss',
+        'entropy','actor_grad_norm','group_grad_norm',
+        'baseline_grad_norm','actor_max_weight_change',
+        'critic_max_weight_change','learning_rate','population_mean',
+        'states_per_microbatch'])add(name,row[name],'scalar');
+    add('gae_lambda',row.gae_lambda,'ratio');
+    add('rss_mb',row.rss_mb,'mb');
+    if(Number.isFinite(row.elapsed_seconds))
+        add('elapsed_training_seconds',row.elapsed_seconds,'seconds');
+
+    const outcomes=row.outcomes||{};
+    const wins=outcomes.win,losses=outcomes.loss,draws=outcomes.draw;
+    add('training_wins',wins,'count');
+    add('training_losses',losses,'count');
+    add('training_draws',draws,'count');
+    if([wins,losses,draws].every(n=>Number.isSafeInteger(n)&&n>=0)) {
+        const played=wins+losses+draws;
+        add('training_completed_matches',played,'count');
+        if(played) {
+            add('training_win_rate',wins/played,'ratio');
+            add('training_score_rate',(wins+0.5*draws)/played,'ratio');
+        }
+    }
+    const games=Array.isArray(row.match_results)?row.match_results:[];
+    let scoreSum=0,marginSum=0,turnsSum=0,scored=0,turns=0;
+    let exactFood=0,exactKills=0,foodGames=0,killGames=0;
+    for(const game of games) {
+        if(Array.isArray(game.scores)&&
+            Number.isSafeInteger(game.learner_seat)&&
+            game.learner_seat>=0&&game.learner_seat<game.scores.length&&
+            game.scores.every(Number.isFinite)) {
+            const own=game.scores[game.learner_seat];
+            const others=game.scores.filter((_,i)=>i!==game.learner_seat);
+            scoreSum+=own;
+            if(others.length)marginSum+=own-others.reduce((a,b)=>a+b,0)/others.length;
+            scored++;
+        }
+        if(Number.isFinite(game.turns)&&game.turns>=0) {
+            turnsSum+=game.turns;turns++;
+        }
+        const exact=game.authoritative_gameplay;
+        if(exact&&typeof exact==='object') {
+            if(Number.isSafeInteger(exact.food_gathered)&&exact.food_gathered>=0) {
+                exactFood+=exact.food_gathered;foodGames++;
+            }
+            if(Number.isSafeInteger(exact.combat_kills)&&exact.combat_kills>=0) {
+                exactKills+=exact.combat_kills;killGames++;
+            }
+        }
+    }
+    if(scored) {
+        add('training_mean_score',scoreSum/scored,'scalar');
+        add('training_mean_score_margin',marginSum/scored,'scalar');
+    }
+    if(turns)add('training_mean_match_turns',turnsSum/turns,'scalar');
+    if(foodGames) {
+        add('food_gathered_exact',exactFood,'count');
+        add('food_gathered_verified_matches',foodGames,'count');
+    }
+    if(killGames)add('combat_kills_exact',exactKills,'count');
+
+    const gameplay=row.gameplay||{};
+    for(const name of ['births_observed','deaths_observed',
+        'food_disappearances_near_own_ant','combat_exposed_ant_turns',
+        'transitions_without_final_observation','population_peak'])
+        add(name,gameplay[name],'count');
+    if(Number.isFinite(gameplay.visible_food_sum)&&
+        Number.isFinite(gameplay.food_samples)&&gameplay.food_samples>0)
+        add('visible_food_mean',gameplay.visible_food_sum/gameplay.food_samples,'scalar');
+    if(Number.isFinite(gameplay.combat_exposed_ant_turns)&&
+        Number.isFinite(gameplay.population_sum)&&gameplay.population_sum>0)
+        add('combat_exposure_fraction',
+            gameplay.combat_exposed_ant_turns/gameplay.population_sum,'ratio');
+
+    // Each collector is a separately identified contributor; remote transfer
+    // roundtrip includes transmission and worker compute, not network-only time.
+    for(const [i,worker] of (Array.isArray(row.collector_samples)
+        ?row.collector_samples:[]).slice(0,9).entries()) {
+        add('collector_'+i+'_ant_decisions',worker.ant_decisions,'count');
+        add('collector_'+i+'_engine_steps',worker.engine_steps,'count');
+        add('collector_'+i+'_roundtrip_seconds',
+            worker.transport_roundtrip_seconds,'seconds');
+    }
+    return metrics;
+}
+
+
+function approvedTailnetEndpoint(value) {
+    if(typeof value!=='string'||!/^100\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d{1,5}$/.test(value))
+        return false;
+    const [ip,rawPort]=value.split(':');
+    const octets=ip.split('.').map(Number),port=Number(rawPort);
+    return octets[1]>=64&&octets[1]<=127&&
+        octets.slice(2).every(n=>n>=0&&n<=255)&&port>=1&&port<=65535;
+}
 
 function fullDir(name) {
     if(typeof name!=='string'||!path.isAbsolute(name)||
@@ -44,10 +171,29 @@ function createTinyBrainsPersistentDockerAdapter({
     projectRoot,hubRoot,artifactRoot,sourceRunRoot,engineCacheRoot,
     seedCheckpointSha256,seedPpoUpdates,profiles,
     image='tinybrains-rocm:halifax-node',sourceWindowsRoot='B:/TinyBrains/Ants-MAPOCA',
-    enableDualGpu=false,
+    enableDualGpu=false,remoteCollectors=null,
 }) {
     if(typeof enableDualGpu!=='boolean')
         throw Error('Dual GPU enablement requires an explicit local boolean opt-in.');
+    let remote=null;
+    if(remoteCollectors!==null) {
+        if(!remoteCollectors||typeof remoteCollectors!=='object'||
+            Array.isArray(remoteCollectors)||
+            Object.keys(remoteCollectors).sort().join(',')!=='endpoints,keyDirectory'||
+            !Array.isArray(remoteCollectors.endpoints)||
+            !remoteCollectors.endpoints.length||remoteCollectors.endpoints.length>8||
+            remoteCollectors.endpoints.some(endpoint=>!approvedTailnetEndpoint(endpoint))||
+            new Set(remoteCollectors.endpoints).size!==remoteCollectors.endpoints.length)
+            throw Error('Remote TinyBrains collectors require unique, locally pinned tailnet IPv4 endpoints.');
+        const keyDirectory=fullDir(remoteCollectors.keyDirectory);
+        const keyFile=path.join(keyDirectory,'rollout.key');
+        const stat=fs.lstatSync(keyFile);
+        if(!stat.isFile()||fs.realpathSync(keyFile)!==keyFile||
+            (stat.mode&0o077)!==0||stat.size<32||stat.size>4096)
+            throw Error('Remote collector rollout.key must be an existing private regular file.');
+        remote={keyDirectory,endpoints:remoteCollectors.endpoints.slice(),
+            keyFingerprint:crypto.createHash('sha256').update(fs.readFileSync(keyFile)).digest('hex')};
+    }
     if(process.platform!=='linux'||!SHA.test(String(seedCheckpointSha256||''))||
         !Number.isSafeInteger(seedPpoUpdates)||seedPpoUpdates<1)
         throw Error('Persistent TinyBrains Docker import requires Linux and a pinned checkpoint hash.');
@@ -57,6 +203,11 @@ function createTinyBrainsPersistentDockerAdapter({
     if(project===artifacts||project===source||artifacts===source||
         source.startsWith(artifacts+'/')||artifacts.startsWith(source+'/'))
         throw Error('Hub job artifacts and immutable TinyBrains import must not overlap.');
+    if(remote&&[project,hub,artifacts,source,cache].some(folder=>
+        remote.keyDirectory===folder||
+        remote.keyDirectory.startsWith(folder+path.sep)||
+        folder.startsWith(remote.keyDirectory+path.sep)))
+        throw Error('Private rollout key directory must not overlap a project, checkpoint, Hub or writable Docker mount.');
     const engine=path.join(project,'tools/tinybrains-0.5.0/tinybrains');
     const result=spawnSync(engine,['--version'],{
         timeout:5000,encoding:'utf8',windowsHide:true,
@@ -98,6 +249,15 @@ function createTinyBrainsPersistentDockerAdapter({
         !Number.isSafeInteger(originalSpec.self_play_updates))
         throw Error('Original run is not the approved persistent colony-PPO lineage.');
 
+    function frozenRemoteKeyIntact() {
+        if(!remote)return true;
+        const file=path.join(remote.keyDirectory,'rollout.key');
+        const stat=fs.lstatSync(file);
+        return stat.isFile()&&fs.realpathSync(file)===file&&
+            (stat.mode&0o077)===0&&stat.size>=32&&stat.size<=4096&&
+            crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex')===remote.keyFingerprint;
+    }
+
     function targetFor(context) {
         if(context.project_id!=='tinybrains'||!UUID.test(context.job_id)||
             !UUID.test(context.artifact_lineage_root_id)||
@@ -128,12 +288,14 @@ function createTinyBrainsPersistentDockerAdapter({
     }
     const docker={
         image,workdir:PROJECT_IN,uid:process.getuid(),gid:process.getgid(),
+        remote_host_network:Boolean(remote),
         mounts:[
             {host:project,target:PROJECT_IN,readonly:true},
             {host:hub,target:HUB_IN,readonly:true},
             {host:artifacts,target:JOBS_IN,readonly:false},
             {host:source,target:SOURCE_IN,readonly:true},
             {host:cache,target:CACHE_IN,readonly:false},
+            ...(remote?[{host:remote.keyDirectory,target:REMOTE_KEY_IN,readonly:true}]:[]),
         ],
         env:{
             HOME:'/tmp',PYTHONDONTWRITEBYTECODE:'1',
@@ -161,6 +323,10 @@ function createTinyBrainsPersistentDockerAdapter({
         tinybrains_cpu_fallback_profiles:[...approved.keys()],
         tinybrains_required_import_profiles:[...approved.keys()],
         tinybrains_dual_gpu_profiles:enableDualGpu?[...approved.keys()]:[],
+        tinybrains_remote_rollout_profiles:remote?[...approved.keys()]:[],
+        tinybrains_remote_rollout_count:remote?remote.endpoints.length:0,
+        tinybrains_remote_rollout_endpoints:remote?remote.endpoints.slice():[],
+        tinybrains_remote_key_fingerprint:remote?remote.keyFingerprint:null,
         ...(enableDualGpu?{gpu_dual_execution:'split-ppo'}:{}),
         tinybrains_imports:Object.fromEntries([...approved.keys()].map(id=>[
             'exeter_'+id,{profile:id,sha256:seedCheckpointSha256},
@@ -179,12 +345,17 @@ function createTinyBrainsPersistentDockerAdapter({
             return ['-B',HUB_IN+'/Training/experiment_hub_tinybrains_rocm_verify.py',...ids];
         },
         args(parameters,context) {
-            const {profile,profile_sha256,updates,threads,device,import_checkpoint,
-                import_checkpoint_sha256}=parameters;
+            const {profile,profile_sha256,updates,threads,device,remote_rollouts,
+                import_checkpoint,import_checkpoint_sha256}=parameters;
             const item=approved.get(profile);
+            if(remote_rollouts===true&&!frozenRemoteKeyIntact())
+                throw Error('Remote rollout key was rotated or changed after local adapter approval.');
             if(!item||item.sha256!==profile_sha256||
                 Object.keys(parameters).some(k=>!['profile','profile_sha256','updates',
-                    'threads','device','import_checkpoint','import_checkpoint_sha256'].includes(k))||
+                    'threads','device','remote_rollouts','import_checkpoint',
+                    'import_checkpoint_sha256'].includes(k))||
+                (remote_rollouts!==undefined&&
+                    (remote_rollouts!==true||!remote||device==='cpu'))||
                 (device!==undefined&&!['cpu','dual'].includes(device))||
                 (threads!==undefined&&(!Number.isSafeInteger(threads)||threads<1||threads>256))||
                 !Number.isSafeInteger(updates)||updates<1||updates>10000000||
@@ -249,6 +420,9 @@ function createTinyBrainsPersistentDockerAdapter({
                 '--live-matches',String(item.profile.live_matches),
                 '--waves',String(item.profile.waves),
                 '--actions',String(item.profile.rollout_actions),
+                ...(remote_rollouts===true?[...remote.endpoints.flatMap(endpoint=>
+                    ['--remote-rollout-endpoint',endpoint]),
+                    '--remote-rollout-key-file',REMOTE_KEY_IN+'/rollout.key']:[]),
                 ...(device==='cpu'?['--device','cpu']:
                     device==='dual'
                         ?['--device','dual',...context.gpu_pci_addresses.flatMap(pci=>
@@ -277,14 +451,26 @@ function createTinyBrainsPersistentDockerAdapter({
                 fd=fs.openSync(file,'r');
                 const stat=fs.fstatSync(fd);
                 if(!stat.isFile()||!stat.size)return null;
-                const offset=Math.max(0,stat.size-TAIL);
-                const buffer=Buffer.alloc(stat.size-offset);
-                fs.readSync(fd,buffer,0,buffer.length,offset);
-                const str=buffer.toString('utf8');
-                const end=str.lastIndexOf('\n');
-                if(end<0)return null;
-                const lineStart=str.lastIndexOf('\n',end-1);
-                if(lineStart<0&&offset>0)return null;
+                // Completed training rows contain per-match evidence. They
+                // can exceed the old 256 KiB tail limit and otherwise make
+                // progress disappear just when many games complete. Expand
+                // only as needed, with a hard bounded scan and diagnostic.
+                let bytes=Math.min(stat.size,TAIL);
+                let offset=0,str='',end=-1,lineStart=-1;
+                while(true) {
+                    offset=stat.size-bytes;
+                    const buffer=Buffer.alloc(bytes);
+                    if(fs.readSync(fd,buffer,0,buffer.length,offset)!==buffer.length)
+                        throw Error('TinyBrains training history changed during read.');
+                    str=buffer.toString('utf8');
+                    end=str.lastIndexOf('\n');
+                    lineStart=end<0?-1:str.lastIndexOf('\n',end-1);
+                    if(end>=0&&(lineStart>=0||offset===0))break;
+                    if(offset===0)return null;
+                    if(bytes>=MAX_PROGRESS_ROW_TAIL)
+                        throw Error('TinyBrains completed-update history row exceeds 8 MiB; export the original history and review telemetry volume.');
+                    bytes=Math.min(stat.size,MAX_PROGRESS_ROW_TAIL,bytes*2);
+                }
                 const row=JSON.parse(str.slice(lineStart+1,end));
                 if(!Number.isSafeInteger(row.update)||row.update<1||
                     !Number.isFinite(row.wall_seconds)||row.wall_seconds<=0||
@@ -314,25 +500,7 @@ function createTinyBrainsPersistentDockerAdapter({
                         }
                     }
                 }
-                const metrics={total_ppo_updates:{value:row.update,unit:'count'}};
-                if(updateWall!==null) {
-                    metrics.update_wall_time={value:updateWall,unit:'seconds'};
-                    metrics.engine_steps_per_second={
-                        value:row.engine_steps/updateWall,unit:'rate'};
-                }
-                // Stage durations are independently measured, not additive
-                // wall-clock costs while rollout and PPO optimization overlap.
-                for(const key of ['collection_seconds','optimization_seconds',
-                    'overlap_seconds']) {
-                    if(Number.isFinite(row[key])&&row[key]>=0)
-                        metrics[key]={value:row[key],unit:'seconds'};
-                }
-                if(Number.isSafeInteger(row.ant_decisions)&&row.ant_decisions>=0) {
-                    metrics.ant_decisions={value:row.ant_decisions,unit:'count'};
-                    if(updateWall!==null)
-                        metrics.ant_decisions_per_second={
-                            value:row.ant_decisions/updateWall,unit:'rate'};
-                }
+                const metrics=recordedTinyBrainsMetrics(row,updateWall);
                 return validateProgress({
                     schema_version:1,source:'hub-metrics-v1',experiment_id:context.job_id,
                     segment_id:'training',source_modified_at:stat.mtime.toISOString(),

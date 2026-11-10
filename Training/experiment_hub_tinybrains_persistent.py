@@ -22,6 +22,8 @@ def main():
     parser.add_argument("--device", choices=("cpu", "cuda", "dual"), default="cuda")
     parser.add_argument("--rocm-pci", action="append")
     parser.add_argument("--gpu-vram-mb", type=int)
+    parser.add_argument("--remote-rollout-endpoint", action="append", default=[])
+    parser.add_argument("--remote-rollout-key-file")
     args = parser.parse_args()
     if min(args.updates, args.threads, args.live_matches, args.waves, args.actions) < 1:
         parser.error("All training limits must be positive.")
@@ -30,6 +32,8 @@ def main():
     expected_count = {"cpu": 0, "cuda": 1, "dual": 2}[args.device]
     if len(args.rocm_pci or []) != expected_count:
         parser.error("The number of frozen ROCm PCI identities must match the execution mode.")
+    if bool(args.remote_rollout_endpoint) != bool(args.remote_rollout_key_file):
+        parser.error("Remote rollout requires locally approved worker endpoints and an HMAC key.")
     if args.gpu_vram_mb is not None and (args.device != "cuda" or args.gpu_vram_mb < 1):
         parser.error("A positive GPU memory ceiling requires the ROCm device.")
     run = args.run.resolve(strict=True)
@@ -48,9 +52,16 @@ def main():
         raise SystemExit("Hub PPO starting update differs from imported checkpoint.")
     # Both the Hub job and the Linux TinyBrains --max-ppo-updates option
     # count additional updates from the verified seed checkpoint.
+    optimization_device = args.device
+    collection_device = None
     if expected_count:
         from experiment_hub_tinybrains_rocm_verify import verify_runtime_devices
-        verify_runtime_devices(args.rocm_pci)
+        actual_pcis = verify_runtime_devices(args.rocm_pci)
+        if args.device == "dual":
+            # The lease fixes physical PCI identities, not HIP ordinal order.
+            # Use its first GPU for PPO optimization and second for rollouts.
+            optimization_device = f"cuda:{actual_pcis.index(args.rocm_pci[0])}"
+            collection_device = f"cuda:{actual_pcis.index(args.rocm_pci[1])}"
         if args.gpu_vram_mb is not None:
             # Cooperative allocator limit, not physical GPU memory isolation.
             total = torch.cuda.get_device_properties(0).total_memory
@@ -63,13 +74,17 @@ def main():
         "--config", str(spec),
         "--out", str(run),
         "--persistent",
-        "--self-play-device", "cuda:1" if args.device == "dual" else args.device,
-        *(["--self-play-collection-device", "cuda:0"] if args.device == "dual" else []),
+        "--self-play-device", optimization_device,
+        *(["--self-play-collection-device", collection_device] if collection_device else []),
         "--self-play-threads", str(args.threads),
         "--live-matches", str(args.live_matches),
         "--waves", str(args.waves),
         "--rollout-actions", str(args.actions),
         "--max-ppo-updates", str(args.updates),
+        *[arg for endpoint in args.remote_rollout_endpoint
+          for arg in ("--remote-rollout-endpoint", endpoint)],
+        *(["--remote-rollout-key-file", args.remote_rollout_key_file,
+           "--remote-rollout-job-id", run.name] if args.remote_rollout_endpoint else []),
     ]
     runpy.run_module("ants_mapoca.learning_path", run_name="__main__", alter_sys=True)
 
