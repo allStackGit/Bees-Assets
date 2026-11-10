@@ -941,8 +941,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     let source_fixed_dt_by_level: Vec<f32> =
         source_levels.iter().map(|source| source.fixed_dt_seconds).collect();
     #[cfg(feature = "client")]
-    let fixed_dt = std::time::Duration::try_from_secs_f32(source_fixed_dt_by_level[0])
-        .map_err(|_| invalid("source fixed duration cannot be represented by the host clock"))?;
+    let client_fixed_dt_by_level: Vec<std::time::Duration> =
+        source_fixed_dt_by_level.iter().map(|&dt|
+            std::time::Duration::try_from_secs_f32(dt)
+                .map_err(|_| invalid("source fixed duration cannot be represented by the host clock"))
+        ).collect::<io::Result<_>>()?;
     let client_bounds: Vec<_> = source_levels.iter().map(|scene| scene.bounds).collect();
     // Open the optional window before starting the model or creating durable
     // run outputs. A window setup failure leaves no live episode to abandon.
@@ -1085,8 +1088,9 @@ fn main() -> Result<(), Box<dyn Error>> {
                 break;
             };
             match client.poll(current, client_bounds[client.selected_world()],
-                host.simulation().world_count(), fixed_dt) {
-                Ok(bees_host::client::NativeClientAction::Wait) => continue,
+                host.simulation().world_count(), client_fixed_dt_by_level[client.selected_world()]) {
+                Ok(bees_host::client::NativeClientAction::Wait |
+                    bees_host::client::NativeClientAction::WorldChanged) => continue,
                 Ok(bees_host::client::NativeClientAction::Step) => {},
                 Ok(bees_host::client::NativeClientAction::Move(input)) => {
                     match host.player_move_squads(input) {
