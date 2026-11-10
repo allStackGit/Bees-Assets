@@ -3065,7 +3065,8 @@ class ExperimentHub {
                         .filter(([name])=>job.metric_selection.includes(name)||
                             name==='total_ppo_updates'));
                     if(!Object.keys(retained).length)
-                        retained=measurements;
+                        retained={project_steps_completed:{
+                            value:progress.steps_completed,unit:'count'}};
                 }
                 chartProgress={...progress,metrics:retained};
             }
