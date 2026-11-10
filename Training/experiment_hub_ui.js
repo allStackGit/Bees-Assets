@@ -46,7 +46,7 @@ function trainingFormPayload() {
 // Compare exports remain observational, not benchmark or qualification
 // evidence. Keep transformations independent of browser state.
 function hubComparisonTerminal(job) {
-    return ['finished','failed','stopped'].includes(job.status);
+    return ['finished','failed','stopped','completed','ended_early'].includes(job.status);
 }
 function hubComparisonEvaluation(job) {
     const final=Object.values(hubFinalEvaluationCohort(job)||{})[0];
@@ -566,7 +566,10 @@ document.addEventListener('DOMContentLoaded', () => {
             new Option(comparisonAxisLabel('steps_completed'),'steps_completed'));
         axisSelect.value='steps_completed';
         const hasExportData=runs.some(run=>hubComparisonPoints(run).length);
-        $('hub-compare-export-full').disabled=!runs.length||project==='bees';
+        const legacyBeesCoordinator=project==='bees'&&
+            !document.documentElement.dataset.hubDefaultProject;
+        $('hub-compare-export-full').disabled=!runs.length||
+            (project==='bees'&&!legacyBeesCoordinator);
         $('hub-compare-export-csv').disabled=!hasExportData;
         $('hub-compare-export-json').disabled=!hasExportData&&!runs.some(run=>
             hubComparisonTerminal(run.job)||hubComparisonEvaluation(run.job));
@@ -789,10 +792,13 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         const bounds={left:85,right:865,top:64,bottom:265};
-        const xmin=Math.min(...values.map(v=>v.x)),
-            xmax=Math.max(...values.map(v=>v.x));
-        const ymin=metric.rate?0:Math.min(0,...values.map(v=>v.y))*1.05;
-        const ymax=metric.rate?1:Math.max(0.001,...values.map(v=>v.y))*1.05;
+        let xmin=Infinity,xmax=-Infinity,minY=0,maxY=0.001;
+        for(const point of values) {
+            xmin=Math.min(xmin,point.x);xmax=Math.max(xmax,point.x);
+            minY=Math.min(minY,point.y);maxY=Math.max(maxY,point.y);
+        }
+        const ymin=metric.rate?0:minY*1.05;
+        const ymax=metric.rate?1:maxY*1.05;
         const x=v=>bounds.left+(v-xmin)/Math.max(1,xmax-xmin)*
             (bounds.right-bounds.left);
         const y=v=>bounds.bottom-(v-ymin)/Math.max(1e-9,ymax-ymin)*
@@ -816,6 +822,7 @@ document.addEventListener('DOMContentLoaded', () => {
             x2:bounds.left,y2:bounds.bottom,class:'plot-axis'});
         node('text',{x:450,y:313,'text-anchor':'middle'},
             axisLabel);
+        const showPoints=series.reduce((n,run)=>n+run.valid.length,0)<=300;
         for(const run of series) {
             let part=[];
             const flush=()=>{
@@ -830,8 +837,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 if(point.break_before||!usable(point))flush();
                 if(!usable(point))continue;
                 part.push(point);
-                node('circle',{cx:x(point[xKey]),cy:y(hubMetricValue(point,key)),
-                    r:3.5,fill:run.color,class:'plot-point'});
+                if(showPoints)
+                    node('circle',{cx:x(point[xKey]),cy:y(hubMetricValue(point,key)),
+                        r:3.5,fill:run.color,class:'plot-point'});
             }
             flush();
         }
