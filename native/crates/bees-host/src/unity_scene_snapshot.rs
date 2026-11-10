@@ -1932,8 +1932,12 @@ impl NativePhysicalScene {
                 (Some(hivemind_controlled), Some(immobile), Some(id)) => {
                     let opponent_id = id.parse::<u64>()
                         .map_err(|_| NativeSnapshotError::InvalidSquad(squad.item_id))?;
+                    // Mixed-production Levels legitimately have neural
+                    // squads controlled by neither the user nor HiveMind.
+                    // Only simultaneous competing authorities are invalid;
+                    // an idle/source-scripted squad is also not HiveMind.
                     if opponent_id.to_string() != id ||
-                        hivemind_controlled == squad.user_controlled {
+                        (hivemind_controlled && squad.user_controlled) {
                         return Err(NativeSnapshotError::InvalidSquad(squad.item_id));
                     }
                     Some(bees_gameplay::level_host::NativeHiveMindSquadSource {
