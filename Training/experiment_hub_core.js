@@ -209,10 +209,13 @@ function boundedReport(value) {
         (dualProfiles.length&&value.platform!=='linux'))
         throw Error('Dual GPU TinyBrains requires locally qualified Linux ROCm profiles.');
     const remoteRollouts=value.tinybrains_remote_rollout_profiles??[];
+    const remoteCount=value.tinybrains_remote_rollout_count??0;
     if(!Array.isArray(remoteRollouts)||remoteRollouts.length>cudaProfiles.length||
         remoteRollouts.some(id=>typeof id!=='string'||!cudaProfiles.includes(id))||
         new Set(remoteRollouts).size!==remoteRollouts.length||
-        (remoteRollouts.length&&value.platform!=='linux'))
+        (remoteRollouts.length&&value.platform!=='linux')||
+        !Number.isSafeInteger(remoteCount)||remoteCount<0||remoteCount>8||
+        Boolean(remoteRollouts.length)!==Boolean(remoteCount))
         throw Error('Remote rollout requires a locally installed Linux TinyBrains GPU adapter.');
     const requiredImports=value.tinybrains_required_import_profiles??[];
     if(!Array.isArray(requiredImports)||requiredImports.length>Object.keys(profiles).length||
@@ -254,6 +257,7 @@ function boundedReport(value) {
         tinybrains_required_import_profiles:requiredImports.slice(),
         tinybrains_dual_gpu_profiles:dualProfiles.slice(),
         tinybrains_remote_rollout_profiles:remoteRollouts.slice(),
+        tinybrains_remote_rollout_count:remoteCount,
         tinybrains_imports:imports,
         gpu_projects:gpuProjects.slice(),
         gpu_shared_projects:gpuShared.slice(),
@@ -994,6 +998,7 @@ class ExperimentHub {
                 machine.tinybrains_required_import_profiles=report.tinybrains_required_import_profiles.slice();
                 machine.tinybrains_dual_gpu_profiles=report.tinybrains_dual_gpu_profiles.slice();
                 machine.tinybrains_remote_rollout_profiles=report.tinybrains_remote_rollout_profiles.slice();
+                machine.tinybrains_remote_rollout_count=report.tinybrains_remote_rollout_count;
                 machine.tinybrains_imports=copy(report.tinybrains_imports);
                 machine.gpu_projects = report.gpu_projects.slice();
                 machine.gpu_shared_projects=report.gpu_shared_projects.slice();
