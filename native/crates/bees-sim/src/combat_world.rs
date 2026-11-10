@@ -1845,6 +1845,16 @@ impl CombatWorld {
         Ok(())
     }
 
+    /// Rebuild a read-only ship membership index from canonical asteroid
+    /// proximity pairs. Reuse its allocation across fixed ticks and exit
+    /// batches; it never owns contact or navigation timer lifetimes.
+    fn refresh_nearby_asteroid_ship_lookup(&mut self) {
+        self.asteroid_navigation_present.clear();
+        self.asteroid_navigation_present.extend(
+            self.nearby_asteroid_ships.iter().map(|&(_, ship_id)| ship_id),
+        );
+    }
+
     /// Ship.NearbyAsteroidDoubleCheck, one shared recurring timer per ship.
     /// An active A* worker must not be invalidated by each one-second sensor
     /// tick. When it completes, the next refresh can reassess the route from
@@ -1862,10 +1872,7 @@ impl CombatWorld {
             // In asteroid-heavy battles, the previous per-timer scan cost
             // O(timers * nearby pairs) each fixed step. Reuse an index of
             // current ship IDs only; nearby pair ownership remains canonical.
-            self.asteroid_navigation_present.clear();
-            self.asteroid_navigation_present.extend(
-                self.nearby_asteroid_ships.iter().map(|&(_, ship_id)| ship_id),
-            );
+            self.refresh_nearby_asteroid_ship_lookup();
             let present = &self.asteroid_navigation_present;
             self.asteroid_navigation_refresh.retain(|&ship_id, _| present.contains(&ship_id));
         }
@@ -3452,10 +3459,7 @@ impl CombatWorld {
             // A large group of simultaneous exits must not scan all
             // remaining asteroid contacts once for every exiting pair.
             // The lookup is rebuilt from canonical pairs and reused.
-            self.asteroid_navigation_present.clear();
-            self.asteroid_navigation_present.extend(
-                self.nearby_asteroid_ships.iter().map(|&(_, ship_id)| ship_id),
-            );
+            self.refresh_nearby_asteroid_ship_lookup();
             for index in 0..exiting {
                 let ship_id = self.physics.proximity_ship_exits()[index].ship_id;
                 if !self.asteroid_navigation_present.contains(&ship_id) {
