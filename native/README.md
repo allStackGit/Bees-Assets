@@ -217,6 +217,16 @@ are not successful rounds. Use its new checkpoint and `--model-manifest`
 path for the next invocation. This is a single-round adapter, not a
 parallel scheduler or distributed trainer.
 
+To queue this round in Experiment Hub, register a separate `bees_native`
+project and expose `createNativeBeesAdapter` from the worker's trusted
+local adapter map under that ID. Configure absolute `pythonPath`,
+`rolloutBinary`, `runConfig`, `trainerConfig`, `checkpoint` and
+`artifactRoot` paths, plus `learnerSlot` for a mixed manifest.
+The fresh job's frozen parameters are `config_sha256` (the adapter's
+exported digest) and a nonnegative integer `seed_offset`.
+The adapter reports completed-round metrics from the receipt and uses
+the Hub's process-group stop. Each job runs one CPU update.
+
 Completed worlds can be recycled up to `episodes_per_world` times through
 `NativeHostRuntime::reset_world`, with fresh monotonic squad lifetimes and
 per-episode deterministic seeds. Each replay uses the exact initial exported

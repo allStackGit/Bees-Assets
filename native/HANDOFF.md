@@ -5,6 +5,20 @@ Read the full goal and fresh root AGENTS.md before further work. The complete
 Unity replacement remains incomplete. The latest Experiment Hub and queue
 work has been merged locally.
 
+## 2026-11-10 native round Experiment Hub adapter
+
+The machine-local `bees_native` adapter launches one model-only native
+training round and maps its completion receipt to Hub progress. Its frozen
+configuration digest covers the run template, trainer config, input checkpoint,
+model manifest and learner slot.
+
+The Windows qualification at
+`B:\Bees\native-capability-qualification\hub-native-round-L5WEwb`
+passed the Windows supervisor's invocation validator, ran the real child
+command and read Hub progress for 18 learner decisions and two episodes.
+Native supervisor ownership, Linux execution and automated continuation
+still need end-to-end qualification.
+
 ## 2026-11-10 historical opponent and capture aggregation
 
 The native learner can now combine completed captures of one behavior
