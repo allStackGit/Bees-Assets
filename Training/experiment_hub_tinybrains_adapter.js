@@ -46,6 +46,10 @@ function supportsTinyBrainsProfile(machine,job) {
     const cpuFallback=p?.device==='cpu'&&
         machine.tinybrains_cpu_fallback_profiles?.includes(p.profile)===true&&
         job.resources?.gpu_count===0;
+    const dual=p?.device==='dual'&&
+        job.resources?.gpu_count===2&&job.resources?.gpu_mode==='exclusive'&&
+        machine.agent_platform==='linux'&&
+        machine.tinybrains_dual_gpu_profiles?.includes(p.profile)===true;
     const gpu=job.resources?.gpu_count===1&&
         (job.resources.gpu_mode==='exclusive'||
             job.resources.gpu_mode==='shared'&&
@@ -53,7 +57,7 @@ function supportsTinyBrainsProfile(machine,job) {
     const imported=p?.import_checkpoint==null?null:
         machine.tinybrains_imports?.[p.import_checkpoint];
     return ['win32','linux'].includes(machine.agent_platform)&&
-        (cuda?(cpuFallback||p?.device===undefined&&gpu):
+        (cuda?(cpuFallback||dual||p?.device===undefined&&gpu):
             p?.device===undefined&&job.resources?.gpu_count===0)&&
         p&&Object.keys(p).every(key=>
             ['profile','profile_sha256','updates','threads','device','import_checkpoint',
