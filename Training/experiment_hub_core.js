@@ -819,6 +819,30 @@ function waitingStageReason(job,byId) {
     return {status:'broken_lineage',depth:1000,
         reason:'Prequeued pipeline depth exceeds the job-history bound; operator review required.'};
 }
+// A remote collector has one physical endpoint approved by the learner's
+// machine-local adapter. CPU capacity alone cannot authorize another host:
+// a wrong claim would strand the learner and could launch an unrelated service.
+function distributedRolloutHost(snapshot,job,machine) {
+    if(job.project_id!=='tinybrains_rollout')return true;
+    const parent=snapshot.jobs.find(j=>j.id===job.frozen_parameters?.learner_job_id);
+    if(!parent||parent.project_id!=='tinybrains'||
+        parent.frozen_parameters?.remote_rollouts!==true||
+        !parent.assigned_machine_id||!machine||
+        machine.id===parent.assigned_machine_id||
+        machine.status!=='connected'||
+        !machine.installed_projects?.includes('tinybrains_rollout'))return false;
+    const learner=snapshot.machines.find(m=>m.id===parent.assigned_machine_id);
+    if(!learner||learner.status!=='connected'||
+        !learner.tinybrains_remote_rollout_endpoints?.includes(machine.tinybrains_rollout_endpoint)||
+        learner.tinybrains_remote_key_fingerprint!==machine.tinybrains_rollout_key_fingerprint)
+        return false;
+    if(snapshot.jobs.some(other=>other.id!==job.id&&
+        other.project_id==='tinybrains_rollout'&&
+        other.status!=='cancelled'&&
+        other.frozen_parameters?.learner_job_id===parent.id&&
+        other.assigned_machine_id===machine.id))return false;
+    return true;
+}
 function allocationBlockReason(machines,job,preferredMachineId=null) {
     const candidates=preferredMachineId
         ?machines.filter(machine=>machine.id===preferredMachineId):machines;
@@ -831,11 +855,12 @@ function allocationBlockReason(machines,job,preferredMachineId=null) {
     return 'No eligible connected worker has enough remaining capacity.';
 }
 function allocationChoice(machines,reservations,job,preferredMachineId=null,
-    following=[],futureMachinesFor=()=>machines) {
+    following=[],futureMachinesFor=()=>machines,snapshot=null) {
     const eligibleOptions=(selected,hosts,preferred=null)=>{
         const eligible=hosts.filter(machine=>
             supportsEvaluation(machine.evaluation_suites,selected)&&
             supportsTinyBrainsProfile(machine,selected)&&
+            (!snapshot||distributedRolloutHost(snapshot,selected,machine))&&
             (!preferred||preferred===machine.id)&&
             (!selected.continuation_machine_id||selected.continuation_machine_id===machine.id));
         const fits=resourcePlacements(eligible,reservations,selected.resources)
@@ -1579,7 +1604,8 @@ class ExperimentHub {
                             machine.observed_gpus?.length>=1&&
                             (job.resources.gpu_mode!=='shared'||
                                 machine.gpu_shared_projects?.includes(job.project_id))));
-            const eligibleHosts=job=>capable.filter(machine=>canHostJob(machine,job));
+            const eligibleHosts=job=>capable.filter(machine=>
+                canHostJob(machine,job)&&distributedRolloutHost(snapshot,job,machine));
             if(session.rebalance_queued) {
                 for(const job of pendingClaims) {
                     if(!owned.has(job.lease_id)||job.dispatch_id||job.continuation_machine_id)
@@ -1604,7 +1630,8 @@ class ExperimentHub {
                         continue;
                     const eligible=eligibleHosts(job).filter(m=>
                         m.id!==source.id&&!overcommitted.has(m.id));
-                    const chosen=allocationChoice(eligible,snapshot.reservations,job);
+                    const chosen=allocationChoice(eligible,snapshot.reservations,job,
+                        null,[],undefined,snapshot);
                     if(!chosen||chosen.observed_headroom_block)continue;
                     const moved=this.moveJobClaim({job_id:job.id,expected_lease_id:job.lease_id,
                         machine_id:chosen.machine_id,confirm_move:true});
@@ -1655,7 +1682,7 @@ class ExperimentHub {
                 // hosts for later CPU or exclusive GPU jobs.
                 const following=pendingClaims.slice(index+1).filter(claimable);
                 const chosen=allocationChoice(eligibleHosts(job),snapshot.reservations,
-                    job,null,following,eligibleHosts);
+                    job,null,following,eligibleHosts,snapshot);
                 if(!chosen)continue;
                 const result=this.allocateJobs({
                     all_projects:true,job_ids:[job.id],
@@ -1942,7 +1969,8 @@ class ExperimentHub {
                 continue;
             }
             const chosen=allocationChoice(machines,next.reservations,job,
-                value.machine_id||null,jobs.slice(index+1));
+                value.machine_id||null,jobs.slice(index+1),()=>machines,
+                {machines,jobs:next.jobs});
             if(!chosen) {
                 results.push({job_id:job.id,machine_id:null,lease_id:null,
                     status:'insufficient_capacity',
@@ -1958,8 +1986,11 @@ class ExperimentHub {
             note:'Coordination only: no process started or hardware limits enforced.'};
     }
     claimJobIn(next,job,machineId,machine) {
+        const host=machine||this.snapshot().machines.find(m=>m.id===machineId);
+        if(!distributedRolloutHost({jobs:next.jobs,machines:this.snapshot().machines},job,host))
+            throw Error('Remote collector must be placed on its learner-approved endpoint and distinct host.');
         const lease=this.offerIn(next,job.project_id,machineId,
-            resourceRequest(job.resources),job.id,machine);
+            resourceRequest(job.resources),job.id,host);
         job.lease_id=lease.id;
         job.assigned_machine_id=lease.machine_id;
         job.assigned_at=now();
@@ -1997,7 +2028,8 @@ class ExperimentHub {
                 throw Error('Checkpoint continuation must stay on the original machine.');
             const machine=machines.get(move.machine_id);
             if(machine?.status!=='connected'||!machine.installed_projects?.includes(job.project_id)||
-                !supportsEvaluation(machine.evaluation_suites,job)||!supportsTinyBrainsProfile(machine,job))
+                !supportsEvaluation(machine.evaluation_suites,job)||!supportsTinyBrainsProfile(machine,job)||
+                !distributedRolloutHost({machines:[...machines.values()],jobs:next.jobs},job,machine))
                 throw Error('Destination requires a connected adapter supporting the project, configuration and evaluation suite.');
             return {job,source,machine};
         });
@@ -3564,6 +3596,7 @@ class ExperimentHub {
         const ordered=fairPending(jobs);
         const reservations=copy(snapshot.reservations);
         const machines=snapshot.machines.filter(m=>m.status==='connected');
+        const draftJobs=copy(snapshot.jobs);
         const proposed=[];
         for(const [index,job] of ordered.entries()) {
             if(job.lease_id)continue;
@@ -3571,12 +3604,16 @@ class ExperimentHub {
                 ['active','offered','acknowledged'].includes(r.status)).length;
             const chosen=claimCount<100
                 ?allocationChoice(machines,reservations,job,null,
-                    ordered.slice(index+1)):null;
-            if(chosen)reservations.push({
-                machine_id:chosen.machine_id,status:'offered',
-                resources:{...resourceRequest(job.resources),
-                    gpus:chosen.suggested_gpus},
-            });
+                    ordered.slice(index+1),()=>machines,{machines: snapshot.machines,jobs:draftJobs}):null;
+            if(chosen) {
+                reservations.push({
+                    machine_id:chosen.machine_id,status:'offered',
+                    resources:{...resourceRequest(job.resources),
+                        gpus:chosen.suggested_gpus},
+                });
+                const predicted=draftJobs.find(j=>j.id===job.id);
+                if(predicted)predicted.assigned_machine_id=chosen.machine_id;
+            }
             proposed.push({id:job.id,project_id:job.project_id,
                 configuration_name:job.configuration_name,
                 status:job.status,claimed:false,executable:false,
