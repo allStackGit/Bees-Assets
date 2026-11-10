@@ -81,6 +81,18 @@ def completed_rollouts(capture, journal, manifest, manifest_sha, checkpoint_sha,
         raise ValueError("reward journal has no completed episodes")
     if not terminals:
         raise ValueError("capture contains no completed episodes for the selected policy manifest")
+    # Group-agent identity is immutable within each authored episode. Use
+    # the same model-slot ownership for decision and terminal observations.
+    # The learner never consumes full observations from an opponent team.
+    learner_agents_by_episode = {
+        key: {
+            int(agent)
+            for team, agents in final["evaluation_context"]["group_agents_by_team"].items()
+            if final["evaluation_context"]["model_slots_by_team"][team] in learner_slots
+            for agent in agents
+        }
+        for key, final in terminals.items()
+    }
     # Keep only active episodes in memory. The writer emits a final
     # observation frame for each completed world before recycling it.
     # Preserve the original first-decision episode order for optimizer input.
@@ -118,9 +130,7 @@ def completed_rollouts(capture, journal, manifest, manifest_sha, checkpoint_sha,
         else:
             # Avoid mask/repacking overhead for 1v1 and other tiny mixed
             # frames. Copy only the learner row when it is retained.
-            copy_full_frame = all_episodes_match and not (
-                generation is not None and has_opponent_slots
-            )
+            copy_full_frame = all_episodes_match and not has_opponent_slots
             owned_frame = rows.copy() if copy_full_frame else None
         source_rows = owned_frame if owned_frame is not None else rows
         if generation is None:
@@ -136,7 +146,22 @@ def completed_rollouts(capture, journal, manifest, manifest_sha, checkpoint_sha,
                 frame = boundaries[key].setdefault(tick, {})
                 if not 0 < tick <= terminals[key]["tick"] or agent in frame:
                     raise ValueError("invalid policy boundary observation identity")
-                frame[agent] = row if owned_frame is not None else row.copy()
+                # Every boundary (including an opponent retirement) must
+                # provide a finite observation, even if the learner will
+                # not retain those features for optimization.
+                if not np.isfinite(row["observations"]).all():
+                    raise ValueError("nonfinite policy boundary observation")
+                if agent in learner_agents_by_episode[key]:
+                    frame[agent] = row if owned_frame is not None else row.copy()
+                else:
+                    frame[agent] = {
+                        "ship": int(row["ship"]),
+                        "binding_revision": int(row["binding_revision"]),
+                    }
+                    if stats is not None:
+                        stats["compact_opponent_boundaries"] = (
+                            stats.get("compact_opponent_boundaries", 0) + 1
+                        )
                 if tick == terminals[key]["tick"]:
                     ready.add(key)
         else:
@@ -208,7 +233,7 @@ def completed_rollouts(capture, journal, manifest, manifest_sha, checkpoint_sha,
             completed.add(key)
             yield _validate_completed_episode(
                 key, ticks, episode_boundaries, terminals, ended_teams,
-                retirements, rewards, learner_slots, journal_id,
+                retirements, rewards, learner_agents_by_episode[key], journal_id,
             )
 
     if completed != terminals.keys():
@@ -217,7 +242,7 @@ def completed_rollouts(capture, journal, manifest, manifest_sha, checkpoint_sha,
 
 def _validate_completed_episode(
     key, episode_ticks, episode_boundaries, terminals, ended_teams,
-    retirements, rewards, learner_slots, journal_id,
+    retirements, rewards, learning_agents, journal_id,
 ):
     """Preserve source cohort, retirement, group reward and terminal checks."""
     ticks = episode_ticks
@@ -273,14 +298,9 @@ def _validate_completed_episode(
         raise ValueError("missing MA-POCA terminal or retirement boundary")
     for end, frame in episode_boundaries.items():
         if (frame.keys() != expected_boundaries[end] or
-                any((row["ship"], row["binding_revision"]) != identities.get(agent) or
-                    not np.isfinite(row["observations"]).all()
+                any((row["ship"], row["binding_revision"]) != identities.get(agent)
                     for agent, row in frame.items())):
             raise ValueError("policy boundary observations disagree with controller lifetimes")
-    learning_agents = {
-        agent for agent, team in expected.items()
-        if context["model_slots_by_team"][str(team)] in learner_slots
-    }
     if not learning_agents:
         raise ValueError("completed episode has no decisions from the learner slot")
     return (journal_id, *key), expected, ticks, closing, episode_boundaries, {
@@ -596,6 +616,7 @@ def main():
         "capture_peak_inflight_decisions": capture_stats.get("peak_inflight_decisions", 0),
         "capture_peak_inflight_episodes": capture_stats.get("peak_inflight_episodes", 0),
         "capture_compact_opponent_decisions": capture_stats.get("compact_opponent_decisions", 0),
+        "capture_compact_opponent_boundaries": capture_stats.get("compact_opponent_boundaries", 0),
     }
     pending_metrics = args.output / "metrics.json.pending"
     with pending_metrics.open("x", encoding="utf-8") as output:
