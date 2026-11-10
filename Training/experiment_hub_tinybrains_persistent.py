@@ -21,6 +21,7 @@ def main():
     parser.add_argument("--actions", type=int, required=True)
     parser.add_argument("--device", choices=("cpu", "cuda"), default="cuda")
     parser.add_argument("--rocm-pci")
+    parser.add_argument("--gpu-vram-mb", type=int)
     args = parser.parse_args()
     if min(args.updates, args.threads, args.live_matches, args.waves, args.actions) < 1:
         parser.error("All training limits must be positive.")
@@ -28,6 +29,8 @@ def main():
         parser.error("Live matches must divide evenly into waves.")
     if (args.device == "cuda") != bool(args.rocm_pci):
         parser.error("ROCm PCI identity is required for GPU and forbidden for CPU.")
+    if args.gpu_vram_mb is not None and (args.device != "cuda" or args.gpu_vram_mb < 1):
+        parser.error("A positive GPU memory ceiling requires the ROCm device.")
     run = args.run.resolve(strict=True)
     checkpoint = run / "self-play" / "latest.pt"
     spec = run / "run-spec.json"
@@ -47,6 +50,13 @@ def main():
     if args.device == "cuda":
         from experiment_hub_tinybrains_rocm_verify import verify_runtime_device
         verify_runtime_device(args.rocm_pci)
+        if args.gpu_vram_mb is not None:
+            # Cooperative allocator limit, not physical GPU memory isolation.
+            total = torch.cuda.get_device_properties(0).total_memory
+            fraction = args.gpu_vram_mb * 1048576 / total
+            if not 0 < fraction <= 1:
+                raise SystemExit("Shared GPU memory request exceeds the device capacity.")
+            torch.cuda.set_per_process_memory_fraction(float(fraction), 0)
     sys.argv = [
         "ants_mapoca.learning_path",
         "--config", str(spec),
