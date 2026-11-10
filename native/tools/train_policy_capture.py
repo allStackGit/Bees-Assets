@@ -279,6 +279,10 @@ def main():
     from bees_mlagents_ppo_compat import install_value_estimate_key_fix
     install_value_estimate_key_fix()
     set_torch_config(TorchSettings(device=str(device)))
+    # ML-Agents selects CUDA at import on GPU hosts. Its CPU setting does
+    # not clear that PyTorch default, so implicit critic tensors can still
+    # land on CUDA. Reset it for CPU and retain the explicit CUDA index.
+    torch.set_default_device(device if device.type == "cuda" else None)
     register_trainer_plugins()
 
     behavior = BehaviorIdentifiers.from_name_behavior_id("BeesRL1v1?team=0")

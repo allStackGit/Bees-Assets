@@ -5,6 +5,24 @@ Read the full goal and fresh root AGENTS.md before further work. The complete
 Unity replacement remains incomplete. The latest Experiment Hub and queue
 work has been merged locally.
 
+## 2026-11-10 supervised Windows native training
+
+The Windows Hub owner ran two actual CPU training rounds in an isolated
+coordinator and worker at
+`B:\Bees\native-capability-qualification\hub-owned-final-7fbb54593d34400096a78fa279c8f5b5`.
+Both jobs returned signed terminal receipts, verified their checkpoints,
+released capacity, and remained finished after reopening the coordinator.
+The successor consumed the predecessor checkpoint recorded in its Hub order.
+
+The first supervised attempt exposed an ML-Agents CPU selection bug on a
+GPU-equipped host. ML-Agents changed its preferred device to CPU while
+PyTorch still defaulted implicit critic tensors to CUDA. The native learner
+now resets that default explicitly. The Hub launches rounds with separate
+rollout and optimizer diagnostics, including on Windows without a console.
+This qualification used an offline framework-dependent .NET 10 owner build
+and manually authorized starts and releases. Linux and automatic scheduling
+of this training adapter remain unqualified.
+
 ## 2026-11-10 native Bees checkpoint pipelines
 
 The Hub can queue native Bees successors on the same worker. A successor

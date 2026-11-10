@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import traceback
 import uuid
 
 from policy_worker import file_sha256
@@ -100,6 +101,18 @@ def check_learner(manifest: Path, checkpoint: Path, slot: int | None) -> str:
     return digest
 
 
+def run_stage(command, diagnostic_path):
+    if diagnostic_path is None:
+        subprocess.run(command, check=True)
+    else:
+        with diagnostic_path.open("x", encoding="utf-8") as stream:
+            try:
+                subprocess.run(command, check=True, stdout=stream, stderr=subprocess.STDOUT)
+            except Exception:
+                traceback.print_exc(file=stream)
+                raise
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("run_config", type=Path)
@@ -116,6 +129,8 @@ def main() -> None:
     )
     parser.add_argument("--rollout-binary", type=Path,
                         help="use a compiled policy_rollout binary instead of cargo run")
+    parser.add_argument("--stage-diagnostics", action="store_true",
+                        help="capture stage output in separate files for supervised execution")
     args = parser.parse_args()
     if not 0 <= args.seed_offset < (1 << 64):
         parser.error("--seed-offset must fit uint64")
@@ -163,7 +178,8 @@ def main() -> None:
                       "seed_offset": args.seed_offset,
                       "input_manifest_sha256": input_manifest_sha,
                       "input_checkpoint_sha256": input_checkpoint_sha}), flush=True)
-    subprocess.run([*command, str(config_path)], check=True)
+    run_stage([*command, str(config_path)],
+              output / "rollout.log" if args.stage_diagnostics else None)
     learner_dir = output / "learner"
     train_command = [
         config["python"], str(Path(__file__).with_name("train_policy_capture.py")),
@@ -173,7 +189,7 @@ def main() -> None:
     ]
     if args.learner_slot is not None:
         train_command += ["--learner-slot", str(args.learner_slot)]
-    subprocess.run(train_command, check=True)
+    run_stage(train_command, output / "optimizer.log" if args.stage_diagnostics else None)
     next_checkpoint = learner_dir / "checkpoint.pt"
     next_manifest = learner_dir / "manifest.json"
     metrics = json.loads((learner_dir / "metrics.json").read_text(encoding="utf-8"))

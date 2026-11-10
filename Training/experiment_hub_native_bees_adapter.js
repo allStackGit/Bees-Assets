@@ -137,6 +137,7 @@ function createNativeBeesAdapter({
                 throw Error('Native Bees predecessor differs from the verified Hub checkpoint.');
             return ['-B', runner, run, inputs.checkpoint, trainer, output,
                 '--model-manifest', inputs.manifest, '--rollout-binary', binary,
+                '--stage-diagnostics',
                 '--seed-offset', String(seed_offset),
                 ...(learnerSlot === undefined ? [] : ['--learner-slot', String(learnerSlot)])];
         },
