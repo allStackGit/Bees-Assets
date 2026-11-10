@@ -1,0 +1,23 @@
+# Copy to ~/.config/systemd/user/experiment-hub-halifax-agent.service only
+# after verifying the installed project and machine-local configuration.
+# EnvironmentFile must be private (mode 0600) and include the enrolled
+# EXPERIMENT_HUB_MACHINE_ID, EXPERIMENT_HUB_AGENT_TOKEN and required native
+# adapter/supervisor/backend opt-in settings from the working manual launcher.
+# Never run a second agent with the same machine identity simultaneously.
+[Unit]
+Description=Bees Experiment Hub Halifax agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/ai/projects/experiment-hub/Assets
+EnvironmentFile=%h/.config/experiment-hub/agent.env
+Environment=EXPERIMENT_HUB_URL=http://127.0.0.1:7149
+ExecStart=/usr/bin/node %h/ai/projects/experiment-hub/Assets/Training/experiment_hub_agent.js
+UMask=0077
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=default.target
