@@ -662,6 +662,8 @@ function nativeStartReadiness(snapshot, job) {
         return block('Linux cgroup v2 CPU and memory controllers are unavailable.');
     if(!supportsTinyBrainsProfile(machine,job))
         return block('The assigned worker does not approve this TinyBrains profile, GPU mode, checkpoint import and update count.');
+    if(!distributedRolloutHost(snapshot,job,machine))
+        return block('The remote collector is not assigned to an active learner and its pinned physical endpoint.');
     if(job.project_id==='tinybrains'&&job.frozen_parameters?.remote_rollouts===true) {
         const count=machine.tinybrains_remote_rollout_count;
         const expectedEndpoints=machine.tinybrains_remote_rollout_endpoints;
@@ -827,6 +829,7 @@ function distributedRolloutHost(snapshot,job,machine) {
     const parent=snapshot.jobs.find(j=>j.id===job.frozen_parameters?.learner_job_id);
     if(!parent||parent.project_id!=='tinybrains'||
         parent.frozen_parameters?.remote_rollouts!==true||
+        !['waiting_adapter','start_requested','launch_requested','running'].includes(parent.status)||
         !parent.assigned_machine_id||!machine||
         machine.id===parent.assigned_machine_id||
         machine.status!=='connected'||
@@ -2624,6 +2627,7 @@ class ExperimentHub {
                     machine.native_preflight_passed!==true||
                     !supportsEvaluation(machine.evaluation_suites,job)||
                     !supportsTinyBrainsProfile(machine,job)||
+                    !distributedRolloutHost(snapshot,job,machine)||
                     nativeResourceBlock(job,lease)||
                     gpuStartBlock(job,lease,machine)) {
                     // A previously offered Start may already own a process.
