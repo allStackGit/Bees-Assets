@@ -2399,13 +2399,19 @@ service to the public Internet.
 
 This path is initially queued as one atomic resource group but is not
 live-rebalanced or automatically restarted as one native process.
-Collector interruptions fail the
-learner's active PPO update rather than allowing incomplete or mixed-policy
-data into its optimizer; resume uses the last completed checkpoint and a new
-remote session. Remote CPU workers cannot join a running learner without a
-new, explicitly configured job. Qualification requires a brief real
-remote-collector run, one full PPO update, a checkpoint/STOP/resume, and
-verified absence/timeout behavior on the actual hosts.
+Collector interruptions fail the learner's active PPO update rather than
+allowing incomplete or mixed-policy data into its optimizer. After a
+**checkpoint-verified finished or stopped** learner has released its capacity,
+choose a saved TinyBrains continuation configuration with the same profile
+pin (and no external checkpoint import), select that predecessor in Train,
+and select **Queue and reserve entire group** again. The new group inherits
+the learner's checkpoint lineage and original Halifax host, but receives
+new remote worker jobs, leases, and authenticated runtime sessions.
+Failed or unverified native processes must first be inspected; this is not
+an automatic retry. Remote collectors cannot join an already running
+learner without a new job. Qualification requires a brief real remote-collector
+run, one full PPO update, a checkpoint/STOP/resume, and verified worker
+absence/timeout behavior on actual hosts.
 
 ## Not yet implemented
 
