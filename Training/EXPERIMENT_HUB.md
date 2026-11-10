@@ -2336,6 +2336,63 @@ live eligible dispatch and persists its cursor and pending receipt in
 `--scratch`. Retain or remove completed dispatch directories under the
 worker's artifact retention policy.
 
+## Trusted distributed TinyBrains rollout group (opt-in)
+
+The `feat/hub-resource-experiments-20261110` Hub branch and matching
+`feat/linux-tinybrains-runtime` TinyBrains branch have an **unqualified**
+multi-machine rollout path. A single Halifax trainer owns the PPO optimizer,
+checkpoint, evaluation and STOP marker. Each remote machine owns an independent
+`tinybrains_rollout` native job under its own acknowledged CPU/RAM lease,
+optionally with **one exclusive Windows CUDA GPU**. The learner sends a frozen
+behavior policy and collects the returned on-policy shards before optimizing.
+Remote workers never publish or advance learner checkpoints.
+
+Install the *same* randomly generated 32+-byte HMAC key on each trusted host
+in a private local file; on Linux use mode 0600. Never put the key in the Hub
+configuration JSON. Use Tailscale IPv4 addresses in 100.64.0.0/10 and allow
+the selected listener port only over the private tailnet; do not expose the
+service to the public Internet.
+
+1. On Halifax, configure the trusted `createTinyBrainsPersistentDockerAdapter`
+   with `remoteCollectors:{endpoints:['100.x.y.z:12134'],keyDirectory:'/private/local/path'}`.
+   Its directory must contain `rollout.key`, readable by the Docker training
+   identity. `enableDualGpu:true` is a separate explicit opt-in when using
+   both verified R9700s; ordinary jobs remain network-isolated.
+2. On each remote host, install
+   `createTinyBrainsRemoteRolloutAdapter({projectRoot,pythonPath,keyPath,
+   cacheRoot,listenIp,port,threads,enableCuda})` as the trusted
+   `tinybrains_rollout` native project adapter. Set `enableCuda:true` only
+   for a Windows worker with an installed working PyTorch CUDA environment;
+   its job then requires one *exclusive*, PCI/UUID-pinned GPU. With
+   `enableCuda:false`, the worker uses CPU only.
+3. Register the `tinybrains_rollout` project and remote machines in the Hub,
+   and enroll their native agents. Queue the learner using an approved
+   TinyBrains profile and `remote_rollouts:true`; request the intended one
+   or two Halifax GPUs and its own CPU/RAM resources. Keep the learner queued.
+4. Queue one `tinybrains_rollout` job per approved remote endpoint, with the
+   frozen configuration `{"learner_job_id":"<queued learner UUID>"}` and its
+   own CPU/RAM allocation (and optionally one exclusive Windows CUDA GPU).
+   Assign separate machines, acknowledge each lease, and explicitly Start
+   every remote job. The learner readiness gate requires a **fresh verified
+   running dispatch** from each worker, the exact pinned endpoints, equal key
+   fingerprints and matching resource leases before allowing its GPU Start.
+5. Perform the learner's normal GPU access qualification, then explicitly
+   Start it. Check `self-play/history.jsonl`: `collector_samples` reports
+   each shard's ant decisions and engine steps plus remote transfer time and
+   a stable endpoint hash. Compare **end-to-end** actions/s, not just GPU busy
+   percentage. For a graceful stop, Stop the learner at a PPO checkpoint
+   boundary and separately Stop its remote sidecar jobs afterward. Do not
+   delete source runs, checkpoints or independent trainer directories.
+
+This path is not dynamically rebalanced or automatically recovered as a
+single atomic multi-machine process. Collector interruptions fail the
+learner's active PPO update rather than allowing incomplete or mixed-policy
+data into its optimizer; resume uses the last completed checkpoint and a new
+remote session. Remote CPU workers cannot join a running learner without a
+new, explicitly configured job. Qualification requires a brief real
+remote-collector run, one full PPO update, a checkpoint/STOP/resume, and
+verified absence/timeout behavior on the actual hosts.
+
 ## Not yet implemented
 
 Production installation and qualification of project-specific adapters,
