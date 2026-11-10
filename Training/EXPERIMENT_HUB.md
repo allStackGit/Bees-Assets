@@ -1861,6 +1861,11 @@ at most 500,000,000 bytes each. Choose several jobs and metrics; optionally
 include raw replays. No checkpoint, model, private key or credential files are
 intentionally included. Every part has a segment manifest for reconstructing
 large logs, and the overall manifest reports jobs without local artifacts.
+When metrics are selected, the archive also includes
+`hub-selected-metric-samples.csv`: a metric-filtered, long-form CSV from the
+bounded Hub comparison history, with job IDs, timestamps, project steps,
+segments, values, and units. This CSV is **not** the full-resolution training
+history; the project-owned history files are included separately and unchanged.
 Download the numbered parts before the private export session expires.
 Raw histories remain complete regardless of selected chart metrics.
 The native coordinator reads TinyBrains jobs under the Hub data root's
