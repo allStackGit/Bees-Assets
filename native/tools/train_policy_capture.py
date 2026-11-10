@@ -388,11 +388,13 @@ def main():
         "episodes": len(episode_keys),
         "opponent_steps": opponent_steps,
     }
-    with (args.output / "metrics.json").open("x", encoding="utf-8") as output:
+    pending_metrics = args.output / "metrics.json.pending"
+    with pending_metrics.open("x", encoding="utf-8") as output:
         json.dump(metrics, output, indent=2)
         output.write("\n")
         output.flush()
         os.fsync(output.fileno())
+    os.replace(pending_metrics, args.output / "metrics.json")
     if os.name == "posix":
         directory = os.open(args.output, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
         try:
