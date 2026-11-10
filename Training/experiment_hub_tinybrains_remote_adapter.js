@@ -10,6 +10,7 @@ const crypto=require('node:crypto');
 const {spawnSync}=require('node:child_process');
 
 const UUID=/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
+const CUDA=/^GPU-[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
 const TAILNET=/^100\.\d{1,3}\.\d{1,3}\.\d{1,3}$/;
 
 function directory(value) {
@@ -42,7 +43,10 @@ function tailnetIp(ip) {
 
 function createTinyBrainsRemoteRolloutAdapter({
     projectRoot,pythonPath,keyPath,cacheRoot,listenIp,port,threads,
+    enableCuda=false,
 }) {
+    if(typeof enableCuda!=='boolean'||enableCuda&&process.platform!=='win32')
+        throw Error('Remote GPU rollout requires explicit Windows CUDA opt-in.');
     const project=directory(projectRoot);
     const cache=directory(cacheRoot);
     const secret=keyFile(keyPath);
@@ -60,22 +64,38 @@ function createTinyBrainsRemoteRolloutAdapter({
     });
     if(probe.status!==0)
         throw Error('Installed TinyBrains worker lacks authenticated remote rollout support.');
+    if(enableCuda) {
+        const check=spawnSync(pythonPath,['-B','-c',
+            'import torch; assert torch.version.cuda and torch.cuda.is_available()'],{
+            cwd:project,timeout:15000,encoding:'utf8',windowsHide:true,
+        });
+        if(check.status!==0)
+            throw Error('Remote CUDA collection requires a locally working NVIDIA PyTorch environment.');
+    }
     return {
         executable:pythonPath,cwd:project,stop_policy:'terminate-group',
         tinybrains_rollout_endpoint:host+':'+port,
         tinybrains_rollout_key_fingerprint:fingerprint,
+        ...(enableCuda?{gpu_execution:'cuda'}:{}),
         args(parameters,context) {
             if(!parameters||typeof parameters!=='object'||Array.isArray(parameters)||
                 Object.keys(parameters).length!==1||
                 !UUID.test(String(parameters.learner_job_id||''))||
                 !UUID.test(String(context.job_id||''))||
-                parameters.learner_job_id===context.job_id)
+                parameters.learner_job_id===context.job_id||
+                (context.gpu_cuda_uuid!==undefined&&
+                    (!enableCuda||!CUDA.test(String(context.gpu_cuda_uuid))||
+                    context.gpu_mode!=='exclusive'||!context.gpu_pci_address))||
+                (context.gpu_cuda_uuid===undefined&&Boolean(context.gpu_pci_address)))
                 throw Error('Remote CPU worker requires one immutable, different TinyBrains learner job ID.');
             return ['-B','-m','ants_mapoca.remote_rollout',
                 '--listen',host,'--port',String(port),
                 '--job-id',parameters.learner_job_id,
                 '--threads',String(threads),'--key-file',secret,
-                '--cache-dir',cache];
+                '--cache-dir',cache,
+                ...(context.gpu_cuda_uuid
+                    ?['--device','cuda','--cuda-uuid',context.gpu_cuda_uuid]
+                    :['--device','cpu'])];
         },
     };
 }
