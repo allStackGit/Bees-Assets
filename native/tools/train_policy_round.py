@@ -10,7 +10,6 @@ import json
 from pathlib import Path
 import shutil
 import subprocess
-import sys
 import uuid
 
 from policy_worker import file_sha256
@@ -129,7 +128,7 @@ def main() -> None:
     subprocess.run([*command, str(config_path)], check=True)
     learner_dir = output / "learner"
     train_command = [
-        sys.executable, str(Path(__file__).with_name("train_policy_capture.py")),
+        config["python"], str(Path(__file__).with_name("train_policy_capture.py")),
         str(output / "decisions.bin"), str(output / "events.jsonl"),
         str(manifest), str(checkpoint), str(trainer_config), str(learner_dir),
         "--device", args.device,
