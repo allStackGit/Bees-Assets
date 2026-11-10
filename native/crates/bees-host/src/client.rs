@@ -42,12 +42,14 @@ pub struct NativeClient {
     pub culled_obstacle_draws: u64,
     pub culled_projectile_draws: u64,
     pub culled_piece_draws: u64,
+    pub viewport_resizes: u64,
 }
 
 impl NativeClient {
     pub fn new(bounds: Aabb) -> Result<Self, Box<dyn std::error::Error>> {
         let renderer = NativeSoftwareRenderer::new(1100, 760, bounds)?;
-        let mut window = Window::new("Bees native", 1100, 760, WindowOptions::default())?;
+        let mut window = Window::new("Bees native", 1100, 760,
+            WindowOptions { resize: true, ..WindowOptions::default() })?;
         window.set_target_fps(60);
         let now = Instant::now();
         Ok(Self { window, renderer, bounds, selected_world: 0, selection_owner: None,
@@ -57,18 +59,35 @@ impl NativeClient {
             rendered_frames: 0, render_wall_seconds: 0.0,
             window_update_wall_seconds: 0.0,
             culled_ship_draws: 0, culled_obstacle_draws: 0,
-            culled_projectile_draws: 0, culled_piece_draws: 0 })
+            culled_projectile_draws: 0, culled_piece_draws: 0,
+            viewport_resizes: 0 })
     }
 
     pub fn selected_world(&self) -> usize { self.selected_world }
+
+    pub fn viewport_size(&self) -> (usize, usize) { self.renderer.size() }
 
     pub fn report_move(&mut self, feedback: &'static str) { self.input_feedback = feedback; }
 
     pub fn poll(
         &mut self, view: NativeRenderWorldView<'_>, bounds: Aabb, world_count: usize, fixed_dt: Duration,
-    ) -> Result<NativeClientAction, minifb::Error> {
+    ) -> Result<NativeClientAction, Box<dyn std::error::Error>> {
         if !self.window.is_open() || self.window.is_key_down(Key::Escape) {
             return Ok(NativeClientAction::Quit);
+        }
+        let (window_width, window_height) = self.window.get_size();
+        if window_width == 0 || window_height == 0 {
+            // Minimized windows have no drawable surface; pump OS events
+            // without trying to submit a zero-sized bitmap.
+            self.window.update();
+            self.previous_frame = Instant::now();
+            return Ok(NativeClientAction::Wait);
+        }
+        if self.renderer.resize(window_width, window_height)? {
+            // A drag's original screen coordinates no longer describe
+            // the same selection box after a window resize.
+            self.selection_drag = None;
+            self.viewport_resizes += 1;
         }
         let now = Instant::now();
         let elapsed = now.duration_since(self.previous_frame).as_secs_f32().min(0.1);
