@@ -78,6 +78,8 @@ function createTinyBrainsRemoteRolloutAdapter({
         tinybrains_rollout_key_fingerprint:fingerprint,
         ...(enableCuda?{gpu_execution:'cuda'}:{}),
         args(parameters,context) {
+            if(crypto.createHash('sha256').update(fs.readFileSync(secret)).digest('hex')!==fingerprint)
+                throw Error('Installed rollout HMAC key differs from its advertised physical worker identity.');
             if(!parameters||typeof parameters!=='object'||Array.isArray(parameters)||
                 Object.keys(parameters).length!==1||
                 !UUID.test(String(parameters.learner_job_id||''))||
