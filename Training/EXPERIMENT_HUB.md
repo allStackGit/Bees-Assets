@@ -1824,11 +1824,11 @@ For a non-Bees project, a trusted local adapter may return a
 `hub-metrics-v1` observation through its existing `readProgress` method.
 The wire contract is strictly bounded: one project-owned experiment ID,
 segment ID, ISO source modification time, cumulative nonnegative
-`steps_completed`, and 1–12 numeric measurements named by lowercase
-slug. Every measurement is `{"value": number, "unit": "scalar|ratio|count|rate|seconds"}`
-(the unit must be one of those five literal values). Ratios are 0–1,
-counts are nonnegative integers, rates and seconds are nonnegative, and
-the payload is capped at 4 KiB. The adapter, not Hub config JSON, owns
+`steps_completed`, and 1–96 numeric measurements named by lowercase
+slug. Every measurement has an explicit value and unit; supported units
+are `scalar`, `ratio`, `count`, `rate`, `seconds`, `milliseconds`,
+`mb` and `bytes`. Ratios are 0–1, counts are nonnegative integers,
+and rates/times/memory are nonnegative. Payloads are capped at 32 KiB. The adapter, not Hub config JSON, owns
 the trusted metric source and semantics. Example observational payload:
 
 ```json
@@ -1846,16 +1846,42 @@ the trusted metric source and semantics. Example observational payload:
 }
 ```
 
-Generic projects can chart a selected reported measurement against
-cumulative project steps. The chart refuses incompatible units, includes
-negative scalar values, and exports selected numeric measurements with
-their units in CSV/JSON. Generic metric names do not grant stopping,
-model promotion or benchmark authority. A concrete project adapter must
-still be installed and independently qualified to produce real metrics.
+The shared Compare view allows an arbitrary number of selected runs, with
+multiple independently plotted metrics. CSV includes the chosen metric columns;
+JSON also carries the bounded progress/evaluation provenance. **Train** can
+freeze an optional per-job list of preferred chart measurements. This is an
+archive/visualization preference; it never changes PPO model settings or
+manufactures metrics the project's adapter did not record. The native Hub
+retains a bounded history of up to 256 chart points for each of 256 jobs;
+project-owned full-resolution histories remain authoritative.
+
+**Export complete job diagnostics** in Compare packages the selected local
+job histories and run-scoped text/JSON logs into independent ZIP archives of
+at most 500,000,000 bytes each. Choose several jobs and metrics; optionally
+include raw replays. No checkpoint, model, private key or credential files are
+intentionally included. Every part has a segment manifest for reconstructing
+large logs, and the overall manifest reports jobs without local artifacts.
+Download the numbered parts before the private export session expires.
+Raw histories remain complete regardless of selected chart metrics.
+The native coordinator reads TinyBrains jobs under the Hub data root's
+`tinybrains-jobs/` directory. For another project (including Courier),
+install a private mode-0600 `job-export-roots.json` in the same Hub data
+root, mapping project IDs to approved, absolute, owner-owned artifact
+directories; these are never specified in HTTP requests. The legacy Bees
+coordinator uses its operator-owned metrics and run-scoped log paths.
+Remote-only worker data is **not** collected through the coordinator;
+copy or upload those logs through a separately approved mechanism.
+Inspect archives before sharing them, as ordinary application logs can
+contain sensitive content.
+
+Generic metric names do not grant stopping, model promotion or benchmark
+authority. A concrete project adapter must be installed and qualified to
+produce real measurements. Host GPU utilization and VRAM values are physical
+device observations, **not per-job GPU accounting**.
 
 ### Selecting and promoting independently trained models
 
-In **Compare**, choose 2–4 independently trained Courier or TinyBrains
+In **Compare**, choose 2–16 independently trained Courier or TinyBrains
 jobs and a saved next-stage configuration. Completed candidates can be
 ranked immediately; active or prequeued candidates can instead have a
 selection scheduled for the existing native automation scheduler.
