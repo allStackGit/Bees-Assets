@@ -83,14 +83,13 @@ function trialBatchLabel(job) {
 function hubComparisonCsv(exported) {
     const fields=[
         'slot','job_id','project_id','configuration_name','configuration_sha256',
-        'selected_x_axis','selected_metric','assigned_machine_id',
+        'selected_x_axis','selected_metric','selected_metrics','assigned_machine_id',
         'artifact_lineage_root_id','continuation_of_job_id','status',
         'observed_at','source_modified_at','experiment_id','segment_id',
         'break_before','steps_completed',
         'trial_batch_id','trial_batch_index','trial_batch_size',
     ];
-    const metrics=new Set(exported.runs.flatMap(run=>
-        run.points.flatMap(point=>Object.keys(point.metrics||{}))));
+    const metrics=new Set(exported.metrics||[]);
     for(const key of [...metrics].sort())
         fields.push('metric_'+key,'unit_'+key);
     const encode=value=>{
@@ -111,6 +110,7 @@ function hubComparisonCsv(exported) {
         configuration_sha256:run.configuration_sha256,
         selected_x_axis:exported.x_axis,
         selected_metric:exported.metric,
+        selected_metrics:(exported.metrics||[]).join('|'),
         assigned_machine_id:run.assigned_machine_id,
         artifact_lineage_root_id:run.artifact_lineage_root_id,
         continuation_of_job_id:run.continuation_of_job_id,
@@ -868,11 +868,12 @@ document.addEventListener('DOMContentLoaded', () => {
             (hubComparisonTerminal(run)||hubComparisonEvaluation(run)))))
             throw Error(format==='csv'?'No recorded samples for the selected runs.':
                 'Select a job with recorded samples, an evaluation receipt or a terminal outcome.');
+        const metrics=selectedComparisonMetrics().map(key=>key.slice(7));
         const exported={
             schema_version:1,project_id:project,
             exported_at:new Date().toISOString(),
             x_axis:$('hub-compare-x-axis').value,
-            metric:$('hub-compare-metric').value,
+            metric:selectedComparisonMetrics()[0]||null,metrics,
             source:'Experiment Hub validated project metrics',
             interpretation:'Training curves are observational and use cumulative steps. Compare independent evaluation receipts only across matched suite definitions and scenarios.',
             runs,
