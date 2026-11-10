@@ -154,6 +154,7 @@ function createTinyBrainsPersistentDockerAdapter({
         tinybrains_profiles:Object.fromEntries([...approved].map(([id,p])=>[id,p.sha256])),
         tinybrains_cuda_profiles:[...approved.keys()],
         tinybrains_thread_overrides:[...approved.keys()],
+        tinybrains_cpu_fallback_profiles:[...approved.keys()],
         tinybrains_imports:Object.fromEntries([...approved.keys()].map(id=>[
             'exeter_'+id,{profile:id,sha256:seedCheckpointSha256},
         ])),
@@ -167,15 +168,17 @@ function createTinyBrainsPersistentDockerAdapter({
                 context.gpu_pci_address];
         },
         args(parameters,context) {
-            const {profile,profile_sha256,updates,threads,import_checkpoint,
+            const {profile,profile_sha256,updates,threads,device,import_checkpoint,
                 import_checkpoint_sha256}=parameters;
             const item=approved.get(profile);
             if(!item||item.sha256!==profile_sha256||
                 Object.keys(parameters).some(k=>!['profile','profile_sha256','updates',
-                    'threads','import_checkpoint','import_checkpoint_sha256'].includes(k))||
+                    'threads','device','import_checkpoint','import_checkpoint_sha256'].includes(k))||
+                (device!==undefined&&device!=='cpu')||
                 (threads!==undefined&&(!Number.isSafeInteger(threads)||threads<1||threads>256))||
                 !Number.isSafeInteger(updates)||updates<1||updates>10000000||
-                !PCI.test(String(context.gpu_pci_address||'')))
+                (device==='cpu'?Boolean(context.gpu_pci_address||context.gpu_cuda_uuid):
+                    !PCI.test(String(context.gpu_pci_address||''))))
                 throw Error('Invalid immutable TinyBrains Hub training request.');
             const parent=context.continuation_of_job_id;
             if(parent?
@@ -220,7 +223,8 @@ function createTinyBrainsPersistentDockerAdapter({
                 '--live-matches',String(item.profile.live_matches),
                 '--waves',String(item.profile.waves),
                 '--actions',String(item.profile.rollout_actions),
-                '--rocm-pci',context.gpu_pci_address];
+                ...(device==='cpu'?['--device','cpu']:
+                    ['--rocm-pci',context.gpu_pci_address])];
         },
         checkpoint_ready(context){
             const item=approved.get(context.frozen_parameters?.profile);
