@@ -5,6 +5,18 @@ Read the full goal and fresh root AGENTS.md before further work. The complete
 Unity replacement remains incomplete. The latest Experiment Hub and queue
 work has been merged locally.
 
+## 2026-11-10 empty obstacle broadphase
+
+Physics skips queries against an empty grid and the per-ship obstacle scan
+when there are no obstacle entries. Contact exit reconciliation still runs.
+In matched Windows release movement fixtures across 16 arenas, serial
+throughput rose from 88–95k to 138k world steps/s at 64 ships per arena,
+and from 23–24k to 34–35k at 256 ships. These fixtures have no obstacles,
+weapons, or inference. A separate before/after native ONNX rollout matched
+all ten journal records for an authored asteroid collision and elimination.
+All 106 native tests passed. Large battles with active collision grids
+and neural inference still need measured runs.
+
 ## 2026-11-10 verified round throughput metrics
 
 The native round now checks the simulator's structured summary for the

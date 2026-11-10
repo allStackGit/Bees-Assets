@@ -1025,8 +1025,13 @@ impl SpatialGrid {
         }
     }
 
+    fn is_empty(&self) -> bool {
+        self.touched.is_empty() && self.overflow.is_empty()
+    }
+
     fn candidates(&mut self, bounds: Aabb, output: &mut Vec<usize>) {
         output.clear();
+        if self.is_empty() { return; }
         self.generation = self.generation.wrapping_add(1);
         if self.generation == 0 {
             self.seen.fill(0);
@@ -1734,7 +1739,10 @@ impl KinematicPhysics {
         self.counts.proximity_obstacle_exits = self.proximity_obstacle_exits.len() as u64;
 
         self.ship_obstacle_current.clear();
-        for ship in &self.ships {
+        // Without obstacle entries the contact set is already empty.
+        // Still reconcile exits below when the last obstacle was retired.
+        let ships_to_check = if self.grid.is_empty() { &[] } else { self.ships.as_slice() };
+        for ship in ships_to_check {
             if !ship.active { continue; }
             let Some(bounds) = ship.collider.bounds else { continue };
             self.grid.candidates(bounds, &mut self.candidates);
