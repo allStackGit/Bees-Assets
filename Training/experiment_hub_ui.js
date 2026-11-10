@@ -28,6 +28,7 @@ function trainingFormPayload() {
             consecutive_passes:Number($('benchmark-target-passes').value),
         }:null,
         reserve_heldout:$('reserve-heldout').checked,
+        metric_selection:[...$('bees-training-metrics').selectedOptions].map(o=>o.value),
         replicates:(typeof editingId === 'undefined' || !editingId) && $('replicate-enabled').checked
             ?Number($('replicate-count').value):1,
         trainer:{
@@ -2191,6 +2192,8 @@ document.addEventListener('DOMContentLoaded', () => {
         $('benchmark-target-matches').value=p.benchmark_target?.min_matches??100;
         $('benchmark-target-passes').value=p.benchmark_target?.consecutive_passes??2;
         $('reserve-heldout').checked=p.reserve_heldout===true;
+        for(const option of $('bees-training-metrics').options)
+            option.selected=(p.metric_selection||[]).includes(option.value);
         $('replicate-enabled').checked=Number(p.replicates||1)>1;
         $('replicate-count').value=p.replicates||3;
         for(const [key,val] of Object.entries(p.trainer.hyperparameters||{})) {
