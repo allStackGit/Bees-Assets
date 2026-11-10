@@ -333,6 +333,8 @@ def main():
     next_checkpoint = args.output / "checkpoint.pt"
     with next_checkpoint.open("xb") as output:
         torch.save({name: module.state_dict() for name, module in modules.items()}, output)
+        output.flush()
+        os.fsync(output.fileno())
 
     # Keep the source ABI and every opponent slot. Only update the learner.
     manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
@@ -364,6 +366,14 @@ def main():
     with next_manifest.open("x", encoding="utf-8") as output:
         json.dump(manifest, output, indent=2)
         output.write("\n")
+        output.flush()
+        os.fsync(output.fileno())
+    if os.name == "posix":
+        directory = os.open(args.output, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
     print(json.dumps({
         "next_manifest": str(next_manifest),
         "next_manifest_sha256": file_sha256(next_manifest),
