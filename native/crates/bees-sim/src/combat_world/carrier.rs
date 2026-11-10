@@ -10,13 +10,13 @@ pub(super) const CARRIER_SHIP_TYPE: u8 = 5;
 const DRONE_SHIP_TYPE: u8 = 8;
 
 impl CombatWorld {
-    /// Install only an authenticated, initially living policy Drone parent.
-    /// Standalone Drones have no entry: their original absent parent remains
-    /// absent until an actual Level owner explicitly changes it.
-    pub fn configure_policy_drone_carrier(
+    /// Install an authenticated, initially living Drone parent from the
+    /// scene's original CarrierShip.Carrier reference. Standalone Drones
+    /// have no entry; they remain unparented even if a later Carrier spawns.
+    pub fn configure_drone_carrier(
         &mut self, drone_id: i64, carrier_id: i64,
     ) -> Result<(), CombatWorldError> {
-        let invalid = || CombatWorldError::InvalidPolicyDroneCarrier;
+        let invalid = || CombatWorldError::InvalidDroneCarrier;
         let &drone_index = self.ship_by_id.get(&drone_id).ok_or_else(invalid)?;
         let &carrier_index = self.ship_by_id.get(&carrier_id).ok_or_else(invalid)?;
         let drone = &self.ships[drone_index];
@@ -28,12 +28,11 @@ impl CombatWorld {
             drone.vitals.is_dead() || carrier.vitals.is_dead() ||
             !self.physics.ships()[drone_index].active ||
             !self.physics.ships()[carrier_index].active ||
-            !self.policy_ship_runtime.contains_key(&drone_id) ||
-            self.policy_drone_carriers.contains_key(&drone_id)
+            self.drone_carriers.contains_key(&drone_id)
         {
             return Err(invalid());
         }
-        self.policy_drone_carriers.insert(drone_id, Some(carrier_id));
+        self.drone_carriers.insert(drone_id, Some(carrier_id));
         Ok(())
     }
 
@@ -41,8 +40,8 @@ impl CombatWorld {
     /// last Carrier died from a source Drone that never had a parent.
     /// Policy observations must not fall back to the original imported
     /// Carrier ID after that death.
-    pub fn policy_drone_carrier(&self, drone_id: i64) -> Option<Option<i64>> {
-        self.policy_drone_carriers.get(&drone_id).copied()
+    pub fn drone_carrier(&self, drone_id: i64) -> Option<Option<i64>> {
+        self.drone_carriers.get(&drone_id).copied()
     }
 
     /// Unity Carrier.Kill selects the first surviving same-side Carrier
@@ -77,7 +76,7 @@ impl CombatWorld {
                 }
             }
         }
-        for carrier in self.policy_drone_carriers.values_mut() {
+        for carrier in self.drone_carriers.values_mut() {
             if *carrier == Some(dead_id) {
                 *carrier = replacement;
             }

@@ -70,7 +70,7 @@ use crate::runtime::NativeHostRuntime;
 use crate::ship_specials::{NativeAuthoredShipSpecial, NativeBeaconTemplate};
 use crate::durable_connection::DurableHiveMindConnection;
 
-const SNAPSHOT_VERSION: u32 = 27;
+const SNAPSHOT_VERSION: u32 = 28;
 
 #[derive(Deserialize, Clone, Copy)]
 struct UnityVec2 { x: f32, y: f32 }
@@ -1500,6 +1500,15 @@ impl NativePhysicalScene {
                     },
                 });
             }
+            // Schema28 captures CarrierShip.Carrier for ordinary game
+            // children too; older exports only included this for policies.
+            if raw.schema_version >= 28 &&
+                (ship.has_living_parent_carrier != (ship.parent_carrier_id > 0) ||
+                (!ship.is_carrier_child && ship.parent_carrier_id != 0) ||
+                (ship.is_carrier_child && !matches!(ship.ship_type, 8 | 19)))
+            {
+                return Err(NativeSnapshotError::InvalidShip(ship.entity_id));
+            }
             if ship.has_bound_policy {
                 if !ship.is_rl_policy_controlled ||
                     ship.effective_vision_range < 0 ||
@@ -1657,9 +1666,10 @@ impl NativePhysicalScene {
                 fleet_ship_id: (ship.fleet_ship_id != 0)
                     .then_some(ship.fleet_ship_id),
                 policy: None,
-                policy_drone_carrier_id: (ship.ship_type == 8 &&
-                    ship.has_bound_policy && ship.is_carrier_child &&
-                    ship.parent_carrier_id > 0).then_some(ship.parent_carrier_id),
+                drone_carrier_id: (ship.ship_type == 8 &&
+                    (raw.schema_version >= 28 || ship.has_bound_policy) &&
+                    ship.is_carrier_child && ship.parent_carrier_id > 0)
+                    .then_some(ship.parent_carrier_id),
                 special,
             }));
         }

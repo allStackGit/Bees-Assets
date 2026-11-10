@@ -348,6 +348,13 @@ the saved per-world acknowledgement frontier is retained. Unregistered runs
 are rejected. Both readers require authoritative terminal boundaries and use
 the same retry ledger. New journals remain schema2. See HANDOFF.md for scope.
 
+New schema-28 Unity exports preserve the original `CarrierShip.Carrier`
+relationship for ordinary as well as neural Drone children. The combat
+world installs links after all ships are spawned and reassigns them, along
+with Striker links, at the actual Carrier-death boundary. Older exports
+retain their prior policy-only Carrier metadata and cannot reconstruct
+ordinary Drone links that were never captured.
+
 ## Unity scene import (schema 25)
 
 Schema25 additionally exports source `targeting_context` and each ship's real

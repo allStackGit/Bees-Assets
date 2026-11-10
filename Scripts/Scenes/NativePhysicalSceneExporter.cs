@@ -262,7 +262,7 @@ internal static class NativePhysicalSceneExporter
     [Serializable]
     private sealed class PhysicalScene
     {
-        public int schema_version = 27;
+        public int schema_version = 28;
         public SourceTargetingContext targeting_context;
         public int source_frame_count = Time.frameCount;
         public string level_name;
@@ -544,10 +544,12 @@ internal static class NativePhysicalSceneExporter
                     RlOneVsOneAgent.CanUseHealingAction(ship),
                 warp_possible = hasBoundPolicy &&
                     RlOneVsOneAgent.CanUseWarpAction(ship),
-                is_carrier_child = hasBoundPolicy && carrierChild != null,
-                has_living_parent_carrier = hasBoundPolicy && hasParent,
-                parent_carrier_id = hasBoundPolicy && hasParent
-                    ? carrierChild.Carrier.Id : 0,
+                // Carrier.Kill reassigns ordinary Drone/Striker children
+                // too. Preserve their real link independently of whether
+                // a neural policy happens to control this ship.
+                is_carrier_child = carrierChild != null,
+                has_living_parent_carrier = hasParent,
+                parent_carrier_id = hasParent ? carrierChild.Carrier.Id : 0,
                 side_starting_tsv = hasBoundPolicy
                     ? level.State.InitialTsv[ship.Side - 1] : 0,
                 team_retainable_mined_tsv = hasBoundPolicy
