@@ -336,6 +336,7 @@ def export(spec: dict, output: Path) -> dict:
                 "missing_artifact_job_ids": manifest["missing_artifact_job_ids"],
                 "missing_sources": missing_sources[:64],
                 "missing_source_count": len(missing_sources),
+                "files_extended_during_copy_count": manifest["files_extended_during_copy_count"],
                 "entries": entry_count}
     except BaseException:
         if archive is not None:
