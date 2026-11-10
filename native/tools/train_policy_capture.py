@@ -1,6 +1,7 @@
 """Run one MA-POCA update on observed native decision intervals."""
 
 import argparse
+from bisect import bisect_right
 from collections import defaultdict
 import hashlib
 import json
@@ -59,15 +60,16 @@ def completed_rollouts(capture, journal, manifest, checkpoint):
     if not terminals:
         raise ValueError("reward journal has no completed episodes")
     frames = defaultdict(dict)
-    final_observations = defaultdict(dict)
+    boundaries = defaultdict(dict)
     for generation, rows in capture_frames(capture, journal_id):
         if generation is None:
             for row in rows.copy():
                 key = int(row["world"]), int(row["episode"])
-                agent = int(row["group_agent"])
-                if row["tick"] != terminals[key]["tick"] or agent in final_observations[key]:
-                    raise ValueError("invalid terminal observation identity")
-                final_observations[key][agent] = row
+                tick, agent = int(row["tick"]), int(row["group_agent"])
+                frame = boundaries[key].setdefault(tick, {})
+                if not 0 < tick <= terminals[key]["tick"] or agent in frame:
+                    raise ValueError("invalid policy boundary observation identity")
+                frame[agent] = row
             continue
         if "continuous_log_probs" not in rows.dtype.names:
             raise ValueError("training requires captured behavior statistics")
@@ -108,6 +110,8 @@ def completed_rollouts(capture, journal, manifest, checkpoint):
         terminal = terminals[key]
         terminal_tick = terminal["tick"]
         bee_team = context["group_team_by_side"][str(context["bee_side"])]
+        closing = dict.fromkeys(expected, terminal_tick)
+        early = {}
         for agent, controller in identities.items():
             retired_at = retirements[key].get(controller)
             if retired_at is None:
@@ -116,24 +120,36 @@ def completed_rollouts(capture, journal, manifest, checkpoint):
                 "bee_side_eliminated" if expected[agent] == bee_team else "human_side_eliminated"
             ]
             if retired_at != terminal_tick or not eliminated:
-                raise ValueError("individual policy retirement needs a separate trajectory boundary")
+                closing[agent] = retired_at
+                early[agent] = retired_at
         for index, (tick, frame) in enumerate(ticks, 1):
-            if (tick != index * period - 1 or frame.keys() != expected.keys() or
+            active = {agent for agent, end in closing.items() if tick < end}
+            if (tick != index * period - 1 or frame.keys() != active or
                     any(int(row["team"]) != expected[agent] or
-                        (row["ship"], row["binding_revision"]) != identities[agent]
+                        (row["ship"], row["binding_revision"]) != identities.get(agent)
                         for agent, row in frame.items())):
-                raise ValueError("training requires a stable, synchronized MA-POCA cohort")
-        if terminals[key]["tick"] - ticks[-1][0] > period:
-            raise ValueError("decision capture ends before the final decision interval")
-        terminal_rows = final_observations[key]
+                raise ValueError("decision cohort disagrees with recorded controller retirements")
+        last_decision = {}
+        for tick, frame in ticks:
+            last_decision.update(dict.fromkeys(frame, tick))
+        if (last_decision.keys() != expected.keys() or
+                any(not 0 < end - last_decision[agent] <= period for agent, end in closing.items())):
+            raise ValueError("controller is missing its final decision interval")
+        expected_boundaries = {}
+        for end in set(early.values()) | {terminal_tick}:
+            expected_boundaries[end] = {
+                agent for agent, close in closing.items() if close >= end
+            }
         if (ended_teams[key] != dict.fromkeys(expected.values(), terminal_tick) or
-                terminal_rows.keys() != expected.keys() or
-                any((row["ship"], row["binding_revision"]) != identities[agent] or
-                    not np.isfinite(row["observations"]).all()
-                    for agent, row in terminal_rows.items())):
-            raise ValueError("training requires terminal observations for the same MA-POCA cohort")
-        ticks.append((terminal_tick, terminal_rows))
-        yield key, expected, ticks, {
+                boundaries[key].keys() != expected_boundaries.keys()):
+            raise ValueError("missing MA-POCA terminal or retirement boundary")
+        for end, frame in boundaries[key].items():
+            if (frame.keys() != expected_boundaries[end] or
+                    any((row["ship"], row["binding_revision"]) != identities.get(agent) or
+                        not np.isfinite(row["observations"]).all()
+                        for agent, row in frame.items())):
+                raise ValueError("policy boundary observations disagree with controller lifetimes")
+        yield key, expected, ticks, closing, boundaries[key], {
             team: rewards[key, team] for team in set(expected.values())
         }
 
@@ -143,49 +159,51 @@ def trajectories(rollouts, horizon, behavior_id):
     from mlagents.trainers.torch_entities.action_log_probs import LogProbsTuple
     from mlagents_envs.base_env import ActionTuple
 
-    for key, teams, frames, rewards in rollouts:
-        first_tick = frames[0][0]
-        period = frames[1][0] - first_tick
-        # The last frame contains real final observations without a new action.
-        group_rewards = {team: np.zeros(len(frames) - 1) for team in rewards}
+    for key, teams, frames, closing, boundaries, rewards in rollouts:
+        terminal_tick = max(boundaries)
+        reward_prefix = {}
         for team, events in rewards.items():
-            for tick, amount in events:
-                index = (tick - first_tick - 1) // period
-                if 0 <= index < len(frames) - 1:
-                    group_rewards[team][index] += amount
-        for start in range(0, len(frames) - 1, horizon):
-            end = min(start + horizon, len(frames) - 1)
-            experiences = {agent: [] for agent in teams}
-            for index in range(start, end):
-                frame = frames[index][1]
-                done = index == len(frames) - 2
-                actions = {
-                    agent: ActionTuple(row["sampled_continuous"], row["discrete"].astype(np.int32))
-                    for agent, row in frame.items()
-                }
-                for agent, row in frame.items():
-                    mates = [
-                        AgentStatus([frame[mate]["observations"]], 0.0, actions[mate], done)
-                        for mate in teams if mate != agent and teams[mate] == teams[agent]
-                    ]
-                    mask = [np.array([False, not bit]) for bit in row["fire_allowed"]]
-                    mask.append(row["special_allowed"] == 0)
-                    previous = (frames[index - 1][1][agent]["discrete"] if index
-                                else np.zeros_like(row["discrete"]))
-                    experiences[agent].append(AgentExperience(
-                        [row["observations"]], 0.0, done, actions[agent],
-                        LogProbsTuple(row["continuous_log_probs"], row["discrete_log_probs"]),
-                        mask, previous.astype(np.int32), False, None, mates,
-                        float(group_rewards[teams[agent]][index]),
-                    ))
-            following = frames[end][1]
-            for agent, steps in experiences.items():
-                yield Trajectory(
-                    steps, [following[agent]["observations"]],
-                    [[following[mate]["observations"]] for mate in teams
-                     if mate != agent and teams[mate] == teams[agent]],
-                    f"{key[0]}:{key[1]}:{agent}", behavior_id,
-                )
+            reward_prefix[team] = ([tick for tick, _ in events],
+                                   np.cumsum([0.0] + [amount for _, amount in events]))
+        frames = frames + [(terminal_tick, boundaries[terminal_tick])]
+        experiences = {agent: [] for agent in teams}
+        previous = {}
+        initial_action = np.zeros(6, dtype=np.int32)
+        for (tick, frame), (next_tick, following) in zip(frames, frames[1:]):
+            actions = {
+                agent: ActionTuple(row["sampled_continuous"], row["discrete"].astype(np.int32))
+                for agent, row in frame.items()
+            }
+            for agent, row in frame.items():
+                end = min(next_tick, closing[agent])
+                done = end == closing[agent]
+                team = teams[agent]
+                mates = [mate for mate in frame if mate != agent and teams[mate] == team]
+                group_status = [
+                    AgentStatus([frame[mate]["observations"]], 0.0, actions[mate], closing[mate] <= end)
+                    for mate in mates
+                ]
+                mask = [np.array([False, not bit]) for bit in row["fire_allowed"]]
+                mask.append(row["special_allowed"] == 0)
+                times, amounts = reward_prefix[team]
+                steps = experiences[agent]
+                steps.append(AgentExperience(
+                    [row["observations"]], 0.0, done, actions[agent],
+                    LogProbsTuple(row["continuous_log_probs"], row["discrete_log_probs"]),
+                    mask, previous.get(agent, initial_action),
+                    False, None, group_status,
+                    float(amounts[bisect_right(times, end)] - amounts[bisect_right(times, tick)]),
+                ))
+                previous[agent] = actions[agent].discrete
+                if done or len(steps) == horizon:
+                    observation_frame = boundaries[end] if done else following
+                    yield Trajectory(
+                        steps, [observation_frame[agent]["observations"]],
+                        [[observation_frame[mate]["observations"]] for mate in mates
+                         if closing[mate] > end or end == terminal_tick],
+                        f"{key[0]}:{key[1]}:{agent}", behavior_id,
+                    )
+                    experiences[agent] = []
 
 
 def main():

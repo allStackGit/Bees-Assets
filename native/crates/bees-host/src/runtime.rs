@@ -924,7 +924,7 @@ where
         let world = self.simulation.world(index).ok_or(
             bees_gameplay::level_host::NativeLevelSourceError::MissingRegisteredWorld,
         )?;
-        self.driver.terminal_observations(index, world)
+        self.driver.policy_boundary_observations(index, world)
     }
 
     /// Expose only the fail-closed persistent connection API, not its raw

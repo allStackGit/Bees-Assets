@@ -546,6 +546,15 @@ impl DurableDiagnosticNotifications {
 impl NativeLevelNotificationSink for DurableDiagnosticNotifications {
     type Error = io::Error;
 
+    fn captures_policy_boundaries(&self) -> bool { self.policy_capture.is_some() }
+
+    fn accept_policy_boundary(
+        &mut self, world: WorldId, revision: u64, tick: u64,
+        rows: &[bees_gameplay::level_host::NativeTerminalObservation],
+    ) -> io::Result<()> {
+        self.capture_terminal_policy(world, revision, tick, rows)
+    }
+
     fn accept_applied_policy_batch(
         &mut self, batch: &bees_gameplay::inference::NativeLevelInferenceBatch,
     ) -> io::Result<()> {

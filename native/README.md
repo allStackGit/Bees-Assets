@@ -157,14 +157,16 @@ to check the pairing and count completed rows. The reader rejects captures
 without the completion footer, including interrupted runs. The ML-Agents
 backend also records raw continuous samples and per-action log probabilities.
 Completed worlds record final observations for surviving group controllers.
-To run one CPU MA-POCA update from a completed capture with a synchronized,
-unchanged group roster, use
+Individual deaths also capture the retiring controller and its surviving
+teammates at the death tick. To run one CPU MA-POCA update from a completed
+capture with synchronized decisions, use
 `python native/tools/train_policy_capture.py decisions.bin events.jsonl manifest.json checkpoint.pt Training/rl_1v1_config.yaml new-checkpoint-dir`.
 The capture must contain one behavior checkpoint across all participating
 slots and enough decisions for a configured minibatch. The learner uses
-the native group's terminal rewards. Controllers lost on the tick their
-side is eliminated get the source's inactive faction observation. Earlier
-individual deaths and rebinding still require their own trajectory boundary.
+the native group's terminal rewards. For an individual death, it closes that
+controller's trajectory and bootstraps using surviving teammates. Controllers
+lost when their side is eliminated receive the source's inactive faction
+observation and final group reward. Controller rebinding is still unsupported.
 Completed worlds can be recycled up to `episodes_per_world` times through
 `NativeHostRuntime::reset_world`, with fresh monotonic squad lifetimes and
 per-episode deterministic seeds. Each replay uses the exact initial exported

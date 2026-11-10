@@ -152,6 +152,11 @@ impl NativeWorldPerceptionAssembler {
         self.identities.assigned_count()
     }
 
+    /// Boundary observations must not assign identities in the live policy stream.
+    pub(crate) fn for_policy_boundary(&self) -> Self {
+        Self::new(self.identities.clone())
+    }
+
     /// One game-owned observation path: project canonical ship, parent,
     /// allies and discovered obstacles, then encode the model input
     /// using this ship's actual bound policy frame and action mask.

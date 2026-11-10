@@ -5,6 +5,21 @@ Read the full goal and fresh root AGENTS.md before further work. The complete
 Unity replacement remains incomplete. The latest Experiment Hub and queue
 work has been merged locally.
 
+## 2026-11-10 individual controller retirement
+
+An opt-in policy capture now records a death-tick observation boundary
+while other controllers continue. The learner closes the dead controller's
+trajectory, bootstraps from surviving teammates, and removes the retired
+controller from subsequent group observations. Boundary observations use
+a copy of the live policy's identity mapping.
+
+The Windows receipt at
+`B:\Bees\native-capability-qualification\survivor-final-b050d7452d1b438ab7010ecb3a69c615`
+verified retirement at tick 1, a same-tick survivor bootstrap observation,
+and episode completion at tick 25. MA-POCA used 51 transitions and completed
+17 minibatches. Controller rebinding and asynchronous decision clocks
+remain outside the capture learner's supported cohort.
+
 ## 2026-11-10 elimination trajectories
 
 The combat death record carries the retired policy binding revision into the

@@ -533,6 +533,7 @@ pub struct NativeLevelWindowCounts {
 
 #[derive(Debug)]
 pub enum NativeLevelWindowError<SourceError, BackendError, SinkError> {
+    RetirementObservation { round: u32, error: NativeLevelSourceError<SourceError> },
     Step {
         round: u32,
         error: NativeBatchedStepError<NativeLevelSourceError<SourceError>, BackendError>,
@@ -598,21 +599,21 @@ pub struct NativeLevelBatchDriver {
 }
 
 impl NativeLevelBatchDriver {
-    /// Capture final observations before the completed world is recycled.
-    /// Dead controllers need their own retirement observation boundary.
-    pub fn terminal_observations<M: NativeLevelObservationContext, A>(
-        &mut self, index: usize, world: &World<NativeLevelState<M, A>>,
+    /// Capture group observations at a controller retirement or episode end.
+    pub fn policy_boundary_observations<M: NativeLevelObservationContext, A>(
+        &self, index: usize, world: &World<NativeLevelState<M, A>>,
     ) -> Result<Vec<NativeTerminalObservation>, NativeLevelSourceError<M::Error>> {
-        let assembly = self.worlds.get_mut(index)
+        let assembly = self.worlds.get(index)
             .ok_or(NativeLevelSourceError::MissingRegisteredWorld)?;
         if assembly.id != world.id {
             return Err(NativeLevelSourceError::WorldIdentityChanged);
         }
-        if assembly.revision != world.episode_revision() || !world.state.events.completed() {
+        if assembly.revision != world.episode_revision() {
             return Err(NativeLevelSourceError::EpisodeRevisionChanged);
         }
         let metadata = &world.state.metadata;
         let combat = &world.state.combat;
+        let mut perception = assembly.perception.for_policy_boundary();
         let mut writer = NativePerceptionWriter::new();
         let mut rows = Vec::new();
         for (ship_id, binding_revision) in combat.bound_policy_agent_bindings() {
@@ -620,7 +621,7 @@ impl NativeLevelBatchDriver {
                 .map_err(NativeLevelSourceError::Source)? else { continue };
             let inputs = metadata.inputs_for_agent(combat, ship_id)
                 .map_err(NativeLevelSourceError::Source)?;
-            let snapshot = assembly.perception.assemble(
+            let snapshot = perception.assemble(
                 world, ship_id, inputs, |id| metadata.authored_ship_perception(id),
             ).map_err(NativeLevelSourceError::Perception)?;
             let frame = combat.policy_frame(ship_id).expect("live policy binding");
@@ -629,8 +630,7 @@ impl NativeLevelBatchDriver {
                 .map_err(NativeLevelSourceError::TerminalPerception)?;
             rows.push(NativeTerminalObservation { ship_id, group_agent, binding_revision, features });
         }
-        let result = world.state.events.latest_finalized_episode()
-            .expect("completed world has a terminal result").result;
+        let result = world.state.events.latest_finalized_episode().map(|finalized| finalized.result);
         let [bee_side, human_side] = world.state.events.sides();
         for event in combat.events() {
             let CombatEvent::ShipDied {
@@ -638,8 +638,8 @@ impl NativeLevelBatchDriver {
             } = *event else { continue };
             let Some(ship) = combat.ship(ship_id) else { continue };
             let faction = match ship.side {
-                side if side == bee_side && result.bee_side_eliminated => 1.0,
-                side if side == human_side && result.human_side_eliminated => -1.0,
+                side if side == bee_side && result.is_none_or(|r| r.bee_side_eliminated) => 1.0,
+                side if side == human_side && result.is_none_or(|r| r.human_side_eliminated) => -1.0,
                 _ => continue,
             };
             let Some(group_agent) = metadata.group_agent_for_ship(ship_id)
@@ -1338,6 +1338,22 @@ impl NativeLevelBatchDriver {
                 sink.accept_applied_policy_batch(&self.inference)
                     .map_err(|error| NativeLevelWindowError::PolicyDelivery { round, error })?;
             }
+            if sink.captures_policy_boundaries() && step.worlds_stepped != 0 {
+                for index in 0..simulation.world_count() {
+                    let world = simulation.world(index).expect("registered world");
+                    if world.is_failed() || world.state.events.completed() ||
+                        world.state.events.was_aborted() ||
+                        !world.state.combat.events().iter().any(|event| matches!(event,
+                            CombatEvent::ShipDied { policy_binding_revision: Some(_), .. }))
+                    {
+                        continue;
+                    }
+                    let rows = self.policy_boundary_observations(index, world)
+                        .map_err(|error| NativeLevelWindowError::RetirementObservation { round, error })?;
+                    sink.accept_policy_boundary(world.id, world.episode_revision(), world.tick(), &rows)
+                        .map_err(|error| NativeLevelWindowError::PolicyDelivery { round, error })?;
+                }
+            }
             counts.rounds += 1;
             counts.world_steps += step.worlds_stepped;
             counts.policy_rows += step.policy_agents_inferred;
@@ -1479,6 +1495,15 @@ impl NativeLevelBatchDriver {
 /// These identifiers cannot be substituted for server OutcomeIds.
 pub trait NativeLevelNotificationSink {
     type Error;
+
+    fn captures_policy_boundaries(&self) -> bool { false }
+
+    fn accept_policy_boundary(
+        &mut self, _world: WorldId, _revision: u64, _tick: u64,
+        _rows: &[NativeTerminalObservation],
+    ) -> Result<(), Self::Error> {
+        Ok(())
+    }
 
     /// Called only after every world in the policy batch stepped successfully,
     /// before delivering rewards and terminal records produced by that step.
