@@ -191,6 +191,12 @@ function boundedReport(value) {
         (cudaProfiles.length&&(!installed.includes('tinybrains')||
             !['linux','win32'].includes(value.platform))))
         throw Error('CUDA/ROCm TinyBrains profiles require an installed native adapter.');
+    const threadOverrides=value.tinybrains_thread_overrides??[];
+    if(!Array.isArray(threadOverrides)||
+        threadOverrides.length>Object.keys(profiles).length||
+        threadOverrides.some(id=>typeof id!=='string'||!Object.hasOwn(profiles,id))||
+        new Set(threadOverrides).size!==threadOverrides.length)
+        throw Error('TinyBrains thread override requires a locally approved profile.');
     const imports=tinyBrainsImports(value.tinybrains_imports??{});
     if(Object.keys(imports).length&&!installed.includes('tinybrains')||
         Object.values(imports).some(item=>!Object.hasOwn(profiles,item.profile)))
@@ -221,6 +227,7 @@ function boundedReport(value) {
         evaluation_suites:localExecutor?evaluationSuites:{},
         tinybrains_profiles:profiles,
         tinybrains_cuda_profiles:cudaProfiles.slice(),
+        tinybrains_thread_overrides:threadOverrides.slice(),
         tinybrains_imports:imports,
         gpu_projects:gpuProjects.slice(),
         gpu_shared_projects:gpuShared.slice(),
@@ -936,6 +943,7 @@ class ExperimentHub {
                 machine.evaluation_suites = copy(report.evaluation_suites);
                 machine.tinybrains_profiles = copy(report.tinybrains_profiles||{});
                 machine.tinybrains_cuda_profiles=report.tinybrains_cuda_profiles.slice();
+                machine.tinybrains_thread_overrides=report.tinybrains_thread_overrides.slice();
                 machine.tinybrains_imports=copy(report.tinybrains_imports);
                 machine.gpu_projects = report.gpu_projects.slice();
                 machine.gpu_shared_projects=report.gpu_shared_projects.slice();
