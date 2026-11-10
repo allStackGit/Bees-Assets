@@ -52,8 +52,11 @@ function supportsTinyBrainsProfile(machine,job) {
     return ['win32','linux'].includes(machine.agent_platform)&&
         (cuda?gpu:job.resources?.gpu_count===0)&&
         p&&Object.keys(p).every(key=>
-            ['profile','profile_sha256','updates','import_checkpoint',
+            ['profile','profile_sha256','updates','threads','import_checkpoint',
                 'import_checkpoint_sha256'].includes(key))&&
+        (p.threads===undefined||
+            Number.isSafeInteger(p.threads)&&p.threads>=1&&p.threads<=256&&
+            machine.tinybrains_thread_overrides?.includes(p.profile)===true)&&
         (p.import_checkpoint===undefined
             ?p.import_checkpoint_sha256===undefined
             :!job.continuation_of_job_id&&
