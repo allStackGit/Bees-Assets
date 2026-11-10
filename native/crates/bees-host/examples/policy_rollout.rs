@@ -1614,6 +1614,8 @@ fn main() -> Result<(), Box<dyn Error>> {
             "rendered_frames": client.rendered_frames,
             "render_wall_seconds": client.render_wall_seconds,
             "window_update_wall_seconds": client.window_update_wall_seconds,
+            "viewport_resizes": client.viewport_resizes,
+            "final_viewport_pixels": client.viewport_size().0 * client.viewport_size().1,
             "culled_ship_draws": client.culled_ship_draws,
             "culled_obstacle_draws": client.culled_obstacle_draws,
             "culled_projectile_draws": client.culled_projectile_draws,
