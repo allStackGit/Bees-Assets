@@ -308,7 +308,14 @@ impl WorldCollider {
             }
             ShipShape::Circle { offset, radius } => {
                 self.polygon_world.clear();
-                self.circle_world = pose.transform_point(*offset);
+                // Centered projectile/ship circles are rotation-invariant.
+                // Most moving shots use a zero local offset, so avoid a
+                // sin/cos calculation on every fixed physics step.
+                self.circle_world = if *offset == Vec2::ZERO {
+                    pose.position
+                } else {
+                    pose.transform_point(*offset)
+                };
                 self.bounds = Some(Aabb::circle(self.circle_world, *radius));
             }
         }
