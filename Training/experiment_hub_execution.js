@@ -45,6 +45,10 @@ class LocalExecution {
             tinybrains_required_import_profiles:[...(this.supervisor.adapters?.tinybrains?.tinybrains_required_import_profiles||[])],
             tinybrains_remote_rollout_profiles:[...(this.supervisor.adapters?.tinybrains?.tinybrains_remote_rollout_profiles||[])],
             tinybrains_remote_rollout_count:this.supervisor.adapters?.tinybrains?.tinybrains_remote_rollout_count||0,
+            tinybrains_remote_rollout_endpoints:[...(this.supervisor.adapters?.tinybrains?.tinybrains_remote_rollout_endpoints||[])],
+            tinybrains_remote_key_fingerprint:this.supervisor.adapters?.tinybrains?.tinybrains_remote_key_fingerprint||null,
+            tinybrains_rollout_endpoint:this.supervisor.adapters?.tinybrains_rollout?.tinybrains_rollout_endpoint||null,
+            tinybrains_rollout_key_fingerprint:this.supervisor.adapters?.tinybrains_rollout?.tinybrains_rollout_key_fingerprint||null,
             tinybrains_dual_gpu_profiles:this.supervisor.gpuEnabled===true&&
                 this.supervisor instanceof DockerSupervisor&&
                 this.supervisor.adapters?.tinybrains?.gpu_dual_execution==='split-ppo'
