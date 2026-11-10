@@ -3033,12 +3033,21 @@ class ExperimentHub {
             // device; they are not measured per-job GPU consumption.
             let chartProgress=progress;
             if(progress) {
-                const measurements={...progress.metrics};
+                // Select requested trainer measurements before adding host
+                // measurements. Filtering afterwards could discard requested
+                // CPU/GPU telemetry when the trainer already reports 96 keys.
+                const selection=Array.isArray(job.metric_selection)&&
+                    job.metric_selection.length?new Set(job.metric_selection):null;
+                const measurements=Object.fromEntries(Object.entries(progress.metrics)
+                    .filter(([name])=>!selection||selection.has(name)));
+                let measurementCount=Object.keys(measurements).length;
                 const add=(key,value,unit)=>{
-                    if(!Object.hasOwn(measurements,key)&&
-                        Object.keys(measurements).length<96&&
-                        Number.isFinite(value)&&value>=0&&value<=1e12)
+                    if((!selection||selection.has(key))&&
+                        !Object.hasOwn(measurements,key)&&measurementCount<96&&
+                        Number.isFinite(value)&&value>=0&&value<=1e12) {
                         measurements[key]={value,unit};
+                        measurementCount++;
+                    }
                 };
                 add('job_cpu_cores',cpuCores,'scalar');
                 add('job_memory_mb',item.memory_current_mb,'mb');
@@ -3059,16 +3068,16 @@ class ExperimentHub {
                         add('host_gpu_vram_mb',observed.used_vram_mb,'mb');
                     }
                 }
-                let retained=measurements;
-                if(Array.isArray(job.metric_selection)&&job.metric_selection.length) {
-                    retained=Object.fromEntries(Object.entries(measurements)
-                        .filter(([name])=>job.metric_selection.includes(name)||
-                            name==='total_ppo_updates'));
-                    if(!Object.keys(retained).length)
-                        retained={project_steps_completed:{
-                            value:progress.steps_completed,unit:'count'}};
-                }
-                chartProgress={...progress,metrics:retained};
+                // Keep the PPO update counter when space remains, without
+                // evicting an explicitly selected measurement at the cap.
+                if(selection&&measurementCount<96&&
+                    Object.hasOwn(progress.metrics,'total_ppo_updates')&&
+                    !Object.hasOwn(measurements,'total_ppo_updates'))
+                    measurements.total_ppo_updates=progress.metrics.total_ppo_updates;
+                if(!Object.keys(measurements).length)
+                    measurements.project_steps_completed={
+                        value:progress.steps_completed,unit:'count'};
+                chartProgress={...progress,metrics:measurements};
             }
             const progressAccepted=chartProgress&&this.progressHistory.record(
                 job.id,job.project_id,chartProgress,received);
