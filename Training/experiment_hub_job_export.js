@@ -20,7 +20,7 @@ const JOB_FIELDS=[
     'checkpoint_stop_verified','created_at','capacity_released_at',
     'evaluation_stop','evaluation_stop_evidence','evaluation_candidates',
     'last_evaluation','final_progress','final_resource_usage',
-    'execution_diagnostic',
+    'execution_diagnostic','native_bees_run_id',
 ];
 function trustedRoot(file) {
     if(typeof file!=='string'||!path.isAbsolute(file))return null;
@@ -54,9 +54,10 @@ function loadRoots(dataRoot) {
     return roots;
 }
 class JobExporter {
-    constructor(dataRoot,hub) {
+    constructor(dataRoot,hub,legacyBees=null) {
         this.dataRoot=dataRoot;
         this.hub=hub;
+        this.legacyBees=legacyBees;
         this.sessions=new Map();
     }
     start(value) {
@@ -76,10 +77,11 @@ class JobExporter {
         if([...this.sessions.values()].some(item=>item.status==='preparing'))
             throw Error('Another complete job export is already in progress.');
         const project=value.project_id;
-        const root=trustedRoot(loadRoots(this.dataRoot)[project]);
+        const legacy=project==='bees'&&this.legacyBees;
+        const root=trustedRoot(legacy?this.dataRoot:loadRoots(this.dataRoot)[project]);
         if(!root)
             throw Error('No approved local artifact directory for this project; configure job-export-roots.json in the private Hub data directory.');
-        const snapshot=this.hub.snapshot();
+        const snapshot=legacy?{jobs:this.legacyBees.jobs()}:this.hub.snapshot();
         const available=new Map(snapshot.jobs.filter(job=>job.project_id===project)
             .map(job=>[job.id,job]));
         const jobs=value.job_ids.map(id=>{
@@ -88,7 +90,8 @@ class JobExporter {
             return Object.fromEntries(JOB_FIELDS.filter(key=>Object.hasOwn(job,key))
                 .map(key=>[key,job[key]]));
         });
-        const progress=this.hub.progressComparison(project);
+        const progress=legacy?this.legacyBees.progress():
+            this.hub.progressComparison(project);
         progress.samples=progress.samples.filter(sample=>value.job_ids.includes(sample.job_id));
         const dir=fs.mkdtempSync(path.join(this.dataRoot,'job-export-'));
         fs.chmodSync(dir,0o700);
@@ -97,6 +100,7 @@ class JobExporter {
             project_id:project,jobs,metrics:value.metrics,
             include_replays:value.include_replays===true,
             artifact_root:root,progress,
+            ...(legacy?{additional_sources:this.legacyBees.sources(jobs)}:{}),
         }),{flag:'wx',mode:0o600});
         const id=crypto.randomUUID();
         const session={id,dir,project,status:'preparing',parts:[],error:null};
@@ -106,10 +110,21 @@ class JobExporter {
             [script,'--spec',spec,'--output',path.join(dir,project+'-analysis.zip')],
             {shell:false,windowsHide:true,stdio:['ignore','pipe','pipe']});
         let stdout='',stderr='',done=false;
+        function cleanupLater() {
+            const cleanup=setTimeout(()=>{
+                fs.rm(dir,{recursive:true,force:true},()=>{});
+                // The session ID remains visible as an expired entry until
+                // this coordinator restarts; it can no longer serve archives.
+                session.status='expired';
+                session.parts=[];
+            },KEEP_MS);
+            cleanup.unref?.();
+        }
         const fail=error=>{
             if(done)return;
             done=true;session.status='failed';
             session.error=String(error).slice(0,500);
+            cleanupLater();
         };
         child.stdout.on('data',chunk=>{
             stdout+=chunk.toString('utf8');
@@ -134,14 +149,10 @@ class JobExporter {
                 session.missing_artifact_job_ids=report.missing_artifact_job_ids||[];
                 session.status='ready';
                 done=true;
+                cleanupLater();
             }catch(error){fail(error);}
         });
         // No training processes are managed or modified by the exporter.
-        const cleanup=setTimeout(()=>{
-            this.sessions.delete(id);
-            fs.rm(dir,{recursive:true,force:true},()=>{});
-        },KEEP_MS);
-        cleanup.unref?.();
         return {id,status:session.status};
     }
     status(id) {
