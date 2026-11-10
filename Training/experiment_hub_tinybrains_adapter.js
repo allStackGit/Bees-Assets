@@ -61,6 +61,9 @@ function supportsTinyBrainsProfile(machine,job) {
         (p.threads===undefined||
             Number.isSafeInteger(p.threads)&&p.threads>=1&&p.threads<=256&&
             machine.tinybrains_thread_overrides?.includes(p.profile)===true)&&
+        (!machine.tinybrains_required_import_profiles?.includes(p.profile)||
+            Boolean(job.continuation_of_job_id)||
+            p.import_checkpoint!==undefined)&&
         (p.import_checkpoint===undefined
             ?p.import_checkpoint_sha256===undefined
             :!job.continuation_of_job_id&&
