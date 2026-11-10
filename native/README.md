@@ -16,9 +16,11 @@ cargo run --release --manifest-path native/Cargo.toml -p bees-host \
 
 Space pauses all worlds; N advances one fixed round while paused; Tab changes
 the inspected world; arrow keys pan; the mouse wheel zooms around the pointer;
-F fits the imported bounds; left-click inspects a nearby ship and selects its
-source-authorized player squad. Ctrl-click adds squads; left-drag selects squads
-whose real hulls overlap the box. C stops Aggressive chase, V enables Cease Fire,
+F fits the imported bounds; window resizing preserves camera zoom while
+revealing more or less world. Left-click inspects a ship using its authored
+collider and selects its source-authorized player squad. Ctrl-click adds squads;
+left-drag selects squads whose real hulls overlap the box, and Ctrl-drag
+extends that selection. C stops Aggressive chase, V enables Cease Fire,
 and A restores Attack on Sight (except during Heal). These update the same
 squad/weapon state as headless play. Right-click moves the selected squads, once per
 live squad lifetime; locked or unavailable squads are skipped. Move requests carry
@@ -31,6 +33,9 @@ Status intervals still include all elapsed host time, including pauses.
 
 The view draws authored primary collider outlines, current health, live
 projectiles, obstacles and fading debris directly from borrowed combat bodies.
+The final `presentation_final` event separates software rendering,
+inspection/title formatting and display-transfer wall time, and counts
+offscreen hull/fragment skips; headless operation incurs none of this cost.
 It is a tactical development view, **not** the finished sprite/UI/audio game.
 No window-system dependency is enabled in the default headless build. Linux
 interactive builds require X11 development libraries and a display; the native
