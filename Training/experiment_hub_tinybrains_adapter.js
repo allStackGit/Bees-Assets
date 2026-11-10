@@ -43,6 +43,9 @@ function supportsTinyBrainsProfile(machine,job) {
     const p=job.frozen_parameters;
     const profiles=machine.tinybrains_profiles;
     const cuda=machine.tinybrains_cuda_profiles?.includes(p?.profile)===true;
+    const cpuFallback=p?.device==='cpu'&&
+        machine.tinybrains_cpu_fallback_profiles?.includes(p.profile)===true&&
+        job.resources?.gpu_count===0;
     const gpu=job.resources?.gpu_count===1&&
         (job.resources.gpu_mode==='exclusive'||
             job.resources.gpu_mode==='shared'&&machine.agent_platform==='win32'&&
@@ -50,9 +53,10 @@ function supportsTinyBrainsProfile(machine,job) {
     const imported=p?.import_checkpoint==null?null:
         machine.tinybrains_imports?.[p.import_checkpoint];
     return ['win32','linux'].includes(machine.agent_platform)&&
-        (cuda?gpu:job.resources?.gpu_count===0)&&
+        (cuda?(cpuFallback||p?.device===undefined&&gpu):
+            p?.device===undefined&&job.resources?.gpu_count===0)&&
         p&&Object.keys(p).every(key=>
-            ['profile','profile_sha256','updates','threads','import_checkpoint',
+            ['profile','profile_sha256','updates','threads','device','import_checkpoint',
                 'import_checkpoint_sha256'].includes(key))&&
         (p.threads===undefined||
             Number.isSafeInteger(p.threads)&&p.threads>=1&&p.threads<=256&&
