@@ -682,7 +682,8 @@ function nativeStartReadiness(snapshot, job) {
         const matchedEndpoints=new Set();
         for(const worker of workers) {
             if(worker.status!=='running'||worker.capacity_released_at||
-                !worker.dispatch_id||worker.resources?.gpu_count!==0)
+                !worker.dispatch_id||![0,1].includes(worker.resources?.gpu_count)||
+                (worker.resources.gpu_count===1&&worker.resources.gpu_mode!=='exclusive'))
                 return block('Every remote CPU collector must be running under its own active Hub job.');
             if(!worker.assigned_machine_id||hosts.has(worker.assigned_machine_id))
                 return block('Every remote CPU collector requires a distinct worker machine.');
@@ -697,7 +698,8 @@ function nativeStartReadiness(snapshot, job) {
             if(!host||host.status!=='connected'||host.local_executor_enabled!==true||
                 host.native_preflight_passed!==true||
                 !host.installed_projects?.includes('tinybrains_rollout')||!owned||
-                nativeResourceBlock(worker,owned))
+                nativeResourceBlock(worker,owned)||
+                gpuStartBlock(worker,owned,host))
                 return block('The remote collector has lost its authenticated host or CPU/RAM ownership.');
             if(!expectedEndpoints.includes(host.tinybrains_rollout_endpoint)||
                 matchedEndpoints.has(host.tinybrains_rollout_endpoint)||
@@ -3311,8 +3313,10 @@ class ExperimentHub {
                 !learner||learner.project_id!=='tinybrains'||
                 learner.frozen_parameters?.remote_rollouts!==true||
                 ['finished','stopped','failed','cancelled'].includes(learner.status)||
-                resources.gpu_count!==0||ancestorId!==null||afterId!==null)
-                throw Error('Remote CPU collector requires one active or queued distributed TinyBrains learner, no GPU, and no separate predecessor.');
+                (resources.gpu_count!==0&&
+                    (resources.gpu_count!==1||resources.gpu_mode!=='exclusive'))||
+                ancestorId!==null||afterId!==null)
+                throw Error('Remote collector requires an active or queued distributed TinyBrains learner, CPU-only or one exclusive GPU, and no separate predecessor.');
             if(next.jobs.filter(j=>j.project_id==='tinybrains_rollout'&&
                 j.status!=='cancelled'&&
                 j.frozen_parameters?.learner_job_id===learner.id).length>=8)
