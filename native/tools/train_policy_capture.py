@@ -394,6 +394,14 @@ def main():
     if device.type == "cuda":
         torch.cuda.synchronize(device)
     update_wall_seconds = time.perf_counter() - update_started
+    # Bundle receipts pin the artifact digests, not only their own JSON.
+    # Files may change while an update runs on a different worker; refuse
+    # to publish learned weights if any input no longer matches its pin.
+    for receipt, digest in bundles:
+        for _ in bundle_captures(
+            receipt, primary_manifest_sha, input_sha, args.learner_slot, digest,
+        ):
+            pass
     modules = {**policy.get_modules(), **optimizer_modules}
     next_checkpoint = args.output / "checkpoint.pt"
     with next_checkpoint.open("xb") as output:
