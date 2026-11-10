@@ -134,6 +134,10 @@ function createTinyBrainsPersistentDockerAdapter({
         ],
         env:{
             HOME:'/tmp',PYTHONDONTWRITEBYTECODE:'1',
+            // On Halifax's R9700, MIOpen's default solver selection made
+            // dilated-convolution backward passes 7-10x slower in isolation.
+            // FAST improved all three observed dilations without model changes.
+            MIOPEN_FIND_MODE:'FAST',
             TINYBRAINS_SOURCE_ROOT:sourceWindowsRoot,
             TINYBRAINS_RUNS_ROOT:'/workspace/experiments/tinybrains',
             TINYBRAINS_HOME:CACHE_IN,
