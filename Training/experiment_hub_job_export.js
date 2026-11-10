@@ -165,6 +165,7 @@ class JobExporter {
                     throw Error('Export part validation failed.');
                 session.parts=report.parts;
                 session.missing_artifact_job_ids=report.missing_artifact_job_ids||[];
+                session.missing_sources=report.missing_sources||[];
                 session.status='ready';
                 done=true;
                 cleanupLater.call(this);
@@ -180,6 +181,7 @@ class JobExporter {
             id,project_id:session.project,status:session.status,
             parts:session.parts,error:session.error,
             missing_artifact_job_ids:session.missing_artifact_job_ids||[],
+            missing_sources:session.missing_sources||[],
         };
     }
     download(id,part,res) {
