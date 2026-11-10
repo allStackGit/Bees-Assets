@@ -844,6 +844,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const tinyBrainsSelect=document.createElement('select');
     const tinyBrainsImport=document.createElement('select');
     const tinyBrainsUpdates=document.createElement('input');
+    const tinyBrainsThreads=document.createElement('input');
+    tinyBrainsThreads.type='number';
+    tinyBrainsThreads.min='1';
+    tinyBrainsThreads.max='256';
+    tinyBrainsThreads.step='1';
+    tinyBrainsThreads.placeholder='Profile default';
     tinyBrainsUpdates.type='number';
     tinyBrainsUpdates.min='1';
     tinyBrainsUpdates.max='10000000';
@@ -852,6 +858,18 @@ document.addEventListener('DOMContentLoaded', () => {
     const tinyBrainsUse=button('Use profile and update count',()=>{
         const [profile,digest]=tinyBrainsSelect.value.split(':');
         const updates=tinyBrainsUpdates.valueAsNumber;
+        const hasThreads=tinyBrainsThreads.value.trim()!=='';
+        const threads=hasThreads?tinyBrainsThreads.valueAsNumber:null;
+        if(hasThreads&&(!Number.isSafeInteger(threads)||threads<1||threads>256)) {
+            feedback('hub-config-message','CPU threads must be a whole number from 1 to 256.');
+            return;
+        }
+        if(hasThreads&&!(state?.machines||[]).some(machine=>
+            machine.status==='connected'&&machine.tinybrains_profiles?.[profile]===digest&&
+            machine.tinybrains_thread_overrides?.includes(profile))) {
+            feedback('hub-config-message','No connected worker approves CPU thread overrides for this profile.');
+            return;
+        }
         if(!profile||!digest||!Number.isSafeInteger(updates)||updates<1||updates>10000000) {
             feedback('hub-config-message','Select an approved profile and enter 1–10,000,000 updates.');
             return;
@@ -859,6 +877,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const [sourceId,sourceDigest]=tinyBrainsImport.value.split(':');
         $('hub-config-json').value=JSON.stringify({
             profile,profile_sha256:digest,updates,
+            ...(hasThreads?{threads}:{}),
             ...(sourceId&&sourceDigest?{
                 import_checkpoint:sourceId,
                 import_checkpoint_sha256:sourceDigest,
@@ -873,10 +892,12 @@ document.addEventListener('DOMContentLoaded', () => {
             (sourceId
                 ?'The source checkpoint SHA-256 is frozen; this draft can initialize a new lineage, not a continuation stage. '
                 :'Use a configuration without an import for checkpoint-continuation stages. ')+
+            (hasThreads?'The CPU thread override does not change the job CPU quota. ':'')+
             'Save the draft to retain these settings.');
     });
     for(const [caption,control] of [['Approved profile ',tinyBrainsSelect],
-        ['Updates ',tinyBrainsUpdates],['Approved checkpoint import (optional) ',tinyBrainsImport]]) {
+        ['Updates ',tinyBrainsUpdates],['CPU threads (optional) ',tinyBrainsThreads],
+        ['Approved checkpoint import (optional) ',tinyBrainsImport]]) {
         const label=document.createElement('label');
         label.append(caption,control);
         tinyBrainsPicker.append(label);
@@ -922,6 +943,7 @@ document.addEventListener('DOMContentLoaded', () => {
         $('hub-config-name').value='';
         $('hub-config-json').value='{}';
         tinyBrainsUpdates.value='1';
+        tinyBrainsThreads.value='';
         setEvaluationEditor();
         $('hub-config-save').textContent='Save draft';
         feedback('hub-config-message','');
@@ -991,6 +1013,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 editing={id:c.id,revision:c.revision};
                 $('hub-config-name').value=c.name;
                 $('hub-config-json').value=JSON.stringify(c.parameters,null,2);
+                tinyBrainsThreads.value=c.parameters.threads??'';
                 setEvaluationEditor(c.evaluation_stop);
                 $('hub-config-save').textContent='Save revision';
                 feedback('hub-config-message','Editing revision '+c.revision);
@@ -999,6 +1022,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 resetEditor();
                 $('hub-config-name').value=(c.name+' copy').slice(0,100);
                 $('hub-config-json').value=JSON.stringify(c.parameters,null,2);
+                tinyBrainsThreads.value=c.parameters.threads??'';
                 setEvaluationEditor(c.evaluation_stop);
                 feedback('hub-config-message','Duplicated into a new unsaved draft. Select Save draft to retain it.');
             }));
