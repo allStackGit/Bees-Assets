@@ -958,6 +958,13 @@ document.addEventListener('DOMContentLoaded', () => {
                         (result.missing_artifact_job_ids?.length
                             ?'Some jobs have no local artifacts: '+
                               result.missing_artifact_job_ids.join(', ')+'. ':'')+
+                        (result.missing_sources?.length
+                            ?'Unavailable log sources: '+result.missing_sources
+                                .slice(0,8).map(item=>item.job_id.slice(-8)+
+                                    '/'+item.label+' ('+item.reason+')').join(', ')+
+                                (result.missing_sources.length>8
+                                    ?' and '+(result.missing_sources.length-8)+' more':'')+
+                                '. See the ZIP manifest for details. ':'')+
                         'Select each part: '));
                     for(const [i,part] of result.parts.entries()) {
                         const link=document.createElement('a');
