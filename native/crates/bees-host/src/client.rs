@@ -40,6 +40,8 @@ pub struct NativeClient {
     pub window_update_wall_seconds: f64,
     pub culled_ship_draws: u64,
     pub culled_obstacle_draws: u64,
+    pub culled_projectile_draws: u64,
+    pub culled_piece_draws: u64,
 }
 
 impl NativeClient {
@@ -54,7 +56,8 @@ impl NativeClient {
             selection_drag: None, support_mode: None,
             rendered_frames: 0, render_wall_seconds: 0.0,
             window_update_wall_seconds: 0.0,
-            culled_ship_draws: 0, culled_obstacle_draws: 0 })
+            culled_ship_draws: 0, culled_obstacle_draws: 0,
+            culled_projectile_draws: 0, culled_piece_draws: 0 })
     }
 
     pub fn selected_world(&self) -> usize { self.selected_world }
@@ -281,6 +284,8 @@ impl NativeClient {
         self.rendered_frames += 1;
         self.culled_ship_draws = self.culled_ship_draws.saturating_add(counts.culled_ships as u64);
         self.culled_obstacle_draws = self.culled_obstacle_draws.saturating_add(counts.culled_obstacles as u64);
+        self.culled_projectile_draws = self.culled_projectile_draws.saturating_add(counts.culled_projectiles as u64);
+        self.culled_piece_draws = self.culled_piece_draws.saturating_add(counts.culled_pieces as u64);
         let window_update_started = Instant::now();
         self.window.update_with_buffer(self.renderer.pixels(), width, height)?;
         self.window_update_wall_seconds += window_update_started.elapsed().as_secs_f64();
