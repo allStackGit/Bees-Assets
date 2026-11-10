@@ -8,11 +8,13 @@ Remote-only artifacts remain explicitly absent from the manifest.
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import os
 import re
 import stat
 import sys
+import tempfile
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
@@ -36,7 +38,7 @@ def safe_source(root: Path, source: Path, include_replays: bool) -> bool:
     rel = source.relative_to(root)
     if not rel.parts or any(part.lower() in DENIED_PARTS for part in rel.parts):
         return False
-    if not include_replays and "replays" in rel.parts:
+    if not include_replays and any(part.lower() == "replays" for part in rel.parts):
         return False
     if any(term in source.name.lower() for term in DENIED_NAMES):
         return False
@@ -49,6 +51,55 @@ def safe_source(root: Path, source: Path, include_replays: bool) -> bool:
         return False
     info = source.stat()
     return stat.S_ISREG(info.st_mode) and info.st_nlink == 1
+
+
+class SelectedObservationRows:
+    """Stream one captured native observation file into a selected-metric CSV."""
+
+    def __init__(self, job_id: str, project: str, names: set[str], writer) -> None:
+        self.job_id = job_id
+        self.project = project
+        self.names = names
+        self.writer = writer
+        self.pending = b""
+        self.rows = 0
+
+    def _line(self, raw: bytes) -> None:
+        if len(raw) > 65536:
+            raise ValueError("Observation record exceeds 64 KiB")
+        if not raw:
+            return
+        row = json.loads(raw)
+        if row.get("job_id") != self.job_id or row.get("project_id") != self.project:
+            raise ValueError("Observation archive lineage does not match the selected job")
+        for origin, field in (("trainer", "metrics"), ("resource", "resource_metrics")):
+            for name, measurement in (row.get(field) or {}).items():
+                if name not in self.names:
+                    continue
+                self.writer.writerow((
+                    self.job_id, self.project, row.get("observed_at"),
+                    row.get("source_modified_at"), row.get("experiment_id"),
+                    row.get("segment_id"), row.get("steps_completed"),
+                    origin, name, measurement["value"], measurement["unit"],
+                ))
+                self.rows += 1
+
+    def feed(self, block: bytes) -> None:
+        lines = block.split(b"\n")
+        if len(lines) == 1:
+            self.pending += block
+        else:
+            self._line(self.pending + lines[0])
+            for line in lines[1:-1]:
+                self._line(line)
+            self.pending = lines[-1]
+        if len(self.pending) > 65536:
+            raise ValueError("Observation line exceeds 64 KiB")
+
+    def finish(self) -> bool:
+        # A concurrently active writer might leave a trailing incomplete row.
+        # Do not present it as a complete observation.
+        return bool(self.pending)
 
 
 def export(spec: dict, output: Path) -> dict:
@@ -99,7 +150,11 @@ def export(spec: dict, output: Path) -> dict:
             "remote worker files not present in the trusted local artifact root",
         ],
         "missing_artifact_job_ids": [],
+        "missing_sources": [],
         "entries_recorded_in_each_part_manifest": True,
+        "file_capture_scope": "Each source is captured through its size when opened; later appended bytes are excluded.",
+        "files_extended_during_copy_count": 0,
+        "files_extended_during_copy": [],
     }
     entry_count = 0
     parts: list[dict] = []
@@ -167,9 +222,21 @@ def export(spec: dict, output: Path) -> dict:
         for i, offset in enumerate(range(0, len(body), CHUNK_BYTES), 1):
             write_chunk(name, body[offset:offset + CHUNK_BYTES], len(body), i)
 
-    def add_file(source: Path, name: str) -> None:
-        size = source.stat().st_size
-        with source.open("rb") as handle:
+    def add_file(source: Path, name: str, observer=None) -> None:
+        # Keep one opened file identity throughout the read. A job may append
+        # during export; capture its initial prefix and disclose that omission
+        # rather than silently labelling the archive a complete final history.
+        flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0)
+        with os.fdopen(os.open(source, flags), "rb") as handle:
+            before = os.fstat(handle.fileno())
+            if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1:
+                raise ValueError("Telemetry source is not a safe regular file: " + name)
+            current = source.lstat()
+            if not stat.S_ISREG(current.st_mode) or (
+                current.st_dev, current.st_ino
+            ) != (before.st_dev, before.st_ino):
+                raise ValueError("Telemetry source changed between validation and open: " + name)
+            size = before.st_size
             index = 0
             remaining = size
             while remaining:
@@ -177,10 +244,65 @@ def export(spec: dict, output: Path) -> dict:
                 if not block:
                     raise OSError("Telemetry file shortened during export: " + name)
                 index += 1
+                if observer is not None:
+                    observer.feed(block)
                 write_chunk(name, block, size, index)
                 remaining -= len(block)
             if index == 0:
                 write_chunk(name, b"", 0, 1)
+            after = os.fstat(handle.fileno())
+            if after.st_size < size or (
+                after.st_size == size and after.st_mtime_ns != before.st_mtime_ns
+            ):
+                raise OSError("Telemetry source was rewritten during export: " + name)
+            if after.st_size > size:
+                manifest["files_extended_during_copy_count"] += 1
+                if len(manifest["files_extended_during_copy"]) < 100:
+                    manifest["files_extended_during_copy"].append({
+                        "source": name, "captured_bytes": size,
+                        "size_after_copy": after.st_size,
+                    })
+
+
+    def add_selected_metric_history() -> int:
+        # This derived CSV is limited to Hub's bounded comparison observations.
+        # The complete project-owned histories are exported separately below.
+        selected = set(metrics)
+        temp_path: Path | None = None
+        rows = 0
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w", encoding="utf-8", newline="", dir=output.parent,
+                prefix="hub-selected-metrics-", suffix=".csv", delete=False,
+            ) as stream:
+                temp_path = Path(stream.name)
+                writer = csv.writer(stream)
+                writer.writerow((
+                    "job_id", "observed_at", "source_modified_at",
+                    "experiment_id", "segment_id", "steps_completed",
+                    "break_before", "metric", "value", "unit",
+                ))
+                for entry in spec.get("progress", {}).get("samples", []):
+                    if entry.get("job_id") not in selected_ids:
+                        continue
+                    for point in entry.get("points", []):
+                        for name, measurement in (point.get("metrics") or {}).items():
+                            if name not in selected:
+                                continue
+                            writer.writerow((
+                                entry["job_id"], point.get("observed_at"),
+                                point.get("source_modified_at"),
+                                point.get("experiment_id"), point.get("segment_id"),
+                                point.get("steps_completed"),
+                                point.get("break_before", False),
+                                name, measurement["value"], measurement["unit"],
+                            ))
+                            rows += 1
+            add_file(temp_path, "hub-selected-metric-samples.csv")
+            return rows
+        finally:
+            if temp_path is not None:
+                temp_path.unlink(missing_ok=True)
 
     try:
         start_part()
@@ -193,12 +315,37 @@ def export(spec: dict, output: Path) -> dict:
             "hub-comparison-history.json",
             json.dumps(spec.get("progress", {}), indent=2).encode("utf-8"),
         )
+        manifest["selected_metric_sample_rows"] = (
+            add_selected_metric_history() if metrics else 0
+        )
+        manifest["selected_metric_sample_resolution"] = (
+            "bounded Hub chart history; full project logs remain separate"
+        )
+        observation_rows = 0
+        observation_sources = 0
+        partial_observation_files = 0
+        selected_observation_path = None
+        selected_observation_stream = None
+        selected_observation_writer = None
+        if metrics and any(source["label"] == "hub-observations" for source in additional):
+            selected_observation_stream = tempfile.NamedTemporaryFile(
+                mode="w", encoding="utf-8", newline="", dir=output.parent,
+                prefix="hub-selected-observations-", suffix=".csv", delete=False,
+            )
+            selected_observation_path = Path(selected_observation_stream.name)
+            selected_observation_writer = csv.writer(selected_observation_stream)
+            selected_observation_writer.writerow((
+                "job_id", "project_id", "observed_at", "source_modified_at",
+                "experiment_id", "segment_id", "steps_completed", "origin",
+                "metric", "value", "unit",
+            ))
         found_by_job = {job["id"]: 0 for job in jobs}
+        missing_sources: list[dict] = []
         def scan_directory(folder: Path, name_prefix: str, job_id: str) -> None:
             for dirpath, dirs, files in os.walk(folder, followlinks=False):
                 current = Path(dirpath)
                 dirs[:] = sorted(d for d in dirs if d.lower() not in DENIED_PARTS
-                    and (bool(spec.get("include_replays", False)) or d != "replays")
+                    and (bool(spec.get("include_replays", False)) or d.lower() != "replays")
                     and not (current / d).is_symlink())
                 for filename in sorted(files):
                     source = current / filename
@@ -210,11 +357,20 @@ def export(spec: dict, output: Path) -> dict:
                     if entry_count > MAX_SOURCE_FILES:
                         raise ValueError("Too many export entries")
 
-        for job in jobs:
+        # Legacy Bees run artifacts live in separately approved named sources,
+        # not a job-ID directory under the coordinator data root.
+        scanned_jobs = [] if project == "bees" else jobs
+        for job in scanned_jobs:
             job_id = job["id"]
             folder = root / job_id
             if not folder.is_symlink() and folder.is_dir() and folder.resolve() == folder.absolute():
                 scan_directory(folder, f"jobs/{job_id}/artifacts", job_id)
+                if found_by_job[job_id] == 0:
+                    missing_sources.append({"job_id": job_id, "label": "artifacts",
+                                            "reason": "no_approved_logs"})
+            else:
+                missing_sources.append({"job_id": job_id, "label": "artifacts",
+                                        "reason": "not_available"})
 
         # These roots are composed exclusively by the trusted local Bees
         # coordinator from known run IDs, never supplied by the browser.
@@ -222,14 +378,41 @@ def export(spec: dict, output: Path) -> dict:
             source = Path(entry["path"])
             job_id = entry["job_id"]
             prefix = f"jobs/{job_id}/external/{entry['label']}"
+            count_before = found_by_job[job_id]
             if source.is_symlink() or not source.exists():
-                continue
-            if source.is_dir() and source.resolve() == source.absolute():
+                reason = "not_available"
+            elif source.is_dir() and source.resolve() == source.absolute():
                 scan_directory(source, prefix, job_id)
+                reason = "no_approved_logs"
             elif source.is_file() and safe_source(source.parent, source, False):
-                add_file(source, prefix + "/" + source.name)
+                observer = (SelectedObservationRows(job_id, project, set(metrics),
+                    selected_observation_writer)
+                    if entry["label"] == "hub-observations" and metrics else None)
+                add_file(source, prefix + "/" + source.name, observer)
+                if observer is not None:
+                    observation_sources += 1
+                    observation_rows += observer.rows
+                    partial_observation_files += int(observer.finish())
                 found_by_job[job_id] += 1
+                reason = None
+            else:
+                reason = "no_approved_logs"
+            if found_by_job[job_id] == count_before:
+                missing_sources.append({"job_id": job_id,
+                                        "label": entry["label"], "reason": reason})
 
+        if selected_observation_stream is not None:
+            selected_observation_stream.close()
+            selected_observation_stream = None
+            add_file(selected_observation_path, "hub-selected-observation-metrics.csv")
+        manifest["selected_observation_metric_rows"] = observation_rows
+        manifest["selected_observation_source_files"] = observation_sources
+        manifest["incomplete_observation_lines"] = partial_observation_files
+        manifest["selected_observation_metric_resolution"] = (
+            "every distinct native progress version received by the Hub; "
+            "trainer-owned histories may contain additional updates"
+        )
+        manifest["missing_sources"] = missing_sources
         manifest["missing_artifact_job_ids"] = [
             job_id for job_id, found in found_by_job.items() if not found
         ]
@@ -238,6 +421,9 @@ def export(spec: dict, output: Path) -> dict:
         end_part()
         return {"project_id": project, "parts": parts,
                 "missing_artifact_job_ids": manifest["missing_artifact_job_ids"],
+                "missing_sources": missing_sources[:64],
+                "missing_source_count": len(missing_sources),
+                "files_extended_during_copy_count": manifest["files_extended_during_copy_count"],
                 "entries": entry_count}
     except BaseException:
         if archive is not None:
@@ -245,6 +431,11 @@ def export(spec: dict, output: Path) -> dict:
         for part in created:
             part.unlink(missing_ok=True)
         raise
+    finally:
+        if 'selected_observation_stream' in locals() and selected_observation_stream is not None:
+            selected_observation_stream.close()
+        if 'selected_observation_path' in locals() and selected_observation_path is not None:
+            selected_observation_path.unlink(missing_ok=True)
 
 
 def main() -> None:

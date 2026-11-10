@@ -120,7 +120,10 @@ class JobExporter {
             project_id:project,jobs,metrics:value.metrics,
             include_replays:value.include_replays===true,
             artifact_root:root,progress,
-            ...(legacy?{additional_sources:this.legacyBees.sources(jobs)}:{}),
+            additional_sources:legacy?this.legacyBees.sources(jobs):jobs.map(job=>({
+                job_id:job.id,label:'hub-observations',
+                path:path.join(this.dataRoot,'hub-observations-v1',job.id+'.jsonl'),
+            })),
         }),{flag:'wx',mode:0o600});
         const id=crypto.randomUUID();
         const session={id,dir,project,status:'preparing',parts:[],error:null};
@@ -165,6 +168,9 @@ class JobExporter {
                     throw Error('Export part validation failed.');
                 session.parts=report.parts;
                 session.missing_artifact_job_ids=report.missing_artifact_job_ids||[];
+                session.missing_sources=report.missing_sources||[];
+                session.missing_source_count=report.missing_source_count||0;
+                session.files_extended_during_copy_count=report.files_extended_during_copy_count||0;
                 session.status='ready';
                 done=true;
                 cleanupLater.call(this);
@@ -180,6 +186,9 @@ class JobExporter {
             id,project_id:session.project,status:session.status,
             parts:session.parts,error:session.error,
             missing_artifact_job_ids:session.missing_artifact_job_ids||[],
+            missing_sources:session.missing_sources||[],
+            missing_source_count:session.missing_source_count||0,
+            files_extended_during_copy_count:session.files_extended_during_copy_count||0,
         };
     }
     download(id,part,res) {
@@ -198,7 +207,12 @@ class JobExporter {
             'Content-Disposition':'attachment; filename="'+record.name+'"',
             'Cache-Control':'no-store','X-Content-Type-Options':'nosniff',
         });
-        fs.createReadStream(target).pipe(res);
+        const stream=fs.createReadStream(target);
+        // A file can disappear after lstat (session expiry, storage failure).
+        // Never let a failed optional download crash the training coordinator.
+        stream.on('error',()=>res.destroy());
+        res.on('close',()=>stream.destroy());
+        stream.pipe(res);
     }
 }
 module.exports={JobExporter};

@@ -25,7 +25,7 @@ function numeric(metrics,key,value,unit='scalar') {
     if(unit==='rate'&&value<0)return;
     metrics[key]={value,unit};
 }
-function point(sample,previous) {
+function point(sample,previous,preferred=[]) {
     if(!Number.isSafeInteger(sample.step)||sample.step<0||
         !Number.isFinite(Date.parse(sample.at)))return null;
     const metrics={};
@@ -54,7 +54,13 @@ function point(sample,previous) {
         }
     }
     numeric(metrics,'training_time_seconds',sample.training_s,'seconds');
-    const selected=Object.fromEntries(Object.entries(metrics).slice(0,96));
+    // When the wire limit is reached, keep recorded measurements explicitly
+    // chosen by the experiment before filling remaining slots from the source.
+    const names=[...new Set([
+        ...preferred.filter(key=>Object.hasOwn(metrics,key)),
+        ...Object.keys(metrics),
+    ])].slice(0,96);
+    const selected=Object.fromEntries(names.map(key=>[key,metrics[key]]));
     if(!Object.keys(selected).length)return null;
     const stage=Number.isSafeInteger(sample.stage_index)?sample.stage_index:0;
     const at=new Date(sample.at).toISOString();
@@ -83,7 +89,8 @@ function comparison(items) {
             indices.add(Math.floor(i*(source.length-1)/(LIMIT-1)));
         const points=[];
         for(const i of [...indices].sort((a,b)=>a-b)) {
-            const next=point(source[i],points[points.length-1]);
+            const next=point(source[i],points[points.length-1],
+                Array.isArray(item.metric_selection)?item.metric_selection:[]);
             if(next)points.push(next);
         }
         if(points.length)samples.push({job_id:item.id,points});

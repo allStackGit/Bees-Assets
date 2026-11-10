@@ -1847,22 +1847,56 @@ the trusted metric source and semantics. Example observational payload:
 ```
 
 The shared Compare view allows an arbitrary number of selected runs, with
-multiple independently plotted metrics. CSV includes the chosen metric columns;
-JSON also carries the bounded progress/evaluation provenance. **Train** can
+multiple independently plotted metrics. CSV keeps selected metric columns as
+numeric values (including negative rewards and losses); JSON includes only
+selected progress metrics while retaining job and evaluation provenance. **Train** can
 freeze an optional per-job list of preferred chart measurements. This is an
 archive/visualization preference; it never changes PPO model settings or
 manufactures metrics the project's adapter did not record. The native Hub
 retains a bounded history of up to 256 chart points for each of 256 jobs;
-project-owned full-resolution histories remain authoritative.
+project-owned full-resolution histories remain authoritative. When explicit
+metric preferences are present, the Hub filters trainer metrics before adding
+requested CPU/GPU observations, so a 96-metric trainer report cannot crowd out
+a selected host measurement. With no explicit preference, measured host resource
+usage and the PPO update counter take priority within the 96-field chart cap;
+remaining slots retain trainer metrics. Full project telemetry is not filtered
+by these display choices. Host GPU utilization/VRAM measurements describe
+the pinned physical device, not isolated per-job GPU consumption. The native
+Hub also appends each distinct **received** validated source update to private
+`hub-observations-v1/<job-id>.jsonl` in its data directory, retaining source
+trainer metrics and observed resource metrics independently of chart limits.
+These files are diagnostic observations, not authoritative trainer histories;
+missed worker updates cannot be reconstructed. A failed archive write does not
+stop training and appears as an archive warning in Compare. This archive is
+append-only and should be included when managing the Hub's disk capacity.
 
 **Export complete job diagnostics** in Compare packages the selected local
 job histories and run-scoped text/JSON logs into independent ZIP archives of
 at most 500,000,000 bytes each. Choose several jobs and metrics; optionally
 include raw replays. No checkpoint, model, private key or credential files are
 intentionally included. Every part has a segment manifest for reconstructing
-large logs, and the overall manifest reports jobs without local artifacts.
-Download the numbered parts before the private export session expires.
-Raw histories remain complete regardless of selected chart metrics.
+large logs. The overall manifest reports jobs without local artifacts and
+individual unavailable or excluded log sources by job ID and source label;
+no private host paths are included in that report.
+When metrics are selected, the archive also includes
+`hub-selected-metric-samples.csv`: a metric-filtered, long-form CSV from the
+bounded Hub comparison history, with job IDs, timestamps, project steps,
+segments, values, and units. This CSV is **not** the full-resolution training
+history. Native projects additionally include
+`hub-selected-observation-metrics.csv` containing every selected measurement
+in each locally retained Hub observation, before chart downsampling, with an
+origin column distinguishing trainer and resource measurements. The complete
+append-only Hub observations JSONL and project-owned histories are included as
+separate raw sources. These are not atomic cross-machine snapshots, and no
+received-observation CSV can supply trainer updates the Hub never observed.
+Running jobs can append to their logs during export. Each file is captured
+through its size when opened, not as one atomic multi-machine snapshot;
+`export-manifest.json` lists files that grew while being copied and the
+captured byte boundary. The Hub also warns about such files when parts are
+ready. Rewritten or redirected files fail export rather than silently mixing
+unverified bytes. Download the numbered parts before the private export
+session expires. Selected chart metrics never truncate the underlying source
+histories; files that change during export may require a later capture.
 The native coordinator reads TinyBrains jobs under the Hub data root's
 `tinybrains-jobs/` directory. For another project (including Courier),
 install a private mode-0600 `job-export-roots.json` in the same Hub data

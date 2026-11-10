@@ -403,7 +403,7 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
       <label>Continue previous job (optional)<select id="hub-job-predecessor"></select></label>
       <label class="wide">Metrics to retain in Hub comparison history (optional; Ctrl/Shift for multiple)
         <select id="hub-job-metrics" multiple size="9"></select>
-        <small>Leave unselected to retain every metric published by the project's adapter. This does not limit project-owned full history or enable unsupported instrumentation.</small>
+        <small>Leave unselected to prioritize observed host CPU/GPU measurements and then retain as many project metrics as fit the shared 96-field chart limit. Explicit selections take priority over this default order. Device busy and VRAM measurements are host-wide, not attributable to an individual shared-GPU job. Full project-owned histories are unaffected; selecting a metric does not install missing instrumentation.</small>
       </label>
       <label class="wide">Requested resources (JSON)<textarea id="hub-job-resources" rows="5">{"cpus":2,"ram_mb":2048,"gpu_count":0}</textarea></label>
       <fieldset class="wide">
@@ -521,6 +521,7 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
     <button type="button" id="hub-compare-export-full" disabled>Export complete job diagnostics (500 MB ZIP parts)</button>
     <label><input id="hub-compare-export-replays" type="checkbox"> Include raw game replays (may be very large)</label>
   </div>
+  <p class="muted">Complete diagnostics include original project logs and selected chart metrics. Native jobs also include every locally received Hub observation and a selected-metric CSV at that higher resolution. The Hub cannot reconstruct updates it never received; all large archives are split into individual ZIP parts.</p>
   <p id="hub-compare-export-message" class="muted" role="status"></p>
   <div class="hub-standalone" id="hub-compare-selection-panel">
     <h3>Promote the best evaluated model</h3>

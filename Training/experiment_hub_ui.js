@@ -98,7 +98,8 @@ function hubComparisonCsv(exported) {
         let str=String(value);
         // Prevent spreadsheet software from interpreting user-supplied
         // configuration labels as formulas.
-        if(str.trimStart().length&&'=+-@'.includes(str.trimStart()[0]))
+        if(typeof value==='string'&&str.trimStart().length&&
+            '=+-@'.includes(str.trimStart()[0]))
             str="'"+str;
         const quote=str.includes(',')||str.includes('"')||
             str.includes(String.fromCharCode(10))||
@@ -583,7 +584,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     :comparisonData?.ephemeral
                         ?'Live chart samples are held in memory only. Final summaries remain available.'
                         :'Bounded chart history is saved separately from the training registry. For detailed investigation export the complete project-owned job history.';
-        feedback('hub-compare-notice',note);
+        feedback('hub-compare-notice',
+            (state?.hub_observation_archive_issue
+                ?state.hub_observation_archive_issue+' '
+                :'')+note);
         const knownRoots=new Set(runs.map(r=>
             r.job.artifact_lineage_root_id||r.job.id));
         const warnings=[];
@@ -832,6 +836,10 @@ document.addEventListener('DOMContentLoaded', () => {
                         x(p[xKey]).toFixed(1)+' '+
                         y(hubMetricValue(p,key)).toFixed(1)).join(' '),
                         stroke:run.color,class:'plot-line'});
+                else if(part.length===1&&!showPoints)
+                    node('circle',{cx:x(part[0][xKey]),
+                        cy:y(hubMetricValue(part[0],key)),r:3.5,
+                        fill:run.color,class:'plot-point'});
                 part=[];
             };
             for(const point of run.valid) {
@@ -848,6 +856,10 @@ document.addEventListener('DOMContentLoaded', () => {
     function exportComparison(format) {
         if(!state)
             throw Error('Select an available project comparison.');
+        const metrics=selectedComparisonMetrics().map(key=>key.slice(7));
+        if(format==='csv'&&!metrics.length)
+            throw Error('Select at least one recorded metric for CSV export.');
+        const chosen=new Set(metrics);
         const jobs=project==='bees'?(state.bees?.runs||[]):
             state.jobs.filter(job=>job.project_id===project);
         const samples=comparisonProject===project&&comparisonData?.samples||[];
@@ -878,14 +890,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 evaluation_stop_evidence:job.evaluation_stop_evidence||null,
                 evaluation_candidates:job.evaluation_candidates||null,
                 stop_requested_at:job.stop_requested_at||null,
-                points:hubComparisonPoints({job,points:byJob.get(id)||[]}),
+                points:hubComparisonPoints({job,points:byJob.get(id)||[]})
+                    .map(point=>({...point,metrics:Object.fromEntries(
+                        Object.entries(point.metrics||{})
+                            .filter(([name])=>chosen.has(name)))})),
             };
         }).filter(Boolean);
         if(!runs.some(run=>run.points.length||(format==='json'&&
             (hubComparisonTerminal(run)||hubComparisonEvaluation(run)))))
             throw Error(format==='csv'?'No recorded samples for the selected runs.':
                 'Select a job with recorded samples, an evaluation receipt or a terminal outcome.');
-        const metrics=selectedComparisonMetrics().map(key=>key.slice(7));
         const exported={
             schema_version:1,project_id:project,
             exported_at:new Date().toISOString(),
@@ -947,6 +961,17 @@ document.addEventListener('DOMContentLoaded', () => {
                         (result.missing_artifact_job_ids?.length
                             ?'Some jobs have no local artifacts: '+
                               result.missing_artifact_job_ids.join(', ')+'. ':'')+
+                        (result.missing_sources?.length
+                            ?'Unavailable log sources: '+result.missing_sources
+                                .slice(0,8).map(item=>item.job_id.slice(-8)+
+                                    '/'+item.label+' ('+item.reason+')').join(', ')+
+                                ((result.missing_source_count||result.missing_sources.length)>8
+                                    ?' and '+((result.missing_source_count||result.missing_sources.length)-8)+' more':'')+
+                                '. See the ZIP manifest for details. ':'')+
+                        (result.files_extended_during_copy_count
+                            ?result.files_extended_during_copy_count+
+                                ' log file(s) grew during export; only their captured byte prefixes are included. '+
+                                'See export-manifest.json for file details. ':'')+
                         'Select each part: '));
                     for(const [i,part] of result.parts.entries()) {
                         const link=document.createElement('a');
@@ -1180,8 +1205,10 @@ document.addEventListener('DOMContentLoaded', () => {
         'collection_seconds','optimization_seconds','overlap_seconds',
         'ppo_microbatches','states_per_microbatch','actor_grad_norm',
         'group_grad_norm','baseline_grad_norm','policy_lag',
-        'rss_mb','job_memory_mb','job_cpu_cores',
+        'rss_mb','job_memory_mb','job_peak_memory_mb','job_cpu_cores',
         'host_cpu_busy_pct','host_gpu_busy_pct','host_gpu_vram_mb',
+        'host_gpu_0_busy_pct','host_gpu_0_used_vram_mb',
+        'host_gpu_1_busy_pct','host_gpu_1_used_vram_mb',
         'data_preparation_seconds','inference_seconds','forward_seconds',
         'backward_seconds','optimizer_step_seconds','cpu_wait_seconds',
         'gpu_transfer_seconds','network_transfer_seconds',
