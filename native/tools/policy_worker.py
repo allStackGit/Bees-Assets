@@ -1,15 +1,11 @@
 #!/usr/bin/env python3
-"""Resident, real PyTorch policy inference for the native v26 game and worker.
+"""Resident policy inference and behavior sampling for the native v26 game.
 
 stdin and stdout are a VERSIONED BINARY PROTOCOL; stdout is not a log.
-The manifest supplies real TorchScript or source-exported ONNX policy weights.
-Each model must implement forward(obs[N,7743], allow_mask[N,15]) ->
-(continuous[N,16], discrete[N,6]) with learned action sampling/masking.
-No placeholder policies, dummy actions or copied combat rules are supplied.
-
-This is an inference/evaluation bridge only. A PPO learner still needs the
-real action log probabilities, value estimates, trajectory ownership and
-group critic. Running this worker does NOT make native training complete.
+The manifest supplies TorchScript, ONNX or ML-Agents actor checkpoint weights.
+The ML-Agents backend returns the source sampler's raw continuous samples
+and selected action log probabilities alongside the environment actions.
+Value estimates, trajectory ownership and the group critic belong to the learner.
 """
 
 from __future__ import annotations
@@ -172,6 +168,48 @@ class OnnxPolicy:
         ))
 
 
+class MlagentsPolicy:
+    """Use the same v26 actor and action sampler as the MA-POCA trainer."""
+
+    def __init__(self, model_file: Path, config: dict):
+        import torch
+        from mlagents.trainers.settings import NetworkSettings
+        from mlagents.trainers.torch_entities.networks import SimpleActor
+        from mlagents_envs.base_env import ActionSpec, DimensionProperty, ObservationSpec, ObservationType
+
+        training_path = str(Path(__file__).resolve().parents[2] / "Training")
+        if training_path not in sys.path:
+            sys.path.insert(0, training_path)
+        from bees_mlagents_structured_policy import install_structured_policy
+
+        install_structured_policy()
+        self.torch = torch
+        self.device = torch.device(config.get("device", "cpu"))
+        self.actor = SimpleActor(
+            observation_specs=[ObservationSpec(
+                (OBS_FLOATS,), (DimensionProperty.NONE,), ObservationType.DEFAULT, "VectorSensor"
+            )],
+            network_settings=NetworkSettings(normalize=True, hidden_units=128, num_layers=3),
+            action_spec=ActionSpec(CONTINUOUS, (2, 2, 2, 2, 2, 5)),
+        ).to(self.device)
+        checkpoint = torch.load(model_file, map_location="cpu", weights_only=True)
+        self.actor.load_state_dict(checkpoint["Policy"], strict=True)
+        self.actor.eval()
+
+    def predict(self, observations, allowed):
+        torch = self.torch
+        observations = torch.from_numpy(np.ascontiguousarray(observations)).to(self.device)
+        allowed = torch.from_numpy(np.ascontiguousarray(allowed)).to(self.device)
+        with torch.inference_mode():
+            action, stats, _ = self.actor.get_action_and_stats([observations], masks=allowed)
+            applied = stats["env_action"]
+            sampled = action.to_action_tuple()
+            log_probs = stats["log_probs"].flatten().cpu().numpy()
+        return applied.continuous, applied.discrete, np.concatenate(
+            (sampled.continuous, log_probs), axis=1
+        )
+
+
 def read_reused(reader, storage: bytearray, count: int):
     """Reuse the largest observation receive buffer across model batches."""
     if len(storage) < count:
@@ -238,6 +276,8 @@ def checked_manifest(path: Path, expected_digest: bytes | None = None):
             model = TorchScriptPolicy(model_file, config)
         elif backend == "onnx":
             model = OnnxPolicy(model_file, config)
+        elif backend == "mlagents":
+            model = MlagentsPolicy(model_file, config)
         else:
             raise ValueError(f"unsupported native model backend: {backend}")
         # Libraries reopen model paths during deserialization. Detect an
@@ -247,6 +287,9 @@ def checked_manifest(path: Path, expected_digest: bytes | None = None):
         if file_sha256(model_file) != expected_sha256:
             raise ValueError(f"model artifact changed during load: slot {slot}")
         policies[slot] = model
+    sampled_slots = sum(isinstance(model, MlagentsPolicy) for model in policies.values())
+    if sampled_slots not in (0, len(policies)):
+        raise ValueError("ML-Agents sampling requires all manifest slots to provide behavior statistics")
     return signature_bytes, policies, manifest_digest
 
 
@@ -289,6 +332,7 @@ def collect_predictions(
     rows = len(slots)
     continuous = np.empty((rows, CONTINUOUS), dtype="<f4")
     discrete = np.empty((rows, DISCRETE), dtype=np.uint8)
+    behavior = None
     # Most short-range runs use a single policy slot for both factions.
     # Avoid sorting model IDs, allocating N row indices and scattering
     # N actions when the whole batch already belongs to one loaded model.
@@ -307,7 +351,15 @@ def collect_predictions(
             indices = np.flatnonzero(slots == slot)
             count = len(indices)
             sub_obs, sub_mask = observations[indices], allowed[indices]
-        out_cont, out_disc = model.predict(sub_obs, sub_mask)
+        prediction = model.predict(sub_obs, sub_mask)
+        out_cont, out_disc = prediction[:2]
+        if len(prediction) == 3:
+            stats = prediction[2]
+            if stats.shape != (count, CONTINUOUS * 2 + DISCRETE) or not np.isfinite(stats).all():
+                raise ValueError("invalid sampled action or behavior log probabilities")
+            if behavior is None:
+                behavior = np.empty((rows, CONTINUOUS * 2 + DISCRETE), dtype="<f4")
+            behavior[indices] = stats
         expected_cont = (count, CONTINUOUS)
         expected_disc = (count, DISCRETE)
         if out_cont.shape != expected_cont or out_disc.shape != expected_disc:
@@ -327,7 +379,7 @@ def collect_predictions(
             raise ValueError("model selected masked weapon firing")
     if np.any(~special[np.arange(rows), discrete[:, 5]]):
         raise ValueError("model selected unavailable special action")
-    return continuous, discrete
+    return continuous, discrete, behavior
 
 
 def main() -> None:
@@ -407,12 +459,14 @@ def main() -> None:
         )
         if not np.all(np.isfinite(observation)):
             raise ValueError("nonfinite policy observation")
-        continuous, discrete = collect_predictions(
+        continuous, discrete, behavior = collect_predictions(
             policy_map, slots, observation, fire, special, allowed
         )
-        writer.write(HEADER.pack(b"BOUT", VERSION, request_id, rows))
+        writer.write(HEADER.pack(b"BTRN" if behavior is not None else b"BOUT", VERSION, request_id, rows))
         writer.write(continuous.tobytes(order="C"))
         writer.write(discrete.tobytes(order="C"))
+        if behavior is not None:
+            writer.write(behavior.tobytes(order="C"))
         writer.flush()
         # Release NumPy/memoryview references before expanding the next
         # batch's storage; smaller/equal batches reuse the same allocation.

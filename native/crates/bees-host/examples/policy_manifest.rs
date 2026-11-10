@@ -72,7 +72,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             return Err(invalid("each model needs a real artifact path").into());
         }
         if !entry.get("backend").is_some_and(|value|
-            matches!(value.as_str(), Some("onnx" | "torchscript"))
+            matches!(value.as_str(), Some("onnx" | "torchscript" | "mlagents"))
         ) {
             return Err(invalid("unsupported model backend").into());
         }

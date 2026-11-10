@@ -15,7 +15,7 @@ use bees_sim::combat_perception_bridge::live_ship_counts;
 use bees_sim::full_perception::{
     NativePerceptionWriter, PerceptionWork, PolicyPerceptionSnapshot,
 };
-use bees_sim::policy::Decision;
+use bees_sim::policy::{CONTINUOUS_ACTIONS, DISCRETE_BRANCHES, Decision};
 use bees_sim::policy_batch::{
     PocaActivityBatchError, PolicyActionMask, PolicyAgentKey, PolicyBatch,
     PolicyBatchError, PolicyBatchFootprint,
@@ -27,6 +27,7 @@ use crate::level_rules::NativeLevelState;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NativeInferenceError {
+    InvalidBehaviorStatistics,
     InvalidAgent,
     RepeatedGroupAgent { world: WorldId, agent: u64 },
     SnapshotIdentityMismatch,
@@ -84,7 +85,13 @@ pub trait NativePolicyInference {
     /// actions. Non-reloading backends retain generation zero. A learner
     /// must also retain the run identity and immutable model artifact SHA.
     fn model_generation(&self) -> u64 { 0 }
+
+    /// Per row: raw continuous samples, continuous log probabilities,
+    /// then selected discrete log probabilities. Empty for inference-only models.
+    fn behavior_statistics(&self) -> &[f32] { &[] }
 }
+
+pub const BEHAVIOR_STATS_PER_ROW: usize = CONTINUOUS_ACTIONS * 2 + DISCRETE_BRANCHES.len();
 
 /// Ordinary game-only Levels can use the canonical fixed-step simulation
 /// without starting a neural policy worker. The batch driver skips forward
@@ -152,6 +159,7 @@ pub struct NativeInferenceMeasurements {
 #[derive(Default)]
 pub struct NativeLevelInferenceBatch {
     batch: PolicyBatch,
+    behavior_statistics: Vec<f32>,
     writer: NativePerceptionWriter,
     keyed_decisions: Vec<(PolicyAgentKey, Decision)>,
     /// Reused per-world row positions, avoiding rescanning every agent
@@ -176,6 +184,7 @@ impl NativeLevelInferenceBatch {
     pub fn new() -> Self { Self::default() }
 
     pub fn clear(&mut self) {
+        self.behavior_statistics.clear();
         self.batch.clear();
         self.keyed_decisions.clear();
         for rows in self.world_rows.values_mut() {
@@ -278,6 +287,10 @@ impl NativeLevelInferenceBatch {
 
     pub fn binding_revisions(&self) -> &[u64] {
         &self.binding_revisions
+    }
+
+    pub fn behavior_statistics(&self) -> &[f32] {
+        &self.behavior_statistics
     }
 
     /// An inference library fills BOTH buffers: 16 continuous channels
@@ -461,6 +474,19 @@ impl NativeLevelInferenceBatch {
             return Err(NativeInferenceRunError::Backend(error));
         }
         let generation = backend.model_generation();
+        let stats = backend.behavior_statistics();
+        if !stats.is_empty() {
+            if stats.len() != self.keys().len() * BEHAVIOR_STATS_PER_ROW ||
+                stats.iter().any(|value| !value.is_finite())
+            {
+                self.failed = true;
+                self.measurements.invalid_action_batches += 1;
+                return Err(NativeInferenceRunError::Boundary(
+                    NativeInferenceError::InvalidBehaviorStatistics,
+                ));
+            }
+            self.behavior_statistics.extend_from_slice(stats);
+        }
         self.finalize().map_err(NativeInferenceRunError::Boundary)?;
         // Record only a fully validated batch. Drop the temporary borrow
         // returned by finalize before updating the cumulative measurement.

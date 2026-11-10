@@ -154,9 +154,9 @@ terminal events. Match rows using world ID and episode revision. A row
 records the observation tick immediately before its action is applied.
 Use `python native/tools/read_policy_capture.py decisions.bin events.jsonl`
 to check the pairing and count completed rows. The reader rejects captures
-without the completion footer, including interrupted runs. These records
-do not include behavior log probabilities, critic estimates or groupmate
-observations and are insufficient for a MA-POCA update.
+without the completion footer, including interrupted runs. The ML-Agents
+backend also records raw continuous samples and per-action log probabilities.
+Critic estimates and groupmate observations still come from the learner path.
 Completed worlds can be recycled up to `episodes_per_world` times through
 `NativeHostRuntime::reset_world`, with fresh monotonic squad lifetimes and
 per-episode deterministic seeds. Each replay uses the exact initial exported
@@ -1022,6 +1022,16 @@ The loaded model must implement
 `forward(observation[N,7743], allowed_mask[N,15])` returning
 `(float32[N,16], integer[N,6])`, with the original trained action
 sampling/masking and authentic weights.
+
+For behavior sampling, a slot can use
+`{"slot":0, "backend":"mlagents", "path":"checkpoint.pt", "device":"cpu"}`.
+Use a feed-forward structured v26 ML-Agents trainer checkpoint containing
+the `Policy` state dict and the repository's learner Python environment.
+The worker loads the actor strictly and uses its native sampler. The
+simulation receives clipped environment actions while decision capture
+retains the unclipped continuous samples and selected action log
+probabilities for the optimizer. Use ML-Agents checkpoints in all slots
+of a behavior-sampling manifest.
 
 Existing exported ONNX policies can instead use an explicit slot mapping,
 for example

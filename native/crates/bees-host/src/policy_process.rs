@@ -18,7 +18,7 @@ use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::path::Path;
 use sha2::{Digest, Sha256};
 
-use bees_gameplay::inference::{NativePolicyInference, NativePolicyRoute};
+use bees_gameplay::inference::{BEHAVIOR_STATS_PER_ROW, NativePolicyInference, NativePolicyRoute};
 use bees_sim::policy::{CONTINUOUS_ACTIONS, DISCRETE_BRANCHES, OBSERVATION_FLOATS};
 use bees_sim::policy_batch::{PolicyActionMask, PolicyAgentKey};
 use bees_sim::policy::{validate_model_abi, PolicyAbiError};
@@ -31,6 +31,7 @@ const MAX_MANIFEST_PATH_BYTES: usize = 4096;
 const MANIFEST_DIGEST_BYTES: usize = 32;
 const REQUEST_MAGIC: &[u8; 4] = b"BINF";
 const RESPONSE_MAGIC: &[u8; 4] = b"BOUT";
+const BEHAVIOR_RESPONSE_MAGIC: &[u8; 4] = b"BTRN";
 const READY_MAGIC: &[u8; 4] = b"BHOK";
 const PER_ROW_HEADER_BYTES: usize = 16;
 const DISCRETE_ACTIONS: usize = DISCRETE_BRANCHES.len();
@@ -71,6 +72,7 @@ pub struct ResidentPolicyProcess {
     unavailable: bool,
     // Reused model route/action-mask packet, 16 bytes per agent.
     row_headers: Vec<u8>,
+    behavior_statistics: Vec<f32>,
 }
 
 impl ResidentPolicyProcess {
@@ -94,6 +96,7 @@ impl ResidentPolicyProcess {
             manifest_digest: [0_u8; MANIFEST_DIGEST_BYTES],
             unavailable: false,
             row_headers: Vec::new(),
+            behavior_statistics: Vec::new(),
         };
         backend.read_handshake()?;
         Ok(backend)
@@ -155,6 +158,7 @@ impl ResidentPolicyProcess {
         discrete: &mut [u8],
     ) -> Result<(), PolicyProcessError> {
         let rows = routes.len();
+        self.behavior_statistics.clear();
         let rows32 = u32::try_from(rows)
             .map_err(|_| PolicyProcessError::InvalidBatch)?;
         if observations.len() != rows.checked_mul(OBSERVATION_FLOATS)
@@ -205,7 +209,8 @@ impl ResidentPolicyProcess {
 
         let mut response = [0_u8; 20];
         self.output.read_exact(&mut response)?;
-        if &response[0..4] != RESPONSE_MAGIC ||
+        let has_behavior = &response[0..4] == BEHAVIOR_RESPONSE_MAGIC;
+        if (!has_behavior && &response[0..4] != RESPONSE_MAGIC) ||
             u32::from_le_bytes(response[4..8].try_into().unwrap())
                 != PROTOCOL_VERSION ||
             u64::from_le_bytes(response[8..16].try_into().unwrap()) != seq ||
@@ -215,6 +220,12 @@ impl ResidentPolicyProcess {
         }
         read_floats(&mut self.output, continuous)?;
         self.output.read_exact(discrete)?;
+        if has_behavior {
+            let count = rows.checked_mul(BEHAVIOR_STATS_PER_ROW)
+                .ok_or(PolicyProcessError::InvalidBatch)?;
+            self.behavior_statistics.resize(count, 0.0);
+            read_floats(&mut self.output, &mut self.behavior_statistics)?;
+        }
         Ok(())
     }
 
@@ -313,6 +324,10 @@ impl ResidentPolicyProcess {
 
 impl NativePolicyInference for ResidentPolicyProcess {
     type Error = PolicyProcessError;
+
+    fn behavior_statistics(&self) -> &[f32] {
+        &self.behavior_statistics
+    }
 
     fn model_generation(&self) -> u64 { self.model_generation }
 

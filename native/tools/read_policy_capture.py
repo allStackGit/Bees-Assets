@@ -16,6 +16,18 @@ ROW = np.dtype([
     ("observations", "<f4", (7743,)), ("continuous", "<f4", (16,)),
     ("discrete", "u1", (6,)),
 ])
+BEHAVIOR_FLAG = 1 << 31
+BEHAVIOR_ROW = np.dtype(ROW.descr + [
+    ("sampled_continuous", "<f4", (16,)),
+    ("continuous_log_probs", "<f4", (16,)),
+    ("discrete_log_probs", "<f4", (6,)),
+])
+
+
+def _frame_layout(field, has_behavior_version):
+    if has_behavior_version and field & BEHAVIOR_FLAG:
+        return field ^ BEHAVIOR_FLAG, BEHAVIOR_ROW
+    return field, ROW
 
 
 def _read_exact(stream, count):
@@ -32,29 +44,33 @@ def applied_batches(path, journal_id):
     The tick is the observation tick, so the action advances tick + 1.
     """
     with path.open("rb") as stream:
-        if _read_exact(stream, 40) != b"BEESACT1" + journal_id.encode("ascii"):
+        header = _read_exact(stream, 40)
+        if header[:8] not in (b"BEESACT1", b"BEESACT2") or header[8:] != journal_id.encode("ascii"):
             raise ValueError("policy capture header does not match reward journal")
+        has_behavior_version = header[:8] == b"BEESACT2"
         end = stream.seek(0, 2)
         stream.seek(40)
         total = 0
         # Check all frame boundaries before exposing even the first batch.
         while True:
-            rows, generation_or_total = FRAME.unpack(_read_exact(stream, FRAME.size))
-            if rows == 0:
+            field, generation_or_total = FRAME.unpack(_read_exact(stream, FRAME.size))
+            if field == 0:
                 if generation_or_total != total or stream.tell() != end:
                     raise ValueError("invalid policy capture footer")
                 break
-            size = rows * ROW.itemsize
-            if rows > 65536 or stream.tell() + size + FRAME.size > end:
+            rows, dtype = _frame_layout(field, has_behavior_version)
+            size = rows * dtype.itemsize
+            if not 0 < rows <= 65536 or stream.tell() + size + FRAME.size > end:
                 raise ValueError("invalid or incomplete policy capture frame")
             stream.seek(size, 1)
             total += rows
         stream.seek(40)
         while total:
-            rows, generation = FRAME.unpack(_read_exact(stream, FRAME.size))
+            field, generation = FRAME.unpack(_read_exact(stream, FRAME.size))
+            rows, dtype = _frame_layout(field, has_behavior_version)
             if not 0 < rows <= min(total, 65536):
                 raise ValueError("policy capture changed while reading")
-            yield generation, np.frombuffer(_read_exact(stream, rows * ROW.itemsize), dtype=ROW)
+            yield generation, np.frombuffer(_read_exact(stream, rows * dtype.itemsize), dtype=dtype)
             total -= rows
 
 

@@ -5,6 +5,17 @@ Read the full goal and fresh root AGENTS.md before further work. The complete
 Unity replacement remains incomplete. The latest Experiment Hub and queue
 work has been merged locally.
 
+## 2026-11-10 ML-Agents behavior sampling
+
+Native rollout can now load the structured v26 trainer actor from a
+checkpoint, apply its clipped environment actions, and capture raw samples
+and behavior log probabilities separately. The Windows receipt at
+`B:\Bees\native-capability-qualification\behavior-sampling-da68c9a24cae46a2826b575c9adc406c`
+contains 1,200 decisions across both sides from a freshly initialized actor.
+The trainer reproduced the recorded log probabilities within 0.000001.
+The remaining learner work starts at groupmate experience and terminal
+trajectory assembly, followed by the MA-POCA optimizer handoff.
+
 ## 2026-11-10 applied native decisions
 
 The rollout window delivers validated decision rows after successful world
