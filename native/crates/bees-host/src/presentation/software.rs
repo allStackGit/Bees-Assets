@@ -1,6 +1,7 @@
 //! Small, window-independent tactical renderer of authoritative live geometry.
 //! Owns only pixels/camera/selection; it never mutates or steps a battle.
 
+use std::collections::HashSet;
 use std::io::{self, Write};
 use bees_sim::collision::{Aabb, Pose};
 use bees_sim::geometry::Vec2;
@@ -80,14 +81,26 @@ impl NativeSoftwareRenderer {
     pub fn size(&self) -> (usize, usize) { (self.width, self.height) }
     pub fn pixels(&self) -> &[u32] { &self.pixels }
 
-    /// Selection has a screen-space tolerance so tiny ships remain pickable.
-    /// It affects inspection only, never policy perception or physics queries.
+    /// Use the authoritative hull and healing-zone colliders for clicks,
+    /// retaining screen-space tolerance for small ships. Large hull edges
+    /// must remain selectable even when their centers are offscreen.
+    /// This read-only UI query never changes gameplay collision state.
     pub fn pick_ship(&self, view: &NativeRenderWorldView<'_>, x: f32, y: f32) -> Option<i64> {
-        view.combat.render_ships().filter_map(|(ship, body)| {
-            let (sx, sy) = self.project(body.motion.position);
-            let d2 = (sx - x).powi(2) + (sy - y).powi(2);
-            (d2 <= 18.0 * 18.0).then_some((d2, ship.entity_id))
-        }).min_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)))
+        if !x.is_finite() || !y.is_finite() { return None; }
+        let point = self.camera.screen_to_world(x, y, self.width, self.height);
+        let radius = 18.0 / self.camera.pixels_per_unit;
+        let padding = Vec2::new(radius, radius);
+        let bounds = Aabb { min: point - padding, max: point + padding };
+        view.combat.physics().input_ship_ids_overlapping_box(bounds).ok()?
+            .filter_map(|id| {
+                let ship = view.combat.ship(id)?;
+                if ship.vitals.is_dead() { return None; }
+                let position = view.combat.ship_body(id)?.motion.position;
+                let (sx, sy) = self.project(position);
+                let distance_squared = (sx - x).powi(2) + (sy - y).powi(2);
+                Some((distance_squared, id))
+            })
+            .min_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)))
             .map(|(_, id)| id)
     }
 
@@ -146,6 +159,12 @@ impl NativeSoftwareRenderer {
 
     pub fn render(&mut self, view: &NativeRenderWorldView<'_>, bounds: Aabb) -> NativeRenderCounts {
         self.selection.synchronize(view);
+        // Selected squad count can approach ship count in large battles.
+        // Keep the common 1v1 path allocation-free, but avoid linear
+        // membership scans for each ship when a large fleet is selected.
+        let selected = (self.selection.squads().len() > 8).then(|| {
+            self.selection.squads().iter().copied().collect::<HashSet<_>>()
+        });
         self.pixels.fill(0x080e19);
         let mut counts = NativeRenderCounts::default();
         self.shape(&ShipShape::Box { offset: (bounds.min + bounds.max) * 0.5,
@@ -170,8 +189,12 @@ impl NativeSoftwareRenderer {
             let health = ship.vitals.health() as f32 / ship.vitals.max_health() as f32;
             self.line(x - 10.0, y - 12.0, x + 10.0, y - 12.0, 0x3c2837);
             self.line(x - 10.0, y - 12.0, x - 10.0 + 20.0 * health, y - 12.0, color);
-            if view.roster.owning_squad(ship.entity_id)
-                .is_some_and(|owner| self.selection.squads().contains(&owner)) {
+            if view.roster.owning_squad(ship.entity_id).is_some_and(|owner|
+                selected.as_ref().map_or_else(
+                    || self.selection.squads().contains(&owner),
+                    |owners| owners.contains(&owner),
+                )
+            ) {
                 self.line(x - 14.0, y - 17.0, x + 14.0, y - 17.0, 0xffffff);
                 self.line(x - 14.0, y + 14.0, x + 14.0, y + 14.0, 0xffffff);
                 for slot in 0..5 {
