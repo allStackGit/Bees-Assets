@@ -74,9 +74,15 @@ def completed_rollouts(capture, journal, manifest, manifest_sha, checkpoint_sha,
         raise ValueError("capture contains no completed episodes for the selected policy manifest")
     frames = defaultdict(dict)
     boundaries = defaultdict(dict)
+    # A single-manifest capture needs every row. Copy each frame into
+    # one owned, writable NumPy block rather than allocating 31 KB per
+    # agent. Mixed-manifest journals retain selective per-row copies.
+    all_episodes_match = len(terminals) == len(all_terminals)
     for generation, rows in capture_frames(capture, journal_id):
+        owned_frame = rows.copy() if all_episodes_match else None
+        source_rows = owned_frame if owned_frame is not None else rows
         if generation is None:
-            for row in rows:
+            for row in source_rows:
                 key = int(row["world"]), int(row["episode"])
                 if key not in all_terminals:
                     raise ValueError("policy boundary belongs to an unknown completed episode")
@@ -86,11 +92,11 @@ def completed_rollouts(capture, journal, manifest, manifest_sha, checkpoint_sha,
                 frame = boundaries[key].setdefault(tick, {})
                 if not 0 < tick <= terminals[key]["tick"] or agent in frame:
                     raise ValueError("invalid policy boundary observation identity")
-                frame[agent] = row.copy()
+                frame[agent] = row if owned_frame is not None else row.copy()
             continue
         if "continuous_log_probs" not in rows.dtype.names:
             raise ValueError("training requires captured behavior statistics")
-        for row in rows:
+        for row in source_rows:
             key = int(row["world"]), int(row["episode"])
             terminal = all_terminals.get(key)
             if terminal is None:
@@ -111,7 +117,7 @@ def completed_rollouts(capture, journal, manifest, manifest_sha, checkpoint_sha,
             frame = frames[key].setdefault(tick, {})
             if agent in frame:
                 raise ValueError("duplicate agent at a decision tick")
-            frame[agent] = row.copy()
+            frame[agent] = row if owned_frame is not None else row.copy()
 
     if frames.keys() != terminals.keys():
         raise ValueError("completed episode missing decisions")
