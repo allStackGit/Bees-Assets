@@ -60,13 +60,18 @@ function checkedAdapterArgs(adapter,fn,parameters,context) {
     return args;
 }
 function gpuRuntimeProof(adapter,parameters,context) {
+    const pci=/^[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]$/;
+    const dual=Array.isArray(context?.gpu_pci_addresses)&&
+        context.gpu_pci_addresses.length===2&&
+        new Set(context.gpu_pci_addresses).size===2&&
+        context.gpu_pci_addresses.every(p=>pci.test(String(p)));
     if(!adapter||typeof adapter.executable!=='string'||
         !path.isAbsolute(adapter.executable)||
         !SAFE_ARG.test(adapter.executable)||
-        !/^[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]$/.test(
-            String(context?.gpu_pci_address||'')))
+        !(dual&&adapter.gpu_dual_execution==='split-ppo'||
+            !context?.gpu_pci_addresses&&pci.test(String(context?.gpu_pci_address||''))))
         throw Error('Invalid local ROCm runtime or leased PCI identity.');
-    const rocrUuid=Object.hasOwn(adapter.rocr_gpu_uuids||{},context.gpu_pci_address)
+    const rocrUuid=dual?null:Object.hasOwn(adapter.rocr_gpu_uuids||{},context.gpu_pci_address)
         ?adapter.rocr_gpu_uuids[context.gpu_pci_address]:null;
     if(rocrUuid!==null&&
         (typeof rocrUuid!=='string'||!ROCM_UUID.test(rocrUuid)))
@@ -79,7 +84,8 @@ function gpuRuntimeProof(adapter,parameters,context) {
         job_id:context.job_id,project_id:context.project_id,
         artifact_lineage_root_id:context.artifact_lineage_root_id,
         continuation_of_job_id:context.continuation_of_job_id||null,
-        gpu_pci_address:context.gpu_pci_address,
+        ...(dual?{gpu_pci_addresses:context.gpu_pci_addresses.slice()}:
+            {gpu_pci_address:context.gpu_pci_address}),
     });
     return {executable:adapter.executable,
         verifyArgs:checkedAdapterArgs(adapter,adapter.gpu_verify_args,
@@ -129,7 +135,8 @@ function validateLocalInput(job,lease,machineId,adapters,hostOs=os,gpuEnabled=fa
             (typeof adapter.cwd!=='string'||!path.isAbsolute(adapter.cwd)||
              !SAFE_ARG.test(adapter.cwd))))
         throw Error('No valid locally installed trusted adapter for this project.');
-    const binding=lease.gpu_bindings?.[0];
+    const bindings=lease.gpu_bindings||[];
+    const binding=bindings[0];
     const cpuOnly=r.gpu_count===0&&lr.gpu_count===0&&
         !(r.gpus||[]).length&&!(lr.gpus||[]).length;
     const sharedGpu=r.gpu_mode==='shared'&&lr.gpu_mode==='shared'&&
@@ -137,13 +144,19 @@ function validateLocalInput(job,lease,machineId,adapters,hostOs=os,gpuEnabled=fa
         Number.isSafeInteger(r.gpu_vram_mb)&&r.gpu_vram_mb>0&&
         Number.isSafeInteger(r.gpu_compute_pct)&&r.gpu_compute_pct>0&&
         r.gpu_compute_pct<=100;
+    const single=r.gpu_count===1&&lr.gpu_count===1&&
+        (r.gpu_mode==='exclusive'&&lr.gpu_mode==='exclusive'||sharedGpu);
+    const dual=r.gpu_count===2&&lr.gpu_count===2&&
+        r.gpu_mode==='exclusive'&&lr.gpu_mode==='exclusive'&&
+        job.project_id==='tinybrains'&&job.frozen_parameters?.device==='dual'&&
+        adapter.gpu_dual_execution==='split-ppo';
     if(!cpuOnly&&(!gpuEnabled||typeof adapter.gpu_verify_args!=='function'||
-        r.gpu_count!==1||lr.gpu_count!==1||
-        !(r.gpu_mode==='exclusive'&&lr.gpu_mode==='exclusive'||sharedGpu)||
-        lease.gpu_bindings?.length!==1||!binding||
-        lr.gpus?.length!==1||binding.id!==lr.gpus[0]||
-        (r.gpus?.length&&r.gpus[0]!==binding.id)))
-        throw Error('Native GPU launch needs a locally enabled adapter and an approved single PCI binding.');
+        !(single||dual)||bindings.length!==r.gpu_count||
+        lr.gpus?.length!==r.gpu_count||
+        bindings.some((bound,index)=>bound.id!==lr.gpus[index])||
+        new Set(bindings.map(bound=>bound.pci_address)).size!==bindings.length||
+        (r.gpus?.length&&r.gpus.some((id,index)=>id!==lr.gpus[index]))))
+        throw Error('Native GPU launch needs one approved PCI binding or two exclusive split-PPO bindings.');
     const stopPolicy=adapter.stop_policy||'terminate-group';
     if(!['terminate-group','interrupt-main'].includes(stopPolicy))
         throw Error('Unknown locally installed native stop policy.');
@@ -162,11 +175,14 @@ function validateLocalInput(job,lease,machineId,adapters,hostOs=os,gpuEnabled=fa
         artifact_lineage_root_id:lineageRoot,
         ...(job.expected_parent_model_sha256?
             {expected_parent_model_sha256:job.expected_parent_model_sha256}:{}),
-        ...(!cpuOnly?{gpu_pci_address:binding.pci_address,
-            gpu_mode:r.gpu_mode,
-            gpu_vram_mb:r.gpu_mode==='shared'?r.gpu_vram_mb:0,
-            gpu_compute_pct:r.gpu_mode==='shared'?r.gpu_compute_pct:100,
-            gpu_total_vram_mb:binding.vram_mb}:{}),
+        ...(!cpuOnly?(dual
+            ?{gpu_pci_addresses:bindings.map(bound=>bound.pci_address),
+                gpu_mode:'exclusive'}
+            :{gpu_pci_address:binding.pci_address,
+                gpu_mode:r.gpu_mode,
+                gpu_vram_mb:r.gpu_mode==='shared'?r.gpu_vram_mb:0,
+                gpu_compute_pct:r.gpu_mode==='shared'?r.gpu_compute_pct:100,
+                gpu_total_vram_mb:binding.vram_mb}):{}),
     });
     const argsFor=fn=>checkedAdapterArgs(adapter,fn,job.frozen_parameters,context);
     const runtimeProof=cpuOnly?null:gpuRuntimeProof(adapter,job.frozen_parameters,context);
@@ -178,7 +194,8 @@ function validateLocalInput(job,lease,machineId,adapters,hostOs=os,gpuEnabled=fa
     return {executable:adapter.executable,args:argsFor(adapter.args),cwd:adapter.cwd||null,
         cpus:r.cpus,ram_mb:r.ram_mb,stop_policy:stopPolicy,
         stopFile,
-        gpu:cpuOnly?null:{binding,...runtimeProof}};
+        gpu:cpuOnly?null:{...(single?{binding}:{}),
+            bindings:bindings.slice(),...runtimeProof}};
 }
 function verifyUnconfinedDeviceAccess(plan,fsApi) {
     for(const device of [plan.kfd,...plan.selected,...plan.unselected]) {
@@ -720,6 +737,8 @@ class LinuxSupervisor {
             throw Error('Job already has a local launch record; reconcile rather than restart.');
         const invocation=validateLocalInput(job,lease,this.machineId,
             this.adapters,this.hostOs,this.gpuEnabled);
+        if(job.resources?.gpu_count===2)
+            throw Error('Two-GPU TinyBrains needs the locally qualified Docker backend.');
         const cpuSlots=typeof this.hostOs.availableParallelism==='function'
             ?this.hostOs.availableParallelism():this.hostOs.cpus().length;
         ensureLocalCpuRamCapacity(this.state.records,invocation.cpus,
