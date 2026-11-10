@@ -166,6 +166,7 @@ class JobExporter {
                 session.parts=report.parts;
                 session.missing_artifact_job_ids=report.missing_artifact_job_ids||[];
                 session.missing_sources=report.missing_sources||[];
+                session.missing_source_count=report.missing_source_count||0;
                 session.status='ready';
                 done=true;
                 cleanupLater.call(this);
@@ -182,6 +183,7 @@ class JobExporter {
             parts:session.parts,error:session.error,
             missing_artifact_job_ids:session.missing_artifact_job_ids||[],
             missing_sources:session.missing_sources||[],
+            missing_source_count:session.missing_source_count||0,
         };
     }
     download(id,part,res) {
