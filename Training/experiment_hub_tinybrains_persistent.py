@@ -48,9 +48,16 @@ def main():
         raise SystemExit("Hub PPO starting update differs from imported checkpoint.")
     # Both the Hub job and the Linux TinyBrains --max-ppo-updates option
     # count additional updates from the verified seed checkpoint.
+    optimization_device = args.device
+    collection_device = None
     if expected_count:
         from experiment_hub_tinybrains_rocm_verify import verify_runtime_devices
-        verify_runtime_devices(args.rocm_pci)
+        actual_pcis = verify_runtime_devices(args.rocm_pci)
+        if args.device == "dual":
+            # The lease fixes physical PCI identities, not HIP ordinal order.
+            # Use its first GPU for PPO optimization and second for rollouts.
+            optimization_device = f"cuda:{actual_pcis.index(args.rocm_pci[0])}"
+            collection_device = f"cuda:{actual_pcis.index(args.rocm_pci[1])}"
         if args.gpu_vram_mb is not None:
             # Cooperative allocator limit, not physical GPU memory isolation.
             total = torch.cuda.get_device_properties(0).total_memory
@@ -63,8 +70,8 @@ def main():
         "--config", str(spec),
         "--out", str(run),
         "--persistent",
-        "--self-play-device", "cuda:1" if args.device == "dual" else args.device,
-        *(["--self-play-collection-device", "cuda:0"] if args.device == "dual" else []),
+        "--self-play-device", optimization_device,
+        *(["--self-play-collection-device", collection_device] if collection_device else []),
         "--self-play-threads", str(args.threads),
         "--live-matches", str(args.live_matches),
         "--waves", str(args.waves),
