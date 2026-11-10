@@ -157,17 +157,23 @@ function createTinyBrainsPersistentDockerAdapter({
         tinybrains_thread_overrides:[...approved.keys()],
         tinybrains_cpu_fallback_profiles:[...approved.keys()],
         tinybrains_required_import_profiles:[...approved.keys()],
+        tinybrains_dual_gpu_profiles:[...approved.keys()],
+        gpu_dual_execution:'split-ppo',
         tinybrains_imports:Object.fromEntries([...approved.keys()].map(id=>[
             'exeter_'+id,{profile:id,sha256:seedCheckpointSha256},
         ])),
         checkpoint_stop_file:ctx=>path.join(targetFor(ctx),'STOP'),
         gpu_verify_args(parameters,context){
             const item=approved.get(parameters?.profile);
+            const dual=parameters?.device==='dual';
+            const ids=dual?context.gpu_pci_addresses:[context.gpu_pci_address];
             if(!item||item.sha256!==parameters.profile_sha256||
-                !PCI.test(String(context.gpu_pci_address||'')))
+                (parameters?.device!==undefined&&parameters.device!=='dual')||
+                !Array.isArray(ids)||ids.length!==(dual?2:1)||
+                ids.some(pci=>!PCI.test(String(pci||'')))||
+                new Set(ids).size!==ids.length)
                 throw Error('Invalid approved TinyBrains ROCm proof.');
-            return ['-B',HUB_IN+'/Training/experiment_hub_tinybrains_rocm_verify.py',
-                context.gpu_pci_address];
+            return ['-B',HUB_IN+'/Training/experiment_hub_tinybrains_rocm_verify.py',...ids];
         },
         args(parameters,context) {
             const {profile,profile_sha256,updates,threads,device,import_checkpoint,
@@ -176,11 +182,19 @@ function createTinyBrainsPersistentDockerAdapter({
             if(!item||item.sha256!==profile_sha256||
                 Object.keys(parameters).some(k=>!['profile','profile_sha256','updates',
                     'threads','device','import_checkpoint','import_checkpoint_sha256'].includes(k))||
-                (device!==undefined&&device!=='cpu')||
+                (device!==undefined&&!['cpu','dual'].includes(device))||
                 (threads!==undefined&&(!Number.isSafeInteger(threads)||threads<1||threads>256))||
                 !Number.isSafeInteger(updates)||updates<1||updates>10000000||
-                (device==='cpu'?Boolean(context.gpu_pci_address||context.gpu_cuda_uuid):
-                    !PCI.test(String(context.gpu_pci_address||'')))||
+                (device==='cpu'?Boolean(context.gpu_pci_address||
+                    context.gpu_pci_addresses||context.gpu_cuda_uuid):
+                    device==='dual'
+                        ?context.gpu_mode!=='exclusive'||
+                            !Array.isArray(context.gpu_pci_addresses)||
+                            context.gpu_pci_addresses.length!==2||
+                            context.gpu_pci_addresses.some(pci=>!PCI.test(String(pci||'')))||
+                            new Set(context.gpu_pci_addresses).size!==2
+                        :!PCI.test(String(context.gpu_pci_address||''))||
+                            context.gpu_pci_addresses!==undefined)||
                 (device!=='cpu'&&context.gpu_mode==='shared'&&
                     (!Number.isSafeInteger(context.gpu_vram_mb)||
                         context.gpu_vram_mb<1||
@@ -233,9 +247,12 @@ function createTinyBrainsPersistentDockerAdapter({
                 '--waves',String(item.profile.waves),
                 '--actions',String(item.profile.rollout_actions),
                 ...(device==='cpu'?['--device','cpu']:
-                    ['--rocm-pci',context.gpu_pci_address,
-                        ...(context.gpu_mode==='shared'?
-                            ['--gpu-vram-mb',String(context.gpu_vram_mb)]:[])])];
+                    device==='dual'
+                        ?['--device','dual',...context.gpu_pci_addresses.flatMap(pci=>
+                            ['--rocm-pci',pci])]
+                        :['--rocm-pci',context.gpu_pci_address,
+                            ...(context.gpu_mode==='shared'?
+                                ['--gpu-vram-mb',String(context.gpu_vram_mb)]:[])])];
         },
         checkpoint_ready(context){
             const item=approved.get(context.frozen_parameters?.profile);
