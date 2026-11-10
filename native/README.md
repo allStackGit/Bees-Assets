@@ -15,7 +15,10 @@ cargo run --release --manifest-path native/Cargo.toml -p bees-host \
 ```
 
 Space pauses all worlds; N advances one fixed round while paused; Tab changes
-the inspected world; arrow keys pan; the mouse wheel zooms around the pointer;
+the inspected world without replaying input from the previous one. Each
+inspected Level uses its own authored fixed-step duration for view pacing;
+the underlying multi-world runner still advances one common simulation
+round across all Levels. Arrow keys pan; the mouse wheel zooms around the pointer;
 F fits the imported bounds; window resizing preserves camera zoom while
 revealing more or less world. Left-click inspects a ship using its authored
 collider and selects its source-authorized player squad. Ctrl-click adds squads;
