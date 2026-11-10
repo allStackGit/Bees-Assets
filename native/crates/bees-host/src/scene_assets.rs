@@ -10,6 +10,7 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use sha2::{Digest, Sha256};
 
 use bees_gameplay::level_rules::NativeLevelRules;
 use bees_sim::asteroid_assets::{
@@ -46,6 +47,7 @@ pub enum NativeSceneAssetError {
 /// before any policy decisions or physical simulation steps.
 pub struct NativeSceneAssets {
     stage_name: String,
+    source_assets_sha256: String,
     collision_matrix: CollisionMatrix,
     asteroid_stage: FullAsteroidStage,
     fragment_palette: AsteroidFragmentPalette,
@@ -86,8 +88,14 @@ impl NativeSceneAssets {
             .map_err(NativeSceneAssetError::BoxCatalog)?);
         let polygon_catalog = Arc::new(PolygonObstacleCatalog::embedded()
             .map_err(NativeSceneAssetError::PolygonCatalog)?);
+        let mut digest = Sha256::new();
+        for source in [&matrix_json, &stage_json] {
+            digest.update((source.len() as u64).to_le_bytes());
+            digest.update(source.as_bytes());
+        }
         Ok(Self {
             stage_name: expected_stage_name.to_owned(),
+            source_assets_sha256: format!("{:x}", digest.finalize()),
             collision_matrix, asteroid_stage, fragment_palette,
             ship_catalog, projectile_catalog, box_catalog, polygon_catalog,
         })
@@ -98,6 +106,8 @@ impl NativeSceneAssets {
     pub fn level_rules(&self) -> NativeLevelRules {
         NativeLevelRules { collision_matrix: self.collision_matrix.clone() }
     }
+
+    pub fn source_assets_sha256(&self) -> &str { &self.source_assets_sha256 }
 
     pub fn stage_name(&self) -> &str { &self.stage_name }
 

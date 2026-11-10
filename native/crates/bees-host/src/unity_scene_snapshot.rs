@@ -800,11 +800,6 @@ impl NativePhysicalScene {
     ) -> Result<NativeAuthoredLevel<NativePolicyOnlyMetadata, A>,
         NativePolicyOnlyLevelError>
     {
-        if self.source_policy_bindings.is_empty() {
-            return Err(NativePolicyOnlyLevelError::Snapshot(
-                NativeSnapshotError::InvalidPolicySource(0),
-            ));
-        }
         for &ship_id in &self.active_policy_ship_ids {
             if !self.source_policy_bindings.contains_key(&ship_id) {
                 return Err(NativePolicyOnlyLevelError::InvalidControllerBinding(

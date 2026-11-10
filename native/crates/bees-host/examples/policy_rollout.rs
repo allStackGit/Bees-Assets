@@ -18,7 +18,9 @@ use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::Arc;
+use std::time::Instant;
 
+use bees_gameplay::inference::{NativePolicyInference, NativePolicyRoute};
 use bees_gameplay::group_rewards::{team_id_for_side, NativeGroupRewardDelivery};
 use bees_gameplay::level_host::NativeLevelStopKind;
 use bees_gameplay::squads::SquadRosterError;
@@ -30,8 +32,8 @@ use bees_host::runtime::{
     NativeHostRuntime, NativeHostSocketEvent, NativeSourceCommandPulse,
 };
 use bees_host::policy_only_metadata::NativePolicyOnlyMetadata;
-use bees_host::notification_file::{DurableDiagnosticNotifications, recover_command_outcomes};
-use bees_host::policy_process::ResidentPolicyProcess;
+use bees_host::notification_file::{DurableDiagnosticNotifications, EpisodeEvaluationContext, recover_command_outcomes};
+use bees_host::policy_process::{PolicyProcessError, ResidentPolicyProcess};
 use bees_host::presentation::NativeSoftwareRenderer;
 use bees_host::scene_assets::NativeSceneAssets;
 use bees_host::scene_builder::{NativeAuthoredEntity, NativeAuthoredGroups};
@@ -42,8 +44,9 @@ use bees_sim::asteroid_fragments::FragmentSpawnSettings;
 use bees_sim::collision::Aabb;
 use bees_sim::control::distinct_team_frames;
 use bees_sim::geometry::Vec2;
+use bees_sim::policy_batch::{PolicyActionMask, PolicyAgentKey};
 use bees_sim::simulation::{RandomStream, WorldId};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
@@ -51,14 +54,14 @@ type MinionAllocator = Box<
     dyn FnMut(SquadLifetime, i64) -> Result<SquadLifetime, SquadRosterError>,
 >;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct BoundsConfig {
     min: [f32; 2],
     max: [f32; 2],
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct FragmentConfig {
     map_bounds: BoundsConfig,
@@ -89,10 +92,32 @@ struct LevelConfig {
     scene: PathBuf,
     world_id: u64,
     level_id: i64,
-    seed: u64,
+    seed: Option<u64>,
+    episode_seeds: Option<Vec<u64>>,
+    #[serde(default)]
     model_slots: HashMap<u8, u32>,
     /// Omit only for a game Level without MA-POCA group rewards.
     groups: Option<GroupConfig>,
+}
+
+impl LevelConfig {
+    fn validate_seeds(&self, episodes: u32) -> io::Result<()> {
+        match (self.seed, &self.episode_seeds) {
+            (Some(_), None) => Ok(()),
+            (None, Some(seeds)) if seeds.len() == episodes as usize => Ok(()),
+            _ => Err(invalid(format!(
+                "world {} needs either seed or exactly {episodes} episode_seeds",
+                self.world_id,
+            ))),
+        }
+    }
+
+    fn episode_seed(&self, offset: u32) -> u64 {
+        match &self.episode_seeds {
+            Some(seeds) => seeds[offset as usize],
+            None => self.seed.expect("validated seed plan").wrapping_add(u64::from(offset)),
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -137,9 +162,9 @@ struct RunConfig {
     collision_matrix: PathBuf,
     stage_palette: PathBuf,
     fragment_spawn: FragmentConfig,
-    python: PathBuf,
-    policy_worker: PathBuf,
-    model_manifest: PathBuf,
+    python: Option<PathBuf>,
+    policy_worker: Option<PathBuf>,
+    model_manifest: Option<PathBuf>,
     connection_checkpoint: PathBuf,
     notifications: PathBuf,
     /// Stopped run journals, replayed into the ORIGINAL connection before
@@ -158,6 +183,7 @@ struct RunConfig {
     #[serde(default = "one_episode")]
     episodes_per_world: u32,
     rounds_per_window: u32,
+    status_every_rounds: Option<u64>,
     delivery_every: u32,
     timing_sample_period: Option<u32>,
     levels: Vec<LevelConfig>,
@@ -314,8 +340,95 @@ fn make_setup(
     })
 }
 
+struct RolloutModel(Option<ResidentPolicyProcess>);
+
+impl RolloutModel {
+    fn model_manifest_sha256(&self) -> Option<String> {
+        self.0.as_ref().map(ResidentPolicyProcess::model_manifest_sha256)
+    }
+
+    fn reload_manifest(&mut self, manifest: &Path) -> Result<u64, PolicyProcessError> {
+        self.0.as_mut().ok_or(PolicyProcessError::Unavailable)?.reload_manifest(manifest)
+    }
+}
+
+impl NativePolicyInference for RolloutModel {
+    type Error = PolicyProcessError;
+
+    fn model_generation(&self) -> u64 {
+        self.0.as_ref().map_or(0, ResidentPolicyProcess::model_generation)
+    }
+
+    fn forward(
+        &mut self, keys: &[PolicyAgentKey], routes: &[NativePolicyRoute],
+        observations: &[f32], masks: &[PolicyActionMask],
+        continuous: &mut [f32], discrete: &mut [u8],
+    ) -> Result<(), Self::Error> {
+        self.0.as_mut().ok_or(PolicyProcessError::Unavailable)?
+            .forward(keys, routes, observations, masks, continuous, discrete)
+    }
+}
+
 type RolloutHost = NativeHostRuntime<NativePolicyOnlyMetadata, MinionAllocator,
-    ResidentPolicyProcess, DurableDiagnosticNotifications>;
+    RolloutModel, DurableDiagnosticNotifications>;
+
+fn gameplay_config_sha256(
+    config: &RunConfig, assets: &NativeSceneAssets, interactive: bool,
+) -> String {
+    let hivemind = config.hivemind.as_ref().map(|network| json!({
+        "endpoint": network.endpoint,
+        "user_id": network.user_id,
+        "version": network.version,
+        "reconnect_game_id": network.reconnect_game_id,
+        // Source controller and opponent identities are part of the scene.
+        "issue_source_commands": network.issue_source_commands,
+        "command_poll_rounds": if interactive { 1 } else { config.rounds_per_window },
+    }));
+    let inputs = json!({
+        "source_assets_sha256": assets.source_assets_sha256(),
+        "fragment_spawn": config.fragment_spawn,
+        "decision_period": config.decision_period,
+        "broadphase_cell_size": config.broadphase_cell_size,
+        "interactive": interactive,
+        "hivemind": hivemind,
+    });
+    format!("{:x}", Sha256::digest(inputs.to_string().as_bytes()))
+}
+
+fn bind_evaluation_episode(
+    host: &mut RolloutHost, index: usize, level: &LevelConfig, seed: u64, scene_sha256: &str,
+    gameplay_config_sha256: &str,
+    episode_offset: u32,
+) -> io::Result<()> {
+    let world = host.simulation().world(index).ok_or_else(|| invalid("missing evaluation Level"))?;
+    let id = world.id;
+    let revision = world.episode_revision();
+    let [bee_side, human_side] = world.state.events.sides();
+    let group_episode_number = level.groups.as_ref().map(|group|
+        episode_number(group, episode_offset)).transpose()?;
+    let mut group_team_by_side = std::collections::BTreeMap::new();
+    if let Some(number) = group_episode_number {
+        for side in [bee_side, human_side] {
+            let team = team_id_for_side(bee_side, human_side, number, side)
+                .map_err(|error| contextual("evaluation group team", error))?;
+            group_team_by_side.insert(side, team);
+        }
+    }
+    let context = EpisodeEvaluationContext {
+        level_id: level.level_id,
+        seed,
+        scene_sha256: scene_sha256.to_owned(),
+        gameplay_config_sha256: gameplay_config_sha256.to_owned(),
+        bee_side,
+        human_side,
+        policy_generation: host.model_mut().model_generation(),
+        policy_manifest_sha256: host.model_mut().model_manifest_sha256(),
+        model_slots_by_team: level.model_slots.iter().map(|(&team, &slot)| (team, slot)).collect(),
+        group_episode_number,
+        group_team_by_side,
+    };
+    host.sink_mut().bind_evaluation_episode(id, revision, context)
+}
 
 #[derive(Clone, Copy, Debug)]
 struct SourceCommandClock {
@@ -525,6 +638,7 @@ impl RunNetwork {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
+    let run_start = Instant::now();
     let mut args = env::args_os().skip(1);
     let config_path = PathBuf::from(args.next().ok_or_else(|| {
         invalid("usage: policy_rollout run.json")
@@ -546,6 +660,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     let config_path = config_path.canonicalize()?;
     let root = config_path.parent().ok_or_else(|| invalid("missing config directory"))?;
     let mut config: RunConfig = serde_json::from_reader(File::open(&config_path)?)?;
+    if config.status_every_rounds == Some(0) {
+        return Err(invalid("status_every_rounds must be positive").into());
+    }
 
     let period = nonzero(config.decision_period, "decision_period")?;
     let window = nonzero(config.rounds_per_window, "rounds_per_window")?;
@@ -562,6 +679,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         config.next_squad_item_id == i64::MAX
     {
         return Err(invalid("invalid run identity, bounds, allocator or round budget").into());
+    }
+    for level in &config.levels {
+        level.validate_seeds(config.episodes_per_world)?;
     }
     let mut previous_update = 0_u64;
     for update in &config.model_updates {
@@ -602,18 +722,26 @@ fn main() -> Result<(), Box<dyn Error>> {
         &config.stage_name,
         fragment_settings,
     ).map_err(|error| contextual("stage assets", error))?;
-    let manifest_path = resolve(root, &config.model_manifest);
-    let manifest_bytes = fs::read(&manifest_path)?;
-    let expected_manifest_sha256 = format!("{:x}", Sha256::digest(&manifest_bytes));
-    let manifest: Value = serde_json::from_slice(&manifest_bytes)?;
-    let declared: HashSet<u32> = manifest.get("models")
-        .and_then(Value::as_array)
-        .ok_or_else(|| invalid("manifest has no models array"))?
-        .iter()
-        .map(|item| item.get("slot").and_then(Value::as_u64)
-            .and_then(|slot| u32::try_from(slot).ok())
-            .ok_or_else(|| invalid("manifest model slot is not uint32")))
-        .collect::<Result<_, _>>()?;
+    let mut declared = HashSet::new();
+    let model_source = match (&config.python, &config.policy_worker, &config.model_manifest) {
+        (Some(python), Some(worker), Some(manifest)) => {
+            let manifest_path = resolve(root, manifest);
+            let bytes = fs::read(&manifest_path)?;
+            let manifest: Value = serde_json::from_slice(&bytes)?;
+            for item in manifest.get("models").and_then(Value::as_array)
+                .ok_or_else(|| invalid("manifest has no models array"))?
+            {
+                let slot = item.get("slot").and_then(Value::as_u64)
+                    .and_then(|slot| u32::try_from(slot).ok())
+                    .ok_or_else(|| invalid("manifest model slot is not uint32"))?;
+                declared.insert(slot);
+            }
+            Some((resolve_interpreter(root, python), resolve(root, worker), manifest_path,
+                format!("{:x}", Sha256::digest(bytes))))
+        }
+        (None, None, None) if config.model_updates.is_empty() => None,
+        _ => return Err(invalid("policy runs require python, policy_worker, and model_manifest").into()),
+    };
 
     let mut level_ids = HashSet::new();
     let mut world_ids = HashSet::new();
@@ -624,24 +752,26 @@ fn main() -> Result<(), Box<dyn Error>> {
     // immutable source template per canonical path, not N copies and
     // filesystem reads. Each arena still parses its own mutable world.
     let mut source_jsons = Vec::with_capacity(config.levels.len());
-    let mut source_templates: HashMap<PathBuf, Arc<str>> = HashMap::new();
+    let mut source_templates: HashMap<PathBuf, (Arc<str>, String)> = HashMap::new();
+    let mut source_digests = Vec::with_capacity(config.levels.len());
     for level in &mut config.levels {
         if level.level_id <= 0 || level.world_id == 0 ||
             !level_ids.insert(level.level_id) ||
             !world_ids.insert(level.world_id) ||
-            level.model_slots.is_empty() ||
             !level.model_slots.values().all(|slot| declared.contains(slot))
         {
             return Err(invalid("duplicate/invalid Level or missing real model slot").into());
         }
         let source_path = resolve(root, &level.scene).canonicalize()?;
-        let source_json = if let Some(cached) = source_templates.get(&source_path) {
-            Arc::clone(cached)
+        let (source_json, source_digest) = if let Some(cached) = source_templates.get(&source_path) {
+            cached.clone()
         } else {
             let text: Arc<str> = fs::read_to_string(&source_path)?.into();
-            source_templates.insert(source_path, Arc::clone(&text));
-            text
+            let digest = format!("{:x}", Sha256::digest(text.as_bytes()));
+            source_templates.insert(source_path, (Arc::clone(&text), digest.clone()));
+            (text, digest)
         };
+        source_digests.push(source_digest);
         let mut source = NativePhysicalScene::parse_with_ship_catalog(&source_json, assets.ship_catalog())
             .map_err(|error| contextual("exported Level", error))?;
         if source.stage_name != config.stage_name {
@@ -714,7 +844,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             }
             // Check the exported initial controller team BEFORE any
             // per-episode permutation or output file creation.
-            bind_group_routes(&mut source, group, 0, true, level.seed)?;
+            bind_group_routes(&mut source, group, 0, true, level.episode_seed(0))?;
             // Replayed self-play episodes flip each controlled side's
             // team ID. Only require the other slot when a replay can
             // actually occur; a one-sided/scripted episode may have just
@@ -731,6 +861,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
         for squad in &source.source_squads {
             highest_squad_item_id = highest_squad_item_id.max(squad.item_id);
+        }
+        if model_source.is_none() && !source.source_policy_bindings.is_empty() {
+            return Err(invalid("authored policy controllers require a model worker").into());
         }
         for binding in source.source_policy_bindings.values() {
             if !level.model_slots.contains_key(&binding.team_id) {
@@ -768,8 +901,9 @@ fn main() -> Result<(), Box<dyn Error>> {
             }
         }
     }
+    let source_fixed_dt = source_levels[0].fixed_dt_seconds;
     #[cfg(feature = "client")]
-    let fixed_dt = std::time::Duration::try_from_secs_f32(source_levels[0].fixed_dt_seconds)
+    let fixed_dt = std::time::Duration::try_from_secs_f32(source_fixed_dt)
         .map_err(|_| invalid("source fixed duration cannot be represented by the host clock"))?;
     let client_bounds: Vec<_> = source_levels.iter().map(|scene| scene.bounds).collect();
     // Open the optional window before starting the model or creating durable
@@ -785,7 +919,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             source,
             make_setup(
                 &config, level, &assets, period,
-                Rc::clone(&next_id), level.seed, 0, source_sides[index],
+                Rc::clone(&next_id), level.episode_seed(0), 0, source_sides[index],
             )?,
         ));
     }
@@ -817,25 +951,34 @@ fn main() -> Result<(), Box<dyn Error>> {
             "newly_checkpointed":recovered.newly_checkpointed,"already_checkpointed":recovered.already_checkpointed}));
     }
 
-    let model = ResidentPolicyProcess::python_worker(
-        &resolve_interpreter(root, &config.python),
-        &resolve(root, &config.policy_worker),
-        &manifest_path,
-    ).map_err(|error| contextual("model worker startup", error))?;
-    if model.model_manifest_sha256() != expected_manifest_sha256 {
-        return Err(invalid(
-            "model manifest changed between route preflight and authenticated worker startup",
-        ).into());
-    }
+    let model = if let Some((python, worker, manifest, expected_sha)) = model_source {
+        let model = ResidentPolicyProcess::python_worker(python, worker, manifest)
+            .map_err(|error| contextual("model worker startup", error))?;
+        if model.model_manifest_sha256() != expected_sha {
+            return Err(invalid(
+                "model manifest changed between route preflight and authenticated worker startup",
+            ).into());
+        }
+        RolloutModel(Some(model))
+    } else {
+        RolloutModel(None)
+    };
     let sink = DurableDiagnosticNotifications::create_new(
         &notifications, config.run_id.clone(),
     )?;
     let mut host = assets.build_imported_policy_runtime(
         launches, model, connection, sink,
     ).map_err(|error| contextual("native Level construction", error))?;
+    let gameplay_digest = gameplay_config_sha256(&config, &assets, view);
+    for (index, level) in config.levels.iter().enumerate() {
+        bind_evaluation_episode(
+            &mut host, index, level, level.episode_seed(0), &source_digests[index],
+            &gameplay_digest, 0,
+        )?;
+    }
     host.set_timing_sample_period(timing);
     let mut network = config.hivemind.as_ref().map(|settings|
-        RunNetwork::start(settings, &config.levels, host.connection_mut())).transpose()?;
+        RunNetwork::start(settings, &config.levels, source_fixed_dt, host.connection_mut())).transpose()?;
     println!("{}", json!({
         "kind": "run_started",
         "run_id": config.run_id,
@@ -856,6 +999,10 @@ fn main() -> Result<(), Box<dyn Error>> {
         "interactive_view": view,
     }));
 
+    let execution_start = Instant::now();
+    let status_every_rounds = config.status_every_rounds.unwrap_or(u64::from(window.get()));
+    let mut successful_world_steps = 0_u64;
+    let mut successful_policy_rows = 0_u64;
     let mut rounds = 0_u64;
     let mut failed_window = None;
     let mut segment_start_round = 0_u64;
@@ -863,7 +1010,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut segment_generation = host.model_mut().model_generation();
     let mut segment_manifest_sha256 = host.model_mut().model_manifest_sha256();
     let mut completed_episodes = vec![0_u32; config.levels.len()];
-    let mut next_status_round = u64::from(window.get());
+    let mut next_status_round = status_every_rounds;
     #[cfg(feature = "client")]
     let mut user_closed = false;
     #[cfg(not(feature = "client"))]
@@ -973,7 +1120,19 @@ fn main() -> Result<(), Box<dyn Error>> {
         // evaluation outcomes, even if episodes have different lengths.
         let remaining = (config.max_rounds - rounds)
             .min(until_update - rounds);
-        let count = nonzero(remaining.min(u64::from(if view { 1 } else { window.get() })) as u32, "window")?;
+        let source_pulse_limit = if let Some(network) = &mut network {
+            let scheduling = network.issue_due_source_commands(&mut host, source_fixed_dt)
+                .and_then(|()| network.rounds_until_next_source_pulse(&host, source_fixed_dt));
+            match scheduling {
+                Ok(limit) => limit,
+                Err(error) => {
+                    failed_window = Some(error.to_string());
+                    break;
+                }
+            }
+        } else { u64::MAX };
+        let count = nonzero(remaining.min(source_pulse_limit)
+            .min(u64::from(if view { 1 } else { window.get() })) as u32, "window")?;
         let counts = match host.run_window(count, delivery) {
             Ok(counts) => counts,
             Err(error) => {
@@ -985,6 +1144,8 @@ fn main() -> Result<(), Box<dyn Error>> {
             }
         };
         rounds += u64::from(counts.rounds);
+        successful_world_steps += counts.world_steps as u64;
+        successful_policy_rows += counts.policy_rows as u64;
         // Pause completed worlds while the slowest active arena reaches
         // the same model-change boundary. A physical episode must never
         // contribute a partially old/partially new benchmark result.
@@ -1133,9 +1294,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                     next_id.set(following);
                     squad.item_id = item_id;
                 }
-                let seed = level.seed.wrapping_add(
-                    u64::from(completed_episodes[index])
-                );
+                let seed = level.episode_seed(completed_episodes[index]);
                 if let Some(group) = &level.groups {
                     bind_group_routes(
                         &mut scene, group, completed_episodes[index], false,
@@ -1153,6 +1312,10 @@ fn main() -> Result<(), Box<dyn Error>> {
                     .state;
                 host.reset_world(index, seed, replacement)
                     .map_err(|error| contextual("guarded Level reset", error))?;
+                bind_evaluation_episode(
+                    &mut host, index, level, seed, &source_digests[index],
+                    &gameplay_digest, completed_episodes[index],
+                )?;
                 recycled += 1;
             }
             Ok(recycled)
@@ -1165,7 +1328,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             }
         };
         if rounds >= next_status_round || counts.stopped_with_no_live_worlds {
-        next_status_round = rounds.saturating_add(u64::from(window.get()));
+        next_status_round = rounds.saturating_add(status_every_rounds);
         let evaluation = host.sink_mut().measurements().clone();
         let mean_episode_seconds = evaluation.mean_episode_seconds();
         match host.sample_status() {
@@ -1214,6 +1377,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     // win or a completed PPO episode. Durable EpisodeAborted notifications
     // explicitly mark partial trajectories as unusable for learning.
     let count = host.simulation().world_count();
+    let finalization_start = Instant::now();
     let mut cleanup_errors = Vec::new();
     if let Some(path) = &capture {
         // Captures are diagnostic output, never a replacement world or model
@@ -1261,10 +1425,18 @@ fn main() -> Result<(), Box<dyn Error>> {
         cleanup_errors.push(format!("final notification sync: {error}"));
     }
     let mut socket_flush_timed_out = false;
+    let mut socket_close_confirmed = false;
     if let Some(network) = &mut network {
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(u64::from(network.flush_seconds));
-        while failed_window.is_none() && host.connection_mut().pending_store_hashes()
-            .map_err(|error| contextual("final pending outcomes", error))?.len() > 0 {
+        while failed_window.is_none() && cleanup_errors.is_empty() {
+            let connection = host.connection_mut();
+            if network.next_level == network.levels.len() &&
+                connection.pending_store_hashes()
+                    .map_err(|error| contextual("final pending outcomes", error))?.is_empty() &&
+                connection.connection().pending_request_count() == 0
+            {
+                break;
+            }
             if std::time::Instant::now() >= deadline { socket_flush_timed_out = true; break; }
             if let Err(error) = network.poll(&mut host) {
                 cleanup_errors.push(error.to_string());
@@ -1274,7 +1446,23 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
         // A bounded wait ending is not an acknowledgement. All remaining
         // original hashes stay in the checkpoint for a later connection.
-        let _ = network.worker.request_close();
+        if failed_window.is_none() && cleanup_errors.is_empty() && !socket_flush_timed_out {
+            match network.worker.request_close() {
+                Ok(()) => {
+                    while !network.worker.closed() && std::time::Instant::now() < deadline {
+                        if let Err(error) = network.poll(&mut host) {
+                            cleanup_errors.push(format!("HiveMind socket close: {error}"));
+                            break;
+                        }
+                        if !network.worker.closed() {
+                            std::thread::sleep(std::time::Duration::from_millis(1));
+                        }
+                    }
+                    socket_close_confirmed = network.worker.closed();
+                }
+                Err(error) => cleanup_errors.push(format!("HiveMind socket close request: {error:?}")),
+            }
+        }
     }
     let status = host.runtime_status()
         .map_err(|error| contextual("final native host status", error))?;
@@ -1286,12 +1474,33 @@ fn main() -> Result<(), Box<dyn Error>> {
     if final_segment.is_none() && failed_window.is_none() {
         failed_window = Some("durable evaluation counters regressed".into());
     }
+    let policy_generation = host.model_mut().model_generation();
+    let policy_manifest_sha256 = host.model_mut().model_manifest_sha256();
+    drop(host.model_mut().0.take());
+    let run_end = Instant::now();
+    let wall_seconds = run_end.duration_since(run_start).as_secs_f64();
+    let execution_wall_seconds = finalization_start.duration_since(execution_start).as_secs_f64();
+    let rate = |count: u64, seconds: f64| {
+        (seconds > 0.0).then(|| count as f64 / seconds)
+    };
     println!("{}", json!({
         "kind": "run_final",
         "run_id": config.run_id,
         "rounds": rounds,
-        "policy_generation": host.model_mut().model_generation(),
-        "policy_manifest_sha256": host.model_mut().model_manifest_sha256(),
+        "throughput": {
+            "wall_seconds": wall_seconds,
+            "startup_wall_seconds": execution_start.duration_since(run_start).as_secs_f64(),
+            "execution_wall_seconds": execution_wall_seconds,
+            "finalization_wall_seconds": run_end.duration_since(finalization_start).as_secs_f64(),
+            "successful_world_steps": successful_world_steps,
+            "successful_policy_rows": successful_policy_rows,
+            "world_steps_per_wall_second": rate(successful_world_steps, wall_seconds),
+            "policy_rows_per_wall_second": rate(successful_policy_rows, wall_seconds),
+            "world_steps_per_execution_second": rate(successful_world_steps, execution_wall_seconds),
+            "policy_rows_per_execution_second": rate(successful_policy_rows, execution_wall_seconds),
+        },
+        "policy_generation": policy_generation,
+        "policy_manifest_sha256": policy_manifest_sha256,
         "completed_episodes": completed_episodes.iter()
             .map(|&count| u64::from(count)).sum::<u64>(),
         "completed_worlds": status.completed_worlds,
@@ -1302,10 +1511,20 @@ fn main() -> Result<(), Box<dyn Error>> {
         "pending_store_commands": status.pending_store_commands,
         "pending_store_reconciliations": status.pending_store_reconciliations,
         "socket_flush_timed_out": socket_flush_timed_out,
+        "pending_hivemind_requests": status.pending_hivemind_requests,
+        "socket_close_confirmed": socket_close_confirmed,
         "network": network.as_ref().map(|network| json!({
             "measurements": network.worker.measurements(),
             "queue_backpressure": network.worker.queue_backpressure(),
             "setups_remaining": network.levels.len() - network.next_level,
+            "source_commands": {
+                "eligible": network.command_measurements.eligible,
+                "issued": network.command_measurements.issued,
+                "out_of_bounds": network.command_measurements.out_of_bounds,
+                "home_moves": network.command_measurements.home_moves,
+                "home_unreachable": network.command_measurements.home_unreachable,
+                "unauthored_minions": network.command_measurements.unauthored_minions,
+            },
         })),
         "model_updates_applied": next_model_update,
         "model_updates_remaining": config.model_updates.len() - next_model_update,

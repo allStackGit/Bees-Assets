@@ -83,6 +83,16 @@ The single JSON configuration file requires:
   `max_rounds`, optional `episodes_per_world` (default 1),
   `rounds_per_window`, `delivery_every`, and optional
   `timing_sample_period` (all step counts are positive).
+- Optional `status_every_rounds` sets the reporting cadence independently
+  of the simulation window. Final `throughput` reports successful world
+  steps and policy rows and wall time for startup, execution, and finalization.
+- Terminal journal records include scene and gameplay configuration hashes,
+  actual seeds, model provenance, and MA-POCA seats when present. Compare two
+  stopped journals using `python native/tools/compare_evaluation.py reference.jsonl candidate.jsonl --focus-side bee`.
+  For changing-policy comparisons, pass both original manifests to verify the
+  opposing artifact and model settings. The recorded configuration covers
+  source asset bytes, physics and decision settings, and HiveMind setup.
+  Remote service state and player inputs can still differ across runs.
 - Optional `model_updates`: an ordered array of
   `{"at_round": 1000, "manifest": "next-model.json"}` entries.
   Rounds must be strictly increasing and less than `max_rounds`.
@@ -116,7 +126,10 @@ The single JSON configuration file requires:
   advance the episode number, alternate team routes and source movement limits,
   and select fresh source-equivalent distinct policy coordinate frames from a
   world-specific reproducible seed. Earlier schemas require a fresh export.
-  Omit `groups` only for non-group gameplay.
+  Omit `groups` for non-group gameplay. Replace `seed` with
+  `episode_seeds` to supply exactly `episodes_per_world` unsigned 64-bit
+  seeds in execution order. Game-only scenes can omit `model_slots` and
+  the run's `python`, `policy_worker`, and `model_manifest`.
 
 
 The runner checks source identities, model routing, collision settings and
@@ -223,10 +236,11 @@ and `--view`: supply `endpoint`, `user_id`, `version`, optional `auth_ticket_env
 `allow_insecure_loopback` (default false), and `shutdown_flush_seconds` (default5).
 The runner sets up all configured Levels serially on one server Game, polls before
 view pacing/input, submits pending outcomes, and reports socket/queue measurements.
-It does not originate strategic/targeting requests for policy-controlled agents.
-Unowned feature replies fail explicitly. Final flushing is bounded; a timeout
-leaves the original pending hashes on disk and is reported separately from an
-acknowledgement. Nonterminal server failures retain the same payload/hash; the
+Set `issue_source_commands` to enable the source-timed targeting and strategy
+cycle for authored HiveMind squads. In headless mode, simulation windows stop at
+the next command pulse. Unowned feature replies fail explicitly. Shutdown drains
+outstanding replies within the configured budget and reports WebSocket close
+confirmation separately. Unacknowledged durable outcomes stay in the checkpoint. Nonterminal server failures retain the same payload/hash; the
 worker's explicit `retry_store(hash)` admits a retry without inventing a per-frame
 resend loop. A new worker replays pending requests after setup; terminal409 batches
 stay in reconciliation. Production uses certificate-verified WSS and source setup

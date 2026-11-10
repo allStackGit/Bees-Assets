@@ -162,6 +162,7 @@ pub fn select_matchup_squad(
 
 #[derive(Debug)]
 pub enum LiveMatchupResolutionError {
+    InvalidShipType(u8),
     MissingSourceContext,
     MissingOwner,
     StaleWorld,
@@ -222,9 +223,16 @@ fn live_candidate(
         // history is optional for policies with no automatic weapons.
         candidate.health += f64::from(ship.vitals.health());
         candidate.tsv += f64::from(ship.vitals.tsv());
-        let needs_rank = matches!(strategy_id,
-            2 | 3 | 6 | 7 | 10 | 11 | 12 | 13 | 18..=40
-        ) || needs_combat_state;
+        if matches!(strategy_id, 18..=40) {
+            let letter = crate::squad_targeting::SOURCE_TYPE_LETTERS
+                .get(usize::from(ship.ship_type))
+                .ok_or(LiveMatchupResolutionError::InvalidShipType(ship.ship_type))?;
+            if let Some(count) = candidate.type_counts.get_mut(usize::from(*letter - b'A')) {
+                *count += 1;
+            }
+        }
+        let needs_rank = matches!(strategy_id, 2 | 3 | 6 | 7 | 10 | 11 | 12 | 13)
+            || needs_combat_state;
         if needs_rank {
             let ranking = world.weapon_target_rank_stats(id)
                 .map_err(LiveMatchupResolutionError::World)?;
@@ -237,9 +245,6 @@ fn live_candidate(
             candidate.firepower += f64::from(ranking.firepower);
             candidate.max_range = candidate.max_range.max(ranking.max_range);
             candidate.speed += f64::from(ranking.speed);
-            if ranking.ship_type_letter < 23 {
-                candidate.type_counts[usize::from(ranking.ship_type_letter)] += 1;
-            }
         }
         if needs_combat_state {
             candidate.in_combat |= in_combat(id)

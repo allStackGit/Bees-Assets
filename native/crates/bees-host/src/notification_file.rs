@@ -200,7 +200,24 @@ impl NativeDiagnosticMeasurements {
 }
 
 
+/// Immutable evaluation inputs for one authored episode.
+#[derive(Debug, Serialize)]
+pub struct EpisodeEvaluationContext {
+    pub level_id: i64,
+    pub seed: u64,
+    pub scene_sha256: String,
+    pub gameplay_config_sha256: String,
+    pub bee_side: i32,
+    pub human_side: i32,
+    pub policy_generation: u64,
+    pub policy_manifest_sha256: Option<String>,
+    pub model_slots_by_team: BTreeMap<u8, u32>,
+    pub group_episode_number: Option<u32>,
+    pub group_team_by_side: BTreeMap<i32, u8>,
+}
+
 pub struct DurableDiagnosticNotifications {
+    evaluation_contexts: BTreeMap<u64, (u64, EpisodeEvaluationContext)>,
     file: File,
     run_id: String,
     journal_id: String,
@@ -249,6 +266,7 @@ impl DurableDiagnosticNotifications {
             file, run_id, journal_id, next_journal_sequence: 0, journal_digest: Sha256::new(),
             pending_prepared: Vec::new(), pending: Vec::new(),
             measurements: NativeDiagnosticMeasurements::default(),
+            evaluation_contexts: BTreeMap::new(),
             prepared: VecDeque::new(),
             unavailable: false,
         })
@@ -259,6 +277,21 @@ impl DurableDiagnosticNotifications {
     /// The source event log remains authoritative for detailed evaluation.
     pub fn measurements(&self) -> &NativeDiagnosticMeasurements {
         &self.measurements
+    }
+
+    pub fn bind_evaluation_episode(
+        &mut self,
+        world: WorldId,
+        revision: u64,
+        context: EpisodeEvaluationContext,
+    ) -> io::Result<()> {
+        if self.evaluation_contexts.get(&world.0)
+            .is_some_and(|(previous, _)| revision <= *previous)
+        {
+            return Err(io::Error::new(io::ErrorKind::InvalidInput, "evaluation episode revision must increase"));
+        }
+        self.evaluation_contexts.insert(world.0, (revision, context));
+        Ok(())
     }
 
     pub fn sync(&mut self) -> io::Result<()> {
@@ -417,7 +450,7 @@ impl DurableDiagnosticNotifications {
             })),
             _ => None,
         };
-        let record = json!({
+        let mut record = json!({
             "schema_version": 2,
             "journal_id": self.journal_id,
             "journal_sequence": self.next_journal_sequence,
@@ -441,6 +474,14 @@ impl DurableDiagnosticNotifications {
                 _ => Some(format!("{:?}", notification.kind)),
             },
         });
+        if matches!(kind, "episode_final" | "episode_aborted") {
+            if let Some((revision, context)) = self.evaluation_contexts.get(&world.0) {
+                if *revision != episode_revision {
+                    return Err(io::Error::new(io::ErrorKind::InvalidData, "terminal evaluation context does not match episode revision"));
+                }
+                record["evaluation_context"] = serde_json::to_value(context).map_err(io::Error::other)?;
+            }
+        }
         let record_start = self.pending.len();
         serde_json::to_writer(&mut self.pending, &record)
             .map_err(io::Error::other)?;

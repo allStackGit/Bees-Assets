@@ -21,7 +21,7 @@ impl From<HiveMindSocketError> for NativeSocketWorkerError {
 }
 
 struct WorkerEvent {
-    result: Result<HiveMindSocketEvent, HiveMindSocketError>,
+    result: Result<Option<HiveMindSocketEvent>, HiveMindSocketError>,
     measurements: NativeSocketMeasurements,
 }
 enum WorkerCommand { Send(PreparedSocketRequest), Close }
@@ -30,6 +30,7 @@ pub struct NativeSocketWorker {
     outgoing: SyncSender<WorkerCommand>,
     incoming: Receiver<WorkerEvent>,
     ready: bool,
+    closed: bool,
     // Flow control only. Actual requests/retries remain in the connection.
     queued_stores: HashSet<i64>,
     // Socket-local flow control only; all pending request identity and
@@ -59,7 +60,15 @@ impl NativeSocketWorker {
                     for _ in 0..QUEUE_CAPACITY {
                         match commands.try_recv() {
                             Ok(WorkerCommand::Send(request)) => socket.send_prepared(request)?,
-                            Ok(WorkerCommand::Close) | Err(TryRecvError::Disconnected) => {
+                            Ok(WorkerCommand::Close) => {
+                                socket.close_and_wait(Duration::from_secs(1))?;
+                                let _ = events.send(WorkerEvent {
+                                    result: Ok(None),
+                                    measurements: socket.measurements(),
+                                });
+                                return Ok(());
+                            }
+                            Err(TryRecvError::Disconnected) => {
                                 let _ = socket.close();
                                 return Ok(());
                             }
@@ -67,7 +76,7 @@ impl NativeSocketWorker {
                         }
                     }
                     if let Some(event) = socket.poll_event()? {
-                        if events.send(WorkerEvent { result: Ok(event), measurements: socket.measurements() }).is_err() {
+                        if events.send(WorkerEvent { result: Ok(Some(event)), measurements: socket.measurements() }).is_err() {
                             let _ = socket.close();
                             return Ok(());
                         }
@@ -78,12 +87,13 @@ impl NativeSocketWorker {
                 let _ = events.send(WorkerEvent { result: Err(error), measurements: socket.measurements() });
             }
         }).map_err(NativeSocketWorkerError::Spawn)?;
-        Ok(Self { outgoing, incoming, ready: false, queued_stores: HashSet::new(),
+        Ok(Self { outgoing, incoming, ready: false, closed: false, queued_stores: HashSet::new(),
             queued_requests: HashSet::new(),
             measurements: NativeSocketMeasurements::default(), queue_backpressure: 0 })
     }
 
     pub fn ready(&self) -> bool { self.ready }
+    pub fn closed(&self) -> bool { self.closed }
     /// Snapshot at the most recently delivered socket event.
     pub fn measurements(&self) -> NativeSocketMeasurements { self.measurements }
     pub fn queue_backpressure(&self) -> u64 { self.queue_backpressure }
@@ -211,22 +221,28 @@ impl NativeSocketWorker {
     /// A fresh worker replays pending stores after authenticated setup.
     /// Closing/dropping a worker never alters the connection's durable queue.
     pub fn request_close(&mut self) -> Result<(), NativeSocketWorkerError> {
-        self.ready = false;
+        if self.closed { return Ok(()); }
         match self.outgoing.try_send(WorkerCommand::Close) {
-            Ok(()) => Ok(()),
+            Ok(()) => { self.ready = false; Ok(()) }
             Err(TrySendError::Full(_)) => Err(NativeSocketWorkerError::Backpressure),
-            Err(TrySendError::Disconnected(_)) => Ok(()),
+            Err(TrySendError::Disconnected(_)) => Err(NativeSocketWorkerError::Closed),
         }
     }
 
     pub fn poll_event(&mut self) -> Result<Option<HiveMindSocketEvent>, NativeSocketWorkerError> {
+        if self.closed { return Ok(None); }
         match self.incoming.try_recv() {
             Ok(event) => {
                 self.measurements = event.measurements;
                 match event.result {
-                    Ok(event) => {
+                    Ok(Some(event)) => {
                         if matches!(event, HiveMindSocketEvent::SetupAccepted { .. }) { self.ready = true; }
                         Ok(Some(event))
+                    }
+                    Ok(None) => {
+                        self.ready = false;
+                        self.closed = true;
+                        Ok(None)
                     }
                     Err(error) => { self.ready = false; Err(error.into()) }
                 }

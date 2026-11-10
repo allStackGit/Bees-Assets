@@ -144,6 +144,7 @@ pub enum HiveMindSocketError {
     MismatchedServerGame,
     ServerFrameTooLarge,
     Disconnected,
+    CloseHandshakeTimedOut,
 }
 
 impl From<tungstenite::Error> for HiveMindSocketError {
@@ -573,6 +574,24 @@ impl NativeHiveMindSocket {
 
     /// Call DurableHiveMindConnection::retire_socket after loss, retaining
     /// StoreCommands pending outcomes for their next authenticated socket.
+    /// Used only after the owner drains outstanding application requests.
+    pub(crate) fn close_and_wait(&mut self, timeout: Duration) -> Result<(), HiveMindSocketError> {
+        let deadline = std::time::Instant::now() + timeout;
+        self.close()?;
+        loop {
+            if std::time::Instant::now() >= deadline {
+                return Err(HiveMindSocketError::CloseHandshakeTimedOut);
+            }
+            match self.socket.read() {
+                Ok(Message::Close(_)) => return Ok(()),
+                Ok(_) => {}
+                Err(tungstenite::Error::Io(ref error)) if matches!(error.kind(),
+                    std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut) => {}
+                Err(error) => return Err(HiveMindSocketError::Transport(error)),
+            }
+        }
+    }
+
     pub fn close(&mut self) -> Result<(), HiveMindSocketError> {
         self.failed = true;
         self.socket.close(None)?;

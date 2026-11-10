@@ -4,6 +4,22 @@ Worktree `B:\Bees\unified-native`, branch `rewrite/unified-native`.
 Read the full goal and fresh root AGENTS.md before further work. The complete
 Unity replacement remains incomplete; the experiment-queue branch is separate.
 
+## 2026-11-10 launcher integration
+
+The local rewrite branch now combines the upstream source command scheduler
+with model-free launching, explicit replay seeds, evaluation journals and
+comparison, whole-run timing, and confirmed WebSocket shutdown. The launcher
+calls source pulses only at gameplay step boundaries and caps headless windows
+at the next due pulse. Type-specific targeting uses the physical ship type
+table shared with request bans.
+
+The Windows launcher receipt in
+`B:\Bees\native-capability-qualification\primary-integration-44c1a08c5d684f8eb2feee1e9c6875a8`
+covers two model-free episodes with seeds 123 and 987, commands on fresh squad
+lifetimes 10 and 100, three acknowledged store messages, and a confirmed close.
+Production HiveMind, Linux runtime, Unity export execution, and live model
+inference remain unverified. The larger replacement and learner work remain open.
+
 ## 2026-11-09 continuation
 
 ## 2026-11-09 command-cycle integration

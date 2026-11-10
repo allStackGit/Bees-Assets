@@ -63,7 +63,7 @@ pub enum NativeTargetingSourceError {
 /// Unity Utilities.ConvertShipTypeToCharacter, indexed by ConfigData.ShipTypes
 /// (not by the alphabetic ShipTypeLetter ordinal). Includes Type X in the
 /// bans even though the deployed targeting-strategy registry stops at W.
-const SOURCE_TYPE_LETTERS: [u8; bees_sim::ship_assets::SHIP_TYPE_COUNT] = [
+pub(crate) const SOURCE_TYPE_LETTERS: [u8; bees_sim::ship_assets::SHIP_TYPE_COUNT] = [
     b'T', // Barge
     b'W', // Beacon
     b'M', // Beehive
