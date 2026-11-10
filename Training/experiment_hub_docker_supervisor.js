@@ -241,6 +241,18 @@ class DockerSupervisor {
         if(devices.length!==expected.size||
             devices.some(d=>!expected.has(d)))
             throw Error('Docker accelerator device allowance changed.');
+        if(doc.State?.Running===true&&gpuNodes.length) {
+            const pcis=record.gpu_pci_addresses||
+                [record.gpu_pci_address].filter(Boolean);
+            if(pcis.length!==gpuNodes.length||!record.gpu_identity)
+                throw Error('Running Docker GPU owner lacks complete frozen PCI identity.');
+            const current=resolveRocmDevices(pcis.map((pci,index)=>({
+                id:'gpu'+index,pci_address:pci,vram_mb:1,
+            })));
+            if(deviceIdentity(current)!==record.gpu_identity||
+                current.selected.some((device,index)=>device.node!==gpuNodes[index]))
+                throw Error('Running Docker GPU render node no longer matches its frozen PCI lease.');
+        }
         if(record.container_id&&doc.Id!==record.container_id)
             throw Error('Deterministic Docker container name was rebound to a different object.');
         // Docker can report ReadOnly:null for a writable --mount. Compare
