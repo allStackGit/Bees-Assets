@@ -5,6 +5,7 @@ from bisect import bisect_right
 from collections import defaultdict
 import hashlib
 import json
+import os
 from pathlib import Path
 import time
 
@@ -310,9 +311,43 @@ def main():
         torch.cuda.synchronize(device)
     update_wall_seconds = time.perf_counter() - update_started
     modules = {**policy.get_modules(), **optimizer_modules}
-    with (args.output / "checkpoint.pt").open("xb") as output:
+    next_checkpoint = args.output / "checkpoint.pt"
+    with next_checkpoint.open("xb") as output:
         torch.save({name: module.state_dict() for name, module in modules.items()}, output)
+
+    # Keep the source ABI and every opponent slot. Only update the learner.
+    manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
+    input_sha = file_sha256(args.checkpoint)
+    if args.learner_slot is None:
+        learner_slots = {
+            entry["slot"] for entry in manifest["models"]
+            if entry["backend"] == "mlagents" and entry["sha256"] == input_sha
+        }
+    else:
+        learner_slots = {args.learner_slot}
+    next_sha = file_sha256(next_checkpoint)
+    for entry in manifest["models"]:
+        if entry["slot"] in learner_slots:
+            entry["path"] = next_checkpoint.name
+            entry["sha256"] = next_sha
+        else:
+            old_artifact = (args.manifest.parent / entry["path"]).resolve()
+            if file_sha256(old_artifact) != entry["sha256"]:
+                raise ValueError(f"opponent artifact changed: slot {entry['slot']}")
+            try:
+                entry["path"] = Path(os.path.relpath(
+                    old_artifact, args.output.resolve(),
+                )).as_posix()
+            except ValueError:
+                # Relative paths cannot span separate Windows drives.
+                entry["path"] = str(old_artifact)
+    next_manifest = args.output / "manifest.json"
+    with next_manifest.open("x", encoding="utf-8") as output:
+        json.dump(manifest, output, indent=2)
+        output.write("\n")
     print(json.dumps({
+        "next_manifest": str(next_manifest),
+        "next_manifest_sha256": file_sha256(next_manifest),
         "optimizer_device": str(device),
         "optimizer_input_steps": steps,
         "trajectory_processing_wall_seconds": processing_wall_seconds,
