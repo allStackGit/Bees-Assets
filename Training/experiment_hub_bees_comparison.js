@@ -37,8 +37,16 @@ function point(sample,previous) {
     for(const field of ['ppo','pipeline']) {
         for(const [key,value] of Object.entries(sample[field]||{})) {
             const name=field+'_'+key;
-            numeric(metrics,name,value,Number.isFinite(value)&&value>=0&&
-                (name.endsWith('_sps')||name.endsWith('_per_second'))?'rate':'scalar');
+            const unit=field==='pipeline'
+                ?(['staged_s','accepted_s','consumed_s'].includes(key)
+                    ?'rate':key==='broker_ratio'?'ratio':'scalar')
+                :field==='ppo'
+                    ?key==='minibatches_s'?'rate':
+                        ['update_s','materialize_s','backward_s',
+                        'optimizer_step_s','cpu_prepare_wait_s'].includes(key)
+                            ?'seconds':'scalar'
+                    :'scalar';
+            numeric(metrics,name,value,unit);
         }
     }
     numeric(metrics,'training_time_seconds',sample.training_s,'seconds');
