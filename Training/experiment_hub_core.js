@@ -276,11 +276,16 @@ function gpuStartBlock(job,lease,machine) {
     const sharedApproved=['win32','linux'].includes(machine.agent_platform)&&
         r.gpu_mode==='shared'&&allocated.gpu_mode==='shared'&&
         machine.gpu_shared_projects?.includes(job.project_id);
-    if(r.gpu_count!==1||allocated.gpu_count!==1||
-        !(r.gpu_mode==='exclusive'&&allocated.gpu_mode==='exclusive'||sharedApproved)||
-        allocated.gpus?.length!==1||
-        (r.gpus?.length&&r.gpus[0]!==allocated.gpus[0]))
-        return 'Native GPU Start requires one exclusive GPU or a locally approved cooperative GPU share.';
+    const single=r.gpu_count===1&&allocated.gpu_count===1&&
+        (r.gpu_mode==='exclusive'&&allocated.gpu_mode==='exclusive'||sharedApproved);
+    const dual=machine.agent_platform==='linux'&&
+        job.project_id==='tinybrains'&&job.frozen_parameters?.device==='dual'&&
+        machine.tinybrains_dual_gpu_profiles?.includes(job.frozen_parameters.profile)&&
+        r.gpu_count===2&&allocated.gpu_count===2&&
+        r.gpu_mode==='exclusive'&&allocated.gpu_mode==='exclusive';
+    if(!(single||dual)||allocated.gpus?.length!==r.gpu_count||
+        (r.gpus?.length&&r.gpus.some((id,i)=>id!==allocated.gpus[i])))
+        return 'Native GPU Start requires one approved GPU, or two exclusively bound TinyBrains ROCm GPUs.';
     if(!machine.gpu_projects?.includes(job.project_id))
         return 'The local adapter has not opted into native GPU execution.';
     if(machine.agent_platform==='win32') {
@@ -295,7 +300,7 @@ function gpuStartBlock(job,lease,machine) {
     if(machine.agent_platform!=='linux')
         return 'Native GPU execution is unavailable on this operating system.';
     if(!(machine.observed_gpus?.length>=2))
-        return 'Native GPU Start requires a second observed GPU to verify access denial.';
+        return 'Native GPU Start requires at least two observed GPUs for device qualification.';
     if(job.gpu_qualification?.current!==true)
         return 'Current device access and HIP runtime qualification for this exact GPU lease are required.';
     return null;
@@ -318,25 +323,29 @@ function gpuProbeWorkerReady(job,lease,machine) {
         machine.native_preflight_passed===true);
 }
 function gpuProbeBlock(job,lease,machine) {
+    const count=job?.resources?.gpu_count;
+    const dual=count===2&&job.project_id==='tinybrains'&&
+        job.frozen_parameters?.device==='dual'&&
+        machine?.tinybrains_dual_gpu_profiles?.includes(job.frozen_parameters.profile)&&
+        job.resources.gpu_mode==='exclusive';
     if(!gpuProbeWorkerReady(job,lease,machine)||!lease.receipt_fresh||
         !machine.installed_projects?.includes(job.project_id)||
-        !(job.resources.gpu_mode==='exclusive'||
+        !(count===1&&(job.resources.gpu_mode==='exclusive'||
             job.resources.gpu_mode==='shared'&&
-                machine.gpu_shared_projects?.includes(job.project_id))||
-        job.resources.gpu_count!==1||
+                machine.gpu_shared_projects?.includes(job.project_id))||dual)||
         (job.resources.gpus?.length>0&&
-            job.resources.gpus[0]!==lease?.resources.gpus?.[0])||
+            job.resources.gpus.some((id,i)=>id!==lease?.resources.gpus?.[i]))||
         lease.resources.gpu_mode!==job.resources.gpu_mode||
-        lease.resources.gpu_count!==1||lease.resources.gpus?.length!==1||
+        lease.resources.gpu_count!==count||lease.resources.gpus?.length!==count||
         physicalGpuBindings(machine,{
             gpu_inventory_source:machine.gpu_inventory_source,
             gpu_devices:machine.observed_gpus,
-        },lease.resources,lease.gpu_bindings)?.length!==1)
-        return 'GPU access probe needs a fresh approved single-GPU lease on a qualified Linux agent.';
+        },lease.resources,lease.gpu_bindings)?.length!==count)
+        return 'GPU access probe requires a fresh approved one- or two-GPU lease on a qualified Linux agent.';
     const resourceBlock=nativeResourceBlock(job,lease);
     if(resourceBlock)return resourceBlock;
     if(!(machine.observed_gpus?.length>=2))
-        return 'GPU access probe requires a second observed GPU to verify access denial.';
+        return 'GPU access probe requires at least two observed physical GPUs.';
     return null;
 }
 // Native finish can complete an independent sequence. Checkpoint continuations
@@ -1004,12 +1013,13 @@ class ExperimentHub {
             const report=this.agentReports.get(proof.machine_id);
             const pinned=lease?.gpu_bindings;
             const stillMatched=Boolean(lease&&machine&&
-                pinned?.length===1&&
-                proof.selected_pci_addresses?.length===1&&
-                proof.selected_pci_addresses[0]===pinned[0].pci_address&&
-                machine.verified_gpus?.some(g=>
-                    g.pci_address===pinned[0].pci_address&&
-                    g.vram_mb>=pinned[0].vram_mb));
+                [1,2].includes(pinned?.length)&&
+                proof.selected_pci_addresses?.length===pinned.length&&
+                pinned.every((bound,index)=>
+                    proof.selected_pci_addresses[index]===bound.pci_address&&
+                    machine.verified_gpus?.some(g=>
+                        g.pci_address===bound.pci_address&&
+                        g.vram_mb>=bound.vram_mb)));
             proof.automation_paused=Boolean(proof.status==='requested'&&proof.automation_session_id&&
                 !this.automationSessionCurrent(proof.automation_session_id,proof.machine_id));
             proof.current=Boolean(proof.status==='verified'&&
@@ -1030,7 +1040,8 @@ class ExperimentHub {
                 job.predecessor_wait=waitingStageReason(job,jobsById);
             if(job.status==='waiting_adapter'&&job.project_id!=='bees')
                 job.native_start_readiness=nativeStartReadiness(snapshot,job);
-            if(job.status==='waiting_adapter'&&job.lease_id&&job.resources?.gpu_count===1) {
+            if(job.status==='waiting_adapter'&&job.lease_id&&
+                [1,2].includes(job.resources?.gpu_count)) {
                 const lease=snapshot.reservations.find(l=>l.id===job.lease_id);
                 const machine=snapshot.machines.find(m=>m.id===job.assigned_machine_id);
                 job.gpu_probe_block=gpuProbeBlock(job,lease,machine);
@@ -1976,7 +1987,7 @@ class ExperimentHub {
                 (report.result==='verified'&&report.cleanup_verified===false)||
                 seen.has(report.job_id)||
                 !Array.isArray(report.selected_pci_addresses)||
-                report.selected_pci_addresses.length>1||
+                report.selected_pci_addresses.length>2||
                 report.selected_pci_addresses.some(p=>!PCI.test(String(p)))||
                 (report.diagnostic!=null&&
                     (typeof report.diagnostic!=='string'||report.diagnostic.length>160)))
@@ -2008,9 +2019,10 @@ class ExperimentHub {
                 throw Error('A cleanup recheck cannot qualify GPU access.');
             const pinned=lease.gpu_bindings;
             const verified=report.result==='verified'&&
-                report.selected_pci_addresses.length===1&&
-                pinned?.length===1&&
-                report.selected_pci_addresses[0]===pinned[0].pci_address;
+                [1,2].includes(pinned?.length)&&
+                report.selected_pci_addresses.length===pinned.length&&
+                pinned.every((bound,index)=>
+                    report.selected_pci_addresses[index]===bound.pci_address);
             if(report.result==='verified'&&!verified)
                 throw Error('GPU proof does not match the frozen physical PCI allocation.');
             request.status=report.result;
