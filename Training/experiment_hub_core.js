@@ -664,8 +664,14 @@ function nativeStartReadiness(snapshot, job) {
         return block('The assigned worker does not approve this TinyBrains profile, GPU mode, checkpoint import and update count.');
     if(job.project_id==='tinybrains'&&job.frozen_parameters?.remote_rollouts===true) {
         const count=machine.tinybrains_remote_rollout_count;
-        if(!Number.isSafeInteger(count)||count<1||count>8)
-            return block('This learner has no locally approved remote CPU collector count.');
+        const expectedEndpoints=machine.tinybrains_remote_rollout_endpoints;
+        const keyFingerprint=machine.tinybrains_remote_key_fingerprint;
+        if(!Number.isSafeInteger(count)||count<1||count>8||
+            !Array.isArray(expectedEndpoints)||expectedEndpoints.length!==count||
+            expectedEndpoints.some(endpoint=>!rolloutEndpoint(endpoint))||
+            new Set(expectedEndpoints).size!==count||
+            !SHA256.test(String(keyFingerprint||'')))
+            return block('The learner has no complete, locally pinned remote CPU collector identities.');
         const workers=snapshot.jobs.filter(worker=>
             worker.project_id==='tinybrains_rollout'&&
             worker.frozen_parameters?.learner_job_id===job.id&&
@@ -673,6 +679,7 @@ function nativeStartReadiness(snapshot, job) {
         if(workers.length!==count)
             return block('The learner requires exactly '+count+' separately reserved remote CPU collector jobs.');
         const hosts=new Set([machine.id]);
+        const matchedEndpoints=new Set();
         for(const worker of workers) {
             if(worker.status!=='running'||worker.capacity_released_at||
                 !worker.dispatch_id||worker.resources?.gpu_count!==0)
@@ -689,8 +696,14 @@ function nativeStartReadiness(snapshot, job) {
                 l.status==='acknowledged'&&l.receipt_fresh===true);
             if(!host||host.status!=='connected'||host.local_executor_enabled!==true||
                 host.native_preflight_passed!==true||
-                !host.installed_projects?.includes('tinybrains_rollout')||!owned)
+                !host.installed_projects?.includes('tinybrains_rollout')||!owned||
+                nativeResourceBlock(worker,owned))
                 return block('The remote collector has lost its authenticated host or CPU/RAM ownership.');
+            if(!expectedEndpoints.includes(host.tinybrains_rollout_endpoint)||
+                matchedEndpoints.has(host.tinybrains_rollout_endpoint)||
+                host.tinybrains_rollout_key_fingerprint!==keyFingerprint)
+                return block('Remote CPU collector endpoint or key identity differs from the learner\'s pinned worker set.');
+            matchedEndpoints.add(host.tinybrains_rollout_endpoint);
         }
     }
     if(!supportsEvaluation(machine.evaluation_suites,job))
