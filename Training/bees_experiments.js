@@ -2003,8 +2003,16 @@ async function definition(input, original = null) {
         developmentSeeds.has(scenario.seed))) {
         throw Error('Held-out benchmarks must use different recipes and evaluation seeds from development.');
     }
+    const metricSelection=input.metric_selection===undefined
+        ?(original?.metric_selection||[]):input.metric_selection;
+    if(!Array.isArray(metricSelection)||metricSelection.length>96||
+        metricSelection.some(key=>typeof key!=='string'||
+            !/^[a-z][a-z0-9_]{0,39}$/.test(key))||
+        new Set(metricSelection).size!==metricSelection.length)
+        throw Error('Choose up to 96 distinct Bees comparison metric names.');
     return {
         id: crypto.randomUUID(), name, group, status: 'queued', created_at: now(),
+        ...(metricSelection.length?{metric_selection:metricSelection.slice()}:{}),
         max_steps: input.unlimited_steps === true ? null : stages[stages.length - 1].end_step,
         first_stage_steps: firstSteps, unlimited_steps: input.unlimited_steps === true,
         max_minutes: maxMinutes, stall_minutes: stallMinutes,
