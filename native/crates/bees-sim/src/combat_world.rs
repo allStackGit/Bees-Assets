@@ -89,6 +89,7 @@ pub use self::weapon_rank_history::NativeWeaponRankSource;
 pub use self::weapon_target_geometry::{NativeLevelGeometry, NativeShipTargetGeometry};
 pub use self::weapon_ranges::NativeWeaponRangeContacts;
 mod striker;
+mod carrier;
 mod fire_barge;
 mod yellow_jacket;
 mod barge;
@@ -161,6 +162,7 @@ pub enum CombatWorldError {
     MissingAutomaticTargetingInputs,
     MissingShipTargetGeometry,
     InvalidPolicyStriker,
+    InvalidPolicyDroneCarrier,
     InvalidGameStriker,
     InvalidPolicyFireBarge,
     InvalidPolicyYellowJacket,
@@ -813,6 +815,10 @@ pub struct CombatWorld {
     /// Persistent game Striker readiness is ship-owned, not reset when
     /// a HiveMind BombingRun command is superseded or timed out.
     game_strikers: BTreeMap<i64, GameStrikerRuntime>,
+    /// Native policy Drones retain their original CarrierShip.Carrier
+    /// relationship across Carrier death. Strikers own that relation
+    /// inside their existing special runtime instead.
+    policy_drone_carriers: HashMap<i64, Option<i64>>,
     /// Scripted Barge coroutine phase lives in the shared combat world;
     /// the HiveMind command owns only its target choice and finalization.
     game_barge_charges: BTreeMap<i64, GameBargeCharge>,
@@ -949,6 +955,7 @@ impl CombatWorld {
             policy_special_measurements: PolicySpecialMeasurements::default(),
             game_bomb_measurements: GameBombMeasurements::default(),
             game_strikers: BTreeMap::new(),
+            policy_drone_carriers: HashMap::new(),
             game_barge_charges: BTreeMap::new(),
             game_barge_measurements: GameBargeMeasurements::default(),
             tracked_order_measurements: TrackedOrderMeasurements::default(),
@@ -1122,9 +1129,10 @@ impl CombatWorld {
         let victim_id = self.ships[index].entity_id;
         // Unity Carrier.Kill reassigns all surviving CarrierShip children
         // BEFORE the dying Carrier is retired from Level.State.Ships.
-        // Game and policy Striker reloads share this one death boundary.
-        self.reassign_striker_carriers_after_death(index);
+        // Striker and policy Drone parent links share this death boundary.
+        self.reassign_carrier_children_after_death(index);
         self.game_strikers.remove(&victim_id);
+        self.policy_drone_carriers.remove(&victim_id);
         self.game_barge_charges.remove(&victim_id);
         // Bomb.ReleaseTargetReservation is part of every authored bomber
         // Kill, not only successful BombingRun command finalization.

@@ -8,8 +8,7 @@
 
 use super::*;
 
-// ConfigData.ShipTypes.Carrier, verified against ship-colliders.json.
-const CARRIER_SHIP_TYPE: u8 = 5;
+use super::carrier::CARRIER_SHIP_TYPE;
 
 /// The source-authored game Striker's persistent Carrier relationship.
 /// Caller supplies the actual Level spawn offset and configured return
@@ -52,45 +51,6 @@ pub(super) struct PolicyStrikerRuntime {
 }
 
 impl CombatWorld {
-    /// Unity Carrier.Kill runs before base.Kill and chooses the first
-    /// living same-side Carrier in Level.State.Ships order. Reassign all
-    /// already-owned Striker relations at the one canonical death boundary,
-    /// without resetting reload clocks, bomb readiness or command state.
-    ///
-    /// Source also resets Drone.Carrier; the native world currently owns
-    /// no separate game Drone carrier field, so no surrogate is introduced.
-    pub(super) fn reassign_striker_carriers_after_death(
-        &mut self, carrier_index: usize,
-    ) {
-        if self.ships[carrier_index].ship_type != CARRIER_SHIP_TYPE {
-            return;
-        }
-        let dead_id = self.ships[carrier_index].entity_id;
-        let side = self.ships[carrier_index].side;
-        // CombatWorld.ships retains Level spawn order; inactive historical
-        // rows are deliberately skipped, just like Unity's IsDead filter.
-        let replacement = self.ships.iter().enumerate().find_map(|(index, ship)| {
-            (index != carrier_index && ship.ship_type == CARRIER_SHIP_TYPE &&
-                ship.side == side && !ship.vitals.is_dead() &&
-                self.physics.ships()[index].active
-            ).then_some(ship.entity_id)
-        });
-        for runtime in self.game_strikers.values_mut() {
-            if runtime.carrier.carrier_id == Some(dead_id) {
-                runtime.carrier.carrier_id = replacement;
-            }
-        }
-        for runtime in self.policy_ship_runtime.values_mut() {
-            if let Some(PolicyShipSpecial::Striker(striker)) =
-                runtime.special.as_mut()
-            {
-                if striker.carrier_id == Some(dead_id) {
-                    striker.carrier_id = replacement;
-                }
-            }
-        }
-    }
-
     /// Bind a source game Striker after its FleetShip identity and body
     /// have been installed. A later call can reassign or clear its Carrier
     /// without resetting IsBombReady or the independent reload timer.

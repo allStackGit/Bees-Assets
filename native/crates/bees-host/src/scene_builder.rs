@@ -58,6 +58,9 @@ pub struct NativeAuthoredShip {
     pub policy_capabilities: NativeAuthoredPolicyCapabilities,
     pub fleet_ship_id: Option<i64>,
     pub policy: Option<NativeAuthoredPolicy>,
+    /// Real imported CarrierShip.Carrier for an initially parented policy
+    /// Drone. Installed after all ships exist, including forward references.
+    pub policy_drone_carrier_id: Option<i64>,
     pub cease_fire: bool,
     pub turrets: Vec<NativeAuthoredTurret>,
     pub special: Option<NativeAuthoredShipSpecial>,
@@ -306,11 +309,15 @@ impl NativeSceneAssets {
         let mut entities = authored.entities;
         let mut specials = Vec::new();
         let mut special_weapons = Vec::new();
+        let mut policy_drone_carriers = Vec::new();
         entities.sort_unstable_by_key(NativeAuthoredEntity::entity_id);
         for entity in entities {
             match entity {
                 NativeAuthoredEntity::Ship(ship) => {
                 if let Some(spec) = ship.special_weapon { special_weapons.push((ship.entity_id, spec)); }
+                if let Some(carrier_id) = ship.policy_drone_carrier_id {
+                    policy_drone_carriers.push((ship.entity_id, carrier_id));
+                }
                 if let Some(special) = ship.special {
                     specials.push((ship.entity_id, ship.policy.is_some(), special));
                 }
@@ -446,6 +453,10 @@ impl NativeSceneAssets {
         }
         for (id, policy, special) in specials {
             special.configure(&mut combat, id, policy)
+                .map_err(NativeSceneBuildError::Combat)?;
+        }
+        for (id, carrier_id) in policy_drone_carriers {
+            combat.configure_policy_drone_carrier(id, carrier_id)
                 .map_err(NativeSceneBuildError::Combat)?;
         }
         if combat.total_living_ships() == 0 {

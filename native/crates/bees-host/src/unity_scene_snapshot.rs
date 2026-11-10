@@ -1657,6 +1657,9 @@ impl NativePhysicalScene {
                 fleet_ship_id: (ship.fleet_ship_id != 0)
                     .then_some(ship.fleet_ship_id),
                 policy: None,
+                policy_drone_carrier_id: (ship.ship_type == 8 &&
+                    ship.has_bound_policy && ship.is_carrier_child &&
+                    ship.parent_carrier_id > 0).then_some(ship.parent_carrier_id),
                 special,
             }));
         }

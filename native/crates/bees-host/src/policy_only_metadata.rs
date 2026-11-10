@@ -653,6 +653,7 @@ impl NativeLevelObservationContext for NativePolicyOnlyMetadata {
             .ok_or(PolicyOnlyMetadataError::MissingSide(agent.side))?;
         let mut capability = agent.capability;
         let parent_carrier_id = _world.policy_striker_carrier(ship_id)
+            .or_else(|| _world.policy_drone_carrier(ship_id))
             .unwrap_or(agent.parent_carrier_id);
         capability.has_living_parent_carrier = parent_carrier_id.is_some();
         capability.ship_mined_tsv = self.fleet.get(ship_id)
