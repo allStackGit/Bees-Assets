@@ -306,7 +306,9 @@ def export(spec: dict, output: Path) -> dict:
         end_part()
         return {"project_id": project, "parts": parts,
                 "missing_artifact_job_ids": manifest["missing_artifact_job_ids"],
-                "missing_sources": missing_sources, "entries": entry_count}
+                "missing_sources": missing_sources[:64],
+                "missing_source_count": len(missing_sources),
+                "entries": entry_count}
     except BaseException:
         if archive is not None:
             archive.close()
