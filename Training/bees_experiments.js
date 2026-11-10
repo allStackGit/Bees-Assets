@@ -52,7 +52,30 @@ function requireHub() {
     if (!hub) throw Error('Experiment Hub unavailable: ' + hubInitializationError);
     return hub;
 }
-const jobExporter=hub?new JobExporter(DATA_ROOT,hub):null;
+const jobExporter=hub?new JobExporter(DATA_ROOT,hub,{
+    jobs:()=>state.items.map(beesComparisonJob),
+    progress:()=>beesComparison(state.items),
+    sources:jobs=>jobs.flatMap(job=>{
+        const source=state.items.find(item=>item.id===job.id);
+        const run=source?.run_id;
+        const result=[{
+            job_id:job.id,label:'metrics',
+            path:path.join(DATA_ROOT,'Metrics',job.id+'.jsonl'),
+        }];
+        if(typeof run!=='string'||!(/^[A-Za-z0-9._-]{1,128}$/.test(run))||
+            run==='.'||run==='..')return result;
+        const folders=[
+            ['workers',path.join(paths.beesRoot,'Training','TrainerLogs',run)],
+            ['learner',path.join(paths.beesRoot,'ManagedBuilds','central-learner','logs',run)],
+            ['trainer-results',path.join(paths.beesRoot,'Training','trainer-results',run)],
+            ['continual-service',path.join(paths.beesRoot,'Training','metadata','continuous-service',run)],
+            ['server-upload',path.join(paths.assetsRoot,'BeesServer~','training-logs',run)],
+        ];
+        return result.concat(folders.map(([label,sourcePath])=>({
+            job_id:job.id,label,path:sourcePath,
+        })));
+    }),
+}):null;
 
 if (!state || state.version !== 1 || !Array.isArray(state.items) || typeof state.armed !== 'boolean') {
     throw Error('Invalid experiment data; no training started: ' + DB);
