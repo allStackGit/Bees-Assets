@@ -5,6 +5,19 @@ Read the full goal and fresh root AGENTS.md before further work. The complete
 Unity replacement remains incomplete. The latest Experiment Hub and queue
 work has been merged locally.
 
+## 2026-11-10 Windows collection and learner dispatch
+
+The isolated Experiment Hub registry at
+`B:\Bees\native-capability-qualification\hub-dispatch-collect-b38a1c311ae1427586077d527c595c68`
+automatically dispatched two jobs through authenticated loopback worker
+heartbeats and signed Windows owner receipts. The collector persisted
+36 policy rows in Hub progress and released capacity. A separately
+queued learner consumed the collector's pinned bundle, produced a
+checkpoint from 18 optimizer input steps, and released capacity.
+Both terminal states survived registry reopen. The two worker identities
+ran on one Windows host and shared local artifact storage. Remote
+transfer and Linux dispatch remain to be qualified.
+
 ## 2026-11-10 active-grid inference qualification
 
 Model timing now samples actual inference calls. A Windows fixture with 64
