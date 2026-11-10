@@ -33,9 +33,13 @@ Status intervals still include all elapsed host time, including pauses.
 
 The view draws authored primary collider outlines, current health, live
 projectiles, obstacles and fading debris directly from borrowed combat bodies.
-The final `presentation_final` event separates software rendering,
-inspection/title formatting and display-transfer wall time, and counts
-offscreen hull/fragment skips; headless operation incurs none of this cost.
+Press B to toggle weapon-range and obstruction diagnostics for selected
+ships. The overlay uses the same authored hull bounds to reject distant
+targets before exact geometry and obstacle linecasts; the window title and
+`presentation_final` report both exact queries and candidates prefiltered.
+The final event also separates software rendering, inspection/title
+formatting and display-transfer wall time, and counts offscreen
+hull/fragment skips; headless operation incurs none of this cost.
 It is a tactical development view, **not** the finished sprite/UI/audio game.
 No window-system dependency is enabled in the default headless build. Linux
 interactive builds require X11 development libraries and a display; the native
