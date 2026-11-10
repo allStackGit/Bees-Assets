@@ -485,6 +485,7 @@ function latestPpoMetrics(runId) {
     const record = getLatestPpoUpdate(runId);
     if (!record) return null;
     const update = record.update || {}, hardware = record.hardware || {};
+    const variability=record.variability||{};
     const minibatches = Number(String(update.minibatches || '').split('/')[0]);
     const seconds = finite(update.seconds);
     if (seconds == null || seconds <= 0) return null;
@@ -500,6 +501,18 @@ function latestPpoMetrics(runId) {
         cpu_prepare_wait_s: finite(update.cpu_prepare_wait),
         cpu_pct: finite(hardware.process_cpu_avg),
         gpu_pct: finite(hardware.gpu_util_avg),
+        system_cpu_pct:finite(hardware.system_cpu_avg),
+        vram_used_max_mib:finite(hardware.vram_used_max_mib),
+        rss_max_mib:finite(hardware.rss_max_mib),
+        avg_minibatch_s:finite(update.avg_minibatch),
+        optimizer_work_per_minibatch_s:finite(update.optimizer_total),
+        optimizer_work_estimated_s:Number.isFinite(minibatches)&&minibatches>0&&
+            finite(update.optimizer_total)!==null
+                ?minibatches*finite(update.optimizer_total):null,
+        diagnostic_profile_s:finite(update.diagnostic_profile),
+        minibatch_p50_s:finite(variability.minibatch_p50),
+        minibatch_p90_s:finite(variability.minibatch_p90),
+        minibatch_max_s:finite(variability.minibatch_max),
     };
 }
 
