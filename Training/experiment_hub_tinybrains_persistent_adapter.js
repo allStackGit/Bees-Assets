@@ -156,6 +156,7 @@ function createTinyBrainsPersistentDockerAdapter({
         tinybrains_cuda_profiles:[...approved.keys()],
         tinybrains_thread_overrides:[...approved.keys()],
         tinybrains_cpu_fallback_profiles:[...approved.keys()],
+        tinybrains_required_import_profiles:[...approved.keys()],
         tinybrains_imports:Object.fromEntries([...approved.keys()].map(id=>[
             'exeter_'+id,{profile:id,sha256:seedCheckpointSha256},
         ])),
