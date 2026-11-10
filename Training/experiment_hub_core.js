@@ -2541,6 +2541,49 @@ class ExperimentHub {
                     this.releaseIn(next,lease);
             }
         }
+        // Terminal learner receipts end the lifecycle of its exclusively
+        // owned remote collection sidecars. Never launch or stop a different
+        // learner's worker, and never infer a native process has disappeared.
+        for(const learner of next.jobs.filter(j=>j.project_id==='tinybrains'&&
+            j.distributed_rollout_managed===true&&
+            ['finished','failed','stopped'].includes(j.status))) {
+            for(const child of next.jobs.filter(j=>j.project_id==='tinybrains_rollout'&&
+                j.frozen_parameters?.learner_job_id===learner.id)) {
+                if(['running','launch_requested','unverified'].includes(child.status)) {
+                    const owned=next.reservations.find(lease=>
+                        lease.id===child.lease_id&&lease.job_id===child.id&&
+                        lease.machine_id===child.assigned_machine_id&&
+                        lease.project_id==='tinybrains_rollout'&&
+                        lease.status==='acknowledged'&&
+                        lease.issued_by==='experiment-hub');
+                    if(!child.dispatch_id||!owned)continue;
+                    child.status='stop_requested';
+                    child.stop_requested_at=now();
+                    child.status_reason='Parent learner is terminal; stopping its reserved remote collector.';
+                    changed=true;
+                }else if(child.status==='start_requested'&&
+                    child.start_first_offered_at===null) {
+                    // This Start was never delivered to the local owner.
+                    // Withdraw the orphaned authority before cancellation.
+                    child.status='waiting_adapter';
+                    delete child.dispatch_id;
+                    delete child.start_requested_at;
+                    delete child.start_first_offered_at;
+                    delete child.automation_start_session_id;
+                    changed=true;
+                }
+                if(child.status==='waiting_adapter'&&!child.dispatch_id&&
+                    !gpuProbeHoldsClaim(child)) {
+                    const lease=next.reservations.find(l=>l.id===child.lease_id&&
+                        l.job_id===child.id&&
+                        ['offered','acknowledged'].includes(l.status));
+                    if(lease||!child.lease_id) {
+                        this.cancelUnstartedJob(next,child,now());
+                        changed=true;
+                    }
+                }
+            }
+        }
         return changed;
     }
     executionOrders(machineId) {
@@ -3125,6 +3168,9 @@ class ExperimentHub {
             throw Error('Register the TinyBrains rollout project before creating a distributed group.');
         const next=copy(this.state),machines=snapshot.machines;
         const learner=this.queueIn(next,value.learner);
+        // Only groups queued as one transaction opt into automatic sidecar
+        // teardown after the learner has a verified terminal owner report.
+        learner.distributed_rollout_managed=true;
         const learnerLease=this.claimJobIn(next,learner,learnerMachine.id,learnerMachine);
         const workers=[],leases=[learnerLease],seen=new Set([learnerMachine.id]);
         for(const [index,endpoint] of endpoints.entries()) {
@@ -3162,6 +3208,7 @@ class ExperimentHub {
             const worker=this.queueIn(next,{
                 configuration_id:workerConfiguration.id,expected_revision:1,resources:budget,
             });
+            worker.release_on_terminal=true;
             const lease=this.claimJobIn(next,worker,host.id,host);
             workers.push(worker);leases.push(lease);
         }
