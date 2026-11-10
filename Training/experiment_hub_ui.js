@@ -852,6 +852,10 @@ document.addEventListener('DOMContentLoaded', () => {
     function exportComparison(format) {
         if(!state)
             throw Error('Select an available project comparison.');
+        const metrics=selectedComparisonMetrics().map(key=>key.slice(7));
+        if(format==='csv'&&!metrics.length)
+            throw Error('Select at least one recorded metric for CSV export.');
+        const chosen=new Set(metrics);
         const jobs=project==='bees'?(state.bees?.runs||[]):
             state.jobs.filter(job=>job.project_id===project);
         const samples=comparisonProject===project&&comparisonData?.samples||[];
@@ -882,14 +886,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 evaluation_stop_evidence:job.evaluation_stop_evidence||null,
                 evaluation_candidates:job.evaluation_candidates||null,
                 stop_requested_at:job.stop_requested_at||null,
-                points:hubComparisonPoints({job,points:byJob.get(id)||[]}),
+                points:hubComparisonPoints({job,points:byJob.get(id)||[]})
+                    .map(point=>({...point,metrics:Object.fromEntries(
+                        Object.entries(point.metrics||{})
+                            .filter(([name])=>chosen.has(name)))})),
             };
         }).filter(Boolean);
         if(!runs.some(run=>run.points.length||(format==='json'&&
             (hubComparisonTerminal(run)||hubComparisonEvaluation(run)))))
             throw Error(format==='csv'?'No recorded samples for the selected runs.':
                 'Select a job with recorded samples, an evaluation receipt or a terminal outcome.');
-        const metrics=selectedComparisonMetrics().map(key=>key.slice(7));
         const exported={
             schema_version:1,project_id:project,
             exported_at:new Date().toISOString(),
