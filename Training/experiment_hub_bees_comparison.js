@@ -10,6 +10,7 @@ function summary(job) {
         id:job.id,project_id:'bees',configuration_name:job.name||job.id,
         status:job.status,assigned_machine_id:'bees-operator',
         created_at:job.created_at,
+        metric_selection:job.metric_selection||[],
         configuration_sha256:job.configuration_sha256||null,
         artifact_lineage_root_id:job.id,
         continuation_of_job_id:null,
