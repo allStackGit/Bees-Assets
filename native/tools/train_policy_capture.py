@@ -100,7 +100,11 @@ def completed_rollouts(capture, journal, manifest, manifest_sha, checkpoint_sha,
         opponent_rows = None
         if (generation is not None and all_episodes_match and
                 has_opponent_slots and len(rows) > 3):
-            selected = np.isin(rows["model_slot"], list(learner_slots))
+            selected = (
+                rows["model_slot"] == next(iter(learner_slots))
+                if len(learner_slots) == 1 else
+                np.isin(rows["model_slot"], list(learner_slots))
+            )
             learner_rows = iter(rows[selected])
             # Project only the three opponent fields BEFORE copying. Never
             # materialize rows[~selected]: that would copy wide observations.
