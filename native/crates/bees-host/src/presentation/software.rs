@@ -372,9 +372,17 @@ impl NativeSoftwareRenderer {
     }
 
     fn shape(&mut self, shape: &ShipShape, pose: Pose, color: u32) {
+        // Match Pose::transform_point exactly, but compute the rotation
+        // once per shape instead of twice per edge. Large authored polygon
+        // hulls and weapon-range circles can have dozens of segments.
+        let (sin, cos) = pose.rotation_degrees.to_radians().sin_cos();
+        let world_point = |point: Vec2| Vec2::new(
+            pose.position.x + point.x * cos - point.y * sin,
+            pose.position.y + point.x * sin + point.y * cos,
+        );
         let mut edge = |a, b| {
-            let (x0, y0) = self.project(pose.transform_point(a));
-            let (x1, y1) = self.project(pose.transform_point(b));
+            let (x0, y0) = self.project(world_point(a));
+            let (x1, y1) = self.project(world_point(b));
             self.line(x0, y0, x1, y1, color);
         };
         match shape {
