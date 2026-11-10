@@ -1613,6 +1613,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         println!("{}", json!({ "kind": "presentation_final", "run_id": config.run_id,
             "rendered_frames": client.rendered_frames,
             "render_wall_seconds": client.render_wall_seconds,
+            "ui_wall_seconds": client.ui_wall_seconds,
             "window_update_wall_seconds": client.window_update_wall_seconds,
             "viewport_resizes": client.viewport_resizes,
             "final_viewport_pixels": client.viewport_size().0 * client.viewport_size().1,
