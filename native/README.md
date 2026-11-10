@@ -156,7 +156,15 @@ Use `python native/tools/read_policy_capture.py decisions.bin events.jsonl`
 to check the pairing and count completed rows. The reader rejects captures
 without the completion footer, including interrupted runs. The ML-Agents
 backend also records raw continuous samples and per-action log probabilities.
-Critic estimates and groupmate observations still come from the learner path.
+Completed worlds record final observations for surviving group controllers.
+To run one CPU MA-POCA update from a completed capture with a synchronized,
+unchanged group roster, use
+`python native/tools/train_policy_capture.py decisions.bin events.jsonl manifest.json checkpoint.pt Training/rl_1v1_config.yaml new-checkpoint-dir`.
+The capture must contain one behavior checkpoint across all participating
+slots and enough decisions for a configured minibatch. The learner uses
+the native group's terminal rewards and rejects captures missing an
+agent's final observation. Agent deaths and rebinding still require
+individual retirement observations.
 Completed worlds can be recycled up to `episodes_per_world` times through
 `NativeHostRuntime::reset_world`, with fresh monotonic squad lifetimes and
 per-episode deterministic seeds. Each replay uses the exact initial exported

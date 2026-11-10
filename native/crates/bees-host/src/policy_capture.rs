@@ -3,6 +3,7 @@ use std::io::{self, BufWriter, Write};
 use std::path::Path;
 
 use bees_gameplay::inference::{BEHAVIOR_STATS_PER_ROW, NativeLevelInferenceBatch};
+use bees_gameplay::level_host::NativeTerminalObservation;
 use bees_sim::policy::{CONTINUOUS_ACTIONS, DISCRETE_BRANCHES, OBSERVATION_FLOATS};
 
 use crate::policy_process::write_floats;
@@ -18,9 +19,28 @@ impl PolicyCapture {
     pub(crate) fn create(path: &Path, journal_id: &str) -> io::Result<Self> {
         let file = OpenOptions::new().create_new(true).write(true).open(path)?;
         let mut writer = BufWriter::with_capacity(256 * 1024, file);
-        writer.write_all(b"BEESACT2")?;
+        writer.write_all(b"BEESACT3")?;
         writer.write_all(journal_id.as_bytes())?;
         Ok(Self { writer, rows: 0 })
+    }
+
+    pub(crate) fn write_terminal(
+        &mut self, world: u64, episode: u64, tick: u64, rows: &[NativeTerminalObservation],
+    ) -> io::Result<()> {
+        if rows.is_empty() { return Ok(()); }
+        let count = u32::try_from(rows.len()).map_err(io::Error::other)?;
+        if count > 65536 {
+            return Err(io::Error::other("too many terminal policy observations"));
+        }
+        self.writer.write_all(&(count | (1 << 30)).to_le_bytes())?;
+        self.writer.write_all(&0_u64.to_le_bytes())?;
+        for row in rows {
+            for field in [world, episode, tick, row.ship_id as u64, row.binding_revision, row.group_agent] {
+                self.writer.write_all(&field.to_le_bytes())?;
+            }
+            write_floats(&mut self.writer, &row.features)?;
+        }
+        Ok(())
     }
 
     pub(crate) fn write_batch(&mut self, batch: &NativeLevelInferenceBatch) -> io::Result<()> {

@@ -215,6 +215,8 @@ pub struct EpisodeEvaluationContext {
     pub authored_policy_slots_by_side: BTreeMap<i32, BTreeSet<u32>>,
     pub group_episode_number: Option<u32>,
     pub group_team_by_side: BTreeMap<i32, u8>,
+    pub group_agents_by_team: BTreeMap<u8, BTreeSet<u64>>,
+    pub decision_period: u32,
 }
 
 pub struct DurableDiagnosticNotifications {
@@ -285,6 +287,16 @@ impl DurableDiagnosticNotifications {
 
     pub fn finish_policy_capture(&mut self, expected_rows: u64) -> io::Result<Option<u64>> {
         self.policy_capture.take().map(|capture| capture.finish(expected_rows)).transpose()
+    }
+
+    pub fn capture_terminal_policy(
+        &mut self, world: WorldId, revision: u64, tick: u64,
+        rows: &[bees_gameplay::level_host::NativeTerminalObservation],
+    ) -> io::Result<()> {
+        if let Some(capture) = &mut self.policy_capture {
+            capture.write_terminal(world.0, revision, tick, rows)?;
+        }
+        Ok(())
     }
 
     /// These are counters for notifications the driver is permitted

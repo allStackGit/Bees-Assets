@@ -916,6 +916,17 @@ where
     pub fn model_mut(&mut self) -> &mut B { &mut self.model }
     pub fn sink_mut(&mut self) -> &mut S { &mut self.sink }
 
+    pub fn terminal_observations(
+        &mut self, index: usize,
+    ) -> Result<Vec<bees_gameplay::level_host::NativeTerminalObservation>,
+        bees_gameplay::level_host::NativeLevelSourceError<<M as NativeLevelObservationContext>::Error>>
+    {
+        let world = self.simulation.world(index).ok_or(
+            bees_gameplay::level_host::NativeLevelSourceError::MissingRegisteredWorld,
+        )?;
+        self.driver.terminal_observations(index, world)
+    }
+
     /// Expose only the fail-closed persistent connection API, not its raw
     /// hash allocator or mutable session.
     pub fn connection_mut(&mut self) -> &mut DurableHiveMindConnection {

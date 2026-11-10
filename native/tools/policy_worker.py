@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 from pathlib import Path
 import struct
 import sys
@@ -168,6 +169,30 @@ class OnnxPolicy:
         ))
 
 
+def install_bees_actor():
+    training_path = str(Path(__file__).resolve().parents[2] / "Training")
+    if training_path not in sys.path:
+        sys.path.insert(0, training_path)
+    from bees_mlagents_ppo_compat import (
+        install_continuous_sigma_guard, install_inactive_continuous_action_masking,
+    )
+    from bees_mlagents_structured_policy import install_structured_policy
+
+    install_structured_policy()
+    install_inactive_continuous_action_masking()
+    install_continuous_sigma_guard()
+
+
+def mlagents_behavior_spec():
+    from mlagents_envs.base_env import (
+        ActionSpec, BehaviorSpec, DimensionProperty, ObservationSpec, ObservationType,
+    )
+
+    return BehaviorSpec([ObservationSpec(
+        (OBS_FLOATS,), (DimensionProperty.NONE,), ObservationType.DEFAULT, "VectorSensor"
+    )], ActionSpec(CONTINUOUS, (2, 2, 2, 2, 2, 5)))
+
+
 class MlagentsPolicy:
     """Use the same v26 actor and action sampler as the MA-POCA trainer."""
 
@@ -175,22 +200,15 @@ class MlagentsPolicy:
         import torch
         from mlagents.trainers.settings import NetworkSettings
         from mlagents.trainers.torch_entities.networks import SimpleActor
-        from mlagents_envs.base_env import ActionSpec, DimensionProperty, ObservationSpec, ObservationType
 
-        training_path = str(Path(__file__).resolve().parents[2] / "Training")
-        if training_path not in sys.path:
-            sys.path.insert(0, training_path)
-        from bees_mlagents_structured_policy import install_structured_policy
-
-        install_structured_policy()
+        install_bees_actor()
+        spec = mlagents_behavior_spec()
         self.torch = torch
         self.device = torch.device(config.get("device", "cpu"))
         self.actor = SimpleActor(
-            observation_specs=[ObservationSpec(
-                (OBS_FLOATS,), (DimensionProperty.NONE,), ObservationType.DEFAULT, "VectorSensor"
-            )],
+            observation_specs=spec.observation_specs,
             network_settings=NetworkSettings(normalize=True, hidden_units=128, num_layers=3),
-            action_spec=ActionSpec(CONTINUOUS, (2, 2, 2, 2, 2, 5)),
+            action_spec=spec.action_spec,
         ).to(self.device)
         checkpoint = torch.load(model_file, map_location="cpu", weights_only=True)
         self.actor.load_state_dict(checkpoint["Policy"], strict=True)
@@ -264,7 +282,13 @@ def checked_manifest(path: Path, expected_digest: bytes | None = None):
             raise ValueError(f"duplicate model slot: {slot}")
         if not isinstance(model_path, str) or not model_path:
             raise ValueError("model path is required")
+        # Rust passes an absolute verbatim path on Windows. Normalize the
+        # slot path before opening so relative parent components work there.
         model_file = path.parent / model_path
+        if os.name == "nt":
+            drive, tail = os.path.splitdrive(model_file)
+            if drive.startswith("\\\\?\\"):
+                model_file = Path(drive + os.path.normpath(tail))
         expected_sha256 = config.get("sha256")
         if not isinstance(expected_sha256, str) or (
             len(expected_sha256) != 64

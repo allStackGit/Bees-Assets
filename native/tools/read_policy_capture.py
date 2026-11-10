@@ -17,6 +17,8 @@ ROW = np.dtype([
     ("discrete", "u1", (6,)),
 ])
 BEHAVIOR_FLAG = 1 << 31
+TERMINAL_FLAG = 1 << 30
+TERMINAL_ROW = np.dtype(ROW.descr[:6] + [("observations", "<f4", (7743,))])
 BEHAVIOR_ROW = np.dtype(ROW.descr + [
     ("sampled_continuous", "<f4", (16,)),
     ("continuous_log_probs", "<f4", (16,)),
@@ -24,8 +26,10 @@ BEHAVIOR_ROW = np.dtype(ROW.descr + [
 ])
 
 
-def _frame_layout(field, has_behavior_version):
-    if has_behavior_version and field & BEHAVIOR_FLAG:
+def _frame_layout(field, version):
+    if version == b"BEESACT3" and field & TERMINAL_FLAG:
+        return field ^ TERMINAL_FLAG, TERMINAL_ROW
+    if version != b"BEESACT1" and field & BEHAVIOR_FLAG:
         return field ^ BEHAVIOR_FLAG, BEHAVIOR_ROW
     return field, ROW
 
@@ -37,17 +41,17 @@ def _read_exact(stream, count):
     return payload
 
 
-def applied_batches(path, journal_id):
-    """Yield (generation, structured row array) from a completed capture.
+def capture_frames(path, journal_id):
+    """Yield (generation, rows), with generation None for terminal observations.
 
     Pass the paired reward journal's ID. Group-agent ID zero means absent.
     The tick is the observation tick, so the action advances tick + 1.
     """
     with path.open("rb") as stream:
         header = _read_exact(stream, 40)
-        if header[:8] not in (b"BEESACT1", b"BEESACT2") or header[8:] != journal_id.encode("ascii"):
+        version = header[:8]
+        if version not in (b"BEESACT1", b"BEESACT2", b"BEESACT3") or header[8:] != journal_id.encode("ascii"):
             raise ValueError("policy capture header does not match reward journal")
-        has_behavior_version = header[:8] == b"BEESACT2"
         end = stream.seek(0, 2)
         stream.seek(40)
         total = 0
@@ -58,20 +62,28 @@ def applied_batches(path, journal_id):
                 if generation_or_total != total or stream.tell() != end:
                     raise ValueError("invalid policy capture footer")
                 break
-            rows, dtype = _frame_layout(field, has_behavior_version)
+            rows, dtype = _frame_layout(field, version)
             size = rows * dtype.itemsize
             if not 0 < rows <= 65536 or stream.tell() + size + FRAME.size > end:
                 raise ValueError("invalid or incomplete policy capture frame")
             stream.seek(size, 1)
-            total += rows
+            if dtype != TERMINAL_ROW:
+                total += rows
+        footer = end - FRAME.size
         stream.seek(40)
-        while total:
+        while stream.tell() < footer:
             field, generation = FRAME.unpack(_read_exact(stream, FRAME.size))
-            rows, dtype = _frame_layout(field, has_behavior_version)
-            if not 0 < rows <= min(total, 65536):
+            rows, dtype = _frame_layout(field, version)
+            if not 0 < rows <= 65536 or stream.tell() + rows * dtype.itemsize > footer:
                 raise ValueError("policy capture changed while reading")
-            yield generation, np.frombuffer(_read_exact(stream, rows * dtype.itemsize), dtype=dtype)
-            total -= rows
+            yield (None if dtype == TERMINAL_ROW else generation,
+                   np.frombuffer(_read_exact(stream, rows * dtype.itemsize), dtype=dtype))
+
+
+def applied_batches(path, journal_id):
+    for generation, rows in capture_frames(path, journal_id):
+        if generation is not None:
+            yield generation, rows
 
 
 def main():

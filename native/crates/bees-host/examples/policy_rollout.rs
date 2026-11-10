@@ -403,7 +403,7 @@ fn gameplay_config_sha256(
 fn bind_evaluation_episode(
     host: &mut RolloutHost, index: usize, level: &LevelConfig, seed: u64, scene_sha256: &str,
     gameplay_config_sha256: &str,
-    episode_offset: u32,
+    episode_offset: u32, decision_period: u32,
 ) -> io::Result<()> {
     let world = host.simulation().world(index).ok_or_else(|| invalid("missing evaluation Level"))?;
     let id = world.id;
@@ -420,6 +420,13 @@ fn bind_evaluation_episode(
             group_team_by_side.insert(side, team);
         }
     }
+    let mut group_agents_by_team = std::collections::BTreeMap::<_, std::collections::BTreeSet<_>>::new();
+    if let Some(group) = &level.groups {
+        for participant in &group.participants {
+            let team = group_team_by_side[&participant.side];
+            group_agents_by_team.entry(team).or_default().insert(participant.agent_id);
+        }
+    }
     let context = EpisodeEvaluationContext {
         level_id: level.level_id,
         seed,
@@ -433,6 +440,8 @@ fn bind_evaluation_episode(
         authored_policy_slots_by_side,
         group_episode_number,
         group_team_by_side,
+        group_agents_by_team,
+        decision_period,
     };
     host.sink_mut().bind_evaluation_episode(id, revision, context)
 }
@@ -990,7 +999,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     for (index, level) in config.levels.iter().enumerate() {
         bind_evaluation_episode(
             &mut host, index, level, level.episode_seed(0), &source_digests[index],
-            &gameplay_digest, 0,
+            &gameplay_digest, 0, config.decision_period,
         )?;
     }
     host.set_timing_sample_period(timing);
@@ -1185,6 +1194,12 @@ fn main() -> Result<(), Box<dyn Error>> {
                     if completed_episodes[index] >= config.episodes_per_world {
                         return Err(invalid("world exceeded its configured episode budget"));
                     }
+                    if policy_capture.is_some() {
+                        let (id, tick) = (world.id, world.tick());
+                        let observations = host.terminal_observations(index)
+                            .map_err(|error| contextual("terminal policy observations", error))?;
+                        host.sink_mut().capture_terminal_policy(id, revision, tick, &observations)?;
+                    }
                     completed_episodes[index] += 1;
                     counted_revisions[index] = Some(revision);
                 }
@@ -1331,7 +1346,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                     .map_err(|error| contextual("guarded Level reset", error))?;
                 bind_evaluation_episode(
                     &mut host, index, level, seed, &source_digests[index],
-                    &gameplay_digest, completed_episodes[index],
+                    &gameplay_digest, completed_episodes[index], config.decision_period,
                 )?;
                 recycled += 1;
             }

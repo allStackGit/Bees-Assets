@@ -35,7 +35,8 @@ use bees_sim::combat_world::CombatWorld;
 use bees_sim::geometry::Vec2;
 use bees_sim::squad_movement::{SquadFormationMember, SquadFormationOptions};
 use bees_sim::simulation::World;
-use bees_sim::policy::Decision;
+use bees_sim::full_perception::NativePerceptionWriter;
+use bees_sim::policy::{Decision, OBSERVATION_FLOATS};
 use bees_sim::simulation::{Simulation, WorldId};
 use bees_sim::telemetry::Measurements;
 
@@ -383,6 +384,7 @@ pub enum NativeTargetingRequestSourceError {
 
 #[derive(Debug)]
 pub enum NativeLevelSourceError<E> {
+    TerminalPerception(bees_sim::perception::PerceptionError),
     MissingRegisteredWorld,
     UnregisteredWorldCount,
     WorldIdentityChanged,
@@ -579,6 +581,13 @@ struct NativeWorldAssembly {
     activation: NativeLevelActivationScratch,
 }
 
+pub struct NativeTerminalObservation {
+    pub ship_id: i64,
+    pub group_agent: u64,
+    pub binding_revision: u64,
+    pub features: Vec<f32>,
+}
+
 /// Runs the REAL v26 observation writer, a genuine supplied model and the
 /// single NativeLevelRules combat step. No per-tick roster copy, generated
 /// action, training-only combat or hidden session state is introduced.
@@ -589,6 +598,39 @@ pub struct NativeLevelBatchDriver {
 }
 
 impl NativeLevelBatchDriver {
+    /// Capture final observations before the completed world is recycled.
+    /// Dead controllers need their own retirement observation boundary.
+    pub fn terminal_observations<M: NativeLevelObservationContext, A>(
+        &mut self, index: usize, world: &World<NativeLevelState<M, A>>,
+    ) -> Result<Vec<NativeTerminalObservation>, NativeLevelSourceError<M::Error>> {
+        let assembly = self.worlds.get_mut(index)
+            .ok_or(NativeLevelSourceError::MissingRegisteredWorld)?;
+        if assembly.id != world.id {
+            return Err(NativeLevelSourceError::WorldIdentityChanged);
+        }
+        if assembly.revision != world.episode_revision() || !world.state.events.completed() {
+            return Err(NativeLevelSourceError::EpisodeRevisionChanged);
+        }
+        let metadata = &world.state.metadata;
+        let combat = &world.state.combat;
+        let mut writer = NativePerceptionWriter::new();
+        let mut rows = Vec::new();
+        for (ship_id, binding_revision) in combat.bound_policy_agent_bindings() {
+            let Some(group_agent) = metadata.group_agent_for_ship(ship_id)
+                .map_err(NativeLevelSourceError::Source)? else { continue };
+            let inputs = metadata.inputs_for_agent(combat, ship_id)
+                .map_err(NativeLevelSourceError::Source)?;
+            let snapshot = assembly.perception.assemble(
+                world, ship_id, inputs, |id| metadata.authored_ship_perception(id),
+            ).map_err(NativeLevelSourceError::Perception)?;
+            let frame = combat.policy_frame(ship_id).expect("live policy binding");
+            let mut features = vec![f32::NAN; OBSERVATION_FLOATS];
+            writer.write(&mut features, &snapshot, frame)
+                .map_err(NativeLevelSourceError::TerminalPerception)?;
+            rows.push(NativeTerminalObservation { ship_id, group_agent, binding_revision, features });
+        }
+        Ok(rows)
+    }
     /// Register the initial Level worlds before any simulation fixed step.
     /// Identity permutations consume their world-local RNG exactly once.
     pub fn from_simulation<M, A>(

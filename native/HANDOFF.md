@@ -5,6 +5,22 @@ Read the full goal and fresh root AGENTS.md before further work. The complete
 Unity replacement remains incomplete. The latest Experiment Hub and queue
 work has been merged locally.
 
+## 2026-11-10 native MA-POCA terminal update
+
+The completed-world capture now encodes final observations from the shared
+gameplay state. The CPU learner uses them with the journal's terminal group
+rewards and the existing MA-POCA trajectory and optimizer code. The Windows
+receipt at
+`B:\Bees\native-capability-qualification\terminal-poca-a65d4300578a44d9a42bc5b315a0a5d1`
+contains 180 decisions and three terminal transitions with the expected
+group rewards. The update completed five minibatches. The preceding
+checkpoint round trip independently verified that Adam resumed at step 5
+and reached step 10.
+
+The learner currently requires a stable, synchronized group roster and
+one behavior checkpoint across all slots. Individual death and rebinding
+observations are the next trajectory boundary to implement.
+
 ## 2026-11-10 ML-Agents behavior sampling
 
 Native rollout can now load the structured v26 trainer actor from a
