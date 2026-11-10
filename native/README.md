@@ -158,9 +158,15 @@ without the completion footer, including interrupted runs. The ML-Agents
 backend also records raw continuous samples and per-action log probabilities.
 Completed worlds record final observations for surviving group controllers.
 Individual deaths also capture the retiring controller and its surviving
-teammates at the death tick. To run one CPU MA-POCA update from a completed
+teammates at the death tick. To run one MA-POCA update from a completed
 capture with synchronized decisions, use
 `python native/tools/train_policy_capture.py decisions.bin events.jsonl manifest.json checkpoint.pt Training/rl_1v1_config.yaml new-checkpoint-dir`.
+The optimizer defaults to CPU; `--device cuda` or `--device cuda:N` selects
+a supported CUDA/ROCm PyTorch device. Results include optimizer throughput
+and elapsed time. A successful update writes `checkpoint.pt` and an updated
+`manifest.json` inside the new output directory, preserving non-learner
+model slots with paths rebased to that manifest's location. Subsequent
+rollouts can load the new manifest at an episode boundary.
 For mixed-checkpoint self-play, pass `--learner-slot 0` (or the actual
 learner slot). The learner verifies that slot against the input checkpoint
 and excludes opponent decisions from optimization. Repeat
