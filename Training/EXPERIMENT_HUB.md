@@ -1869,8 +1869,14 @@ When metrics are selected, the archive also includes
 bounded Hub comparison history, with job IDs, timestamps, project steps,
 segments, values, and units. This CSV is **not** the full-resolution training
 history; the project-owned history files are included separately and unchanged.
-Download the numbered parts before the private export session expires.
-Raw histories remain complete regardless of selected chart metrics.
+Running jobs can append to their logs during export. Each file is captured
+through its size when opened, not as one atomic multi-machine snapshot;
+`export-manifest.json` lists files that grew while being copied and the
+captured byte boundary. The Hub also warns about such files when parts are
+ready. Rewritten or redirected files fail export rather than silently mixing
+unverified bytes. Download the numbered parts before the private export
+session expires. Selected chart metrics never truncate the underlying source
+histories; files that change during export may require a later capture.
 The native coordinator reads TinyBrains jobs under the Hub data root's
 `tinybrains-jobs/` directory. For another project (including Courier),
 install a private mode-0600 `job-export-roots.json` in the same Hub data
