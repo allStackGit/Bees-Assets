@@ -11,7 +11,7 @@ const {spawn}=require('node:child_process');
 const UUID=/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
 const PROJECT=/^[a-z][a-z0-9_-]{0,47}$/;
 const METRIC=/^[a-z][a-z0-9_]{0,39}$/;
-const KEEP_MS=30*60*1000;
+const KEEP_MS=2*60*60*1000;
 const JOB_FIELDS=[
     'id','project_id','configuration_name','configuration_sha256',
     'frozen_parameters','metric_selection','resources','status',
@@ -116,11 +116,8 @@ class JobExporter {
         let stdout='',stderr='',done=false;
         function cleanupLater() {
             const cleanup=setTimeout(()=>{
+                this.sessions.delete(id);
                 fs.rm(dir,{recursive:true,force:true},()=>{});
-                // The session ID remains visible as an expired entry until
-                // this coordinator restarts; it can no longer serve archives.
-                session.status='expired';
-                session.parts=[];
             },KEEP_MS);
             cleanup.unref?.();
         }
@@ -128,7 +125,8 @@ class JobExporter {
             if(done)return;
             done=true;session.status='failed';
             session.error=String(error).slice(0,500);
-            cleanupLater();
+            child.kill();
+            cleanupLater.call(this);
         };
         child.stdout.on('data',chunk=>{
             stdout+=chunk.toString('utf8');
@@ -153,7 +151,7 @@ class JobExporter {
                 session.missing_artifact_job_ids=report.missing_artifact_job_ids||[];
                 session.status='ready';
                 done=true;
-                cleanupLater();
+                cleanupLater.call(this);
             }catch(error){fail(error);}
         });
         // No training processes are managed or modified by the exporter.
