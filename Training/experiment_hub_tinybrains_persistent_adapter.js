@@ -15,6 +15,7 @@ const PROFILE=/^[a-z][a-z0-9_-]{0,47}$/;
 const SHA=/^[0-9a-f]{64}$/;
 const PCI=/^[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]$/;
 const TAIL=256*1024;
+const MAX_PROGRESS_ROW_TAIL=8*1024*1024;
 const PROJECT_IN='/workspace/projects/tinybrains/Ants-MAPOCA';
 const HUB_IN='/workspace/projects/experiment-hub/Assets';
 const JOBS_IN='/workspace/experiments/experiment-hub/tinybrains-jobs';
@@ -450,14 +451,26 @@ function createTinyBrainsPersistentDockerAdapter({
                 fd=fs.openSync(file,'r');
                 const stat=fs.fstatSync(fd);
                 if(!stat.isFile()||!stat.size)return null;
-                const offset=Math.max(0,stat.size-TAIL);
-                const buffer=Buffer.alloc(stat.size-offset);
-                fs.readSync(fd,buffer,0,buffer.length,offset);
-                const str=buffer.toString('utf8');
-                const end=str.lastIndexOf('\n');
-                if(end<0)return null;
-                const lineStart=str.lastIndexOf('\n',end-1);
-                if(lineStart<0&&offset>0)return null;
+                // Completed training rows contain per-match evidence. They
+                // can exceed the old 256 KiB tail limit and otherwise make
+                // progress disappear just when many games complete. Expand
+                // only as needed, with a hard bounded scan and diagnostic.
+                let bytes=Math.min(stat.size,TAIL);
+                let offset=0,str='',end=-1,lineStart=-1;
+                while(true) {
+                    offset=stat.size-bytes;
+                    const buffer=Buffer.alloc(bytes);
+                    if(fs.readSync(fd,buffer,0,buffer.length,offset)!==buffer.length)
+                        throw Error('TinyBrains training history changed during read.');
+                    str=buffer.toString('utf8');
+                    end=str.lastIndexOf('\n');
+                    lineStart=end<0?-1:str.lastIndexOf('\n',end-1);
+                    if(end>=0&&(lineStart>=0||offset===0))break;
+                    if(offset===0)return null;
+                    if(bytes>=MAX_PROGRESS_ROW_TAIL)
+                        throw Error('TinyBrains completed-update history row exceeds 8 MiB; export the original history and review telemetry volume.');
+                    bytes=Math.min(stat.size,MAX_PROGRESS_ROW_TAIL,bytes*2);
+                }
                 const row=JSON.parse(str.slice(lineStart+1,end));
                 if(!Number.isSafeInteger(row.update)||row.update<1||
                     !Number.isFinite(row.wall_seconds)||row.wall_seconds<=0||
