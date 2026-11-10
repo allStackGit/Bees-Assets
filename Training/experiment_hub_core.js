@@ -1020,7 +1020,7 @@ class ExperimentHub {
                 const machine=snapshot.machines.find(m=>m.id===job.assigned_machine_id);
                 job.gpu_probe_block=gpuProbeBlock(job,lease,machine);
                 job.gpu_probe_cleanup_ready=Boolean(gpuProbeWorkerReady(job,lease,machine)&&
-                    job.gpu_qualification?.lease_id===lease.id&&
+                    job.gpu_qualification?.lease_id===lease?.id&&
                     job.gpu_qualification.cleanup_required&&job.gpu_qualification.status!=='requested');
             }
             if(job.status==='start_requested'&&job.automation_start_session_id)
