@@ -331,7 +331,7 @@ class DockerSupervisor {
             if(contenders.length) {
                 const requested=job.resources;
                 const compatible=requested.gpu_mode==='shared'&&
-                    d.gpu_sharing==='cooperative-pytorch'&&
+                    this.adapters[job.project_id].gpu_sharing==='cooperative-pytorch'&&
                     contenders.every(x=>x.gpu_mode==='shared'&&
                         Number.isSafeInteger(x.gpu_vram_mb)&&x.gpu_vram_mb>0&&
                         Number.isSafeInteger(x.gpu_compute_pct)&&x.gpu_compute_pct>0);
