@@ -20,7 +20,7 @@ def resolved(base: Path, value: str) -> str:
     return str((path if path.is_absolute() else base / path).resolve())
 
 
-def source_config(path: Path, manifest: Path) -> dict:
+def source_config(path: Path, manifest: Path, output: Path) -> dict:
     config = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(config, dict):
         raise ValueError("native run configuration must be an object")
@@ -29,11 +29,19 @@ def source_config(path: Path, manifest: Path) -> dict:
     if not isinstance(config.get("run_id"), str) or not config["run_id"].strip():
         raise ValueError("native run requires a nonempty run_id")
     base = path.parent
-    for key in ("collision_matrix", "stage_palette", "policy_worker",
-                "connection_checkpoint"):
+    for key in ("collision_matrix", "stage_palette", "policy_worker"):
         if not isinstance(config.get(key), str) or not config[key]:
             raise ValueError(f"run configuration requires {key}")
         config[key] = resolved(base, config[key])
+    if (config.get("hivemind") is not None or config.get("recover_notifications")
+            or config.get("recover_outcome_journals")):
+        previous = config.get("connection_checkpoint")
+        if not isinstance(previous, str) or not previous:
+            raise ValueError("network or recovery runs require the original connection checkpoint")
+        config["connection_checkpoint"] = resolved(base, previous)
+    else:
+        # No cross-run HiveMind history belongs to independent model-only training.
+        config["connection_checkpoint"] = str(output / "connection-checkpoint.json")
     interpreter = config.get("python")
     if not isinstance(interpreter, str) or not interpreter:
         raise ValueError("run configuration requires its native policy Python interpreter")
@@ -52,6 +60,25 @@ def source_config(path: Path, manifest: Path) -> dict:
         previous["path"] = resolved(base, previous["path"])
     config["model_manifest"] = str(manifest)
     return config
+
+
+def shifted_seeds(config: dict, offset: int) -> None:
+    """Shift only source episode RNG seeds, never authored entity identities."""
+    if not offset:
+        return
+    for level in config["levels"]:
+        if level.get("seed") is not None:
+            fields = [level["seed"]]
+            label = "seed"
+        elif isinstance(level.get("episode_seeds"), list):
+            fields = level["episode_seeds"]
+            label = "episode_seeds"
+        else:
+            raise ValueError("seed offset requires authored seeds for every Level")
+        if any(type(seed) is not int or not 0 <= seed < 1 << 64 for seed in fields):
+            raise ValueError("seed offset requires unsigned 64-bit source seeds")
+        updated = [(seed + offset) % (1 << 64) for seed in fields]
+        level[label] = updated[0] if label == "seed" else updated
 
 
 def check_learner(manifest: Path, checkpoint: Path, slot: int | None) -> None:
@@ -81,9 +108,15 @@ def main() -> None:
                         help="override the run configuration's manifest for the next round")
     parser.add_argument("--learner-slot", type=int)
     parser.add_argument("--device", default="cpu")
+    parser.add_argument(
+        "--seed-offset", type=int, default=0,
+        help="unsigned offset to all authored episode seeds for a new reproducible round",
+    )
     parser.add_argument("--rollout-binary", type=Path,
                         help="use a compiled policy_rollout binary instead of cargo run")
     args = parser.parse_args()
+    if not 0 <= args.seed_offset < (1 << 64):
+        parser.error("--seed-offset must fit uint64")
 
     run_path = args.run_config.resolve(strict=True)
     checkpoint = args.checkpoint.resolve(strict=True)
@@ -111,8 +144,9 @@ def main() -> None:
             "-p", "bees-host", "--example", "policy_rollout", "--",
         ]
 
-    config = source_config(run_path, manifest)
     output = args.output_dir.resolve()
+    config = source_config(run_path, manifest, output)
+    shifted_seeds(config, args.seed_offset)
     output.mkdir(parents=True, exist_ok=False)
     config["run_id"] = f"{config['run_id']}-{uuid.uuid4().hex}"
     config["notifications"] = str(output / "events.jsonl")
@@ -123,6 +157,7 @@ def main() -> None:
         stream.write("\n")
 
     print(json.dumps({"kind": "native_training_round_started", "run_config": str(config_path),
+                      "seed_offset": args.seed_offset,
                       "input_manifest_sha256": file_sha256(manifest),
                       "input_checkpoint_sha256": file_sha256(checkpoint)}), flush=True)
     subprocess.run([*command, str(config_path)], check=True)
