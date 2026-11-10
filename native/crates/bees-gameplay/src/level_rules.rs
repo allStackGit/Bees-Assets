@@ -7,7 +7,7 @@
 //! episode revision, seeded RNG, aggregate measurements and failure state.
 //! The caller must reset completed episodes before asking for a new step.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::num::NonZeroU32;
 
 use bees_hivemind::session::SquadLifetime;
@@ -469,6 +469,9 @@ pub struct NativeLevelState<M, A> {
     /// Rare source-order survivor-formation updates after ship deaths.
     /// Both buffers are reused; quiet frames do no formation work.
     formation_changed_squads: Vec<SquadLifetime>,
+    /// Scratch membership only; source-order changes stay in the Vec.
+    /// Retain capacity when mass casualties occur across multiple ticks.
+    formation_changed_seen: HashSet<SquadLifetime>,
     survivor_offsets: Vec<SquadMemberOffset>,
     command_input_measurements: NativeCommandInputMeasurements,
     navigation_jobs_completed: u64,
@@ -517,6 +520,7 @@ impl<M, A> NativeLevelState<M, A> {
             hivemind_observers: Vec::new(),
             first_sightings: Vec::new(),
             formation_changed_squads: Vec::new(),
+            formation_changed_seen: HashSet::new(),
             survivor_offsets: Vec::new(),
             command_input_measurements: NativeCommandInputMeasurements::default(),
             navigation_jobs_completed: 0,
@@ -768,10 +772,11 @@ where
         // on subsequent movement polls. When all members died this tick,
         // the roster retired their squad instead; no rebasing is needed.
         state.formation_changed_squads.clear();
+        state.formation_changed_seen.clear();
         for &change in state.events.latest_squad_changes() {
             if let SquadRosterChange::MemberLost { squad, .. } = change {
                 if state.events.roster().get(squad).is_some() &&
-                    !state.formation_changed_squads.contains(&squad)
+                    state.formation_changed_seen.insert(squad)
                 {
                     state.formation_changed_squads.push(squad);
                 }
