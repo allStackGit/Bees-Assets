@@ -368,14 +368,15 @@ def main():
         output.write("\n")
         output.flush()
         os.fsync(output.fileno())
-    if os.name == "posix":
-        directory = os.open(args.output, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
-        try:
-            os.fsync(directory)
-        finally:
-            os.close(directory)
-    print(json.dumps({
-        "next_manifest": str(next_manifest),
+    metrics = {
+        "schema_version": 1,
+        "source": "bees-native-ma-poca-v1",
+        "input_checkpoint_sha256": input_sha,
+        "input_manifest_sha256": file_sha256(args.manifest),
+        "learner_slot": args.learner_slot,
+        "next_checkpoint": str(next_checkpoint.resolve()),
+        "next_checkpoint_sha256": next_sha,
+        "next_manifest": str(next_manifest.resolve()),
         "next_manifest_sha256": file_sha256(next_manifest),
         "optimizer_device": str(device),
         "optimizer_input_steps": steps,
@@ -386,7 +387,19 @@ def main():
         "terminal_steps": terminal_steps,
         "episodes": len(episode_keys),
         "opponent_steps": opponent_steps,
-    }))
+    }
+    with (args.output / "metrics.json").open("x", encoding="utf-8") as output:
+        json.dump(metrics, output, indent=2)
+        output.write("\n")
+        output.flush()
+        os.fsync(output.fileno())
+    if os.name == "posix":
+        directory = os.open(args.output, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
+    print(json.dumps(metrics))
 
 
 if __name__ == "__main__":
