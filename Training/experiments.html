@@ -352,7 +352,7 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
 </section>
 <section data-hub-tab="train" data-project="other">
   <h2>Project job queue</h2>
-  <p class="hub-notice">Queue frozen configurations, coordinate resource claims, and explicitly start or stop native jobs on supported Linux or Windows machines with a locally installed, opted-in trusted adapter. Real-host native execution requires qualification. CPU jobs can use enforced CPU/RAM limits; opted-in single-GPU CUDA/ROCm execution requires verified device identity and platform-specific authorization. Cooperative Windows CUDA and locally approved Linux ROCm GPU sharing use allocator VRAM budgets; GPU compute shares are advisory and neither backend provides hard GPU memory isolation. Bees training stays under its existing operator.</p>
+  <p class="hub-notice">Queue frozen configurations, coordinate resource claims, and explicitly start or stop native jobs on supported Linux or Windows machines with a locally installed, opted-in trusted adapter. Real-host native execution requires qualification. CPU jobs can use enforced CPU/RAM limits; opted-in CUDA/ROCm execution requires verified device identity and platform-specific authorization; dual-GPU TinyBrains uses two exclusively pinned devices and the separately qualified split-PPO runtime. Cooperative Windows CUDA and locally approved Linux ROCm GPU sharing use allocator VRAM budgets; GPU compute shares are advisory and neither backend provides hard GPU memory isolation. Bees training stays under its existing operator.</p>
   <div class="hub-standalone">
     <h3>Queue a saved configuration</h3>
     <div class="formgrid">
@@ -364,7 +364,7 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
         <div class="formgrid">
           <label>CPU slots<input id="hub-build-cpus" type="number" min="1" max="4096" step="1" value="2"></label>
           <label>RAM MiB<input id="hub-build-ram" type="number" min="128" max="100000000" step="1" value="2048"></label>
-          <label>GPU count (native: 0 or 1)<input id="hub-build-gpu-count" type="number" min="0" max="1" step="1" value="0"></label>
+          <label>GPU count (native: 0, 1, or approved 2)<input id="hub-build-gpu-count" type="number" min="0" max="2" step="1" value="0"></label>
           <label>GPU mode<select id="hub-build-gpu-mode">
             <option value="exclusive">Exclusive</option>
             <option value="shared">Cooperative share (approved CUDA/ROCm adapters)</option>
