@@ -3,6 +3,7 @@
 
 use std::collections::HashSet;
 use std::io::{self, Write};
+use std::sync::OnceLock;
 use bees_sim::collision::{Aabb, Pose};
 use bees_sim::geometry::Vec2;
 use bees_sim::physics::ShipShape;
@@ -385,11 +386,19 @@ impl NativeSoftwareRenderer {
                 for i in 0..4 { edge(corners[i], corners[(i + 1) % 4]); }
             }
             ShipShape::Circle { offset, radius } => {
-                let mut previous = *offset + Vec2::new(*radius, 0.0);
-                for i in 1..=32 {
-                    let (sin, cos) = (std::f32::consts::TAU * i as f32 / 32.0).sin_cos();
-                    let point = *offset + Vec2::new(cos, sin) * *radius;
-                    edge(previous, point); previous = point;
+                // All circles use the identical 32-segment tactical outline.
+                // Calculate unit vectors once, not 32 trigonometric calls for
+                // every projectile, ship and inspection range in every frame.
+                const SEGMENTS: usize = 32;
+                static UNIT_CIRCLE: OnceLock<[Vec2; SEGMENTS + 1]> = OnceLock::new();
+                let vertices = UNIT_CIRCLE.get_or_init(|| std::array::from_fn(|i| {
+                    let (sin, cos) = (std::f32::consts::TAU * i as f32
+                        / SEGMENTS as f32).sin_cos();
+                    Vec2::new(cos, sin)
+                }));
+                for pair in vertices.windows(2) {
+                    edge(*offset + pair[0] * *radius,
+                         *offset + pair[1] * *radius);
                 }
             }
         }
