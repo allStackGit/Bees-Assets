@@ -2578,6 +2578,28 @@ document.addEventListener('DOMContentLoaded', () => {
         const predecessor=$('hub-job-predecessor').value;
         const parent=state.jobs.find(j=>j.id===predecessor);
         const prequeue=Boolean(parent&&!parent.capacity_released_at);
+        if(project==='tinybrains') {
+            const parameters=selected.parameters;
+            if(predecessor&&parameters.import_checkpoint!==undefined) {
+                feedback('hub-job-message',
+                    'A TinyBrains checkpoint continuation cannot import a separate seed. '+
+                    'Select a saved configuration without import_checkpoint.');
+                return;
+            }
+            if(!predecessor&&parameters.import_checkpoint===undefined) {
+                const matching=state.machines.filter(machine=>
+                    machine.status==='connected'&&
+                    machine.tinybrains_profiles?.[parameters.profile]===
+                        parameters.profile_sha256);
+                if(matching.length&&matching.every(machine=>
+                    machine.tinybrains_required_import_profiles?.includes(parameters.profile))) {
+                    feedback('hub-job-message',
+                        'This TinyBrains profile needs an approved seed checkpoint for a new run. '+
+                        'Select a verified predecessor or save a configuration with an approved import.');
+                    return;
+                }
+            }
+        }
         if(!confirm('Freeze '+selected.name+' revision '+selected.revision+
             (predecessor?' as a continuation of the selected predecessor':
                 ' as a new job')+
