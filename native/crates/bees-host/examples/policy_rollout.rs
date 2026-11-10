@@ -1612,6 +1612,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     if let Some(client) = &client {
         println!("{}", json!({ "kind": "presentation_final", "run_id": config.run_id,
             "rendered_frames": client.rendered_frames,
+            "rendered_pixels": client.rendered_pixels,
             "render_wall_seconds": client.render_wall_seconds,
             "ui_wall_seconds": client.ui_wall_seconds,
             "window_update_wall_seconds": client.window_update_wall_seconds,
