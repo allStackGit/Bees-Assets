@@ -3013,11 +3013,22 @@ class ExperimentHub {
             const previousTelemetry=this.executionTelemetry.get(item.job_id);
             const previousProgress=previousTelemetry?.progress||null;
             const job=this.state.jobs.find(j=>j.id===item.job_id);
+            // Job metric preferences affect the lightweight Hub chart archive
+            // only. Every project's native full history stays intact.
+            // Never fabricate a requested metric that the adapter did not emit.
+            let chartProgress=progress;
+            if(progress&&Array.isArray(job.metric_selection)&&job.metric_selection.length) {
+                const chosen=Object.fromEntries(Object.entries(progress.metrics)
+                    .filter(([name])=>job.metric_selection.includes(name)||
+                        name==='total_ppo_updates'));
+                if(Object.keys(chosen).length)
+                    chartProgress={...progress,metrics:chosen};
+            }
             // Comparison history rejects duplicate, out-of-order and
             // unrelated experiment snapshots. Keep the last accepted
             // progress visible while fresh native process metrics arrive.
-            const progressAccepted=progress&&this.progressHistory.record(
-                job.id,job.project_id,progress,received);
+            const progressAccepted=chartProgress&&this.progressHistory.record(
+                job.id,job.project_id,chartProgress,received);
             if(progressAccepted)changedHistory=true;
             // A terminal report may omit new metrics. Still flush any
             // previously sampled history before the coordinator exits.
@@ -3047,7 +3058,7 @@ class ExperimentHub {
                 cpu_cores_used:cpuCores,
                 resource_usage:resources,
                 process_tasks:item.process_tasks??null,
-                progress:progressAccepted?progress:previousProgress,
+                progress:progressAccepted?chartProgress:previousProgress,
                 progress_issue:item.progress_issue||null,
                 evaluation:evaluation||previousTelemetry?.evaluation||null,
                 evaluation_issue:evaluationIssue,
@@ -3151,7 +3162,7 @@ class ExperimentHub {
             !object(value.learner)||
             Object.keys(value.learner).some(key=>
                 !['configuration_id','expected_revision','machine_id','resources',
-                    'continuation_of_job_id'].includes(key))||
+                    'continuation_of_job_id','metric_selection'].includes(key))||
             !ID.test(String(value.learner.machine_id||''))||
             !Array.isArray(value.collectors))
             throw Error('Confirm the saved learner, its machine, and one resource budget for each approved remote collector.');
@@ -3504,6 +3515,16 @@ class ExperimentHub {
         // directory, or process arguments can be supplied in the job request.
         const frozen = config(selected.parameters);
         const resources = resourceRequest(value.resources);
+        // Telemetry selection is independent from optimizer configuration
+        // fingerprints. It never influences a model or continuation lineage.
+        const selectedMetrics=value.metric_selection??null;
+        if(selectedMetrics!==null&&(!Array.isArray(selectedMetrics)||
+            selectedMetrics.length>96||
+            selectedMetrics.some(k=>typeof k!=='string'||
+                !/^[a-z][a-z0-9_]{0,39}$/.test(k))||
+            new Set(selectedMetrics).size!==selectedMetrics.length))
+            throw Error('Select up to 96 distinct project metric names.');
+
         const ancestorId=value.continuation_of_job_id==null
             ?null:value.continuation_of_job_id;
         const afterId=value.after_job_id==null?null:value.after_job_id;
@@ -3624,6 +3645,7 @@ class ExperimentHub {
             configuration_sha256:crypto.createHash('sha256')
                 .update(JSON.stringify(frozen)).digest('hex'),
             frozen_parameters:frozen, resources,
+            ...(selectedMetrics?.length?{metric_selection:selectedMetrics.slice()}:{}),
             ...(['courier','tinybrains'].includes(project.id)
                 ?{checkpoint_proof_required:true}:{}),
             ...(selected.evaluation_stop
