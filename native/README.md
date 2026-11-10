@@ -309,7 +309,12 @@ and `--view`: supply `endpoint`, `user_id`, `version`, optional `auth_ticket_env
 The runner sets up all configured Levels serially on one server Game, polls before
 view pacing/input, submits pending outcomes, and reports socket/queue measurements.
 Set `issue_source_commands` to enable the source-timed targeting and strategy
-cycle for authored HiveMind squads. In headless mode, simulation windows stop at
+cycle for authored HiveMind squads. Schema-27 exports allow player, HiveMind,
+neural and controller-free squads in the same Level; simultaneous player and
+HiveMind control remains invalid. The native quarter-second pulse retains
+fractional intervals across fixed ticks, without issuing duplicate requests
+after delayed ticks. Unity's Update-based timer execution order still needs
+live parity qualification. In headless mode, simulation windows stop at
 the next command pulse. Unowned feature replies fail explicitly. Shutdown drains
 outstanding replies within the configured budget and reports WebSocket close
 confirmation separately. Unacknowledged durable outcomes stay in the checkpoint. Nonterminal server failures retain the same payload/hash; the
