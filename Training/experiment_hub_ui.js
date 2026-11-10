@@ -1267,6 +1267,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 .map(m=>new Option(m.name+' ('+m.id+')',m.id)));
         if(state.machines.some(m=>m.id===previousMachine&&m.status==='connected'))
             $('hub-job-machine').value=previousMachine;
+        renderDistributedGroup();
         const records=(state.jobs||[]).filter(j=>j.project_id===project);
         $('hub-job-allocate-all').disabled=['bees','ants'].includes(project)||
             !records.some(j=>j.status==='waiting_adapter'&&!j.lease_id);
@@ -2607,6 +2608,99 @@ document.addEventListener('DOMContentLoaded', () => {
             feedback('hub-build-message',String(error.message||error));
         }
     });
+    // Distributed groups are frozen and claimed atomically. The operator
+    // chooses the CPU/RAM/GPU budgets; endpoint-to-machine identity is never
+    // entered by the browser and comes from connected native agents instead.
+    const distributedPanel=document.createElement('fieldset');
+    const distributedLegend=document.createElement('legend');
+    distributedLegend.textContent='Distributed TinyBrains learner + remote collectors';
+    const distributedMachine=document.createElement('select');
+    const distributedBudgets=document.createElement('textarea');
+    distributedBudgets.rows=5;
+    distributedBudgets.placeholder='Worker resource budgets, in endpoint order';
+    const distributedDetails=document.createElement('div');
+    const distributedFeedback=document.createElement('div');
+    const distributedMachineLabel=document.createElement('label');
+    distributedMachineLabel.append('Learner machine ',distributedMachine);
+    const distributedBudgetsLabel=document.createElement('label');
+    distributedBudgetsLabel.append('Remote worker budgets (JSON array) ',distributedBudgets);
+    const distributedQueue=button('Queue and reserve entire group',async()=>{
+        const selected=state?.configurations.find(c=>
+            c.project_id==='tinybrains'&&c.id===$('hub-job-configuration').value);
+        if(!selected||selected.parameters?.remote_rollouts!==true||
+            !distributedMachine.value)return;
+        try {
+            if($('hub-job-predecessor').value)
+                throw Error('Distributed group queueing creates a new learner. Clear the predecessor selection.');
+            const budgets=JSON.parse(distributedBudgets.value);
+            const selectedMachine=state.machines.find(m=>m.id===distributedMachine.value);
+            if(!Array.isArray(budgets)||budgets.length!==
+                selectedMachine?.tinybrains_remote_rollout_endpoints?.length)
+                throw Error('Supply one resource budget for each physically approved remote collector.');
+            const resources=JSON.parse($('hub-job-resources').value);
+            if(!confirm('Queue one TinyBrains learner on '+distributedMachine.value+
+                ' and '+budgets.length+' remotely pinned collectors? All CPU, RAM and GPU'+
+                ' reservations will be created together, but no process will start.'))return;
+            const result=await action('hub/distributed/tinybrains',{
+                confirm_queue:true,
+                learner:{configuration_id:selected.id,expected_revision:selected.revision,
+                    machine_id:distributedMachine.value,resources},
+                collectors:budgets.map(resources=>({resources})),
+            });
+            distributedFeedback.textContent='Queued learner '+result.learner.id+
+                ' and '+result.collectors.length+' separate collector jobs. All '+
+                result.leases.length+' claims await native receipts and explicit Starts.';
+            await reload();
+        }catch(error){distributedFeedback.textContent=String(error.message||error);}
+    });
+    distributedPanel.append(distributedLegend,distributedMachineLabel,
+        distributedBudgetsLabel,distributedDetails,distributedQueue,distributedFeedback);
+    $('hub-job-queue').insertAdjacentElement('afterend',distributedPanel);
+    let distributedBudgetHost=null;
+    function renderDistributedGroup() {
+        if(!state)return;
+        const selected=state.configurations.find(c=>
+            c.project_id==='tinybrains'&&c.id===$('hub-job-configuration').value);
+        distributedPanel.hidden=project!=='tinybrains'||
+            selected?.parameters?.remote_rollouts!==true;
+        if(distributedPanel.hidden)return;
+        const prior=distributedMachine.value;
+        const machines=state.machines.filter(m=>m.status==='connected'&&
+            m.agent_platform==='linux'&&m.local_executor_enabled&&
+            m.native_preflight_passed&&m.tinybrains_profiles?.[selected.parameters.profile]===
+                selected.parameters.profile_sha256&&
+            m.tinybrains_remote_rollout_profiles?.includes(selected.parameters.profile)&&
+            m.tinybrains_remote_rollout_endpoints?.length);
+        distributedMachine.replaceChildren(...machines.map(m=>new Option(
+            (m.name||m.id)+' ('+m.id+') · '+
+                m.tinybrains_remote_rollout_endpoints.length+' collectors',m.id)));
+        if(machines.some(m=>m.id===prior))distributedMachine.value=prior;
+        const machine=machines.find(m=>m.id===distributedMachine.value);
+        if(distributedBudgetHost!==machine?.id) {
+            distributedBudgetHost=machine?.id||null;
+            distributedBudgets.value=JSON.stringify(
+                (machine?.tinybrains_remote_rollout_endpoints||[]).map(()=>
+                    ({cpus:2,ram_mb:4096,gpu_count:0})),null,2);
+        }
+        const endpoints=machine?.tinybrains_remote_rollout_endpoints||[];
+        const workers=endpoints.map(endpoint=>state.machines.filter(m=>
+            m.status==='connected'&&m.id!==machine.id&&
+            m.tinybrains_rollout_endpoint===endpoint&&
+            m.tinybrains_rollout_key_fingerprint===machine.tinybrains_remote_key_fingerprint&&
+            m.installed_projects?.includes('tinybrains_rollout')));
+        const ready=Boolean(machine&&
+            state.projects.some(p=>p.id==='tinybrains_rollout')&&
+            workers.every(m=>m.length===1)&&
+            new Set(workers.map(m=>m[0]?.id)).size===workers.length);
+        distributedQueue.disabled=!ready;
+        distributedDetails.textContent=ready
+            ?'Approved collectors: '+workers.map((items,i)=>
+                endpoints[i]+' on '+items[0].id).join('; ')+
+                '. Modify each worker budget or request its optional exclusive GPU.'
+            :'Register the tinybrains_rollout project and connect one distinct, matching worker for every approved endpoint.';
+    }
+    $('hub-job-configuration').addEventListener('change',renderDistributedGroup);
+    distributedMachine.addEventListener('change',renderDistributedGroup);
     $('hub-job-queue').addEventListener('click',async()=>{
         const selected=state?.configurations.find(c=>
             c.project_id===project&&c.id===$('hub-job-configuration').value);
