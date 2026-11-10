@@ -403,7 +403,7 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
       <label>Continue previous job (optional)<select id="hub-job-predecessor"></select></label>
       <label class="wide">Metrics to retain in Hub comparison history (optional; Ctrl/Shift for multiple)
         <select id="hub-job-metrics" multiple size="9"></select>
-        <small>Leave unselected to retain the project's published metrics (up to the shared 96-metric chart limit). Explicit selections are applied before CPU/GPU host measurements are added. Device busy and VRAM measurements are host-wide, not attributable to an individual shared-GPU job. Full project-owned histories are unaffected; selecting a metric does not install missing instrumentation.</small>
+        <small>Leave unselected to prioritize observed host CPU/GPU measurements and then retain as many project metrics as fit the shared 96-field chart limit. Explicit selections take priority over this default order. Device busy and VRAM measurements are host-wide, not attributable to an individual shared-GPU job. Full project-owned histories are unaffected; selecting a metric does not install missing instrumentation.</small>
       </label>
       <label class="wide">Requested resources (JSON)<textarea id="hub-job-resources" rows="5">{"cpus":2,"ram_mb":2048,"gpu_count":0}</textarea></label>
       <fieldset class="wide">
