@@ -41,6 +41,8 @@ impl NativeCamera {
 pub struct NativeRenderCounts {
     pub ships: usize,
     pub obstacles: usize,
+    pub culled_ships: usize,
+    pub culled_obstacles: usize,
     pub projectiles: usize,
     pub pieces: usize,
     pub range_queries: usize,
@@ -165,6 +167,18 @@ impl NativeSoftwareRenderer {
         let selected = (self.selection.squads().len() > 8).then(|| {
             self.selection.squads().iter().copied().collect::<HashSet<_>>()
         });
+        // The fixed software viewport is axis-aligned in world space.
+        // Margin preserves center markers, health and selected-ship UI at
+        // its edges. Cached physical hull bounds stay authoritative.
+        let pad = Vec2::new(24.0, 24.0) * (1.0 / self.camera.pixels_per_unit);
+        let viewport = Aabb {
+            min: self.camera.screen_to_world(
+                0.0, self.height as f32, self.width, self.height,
+            ) - pad,
+            max: self.camera.screen_to_world(
+                self.width as f32, 0.0, self.width, self.height,
+            ) + pad,
+        };
         self.pixels.fill(0x080e19);
         let mut counts = NativeRenderCounts::default();
         self.shape(&ShipShape::Box { offset: (bounds.min + bounds.max) * 0.5,
@@ -172,6 +186,10 @@ impl NativeSoftwareRenderer {
             Pose { position: Vec2::ZERO, rotation_degrees: 0.0 }, 0x33455e);
         for (_, body) in view.combat.render_obstacles() {
             counts.obstacles += 1;
+            if body.primary_bounds().is_some_and(|hull| !hull.overlaps(viewport)) {
+                counts.culled_obstacles += 1;
+                continue;
+            }
             self.shape(body.shape(), body.pose, 0x758496);
         }
         for piece in view.combat.render_asteroid_pieces() {
@@ -181,6 +199,25 @@ impl NativeSoftwareRenderer {
         }
         for (ship, body) in view.combat.render_ships() {
             counts.ships += 1;
+            let selected_ship = view.roster.owning_squad(ship.entity_id).is_some_and(|owner|
+                selected.as_ref().map_or_else(
+                    || self.selection.squads().contains(&owner),
+                    |owners| owners.contains(&owner),
+                )
+            );
+            let position = body.motion.position;
+            let center_visible = position.x >= viewport.min.x &&
+                position.x <= viewport.max.x &&
+                position.y >= viewport.min.y &&
+                position.y <= viewport.max.y;
+            // Selected offscreen ships still draw their movement and target
+            // lines, which may cross the camera. Never cull those commands.
+            if !selected_ship && !center_visible &&
+                body.primary_bounds().is_some_and(|hull| !hull.overlaps(viewport))
+            {
+                counts.culled_ships += 1;
+                continue;
+            }
             let color = side_color(ship.side);
             self.shape(body.shape(), Pose { position: body.motion.position,
                 rotation_degrees: body.motion.rotation_degrees }, color);
@@ -189,12 +226,7 @@ impl NativeSoftwareRenderer {
             let health = ship.vitals.health() as f32 / ship.vitals.max_health() as f32;
             self.line(x - 10.0, y - 12.0, x + 10.0, y - 12.0, 0x3c2837);
             self.line(x - 10.0, y - 12.0, x - 10.0 + 20.0 * health, y - 12.0, color);
-            if view.roster.owning_squad(ship.entity_id).is_some_and(|owner|
-                selected.as_ref().map_or_else(
-                    || self.selection.squads().contains(&owner),
-                    |owners| owners.contains(&owner),
-                )
-            ) {
+            if selected_ship {
                 self.line(x - 14.0, y - 17.0, x + 14.0, y - 17.0, 0xffffff);
                 self.line(x - 14.0, y + 14.0, x + 14.0, y + 14.0, 0xffffff);
                 for slot in 0..5 {
