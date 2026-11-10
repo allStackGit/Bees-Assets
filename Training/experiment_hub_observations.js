@@ -5,7 +5,7 @@
 // Original trainer histories remain the source of truth for training updates.
 const fs=require('node:fs');
 const path=require('node:path');
-const UUID=/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const UUID=/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
 const MAX_RECORD_BYTES=65536;
 const dirName='hub-observations-v1';
 
