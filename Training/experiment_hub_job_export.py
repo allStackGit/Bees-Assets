@@ -263,7 +263,8 @@ def export(spec: dict, output: Path) -> dict:
 
         # Legacy Bees run artifacts live in separately approved named sources,
         # not a job-ID directory under the coordinator data root.
-        for job in jobs if project != "bees" else []:
+        scanned_jobs = [] if project == "bees" else jobs
+        for job in scanned_jobs:
             job_id = job["id"]
             folder = root / job_id
             if not folder.is_symlink() and folder.is_dir() and folder.resolve() == folder.absolute():
