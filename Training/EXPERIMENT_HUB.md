@@ -1861,7 +1861,9 @@ job histories and run-scoped text/JSON logs into independent ZIP archives of
 at most 500,000,000 bytes each. Choose several jobs and metrics; optionally
 include raw replays. No checkpoint, model, private key or credential files are
 intentionally included. Every part has a segment manifest for reconstructing
-large logs, and the overall manifest reports jobs without local artifacts.
+large logs. The overall manifest reports jobs without local artifacts and
+individual unavailable or excluded log sources by job ID and source label;
+no private host paths are included in that report.
 When metrics are selected, the archive also includes
 `hub-selected-metric-samples.csv`: a metric-filtered, long-form CSV from the
 bounded Hub comparison history, with job IDs, timestamps, project steps,
