@@ -36,6 +36,8 @@ Status intervals still include all elapsed host time, including pauses.
 
 The view draws authored primary collider outlines, current health, live
 projectiles, obstacles and fading debris directly from borrowed combat bodies.
+Selecting a Striker or parented Drone shows its live Carrier ID (or orphaned
+status) after canonical Carrier-death reassignment.
 Press B to toggle weapon-range and obstruction diagnostics for selected
 ships. The overlay uses the same authored hull bounds to reject distant
 targets before exact geometry and obstacle linecasts; the window title and

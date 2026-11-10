@@ -302,12 +302,26 @@ impl NativeClient {
         let ui_started = Instant::now();
         let selected = self.renderer.selected_ship.and_then(|id| view.combat.ship(id))
             .filter(|ship| !ship.vitals.is_dead())
-            .map(|ship| format!(" | Ship {} type {} side {} HP {}/{} TSV {} | {}",
-                ship.entity_id, ship.ship_type, ship.side, ship.vitals.health(),
-                ship.vitals.max_health(), ship.vitals.tsv(),
-                view.combat.ship_cease_fire(ship.entity_id)
-                    .map(|paused| if paused { "CEASE FIRE" } else { "ATTACK ON SIGHT" })
-                    .unwrap_or("FIRING STATUS UNKNOWN"))).unwrap_or_default();
+            .map(|ship| {
+                // Source CarrierShip.Carrier is a live physical relation.
+                // The owner can change at the Carrier death boundary;
+                // never display the imported, now-stale metadata copy.
+                let carrier = view.combat.game_striker_carrier(ship.entity_id)
+                    .map(|state| state.carrier_id)
+                    .or_else(|| view.combat.policy_striker_carrier(ship.entity_id))
+                    .or_else(|| view.combat.drone_carrier(ship.entity_id));
+                let carrier_label = match carrier {
+                    Some(Some(id)) => format!(" | Carrier {}", id),
+                    Some(None) => " | No Carrier".to_owned(),
+                    None => String::new(),
+                };
+                format!(" | Ship {} type {} side {} HP {}/{} TSV {}{} | {}",
+                    ship.entity_id, ship.ship_type, ship.side, ship.vitals.health(),
+                    ship.vitals.max_health(), ship.vitals.tsv(), carrier_label,
+                    view.combat.ship_cease_fire(ship.entity_id)
+                        .map(|paused| if paused { "CEASE FIRE" } else { "ATTACK ON SIGHT" })
+                        .unwrap_or("FIRING STATUS UNKNOWN"))
+            }).unwrap_or_default();
         self.window.set_title(&format!(
             "Bees native | World {} | Episode {} | Tick {} | {} ships, {} shots | {} squads selected | {}{} | {} | range/obstruction {} | Left select/drag, Ctrl add, right move/attack | C stop chase, V cease fire, A attack on sight, G guard, P patrol, M mine, H heal, R retreat, T point fire, X stop, B ranges, Backspace cancel | Space pause, N step, Tab world, arrows pan, wheel zoom, F fit, Esc exit",
             view.world_id.0, view.episode_revision, view.tick, counts.ships, counts.projectiles,
