@@ -320,10 +320,29 @@ class DockerSupervisor {
             throw Error('Docker job already has an ownership record; reconcile instead.');
         const invocation=validateLocalInput(job,lease,this.machineId,
             this.adapters,os,this.gpuEnabled);
-        if(this.state.some(x=>ACTIVE.has(x.state)&&x.gpu_pci_address&&
-            x.gpu_pci_address===invocation.gpu?.binding.pci_address))
-            throw Error('Hub already owns an unresolved container on this physical GPU.');
         const d=fixedDockerSpec(this.adapters[job.project_id]);
+        if(invocation.gpu) {
+            // The locally persistent owner independently checks shared GPU
+            // admission; a stale coordinator claim cannot overcommit the GPU.
+            if(this.state.some(x=>ACTIVE.has(x.state)&&x.gpu_node&&!x.gpu_pci_address))
+                throw Error('Unknown unresolved GPU ownership blocks new Docker GPU launches.');
+            const contenders=this.state.filter(x=>ACTIVE.has(x.state)&&
+                x.gpu_pci_address===invocation.gpu.binding.pci_address);
+            if(contenders.length) {
+                const requested=job.resources;
+                const compatible=requested.gpu_mode==='shared'&&
+                    d.gpu_sharing==='cooperative-pytorch'&&
+                    contenders.every(x=>x.gpu_mode==='shared'&&
+                        Number.isSafeInteger(x.gpu_vram_mb)&&x.gpu_vram_mb>0&&
+                        Number.isSafeInteger(x.gpu_compute_pct)&&x.gpu_compute_pct>0);
+                if(!compatible)
+                    throw Error('Hub already owns an exclusive or unresolved container on this GPU.');
+                const totalMemory=contenders.reduce((n,x)=>n+x.gpu_vram_mb,requested.gpu_vram_mb);
+                const totalCompute=contenders.reduce((n,x)=>n+x.gpu_compute_pct,requested.gpu_compute_pct);
+                if(totalMemory>invocation.gpu.binding.vram_mb||totalCompute>100)
+                    throw Error('Local cooperative GPU reservations exceed physical VRAM or advisory compute capacity.');
+            }
+        }
         let plan=null;
         if(invocation.gpu) {
             const proof=gpuRuntimeProof(this.adapters[job.project_id],
@@ -350,7 +369,10 @@ class DockerSupervisor {
             command:[invocation.executable,...invocation.args],
             ...(plan?{gpu_node:plan.selected[0].node,
                 gpu_pci_address:plan.selected[0].pci_address,
-                gpu_identity:deviceIdentity(plan)}:{}),
+                gpu_identity:deviceIdentity(plan),
+                gpu_mode:job.resources.gpu_mode,
+                gpu_vram_mb:job.resources.gpu_mode==='shared'?job.resources.gpu_vram_mb:0,
+                gpu_compute_pct:job.resources.gpu_mode==='shared'?job.resources.gpu_compute_pct:100}:{}),
             state:'launch_requested',
             stop_requested_at:null,checkpoint_stop_file:invocation.stopFile,
             requested_at:new Date().toISOString(),
