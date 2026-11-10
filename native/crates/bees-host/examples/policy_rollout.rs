@@ -404,6 +404,7 @@ fn bind_evaluation_episode(
     let id = world.id;
     let revision = world.episode_revision();
     let [bee_side, human_side] = world.state.events.sides();
+    let authored_policy_slots_by_side = world.state.metadata.authored_policy_slots_by_side();
     let group_episode_number = level.groups.as_ref().map(|group|
         episode_number(group, episode_offset)).transpose()?;
     let mut group_team_by_side = std::collections::BTreeMap::new();
@@ -424,6 +425,7 @@ fn bind_evaluation_episode(
         policy_generation: host.model_mut().model_generation(),
         policy_manifest_sha256: host.model_mut().model_manifest_sha256(),
         model_slots_by_team: level.model_slots.iter().map(|(&team, &slot)| (team, slot)).collect(),
+        authored_policy_slots_by_side,
         group_episode_number,
         group_team_by_side,
     };

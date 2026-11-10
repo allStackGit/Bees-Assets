@@ -2,7 +2,23 @@
 
 Worktree `B:\Bees\unified-native`, branch `rewrite/unified-native`.
 Read the full goal and fresh root AGENTS.md before further work. The complete
-Unity replacement remains incomplete; the experiment-queue branch is separate.
+Unity replacement remains incomplete. The latest Experiment Hub and queue
+work has been merged locally.
+
+## 2026-11-10 resident policy evaluation
+
+Terminal evaluation journals now record authored policy slots by side
+separately from MA-POCA reward-group assignments. The fixed-opponent
+comparator verifies that both sides have distinct authored policy slots.
+
+The Windows receipts in
+`B:\Bees\native-capability-qualification\resident-seats-2f06fd33f3324d5cb7c1b672022f2641`
+use deterministic TorchScript fixtures. The single-controller run processed
+6,000 rows across two episodes and changed manifests at the episode boundary.
+The two-controller reference and candidate processed 6,000 rows each and
+matched one episode with a fixed opposing artifact. The comparator rejected
+the single-controller journal for fixed-opponent model comparison.
+Learned-checkpoint evaluation and optimizer integration remain open.
 
 ## 2026-11-10 launcher integration
 
@@ -17,8 +33,8 @@ The Windows launcher receipt in
 `B:\Bees\native-capability-qualification\primary-integration-44c1a08c5d684f8eb2feee1e9c6875a8`
 covers two model-free episodes with seeds 123 and 987, commands on fresh squad
 lifetimes 10 and 100, three acknowledged store messages, and a confirmed close.
-Production HiveMind, Linux runtime, Unity export execution, and live model
-inference remain unverified. The larger replacement and learner work remain open.
+Production HiveMind, Linux runtime, and Unity export execution remain
+unverified. The larger replacement and learner work remain open.
 
 ## 2026-11-09 continuation
 

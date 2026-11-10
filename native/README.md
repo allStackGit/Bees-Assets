@@ -87,10 +87,12 @@ The single JSON configuration file requires:
   of the simulation window. Final `throughput` reports successful world
   steps and policy rows and wall time for startup, execution, and finalization.
 - Terminal journal records include scene and gameplay configuration hashes,
-  actual seeds, model provenance, and MA-POCA seats when present. Compare two
+  actual seeds, model provenance, authored controller routes by side, and
+  MA-POCA group assignments when present. Compare two
   stopped journals using `python native/tools/compare_evaluation.py reference.jsonl candidate.jsonl --focus-side bee`.
   For changing-policy comparisons, pass both original manifests to verify the
-  opposing artifact and model settings. The recorded configuration covers
+  opposing artifacts and model settings. This mode requires recorded policy
+  controllers on both sides with disjoint model slots. The recorded configuration covers
   source asset bytes, physics and decision settings, and HiveMind setup.
   Remote service state and player inputs can still differ across runs.
 - Optional `model_updates`: an ordered array of

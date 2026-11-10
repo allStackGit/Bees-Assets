@@ -8,7 +8,7 @@
 
 mod commands;
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::Arc;
 use bees_gameplay::commands::{
     GameCommandError, NativeBombWeapon, NativeEnemyTargetStats,
@@ -145,6 +145,15 @@ pub struct NativePolicyOnlyMetadata {
 }
 
 impl NativePolicyOnlyMetadata {
+    /// Initial controller routes for the current episode, independent of reward groups.
+    pub fn authored_policy_slots_by_side(&self) -> BTreeMap<i32, BTreeSet<u32>> {
+        let mut slots = BTreeMap::<i32, BTreeSet<u32>>::new();
+        for agent in self.agents.values() {
+            slots.entry(agent.side).or_default().insert(agent.route.model_slot);
+        }
+        slots
+    }
+
     pub fn new(
         bounds: Aabb,
         navigation: NavigationRuntime,

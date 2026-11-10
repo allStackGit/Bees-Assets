@@ -6,7 +6,7 @@
 //! Each record therefore reaches stable storage before its source outbox
 //! entry is retired. A distinct, exclusive file is required for each run.
 
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::fs::{File, OpenOptions};
 use std::io::{self, BufRead, BufReader, Read, Write};
 use std::path::Path;
@@ -212,6 +212,7 @@ pub struct EpisodeEvaluationContext {
     pub policy_generation: u64,
     pub policy_manifest_sha256: Option<String>,
     pub model_slots_by_team: BTreeMap<u8, u32>,
+    pub authored_policy_slots_by_side: BTreeMap<i32, BTreeSet<u32>>,
     pub group_episode_number: Option<u32>,
     pub group_team_by_side: BTreeMap<i32, u8>,
 }

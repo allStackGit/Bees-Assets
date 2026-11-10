@@ -53,14 +53,20 @@ def completed_episodes(path, focus, manifest):
                     expected_sha, models = manifest
                     if manifest_sha != expected_sha:
                         raise ValueError("episode does not use the supplied model manifest")
-                    if str(side) not in teams or str(other) not in teams:
-                        raise ValueError("changing models requires a recorded side-to-team assignment")
-                    focus_slot = str(slots[str(teams[str(side)])])
-                    opponent_slot = str(slots[str(teams[str(other)])])
-                    if focus_slot == opponent_slot:
+                    authored = context.get("authored_policy_slots_by_side")
+                    if authored is None:
+                        raise ValueError("changing models requires recorded authored policy seats")
+                    focus_slots = set(authored.get(str(side), ()))
+                    opponent_slots = set(authored.get(str(other), ()))
+                    if not focus_slots or not opponent_slots:
+                        raise ValueError("fixed-opponent model comparison requires a policy controller on both sides")
+                    if focus_slots & opponent_slots:
                         raise ValueError("focus and opponent must use separate model slots")
-                    models[focus_slot]
-                    model_identity = models[opponent_slot]
+                    if any(str(slot) not in models for slot in focus_slots | opponent_slots):
+                        raise ValueError("authored policy slot missing from the supplied manifest")
+                    model_identity = {
+                        slot: models[str(slot)] for slot in sorted(opponent_slots)
+                    }
                 gameplay_config = context.get("gameplay_config_sha256")
                 if gameplay_config is None:
                     counts["legacy_config"] += 1
