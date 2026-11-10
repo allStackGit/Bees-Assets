@@ -50,9 +50,9 @@ class LocalExecution {
                     :typeof this.supervisor.adapters?.[project]?.gpu_verify_args==='function')),
             gpu_shared_projects:this.projects.filter(project=>
                 this.supervisor.gpuEnabled===true&&
-                this.supervisor.gpuExecution==='cuda'&&
                 this.supervisor.adapters?.[project]?.gpu_execution==='cuda'&&
-                this.supervisor.adapters?.[project]?.gpu_sharing==='cooperative-pytorch')};
+                this.supervisor.adapters?.[project]?.gpu_sharing==='cooperative-pytorch'&&
+                (this.supervisor.gpuExecution==='cuda'||this.supervisor instanceof DockerSupervisor))};
     }
     async handle(order) {
         if(!order||!['start','stop','inspect','qualify_gpu'].includes(order.action)||
@@ -97,9 +97,12 @@ class LocalExecution {
                 if(typeof this.supervisor.qualifyGpuDeviceAccess!=='function'||
                     !this.supervisor.qualifiedAt||
                     job.status!=='waiting_adapter'||
-                    job.resources?.gpu_mode!=='exclusive'||
+                    !(job.resources?.gpu_mode==='exclusive'||
+                        job.resources?.gpu_mode==='shared'&&
+                        this.supervisor instanceof DockerSupervisor&&
+                        localAdapter?.gpu_sharing==='cooperative-pytorch')||
                     job.resources?.gpu_count!==1||
-                    lease.resources?.gpu_mode!=='exclusive'||
+                    lease.resources?.gpu_mode!==job.resources?.gpu_mode||
                     lease.resources?.gpu_count!==1||
                     lease.status!=='acknowledged'||lease.receipt_fresh!==true||
                     !Array.isArray(lease.gpu_bindings)||
