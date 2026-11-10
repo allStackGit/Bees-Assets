@@ -929,6 +929,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const requested=await action('hub/exports',{
                 project_id:project,job_ids:ids,
                 metrics:selectedComparisonMetrics().map(key=>key.slice(7)),
+                include_replays:$('hub-compare-export-replays').checked,
             });
             // An export is read-only and asynchronous. Poll its status rather
             // than attempting a single unbounded HTTP download response.
