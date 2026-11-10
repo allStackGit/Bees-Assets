@@ -54,14 +54,18 @@ function supportsTinyBrainsProfile(machine,job) {
         (job.resources.gpu_mode==='exclusive'||
             job.resources.gpu_mode==='shared'&&
                 machine.gpu_shared_projects?.includes('tinybrains'));
+    const remote=p?.remote_rollouts===true&&p.device!=='cpu'&&
+        machine.agent_platform==='linux'&&job.resources?.gpu_count>=1&&
+        machine.tinybrains_remote_rollout_profiles?.includes(p.profile)===true;
     const imported=p?.import_checkpoint==null?null:
         machine.tinybrains_imports?.[p.import_checkpoint];
     return ['win32','linux'].includes(machine.agent_platform)&&
         (cuda?(cpuFallback||dual||p?.device===undefined&&gpu):
             p?.device===undefined&&job.resources?.gpu_count===0)&&
         p&&Object.keys(p).every(key=>
-            ['profile','profile_sha256','updates','threads','device','import_checkpoint',
+            ['profile','profile_sha256','updates','threads','device','remote_rollouts','import_checkpoint',
                 'import_checkpoint_sha256'].includes(key))&&
+        (p.remote_rollouts===undefined||remote)&&
         (p.threads===undefined||
             Number.isSafeInteger(p.threads)&&p.threads>=1&&p.threads<=256&&
             machine.tinybrains_thread_overrides?.includes(p.profile)===true)&&
