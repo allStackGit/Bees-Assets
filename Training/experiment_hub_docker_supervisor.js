@@ -14,6 +14,9 @@ const {validateLocalInput,gpuRuntimeProof}=
     require('./experiment_hub_linux_supervisor');
 const {resolveRocmDevices,deviceIdentity}=
     require('./experiment_hub_linux_gpu_devices');
+const {availableMemoryMb}=require('./experiment_hub_host');
+const {ensureLocalCpuRamCapacity,startHeadroom}=
+    require('./experiment_hub_resources');
 
 const exec=promisify(execFile);
 const UUID=/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
@@ -320,6 +323,13 @@ class DockerSupervisor {
             throw Error('Docker job already has an ownership record; reconcile instead.');
         const invocation=validateLocalInput(job,lease,this.machineId,
             this.adapters,os,this.gpuEnabled);
+        const hostCpus=typeof os.availableParallelism==='function'
+            ?os.availableParallelism():os.cpus().length;
+        ensureLocalCpuRamCapacity(this.state,invocation.cpus,invocation.ram_mb,
+            hostCpus,Math.floor(os.totalmem()/1048576));
+        const freeRam=availableMemoryMb(os);
+        const memoryBlock=startHeadroom(job.resources,freeRam);
+        if(memoryBlock)throw Error(memoryBlock);
         const d=fixedDockerSpec(this.adapters[job.project_id]);
         if(invocation.gpu) {
             // The locally persistent owner independently checks shared GPU
@@ -353,6 +363,11 @@ class DockerSupervisor {
                     gpu_pci_address:invocation.gpu.binding.pci_address});
             await this.qualifyGpuDeviceAccess([invocation.gpu.binding],proof);
             plan=resolveRocmDevices([invocation.gpu.binding]);
+            const physicalFreeVram=plan.selected[0].observed_vram_mb;
+            // Fresh host GPU pressure is checked by coordinator admission;
+            // the local owner independently prevents incompatible reservations.
+            if(physicalFreeVram<invocation.gpu.binding.vram_mb)
+                throw Error('Physical GPU capacity changed after lease qualification.');
         }
         const imageId=await this.imageId(d.image);
         const name=containerName(job.id);
