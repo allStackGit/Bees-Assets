@@ -1847,8 +1847,9 @@ the trusted metric source and semantics. Example observational payload:
 ```
 
 The shared Compare view allows an arbitrary number of selected runs, with
-multiple independently plotted metrics. CSV includes the chosen metric columns;
-JSON also carries the bounded progress/evaluation provenance. **Train** can
+multiple independently plotted metrics. CSV keeps selected metric columns as
+numeric values (including negative rewards and losses); JSON includes only
+selected progress metrics while retaining job and evaluation provenance. **Train** can
 freeze an optional per-job list of preferred chart measurements. This is an
 archive/visualization preference; it never changes PPO model settings or
 manufactures metrics the project's adapter did not record. The native Hub
