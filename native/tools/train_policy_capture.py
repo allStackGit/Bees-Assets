@@ -33,6 +33,7 @@ def completed_rollouts(capture, journal, manifest, checkpoint, learner_slot=None
             raise ValueError("learner slot must match the optimizer input checkpoint")
         learner_slots = {learner_slot}
     terminals = {}
+    all_terminals = {}
     rewards = defaultdict(list)
     ended_teams = defaultdict(dict)
     retirements = defaultdict(dict)
@@ -47,9 +48,11 @@ def completed_rollouts(capture, journal, manifest, checkpoint, learner_slot=None
             key = row["world_id"], row["episode_revision"]
             if row["kind"] == "episode_final":
                 context = row["evaluation_context"]
-                if key in terminals or context["policy_manifest_sha256"] != manifest_sha:
-                    raise ValueError("ambiguous terminal or mismatched rollout manifest")
-                terminals[key] = row
+                if key in all_terminals:
+                    raise ValueError("duplicate episode terminal")
+                all_terminals[key] = row
+                if context["policy_manifest_sha256"] == manifest_sha:
+                    terminals[key] = row
             elif row["kind"] == "episode_aborted":
                 raise ValueError("aborted episode in training capture")
             elif row["kind"] == "policy_controller_retired":
@@ -68,28 +71,40 @@ def completed_rollouts(capture, journal, manifest, checkpoint, learner_slot=None
                         raise ValueError("duplicate group terminal event")
                     ended_teams[key][team] = row["tick"]
 
-    if not terminals:
+    if not all_terminals:
         raise ValueError("reward journal has no completed episodes")
+    if not terminals:
+        raise ValueError("capture contains no completed episodes for the selected policy manifest")
     frames = defaultdict(dict)
     boundaries = defaultdict(dict)
     for generation, rows in capture_frames(capture, journal_id):
         if generation is None:
-            for row in rows.copy():
+            for row in rows:
                 key = int(row["world"]), int(row["episode"])
+                if key not in all_terminals:
+                    raise ValueError("policy boundary belongs to an unknown completed episode")
+                if key not in terminals:
+                    continue
                 tick, agent = int(row["tick"]), int(row["group_agent"])
                 frame = boundaries[key].setdefault(tick, {})
                 if not 0 < tick <= terminals[key]["tick"] or agent in frame:
                     raise ValueError("invalid policy boundary observation identity")
-                frame[agent] = row
+                frame[agent] = row.copy()
             continue
         if "continuous_log_probs" not in rows.dtype.names:
             raise ValueError("training requires captured behavior statistics")
-        for row in rows.copy():
+        for row in rows:
             key = int(row["world"]), int(row["episode"])
-            terminal = terminals[key]
+            terminal = all_terminals.get(key)
+            if terminal is None:
+                raise ValueError("policy decision belongs to an unknown completed episode")
             context = terminal["evaluation_context"]
-            if generation != context["policy_generation"] or row["model_slot"] not in models:
+            if generation != context["policy_generation"]:
                 raise ValueError("rollout includes decisions outside the recorded policy generation")
+            if key not in terminals:
+                continue
+            if row["model_slot"] not in models:
+                raise ValueError("rollout includes an unknown model slot")
             tick, agent = int(row["tick"]), int(row["group_agent"])
             team = int(row["team"])
             if (tick >= terminal["tick"] or
@@ -99,7 +114,7 @@ def completed_rollouts(capture, journal, manifest, checkpoint, learner_slot=None
             frame = frames[key].setdefault(tick, {})
             if agent in frame:
                 raise ValueError("duplicate agent at a decision tick")
-            frame[agent] = row
+            frame[agent] = row.copy()
 
     if frames.keys() != terminals.keys():
         raise ValueError("completed episode missing decisions")
