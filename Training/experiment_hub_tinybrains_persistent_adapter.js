@@ -44,7 +44,10 @@ function createTinyBrainsPersistentDockerAdapter({
     projectRoot,hubRoot,artifactRoot,sourceRunRoot,engineCacheRoot,
     seedCheckpointSha256,seedPpoUpdates,profiles,
     image='tinybrains-rocm:halifax-node',sourceWindowsRoot='B:/TinyBrains/Ants-MAPOCA',
+    enableDualGpu=false,
 }) {
+    if(typeof enableDualGpu!=='boolean')
+        throw Error('Dual GPU enablement requires an explicit local boolean opt-in.');
     if(process.platform!=='linux'||!SHA.test(String(seedCheckpointSha256||''))||
         !Number.isSafeInteger(seedPpoUpdates)||seedPpoUpdates<1)
         throw Error('Persistent TinyBrains Docker import requires Linux and a pinned checkpoint hash.');
@@ -157,8 +160,8 @@ function createTinyBrainsPersistentDockerAdapter({
         tinybrains_thread_overrides:[...approved.keys()],
         tinybrains_cpu_fallback_profiles:[...approved.keys()],
         tinybrains_required_import_profiles:[...approved.keys()],
-        tinybrains_dual_gpu_profiles:[...approved.keys()],
-        gpu_dual_execution:'split-ppo',
+        tinybrains_dual_gpu_profiles:enableDualGpu?[...approved.keys()]:[],
+        ...(enableDualGpu?{gpu_dual_execution:'split-ppo'}:{}),
         tinybrains_imports:Object.fromEntries([...approved.keys()].map(id=>[
             'exeter_'+id,{profile:id,sha256:seedCheckpointSha256},
         ])),
