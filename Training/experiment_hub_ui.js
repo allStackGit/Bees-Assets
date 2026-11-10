@@ -552,8 +552,12 @@ document.addEventListener('DOMContentLoaded', () => {
         metricSelect.replaceChildren(...metricOptions.map(m=>
             new Option(m.label,m.key)));
         const keep=oldMetrics.filter(key=>metricOptions.some(m=>m.key===key));
+        const preferred=[...new Set(runs.flatMap(run=>run.job.metric_selection||[]))]
+            .map(key=>'metric:'+key)
+            .filter(key=>metricOptions.some(m=>m.key===key));
         for(const option of metricSelect.options)
-            option.selected=(keep.length?keep:[metricOptions[0]?.key]).includes(option.value);
+            option.selected=(keep.length?keep:
+                preferred.length?preferred:[metricOptions[0]?.key]).includes(option.value);
         const selectedMetrics=selectedComparisonMetrics();
         const axisSelect=$('hub-compare-x-axis'),oldAxis=axisSelect.value;
         axisSelect.replaceChildren(
@@ -1094,12 +1098,70 @@ document.addEventListener('DOMContentLoaded', () => {
         return {suite_id:suite,min_trials:Number(trials),min_success_rate:Number(rate),
             ...(digest?{suite_sha256:digest}:{})};
     }
+    let jobMetricSelectionProject=null;
+    // Availability is adapter-driven. These are discoverable requests, not a
+    // promise that every project provides every physical/game measurement.
+    const knownLearningMetrics=[
+        'training_wins','training_losses','training_draws',
+        'training_completed_matches','training_win_rate','training_score_rate',
+        'training_mean_score','training_mean_score_margin',
+        'training_mean_match_turns','food_gathered_exact',
+        'food_disappearances_near_own_ant','visible_food_mean',
+        'combat_kills_exact','births_observed','deaths_observed',
+        'population_mean','population_peak','combat_exposure_fraction',
+        'terminal_rewards','episodes_ended','loss','policy_loss',
+        'value_loss','baseline_loss','entropy','local_elo','mean_reward'];
+    const knownPerformanceMetrics=[
+        'total_ppo_updates','update_wall_time','elapsed_training_seconds',
+        'engine_steps','engine_steps_per_second','ant_decisions',
+        'ant_decisions_per_second','group_states','group_states_per_second',
+        'collection_seconds','optimization_seconds','overlap_seconds',
+        'ppo_microbatches','states_per_microbatch','actor_grad_norm',
+        'group_grad_norm','baseline_grad_norm','policy_lag',
+        'rss_mb','job_memory_mb','job_cpu_cores',
+        'host_cpu_busy_pct','host_gpu_busy_pct','host_gpu_vram_mb',
+        'data_preparation_seconds','inference_seconds','forward_seconds',
+        'backward_seconds','optimizer_step_seconds','cpu_wait_seconds',
+        'gpu_transfer_seconds','network_transfer_seconds',
+        'broker_queue_seconds','serialization_seconds','checkpoint_seconds',
+        'evaluation_seconds','collector_count','collector_0_ant_decisions',
+        'collector_1_ant_decisions','collector_1_roundtrip_seconds'];
+    function renderJobMetricSelection() {
+        const select=$('hub-job-metrics');
+        if(!select)return;
+        const prior=jobMetricSelectionProject===project
+            ?new Set([...select.selectedOptions].map(o=>o.value)):new Set();
+        const observed=new Set();
+        for(const job of state?.jobs||[]) {
+            if(job.project_id!==project)continue;
+            for(const name of Object.keys(job.live_execution?.progress?.metrics||
+                job.final_progress?.metrics||{}))observed.add(name);
+            for(const name of job.metric_selection||[])observed.add(name);
+        }
+        if(comparisonProject===project)
+            for(const item of comparisonData?.samples||[])
+                for(const point of item.points||[])
+                    for(const name of Object.keys(point.metrics||{}))observed.add(name);
+        const all=[...new Set([...knownLearningMetrics,...knownPerformanceMetrics,
+            ...observed])].filter(key=>/^[a-z][a-z0-9_]{0,39}$/.test(key))
+            .sort();
+        select.replaceChildren(...all.map(key=>{
+            const option=new Option(key,key);
+            option.selected=prior.has(key);
+            return option;
+        }));
+        jobMetricSelectionProject=project;
+    }
+    function selectedJobMetrics() {
+        return [...$('hub-job-metrics').selectedOptions].map(o=>o.value);
+    }
     function display() {
         if(!state)return;
         const current=project;
         $('hub-project').replaceChildren(...state.projects.map(p=>new Option(p.name,p.id)));
         project=state.projects.some(p=>p.id===current)?current:'bees';
         $('hub-project').value=project;
+        renderJobMetricSelection();
         $('hub-copy-bees-form').hidden=project!=='bees';
         $('hub-config-evaluation').hidden=project==='bees';
         displayTinyBrainsProfiles();
@@ -2822,9 +2884,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 :'')+
             'Queueing alone does not authorize execution.'))return;
         try{
+            const metrics=selectedJobMetrics();
             const job=await action('hub/jobs',{
                 configuration_id:selected.id,expected_revision:selected.revision,
                 resources:JSON.parse($('hub-job-resources').value),
+                ...(metrics.length?{metric_selection:metrics}:{}),
                 ...(predecessor?{continuation_of_job_id:predecessor}:{}),
             });
             feedback('hub-job-message',job.status==='waiting_predecessor'
