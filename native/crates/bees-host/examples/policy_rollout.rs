@@ -1615,7 +1615,9 @@ fn main() -> Result<(), Box<dyn Error>> {
             "render_wall_seconds": client.render_wall_seconds,
             "window_update_wall_seconds": client.window_update_wall_seconds,
             "culled_ship_draws": client.culled_ship_draws,
-            "culled_obstacle_draws": client.culled_obstacle_draws }));
+            "culled_obstacle_draws": client.culled_obstacle_draws,
+            "culled_projectile_draws": client.culled_projectile_draws,
+            "culled_piece_draws": client.culled_piece_draws }));
     }
     if failed_window.is_some() || !cleanup_errors.is_empty() {
         return Err(invalid(
