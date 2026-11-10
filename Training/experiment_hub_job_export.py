@@ -68,6 +68,18 @@ def export(spec: dict, output: Path) -> dict:
         for name in metrics
     ) or len(set(metrics)) != len(metrics):
         raise ValueError("Invalid metric selection")
+    additional = spec.get("additional_sources", [])
+    selected_ids = {job["id"] for job in jobs}
+    if not isinstance(additional, list) or len(additional) > 6000 or any(
+        not isinstance(entry, dict) or
+        set(entry) != {"job_id", "label", "path"} or
+        entry["job_id"] not in selected_ids or
+        not re.fullmatch(r"[a-z][a-z0-9_-]{0,47}", str(entry["label"])) or
+        not isinstance(entry["path"], str) or
+        not Path(entry["path"]).is_absolute()
+        for entry in additional
+    ):
+        raise ValueError("Invalid operator-owned extra artifact sources")
     if output.exists() or not output.parent.is_dir():
         raise ValueError("Export location already exists or is unavailable")
     if root.is_symlink() or not root.is_dir() or root.resolve() != root.absolute():
@@ -160,14 +172,16 @@ def export(spec: dict, output: Path) -> dict:
         size = source.stat().st_size
         with source.open("rb") as handle:
             index = 0
-            while True:
-                block = handle.read(CHUNK_BYTES)
+            remaining = size
+            while remaining:
+                block = handle.read(min(CHUNK_BYTES, remaining))
                 if not block:
-                    if index == 0:
-                        write_chunk(name, b"", 0, 1)
-                    break
+                    raise OSError("Telemetry file shortened during export: " + name)
                 index += 1
                 write_chunk(name, block, size, index)
+                remaining -= len(block)
+            if index == 0:
+                write_chunk(name, b"", 0, 1)
 
     try:
         start_part()
@@ -180,13 +194,8 @@ def export(spec: dict, output: Path) -> dict:
             "hub-comparison-history.json",
             json.dumps(spec.get("progress", {}), indent=2).encode("utf-8"),
         )
-        for job in jobs:
-            job_id = job["id"]
-            folder = root / job_id
-            if folder.is_symlink() or not folder.is_dir() or folder.resolve() != folder.absolute():
-                manifest["missing_artifact_job_ids"].append(job_id)
-                continue
-            found = 0
+        found_by_job = {job["id"]: 0 for job in jobs}
+        def scan_directory(folder: Path, name_prefix: str, job_id: str) -> None:
             for dirpath, dirs, files in os.walk(folder, followlinks=False):
                 current = Path(dirpath)
                 dirs[:] = sorted(d for d in dirs if d.lower() not in DENIED_PARTS
@@ -196,12 +205,35 @@ def export(spec: dict, output: Path) -> dict:
                     source = current / filename
                     if not safe_source(folder, source, bool(spec.get("include_replays", False))):
                         continue
-                    add_file(source, f"jobs/{job_id}/artifacts/{source.relative_to(folder).as_posix()}")
-                    found += 1
+                    add_file(source, name_prefix + "/" +
+                             source.relative_to(folder).as_posix())
+                    found_by_job[job_id] += 1
                     if len(manifest["entries"]) > MAX_SOURCE_FILES:
                         raise ValueError("Too many export entries")
-            if not found:
-                manifest["missing_artifact_job_ids"].append(job_id)
+
+        for job in jobs:
+            job_id = job["id"]
+            folder = root / job_id
+            if not folder.is_symlink() and folder.is_dir() and folder.resolve() == folder.absolute():
+                scan_directory(folder, f"jobs/{job_id}/artifacts", job_id)
+
+        # These roots are composed exclusively by the trusted local Bees
+        # coordinator from known run IDs, never supplied by the browser.
+        for entry in additional:
+            source = Path(entry["path"])
+            job_id = entry["job_id"]
+            prefix = f"jobs/{job_id}/external/{entry['label']}"
+            if source.is_symlink() or not source.exists():
+                continue
+            if source.is_dir() and source.resolve() == source.absolute():
+                scan_directory(source, prefix, job_id)
+            elif source.is_file() and safe_source(source.parent, source, False):
+                add_file(source, prefix + "/" + source.name)
+                found_by_job[job_id] += 1
+
+        manifest["missing_artifact_job_ids"] = [
+            job_id for job_id, found in found_by_job.items() if not found
+        ]
         add_bytes("export-manifest.json", json.dumps(manifest, indent=2).encode("utf-8"))
         end_part()
         return {"project_id": project, "parts": parts,
