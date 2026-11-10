@@ -249,6 +249,12 @@ impl NativeLevelInferenceBatch {
         )
     }
 
+    /// Count actual model calls so a fixed simulation sampling phase
+    /// cannot miss every inference on a periodic decision clock.
+    pub(crate) fn sample_model_timing(&self, every: Option<NonZeroU32>) -> bool {
+        every.is_some_and(|period| self.measurements.model_calls % u64::from(period.get()) == 0)
+    }
+
     pub fn perceptions(&self) -> PerceptionWork {
         self.writer.measurements()
     }

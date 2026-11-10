@@ -188,7 +188,8 @@ where
             )
         )?;
     } else {
-        batch.infer_with_timing(backend, sample_phases)
+        let sample_model = batch.sample_model_timing(simulation.timing_sample_period());
+        batch.infer_with_timing(backend, sample_model)
             .map_err(NativeBatchedStepError::Inference)?;
     }
     if let Some(started) = inference_started {

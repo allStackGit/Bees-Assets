@@ -374,6 +374,12 @@ def collect_predictions(
         else:
             indices = np.flatnonzero(slots == slot)
             count = len(indices)
+            # A single arena often presents a contiguous block per slot.
+            # A slice borrows its wide observation rows instead of gathering
+            # copies. Interleaved batches retain their original gather order.
+            first, last = int(indices[0]), int(indices[-1])
+            if last - first + 1 == count:
+                indices = slice(first, last + 1)
             sub_obs, sub_mask = observations[indices], allowed[indices]
         prediction = model.predict(sub_obs, sub_mask)
         out_cont, out_disc = prediction[:2]

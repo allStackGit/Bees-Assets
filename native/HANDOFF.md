@@ -5,6 +5,19 @@ Read the full goal and fresh root AGENTS.md before further work. The complete
 Unity replacement remains incomplete. The latest Experiment Hub and queue
 work has been merged locally.
 
+## 2026-11-10 active-grid inference qualification
+
+Model timing now samples actual inference calls. A Windows fixture with 64
+ships, four asteroid hulls, and two slots served by the same ONNX policy
+sampled 24 of 120 calls and 1,536 of 7,680 decisions with both periods set
+to five. The old sampler recorded zero calls in the matched configuration.
+Contiguous slot groups now borrow observation and mask slices. Direct ONNX
+checks matched actions for contiguous and interleaved slots, and the
+rollout matched seven journal records after normalizing run identifiers.
+All 106 native tests passed. Short paired release timings overlapped.
+The fixture had no weapon hits and used a configured scene, so authored
+Unity scenario parity and a durable throughput gain remain unverified.
+
 ## 2026-11-10 empty obstacle broadphase
 
 Physics skips queries against an empty grid and the per-ship obstacle scan
