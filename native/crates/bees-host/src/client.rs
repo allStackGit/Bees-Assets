@@ -45,6 +45,8 @@ pub struct NativeClient {
     pub culled_obstacle_draws: u64,
     pub culled_projectile_draws: u64,
     pub culled_piece_draws: u64,
+    pub weapon_geometry_queries: u64,
+    pub weapon_range_candidates_culled: u64,
     pub viewport_resizes: u64,
 }
 
@@ -63,6 +65,7 @@ impl NativeClient {
             ui_wall_seconds: 0.0, window_update_wall_seconds: 0.0,
             culled_ship_draws: 0, culled_obstacle_draws: 0,
             culled_projectile_draws: 0, culled_piece_draws: 0,
+            weapon_geometry_queries: 0, weapon_range_candidates_culled: 0,
             viewport_resizes: 0 })
     }
 
@@ -302,8 +305,10 @@ impl NativeClient {
             view.world_id.0, view.episode_revision, view.tick, counts.ships, counts.projectiles,
             self.renderer.selection.squads().len(),
             if self.paused { "PAUSED" } else { "RUNNING" }, selected, self.input_feedback,
-            if self.renderer.show_weapon_ranges { format!("{} auto targets, {} contacts, {}/{} blocked, {} queries, {} missing; {} aim points, {} missing",
-                counts.automatic_targets, counts.range_contacts, counts.obstructed_ranges, counts.range_overlaps, counts.range_queries, counts.missing_range_data, counts.aim_points, counts.missing_aim_data) }
+            if self.renderer.show_weapon_ranges { format!("{} auto targets, {} contacts, {}/{} blocked, {} exact queries, {} prefiltered, {} missing; {} aim points, {} missing",
+                counts.automatic_targets, counts.range_contacts, counts.obstructed_ranges, counts.range_overlaps,
+                counts.range_queries, counts.range_candidates_culled, counts.missing_range_data,
+                counts.aim_points, counts.missing_aim_data) }
             else { "off".to_owned() },
         ));
         self.ui_wall_seconds += ui_started.elapsed().as_secs_f64();
@@ -315,6 +320,9 @@ impl NativeClient {
         self.culled_obstacle_draws = self.culled_obstacle_draws.saturating_add(counts.culled_obstacles as u64);
         self.culled_projectile_draws = self.culled_projectile_draws.saturating_add(counts.culled_projectiles as u64);
         self.culled_piece_draws = self.culled_piece_draws.saturating_add(counts.culled_pieces as u64);
+        self.weapon_geometry_queries = self.weapon_geometry_queries.saturating_add(counts.range_queries as u64);
+        self.weapon_range_candidates_culled = self.weapon_range_candidates_culled
+            .saturating_add(counts.range_candidates_culled as u64);
         let window_update_started = Instant::now();
         self.window.update_with_buffer(self.renderer.pixels(), width, height)?;
         self.window_update_wall_seconds += window_update_started.elapsed().as_secs_f64();
