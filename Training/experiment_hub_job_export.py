@@ -38,7 +38,7 @@ def safe_source(root: Path, source: Path, include_replays: bool) -> bool:
     rel = source.relative_to(root)
     if not rel.parts or any(part.lower() in DENIED_PARTS for part in rel.parts):
         return False
-    if not include_replays and "replays" in rel.parts:
+    if not include_replays and any(part.lower() == "replays" for part in rel.parts):
         return False
     if any(term in source.name.lower() for term in DENIED_NAMES):
         return False
@@ -247,7 +247,7 @@ def export(spec: dict, output: Path) -> dict:
             for dirpath, dirs, files in os.walk(folder, followlinks=False):
                 current = Path(dirpath)
                 dirs[:] = sorted(d for d in dirs if d.lower() not in DENIED_PARTS
-                    and (bool(spec.get("include_replays", False)) or d != "replays")
+                    and (bool(spec.get("include_replays", False)) or d.lower() != "replays")
                     and not (current / d).is_symlink())
                 for filename in sorted(files):
                     source = current / filename
