@@ -49,6 +49,9 @@ pub struct NativeRenderCounts {
     pub culled_projectiles: usize,
     pub culled_pieces: usize,
     pub range_queries: usize,
+    /// Enemy hulls ruled out by authoritative cached bounds before an
+    /// expensive exact geometry/obstacle linecast diagnostic.
+    pub range_candidates_culled: usize,
     pub range_contacts: usize,
     pub aim_points: usize,
     pub automatic_targets: usize,
@@ -285,8 +288,21 @@ impl NativeSoftwareRenderer {
                             if range.enabled { 0x355b80 } else { 0x555555 });
                         let Some(has_obstacles) = view.player_authority.weapon_obstacles_enabled()
                             else { counts.missing_range_data += 1; continue; };
-                        for (target, _) in view.combat.render_ships() {
+                        // An inactive range cannot draw a valid contact.
+                        if !range.enabled { continue; }
+                        let range_bounds = Aabb::circle(range.center, range.radius);
+                        for (target, target_body) in view.combat.render_ships() {
                             if target.side == ship.side { continue; }
+                            // Exact range overlap requires intersecting
+                            // primary hull bounds. Reject distant enemies
+                            // before query_weapon_target_geometry performs
+                            // both exact hull work and obstacle linecasts.
+                            if target_body.primary_bounds().is_some_and(|hull|
+                                !hull.overlaps(range_bounds)
+                            ) {
+                                counts.range_candidates_culled += 1;
+                                continue;
+                            }
                             counts.range_queries += 1;
                             match view.combat.query_weapon_target_geometry(ship.entity_id, slot,
                                 target.entity_id, view.collision_matrix, has_obstacles) {
