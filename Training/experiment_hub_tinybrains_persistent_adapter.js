@@ -127,6 +127,15 @@ function createTinyBrainsPersistentDockerAdapter({
         !Number.isSafeInteger(originalSpec.self_play_updates))
         throw Error('Original run is not the approved persistent colony-PPO lineage.');
 
+    function frozenRemoteKeyIntact() {
+        if(!remote)return true;
+        const file=path.join(remote.keyDirectory,'rollout.key');
+        const stat=fs.lstatSync(file);
+        return stat.isFile()&&fs.realpathSync(file)===file&&
+            (stat.mode&0o077)===0&&stat.size>=32&&stat.size<=4096&&
+            crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex')===remote.keyFingerprint;
+    }
+
     function targetFor(context) {
         if(context.project_id!=='tinybrains'||!UUID.test(context.job_id)||
             !UUID.test(context.artifact_lineage_root_id)||
@@ -217,6 +226,8 @@ function createTinyBrainsPersistentDockerAdapter({
             const {profile,profile_sha256,updates,threads,device,remote_rollouts,
                 import_checkpoint,import_checkpoint_sha256}=parameters;
             const item=approved.get(profile);
+            if(remote_rollouts===true&&!frozenRemoteKeyIntact())
+                throw Error('Remote rollout key was rotated or changed after local adapter approval.');
             if(!item||item.sha256!==profile_sha256||
                 Object.keys(parameters).some(k=>!['profile','profile_sha256','updates',
                     'threads','device','remote_rollouts','import_checkpoint',
