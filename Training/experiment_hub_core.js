@@ -14,6 +14,15 @@ const {ProgressHistory}=require('./experiment_hub_history');
 const ID = /^[a-z][a-z0-9_-]{0,47}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const SHA256 = /^[0-9a-f]{64}$/;
+function rolloutEndpoint(value) {
+    if(typeof value!=='string')return false;
+    const parts=value.split(':');
+    if(parts.length!==2||!/^[0-9]{1,5}$/.test(parts[1]))return false;
+    const octets=parts[0].split('.');
+    return octets.length===4&&octets.every(p=>/^[0-9]{1,3}$/.test(p)&&Number(p)<=255)&&
+        Number(octets[0])===100&&Number(octets[1])>=64&&Number(octets[1])<=127&&
+        Number(parts[1])>=1&&Number(parts[1])<=65535;
+}
 const PCI = /^[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]$/;
 const CUDA_UUID = /^GPU-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const now = () => new Date().toISOString();
@@ -210,12 +219,25 @@ function boundedReport(value) {
         throw Error('Dual GPU TinyBrains requires locally qualified Linux ROCm profiles.');
     const remoteRollouts=value.tinybrains_remote_rollout_profiles??[];
     const remoteCount=value.tinybrains_remote_rollout_count??0;
+    const remoteEndpoints=value.tinybrains_remote_rollout_endpoints??[];
+    const remoteFingerprint=value.tinybrains_remote_key_fingerprint??null;
+    const workerEndpoint=value.tinybrains_rollout_endpoint??null;
+    const workerFingerprint=value.tinybrains_rollout_key_fingerprint??null;
     if(!Array.isArray(remoteRollouts)||remoteRollouts.length>cudaProfiles.length||
         remoteRollouts.some(id=>typeof id!=='string'||!cudaProfiles.includes(id))||
         new Set(remoteRollouts).size!==remoteRollouts.length||
         (remoteRollouts.length&&value.platform!=='linux')||
         !Number.isSafeInteger(remoteCount)||remoteCount<0||remoteCount>8||
-        Boolean(remoteRollouts.length)!==Boolean(remoteCount))
+        Boolean(remoteRollouts.length)!==Boolean(remoteCount)||
+        !Array.isArray(remoteEndpoints)||remoteEndpoints.length!==remoteCount||
+        remoteEndpoints.some(endpoint=>!rolloutEndpoint(endpoint))||
+        new Set(remoteEndpoints).size!==remoteEndpoints.length||
+        (remoteCount>0?!SHA256.test(String(remoteFingerprint||'')):remoteFingerprint!==null)||
+        (workerEndpoint===null)!==(workerFingerprint===null)||
+        (workerEndpoint!==null&&(!rolloutEndpoint(workerEndpoint)||
+            !SHA256.test(String(workerFingerprint||''))||
+            !installed.includes('tinybrains_rollout')))||
+        (installed.includes('tinybrains_rollout')&&workerEndpoint===null))
         throw Error('Remote rollout requires a locally installed Linux TinyBrains GPU adapter.');
     const requiredImports=value.tinybrains_required_import_profiles??[];
     if(!Array.isArray(requiredImports)||requiredImports.length>Object.keys(profiles).length||
@@ -258,6 +280,10 @@ function boundedReport(value) {
         tinybrains_dual_gpu_profiles:dualProfiles.slice(),
         tinybrains_remote_rollout_profiles:remoteRollouts.slice(),
         tinybrains_remote_rollout_count:remoteCount,
+        tinybrains_remote_rollout_endpoints:remoteEndpoints.slice(),
+        tinybrains_remote_key_fingerprint:remoteFingerprint,
+        tinybrains_rollout_endpoint:workerEndpoint,
+        tinybrains_rollout_key_fingerprint:workerFingerprint,
         tinybrains_imports:imports,
         gpu_projects:gpuProjects.slice(),
         gpu_shared_projects:gpuShared.slice(),
@@ -1030,6 +1056,10 @@ class ExperimentHub {
                 machine.tinybrains_dual_gpu_profiles=report.tinybrains_dual_gpu_profiles.slice();
                 machine.tinybrains_remote_rollout_profiles=report.tinybrains_remote_rollout_profiles.slice();
                 machine.tinybrains_remote_rollout_count=report.tinybrains_remote_rollout_count;
+                machine.tinybrains_remote_rollout_endpoints=report.tinybrains_remote_rollout_endpoints.slice();
+                machine.tinybrains_remote_key_fingerprint=report.tinybrains_remote_key_fingerprint;
+                machine.tinybrains_rollout_endpoint=report.tinybrains_rollout_endpoint;
+                machine.tinybrains_rollout_key_fingerprint=report.tinybrains_rollout_key_fingerprint;
                 machine.tinybrains_imports=copy(report.tinybrains_imports);
                 machine.gpu_projects = report.gpu_projects.slice();
                 machine.gpu_shared_projects=report.gpu_shared_projects.slice();
