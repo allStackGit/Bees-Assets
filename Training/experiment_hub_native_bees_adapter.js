@@ -55,6 +55,67 @@ function createNativeBeesAdapter({
         return path.join(artifacts, context.job_id);
     }
 
+    function completedRound(output) {
+        const file = path.join(output, 'round-result.json');
+        let stat;
+        try {
+            stat = fs.lstatSync(file);
+        } catch (error) {
+            if (error.code === 'ENOENT') return null;
+            throw error;
+        }
+        if (!stat.isFile() || stat.size < 1 || stat.size > 64 * 1024 || fs.realpathSync(file) !== file)
+            throw Error('Invalid native Bees completion receipt file.');
+        const receipt = JSON.parse(fs.readFileSync(file, 'utf8'));
+        const metrics = receipt.learner_metrics;
+        if (receipt.schema_version !== 1 || receipt.kind !== 'native_training_round_complete' ||
+            metrics?.schema_version !== 1 || metrics.source !== 'bees-native-ma-poca-v1' ||
+            metrics.learner_slot !== (learnerSlot ?? null) ||
+            metrics.input_checkpoint_sha256 !== receipt.input_checkpoint_sha256 ||
+            metrics.input_manifest_sha256 !== receipt.input_manifest_sha256 ||
+            !Number.isSafeInteger(metrics.optimizer_input_steps) || metrics.optimizer_input_steps < 1)
+            throw Error('Invalid native Bees completion receipt.');
+        return {receipt, metrics, stat};
+    }
+
+    function verifiedOutput(round, output) {
+        if (!round) throw Error('Native Bees continuation needs a completed round.');
+        const {receipt, metrics} = round;
+        const checkpoint = path.join(output, 'learner', 'checkpoint.pt');
+        const manifest = path.join(output, 'learner', 'manifest.json');
+        for (const [file, digest, metricDigest] of [
+            [checkpoint, receipt.next_checkpoint_sha256, metrics.next_checkpoint_sha256],
+            [manifest, receipt.next_manifest_sha256, metrics.next_manifest_sha256],
+        ]) {
+            if (trustedFile(file) !== file || digest !== metricDigest ||
+                sha256(fs.readFileSync(file)) !== digest)
+                throw Error('Native Bees output differs from its completion receipt.');
+        }
+        return {checkpoint, manifest, checkpointDigest: receipt.next_checkpoint_sha256,
+            manifestDigest: receipt.next_manifest_sha256};
+    }
+
+    function roundInputs(context) {
+        if (!context.continuation_of_job_id)
+            return {checkpoint: input, manifest, checkpointDigest: pins.get(input),
+                manifestDigest: pins.get(manifest)};
+        if (!UUID.test(context.continuation_of_job_id) || context.continuation_of_job_id === context.job_id)
+            throw Error('Invalid native Bees predecessor.');
+        const parent = path.join(artifacts, context.continuation_of_job_id);
+        return verifiedOutput(completedRound(parent), parent);
+    }
+
+    function jobRound(context) {
+        const output = jobRoot(context);
+        const round = completedRound(output);
+        if (!round) return null;
+        const inputs = roundInputs(context);
+        if (round.receipt.input_checkpoint_sha256 !== inputs.checkpointDigest ||
+            round.receipt.input_manifest_sha256 !== inputs.manifestDigest)
+            throw Error('Native Bees completion receipt disagrees with the approved inputs.');
+        return round;
+    }
+
     return {
         executable,
         cwd: path.dirname(runner),
@@ -63,40 +124,32 @@ function createNativeBeesAdapter({
         args(parameters, context) {
             const output = jobRoot(context);
             const {config_sha256, seed_offset} = parameters;
-            if (context.continuation_of_job_id ||
-                Object.keys(parameters).some(key => !['config_sha256', 'seed_offset'].includes(key)) ||
+            if (Object.keys(parameters).some(key => !['config_sha256', 'seed_offset'].includes(key)) ||
                 config_sha256 !== configSha256 || !Number.isSafeInteger(seed_offset) || seed_offset < 0)
-                throw Error('Native Bees requires a fresh job, the approved configuration digest and a seed offset.');
+                throw Error('Native Bees requires the approved configuration digest and a seed offset.');
             for (const [file, digest] of pins) {
                 if (sha256(fs.readFileSync(file)) !== digest)
                     throw Error('Native Bees pinned input changed after adapter installation.');
             }
-            return ['-B', runner, run, input, trainer, output,
-                '--model-manifest', manifest, '--rollout-binary', binary,
+            const inputs = roundInputs(context);
+            if (context.continuation_of_job_id &&
+                context.expected_parent_model_sha256 !== inputs.checkpointDigest)
+                throw Error('Native Bees predecessor differs from the verified Hub checkpoint.');
+            return ['-B', runner, run, inputs.checkpoint, trainer, output,
+                '--model-manifest', inputs.manifest, '--rollout-binary', binary,
                 '--seed-offset', String(seed_offset),
                 ...(learnerSlot === undefined ? [] : ['--learner-slot', String(learnerSlot)])];
         },
+        checkpoint_ready(context) {
+            return Boolean(verifiedOutput(jobRound(context), jobRoot(context)));
+        },
+        model_checkpoint_sha256(context) {
+            return verifiedOutput(jobRound(context), jobRoot(context)).checkpointDigest;
+        },
         readProgress(context) {
-            const output = jobRoot(context);
-            const file = path.join(output, 'round-result.json');
-            let stat;
-            try {
-                stat = fs.lstatSync(file);
-            } catch (error) {
-                if (error.code === 'ENOENT') return null;
-                throw error;
-            }
-            if (!stat.isFile() || stat.size < 1 || stat.size > 64 * 1024 || fs.realpathSync(file) !== file)
-                throw Error('Invalid native Bees completion receipt file.');
-            const receipt = JSON.parse(fs.readFileSync(file, 'utf8'));
-            const metrics = receipt.learner_metrics;
-            if (receipt.schema_version !== 1 || receipt.kind !== 'native_training_round_complete' ||
-                receipt.input_checkpoint_sha256 !== pins.get(input) ||
-                receipt.input_manifest_sha256 !== pins.get(manifest) ||
-                metrics?.schema_version !== 1 || metrics.source !== 'bees-native-ma-poca-v1' ||
-                metrics.learner_slot !== (learnerSlot ?? null) ||
-                !Number.isSafeInteger(metrics.optimizer_input_steps) || metrics.optimizer_input_steps < 1)
-                throw Error('Native Bees completion receipt disagrees with the installed inputs.');
+            const round = jobRound(context);
+            if (!round) return null;
+            const {metrics, stat} = round;
             return validateProgress({
                 schema_version: 1, source: 'hub-metrics-v1',
                 experiment_id: context.job_id, segment_id: 'training',

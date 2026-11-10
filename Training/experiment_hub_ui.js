@@ -333,7 +333,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     function renderPipelineStages() {
         const rows=[...$('hub-pipeline-rows').children];
-        const checkpointPipeline=['tinybrains','courier'].includes(project)&&
+        const checkpointPipeline=['tinybrains','courier','bees_native'].includes(project)&&
             $('hub-pipeline-kind').value==='continuation';
         const configs=(state?.configurations||[]).filter(c=>
             checkpointPipeline?c.project_id===project:
@@ -1318,7 +1318,7 @@ document.addEventListener('DOMContentLoaded', () => {
             })
             .map(j=>j.continuation_of_job_id||j.after_job_id));
         const availableParents=(state.jobs||[]).filter(j=>
-            ['tinybrains','courier'].includes(project)&&j.project_id===project&&!successors.has(j.id)&&(
+            ['tinybrains','courier','bees_native'].includes(project)&&j.project_id===project&&!successors.has(j.id)&&(
                 j.assigned_machine_id&&j.dispatch_id&&(
                     (j.status==='finished'&&
                         (j.checkpoint_ready_verified===true||
@@ -1403,16 +1403,16 @@ document.addEventListener('DOMContentLoaded', () => {
         kind.replaceChildren(
             new Option('Independent fresh jobs (no shared checkpoint)','independent'),
             new Option('Independent trials (no dependency)','batch'),
-            ...(['tinybrains','courier'].includes(project)
+            ...(['tinybrains','courier','bees_native'].includes(project)
                 ?[new Option('Checkpoint-continuation stages','continuation')]
                 :[]));
         if(pipelineKindProject===project&&
             ['independent','batch','continuation'].includes(oldKind)&&
-            (oldKind!=='continuation'||['tinybrains','courier'].includes(project)))
+            (oldKind!=='continuation'||['tinybrains','courier','bees_native'].includes(project)))
             kind.value=oldKind;
-        else kind.value=['tinybrains','courier'].includes(project)?'continuation':'independent';
+        else kind.value=['tinybrains','courier','bees_native'].includes(project)?'continuation':'independent';
         pipelineKindProject=project;
-        const checkpointPipeline=['tinybrains','courier'].includes(project)&&kind.value==='continuation';
+        const checkpointPipeline=['tinybrains','courier','bees_native'].includes(project)&&kind.value==='continuation';
         const trialBatch=kind.value==='batch';
         $('hub-pipeline-add').textContent=trialBatch?'Add trial':'Add stage';
         $('hub-pipeline-queue').textContent=trialBatch?'Queue all trials':'Queue entire pipeline';
@@ -2738,7 +2738,7 @@ document.addEventListener('DOMContentLoaded', () => {
     $('hub-pipeline-queue').addEventListener('click',async()=>{
         if(project==='bees'||!state)return;
         try {
-            const checkpointPipeline=['tinybrains','courier'].includes(project)&&
+            const checkpointPipeline=['tinybrains','courier','bees_native'].includes(project)&&
                 $('hub-pipeline-kind').value==='continuation';
             const trialBatch=$('hub-pipeline-kind').value==='batch';
             const configs=state.configurations.filter(c=>checkpointPipeline

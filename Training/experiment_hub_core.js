@@ -405,6 +405,9 @@ function independentSequenceComplete(job) {
         job.evaluation_stop,job.dispatch_id);
 }
 function checkpointContinuationComplete(job) {
+    if(job?.project_id==='bees_native')
+        return job.status==='finished'&&job.checkpoint_ready_verified===true&&
+            SHA256.test(String(job.checkpoint_model_sha256||''));
     if(!['courier','tinybrains'].includes(job?.project_id))return false;
     return job.status==='finished'
         ?job.checkpoint_ready_verified===true||
@@ -2377,7 +2380,7 @@ class ExperimentHub {
                 ?'stop_requested':report.state;
             if(state==='launch_requested'&&job.status!=='start_requested')continue;
             if(job.status==='stop_requested'&&report.state==='launch_requested')continue;
-            if(['courier','tinybrains'].includes(job.project_id)) {
+            if(['courier','tinybrains','bees_native'].includes(job.project_id)) {
                 if(state==='finished'&&report.checkpoint_ready_verified===true) {
                     job.checkpoint_ready_verified=true;
                     changed=true;
@@ -2717,6 +2720,9 @@ class ExperimentHub {
                 this.commit(next);
             }
             this.executionOrderCursor.set(machineId+':'+priority(job),job.id);
+            const parentDigest=job.project_id==='bees_native'&&job.continuation_of_job_id
+                ?this.state.jobs.find(parent=>parent.id===job.continuation_of_job_id)?.checkpoint_model_sha256
+                :job.expected_parent_model_sha256;
             return [{
                 action,dispatch_id:action==='qualify_gpu'
                     ?job.gpu_qualification.request_id:job.dispatch_id,
@@ -2733,8 +2739,7 @@ class ExperimentHub {
                         ?{reverify_checkpoint:true}:{}),
                     ...(job.evaluation_stop?{evaluation_stop:copy(job.evaluation_stop)}:{}),
                     ...(lease.status==='released'?{final_checkpoint_sha256:job.checkpoint_model_sha256}:{}),
-                    ...(job.expected_parent_model_sha256
-                        ?{expected_parent_model_sha256:job.expected_parent_model_sha256}:{}),
+                    ...(parentDigest ?{expected_parent_model_sha256:parentDigest}:{}),
                 },
                 lease:{
                     id:lease.id,job_id:job.id,project_id:lease.project_id,
@@ -3513,8 +3518,8 @@ class ExperimentHub {
             const job=this.queueIn(next,{
                 ...stage,continuation_of_job_id:predecessor,
             });
-            if(!['tinybrains','courier'].includes(job.project_id))
-                throw Error('Checkpoint pipelines require the TinyBrains or Courier adapter.');
+            if(!['tinybrains','courier','bees_native'].includes(job.project_id))
+                throw Error('Checkpoint pipelines require a supported native adapter.');
             jobs.push(copy(job));
             predecessor=job.id;
         }
@@ -3582,8 +3587,8 @@ class ExperimentHub {
         let parent=null,dependency=null,waitingPredecessor=false;
         let dependencyReady=false;
         if(ancestorId!==null) {
-            if(!['tinybrains','courier'].includes(project.id))
-                throw Error('Checkpoint continuation requires the TinyBrains or Courier adapter.');
+            if(!['tinybrains','courier','bees_native'].includes(project.id))
+                throw Error('Checkpoint continuation requires a supported native adapter.');
             if(typeof ancestorId!=='string'||!UUID.test(ancestorId))
                 throw Error('Select a valid predecessor job for continuation.');
             parent=next.jobs.find(j=>j.id===ancestorId);
@@ -3609,7 +3614,7 @@ class ExperimentHub {
                 throw Error('This predecessor already has an active or unresolved successor.');
         }
         if(parent) {
-            const digestField=project.id==='courier'?'config_sha256':'profile_sha256';
+            const digestField=project.id==='tinybrains'?'profile_sha256':'config_sha256';
             const digest=parent.frozen_parameters?.[digestField];
             if(typeof digest!=='string'||digest!==frozen[digestField])
                 throw Error('Checkpoint continuation requires the same approved configuration digest as the predecessor.');
@@ -3672,7 +3677,7 @@ class ExperimentHub {
                 .update(JSON.stringify(frozen)).digest('hex'),
             frozen_parameters:frozen, resources,
             ...(selectedMetrics?.length?{metric_selection:selectedMetrics.slice()}:{}),
-            ...(['courier','tinybrains'].includes(project.id)
+            ...(['courier','tinybrains','bees_native'].includes(project.id)
                 ?{checkpoint_proof_required:true}:{}),
             ...(selected.evaluation_stop
                 ?{evaluation_stop:evaluationPolicy(selected.evaluation_stop)}:{}),

@@ -222,10 +222,13 @@ project and expose `createNativeBeesAdapter` from the worker's trusted
 local adapter map under that ID. Configure absolute `pythonPath`,
 `rolloutBinary`, `runConfig`, `trainerConfig`, `checkpoint` and
 `artifactRoot` paths, plus `learnerSlot` for a mixed manifest.
-The fresh job's frozen parameters are `config_sha256` (the adapter's
+The job's frozen parameters are `config_sha256` (the adapter's
 exported digest) and a nonnegative integer `seed_offset`.
 The adapter reports completed-round metrics from the receipt and uses
-the Hub's process-group stop. Each job runs one CPU update.
+the Hub's process-group stop. Each job runs one CPU update. A checkpoint
+pipeline keeps the approved configuration digest and uses each predecessor's
+verified checkpoint and manifest on the same worker. Capacity must be released
+before the successor can start.
 
 Completed worlds can be recycled up to `episodes_per_world` times through
 `NativeHostRuntime::reset_world`, with fresh monotonic squad lifetimes and

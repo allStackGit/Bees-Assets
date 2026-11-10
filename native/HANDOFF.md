@@ -5,6 +5,20 @@ Read the full goal and fresh root AGENTS.md before further work. The complete
 Unity replacement remains incomplete. The latest Experiment Hub and queue
 work has been merged locally.
 
+## 2026-11-10 native Bees checkpoint pipelines
+
+The Hub can queue native Bees successors on the same worker. A successor
+requires the authenticated predecessor checkpoint fingerprint and uses the
+checkpoint and manifest verified against the predecessor's round receipt.
+
+The isolated Windows fixture at
+`B:\Bees\native-capability-qualification\hub-bees-chain-B7ekfj`
+queued two stages, passed the Windows launch validator for both, ran two
+real rounds, and verified the second receipt used the first checkpoint.
+An incorrect predecessor fingerprint was refused. The native Windows owner
+build could not access the host's NuGet configuration, so signed ownership
+and capacity release through the live worker remain unqualified.
+
 ## 2026-11-10 native round Experiment Hub adapter
 
 The machine-local `bees_native` adapter launches one model-only native
