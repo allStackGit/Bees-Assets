@@ -98,7 +98,8 @@ function hubComparisonCsv(exported) {
         let str=String(value);
         // Prevent spreadsheet software from interpreting user-supplied
         // configuration labels as formulas.
-        if(str.trimStart().length&&'=+-@'.includes(str.trimStart()[0]))
+        if(typeof value==='string'&&str.trimStart().length&&
+            '=+-@'.includes(str.trimStart()[0]))
             str="'"+str;
         const quote=str.includes(',')||str.includes('"')||
             str.includes(String.fromCharCode(10))||
