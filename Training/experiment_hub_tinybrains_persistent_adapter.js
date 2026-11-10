@@ -274,14 +274,34 @@ function createTinyBrainsPersistentDockerAdapter({
                     path.join(targetFor(context),'hub-start-update.json'),'utf8')).update;
                 if(!Number.isSafeInteger(start)||row.update<start)
                     throw Error('Progress precedes the pinned imported PPO checkpoint.');
-                const metrics={
-                    total_ppo_updates:{value:row.update,unit:'count'},
-                    update_wall_time:{value:row.wall_seconds,unit:'seconds'},
-                    engine_steps_per_second:{value:row.engine_steps/row.wall_seconds,unit:'rate'},
-                };
-                // Timings are measured per completed PPO update. In
-                // particular, stage durations overlap and must not be
-                // summed to estimate elapsed update time.
+                // TinyBrains row.wall_seconds is collection + optimization,
+                // which double-counts overlap between the two stages.
+                // Cumulative elapsed_seconds differences are the measured
+                // per-update wall time for throughput comparisons.
+                let updateWall=null;
+                if(Number.isFinite(row.elapsed_seconds)&&row.elapsed_seconds>0) {
+                    if(row.update===start+1)
+                        updateWall=row.elapsed_seconds;
+                    else {
+                        const priorStart=str.lastIndexOf('\\n',lineStart-1);
+                        if(priorStart>=0) {
+                            const prior=JSON.parse(str.slice(priorStart+1,lineStart));
+                            if(prior.update===row.update-1&&
+                                Number.isFinite(prior.elapsed_seconds)&&
+                                prior.elapsed_seconds>=0&&
+                                row.elapsed_seconds>prior.elapsed_seconds)
+                                updateWall=row.elapsed_seconds-prior.elapsed_seconds;
+                        }
+                    }
+                }
+                const metrics={total_ppo_updates:{value:row.update,unit:'count'}};
+                if(updateWall!==null) {
+                    metrics.update_wall_time={value:updateWall,unit:'seconds'};
+                    metrics.engine_steps_per_second={
+                        value:row.engine_steps/updateWall,unit:'rate'};
+                }
+                // Stage durations are independently measured, not additive
+                // wall-clock costs while rollout and PPO optimization overlap.
                 for(const key of ['collection_seconds','optimization_seconds',
                     'overlap_seconds']) {
                     if(Number.isFinite(row[key])&&row[key]>=0)
@@ -289,8 +309,9 @@ function createTinyBrainsPersistentDockerAdapter({
                 }
                 if(Number.isSafeInteger(row.ant_decisions)&&row.ant_decisions>=0) {
                     metrics.ant_decisions={value:row.ant_decisions,unit:'count'};
-                    metrics.ant_decisions_per_second={
-                        value:row.ant_decisions/row.wall_seconds,unit:'rate'};
+                    if(updateWall!==null)
+                        metrics.ant_decisions_per_second={
+                            value:row.ant_decisions/updateWall,unit:'rate'};
                 }
                 return validateProgress({
                     schema_version:1,source:'hub-metrics-v1',experiment_id:context.job_id,
