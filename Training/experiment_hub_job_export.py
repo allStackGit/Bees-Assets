@@ -101,6 +101,7 @@ def export(spec: dict, output: Path) -> dict:
             "remote worker files not present in the trusted local artifact root",
         ],
         "missing_artifact_job_ids": [],
+        "missing_sources": [],
         "entries_recorded_in_each_part_manifest": True,
     }
     entry_count = 0
@@ -243,6 +244,7 @@ def export(spec: dict, output: Path) -> dict:
             "bounded Hub chart history; full project logs remain separate"
         )
         found_by_job = {job["id"]: 0 for job in jobs}
+        missing_sources: list[dict] = []
         def scan_directory(folder: Path, name_prefix: str, job_id: str) -> None:
             for dirpath, dirs, files in os.walk(folder, followlinks=False):
                 current = Path(dirpath)
@@ -264,6 +266,12 @@ def export(spec: dict, output: Path) -> dict:
             folder = root / job_id
             if not folder.is_symlink() and folder.is_dir() and folder.resolve() == folder.absolute():
                 scan_directory(folder, f"jobs/{job_id}/artifacts", job_id)
+                if found_by_job[job_id] == 0:
+                    missing_sources.append({"job_id": job_id, "label": "artifacts",
+                                            "reason": "no_approved_logs"})
+            else:
+                missing_sources.append({"job_id": job_id, "label": "artifacts",
+                                        "reason": "not_available"})
 
         # These roots are composed exclusively by the trusted local Bees
         # coordinator from known run IDs, never supplied by the browser.
@@ -271,14 +279,23 @@ def export(spec: dict, output: Path) -> dict:
             source = Path(entry["path"])
             job_id = entry["job_id"]
             prefix = f"jobs/{job_id}/external/{entry['label']}"
+            count_before = found_by_job[job_id]
             if source.is_symlink() or not source.exists():
-                continue
-            if source.is_dir() and source.resolve() == source.absolute():
+                reason = "not_available"
+            elif source.is_dir() and source.resolve() == source.absolute():
                 scan_directory(source, prefix, job_id)
+                reason = "no_approved_logs"
             elif source.is_file() and safe_source(source.parent, source, False):
                 add_file(source, prefix + "/" + source.name)
                 found_by_job[job_id] += 1
+                reason = None
+            else:
+                reason = "no_approved_logs"
+            if found_by_job[job_id] == count_before:
+                missing_sources.append({"job_id": job_id,
+                                        "label": entry["label"], "reason": reason})
 
+        manifest["missing_sources"] = missing_sources
         manifest["missing_artifact_job_ids"] = [
             job_id for job_id, found in found_by_job.items() if not found
         ]
@@ -287,7 +304,7 @@ def export(spec: dict, output: Path) -> dict:
         end_part()
         return {"project_id": project, "parts": parts,
                 "missing_artifact_job_ids": manifest["missing_artifact_job_ids"],
-                "entries": entry_count}
+                "missing_sources": missing_sources, "entries": entry_count}
     except BaseException:
         if archive is not None:
             archive.close()
