@@ -15,6 +15,7 @@ const { selectedRoot, copyAndSelect } = require('./bees_experiment_storage');
 const { normalizeTarget, scoreTarget } = require('./bees_experiment_benchmark_target');
 const { ExperimentHub } = require('./experiment_hub_core');
 const { JobExporter } = require('./experiment_hub_job_export');
+const { comparison: beesComparison, summary: beesComparisonJob } = require('./experiment_hub_bees_comparison');
 const { createAgentServer, AGENT_PORT, AGENT_HOST } =
     require('./experiment_hub_agent_listener');
 const { route: hubAdminRoute } = require('./experiment_hub_admin');
@@ -2352,6 +2353,9 @@ const server = http.createServer(async (req, res) => {
             }
             return await exportExperimentLogs(item, res, percent);
         }
+        if(req.method==='GET'&&route==='/api/hub/progress'&&
+            url.searchParams.get('project_id')==='bees')
+            return json(res,200,beesComparison(state.items));
         if(req.method==='GET'&&route.startsWith('/api/hub/exports/')) {
             if(!jobExporter)throw Error('Experiment Hub export service unavailable.');
             const status=/^\/api\/hub\/exports\/([0-9a-f-]{36})$/.exec(route);
@@ -2366,10 +2370,7 @@ const server = http.createServer(async (req, res) => {
             const bees=route==='/api/hub/state'?{
                 active_id:state.active_id,
                 queue_armed:state.armed,
-                runs:state.items.map(x=>({
-                    id:x.id,name:x.name,status:x.status,
-                    run_id:x.run_id,step:x.step,group:x.group,
-                })),
+                runs:state.items.map(beesComparisonJob),
             }:null;
             const result=hubAdminRoute(requireHub(),'GET',route,
                 url.searchParams,null,bees);
