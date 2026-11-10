@@ -7,7 +7,7 @@ const safeInt=n=>Number.isSafeInteger(n)&&n>=0;
 // Values and units are explicit; neither metrics nor steps authorize
 // training, benchmark decisions, lease release, or policy promotion.
 const GENERIC_METRIC=/^[a-z][a-z0-9_]{0,39}$/;
-const GENERIC_UNITS=new Set(['scalar','ratio','count','rate','seconds']);
+const GENERIC_UNITS=new Set(['scalar','ratio','count','rate','seconds','mb','bytes','milliseconds']);
 function validateGenericProgress(value,projectId) {
     const metrics=value?.metrics;
     if(!/^[a-z][a-z0-9_-]{0,47}$/.test(String(projectId||''))||
@@ -42,7 +42,7 @@ function validateGenericProgress(value,projectId) {
             !Number.isFinite(item.value)||Math.abs(item.value)>1e12||
             (item.unit==='ratio'&&(item.value<0||item.value>1))||
             (item.unit==='count'&&!safeInt(item.value))||
-            (['rate','seconds'].includes(item.unit)&&item.value<0))
+            (['rate','seconds','mb','bytes','milliseconds'].includes(item.unit)&&item.value<0))
             throw Error('Invalid project-neutral progress measurement: '+key);
         normalized[key]={value:item.value,unit:item.unit};
     }
