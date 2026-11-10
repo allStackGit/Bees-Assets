@@ -5,6 +5,20 @@ Read the full goal and fresh root AGENTS.md before further work. The complete
 Unity replacement remains incomplete. The latest Experiment Hub and queue
 work has been merged locally.
 
+## 2026-11-10 verified round throughput metrics
+
+The native round now checks the simulator's structured summary for the
+expected run ID, manifest, episode count and captured rows before launching
+the optimizer. The round receipt and Hub progress include rollout phase
+timing and work counts separately from optimizer metrics.
+
+Two automatic Windows rounds in
+`B:\Bees\native-capability-qualification\hub-round-metrics-4a3a6ddd293d458396f128412636cd60`
+each recorded 62 world steps, 36 policy rows, and 18 optimizer input rows.
+Startup dominated the wall time of this short fixture. A rollout cut off
+after one round was refused before optimizer launch. Larger-battle and
+Linux performance remain to be measured.
+
 ## 2026-11-10 automatic Windows checkpoint pipeline
 
 The isolated Windows Hub at

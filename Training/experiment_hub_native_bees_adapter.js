@@ -150,13 +150,25 @@ function createNativeBeesAdapter({
         readProgress(context) {
             const round = jobRound(context);
             if (!round) return null;
-            const {metrics, stat} = round;
+            const {receipt, metrics, stat} = round;
+            const rollout = receipt.rollout_metrics;
             return validateProgress({
                 schema_version: 1, source: 'hub-metrics-v1',
                 experiment_id: context.job_id, segment_id: 'training',
                 source_modified_at: stat.mtime.toISOString(),
                 steps_completed: metrics.optimizer_input_steps,
                 metrics: {
+                    ...(rollout ? {
+                        rollout_world_steps: {value: rollout.successful_world_steps, unit: 'count'},
+                        rollout_policy_rows: {value: rollout.successful_policy_rows, unit: 'count'},
+                        rollout_wall_seconds: {value: rollout.wall_seconds, unit: 'seconds'},
+                        rollout_startup_seconds: {value: rollout.startup_wall_seconds, unit: 'seconds'},
+                        rollout_execution_seconds: {value: rollout.execution_wall_seconds, unit: 'seconds'},
+                        rollout_finalization_seconds: {value: rollout.finalization_wall_seconds, unit: 'seconds'},
+                        rollout_policy_rows_per_second: {
+                            value: rollout.successful_policy_rows / rollout.wall_seconds, unit: 'rate',
+                        },
+                    } : {}),
                     episodes: {value: metrics.episodes, unit: 'count'},
                     opponent_steps: {value: metrics.opponent_steps, unit: 'count'},
                     terminal_steps: {value: metrics.terminal_steps, unit: 'count'},

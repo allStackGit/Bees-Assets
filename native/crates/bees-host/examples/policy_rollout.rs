@@ -168,6 +168,7 @@ struct RunConfig {
     connection_checkpoint: PathBuf,
     notifications: PathBuf,
     policy_capture: Option<PathBuf>,
+    rollout_summary: Option<PathBuf>,
     /// Stopped run journals, replayed into the ORIGINAL connection before
     /// starting a new incarnation. No previous world is resumed.
     #[serde(default)]
@@ -1561,7 +1562,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let rate = |count: u64, seconds: f64| {
         (seconds > 0.0).then(|| count as f64 / seconds)
     };
-    println!("{}", json!({
+    let final_summary = json!({
         "kind": "run_final",
         "run_id": config.run_id,
         "rounds": rounds,
@@ -1620,7 +1621,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         "failed_window": failed_window,
         "cleanup_errors": cleanup_errors,
         "user_closed": user_closed,
-    }));
+    });
+    println!("{final_summary}");
     #[cfg(feature = "client")]
     if let Some(client) = &client {
         println!("{}", json!({ "kind": "presentation_final", "run_id": config.run_id,
@@ -1642,6 +1644,12 @@ fn main() -> Result<(), Box<dyn Error>> {
         return Err(invalid(
             "headless rollout failed; run_final identifies the original failure and unresolved obligations",
         ).into());
+    }
+    if let Some(summary_path) = config.rollout_summary.as_ref() {
+        let file = fs::OpenOptions::new().write(true).create_new(true)
+            .open(resolve(root, summary_path))?;
+        serde_json::to_writer(&file, &final_summary)?;
+        file.sync_all()?;
     }
     Ok(())
 }

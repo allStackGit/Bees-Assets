@@ -7,6 +7,7 @@ never converts a failed or incomplete rollout into training data.
 
 import argparse
 import json
+import math
 import os
 from pathlib import Path
 import shutil
@@ -113,6 +114,29 @@ def run_stage(command, diagnostic_path):
                 raise
 
 
+def rollout_metrics(summary_path, config, manifest_sha):
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    expected_episodes = len(config["levels"]) * config.get("episodes_per_world", 1)
+    if (summary["kind"] != "run_final" or summary["run_id"] != config["run_id"] or
+            summary["policy_manifest_sha256"] != manifest_sha or
+            summary["completed_episodes"] != expected_episodes or
+            any(summary[key] != 0 for key in ("aborted_worlds", "failed_worlds", "running_worlds")) or
+            summary["failed_window"] is not None or summary["cleanup_errors"]):
+        raise ValueError("native rollout summary does not identify a completed training rollout")
+    throughput = summary["throughput"]
+    counts = {key: throughput[key] for key in ("successful_world_steps", "successful_policy_rows")}
+    times = {key: throughput[key] for key in (
+        "wall_seconds", "startup_wall_seconds", "execution_wall_seconds", "finalization_wall_seconds",
+    )}
+    if (any(type(value) is not int or value < 1 for value in counts.values()) or
+            summary["captured_policy_rows"] != counts["successful_policy_rows"] or
+            any(type(value) not in (float, int) or not math.isfinite(value) or value < 0
+                for value in times.values()) or times["wall_seconds"] <= 0 or
+            times["execution_wall_seconds"] <= 0):
+        raise ValueError("native rollout summary contains invalid work or timing")
+    return {**counts, **times}
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("run_config", type=Path)
@@ -169,6 +193,8 @@ def main() -> None:
     config["run_id"] = f"{config['run_id']}-{uuid.uuid4().hex}"
     config["notifications"] = str(output / "events.jsonl")
     config["policy_capture"] = str(output / "decisions.bin")
+    summary_path = output / "rollout-summary.json"
+    config["rollout_summary"] = str(summary_path)
     config_path = output / "run.json"
     with config_path.open("x", encoding="utf-8") as stream:
         json.dump(config, stream, indent=2)
@@ -180,6 +206,7 @@ def main() -> None:
                       "input_checkpoint_sha256": input_checkpoint_sha}), flush=True)
     run_stage([*command, str(config_path)],
               output / "rollout.log" if args.stage_diagnostics else None)
+    rollout = rollout_metrics(summary_path, config, input_manifest_sha)
     learner_dir = output / "learner"
     train_command = [
         config["python"], str(Path(__file__).with_name("train_policy_capture.py")),
@@ -220,6 +247,7 @@ def main() -> None:
         "input_manifest_sha256": input_manifest_sha,
         "capture": str(output / "decisions.bin"),
         "journal": str(output / "events.jsonl"),
+        "rollout_metrics": rollout,
         "learner_metrics": metrics,
         "next_checkpoint": str(next_checkpoint),
         "next_checkpoint_sha256": checkpoint_sha,
