@@ -22,6 +22,19 @@ const JOB_FIELDS=[
     'last_evaluation','final_progress','final_resource_usage',
     'execution_diagnostic','native_bees_run_id',
 ];
+// Exported job metadata is operator-readable but can leave the machine when
+// downloaded. Never copy credential-like configuration fields verbatim.
+function redactMetadata(value,depth=0) {
+    if(depth>20)return '[nested configuration omitted]';
+    if(Array.isArray(value))
+        return value.map(item=>redactMetadata(item,depth+1));
+    if(value&&typeof value==='object')
+        return Object.fromEntries(Object.entries(value).map(([key,item])=>[
+            key,/(?:^|_)(?:token|password|secret|credential|api_key|private_key|key_file|authorization)(?:_|$)/i.test(key)
+                ?'[redacted]':redactMetadata(item,depth+1),
+        ]));
+    return value;
+}
 function trustedRoot(file) {
     if(typeof file!=='string'||!path.isAbsolute(file))return null;
     try {
@@ -88,8 +101,9 @@ class JobExporter {
         const jobs=value.job_ids.map(id=>{
             const job=available.get(id);
             if(!job)throw Error('Selected job is not managed by this project.');
-            return Object.fromEntries(JOB_FIELDS.filter(key=>Object.hasOwn(job,key))
-                .map(key=>[key,job[key]]));
+            return redactMetadata(Object.fromEntries(
+                JOB_FIELDS.filter(key=>Object.hasOwn(job,key))
+                    .map(key=>[key,job[key]])));
         });
         const progress=legacy?this.legacyBees.progress():
             this.hub.progressComparison(project);
