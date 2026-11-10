@@ -1388,10 +1388,14 @@ impl NativePhysicalScene {
             if ship.has_bound_policy && ship.has_special_action != special.is_some() {
                 return Err(NativeSnapshotError::InvalidPolicySource(ship.entity_id));
             }
-            if ship.has_bound_policy {
+            // Schema28 captures ordinary Striker CarrierShip.Carrier as
+            // well as the Bomb special's Carrier reference. Both fields
+            // originate from the same Unity object and must agree; a
+            // mismatch cannot safely enter game or policy simulation.
+            if ship.has_bound_policy || raw.schema_version >= 28 {
                 if let Some(NativeAuthoredShipSpecial::Striker { carrier, .. }) = &special {
                     if carrier.carrier_id != (ship.parent_carrier_id > 0).then_some(ship.parent_carrier_id) {
-                        return Err(NativeSnapshotError::InvalidPolicySource(ship.entity_id));
+                        return Err(NativeSnapshotError::InvalidShip(ship.entity_id));
                     }
                 }
             }
