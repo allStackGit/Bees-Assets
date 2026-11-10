@@ -399,8 +399,30 @@ document.addEventListener('DOMContentLoaded', () => {
         if(tab==='compare'&&project!=='bees')loadComparison();
         if(tab==='machines') loadLiveBeesWorkers();
     }
-    const compareSlots=['a','b','c','d'];
-    const chartPalette=['#1769aa','#ce5a18','#23834b','#8647a8'];
+    const compareSlots=[];
+    let compareSerial=0;
+    const compareColor=i=>'hsl('+((i*137.508+211)%360).toFixed(2)+' 65% 38%)';
+    function addComparisonSlot() {
+        const slot='run'+(++compareSerial);
+        compareSlots.push(slot);
+        const label=document.createElement('label');
+        label.textContent='Run '+compareSerial+' ';
+        const select=document.createElement('select');
+        select.id='hub-compare-'+slot;
+        select.addEventListener('change',renderComparison);
+        const remove=button('Remove',()=>{
+            compareSlots.splice(compareSlots.indexOf(slot),1);
+            label.remove();
+            renderComparison();
+        });
+        remove.title='Remove from comparison (does not modify the job)';
+        label.append(select,remove);
+        $('hub-compare-run-list').append(label);
+        return slot;
+    }
+    function selectedComparisonMetrics() {
+        return [...$('hub-compare-metric').selectedOptions].map(option=>option.value);
+    }
     const chartAxes={steps_completed:{label:'Cumulative project steps'}};
     async function loadComparison() {
         if(!state||project==='bees')return;
@@ -436,7 +458,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const selectable=jobs.filter(j=>hasSamples(j)||hubComparisonEvaluation(j)||
             hubComparisonTerminal(j)||['waiting_adapter','waiting_predecessor',
                 'start_requested','launch_requested','running','stop_requested']
-                .includes(j.status)).slice(-80).reverse();
+                .includes(j.status)).reverse();
         const chartable=selectable.filter(hasSamples);
         const defaults=[...chartable,...selectable.filter(j=>!hasSamples(j))];
         const previous=compareSlots.map(slot=>$('hub-compare-'+slot).value);
@@ -516,10 +538,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const runs=compareSlots.map((slot,i)=>{
             const id=$('hub-compare-'+slot).value;
             const job=jobs.find(j=>j.id===id);
-            return job?{job,color:chartPalette[i],slot:slot.toUpperCase(),
+            return job?{job,color:compareColor(i),slot:String(i+1),
                 points:history.get(id)||[]}:null;
         }).filter(Boolean);
-        const metricSelect=$('hub-compare-metric'),oldMetric=metricSelect.value;
+        const metricSelect=$('hub-compare-metric');
+        const oldMetrics=selectedComparisonMetrics();
         const metricOptions=hubGenericMetricCatalog(chartable.map(job=>({
             job,points:history.get(job.id)||[],
         }))).map(metric=>({
@@ -528,7 +551,10 @@ document.addEventListener('DOMContentLoaded', () => {
         }));
         metricSelect.replaceChildren(...metricOptions.map(m=>
             new Option(m.label,m.key)));
-        if(metricOptions.some(m=>m.key===oldMetric))metricSelect.value=oldMetric;
+        const keep=oldMetrics.filter(key=>metricOptions.some(m=>m.key===key));
+        for(const option of metricSelect.options)
+            option.selected=(keep.length?keep:[metricOptions[0]?.key]).includes(option.value);
+        const selectedMetrics=selectedComparisonMetrics();
         const axisSelect=$('hub-compare-x-axis'),oldAxis=axisSelect.value;
         axisSelect.replaceChildren(
             new Option(comparisonAxisLabel('steps_completed'),'steps_completed'));
@@ -545,7 +571,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     ?comparisonData.storage_warning+' Live chart samples remain available; saved history may be incomplete.'
                     :comparisonData?.ephemeral
                         ?'Live chart samples are held in memory only. Final summaries remain available.'
-                        :'Bounded chart history is saved separately from the training registry (up to 96 points per job and 24 jobs). Recent unsaved samples may be lost on abrupt shutdown.';
+                        :'Bounded chart history is saved separately from the training registry. For detailed investigation export the complete project-owned job history.';
         feedback('hub-compare-notice',note);
         const knownRoots=new Set(runs.map(r=>
             r.job.artifact_lineage_root_id||r.job.id));
@@ -585,7 +611,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const table=$('hub-compare-rows');
         table.replaceChildren();
         const headings=[...table.closest('table').querySelectorAll('thead th')];
-        const labels=['Run','Status / host','Project steps','Selected metric',
+        const labels=['Run','Status / host','Project steps','Selected metrics',
             'Reported metrics','Segment','Latest summary'];
         labels.forEach((label,i)=>{if(headings[i])headings[i].textContent=label;});
         for(const run of runs) {
@@ -597,9 +623,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 (j.continuation_of_job_id?' (continuation)':''));
             cell(tr,j.status+' · '+(j.assigned_machine_id||'unassigned')+
                 (j.execution_diagnostic?' · '+j.execution_diagnostic:''));
-            const metric=p?.metrics?.[metricSelect.value.slice(7)];
             cell(tr,p?.steps_completed?.toLocaleString()||'—');
-            cell(tr,metric?metric.value.toLocaleString()+' '+metric.unit:'—');
+            cell(tr,selectedMetrics.map(key=>{
+                const metric=p?.metrics?.[key.slice(7)];
+                return metric?key.slice(7)+': '+metric.value.toLocaleString()+' '+metric.unit:null;
+            }).filter(Boolean).join(' · ')||'—');
             cell(tr,Object.keys(p?.metrics||{}).join(', ')||'—');
             cell(tr,p?.segment_id||'—');
             cell(tr,p?.source_modified_at
@@ -613,7 +641,7 @@ document.addEventListener('DOMContentLoaded', () => {
             table.append(tr);
         }
         renderComparisonEvaluations(runs);
-        drawComparisonChart(runs,$('hub-compare-metric').value,
+        drawComparisonCharts(runs,selectedMetrics,
             $('hub-compare-x-axis').value);
     }
     function renderComparisonEvaluations(runs) {
@@ -683,8 +711,37 @@ document.addEventListener('DOMContentLoaded', () => {
             missingDigest?'Some receipts lack a suite fingerprint. A shared suite ID cannot verify matching scenarios.':'',
         ].filter(Boolean).join(' '));
     }
-    function drawComparisonChart(runs,key,xKey) {
-        const svg=$('hub-compare-svg'),axisLabel=comparisonAxisLabel(xKey);
+    function drawComparisonCharts(runs,keys,xKey) {
+        const container=$('hub-compare-plots');
+        container.replaceChildren();
+        for(const key of keys) {
+            const section=document.createElement('div');
+            section.className='hub-progress-plot';
+            const title=document.createElement('h3');
+            title.textContent=key.slice(7);
+            const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
+            svg.setAttribute('role','img');
+            svg.setAttribute('viewBox','0 0 900 320');
+            svg.setAttribute('preserveAspectRatio','xMidYMid meet');
+            svg.style.width='100%';
+            const legend=document.createElement('p');
+            legend.className='muted';
+            for(const run of runs) {
+                const swatch=document.createElement('span');
+                swatch.style.display='inline-block';
+                swatch.style.borderTop='4px solid '+run.color;
+                swatch.style.width='22px';
+                swatch.style.margin='0 5px 3px 12px';
+                legend.append(swatch,document.createTextNode(
+                    run.slot+' · '+run.job.configuration_name+'  '));
+            }
+            section.append(title,svg,legend);
+            container.append(section);
+            drawComparisonChart(runs,key,xKey,svg);
+        }
+    }
+    function drawComparisonChart(runs,key,xKey,svg) {
+        const axisLabel=comparisonAxisLabel(xKey);
         const genericKey=key.startsWith('metric:')?key.slice(7):null;
         const units=genericKey?[...new Set(runs.flatMap(run=>
             hubComparisonPoints(run).map(point=>
@@ -753,12 +810,6 @@ document.addEventListener('DOMContentLoaded', () => {
         node('text',{x:450,y:313,'text-anchor':'middle'},
             axisLabel);
         for(const run of series) {
-            // Run slots provide stable colors even as selections change.
-            const i=runs.findIndex(r=>r.job.id===run.job.id);
-            node('line',{x1:100+i*195,y1:29,x2:128+i*195,y2:29,
-                stroke:run.color,'stroke-width':4});
-            node('text',{x:133+i*195,y:33},
-                run.slot+' · '+run.job.configuration_name.slice(0,18));
             let part=[];
             const flush=()=>{
                 if(part.length>1)
@@ -2030,8 +2081,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     for(const b of document.querySelectorAll('[data-hub-go]'))
         b.addEventListener('click',()=>selectTab(b.dataset.hubGo));
-    for(const slot of compareSlots)
-        $('hub-compare-'+slot).addEventListener('change',renderComparison);
+    addComparisonSlot();
+    addComparisonSlot();
+    $('hub-compare-add-run').addEventListener('click',()=>{
+        addComparisonSlot();
+        renderComparison();
+    });
     $('hub-compare-metric').addEventListener('change',renderComparison);
     $('hub-compare-x-axis').addEventListener('change',renderComparison);
     for(const format of ['csv','json'])
