@@ -76,6 +76,9 @@ pub struct SquadRosterMeasurements {
     pub ships_added_to_existing: u64,
     pub squads_retired: u64,
     pub peak_squads: usize,
+    /// How many source-order compactions were needed at retirement.
+    /// Batched deaths compact once, not once per killed squad.
+    pub source_order_compactions: u64,
 }
 
 /// Contains only data the Level already owns; physical positions, health,
@@ -325,6 +328,16 @@ impl NativeSquadRoster {
         ship_id: i64,
         changes: &mut Vec<SquadRosterChange>,
     ) -> bool {
+        self.on_ship_death_inner(ship_id, changes, true)
+    }
+
+    /// An isolated death must leave the public roster fully ordered.
+    /// The canonical fixed-step event bridge can defer compaction until
+    /// after all deaths from the same event batch have been applied.
+    fn on_ship_death_inner(
+        &mut self, ship_id: i64, changes: &mut Vec<SquadRosterChange>,
+        compact_source_order: bool,
+    ) -> bool {
         let Some(owner) = self.owner_by_ship.remove(&ship_id) else {
             return false;
         };
@@ -339,7 +352,10 @@ impl NativeSquadRoster {
         self.measurements.ships_removed += 1;
         if squad.members.is_empty() {
             self.active.remove(&owner);
-            self.source_order.retain(|entry| *entry != owner);
+            if compact_source_order {
+                self.source_order.retain(|entry| *entry != owner);
+                self.measurements.source_order_compactions += 1;
+            }
             self.measurements.squads_retired += 1;
             changes.push(SquadRosterChange::SquadRetired { squad: owner });
         } else {
@@ -454,6 +470,7 @@ impl NativeSquadRoster {
         // Read only the small discriminants needed by the roster. The
         // combat event store remains authoritative and is not drained.
         // Command retirement after this pass can mutate world speed safely.
+        let mut retired_any_squad = false;
         for event in world.events() {
             match event {
                 CombatEvent::ScoutBeaconDropped {
@@ -467,14 +484,24 @@ impl NativeSquadRoster {
                     )?);
                 }
                 CombatEvent::ShipDied { victim_id, .. } => {
-                    if !self.on_ship_death(*victim_id, changes) {
+                    if !self.on_ship_death_inner(*victim_id, changes, false) {
                         return Err(SquadRosterError::MissingShipOwner(
                             *victim_id,
                         ).into());
                     }
+                    retired_any_squad |= matches!(
+                        changes.last(), Some(SquadRosterChange::SquadRetired { .. })
+                    );
                 },
                 _ => {}
             }
+        }
+        if retired_any_squad {
+            // Preserve canonical registration order, including any Beacon
+            // squads created earlier/later in this very same event batch.
+            // A mass death used to scan this list once PER retired squad.
+            self.source_order.retain(|owner| self.active.contains_key(owner));
+            self.measurements.source_order_compactions += 1;
         }
         if !self.covers_live_roster(world) {
             return Err(SquadRosterError::UnregisteredLiveShips.into());
