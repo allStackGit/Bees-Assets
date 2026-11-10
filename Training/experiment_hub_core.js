@@ -208,6 +208,12 @@ function boundedReport(value) {
         new Set(dualProfiles).size!==dualProfiles.length||
         (dualProfiles.length&&value.platform!=='linux'))
         throw Error('Dual GPU TinyBrains requires locally qualified Linux ROCm profiles.');
+    const remoteRollouts=value.tinybrains_remote_rollout_profiles??[];
+    if(!Array.isArray(remoteRollouts)||remoteRollouts.length>cudaProfiles.length||
+        remoteRollouts.some(id=>typeof id!=='string'||!cudaProfiles.includes(id))||
+        new Set(remoteRollouts).size!==remoteRollouts.length||
+        (remoteRollouts.length&&value.platform!=='linux'))
+        throw Error('Remote rollout requires a locally installed Linux TinyBrains GPU adapter.');
     const requiredImports=value.tinybrains_required_import_profiles??[];
     if(!Array.isArray(requiredImports)||requiredImports.length>Object.keys(profiles).length||
         requiredImports.some(id=>typeof id!=='string'||!Object.hasOwn(profiles,id))||
@@ -247,6 +253,7 @@ function boundedReport(value) {
         tinybrains_cpu_fallback_profiles:cpuFallback.slice(),
         tinybrains_required_import_profiles:requiredImports.slice(),
         tinybrains_dual_gpu_profiles:dualProfiles.slice(),
+        tinybrains_remote_rollout_profiles:remoteRollouts.slice(),
         tinybrains_imports:imports,
         gpu_projects:gpuProjects.slice(),
         gpu_shared_projects:gpuShared.slice(),
@@ -986,6 +993,7 @@ class ExperimentHub {
                 machine.tinybrains_cpu_fallback_profiles=report.tinybrains_cpu_fallback_profiles.slice();
                 machine.tinybrains_required_import_profiles=report.tinybrains_required_import_profiles.slice();
                 machine.tinybrains_dual_gpu_profiles=report.tinybrains_dual_gpu_profiles.slice();
+                machine.tinybrains_remote_rollout_profiles=report.tinybrains_remote_rollout_profiles.slice();
                 machine.tinybrains_imports=copy(report.tinybrains_imports);
                 machine.gpu_projects = report.gpu_projects.slice();
                 machine.gpu_shared_projects=report.gpu_shared_projects.slice();
