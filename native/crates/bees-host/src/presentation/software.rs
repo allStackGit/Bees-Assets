@@ -66,6 +66,8 @@ pub struct NativeSoftwareRenderer {
     /// Selection is scoped to a WorldId AND episode revision by the client.
     pub selected_ship: Option<i64>,
     pub selection: NativeSquadSelection,
+    // Reused only for large selections; small squads need no hash allocation.
+    selected_squad_lookup: HashSet<bees_hivemind::session::SquadLifetime>,
     pub selection_box: Option<Aabb>,
     /// Optional inspection only. Disabled means no range or linecast work.
     pub show_weapon_ranges: bool,
@@ -80,7 +82,9 @@ impl NativeSoftwareRenderer {
         }
         Ok(Self { width, height, pixels: vec![0; width * height],
             camera: NativeCamera::fit(bounds, width, height), selected_ship: None,
-            selection: NativeSquadSelection::default(), selection_box: None, show_weapon_ranges: false })
+            selection: NativeSquadSelection::default(),
+            selected_squad_lookup: HashSet::new(),
+            selection_box: None, show_weapon_ranges: false })
     }
 
     pub fn size(&self) -> (usize, usize) { (self.width, self.height) }
@@ -180,11 +184,13 @@ impl NativeSoftwareRenderer {
     pub fn render(&mut self, view: &NativeRenderWorldView<'_>, bounds: Aabb) -> NativeRenderCounts {
         self.selection.synchronize(view);
         // Selected squad count can approach ship count in large battles.
-        // Keep the common 1v1 path allocation-free, but avoid linear
-        // membership scans for each ship when a large fleet is selected.
-        let selected = (self.selection.squads().len() > 8).then(|| {
-            self.selection.squads().iter().copied().collect::<HashSet<_>>()
-        });
+        // Keep 1v1 allocation-free and reuse the large-selection lookup
+        // rather than allocating a new hash table every rendered frame.
+        let many_selected = self.selection.squads().len() > 8;
+        self.selected_squad_lookup.clear();
+        if many_selected {
+            self.selected_squad_lookup.extend(self.selection.squads().iter().copied());
+        }
         // The fixed software viewport is axis-aligned in world space.
         // Margin preserves center markers, health and selected-ship UI at
         // its edges. Cached physical hull bounds stay authoritative.
@@ -225,10 +231,8 @@ impl NativeSoftwareRenderer {
         for (ship, body) in view.combat.render_ships() {
             counts.ships += 1;
             let selected_ship = view.roster.owning_squad(ship.entity_id).is_some_and(|owner|
-                selected.as_ref().map_or_else(
-                    || self.selection.squads().contains(&owner),
-                    |owners| owners.contains(&owner),
-                )
+                if many_selected { self.selected_squad_lookup.contains(&owner) }
+                else { self.selection.squads().contains(&owner) }
             );
             let position = body.motion.position;
             let center_visible = position.x >= viewport.min.x &&
