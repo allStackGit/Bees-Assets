@@ -224,7 +224,9 @@ impl NativeClient {
                         }
                     } else if dragging {
                         if rectangle.min.x < rectangle.max.x && rectangle.min.y < rectangle.max.y {
-                            if self.renderer.selection.select_box(&view, rectangle).is_err() {
+                            let additive = self.window.is_key_down(Key::LeftCtrl) ||
+                                self.window.is_key_down(Key::RightCtrl);
+                            if self.renderer.selection.select_box(&view, rectangle, additive).is_err() {
                                 self.input_feedback = "Selection box is unavailable";
                             }
                         } else { self.renderer.selection.clear(); }
