@@ -132,13 +132,18 @@ function validateLocalInput(job,lease,machineId,adapters,hostOs=os,gpuEnabled=fa
     const binding=lease.gpu_bindings?.[0];
     const cpuOnly=r.gpu_count===0&&lr.gpu_count===0&&
         !(r.gpus||[]).length&&!(lr.gpus||[]).length;
+    const sharedGpu=r.gpu_mode==='shared'&&lr.gpu_mode==='shared'&&
+        adapter.gpu_sharing==='cooperative-pytorch'&&
+        Number.isSafeInteger(r.gpu_vram_mb)&&r.gpu_vram_mb>0&&
+        Number.isSafeInteger(r.gpu_compute_pct)&&r.gpu_compute_pct>0&&
+        r.gpu_compute_pct<=100;
     if(!cpuOnly&&(!gpuEnabled||typeof adapter.gpu_verify_args!=='function'||
         r.gpu_count!==1||lr.gpu_count!==1||
-        r.gpu_mode!=='exclusive'||lr.gpu_mode!=='exclusive'||
+        !(r.gpu_mode==='exclusive'&&lr.gpu_mode==='exclusive'||sharedGpu)||
         lease.gpu_bindings?.length!==1||!binding||
         lr.gpus?.length!==1||binding.id!==lr.gpus[0]||
         (r.gpus?.length&&r.gpus[0]!==binding.id)))
-        throw Error('Native GPU launch needs a locally enabled adapter and one exclusive PCI binding.');
+        throw Error('Native GPU launch needs a locally enabled adapter and an approved single PCI binding.');
     const stopPolicy=adapter.stop_policy||'terminate-group';
     if(!['terminate-group','interrupt-main'].includes(stopPolicy))
         throw Error('Unknown locally installed native stop policy.');
@@ -157,7 +162,11 @@ function validateLocalInput(job,lease,machineId,adapters,hostOs=os,gpuEnabled=fa
         artifact_lineage_root_id:lineageRoot,
         ...(job.expected_parent_model_sha256?
             {expected_parent_model_sha256:job.expected_parent_model_sha256}:{}),
-        ...(!cpuOnly?{gpu_pci_address:binding.pci_address}:{}),
+        ...(!cpuOnly?{gpu_pci_address:binding.pci_address,
+            gpu_mode:r.gpu_mode,
+            gpu_vram_mb:r.gpu_mode==='shared'?r.gpu_vram_mb:0,
+            gpu_compute_pct:r.gpu_mode==='shared'?r.gpu_compute_pct:100,
+            gpu_total_vram_mb:binding.vram_mb}:{}),
     });
     const argsFor=fn=>checkedAdapterArgs(adapter,fn,job.frozen_parameters,context);
     const runtimeProof=cpuOnly?null:gpuRuntimeProof(adapter,job.frozen_parameters,context);
