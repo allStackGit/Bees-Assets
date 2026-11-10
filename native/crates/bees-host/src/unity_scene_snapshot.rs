@@ -1507,7 +1507,9 @@ impl NativePhysicalScene {
             // Schema28 captures CarrierShip.Carrier for ordinary game
             // children too; older exports only included this for policies.
             if raw.schema_version >= 28 &&
-                (ship.has_living_parent_carrier != (ship.parent_carrier_id > 0) ||
+                (ship.parent_carrier_id < 0 ||
+                ship.has_living_parent_carrier != (ship.parent_carrier_id > 0) ||
+                (ship.has_living_parent_carrier && !ship.is_carrier_child) ||
                 (!ship.is_carrier_child && ship.parent_carrier_id != 0) ||
                 (ship.is_carrier_child && !matches!(ship.ship_type, 8 | 19)))
             {
@@ -1902,6 +1904,28 @@ impl NativePhysicalScene {
                 _ => None,
             }
         ).collect();
+        // Unity CarrierSquad.SetupCarrierSquad creates homogeneous Drone
+        // or Striker groups for ONE parent Carrier. This import-only map
+        // validates the authoritative ship links before commands can use
+        // the source IsCarrierSquad flag. It is not kept in the live world.
+        let carrier_children: HashMap<i64, (u8, Option<i64>)> =
+            if raw.schema_version >= 28 {
+                entities.iter().filter_map(|entity| {
+                    let NativeAuthoredEntity::Ship(ship) = entity else {
+                        return None;
+                    };
+                    let parent = match ship.ship_type {
+                        8 => ship.drone_carrier_id,
+                        19 => match &ship.special {
+                            Some(NativeAuthoredShipSpecial::Striker { carrier, .. }) =>
+                                carrier.carrier_id,
+                            _ => return None,
+                        },
+                        _ => return None,
+                    };
+                    Some((ship.entity_id, (ship.ship_type, parent)))
+                }).collect()
+            } else { HashMap::new() };
         let mut source_squads = Vec::with_capacity(raw.squads.len());
         let mut squad_ids = HashSet::with_capacity(raw.squads.len());
         let mut registered_ships = HashSet::with_capacity(live_ships.len());
@@ -1925,6 +1949,17 @@ impl NativePhysicalScene {
                 .ok_or(NativeSnapshotError::InvalidSquad(squad.item_id))?;
             if raw.schema_version >= 24 && squad.is_carrier_squad.is_none() {
                 return Err(NativeSnapshotError::InvalidSquad(squad.item_id));
+            }
+            if raw.schema_version >= 28 && squad.is_carrier_squad == Some(true) {
+                let first = carrier_children.get(&squad.member_ids[0])
+                    .ok_or(NativeSnapshotError::InvalidSquad(squad.item_id))?;
+                // No guessed Carrier Squad or cross-parent ship transfer.
+                // An orphaned squad has None as its shared parent.
+                if squad.member_ids.iter().any(|id|
+                    carrier_children.get(id) != Some(first)
+                ) {
+                    return Err(NativeSnapshotError::InvalidSquad(squad.item_id));
+                }
             }
             if raw.schema_version >= 26 && squad.banned_strategies.is_none() {
                 return Err(NativeSnapshotError::InvalidSquad(squad.item_id));
