@@ -1621,7 +1621,9 @@ fn main() -> Result<(), Box<dyn Error>> {
             "culled_ship_draws": client.culled_ship_draws,
             "culled_obstacle_draws": client.culled_obstacle_draws,
             "culled_projectile_draws": client.culled_projectile_draws,
-            "culled_piece_draws": client.culled_piece_draws }));
+            "culled_piece_draws": client.culled_piece_draws,
+            "weapon_geometry_queries": client.weapon_geometry_queries,
+            "weapon_range_candidates_culled": client.weapon_range_candidates_culled }));
     }
     if failed_window.is_some() || !cleanup_errors.is_empty() {
         return Err(invalid(
