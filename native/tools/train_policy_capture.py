@@ -292,14 +292,6 @@ def main():
             (network.hidden_units, network.num_layers) != (128, 3) or settings.time_horizon <= 0):
         parser.error("expected a feed-forward structured v26 MA-POCA trainer configuration")
     checkpoint = torch.load(args.checkpoint, map_location="cpu", weights_only=True)
-    rollouts = [
-        rollout
-        for paths in [(args.capture, args.journal, args.manifest), *args.rollout]
-        for rollout in completed_rollouts(*paths, args.checkpoint, args.learner_slot)
-    ]
-    episode_keys = {rollout[0] for rollout in rollouts}
-    if len(episode_keys) != len(rollouts):
-        parser.error("the same completed episode was supplied more than once")
     args.output.mkdir()
     trainer = POCATrainer(behavior.brain_name, 100, settings, True, False, 0, str(args.output))
     policy = trainer.create_policy(behavior, mlagents_behavior_spec())
@@ -312,9 +304,21 @@ def main():
             module.load_state_dict(checkpoint[name])
     processing_started = time.perf_counter()
     terminal_steps = 0
-    for trajectory in trajectories(rollouts, settings.time_horizon, behavior.behavior_id):
-        trainer._process_trajectory(trajectory)
-        terminal_steps += int(trajectory.done_reached)
+    episode_keys = set()
+    opponent_steps = 0
+    for paths in [(args.capture, args.journal, args.manifest), *args.rollout]:
+        for rollout in completed_rollouts(*paths, args.checkpoint, args.learner_slot):
+            key, _, ticks, _, _, _, learning_agents = rollout
+            if key in episode_keys:
+                parser.error("the same completed episode was supplied more than once")
+            episode_keys.add(key)
+            opponent_steps += sum(
+                sum(agent not in learning_agents for agent in frame)
+                for _, frame in ticks
+            )
+            for trajectory in trajectories((rollout,), settings.time_horizon, behavior.behavior_id):
+                trainer._process_trajectory(trajectory)
+                terminal_steps += int(trajectory.done_reached)
     steps = trainer.update_buffer.num_experiences
     if steps < settings.hyperparameters.batch_size:
         parser.error("capture contains fewer observed intervals than one optimizer minibatch")
@@ -370,11 +374,8 @@ def main():
         "optimizer_steps_per_update_second": steps / update_wall_seconds if update_wall_seconds else None,
         "total_wall_seconds": time.perf_counter() - started_at,
         "terminal_steps": terminal_steps,
-        "episodes": len(rollouts),
-        "opponent_steps": sum(
-            sum(agent not in learning_agents for agent in frame)
-            for _, _, ticks, _, _, _, learning_agents in rollouts for _, frame in ticks
-        ),
+        "episodes": len(episode_keys),
+        "opponent_steps": opponent_steps,
     }))
 
 
