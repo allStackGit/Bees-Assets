@@ -94,6 +94,28 @@ fn update_contact_changes<T: Copy + Ord>(
     std::mem::swap(previous, current);
 }
 
+/// Emit just newly entered contacts from two canonical sorted sets.
+/// Projectile trigger streams do not consume exits. A merge visits each
+/// prior contact at most once, rather than binary-searching old contacts
+/// for every pair as projectile counts increase.
+fn update_contact_entries<T: Copy + Ord>(
+    current: &mut Vec<T>, previous: &mut Vec<T>, entered: &mut Vec<T>,
+) {
+    current.sort_unstable();
+    current.dedup();
+    entered.clear();
+    let mut old = 0;
+    for &pair in current.iter() {
+        while old < previous.len() && previous[old] < pair {
+            old += 1;
+        }
+        if old == previous.len() || previous[old] != pair {
+            entered.push(pair);
+        }
+    }
+    std::mem::swap(previous, current);
+}
+
 /// Unity 2D physics layers are 0..31. The actual layer collision matrix
 /// must be imported from the authoritative project settings. No permissive
 /// default is provided for game execution.
@@ -1770,31 +1792,19 @@ impl KinematicPhysics {
         self.counts.obstacle_pair_enters = self.obstacle_pair_enters.len() as u64;
         self.counts.obstacle_pair_exits = self.obstacle_pair_exits.len() as u64;
 
-        self.obstacle_overlaps_current.sort_unstable();
-        self.obstacle_overlaps_current.dedup();
-        self.obstacle_entries.clear();
-        for &pair in &self.obstacle_overlaps_current {
-            if self.obstacle_overlaps_previous.binary_search(&pair).is_err() {
-                self.obstacle_entries.push(pair);
-            }
-        }
-        self.counts.obstacle_trigger_enters = self.obstacle_entries.len() as u64;
-        std::mem::swap(
-            &mut self.obstacle_overlaps_previous,
+        update_contact_entries(
             &mut self.obstacle_overlaps_current,
+            &mut self.obstacle_overlaps_previous,
+            &mut self.obstacle_entries,
         );
+        self.counts.obstacle_trigger_enters = self.obstacle_entries.len() as u64;
         // Stable event ordering is necessary for reproducible outcome credit.
         // Unity callback order may differ: parity must be checked explicitly.
-        self.overlaps_current.sort_unstable();
-        self.overlaps_current.dedup();
-        self.entries.clear();
-        for &pair in &self.overlaps_current {
-            if self.overlaps_previous.binary_search(&pair).is_err() {
-                self.entries.push(pair);
-            }
-        }
+        update_contact_entries(
+            &mut self.overlaps_current, &mut self.overlaps_previous,
+            &mut self.entries,
+        );
         self.counts.trigger_enters = self.entries.len() as u64;
-        std::mem::swap(&mut self.overlaps_previous, &mut self.overlaps_current);
         Ok(&self.entries)
     }
 }
