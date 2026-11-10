@@ -1208,7 +1208,11 @@ document.addEventListener('DOMContentLoaded', () => {
             ...observed])].filter(key=>/^[a-z][a-z0-9_]{0,39}$/.test(key))
             .sort();
         select.replaceChildren(...all.map(key=>{
-            const option=new Option(key,key);
+            const option=new Option(key+(observed.has(key)
+                ?' · recorded':' · not yet observed'),key);
+            option.title=observed.has(key)
+                ?'This metric has been published by a job in this project.'
+                :'Selecting a metric does not install missing project instrumentation.';
             option.selected=prior.has(key);
             return option;
         }));
