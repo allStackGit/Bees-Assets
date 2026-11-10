@@ -626,7 +626,9 @@ function nativeStartReadiness(snapshot, job) {
             ?r.gpu_mode==='shared'
                 ?'Eligible for cooperative shared CUDA Start: PyTorch allocator VRAM ceiling; GPU compute share is advisory.'
                 :'Eligible for explicit cooperative CUDA Start; Windows cannot isolate GPU access.'
-            :'Eligible for explicit exclusive GPU Start with in-service verification.'
+            :r.gpu_mode==='shared'
+                ?'Eligible for cooperative ROCm Start: PyTorch allocator VRAM ceiling; GPU compute budget is advisory.'
+                :'Eligible for explicit exclusive GPU Start with in-service verification.'
         :'Eligible for explicit CPU-only native Start authorization.'};
 }
 // Match the operator's cross-project FIFO fairness in both the read-only
@@ -1013,8 +1015,7 @@ class ExperimentHub {
                 job.predecessor_wait=waitingStageReason(job,jobsById);
             if(job.status==='waiting_adapter'&&job.project_id!=='bees')
                 job.native_start_readiness=nativeStartReadiness(snapshot,job);
-            if(job.status==='waiting_adapter'&&job.lease_id&&job.resources?.gpu_count===1&&
-                job.resources.gpu_mode==='exclusive') {
+            if(job.status==='waiting_adapter'&&job.lease_id&&job.resources?.gpu_count===1) {
                 const lease=snapshot.reservations.find(l=>l.id===job.lease_id);
                 const machine=snapshot.machines.find(m=>m.id===job.assigned_machine_id);
                 job.gpu_probe_block=gpuProbeBlock(job,lease,machine);
@@ -1438,7 +1439,10 @@ class ExperimentHub {
                 (job.resources.gpu_count===0||
                     machine.gpu_projects?.includes(job.project_id)&&
                     (machine.agent_platform==='linux'
-                        ?job.resources.gpu_mode==='exclusive'&&machine.observed_gpus?.length>=2
+                        ?(job.resources.gpu_mode==='exclusive'||
+                            job.resources.gpu_mode==='shared'&&
+                                machine.gpu_shared_projects?.includes(job.project_id))&&
+                            machine.observed_gpus?.length>=2
                         :machine.agent_platform==='win32'&&
                             machine.gpu_inventory_source==='nvidia-smi-v1'&&
                             machine.observed_gpus?.length>=1&&
@@ -1482,7 +1486,10 @@ class ExperimentHub {
             if(session.probe_exclusive_gpu) {
                 for(const job of pendingClaims) {
                     if(job.resources.gpu_count!==1||
-                        job.resources.gpu_mode!=='exclusive'||
+                        !(job.resources.gpu_mode==='exclusive'||
+                            job.resources.gpu_mode==='shared'&&
+                                snapshot.machines.find(m=>m.id===job.assigned_machine_id)
+                                    ?.gpu_shared_projects?.includes(job.project_id))||
                         !owned.has(job.lease_id)||
                         job.gpu_qualification?.lease_id===job.lease_id||
                         startingMachines.has(job.assigned_machine_id))
@@ -1497,7 +1504,7 @@ class ExperimentHub {
                         (machine.observed_gpus?.length||0)<2||!lease?.receipt_fresh)
                         continue;
                     this.requestGpuQualification({job_id:job.id,confirm_qualify:true},'automation');
-                    return transitioned('Requested exclusive GPU access probe on '+machine.id+
+                    return transitioned('Requested GPU access probe on '+machine.id+
                         ' for '+job.configuration_name+'.');
                 }
             }
