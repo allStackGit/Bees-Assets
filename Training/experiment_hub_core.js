@@ -202,6 +202,12 @@ function boundedReport(value) {
         cpuFallback.some(id=>typeof id!=='string'||!cudaProfiles.includes(id))||
         new Set(cpuFallback).size!==cpuFallback.length)
         throw Error('TinyBrains CPU fallback requires an approved GPU profile.');
+    const dualProfiles=value.tinybrains_dual_gpu_profiles??[];
+    if(!Array.isArray(dualProfiles)||dualProfiles.length>cudaProfiles.length||
+        dualProfiles.some(id=>typeof id!=='string'||!cudaProfiles.includes(id))||
+        new Set(dualProfiles).size!==dualProfiles.length||
+        (dualProfiles.length&&value.platform!=='linux'))
+        throw Error('Dual GPU TinyBrains requires locally qualified Linux ROCm profiles.');
     const requiredImports=value.tinybrains_required_import_profiles??[];
     if(!Array.isArray(requiredImports)||requiredImports.length>Object.keys(profiles).length||
         requiredImports.some(id=>typeof id!=='string'||!Object.hasOwn(profiles,id))||
@@ -240,6 +246,7 @@ function boundedReport(value) {
         tinybrains_thread_overrides:threadOverrides.slice(),
         tinybrains_cpu_fallback_profiles:cpuFallback.slice(),
         tinybrains_required_import_profiles:requiredImports.slice(),
+        tinybrains_dual_gpu_profiles:dualProfiles.slice(),
         tinybrains_imports:imports,
         gpu_projects:gpuProjects.slice(),
         gpu_shared_projects:gpuShared.slice(),
@@ -964,6 +971,7 @@ class ExperimentHub {
                 machine.tinybrains_thread_overrides=report.tinybrains_thread_overrides.slice();
                 machine.tinybrains_cpu_fallback_profiles=report.tinybrains_cpu_fallback_profiles.slice();
                 machine.tinybrains_required_import_profiles=report.tinybrains_required_import_profiles.slice();
+                machine.tinybrains_dual_gpu_profiles=report.tinybrains_dual_gpu_profiles.slice();
                 machine.tinybrains_imports=copy(report.tinybrains_imports);
                 machine.gpu_projects = report.gpu_projects.slice();
                 machine.gpu_shared_projects=report.gpu_shared_projects.slice();
