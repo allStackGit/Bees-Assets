@@ -91,7 +91,7 @@ def export(spec: dict, output: Path) -> dict:
         "exported_at": datetime.now(timezone.utc).isoformat(),
         "selected_job_ids": [job["id"] for job in jobs],
         "selected_metrics": metrics,
-        "full_project_histories": True,
+        "full_project_histories": "available local files only",
         "include_replays": bool(spec.get("include_replays", False)),
         "excluded": [
             "checkpoints and model binaries", "secrets and credentials",
@@ -99,8 +99,9 @@ def export(spec: dict, output: Path) -> dict:
             "remote worker files not present in the trusted local artifact root",
         ],
         "missing_artifact_job_ids": [],
-        "entries": [],
+        "entries_recorded_in_each_part_manifest": True,
     }
+    entry_count = 0
     parts: list[dict] = []
     created: list[Path] = []
     archive = None
@@ -140,7 +141,7 @@ def export(spec: dict, output: Path) -> dict:
         parts.append({"name": archive_file.name, "bytes": size})
 
     def write_chunk(name: str, data: bytes, source_bytes: int, index: int) -> None:
-        nonlocal consumed
+        nonlocal consumed, entry_count
         if archive is None:
             start_part()
         if consumed + len(data) + 5_000_000 > TARGET_BYTES:
@@ -156,9 +157,7 @@ def export(spec: dict, output: Path) -> dict:
             "original_file_bytes": source_bytes, "uncompressed_bytes": len(data),
         }
         part_entries.append(item)
-        manifest["entries"].append({
-            "part": len(parts) + 1, **item,
-        })
+        entry_count += 1
         consumed += len(data) + len(target) + 1024
 
     def add_bytes(name: str, body: bytes) -> None:
@@ -208,7 +207,7 @@ def export(spec: dict, output: Path) -> dict:
                     add_file(source, name_prefix + "/" +
                              source.relative_to(folder).as_posix())
                     found_by_job[job_id] += 1
-                    if len(manifest["entries"]) > MAX_SOURCE_FILES:
+                    if entry_count > MAX_SOURCE_FILES:
                         raise ValueError("Too many export entries")
 
         for job in jobs:
@@ -234,11 +233,12 @@ def export(spec: dict, output: Path) -> dict:
         manifest["missing_artifact_job_ids"] = [
             job_id for job_id, found in found_by_job.items() if not found
         ]
+        manifest["exported_segments"] = entry_count
         add_bytes("export-manifest.json", json.dumps(manifest, indent=2).encode("utf-8"))
         end_part()
         return {"project_id": project, "parts": parts,
                 "missing_artifact_job_ids": manifest["missing_artifact_job_ids"],
-                "entries": len(manifest["entries"])}
+                "entries": entry_count}
     except BaseException:
         if archive is not None:
             archive.close()
