@@ -192,6 +192,7 @@ function createTinyBrainsPersistentDockerAdapter({
         tinybrains_required_import_profiles:[...approved.keys()],
         tinybrains_dual_gpu_profiles:enableDualGpu?[...approved.keys()]:[],
         tinybrains_remote_rollout_profiles:remote?[...approved.keys()]:[],
+        tinybrains_remote_rollout_count:remote?remote.endpoints.length:0,
         ...(enableDualGpu?{gpu_dual_execution:'split-ppo'}:{}),
         tinybrains_imports:Object.fromEntries([...approved.keys()].map(id=>[
             'exeter_'+id,{profile:id,sha256:seedCheckpointSha256},
