@@ -42,6 +42,7 @@ class LocalExecution {
             tinybrains_cuda_profiles:[...(this.supervisor.adapters?.tinybrains?.tinybrains_cuda_profiles||[])],
             tinybrains_thread_overrides:[...(this.supervisor.adapters?.tinybrains?.tinybrains_thread_overrides||[])],
             tinybrains_cpu_fallback_profiles:[...(this.supervisor.adapters?.tinybrains?.tinybrains_cpu_fallback_profiles||[])],
+            tinybrains_required_import_profiles:[...(this.supervisor.adapters?.tinybrains?.tinybrains_required_import_profiles||[])],
             tinybrains_imports:{...this.supervisor.adapters?.tinybrains?.tinybrains_imports},
             gpu_projects:this.projects.filter(project=>
                 this.supervisor.gpuEnabled===true&&
