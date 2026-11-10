@@ -1861,7 +1861,14 @@ a selected host measurement. With no explicit preference, measured host resource
 usage and the PPO update counter take priority within the 96-field chart cap;
 remaining slots retain trainer metrics. Full project telemetry is not filtered
 by these display choices. Host GPU utilization/VRAM measurements describe
-the pinned physical device, not isolated per-job GPU consumption.
+the pinned physical device, not isolated per-job GPU consumption. The native
+Hub also appends each distinct **received** validated source update to private
+`hub-observations-v1/<job-id>.jsonl` in its data directory, retaining source
+trainer metrics and observed resource metrics independently of chart limits.
+These files are diagnostic observations, not authoritative trainer histories;
+missed worker updates cannot be reconstructed. A failed archive write does not
+stop training and appears as an archive warning in Compare. This archive is
+append-only and should be included when managing the Hub's disk capacity.
 
 **Export complete job diagnostics** in Compare packages the selected local
 job histories and run-scoped text/JSON logs into independent ZIP archives of
@@ -1875,7 +1882,13 @@ When metrics are selected, the archive also includes
 `hub-selected-metric-samples.csv`: a metric-filtered, long-form CSV from the
 bounded Hub comparison history, with job IDs, timestamps, project steps,
 segments, values, and units. This CSV is **not** the full-resolution training
-history; the project-owned history files are included separately and unchanged.
+history. Native projects additionally include
+`hub-selected-observation-metrics.csv` containing every selected measurement
+in each locally retained Hub observation, before chart downsampling, with an
+origin column distinguishing trainer and resource measurements. The complete
+append-only Hub observations JSONL and project-owned histories are included as
+separate raw sources. These are not atomic cross-machine snapshots, and no
+received-observation CSV can supply trainer updates the Hub never observed.
 Running jobs can append to their logs during export. Each file is captured
 through its size when opened, not as one atomic multi-machine snapshot;
 `export-manifest.json` lists files that grew while being copied and the
