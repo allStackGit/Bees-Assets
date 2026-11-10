@@ -306,6 +306,10 @@ def trajectories(rollouts, horizon, behavior_id):
                 members_by_team = defaultdict(list)
                 for member in frame:
                     members_by_team[teams[member]].append(member)
+            # Group rewards depend on team and interval, not on the
+            # individual policy controller. Cache only for larger active
+            # cohorts; 1v1 avoids the per-frame dictionary allocation.
+            interval_rewards = {} if len(actions) > 4 else None
             for agent in actions:
                 row = frame[agent]
                 end = min(next_tick, closing[agent])
@@ -322,14 +326,25 @@ def trajectories(rollouts, horizon, behavior_id):
                 ]
                 mask = [np.array([False, not bit]) for bit in row["fire_allowed"]]
                 mask.append(row["special_allowed"] == 0)
-                times, amounts = reward_prefix[team]
+                if interval_rewards is None:
+                    times, amounts = reward_prefix[team]
+                    reward = float(amounts[bisect_right(times, end)] -
+                                   amounts[bisect_right(times, tick)])
+                else:
+                    interval = (team, end)
+                    reward = interval_rewards.get(interval)
+                    if reward is None:
+                        times, amounts = reward_prefix[team]
+                        reward = float(amounts[bisect_right(times, end)] -
+                                       amounts[bisect_right(times, tick)])
+                        interval_rewards[interval] = reward
                 steps = experiences[agent]
                 steps.append(AgentExperience(
                     [row["observations"]], 0.0, done, actions[agent],
                     LogProbsTuple(row["continuous_log_probs"], row["discrete_log_probs"]),
                     mask, previous.get(agent, initial_action),
                     False, None, group_status,
-                    float(amounts[bisect_right(times, end)] - amounts[bisect_right(times, tick)]),
+                    reward,
                 ))
                 previous[agent] = actions[agent].discrete
                 if done or len(steps) == horizon:
