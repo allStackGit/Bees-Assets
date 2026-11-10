@@ -2106,6 +2106,7 @@ function editableDefinition(item) {
             (item.stage_benchmarks ? 'each_stage' : item.benchmark ? 'final' : 'none'),
         benchmark_target:item.benchmark_target||null,
         reserve_heldout: Boolean(item.heldout_benchmarks),
+        metric_selection:item.metric_selection||[],
         trainer: {
             hyperparameters: Object.fromEntries(
                 ['beta', 'lambd', 'learning_rate', 'batch_size', 'buffer_size', 'num_epoch']
