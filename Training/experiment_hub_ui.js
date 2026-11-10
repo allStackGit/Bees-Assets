@@ -2654,7 +2654,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 confirm_queue:true,
                 learner:{configuration_id:selected.id,expected_revision:selected.revision,
                     machine_id:distributedMachine.value,resources},
-                collectors:budgets.map(resources=>({resources})),
+                collectors:budgets.map(item=>{
+                    if(!item||typeof item!=='object'||Array.isArray(item))
+                        throw Error('Each collector budget must be a JSON object.');
+                    const {threads,...resources}=item;
+                    return {resources,...(threads===undefined?{}:{threads})};
+                }),
             });
             distributedFeedback.textContent='Queued learner '+result.learner.id+
                 ' and '+result.collectors.length+' separate collector jobs. All '+
@@ -2689,7 +2694,7 @@ document.addEventListener('DOMContentLoaded', () => {
             distributedBudgetHost=machine?.id||null;
             distributedBudgets.value=JSON.stringify(
                 (machine?.tinybrains_remote_rollout_endpoints||[]).map(()=>
-                    ({cpus:2,ram_mb:4096,gpu_count:0})),null,2);
+                    ({cpus:2,ram_mb:4096,gpu_count:0,threads:2})),null,2);
         }
         const endpoints=machine?.tinybrains_remote_rollout_endpoints||[];
         const workers=endpoints.map(endpoint=>state.machines.filter(m=>
@@ -2705,7 +2710,7 @@ document.addEventListener('DOMContentLoaded', () => {
         distributedDetails.textContent=ready
             ?'Approved collectors: '+workers.map((items,i)=>
                 endpoints[i]+' on '+items[0].id).join('; ')+
-                '. Modify each worker budget or request its optional exclusive GPU.'
+                '. Modify each CPU/RAM budget, its independent threads setting, or request an exclusive CUDA GPU.'
             :'Register the tinybrains_rollout project and connect one distinct, matching worker for every approved endpoint.';
     }
     $('hub-job-configuration').addEventListener('change',renderDistributedGroup);
