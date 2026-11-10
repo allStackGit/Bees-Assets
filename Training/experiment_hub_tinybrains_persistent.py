@@ -19,12 +19,15 @@ def main():
     parser.add_argument("--live-matches", type=int, required=True)
     parser.add_argument("--waves", type=int, required=True)
     parser.add_argument("--actions", type=int, required=True)
-    parser.add_argument("--rocm-pci", required=True)
+    parser.add_argument("--device", choices=("cpu", "cuda"), default="cuda")
+    parser.add_argument("--rocm-pci")
     args = parser.parse_args()
     if min(args.updates, args.threads, args.live_matches, args.waves, args.actions) < 1:
         parser.error("All training limits must be positive.")
     if args.live_matches % args.waves:
         parser.error("Live matches must divide evenly into waves.")
+    if (args.device == "cuda") != bool(args.rocm_pci):
+        parser.error("ROCm PCI identity is required for GPU and forbidden for CPU.")
     run = args.run.resolve(strict=True)
     checkpoint = run / "self-play" / "latest.pt"
     spec = run / "run-spec.json"
@@ -41,14 +44,15 @@ def main():
         raise SystemExit("Hub PPO starting update differs from imported checkpoint.")
     # Both the Hub job and the Linux TinyBrains --max-ppo-updates option
     # count additional updates from the verified seed checkpoint.
-    from experiment_hub_tinybrains_rocm_verify import verify_runtime_device
-    verify_runtime_device(args.rocm_pci)
+    if args.device == "cuda":
+        from experiment_hub_tinybrains_rocm_verify import verify_runtime_device
+        verify_runtime_device(args.rocm_pci)
     sys.argv = [
         "ants_mapoca.learning_path",
         "--config", str(spec),
         "--out", str(run),
         "--persistent",
-        "--self-play-device", "cuda",
+        "--self-play-device", args.device,
         "--self-play-threads", str(args.threads),
         "--live-matches", str(args.live_matches),
         "--waves", str(args.waves),
