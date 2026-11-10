@@ -564,6 +564,7 @@ document.addEventListener('DOMContentLoaded', () => {
             new Option(comparisonAxisLabel('steps_completed'),'steps_completed'));
         axisSelect.value='steps_completed';
         const hasExportData=runs.some(run=>hubComparisonPoints(run).length);
+        $('hub-compare-export-full').disabled=!runs.length;
         $('hub-compare-export-csv').disabled=!hasExportData;
         $('hub-compare-export-json').disabled=!hasExportData&&!runs.some(run=>
             hubComparisonTerminal(run.job)||hubComparisonEvaluation(run.job));
@@ -901,6 +902,54 @@ document.addEventListener('DOMContentLoaded', () => {
         feedback('hub-compare-export-message','Exported '+runs.length+
             ' selected runs as '+format.toUpperCase()+
             '. This is observational progress, not independent evaluation.');
+    }
+    // The coordinator invokes only an installed trusted exporter. No browser
+    // request can choose a filesystem path, executable or checkpoint filename.
+    async function exportCompleteComparison() {
+        const ids=compareSlots.map(slot=>$('hub-compare-'+slot).value).filter(Boolean);
+        if(!ids.length||new Set(ids).size!==ids.length)
+            throw Error('Choose at least one distinct managed job.');
+        const button=$('hub-compare-export-full');
+        button.disabled=true;
+        const message=$('hub-compare-export-message');
+        try {
+            feedback('hub-compare-export-message','Preparing complete job archives; no training files will be modified.');
+            const requested=await action('hub/exports',{
+                project_id:project,job_ids:ids,
+                metrics:selectedComparisonMetrics().map(key=>key.slice(7)),
+            });
+            // An export is read-only and asynchronous. Poll its status rather
+            // than attempting a single unbounded HTTP download response.
+            for(let attempt=0;attempt<900;attempt++) {
+                await new Promise(resolve=>setTimeout(resolve,2000));
+                const response=await fetch('/api/hub/exports/'+requested.id,
+                    {cache:'no-store'});
+                const result=await response.json();
+                if(!response.ok)throw Error(result.error||response.statusText);
+                if(result.status==='failed')
+                    throw Error(result.error||'Job archive generation failed.');
+                if(result.status==='ready') {
+                    message.replaceChildren(document.createTextNode(
+                        result.parts.length+' independently downloadable ZIP part(s), each at most 500 MB. '+
+                        (result.missing_artifact_job_ids?.length
+                            ?'Some jobs have no local artifacts: '+
+                              result.missing_artifact_job_ids.join(', ')+'. ':'')+
+                        'Select each part: '));
+                    for(const [i,part] of result.parts.entries()) {
+                        const link=document.createElement('a');
+                        link.href='/api/hub/exports/'+requested.id+'/part/'+(i+1);
+                        link.textContent=part.name+' ('+(part.bytes/1e6).toFixed(1)+' MB)';
+                        link.rel='noopener';
+                        link.style.marginRight='12px';
+                        message.append(link);
+                    }
+                    return;
+                }
+                if(attempt%15===0)
+                    feedback('hub-compare-export-message','Preparing ZIP archives; project-owned histories remain untouched.');
+            }
+            throw Error('Export is still preparing. Check the export status before starting another.');
+        }finally { button.disabled=false; }
     }
     const tinyBrainsPicker=document.createElement('fieldset');
     tinyBrainsPicker.hidden=true;
@@ -2159,6 +2208,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 feedback('hub-compare-export-message',String(error.message||error));
             }
         });
+    $('hub-compare-export-full').addEventListener('click',async()=>{
+        try{await exportCompleteComparison();}
+        catch(error){
+            feedback('hub-compare-export-message',String(error.message||error));
+        }
+    });
     function candidateRankingText(decision) {
         if(!Array.isArray(decision.ranked)||!decision.ranked.length)
             throw Error('No comparable independently evaluated candidates.');
