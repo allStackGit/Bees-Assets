@@ -396,7 +396,7 @@ document.addEventListener('DOMContentLoaded', () => {
         $('bees-controls').hidden=project!=='bees' || !['train','monitor'].includes(tab);
         if(tab==='train'&&project==='bees') loadBeesControl();
         if(tab==='monitor'&&project==='bees') loadMonitorBees();
-        if(tab==='compare'&&project!=='bees')loadComparison();
+        if(tab==='compare')loadComparison();
         if(tab==='machines') loadLiveBeesWorkers();
     }
     const compareSlots=[];
@@ -425,7 +425,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     const chartAxes={steps_completed:{label:'Cumulative project steps'}};
     async function loadComparison() {
-        if(!state||project==='bees')return;
+        if(!state)return;
         const requested=project,serial=++comparisonRequest;
         try {
             const response=await fetch('/api/hub/progress?project_id='+
@@ -450,9 +450,11 @@ document.addEventListener('DOMContentLoaded', () => {
             ?'Cumulative TinyBrains updates':chartAxes[key]?.label;
     }
     function renderComparison() {
-        if(!state||project==='bees')return;
-        const jobs=state.jobs.filter(j=>j.project_id===project);
+        if(!state)return;
+        const jobs=project==='bees'?(state.bees?.runs||[]):
+            state.jobs.filter(j=>j.project_id===project);
         const samples=comparisonProject===project&&comparisonData?.samples||[];
+        $('hub-compare-selection-panel').hidden=project==='bees';
         const history=new Map(samples.map(s=>[s.job_id,s.points||[]]));
         const hasSamples=j=>j.live_execution?.progress||j.final_progress||history.get(j.id)?.length;
         const selectable=jobs.filter(j=>hasSamples(j)||hubComparisonEvaluation(j)||
@@ -564,7 +566,7 @@ document.addEventListener('DOMContentLoaded', () => {
             new Option(comparisonAxisLabel('steps_completed'),'steps_completed'));
         axisSelect.value='steps_completed';
         const hasExportData=runs.some(run=>hubComparisonPoints(run).length);
-        $('hub-compare-export-full').disabled=!runs.length;
+        $('hub-compare-export-full').disabled=!runs.length||project==='bees';
         $('hub-compare-export-csv').disabled=!hasExportData;
         $('hub-compare-export-json').disabled=!hasExportData&&!runs.some(run=>
             hubComparisonTerminal(run.job)||hubComparisonEvaluation(run.job));
@@ -835,9 +837,10 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
     function exportComparison(format) {
-        if(!state||project==='bees')
+        if(!state)
             throw Error('Select an available project comparison.');
-        const jobs=state.jobs.filter(job=>job.project_id===project);
+        const jobs=project==='bees'?(state.bees?.runs||[]):
+            state.jobs.filter(job=>job.project_id===project);
         const samples=comparisonProject===project&&comparisonData?.samples||[];
         const byJob=new Map(samples.map(sample=>
             [sample.job_id,sample.points||[]]));
