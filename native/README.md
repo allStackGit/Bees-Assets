@@ -165,8 +165,10 @@ The optimizer defaults to CPU; `--device cuda` or `--device cuda:N` selects
 a supported CUDA/ROCm PyTorch device. Results include optimizer throughput
 and elapsed time. A successful update writes `checkpoint.pt` and an updated
 `manifest.json` inside the new output directory, preserving non-learner
-model slots with paths rebased to that manifest's location. Subsequent
-rollouts can load the new manifest at an episode boundary.
+model slots with paths rebased to that manifest's location. It also
+writes synchronized `metrics.json` containing measured steps, update time
+and checkpoint/manifest hashes. Subsequent rollouts can load the new
+manifest at an episode boundary.
 For mixed-checkpoint self-play, pass `--learner-slot 0` (or the actual
 learner slot). The learner verifies that slot against the input checkpoint
 and excludes opponent decisions from optimization. Repeat
@@ -184,15 +186,22 @@ For one operator- or Experiment Hub-owned rollout followed by one optimizer
 update, run
 `python native/tools/train_policy_round.py run.json checkpoint.pt Training/rl_1v1_config.yaml fresh-round-directory`.
 Use `--learner-slot N` for mixed-checkpoint opponents, `--device cuda`
-for a supported GPU optimizer, and `--rollout-binary PATH` if the Rust
-runner is precompiled. The tool invokes the existing `policy_rollout` and
+for a supported GPU optimizer, `--seed-offset N` to vary source episode
+seeds reproducibly, and `--rollout-binary PATH` if the Rust runner is
+precompiled. The tool invokes the existing `policy_rollout` and
 `train_policy_capture.py` executables, generates a new run identity and
 unique notification/capture paths, and does not train after a failed
-rollout. It intentionally rejects `model_updates`: a training round must
-use one fixed behavior manifest. Each successful round reports the next
-checkpoint and manifest; pass these into the next invocation using the
-checkpoint positional argument and `--model-manifest PATH`.
-This is a single-round adapter, not a parallel scheduler or distributed trainer.
+rollout. Model-only rounds get their own durable connection checkpoint;
+network/recovery rounds continue using the configured original checkpoint,
+which requires exclusive operator ownership. The wrapper intentionally
+rejects `model_updates`: a training round uses one behavior manifest.
+A successful round synchronizes `learner/checkpoint.pt`,
+`learner/manifest.json`, `learner/metrics.json`, then writes
+`round-result.json` with verified input/output hashes and training
+measurements. The result file is the completion handoff; absent results
+are not successful rounds. Use its new checkpoint and `--model-manifest`
+path for the next invocation. This is a single-round adapter, not a
+parallel scheduler or distributed trainer.
 
 Completed worlds can be recycled up to `episodes_per_world` times through
 `NativeHostRuntime::reset_world`, with fresh monotonic squad lifetimes and
