@@ -337,37 +337,43 @@ class DockerSupervisor {
         if(memoryBlock)throw Error(memoryBlock);
         const d=fixedDockerSpec(this.adapters[job.project_id]);
         if(invocation.gpu) {
-            // The locally persistent owner independently checks shared GPU
-            // admission; a stale coordinator claim cannot overcommit the GPU.
-            if(this.state.some(x=>ACTIVE.has(x.state)&&x.gpu_node&&!x.gpu_pci_address))
-                throw Error('Unknown unresolved GPU ownership blocks new Docker GPU launches.');
-            const contenders=this.state.filter(x=>ACTIVE.has(x.state)&&
-                x.gpu_pci_address===invocation.gpu.binding.pci_address);
-            if(contenders.length) {
-                const requested=job.resources;
-                const compatible=requested.gpu_mode==='shared'&&
+            // The durable machine-local owner refuses overlaps even if the
+            // coordinator's admission ledger has become stale.
+            const active=this.state.filter(x=>ACTIVE.has(x.state));
+            const pciIds=x=>x.gpu_pci_addresses||[x.gpu_pci_address].filter(Boolean);
+            if(active.some(x=>(x.gpu_node||x.gpu_nodes?.length)&&!pciIds(x).length))
+                throw Error('Unresolved physical GPU ownership lacks a trustworthy PCI identity.');
+            for(const binding of invocation.gpu.bindings) {
+                const contenders=active.filter(x=>pciIds(x).includes(binding.pci_address));
+                if(!contenders.length)continue;
+                const compatible=job.resources.gpu_mode==='shared'&&
                     this.adapters[job.project_id].gpu_sharing==='cooperative-pytorch'&&
                     contenders.every(x=>x.gpu_mode==='shared'&&
                         Number.isSafeInteger(x.gpu_vram_mb)&&x.gpu_vram_mb>0&&
                         Number.isSafeInteger(x.gpu_compute_pct)&&x.gpu_compute_pct>0);
                 if(!compatible)
-                    throw Error('Hub already owns an exclusive or unresolved container on this GPU.');
-                const totalMemory=contenders.reduce((n,x)=>n+x.gpu_vram_mb,requested.gpu_vram_mb);
-                const totalCompute=contenders.reduce((n,x)=>n+x.gpu_compute_pct,requested.gpu_compute_pct);
-                if(totalMemory>invocation.gpu.binding.vram_mb||totalCompute>100)
-                    throw Error('Local cooperative GPU reservations exceed physical VRAM or advisory compute capacity.');
+                    throw Error('A leased GPU has exclusive or unresolved Docker ownership.');
+                const memory=contenders.reduce((n,x)=>n+x.gpu_vram_mb,
+                    job.resources.gpu_vram_mb);
+                const compute=contenders.reduce((n,x)=>n+x.gpu_compute_pct,
+                    job.resources.gpu_compute_pct);
+                if(memory>binding.vram_mb||compute>100)
+                    throw Error('Local cooperative GPU commitments exceed PCI-device capacity.');
             }
         }
         let plan=null;
         if(invocation.gpu) {
+            const bindings=invocation.gpu.bindings;
             const proof=gpuRuntimeProof(this.adapters[job.project_id],
                 job.frozen_parameters,{job_id:job.id,
                     project_id:job.project_id,
                     artifact_lineage_root_id:job.artifact_lineage_root_id||job.id,
                     continuation_of_job_id:job.continuation_of_job_id||null,
-                    gpu_pci_address:invocation.gpu.binding.pci_address});
-            await this.qualifyGpuDeviceAccess([invocation.gpu.binding],proof);
-            plan=resolveRocmDevices([invocation.gpu.binding]);
+                    ...(bindings.length===2
+                        ?{gpu_pci_addresses:bindings.map(b=>b.pci_address)}
+                        :{gpu_pci_address:bindings[0].pci_address})});
+            await this.qualifyGpuDeviceAccess(bindings,proof);
+            plan=resolveRocmDevices(bindings);
         }
         const imageId=await this.imageId(d.image);
         const name=containerName(job.id);
@@ -382,8 +388,12 @@ class DockerSupervisor {
             mounts:d.mounts.map(m=>[m.host,m.target,m.readonly]),
             user:d.uid+':'+d.gid,env:d.env,
             command:[invocation.executable,...invocation.args],
-            ...(plan?{gpu_node:plan.selected[0].node,
-                gpu_pci_address:plan.selected[0].pci_address,
+            ...(plan?{
+                ...(plan.selected.length===1
+                    ?{gpu_node:plan.selected[0].node,
+                        gpu_pci_address:plan.selected[0].pci_address}
+                    :{gpu_nodes:plan.selected.map(d=>d.node),
+                        gpu_pci_addresses:plan.selected.map(d=>d.pci_address)}),
                 gpu_identity:deviceIdentity(plan),
                 gpu_mode:job.resources.gpu_mode,
                 gpu_vram_mb:job.resources.gpu_mode==='shared'?job.resources.gpu_vram_mb:0,
