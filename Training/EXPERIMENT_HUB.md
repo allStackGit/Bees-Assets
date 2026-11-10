@@ -2371,8 +2371,10 @@ service to the public Internet.
    In **Train**, choose the saved learner configuration, enter its local
    CPU/RAM and one- or two-GPU budget, then use **Queue and reserve entire
    group**. Select Halifax and provide one CPU/RAM resource budget per
-   approved endpoint in the shown order. A worker budget may also request
-   one exclusive Windows CUDA GPU; no shared remote GPU is admitted.
+   approved endpoint in the shown order. Each collector may set an independent
+   `threads` count no greater than its leased CPUs or its locally approved
+   thread limit. A worker budget may also request one exclusive Windows CUDA
+   GPU; no shared remote GPU is admitted.
    The Hub creates each worker configuration, all jobs and all machine
    reservations atomically; if any physical worker or capacity is missing,
    no job or claim is committed. No process is started by this action.
