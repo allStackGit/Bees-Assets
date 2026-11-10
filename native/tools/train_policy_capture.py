@@ -15,7 +15,7 @@ from policy_worker import file_sha256, install_bees_actor, mlagents_behavior_spe
 from read_policy_capture import capture_frames
 
 
-def completed_rollouts(capture, journal, manifest, manifest_sha, checkpoint_sha, learner_slot=None):
+def completed_rollouts(capture, journal, manifest, manifest_sha, checkpoint_sha, learner_slot=None, stats=None):
     models = {entry["slot"]: entry for entry in manifest["models"]}
     matching = {
         slot for slot, entry in models.items()
@@ -80,6 +80,7 @@ def completed_rollouts(capture, journal, manifest, manifest_sha, checkpoint_sha,
     first_seen = deque()
     ready = set()
     completed = set()
+    queued_decisions = 0
     all_episodes_match = len(terminals) == len(all_terminals)
     for generation, rows in capture_frames(capture, journal_id):
         # Single-manifest captures can retain borrowed rows from one owned
@@ -132,6 +133,15 @@ def completed_rollouts(capture, journal, manifest, manifest_sha, checkpoint_sha,
                 if agent in frame:
                     raise ValueError("duplicate agent at a decision tick")
                 frame[agent] = row if owned_frame is not None else row.copy()
+                queued_decisions += 1
+
+        if stats is not None:
+            stats["peak_inflight_decisions"] = max(
+                stats.get("peak_inflight_decisions", 0), queued_decisions,
+            )
+            stats["peak_inflight_episodes"] = max(
+                stats.get("peak_inflight_episodes", 0), len(frames),
+            )
 
         # A completed episode can be handed to MA-POCA and released before
         # the rest of a long capture is loaded. Do not reorder episodes:
@@ -140,6 +150,7 @@ def completed_rollouts(capture, journal, manifest, manifest_sha, checkpoint_sha,
             key = first_seen.popleft()
             ready.remove(key)
             ticks = frames.pop(key)
+            queued_decisions -= sum(len(frame) for frame in ticks.values())
             episode_boundaries = boundaries.pop(key, {})
             completed.add(key)
             yield _validate_completed_episode(
@@ -409,10 +420,12 @@ def main():
     terminal_steps = 0
     episode_keys = set()
     opponent_steps = 0
+    capture_stats = {}
     for capture, journal, path in inputs:
         manifest, manifest_sha = manifests[path]
         for rollout in completed_rollouts(
             capture, journal, manifest, manifest_sha, input_sha, args.learner_slot,
+            stats=capture_stats,
         ):
             key, _, ticks, _, _, _, learning_agents = rollout
             if key in episode_keys:
@@ -500,6 +513,8 @@ def main():
         "terminal_steps": terminal_steps,
         "episodes": len(episode_keys),
         "opponent_steps": opponent_steps,
+        "capture_peak_inflight_decisions": capture_stats.get("peak_inflight_decisions", 0),
+        "capture_peak_inflight_episodes": capture_stats.get("peak_inflight_episodes", 0),
     }
     pending_metrics = args.output / "metrics.json.pending"
     with pending_metrics.open("x", encoding="utf-8") as output:
