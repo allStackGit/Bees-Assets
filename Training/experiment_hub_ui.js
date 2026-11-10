@@ -847,7 +847,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const tinyBrainsThreads=document.createElement('input');
     const tinyBrainsDevice=document.createElement('select');
     tinyBrainsDevice.append(new Option('Profile default',''),
-        new Option('CPU-only fallback (no GPU)','cpu'));
+        new Option('CPU-only fallback (no GPU)','cpu'),
+        new Option('Dedicated two-GPU split PPO (ROCm)','dual'));
     tinyBrainsThreads.type='number';
     tinyBrainsThreads.min='1';
     tinyBrainsThreads.max='256';
@@ -864,6 +865,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const hasThreads=tinyBrainsThreads.value.trim()!=='';
         const threads=hasThreads?tinyBrainsThreads.valueAsNumber:null;
         const cpuFallback=tinyBrainsDevice.value==='cpu';
+        const dualGpu=tinyBrainsDevice.value==='dual';
         if(hasThreads&&(!Number.isSafeInteger(threads)||threads<1||threads>256)) {
             feedback('hub-config-message','CPU threads must be a whole number from 1 to 256.');
             return;
@@ -880,6 +882,12 @@ document.addEventListener('DOMContentLoaded', () => {
             feedback('hub-config-message','No connected worker approves CPU-only fallback for this profile.');
             return;
         }
+        if(dualGpu&&!(state?.machines||[]).some(machine=>
+            machine.status==='connected'&&machine.tinybrains_profiles?.[profile]===digest&&
+            machine.tinybrains_dual_gpu_profiles?.includes(profile))) {
+            feedback('hub-config-message','No connected ROCm worker approves two-GPU split PPO for this profile.');
+            return;
+        }
         if(!profile||!digest||!Number.isSafeInteger(updates)||updates<1||updates>10000000) {
             feedback('hub-config-message','Select an approved profile and enter 1–10,000,000 updates.');
             return;
@@ -888,7 +896,7 @@ document.addEventListener('DOMContentLoaded', () => {
         $('hub-config-json').value=JSON.stringify({
             profile,profile_sha256:digest,updates,
             ...(hasThreads?{threads}:{}),
-            ...(cpuFallback?{device:'cpu'}:{}),
+            ...(cpuFallback?{device:'cpu'}:dualGpu?{device:'dual'}:{}),
             ...(sourceId&&sourceDigest?{
                 import_checkpoint:sourceId,
                 import_checkpoint_sha256:sourceDigest,
@@ -899,7 +907,9 @@ document.addEventListener('DOMContentLoaded', () => {
         feedback('hub-config-message','Profile and update count copied to the draft. '+
             (cpuFallback||!selected?.cudaWorkers
                 ?'When queueing, request CPU/RAM without GPUs. '
-                :'When queueing, request one GPU (exclusive, or an approved cooperative share) and sufficient CPU/RAM. ')+
+                :dualGpu
+                    ?'When queueing, request two EXCLUSIVE GPUs and sufficient CPU/RAM; a single PPO optimizer runs on one GPU while collection runs on the other. '
+                    :'When queueing, request one GPU (exclusive, or an approved cooperative share) and sufficient CPU/RAM. ')+
             (sourceId
                 ?'The source checkpoint SHA-256 is frozen; this draft can initialize a new lineage, not a continuation stage. '
                 :'Use a configuration without an import for checkpoint-continuation stages. ')+
@@ -1032,7 +1042,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 $('hub-config-name').value=c.name;
                 $('hub-config-json').value=JSON.stringify(c.parameters,null,2);
                 tinyBrainsThreads.value=c.parameters.threads??'';
-                tinyBrainsDevice.value=c.parameters.device==='cpu'?'cpu':'';
+                tinyBrainsDevice.value=['cpu','dual'].includes(c.parameters.device)
+                    ?c.parameters.device:'';
                 setEvaluationEditor(c.evaluation_stop);
                 $('hub-config-save').textContent='Save revision';
                 feedback('hub-config-message','Editing revision '+c.revision);
@@ -1042,7 +1053,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 $('hub-config-name').value=(c.name+' copy').slice(0,100);
                 $('hub-config-json').value=JSON.stringify(c.parameters,null,2);
                 tinyBrainsThreads.value=c.parameters.threads??'';
-                tinyBrainsDevice.value=c.parameters.device==='cpu'?'cpu':'';
+                tinyBrainsDevice.value=['cpu','dual'].includes(c.parameters.device)
+                    ?c.parameters.device:'';
                 setEvaluationEditor(c.evaluation_stop);
                 feedback('hub-config-message','Duplicated into a new unsaved draft. Select Save draft to retain it.');
             }));
@@ -1484,7 +1496,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if(j.status==='waiting_adapter'&&readiness?.eligible===true)
                 actions.append(button('Start native job',async()=>{
                     const windows=machine.agent_platform==='win32';
-                    const gpu=j.resources.gpu_count===1;
+                    const gpu=j.resources.gpu_count>0;
                     const autoRelease=$('hub-native-release-on-terminal').checked;
                     if(!confirm((gpu?'Authorize native '+(j.resources.gpu_mode==='shared'
                             ?'cooperative shared':'exclusive')+' GPU execution for ':
@@ -2544,9 +2556,9 @@ document.addEventListener('DOMContentLoaded', () => {
             };
             const cpus=integer('hub-build-cpus',1,4096);
             const ram_mb=integer('hub-build-ram',128,100000000);
-            const gpu_count=integer('hub-build-gpu-count',0,32);
-            if(gpu_count>1)
-                throw Error('Native Start currently supports at most one GPU per job. Use separate jobs for multiple devices.');
+            const gpu_count=integer('hub-build-gpu-count',0,2);
+            if(gpu_count===2&&mode==='shared')
+                throw Error('Two-GPU TinyBrains training requires exclusive GPUs; shared mode supports one GPU.');
             const mode=builderMode.value;
             const min_gpu_vram_mb=integer('hub-build-gpu-min-vram',0,1000000);
             const raw=$('hub-build-gpu-ids').value.trim();
