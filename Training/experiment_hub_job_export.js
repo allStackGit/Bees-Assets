@@ -120,7 +120,10 @@ class JobExporter {
             project_id:project,jobs,metrics:value.metrics,
             include_replays:value.include_replays===true,
             artifact_root:root,progress,
-            ...(legacy?{additional_sources:this.legacyBees.sources(jobs)}:{}),
+            additional_sources:legacy?this.legacyBees.sources(jobs):jobs.map(job=>({
+                job_id:job.id,label:'hub-observations',
+                path:path.join(this.dataRoot,'hub-observations-v1',job.id+'.jsonl'),
+            })),
         }),{flag:'wx',mode:0o600});
         const id=crypto.randomUUID();
         const session={id,dir,project,status:'preparing',parts:[],error:null};
