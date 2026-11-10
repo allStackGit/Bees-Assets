@@ -22,7 +22,6 @@ function createNativeBeesAdapter({
     learnerSlot,
 }) {
     const executable = trustedFile(pythonPath);
-    const binary = trustedFile(rolloutBinary);
     const run = trustedFile(runConfig);
     const trainer = trustedFile(trainerConfig);
     const input = trustedFile(checkpoint);
@@ -37,6 +36,8 @@ function createNativeBeesAdapter({
 
     const runBytes = fs.readFileSync(run);
     const config = JSON.parse(runBytes);
+    const bundleRound = Object.hasOwn(config, 'rollout_bundles');
+    const binary = bundleRound ? null : trustedFile(rolloutBinary);
     if (config.hivemind != null || config.recover_notifications?.length ||
         config.recover_outcome_journals?.length || config.model_updates?.length ||
         !path.isAbsolute(config.python || '') || trustedFile(config.python) !== executable ||
@@ -125,7 +126,8 @@ function createNativeBeesAdapter({
             const output = jobRoot(context);
             const {config_sha256, seed_offset} = parameters;
             if (Object.keys(parameters).some(key => !['config_sha256', 'seed_offset'].includes(key)) ||
-                config_sha256 !== configSha256 || !Number.isSafeInteger(seed_offset) || seed_offset < 0)
+                config_sha256 !== configSha256 || !Number.isSafeInteger(seed_offset) || seed_offset < 0 ||
+                (bundleRound && seed_offset !== 0))
                 throw Error('Native Bees requires the approved configuration digest and a seed offset.');
             for (const [file, digest] of pins) {
                 if (sha256(fs.readFileSync(file)) !== digest)
@@ -136,7 +138,7 @@ function createNativeBeesAdapter({
                 context.expected_parent_model_sha256 !== inputs.checkpointDigest)
                 throw Error('Native Bees predecessor differs from the verified Hub checkpoint.');
             return ['-B', runner, run, inputs.checkpoint, trainer, output,
-                '--model-manifest', inputs.manifest, '--rollout-binary', binary,
+                '--model-manifest', inputs.manifest, ...(binary ? ['--rollout-binary', binary] : []),
                 '--stage-diagnostics',
                 '--seed-offset', String(seed_offset),
                 ...(learnerSlot === undefined ? [] : ['--learner-slot', String(learnerSlot)])];
@@ -173,6 +175,9 @@ function createNativeBeesAdapter({
                         rollout_policy_rows_per_second: {
                             value: rollout.successful_policy_rows / rollout.wall_seconds, unit: 'rate',
                         },
+                    } : {}),
+                    ...(receipt.rollout_bundles ? {
+                        imported_rollout_bundles: {value: receipt.rollout_bundles.length, unit: 'count'},
                     } : {}),
                     ...(modelTiming ? {
                         rollout_sampled_model_calls: {value: modelTiming.calls, unit: 'count'},

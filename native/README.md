@@ -239,6 +239,13 @@ local adapter map under that ID. Configure absolute `pythonPath`,
 `artifactRoot` paths, plus `learnerSlot` for a mixed manifest.
 The job's frozen parameters are `config_sha256` (the adapter's
 exported digest) and a nonnegative integer `seed_offset`.
+To queue an update from transferred captures, use a template with
+`run_id`, `python`, `model_manifest`, and `rollout_bundles`, a list of
+`{path, sha256}` receipt records, in place of live Levels. These jobs use
+`seed_offset: 0` and require only the learner runtime. Bundle paths are
+relative to the template or absolute. The job verifies the approved
+receipt digests and publishes the same checkpoint completion record as
+a local rollout round.
 The adapter reports completed-round metrics from the receipt and uses
 the Hub's process-group stop. Each job runs one CPU update. A checkpoint
 pipeline keeps the approved configuration digest and uses each predecessor's

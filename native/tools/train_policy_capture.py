@@ -236,9 +236,13 @@ def trajectories(rollouts, horizon, behavior_id):
                     experiences[agent] = []
 
 
-def bundle_captures(receipt_path, manifest_sha, checkpoint_sha, learner_slot):
-    root = receipt_path.resolve(strict=True).parent
-    receipt = json.loads(receipt_path.read_bytes())
+def bundle_captures(receipt_path, manifest_sha, checkpoint_sha, learner_slot, expected_sha=None):
+    receipt_path = receipt_path.resolve(strict=True)
+    root = receipt_path.parent
+    content = receipt_path.read_bytes()
+    if expected_sha is not None and hashlib.sha256(content).hexdigest() != expected_sha:
+        raise ValueError("rollout bundle receipt differs from the approved digest")
+    receipt = json.loads(content)
     if (receipt.get("schema_version") != 1 or receipt.get("kind") != "native_rollout_bundle" or
             receipt.get("input_manifest_sha256") != manifest_sha or
             receipt.get("input_checkpoint_sha256") != checkpoint_sha or
@@ -276,9 +280,13 @@ def main():
     )
     parser.add_argument("--rollout-bundle", type=Path, action="append", default=[],
                         help="import a completed collection receipt and its captures")
+    parser.add_argument("--pinned-rollout-bundle", nargs=2, action="append", default=[],
+                        metavar=("RECEIPT", "SHA256"), help="import a receipt with an approved digest")
     args = parser.parse_args()
+    bundles = [(path, None) for path in args.rollout_bundle]
+    bundles.extend((Path(path), digest) for path, digest in args.pinned_rollout_bundle)
     if (args.capture is None) != (args.journal is None) or (
-            args.capture is None and not (args.rollout_bundle or args.rollout)):
+            args.capture is None and not (bundles or args.rollout)):
         parser.error("supply a capture and journal or completed rollout inputs")
 
     import torch
@@ -339,10 +347,12 @@ def main():
         source.seek(0)
         if stream_sha256(source) != input_sha:
             raise ValueError("optimizer input checkpoint changed while loading")
-    for receipt in args.rollout_bundle:
+    for receipt, digest in bundles:
         inputs.extend(
             (capture, journal, primary_path)
-            for capture, journal in bundle_captures(receipt, primary_manifest_sha, input_sha, args.learner_slot)
+            for capture, journal in bundle_captures(
+                receipt, primary_manifest_sha, input_sha, args.learner_slot, digest,
+            )
         )
     args.output.mkdir()
     trainer = POCATrainer(behavior.brain_name, 100, settings, True, False, 0, str(args.output))

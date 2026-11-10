@@ -7,6 +7,7 @@ never converts a failed or incomplete rollout into training data.
 
 import argparse
 from concurrent.futures import ThreadPoolExecutor
+import hashlib
 import json
 import math
 import os
@@ -192,6 +193,53 @@ def publish_receipt(output, filename, receipt):
     print(json.dumps(receipt), flush=True)
 
 
+def optimize(args, output, python, manifest, checkpoint, trainer_config, result, rollout_args):
+    learner_dir = output / "learner"
+    primary = [result["capture"], result["journal"]] if "capture" in result else []
+    train_command = [
+        python, str(Path(__file__).with_name("train_policy_capture.py")),
+        *primary, str(manifest), str(checkpoint), str(trainer_config), str(learner_dir),
+        "--device", args.device, *rollout_args,
+    ]
+    if args.learner_slot is not None:
+        train_command += ["--learner-slot", str(args.learner_slot)]
+    run_stage(train_command, output / "optimizer.log" if args.stage_diagnostics else None)
+    next_checkpoint = learner_dir / "checkpoint.pt"
+    next_manifest = learner_dir / "manifest.json"
+    metrics = json.loads((learner_dir / "metrics.json").read_text(encoding="utf-8"))
+    input_checkpoint_sha = result["input_checkpoint_sha256"]
+    input_manifest_sha = result["input_manifest_sha256"]
+    if (file_sha256(checkpoint) != input_checkpoint_sha or
+            file_sha256(manifest) != input_manifest_sha):
+        raise ValueError("round input checkpoint or manifest changed after training began")
+    for bundle in result.get("rollout_bundles", []):
+        if file_sha256(Path(bundle["path"])) != bundle["sha256"]:
+            raise ValueError("rollout bundle receipt changed during training")
+    checkpoint_sha = file_sha256(next_checkpoint)
+    manifest_sha = file_sha256(next_manifest)
+    if (not isinstance(metrics, dict) or metrics.get("schema_version") != 1 or
+            metrics.get("source") != "bees-native-ma-poca-v1" or
+            metrics.get("input_checkpoint_sha256") != input_checkpoint_sha or
+            metrics.get("input_manifest_sha256") != input_manifest_sha or
+            metrics.get("next_checkpoint_sha256") != checkpoint_sha or
+            metrics.get("next_manifest_sha256") != manifest_sha or
+            metrics.get("learner_slot") != args.learner_slot or
+            type(metrics.get("optimizer_input_steps")) is not int or
+            metrics["optimizer_input_steps"] < 1 or
+            type(metrics.get("episodes")) is not int or metrics["episodes"] < 1):
+        raise ValueError("native learner completion receipt disagrees with its model artifacts")
+    publish_receipt(output, "round-result.json", {
+        "schema_version": 1,
+        "kind": "native_training_round_complete",
+        **result,
+        "learner_metrics": metrics,
+        "next_checkpoint": str(next_checkpoint),
+        "next_checkpoint_sha256": checkpoint_sha,
+        "next_manifest": str(next_manifest),
+        "next_manifest_sha256": manifest_sha,
+    })
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("run_config", type=Path)
@@ -219,7 +267,8 @@ def main() -> None:
     run_path = args.run_config.resolve(strict=True)
     checkpoint = args.checkpoint.resolve(strict=True)
     trainer_config = args.trainer_config.resolve(strict=True)
-    run_document = json.loads(run_path.read_text(encoding="utf-8"))
+    run_bytes = run_path.read_bytes()
+    run_document = json.loads(run_bytes)
     if not isinstance(run_document, dict):
         parser.error("run configuration must be an object")
     manifest_value = args.model_manifest or run_document.get("model_manifest")
@@ -231,6 +280,43 @@ def main() -> None:
     manifest = manifest.resolve(strict=True)
     input_checkpoint_sha = check_learner(manifest, checkpoint, args.learner_slot)
     input_manifest_sha = file_sha256(manifest)
+    output = args.output_dir.resolve()
+    result = {
+        "seed_offset": args.seed_offset,
+        "input_checkpoint_sha256": input_checkpoint_sha,
+        "input_manifest_sha256": input_manifest_sha,
+    }
+    if "rollout_bundles" in run_document:
+        if (args.collect_only or args.seed_offset or run_document.get("levels") or
+                any(run_document.get(key) for key in (
+                    "hivemind", "model_updates", "recover_notifications", "recover_outcome_journals",
+                ))):
+            parser.error("bundle rounds use completed captures without live Levels or seed shifts")
+        bundles = run_document["rollout_bundles"]
+        if not isinstance(bundles, list) or not bundles:
+            parser.error("rollout_bundles must list at least one pinned receipt")
+        run_id = run_document.get("run_id")
+        python = run_document.get("python")
+        if not isinstance(run_id, str) or not run_id.strip() or not isinstance(python, str) or not python:
+            parser.error("bundle rounds require a run ID and Python interpreter")
+        pinned = []
+        rollout_args = []
+        for bundle in bundles:
+            path = resolved(run_path.parent, bundle["path"])
+            digest = file_sha256(Path(path))
+            if digest != bundle["sha256"]:
+                raise ValueError("rollout bundle receipt differs from the approved digest")
+            pinned.append({"path": path, "sha256": digest})
+            rollout_args.extend(["--pinned-rollout-bundle", path, digest])
+        output.mkdir(parents=True, exist_ok=False)
+        result.update(
+            run_id=f"{run_id}-{uuid.uuid4().hex}",
+            run_config=str(run_path),
+            run_config_sha256=hashlib.sha256(run_bytes).hexdigest(),
+            rollout_bundles=pinned,
+        )
+        optimize(args, output, python, manifest, checkpoint, trainer_config, result, rollout_args)
+        return
     if args.rollout_binary is None and shutil.which("cargo") is None:
         parser.error("cargo was not found; provide --rollout-binary")
     if args.rollout_binary is not None:
@@ -243,7 +329,6 @@ def main() -> None:
             "-p", "bees-host", "--example", "policy_rollout", "--",
         ]
 
-    output = args.output_dir.resolve()
     config = source_config(run_path, manifest, output)
     shifted_seeds(config, args.seed_offset)
     workers = config.pop("rollout_workers", 1)
@@ -312,64 +397,24 @@ def main() -> None:
             "rollout_metrics": rollout,
         })
         return
-    learner_dir = output / "learner"
-    train_command = [
-        config["python"], str(Path(__file__).with_name("train_policy_capture.py")),
-        first["policy_capture"], first["notifications"],
-        str(manifest), str(checkpoint), str(trainer_config), str(learner_dir),
-        "--device", args.device,
-    ]
+    rollout_args = []
     for shard, _ in shards[1:]:
-        train_command += ["--rollout", shard["policy_capture"], shard["notifications"], str(manifest)]
-    if args.learner_slot is not None:
-        train_command += ["--learner-slot", str(args.learner_slot)]
-    run_stage(train_command, output / "optimizer.log" if args.stage_diagnostics else None)
-    next_checkpoint = learner_dir / "checkpoint.pt"
-    next_manifest = learner_dir / "manifest.json"
-    metrics = json.loads((learner_dir / "metrics.json").read_text(encoding="utf-8"))
-    if (file_sha256(checkpoint) != input_checkpoint_sha or
-            file_sha256(manifest) != input_manifest_sha):
-        raise ValueError("round input checkpoint or manifest changed after training began")
-    checkpoint_sha = file_sha256(next_checkpoint)
-    manifest_sha = file_sha256(next_manifest)
-    if (not isinstance(metrics, dict) or metrics.get("schema_version") != 1 or
-            metrics.get("source") != "bees-native-ma-poca-v1" or
-            metrics.get("input_checkpoint_sha256") != input_checkpoint_sha or
-            metrics.get("input_manifest_sha256") != input_manifest_sha or
-            metrics.get("next_checkpoint_sha256") != checkpoint_sha or
-            metrics.get("next_manifest_sha256") != manifest_sha or
-            metrics.get("learner_slot") != args.learner_slot or
-            type(metrics.get("optimizer_input_steps")) is not int or
-            metrics["optimizer_input_steps"] < 1 or
-            type(metrics.get("episodes")) is not int or metrics["episodes"] < 1):
-        raise ValueError("native learner completion receipt disagrees with its model artifacts")
-    result = {
-        "schema_version": 1,
-        "kind": "native_training_round_complete",
-        "run_id": first["run_id"],
-        "seed_offset": args.seed_offset,
-        "run_config": str(config_path),
-        "run_config_sha256": file_sha256(config_path),
-        "input_checkpoint_sha256": input_checkpoint_sha,
-        "input_manifest_sha256": input_manifest_sha,
-        "capture": first["policy_capture"],
-        "journal": first["notifications"],
-        "rollout_metrics": rollout,
-        "learner_metrics": metrics,
-        "next_checkpoint": str(next_checkpoint),
-        "next_checkpoint_sha256": checkpoint_sha,
-        "next_manifest": str(next_manifest),
-        "next_manifest_sha256": manifest_sha,
-    }
+        rollout_args += ["--rollout", shard["policy_capture"], shard["notifications"], str(manifest)]
+    result.update(
+        run_id=first["run_id"],
+        run_config=str(config_path),
+        run_config_sha256=file_sha256(config_path),
+        capture=first["policy_capture"],
+        journal=first["notifications"],
+        rollout_metrics=rollout,
+    )
     if workers > 1:
         result["rollout_shards"] = [
             {"run_config": str(path), "run_config_sha256": file_sha256(path),
              "capture": shard["policy_capture"], "journal": shard["notifications"]}
             for shard, path in shards
         ]
-    # The result is the only handoff marker for schedulers. An interrupted
-    # optimizer never publishes it, even when some output files exist.
-    publish_receipt(output, "round-result.json", result)
+    optimize(args, output, config["python"], manifest, checkpoint, trainer_config, result, rollout_args)
 
 
 if __name__ == "__main__":
