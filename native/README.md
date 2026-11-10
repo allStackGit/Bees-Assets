@@ -171,12 +171,29 @@ For mixed-checkpoint self-play, pass `--learner-slot 0` (or the actual
 learner slot). The learner verifies that slot against the input checkpoint
 and excludes opponent decisions from optimization. Repeat
 `--rollout CAPTURE JOURNAL MANIFEST` to combine independent captures of
-the same learner checkpoint in one update. Supply enough learner decisions
-for a configured minibatch. The learner uses
-the native group's terminal rewards. For an individual death, it closes that
+the same learner checkpoint in one update. If a completed capture contains
+scheduled model switches, the learner selects only episodes whose recorded
+manifest digest matches its supplied manifest and verifies the generation
+on each captured decision. Supply enough learner decisions for a configured
+minibatch. The learner uses the native group's terminal rewards. For an individual death, it closes that
 controller's trajectory and bootstraps using surviving teammates. Controllers
 lost when their side is eliminated receive the source's inactive faction
 observation and final group reward. Controller rebinding is still unsupported.
+
+For one operator- or Experiment Hub-owned rollout followed by one optimizer
+update, run
+`python native/tools/train_policy_round.py run.json checkpoint.pt Training/rl_1v1_config.yaml fresh-round-directory`.
+Use `--learner-slot N` for mixed-checkpoint opponents, `--device cuda`
+for a supported GPU optimizer, and `--rollout-binary PATH` if the Rust
+runner is precompiled. The tool invokes the existing `policy_rollout` and
+`train_policy_capture.py` executables, generates a new run identity and
+unique notification/capture paths, and does not train after a failed
+rollout. It intentionally rejects `model_updates`: a training round must
+use one fixed behavior manifest. Each successful round reports the next
+checkpoint and manifest; pass these into the next invocation using the
+checkpoint positional argument and `--model-manifest PATH`.
+This is a single-round adapter, not a parallel scheduler or distributed trainer.
+
 Completed worlds can be recycled up to `episodes_per_world` times through
 `NativeHostRuntime::reset_world`, with fresh monotonic squad lifetimes and
 per-episode deterministic seeds. Each replay uses the exact initial exported
