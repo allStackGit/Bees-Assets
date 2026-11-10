@@ -43,6 +43,7 @@ class LocalExecution {
             tinybrains_thread_overrides:[...(this.supervisor.adapters?.tinybrains?.tinybrains_thread_overrides||[])],
             tinybrains_cpu_fallback_profiles:[...(this.supervisor.adapters?.tinybrains?.tinybrains_cpu_fallback_profiles||[])],
             tinybrains_required_import_profiles:[...(this.supervisor.adapters?.tinybrains?.tinybrains_required_import_profiles||[])],
+            tinybrains_remote_rollout_profiles:[...(this.supervisor.adapters?.tinybrains?.tinybrains_remote_rollout_profiles||[])],
             tinybrains_dual_gpu_profiles:this.supervisor.gpuEnabled===true&&
                 this.supervisor instanceof DockerSupervisor&&
                 this.supervisor.adapters?.tinybrains?.gpu_dual_execution==='split-ppo'
