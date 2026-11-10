@@ -280,12 +280,24 @@ def trajectories(rollouts, horizon, behavior_id):
                 agent: ActionTuple(row["sampled_continuous"], row["discrete"].astype(np.int32))
                 for agent, row in frame.items() if agent in learning_agents
             }
+            # Keep the tiny 1v1 path allocation-free. For large mixed-team
+            # batches, index the frame once instead of scanning every enemy
+            # for each MA-POCA groupmate query. Preserve frame order.
+            members_by_team = None
+            if len(frame) > 4:
+                members_by_team = defaultdict(list)
+                for member in frame:
+                    members_by_team[teams[member]].append(member)
             for agent in actions:
                 row = frame[agent]
                 end = min(next_tick, closing[agent])
                 done = end == closing[agent]
                 team = teams[agent]
-                mates = [mate for mate in frame if mate != agent and teams[mate] == team]
+                mates = (
+                    [mate for mate in members_by_team[team] if mate != agent]
+                    if members_by_team is not None else
+                    [mate for mate in frame if mate != agent and teams[mate] == team]
+                )
                 group_status = [
                     AgentStatus([frame[mate]["observations"]], 0.0, actions[mate], closing[mate] <= end)
                     for mate in mates
