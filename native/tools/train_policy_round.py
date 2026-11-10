@@ -7,6 +7,7 @@ never converts a failed or incomplete rollout into training data.
 
 import argparse
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -173,14 +174,53 @@ def main() -> None:
     subprocess.run(train_command, check=True)
     next_checkpoint = learner_dir / "checkpoint.pt"
     next_manifest = learner_dir / "manifest.json"
-    print(json.dumps({
+    metrics = json.loads((learner_dir / "metrics.json").read_text(encoding="utf-8"))
+    input_checkpoint_sha = file_sha256(checkpoint)
+    input_manifest_sha = file_sha256(manifest)
+    checkpoint_sha = file_sha256(next_checkpoint)
+    manifest_sha = file_sha256(next_manifest)
+    if (not isinstance(metrics, dict) or metrics.get("schema_version") != 1 or
+            metrics.get("source") != "bees-native-ma-poca-v1" or
+            metrics.get("input_checkpoint_sha256") != input_checkpoint_sha or
+            metrics.get("input_manifest_sha256") != input_manifest_sha or
+            metrics.get("next_checkpoint_sha256") != checkpoint_sha or
+            metrics.get("next_manifest_sha256") != manifest_sha or
+            metrics.get("learner_slot") != args.learner_slot or
+            type(metrics.get("optimizer_input_steps")) is not int or
+            metrics["optimizer_input_steps"] < 1 or
+            type(metrics.get("episodes")) is not int or metrics["episodes"] < 1):
+        raise ValueError("native learner completion receipt disagrees with its model artifacts")
+    result = {
+        "schema_version": 1,
         "kind": "native_training_round_complete",
         "run_id": config["run_id"],
+        "seed_offset": args.seed_offset,
+        "run_config": str(config_path),
+        "run_config_sha256": file_sha256(config_path),
+        "input_checkpoint_sha256": input_checkpoint_sha,
+        "input_manifest_sha256": input_manifest_sha,
+        "capture": str(output / "decisions.bin"),
+        "journal": str(output / "events.jsonl"),
+        "learner_metrics": metrics,
         "next_checkpoint": str(next_checkpoint),
-        "next_checkpoint_sha256": file_sha256(next_checkpoint),
+        "next_checkpoint_sha256": checkpoint_sha,
         "next_manifest": str(next_manifest),
-        "next_manifest_sha256": file_sha256(next_manifest),
-    }), flush=True)
+        "next_manifest_sha256": manifest_sha,
+    }
+    # The result is the only handoff marker for schedulers. An interrupted
+    # optimizer never publishes it, even when some output files exist.
+    with (output / "round-result.json").open("x", encoding="utf-8") as stream:
+        json.dump(result, stream, indent=2)
+        stream.write("\n")
+        stream.flush()
+        os.fsync(stream.fileno())
+    if os.name == "posix":
+        directory = os.open(output, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
+    print(json.dumps(result), flush=True)
 
 
 if __name__ == "__main__":
