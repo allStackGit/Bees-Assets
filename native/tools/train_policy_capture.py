@@ -236,10 +236,33 @@ def trajectories(rollouts, horizon, behavior_id):
                     experiences[agent] = []
 
 
+def bundle_captures(receipt_path, manifest_sha, checkpoint_sha, learner_slot):
+    root = receipt_path.resolve(strict=True).parent
+    receipt = json.loads(receipt_path.read_bytes())
+    if (receipt.get("schema_version") != 1 or receipt.get("kind") != "native_rollout_bundle" or
+            receipt.get("input_manifest_sha256") != manifest_sha or
+            receipt.get("input_checkpoint_sha256") != checkpoint_sha or
+            receipt.get("learner_slot") != learner_slot or not receipt.get("captures")):
+        raise ValueError("native rollout bundle does not match the learner inputs")
+    for entry in receipt["captures"]:
+        files = []
+        for key in ("policy_capture", "notifications"):
+            record = entry[key]
+            relative = Path(record["path"])
+            artifact = (root / relative).resolve(strict=True)
+            if (relative.is_absolute() or not artifact.is_relative_to(root) or
+                    not artifact.is_file() or file_sha256(artifact) != record["sha256"]):
+                raise ValueError(f"native rollout bundle has invalid {key} artifact")
+            files.append(artifact)
+        yield tuple(files)
+
+
 def main():
     started_at = time.perf_counter()
     parser = argparse.ArgumentParser(description=__doc__)
-    for name in ("capture", "journal", "manifest", "checkpoint", "config", "output"):
+    for name in ("capture", "journal"):
+        parser.add_argument(name, type=Path, nargs="?")
+    for name in ("manifest", "checkpoint", "config", "output"):
         parser.add_argument(name, type=Path)
     parser.add_argument("--learner-slot", type=int, help="train only on this manifest slot")
     parser.add_argument(
@@ -251,7 +274,12 @@ def main():
         metavar=("CAPTURE", "JOURNAL", "MANIFEST"),
         help="add another completed capture sampled from the same learner checkpoint",
     )
+    parser.add_argument("--rollout-bundle", type=Path, action="append", default=[],
+                        help="import a completed collection receipt and its captures")
     args = parser.parse_args()
+    if (args.capture is None) != (args.journal is None) or (
+            args.capture is None and not (args.rollout_bundle or args.rollout)):
+        parser.error("supply a capture and journal or completed rollout inputs")
 
     import torch
     import yaml
@@ -292,16 +320,18 @@ def main():
             network.memory is not None or not network.normalize or
             (network.hidden_units, network.num_layers) != (128, 3) or settings.time_horizon <= 0):
         parser.error("expected a feed-forward structured v26 MA-POCA trainer configuration")
+    primary_path = args.manifest.resolve(strict=True)
+    direct_inputs = [(args.capture, args.journal, primary_path)] if args.capture else []
     inputs = [
         (capture, journal, manifest.resolve(strict=True))
-        for capture, journal, manifest in [(args.capture, args.journal, args.manifest), *args.rollout]
+        for capture, journal, manifest in [*direct_inputs, *args.rollout]
     ]
     manifests = {}
-    for _, _, path in inputs:
+    for path in [primary_path, *(path for _, _, path in inputs)]:
         if path not in manifests:
             content = path.read_bytes()
             manifests[path] = json.loads(content), hashlib.sha256(content).hexdigest()
-    primary_manifest, primary_manifest_sha = manifests[inputs[0][2]]
+    primary_manifest, primary_manifest_sha = manifests[primary_path]
     with args.checkpoint.open("rb") as source:
         input_sha = stream_sha256(source)
         source.seek(0)
@@ -309,6 +339,11 @@ def main():
         source.seek(0)
         if stream_sha256(source) != input_sha:
             raise ValueError("optimizer input checkpoint changed while loading")
+    for receipt in args.rollout_bundle:
+        inputs.extend(
+            (capture, journal, primary_path)
+            for capture, journal in bundle_captures(receipt, primary_manifest_sha, input_sha, args.learner_slot)
+        )
     args.output.mkdir()
     trainer = POCATrainer(behavior.brain_name, 100, settings, True, False, 0, str(args.output))
     policy = trainer.create_policy(behavior, mlagents_behavior_spec())

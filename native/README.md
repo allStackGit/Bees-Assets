@@ -221,6 +221,17 @@ and seed. The learner waits for every shard to complete, then performs one
 update on the combined capture. The receipt lists each shard and reports
 elapsed rollout wall time. Sampled backend seconds sum work across workers.
 
+Add `--collect-only` to the round command on a model-only worker to stop
+after publishing `rollout-bundle.json`. Transfer the receipt and its listed
+capture and journal files together, preserving relative paths. Use the same
+manifest bytes, checkpoint and learner slot on each worker and learner.
+The learner verifies those inputs and the transferred file digests before
+processing trajectories. Repeat `--rollout-bundle` to combine worker bundles:
+
+```text
+python native/tools/train_policy_capture.py manifest.json checkpoint.pt trainer.yaml learner-out --rollout-bundle incoming/rollout-bundle.json
+```
+
 To queue this round in Experiment Hub, register a separate `bees_native`
 project and expose `createNativeBeesAdapter` from the worker's trusted
 local adapter map under that ID. Configure absolute `pythonPath`,

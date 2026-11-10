@@ -175,6 +175,23 @@ def combined_rollout_metrics(shards, wall_seconds):
     return metrics
 
 
+def publish_receipt(output, filename, receipt):
+    pending = output / (filename + ".pending")
+    with pending.open("x", encoding="utf-8") as stream:
+        json.dump(receipt, stream, indent=2)
+        stream.write("\n")
+        stream.flush()
+        os.fsync(stream.fileno())
+    os.replace(pending, output / filename)
+    if os.name == "posix":
+        directory = os.open(output, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
+    print(json.dumps(receipt), flush=True)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("run_config", type=Path)
@@ -193,6 +210,8 @@ def main() -> None:
                         help="use a compiled policy_rollout binary instead of cargo run")
     parser.add_argument("--stage-diagnostics", action="store_true",
                         help="capture stage output in separate files for supervised execution")
+    parser.add_argument("--collect-only", action="store_true",
+                        help="publish a portable rollout bundle without running the optimizer")
     args = parser.parse_args()
     if not 0 <= args.seed_offset < (1 << 64):
         parser.error("--seed-offset must fit uint64")
@@ -231,11 +250,11 @@ def main() -> None:
     levels = config["levels"]
     if type(workers) is not int or not 1 <= workers <= len(levels):
         parser.error("rollout_workers must be between one and the number of Levels")
-    if workers > 1:
+    if workers > 1 or args.collect_only:
         if args.rollout_binary is None or config.get("hivemind") is not None or any(
             config.get(key) for key in ("recover_notifications", "recover_outcome_journals")
         ):
-            parser.error("parallel rollouts require a compiled binary and model-only Levels")
+            parser.error("parallel or collection-only rollouts require a compiled binary and model-only Levels")
         for field in ("world_id", "level_id"):
             identities = [level.get(field) for level in levels]
             if (any(type(identity) is not int or identity <= 0 for identity in identities)
@@ -269,6 +288,30 @@ def main() -> None:
         with ThreadPoolExecutor(max_workers=workers) as pool:
             shard_metrics = list(pool.map(run_shard, shards))
         rollout = combined_rollout_metrics(shard_metrics, time.perf_counter() - started)
+    if args.collect_only:
+        captures = []
+        for shard, _ in shards:
+            files = {}
+            for key in ("policy_capture", "notifications"):
+                artifact = Path(shard[key])
+                files[key] = {
+                    "path": artifact.relative_to(output).as_posix(),
+                    "sha256": file_sha256(artifact),
+                }
+            captures.append(files)
+        if (file_sha256(checkpoint) != input_checkpoint_sha or
+                file_sha256(manifest) != input_manifest_sha):
+            raise ValueError("rollout input checkpoint or manifest changed during collection")
+        publish_receipt(output, "rollout-bundle.json", {
+            "schema_version": 1,
+            "kind": "native_rollout_bundle",
+            "input_checkpoint_sha256": input_checkpoint_sha,
+            "input_manifest_sha256": input_manifest_sha,
+            "learner_slot": args.learner_slot,
+            "captures": captures,
+            "rollout_metrics": rollout,
+        })
+        return
     learner_dir = output / "learner"
     train_command = [
         config["python"], str(Path(__file__).with_name("train_policy_capture.py")),
@@ -326,20 +369,7 @@ def main() -> None:
         ]
     # The result is the only handoff marker for schedulers. An interrupted
     # optimizer never publishes it, even when some output files exist.
-    pending_result = output / "round-result.json.pending"
-    with pending_result.open("x", encoding="utf-8") as stream:
-        json.dump(result, stream, indent=2)
-        stream.write("\n")
-        stream.flush()
-        os.fsync(stream.fileno())
-    os.replace(pending_result, output / "round-result.json")
-    if os.name == "posix":
-        directory = os.open(output, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
-        try:
-            os.fsync(directory)
-        finally:
-            os.close(directory)
-    print(json.dumps(result), flush=True)
+    publish_receipt(output, "round-result.json", result)
 
 
 if __name__ == "__main__":
