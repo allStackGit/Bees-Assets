@@ -655,6 +655,14 @@ impl ProjectileBody {
         self.collider.as_ref().map(|collider| &collider.shape)
     }
 
+    /// Cached primary geometry shared by simulation and optional rendering.
+    /// A newly changed shape has no cached bounds until update_hull runs;
+    /// consumers must then avoid rejecting it as offscreen.
+    pub fn primary_bounds(&self) -> Option<Aabb> {
+        if !self.active { return None; }
+        self.collider.as_ref()?.bounds
+    }
+
     /// Uses the actual post-physics projectile hull, including a growing beam.
     pub(crate) fn primary_overlaps_circle(&self, center: Vec2, radius: f32) -> bool {
         self.active && self.collider.as_ref().is_some_and(|collider| collider.overlaps_circle(center, radius))
