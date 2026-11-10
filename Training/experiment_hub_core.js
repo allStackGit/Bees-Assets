@@ -3082,6 +3082,91 @@ class ExperimentHub {
         this.commit(next);
         return copy(job);
     }
+    // Queue and reserve an entire TinyBrains rollout group as one durable
+    // transaction. The operator supplies resource budgets; physical worker
+    // endpoints and identities come only from authenticated machine agents.
+    // An incomplete set never leaves behind a stranded learner or sidecar.
+    queueDistributedTinyBrains(value) {
+        if(!object(value)||value.confirm_queue!==true||
+            Object.keys(value).some(key=>!['confirm_queue','learner','collectors'].includes(key))||
+            !object(value.learner)||
+            Object.keys(value.learner).some(key=>
+                !['configuration_id','expected_revision','machine_id','resources'].includes(key))||
+            !ID.test(String(value.learner.machine_id||''))||
+            !Array.isArray(value.collectors))
+            throw Error('Confirm the saved learner, its machine, and one resource budget for each approved remote collector.');
+        const snapshot=this.snapshot();
+        const learnerMachine=snapshot.machines.find(m=>m.id===value.learner.machine_id);
+        const config=snapshot.configurations.find(c=>c.id===value.learner.configuration_id&&
+            c.revision===value.learner.expected_revision&&c.project_id==='tinybrains');
+        const endpoints=learnerMachine?.tinybrains_remote_rollout_endpoints;
+        if(!config||config.parameters?.remote_rollouts!==true||
+            config.parameters?.device==='cpu'||
+            !learnerMachine||learnerMachine.status!=='connected'||
+            learnerMachine.agent_platform!=='linux'||
+            learnerMachine.local_executor_enabled!==true||
+            learnerMachine.native_preflight_passed!==true||
+            !learnerMachine.installed_projects?.includes('tinybrains')||
+            !learnerMachine.gpu_projects?.includes('tinybrains')||
+            !supportsTinyBrainsProfile(learnerMachine,{
+                project_id:'tinybrains',frozen_parameters:config.parameters,
+                resources:resourceRequest(value.learner.resources),
+            })||
+            !Array.isArray(endpoints)||!endpoints.length||endpoints.length>8||
+            value.collectors.length!==endpoints.length||
+            !SHA256.test(String(learnerMachine.tinybrains_remote_key_fingerprint||'')))
+            throw Error('The selected Linux GPU learner must approve this profile and exactly the supplied remote collector count.');
+        const rolloutProject=snapshot.projects.find(p=>p.id==='tinybrains_rollout');
+        if(rolloutProject?.adapter!=='unconfigured')
+            throw Error('Register the TinyBrains rollout project before creating a distributed group.');
+        const next=copy(this.state),machines=snapshot.machines;
+        const learner=this.queueIn(next,value.learner);
+        const learnerLease=this.claimJobIn(next,learner,learnerMachine.id,learnerMachine);
+        const workers=[],leases=[learnerLease],seen=new Set([learnerMachine.id]);
+        for(const [index,endpoint] of endpoints.entries()) {
+            const selection=value.collectors[index];
+            if(!object(selection)||Object.keys(selection).some(key=>key!=='resources'))
+                throw Error('Each distributed collector supplies only a CPU/RAM and optional exclusive GPU resource budget.');
+            const budget=resourceRequest(selection.resources);
+            if(budget.gpu_count>1||
+                (budget.gpu_count===1&&budget.gpu_mode!=='exclusive'))
+                throw Error('A remote collector may use CPU only or one exclusively leased CUDA GPU.');
+            const eligible=machines.filter(host=>
+                host.status==='connected'&&host.tinybrains_rollout_endpoint===endpoint&&
+                host.tinybrains_rollout_key_fingerprint===
+                    learnerMachine.tinybrains_remote_key_fingerprint&&
+                host.installed_projects?.includes('tinybrains_rollout')&&
+                host.local_executor_enabled===true&&host.native_preflight_passed===true&&
+                (host.agent_platform==='win32'||host.agent_platform==='linux'&&
+                    host.execution_capabilities?.cgroup_v2_detected===true&&
+                    ['cpu','memory'].every(c=>host.execution_capabilities?.cgroup_controllers.includes(c)))&&
+                (!budget.gpu_count||host.agent_platform==='win32'&&
+                    host.gpu_projects?.includes('tinybrains_rollout')&&
+                    host.gpu_inventory_source==='nvidia-smi-v1'));
+            if(eligible.length!==1||seen.has(eligible[0].id))
+                throw Error('Every approved rollout endpoint must identify exactly one distinct connected, qualified worker.');
+            const host=eligible[0];
+            seen.add(host.id);
+            const timestamp=now();
+            const workerConfiguration={
+                id:crypto.randomUUID(),project_id:'tinybrains_rollout',
+                name:'Rollout '+(index+1)+' for '+learner.id.slice(-8),
+                parameters:{learner_job_id:learner.id},revision:1,
+                created_at:timestamp,updated_at:timestamp,
+            };
+            next.configurations.push(workerConfiguration);
+            const worker=this.queueIn(next,{
+                configuration_id:workerConfiguration.id,expected_revision:1,resources:budget,
+            });
+            const lease=this.claimJobIn(next,worker,host.id,host);
+            workers.push(worker);leases.push(lease);
+        }
+        this.commit(next);
+        return {learner:copy(learner),collectors:workers.map(copy),
+            leases:leases.map(lease=>({...copy(lease),receipt_fresh:false})),
+            starts_authorized:0,
+            note:'The entire distributed group has advisory machine claims. Each worker must acknowledge its lease and acquire separate native Start authorization before the learner can start.'};
+    }
     // Independent jobs may be chained across non-Bees projects. These
     // dependencies do not imply checkpoint inheritance, machine affinity,
     // shared experiments, or evaluation success.
