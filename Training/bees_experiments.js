@@ -14,6 +14,7 @@ const { freezePlan: freezeEvaluator, supportsPurpose: evaluatorSupportsPurpose }
 const { selectedRoot, copyAndSelect } = require('./bees_experiment_storage');
 const { normalizeTarget, scoreTarget } = require('./bees_experiment_benchmark_target');
 const { ExperimentHub } = require('./experiment_hub_core');
+const { JobExporter } = require('./experiment_hub_job_export');
 const { createAgentServer, AGENT_PORT, AGENT_HOST } =
     require('./experiment_hub_agent_listener');
 const { route: hubAdminRoute } = require('./experiment_hub_admin');
@@ -50,6 +51,7 @@ function requireHub() {
     if (!hub) throw Error('Experiment Hub unavailable: ' + hubInitializationError);
     return hub;
 }
+const jobExporter=hub?new JobExporter(DATA_ROOT,hub):null;
 
 if (!state || state.version !== 1 || !Array.isArray(state.items) || typeof state.armed !== 'boolean') {
     throw Error('Invalid experiment data; no training started: ' + DB);
@@ -2350,6 +2352,13 @@ const server = http.createServer(async (req, res) => {
             }
             return await exportExperimentLogs(item, res, percent);
         }
+        if(req.method==='GET'&&route.startsWith('/api/hub/exports/')) {
+            if(!jobExporter)throw Error('Experiment Hub export service unavailable.');
+            const status=/^\/api\/hub\/exports\/([0-9a-f-]{36})$/.exec(route);
+            if(status)return json(res,200,jobExporter.status(status[1]));
+            const part=/^\/api\/hub\/exports\/([0-9a-f-]{36})\/part\/([1-9][0-9]*)$/.exec(route);
+            if(part)return jobExporter.download(part[1],Number(part[2]),res);
+        }
         if(req.method==='GET'&&route.startsWith('/api/hub/')&&
             !route.startsWith('/api/hub/bees/')) {
             // Only the full state endpoint needs Bees history. Keep planning
@@ -2494,6 +2503,10 @@ const server = http.createServer(async (req, res) => {
         const value = await body(req);
         if (storageMigrationPending) {
             return json(res, 409, { error: 'Data-location switch prepared. Restart this manager before making other changes.' });
+        }
+        if(route==='/api/hub/exports') {
+            if(!jobExporter)throw Error('Experiment Hub export service unavailable.');
+            return json(res,202,jobExporter.start(value));
         }
         if(route.startsWith('/api/hub/')&&
             !route.startsWith('/api/hub/bees/')) {
