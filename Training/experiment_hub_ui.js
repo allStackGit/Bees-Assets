@@ -962,8 +962,8 @@ document.addEventListener('DOMContentLoaded', () => {
                             ?'Unavailable log sources: '+result.missing_sources
                                 .slice(0,8).map(item=>item.job_id.slice(-8)+
                                     '/'+item.label+' ('+item.reason+')').join(', ')+
-                                (result.missing_sources.length>8
-                                    ?' and '+(result.missing_sources.length-8)+' more':'')+
+                                ((result.missing_source_count||result.missing_sources.length)>8
+                                    ?' and '+((result.missing_source_count||result.missing_sources.length)-8)+' more':'')+
                                 '. See the ZIP manifest for details. ':'')+
                         'Select each part: '));
                     for(const [i,part] of result.parts.entries()) {
