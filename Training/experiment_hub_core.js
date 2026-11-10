@@ -681,7 +681,11 @@ function nativeStartReadiness(snapshot, job) {
         const hosts=new Set([machine.id]);
         const matchedEndpoints=new Set();
         for(const worker of workers) {
-            if(worker.status!=='running'||worker.capacity_released_at||
+            // A persisted "running" status is not proof the service is still
+            // present. Require a recent authenticated owner observation too.
+            if(worker.status!=='running'||worker.live_execution?.state!=='running'||
+                worker.live_execution.dispatch_id!==worker.dispatch_id||
+                worker.capacity_released_at||
                 !worker.dispatch_id||![0,1].includes(worker.resources?.gpu_count)||
                 (worker.resources.gpu_count===1&&worker.resources.gpu_mode!=='exclusive'))
                 return block('Every remote CPU collector must be running under its own active Hub job.');
