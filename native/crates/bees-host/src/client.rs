@@ -35,6 +35,9 @@ pub struct NativeClient {
     support_mode: Option<NativeTargetMode>,
     pub rendered_frames: u64,
     pub render_wall_seconds: f64,
+    /// Includes minifb's frame pacing and display transfer, separate from
+    /// CPU software rendering time.
+    pub window_update_wall_seconds: f64,
 }
 
 impl NativeClient {
@@ -47,7 +50,8 @@ impl NativeClient {
             paused: false, next_step: now, previous_frame: now, left_was_down: false,
             right_was_down: false, input_feedback: "",
             selection_drag: None, support_mode: None,
-            rendered_frames: 0, render_wall_seconds: 0.0 })
+            rendered_frames: 0, render_wall_seconds: 0.0,
+            window_update_wall_seconds: 0.0 })
     }
 
     pub fn selected_world(&self) -> usize { self.selected_world }
@@ -272,7 +276,9 @@ impl NativeClient {
         ));
         self.render_wall_seconds += render_started.elapsed().as_secs_f64();
         self.rendered_frames += 1;
+        let window_update_started = Instant::now();
         self.window.update_with_buffer(self.renderer.pixels(), width, height)?;
+        self.window_update_wall_seconds += window_update_started.elapsed().as_secs_f64();
         if !self.window.is_open() { return Ok(NativeClientAction::Quit); }
         if let Some(input) = cease_fire_input { return Ok(NativeClientAction::CeaseFire(input)); }
         if let Some(input) = manual_fire { return Ok(NativeClientAction::Fire(input)); }
