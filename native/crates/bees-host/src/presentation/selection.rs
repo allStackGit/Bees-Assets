@@ -63,8 +63,11 @@ impl NativeSquadSelection {
     pub fn representative_ships<'a>(&'a self, view: &'a NativeRenderWorldView<'_>)
         -> impl Iterator<Item = i64> + 'a
     {
-        self.squads.iter().filter_map(|owner|
-            view.roster.get(*owner).and_then(|squad| squad.members.first()).copied())
+        self.squads.iter().filter_map(|owner| {
+            view.roster.get(*owner)?.members.iter().copied().find(|ship_id|
+                view.combat.ship(*ship_id).is_some_and(|ship| !ship.vitals.is_dead())
+            )
+        })
     }
 
     pub fn support_command(&mut self, view: &NativeRenderWorldView<'_>,
