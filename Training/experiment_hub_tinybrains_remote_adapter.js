@@ -6,6 +6,7 @@
 // port, thread budget, cache and secret are installed by the host operator.
 const fs=require('node:fs');
 const path=require('node:path');
+const crypto=require('node:crypto');
 const {spawnSync}=require('node:child_process');
 
 const UUID=/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
@@ -45,6 +46,7 @@ function createTinyBrainsRemoteRolloutAdapter({
     const project=directory(projectRoot);
     const cache=directory(cacheRoot);
     const secret=keyFile(keyPath);
+    const fingerprint=crypto.createHash('sha256').update(fs.readFileSync(secret)).digest('hex');
     const host=tailnetIp(listenIp);
     if(!Number.isSafeInteger(port)||port<1024||port>65535||
         !Number.isSafeInteger(threads)||threads<1||threads>256)
@@ -60,6 +62,8 @@ function createTinyBrainsRemoteRolloutAdapter({
         throw Error('Installed TinyBrains worker lacks authenticated remote rollout support.');
     return {
         executable:pythonPath,cwd:project,stop_policy:'terminate-group',
+        tinybrains_rollout_endpoint:host+':'+port,
+        tinybrains_rollout_key_fingerprint:fingerprint,
         args(parameters,context) {
             if(!parameters||typeof parameters!=='object'||Array.isArray(parameters)||
                 Object.keys(parameters).length!==1||
