@@ -76,12 +76,18 @@ function createTinyBrainsRemoteRolloutAdapter({
         executable:pythonPath,cwd:project,stop_policy:'terminate-group',
         tinybrains_rollout_endpoint:host+':'+port,
         tinybrains_rollout_key_fingerprint:fingerprint,
+        tinybrains_rollout_thread_limit:threads,
         ...(enableCuda?{gpu_execution:'cuda'}:{}),
         args(parameters,context) {
+            const desired=parameters?.threads??Math.min(threads,context.cpu_quota);
+            if(!Number.isSafeInteger(context.cpu_quota)||context.cpu_quota<1||
+                !Number.isSafeInteger(desired)||desired<1||
+                desired>threads||desired>context.cpu_quota)
+                throw Error('Remote collector threads must fit both its CPU lease and the local approved thread limit.');
             if(crypto.createHash('sha256').update(fs.readFileSync(secret)).digest('hex')!==fingerprint)
                 throw Error('Installed rollout HMAC key differs from its advertised physical worker identity.');
             if(!parameters||typeof parameters!=='object'||Array.isArray(parameters)||
-                Object.keys(parameters).length!==1||
+                Object.keys(parameters).some(key=>!['learner_job_id','threads'].includes(key))||
                 !UUID.test(String(parameters.learner_job_id||''))||
                 !UUID.test(String(context.job_id||''))||
                 parameters.learner_job_id===context.job_id||
@@ -93,7 +99,7 @@ function createTinyBrainsRemoteRolloutAdapter({
             return ['-B','-m','ants_mapoca.remote_rollout',
                 '--listen',host,'--port',String(port),
                 '--job-id',parameters.learner_job_id,
-                '--threads',String(threads),'--key-file',secret,
+                '--threads',String(desired),'--key-file',secret,
                 '--cache-dir',cache,
                 ...(context.gpu_cuda_uuid
                     ?['--device','cuda','--cuda-uuid',context.gpu_cuda_uuid]
