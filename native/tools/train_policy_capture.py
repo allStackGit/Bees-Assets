@@ -81,18 +81,9 @@ def completed_rollouts(capture, journal, manifest, manifest_sha, checkpoint_sha,
         raise ValueError("reward journal has no completed episodes")
     if not terminals:
         raise ValueError("capture contains no completed episodes for the selected policy manifest")
-    # Group-agent identity is immutable within each authored episode. Use
-    # the same model-slot ownership for decision and terminal observations.
-    # The learner never consumes full observations from an opponent team.
-    learner_agents_by_episode = {
-        key: {
-            int(agent)
-            for team, agents in final["evaluation_context"]["group_agents_by_team"].items()
-            if final["evaluation_context"]["model_slots_by_team"][team] in learner_slots
-            for agent in agents
-        }
-        for key, final in terminals.items()
-    }
+    # Resolve learner ownership only for episodes whose terminal boundaries
+    # are being processed, rather than retaining IDs for the whole run.
+    learner_agents_by_episode = {}
     # Keep only active episodes in memory. The writer emits a final
     # observation frame for each completed world before recycling it.
     # Preserve the original first-decision episode order for optimizer input.
@@ -151,6 +142,14 @@ def completed_rollouts(capture, journal, manifest, manifest_sha, checkpoint_sha,
                 # not retain those features for optimization.
                 if not np.isfinite(row["observations"]).all():
                     raise ValueError("nonfinite policy boundary observation")
+                if key not in learner_agents_by_episode:
+                    context = terminals[key]["evaluation_context"]
+                    learner_agents_by_episode[key] = {
+                        int(member)
+                        for team, members in context["group_agents_by_team"].items()
+                        if context["model_slots_by_team"][team] in learner_slots
+                        for member in members
+                    }
                 if agent in learner_agents_by_episode[key]:
                     frame[agent] = row if owned_frame is not None else row.copy()
                 else:
@@ -233,7 +232,7 @@ def completed_rollouts(capture, journal, manifest, manifest_sha, checkpoint_sha,
             completed.add(key)
             yield _validate_completed_episode(
                 key, ticks, episode_boundaries, terminals, ended_teams,
-                retirements, rewards, learner_agents_by_episode[key], journal_id,
+                retirements, rewards, learner_agents_by_episode.pop(key), journal_id,
             )
 
     if completed != terminals.keys():
