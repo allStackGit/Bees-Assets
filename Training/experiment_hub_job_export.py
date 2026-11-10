@@ -327,7 +327,7 @@ def export(spec: dict, output: Path) -> dict:
         selected_observation_path = None
         selected_observation_stream = None
         selected_observation_writer = None
-        if metrics:
+        if metrics and any(source["label"] == "hub-observations" for source in additional):
             selected_observation_stream = tempfile.NamedTemporaryFile(
                 mode="w", encoding="utf-8", newline="", dir=output.parent,
                 prefix="hub-selected-observations-", suffix=".csv", delete=False,
