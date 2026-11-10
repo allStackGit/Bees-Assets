@@ -363,11 +363,6 @@ class DockerSupervisor {
                     gpu_pci_address:invocation.gpu.binding.pci_address});
             await this.qualifyGpuDeviceAccess([invocation.gpu.binding],proof);
             plan=resolveRocmDevices([invocation.gpu.binding]);
-            const physicalFreeVram=plan.selected[0].observed_vram_mb;
-            // Fresh host GPU pressure is checked by coordinator admission;
-            // the local owner independently prevents incompatible reservations.
-            if(physicalFreeVram<invocation.gpu.binding.vram_mb)
-                throw Error('Physical GPU capacity changed after lease qualification.');
         }
         const imageId=await this.imageId(d.image);
         const name=containerName(job.id);
