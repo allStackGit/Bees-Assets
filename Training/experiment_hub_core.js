@@ -223,6 +223,7 @@ function boundedReport(value) {
     const remoteFingerprint=value.tinybrains_remote_key_fingerprint??null;
     const workerEndpoint=value.tinybrains_rollout_endpoint??null;
     const workerFingerprint=value.tinybrains_rollout_key_fingerprint??null;
+    const workerThreadLimit=value.tinybrains_rollout_thread_limit??0;
     if(!Array.isArray(remoteRollouts)||remoteRollouts.length>cudaProfiles.length||
         remoteRollouts.some(id=>typeof id!=='string'||!cudaProfiles.includes(id))||
         new Set(remoteRollouts).size!==remoteRollouts.length||
@@ -237,7 +238,9 @@ function boundedReport(value) {
         (workerEndpoint!==null&&(!rolloutEndpoint(workerEndpoint)||
             !SHA256.test(String(workerFingerprint||''))||
             !installed.includes('tinybrains_rollout')))||
-        (installed.includes('tinybrains_rollout')&&workerEndpoint===null))
+        (installed.includes('tinybrains_rollout')&&workerEndpoint===null)||
+        !Number.isSafeInteger(workerThreadLimit)||workerThreadLimit<0||workerThreadLimit>256||
+        Boolean(workerThreadLimit)!==Boolean(workerEndpoint))
         throw Error('Remote rollout requires a locally installed Linux TinyBrains GPU adapter.');
     const requiredImports=value.tinybrains_required_import_profiles??[];
     if(!Array.isArray(requiredImports)||requiredImports.length>Object.keys(profiles).length||
@@ -284,6 +287,7 @@ function boundedReport(value) {
         tinybrains_remote_key_fingerprint:remoteFingerprint,
         tinybrains_rollout_endpoint:workerEndpoint,
         tinybrains_rollout_key_fingerprint:workerFingerprint,
+        tinybrains_rollout_thread_limit:workerThreadLimit,
         tinybrains_imports:imports,
         gpu_projects:gpuProjects.slice(),
         gpu_shared_projects:gpuShared.slice(),
@@ -839,6 +843,13 @@ function distributedRolloutHost(snapshot,job,machine) {
         !learner.tinybrains_remote_rollout_endpoints?.includes(machine.tinybrains_rollout_endpoint)||
         learner.tinybrains_remote_key_fingerprint!==machine.tinybrains_rollout_key_fingerprint)
         return false;
+    if(!Number.isSafeInteger(machine.tinybrains_rollout_thread_limit)||
+        machine.tinybrains_rollout_thread_limit<1||
+        (job.frozen_parameters?.threads!==undefined&&
+            (!Number.isSafeInteger(job.frozen_parameters.threads)||
+                job.frozen_parameters.threads<1||
+                job.frozen_parameters.threads>machine.tinybrains_rollout_thread_limit||
+                job.frozen_parameters.threads>job.resources?.cpus)))return false;
     if(snapshot.jobs.some(other=>other.id!==job.id&&
         other.project_id==='tinybrains_rollout'&&
         other.status!=='cancelled'&&
@@ -1107,6 +1118,7 @@ class ExperimentHub {
                 machine.tinybrains_remote_key_fingerprint=report.tinybrains_remote_key_fingerprint;
                 machine.tinybrains_rollout_endpoint=report.tinybrains_rollout_endpoint;
                 machine.tinybrains_rollout_key_fingerprint=report.tinybrains_rollout_key_fingerprint;
+                machine.tinybrains_rollout_thread_limit=report.tinybrains_rollout_thread_limit;
                 machine.tinybrains_imports=copy(report.tinybrains_imports);
                 machine.gpu_projects = report.gpu_projects.slice();
                 machine.gpu_shared_projects=report.gpu_shared_projects.slice();
@@ -3175,7 +3187,8 @@ class ExperimentHub {
         const workers=[],leases=[learnerLease],seen=new Set([learnerMachine.id]);
         for(const [index,endpoint] of endpoints.entries()) {
             const selection=value.collectors[index];
-            if(!object(selection)||Object.keys(selection).some(key=>key!=='resources'))
+            if(!object(selection)||Object.keys(selection).some(key=>
+                !['resources','threads'].includes(key)))
                 throw Error('Each distributed collector supplies only a CPU/RAM and optional exclusive GPU resource budget.');
             const budget=resourceRequest(selection.resources);
             if(budget.gpu_count>1||
@@ -3198,10 +3211,16 @@ class ExperimentHub {
             const host=eligible[0];
             seen.add(host.id);
             const timestamp=now();
+            const desiredThreads=selection.threads??Math.min(budget.cpus,
+                host.tinybrains_rollout_thread_limit);
+            if(!Number.isSafeInteger(desiredThreads)||desiredThreads<1||
+                desiredThreads>budget.cpus||
+                desiredThreads>host.tinybrains_rollout_thread_limit)
+                throw Error('Remote worker threads must fit its leased CPUs and approved local thread ceiling.');
             const workerConfiguration={
                 id:crypto.randomUUID(),project_id:'tinybrains_rollout',
                 name:'Rollout '+(index+1)+' for '+learner.id.slice(-8),
-                parameters:{learner_job_id:learner.id},revision:1,
+                parameters:{learner_job_id:learner.id,threads:desiredThreads},revision:1,
                 created_at:timestamp,updated_at:timestamp,
             };
             next.configurations.push(workerConfiguration);
@@ -3480,7 +3499,10 @@ class ExperimentHub {
             throw Error('A job cannot both depend on an independent predecessor and continue its checkpoint.');
         if(project.id==='tinybrains_rollout') {
             const learner=next.jobs.find(j=>j.id===frozen.learner_job_id);
-            if(Object.keys(frozen).length!==1||
+            if(Object.keys(frozen).some(key=>!['learner_job_id','threads'].includes(key))||
+                (frozen.threads!==undefined&&
+                    (!Number.isSafeInteger(frozen.threads)||frozen.threads<1||
+                        frozen.threads>resources.cpus||frozen.threads>256))||
                 !UUID.test(String(frozen.learner_job_id||''))||
                 !learner||learner.project_id!=='tinybrains'||
                 learner.frozen_parameters?.remote_rollouts!==true||
