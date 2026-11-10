@@ -18,7 +18,7 @@ function validateGenericProgress(value,projectId) {
             'schema_version','source','experiment_id','segment_id',
             'source_modified_at','steps_completed','metrics',
         ].includes(key))||
-        JSON.stringify(value).length>4096||
+        JSON.stringify(value).length>32768||
         typeof value.experiment_id!=='string'||
         !/^[A-Za-z0-9_-]{1,80}$/.test(value.experiment_id)||
         typeof value.segment_id!=='string'||
@@ -30,7 +30,7 @@ function validateGenericProgress(value,projectId) {
         new Date(value.source_modified_at).toISOString()!==value.source_modified_at||
         !safeInt(value.steps_completed)||
         !metrics||typeof metrics!=='object'||Array.isArray(metrics)||
-        Object.keys(metrics).length<1||Object.keys(metrics).length>12)
+        Object.keys(metrics).length<1||Object.keys(metrics).length>96)
         throw Error('Invalid project-neutral progress report.');
     const normalized={};
     for(const [key,item] of Object.entries(metrics).sort(([a],[b])=>
