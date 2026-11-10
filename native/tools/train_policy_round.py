@@ -6,12 +6,14 @@ never converts a failed or incomplete rollout into training data.
 """
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 import json
 import math
 import os
 from pathlib import Path
 import shutil
 import subprocess
+import time
 import traceback
 import uuid
 
@@ -146,6 +148,33 @@ def rollout_metrics(summary_path, config, manifest_sha):
     return metrics
 
 
+def prepare_rollout(config, directory):
+    config["run_id"] = f"{config['run_id']}-{uuid.uuid4().hex}"
+    config["notifications"] = str(directory / "events.jsonl")
+    config["policy_capture"] = str(directory / "decisions.bin")
+    config["rollout_summary"] = str(directory / "rollout-summary.json")
+    config_path = directory / "run.json"
+    with config_path.open("x", encoding="utf-8") as stream:
+        json.dump(config, stream, indent=2)
+        stream.write("\n")
+    return config_path
+
+
+def combined_rollout_metrics(shards, wall_seconds):
+    metrics = {
+        "workers": len(shards),
+        "wall_seconds": wall_seconds,
+        **{key: sum(shard[key] for shard in shards)
+           for key in ("successful_world_steps", "successful_policy_rows")},
+    }
+    samples = [shard["sampled_model_timing"] for shard in shards if "sampled_model_timing" in shard]
+    if samples:
+        metrics["sampled_model_timing"] = {
+            key: sum(sample[key] for sample in samples) for key in ("calls", "rows", "wall_seconds")
+        }
+    return metrics
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("run_config", type=Path)
@@ -198,31 +227,57 @@ def main() -> None:
     output = args.output_dir.resolve()
     config = source_config(run_path, manifest, output)
     shifted_seeds(config, args.seed_offset)
+    workers = config.pop("rollout_workers", 1)
+    levels = config["levels"]
+    if type(workers) is not int or not 1 <= workers <= len(levels):
+        parser.error("rollout_workers must be between one and the number of Levels")
+    if workers > 1:
+        if args.rollout_binary is None or config.get("hivemind") is not None or any(
+            config.get(key) for key in ("recover_notifications", "recover_outcome_journals")
+        ):
+            parser.error("parallel rollouts require a compiled binary and model-only Levels")
+        for field in ("world_id", "level_id"):
+            identities = [level.get(field) for level in levels]
+            if (any(type(identity) is not int or identity <= 0 for identity in identities)
+                    or len(set(identities)) != len(levels)):
+                parser.error(f"parallel rollouts require distinct positive {field} values")
     output.mkdir(parents=True, exist_ok=False)
-    config["run_id"] = f"{config['run_id']}-{uuid.uuid4().hex}"
-    config["notifications"] = str(output / "events.jsonl")
-    config["policy_capture"] = str(output / "decisions.bin")
-    summary_path = output / "rollout-summary.json"
-    config["rollout_summary"] = str(summary_path)
-    config_path = output / "run.json"
-    with config_path.open("x", encoding="utf-8") as stream:
-        json.dump(config, stream, indent=2)
-        stream.write("\n")
+    shards = []
+    for index in range(workers):
+        directory = output if workers == 1 else output / f"rollout-{index}"
+        shard = {**config, "levels": levels[index::workers]}
+        if workers > 1:
+            directory.mkdir()
+            shard["connection_checkpoint"] = str(directory / "connection-checkpoint.json")
+        shards.append((shard, prepare_rollout(shard, directory)))
+    first, config_path = shards[0]
 
     print(json.dumps({"kind": "native_training_round_started", "run_config": str(config_path),
                       "seed_offset": args.seed_offset,
                       "input_manifest_sha256": input_manifest_sha,
                       "input_checkpoint_sha256": input_checkpoint_sha}), flush=True)
-    run_stage([*command, str(config_path)],
-              output / "rollout.log" if args.stage_diagnostics else None)
-    rollout = rollout_metrics(summary_path, config, input_manifest_sha)
+    def run_shard(item):
+        shard, shard_path = item
+        run_stage([*command, str(shard_path)],
+                  shard_path.with_name("rollout.log") if args.stage_diagnostics else None)
+        return rollout_metrics(Path(shard["rollout_summary"]), shard, input_manifest_sha)
+
+    if workers == 1:
+        rollout = run_shard(shards[0])
+    else:
+        started = time.perf_counter()
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            shard_metrics = list(pool.map(run_shard, shards))
+        rollout = combined_rollout_metrics(shard_metrics, time.perf_counter() - started)
     learner_dir = output / "learner"
     train_command = [
         config["python"], str(Path(__file__).with_name("train_policy_capture.py")),
-        str(output / "decisions.bin"), str(output / "events.jsonl"),
+        first["policy_capture"], first["notifications"],
         str(manifest), str(checkpoint), str(trainer_config), str(learner_dir),
         "--device", args.device,
     ]
+    for shard, _ in shards[1:]:
+        train_command += ["--rollout", shard["policy_capture"], shard["notifications"], str(manifest)]
     if args.learner_slot is not None:
         train_command += ["--learner-slot", str(args.learner_slot)]
     run_stage(train_command, output / "optimizer.log" if args.stage_diagnostics else None)
@@ -248,14 +303,14 @@ def main() -> None:
     result = {
         "schema_version": 1,
         "kind": "native_training_round_complete",
-        "run_id": config["run_id"],
+        "run_id": first["run_id"],
         "seed_offset": args.seed_offset,
         "run_config": str(config_path),
         "run_config_sha256": file_sha256(config_path),
         "input_checkpoint_sha256": input_checkpoint_sha,
         "input_manifest_sha256": input_manifest_sha,
-        "capture": str(output / "decisions.bin"),
-        "journal": str(output / "events.jsonl"),
+        "capture": first["policy_capture"],
+        "journal": first["notifications"],
         "rollout_metrics": rollout,
         "learner_metrics": metrics,
         "next_checkpoint": str(next_checkpoint),
@@ -263,6 +318,12 @@ def main() -> None:
         "next_manifest": str(next_manifest),
         "next_manifest_sha256": manifest_sha,
     }
+    if workers > 1:
+        result["rollout_shards"] = [
+            {"run_config": str(path), "run_config_sha256": file_sha256(path),
+             "capture": shard["policy_capture"], "journal": shard["notifications"]}
+            for shard, path in shards
+        ]
     # The result is the only handoff marker for schedulers. An interrupted
     # optimizer never publishes it, even when some output files exist.
     pending_result = output / "round-result.json.pending"

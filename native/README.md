@@ -214,8 +214,12 @@ A successful round synchronizes `learner/checkpoint.pt`,
 `round-result.json` with verified input/output hashes and training
 measurements. The result file is the completion handoff; absent results
 are not successful rounds. Use its new checkpoint and `--model-manifest`
-path for the next invocation. This is a single-round adapter, not a
-parallel scheduler or distributed trainer.
+path for the next invocation. Model-only runs with a precompiled binary
+can set `rollout_workers` in the run template to split its Levels across
+concurrent local processes. Each Level runs once with its original identity
+and seed. The learner waits for every shard to complete, then performs one
+update on the combined capture. The receipt lists each shard and reports
+elapsed rollout wall time. Sampled backend seconds sum work across workers.
 
 To queue this round in Experiment Hub, register a separate `bees_native`
 project and expose `createNativeBeesAdapter` from the worker's trusted
