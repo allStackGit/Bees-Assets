@@ -54,12 +54,14 @@ class ObservationArchive {
                         if(row.job_id!==job.id||row.project_id!==job.project_id||
                             !Number.isFinite(Date.parse(row.source_modified_at)))
                             throw Error('Observation archive lineage is invalid.');
-                        last={project_id:row.project_id,at:Date.parse(row.source_modified_at)};
+                        last={project_id:row.project_id,at:Date.parse(row.source_modified_at),
+                            size:stat.size,dev:stat.dev,ino:stat.ino};
                     }
                     this.lastByJob.set(job.id,last);
                 }
-                if(last&&last.project_id!==job.project_id)
-                    throw Error('Observation archive changed project identity.');
+                if(last&&(last.project_id!==job.project_id||
+                    last.size!==stat.size||last.dev!==stat.dev||last.ino!==stat.ino))
+                    throw Error('Observation archive was replaced or truncated.');
                 const at=Date.parse(progress.source_modified_at);
                 if(!Number.isFinite(at))
                     throw Error('Observation source timestamp is invalid.');
@@ -78,7 +80,8 @@ class ObservationArchive {
                     throw Error('Observation record exceeds its size limit.');
                 if(fs.writeSync(fd,body,0,body.length)!==body.length)
                     throw Error('Incomplete observation archive append.');
-                this.lastByJob.set(job.id,{project_id:job.project_id,at});
+                this.lastByJob.set(job.id,{project_id:job.project_id,at,
+                    size:stat.size+body.length,dev:stat.dev,ino:stat.ino});
                 this.error=null;
                 return true;
             }finally{fs.closeSync(fd);}
