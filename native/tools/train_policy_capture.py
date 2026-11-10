@@ -15,6 +15,14 @@ from policy_worker import file_sha256, install_bees_actor, mlagents_behavior_spe
 from read_policy_capture import capture_frames
 
 
+# Non-learner controllers need only lifetime/side validation. This
+# packed representation retains named field access without one Python
+# dict (and three boxed integers) per opponent decision.
+OPPONENT_IDENTITY = np.dtype([
+    ("ship", "<u8"), ("binding_revision", "<u8"), ("team", "u1"),
+])
+
+
 def completed_rollouts(capture, journal, manifest, manifest_sha, checkpoint_sha, learner_slot=None, stats=None):
     models = {entry["slot"]: entry for entry in manifest["models"]}
     matching = {
@@ -89,9 +97,18 @@ def completed_rollouts(capture, journal, manifest, manifest_sha, checkpoint_sha,
         # decision, but their 7,743-float observations never reach MA-POCA.
         # A selected-only NumPy copy keeps the bulk allocation advantage.
         learner_rows = None
+        opponent_rows = None
         if generation is not None and all_episodes_match and has_opponent_slots:
             selected = np.isin(rows["model_slot"], list(learner_slots))
             learner_rows = iter(rows[selected])
+            # Project only the three opponent fields BEFORE copying. Never
+            # materialize rows[~selected]: that would copy wide observations.
+            opponent_identities = np.empty(
+                len(rows) - np.count_nonzero(selected), dtype=OPPONENT_IDENTITY,
+            )
+            for name in OPPONENT_IDENTITY.names:
+                opponent_identities[name] = rows[name][~selected]
+            opponent_rows = iter(opponent_identities)
             owned_frame = None
         else:
             owned_frame = rows.copy() if all_episodes_match else None
@@ -149,11 +166,12 @@ def completed_rollouts(capture, journal, manifest, manifest_sha, checkpoint_sha,
                 else:
                     # The validator uses these exact fields for opponents;
                     # only learner-side rows are fed to the group critic.
-                    frame[agent] = {
-                        "ship": int(row["ship"]),
-                        "binding_revision": int(row["binding_revision"]),
-                        "team": team,
-                    }
+                    frame[agent] = (
+                        next(opponent_rows) if opponent_rows is not None else
+                        {"ship": int(row["ship"]),
+                         "binding_revision": int(row["binding_revision"]),
+                         "team": team}
+                    )
                     if stats is not None:
                         stats["compact_opponent_decisions"] = (
                             stats.get("compact_opponent_decisions", 0) + 1
