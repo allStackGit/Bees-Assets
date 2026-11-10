@@ -14,7 +14,7 @@ use bees_gameplay::player_inputs::{
 use bees_sim::geometry::Vec2;
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum NativeClientAction { Wait, Step, Quit, Move(NativePlayerSquadMoves), Support(NativePlayerSquadCommands), Fire(NativePlayerSquadFire), CeaseFire(NativePlayerSquadCeaseFire) }
+pub enum NativeClientAction { Wait, Step, Quit, WorldChanged, Move(NativePlayerSquadMoves), Support(NativePlayerSquadCommands), Fire(NativePlayerSquadFire), CeaseFire(NativePlayerSquadCeaseFire) }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum NativeTargetMode { Support(NativeSupportMode), ManualFire }
@@ -121,14 +121,22 @@ impl NativeClient {
             self.renderer.show_weapon_ranges = !self.renderer.show_weapon_ranges;
         }
         let single_step = self.paused && self.window.is_key_pressed(Key::N, KeyRepeat::No);
-        let changed_world = self.window.is_key_pressed(Key::Tab, KeyRepeat::No) && world_count > 0;
-        if changed_world {
+        if self.window.is_key_pressed(Key::Tab, KeyRepeat::No) && world_count > 1 {
             self.selected_world = (self.selected_world + 1) % world_count;
             self.renderer.selected_ship = None;
             self.renderer.selection.clear();
             self.selection_drag = None;
             self.support_mode = None;
             self.renderer.selection_box = None;
+            // Never apply an input to or render the old World after changing
+            // the selection. The caller must borrow the new World before
+            // asking us to display another frame. Do not interpret a mouse
+            // button held across the switch as a new click in that World.
+            self.left_was_down = self.window.get_mouse_down(MouseButton::Left);
+            self.right_was_down = self.window.get_mouse_down(MouseButton::Right);
+            self.window.update();
+            self.next_step = Instant::now();
+            return Ok(NativeClientAction::WorldChanged);
         }
         let (width, height) = self.renderer.size();
         if self.window.is_key_pressed(Key::F, KeyRepeat::No) {
@@ -143,7 +151,7 @@ impl NativeClient {
         if let (Some((_, scroll)), Some((x, y))) = (self.window.get_scroll_wheel(), mouse) {
             self.renderer.camera.zoom_at(1.15_f32.powf(scroll.clamp(-10.0, 10.0)), x, y, width, height);
         }
-        if !changed_world {
+        {
             for (key, mode, prompt) in [
                 (Key::G, NativeTargetMode::Support(NativeSupportMode::Guard), "Guard: click a friendly ship"),
                 (Key::P, NativeTargetMode::Support(NativeSupportMode::Patrol), "Patrol: drag the patrol area"),
@@ -178,7 +186,7 @@ impl NativeClient {
             self.renderer.selection_box = None;
             self.input_feedback = "Target selection cancelled";
         }
-        let mut manual_fire = if !changed_world && self.window.is_key_pressed(Key::X, KeyRepeat::No) &&
+        let mut manual_fire = if self.window.is_key_pressed(Key::X, KeyRepeat::No) &&
             !self.renderer.selection.squads().is_empty() {
             self.support_mode = None;
             self.selection_drag = None;
@@ -186,9 +194,9 @@ impl NativeClient {
             Some(NativePlayerSquadFire { world_id: view.world_id, episode_revision: view.episode_revision,
                 squads: self.renderer.selection.squads().to_vec(), target: None })
         } else { None };
-        let firing_mode = if !changed_world && self.window.is_key_pressed(Key::V, KeyRepeat::No) {
+        let firing_mode = if self.window.is_key_pressed(Key::V, KeyRepeat::No) {
             Some(true)
-        } else if !changed_world && self.window.is_key_pressed(Key::A, KeyRepeat::No) {
+        } else if self.window.is_key_pressed(Key::A, KeyRepeat::No) {
             Some(false)
         } else { None };
         let cease_fire_input = firing_mode.and_then(|cease_fire| {
@@ -206,7 +214,7 @@ impl NativeClient {
             }
         });
         let mut support_command = None;
-        if !changed_world && self.window.is_key_pressed(Key::C, KeyRepeat::No) {
+        if self.window.is_key_pressed(Key::C, KeyRepeat::No) {
             if self.renderer.selection.squads().is_empty() {
                 self.input_feedback = "Select squads first";
             } else {
@@ -219,11 +227,11 @@ impl NativeClient {
             }
         }
         let left_down = self.window.get_mouse_down(MouseButton::Left);
-        if !changed_world && !cancel_support && left_down && !self.left_was_down {
+        if !cancel_support && left_down && !self.left_was_down {
             self.selection_drag = mouse.map(|(x, y)| (
                 self.renderer.camera.screen_to_world(x, y, width, height), Vec2::new(x, y)));
         }
-        if !changed_world && !cancel_support {
+        if !cancel_support {
             if let (Some((start, start_pixel)), Some((x, y))) = (self.selection_drag, mouse) {
                 let end = self.renderer.camera.screen_to_world(x, y, width, height);
                 let dragging = (Vec2::new(x, y) - start_pixel).length_squared() > 16.0;
@@ -273,7 +281,7 @@ impl NativeClient {
             self.renderer.selection_box = None;
         }
         self.left_was_down = left_down;
-        let player_move = if !changed_world && !cancel_support && support_command.is_none() && manual_fire.is_none() &&
+        let player_move = if !cancel_support && support_command.is_none() && manual_fire.is_none() &&
             right_down && !self.right_was_down {
             mouse.filter(|_| !self.renderer.selection.squads().is_empty()).and_then(|(x, y)| {
                 let destination = self.renderer.camera.screen_to_world(x, y, width, height);
