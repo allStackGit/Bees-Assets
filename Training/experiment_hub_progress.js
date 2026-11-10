@@ -53,7 +53,36 @@ function validateGenericProgress(value,projectId) {
         steps_completed:value.steps_completed,metrics:normalized,
     };
 }
+// Display data is intentionally bounded independently of the authoritative
+// project log. Host measurements are already validated by the coordinator,
+// but they must not disappear when a trainer fills all 96 wire fields.
+function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
+    const metrics={};
+    let count=0;
+    const retain=(name,value)=>{
+        if(value&&!Object.hasOwn(metrics,name)&&count<96) {
+            metrics[name]=value;
+            count++;
+        }
+    };
+    if(Array.isArray(preferred)&&preferred.length) {
+        // An explicit operator preference always wins. Unavailable requested
+        // metrics are not fabricated and do not consume the 96-field budget.
+        for(const name of preferred)
+            retain(name,Object.hasOwn(observed,name)?observed[name]:reported[name]);
+        retain('total_ppo_updates',reported.total_ppo_updates);
+    }else {
+        // Without an explicit preference, retain observed host resources
+        // before filling the remaining slots from the trusted trainer data.
+        for(const [name,value] of Object.entries(observed))retain(name,value);
+        retain('total_ppo_updates',reported.total_ppo_updates);
+        for(const [name,value] of Object.entries(reported))retain(name,value);
+    }
+    if(!count)
+        metrics.project_steps_completed={value:stepsCompleted,unit:'count'};
+    return metrics;
+}
 function validateProgress(value,projectId) {
     return validateGenericProgress(value,projectId);
 }
-module.exports={validateProgress};
+module.exports={validateProgress,selectChartMetrics};
