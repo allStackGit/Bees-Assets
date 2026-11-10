@@ -358,6 +358,10 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
     <div class="formgrid">
       <label>Saved configuration<select id="hub-job-configuration"></select></label>
       <label>Continue previous job (optional)<select id="hub-job-predecessor"></select></label>
+      <label class="wide">Metrics to retain in Hub comparison history (optional; Ctrl/Shift for multiple)
+        <select id="hub-job-metrics" multiple size="9"></select>
+        <small>Leave unselected to retain every metric published by the project's adapter. This does not limit project-owned full history or enable unsupported instrumentation.</small>
+      </label>
       <label class="wide">Requested resources (JSON)<textarea id="hub-job-resources" rows="5">{"cpus":2,"ram_mb":2048,"gpu_count":0}</textarea></label>
       <fieldset class="wide">
         <legend>Resource allocation builder (optional)</legend>
