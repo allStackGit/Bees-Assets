@@ -1857,7 +1857,10 @@ retains a bounded history of up to 256 chart points for each of 256 jobs;
 project-owned full-resolution histories remain authoritative. When explicit
 metric preferences are present, the Hub filters trainer metrics before adding
 requested CPU/GPU observations, so a 96-metric trainer report cannot crowd out
-a selected host measurement. Host GPU utilization/VRAM measurements describe
+a selected host measurement. With no explicit preference, measured host resource
+usage and the PPO update counter take priority within the 96-field chart cap;
+remaining slots retain trainer metrics. Full project telemetry is not filtered
+by these display choices. Host GPU utilization/VRAM measurements describe
 the pinned physical device, not isolated per-job GPU consumption.
 
 **Export complete job diagnostics** in Compare packages the selected local
