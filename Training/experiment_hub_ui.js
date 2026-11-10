@@ -855,6 +855,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const tinyBrainsUpdates=document.createElement('input');
     const tinyBrainsThreads=document.createElement('input');
     const tinyBrainsDevice=document.createElement('select');
+    const tinyBrainsRemote=document.createElement('input');
+    tinyBrainsRemote.type='checkbox';
     tinyBrainsDevice.append(new Option('Profile default',''),
         new Option('CPU-only fallback (no GPU)','cpu'),
         new Option('Dedicated two-GPU split PPO (ROCm)','dual'));
@@ -875,6 +877,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const threads=hasThreads?tinyBrainsThreads.valueAsNumber:null;
         const cpuFallback=tinyBrainsDevice.value==='cpu';
         const dualGpu=tinyBrainsDevice.value==='dual';
+        const remoteRollouts=tinyBrainsRemote.checked;
         if(hasThreads&&(!Number.isSafeInteger(threads)||threads<1||threads>256)) {
             feedback('hub-config-message','CPU threads must be a whole number from 1 to 256.');
             return;
@@ -897,6 +900,13 @@ document.addEventListener('DOMContentLoaded', () => {
             feedback('hub-config-message','No connected ROCm worker approves two-GPU split PPO for this profile.');
             return;
         }
+        if(remoteRollouts&&(cpuFallback||!(state?.machines||[]).some(machine=>
+            machine.status==='connected'&&machine.agent_platform==='linux'&&
+            machine.tinybrains_profiles?.[profile]===digest&&
+            machine.tinybrains_remote_rollout_profiles?.includes(profile)))) {
+            feedback('hub-config-message','Remote CPU rollouts require an approved Linux GPU learner and a locally installed tailnet worker configuration.');
+            return;
+        }
         if(!profile||!digest||!Number.isSafeInteger(updates)||updates<1||updates>10000000) {
             feedback('hub-config-message','Select an approved profile and enter 1–10,000,000 updates.');
             return;
@@ -906,6 +916,7 @@ document.addEventListener('DOMContentLoaded', () => {
             profile,profile_sha256:digest,updates,
             ...(hasThreads?{threads}:{}),
             ...(cpuFallback?{device:'cpu'}:dualGpu?{device:'dual'}:{}),
+            ...(remoteRollouts?{remote_rollouts:true}:{}),
             ...(sourceId&&sourceDigest?{
                 import_checkpoint:sourceId,
                 import_checkpoint_sha256:sourceDigest,
@@ -923,11 +934,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 ?'The source checkpoint SHA-256 is frozen; this draft can initialize a new lineage, not a continuation stage. '
                 :'Use a configuration without an import for checkpoint-continuation stages. ')+
             (hasThreads?'The CPU thread override does not change the job CPU quota. ':'')+
+            (remoteRollouts?'Remote CPU collectors must already be installed, authenticated, and reserved separately; the Hub does not yet claim their CPU resources. ':'')+
             'Save the draft to retain these settings.');
     });
     for(const [caption,control] of [['Approved profile ',tinyBrainsSelect],
         ['Updates ',tinyBrainsUpdates],['CPU threads (optional) ',tinyBrainsThreads],
         ['Execution device ',tinyBrainsDevice],
+        ['Use approved remote CPU rollout collectors ',tinyBrainsRemote],
         ['Approved checkpoint import (optional) ',tinyBrainsImport]]) {
         const label=document.createElement('label');
         label.append(caption,control);
