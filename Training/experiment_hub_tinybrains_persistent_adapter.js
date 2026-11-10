@@ -218,7 +218,7 @@ function createTinyBrainsPersistentDockerAdapter({
                     'threads','device','remote_rollouts','import_checkpoint',
                     'import_checkpoint_sha256'].includes(k))||
                 (remote_rollouts!==undefined&&
-                    (remote_rollouts!==true||!remote))||
+                    (remote_rollouts!==true||!remote||device==='cpu'))||
                 (device!==undefined&&!['cpu','dual'].includes(device))||
                 (threads!==undefined&&(!Number.isSafeInteger(threads)||threads<1||threads>256))||
                 !Number.isSafeInteger(updates)||updates<1||updates>10000000||
