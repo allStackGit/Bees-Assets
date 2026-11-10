@@ -54,10 +54,11 @@ function loadRoots(dataRoot) {
     return roots;
 }
 class JobExporter {
-    constructor(dataRoot,hub,legacyBees=null) {
+    constructor(dataRoot,hub,legacyBees=null,pythonExecutable=null) {
         this.dataRoot=dataRoot;
         this.hub=hub;
         this.legacyBees=legacyBees;
+        this.pythonExecutable=pythonExecutable;
         this.sessions=new Map();
     }
     start(value) {
@@ -106,7 +107,10 @@ class JobExporter {
         const session={id,dir,project,status:'preparing',parts:[],error:null};
         this.sessions.set(id,session);
         const script=path.join(__dirname,'experiment_hub_job_export.py');
-        const child=spawn(process.platform==='win32'?'python':'python3',
+        const python=typeof this.pythonExecutable==='function'
+            ?this.pythonExecutable():this.pythonExecutable||
+                (process.platform==='win32'?'python':'python3');
+        const child=spawn(python,
             [script,'--spec',spec,'--output',path.join(dir,project+'-analysis.zip')],
             {shell:false,windowsHide:true,stdio:['ignore','pipe','pipe']});
         let stdout='',stderr='',done=false;
