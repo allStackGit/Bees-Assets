@@ -21,6 +21,26 @@ function inside(parent,child) {
     return !path.isAbsolute(relative)&&relative!=='..'&&!relative.startsWith('..'+path.sep);
 }
 
+// Courier versions may publish additional scalar statistics beside the
+// mandatory checkpoint fields. Preserve only actually reported measurements;
+// a missing score or success-rate is not inferred from population lineage.
+function courierMetrics(source) {
+    const metrics={};
+    const stats=source?.metrics;
+    if(!stats||typeof stats!=='object'||Array.isArray(stats))return metrics;
+    for(const [name,value] of Object.entries(stats)) {
+        if(Object.keys(metrics).length>=90)break;
+        if(!/^[a-z][a-z0-9_]{0,39}$/.test(name)||
+            !Number.isFinite(value)||Math.abs(value)>1e12)continue;
+        const unit=/(?:^|_)(?:seconds|duration|time_s)$/.test(name)
+            ?'seconds':/(?:^|_)(?:rate|ratio|fraction)$/.test(name)&&
+                value>=0&&value<=1?'ratio':'scalar';
+        if(unit==='seconds'&&value<0)continue;
+        metrics[name]={value,unit};
+    }
+    return metrics;
+}
+
 function liveWindowsProgress(root) {
     // Reading the durable checkpoint can block Python's replacement on Windows.
     // The append-only event is emitted after all checkpoint files are published.
@@ -43,7 +63,10 @@ function liveWindowsProgress(root) {
             if(event.event==='checkpoint_saved')return {
                 steps_completed:event.round,
                 source_modified_at:new Date(event.utc).toISOString(),
-                metrics:{checkpoint_write_time:{value:event.seconds,unit:'seconds'}},
+                metrics:{
+                    checkpoint_write_time:{value:event.seconds,unit:'seconds'},
+                    ...courierMetrics(event),
+                },
             };
         }
         return null;
@@ -206,6 +229,7 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
                     metrics:{
                         generation:{value:summary.generation,unit:'count'},
                         active_training_time:{value:summary.active_seconds,unit:'seconds'},
+                        ...courierMetrics(summary),
                     },
                 },context.project_id);
             }catch(error) {
