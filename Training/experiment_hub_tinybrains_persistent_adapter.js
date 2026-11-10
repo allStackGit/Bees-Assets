@@ -151,6 +151,7 @@ function createTinyBrainsPersistentDockerAdapter({
     return {
         executable,cwd:PROJECT_IN,docker,stop_policy:'interrupt-main',
         gpu_execution:'cuda',
+        gpu_sharing:'cooperative-pytorch',
         tinybrains_profiles:Object.fromEntries([...approved].map(([id,p])=>[id,p.sha256])),
         tinybrains_cuda_profiles:[...approved.keys()],
         tinybrains_thread_overrides:[...approved.keys()],
@@ -178,7 +179,14 @@ function createTinyBrainsPersistentDockerAdapter({
                 (threads!==undefined&&(!Number.isSafeInteger(threads)||threads<1||threads>256))||
                 !Number.isSafeInteger(updates)||updates<1||updates>10000000||
                 (device==='cpu'?Boolean(context.gpu_pci_address||context.gpu_cuda_uuid):
-                    !PCI.test(String(context.gpu_pci_address||''))))
+                    !PCI.test(String(context.gpu_pci_address||'')))||
+                (device!=='cpu'&&context.gpu_mode==='shared'&&
+                    (!Number.isSafeInteger(context.gpu_vram_mb)||
+                        context.gpu_vram_mb<1||
+                        !Number.isSafeInteger(context.gpu_total_vram_mb)||
+                        context.gpu_vram_mb>context.gpu_total_vram_mb||
+                        !Number.isSafeInteger(context.gpu_compute_pct)||
+                        context.gpu_compute_pct<1||context.gpu_compute_pct>100)))
                 throw Error('Invalid immutable TinyBrains Hub training request.');
             const parent=context.continuation_of_job_id;
             if(parent?
@@ -224,7 +232,9 @@ function createTinyBrainsPersistentDockerAdapter({
                 '--waves',String(item.profile.waves),
                 '--actions',String(item.profile.rollout_actions),
                 ...(device==='cpu'?['--device','cpu']:
-                    ['--rocm-pci',context.gpu_pci_address])];
+                    ['--rocm-pci',context.gpu_pci_address,
+                        ...(context.gpu_mode==='shared'?
+                            ['--gpu-vram-mb',String(context.gpu_vram_mb)]:[])])];
         },
         checkpoint_ready(context){
             const item=approved.get(context.frozen_parameters?.profile);
