@@ -3013,27 +3013,6 @@ class ExperimentHub {
             const previousTelemetry=this.executionTelemetry.get(item.job_id);
             const previousProgress=previousTelemetry?.progress||null;
             const job=this.state.jobs.find(j=>j.id===item.job_id);
-            // Job metric preferences affect the lightweight Hub chart archive
-            // only. Every project's native full history stays intact.
-            // Never fabricate a requested metric that the adapter did not emit.
-            let chartProgress=progress;
-            if(progress&&Array.isArray(job.metric_selection)&&job.metric_selection.length) {
-                const chosen=Object.fromEntries(Object.entries(progress.metrics)
-                    .filter(([name])=>job.metric_selection.includes(name)||
-                        name==='total_ppo_updates'));
-                if(Object.keys(chosen).length)
-                    chartProgress={...progress,metrics:chosen};
-            }
-            // Comparison history rejects duplicate, out-of-order and
-            // unrelated experiment snapshots. Keep the last accepted
-            // progress visible while fresh native process metrics arrive.
-            const progressAccepted=chartProgress&&this.progressHistory.record(
-                job.id,job.project_id,chartProgress,received);
-            if(progressAccepted)changedHistory=true;
-            // A terminal report may omit new metrics. Still flush any
-            // previously sampled history before the coordinator exits.
-            if(['finished','failed','stopped'].includes(job.status))
-                terminalHistory=true;
             // Estimate CPU-core equivalents from authenticated server
             // arrival times, not a worker-supplied wall clock. Neither a
             // restarted agent nor a replaced native dispatch is continuous.
@@ -3049,6 +3028,52 @@ class ExperimentHub {
                 cpuAfter>=cpuBefore&&Number.isFinite(elapsedMs)&&
                 elapsedMs>=1000&&elapsedMs<=120000
                 ?(cpuAfter-cpuBefore)/(elapsedMs*1000000):null;
+            // Resource samples are authenticated machine/job observations.
+            // GPU values are HOST-WIDE observations on the physically bound
+            // device; they are not measured per-job GPU consumption.
+            let chartProgress=progress;
+            if(progress) {
+                const measurements={...progress.metrics};
+                const add=(key,value,unit)=>{
+                    if(!Object.hasOwn(measurements,key)&&
+                        Object.keys(measurements).length<96&&
+                        Number.isFinite(value)&&value>=0&&value<=1e12)
+                        measurements[key]={value,unit};
+                };
+                add('job_cpu_cores',cpuCores,'scalar');
+                add('job_memory_mb',item.memory_current_mb,'mb');
+                add('job_peak_memory_mb',Number.isFinite(item.peak_job_memory_bytes)
+                    ?item.peak_job_memory_bytes/1048576:null,'mb');
+                add('host_cpu_busy_pct',report.host_cpu_busy_pct,'scalar');
+                const lease=this.state.reservations.find(l=>
+                    l.id===job.lease_id&&l.job_id===job.id);
+                const bindings=lease?.gpu_bindings||[];
+                for(const [i,binding] of bindings.entries()) {
+                    const observed=report.gpu_devices?.find(device=>
+                        device.pci_address===binding.pci_address);
+                    if(!observed)continue;
+                    add('host_gpu_'+i+'_busy_pct',observed.gpu_busy_pct,'scalar');
+                    add('host_gpu_'+i+'_used_vram_mb',observed.used_vram_mb,'mb');
+                    if(bindings.length===1) {
+                        add('host_gpu_busy_pct',observed.gpu_busy_pct,'scalar');
+                        add('host_gpu_vram_mb',observed.used_vram_mb,'mb');
+                    }
+                }
+                let retained=measurements;
+                if(Array.isArray(job.metric_selection)&&job.metric_selection.length) {
+                    retained=Object.fromEntries(Object.entries(measurements)
+                        .filter(([name])=>job.metric_selection.includes(name)||
+                            name==='total_ppo_updates'));
+                    if(!Object.keys(retained).length)
+                        retained=measurements;
+                }
+                chartProgress={...progress,metrics:retained};
+            }
+            const progressAccepted=chartProgress&&this.progressHistory.record(
+                job.id,job.project_id,chartProgress,received);
+            if(progressAccepted)changedHistory=true;
+            if(['finished','failed','stopped'].includes(job.status))
+                terminalHistory=true;
             this.executionTelemetry.set(item.job_id,{
                 at:new Date(received).toISOString(),state:item.state,
                 dispatch_id:item.dispatch_id,agent_instance_id:instance||null,
