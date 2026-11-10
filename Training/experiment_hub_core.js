@@ -757,7 +757,9 @@ function allocationChoice(machines,reservations,job,preferredMachineId=null,
         const cpuOnly=r.gpu_count===0&&!(r.gpus||[]).length;
         const exclusiveGpu=r.gpu_count===1&&r.gpu_mode==='exclusive';
         const nativeGpu=r.gpu_count===1&&['exclusive','shared'].includes(r.gpu_mode);
-        if(r.ram_mb<128||(!cpuOnly&&!nativeGpu))return fits;
+        const dualGpu=r.gpu_count===2&&r.gpu_mode==='exclusive'&&
+            selected.project_id==='tinybrains'&&selected.frozen_parameters?.device==='dual';
+        if(r.ram_mb<128||(!cpuOnly&&!nativeGpu&&!dualGpu))return fits;
         const ready=new Set(eligible.filter(machine=>
             machine.local_executor_enabled===true&&machine.native_preflight_passed===true&&
             machine.installed_projects?.includes(selected.project_id)&&
@@ -769,8 +771,11 @@ function allocationChoice(machines,reservations,job,preferredMachineId=null,
                 (machine.agent_platform==='win32'
                     ?machine.gpu_inventory_source==='nvidia-smi-v1'&&machine.observed_gpus?.length>=1&&
                         (r.gpu_mode!=='shared'||machine.gpu_shared_projects?.includes(selected.project_id))
-                    :(r.gpu_mode==='exclusive'||r.gpu_mode==='shared'&&
-                        machine.gpu_shared_projects?.includes(selected.project_id))&&
+                    :(r.gpu_count===2
+                        ?dualGpu&&machine.tinybrains_dual_gpu_profiles
+                            ?.includes(selected.frozen_parameters.profile)
+                        :r.gpu_mode==='exclusive'||r.gpu_mode==='shared'&&
+                            machine.gpu_shared_projects?.includes(selected.project_id))&&
                         machine.observed_gpus?.length>=2))
         ).map(machine=>machine.id));
         const runnable=fits.filter(p=>ready.has(p.machine_id));
@@ -1465,9 +1470,16 @@ class ExperimentHub {
                 (job.resources.gpu_count===0||
                     machine.gpu_projects?.includes(job.project_id)&&
                     (machine.agent_platform==='linux'
-                        ?(job.resources.gpu_mode==='exclusive'||
-                            job.resources.gpu_mode==='shared'&&
-                                machine.gpu_shared_projects?.includes(job.project_id))&&
+                        ?(job.resources.gpu_count===2
+                            ?job.project_id==='tinybrains'&&
+                                job.frozen_parameters?.device==='dual'&&
+                                job.resources.gpu_mode==='exclusive'&&
+                                machine.tinybrains_dual_gpu_profiles
+                                    ?.includes(job.frozen_parameters.profile)
+                            :job.resources.gpu_count===1&&
+                                (job.resources.gpu_mode==='exclusive'||
+                                    job.resources.gpu_mode==='shared'&&
+                                        machine.gpu_shared_projects?.includes(job.project_id)))&&
                             machine.observed_gpus?.length>=2
                         :machine.agent_platform==='win32'&&
                             machine.gpu_inventory_source==='nvidia-smi-v1'&&
@@ -1511,7 +1523,7 @@ class ExperimentHub {
             }
             if(session.probe_exclusive_gpu) {
                 for(const job of pendingClaims) {
-                    if(job.resources.gpu_count!==1||
+                    if(![1,2].includes(job.resources.gpu_count)||
                         !(job.resources.gpu_mode==='exclusive'||
                             job.resources.gpu_mode==='shared'&&
                                 snapshot.machines.find(m=>m.id===job.assigned_machine_id)
@@ -1538,8 +1550,11 @@ class ExperimentHub {
                 const r=job.resources;
                 return !job.lease_id&&r.ram_mb>=128&&(
                     r.gpu_count===0&&!(r.gpus||[]).length||
-                    session.claim_exclusive_gpu&&r.gpu_count===1&&
-                        ['exclusive','shared'].includes(r.gpu_mode));
+                    session.claim_exclusive_gpu&&(
+                        r.gpu_count===1&&['exclusive','shared'].includes(r.gpu_mode)||
+                        r.gpu_count===2&&r.gpu_mode==='exclusive'&&
+                            job.project_id==='tinybrains'&&
+                            job.frozen_parameters?.device==='dual'));
             };
             for(const [index,job] of pendingClaims.entries()) {
                 if(!claimable(job))continue;
