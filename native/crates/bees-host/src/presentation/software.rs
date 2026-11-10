@@ -45,6 +45,8 @@ pub struct NativeRenderCounts {
     pub culled_obstacles: usize,
     pub projectiles: usize,
     pub pieces: usize,
+    pub culled_projectiles: usize,
+    pub culled_pieces: usize,
     pub range_queries: usize,
     pub range_contacts: usize,
     pub aim_points: usize,
@@ -194,8 +196,15 @@ impl NativeSoftwareRenderer {
         }
         for piece in view.combat.render_asteroid_pieces() {
             counts.pieces += 1;
+            let position = piece.pose.position;
+            if position.x < viewport.min.x || position.x > viewport.max.x ||
+                position.y < viewport.min.y || position.y > viewport.max.y
+            {
+                counts.culled_pieces += 1;
+                continue;
+            }
             let c = (piece.sprite_opacity() * 160.0) as u32;
-            self.cross(piece.pose.position, 1.0, c * 0x010101);
+            self.cross(position, 1.0, c * 0x010101);
         }
         for (ship, body) in view.combat.render_ships() {
             counts.ships += 1;
@@ -288,12 +297,28 @@ impl NativeSoftwareRenderer {
         }
         for (_, body) in view.combat.render_projectiles() {
             counts.projectiles += 1;
+            let position = body.motion.position;
+            let center_visible = position.x >= viewport.min.x &&
+                position.x <= viewport.max.x &&
+                position.y >= viewport.min.y &&
+                position.y <= viewport.max.y;
+            let outside_hull = match body.shape() {
+                None => true,
+                Some(_) => body.primary_bounds()
+                    .is_some_and(|hull| !hull.overlaps(viewport)),
+            };
+            // The script-entity center marker is real UI even when its
+            // collider is displaced, so require both to be offscreen.
+            if !center_visible && outside_hull {
+                counts.culled_projectiles += 1;
+                continue;
+            }
             if let Some(shape) = body.shape() {
-                self.shape(shape, Pose { position: body.motion.position,
+                self.shape(shape, Pose { position,
                     rotation_degrees: body.rotation_degrees }, 0xffd580);
             }
             // Collider-less script entities still have an inspectable position.
-            self.cross(body.motion.position, 1.0, 0xffd580);
+            self.cross(position, 1.0, 0xffd580);
         }
         if let Some(bounds) = self.selection_box {
             self.shape(&ShipShape::Box { offset: (bounds.min + bounds.max) * 0.5,
