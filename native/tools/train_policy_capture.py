@@ -6,6 +6,7 @@ from collections import defaultdict
 import hashlib
 import json
 from pathlib import Path
+import time
 
 import numpy as np
 
@@ -223,10 +224,15 @@ def trajectories(rollouts, horizon, behavior_id):
 
 
 def main():
+    started_at = time.perf_counter()
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ("capture", "journal", "manifest", "checkpoint", "config", "output"):
         parser.add_argument(name, type=Path)
     parser.add_argument("--learner-slot", type=int, help="train only on this manifest slot")
+    parser.add_argument(
+        "--device", default="cpu",
+        help="optimizer device: cpu, cuda, or cuda:N (ROCm PyTorch also uses cuda)",
+    )
     parser.add_argument(
         "--rollout", type=Path, nargs=3, action="append", default=[],
         metavar=("CAPTURE", "JOURNAL", "MANIFEST"),
@@ -242,10 +248,21 @@ def main():
     from mlagents.trainers.settings import TorchSettings, TrainerSettings
     from mlagents.torch_utils import set_torch_config
 
+    try:
+        device = torch.device(args.device)
+    except (TypeError, RuntimeError) as error:
+        parser.error(f"invalid optimizer device: {error}")
+    if device.type not in ("cpu", "cuda"):
+        parser.error("optimizer device must be cpu, cuda, or cuda:N")
+    if device.type == "cuda" and (
+        not torch.cuda.is_available() or
+        (device.index is not None and device.index >= torch.cuda.device_count())
+    ):
+        parser.error(f"optimizer device {device} is not available")
     install_bees_actor()
     from bees_mlagents_ppo_compat import install_value_estimate_key_fix
     install_value_estimate_key_fix()
-    set_torch_config(TorchSettings(device="cpu"))
+    set_torch_config(TorchSettings(device=str(device)))
     register_trainer_plugins()
 
     behavior = BehaviorIdentifiers.from_name_behavior_id("BeesRL1v1?team=0")
@@ -277,6 +294,7 @@ def main():
     if any(name in checkpoint for name in optimizer_modules):
         for name, module in optimizer_modules.items():
             module.load_state_dict(checkpoint[name])
+    processing_started = time.perf_counter()
     terminal_steps = 0
     for trajectory in trajectories(rollouts, settings.time_horizon, behavior.behavior_id):
         trainer._process_trajectory(trajectory)
@@ -284,13 +302,23 @@ def main():
     steps = trainer.update_buffer.num_experiences
     if steps < settings.hyperparameters.batch_size:
         parser.error("capture contains fewer observed intervals than one optimizer minibatch")
+    processing_wall_seconds = time.perf_counter() - processing_started
+    update_started = time.perf_counter()
     if not trainer._update_policy():
         raise RuntimeError("MA-POCA did not update its policy")
+    if device.type == "cuda":
+        torch.cuda.synchronize(device)
+    update_wall_seconds = time.perf_counter() - update_started
     modules = {**policy.get_modules(), **optimizer_modules}
     with (args.output / "checkpoint.pt").open("xb") as output:
         torch.save({name: module.state_dict() for name, module in modules.items()}, output)
     print(json.dumps({
+        "optimizer_device": str(device),
         "optimizer_input_steps": steps,
+        "trajectory_processing_wall_seconds": processing_wall_seconds,
+        "optimizer_update_wall_seconds": update_wall_seconds,
+        "optimizer_steps_per_update_second": steps / update_wall_seconds if update_wall_seconds else None,
+        "total_wall_seconds": time.perf_counter() - started_at,
         "terminal_steps": terminal_steps,
         "episodes": len(rollouts),
         "opponent_steps": sum(
