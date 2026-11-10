@@ -48,7 +48,7 @@ function supportsTinyBrainsProfile(machine,job) {
         job.resources?.gpu_count===0;
     const gpu=job.resources?.gpu_count===1&&
         (job.resources.gpu_mode==='exclusive'||
-            job.resources.gpu_mode==='shared'&&machine.agent_platform==='win32'&&
+            job.resources.gpu_mode==='shared'&&
                 machine.gpu_shared_projects?.includes('tinybrains'));
     const imported=p?.import_checkpoint==null?null:
         machine.tinybrains_imports?.[p.import_checkpoint];
