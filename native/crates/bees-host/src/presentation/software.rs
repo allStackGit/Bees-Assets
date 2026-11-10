@@ -85,6 +85,21 @@ impl NativeSoftwareRenderer {
     pub fn size(&self) -> (usize, usize) { (self.width, self.height) }
     pub fn pixels(&self) -> &[u32] { &self.pixels }
 
+    /// Resize presentation storage only. Preserve camera world scale and
+    /// center, so exposing more pixels shows more of the same battlefield.
+    /// Never allocate a new simulation or touch the authoritative world.
+    pub fn resize(&mut self, width: usize, height: usize) -> io::Result<bool> {
+        if width == self.width && height == self.height { return Ok(false); }
+        if width == 0 || height == 0 || width > 8192 || height > 8192 {
+            return Err(io::Error::new(io::ErrorKind::InvalidInput, "invalid viewport size"));
+        }
+        self.pixels.resize(width * height, 0);
+        self.width = width;
+        self.height = height;
+        self.selection_box = None;
+        Ok(true)
+    }
+
     /// Use the authoritative hull and healing-zone colliders for clicks,
     /// retaining screen-space tolerance for small ships. Large hull edges
     /// must remain selectable even when their centers are offscreen.
