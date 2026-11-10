@@ -3150,7 +3150,8 @@ class ExperimentHub {
             Object.keys(value).some(key=>!['confirm_queue','learner','collectors'].includes(key))||
             !object(value.learner)||
             Object.keys(value.learner).some(key=>
-                !['configuration_id','expected_revision','machine_id','resources'].includes(key))||
+                !['configuration_id','expected_revision','machine_id','resources',
+                    'continuation_of_job_id'].includes(key))||
             !ID.test(String(value.learner.machine_id||''))||
             !Array.isArray(value.collectors))
             throw Error('Confirm the saved learner, its machine, and one resource budget for each approved remote collector.');
@@ -3159,6 +3160,14 @@ class ExperimentHub {
         const config=snapshot.configurations.find(c=>c.id===value.learner.configuration_id&&
             c.revision===value.learner.expected_revision&&c.project_id==='tinybrains');
         const endpoints=learnerMachine?.tinybrains_remote_rollout_endpoints;
+        const ancestorId=value.learner.continuation_of_job_id??null;
+        const ancestor=ancestorId===null?null:snapshot.jobs.find(j=>j.id===ancestorId);
+        if(ancestorId!==null&&(!UUID.test(String(ancestorId))||
+            !ancestor||ancestor.project_id!=='tinybrains'||
+            !checkpointContinuationComplete(ancestor)||
+            !ancestor.capacity_released_at||
+            ancestor.assigned_machine_id!==value.learner.machine_id))
+            throw Error('Distributed continuation requires a verified resumable learner checkpoint, released capacity and the same learner machine.');
         if(!config||config.parameters?.remote_rollouts!==true||
             config.parameters?.device==='cpu'||
             !learnerMachine||learnerMachine.status!=='connected'||
@@ -3170,6 +3179,7 @@ class ExperimentHub {
             !supportsTinyBrainsProfile(learnerMachine,{
                 project_id:'tinybrains',frozen_parameters:config.parameters,
                 resources:resourceRequest(value.learner.resources),
+                continuation_of_job_id:ancestorId,
             })||
             !Array.isArray(endpoints)||!endpoints.length||endpoints.length>8||
             value.collectors.length!==endpoints.length||
@@ -3180,6 +3190,8 @@ class ExperimentHub {
             throw Error('Register the TinyBrains rollout project before creating a distributed group.');
         const next=copy(this.state),machines=snapshot.machines;
         const learner=this.queueIn(next,value.learner);
+        if(learner.status!=='waiting_adapter')
+            throw Error('Distributed group claims require an immediately eligible, released predecessor.');
         // Only groups queued as one transaction opt into automatic sidecar
         // teardown after the learner has a verified terminal owner report.
         learner.distributed_rollout_managed=true;
