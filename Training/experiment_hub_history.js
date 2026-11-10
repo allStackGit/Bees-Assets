@@ -5,9 +5,9 @@
 const fs=require('node:fs');
 const crypto=require('node:crypto');
 const {validateProgress}=require('./experiment_hub_progress');
-const MAX_FILE_BYTES=4*1024*1024;
-const MAX_JOBS=24;
-const MAX_POINTS=96;
+const MAX_FILE_BYTES=128*1024*1024;
+const MAX_JOBS=256;
+const MAX_POINTS=256;
 const PROJECT=/^[a-z][a-z0-9_-]{0,47}$/;
 const MIN_SAMPLE_INTERVAL_MS=60000;
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
