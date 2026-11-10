@@ -39,12 +39,16 @@ function point(sample,previous) {
             const name=field+'_'+key;
             const unit=field==='pipeline'
                 ?(['staged_s','accepted_s','consumed_s'].includes(key)
-                    ?'rate':key==='broker_ratio'?'ratio':'scalar')
+                    ?'rate':'scalar')
                 :field==='ppo'
                     ?key==='minibatches_s'?'rate':
+                        ['vram_used_max_mib','rss_max_mib'].includes(key)?'mb':
                         ['update_s','materialize_s','backward_s',
-                        'optimizer_step_s','cpu_prepare_wait_s'].includes(key)
-                            ?'seconds':'scalar'
+                        'optimizer_step_s','cpu_prepare_wait_s',
+                        'avg_minibatch_s','optimizer_work_per_minibatch_s',
+                        'optimizer_work_estimated_s','diagnostic_profile_s',
+                        'minibatch_p50_s','minibatch_p90_s','minibatch_max_s'
+                        ].includes(key)?'seconds':'scalar'
                     :'scalar';
             numeric(metrics,name,value,unit);
         }
