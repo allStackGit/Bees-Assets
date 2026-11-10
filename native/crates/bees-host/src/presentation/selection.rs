@@ -41,15 +41,16 @@ impl NativeSquadSelection {
 
     /// Source Selector deduplicates squads touched by the actual selection
     /// collider. Overlap includes hull edges even when centers lie outside.
-    pub fn select_box(&mut self, view: &NativeRenderWorldView<'_>, bounds: Aabb)
-        -> Result<(), PhysicsError>
+    pub fn select_box(&mut self, view: &NativeRenderWorldView<'_>, bounds: Aabb,
+        additive: bool) -> Result<(), PhysicsError>
     {
         self.synchronize(view);
         let ships = view.combat.physics().ship_ids_overlapping_box(bounds)?;
-        self.clear();
-        // Preserve first-hull traversal order for command dispatch, without
-        // searching an expanding selection vector for every squad member.
-        let mut seen = HashSet::new();
+        // Ctrl-drag extends the current squad selection just as Ctrl-click
+        // does. Preserve existing order and first-hull traversal order for
+        // command dispatch, without quadratic membership searches.
+        if !additive { self.clear(); }
+        let mut seen: HashSet<_> = self.squads.iter().copied().collect();
         for ship in ships {
             let Some(owner) = view.roster.owning_squad(ship) else { continue };
             if selectable(view, owner) && seen.insert(owner) {
