@@ -503,7 +503,30 @@ function validatePowerShellFile(filePath) {
     });
 }
 
-function prepareRemoteBootstrap(config, python, release) {
+// The worker overlay is intentionally independent of the immutable central
+// training release. An ordinary same-run start must not publish an older
+// worker bundle over the update.
+const workerRuntimeOverridePath = path.join(paths.runtimeRoot, 'worker-runtime-override.json');
+
+function workerBootstrapRelease(release, explicitlySelected = null) {
+    const override = explicitlySelected ||
+        (exists(workerRuntimeOverridePath) ? readJson(workerRuntimeOverridePath) : null);
+    if (!override) return { release, overridden: false };
+    if (override.run_id !== release.run_id ||
+        override.build_id !== release.build_id ||
+        override.compatibility_key !== release.compatibility_key) {
+        if (explicitlySelected) throw new Error('Worker update lost pinned run/build compatibility.');
+        return { release, overridden: false }; // An unrelated new run uses its own frozen release.
+    }
+    if (!override.training_runtime || !override.training_runtime.archive ||
+        !override.training_runtime.archive_sha256 ||
+        !override.training_runtime.runtime_version) {
+        throw new Error('Worker-only runtime metadata is incomplete. Refusing to replace bootstrap.');
+    }
+    return { release: { ...release, training_runtime: override.training_runtime }, overridden: true };
+}
+
+function prepareRemoteBootstrap(config, python, release, options = {}) {
     for (const required of [
         paths.remoteBootstrapTemplate,
         paths.remoteLinuxBootstrapTemplate,
@@ -553,7 +576,8 @@ function prepareRemoteBootstrap(config, python, release) {
 
     ensureDir(paths.remoteRoot);
     ensureDir(paths.runtimeRoot);
-    const runtime = resolveReleaseTrainingRuntime(python, release, true);
+    const selected = workerBootstrapRelease(release, options.workerOverride || null);
+    const runtime = resolveReleaseTrainingRuntime(python, selected.release, true);
     const releaseRuntimeArchive = String(runtime.archive);
 
     const runtimeZip = path.join(paths.remoteRoot, 'bees-remote-runtime.zip');
@@ -708,18 +732,25 @@ exit "$BEES_EXIT"
     }
     fs.writeFileSync(linuxCandidate, linuxWrapper, 'utf8');
 
-    const bundle = invokePythonJson(python, [
-        paths.bootstrapBundleScript,
-        '--output', bundleCandidate,
-        '--runtime', releaseRuntimeArchive,
-        '--worker-token', paths.workerTokenPath,
-        '--wan-token', paths.wanTokenPath,
-        '--release', paths.latestReleasePath,
-        '--windows-bridge', windowsBridge,
-        '--linux-bridge', linuxBridge,
-        '--windows-launcher', windowsCandidate,
-        '--linux-launcher', linuxCandidate,
-    ]);
+    const workerReleaseCandidate = path.join(paths.runtimeRoot, 'worker-bootstrap-release.candidate.json');
+    if (selected.overridden) writeJsonAtomic(workerReleaseCandidate, selected.release);
+    let bundle;
+    try {
+        bundle = invokePythonJson(python, [
+            paths.bootstrapBundleScript,
+            '--output', bundleCandidate,
+            '--runtime', releaseRuntimeArchive,
+            '--worker-token', paths.workerTokenPath,
+            '--wan-token', paths.wanTokenPath,
+            '--release', selected.overridden ? workerReleaseCandidate : paths.latestReleasePath,
+            '--windows-bridge', windowsBridge,
+            '--linux-bridge', linuxBridge,
+            '--windows-launcher', windowsCandidate,
+            '--linux-launcher', linuxCandidate,
+        ]);
+    } finally {
+        if (selected.overridden) removeIfExists(workerReleaseCandidate);
+    }
     if (String(bundle.build_id) !== String(release.build_id)) {
         throw new Error(
             'Published bootstrap bundle build identity disagrees with release. bundle=' +
@@ -730,6 +761,11 @@ exit "$BEES_EXIT"
     atomicReplace(windowsCandidate, path.join(paths.remoteRoot, 'bees-remote-worker.cmd'));
     atomicReplace(linuxCandidate, path.join(paths.remoteRoot, 'bees-remote-worker.sh'));
     atomicReplace(bundleCandidate, paths.bootstrapBundlePath);
+    if (options.workerOverride && options.persistWorkerOverride !== false) {
+        // A Unity maintenance build stages its package first and persists
+        // the new pointer only after the compatible Unity build is canonical.
+        writeJsonAtomic(workerRuntimeOverridePath, options.workerOverride);
+    }
 
     for (const entry of fs.readdirSync(paths.remoteRoot, { withFileTypes: true })) {
         if (!entry.isFile()) continue;

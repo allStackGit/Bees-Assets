@@ -289,6 +289,7 @@ function newTrainingRunPlan(python, options = {}) {
         '--state', paths.runStatePath,
         '--out', paths.runPlanPath,
     ];
+    if (options.trainerConfig) args.push('--trainer-config', String(options.trainerConfig));
     if (options.preserveRun) {
         args.push('--preserve-run');
     }
@@ -379,6 +380,7 @@ function convertReleaseToForcedRunPlan(release, plan, outgoingRun) {
     copy.compatibility_key = String(plan.compatibility_key);
     copy.incompatible = true;
     copy.contract = plan.contract;
+    copy.experiment_config = plan.trainer_config || null;
     return copy;
 }
 

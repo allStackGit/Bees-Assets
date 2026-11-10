@@ -40,6 +40,13 @@ namespace Assets.Scripts.Levels
                     (ConfigData.CurrentGameMode != ConfigData.GameModes.Campaign || ConfigData.IsTestingLevel))
                 {
                     Level.State.GameOver = true;
+                    if (global::RlOneVsOneTrainingBootstrap.IsActiveFor(Level.Stage))
+                    {
+                        // Latch the outcome at the first last-squad death. The normal
+                        // Level.Update path completes ML-Agents and resets the arena
+                        // after this entire death/projectile callback has unwound.
+                        Level.State.CaptureEliminationStateFromShips();
+                    }
                 }
             }
 
