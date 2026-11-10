@@ -3433,14 +3433,34 @@ impl CombatWorld {
     /// shared asteroid and ship damage rules.
     fn process_asteroid_ship_contacts(&mut self) -> Result<(), CombatWorldError> {
         let mut newly_nearby_ships = Vec::new();
-        for index in 0..self.physics.proximity_ship_exits().len() {
+        let exiting = self.physics.proximity_ship_exits().len();
+        for index in 0..exiting {
             let contact = self.physics.proximity_ship_exits()[index];
             self.nearby_asteroid_ships.remove(&(
                 contact.obstacle_id, contact.ship_id,
             ));
-            if !self.nearby_asteroid_ships.iter()
-                .any(|&(_, ship_id)| ship_id == contact.ship_id) {
-                self.asteroid_navigation_refresh.remove(&contact.ship_id);
+        }
+        // All exits precede new entries in the source callback phase.
+        // Prune each ship's timer after the exit batch, but before entries
+        // can re-arm it. This preserves the original reset semantics.
+        if exiting == 1 {
+            let ship_id = self.physics.proximity_ship_exits()[0].ship_id;
+            if !self.nearby_asteroid_ships.iter().any(|&(_, other)| other == ship_id) {
+                self.asteroid_navigation_refresh.remove(&ship_id);
+            }
+        } else if exiting > 1 {
+            // A large group of simultaneous exits must not scan all
+            // remaining asteroid contacts once for every exiting pair.
+            // The lookup is rebuilt from canonical pairs and reused.
+            self.asteroid_navigation_present.clear();
+            self.asteroid_navigation_present.extend(
+                self.nearby_asteroid_ships.iter().map(|&(_, ship_id)| ship_id),
+            );
+            for index in 0..exiting {
+                let ship_id = self.physics.proximity_ship_exits()[index].ship_id;
+                if !self.asteroid_navigation_present.contains(&ship_id) {
+                    self.asteroid_navigation_refresh.remove(&ship_id);
+                }
             }
         }
         for index in 0..self.physics.proximity_ship_entries().len() {
