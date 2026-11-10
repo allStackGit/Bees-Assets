@@ -29,6 +29,7 @@ def completed_rollouts(capture, journal, manifest, manifest_sha, checkpoint_sha,
         if learner_slot not in matching:
             raise ValueError("learner slot must match the optimizer input checkpoint")
         learner_slots = {learner_slot}
+    has_opponent_slots = learner_slots != set(models)
     terminals = {}
     all_terminals = {}
     rewards = defaultdict(list)
@@ -83,9 +84,17 @@ def completed_rollouts(capture, journal, manifest, manifest_sha, checkpoint_sha,
     queued_decisions = 0
     all_episodes_match = len(terminals) == len(all_terminals)
     for generation, rows in capture_frames(capture, journal_id):
-        # Single-manifest captures can retain borrowed rows from one owned
-        # frame allocation. Mixed manifests copy only selected episodes.
-        owned_frame = rows.copy() if all_episodes_match else None
+        # Retain full observations only for the selected learner. Opposing
+        # controllers still need their identity and team verified at every
+        # decision, but their 7,743-float observations never reach MA-POCA.
+        # A selected-only NumPy copy keeps the bulk allocation advantage.
+        learner_rows = None
+        if generation is not None and all_episodes_match and has_opponent_slots:
+            selected = np.isin(rows["model_slot"], list(learner_slots))
+            learner_rows = iter(rows[selected])
+            owned_frame = None
+        else:
+            owned_frame = rows.copy() if all_episodes_match else None
         source_rows = owned_frame if owned_frame is not None else rows
         if generation is None:
             for row in source_rows:
@@ -132,7 +141,23 @@ def completed_rollouts(capture, journal, manifest, manifest_sha, checkpoint_sha,
                 frame = frames[key].setdefault(tick, {})
                 if agent in frame:
                     raise ValueError("duplicate agent at a decision tick")
-                frame[agent] = row if owned_frame is not None else row.copy()
+                if int(row["model_slot"]) in learner_slots:
+                    frame[agent] = (
+                        next(learner_rows) if learner_rows is not None else
+                        row if owned_frame is not None else row.copy()
+                    )
+                else:
+                    # The validator uses these exact fields for opponents;
+                    # only learner-side rows are fed to the group critic.
+                    frame[agent] = {
+                        "ship": int(row["ship"]),
+                        "binding_revision": int(row["binding_revision"]),
+                        "team": team,
+                    }
+                    if stats is not None:
+                        stats["compact_opponent_decisions"] = (
+                            stats.get("compact_opponent_decisions", 0) + 1
+                        )
                 queued_decisions += 1
 
         if stats is not None:
@@ -515,6 +540,7 @@ def main():
         "opponent_steps": opponent_steps,
         "capture_peak_inflight_decisions": capture_stats.get("peak_inflight_decisions", 0),
         "capture_peak_inflight_episodes": capture_stats.get("peak_inflight_episodes", 0),
+        "capture_compact_opponent_decisions": capture_stats.get("compact_opponent_decisions", 0),
     }
     pending_metrics = args.output / "metrics.json.pending"
     with pending_metrics.open("x", encoding="utf-8") as output:
