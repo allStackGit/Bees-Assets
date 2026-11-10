@@ -899,7 +899,7 @@ document.addEventListener('DOMContentLoaded', () => {
         feedback('hub-config-message','Profile and update count copied to the draft. '+
             (cpuFallback||!selected?.cudaWorkers
                 ?'When queueing, request CPU/RAM without GPUs. '
-                :'When queueing, request one GPU (exclusive, or a cooperative Windows share) and sufficient CPU/RAM. ')+
+                :'When queueing, request one GPU (exclusive, or an approved cooperative share) and sufficient CPU/RAM. ')+
             (sourceId
                 ?'The source checkpoint SHA-256 is frozen; this draft can initialize a new lineage, not a continuation stage. '
                 :'Use a configuration without an import for checkpoint-continuation stages. ')+
@@ -1493,7 +1493,12 @@ document.addEventListener('DOMContentLoaded', () => {
                                         ' MiB; its '+j.resources.gpu_compute_pct+
                                         '% GPU compute budget is advisory, not enforced. '
                                     :'No GPU share or VRAM cap is enforced. ')
-                            :'The Linux service verifies device access and ROCm visibility before training. '):'')+
+                            :'The Linux service verifies device access and ROCm visibility before training. '+
+                                (j.resources.gpu_mode==='shared'
+                                    ?'TinyBrains limits PyTorch allocator memory to '+j.resources.gpu_vram_mb+
+                                        ' MiB; its '+j.resources.gpu_compute_pct+
+                                        '% GPU compute budget is advisory. No hard GPU VRAM isolation is provided. '
+                                    :'')):'')+
                         (windows?'Windows Stop requests checkpoint-preserving shutdown when the local adapter supports it; otherwise it force-terminates the Job Object process tree. ':
                             'Linux uses the locally selected service stop policy. ')+
                         (autoRelease?'The Hub will release this claim after verified finish or Stop. ':'')+
@@ -2374,8 +2379,8 @@ document.addEventListener('DOMContentLoaded', () => {
             '? This will start eligible CPU jobs and release verified completed capacity. You confirm that unmanaged host workloads have been accounted for. Restart disarms automation by default.'+
             (resume?' You explicitly authorize CPU-only scheduling recovery after coordinator or agent restart, after fresh native and lease proof. This does not enable machine boot startup. Uncertain jobs or changed credentials cancel the permission.':'')+
             (adopt?' Previously automated running or completed jobs will be re-adopted ONLY after fresh, same-dispatch native inspection and verified lease ownership. Uncertain jobs block arming; existing native processes will not be relaunched.':'')+
-            (gpu?' This session may also start eligible Linux exclusive GPU or Windows exclusive/cooperative CUDA jobs.':'')+
-            (gpuClaim?' This session may claim exclusive GPU or locally approved cooperative Windows shared capacity.':'')+
+            (gpu?' This session may also start eligible Linux or Windows GPU jobs with separately verified sharing support.':'')+
+            (gpuClaim?' This session may claim exclusive GPU or locally approved cooperative CUDA/ROCm shared capacity.':'')+
             (gpuProbe?' It may run inert Linux device-denial probes for exclusive GPU claims only.':'')+
             (rebalance?' This session may move its own unstarted claims between armed hosts after a capacity drop.':'')))return;
         try {
