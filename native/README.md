@@ -246,6 +246,13 @@ To queue an update from transferred captures, use a template with
 relative to the template or absolute. The job verifies the approved
 receipt digests and publishes the same checkpoint completion record as
 a local rollout round.
+
+Register `bees_native_collect` with `createNativeBeesAdapter` and
+`collectOnly: true` on collection hosts. Use an independent job with
+the collector's own configuration digest and seed offset. Its output is
+`<artifactRoot>/<job_id>/rollout-bundle.json` and the files it lists.
+Collection progress counts policy rows. The bundle can feed a separate
+`bees_native` learner job after transfer and receipt approval.
 The adapter reports completed-round metrics from the receipt and uses
 the Hub's process-group stop. Each job runs one CPU update. A checkpoint
 pipeline keeps the approved configuration digest and uses each predecessor's

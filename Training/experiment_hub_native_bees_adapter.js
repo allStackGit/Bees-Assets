@@ -19,8 +19,10 @@ function trustedFile(file) {
 
 function createNativeBeesAdapter({
     pythonPath, rolloutBinary, runConfig, trainerConfig, checkpoint, artifactRoot,
-    learnerSlot,
+    learnerSlot, collectOnly = false,
 }) {
+    if (typeof collectOnly !== 'boolean') throw Error('Invalid native Bees collection mode.');
+    const project = collectOnly ? 'bees_native_collect' : PROJECT;
     const executable = trustedFile(pythonPath);
     const run = trustedFile(runConfig);
     const trainer = trustedFile(trainerConfig);
@@ -37,6 +39,7 @@ function createNativeBeesAdapter({
     const runBytes = fs.readFileSync(run);
     const config = JSON.parse(runBytes);
     const bundleRound = Object.hasOwn(config, 'rollout_bundles');
+    if (collectOnly && bundleRound) throw Error('Native Bees collection requires live Levels.');
     const binary = bundleRound ? null : trustedFile(rolloutBinary);
     if (config.hivemind != null || config.recover_notifications?.length ||
         config.recover_outcome_journals?.length || config.model_updates?.length ||
@@ -48,16 +51,18 @@ function createNativeBeesAdapter({
         [run, sha256(runBytes)],
         ...[trainer, input, manifest].map(file => [file, sha256(fs.readFileSync(file))]),
     ]);
-    const configSha256 = sha256(JSON.stringify([...pins.values(), learnerSlot ?? null]));
+    const configIdentity = [...pins.values(), learnerSlot ?? null];
+    if (collectOnly) configIdentity.push(project);
+    const configSha256 = sha256(JSON.stringify(configIdentity));
 
     function jobRoot(context) {
-        if (context.project_id !== PROJECT || !UUID.test(context.job_id))
+        if (context.project_id !== project || !UUID.test(context.job_id))
             throw Error('Invalid native Bees job identity.');
         return path.join(artifacts, context.job_id);
     }
 
-    function completedRound(output) {
-        const file = path.join(output, 'round-result.json');
+    function completionReceipt(output, name) {
+        const file = path.join(output, name);
         let stat;
         try {
             stat = fs.lstatSync(file);
@@ -67,7 +72,13 @@ function createNativeBeesAdapter({
         }
         if (!stat.isFile() || stat.size < 1 || stat.size > 64 * 1024 || fs.realpathSync(file) !== file)
             throw Error('Invalid native Bees completion receipt file.');
-        const receipt = JSON.parse(fs.readFileSync(file, 'utf8'));
+        return {receipt: JSON.parse(fs.readFileSync(file, 'utf8')), stat};
+    }
+
+    function completedRound(output) {
+        const result = completionReceipt(output, 'round-result.json');
+        if (!result) return null;
+        const {receipt, stat} = result;
         const metrics = receipt.learner_metrics;
         if (receipt.schema_version !== 1 || receipt.kind !== 'native_training_round_complete' ||
             metrics?.schema_version !== 1 || metrics.source !== 'bees-native-ma-poca-v1' ||
@@ -100,6 +111,7 @@ function createNativeBeesAdapter({
         if (!context.continuation_of_job_id)
             return {checkpoint: input, manifest, checkpointDigest: pins.get(input),
                 manifestDigest: pins.get(manifest)};
+        if (collectOnly) throw Error('Native Bees collection requires an independent job.');
         if (!UUID.test(context.continuation_of_job_id) || context.continuation_of_job_id === context.job_id)
             throw Error('Invalid native Bees predecessor.');
         const parent = path.join(artifacts, context.continuation_of_job_id);
@@ -140,16 +152,47 @@ function createNativeBeesAdapter({
             return ['-B', runner, run, inputs.checkpoint, trainer, output,
                 '--model-manifest', inputs.manifest, ...(binary ? ['--rollout-binary', binary] : []),
                 '--stage-diagnostics',
+                ...(collectOnly ? ['--collect-only'] : []),
                 '--seed-offset', String(seed_offset),
                 ...(learnerSlot === undefined ? [] : ['--learner-slot', String(learnerSlot)])];
         },
-        checkpoint_ready(context) {
-            return Boolean(verifiedOutput(jobRound(context), jobRoot(context)));
-        },
-        model_checkpoint_sha256(context) {
-            return verifiedOutput(jobRound(context), jobRoot(context)).checkpointDigest;
-        },
+        ...(collectOnly ? {} : {
+            checkpoint_ready(context) {
+                return Boolean(verifiedOutput(jobRound(context), jobRoot(context)));
+            },
+            model_checkpoint_sha256(context) {
+                return verifiedOutput(jobRound(context), jobRoot(context)).checkpointDigest;
+            },
+        }),
         readProgress(context) {
+            if (collectOnly) {
+                const bundle = completionReceipt(jobRoot(context), 'rollout-bundle.json');
+                if (!bundle) return null;
+                const {receipt, stat} = bundle;
+                const rollout = receipt.rollout_metrics;
+                const inputs = roundInputs(context);
+                if (receipt.schema_version !== 1 || receipt.kind !== 'native_rollout_bundle' ||
+                    receipt.input_checkpoint_sha256 !== inputs.checkpointDigest ||
+                    receipt.input_manifest_sha256 !== inputs.manifestDigest ||
+                    receipt.learner_slot !== (learnerSlot ?? null) ||
+                    !Array.isArray(receipt.captures) || !receipt.captures.length ||
+                    !Number.isSafeInteger(rollout?.successful_policy_rows) || rollout.successful_policy_rows < 1 ||
+                    !Number.isSafeInteger(rollout.successful_world_steps) || rollout.successful_world_steps < 1 ||
+                    !Number.isFinite(rollout.wall_seconds) || rollout.wall_seconds <= 0)
+                    throw Error('Invalid native Bees rollout bundle receipt.');
+                return validateProgress({
+                    schema_version: 1, source: 'hub-metrics-v1',
+                    experiment_id: context.job_id, segment_id: 'collection',
+                    source_modified_at: stat.mtime.toISOString(),
+                    steps_completed: rollout.successful_policy_rows,
+                    metrics: {
+                        rollout_world_steps: {value: rollout.successful_world_steps, unit: 'count'},
+                        rollout_policy_rows: {value: rollout.successful_policy_rows, unit: 'count'},
+                        rollout_wall_seconds: {value: rollout.wall_seconds, unit: 'seconds'},
+                        rollout_workers: {value: receipt.captures.length, unit: 'count'},
+                    },
+                }, project);
+            }
             const round = jobRound(context);
             if (!round) return null;
             const {receipt, metrics, stat} = round;
