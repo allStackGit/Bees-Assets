@@ -167,6 +167,15 @@ function placements(machines,reservations,input) {
                 selected[0].observed_gpu_busy_pct:null,
             observed_gpu_free_vram_mb:selected.length===1?
                 selected[0].observed_physical_free_vram_mb:null,
+            // Keep per-device observations distinct: physical VRAM on two
+            // GPUs cannot be added into one useful memory budget.
+            observed_gpu_devices:selected.map(g=>({
+                id:g.id,
+                busy_pct:g.observed_gpu_busy_pct,
+                physical_free_vram_mb:g.observed_physical_free_vram_mb,
+                hub_available_vram_mb:g.available_vram_mb,
+                hub_available_compute_pct:g.available_compute_pct,
+            })),
             // Heartbeats authenticate a reporting process, not reservation
             // enforcement. No job is executable through this planner yet.
             fits:false,capacity_fits:capacityFits,
