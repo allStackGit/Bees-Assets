@@ -476,13 +476,14 @@ struct RunNetwork {
     auth_ticket: Option<String>,
     flush_seconds: u32,
     issue_source_commands: bool,
-    command_period_ticks: u64,
+    fixed_dt_by_level: Vec<f32>,
+    command_period_ticks: Vec<u64>,
     command_clocks: Vec<Option<SourceCommandClock>>,
     command_measurements: NativeSourceCommandPulse,
 }
 
 impl RunNetwork {
-    fn start(config: &HiveMindConfig, levels: &[LevelConfig], fixed_dt: f32,
+    fn start(config: &HiveMindConfig, levels: &[LevelConfig], fixed_dt_by_level: &[f32],
         connection: &mut DurableHiveMindConnection)
         -> io::Result<Self>
     {
@@ -491,7 +492,12 @@ impl RunNetwork {
             .transpose()?;
         let levels = levels.iter().map(|level| i32::try_from(level.level_id)
             .map_err(|_| invalid("HiveMind server LevelId must fit int32"))).collect::<Result<Vec<_>,_>>()?;
-        let command_period_ticks = source_command_ticks(0.25, fixed_dt)?;
+        if fixed_dt_by_level.len() != levels.len() {
+            return Err(invalid("HiveMind command clock has mismatched Level timesteps"));
+        }
+        let command_period_ticks = fixed_dt_by_level.iter()
+            .map(|&dt| source_command_ticks(0.25, dt))
+            .collect::<io::Result<Vec<_>>>()?;
         let mut network = Self {
             worker: NativeSocketWorker::start(config.endpoint.clone(), config.allow_insecure_loopback)
                 .map_err(|error| contextual("HiveMind network startup", error))?,
@@ -499,6 +505,7 @@ impl RunNetwork {
             levels, next_level: 0, user_id: config.user_id, version: config.version,
             auth_ticket, flush_seconds: config.shutdown_flush_seconds,
             issue_source_commands: config.issue_source_commands,
+            fixed_dt_by_level: fixed_dt_by_level.to_vec(),
             command_period_ticks,
             command_measurements: NativeSourceCommandPulse::default(),
         };
@@ -518,7 +525,7 @@ impl RunNetwork {
     }
 
     fn ensure_source_clock(&mut self, index: usize, revision: u64,
-        first_delay: i32, fixed_dt: f32,
+        first_delay: i32,
     ) -> io::Result<()> {
         if self.command_clocks[index].is_none_or(|clock|
             clock.revision != revision
@@ -530,7 +537,7 @@ impl RunNetwork {
             let initial_seconds = f64::from(first_delay.max(0)).max(0.25);
             self.command_clocks[index] = Some(SourceCommandClock {
                 revision,
-                next_due_tick: source_command_ticks(initial_seconds, fixed_dt)?,
+                next_due_tick: source_command_ticks(initial_seconds, self.fixed_dt_by_level[index])?,
             });
         }
         Ok(())
@@ -539,9 +546,7 @@ impl RunNetwork {
     /// Scheduler state is solely the per-Level timer and episode revision.
     /// The authoritative gameplay roster decides which squads may request.
     /// Already-missed timer beats do not become bursts of duplicate orders.
-    fn issue_due_source_commands(&mut self, host: &mut RolloutHost,
-        fixed_dt: f32,
-    ) -> io::Result<()> {
+    fn issue_due_source_commands(&mut self, host: &mut RolloutHost) -> io::Result<()> {
         if !self.issue_source_commands { return Ok(()); }
         let ready = self.worker.ready() && self.next_level == self.levels.len();
         let mut due_levels = HashSet::new();
@@ -551,7 +556,7 @@ impl RunNetwork {
             let initial = world.state.metadata.hivemind_initial_delay_seconds
                 .ok_or_else(|| invalid("source HiveMind delay missing from Level"))?;
             let tick = world.tick();
-            self.ensure_source_clock(index, world.episode_revision(), initial, fixed_dt)?;
+            self.ensure_source_clock(index, world.episode_revision(), initial)?;
             let clock = self.command_clocks[index].as_mut()
                 .expect("source clock initialized");
             if tick >= clock.next_due_tick {
@@ -562,9 +567,10 @@ impl RunNetwork {
                     due_levels.insert(i64::from(self.levels[index]));
                 }
                 let elapsed = tick.saturating_sub(clock.next_due_tick);
-                let periods = elapsed / self.command_period_ticks + 1;
+                let period = self.command_period_ticks[index];
+                let periods = elapsed / period + 1;
                 clock.next_due_tick = clock.next_due_tick.saturating_add(
-                    periods.saturating_mul(self.command_period_ticks),
+                    periods.saturating_mul(period),
                 );
             }
         }
@@ -585,9 +591,7 @@ impl RunNetwork {
     /// Prevent large headless inference windows from stepping straight
     /// past a source HiveMind 0.25-second pulse. Graphical mode already
     /// advances a single fixed tick at a time.
-    fn rounds_until_next_source_pulse(&mut self, host: &RolloutHost,
-        fixed_dt: f32,
-    ) -> io::Result<u64> {
+    fn rounds_until_next_source_pulse(&mut self, host: &RolloutHost) -> io::Result<u64> {
         if !self.issue_source_commands || !self.worker.ready() ||
             self.next_level != self.levels.len() {
             return Ok(u64::MAX);
@@ -603,7 +607,7 @@ impl RunNetwork {
             }
             let initial = world.state.metadata.hivemind_initial_delay_seconds
                 .ok_or_else(|| invalid("source HiveMind delay missing from Level"))?;
-            self.ensure_source_clock(index, world.episode_revision(), initial, fixed_dt)?;
+            self.ensure_source_clock(index, world.episode_revision(), initial)?;
             let due = self.command_clocks[index]
                 .expect("source clock initialized").next_due_tick;
             limit = limit.min(due.saturating_sub(world.tick()).max(1));
@@ -799,6 +803,19 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
         let sides = source.exported_episode()
             .map_err(|error| contextual("source episode", error))?.sides();
+        if config.hivemind.as_ref().is_some_and(|network| network.issue_source_commands) &&
+            (source.schema_version < 27 ||
+                source.activate_hivemind.is_none() ||
+                source.activate_mining.is_none() ||
+                source.hivemind_initial_command_delay_seconds.is_none() ||
+                source.starting_positions.is_none() ||
+                source.source_squads.iter().any(|squad| squad.hivemind.is_none()))
+        {
+            return Err(invalid(format!(
+                "Level {} requires schema-27 Unity HiveMind activation, timing, home positions, mining and per-squad authority for source commands",
+                level.level_id,
+            )).into());
+        }
         // Schema 16 carries authentic Unity Agent instance identities.
         // New scenes do not need operator-supplied group IDs; any manual
         // values must agree exactly with the recorded source membership.
@@ -921,9 +938,10 @@ fn main() -> Result<(), Box<dyn Error>> {
             }
         }
     }
-    let source_fixed_dt = source_levels[0].fixed_dt_seconds;
+    let source_fixed_dt_by_level: Vec<f32> =
+        source_levels.iter().map(|source| source.fixed_dt_seconds).collect();
     #[cfg(feature = "client")]
-    let fixed_dt = std::time::Duration::try_from_secs_f32(source_fixed_dt)
+    let fixed_dt = std::time::Duration::try_from_secs_f32(source_fixed_dt_by_level[0])
         .map_err(|_| invalid("source fixed duration cannot be represented by the host clock"))?;
     let client_bounds: Vec<_> = source_levels.iter().map(|scene| scene.bounds).collect();
     // Open the optional window before starting the model or creating durable
@@ -1004,7 +1022,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
     host.set_timing_sample_period(timing);
     let mut network = config.hivemind.as_ref().map(|settings|
-        RunNetwork::start(settings, &config.levels, source_fixed_dt, host.connection_mut())).transpose()?;
+        RunNetwork::start(settings, &config.levels, &source_fixed_dt_by_level, host.connection_mut())).transpose()?;
     println!("{}", json!({
         "kind": "run_started",
         "run_id": config.run_id,
@@ -1023,6 +1041,12 @@ fn main() -> Result<(), Box<dyn Error>> {
         "delivery_every": config.delivery_every,
         "timing_sample_period": config.timing_sample_period,
         "interactive_view": view,
+        "source_hivemind_commands": config.hivemind.as_ref()
+            .is_some_and(|settings| settings.issue_source_commands),
+        "fixed_dt_by_world": config.levels.iter()
+            .zip(source_fixed_dt_by_level.iter())
+            .map(|(level, &dt)| (level.world_id, dt))
+            .collect::<Vec<_>>(),
     }));
 
     let execution_start = Instant::now();
@@ -1147,8 +1171,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         let remaining = (config.max_rounds - rounds)
             .min(until_update - rounds);
         let source_pulse_limit = if let Some(network) = &mut network {
-            let scheduling = network.issue_due_source_commands(&mut host, source_fixed_dt)
-                .and_then(|()| network.rounds_until_next_source_pulse(&host, source_fixed_dt));
+            let scheduling = network.issue_due_source_commands(&mut host)
+                .and_then(|()| network.rounds_until_next_source_pulse(&host));
             match scheduling {
                 Ok(limit) => limit,
                 Err(error) => {
