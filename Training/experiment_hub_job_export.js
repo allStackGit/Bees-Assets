@@ -95,6 +95,11 @@ class JobExporter {
         const root=trustedRoot(legacy?this.dataRoot:loadRoots(this.dataRoot)[project]);
         if(!root)
             throw Error('No approved local artifact directory for this project; configure job-export-roots.json in the private Hub data directory.');
+        const python=typeof this.pythonExecutable==='function'
+            ?this.pythonExecutable():this.pythonExecutable||
+                (process.platform==='win32'?'python':'python3');
+        if(typeof python!=='string'||!python.trim())
+            throw Error('A trusted Python interpreter is required for ZIP export.');
         const snapshot=legacy?{jobs:this.legacyBees.jobs()}:this.hub.snapshot();
         const available=new Map(snapshot.jobs.filter(job=>job.project_id===project)
             .map(job=>[job.id,job]));
@@ -121,9 +126,6 @@ class JobExporter {
         const session={id,dir,project,status:'preparing',parts:[],error:null};
         this.sessions.set(id,session);
         const script=path.join(__dirname,'experiment_hub_job_export.py');
-        const python=typeof this.pythonExecutable==='function'
-            ?this.pythonExecutable():this.pythonExecutable||
-                (process.platform==='win32'?'python':'python3');
         const child=spawn(python,
             [script,'--spec',spec,'--output',path.join(dir,project+'-analysis.zip')],
             {shell:false,windowsHide:true,stdio:['ignore','pipe','pipe']});
