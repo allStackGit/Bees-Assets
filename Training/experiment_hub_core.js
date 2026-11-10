@@ -202,6 +202,11 @@ function boundedReport(value) {
         cpuFallback.some(id=>typeof id!=='string'||!cudaProfiles.includes(id))||
         new Set(cpuFallback).size!==cpuFallback.length)
         throw Error('TinyBrains CPU fallback requires an approved GPU profile.');
+    const requiredImports=value.tinybrains_required_import_profiles??[];
+    if(!Array.isArray(requiredImports)||requiredImports.length>Object.keys(profiles).length||
+        requiredImports.some(id=>typeof id!=='string'||!Object.hasOwn(profiles,id))||
+        new Set(requiredImports).size!==requiredImports.length)
+        throw Error('Pinned-seed requirement must reference approved TinyBrains profiles.');
     const imports=tinyBrainsImports(value.tinybrains_imports??{});
     if(Object.keys(imports).length&&!installed.includes('tinybrains')||
         Object.values(imports).some(item=>!Object.hasOwn(profiles,item.profile)))
@@ -234,6 +239,7 @@ function boundedReport(value) {
         tinybrains_cuda_profiles:cudaProfiles.slice(),
         tinybrains_thread_overrides:threadOverrides.slice(),
         tinybrains_cpu_fallback_profiles:cpuFallback.slice(),
+        tinybrains_required_import_profiles:requiredImports.slice(),
         tinybrains_imports:imports,
         gpu_projects:gpuProjects.slice(),
         gpu_shared_projects:gpuShared.slice(),
@@ -957,6 +963,7 @@ class ExperimentHub {
                 machine.tinybrains_cuda_profiles=report.tinybrains_cuda_profiles.slice();
                 machine.tinybrains_thread_overrides=report.tinybrains_thread_overrides.slice();
                 machine.tinybrains_cpu_fallback_profiles=report.tinybrains_cpu_fallback_profiles.slice();
+                machine.tinybrains_required_import_profiles=report.tinybrains_required_import_profiles.slice();
                 machine.tinybrains_imports=copy(report.tinybrains_imports);
                 machine.gpu_projects = report.gpu_projects.slice();
                 machine.gpu_shared_projects=report.gpu_shared_projects.slice();
