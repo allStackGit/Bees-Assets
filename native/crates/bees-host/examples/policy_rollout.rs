@@ -1612,7 +1612,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     if let Some(client) = &client {
         println!("{}", json!({ "kind": "presentation_final", "run_id": config.run_id,
             "rendered_frames": client.rendered_frames,
-            "render_wall_seconds": client.render_wall_seconds }));
+            "render_wall_seconds": client.render_wall_seconds,
+            "window_update_wall_seconds": client.window_update_wall_seconds }));
     }
     if failed_window.is_some() || !cleanup_errors.is_empty() {
         return Err(invalid(
