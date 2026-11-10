@@ -832,6 +832,10 @@ document.addEventListener('DOMContentLoaded', () => {
                         x(p[xKey]).toFixed(1)+' '+
                         y(hubMetricValue(p,key)).toFixed(1)).join(' '),
                         stroke:run.color,class:'plot-line'});
+                else if(part.length===1&&!showPoints)
+                    node('circle',{cx:x(part[0][xKey]),
+                        cy:y(hubMetricValue(part[0],key)),r:3.5,
+                        fill:run.color,class:'plot-point'});
                 part=[];
             };
             for(const point of run.valid) {
