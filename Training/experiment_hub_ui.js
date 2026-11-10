@@ -249,6 +249,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 ?' · '+place.observed_gpu_busy_pct+'% GPU busy':'';
             return vram+activity;
         }
+        if(place.suggested_gpus?.length>1&&
+            Array.isArray(place.observed_gpu_devices)) {
+            return place.observed_gpu_devices.map(g=>(
+                ' · '+g.id+
+                (Number.isFinite(g.busy_pct)?' '+g.busy_pct+'% busy':'')+
+                (Number.isSafeInteger(g.physical_free_vram_mb)
+                    ?' '+g.physical_free_vram_mb+' MiB physical free':'')
+            )).join('');
+        }
         return Number.isFinite(place.observed_host_cpu_busy_pct)
             ?' · '+place.observed_host_cpu_busy_pct.toFixed(1)+'% host CPU busy':'';
     }
