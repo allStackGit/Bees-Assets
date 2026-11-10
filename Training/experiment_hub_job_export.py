@@ -8,11 +8,13 @@ Remote-only artifacts remain explicitly absent from the manifest.
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import os
 import re
 import stat
 import sys
+import tempfile
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
@@ -182,6 +184,47 @@ def export(spec: dict, output: Path) -> dict:
             if index == 0:
                 write_chunk(name, b"", 0, 1)
 
+
+    def add_selected_metric_history() -> int:
+        # This derived CSV is limited to Hub's bounded comparison observations.
+        # The complete project-owned histories are exported separately below.
+        selected = set(metrics)
+        temp_path: Path | None = None
+        rows = 0
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w", encoding="utf-8", newline="", dir=output.parent,
+                prefix="hub-selected-metrics-", suffix=".csv", delete=False,
+            ) as stream:
+                temp_path = Path(stream.name)
+                writer = csv.writer(stream)
+                writer.writerow((
+                    "job_id", "observed_at", "source_modified_at",
+                    "experiment_id", "segment_id", "steps_completed",
+                    "break_before", "metric", "value", "unit",
+                ))
+                for entry in spec.get("progress", {}).get("samples", []):
+                    if entry.get("job_id") not in selected_ids:
+                        continue
+                    for point in entry.get("points", []):
+                        for name, measurement in (point.get("metrics") or {}).items():
+                            if name not in selected:
+                                continue
+                            writer.writerow((
+                                entry["job_id"], point.get("observed_at"),
+                                point.get("source_modified_at"),
+                                point.get("experiment_id"), point.get("segment_id"),
+                                point.get("steps_completed"),
+                                point.get("break_before", False),
+                                name, measurement["value"], measurement["unit"],
+                            ))
+                            rows += 1
+            add_file(temp_path, "hub-selected-metric-samples.csv")
+            return rows
+        finally:
+            if temp_path is not None:
+                temp_path.unlink(missing_ok=True)
+
     try:
         start_part()
         metadata = {
@@ -192,6 +235,12 @@ def export(spec: dict, output: Path) -> dict:
         add_bytes(
             "hub-comparison-history.json",
             json.dumps(spec.get("progress", {}), indent=2).encode("utf-8"),
+        )
+        manifest["selected_metric_sample_rows"] = (
+            add_selected_metric_history() if metrics else 0
+        )
+        manifest["selected_metric_sample_resolution"] = (
+            "bounded Hub chart history; full project logs remain separate"
         )
         found_by_job = {job["id"]: 0 for job in jobs}
         def scan_directory(folder: Path, name_prefix: str, job_id: str) -> None:
