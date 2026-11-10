@@ -965,6 +965,10 @@ document.addEventListener('DOMContentLoaded', () => {
                                 ((result.missing_source_count||result.missing_sources.length)>8
                                     ?' and '+((result.missing_source_count||result.missing_sources.length)-8)+' more':'')+
                                 '. See the ZIP manifest for details. ':'')+
+                        (result.files_extended_during_copy_count
+                            ?result.files_extended_during_copy_count+
+                                ' log file(s) grew during export; only their captured byte prefixes are included. '+
+                                'See export-manifest.json for file details. ':'')+
                         'Select each part: '));
                     for(const [i,part] of result.parts.entries()) {
                         const link=document.createElement('a');
