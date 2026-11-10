@@ -274,14 +274,28 @@ function createTinyBrainsPersistentDockerAdapter({
                     path.join(targetFor(context),'hub-start-update.json'),'utf8')).update;
                 if(!Number.isSafeInteger(start)||row.update<start)
                     throw Error('Progress precedes the pinned imported PPO checkpoint.');
+                const metrics={
+                    total_ppo_updates:{value:row.update,unit:'count'},
+                    update_wall_time:{value:row.wall_seconds,unit:'seconds'},
+                    engine_steps_per_second:{value:row.engine_steps/row.wall_seconds,unit:'rate'},
+                };
+                // Timings are measured per completed PPO update. In
+                // particular, stage durations overlap and must not be
+                // summed to estimate elapsed update time.
+                for(const key of ['collection_seconds','optimization_seconds',
+                    'overlap_seconds']) {
+                    if(Number.isFinite(row[key])&&row[key]>=0)
+                        metrics[key]={value:row[key],unit:'seconds'};
+                }
+                if(Number.isSafeInteger(row.ant_decisions)&&row.ant_decisions>=0) {
+                    metrics.ant_decisions={value:row.ant_decisions,unit:'count'};
+                    metrics.ant_decisions_per_second={
+                        value:row.ant_decisions/row.wall_seconds,unit:'rate'};
+                }
                 return validateProgress({
                     schema_version:1,source:'hub-metrics-v1',experiment_id:context.job_id,
                     segment_id:'training',source_modified_at:stat.mtime.toISOString(),
-                    steps_completed:row.update-start,metrics:{
-                        total_ppo_updates:{value:row.update,unit:'count'},
-                        update_wall_time:{value:row.wall_seconds,unit:'seconds'},
-                        engine_steps_per_second:{value:row.engine_steps/row.wall_seconds,unit:'rate'},
-                    },
+                    steps_completed:row.update-start,metrics,
                 },context.project_id);
             }catch(error){
                 if(error.code==='ENOENT')return null;
