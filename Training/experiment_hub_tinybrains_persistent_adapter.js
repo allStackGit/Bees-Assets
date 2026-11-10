@@ -284,7 +284,7 @@ function createTinyBrainsPersistentDockerAdapter({
                         updateWall=row.elapsed_seconds;
                     else {
                         const priorStart=str.lastIndexOf('\n',lineStart-1);
-                        if(priorStart>=0) {
+                        if(priorStart>=0||offset===0) {
                             const prior=JSON.parse(str.slice(priorStart+1,lineStart));
                             if(prior.update===row.update-1&&
                                 Number.isFinite(prior.elapsed_seconds)&&
