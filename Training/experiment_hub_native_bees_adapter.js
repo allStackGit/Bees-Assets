@@ -152,6 +152,7 @@ function createNativeBeesAdapter({
             if (!round) return null;
             const {receipt, metrics, stat} = round;
             const rollout = receipt.rollout_metrics;
+            const modelTiming = rollout?.sampled_model_timing;
             return validateProgress({
                 schema_version: 1, source: 'hub-metrics-v1',
                 experiment_id: context.job_id, segment_id: 'training',
@@ -168,6 +169,11 @@ function createNativeBeesAdapter({
                         rollout_policy_rows_per_second: {
                             value: rollout.successful_policy_rows / rollout.wall_seconds, unit: 'rate',
                         },
+                    } : {}),
+                    ...(modelTiming ? {
+                        rollout_sampled_model_calls: {value: modelTiming.calls, unit: 'count'},
+                        rollout_sampled_model_rows: {value: modelTiming.rows, unit: 'count'},
+                        rollout_sampled_model_wall_seconds: {value: modelTiming.wall_seconds, unit: 'seconds'},
                     } : {}),
                     episodes: {value: metrics.episodes, unit: 'count'},
                     opponent_steps: {value: metrics.opponent_steps, unit: 'count'},

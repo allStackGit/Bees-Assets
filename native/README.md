@@ -1058,7 +1058,9 @@ successful batched gameplay steps also measure host time separately for
 observation assembly, inference/validation and world stepping.
 `NativeBatchedStepCounts.phase_timing_sampled` distinguishes genuine
 samples from zero-valued unmeasured calls. Rollout model-forward timing
-uses the same sampling cadence, and
+applies the configured period to actual model calls independently of tick
+sampling. Completed native training rounds carry sampled call counts, row
+counts, and backend wall time into Experiment Hub progress.
 `NativeInferenceMeasurements.model_forward_timed_calls` and
 `model_forward_timed_rows` provide denominators for sampled wall times.
 Standalone `NativeLevelInferenceBatch::infer` continues to time every

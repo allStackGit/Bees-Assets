@@ -134,7 +134,16 @@ def rollout_metrics(summary_path, config, manifest_sha):
                 for value in times.values()) or times["wall_seconds"] <= 0 or
             times["execution_wall_seconds"] <= 0):
         raise ValueError("native rollout summary contains invalid work or timing")
-    return {**counts, **times}
+    metrics = {**counts, **times}
+    model_timing = summary.get("sampled_model_timing")
+    if model_timing is not None:
+        calls, rows, seconds = (model_timing[key] for key in ("calls", "rows", "wall_seconds"))
+        if (type(calls) is not int or type(rows) is not int or
+                not 0 < calls <= rows <= counts["successful_policy_rows"] or
+                type(seconds) not in (float, int) or not math.isfinite(seconds) or seconds < 0):
+            raise ValueError("native rollout summary contains invalid sampled model timing")
+        metrics["sampled_model_timing"] = model_timing
+    return metrics
 
 
 def main() -> None:

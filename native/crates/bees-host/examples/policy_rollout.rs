@@ -1578,6 +1578,11 @@ fn main() -> Result<(), Box<dyn Error>> {
             "world_steps_per_execution_second": rate(successful_world_steps, execution_wall_seconds),
             "policy_rows_per_execution_second": rate(successful_policy_rows, execution_wall_seconds),
         },
+        "sampled_model_timing": (status.inference.model_forward_timed_calls != 0).then(|| json!({
+            "calls": status.inference.model_forward_timed_calls,
+            "rows": status.inference.model_forward_timed_rows,
+            "wall_seconds": status.inference.model_forward_nanos as f64 / 1e9,
+        })),
         "policy_generation": policy_generation,
         "captured_policy_rows": captured_policy_rows,
         "policy_manifest_sha256": policy_manifest_sha256,
