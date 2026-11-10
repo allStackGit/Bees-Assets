@@ -82,7 +82,7 @@ def shifted_seeds(config: dict, offset: int) -> None:
         level[label] = updated[0] if label == "seed" else updated
 
 
-def check_learner(manifest: Path, checkpoint: Path, slot: int | None) -> None:
+def check_learner(manifest: Path, checkpoint: Path, slot: int | None) -> str:
     record = json.loads(manifest.read_text(encoding="utf-8"))
     if record.get("format") != "bees-native-model-v1" or not isinstance(record.get("models"), list):
         raise ValueError("native training requires a generated model manifest")
@@ -97,6 +97,7 @@ def check_learner(manifest: Path, checkpoint: Path, slot: int | None) -> None:
             raise ValueError("mixed-checkpoint training requires --learner-slot")
     elif slot not in matching:
         raise ValueError("learner slot must identify the supplied input checkpoint")
+    return digest
 
 
 def main() -> None:
@@ -132,7 +133,8 @@ def main() -> None:
     if not manifest.is_absolute():
         manifest = run_path.parent / manifest
     manifest = manifest.resolve(strict=True)
-    check_learner(manifest, checkpoint, args.learner_slot)
+    input_checkpoint_sha = check_learner(manifest, checkpoint, args.learner_slot)
+    input_manifest_sha = file_sha256(manifest)
     if args.rollout_binary is None and shutil.which("cargo") is None:
         parser.error("cargo was not found; provide --rollout-binary")
     if args.rollout_binary is not None:
@@ -159,8 +161,8 @@ def main() -> None:
 
     print(json.dumps({"kind": "native_training_round_started", "run_config": str(config_path),
                       "seed_offset": args.seed_offset,
-                      "input_manifest_sha256": file_sha256(manifest),
-                      "input_checkpoint_sha256": file_sha256(checkpoint)}), flush=True)
+                      "input_manifest_sha256": input_manifest_sha,
+                      "input_checkpoint_sha256": input_checkpoint_sha}), flush=True)
     subprocess.run([*command, str(config_path)], check=True)
     learner_dir = output / "learner"
     train_command = [
@@ -175,8 +177,9 @@ def main() -> None:
     next_checkpoint = learner_dir / "checkpoint.pt"
     next_manifest = learner_dir / "manifest.json"
     metrics = json.loads((learner_dir / "metrics.json").read_text(encoding="utf-8"))
-    input_checkpoint_sha = file_sha256(checkpoint)
-    input_manifest_sha = file_sha256(manifest)
+    if (file_sha256(checkpoint) != input_checkpoint_sha or
+            file_sha256(manifest) != input_manifest_sha):
+        raise ValueError("round input checkpoint or manifest changed after training began")
     checkpoint_sha = file_sha256(next_checkpoint)
     manifest_sha = file_sha256(next_manifest)
     if (not isinstance(metrics, dict) or metrics.get("schema_version") != 1 or
