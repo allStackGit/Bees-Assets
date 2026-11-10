@@ -86,6 +86,11 @@ function createTinyBrainsPersistentDockerAdapter({
     if(project===artifacts||project===source||artifacts===source||
         source.startsWith(artifacts+'/')||artifacts.startsWith(source+'/'))
         throw Error('Hub job artifacts and immutable TinyBrains import must not overlap.');
+    if(remote&&[project,hub,artifacts,source,cache].some(folder=>
+        remote.keyDirectory===folder||
+        remote.keyDirectory.startsWith(folder+path.sep)||
+        folder.startsWith(remote.keyDirectory+path.sep)))
+        throw Error('Private rollout key directory must not overlap a project, checkpoint, Hub or writable Docker mount.');
     const engine=path.join(project,'tools/tinybrains-0.5.0/tinybrains');
     const result=spawnSync(engine,['--version'],{
         timeout:5000,encoding:'utf8',windowsHide:true,
