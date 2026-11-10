@@ -934,7 +934,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 ?'The source checkpoint SHA-256 is frozen; this draft can initialize a new lineage, not a continuation stage. '
                 :'Use a configuration without an import for checkpoint-continuation stages. ')+
             (hasThreads?'The CPU thread override does not change the job CPU quota. ':'')+
-            (remoteRollouts?'Remote CPU collectors must already be installed, authenticated, and reserved separately; the Hub does not yet claim their CPU resources. ':'')+
+            (remoteRollouts?'In Train, use Queue and reserve entire group to atomically assign learner and approved remote collector CPU/GPU budgets before any Start. ':'')+
             'Save the draft to retain these settings.');
     });
     for(const [caption,control] of [['Approved profile ',tinyBrainsSelect],
@@ -1414,8 +1414,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 :j.checkpoint_reinspection_requested_at?' · Checkpoint recheck pending':'';
             const noTrainer=j.prelaunch_absence_verified===true
                 ?' · No trainer started':'';
+            const groupWorkers=j.project_id==='tinybrains'&&
+                j.distributed_rollout_managed===true
+                ?state.jobs.filter(worker=>worker.project_id==='tinybrains_rollout'&&
+                    worker.frozen_parameters?.learner_job_id===j.id):[];
+            const distributedSummary=groupWorkers.length
+                ?' · Distributed collectors: '+groupWorkers.map(worker=>
+                    (worker.assigned_machine_id||'unassigned')+' '+worker.status+
+                    (worker.capacity_released_at?' (released)':'')).join('; ')
+                :'';
             const statusCell=cell(tr,status+lineage+promoted+gpuProof+readinessText+
-                checkpointRecovery+noTrainer+
+                checkpointRecovery+noTrainer+distributedSummary+
                 (hasSuccessor&&['waiting_adapter','waiting_predecessor'].includes(j.status)
                     ?' · Cancel downstream stage first':''));
 
