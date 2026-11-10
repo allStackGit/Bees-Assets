@@ -636,6 +636,37 @@ function nativeStartReadiness(snapshot, job) {
         return block('Linux cgroup v2 CPU and memory controllers are unavailable.');
     if(!supportsTinyBrainsProfile(machine,job))
         return block('The assigned worker does not approve this TinyBrains profile, GPU mode, checkpoint import and update count.');
+    if(job.project_id==='tinybrains'&&job.frozen_parameters?.remote_rollouts===true) {
+        const count=machine.tinybrains_remote_rollout_count;
+        if(!Number.isSafeInteger(count)||count<1||count>8)
+            return block('This learner has no locally approved remote CPU collector count.');
+        const workers=snapshot.jobs.filter(worker=>
+            worker.project_id==='tinybrains_rollout'&&
+            worker.frozen_parameters?.learner_job_id===job.id&&
+            worker.status!=='cancelled');
+        if(workers.length!==count)
+            return block('The learner requires exactly '+count+' separately reserved remote CPU collector jobs.');
+        const hosts=new Set([machine.id]);
+        for(const worker of workers) {
+            if(worker.status!=='running'||worker.capacity_released_at||
+                !worker.dispatch_id||worker.resources?.gpu_count!==0)
+                return block('Every remote CPU collector must be running under its own active Hub job.');
+            if(!worker.assigned_machine_id||hosts.has(worker.assigned_machine_id))
+                return block('Every remote CPU collector requires a distinct worker machine.');
+            hosts.add(worker.assigned_machine_id);
+            const host=snapshot.machines.find(m=>m.id===worker.assigned_machine_id);
+            const owned=snapshot.reservations.find(l=>
+                l.id===worker.lease_id&&l.job_id===worker.id&&
+                l.project_id==='tinybrains_rollout'&&
+                l.machine_id===worker.assigned_machine_id&&
+                l.issued_by==='experiment-hub'&&
+                l.status==='acknowledged'&&l.receipt_fresh===true);
+            if(!host||host.status!=='connected'||host.local_executor_enabled!==true||
+                host.native_preflight_passed!==true||
+                !host.installed_projects?.includes('tinybrains_rollout')||!owned)
+                return block('The remote collector has lost its authenticated host or CPU/RAM ownership.');
+        }
+    }
     if(!supportsEvaluation(machine.evaluation_suites,job))
         return block('The assigned adapter does not advertise all required evaluation suites.');
     const r=job.resources;
