@@ -2566,9 +2566,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const cpus=integer('hub-build-cpus',1,4096);
             const ram_mb=integer('hub-build-ram',128,100000000);
             const gpu_count=integer('hub-build-gpu-count',0,2);
+            const mode=builderMode.value;
             if(gpu_count===2&&mode==='shared')
                 throw Error('Two-GPU TinyBrains training requires exclusive GPUs; shared mode supports one GPU.');
-            const mode=builderMode.value;
             const min_gpu_vram_mb=integer('hub-build-gpu-min-vram',0,1000000);
             const raw=$('hub-build-gpu-ids').value.trim();
             const gpus=raw?raw.split(',').map(s=>s.trim()):[];
