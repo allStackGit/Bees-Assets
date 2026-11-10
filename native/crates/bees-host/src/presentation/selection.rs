@@ -1,6 +1,8 @@
 //! UI-only squad lifetime selection, always scoped to one actual episode.
 //! Membership and permissions are borrowed from the authoritative Level.
 
+use std::collections::HashSet;
+
 use bees_hivemind::session::SquadLifetime;
 use bees_sim::{collision::Aabb, physics::PhysicsError, simulation::WorldId};
 use super::NativeRenderWorldView;
@@ -45,9 +47,12 @@ impl NativeSquadSelection {
         self.synchronize(view);
         let ships = view.combat.physics().ship_ids_overlapping_box(bounds)?;
         self.clear();
+        // Preserve first-hull traversal order for command dispatch, without
+        // searching an expanding selection vector for every squad member.
+        let mut seen = HashSet::new();
         for ship in ships {
             let Some(owner) = view.roster.owning_squad(ship) else { continue };
-            if selectable(view, owner) && !self.squads.contains(&owner) {
+            if selectable(view, owner) && seen.insert(owner) {
                 self.squads.push(owner);
             }
         }
