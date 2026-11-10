@@ -965,7 +965,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const live=job.live_execution;
         const p=live?.progress||job.final_progress;
         if(p?.source==='hub-metrics-v1') {
-            const values=Object.entries(p.metrics).slice(0,5).map(
+            const preferred=['total_ppo_updates','update_wall_time',
+                'ant_decisions_per_second','collection_seconds','optimization_seconds'];
+            const priority=preferred.filter(key=>Object.hasOwn(p.metrics,key));
+            const entries=[...priority.map(key=>[key,p.metrics[key]]),
+                ...Object.entries(p.metrics).filter(([key])=>!priority.includes(key))];
+            const values=entries.slice(0,5).map(
                 ([key,measurement])=>key+' '+
                     (measurement.unit==='ratio'
                         ?(measurement.value*100).toFixed(1)+'%'
