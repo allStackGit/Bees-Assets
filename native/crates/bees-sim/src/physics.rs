@@ -277,6 +277,9 @@ impl WorldCollider {
             return Err(PhysicsError::InvalidCollider);
         }
         self.shape = shape;
+        // Old bounds belong to a different collider shape. Invalidate
+        // both keys before anyone can inspect this hull between ticks.
+        self.bounds = None;
         self.cached_pose = None;
         Ok(())
     }
@@ -578,11 +581,14 @@ impl ShipBody {
         else { pose.transform_point(self.collider.shape.closest_local_point(pose.inverse_transform_point(point))) }
     }
 
-    /// Invalidates cached geometry before the next fixed step.
+    /// Update the authored primary collider at the current pose immediately.
+    /// Read-only presentation/selection and tick-zero perception must never
+    /// use the previous hull's cached bounds after a prefab shape swap.
     pub fn replace_shape(&mut self, shape: ShipShape) -> Result<(), PhysicsError> {
         let radius = shape.maximum_extent();
         self.collider.replace_shape(shape)?;
         self.hull_radius_bound = radius * 1.0001 + 0.001;
+        self.update_hull();
         Ok(())
     }
 
