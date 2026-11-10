@@ -2,7 +2,7 @@
 
 import argparse
 from bisect import bisect_right
-from collections import defaultdict
+from collections import defaultdict, deque
 import hashlib
 import json
 import os
@@ -72,13 +72,18 @@ def completed_rollouts(capture, journal, manifest, manifest_sha, checkpoint_sha,
         raise ValueError("reward journal has no completed episodes")
     if not terminals:
         raise ValueError("capture contains no completed episodes for the selected policy manifest")
-    frames = defaultdict(dict)
+    # Keep only active episodes in memory. The writer emits a final
+    # observation frame for each completed world before recycling it.
+    # Preserve the original first-decision episode order for optimizer input.
+    frames = {}
     boundaries = defaultdict(dict)
-    # A single-manifest capture needs every row. Copy each frame into
-    # one owned, writable NumPy block rather than allocating 31 KB per
-    # agent. Mixed-manifest journals retain selective per-row copies.
+    first_seen = deque()
+    ready = set()
+    completed = set()
     all_episodes_match = len(terminals) == len(all_terminals)
     for generation, rows in capture_frames(capture, journal_id):
+        # Single-manifest captures can retain borrowed rows from one owned
+        # frame allocation. Mixed manifests copy only selected episodes.
         owned_frame = rows.copy() if all_episodes_match else None
         source_rows = owned_frame if owned_frame is not None else rows
         if generation is None:
@@ -86,6 +91,8 @@ def completed_rollouts(capture, journal, manifest, manifest_sha, checkpoint_sha,
                 key = int(row["world"]), int(row["episode"])
                 if key not in all_terminals:
                     raise ValueError("policy boundary belongs to an unknown completed episode")
+                if key in completed:
+                    raise ValueError("duplicate policy episode boundary")
                 if key not in terminals:
                     continue
                 tick, agent = int(row["tick"]), int(row["group_agent"])
@@ -93,100 +100,128 @@ def completed_rollouts(capture, journal, manifest, manifest_sha, checkpoint_sha,
                 if not 0 < tick <= terminals[key]["tick"] or agent in frame:
                     raise ValueError("invalid policy boundary observation identity")
                 frame[agent] = row if owned_frame is not None else row.copy()
-            continue
-        if "continuous_log_probs" not in rows.dtype.names:
-            raise ValueError("training requires captured behavior statistics")
-        for row in source_rows:
-            key = int(row["world"]), int(row["episode"])
-            terminal = all_terminals.get(key)
-            if terminal is None:
-                raise ValueError("policy decision belongs to an unknown completed episode")
-            context = terminal["evaluation_context"]
-            if generation != context["policy_generation"]:
-                raise ValueError("rollout includes decisions outside the recorded policy generation")
-            if key not in terminals:
-                continue
-            if row["model_slot"] not in models:
-                raise ValueError("rollout includes an unknown model slot")
-            tick, agent = int(row["tick"]), int(row["group_agent"])
-            team = int(row["team"])
-            if (tick >= terminal["tick"] or
-                    row["model_slot"] != context["model_slots_by_team"][str(team)] or
-                    agent not in context["group_agents_by_team"][str(team)]):
-                raise ValueError("decision disagrees with its authored episode")
-            frame = frames[key].setdefault(tick, {})
-            if agent in frame:
-                raise ValueError("duplicate agent at a decision tick")
-            frame[agent] = row if owned_frame is not None else row.copy()
+                if tick == terminals[key]["tick"]:
+                    ready.add(key)
+        else:
+            if "continuous_log_probs" not in rows.dtype.names:
+                raise ValueError("training requires captured behavior statistics")
+            for row in source_rows:
+                key = int(row["world"]), int(row["episode"])
+                terminal = all_terminals.get(key)
+                if terminal is None:
+                    raise ValueError("policy decision belongs to an unknown completed episode")
+                context = terminal["evaluation_context"]
+                if generation != context["policy_generation"]:
+                    raise ValueError("rollout includes decisions outside the recorded policy generation")
+                if key not in terminals:
+                    continue
+                if key in completed or key in ready:
+                    raise ValueError("policy decision follows its completed boundary")
+                if row["model_slot"] not in models:
+                    raise ValueError("rollout includes an unknown model slot")
+                tick, agent = int(row["tick"]), int(row["group_agent"])
+                team = int(row["team"])
+                if (tick >= terminal["tick"] or
+                        row["model_slot"] != context["model_slots_by_team"][str(team)] or
+                        agent not in context["group_agents_by_team"][str(team)]):
+                    raise ValueError("decision disagrees with its authored episode")
+                if key not in frames:
+                    frames[key] = {}
+                    first_seen.append(key)
+                frame = frames[key].setdefault(tick, {})
+                if agent in frame:
+                    raise ValueError("duplicate agent at a decision tick")
+                frame[agent] = row if owned_frame is not None else row.copy()
 
-    if frames.keys() != terminals.keys():
-        raise ValueError("completed episode missing decisions")
-    for key, ticks in frames.items():
-        context = terminals[key]["evaluation_context"]
-        period = context["decision_period"]
-        ticks = list(ticks.items())
-        expected = {
-            agent: int(team)
-            for team, agents in context["group_agents_by_team"].items()
-            for agent in agents
+        # A completed episode can be handed to MA-POCA and released before
+        # the rest of a long capture is loaded. Do not reorder episodes:
+        # keep the learner's trajectory input sequence stable.
+        while first_seen and first_seen[0] in ready:
+            key = first_seen.popleft()
+            ready.remove(key)
+            ticks = frames.pop(key)
+            episode_boundaries = boundaries.pop(key, {})
+            completed.add(key)
+            yield _validate_completed_episode(
+                key, ticks, episode_boundaries, terminals, ended_teams,
+                retirements, rewards, learner_slots, journal_id,
+            )
+
+    if completed != terminals.keys():
+        raise ValueError("completed episode missing decisions or policy boundary")
+
+
+def _validate_completed_episode(
+    key, episode_ticks, episode_boundaries, terminals, ended_teams,
+    retirements, rewards, learner_slots, journal_id,
+):
+    """Preserve source cohort, retirement, group reward and terminal checks."""
+    ticks = episode_ticks
+    context = terminals[key]["evaluation_context"]
+    period = context["decision_period"]
+    ticks = list(ticks.items())
+    expected = {
+        agent: int(team)
+        for team, agents in context["group_agents_by_team"].items()
+        for agent in agents
+    }
+    if not ticks or period <= 0:
+        raise ValueError("episode has no observed decision interval")
+    identities = {
+        agent: (int(row["ship"]), int(row["binding_revision"]))
+        for agent, row in ticks[0][1].items()
+    }
+    terminal = terminals[key]
+    terminal_tick = terminal["tick"]
+    bee_team = context["group_team_by_side"][str(context["bee_side"])]
+    closing = dict.fromkeys(expected, terminal_tick)
+    early = {}
+    for agent, controller in identities.items():
+        retired_at = retirements[key].get(controller)
+        if retired_at is None:
+            continue
+        eliminated = terminal["payload"][
+            "bee_side_eliminated" if expected[agent] == bee_team else "human_side_eliminated"
+        ]
+        if retired_at != terminal_tick or not eliminated:
+            closing[agent] = retired_at
+            early[agent] = retired_at
+    for index, (tick, frame) in enumerate(ticks, 1):
+        active = {agent for agent, end in closing.items() if tick < end}
+        if (tick != index * period - 1 or frame.keys() != active or
+                any(int(row["team"]) != expected[agent] or
+                    (row["ship"], row["binding_revision"]) != identities.get(agent)
+                    for agent, row in frame.items())):
+            raise ValueError("decision cohort disagrees with recorded controller retirements")
+    last_decision = {}
+    for tick, frame in ticks:
+        last_decision.update(dict.fromkeys(frame, tick))
+    if (last_decision.keys() != expected.keys() or
+            any(not 0 < end - last_decision[agent] <= period for agent, end in closing.items())):
+        raise ValueError("controller is missing its final decision interval")
+    expected_boundaries = {}
+    for end in set(early.values()) | {terminal_tick}:
+        expected_boundaries[end] = {
+            agent for agent, close in closing.items() if close >= end
         }
-        if not ticks or period <= 0:
-            raise ValueError("episode has no observed decision interval")
-        identities = {
-            agent: (int(row["ship"]), int(row["binding_revision"]))
-            for agent, row in ticks[0][1].items()
-        }
-        terminal = terminals[key]
-        terminal_tick = terminal["tick"]
-        bee_team = context["group_team_by_side"][str(context["bee_side"])]
-        closing = dict.fromkeys(expected, terminal_tick)
-        early = {}
-        for agent, controller in identities.items():
-            retired_at = retirements[key].get(controller)
-            if retired_at is None:
-                continue
-            eliminated = terminal["payload"][
-                "bee_side_eliminated" if expected[agent] == bee_team else "human_side_eliminated"
-            ]
-            if retired_at != terminal_tick or not eliminated:
-                closing[agent] = retired_at
-                early[agent] = retired_at
-        for index, (tick, frame) in enumerate(ticks, 1):
-            active = {agent for agent, end in closing.items() if tick < end}
-            if (tick != index * period - 1 or frame.keys() != active or
-                    any(int(row["team"]) != expected[agent] or
-                        (row["ship"], row["binding_revision"]) != identities.get(agent)
-                        for agent, row in frame.items())):
-                raise ValueError("decision cohort disagrees with recorded controller retirements")
-        last_decision = {}
-        for tick, frame in ticks:
-            last_decision.update(dict.fromkeys(frame, tick))
-        if (last_decision.keys() != expected.keys() or
-                any(not 0 < end - last_decision[agent] <= period for agent, end in closing.items())):
-            raise ValueError("controller is missing its final decision interval")
-        expected_boundaries = {}
-        for end in set(early.values()) | {terminal_tick}:
-            expected_boundaries[end] = {
-                agent for agent, close in closing.items() if close >= end
-            }
-        if (ended_teams[key] != dict.fromkeys(expected.values(), terminal_tick) or
-                boundaries[key].keys() != expected_boundaries.keys()):
-            raise ValueError("missing MA-POCA terminal or retirement boundary")
-        for end, frame in boundaries[key].items():
-            if (frame.keys() != expected_boundaries[end] or
-                    any((row["ship"], row["binding_revision"]) != identities.get(agent) or
-                        not np.isfinite(row["observations"]).all()
-                        for agent, row in frame.items())):
-                raise ValueError("policy boundary observations disagree with controller lifetimes")
-        learning_agents = {
-            agent for agent, team in expected.items()
-            if context["model_slots_by_team"][str(team)] in learner_slots
-        }
-        if not learning_agents:
-            raise ValueError("completed episode has no decisions from the learner slot")
-        yield (journal_id, *key), expected, ticks, closing, boundaries[key], {
-            team: rewards[key, team] for team in set(expected.values())
-        }, learning_agents
+    if (ended_teams[key] != dict.fromkeys(expected.values(), terminal_tick) or
+            episode_boundaries.keys() != expected_boundaries.keys()):
+        raise ValueError("missing MA-POCA terminal or retirement boundary")
+    for end, frame in episode_boundaries.items():
+        if (frame.keys() != expected_boundaries[end] or
+                any((row["ship"], row["binding_revision"]) != identities.get(agent) or
+                    not np.isfinite(row["observations"]).all()
+                    for agent, row in frame.items())):
+            raise ValueError("policy boundary observations disagree with controller lifetimes")
+    learning_agents = {
+        agent for agent, team in expected.items()
+        if context["model_slots_by_team"][str(team)] in learner_slots
+    }
+    if not learning_agents:
+        raise ValueError("completed episode has no decisions from the learner slot")
+    return (journal_id, *key), expected, ticks, closing, episode_boundaries, {
+        team: rewards[key, team] for team in set(expected.values())
+    }, learning_agents
 
 
 def trajectories(rollouts, horizon, behavior_id):
