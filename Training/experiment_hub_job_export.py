@@ -103,6 +103,9 @@ def export(spec: dict, output: Path) -> dict:
         "missing_artifact_job_ids": [],
         "missing_sources": [],
         "entries_recorded_in_each_part_manifest": True,
+        "file_capture_scope": "Each source is captured through its size when opened; later appended bytes are excluded.",
+        "files_extended_during_copy_count": 0,
+        "files_extended_during_copy": [],
     }
     entry_count = 0
     parts: list[dict] = []
@@ -171,8 +174,20 @@ def export(spec: dict, output: Path) -> dict:
             write_chunk(name, body[offset:offset + CHUNK_BYTES], len(body), i)
 
     def add_file(source: Path, name: str) -> None:
-        size = source.stat().st_size
-        with source.open("rb") as handle:
+        # Keep one opened file identity throughout the read. A job may append
+        # during export; capture its initial prefix and disclose that omission
+        # rather than silently labelling the archive a complete final history.
+        flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0)
+        with os.fdopen(os.open(source, flags), "rb") as handle:
+            before = os.fstat(handle.fileno())
+            if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1:
+                raise ValueError("Telemetry source is not a safe regular file: " + name)
+            current = source.lstat()
+            if not stat.S_ISREG(current.st_mode) or (
+                current.st_dev, current.st_ino
+            ) != (before.st_dev, before.st_ino):
+                raise ValueError("Telemetry source changed between validation and open: " + name)
+            size = before.st_size
             index = 0
             remaining = size
             while remaining:
@@ -184,6 +199,18 @@ def export(spec: dict, output: Path) -> dict:
                 remaining -= len(block)
             if index == 0:
                 write_chunk(name, b"", 0, 1)
+            after = os.fstat(handle.fileno())
+            if after.st_size < size or (
+                after.st_size == size and after.st_mtime_ns != before.st_mtime_ns
+            ):
+                raise OSError("Telemetry source was rewritten during export: " + name)
+            if after.st_size > size:
+                manifest["files_extended_during_copy_count"] += 1
+                if len(manifest["files_extended_during_copy"]) < 100:
+                    manifest["files_extended_during_copy"].append({
+                        "source": name, "captured_bytes": size,
+                        "size_after_copy": after.st_size,
+                    })
 
 
     def add_selected_metric_history() -> int:
@@ -263,7 +290,8 @@ def export(spec: dict, output: Path) -> dict:
 
         # Legacy Bees run artifacts live in separately approved named sources,
         # not a job-ID directory under the coordinator data root.
-        for job in jobs if project != "bees" else []:
+        scanned_jobs = [] if project == "bees" else jobs
+        for job in scanned_jobs:
             job_id = job["id"]
             folder = root / job_id
             if not folder.is_symlink() and folder.is_dir() and folder.resolve() == folder.absolute():
@@ -308,6 +336,7 @@ def export(spec: dict, output: Path) -> dict:
                 "missing_artifact_job_ids": manifest["missing_artifact_job_ids"],
                 "missing_sources": missing_sources[:64],
                 "missing_source_count": len(missing_sources),
+                "files_extended_during_copy_count": manifest["files_extended_during_copy_count"],
                 "entries": entry_count}
     except BaseException:
         if archive is not None:

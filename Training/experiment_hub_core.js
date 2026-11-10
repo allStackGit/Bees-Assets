@@ -6,7 +6,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const {request: resourceRequest,matchingLeaseBudget,placements: resourcePlacements,
     startHeadroom,observedLoadPreference} = require('./experiment_hub_resources');
-const {validateProgress}=require('./experiment_hub_progress');
+const {validateProgress,selectChartMetrics}=require('./experiment_hub_progress');
 const {tinyBrainsProfiles,tinyBrainsImports,supportsTinyBrainsProfile}=require('./experiment_hub_tinybrains_adapter');
 const {evaluationPolicy,evaluationEvidence,evaluationRules,evaluationComplete,suiteIds,supportsEvaluation}=
     require('./experiment_hub_evaluation');
@@ -3038,12 +3038,10 @@ class ExperimentHub {
             // device; they are not measured per-job GPU consumption.
             let chartProgress=progress;
             if(progress) {
-                const measurements={...progress.metrics};
+                const observed={};
                 const add=(key,value,unit)=>{
-                    if(!Object.hasOwn(measurements,key)&&
-                        Object.keys(measurements).length<96&&
-                        Number.isFinite(value)&&value>=0&&value<=1e12)
-                        measurements[key]={value,unit};
+                    if(Number.isFinite(value)&&value>=0&&value<=1e12)
+                        observed[key]={value,unit};
                 };
                 add('job_cpu_cores',cpuCores,'scalar');
                 add('job_memory_mb',item.memory_current_mb,'mb');
@@ -3054,26 +3052,19 @@ class ExperimentHub {
                     l.id===job.lease_id&&l.job_id===job.id);
                 const bindings=lease?.gpu_bindings||[];
                 for(const [i,binding] of bindings.entries()) {
-                    const observed=report.gpu_devices?.find(device=>
-                        device.pci_address===binding.pci_address);
-                    if(!observed)continue;
-                    add('host_gpu_'+i+'_busy_pct',observed.gpu_busy_pct,'scalar');
-                    add('host_gpu_'+i+'_used_vram_mb',observed.used_vram_mb,'mb');
+                    const device=report.gpu_devices?.find(observedGpu=>
+                        observedGpu.pci_address===binding.pci_address);
+                    if(!device)continue;
+                    add('host_gpu_'+i+'_busy_pct',device.gpu_busy_pct,'scalar');
+                    add('host_gpu_'+i+'_used_vram_mb',device.used_vram_mb,'mb');
                     if(bindings.length===1) {
-                        add('host_gpu_busy_pct',observed.gpu_busy_pct,'scalar');
-                        add('host_gpu_vram_mb',observed.used_vram_mb,'mb');
+                        add('host_gpu_busy_pct',device.gpu_busy_pct,'scalar');
+                        add('host_gpu_vram_mb',device.used_vram_mb,'mb');
                     }
                 }
-                let retained=measurements;
-                if(Array.isArray(job.metric_selection)&&job.metric_selection.length) {
-                    retained=Object.fromEntries(Object.entries(measurements)
-                        .filter(([name])=>job.metric_selection.includes(name)||
-                            name==='total_ppo_updates'));
-                    if(!Object.keys(retained).length)
-                        retained={project_steps_completed:{
-                            value:progress.steps_completed,unit:'count'}};
-                }
-                chartProgress={...progress,metrics:retained};
+                chartProgress={...progress,metrics:selectChartMetrics(
+                    progress.metrics,observed,job.metric_selection,
+                    progress.steps_completed)};
             }
             const progressAccepted=chartProgress&&this.progressHistory.record(
                 job.id,job.project_id,chartProgress,received);

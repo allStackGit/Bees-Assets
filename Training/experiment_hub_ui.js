@@ -965,6 +965,10 @@ document.addEventListener('DOMContentLoaded', () => {
                                 ((result.missing_source_count||result.missing_sources.length)>8
                                     ?' and '+((result.missing_source_count||result.missing_sources.length)-8)+' more':'')+
                                 '. See the ZIP manifest for details. ':'')+
+                        (result.files_extended_during_copy_count
+                            ?result.files_extended_during_copy_count+
+                                ' log file(s) grew during export; only their captured byte prefixes are included. '+
+                                'See export-manifest.json for file details. ':'')+
                         'Select each part: '));
                     for(const [i,part] of result.parts.entries()) {
                         const link=document.createElement('a');
@@ -1198,8 +1202,10 @@ document.addEventListener('DOMContentLoaded', () => {
         'collection_seconds','optimization_seconds','overlap_seconds',
         'ppo_microbatches','states_per_microbatch','actor_grad_norm',
         'group_grad_norm','baseline_grad_norm','policy_lag',
-        'rss_mb','job_memory_mb','job_cpu_cores',
+        'rss_mb','job_memory_mb','job_peak_memory_mb','job_cpu_cores',
         'host_cpu_busy_pct','host_gpu_busy_pct','host_gpu_vram_mb',
+        'host_gpu_0_busy_pct','host_gpu_0_used_vram_mb',
+        'host_gpu_1_busy_pct','host_gpu_1_used_vram_mb',
         'data_preparation_seconds','inference_seconds','forward_seconds',
         'backward_seconds','optimizer_step_seconds','cpu_wait_seconds',
         'gpu_transfer_seconds','network_transfer_seconds',
