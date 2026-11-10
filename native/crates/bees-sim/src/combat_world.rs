@@ -834,6 +834,10 @@ pub struct CombatWorld {
     /// the ship has nearby collision asteroids. One timer per ship avoids
     /// repeated route invalidation for multiple overlapping sensors.
     asteroid_navigation_refresh: HashMap<i64, ScaledTimer>,
+    /// Per-tick membership scratch, derived from nearby_asteroid_ships.
+    /// Avoids a ship-by-every-asteroid scan in large battles; it never
+    /// owns contact lifetimes or changes the authored timer schedule.
+    asteroid_navigation_present: HashSet<i64>,
     obstacle_by_id: HashMap<i64, usize>,
     asteroid_border_states: HashMap<i64, AsteroidBorderState>,
     /// Directional child-proximity contacts; a primary collider entry only
@@ -956,6 +960,7 @@ impl CombatWorld {
             ship_collision_profiles: HashMap::new(),
             nearby_asteroid_ships: HashSet::new(),
             asteroid_navigation_refresh: HashMap::new(),
+            asteroid_navigation_present: HashSet::new(),
             obstacle_by_id: HashMap::new(),
             asteroid_border_states: HashMap::new(),
             nearby_asteroid_pairs: HashSet::new(),
@@ -1847,10 +1852,23 @@ impl CombatWorld {
     fn advance_asteroid_navigation_refresh(
         &mut self, dt: f32,
     ) -> Result<(), CombatWorldError> {
-        let nearby_ships = &self.nearby_asteroid_ships;
-        self.asteroid_navigation_refresh.retain(|&ship_id, _| {
-            nearby_ships.iter().any(|&(_, nearby_ship)| nearby_ship == ship_id)
-        });
+        if self.asteroid_navigation_refresh.len() <= 1 {
+            // The single-squad/1v1 case avoids building a membership set.
+            let nearby = &self.nearby_asteroid_ships;
+            self.asteroid_navigation_refresh.retain(|&ship_id, _|
+                nearby.iter().any(|&(_, owner)| owner == ship_id)
+            );
+        } else {
+            // In asteroid-heavy battles, the previous per-timer scan cost
+            // O(timers * nearby pairs) each fixed step. Reuse an index of
+            // current ship IDs only; nearby pair ownership remains canonical.
+            self.asteroid_navigation_present.clear();
+            self.asteroid_navigation_present.extend(
+                self.nearby_asteroid_ships.iter().map(|&(_, ship_id)| ship_id),
+            );
+            let present = &self.asteroid_navigation_present;
+            self.asteroid_navigation_refresh.retain(|&ship_id, _| present.contains(&ship_id));
+        }
         let mut ready = Vec::new();
         for (&ship_id, timer) in &mut self.asteroid_navigation_refresh {
             if let Some(due) = timer.begin_update(dt) {
