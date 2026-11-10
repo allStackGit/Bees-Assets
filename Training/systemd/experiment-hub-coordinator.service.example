@@ -1,0 +1,17 @@
+# Copy to ~/.config/systemd/user/experiment-hub-coordinator.service only after
+# verifying the project and private data-root paths. Do not run a second
+# coordinator against the same registry. This unit never starts training.
+[Unit]
+Description=Bees Experiment Hub coordinator
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/ai/projects/experiment-hub/Assets
+ExecStart=/usr/bin/node %h/ai/projects/experiment-hub/Assets/Training/experiment_hub_standalone.js --data-root %h/ai/experiments/experiment-hub
+UMask=0077
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=default.target
