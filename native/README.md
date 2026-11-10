@@ -161,8 +161,12 @@ Individual deaths also capture the retiring controller and its surviving
 teammates at the death tick. To run one CPU MA-POCA update from a completed
 capture with synchronized decisions, use
 `python native/tools/train_policy_capture.py decisions.bin events.jsonl manifest.json checkpoint.pt Training/rl_1v1_config.yaml new-checkpoint-dir`.
-The capture must contain one behavior checkpoint across all participating
-slots and enough decisions for a configured minibatch. The learner uses
+For mixed-checkpoint self-play, pass `--learner-slot 0` (or the actual
+learner slot). The learner verifies that slot against the input checkpoint
+and excludes opponent decisions from optimization. Repeat
+`--rollout CAPTURE JOURNAL MANIFEST` to combine independent captures of
+the same learner checkpoint in one update. Supply enough learner decisions
+for a configured minibatch. The learner uses
 the native group's terminal rewards. For an individual death, it closes that
 controller's trajectory and bootstraps using surviving teammates. Controllers
 lost when their side is eliminated receive the source's inactive faction

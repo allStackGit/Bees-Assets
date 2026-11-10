@@ -13,14 +13,23 @@ from policy_worker import file_sha256, install_bees_actor, mlagents_behavior_spe
 from read_policy_capture import capture_frames
 
 
-def completed_rollouts(capture, journal, manifest, checkpoint):
+def completed_rollouts(capture, journal, manifest, checkpoint, learner_slot=None):
     manifest_bytes = manifest.read_bytes()
     manifest_sha = hashlib.sha256(manifest_bytes).hexdigest()
     checkpoint_sha = file_sha256(checkpoint)
-    learner_slots = {
-        entry["slot"] for entry in json.loads(manifest_bytes)["models"]
+    models = {entry["slot"]: entry for entry in json.loads(manifest_bytes)["models"]}
+    matching = {
+        slot for slot, entry in models.items()
         if entry["backend"] == "mlagents" and entry["sha256"] == checkpoint_sha
     }
+    if learner_slot is None:
+        if not matching or matching != models.keys():
+            raise ValueError("mixed-checkpoint captures require an explicit learner slot")
+        learner_slots = matching
+    else:
+        if learner_slot not in matching:
+            raise ValueError("learner slot must match the optimizer input checkpoint")
+        learner_slots = {learner_slot}
     terminals = {}
     rewards = defaultdict(list)
     ended_teams = defaultdict(dict)
@@ -77,8 +86,8 @@ def completed_rollouts(capture, journal, manifest, checkpoint):
             key = int(row["world"]), int(row["episode"])
             terminal = terminals[key]
             context = terminal["evaluation_context"]
-            if generation != context["policy_generation"] or row["model_slot"] not in learner_slots:
-                raise ValueError("rollout includes decisions from a different behavior policy")
+            if generation != context["policy_generation"] or row["model_slot"] not in models:
+                raise ValueError("rollout includes decisions outside the recorded policy generation")
             tick, agent = int(row["tick"]), int(row["group_agent"])
             team = int(row["team"])
             if (tick >= terminal["tick"] or
@@ -149,9 +158,15 @@ def completed_rollouts(capture, journal, manifest, checkpoint):
                         not np.isfinite(row["observations"]).all()
                         for agent, row in frame.items())):
                 raise ValueError("policy boundary observations disagree with controller lifetimes")
-        yield key, expected, ticks, closing, boundaries[key], {
-            team: rewards[key, team] for team in set(expected.values())
+        learning_agents = {
+            agent for agent, team in expected.items()
+            if context["model_slots_by_team"][str(team)] in learner_slots
         }
+        if not learning_agents:
+            raise ValueError("completed episode has no decisions from the learner slot")
+        yield (journal_id, *key), expected, ticks, closing, boundaries[key], {
+            team: rewards[key, team] for team in set(expected.values())
+        }, learning_agents
 
 
 def trajectories(rollouts, horizon, behavior_id):
@@ -159,22 +174,23 @@ def trajectories(rollouts, horizon, behavior_id):
     from mlagents.trainers.torch_entities.action_log_probs import LogProbsTuple
     from mlagents_envs.base_env import ActionTuple
 
-    for key, teams, frames, closing, boundaries, rewards in rollouts:
+    for key, teams, frames, closing, boundaries, rewards, learning_agents in rollouts:
         terminal_tick = max(boundaries)
         reward_prefix = {}
         for team, events in rewards.items():
             reward_prefix[team] = ([tick for tick, _ in events],
                                    np.cumsum([0.0] + [amount for _, amount in events]))
         frames = frames + [(terminal_tick, boundaries[terminal_tick])]
-        experiences = {agent: [] for agent in teams}
+        experiences = {agent: [] for agent in learning_agents}
         previous = {}
         initial_action = np.zeros(6, dtype=np.int32)
         for (tick, frame), (next_tick, following) in zip(frames, frames[1:]):
             actions = {
                 agent: ActionTuple(row["sampled_continuous"], row["discrete"].astype(np.int32))
-                for agent, row in frame.items()
+                for agent, row in frame.items() if agent in learning_agents
             }
-            for agent, row in frame.items():
+            for agent in actions:
+                row = frame[agent]
                 end = min(next_tick, closing[agent])
                 done = end == closing[agent]
                 team = teams[agent]
@@ -201,7 +217,7 @@ def trajectories(rollouts, horizon, behavior_id):
                         steps, [observation_frame[agent]["observations"]],
                         [[observation_frame[mate]["observations"]] for mate in mates
                          if closing[mate] > end or end == terminal_tick],
-                        f"{key[0]}:{key[1]}:{agent}", behavior_id,
+                        f"{key[0]}:{key[1]}:{key[2]}:{agent}", behavior_id,
                     )
                     experiences[agent] = []
 
@@ -210,6 +226,12 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ("capture", "journal", "manifest", "checkpoint", "config", "output"):
         parser.add_argument(name, type=Path)
+    parser.add_argument("--learner-slot", type=int, help="train only on this manifest slot")
+    parser.add_argument(
+        "--rollout", type=Path, nargs=3, action="append", default=[],
+        metavar=("CAPTURE", "JOURNAL", "MANIFEST"),
+        help="add another completed capture sampled from the same learner checkpoint",
+    )
     args = parser.parse_args()
 
     import torch
@@ -237,7 +259,14 @@ def main():
             (network.hidden_units, network.num_layers) != (128, 3) or settings.time_horizon <= 0):
         parser.error("expected a feed-forward structured v26 MA-POCA trainer configuration")
     checkpoint = torch.load(args.checkpoint, map_location="cpu", weights_only=True)
-    rollouts = list(completed_rollouts(args.capture, args.journal, args.manifest, args.checkpoint))
+    rollouts = [
+        rollout
+        for paths in [(args.capture, args.journal, args.manifest), *args.rollout]
+        for rollout in completed_rollouts(*paths, args.checkpoint, args.learner_slot)
+    ]
+    episode_keys = {rollout[0] for rollout in rollouts}
+    if len(episode_keys) != len(rollouts):
+        parser.error("the same completed episode was supplied more than once")
     args.output.mkdir()
     trainer = POCATrainer(behavior.brain_name, 100, settings, True, False, 0, str(args.output))
     policy = trainer.create_policy(behavior, mlagents_behavior_spec())
@@ -264,6 +293,10 @@ def main():
         "optimizer_input_steps": steps,
         "terminal_steps": terminal_steps,
         "episodes": len(rollouts),
+        "opponent_steps": sum(
+            sum(agent not in learning_agents for agent in frame)
+            for _, _, ticks, _, _, _, learning_agents in rollouts for _, frame in ticks
+        ),
     }))
 
 

@@ -5,6 +5,21 @@ Read the full goal and fresh root AGENTS.md before further work. The complete
 Unity replacement remains incomplete. The latest Experiment Hub and queue
 work has been merged locally.
 
+## 2026-11-10 historical opponent and capture aggregation
+
+The native learner can now combine completed captures of one behavior
+checkpoint and train only on its explicit manifest slot when an opponent
+uses different weights. The slot follows the checkpoint across the
+existing faction swap. Journal identity scopes trajectories and prevents
+duplicate episode submission.
+
+The Windows fixture at
+`B:\Bees\native-capability-qualification\historical-poca-e5c2800587ff4b85b1eb1e7315f3faaf`
+combined two captures and four episodes. The learner accepted 36 decisions
+and excluded 36 opponent decisions. Adam advanced six minibatches.
+Wrong slots and duplicate episodes were refused. This path consumes
+completed files locally. Live worker transport remains open.
+
 ## 2026-11-10 individual controller retirement
 
 An opt-in policy capture now records a death-tick observation boundary
