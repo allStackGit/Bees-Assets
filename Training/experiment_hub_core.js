@@ -3671,7 +3671,19 @@ class ExperimentHub {
         const job=next.jobs.find(j=>j.id===value.job_id);
         if (!job) throw Error('Job not found.');
         if (job.status==='cancelled') return copy(job);
-        this.cancelUnstartedJob(next,job,now());
+        const cancelledAt=now();
+        if(job.project_id==='tinybrains'&&job.distributed_rollout_managed===true) {
+            // The collector jobs are not checkpoint successors: they exist
+            // solely for this learner. Cancel every unstarted child before
+            // withdrawing the learner. Any uncertain/started sidecar blocks
+            // the whole cancellation and requires explicit native Stop.
+            for(const child of next.jobs.filter(candidate=>
+                candidate.project_id==='tinybrains_rollout'&&
+                candidate.frozen_parameters?.learner_job_id===job.id&&
+                candidate.status!=='cancelled'))
+                this.cancelUnstartedJob(next,child,cancelledAt);
+        }
+        this.cancelUnstartedJob(next,job,cancelledAt);
         this.commit(next);
         return copy(job);
     }
