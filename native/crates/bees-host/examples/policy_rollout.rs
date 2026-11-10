@@ -450,6 +450,10 @@ fn bind_evaluation_episode(
 struct SourceCommandClock {
     revision: u64,
     next_due_tick: u64,
+    /// Retain the source ScaledTimer's fractional interval across ticks.
+    /// Rounding each 0.25-second period to a whole tick would accumulate
+    /// drift whenever the Level's fixed_dt does not divide that interval.
+    next_due_seconds: f64,
 }
 
 /// Converts authored Stage timer lengths to fixed-step handoff points.
@@ -477,7 +481,6 @@ struct RunNetwork {
     flush_seconds: u32,
     issue_source_commands: bool,
     fixed_dt_by_level: Vec<f32>,
-    command_period_ticks: Vec<u64>,
     command_clocks: Vec<Option<SourceCommandClock>>,
     command_measurements: NativeSourceCommandPulse,
 }
@@ -495,9 +498,9 @@ impl RunNetwork {
         if fixed_dt_by_level.len() != levels.len() {
             return Err(invalid("HiveMind command clock has mismatched Level timesteps"));
         }
-        let command_period_ticks = fixed_dt_by_level.iter()
-            .map(|&dt| source_command_ticks(0.25, dt))
-            .collect::<io::Result<Vec<_>>>()?;
+        for &dt in fixed_dt_by_level {
+            source_command_ticks(0.25, dt)?;
+        }
         let mut network = Self {
             worker: NativeSocketWorker::start(config.endpoint.clone(), config.allow_insecure_loopback)
                 .map_err(|error| contextual("HiveMind network startup", error))?,
@@ -506,7 +509,6 @@ impl RunNetwork {
             auth_ticket, flush_seconds: config.shutdown_flush_seconds,
             issue_source_commands: config.issue_source_commands,
             fixed_dt_by_level: fixed_dt_by_level.to_vec(),
-            command_period_ticks,
             command_measurements: NativeSourceCommandPulse::default(),
         };
         let (kind, server_game_id) = config.reconnect_game_id
@@ -538,6 +540,7 @@ impl RunNetwork {
             self.command_clocks[index] = Some(SourceCommandClock {
                 revision,
                 next_due_tick: source_command_ticks(initial_seconds, self.fixed_dt_by_level[index])?,
+                next_due_seconds: initial_seconds,
             });
         }
         Ok(())
@@ -566,12 +569,18 @@ impl RunNetwork {
                 {
                     due_levels.insert(i64::from(self.levels[index]));
                 }
-                let elapsed = tick.saturating_sub(clock.next_due_tick);
-                let period = self.command_period_ticks[index];
-                let periods = elapsed / period + 1;
-                clock.next_due_tick = clock.next_due_tick.saturating_add(
-                    periods.saturating_mul(period),
-                );
+                // Unity ScaledTimer subtracts the *actual* quarter-second
+                // length, retaining time leftover from the previous frame.
+                // Do not add ceil(0.25 / fixed_dt) ticks each period: e.g.
+                // 0.02s simulation steps otherwise drift from 0.25s pulses
+                // to 0.26s pulses for the lifetime of the Level.
+                let elapsed_seconds = tick as f64 * f64::from(self.fixed_dt_by_level[index]);
+                let overdue = (elapsed_seconds - clock.next_due_seconds).max(0.0);
+                let periods = (overdue / 0.25).floor() + 1.0;
+                clock.next_due_seconds += periods * 0.25;
+                clock.next_due_tick = source_command_ticks(
+                    clock.next_due_seconds, self.fixed_dt_by_level[index],
+                )?.max(tick.saturating_add(1));
             }
         }
         if due_levels.is_empty() { return Ok(()); }
