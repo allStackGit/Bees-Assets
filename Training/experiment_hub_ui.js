@@ -2639,21 +2639,32 @@ document.addEventListener('DOMContentLoaded', () => {
         if(!selected||selected.parameters?.remote_rollouts!==true||
             !distributedMachine.value)return;
         try {
-            if($('hub-job-predecessor').value)
-                throw Error('Distributed group queueing creates a new learner. Clear the predecessor selection.');
+            const predecessor=$('hub-job-predecessor').value;
+            if(predecessor) {
+                const parent=state.jobs.find(j=>j.id===predecessor);
+                if(!parent||!parent.capacity_released_at||
+                    parent.assigned_machine_id!==distributedMachine.value||
+                    !(parent.status==='finished'&&parent.checkpoint_ready_verified===true||
+                      parent.status==='stopped'&&parent.checkpoint_stop_verified===true))
+                    throw Error('Distributed continuation requires a released, checkpoint-verified learner on this same machine.');
+                if(selected.parameters.import_checkpoint!==undefined)
+                    throw Error('Save a continuation configuration without the original checkpoint import.');
+            }
             const budgets=JSON.parse(distributedBudgets.value);
             const selectedMachine=state.machines.find(m=>m.id===distributedMachine.value);
             if(!Array.isArray(budgets)||budgets.length!==
                 selectedMachine?.tinybrains_remote_rollout_endpoints?.length)
                 throw Error('Supply one resource budget for each physically approved remote collector.');
             const resources=JSON.parse($('hub-job-resources').value);
-            if(!confirm('Queue one TinyBrains learner on '+distributedMachine.value+
+            if(!confirm('Queue '+(predecessor?'checkpoint continuation':'new TinyBrains learner')+
+                ' on '+distributedMachine.value+
                 ' and '+budgets.length+' remotely pinned collectors? All CPU, RAM and GPU'+
                 ' reservations will be created together, but no process will start.'))return;
             const result=await action('hub/distributed/tinybrains',{
                 confirm_queue:true,
                 learner:{configuration_id:selected.id,expected_revision:selected.revision,
-                    machine_id:distributedMachine.value,resources},
+                    machine_id:distributedMachine.value,resources,
+                    ...(predecessor?{continuation_of_job_id:predecessor}:{})},
                 collectors:budgets.map(item=>{
                     if(!item||typeof item!=='object'||Array.isArray(item))
                         throw Error('Each collector budget must be a JSON object.');
