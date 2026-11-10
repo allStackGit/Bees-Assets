@@ -95,6 +95,75 @@ input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]), select {
     height: var(--control-height);
     padding: 0 8px;
 }
+/* The generic 36px input rule must not collapse multi-row metric selectors. */
+select[multiple] {
+    height: auto;
+    min-height: 240px;
+    padding: 6px 8px;
+    font-size: 15px;
+    line-height: 1.55;
+}
+select[multiple].hub-metric-source.is-enhanced { display: none; }
+.formgrid > .hub-metric-field { flex: 2 1 350px; min-width: min(100%, 280px); }
+.hub-metric-picker {
+    margin: 6px 0 10px;
+    padding: 12px;
+    border: 2px solid var(--ink);
+    font-size: 15px;
+    font-weight: 400;
+}
+.hub-metric-toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.hub-metric-toolbar input[type="search"] {
+    flex: 1 1 230px;
+    min-width: 165px;
+    width: auto;
+    height: 40px;
+    font-size: 15px;
+}
+.hub-metric-toolbar button { font-size: 12px; }
+.hub-metric-count { font-size: 13px; font-weight: 700; }
+.hub-metric-options {
+    height: min(48vh, 430px);
+    min-height: 230px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 3px 5px;
+    margin-top: 10px;
+    border: 1px solid var(--ink);
+}
+.hub-metric-group-title {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    padding: 7px 8px;
+    margin: 7px 0 3px;
+    background: var(--paper);
+    border-bottom: 1px solid var(--ink);
+    font-size: 13px;
+    font-weight: 900;
+}
+.hub-metric-choice {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    padding: 8px;
+    margin: 0;
+    width: 100%;
+    cursor: pointer;
+    font-size: 15px;
+    font-weight: 500;
+    overflow-wrap: anywhere;
+}
+.hub-metric-choice:hover, .hub-metric-choice:focus-within { background: #ebebeb; }
+.hub-metric-choice input[type="checkbox"] {
+    width: 19px;
+    height: 19px;
+    flex: 0 0 19px;
+    padding: 0;
+    margin: 0;
+}
+.hub-metric-choice small { margin-left: auto; font-size: 12px; font-weight: 400; }
+.hub-metric-empty { padding: 18px 8px; font-size: 14px; }
 input::placeholder, textarea::placeholder { color: var(--ink); opacity: 1; font-style: italic; }
 input:disabled, textarea:disabled, select:disabled { background: var(--paper); color: var(--ink); border-style: dotted; }
 input:focus, textarea:focus, select:focus, button:focus-visible, summary:focus-visible {
@@ -401,10 +470,12 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
     <div class="formgrid">
       <label>Saved configuration<select id="hub-job-configuration"></select></label>
       <label>Continue previous job (optional)<select id="hub-job-predecessor"></select></label>
-      <label class="wide">Metrics to retain in Hub comparison history (optional; Ctrl/Shift for multiple)
-        <select id="hub-job-metrics" multiple size="9"></select>
-        <small>Leave unselected to prioritize observed host CPU/GPU measurements and then retain as many project metrics as fit the shared 96-field chart limit. Explicit selections take priority over this default order. Device busy and VRAM measurements are host-wide, not attributable to an individual shared-GPU job. Full project-owned histories are unaffected; selecting a metric does not install missing instrumentation.</small>
-      </label>
+      <div class="hub-metric-field">
+        <label for="hub-job-metrics">Metrics to retain in Hub comparison history (optional)</label>
+        <select id="hub-job-metrics" class="hub-metric-source" multiple size="12" aria-label="Metrics to retain in Hub comparison history"></select>
+        <div id="hub-job-metric-picker" class="hub-metric-picker" aria-label="Search and select job metrics"></div>
+        <small>Leave all unchecked to prioritize observed host CPU/GPU measurements, followed by project metrics within the shared 96-field chart limit. Checked metrics take priority. Device busy and VRAM are host-wide measurements, not individual shared-GPU usage. Full project histories are unaffected; selecting a metric cannot install missing instrumentation.</small>
+      </div>
       <label class="wide">Requested resources (JSON)<textarea id="hub-job-resources" rows="5">{"cpus":2,"ram_mb":2048,"gpu_count":0}</textarea></label>
       <fieldset class="wide">
         <legend>Resource allocation builder (optional)</legend>
@@ -504,9 +575,11 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
   <h2>Project comparisons</h2>
   <p id="hub-compare-notice" class="hub-notice">Select two or more jobs to compare reported learning progress. A chart describes progress; it does not establish experimental equivalence.</p>
   <div class="formgrid">
-    <label>Chart and export metrics (select multiple with Ctrl/Shift)
-      <select id="hub-compare-metric" multiple size="7" aria-label="Metrics to chart and export"></select>
-    </label>
+    <div class="hub-metric-field">
+      <label for="hub-compare-metric">Chart and export metrics</label>
+      <select id="hub-compare-metric" class="hub-metric-source" multiple size="12" aria-label="Metrics to chart and export"></select>
+      <div id="hub-compare-metric-picker" class="hub-metric-picker" aria-label="Search and select comparison metrics"></div>
+    </div>
     <label>Horizontal axis
       <select id="hub-compare-x-axis">
         <option value="steps_completed">Cumulative project steps</option>
