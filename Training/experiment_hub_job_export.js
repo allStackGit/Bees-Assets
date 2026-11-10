@@ -198,7 +198,12 @@ class JobExporter {
             'Content-Disposition':'attachment; filename="'+record.name+'"',
             'Cache-Control':'no-store','X-Content-Type-Options':'nosniff',
         });
-        fs.createReadStream(target).pipe(res);
+        const stream=fs.createReadStream(target);
+        // A file can disappear after lstat (session expiry, storage failure).
+        // Never let a failed optional download crash the training coordinator.
+        stream.on('error',()=>res.destroy());
+        res.on('close',()=>stream.destroy());
+        stream.pipe(res);
     }
 }
 module.exports={JobExporter};
