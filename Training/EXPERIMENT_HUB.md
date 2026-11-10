@@ -2366,26 +2366,38 @@ service to the public Internet.
    its job then requires one *exclusive*, PCI/UUID-pinned GPU. With
    `enableCuda:false`, the worker uses CPU only.
 3. Register the `tinybrains_rollout` project and remote machines in the Hub,
-   and enroll their native agents. Queue the learner using an approved
-   TinyBrains profile and `remote_rollouts:true`; request the intended one
-   or two Halifax GPUs and its own CPU/RAM resources. Keep the learner queued.
-4. Queue one `tinybrains_rollout` job per approved remote endpoint, with the
-   frozen configuration `{"learner_job_id":"<queued learner UUID>"}` and its
-   own CPU/RAM allocation (and optionally one exclusive Windows CUDA GPU).
-   Assign separate machines, acknowledge each lease, and explicitly Start
-   every remote job. The learner readiness gate requires a **fresh verified
-   running dispatch** from each worker, the exact pinned endpoints, equal key
-   fingerprints and matching resource leases before allowing its GPU Start.
+   and enroll their native agents. Save a TinyBrains configuration with
+   `remote_rollouts:true` and the approved profile/checkpoint import.
+   In **Train**, choose the saved learner configuration, enter its local
+   CPU/RAM and one- or two-GPU budget, then use **Queue and reserve entire
+   group**. Select Halifax and provide one CPU/RAM resource budget per
+   approved endpoint in the shown order. A worker budget may also request
+   one exclusive Windows CUDA GPU; no shared remote GPU is admitted.
+   The Hub creates each worker configuration, all jobs and all machine
+   reservations atomically; if any physical worker or capacity is missing,
+   no job or claim is committed. No process is started by this action.
+4. Allow each host's authenticated agent to acknowledge its offered claim.
+   Explicitly Start every remote `tinybrains_rollout` job first, or use an
+   independently authorized native automation session. The learner Start
+   gate requires a **fresh verified running dispatch** from every worker,
+   exact pinned endpoints, equal key fingerprints and matching leases.
+   A coordinator restart requires fresh agent and native process receipts
+   before any new Start; persisted `running` labels are not sufficient.
 5. Perform the learner's normal GPU access qualification, then explicitly
    Start it. Check `self-play/history.jsonl`: `collector_samples` reports
    each shard's ant decisions and engine steps plus remote transfer time and
    a stable endpoint hash. Compare **end-to-end** actions/s, not just GPU busy
    percentage. For a graceful stop, Stop the learner at a PPO checkpoint
-   boundary and separately Stop its remote sidecar jobs afterward. Do not
-   delete source runs, checkpoints or independent trainer directories.
+   boundary. For groups created with the atomic queue action, the Hub
+   requests native Stop for its remote sidecars once the learner's terminal
+   report is verified; their own terminal receipts authorize automatic
+   resource release. Unverified or failed native owners retain their
+   reservations for operator inspection. Do not delete source runs,
+   checkpoints or independent trainer directories.
 
-This path is not dynamically rebalanced or automatically recovered as a
-single atomic multi-machine process. Collector interruptions fail the
+This path is initially queued as one atomic resource group but is not
+live-rebalanced or automatically restarted as one native process.
+Collector interruptions fail the
 learner's active PPO update rather than allowing incomplete or mixed-policy
 data into its optimizer; resume uses the last completed checkpoint and a new
 remote session. Remote CPU workers cannot join a running learner without a
@@ -2397,7 +2409,7 @@ verified absence/timeout behavior on the actual hosts.
 
 Production installation and qualification of project-specific adapters,
 real-machine Windows CUDA and Linux systemd/ROCm qualification,
-enforceable OS GPU compute and VRAM quotas, Linux shared-GPU execution,
+enforceable OS GPU compute and VRAM quotas, production-qualified Linux cooperative shared-GPU execution,
 independent non-PyTorch shared GPU adapters, seamless adoption of
 independently running trainers,
 production coexistence qualification of the
