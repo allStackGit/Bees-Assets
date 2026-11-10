@@ -98,7 +98,8 @@ def completed_rollouts(capture, journal, manifest, manifest_sha, checkpoint_sha,
         # A selected-only NumPy copy keeps the bulk allocation advantage.
         learner_rows = None
         opponent_rows = None
-        if generation is not None and all_episodes_match and has_opponent_slots:
+        if (generation is not None and all_episodes_match and
+                has_opponent_slots and len(rows) > 3):
             selected = np.isin(rows["model_slot"], list(learner_slots))
             learner_rows = iter(rows[selected])
             # Project only the three opponent fields BEFORE copying. Never
@@ -111,7 +112,12 @@ def completed_rollouts(capture, journal, manifest, manifest_sha, checkpoint_sha,
             opponent_rows = iter(opponent_identities)
             owned_frame = None
         else:
-            owned_frame = rows.copy() if all_episodes_match else None
+            # Avoid mask/repacking overhead for 1v1 and other tiny mixed
+            # frames. Copy only the learner row when it is retained.
+            copy_full_frame = all_episodes_match and not (
+                generation is not None and has_opponent_slots
+            )
+            owned_frame = rows.copy() if copy_full_frame else None
         source_rows = owned_frame if owned_frame is not None else rows
         if generation is None:
             for row in source_rows:
