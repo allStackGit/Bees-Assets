@@ -216,8 +216,8 @@ function boundedReport(value) {
     if(!Array.isArray(gpuShared)||gpuShared.length>gpuProjects.length||
         gpuShared.some(p=>typeof p!=='string'||!gpuProjects.includes(p))||
         new Set(gpuShared).size!==gpuShared.length||
-        (gpuShared.length&&value.platform!=='win32'))
-        throw Error('Shared GPU execution requires a trusted, Windows CUDA adapter.');
+        (gpuShared.length&&!['win32','linux'].includes(value.platform)))
+        throw Error('Shared GPU execution requires an opted-in native adapter.');
     const evaluationSuites=Object.fromEntries(Object.entries(evaluators)
         .map(([project,ids])=>[project,suiteIds(ids)]));
     return {cpus:value.cpus,ram_mb:value.ram_mb,
@@ -260,14 +260,14 @@ function gpuStartBlock(job,lease,machine) {
     const r=job.resources,allocated=lease.resources;
     if(r.gpu_count===0&&allocated.gpu_count===0&&
         !(r.gpus||[]).length&&!(allocated.gpus||[]).length)return null;
-    const sharedWindows=machine.agent_platform==='win32'&&
+    const sharedApproved=['win32','linux'].includes(machine.agent_platform)&&
         r.gpu_mode==='shared'&&allocated.gpu_mode==='shared'&&
         machine.gpu_shared_projects?.includes(job.project_id);
     if(r.gpu_count!==1||allocated.gpu_count!==1||
-        !(r.gpu_mode==='exclusive'&&allocated.gpu_mode==='exclusive'||sharedWindows)||
+        !(r.gpu_mode==='exclusive'&&allocated.gpu_mode==='exclusive'||sharedApproved)||
         allocated.gpus?.length!==1||
         (r.gpus?.length&&r.gpus[0]!==allocated.gpus[0]))
-        return 'Native GPU Start requires one exclusive GPU or a locally approved cooperative Windows CUDA share.';
+        return 'Native GPU Start requires one exclusive GPU or a locally approved cooperative GPU share.';
     if(!machine.gpu_projects?.includes(job.project_id))
         return 'The local adapter has not opted into native GPU execution.';
     if(machine.agent_platform==='win32') {
@@ -307,17 +307,19 @@ function gpuProbeWorkerReady(job,lease,machine) {
 function gpuProbeBlock(job,lease,machine) {
     if(!gpuProbeWorkerReady(job,lease,machine)||!lease.receipt_fresh||
         !machine.installed_projects?.includes(job.project_id)||
-        job.resources.gpu_mode!=='exclusive'||
+        !(job.resources.gpu_mode==='exclusive'||
+            job.resources.gpu_mode==='shared'&&
+                machine.gpu_shared_projects?.includes(job.project_id))||
         job.resources.gpu_count!==1||
         (job.resources.gpus?.length>0&&
             job.resources.gpus[0]!==lease?.resources.gpus?.[0])||
-        lease.resources.gpu_mode!=='exclusive'||
+        lease.resources.gpu_mode!==job.resources.gpu_mode||
         lease.resources.gpu_count!==1||lease.resources.gpus?.length!==1||
         physicalGpuBindings(machine,{
             gpu_inventory_source:machine.gpu_inventory_source,
             gpu_devices:machine.observed_gpus,
         },lease.resources,lease.gpu_bindings)?.length!==1)
-        return 'GPU access probe needs a fresh exclusive single-GPU lease on a qualified Linux agent.';
+        return 'GPU access probe needs a fresh approved single-GPU lease on a qualified Linux agent.';
     const resourceBlock=nativeResourceBlock(job,lease);
     if(resourceBlock)return resourceBlock;
     if(!(machine.observed_gpus?.length>=2))
@@ -743,7 +745,9 @@ function allocationChoice(machines,reservations,job,preferredMachineId=null,
                 (machine.agent_platform==='win32'
                     ?machine.gpu_inventory_source==='nvidia-smi-v1'&&machine.observed_gpus?.length>=1&&
                         (r.gpu_mode!=='shared'||machine.gpu_shared_projects?.includes(selected.project_id))
-                    :r.gpu_mode==='exclusive'&&machine.observed_gpus?.length>=2))
+                    :(r.gpu_mode==='exclusive'||r.gpu_mode==='shared'&&
+                        machine.gpu_shared_projects?.includes(selected.project_id))&&
+                        machine.observed_gpus?.length>=2))
         ).map(machine=>machine.id));
         const runnable=fits.filter(p=>ready.has(p.machine_id));
         if(runnable.length)return runnable;
