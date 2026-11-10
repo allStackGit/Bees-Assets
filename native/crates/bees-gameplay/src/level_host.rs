@@ -539,6 +539,7 @@ pub enum NativeLevelWindowError<SourceError, BackendError, SinkError> {
         round: u32,
         error: NativeNotificationDeliveryError<SinkError>,
     },
+    PolicyDelivery { round: u32, error: SinkError },
 }
 
 /// A normal operator stop and a failed-step abort have different source
@@ -1269,6 +1270,10 @@ impl NativeLevelBatchDriver {
                 .map_err(|error| NativeLevelWindowError::Step {
                     round, error,
                 })?;
+            if step.policy_agents_inferred != 0 {
+                sink.accept_applied_policy_batch(&self.inference)
+                    .map_err(|error| NativeLevelWindowError::PolicyDelivery { round, error })?;
+            }
             counts.rounds += 1;
             counts.world_steps += step.worlds_stepped;
             counts.policy_rows += step.policy_agents_inferred;
@@ -1410,6 +1415,14 @@ impl NativeLevelBatchDriver {
 /// These identifiers cannot be substituted for server OutcomeIds.
 pub trait NativeLevelNotificationSink {
     type Error;
+
+    /// Called only after every world in the policy batch stepped successfully,
+    /// before delivering rewards and terminal records produced by that step.
+    fn accept_applied_policy_batch(
+        &mut self, _batch: &NativeLevelInferenceBatch,
+    ) -> Result<(), Self::Error> {
+        Ok(())
+    }
 
     /// Durable command-credit sinks expose only batches that they have
     /// already committed to their own journal. The host then checkpoints

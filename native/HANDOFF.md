@@ -5,6 +5,19 @@ Read the full goal and fresh root AGENTS.md before further work. The complete
 Unity replacement remains incomplete. The latest Experiment Hub and queue
 work has been merged locally.
 
+## 2026-11-10 applied native decisions
+
+The rollout window delivers validated decision rows after successful world
+dispatch and before reward delivery. Optional binary capture pairs those rows
+with the existing notification journal. The Windows receipt in
+`B:\Bees\native-capability-qualification\applied-decisions-427b22a1352543a3942e5404516e2f8b`
+contains 600 decisions for controller 1003 and its terminal at tick 3000.
+The reader refused the run stopped at 20 rounds and an unrelated journal.
+
+The capture verifies the simulator's decision boundary. Optimizer integration
+still needs online behavior-policy sampling with log probabilities, live
+groupmate data, and the source trajectory owner's terminal handling.
+
 ## 2026-11-10 trainer ONNX evaluation
 
 The Windows receipts in

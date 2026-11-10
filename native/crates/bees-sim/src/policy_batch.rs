@@ -153,6 +153,9 @@ impl PolicyBatch {
     pub fn keys(&self) -> &[PolicyAgentKey] { &self.keys }
     pub fn masks(&self) -> &[PolicyActionMask] { &self.masks }
     pub fn observations(&self) -> &[f32] { &self.observations }
+    pub fn actions(&self) -> (&[f32], &[u8]) {
+        (&self.continuous, &self.discrete)
+    }
 
     /// Read this at dashboard/export boundaries without introducing per-step
     /// histograms, allocation tracing or extra copies.

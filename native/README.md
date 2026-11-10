@@ -145,6 +145,18 @@ log is **not** the complete observation/action/value/log-probability data
 needed to train a policy. Its durable sink synchronizes bounded ordered event
 chunks (up to 128 records or 256 KiB) and acknowledges only the actually
 committed source prefix; a previously created output path is never overwritten.
+
+For an opt-in decision capture, set `"policy_capture": "decisions.bin"`.
+This separate binary file records only successfully dispatched policy
+batches, with observations, allowed masks, actions, policy generation and
+controller identities. The notification journal still owns rewards and
+terminal events. Match rows using world ID and episode revision. A row
+records the observation tick immediately before its action is applied.
+Use `python native/tools/read_policy_capture.py decisions.bin events.jsonl`
+to check the pairing and count completed rows. The reader rejects captures
+without the completion footer, including interrupted runs. These records
+do not include behavior log probabilities, critic estimates or groupmate
+observations and are insufficient for a MA-POCA update.
 Completed worlds can be recycled up to `episodes_per_world` times through
 `NativeHostRuntime::reset_world`, with fresh monotonic squad lifetimes and
 per-episode deterministic seeds. Each replay uses the exact initial exported

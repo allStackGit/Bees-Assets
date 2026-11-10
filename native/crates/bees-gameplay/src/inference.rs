@@ -260,11 +260,24 @@ impl NativeLevelInferenceBatch {
         &self.routes
     }
 
+    /// The caller must wait for successful world dispatch before consuming these rows.
+    pub fn validated_policy_outputs(&self) -> Option<(&[PolicyActionMask], &[f32], &[u8])> {
+        if !self.finalized || self.failed || self.batch.is_empty() {
+            return None;
+        }
+        let (continuous, discrete) = self.batch.actions();
+        Some((self.batch.masks(), continuous, discrete))
+    }
+
     /// Row-aligned with keys()/observations()/routes()/actions().
     /// None is reserved for the non-group game and older source scenes.
     /// The owner must not fabricate an MA-POCA Agent from its ship ID.
     pub fn group_agent_ids(&self) -> &[Option<u64>] {
         &self.group_agent_ids
+    }
+
+    pub fn binding_revisions(&self) -> &[u64] {
+        &self.binding_revisions
     }
 
     /// An inference library fills BOTH buffers: 16 continuous channels

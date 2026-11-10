@@ -219,6 +219,7 @@ pub struct EpisodeEvaluationContext {
 
 pub struct DurableDiagnosticNotifications {
     evaluation_contexts: BTreeMap<u64, (u64, EpisodeEvaluationContext)>,
+    policy_capture: Option<crate::policy_capture::PolicyCapture>,
     file: File,
     run_id: String,
     journal_id: String,
@@ -268,9 +269,22 @@ impl DurableDiagnosticNotifications {
             pending_prepared: Vec::new(), pending: Vec::new(),
             measurements: NativeDiagnosticMeasurements::default(),
             evaluation_contexts: BTreeMap::new(),
+            policy_capture: None,
             prepared: VecDeque::new(),
             unavailable: false,
         })
+    }
+
+    pub fn capture_policy_to(&mut self, path: &Path) -> io::Result<()> {
+        if self.policy_capture.is_some() {
+            return Err(io::Error::other("policy capture already configured"));
+        }
+        self.policy_capture = Some(crate::policy_capture::PolicyCapture::create(path, &self.journal_id)?);
+        Ok(())
+    }
+
+    pub fn finish_policy_capture(&mut self, expected_rows: u64) -> io::Result<Option<u64>> {
+        self.policy_capture.take().map(|capture| capture.finish(expected_rows)).transpose()
     }
 
     /// These are counters for notifications the driver is permitted
@@ -516,6 +530,15 @@ impl DurableDiagnosticNotifications {
 
 impl NativeLevelNotificationSink for DurableDiagnosticNotifications {
     type Error = io::Error;
+
+    fn accept_applied_policy_batch(
+        &mut self, batch: &bees_gameplay::inference::NativeLevelInferenceBatch,
+    ) -> io::Result<()> {
+        if let Some(capture) = &mut self.policy_capture {
+            capture.write_batch(batch)?;
+        }
+        Ok(())
+    }
 
     fn first_prepared_outcomes(&self) -> Option<&PreparedOutcomeBatch> {
         self.prepared.front()

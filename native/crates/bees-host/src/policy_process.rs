@@ -356,7 +356,7 @@ impl Drop for ResidentPolicyProcess {
 
 // Little-endian x86-64/ARM64 has a zero-copy, aligned slice view. Big
 // endian hosts transcode floats rather than quietly corrupting a model.
-fn write_floats<W: Write>(writer: &mut W, values: &[f32])
+pub(crate) fn write_floats<W: Write>(writer: &mut W, values: &[f32])
     -> io::Result<()>
 {
     #[cfg(target_endian = "little")]

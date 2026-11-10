@@ -167,6 +167,7 @@ struct RunConfig {
     model_manifest: Option<PathBuf>,
     connection_checkpoint: PathBuf,
     notifications: PathBuf,
+    policy_capture: Option<PathBuf>,
     /// Stopped run journals, replayed into the ORIGINAL connection before
     /// starting a new incarnation. No previous world is resumed.
     #[serde(default)]
@@ -699,8 +700,12 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
     let checkpoint = resolve(root, &config.connection_checkpoint);
     let notifications = resolve(root, &config.notifications);
+    let policy_capture = config.policy_capture.as_ref().map(|path| resolve(root, path));
     if checkpoint == notifications {
         return Err(invalid("checkpoint and notification log must be distinct").into());
+    }
+    if policy_capture.as_ref().is_some_and(|path| path == &checkpoint || path == &notifications) {
+        return Err(invalid("policy capture, checkpoint and notification log must be distinct").into());
     }
     let bounds = &config.fragment_spawn.map_bounds;
     let fragment_settings = FragmentSpawnSettings {
@@ -953,6 +958,9 @@ fn main() -> Result<(), Box<dyn Error>> {
             "newly_checkpointed":recovered.newly_checkpointed,"already_checkpointed":recovered.already_checkpointed}));
     }
 
+    if policy_capture.is_some() && model_source.is_none() {
+        return Err(invalid("policy capture requires a resident model worker").into());
+    }
     let model = if let Some((python, worker, manifest, expected_sha)) = model_source {
         let model = ResidentPolicyProcess::python_worker(python, worker, manifest)
             .map_err(|error| contextual("model worker startup", error))?;
@@ -965,9 +973,12 @@ fn main() -> Result<(), Box<dyn Error>> {
     } else {
         RolloutModel(None)
     };
-    let sink = DurableDiagnosticNotifications::create_new(
+    let mut sink = DurableDiagnosticNotifications::create_new(
         &notifications, config.run_id.clone(),
     )?;
+    if let Some(path) = policy_capture.as_ref() {
+        sink.capture_policy_to(path)?;
+    }
     let mut host = assets.build_imported_policy_runtime(
         launches, model, connection, sink,
     ).map_err(|error| contextual("native Level construction", error))?;
@@ -1476,6 +1487,15 @@ fn main() -> Result<(), Box<dyn Error>> {
     if final_segment.is_none() && failed_window.is_none() {
         failed_window = Some("durable evaluation counters regressed".into());
     }
+    let mut captured_policy_rows = None;
+    if failed_window.is_none() && cleanup_errors.is_empty()
+        && completed_episodes.iter().all(|&finished| finished == config.episodes_per_world)
+    {
+        match host.sink_mut().finish_policy_capture(successful_policy_rows) {
+            Ok(rows) => captured_policy_rows = rows,
+            Err(error) => cleanup_errors.push(format!("policy capture finalization: {error}")),
+        }
+    }
     let policy_generation = host.model_mut().model_generation();
     let policy_manifest_sha256 = host.model_mut().model_manifest_sha256();
     drop(host.model_mut().0.take());
@@ -1502,6 +1522,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             "policy_rows_per_execution_second": rate(successful_policy_rows, execution_wall_seconds),
         },
         "policy_generation": policy_generation,
+        "captured_policy_rows": captured_policy_rows,
         "policy_manifest_sha256": policy_manifest_sha256,
         "completed_episodes": completed_episodes.iter()
             .map(|&count| u64::from(count)).sum::<u64>(),

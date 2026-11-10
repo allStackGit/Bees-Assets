@@ -24,3 +24,4 @@ pub mod client;
 pub mod unity_scene_snapshot;
 
 pub mod notification_file;
+mod policy_capture;
