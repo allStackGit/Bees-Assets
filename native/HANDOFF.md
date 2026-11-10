@@ -5,6 +5,21 @@ Read the full goal and fresh root AGENTS.md before further work. The complete
 Unity replacement remains incomplete. The latest Experiment Hub and queue
 work has been merged locally.
 
+## 2026-11-10 trainer ONNX evaluation
+
+The Windows receipts in
+`B:\Bees\native-capability-qualification\trainer-onnx-final-d8619b9dabb444c7b2fe4615f4dc875b`
+use a freshly initialized structured v26 actor exported by the installed
+ML-Agents ModelSerializer. The resident ONNX worker ran the deterministic
+action outputs through four native episodes and validated 4,800 policy rows.
+Swapped observation and mask inputs failed during worker startup.
+ONNX slots can cap intra-op threads for bounded CPU placements.
+
+The next training integration needs to pass native decision and terminal data
+to the existing MA-POCA trajectory owner, including real sampled action
+log probabilities and groupmate data. The frozen ONNX path supplies actions
+for evaluation and does not produce optimizer inputs.
+
 ## 2026-11-10 resident policy evaluation
 
 Terminal evaluation journals now record authored policy slots by side

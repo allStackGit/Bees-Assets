@@ -1019,6 +1019,11 @@ for example
 "outputs":{"continuous":"continuous_actions", "discrete":"discrete_actions"}}`.
 Names must match the actual exported model; if the model instead emits
 one already-decoded 22-column action tensor, use `"outputs":{"combined":"actual_name"}`.
+ML-Agents' feed-forward v26 export exposes
+`deterministic_continuous_actions` and `deterministic_discrete_actions`
+for frozen-policy evaluation. An optional positive `intra_op_threads`
+limits ONNX Runtime's per-session CPU parallelism. Omit it to use the
+runtime's default.
 An exported ONNX policy needing additional recurrent/memory inputs or
 unsupported output layouts is rejected rather than supplied fabricated
 values. The model's own inference graph must honor the 15-column

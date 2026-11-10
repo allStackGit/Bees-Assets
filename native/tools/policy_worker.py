@@ -124,19 +124,33 @@ class OnnxPolicy:
             not isinstance(provider, str) for provider in providers
         ):
             raise ValueError("ONNX providers must be an ordered list")
-        self.session = ort.InferenceSession(str(model_file), providers=providers)
+        options = None
+        intra_op_threads = config.get("intra_op_threads")
+        if intra_op_threads is not None:
+            if type(intra_op_threads) is not int or not 1 <= intra_op_threads <= 2147483647:
+                raise ValueError("ONNX intra_op_threads must be a positive int32")
+            options = ort.SessionOptions()
+            options.intra_op_num_threads = intra_op_threads
+        self.session = ort.InferenceSession(
+            str(model_file), sess_options=options, providers=providers
+        )
         # Fail rather than silently claiming an unavailable accelerator.
         if providers[0] not in self.session.get_providers():
             raise ValueError("requested primary ONNX provider is not available")
-        actual_inputs = {item.name for item in self.session.get_inputs()}
+        actual_inputs = {item.name: item for item in self.session.get_inputs()}
         actual_outputs = {item.name for item in self.session.get_outputs()}
-        if not {obs_input, mask_input}.issubset(actual_inputs):
+        if obs_input == mask_input or not {obs_input, mask_input}.issubset(actual_inputs):
             raise ValueError("ONNX missing configured observation/mask inputs")
         if any(name not in actual_outputs for name in names[2:]):
             raise ValueError("ONNX missing configured action outputs")
         # Extra required model inputs must not be invented by the worker.
         if len(actual_inputs) != 2:
             raise ValueError("ONNX model requires additional unsupported inputs")
+        for name, width in ((obs_input, OBS_FLOATS), (mask_input, MASK_WIDTH)):
+            info = actual_inputs[name]
+            if (info.type != "tensor(float)" or len(info.shape) != 2
+                    or isinstance(info.shape[1], int) and info.shape[1] != width):
+                raise ValueError(f"ONNX input {name!r} must accept float32 [batch, {width}]")
 
     def predict(self, observations: np.ndarray, allowed: np.ndarray):
         feeds = {
