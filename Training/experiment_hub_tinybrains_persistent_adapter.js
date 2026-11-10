@@ -20,6 +20,16 @@ const HUB_IN='/workspace/projects/experiment-hub/Assets';
 const JOBS_IN='/workspace/experiments/experiment-hub/tinybrains-jobs';
 const SOURCE_IN='/workspace/experiments/tinybrains/mini-learning';
 const CACHE_IN='/workspace/cache/tinybrains';
+const REMOTE_KEY_IN='/workspace/private/tinybrains-rollouts';
+
+function approvedTailnetEndpoint(value) {
+    if(typeof value!=='string'||!/^100\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d{1,5}$/.test(value))
+        return false;
+    const [ip,rawPort]=value.split(':');
+    const octets=ip.split('.').map(Number),port=Number(rawPort);
+    return octets[1]>=64&&octets[1]<=127&&
+        octets.slice(2).every(n=>n>=0&&n<=255)&&port>=1&&port<=65535;
+}
 
 function fullDir(name) {
     if(typeof name!=='string'||!path.isAbsolute(name)||
@@ -44,10 +54,28 @@ function createTinyBrainsPersistentDockerAdapter({
     projectRoot,hubRoot,artifactRoot,sourceRunRoot,engineCacheRoot,
     seedCheckpointSha256,seedPpoUpdates,profiles,
     image='tinybrains-rocm:halifax-node',sourceWindowsRoot='B:/TinyBrains/Ants-MAPOCA',
-    enableDualGpu=false,
+    enableDualGpu=false,remoteCollectors=null,
 }) {
     if(typeof enableDualGpu!=='boolean')
         throw Error('Dual GPU enablement requires an explicit local boolean opt-in.');
+    let remote=null;
+    if(remoteCollectors!==null) {
+        if(!remoteCollectors||typeof remoteCollectors!=='object'||
+            Array.isArray(remoteCollectors)||
+            Object.keys(remoteCollectors).sort().join(',')!=='endpoints,keyDirectory'||
+            !Array.isArray(remoteCollectors.endpoints)||
+            !remoteCollectors.endpoints.length||remoteCollectors.endpoints.length>8||
+            remoteCollectors.endpoints.some(endpoint=>!approvedTailnetEndpoint(endpoint))||
+            new Set(remoteCollectors.endpoints).size!==remoteCollectors.endpoints.length)
+            throw Error('Remote TinyBrains collectors require unique, locally pinned tailnet IPv4 endpoints.');
+        const keyDirectory=fullDir(remoteCollectors.keyDirectory);
+        const keyFile=path.join(keyDirectory,'rollout.key');
+        const stat=fs.lstatSync(keyFile);
+        if(!stat.isFile()||fs.realpathSync(keyFile)!==keyFile||
+            (stat.mode&0o077)!==0||stat.size<32||stat.size>4096)
+            throw Error('Remote collector rollout.key must be an existing private regular file.');
+        remote={keyDirectory,endpoints:remoteCollectors.endpoints.slice()};
+    }
     if(process.platform!=='linux'||!SHA.test(String(seedCheckpointSha256||''))||
         !Number.isSafeInteger(seedPpoUpdates)||seedPpoUpdates<1)
         throw Error('Persistent TinyBrains Docker import requires Linux and a pinned checkpoint hash.');
@@ -128,12 +156,14 @@ function createTinyBrainsPersistentDockerAdapter({
     }
     const docker={
         image,workdir:PROJECT_IN,uid:process.getuid(),gid:process.getgid(),
+        remote_host_network:Boolean(remote),
         mounts:[
             {host:project,target:PROJECT_IN,readonly:true},
             {host:hub,target:HUB_IN,readonly:true},
             {host:artifacts,target:JOBS_IN,readonly:false},
             {host:source,target:SOURCE_IN,readonly:true},
             {host:cache,target:CACHE_IN,readonly:false},
+            ...(remote?[{host:remote.keyDirectory,target:REMOTE_KEY_IN,readonly:true}]:[]),
         ],
         env:{
             HOME:'/tmp',PYTHONDONTWRITEBYTECODE:'1',
@@ -161,6 +191,7 @@ function createTinyBrainsPersistentDockerAdapter({
         tinybrains_cpu_fallback_profiles:[...approved.keys()],
         tinybrains_required_import_profiles:[...approved.keys()],
         tinybrains_dual_gpu_profiles:enableDualGpu?[...approved.keys()]:[],
+        tinybrains_remote_rollout_profiles:remote?[...approved.keys()]:[],
         ...(enableDualGpu?{gpu_dual_execution:'split-ppo'}:{}),
         tinybrains_imports:Object.fromEntries([...approved.keys()].map(id=>[
             'exeter_'+id,{profile:id,sha256:seedCheckpointSha256},
@@ -179,12 +210,15 @@ function createTinyBrainsPersistentDockerAdapter({
             return ['-B',HUB_IN+'/Training/experiment_hub_tinybrains_rocm_verify.py',...ids];
         },
         args(parameters,context) {
-            const {profile,profile_sha256,updates,threads,device,import_checkpoint,
-                import_checkpoint_sha256}=parameters;
+            const {profile,profile_sha256,updates,threads,device,remote_rollouts,
+                import_checkpoint,import_checkpoint_sha256}=parameters;
             const item=approved.get(profile);
             if(!item||item.sha256!==profile_sha256||
                 Object.keys(parameters).some(k=>!['profile','profile_sha256','updates',
-                    'threads','device','import_checkpoint','import_checkpoint_sha256'].includes(k))||
+                    'threads','device','remote_rollouts','import_checkpoint',
+                    'import_checkpoint_sha256'].includes(k))||
+                (remote_rollouts!==undefined&&
+                    (remote_rollouts!==true||!remote))||
                 (device!==undefined&&!['cpu','dual'].includes(device))||
                 (threads!==undefined&&(!Number.isSafeInteger(threads)||threads<1||threads>256))||
                 !Number.isSafeInteger(updates)||updates<1||updates>10000000||
@@ -249,6 +283,9 @@ function createTinyBrainsPersistentDockerAdapter({
                 '--live-matches',String(item.profile.live_matches),
                 '--waves',String(item.profile.waves),
                 '--actions',String(item.profile.rollout_actions),
+                ...(remote_rollouts===true?[...remote.endpoints.flatMap(endpoint=>
+                    ['--remote-rollout-endpoint',endpoint]),
+                    '--remote-rollout-key-file',REMOTE_KEY_IN+'/rollout.key']:[]),
                 ...(device==='cpu'?['--device','cpu']:
                     device==='dual'
                         ?['--device','dual',...context.gpu_pci_addresses.flatMap(pci=>
