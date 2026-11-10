@@ -99,23 +99,29 @@ class LocalExecution {
                         .update(JSON.stringify(job.frozen_parameters)).digest('hex')!==
                             job.configuration_sha256)
                     throw Error('GPU access probe frozen configuration fingerprint mismatch.');
+                const count=job.resources?.gpu_count;
+                const dual=count===2&&
+                    this.supervisor instanceof DockerSupervisor&&
+                    localAdapter?.gpu_dual_execution==='split-ppo'&&
+                    job.frozen_parameters?.device==='dual'&&
+                    job.resources?.gpu_mode==='exclusive';
+                const single=count===1;
                 if(typeof this.supervisor.qualifyGpuDeviceAccess!=='function'||
                     !this.supervisor.qualifiedAt||
                     job.status!=='waiting_adapter'||
-                    !(job.resources?.gpu_mode==='exclusive'||
+                    !(dual||single&&(job.resources?.gpu_mode==='exclusive'||
                         job.resources?.gpu_mode==='shared'&&
                         this.supervisor instanceof DockerSupervisor&&
-                        localAdapter?.gpu_sharing==='cooperative-pytorch')||
-                    job.resources?.gpu_count!==1||
+                        localAdapter?.gpu_sharing==='cooperative-pytorch'))||
                     lease.resources?.gpu_mode!==job.resources?.gpu_mode||
-                    lease.resources?.gpu_count!==1||
+                    lease.resources?.gpu_count!==count||
                     lease.status!=='acknowledged'||lease.receipt_fresh!==true||
                     !Array.isArray(lease.gpu_bindings)||
-                    lease.gpu_bindings.length!==1||
-                    (job.resources.gpus?.length>0&&
-                        lease.gpu_bindings[0].id!==job.resources.gpus[0])||
-                    lease.gpu_bindings[0].id!==lease.resources.gpus?.[0])
-                    throw Error('GPU access probe requires a locally qualified, frozen exclusive Linux lease.');
+                    lease.gpu_bindings.length!==count||
+                    lease.gpu_bindings.some((bound,i)=>
+                        bound.id!==lease.resources.gpus?.[i]||
+                        (job.resources.gpus?.length>0&&bound.id!==job.resources.gpus[i])))
+                    throw Error('GPU access probe requires a qualified frozen one- or two-GPU Linux lease.');
                 // The bounded device-filter service verifies both allowed /
                 // denied render nodes and the actual installed HIP runtime.
                 // Read-only verifier construction must not create the
@@ -125,15 +131,18 @@ class LocalExecution {
                         job_id:job.id,project_id:job.project_id,
                         artifact_lineage_root_id:job.artifact_lineage_root_id||job.id,
                         continuation_of_job_id:job.continuation_of_job_id||null,
-                        gpu_pci_address:lease.gpu_bindings[0].pci_address,
+                        ...(dual
+                            ?{gpu_pci_addresses:lease.gpu_bindings.map(b=>b.pci_address)}
+                            :{gpu_pci_address:lease.gpu_bindings[0].pci_address}),
                     }));
                 const result=await this.supervisor.qualifyGpuDeviceAccess(
                     lease.gpu_bindings,{...runtime,ram_mb:job.resources.ram_mb});
                 if(!Array.isArray(result?.selected)||
-                    result.selected.length!==1||
-                    result.selected[0]!==lease.gpu_bindings[0].pci_address||
+                    result.selected.length!==count||
+                    result.selected.some((pci,i)=>
+                        pci!==lease.gpu_bindings[i].pci_address)||
                     result.runtime_pci_verified!==true)
-                    throw Error('GPU preflight did not verify the leased HIP runtime device.');
+                    throw Error('GPU preflight did not verify all leased HIP runtime PCI devices.');
                 return {kind:'gpu_qualification',
                     job_id:job.id,lease_id:lease.id,
                     dispatch_id:order.dispatch_id,
