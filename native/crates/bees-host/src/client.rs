@@ -30,6 +30,8 @@ pub struct NativeClient {
     previous_frame: Instant,
     left_was_down: bool,
     right_was_down: bool,
+    last_left_press: Option<Instant>,
+    double_left_press: bool,
     input_feedback: &'static str,
     selection_drag: Option<(Vec2, Vec2)>,
     support_mode: Option<NativeTargetMode>,
@@ -59,7 +61,8 @@ impl NativeClient {
         let now = Instant::now();
         Ok(Self { window, renderer, bounds, selected_world: 0, selection_owner: None,
             paused: false, next_step: now, previous_frame: now, left_was_down: false,
-            right_was_down: false, input_feedback: "",
+            right_was_down: false, last_left_press: None, double_left_press: false,
+            input_feedback: "",
             selection_drag: None, support_mode: None,
             rendered_frames: 0, rendered_pixels: 0, render_wall_seconds: 0.0,
             ui_wall_seconds: 0.0, window_update_wall_seconds: 0.0,
@@ -93,6 +96,8 @@ impl NativeClient {
             // A drag's original screen coordinates no longer describe
             // the same selection box after a window resize.
             self.selection_drag = None;
+            self.last_left_press = None;
+            self.double_left_press = false;
             self.viewport_resizes += 1;
         }
         let now = Instant::now();
@@ -103,6 +108,8 @@ impl NativeClient {
             self.renderer.selected_ship = None;
             self.selection_drag = None;
             self.support_mode = None;
+            self.last_left_press = None;
+            self.double_left_press = false;
             self.renderer.selection_box = None;
             self.input_feedback = "";
             if self.selection_owner.is_some_and(|(world, _)| world != view.world_id) {
@@ -127,6 +134,8 @@ impl NativeClient {
             self.renderer.selection.clear();
             self.selection_drag = None;
             self.support_mode = None;
+            self.last_left_press = None;
+            self.double_left_press = false;
             self.renderer.selection_box = None;
             // Never apply an input to or render the old World after changing
             // the selection. The caller must borrow the new World before
@@ -163,6 +172,8 @@ impl NativeClient {
                 if self.window.is_key_pressed(key, KeyRepeat::No) {
                     self.selection_drag = None;
                     self.renderer.selection_box = None;
+                    self.last_left_press = None;
+                    self.double_left_press = false;
                     if self.renderer.selection.squads().is_empty() {
                         self.input_feedback = "Select squads first";
                     } else {
@@ -228,6 +239,12 @@ impl NativeClient {
         }
         let left_down = self.window.get_mouse_down(MouseButton::Left);
         if !cancel_support && left_down && !self.left_was_down {
+            // Unity treats two presses within 0.25 real seconds as a
+            // double-click. The second release must also be prompt.
+            self.double_left_press = self.support_mode.is_none() &&
+                self.last_left_press.is_some_and(|previous|
+                    now.duration_since(previous) <= Duration::from_millis(250));
+            self.last_left_press = Some(now);
             self.selection_drag = mouse.map(|(x, y)| (
                 self.renderer.camera.screen_to_world(x, y, width, height), Vec2::new(x, y)));
         }
@@ -256,6 +273,8 @@ impl NativeClient {
                             } else { self.input_feedback = "Choose a valid target; Backspace cancels"; }
                         }
                     } else if dragging {
+                        self.last_left_press = None;
+                        self.double_left_press = false;
                         if rectangle.min.x < rectangle.max.x && rectangle.min.y < rectangle.max.y {
                             let additive = self.window.is_key_down(Key::LeftCtrl) ||
                                 self.window.is_key_down(Key::RightCtrl);
@@ -270,7 +289,15 @@ impl NativeClient {
                         if let Some(ship) = self.renderer.selected_ship {
                             let additive = self.window.is_key_down(Key::LeftCtrl) ||
                                 self.window.is_key_down(Key::RightCtrl);
-                            self.renderer.selection.select_ship(&view, ship, additive);
+                            if !additive && self.double_left_press &&
+                                self.last_left_press.is_some_and(|pressed|
+                                    now.duration_since(pressed) <= Duration::from_millis(250)) {
+                                if let Some(ship_type) = view.combat.ship(ship).map(|body| body.ship_type) {
+                                    self.renderer.selection.select_ship_type(&view, ship_type);
+                                }
+                            } else {
+                                self.renderer.selection.select_ship(&view, ship, additive);
+                            }
                         } else { self.renderer.selection.clear(); }
                     }
                 }
@@ -279,6 +306,7 @@ impl NativeClient {
         if !left_down {
             self.selection_drag = None;
             self.renderer.selection_box = None;
+            self.double_left_press = false;
         }
         self.left_was_down = left_down;
         let player_move = if !cancel_support && support_command.is_none() && manual_fire.is_none() &&
@@ -323,7 +351,7 @@ impl NativeClient {
                         .unwrap_or("FIRING STATUS UNKNOWN"))
             }).unwrap_or_default();
         self.window.set_title(&format!(
-            "Bees native | World {} | Episode {} | Tick {} | {} ships, {} shots | {} squads selected | {}{} | {} | range/obstruction {} | Left select/drag, Ctrl add, right move/attack | C stop chase, V cease fire, A attack on sight, G guard, P patrol, M mine, H heal, R retreat, T point fire, X stop, B ranges, Backspace cancel | Space pause, N step, Tab world, arrows pan, wheel zoom, F fit, Esc exit",
+            "Bees native | World {} | Episode {} | Tick {} | {} ships, {} shots | {} squads selected | {}{} | {} | range/obstruction {} | Left select/drag, double-click type, Ctrl add, right move/attack | C stop chase, V cease fire, A attack on sight, G guard, P patrol, M mine, H heal, R retreat, T point fire, X stop, B ranges, Backspace cancel | Space pause, N step, Tab world, arrows pan, wheel zoom, F fit, Esc exit",
             view.world_id.0, view.episode_revision, view.tick, counts.ships, counts.projectiles,
             self.renderer.selection.squads().len(),
             if self.paused { "PAUSED" } else { "RUNNING" }, selected, self.input_feedback,

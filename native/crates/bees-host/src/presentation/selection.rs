@@ -60,6 +60,23 @@ impl NativeSquadSelection {
         Ok(())
     }
 
+    /// Source LevelInputManager double-click selects every user-eligible
+    /// squad containing the clicked ship type. Preserve authored squad
+    /// registration order and use the live roster, never a UI-side registry.
+    pub fn select_ship_type(&mut self, view: &NativeRenderWorldView<'_>, ship_type: u8) {
+        self.synchronize(view);
+        self.clear();
+        for &owner in view.roster.source_order() {
+            let Some(squad) = view.roster.get(owner) else { continue };
+            if !selectable(view, owner) { continue; }
+            if squad.members.iter().any(|&id| view.combat.ship(id)
+                .is_some_and(|ship| !ship.vitals.is_dead() &&
+                    ship.ship_type == ship_type)) {
+                self.squads.push(owner);
+            }
+        }
+    }
+
     pub fn representative_ships<'a>(&'a self, view: &'a NativeRenderWorldView<'_>)
         -> impl Iterator<Item = i64> + 'a
     {
