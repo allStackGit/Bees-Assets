@@ -40,6 +40,7 @@ class LocalExecution {
             evaluation_suites:structuredClone(this.evaluationSuites),
             tinybrains_profiles:{...this.supervisor.adapters?.tinybrains?.tinybrains_profiles},
             tinybrains_cuda_profiles:[...(this.supervisor.adapters?.tinybrains?.tinybrains_cuda_profiles||[])],
+            tinybrains_thread_overrides:[...(this.supervisor.adapters?.tinybrains?.tinybrains_thread_overrides||[])],
             tinybrains_imports:{...this.supervisor.adapters?.tinybrains?.tinybrains_imports},
             gpu_projects:this.projects.filter(project=>
                 this.supervisor.gpuEnabled===true&&
