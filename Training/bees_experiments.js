@@ -75,7 +75,7 @@ const jobExporter=hub?new JobExporter(DATA_ROOT,hub,{
             job_id:job.id,label,path:sourcePath,
         })));
     }),
-}):null;
+},()=>resolvePython(loadConfig())):null;
 
 if (!state || state.version !== 1 || !Array.isArray(state.items) || typeof state.armed !== 'boolean') {
     throw Error('Invalid experiment data; no training started: ' + DB);
