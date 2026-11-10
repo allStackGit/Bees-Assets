@@ -212,11 +212,13 @@ def main() -> None:
     }
     # The result is the only handoff marker for schedulers. An interrupted
     # optimizer never publishes it, even when some output files exist.
-    with (output / "round-result.json").open("x", encoding="utf-8") as stream:
+    pending_result = output / "round-result.json.pending"
+    with pending_result.open("x", encoding="utf-8") as stream:
         json.dump(result, stream, indent=2)
         stream.write("\n")
         stream.flush()
         os.fsync(stream.fileno())
+    os.replace(pending_result, output / "round-result.json")
     if os.name == "posix":
         directory = os.open(output, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
         try:
