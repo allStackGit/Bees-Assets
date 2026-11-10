@@ -7,6 +7,7 @@ const fs=require('node:fs');
 const http=require('node:http');
 const path=require('node:path');
 const {ExperimentHub}=require('./experiment_hub_core');
+const {JobExporter}=require('./experiment_hub_job_export');
 const {route:hubRoute}=require('./experiment_hub_admin');
 const {createAgentServer,AGENT_HOST,AGENT_PORT}=
     require('./experiment_hub_agent_listener');
@@ -87,7 +88,8 @@ async function readJson(req) {
     return JSON.parse(raw||'{}');
 }
 
-function createAdminServer(hub,{html,ui}={}) {
+function createAdminServer(hub,{html,ui,dataRoot}={}) {
+    const exporter=new JobExporter(dataRoot,hub);
     return http.createServer(async(req,res)=>{
         const host=req.headers.host,origin=req.headers.origin;
         const expected=['127.0.0.1:'+PORT,'localhost:'+PORT];
@@ -103,6 +105,14 @@ function createAdminServer(hub,{html,ui}={}) {
                 return sendFile(res,html,'text/html; charset=utf-8');
             if(req.method==='GET'&&route==='/experiment-hub-ui.js')
                 return sendFile(res,ui,'text/javascript; charset=utf-8');
+            if(req.method==='POST'&&route==='/api/hub/exports')
+                return json(res,202,exporter.start(await readJson(req)));
+            const statusRoute=/^\/api\/hub\/exports\/([0-9a-f-]{36})$/.exec(route);
+            if(req.method==='GET'&&statusRoute)
+                return json(res,200,exporter.status(statusRoute[1]));
+            const partRoute=/^\/api\/hub\/exports\/([0-9a-f-]{36})\/part\/([1-9][0-9]*)$/.exec(route);
+            if(req.method==='GET'&&partRoute)
+                return exporter.download(partRoute[1],Number(partRoute[2]),res);
             if(req.method==='GET'&&route==='/api/hub/bees/workers')
                 return json(res,200,{workers:[],run_id:null});
             if(req.method==='GET'&&route==='/api/hub/bees/control')
@@ -145,7 +155,7 @@ async function main(argv=process.argv.slice(2)) {
     }
     const html=renderPage(fs.readFileSync(path.join(__dirname,'experiments.html'),'utf8'));
     const ui=fs.readFileSync(path.join(__dirname,'experiment_hub_ui.js'),'utf8');
-    const admin=createAdminServer(hub,{html,ui});
+    const admin=createAdminServer(hub,{html,ui,dataRoot:root});
     const worker=createAgentServer(()=>hub);
     try {
         await new Promise((resolve,reject)=>{
