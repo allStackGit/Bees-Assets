@@ -203,12 +203,12 @@ class DockerSupervisor {
         for(const [key,value] of Object.entries(d.env))
             args.push('--env='+key+'='+value);
         if(plan){
-            args.push('--device=/dev/kfd:/dev/kfd:rwm',
-                '--device='+plan.selected[0].node+':'+plan.selected[0].node+':rwm');
-            for(const id of new Set([
-                fs.statSync('/dev/kfd').gid,
-                fs.statSync(plan.selected[0].node).gid,
-            ]))args.push('--group-add='+id);
+            args.push('--device=/dev/kfd:/dev/kfd:rwm');
+            for(const device of plan.selected)
+                args.push('--device='+device.node+':'+device.node+':rwm');
+            for(const id of new Set(['/dev/kfd',...plan.selected.map(d=>d.node)]
+                .map(node=>fs.statSync(node).gid)))
+                args.push('--group-add='+id);
         }else{
             // No accelerator devices for CPU-only jobs.
             for(const name of ['CUDA_VISIBLE_DEVICES','HIP_VISIBLE_DEVICES',
@@ -234,8 +234,9 @@ class DockerSupervisor {
             doc.Config?.User!==record.user||
             !Array.isArray(doc.HostConfig?.Devices))
             throw Error('Docker container identity or kernel resource controls differ from lease.');
-        const expected=record.gpu_node
-            ?new Set(['/dev/kfd',record.gpu_node]):new Set();
+        const gpuNodes=record.gpu_nodes||[record.gpu_node].filter(Boolean);
+        const expected=gpuNodes.length
+            ?new Set(['/dev/kfd',...gpuNodes]):new Set();
         const devices=doc.HostConfig.Devices.map(d=>d.PathOnHost);
         if(devices.length!==expected.size||
             devices.some(d=>!expected.has(d)))
@@ -269,12 +270,14 @@ class DockerSupervisor {
     }
     async qualifyGpuDeviceAccess(bindings,proof) {
         if(!this.qualifiedAt||!this.gpuEnabled||!proof||
-            !Array.isArray(bindings)||bindings.length!==1||
+            !Array.isArray(bindings)||![1,2].includes(bindings.length)||
+            (bindings.length===2&&
+                this.adapters.tinybrains?.gpu_dual_execution!=='split-ppo')||
             this.gpuProbeCleanupPending())
-            throw Error('Exclusive Docker GPU proof is unavailable.');
+            throw Error('Approved Docker one- or two-GPU proof is unavailable.');
         const plan=resolveRocmDevices(bindings);
-        if(!plan.unselected.length)
-            throw Error('Docker GPU qualification requires an excluded peer GPU.');
+        if(bindings.length===1&&!plan.unselected.length)
+            throw Error('Single-GPU Docker proof requires an excluded peer GPU.');
         const d=fixedDockerSpec(this.adapters.tinybrains);
         if(proof.executable!==this.adapters.tinybrains.executable)
             throw Error('GPU proof Python differs from the approved Docker adapter.');
@@ -285,10 +288,11 @@ class DockerSupervisor {
             '--tmpfs=/tmp:rw,size=64m,mode=1777',
             '--cpus=1','--memory=4096m','--memory-swap=4096m',
             '--user='+d.uid+':'+d.gid,
-            '--device=/dev/kfd:/dev/kfd:rwm',
-            '--device='+plan.selected[0].node+':'+plan.selected[0].node+':rwm'];
-        for(const id of new Set([fs.statSync('/dev/kfd').gid,
-            fs.statSync(plan.selected[0].node).gid]))
+            '--device=/dev/kfd:/dev/kfd:rwm'];
+        for(const device of plan.selected)
+            flags.push('--device='+device.node+':'+device.node+':rwm');
+        for(const id of new Set(['/dev/kfd',...plan.selected.map(d=>d.node)]
+            .map(node=>fs.statSync(node).gid)))
             flags.push('--group-add='+id);
         for(const m of d.mounts)
             flags.push('--mount=type=bind,source='+m.host+',target='+m.target+
@@ -297,14 +301,15 @@ class DockerSupervisor {
             flags.push('--env='+key+'='+value);
         flags.push('--workdir='+d.workdir,image,
             proof.executable,...proof.verifyArgs);
-        writeAtomic(this.probeFile,{name:probeName,device:plan.selected[0].pci_address});
+        writeAtomic(this.probeFile,{name:probeName,
+            devices:plan.selected.map(d=>d.pci_address)});
         let answer,error=null;
         try {
             const output=await this.call(flags,90000);
             answer=JSON.parse(output.split('\n').at(-1));
             if(JSON.stringify(answer?.pci_addresses)!==
-                JSON.stringify([bindings[0].pci_address]))
-                throw Error('Container HIP PCI identity does not match Hub GPU lease.');
+                JSON.stringify(bindings.map(b=>b.pci_address)))
+                throw Error('Container HIP PCI identities do not match the Hub GPU lease.');
         }catch(exc){error=exc;}
         // A timed-out Docker CLI can leave a daemon-owned container alive.
         // Never silently erase the pending proof in that case.
@@ -314,7 +319,7 @@ class DockerSupervisor {
         if(error||remains)
             throw Error('Docker GPU proof failed or requires cleanup: '+
                 String(error?.message||probeName).slice(0,130));
-        return {selected:[bindings[0].pci_address],runtime_pci_verified:true};
+        return {selected:bindings.map(b=>b.pci_address),runtime_pci_verified:true};
     }
     async start(job,lease) {
         if(!this.qualifiedAt||this.gpuProbeCleanupPending())
