@@ -22,6 +22,122 @@ const SOURCE_IN='/workspace/experiments/tinybrains/mini-learning';
 const CACHE_IN='/workspace/cache/tinybrains';
 const REMOTE_KEY_IN='/workspace/private/tinybrains-rollouts';
 
+// Derive bounded, project-neutral chart measurements from the trainer's
+// committed update, not from GPU utilization guesses or incomplete rollouts.
+// Keep exact game events distinct from observation-based food/combat proxies.
+function recordedTinyBrainsMetrics(row,updateWall) {
+    const metrics={};
+    function add(name,value,unit) {
+        if(!Number.isFinite(value)||Math.abs(value)>1e12||
+            (unit==='count'&&(!Number.isSafeInteger(value)||value<0))||
+            (['rate','seconds','mb'].includes(unit)&&value<0)||
+            (unit==='ratio'&&(value<0||value>1)))return;
+        metrics[name]={value,unit};
+    }
+    add('total_ppo_updates',row.update,'count');
+    add('engine_steps',row.engine_steps,'count');
+    if(updateWall!==null&&updateWall>0) {
+        add('update_wall_time',updateWall,'seconds');
+        add('engine_steps_per_second',row.engine_steps/updateWall,'rate');
+        add('ant_decisions_per_second',row.ant_decisions/updateWall,'rate');
+        add('group_states_per_second',row.group_states/updateWall,'rate');
+    }
+    for(const name of ['collection_seconds','optimization_seconds',
+        'overlap_seconds'])add(name,row[name],'seconds');
+    for(const name of ['ant_decisions','group_states','births','deaths',
+        'episodes_ended','multi_ant_states','terminal_rewards',
+        'carried_matches','open_matches','peak_live_matches',
+        'truncated_groups','terminal_groups','collector_count',
+        'ppo_microbatches','policy_lag','action_target'])add(name,row[name],'count');
+    // These optimizer observations can be negative; they are scalar values,
+    // never performance or strength certification.
+    for(const name of ['loss','policy_loss','value_loss','baseline_loss',
+        'entropy','actor_grad_norm','group_grad_norm',
+        'baseline_grad_norm','actor_max_weight_change',
+        'critic_max_weight_change','learning_rate','population_mean',
+        'states_per_microbatch'])add(name,row[name],'scalar');
+    add('gae_lambda',row.gae_lambda,'ratio');
+    add('rss_mb',row.rss_mb,'mb');
+    if(Number.isFinite(row.elapsed_seconds))
+        add('elapsed_training_seconds',row.elapsed_seconds,'seconds');
+
+    const outcomes=row.outcomes||{};
+    const wins=outcomes.win,losses=outcomes.loss,draws=outcomes.draw;
+    add('training_wins',wins,'count');
+    add('training_losses',losses,'count');
+    add('training_draws',draws,'count');
+    if([wins,losses,draws].every(n=>Number.isSafeInteger(n)&&n>=0)) {
+        const played=wins+losses+draws;
+        add('training_completed_matches',played,'count');
+        if(played) {
+            add('training_win_rate',wins/played,'ratio');
+            add('training_score_rate',(wins+0.5*draws)/played,'ratio');
+        }
+    }
+    const games=Array.isArray(row.match_results)?row.match_results:[];
+    let scoreSum=0,marginSum=0,turnsSum=0,scored=0,turns=0;
+    let exactFood=0,exactKills=0,foodGames=0,killGames=0;
+    for(const game of games) {
+        if(Array.isArray(game.scores)&&
+            Number.isSafeInteger(game.learner_seat)&&
+            game.learner_seat>=0&&game.learner_seat<game.scores.length&&
+            game.scores.every(Number.isFinite)) {
+            const own=game.scores[game.learner_seat];
+            const others=game.scores.filter((_,i)=>i!==game.learner_seat);
+            scoreSum+=own;
+            if(others.length)marginSum+=own-others.reduce((a,b)=>a+b,0)/others.length;
+            scored++;
+        }
+        if(Number.isFinite(game.turns)&&game.turns>=0) {
+            turnsSum+=game.turns;turns++;
+        }
+        const exact=game.authoritative_gameplay;
+        if(exact&&typeof exact==='object') {
+            if(Number.isSafeInteger(exact.food_gathered)&&exact.food_gathered>=0) {
+                exactFood+=exact.food_gathered;foodGames++;
+            }
+            if(Number.isSafeInteger(exact.combat_kills)&&exact.combat_kills>=0) {
+                exactKills+=exact.combat_kills;killGames++;
+            }
+        }
+    }
+    if(scored) {
+        add('training_mean_score',scoreSum/scored,'scalar');
+        add('training_mean_score_margin',marginSum/scored,'scalar');
+    }
+    if(turns)add('training_mean_match_turns',turnsSum/turns,'scalar');
+    if(foodGames) {
+        add('food_gathered_exact',exactFood,'count');
+        add('food_gathered_verified_matches',foodGames,'count');
+    }
+    if(killGames)add('combat_kills_exact',exactKills,'count');
+
+    const gameplay=row.gameplay||{};
+    for(const name of ['births_observed','deaths_observed',
+        'food_disappearances_near_own_ant','combat_exposed_ant_turns',
+        'transitions_without_final_observation','population_peak'])
+        add(name,gameplay[name],'count');
+    if(Number.isFinite(gameplay.visible_food_sum)&&
+        Number.isFinite(gameplay.food_samples)&&gameplay.food_samples>0)
+        add('visible_food_mean',gameplay.visible_food_sum/gameplay.food_samples,'scalar');
+    if(Number.isFinite(gameplay.combat_exposed_ant_turns)&&
+        Number.isFinite(gameplay.population_sum)&&gameplay.population_sum>0)
+        add('combat_exposure_fraction',
+            gameplay.combat_exposed_ant_turns/gameplay.population_sum,'ratio');
+
+    // Each collector is a separately identified contributor; remote transfer
+    // roundtrip includes transmission and worker compute, not network-only time.
+    for(const [i,worker] of (Array.isArray(row.collector_samples)
+        ?row.collector_samples:[]).slice(0,9).entries()) {
+        add('collector_'+i+'_ant_decisions',worker.ant_decisions,'count');
+        add('collector_'+i+'_engine_steps',worker.engine_steps,'count');
+        add('collector_'+i+'_roundtrip_seconds',
+            worker.transport_roundtrip_seconds,'seconds');
+    }
+    return metrics;
+}
+
+
 function approvedTailnetEndpoint(value) {
     if(typeof value!=='string'||!/^100\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d{1,5}$/.test(value))
         return false;
@@ -371,25 +487,7 @@ function createTinyBrainsPersistentDockerAdapter({
                         }
                     }
                 }
-                const metrics={total_ppo_updates:{value:row.update,unit:'count'}};
-                if(updateWall!==null) {
-                    metrics.update_wall_time={value:updateWall,unit:'seconds'};
-                    metrics.engine_steps_per_second={
-                        value:row.engine_steps/updateWall,unit:'rate'};
-                }
-                // Stage durations are independently measured, not additive
-                // wall-clock costs while rollout and PPO optimization overlap.
-                for(const key of ['collection_seconds','optimization_seconds',
-                    'overlap_seconds']) {
-                    if(Number.isFinite(row[key])&&row[key]>=0)
-                        metrics[key]={value:row[key],unit:'seconds'};
-                }
-                if(Number.isSafeInteger(row.ant_decisions)&&row.ant_decisions>=0) {
-                    metrics.ant_decisions={value:row.ant_decisions,unit:'count'};
-                    if(updateWall!==null)
-                        metrics.ant_decisions_per_second={
-                            value:row.ant_decisions/updateWall,unit:'rate'};
-                }
+                const metrics=recordedTinyBrainsMetrics(row,updateWall);
                 return validateProgress({
                     schema_version:1,source:'hub-metrics-v1',experiment_id:context.job_id,
                     segment_id:'training',source_modified_at:stat.mtime.toISOString(),
