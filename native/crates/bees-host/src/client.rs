@@ -34,6 +34,8 @@ pub struct NativeClient {
     selection_drag: Option<(Vec2, Vec2)>,
     support_mode: Option<NativeTargetMode>,
     pub rendered_frames: u64,
+    /// Total software framebuffer pixels actually drawn across changing sizes.
+    pub rendered_pixels: u64,
     pub render_wall_seconds: f64,
     pub ui_wall_seconds: f64,
     /// Includes minifb's frame pacing and display transfer, separate from
@@ -57,7 +59,7 @@ impl NativeClient {
             paused: false, next_step: now, previous_frame: now, left_was_down: false,
             right_was_down: false, input_feedback: "",
             selection_drag: None, support_mode: None,
-            rendered_frames: 0, render_wall_seconds: 0.0,
+            rendered_frames: 0, rendered_pixels: 0, render_wall_seconds: 0.0,
             ui_wall_seconds: 0.0, window_update_wall_seconds: 0.0,
             culled_ship_draws: 0, culled_obstacle_draws: 0,
             culled_projectile_draws: 0, culled_piece_draws: 0,
@@ -306,6 +308,9 @@ impl NativeClient {
         ));
         self.ui_wall_seconds += ui_started.elapsed().as_secs_f64();
         self.rendered_frames += 1;
+        self.rendered_pixels = self.rendered_pixels.saturating_add(
+            (width as u64).saturating_mul(height as u64)
+        );
         self.culled_ship_draws = self.culled_ship_draws.saturating_add(counts.culled_ships as u64);
         self.culled_obstacle_draws = self.culled_obstacle_draws.saturating_add(counts.culled_obstacles as u64);
         self.culled_projectile_draws = self.culled_projectile_draws.saturating_add(counts.culled_projectiles as u64);
