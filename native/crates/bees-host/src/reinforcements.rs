@@ -53,6 +53,15 @@ impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
             {
                 return Err("Reinforcements need positive nondecreasing times, nonempty squads, and finite spawn/entry coordinates");
             }
+            // Unity LevelConstructor.PositionSquads spreads multiple squads
+            // sideways according to their live bounds. One shared spawn
+            // center cannot represent that layout: placing every squad at
+            // the same center silently overlaps their physical hulls.
+            // Multiple squads are valid only when their individual source
+            // positions are already present in the captured scene.
+            if plan.spawn.is_some() && plan.squad_item_ids.len() > 1 {
+                return Err("Multi-squad reinforcements need captured source positions or one plan per squad with its own spawn center");
+            }
             for id in plan.squad_item_ids {
                 if squad_waves.insert(id, waves.len()).is_some() {
                     return Err("A squad may arrive in only one reinforcement wave");
