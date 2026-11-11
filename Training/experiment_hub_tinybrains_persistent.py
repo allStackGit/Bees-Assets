@@ -23,6 +23,7 @@ def main():
     parser.add_argument("--rocm-pci", action="append")
     parser.add_argument("--gpu-vram-mb", type=int)
     parser.add_argument("--remote-rollout-endpoint", action="append", default=[])
+    parser.add_argument("--remote-rollout-weight", action="append", type=int, default=[])
     parser.add_argument("--remote-rollout-key-file")
     args = parser.parse_args()
     if min(args.updates, args.threads, args.live_matches, args.waves, args.actions) < 1:
@@ -34,6 +35,10 @@ def main():
         parser.error("The number of frozen ROCm PCI identities must match the execution mode.")
     if bool(args.remote_rollout_endpoint) != bool(args.remote_rollout_key_file):
         parser.error("Remote rollout requires locally approved worker endpoints and an HMAC key.")
+    if args.remote_rollout_weight and (
+            len(args.remote_rollout_weight) != len(args.remote_rollout_endpoint) + 1 or
+            any(not 1 <= w <= 1024 for w in args.remote_rollout_weight)):
+        parser.error("Fixed rollout weights require one positive weight for the learner and each remote worker.")
     if args.gpu_vram_mb is not None and (args.device != "cuda" or args.gpu_vram_mb < 1):
         parser.error("A positive GPU memory ceiling requires the ROCm device.")
     run = args.run.resolve(strict=True)
@@ -83,6 +88,8 @@ def main():
         "--max-ppo-updates", str(args.updates),
         *[arg for endpoint in args.remote_rollout_endpoint
           for arg in ("--remote-rollout-endpoint", endpoint)],
+        *[arg for weight in args.remote_rollout_weight
+          for arg in ("--remote-rollout-weight", str(weight))],
         *(["--remote-rollout-key-file", args.remote_rollout_key_file,
            "--remote-rollout-job-id", run.name] if args.remote_rollout_endpoint else []),
     ]
