@@ -1487,8 +1487,16 @@ map to the adapter when the runtime cannot otherwise prove one visible
 leased device. The fixed HIP/PyTorch PCI verifier is shared with TinyBrains.
 For reproducible CPU scaling experiments, a Bees training job may specify
 `optimizer_threads` in its frozen parameters (1–256, not exceeding the
-assigned Hub CPU count); this sets the learner's PyTorch intra-op threads
-only, not the rollout worker count. Omit it to retain PyTorch's default.
+assigned Hub CPU count); this sets the learner's PyTorch intra-op threads,
+not the rollout worker count. A direct training or collection job can
+separately specify `rollout_workers` (1–256, no more than either its
+fixed CPU lease or the authored Level count). This launches that many
+independent native rollout processes, with Levels sharded across them;
+it does not distribute a single job across machines or change its
+resource reservation. Imported-bundle learners cannot set this option.
+Omit either parameter to retain the installed run template's behavior.
+Use measured world steps/s and policy rows/s to compare fixed settings;
+more workers do not guarantee higher throughput.
 For completed direct rounds, Compare reports separately the simulator's
 world steps, captured policy rows, and MA-POCA optimizer input steps per
 second. The whole-round rates use collection wall time plus learner wall
