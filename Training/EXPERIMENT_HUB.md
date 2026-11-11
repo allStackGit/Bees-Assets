@@ -2451,11 +2451,12 @@ five samples, matching frozen configurations, and exactly one monotonically
 increased resource dimension. For distributed TinyBrains learners, the
 allocator sums the learner and its separately leased remote collectors;
 the comparison requires the same set of machines, the same learner/collector
-roles, and unchanged GPU modes. Comparisons also require frozen
-physical PCI GPU identities from each job's persisted resource lease:
+roles, and unchanged GPU modes. Comparisons also require a persisted Hub-issued resource lease for every
+job (including CPU-only jobs), with matching frozen CPU, RAM, GPU count and
+GPU mode. For GPU jobs they additionally require physical PCI GPU identities:
 CPU scaling must use the same devices, while GPU scaling may add devices
-but must retain existing ones. Missing historical GPU bindings disable the
-marginal estimate rather than guessing device equivalence. It refuses
+but must retain existing ones. Missing or mismatched historical claims
+disable marginal estimates rather than guessing allocation equivalence. It refuses
 incomplete group records and CPU/GPU reallocations that reduce resources
 on one host while increasing another. Distributed rows also show the
 total frozen remote collector threads versus CPUs reserved for those
