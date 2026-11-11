@@ -1306,7 +1306,7 @@ fn run_battle(
             config.levels[0].campaign_dialogue,
             Some(bees_gameplay::campaign_dialogue::CampaignDialogueSpec::TitaniaBeenoculars { .. })
         ) {
-            client.focus_camera(bees_sim::geometry::Vec2::new(-32.0, 55.0));
+            client.focus_camera(bees_gameplay::campaign_dialogue::TITANIA_II_CENTER);
         }
         if replay_inputs.is_some() { client.set_playback(); }
         Some(client)
