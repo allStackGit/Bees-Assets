@@ -229,6 +229,12 @@ impl NativePolicyOnlyMetadata {
     pub(crate) fn activate_reinforcements(
         &mut self, world: &mut CombatWorld, events: &mut NativeLevelEventProcessor, tick: u64,
     ) -> Result<(), NativeLevelStepError> {
+        // Unity's obstacle-aware Squad.Move checks the current Pathfinder.
+        // The normal native command path refreshes live clearance immediately
+        // before planning, but deferred waves can arrive after the combat step
+        // has moved or destroyed collision asteroids. Refresh once per
+        // arrival tick, only when a due wave has an obstacle-aware entry move.
+        let mut navigation_refreshed = false;
         while self.reinforcements.front().is_some_and(|wave| wave.tick <= tick) {
             let wave = self.reinforcements.pop_front().expect("due wave");
             let (ships, squads) = (wave.ships.len(), wave.squads.len());
@@ -240,6 +246,12 @@ impl NativePolicyOnlyMetadata {
             }
             install_ship_attachments(world, attachments).map_err(|error| invalid(format!("{error:?}")))?;
             let options = self.player_formation_options();
+            if wave.entry.is_some() && options.has_obstacles && !navigation_refreshed {
+                world.refresh_world_navigation(
+                    &mut self.navigation, true, self.activate_collision_asteroids,
+                ).map_err(|error| invalid(format!("Reinforcement navigation: {error:?}")))?;
+                navigation_refreshed = true;
+            }
             for squad in wave.squads {
                 if let Some(entry) = wave.entry {
                     let members = squad.members.iter().map(|&ship_id| {
