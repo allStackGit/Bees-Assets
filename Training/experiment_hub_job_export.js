@@ -14,7 +14,8 @@ const METRIC=/^[a-z][a-z0-9_]{0,39}$/;
 const KEEP_MS=2*60*60*1000;
 const JOB_FIELDS=[
     'id','project_id','configuration_name','configuration_sha256',
-    'frozen_parameters','metric_selection','resources','resource_bundle','status',
+    'frozen_parameters','metric_selection','resources','resource_bundle',
+    'trial_batch','distributed_rollout_managed','status',
     'assigned_machine_id','continuation_of_job_id','artifact_lineage_root_id',
     'checkpoint_model_sha256','checkpoint_ready_verified',
     'checkpoint_stop_verified','created_at','capacity_released_at',
@@ -81,6 +82,51 @@ function loadRoots(dataRoot) {
         Object.assign(machineRoots,mounts);
     }
     return {roots,machineRoots};
+}
+// The reservation ledger is historical admission evidence, not proof that
+// the OS used a given number of cores or that a GPU delivered useful work.
+// Keep immutable physical GPU bindings available for offline comparisons.
+function resourceProvenance(snapshot,selectedJobs) {
+    const registry=Array.isArray(snapshot.jobs)?snapshot.jobs:[];
+    const reservations=Array.isArray(snapshot.reservations)?snapshot.reservations:[];
+    const leaseFor=job=>{
+        const lease=reservations.find(item=>item.id===job.lease_id&&
+            item.job_id===job.id&&item.project_id===job.project_id&&
+            item.machine_id===job.assigned_machine_id&&
+            item.issued_by==='experiment-hub');
+        return lease?redactMetadata(Object.fromEntries([
+            'id','project_id','machine_id','status','resources',
+            'gpu_bindings','created_at','acknowledged_at','released_at',
+        ].filter(field=>Object.hasOwn(lease,field))
+            .map(field=>[field,lease[field]]))):null;
+    };
+    return {
+        schema_version:1,
+        scope:'selected jobs and their explicitly managed collector sidecars',
+        resource_claims_are_not_utilization:true,
+        jobs:selectedJobs.map(selected=>{
+            const job=registry.find(item=>item.id===selected.id&&
+                item.project_id===selected.project_id);
+            const collectors=job?.project_id==='tinybrains'&&
+                job.distributed_rollout_managed===true
+                ?registry.filter(other=>other.project_id==='tinybrains_rollout'&&
+                    other.frozen_parameters?.learner_job_id===job.id)
+                :[];
+            return {
+                job_id:selected.id,project_id:selected.project_id,
+                assigned_machine_id:job?.assigned_machine_id??null,
+                dispatch_id:job?.dispatch_id??null,
+                lease:job?leaseFor(job):null,
+                collectors:collectors.map(child=>({
+                    job_id:child.id,project_id:child.project_id,
+                    assigned_machine_id:child.assigned_machine_id??null,
+                    status:child.status,dispatch_id:child.dispatch_id??null,
+                    frozen_threads:child.frozen_parameters?.threads??null,
+                    lease:leaseFor(child),
+                })),
+            };
+        }),
+    };
 }
 class JobExporter {
     constructor(dataRoot,hub,legacyBees=null,pythonExecutable=null) {
@@ -166,6 +212,7 @@ class JobExporter {
             include_replays:value.include_replays===true,
             artifact_root:root,local_artifact_root_missing:missingLocalRoot,
             mounted_artifact_job_ids:mounted.map(item=>item.job_id),
+            resource_provenance:legacy?null:resourceProvenance(snapshot,jobs),
             progress,
             additional_sources:legacy?this.legacyBees.sources(jobs):
                 [...jobs.map(job=>({

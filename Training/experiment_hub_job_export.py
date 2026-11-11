@@ -327,6 +327,16 @@ def export(spec: dict, output: Path) -> dict:
             "all_recorded_metrics": all_recorded_metrics,
         }
         add_bytes("hub-jobs.json", json.dumps(metadata, indent=2).encode("utf-8"))
+        provenance = spec.get("resource_provenance")
+        if provenance is not None:
+            if not isinstance(provenance, dict) or provenance.get("schema_version") != 1 or (
+                not isinstance(provenance.get("jobs"), list) or
+                len(provenance["jobs"]) != len(jobs)
+            ):
+                raise ValueError("Invalid immutable resource provenance metadata")
+            add_bytes("hub-resource-claims.json",
+                      json.dumps(provenance, indent=2).encode("utf-8"))
+        manifest["resource_provenance_included"] = provenance is not None
         add_bytes(
             "hub-comparison-history.json",
             json.dumps(spec.get("progress", {}), indent=2).encode("utf-8"),
