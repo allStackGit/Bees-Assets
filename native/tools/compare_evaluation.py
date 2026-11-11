@@ -94,6 +94,33 @@ def completed_episodes(path, focus, manifest):
     return episodes, counts
 
 
+# The serialized identity is constructed in completed_episodes above. These
+# prefixes identify where paired comparison stops matching without requiring
+# operators to inspect huge per-episode keys or relax strict matching.
+MATCH_FIELDS = (
+    "scene_sha256", "seed", "bee_side", "human_side",
+    "group_episode_number", "group_team_by_side",
+    "model_identity", "gameplay_config_sha256",
+)
+
+
+def matching_input_prefixes(reference, candidate):
+    left = [json.loads(key) for key in reference]
+    right = [json.loads(key) for key in candidate]
+    matches = {}
+    for width, field in enumerate(MATCH_FIELDS, 1):
+        left_keys = {
+            json.dumps(parts[:width], sort_keys=True, separators=(",", ":"))
+            for parts in left
+        }
+        right_keys = {
+            json.dumps(parts[:width], sort_keys=True, separators=(",", ":"))
+            for parts in right
+        }
+        matches[field] = len(left_keys & right_keys)
+    return matches
+
+
 def compare(reference, candidate):
     shared = reference.keys() & candidate.keys()
     transitions = Counter()
@@ -113,6 +140,7 @@ def compare(reference, candidate):
         "matched_episodes": count,
         "unmatched_reference_episodes": len(reference) - count,
         "unmatched_candidate_episodes": len(candidate) - count,
+        "matching_input_prefixes": matching_input_prefixes(reference, candidate),
         "outcome_transitions": dict(transitions),
         "reference_mean_score": reference_score / count if count else None,
         "candidate_mean_score": candidate_score / count if count else None,
