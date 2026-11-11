@@ -148,9 +148,11 @@ def completed_rollouts(capture, journal, manifest, manifest_sha, checkpoint_sha,
         raise ValueError("reward journal has no completed episodes")
     if not terminals:
         raise ValueError("capture contains no completed episodes for the selected policy manifest")
-    # MA-POCA reward assignment uses bisect_right on these journal ticks.
-    # The authoring path emits nondecreasing tick-ordered group rewards;
-    # verify that assumption once per journal, not in the decision loop.
+    # The journal parser has already checked the nonnegative, nondecreasing
+    # source ticks for every world and forbids events after EpisodeFinal.
+    # Validate each team's owner and numeric amounts without rebuilding one
+    # Python reward tuple per event; bisect_right uses the original tick order.
+    reward_events = 0
     for (episode_key, team), events in rewards.items():
         final = all_terminals.get(episode_key)
         if final is None:
@@ -158,13 +160,17 @@ def completed_rollouts(capture, journal, manifest, manifest_sha, checkpoint_sha,
         groups = final["evaluation_context"]["group_agents_by_team"]
         if str(team) not in groups:
             raise ValueError("group reward belongs to an unknown episode team")
-        last_tick = -1
-        for tick, amount in events:
-            if (type(tick) is not int or tick < last_tick or
-                    tick > final["tick"] or
-                    not np.isfinite(amount)):
-                raise ValueError("invalid or out-of-order group reward journal")
-            last_tick = tick
+        if (events.ticks and events.ticks[-1] > final["tick"]) or not np.isfinite(
+            np.frombuffer(events.amounts, dtype=np.float64)
+        ).all():
+            raise ValueError("invalid or out-of-order group reward journal")
+        reward_events += len(events.ticks)
+    if stats is not None:
+        stats["reward_journal_events"] = stats.get("reward_journal_events", 0) + reward_events
+        # Logical numeric payload, not Python allocator or peak RSS usage.
+        stats["reward_journal_payload_bytes"] = (
+            stats.get("reward_journal_payload_bytes", 0) + reward_events * 16
+        )
     # Resolve learner ownership only for episodes whose terminal boundaries
     # are being processed, rather than retaining IDs for the whole run.
     learner_agents_by_episode = {}
@@ -790,6 +796,8 @@ def main():
         "capture_peak_inflight_episodes": capture_stats.get("peak_inflight_episodes", 0),
         "capture_compact_opponent_decisions": capture_stats.get("compact_opponent_decisions", 0),
         "capture_compact_opponent_boundaries": capture_stats.get("compact_opponent_boundaries", 0),
+        "reward_journal_events": capture_stats.get("reward_journal_events", 0),
+        "reward_journal_payload_bytes": capture_stats.get("reward_journal_payload_bytes", 0),
         "training_outcomes": {
             **capture_stats.get("training_outcomes", {}),
             "mean_episode_seconds": (
