@@ -1338,6 +1338,15 @@ document.addEventListener('DOMContentLoaded', () => {
         'backward_seconds','optimizer_step_seconds','cpu_wait_seconds',
         'gpu_transfer_seconds','network_transfer_seconds',
         'broker_queue_seconds','serialization_seconds','checkpoint_seconds',
+        'ppo_profile_host_seconds','ppo_advantages_seconds',
+        'ppo_ordering_seconds','ppo_zero_grad_seconds',
+        'ppo_grouping_seconds','ppo_data_preparation_seconds',
+        'ppo_forward_loss_seconds','ppo_loss_finite_check_seconds',
+        'ppo_backward_seconds','ppo_metric_readback_seconds',
+        'ppo_gradient_processing_seconds','ppo_optimizer_step_seconds',
+        'ppo_parameter_finite_check_seconds','ppo_gpu_stream_sync_seconds',
+        'ppo_minibatches','ppo_microbatches','ppo_board_pixel_samples',
+        'ppo_max_board_cells','ppo_unique_board_shapes',
         'evaluation_seconds','collector_count','collector_0_ant_decisions',
         'collector_1_ant_decisions','collector_1_roundtrip_seconds'];
     function renderJobMetricSelection() {
