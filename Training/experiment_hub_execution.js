@@ -223,6 +223,9 @@ class LocalExecution {
             ...(Number.isSafeInteger(observed.cpu_time_ns)&&
                 observed.cpu_time_ns>=0
                 ?{cpu_time_ns:observed.cpu_time_ns}:{}),
+            ...(Number.isFinite(observed.cpu_time_seconds)&&
+                observed.cpu_time_seconds>=0&&observed.cpu_time_seconds<=1e12
+                ?{cpu_time_seconds:observed.cpu_time_seconds}:{}),
             ...(Number.isSafeInteger(observed.peak_job_memory_bytes)&&
                 observed.peak_job_memory_bytes>=0
                 ?{peak_job_memory_bytes:observed.peak_job_memory_bytes}:{}),
