@@ -145,6 +145,30 @@ weapon and squad attributes must come from the authentic scene capture,
 not synthesized from ship type. The battle journal records their arrival
 tick and counts.
 
+For Titania II's *obstacle-free* mission, the authored approach lanes can
+be generated rather than transcribed by hand. Prepare a `waves.json`
+manifest with the actual captured squad item IDs and Unity's normalized
+entry directions (illustrative IDs):
+
+```json
+{"waves": [
+  {"after_seconds": 60, "direction": [1, -0.7], "squad_item_ids": [51, 52]},
+  {"after_seconds": 120, "direction": [-1, -0.85], "squad_item_ids": [53, 54]}
+]}
+```
+
+Run `python3 native/tools/author-titania2-waves.py run.json waves.json
+run-with-waves.json` from the repository root (use actual config paths).
+The tool reads the Level's captured `scene` and expands each squad to its
+own source-equivalent `spawn`/`entry` lane, including the original 0.16
+tangent offset for multiple squads. It validates source IDs, sides, physical
+members and times; it never creates ship data. The generated run file must
+remain beside the original so its relative asset paths keep working.
+Existing output files and reinforcement lists are not overwritten. The
+initial four Titania II enemy groups arrive before timed waves and must
+already be in the starting scene. Obstacle-bearing variants require
+explicit routes validated against their real collider geometry.
+
 Space pauses all worlds; N advances one fixed round while paused; Tab changes
 the inspected world without replaying input from the previous one. Each
 Level uses its authored fixed timestep for physics, timers, and presentation.
