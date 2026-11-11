@@ -11,7 +11,7 @@ const GENERIC_UNITS=new Set(['scalar','ratio','count','rate','seconds','mb','byt
 // Keep a larger bounded source envelope than the 96-metric chart cache.
 // Complete trainer metrics must reach the observation archive before display
 // downselection; the transport's separate 32-KiB limit still applies.
-const MAX_SOURCE_METRICS=192;
+const MAX_SOURCE_METRICS=256;
 function validateGenericProgress(value,projectId) {
     const metrics=value?.metrics;
     if(!/^[a-z][a-z0-9_-]{0,47}$/.test(String(projectId||''))||
