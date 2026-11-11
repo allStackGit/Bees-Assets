@@ -156,6 +156,75 @@ function hubScalingEvidence(runs,key) {
     }
     return rows;
 }
+// Read-only, next-run guidance from actual paired per-update collector rates.
+// Never modify a running job or infer unmeasured machine scaling.
+function hubRolloutWeightRecommendation(run) {
+    const job=run.job;
+    if(job.project_id!=='tinybrains'||job.distributed_rollout_managed!==true||
+        job.frozen_parameters?.remote_rollouts!==true||
+        !['finished','stopped'].includes(job.status))return null;
+    const points=hubComparisonPoints(run);
+    let lastBreak=0;
+    for(let i=1;i<points.length;i++)
+        if(points[i].break_before)lastBreak=i;
+    const recent=points.slice(lastBreak).slice(-64);
+    let collectorCount=null;
+    const complete=[];
+    for(const point of recent) {
+        const metrics=point.metrics||{};
+        const count=metrics.collector_count;
+        if(count?.unit!=='count'||!Number.isSafeInteger(count.value)||
+            count.value<2||count.value>9)continue;
+        if(collectorCount===null)collectorCount=count.value;
+        if(count.value!==collectorCount)return null;
+        const rates=[],targets=[];
+        for(let i=0;i<collectorCount;i++) {
+            const rate=metrics['collector_'+i+'_decisions_per_second'];
+            const target=metrics['collector_'+i+'_action_target'];
+            if(rate?.unit!=='rate'||!Number.isFinite(rate.value)||
+                rate.value<=0||target?.unit!=='count'||
+                !Number.isSafeInteger(target.value)||target.value<1)break;
+            rates.push(rate.value);
+            targets.push(target.value);
+        }
+        if(rates.length===collectorCount)complete.push({rates,targets});
+    }
+    if(complete.length<5)return null;
+    // Shard work shares are frozen for this run. If the published targets
+    // changed, these historical rate samples do not support one recommendation.
+    const targets=complete[0].targets;
+    if(complete.some(sample=>sample.targets.some((v,i)=>v!==targets[i])))
+        return null;
+    const original=job.frozen_parameters.rollout_action_weights;
+    if(original!==undefined&&(!Array.isArray(original)||
+        original.length!==collectorCount))return null;
+    const latest=complete.slice(-32);
+    const median=values=>{
+        const sorted=values.slice().sort((a,b)=>a-b);
+        const middle=Math.floor(sorted.length/2);
+        return sorted.length%2?sorted[middle]:
+            (sorted[middle-1]+sorted[middle])/2;
+    };
+    const rates=targets.map((_,i)=>median(latest.map(x=>x.rates[i])));
+    const smallest=Math.min(...rates),largest=Math.max(...rates);
+    if(!Number.isFinite(smallest)||smallest<=0||largest/smallest>1024)
+        return null;
+    // Approximate relative rates in small deterministic integer weights.
+    // Bound every value to TinyBrains' frozen CLI range [1,1024].
+    const scale=Math.min(16,1024/(largest/smallest));
+    const raw=rates.map(rate=>Math.max(1,Math.round(rate/smallest*scale)));
+    const gcd=(a,b)=>b?gcd(b,a%b):a;
+    const divisor=raw.reduce(gcd);
+    return {
+        job_id:job.id,
+        profile:job.frozen_parameters.profile,
+        profile_sha256:job.frozen_parameters.profile_sha256,
+        weights:raw.map(value=>value/divisor),
+        current:original||Array(collectorCount).fill(1),
+        rates,targets,samples:latest.length,
+        // A new target can change throughput; this is a starting estimate.
+    };
+}
 function trialBatchLabel(job) {
     const batch=job.trial_batch;
     return batch?' · batch '+batch.id.slice(-8)+' · trial '+batch.index+'/'+batch.size:'';
@@ -599,6 +668,10 @@ document.addEventListener('DOMContentLoaded', () => {
         if(tab==='machines') loadLiveBeesWorkers();
     }
     const compareSlots=[];
+    const rolloutRecommendations=document.createElement('div');
+    rolloutRecommendations.id='hub-compare-rollout-recommendations';
+    $('hub-compare-scaling-note').insertAdjacentElement('afterend',
+        rolloutRecommendations);
     const comparisonMetricOverrides=new Map();
     let compareSerial=0;
     const compareColor=i=>'hsl('+((i*137.508+211)%360).toFixed(2)+' 65% 38%)';
@@ -968,6 +1041,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         renderComparisonEvaluations(runs);
         renderScalingEvidence(runs,selectedMetrics);
+        renderRolloutRecommendations(runs);
         drawComparisonCharts(runs,selectedMetrics,
             $('hub-compare-x-axis').value);
     }
@@ -1019,6 +1093,50 @@ document.addEventListener('DOMContentLoaded', () => {
                 :'Select one or more runs to review observed scaling.').colSpan=8;
             table.append(tr);
         }
+    }
+    function renderRolloutRecommendations(runs) {
+        rolloutRecommendations.replaceChildren();
+        rolloutRecommendations.hidden=project!=='tinybrains';
+        if(project!=='tinybrains')return;
+        const heading=document.createElement('strong');
+        heading.textContent='Next-run distributed rollout action weights';
+        rolloutRecommendations.append(heading);
+        const suggestions=runs.map(run=>({
+            run,recommendation:hubRolloutWeightRecommendation(run),
+        })).filter(item=>item.recommendation);
+        if(!suggestions.length) {
+            const note=document.createElement('p');
+            note.textContent='Select a finished or stopped distributed TinyBrains learner with at least five complete paired collector throughput and action-target observations in its latest segment. No weights are inferred from utilization or missing samples.';
+            rolloutRecommendations.append(note);
+            return;
+        }
+        for(const {run,recommendation:r} of suggestions) {
+            const entry=document.createElement('p');
+            const format=value=>value.toLocaleString(undefined,{maximumFractionDigits:1});
+            entry.textContent='Run '+run.slot+' · '+r.job_id.slice(-8)+
+                ' · '+r.samples+' paired updates · observed decisions/s ['+
+                r.rates.map(format).join(', ')+'] · current weights ['+
+                r.current.join(', ')+'] · proposed ['+r.weights.join(', ')+']. ';
+            const action=button('Use proposed weights in Design',()=>{
+                const key=r.profile+':'+r.profile_sha256;
+                if(![...tinyBrainsSelect.options].some(option=>option.value===key)) {
+                    feedback('hub-compare-scaling-note',
+                        'The original learner profile is not available in Design. Review the printed weights and the current approved machines manually.');
+                    return;
+                }
+                tinyBrainsSelect.value=key;
+                tinyBrainsRemote.checked=true;
+                tinyBrainsWeights.value=r.weights.join(',');
+                selectTab('design');
+                feedback('hub-config-message',
+                    'Proposed weights copied to the Design input only. Click Use profile and update count, review the entire draft (including approved remote count and checkpoint lineage), and Save. No job or reservation was changed.');
+            });
+            entry.append(action);
+            rolloutRecommendations.append(entry);
+        }
+        const disclaimer=document.createElement('p');
+        disclaimer.textContent='Advisory starting estimates only: recent delivered rates depend on the previous work shares, network and workload. The suggested weights do not change CPU/GPU leases, optimize the live job, or certify higher PPO steps/s. Validate with a new fixed-allocation run.';
+        rolloutRecommendations.append(disclaimer);
     }
     function renderComparisonEvaluations(runs) {
         const table=$('hub-compare-evaluation-rows');
@@ -3339,6 +3457,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 selectedMachine?.tinybrains_remote_rollout_endpoints?.length)
                 throw Error('Supply one resource budget for each physically approved remote collector.');
             const resources=JSON.parse($('hub-job-resources').value);
+            // The distributed queue must preserve the same Train metrics as
+            // ordinary queueing. Prioritize paired collector evidence for
+            // a subsequent *advisory* allocation recommendation.
+            const required=['collector_count',...Array.from(
+                {length:budgets.length+1},(_,i)=>[
+                    'collector_'+i+'_decisions_per_second',
+                    'collector_'+i+'_action_target',
+                ]).flat()];
+            const metricSelection=[...new Set([
+                ...selectedJobMetrics(),...required,
+            ])];
+            if(metricSelection.length>96)
+                throw Error('Distributed collector metrics plus selected Train metrics exceed 96. Deselect unused metrics before queueing.');
             if(!confirm('Queue '+(predecessor?'checkpoint continuation':'new TinyBrains learner')+
                 ' on '+distributedMachine.value+
                 ' and '+budgets.length+' remotely pinned collectors? All CPU, RAM and GPU'+
@@ -3347,6 +3478,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 confirm_queue:true,
                 learner:{configuration_id:selected.id,expected_revision:selected.revision,
                     machine_id:distributedMachine.value,resources,
+                    metric_selection:metricSelection,
                     ...(predecessor?{continuation_of_job_id:predecessor}:{})},
                 collectors:budgets.map(item=>{
                     if(!item||typeof item!=='object'||Array.isArray(item))
