@@ -36,7 +36,8 @@ capacity claims or native starts are authorized.
   reports and research charts remain intact. Non-experiment training is shown
   as distinct from experiment-owned training. Trusted non-Bees adapters
   can publish unit-typed metrics for cumulative project-step comparisons
-  across up to four jobs. These observations are never treated as
+  across an operator-selected set of runs, with additional comparison
+  slots added on demand. These observations are never treated as
   independent evaluations or stopping criteria.
 - **Machines:** Show read-only Bees worker reports from the existing control
   plane. Manually register project-independent machines (CPU, RAM, GPU capacity)
