@@ -2537,8 +2537,11 @@ service to the public Internet.
    The learner separately reports `remote_policy_snapshot_seconds`, the
    time to prepare one frozen CPU weight snapshot shared by all remote
    collector requests in that PPO update. It is absent for local-only
-   training. Compare it with the full `collection_seconds` and delivered
-   decisions/s to assess transfer overhead rather than GPU utilization.
+   training. The separate `remote_opponent_snapshot_seconds` records the
+   time spent reading and hashing each frozen opponent artifact once per
+   update, instead of repeating disk I/O and hashing for every remote host.
+   Both are preparation costs within full `collection_seconds`. Compare
+   them with delivered decisions/s to identify bottlenecks.
    The Hub creates each worker configuration, all jobs and all machine
    reservations atomically; if any physical worker or capacity is missing,
    no job or claim is committed. No process is started by this action.
