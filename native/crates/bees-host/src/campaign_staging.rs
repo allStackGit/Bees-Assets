@@ -11,7 +11,7 @@ use bees_sim::squad_movement::authored_placement_offset;
 use crate::policy_only_metadata::NativePolicyOnlyMetadata;
 use crate::scene_builder::{NativeAuthoredEntity, NativeAuthoredLevel, NativeAuthoredShip};
 
-const TITANIA_CENTER: Vec2 = Vec2::new(-32.0, 55.0);
+pub(crate) const TITANIA_CENTER: Vec2 = Vec2::new(-32.0, 55.0);
 
 struct Placement {
     index: usize,
