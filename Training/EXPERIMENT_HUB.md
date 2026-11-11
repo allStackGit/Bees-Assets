@@ -2126,7 +2126,8 @@ must exercise both a natural exit and an explicit Stop.
 ### Completed-job resource observations
 
 When a native job reaches a verified terminal state, the Hub retains the
-highest reported CPU time, the highest sampled RAM, and the observed
+highest reported CPU time (seconds where available, retaining older
+nanosecond-only summaries), the highest sampled RAM, and the observed
 time window. Monitor, the JSON comparison export and `get state` expose
 the retained summary after restart. Missing counters remain null. The
 summary covers the observations still in memory when the job ends, plus
@@ -2134,7 +2135,8 @@ any terminal counters. A coordinator restart before completion can
 shorten that window. Sampled RAM does not measure the OS lifetime peak.
 Windows owners also report their OS Job Object peak-memory counter
 separately. Version-2 signed terminal receipts carry that counter and final
-CPU time even if the coordinator missed all live samples. Legacy signed
+CPU time when its nanosecond value is representable; sufficiently long
+multicore jobs rely on previously received live CPU-second observations. Legacy signed
 receipts remain valid and leave those terminal counters unavailable.
 Deploy the updated supervisor before updating the pinned Windows owner.
 

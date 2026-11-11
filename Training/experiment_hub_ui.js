@@ -2643,14 +2643,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 nativePeak,
                 final.peak_observed_memory_mb==null?null:
                     final.peak_observed_memory_mb.toLocaleString()+' MiB highest sampled RAM',
-                final.cpu_time_ns_high_water==null?null:
-                    (final.cpu_time_ns_high_water/1e9).toFixed(2)+' highest reported CPU seconds',
+                final.cpu_time_seconds_high_water!=null
+                    ?final.cpu_time_seconds_high_water.toFixed(2)+' highest reported CPU seconds'
+                    :final.cpu_time_ns_high_water==null?null:
+                        (final.cpu_time_ns_high_water/1e9).toFixed(2)+' highest reported CPU seconds',
             ].filter(Boolean).join(' · '):live?[
                 nativePeak,
                 live.memory_current_mb==null?null:
                     live.memory_current_mb.toLocaleString()+' MiB RAM',
-                live.cpu_time_ns==null?null:
-                    Math.round(live.cpu_time_ns/1e9).toLocaleString()+' CPU seconds',
+                live.cpu_time_seconds!=null
+                    ?Math.round(live.cpu_time_seconds).toLocaleString()+' CPU seconds'
+                    :live.cpu_time_ns==null?null:
+                        Math.round(live.cpu_time_ns/1e9).toLocaleString()+' CPU seconds',
                 Number.isFinite(live.cpu_cores_used)
                     ?live.cpu_cores_used.toFixed(2)+' average CPU cores':null,
             ].filter(Boolean).join(' · '):'';
