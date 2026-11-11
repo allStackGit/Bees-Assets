@@ -122,11 +122,12 @@ impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
                         .ok_or("Reinforcement ship has no staged squad")?;
                     let offset = self.metadata.stored_formation_offset(ship.entity_id)
                         .ok_or("Reinforcement ship has no source formation offset")?;
-                    let position = spawn + if squad.members.len() == 1 {
+                    let offset = if squad.members.len() == 1 {
                         Vec2::ZERO
                     } else {
                         offset
                     };
+                    let position = spawn + offset;
                     if !position.is_finite() {
                         return Err("Reinforcement spawn and formation overflowed world coordinates");
                     }
