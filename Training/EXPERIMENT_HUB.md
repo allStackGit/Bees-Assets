@@ -2524,7 +2524,11 @@ service to the public Internet.
    approved endpoint in the shown order. Each collector may set an independent
    `threads` count no greater than its leased CPUs or its locally approved
    thread limit. A worker budget may also request one exclusive Windows CUDA
-   GPU; no shared remote GPU is admitted.
+   GPU; no shared remote GPU is admitted. Collector slot 0 is the learner's
+   local rollout; slots 1–8 correspond to approved remote endpoints.
+   Updated remote workers report `collector_N_model_prepare_seconds`
+   (policy/critic weight loading plus first-use allocation) so that model
+   reuse can be measured separately from end-to-end collection time.
    The Hub creates each worker configuration, all jobs and all machine
    reservations atomically; if any physical worker or capacity is missing,
    no job or claim is committed. No process is started by this action.

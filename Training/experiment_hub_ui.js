@@ -1597,12 +1597,13 @@ document.addEventListener('DOMContentLoaded', () => {
         'ppo_minibatches','ppo_microbatches','ppo_board_pixel_samples',
         'ppo_max_board_cells','ppo_unique_board_shapes',
         'evaluation_seconds','collector_count',
-        // The trusted TinyBrains rollout adapter supports up to eight
-        // collectors; keep each contributor discoverable before a job starts.
-        ...Array.from({length:8},(_,i)=>[
+        // The TinyBrains learner contributes slot 0; up to eight remote
+        // workers contribute slots 1–8. Let the operator select every slot.
+        ...Array.from({length:9},(_,i)=>[
             'collector_'+i+'_ant_decisions',
             'collector_'+i+'_engine_steps',
             'collector_'+i+'_roundtrip_seconds',
+            'collector_'+i+'_model_prepare_seconds',
         ]).flat()];
     function renderJobMetricSelection() {
         const select=$('hub-job-metrics');

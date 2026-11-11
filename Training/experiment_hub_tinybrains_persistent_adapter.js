@@ -167,6 +167,8 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         add('collector_'+i+'_engine_steps',worker.engine_steps,'count');
         add('collector_'+i+'_roundtrip_seconds',
             worker.transport_roundtrip_seconds,'seconds');
+        add('collector_'+i+'_model_prepare_seconds',
+            worker.model_prepare_seconds,'seconds');
     }
     return metrics;
 }
