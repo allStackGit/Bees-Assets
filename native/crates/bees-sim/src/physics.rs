@@ -1542,38 +1542,52 @@ impl KinematicPhysics {
     pub fn proximity_obstacle_entries(&self) -> &[ObstacleProximityContact] { &self.proximity_obstacle_enters }
     pub fn proximity_obstacle_exits(&self) -> &[ObstacleProximityContact] { &self.proximity_obstacle_exits }
 
-    /// Obstacles retain distinct IDs across the unified world. Their
-    /// gameplay kind, health and destruction state live in CombatWorld.
+    /// Standalone physics callers get duplicate-ID validation. The shared
+    /// CombatWorld already validates IDs against its ship, obstacle and shot
+    /// maps (and the source-monotonic ID stream) before insertion, so it uses
+    /// the crate-private insertion methods below without scanning all bodies.
     pub fn add_obstacle(&mut self, body: ObstacleBody) -> Result<usize, PhysicsError> {
         if self.obstacles.iter().any(|other| other.id == body.id) {
             return Err(PhysicsError::DuplicateEntityId);
         }
+        Ok(self.insert_prevalidated_obstacle(body))
+    }
+
+    pub(crate) fn insert_prevalidated_obstacle(&mut self, body: ObstacleBody) -> usize {
         let index = self.obstacles.len();
         self.obstacles.push(body);
         self.grid_contents = GridContents::Stale;
-        Ok(index)
+        index
     }
 
     pub fn add_ship(&mut self, ship: ShipBody) -> Result<usize, PhysicsError> {
         if self.ships.iter().any(|other| other.id == ship.id) {
             return Err(PhysicsError::DuplicateEntityId);
         }
+        Ok(self.insert_prevalidated_ship(ship))
+    }
+
+    pub(crate) fn insert_prevalidated_ship(&mut self, ship: ShipBody) -> usize {
         let index = self.ships.len();
         self.ships.push(ship);
         // Dynamic Scout/Carrier spawns may be followed by sight queries
         // before the next physics tick. Invalidate the reused ship grid so
         // it includes the new collider on its next lazy rebuild.
         self.grid_contents = GridContents::Stale;
-        Ok(index)
+        index
     }
 
     pub fn add_projectile(&mut self, projectile: ProjectileBody) -> Result<usize, PhysicsError> {
         if self.projectiles.iter().any(|other| other.id == projectile.id) {
             return Err(PhysicsError::DuplicateEntityId);
         }
+        Ok(self.insert_prevalidated_projectile(projectile))
+    }
+
+    pub(crate) fn insert_prevalidated_projectile(&mut self, projectile: ProjectileBody) -> usize {
         let index = self.projectiles.len();
         self.projectiles.push(projectile);
-        Ok(index)
+        index
     }
 
     /// Recycle the physical storage of an ended projectile without allowing
