@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 import os
 import re
@@ -226,6 +227,7 @@ def export(spec: dict, output: Path) -> dict:
         item = {
             "name": target, "source": name, "segment": index,
             "original_file_bytes": source_bytes, "uncompressed_bytes": len(data),
+            "sha256": hashlib.sha256(data).hexdigest(),
         }
         part_entries.append(item)
         entry_count += 1

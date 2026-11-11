@@ -1918,7 +1918,10 @@ at most 500,000,000 bytes each. Choose several jobs and up to 256
 metric names; optionally include raw replays. This export selection is
 independent of the 96-field per-observation chart cache. No checkpoint, model, private key or credential files are
 intentionally included. Every part has a segment manifest for reconstructing
-large logs. The overall manifest reports jobs without local artifacts and
+large logs; each entry records the SHA-256 of the uncompressed segment bytes.
+These hashes let an operator verify and reassemble files from split ZIP parts
+without confusing a segment's checksum with a hash of a whole training run.
+The overall manifest reports jobs without local artifacts and
 individual unavailable or excluded log sources by job ID and source label;
 no private host paths are included in that report. A job with only the Hub's
 received observation archive still appears in `missing_artifact_job_ids`:
