@@ -3836,6 +3836,36 @@ class ExperimentHub {
         this.commit(next);
         return copy(job);
     }
+    // Undo a never-dispatched bundle as one durable transaction. If one
+    // member has started or is uncertain, do not release any of the group's
+    // claims: the local native owner must first be reconciled explicitly.
+    cancelResourceBundle(value) {
+        if(!object(value)||value.confirm_cancel!==true||
+            !UUID.test(String(value.bundle_id||''))||
+            !Array.isArray(value.expected_job_ids)||
+            value.expected_job_ids.length<1||value.expected_job_ids.length>16||
+            value.expected_job_ids.some(id=>!UUID.test(String(id)))||
+            new Set(value.expected_job_ids).size!==value.expected_job_ids.length)
+            throw Error('Confirm the exact resource bundle and outstanding member jobs.');
+        const next=copy(this.state);
+        const members=next.jobs.filter(job=>job.resource_bundle?.id===value.bundle_id);
+        if(!members.length||members.length!==members[0].resource_bundle.size||
+            members.some((job,index)=>job.resource_bundle.index!==index+1||
+                job.resource_bundle.size!==members.length))
+            throw Error('Resource bundle member ledger is incomplete or inconsistent.');
+        const active=members.filter(job=>job.status!=='cancelled');
+        const expected=new Set(value.expected_job_ids);
+        if(active.length!==expected.size||
+            active.some(job=>!expected.has(job.id)))
+            throw Error('Bundle members have changed. Refresh before cancelling.');
+        if(active.some(job=>job.dispatch_id||job.status!=='waiting_adapter'))
+            throw Error('A bundle member was started or changed state. Reconcile native ownership before cancelling.');
+        const at=now();
+        for(const job of active)this.cancelUnstartedJob(next,job,at);
+        this.commit(next);
+        return {bundle_id:value.bundle_id,cancelled_job_ids:active.map(job=>job.id),
+            cancelled_count:active.length,starts_stopped:0};
+    }
     cancelQueuedTrials(value) {
         if(!object(value)||value.confirm_cancel!==true||!UUID.test(String(value.trial_batch_id||''))||
             !Array.isArray(value.expected_job_ids)||!value.expected_job_ids.length||
