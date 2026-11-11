@@ -87,6 +87,23 @@ def completed_rollouts(capture, journal, manifest, manifest_sha, checkpoint_sha,
         raise ValueError("reward journal has no completed episodes")
     if not terminals:
         raise ValueError("capture contains no completed episodes for the selected policy manifest")
+    # MA-POCA reward assignment uses bisect_right on these journal ticks.
+    # The authoring path emits nondecreasing tick-ordered group rewards;
+    # verify that assumption once per journal, not in the decision loop.
+    for (episode_key, team), events in rewards.items():
+        final = all_terminals.get(episode_key)
+        if final is None:
+            raise ValueError("group reward belongs to an unfinished episode")
+        groups = final["evaluation_context"]["group_agents_by_team"]
+        if str(team) not in groups:
+            raise ValueError("group reward belongs to an unknown episode team")
+        last_tick = -1
+        for tick, amount in events:
+            if (type(tick) is not int or tick < last_tick or
+                    tick > final["tick"] or
+                    not np.isfinite(amount)):
+                raise ValueError("invalid or out-of-order group reward journal")
+            last_tick = tick
     # Resolve learner ownership only for episodes whose terminal boundaries
     # are being processed, rather than retaining IDs for the whole run.
     learner_agents_by_episode = {}
