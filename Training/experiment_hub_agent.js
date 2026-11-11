@@ -10,6 +10,7 @@ const crypto=require('node:crypto');
 const {inspectHost,availableMemoryMb}=require('./experiment_hub_host');
 const {discoverAmdGpus,discoverNvidiaGpus}=require('./experiment_hub_gpu_inventory');
 const {fromEnvironment}=require('./experiment_hub_execution');
+const {MAX_BODY_BYTES}=require('./experiment_hub_agent_listener');
 const {request: resourceRequest}=require('./experiment_hub_resources');
 
 const ID = /^[a-z][a-z0-9_-]{0,47}$/;
@@ -232,6 +233,11 @@ function sendHeartbeat(url,machineId,token,observedLeaseIds=[],
         native_preflight_reason:advertisement.native_preflight_reason||null,
         agent_instance_id:advertisement.instance_id||null,
     });
+    // Progress fits its own bounded envelope; the complete heartbeat
+    // separately includes physical inventory, leases and native receipts.
+    if(Buffer.byteLength(payload)>MAX_BODY_BYTES)
+        return Promise.reject(Error('Agent heartbeat exceeds '+MAX_BODY_BYTES+
+            ' bytes, including native reports and machine observations.'));
     return new Promise((resolve,reject)=>{
         const req=http.request(url,{
             method:'POST',timeout:10000,

@@ -1163,7 +1163,10 @@ instance cannot take over its machine identity or receive native
 instructions. Replacement agents become eligible after that instance
 expires (45 seconds); this does not release job leases or bypass
 the deterministic systemd unit and local ownership ledger. The
-worker-only endpoint also enforces a 32-KiB request byte limit.
+worker-only endpoint also enforces a 64-KiB heartbeat request byte limit,
+independent of the 32-KiB trainer-progress envelope. The agent checks
+complete request size before sending; oversize messages cannot update native
+ownership, leases or checkpoints.
 
 The agent sends a native report only after its local systemd supervisor
 inspects exact service identity, systemd `CPUQuota`/`MemoryMax`
