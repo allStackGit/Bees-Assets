@@ -248,10 +248,10 @@ class JobExporter {
                 if(root&&fs.existsSync(root)&&!trustedRoot(root))
                     throw Error('Selected collector mount is redirected or unowned.');
                 return [
-                    ...(fs.existsSync(source)?[{
+                    {
                         job_id:learner.id,label:'collector_'+labelId+'_src',
                         path:source,
-                    }]:[]),
+                    },
                     {job_id:learner.id,label:'collector_'+labelId+'_host',
                         path:path.join(archive,child.id+'-resources.jsonl')},
                     ...(root?[{
