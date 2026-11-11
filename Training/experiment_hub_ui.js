@@ -226,6 +226,38 @@ function hubRolloutWeightRecommendation(run) {
     };
 }
 
+// Preserve the operator's explicit chart selection while adding balanced
+// collector timing pairs when the bounded project-neutral chart has room.
+// Full source telemetry remains in the separate observation archive.
+function hubDistributedMetricSelection(selected,remoteCount) {
+    if(!Array.isArray(selected)||!Number.isSafeInteger(remoteCount)||
+        remoteCount<1||remoteCount>8)
+        throw Error('Choose recorded metrics and 1–8 approved collectors.');
+    const total=remoteCount+1;
+    const required=['collector_count',...Array.from({length:total},(_,i)=>[
+        'collector_'+i+'_decisions_per_second',
+        'collector_'+i+'_action_target',
+    ]).flat()];
+    const names=[...new Set([...selected,...required])];
+    if(names.length>96)
+        throw Error('Distributed collector metrics plus selected Train metrics exceed 96. Deselect unused metrics before queueing.');
+    const includePair=(first,second)=>{
+        const missing=[first,second].filter(name=>!names.includes(name));
+        if(names.length+missing.length<=96)names.push(...missing);
+    };
+    for(let i=0;i<total;i++)
+        includePair('collector_'+i+'_rollout_engine_step_seconds',
+            'collector_'+i+'_learner_inference_seconds');
+    for(let i=0;i<total;i++) {
+        const model='collector_'+i+'_model_prepare_seconds';
+        if(!names.includes(model)&&names.length<96)names.push(model);
+        if(i>0) {
+            const roundtrip='collector_'+i+'_roundtrip_seconds';
+            if(!names.includes(roundtrip)&&names.length<96)names.push(roundtrip);
+        }
+    }
+    return names;
+}
 function hubCollectorStageProfile(run) {
     const job=run.job;
     if(job.project_id!=='tinybrains'||job.distributed_rollout_managed!==true||
@@ -3581,16 +3613,8 @@ document.addEventListener('DOMContentLoaded', () => {
             // The distributed queue must preserve the same Train metrics as
             // ordinary queueing. Prioritize paired collector evidence for
             // a subsequent *advisory* allocation recommendation.
-            const required=['collector_count',...Array.from(
-                {length:budgets.length+1},(_,i)=>[
-                    'collector_'+i+'_decisions_per_second',
-                    'collector_'+i+'_action_target',
-                ]).flat()];
-            const metricSelection=[...new Set([
-                ...selectedJobMetrics(),...required,
-            ])];
-            if(metricSelection.length>96)
-                throw Error('Distributed collector metrics plus selected Train metrics exceed 96. Deselect unused metrics before queueing.');
+            const metricSelection=hubDistributedMetricSelection(
+                selectedJobMetrics(),budgets.length);
             if(!confirm('Queue '+(predecessor?'checkpoint continuation':'new TinyBrains learner')+
                 ' on '+distributedMachine.value+
                 ' and '+budgets.length+' remotely pinned collectors? All CPU, RAM and GPU'+
