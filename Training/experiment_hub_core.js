@@ -990,7 +990,7 @@ function observedCpuSeconds(report) {
 }
 function summarizeResourceSample(previous,report,observedAt) {
     if(!['running','stop_requested','finished','failed','stopped'].includes(report.state)||
-        (report.cpu_time_ns==null&&report.memory_current_mb==null&&
+        (observedCpuSeconds(report)===null&&report.memory_current_mb==null&&
          report.peak_job_memory_bytes==null))
         return previous;
     const highest=(a,b)=>a==null?b??null:b==null?a:Math.max(a,b);
@@ -998,6 +998,8 @@ function summarizeResourceSample(previous,report,observedAt) {
         first_observed_at:previous?.first_observed_at||observedAt,
         last_observed_at:observedAt,
         cpu_time_ns_high_water:highest(previous?.cpu_time_ns_high_water,report.cpu_time_ns),
+        cpu_time_seconds_high_water:highest(
+            previous?.cpu_time_seconds_high_water,observedCpuSeconds(report)),
         peak_observed_memory_mb:highest(previous?.peak_observed_memory_mb,report.memory_current_mb),
         peak_job_memory_bytes:highest(previous?.peak_job_memory_bytes,report.peak_job_memory_bytes),
     };
