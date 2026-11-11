@@ -563,6 +563,15 @@ def main():
     if device.type == "cuda":
         torch.cuda.synchronize(device)
     update_wall_seconds = time.perf_counter() - update_started
+    # PyTorch allocator peaks describe this process, not total device VRAM.
+    # Read once per round, never in the simulation or optimizer hot loop.
+    cuda_metrics = {}
+    if device.type == "cuda":
+        cuda_metrics = {
+            "optimizer_cuda_device_name": torch.cuda.get_device_name(device),
+            "optimizer_cuda_peak_allocated_bytes": torch.cuda.max_memory_allocated(device),
+            "optimizer_cuda_peak_reserved_bytes": torch.cuda.max_memory_reserved(device),
+        }
     # Bundle receipts pin the artifact digests, not only their own JSON.
     # Files may change while an update runs on a different worker; refuse
     # to publish learned weights if any input no longer matches its pin.
@@ -620,6 +629,9 @@ def main():
         "next_manifest": str(next_manifest.resolve()),
         "next_manifest_sha256": file_sha256(next_manifest),
         "optimizer_device": str(device),
+        "optimizer_torch_intraop_threads": torch.get_num_threads(),
+        "optimizer_torch_interop_threads": torch.get_num_interop_threads(),
+        **cuda_metrics,
         "optimizer_input_steps": steps,
         "trajectory_processing_wall_seconds": processing_wall_seconds,
         "capture_read_and_validation_wall_seconds": capture_read_wall_seconds,
