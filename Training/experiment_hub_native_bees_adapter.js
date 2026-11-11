@@ -26,8 +26,13 @@ function learnerMeasurements(metrics) {
         if (value != null) report[name] = {value, unit};
     };
     add('capture_read_and_validation_wall_seconds', 'seconds');
+    add('capture_read_and_validation_cpu_seconds', 'seconds');
     add('trajectory_assembly_and_ingest_seconds', 'seconds', metrics.trajectory_assembly_and_ingest_wall_seconds);
+    add('trajectory_ingest_cpu_seconds', 'seconds');
+    add('trajectory_processing_cpu_seconds', 'seconds');
+    add('optimizer_update_cpu_seconds', 'seconds');
     add('total_wall_seconds', 'seconds');
+    add('total_cpu_seconds', 'seconds');
     for (const name of ['capture_peak_inflight_decisions', 'capture_peak_inflight_episodes',
         'capture_compact_opponent_decisions', 'capture_compact_opponent_boundaries',
         'optimizer_torch_intraop_threads', 'optimizer_torch_interop_threads'])
@@ -354,6 +359,13 @@ function createNativeBeesAdapter({
                     terminal_steps: {value: metrics.terminal_steps, unit: 'count'},
                     optimizer_update_wall_seconds: {value: metrics.optimizer_update_wall_seconds, unit: 'seconds'},
                     trajectory_processing_wall_seconds: {value: metrics.trajectory_processing_wall_seconds, unit: 'seconds'},
+                    ...(rollout?.wall_seconds > 0 && metrics.total_wall_seconds > 0 ? {
+                        training_round_input_steps_per_second: {
+                            value: metrics.optimizer_input_steps /
+                                (rollout.wall_seconds + metrics.total_wall_seconds),
+                            unit: 'rate',
+                        },
+                    } : {}),
                     ...learnerMeasurements(metrics),
                 },
             }, PROJECT);
