@@ -75,6 +75,10 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
         for(const name of preferred)
             retain(name,Object.hasOwn(observed,name)?observed[name]:reported[name]);
         retain('total_ppo_updates',reported.total_ppo_updates);
+        // Spare chart slots still show observed host resources. The
+        // operator's requested metrics retain first priority; unrelated
+        // trainer fields remain out of an explicitly selected view.
+        for(const [name,value] of Object.entries(observed))retain(name,value);
     }else {
         // Without an explicit preference, retain observed host resources
         // before filling the remaining slots from the trusted trainer data.
