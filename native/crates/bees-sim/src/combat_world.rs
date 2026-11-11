@@ -146,6 +146,7 @@ pub enum CombatWorldError {
     DuplicateEntity,
     InvalidSide,
     InvalidLiveShipSpawn,
+    InvalidLiveProjectileSpawn,
     InvalidProjectilePower,
     InvalidProjectileType(u8),
     /// Never fabricate simplified behavior for unported weapons.
@@ -2590,6 +2591,13 @@ impl CombatWorld {
         projectile: CombatProjectile,
         body: ProjectileBody,
     ) -> Result<(), CombatWorldError> {
+        // This world only creates active shots. Every ended shot is recorded
+        // once in free_projectile_slots and every reused slot is removed
+        // there; accepting an initially inactive shot would break that
+        // invariant and the O(1) live-projectile count.
+        if !body.active {
+            return Err(CombatWorldError::InvalidLiveProjectileSpawn);
+        }
         if body.id != projectile.entity_id || body.id < self.next_entity_id ||
             self.ship_by_id.contains_key(&projectile.entity_id) ||
             self.projectile_by_id.contains_key(&projectile.entity_id) ||
