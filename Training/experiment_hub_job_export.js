@@ -83,11 +83,11 @@ class JobExporter {
             value.job_ids.length>1000||
             value.job_ids.some(id=>!UUID.test(String(id)))||
             new Set(value.job_ids).size!==value.job_ids.length||
-            !Array.isArray(value.metrics)||value.metrics.length>96||
+            !Array.isArray(value.metrics)||value.metrics.length>256||
             value.metrics.some(m=>!METRIC.test(String(m)))||
             new Set(value.metrics).size!==value.metrics.length||
             (value.include_replays!==undefined&&typeof value.include_replays!=='boolean'))
-            throw Error('Choose distinct managed jobs and up to 96 metric names.');
+            throw Error('Choose distinct managed jobs and up to 256 metric names.');
         if([...this.sessions.values()].some(item=>item.status==='preparing'))
             throw Error('Another complete job export is already in progress.');
         const project=value.project_id;

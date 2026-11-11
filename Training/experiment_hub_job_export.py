@@ -114,7 +114,7 @@ def export(spec: dict, output: Path) -> dict:
     ):
         raise ValueError("Invalid selected job identifiers")
     metrics = spec.get("metrics", [])
-    if not isinstance(metrics, list) or len(metrics) > 96 or any(
+    if not isinstance(metrics, list) or len(metrics) > 256 or any(
         not isinstance(name, str) or not METRIC.fullmatch(name)
         for name in metrics
     ) or len(set(metrics)) != len(metrics):

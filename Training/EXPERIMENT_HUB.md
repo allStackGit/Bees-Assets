@@ -1897,8 +1897,9 @@ append-only and should be included when managing the Hub's disk capacity.
 
 **Export complete job diagnostics** in Compare packages the selected local
 job histories and run-scoped text/JSON logs into independent ZIP archives of
-at most 500,000,000 bytes each. Choose several jobs and metrics; optionally
-include raw replays. No checkpoint, model, private key or credential files are
+at most 500,000,000 bytes each. Choose several jobs and up to 256
+metric names; optionally include raw replays. This export selection is
+independent of the 96-field per-observation chart cache. No checkpoint, model, private key or credential files are
 intentionally included. Every part has a segment manifest for reconstructing
 large logs. The overall manifest reports jobs without local artifacts and
 individual unavailable or excluded log sources by job ID and source label;
