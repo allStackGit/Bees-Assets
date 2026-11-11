@@ -3054,6 +3054,7 @@ class ExperimentHub {
             // device; they are not measured per-job GPU consumption.
             let chartProgress=progress;
             {
+                const liveOwner=['running','stop_requested'].includes(item.state);
                 const observed={};
                 const add=(key,value,unit)=>{
                     if(Number.isFinite(value)&&value>=0&&value<=1e12)
@@ -3070,11 +3071,12 @@ class ExperimentHub {
                 add('job_memory_mb',item.memory_current_mb,'mb');
                 add('job_peak_memory_mb',Number.isFinite(item.peak_job_memory_bytes)
                     ?item.peak_job_memory_bytes/1048576:null,'mb');
-                add('host_cpu_busy_pct',report.host_cpu_busy_pct,'scalar');
+                if(liveOwner)add('host_cpu_busy_pct',
+                    report.host_cpu_busy_pct,'scalar');
                 const lease=this.state.reservations.find(l=>
                     l.id===job.lease_id&&l.job_id===job.id);
                 const bindings=lease?.gpu_bindings||[];
-                for(const [i,binding] of bindings.entries()) {
+                for(const [i,binding] of (liveOwner?bindings:[]).entries()) {
                     const device=report.gpu_devices?.find(observedGpu=>
                         observedGpu.pci_address===binding.pci_address);
                     if(!device)continue;
@@ -3097,8 +3099,8 @@ class ExperimentHub {
                 // Terminal Inspect may legitimately report the host's busy
                 // CPU/GPU after this job has exited. Do not append those
                 // physical-host samples as if the finished process used them.
-                if(['running','stop_requested'].includes(item.state)&&
-                    !archived&&(!progress||!this.observations.error))
+                if(liveOwner&&!archived&&
+                    (!progress||!this.observations.error))
                     this.observations.recordResources(job,observed,received,
                         progress?'not_advanced':
                         item.progress_issue?'read_error':'absent');
