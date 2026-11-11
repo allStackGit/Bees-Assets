@@ -387,7 +387,7 @@ pub(crate) fn write_floats<W: Write>(writer: &mut W, values: &[f32])
     }
 }
 
-fn read_floats<R: Read>(reader: &mut R, values: &mut [f32])
+pub(crate) fn read_floats<R: Read>(reader: &mut R, values: &mut [f32])
     -> io::Result<()>
 {
     #[cfg(target_endian = "little")]

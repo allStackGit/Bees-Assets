@@ -51,7 +51,11 @@ enum TraceRecord {
         levels: Vec<NativeTraceLevel>,
     },
     PlayerInput { round: u64, tick: u64, action: NativePlayerInput },
-    PlayerInputTraceEnd { rounds: u64, failed_window: Option<String> },
+    PlayerInputTraceEnd {
+        rounds: u64,
+        failed_window: Option<String>,
+        policy_actions_sha256: Option<String>,
+    },
 }
 
 pub struct NativeTraceInput {
@@ -63,11 +67,13 @@ pub struct NativeTraceInput {
 pub struct NativePlayerTrace {
     pub inputs: VecDeque<NativeTraceInput>,
     pub end_round: u64,
+    pub policy_actions_sha256: Option<String>,
 }
 
 impl NativePlayerTrace {
     pub fn read(
         path: &Path, config_sha256: &str, gameplay_sha256: &str, expected_levels: &[NativeTraceLevel],
+        expected_model: Option<&str>,
     ) -> io::Result<Self> {
         let invalid = |message: &str| io::Error::new(io::ErrorKind::InvalidData, message);
         let mut records = BufReader::new(File::open(path)?).lines()
@@ -75,9 +81,10 @@ impl NativePlayerTrace {
         let header = records.next().transpose()?;
         match header {
             Some(TraceRecord::PlayerInputTrace { schema_version: 1, run_config_sha256,
-                gameplay_config_sha256, policy_manifest_sha256: None, levels })
+                gameplay_config_sha256, policy_manifest_sha256, levels })
                 if run_config_sha256 == config_sha256 &&
-                    gameplay_config_sha256 == gameplay_sha256 && levels == expected_levels => {}
+                    gameplay_config_sha256 == gameplay_sha256 && levels == expected_levels &&
+                    policy_manifest_sha256.as_deref() == expected_model => {}
             _ => return Err(invalid("player trace does not match the offline battle configuration")),
         }
         let mut inputs = VecDeque::new();
@@ -88,11 +95,12 @@ impl NativePlayerTrace {
                     previous = round;
                     inputs.push_back(NativeTraceInput { round, tick, action });
                 }
-                TraceRecord::PlayerInputTraceEnd { rounds, failed_window: None } if rounds >= previous => {
+                TraceRecord::PlayerInputTraceEnd { rounds, failed_window: None, policy_actions_sha256 }
+                    if rounds >= previous && policy_actions_sha256.is_some() == expected_model.is_some() => {
                     if records.next().is_some() {
                         return Err(invalid("records follow the end of the player trace"));
                     }
-                    return Ok(Self { inputs, end_round: rounds });
+                    return Ok(Self { inputs, end_round: rounds, policy_actions_sha256 });
                 }
                 _ => return Err(invalid("invalid, out-of-order, or failed player trace")),
             }

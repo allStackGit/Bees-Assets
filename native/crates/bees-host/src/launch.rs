@@ -4,7 +4,7 @@ use std::cell::Cell;
 use std::collections::{HashMap, HashSet};
 use std::env;
 use std::error::Error;
-use std::fs::{self, File};
+use std::fs;
 use std::io::{self, ErrorKind};
 #[cfg(feature = "client")]
 use std::io::Write;
@@ -28,6 +28,7 @@ use bees_host::runtime::{
 use bees_host::policy_only_metadata::NativePolicyOnlyMetadata;
 use bees_host::notification_file::{DurableDiagnosticNotifications, EpisodeEvaluationContext, recover_command_outcomes};
 use bees_host::policy_process::{PolicyProcessError, ResidentPolicyProcess};
+use bees_host::policy_action_trace::{PolicyActionPlayback, PolicyActionRecorder};
 use bees_host::player_trace::{NativePlayerInput, NativePlayerTrace, NativeTraceLevel};
 use bees_host::presentation::NativeSoftwareRenderer;
 use bees_host::scene_assets::NativeSceneAssets;
@@ -337,15 +338,21 @@ fn make_setup(
     })
 }
 
-struct RolloutModel(Option<ResidentPolicyProcess>);
+#[derive(Default)]
+struct RolloutModel {
+    resident: Option<ResidentPolicyProcess>,
+    recorder: Option<PolicyActionRecorder>,
+    playback: Option<(PolicyActionPlayback, String)>,
+}
 
 impl RolloutModel {
     fn model_manifest_sha256(&self) -> Option<String> {
-        self.0.as_ref().map(ResidentPolicyProcess::model_manifest_sha256)
+        self.resident.as_ref().map(ResidentPolicyProcess::model_manifest_sha256)
+            .or_else(|| self.playback.as_ref().map(|(_, digest)| digest.clone()))
     }
 
     fn reload_manifest(&mut self, manifest: &Path) -> Result<u64, PolicyProcessError> {
-        self.0.as_mut().ok_or(PolicyProcessError::Unavailable)?.reload_manifest(manifest)
+        self.resident.as_mut().ok_or(PolicyProcessError::Unavailable)?.reload_manifest(manifest)
     }
 }
 
@@ -353,11 +360,11 @@ impl NativePolicyInference for RolloutModel {
     type Error = PolicyProcessError;
 
     fn behavior_statistics(&self) -> &[f32] {
-        self.0.as_ref().map_or(&[], ResidentPolicyProcess::behavior_statistics)
+        self.resident.as_ref().map_or(&[], ResidentPolicyProcess::behavior_statistics)
     }
 
     fn model_generation(&self) -> u64 {
-        self.0.as_ref().map_or(0, ResidentPolicyProcess::model_generation)
+        self.resident.as_ref().map_or(0, ResidentPolicyProcess::model_generation)
     }
 
     fn forward(
@@ -365,8 +372,15 @@ impl NativePolicyInference for RolloutModel {
         observations: &[f32], masks: &[PolicyActionMask],
         continuous: &mut [f32], discrete: &mut [u8],
     ) -> Result<(), Self::Error> {
-        self.0.as_mut().ok_or(PolicyProcessError::Unavailable)?
-            .forward(keys, routes, observations, masks, continuous, discrete)
+        if let Some((playback, _)) = &mut self.playback {
+            return Ok(playback.apply(keys, routes, observations, masks, continuous, discrete)?);
+        }
+        self.resident.as_mut().ok_or(PolicyProcessError::Unavailable)?
+            .forward(keys, routes, observations, masks, continuous, discrete)?;
+        if let Some(recorder) = &mut self.recorder {
+            recorder.record(keys, routes, observations, masks, continuous, discrete)?;
+        }
+        Ok(())
     }
 }
 
@@ -763,8 +777,8 @@ fn run_battle(
     let root = config_path.parent().ok_or_else(|| invalid("missing config directory"))?;
     let config_bytes = fs::read(config_path)?;
     let mut config: RunConfig = serde_json::from_slice(&config_bytes)?;
-    if replay_inputs.is_some() && (config.model_manifest.is_some() || !config.model_updates.is_empty()) {
-        return Err(invalid("player input playback requires an offline battle without model inference").into());
+    if replay_inputs.is_some() && !config.model_updates.is_empty() {
+        return Err(invalid("player input playback requires one policy manifest for the whole battle").into());
     }
     if config.status_every_rounds == Some(0) {
         return Err(invalid("status_every_rounds must be positive").into());
@@ -814,7 +828,7 @@ fn run_battle(
     let notifications = output.as_ref().map_or_else(
         || resolve(root, &config.notifications), |dir| dir.join("events.jsonl"),
     );
-    let policy_capture = config.policy_capture.as_ref().map(|path| output.as_ref().map_or_else(
+    let policy_capture = config.policy_capture.as_ref().filter(|_| replay_inputs.is_none()).map(|path| output.as_ref().map_or_else(
         || resolve(root, path), |dir| dir.join("decisions.bin"),
     ));
     let summary = output.as_ref().map(|dir| dir.join("rollout-summary.json"))
@@ -1081,12 +1095,22 @@ fn run_battle(
         }
     ).collect::<Vec<_>>();
     let mut playback = replay_inputs.map(|path|
-        NativePlayerTrace::read(path, &config_digest, &gameplay_digest, &trace_levels)
+        NativePlayerTrace::read(path, &config_digest, &gameplay_digest, &trace_levels,
+            model_source.as_ref().map(|(_, _, _, digest)| digest.as_str()))
     ).transpose()?;
     if playback.as_ref().is_some_and(|trace| trace.end_round > config.max_rounds) {
         return Err(invalid("player trace exceeds the configured round budget").into());
     }
+    let trace_output = output.filter(|_| play && replay_inputs.is_none() && config.model_updates.is_empty());
 
+    let mut model = RolloutModel::default();
+    if let (Some(path), Some(trace), Some((_, _, _, manifest_digest))) =
+        (replay_inputs, playback.as_ref(), model_source.as_ref())
+    {
+        let actions = PolicyActionPlayback::open(&path.with_file_name("policy-actions.bin"),
+            trace.policy_actions_sha256.as_deref().expect("validated policy trace digest"))?;
+        model.playback = Some((actions, manifest_digest.clone()));
+    }
     if let Some(directory) = output {
         fs::create_dir(directory)?;
     }
@@ -1120,18 +1144,19 @@ fn run_battle(
     if policy_capture.is_some() && model_source.is_none() {
         return Err(invalid("policy capture requires a resident model worker").into());
     }
-    let model = if let Some((python, worker, manifest, expected_sha)) = model_source {
-        let model = ResidentPolicyProcess::python_worker(python, worker, manifest)
+    if let Some((python, worker, manifest, expected_sha)) = model_source.filter(|_| replay_inputs.is_none()) {
+        let resident = ResidentPolicyProcess::python_worker(python, worker, manifest)
             .map_err(|error| contextual("model worker startup", error))?;
-        if model.model_manifest_sha256() != expected_sha {
+        if resident.model_manifest_sha256() != expected_sha {
             return Err(invalid(
                 "model manifest changed between route preflight and authenticated worker startup",
             ).into());
         }
-        RolloutModel(Some(model))
-    } else {
-        RolloutModel(None)
-    };
+        model.resident = Some(resident);
+        if let Some(directory) = trace_output {
+            model.recorder = Some(PolicyActionRecorder::create(&directory.join("policy-actions.bin"))?);
+        }
+    }
     let mut sink = DurableDiagnosticNotifications::create_new(
         &notifications, config.run_id.clone(),
     )?;
@@ -1149,7 +1174,7 @@ fn run_battle(
     }
     host.set_timing_sample_period(timing);
     #[cfg(feature = "client")]
-    let mut input_trace = if let (true, None, Some(directory)) = (play, replay_inputs, output) {
+    let mut input_trace = if let Some(directory) = trace_output {
         let mut trace = fs::OpenOptions::new().write(true).create_new(true)
             .open(directory.join("player-inputs.jsonl"))?;
         writeln!(trace, "{}", json!({
@@ -1557,13 +1582,32 @@ fn run_battle(
     let count = host.simulation().world_count();
     let finalization_start = Instant::now();
     let mut cleanup_errors = Vec::new();
+    if failed_window.is_none() && !user_closed {
+        if let Some((actions, _)) = &mut host.model_mut().playback {
+            if let Err(error) = actions.finish() {
+                failed_window = Some(format!("policy action playback: {error}"));
+            }
+        }
+    }
     #[cfg(feature = "client")]
     if let Some(mut trace) = input_trace {
+        let policy_actions_sha256 = host.model_mut().recorder.take().and_then(|recorder| {
+            match recorder.finish() {
+                Ok(digest) => Some(digest),
+                Err(error) => {
+                    let message = format!("policy action trace: {error}");
+                    failed_window.get_or_insert_with(|| message.clone());
+                    cleanup_errors.push(message);
+                    None
+                }
+            }
+        });
         let finished = writeln!(trace, "{}", json!({
             "kind": "player_input_trace_end",
             "rounds": rounds,
             "user_closed": user_closed,
             "failed_window": failed_window,
+            "policy_actions_sha256": policy_actions_sha256,
         })).and_then(|()| trace.sync_all());
         if let Err(error) = finished {
             cleanup_errors.push(format!("player input trace: {error}"));
@@ -1675,7 +1719,7 @@ fn run_battle(
     }
     let policy_generation = host.model_mut().model_generation();
     let policy_manifest_sha256 = host.model_mut().model_manifest_sha256();
-    drop(host.model_mut().0.take());
+    drop(host.model_mut().resident.take());
     let run_end = Instant::now();
     let wall_seconds = run_end.duration_since(run_start).as_secs_f64();
     let execution_wall_seconds = finalization_start.duration_since(execution_start).as_secs_f64();

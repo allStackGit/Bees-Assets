@@ -51,12 +51,16 @@ automatically at the run boundary.
 With `--output-dir`, press Enter on the result screen to replay the same
 configuration and seeds. Each replay opens a new battle window and saves
 its own journal and summary in a numbered directory under the first run.
-`bees play --output-dir` also saves `player-inputs.jsonl`. It records
-the scene digests and seed plans, then each submitted order with its
+For battles with no scheduled model changes, `bees play --output-dir` also
+saves `player-inputs.jsonl`. It records the scene digests and seed plans,
+then each submitted order with its
 global round, world tick, and squad lifetime. These are input attempts.
 The gameplay journal and summary record the resulting battle outcomes.
-Replay a completed input trace from an offline battle without model
-inference using the original run configuration:
+Replay a completed offline input trace using the original run configuration.
+For a battle with a neural policy, keep the original model manifest at the
+path in the run configuration and keep `policy-actions.bin` beside
+`player-inputs.jsonl`. Playback verifies each observation batch and uses the
+saved actions without starting a model worker or producing learner capture data.
 
 ```sh
 bees run run.json --replay-inputs first-run/player-inputs.jsonl --output-dir new-playback
