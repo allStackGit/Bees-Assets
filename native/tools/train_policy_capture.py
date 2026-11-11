@@ -230,10 +230,15 @@ def completed_rollouts(capture, journal, manifest, manifest_sha, checkpoint_sha,
             queued_decisions -= sum(len(frame) for frame in ticks.values())
             episode_boundaries = boundaries.pop(key, {})
             completed.add(key)
-            yield _validate_completed_episode(
+            rollout = _validate_completed_episode(
                 key, ticks, episode_boundaries, terminals, ended_teams,
                 retirements, rewards, learner_agents_by_episode.pop(key), journal_id,
             )
+            if stats is not None:
+                accumulate_training_outcome(
+                    stats, terminals[key], rollout[5], learner_slots,
+                )
+            yield rollout
 
     if completed != terminals.keys():
         raise ValueError("completed episode missing decisions or policy boundary")
@@ -305,6 +310,87 @@ def _validate_completed_episode(
     return (journal_id, *key), expected, ticks, closing, episode_boundaries, {
         team: rewards[key, team] for team in set(expected.values())
     }, learning_agents
+
+
+def accumulate_training_outcome(stats, terminal, group_rewards, learner_slots):
+    """Summarize authored outcomes by policy owner, never by fixed faction.
+
+    Training wins/losses are meaningful only when exactly one side uses
+    the learner checkpoint. Self-play is counted separately rather than
+    mislabelled as either a learner win or an opponent loss.
+    """
+    context = terminal["evaluation_context"]
+    payload = terminal["payload"]
+    bee_side, human_side = int(context["bee_side"]), int(context["human_side"])
+    if bee_side == human_side:
+        raise ValueError("training outcome has identical factions")
+    team_by_side = context["group_team_by_side"]
+    slots_by_team = context["model_slots_by_team"]
+    bee_team = int(team_by_side[str(bee_side)])
+    human_team = int(team_by_side[str(human_side)])
+    if bee_team == human_team:
+        raise ValueError("training outcome has duplicate model teams")
+    bee_learner = slots_by_team[str(bee_team)] in learner_slots
+    human_learner = slots_by_team[str(human_team)] in learner_slots
+    if not (bee_learner or human_learner):
+        raise ValueError("training outcome contains no learner policy")
+
+    winner = int(payload["winner_side"])
+    if winner not in (0, bee_side, human_side):
+        raise ValueError("training outcome names an unregistered winner")
+    duration = float(payload["duration_seconds"])
+    if not np.isfinite(duration) or duration < 0:
+        raise ValueError("training outcome has invalid duration")
+    values = {}
+    for name in (
+        "bee_retained_mined_tsv", "human_retained_mined_tsv",
+        "bee_retained_reward", "human_retained_reward",
+    ):
+        value = float(payload[name])
+        if not np.isfinite(value):
+            raise ValueError(f"training outcome has invalid {name}")
+        values[name] = value
+
+    counts = stats.setdefault("training_outcomes", {
+        "episodes": 0, "head_to_head_episodes": 0,
+        "self_play_episodes": 0, "learner_wins": 0,
+        "learner_losses": 0, "learner_draws": 0,
+        "learner_as_bee_episodes": 0, "learner_as_human_episodes": 0,
+        "bee_wins": 0, "human_wins": 0, "draws": 0,
+        "timed_out_episodes": 0, "total_episode_seconds": 0.0,
+        "bee_retained_mined_tsv": 0.0, "human_retained_mined_tsv": 0.0,
+        "bee_retained_reward": 0.0, "human_retained_reward": 0.0,
+        "learner_ppo_reward_sum": 0.0,
+        "opponent_ppo_reward_sum": 0.0,
+    })
+    counts["episodes"] += 1
+    counts["total_episode_seconds"] += duration
+    counts["timed_out_episodes"] += int(payload["timed_out"])
+    counts["bee_wins"] += int(winner == bee_side)
+    counts["human_wins"] += int(winner == human_side)
+    counts["draws"] += int(winner == 0)
+    for name, value in values.items():
+        counts[name] += value
+
+    if bee_learner and human_learner:
+        counts["self_play_episodes"] += 1
+        return
+    counts["head_to_head_episodes"] += 1
+    counts["learner_as_bee_episodes"] += int(bee_learner)
+    counts["learner_as_human_episodes"] += int(human_learner)
+    learner_side = bee_side if bee_learner else human_side
+    learner_team, opponent_team = (
+        (bee_team, human_team) if bee_learner else (human_team, bee_team)
+    )
+    counts["learner_wins"] += int(winner == learner_side)
+    counts["learner_draws"] += int(winner == 0)
+    counts["learner_losses"] += int(winner not in (0, learner_side))
+    for team, target in (
+        (learner_team, "learner_ppo_reward_sum"),
+        (opponent_team, "opponent_ppo_reward_sum"),
+    ):
+        amounts = (float(value) for _, value in group_rewards[team])
+        counts[target] += sum(amounts)
 
 
 def trajectories(rollouts, horizon, behavior_id):
@@ -646,6 +732,17 @@ def main():
         "capture_peak_inflight_episodes": capture_stats.get("peak_inflight_episodes", 0),
         "capture_compact_opponent_decisions": capture_stats.get("compact_opponent_decisions", 0),
         "capture_compact_opponent_boundaries": capture_stats.get("compact_opponent_boundaries", 0),
+        "training_outcomes": {
+            **capture_stats.get("training_outcomes", {}),
+            "mean_episode_seconds": (
+                capture_stats["training_outcomes"]["total_episode_seconds"] /
+                capture_stats["training_outcomes"]["episodes"]
+            ) if capture_stats.get("training_outcomes") else None,
+            "head_to_head_win_rate": (
+                capture_stats["training_outcomes"]["learner_wins"] /
+                capture_stats["training_outcomes"]["head_to_head_episodes"]
+            ) if (capture_stats.get("training_outcomes", {}).get("head_to_head_episodes", 0)) else None,
+        },
     }
     pending_metrics = args.output / "metrics.json.pending"
     with pending_metrics.open("x", encoding="utf-8") as output:
