@@ -61,11 +61,13 @@ function loadRoots(dataRoot) {
         const entries=JSON.parse(fs.readFileSync(config,'utf8'));
         if(!entries||typeof entries!=='object'||Array.isArray(entries))
             throw Error('Invalid project export root configuration.');
-        const mounts=entries['@machine_roots']||{};
+        const mounts=Object.hasOwn(entries,'@machine_roots')
+            ?entries['@machine_roots']:{};
+
         delete entries['@machine_roots'];
         if(Object.keys(entries).length>32||
             Object.entries(entries).some(([id,dir])=>!PROJECT.test(id)||
-                !trustedRoot(dir))||
+                typeof dir!=='string'||!path.isAbsolute(dir))||
             !mounts||typeof mounts!=='object'||Array.isArray(mounts)||
             Object.keys(mounts).length>32||
             Object.entries(mounts).some(([machine,projects])=>
@@ -73,9 +75,8 @@ function loadRoots(dataRoot) {
                 Array.isArray(projects)||Object.keys(projects).length>32||
                 Object.entries(projects).some(([project,dir])=>
                     !PROJECT.test(project)||typeof dir!=='string'||
-                    !path.isAbsolute(dir)||
-                    (fs.existsSync(dir)&&!trustedRoot(dir)))))
-            throw Error('Project/machine export roots must be approved, absolute directories or unavailable mounts.');
+                    !path.isAbsolute(dir))))
+            throw Error('Project/machine export root configuration requires absolute directories.');
         Object.assign(roots,entries);
         Object.assign(machineRoots,mounts);
     }
@@ -147,8 +148,14 @@ class JobExporter {
         // arbitrary caller path components.
         const mounted=legacy?[]:jobs.flatMap(job=>{
             const root=configured.machineRoots[job.assigned_machine_id]?.[project];
-            return root?[{job_id:job.id,label:'mounted-artifacts',
-                path:path.join(root,job.id)}]:[];
+            if(!root)return [];
+            // Other machines may be offline or have a temporarily unsafe
+            // mount. Never let their paths block an unrelated selected job,
+            // but fail closed if this selected job's mount is redirected.
+            if(fs.existsSync(root)&&!trustedRoot(root))
+                throw Error('Selected machine artifact mount is redirected or unowned.');
+            return [{job_id:job.id,label:'mounted-artifacts',
+                path:path.join(root,job.id)}];
         });
         const dir=fs.mkdtempSync(path.join(this.dataRoot,'job-export-'));
         fs.chmodSync(dir,0o700);
