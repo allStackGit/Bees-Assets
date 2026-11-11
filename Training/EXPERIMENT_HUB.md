@@ -1448,8 +1448,12 @@ The installed `createNativeBeesAdapter` supports the same preflight for
 `bees_native` **optimizer** jobs, but not collection-only jobs. A single
 exclusive GPU lease selects `--device cuda` (also the ROCm PyTorch device
 name); a CPU-only lease selects `--device cpu`. Shared and multi-GPU Bees
-optimizer leases are not supported by this adapter. On multi-GPU Linux
-hosts, provide the optional machine-local `rocrGpuUuids` PCI-to-ROCr-UUID
+optimizer leases are not supported by this adapter. A Bees job
+training an ML-Agents model against ONNX or TorchScript opponents must
+configure the approved adapter's `learnerSlot` to that ML-Agents slot.
+Mixed-backend batches preserve learner action probabilities; opponent-only
+batches legitimately contain actions without policy log probabilities.
+On multi-GPU Linux hosts, provide the optional machine-local `rocrGpuUuids` PCI-to-ROCr-UUID
 map to the adapter when the runtime cannot otherwise prove one visible
 leased device. The fixed HIP/PyTorch PCI verifier is shared with TinyBrains.
 For reproducible CPU scaling experiments, a Bees training job may specify
