@@ -94,13 +94,57 @@ def completed_episodes(path, focus, manifest):
     return episodes, counts
 
 
-def compare(reference, candidate):
-    shared = reference.keys() & candidate.keys()
+# The serialized identity is constructed in completed_episodes above. These
+# prefixes identify where paired comparison stops matching without requiring
+# operators to inspect huge per-episode keys or relax strict matching.
+def aggregate_completed_episodes(paths, focus, manifest):
+    """Combine independently journaled native shards without losing pair identity.
+
+    Each file retains its own run/journal identity validation. Repeated
+    evaluation inputs across files are ambiguous, not extra samples.
+    """
+    episodes = {}
+    counts = Counter()
+    for path in paths:
+        shard, shard_counts = completed_episodes(path, focus, manifest)
+        if episodes.keys() & shard.keys():
+            raise ValueError(f"{path}: duplicate evaluation inputs across journal files")
+        episodes.update(shard)
+        counts.update(shard_counts)
+    return episodes, counts
+
+
+MATCH_FIELDS = (
+    "scene_sha256", "seed", "bee_side", "human_side",
+    "group_episode_number", "group_team_by_side",
+    "model_identity", "gameplay_config_sha256",
+)
+
+
+def matching_input_prefixes(reference, candidate):
+    left = [json.loads(key) for key in reference]
+    right = [json.loads(key) for key in candidate]
+    matches = {}
+    for width, field in enumerate(MATCH_FIELDS, 1):
+        left_keys = {
+            json.dumps(parts[:width], sort_keys=True, separators=(",", ":"))
+            for parts in left
+        }
+        right_keys = {
+            json.dumps(parts[:width], sort_keys=True, separators=(",", ":"))
+            for parts in right
+        }
+        matches[field] = len(left_keys & right_keys)
+    return matches
+
+
+def paired_summary(reference, candidate, shared):
+    """Summarize only strictly paired episodes, for a run or one source scene."""
     transitions = Counter()
     score = {"loss": 0.0, "draw": 0.5, "win": 1.0}
     reference_score = candidate_score = 0.0
-    duration_delta = 0.0
     timeout_delta = 0
+    duration_delta = 0.0
     for key in sorted(shared):
         before, after = reference[key], candidate[key]
         transitions[f"{before[0]}_to_{after[0]}"] += 1
@@ -111,8 +155,6 @@ def compare(reference, candidate):
     count = len(shared)
     return {
         "matched_episodes": count,
-        "unmatched_reference_episodes": len(reference) - count,
-        "unmatched_candidate_episodes": len(candidate) - count,
         "outcome_transitions": dict(transitions),
         "reference_mean_score": reference_score / count if count else None,
         "candidate_mean_score": candidate_score / count if count else None,
@@ -122,6 +164,42 @@ def compare(reference, candidate):
     }
 
 
+def compare(reference, candidate):
+    shared = reference.keys() & candidate.keys()
+    report = paired_summary(reference, candidate, shared)
+    report.update(
+        unmatched_reference_episodes=len(reference) - len(shared),
+        unmatched_candidate_episodes=len(candidate) - len(shared),
+        matching_input_prefixes=matching_input_prefixes(reference, candidate),
+    )
+
+    # Scene-level comparisons make failures in one authored battle visible
+    # even when another scene lifts the aggregate score. Only the original
+    # fully matched episode keys contribute to any score or outcome metric.
+    scenes = {}
+    for key in reference:
+        scene = json.loads(key)[0]
+        bucket = scenes.setdefault(scene, {"reference": 0, "candidate": 0, "paired": []})
+        bucket["reference"] += 1
+    for key in candidate:
+        scene = json.loads(key)[0]
+        bucket = scenes.setdefault(scene, {"reference": 0, "candidate": 0, "paired": []})
+        bucket["candidate"] += 1
+    for key in shared:
+        scenes[json.loads(key)[0]]["paired"].append(key)
+
+    report["by_scene_sha256"] = {}
+    for scene in sorted(scenes):
+        bucket = scenes[scene]
+        summary = paired_summary(reference, candidate, bucket["paired"])
+        summary.update(
+            unmatched_reference_episodes=bucket["reference"] - summary["matched_episodes"],
+            unmatched_candidate_episodes=bucket["candidate"] - summary["matched_episodes"],
+        )
+        report["by_scene_sha256"][scene] = summary
+    return report
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("reference", type=Path)
@@ -129,19 +207,27 @@ def main():
     parser.add_argument("--focus-side", choices=("bee", "human"), required=True)
     parser.add_argument("--reference-manifest", type=Path)
     parser.add_argument("--candidate-manifest", type=Path)
+    parser.add_argument("--reference-extra", type=Path, action="append", default=[],
+                        help="additional reference shard/journal; repeat for each file")
+    parser.add_argument("--candidate-extra", type=Path, action="append", default=[],
+                        help="additional candidate shard/journal; repeat for each file")
     args = parser.parse_args()
     paths = (args.reference_manifest, args.candidate_manifest)
     if (paths[0] is None) != (paths[1] is None):
         parser.error("supply both model manifests or omit both")
     try:
         manifests = [manifest_identity(path) if path else None for path in paths]
-        reference, reference_counts = completed_episodes(args.reference, args.focus_side, manifests[0])
-        candidate, candidate_counts = completed_episodes(args.candidate, args.focus_side, manifests[1])
+        reference, reference_counts = aggregate_completed_episodes(
+            [args.reference, *args.reference_extra], args.focus_side, manifests[0])
+        candidate, candidate_counts = aggregate_completed_episodes(
+            [args.candidate, *args.candidate_extra], args.focus_side, manifests[1])
         report = compare(reference, candidate)
     except (OSError, KeyError, TypeError, ValueError) as error:
         parser.error(str(error))
     report.update(
         focus_side=args.focus_side,
+        reference_journal_files=1 + len(args.reference_extra),
+        candidate_journal_files=1 + len(args.candidate_extra),
         model_matching="fixed_opponent_artifact" if paths[0] else "same_manifest_and_slots",
         reference_aborted_episodes=reference_counts["aborted"],
         candidate_aborted_episodes=candidate_counts["aborted"],

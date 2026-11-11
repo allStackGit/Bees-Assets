@@ -8,6 +8,10 @@ const safeInt=n=>Number.isSafeInteger(n)&&n>=0;
 // training, benchmark decisions, lease release, or policy promotion.
 const GENERIC_METRIC=/^[a-z][a-z0-9_]{0,39}$/;
 const GENERIC_UNITS=new Set(['scalar','ratio','count','rate','seconds','mb','bytes','milliseconds']);
+// Keep a larger bounded source envelope than the 96-metric chart cache.
+// Complete trainer metrics must reach the observation archive before display
+// downselection; the transport's separate 32-KiB limit still applies.
+const MAX_SOURCE_METRICS=192;
 function validateGenericProgress(value,projectId) {
     const metrics=value?.metrics;
     if(!/^[a-z][a-z0-9_-]{0,47}$/.test(String(projectId||''))||
@@ -30,7 +34,7 @@ function validateGenericProgress(value,projectId) {
         new Date(value.source_modified_at).toISOString()!==value.source_modified_at||
         !safeInt(value.steps_completed)||
         !metrics||typeof metrics!=='object'||Array.isArray(metrics)||
-        Object.keys(metrics).length<1||Object.keys(metrics).length>96)
+        Object.keys(metrics).length<1||Object.keys(metrics).length>MAX_SOURCE_METRICS)
         throw Error('Invalid project-neutral progress report.');
     const normalized={};
     for(const [key,item] of Object.entries(metrics).sort(([a],[b])=>
@@ -55,7 +59,7 @@ function validateGenericProgress(value,projectId) {
 }
 // Display data is intentionally bounded independently of the authoritative
 // project log. Host measurements are already validated by the coordinator,
-// but they must not disappear when a trainer fills all 96 wire fields.
+// but they must not disappear when a trainer reports more than 96 metrics.
 function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
     const metrics={};
     let count=0;

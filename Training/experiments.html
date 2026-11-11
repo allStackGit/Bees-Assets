@@ -501,6 +501,17 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
     <button type="button" id="hub-job-queue">Queue job</button>
     <button type="button" id="hub-job-preview">Preview queued placements</button>
     <p id="hub-job-message" class="hub-notice" role="status">No work scheduled or executing.</p>
+    <div class="hub-standalone" id="hub-resource-bundle-panel">
+      <h3>Reserve a multi-machine resource bundle</h3>
+      <p class="muted">Select two or more independently executable saved jobs, each with a fixed machine and CPU/RAM/GPU budget. All reservations succeed together or none are created. This is resource coordination only: no training data is exchanged, no Start is authorized, and no cross-project learner/worker synchronization is implied.</p>
+      <div id="hub-resource-bundle-rows"></div>
+      <div class="hub-controls">
+        <button type="button" id="hub-resource-bundle-add">Add member</button>
+        <button type="button" id="hub-resource-bundle-queue">Reserve entire bundle</button>
+      </div>
+      <p id="hub-resource-bundle-message" class="hub-notice" role="status">No resource bundle reserved.</p>
+      <div id="hub-resource-bundle-existing" aria-label="Recent resource bundle ownership"></div>
+    </div>
     <div class="hub-standalone" id="hub-pipeline-panel" hidden>
       <h3 id="hub-pipeline-title">Queue a multi-job pipeline</h3>
       <label>Relationship between jobs
@@ -600,6 +611,12 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
   <h3>Selected training metric charts</h3>
   <div id="hub-compare-plots" aria-label="Selected training metric charts"></div>
   <p id="hub-compare-chart-note" class="muted">Bounded comparison curves are saved separately from training records. Comparisons are observational, not independent evaluations.</p>
+  <h3>Observed resource scaling</h3>
+  <p id="hub-compare-scaling-note" class="muted">Select a throughput metric and two or more runs. These comparisons are observational, not automatic resource tuning.</p>
+  <div class="tablewrap hub-table"><table>
+    <thead><tr><th>Run</th><th>Allocated CPU cores</th><th>Allocated GPUs</th><th>Host</th><th>Samples</th><th>Median throughput</th><th>Throughput / allocated core</th><th>Marginal throughput</th></tr></thead>
+    <tbody id="hub-compare-scaling-rows"></tbody>
+  </table></div>
   <div class="hub-standalone" id="hub-compare-selection-panel">
     <h3>Promote the best evaluated model</h3>
     <p class="muted">Choose 2–16 independent candidate jobs above and an approved next-stage configuration below. The Hub compares only identical frozen benchmark suites and promotes only a resumable model whose exact bytes match its evaluation. Active candidates can be scheduled for automatic selection after completion.</p>

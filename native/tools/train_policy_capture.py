@@ -1,6 +1,7 @@
 """Run one MA-POCA update on observed native decision intervals."""
 
 import argparse
+from array import array
 from bisect import bisect_right
 from collections import defaultdict, deque
 import hashlib
@@ -24,6 +25,36 @@ OPPONENT_IDENTITY = np.dtype([
 ])
 
 
+class GroupRewardSeries:
+    """Compact source-order group rewards with float64 journal precision.
+
+    Every reward from a completed world is needed to attribute PPO group
+    returns. Two typed arrays avoid one Python tuple and two boxed objects
+    per event; maintain the original timestamp and amount iteration contract.
+    """
+    __slots__ = ("ticks", "amounts")
+
+    def __init__(self):
+        self.ticks = array("Q")
+        self.amounts = array("d")
+
+    def add(self, tick, amount):
+        self.ticks.append(tick)
+        self.amounts.append(amount)
+
+    def __iter__(self):
+        return zip(self.ticks, self.amounts)
+
+    def prefix(self):
+        # Cumulative group rewards are float64 in the original learner.
+        # Take a borrowed numeric view; neither source array is modified
+        # once an episode has completed.
+        cumulative = np.empty(len(self.amounts) + 1, dtype=np.float64)
+        cumulative[0] = 0.0
+        np.cumsum(np.frombuffer(self.amounts, dtype=np.float64), out=cumulative[1:])
+        return self.ticks, cumulative
+
+
 def completed_rollouts(capture, journal, manifest, manifest_sha, checkpoint_sha, learner_slot=None, stats=None):
     models = {entry["slot"]: entry for entry in manifest["models"]}
     matching = {
@@ -41,21 +72,51 @@ def completed_rollouts(capture, journal, manifest, manifest_sha, checkpoint_sha,
     has_opponent_slots = learner_slots != set(models)
     terminals = {}
     all_terminals = {}
-    rewards = defaultdict(list)
+    rewards = defaultdict(GroupRewardSeries)
     ended_teams = defaultdict(dict)
     retirements = defaultdict(dict)
     # Source combat hits are logged once per physical hit. Retain
     # aggregates, not individual hit events, until their episode closes.
     combat_by_episode = defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
     journal_id = None
+    run_id = None
+    world_sequences = {}
     with journal.open(encoding="utf-8") as stream:
         for sequence, line in enumerate(stream):
             row = json.loads(line)
             if journal_id is None:
                 journal_id = row["journal_id"]
-            if row["journal_id"] != journal_id or row["journal_sequence"] != sequence:
+                run_id = row["run_id"]
+            if (row.get("schema_version") != 2 or
+                    not isinstance(run_id, str) or not run_id.strip() or
+                    row["journal_id"] != journal_id or row["run_id"] != run_id or
+                    type(row["journal_sequence"]) is not int or
+                    row["journal_sequence"] != sequence):
                 raise ValueError("mixed or incomplete reward journal")
-            key = row["world_id"], row["episode_revision"]
+            world, revision = row["world_id"], row["episode_revision"]
+            previous = world_sequences.get(world)
+            if (type(world) is not int or type(revision) is not int or
+                    (previous is not None and revision < previous[0])):
+                raise ValueError("invalid or retired world episode in reward journal")
+            same_episode = previous is not None and revision == previous[0]
+            expected = previous[1] if same_episode else 0
+            tick = row["tick"]
+            if (type(row["event_sequence"]) is not int or row["event_sequence"] != expected or
+                    type(tick) is not int or tick < 0 or
+                    (same_episode and tick < previous[2])):
+                raise ValueError("missing, repeated, or out-of-order world notification")
+            world_sequences[world] = (revision, expected + 1, tick)
+            key = world, revision
+            # The source Level writes EpisodeFinal after all combat and
+            # group rewards. Only the immediate command-credit settlement
+            # batch may follow, exactly one event later at the same tick.
+            final = all_terminals.get(key)
+            if row["kind"] == "command_outcomes_ready":
+                if (final is None or row["event_sequence"] != final["event_sequence"] + 1 or
+                        tick != final["tick"]):
+                    raise ValueError("outcome batch is detached from the episode terminal")
+            elif final is not None:
+                raise ValueError("notification follows the completed episode terminal")
             if row["kind"] == "episode_final":
                 context = row["evaluation_context"]
                 if key in all_terminals:
@@ -76,7 +137,7 @@ def completed_rollouts(capture, journal, manifest, manifest_sha, checkpoint_sha,
             elif row["kind"] == "group_reward":
                 event = row["payload"]
                 if event["group_kind"] in ("immediate", "terminal"):
-                    rewards[key, event["team_id"]].append((row["tick"], event["ppo_reward"]))
+                    rewards[key, event["team_id"]].add(row["tick"], event["ppo_reward"])
                 elif event["group_kind"] == "end_episode":
                     team = event["team_id"]
                     if team in ended_teams[key]:
@@ -87,6 +148,34 @@ def completed_rollouts(capture, journal, manifest, manifest_sha, checkpoint_sha,
         raise ValueError("reward journal has no completed episodes")
     if not terminals:
         raise ValueError("capture contains no completed episodes for the selected policy manifest")
+    # The journal parser has already checked the nonnegative, nondecreasing
+    # source ticks for every world and forbids events after EpisodeFinal.
+    # Validate each team's owner and numeric amounts without rebuilding one
+    # Python reward tuple per event; bisect_right uses the original tick order.
+    reward_events = 0
+    reward_payload_bytes = 0
+    for (episode_key, team), events in rewards.items():
+        final = all_terminals.get(episode_key)
+        if final is None:
+            raise ValueError("group reward belongs to an unfinished episode")
+        groups = final["evaluation_context"]["group_agents_by_team"]
+        if str(team) not in groups:
+            raise ValueError("group reward belongs to an unknown episode team")
+        if (events.ticks and events.ticks[-1] > final["tick"]) or not np.isfinite(
+            np.frombuffer(events.amounts, dtype=np.float64)
+        ).all():
+            raise ValueError("invalid or out-of-order group reward journal")
+        reward_events += len(events.ticks)
+        reward_payload_bytes += (
+            len(events.ticks) * events.ticks.itemsize +
+            len(events.amounts) * events.amounts.itemsize
+        )
+    if stats is not None:
+        stats["reward_journal_events"] = stats.get("reward_journal_events", 0) + reward_events
+        # Logical numeric payload, not Python allocator or peak RSS usage.
+        stats["reward_journal_payload_bytes"] = (
+            stats.get("reward_journal_payload_bytes", 0) + reward_payload_bytes
+        )
     # Resolve learner ownership only for episodes whose terminal boundaries
     # are being processed, rather than retaining IDs for the whole run.
     learner_agents_by_episode = {}
@@ -170,8 +259,11 @@ def completed_rollouts(capture, journal, manifest, manifest_sha, checkpoint_sha,
                 if tick == terminals[key]["tick"]:
                     ready.add(key)
         else:
-            if "continuous_log_probs" not in rows.dtype.names:
-                raise ValueError("training requires captured behavior statistics")
+            # An inference batch containing no ML-Agents controllers uses a
+            # normal action frame without behavior probabilities. Preserve
+            # those genuine opponent decisions; only ML-Agents slots must
+            # carry sampled policy data for PPO.
+            has_behavior = "continuous_log_probs" in rows.dtype.names
             for row in source_rows:
                 key = int(row["world"]), int(row["episode"])
                 terminal = all_terminals.get(key)
@@ -186,6 +278,8 @@ def completed_rollouts(capture, journal, manifest, manifest_sha, checkpoint_sha,
                     raise ValueError("policy decision follows its completed boundary")
                 if row["model_slot"] not in models:
                     raise ValueError("rollout includes an unknown model slot")
+                if models[int(row["model_slot"])]["backend"] == "mlagents" and not has_behavior:
+                    raise ValueError("ML-Agents decision lacks captured behavior statistics")
                 tick, agent = int(row["tick"]), int(row["group_agent"])
                 team = int(row["team"])
                 if (tick >= terminal["tick"] or
@@ -336,8 +430,7 @@ def trajectories(rollouts, horizon, behavior_id):
         terminal_tick = max(boundaries)
         reward_prefix = {}
         for team, events in rewards.items():
-            reward_prefix[team] = ([tick for tick, _ in events],
-                                   np.cumsum([0.0] + [amount for _, amount in events]))
+            reward_prefix[team] = events.prefix()
         frames = frames + [(terminal_tick, boundaries[terminal_tick])]
         experiences = {agent: [] for agent in learning_agents}
         previous = {}
@@ -359,6 +452,11 @@ def trajectories(rollouts, horizon, behavior_id):
             # individual policy controller. Cache only for larger active
             # cohorts; 1v1 avoids the per-frame dictionary allocation.
             interval_rewards = {} if len(actions) > 4 else None
+            # AgentStatus is an immutable ML-Agents named tuple. Share its
+            # observation/action references within this decision interval
+            # rather than building an O(team_size**2) number of identical
+            # status objects for each agent's centralized critic input.
+            group_status_cache = {} if len(actions) > 4 else None
             for agent in actions:
                 row = frame[agent]
                 end = min(next_tick, closing[agent])
@@ -369,10 +467,27 @@ def trajectories(rollouts, horizon, behavior_id):
                     if members_by_team is not None else
                     [mate for mate in frame if mate != agent and teams[mate] == team]
                 )
-                group_status = [
-                    AgentStatus([frame[mate]["observations"]], 0.0, actions[mate], closing[mate] <= end)
-                    for mate in mates
-                ]
+                if group_status_cache is None:
+                    group_status = [
+                        AgentStatus([frame[mate]["observations"]], 0.0, actions[mate], closing[mate] <= end)
+                        for mate in mates
+                    ]
+                else:
+                    interval = (team, end)
+                    statuses = group_status_cache.get(interval)
+                    if statuses is None:
+                        statuses = {
+                            member: AgentStatus(
+                                [frame[member]["observations"]], 0.0,
+                                actions[member], closing[member] <= end,
+                            )
+                            for member in members_by_team[team]
+                        }
+                        group_status_cache[interval] = statuses
+                    # Retain the authored teammate order and exclude self.
+                    # The status records are immutable, but each experience
+                    # still owns a distinct group list for ML-Agents.
+                    group_status = [statuses[mate] for mate in mates]
                 mask = [np.array([False, not bit]) for bit in row["fire_allowed"]]
                 mask.append(row["special_allowed"] == 0)
                 if interval_rewards is None:
@@ -434,12 +549,17 @@ def bundle_captures(receipt_path, manifest_sha, checkpoint_sha, learner_slot, ex
 
 def main():
     started_at = time.perf_counter()
+    process_cpu_started_at = time.process_time()
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ("capture", "journal"):
         parser.add_argument(name, type=Path, nargs="?")
     for name in ("manifest", "checkpoint", "config", "output"):
         parser.add_argument(name, type=Path)
     parser.add_argument("--learner-slot", type=int, help="train only on this manifest slot")
+    parser.add_argument(
+        "--torch-threads", type=int,
+        help="fixed CPU intra-op thread count for the optimizer, independent of rollout workers",
+    )
     parser.add_argument(
         "--device", default="cpu",
         help="optimizer device: cpu, cuda, or cuda:N (ROCm PyTorch also uses cuda)",
@@ -460,7 +580,11 @@ def main():
             args.capture is None and not (bundles or args.rollout)):
         parser.error("supply a capture and journal or completed rollout inputs")
 
+    if args.torch_threads is not None and not 1 <= args.torch_threads <= 256:
+        parser.error("--torch-threads must be between 1 and 256")
     import torch
+    if args.torch_threads is not None:
+        torch.set_num_threads(args.torch_threads)
     import yaml
     from mlagents.plugins.trainer_type import register_trainer_plugins
     from mlagents.trainers.behavior_id_utils import BehaviorIdentifiers
@@ -536,12 +660,15 @@ def main():
         for name, module in optimizer_modules.items():
             module.load_state_dict(checkpoint[name])
     processing_started = time.perf_counter()
+    processing_cpu_started = time.process_time()
     terminal_steps = 0
     episode_keys = set()
     opponent_steps = 0
     capture_stats = {}
     capture_read_wall_seconds = 0.0
     trajectory_ingest_wall_seconds = 0.0
+    capture_read_cpu_seconds = 0.0
+    trajectory_ingest_cpu_seconds = 0.0
     for capture, journal, path in inputs:
         manifest, manifest_sha = manifests[path]
         rollouts = iter(completed_rollouts(
@@ -554,13 +681,17 @@ def main():
         # and ML-Agents buffer ingestion. The existing total includes both.
         while True:
             capture_started = time.perf_counter()
+            capture_cpu_started = time.process_time()
             try:
                 rollout = next(rollouts)
             except StopIteration:
                 capture_read_wall_seconds += time.perf_counter() - capture_started
+                capture_read_cpu_seconds += time.process_time() - capture_cpu_started
                 break
             capture_read_wall_seconds += time.perf_counter() - capture_started
+            capture_read_cpu_seconds += time.process_time() - capture_cpu_started
             ingest_started = time.perf_counter()
+            ingest_cpu_started = time.process_time()
             key, _, ticks, _, _, _, learning_agents = rollout
             if key in episode_keys:
                 parser.error("the same completed episode was supplied more than once")
@@ -573,16 +704,20 @@ def main():
                 trainer._process_trajectory(trajectory)
                 terminal_steps += int(trajectory.done_reached)
             trajectory_ingest_wall_seconds += time.perf_counter() - ingest_started
+            trajectory_ingest_cpu_seconds += time.process_time() - ingest_cpu_started
     steps = trainer.update_buffer.num_experiences
     if steps < settings.hyperparameters.batch_size:
         parser.error("capture contains fewer observed intervals than one optimizer minibatch")
     processing_wall_seconds = time.perf_counter() - processing_started
+    processing_cpu_seconds = time.process_time() - processing_cpu_started
     update_started = time.perf_counter()
+    update_cpu_started = time.process_time()
     if not trainer._update_policy():
         raise RuntimeError("MA-POCA did not update its policy")
     if device.type == "cuda":
         torch.cuda.synchronize(device)
     update_wall_seconds = time.perf_counter() - update_started
+    update_cpu_seconds = time.process_time() - update_cpu_started
     # PyTorch allocator peaks describe this process, not total device VRAM.
     # Read once per round, never in the simulation or optimizer hot loop.
     cuda_metrics = {}
@@ -654,11 +789,16 @@ def main():
         **cuda_metrics,
         "optimizer_input_steps": steps,
         "trajectory_processing_wall_seconds": processing_wall_seconds,
+        "trajectory_processing_cpu_seconds": processing_cpu_seconds,
         "capture_read_and_validation_wall_seconds": capture_read_wall_seconds,
+        "capture_read_and_validation_cpu_seconds": capture_read_cpu_seconds,
         "trajectory_assembly_and_ingest_wall_seconds": trajectory_ingest_wall_seconds,
+        "trajectory_ingest_cpu_seconds": trajectory_ingest_cpu_seconds,
         "optimizer_update_wall_seconds": update_wall_seconds,
+        "optimizer_update_cpu_seconds": update_cpu_seconds,
         "optimizer_steps_per_update_second": steps / update_wall_seconds if update_wall_seconds else None,
         "total_wall_seconds": time.perf_counter() - started_at,
+        "total_cpu_seconds": time.process_time() - process_cpu_started_at,
         "terminal_steps": terminal_steps,
         "episodes": len(episode_keys),
         "opponent_steps": opponent_steps,
@@ -666,6 +806,8 @@ def main():
         "capture_peak_inflight_episodes": capture_stats.get("peak_inflight_episodes", 0),
         "capture_compact_opponent_decisions": capture_stats.get("compact_opponent_decisions", 0),
         "capture_compact_opponent_boundaries": capture_stats.get("compact_opponent_boundaries", 0),
+        "reward_journal_events": capture_stats.get("reward_journal_events", 0),
+        "reward_journal_payload_bytes": capture_stats.get("reward_journal_payload_bytes", 0),
         "training_outcomes": {
             **capture_stats.get("training_outcomes", {}),
             "mean_episode_seconds": (

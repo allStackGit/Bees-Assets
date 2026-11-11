@@ -1533,6 +1533,10 @@ impl KinematicPhysics {
         }
         let index = self.ships.len();
         self.ships.push(ship);
+        // Dynamic Scout/Carrier spawns may be followed by sight queries
+        // before the next physics tick. Invalidate the reused ship grid so
+        // it includes the new collider on its next lazy rebuild.
+        self.grid_contains_ships = false;
         Ok(index)
     }
 

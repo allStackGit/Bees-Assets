@@ -28,7 +28,9 @@ impl NativeSquadSelection {
         }
         // A squad survives losing its selected representative ship. A
         // retired pooled lifetime cannot inherit somebody else's selection.
-        self.squads.retain(|owner| view.roster.get(*owner).is_some());
+        // Player authority can also change during a live Level; don't keep
+        // previously selected squads eligible for UI commands after that.
+        self.squads.retain(|owner| view.roster.get(*owner).is_some() && selectable(view, *owner));
     }
 
     pub fn select_ship(&mut self, view: &NativeRenderWorldView<'_>, ship: i64, additive: bool) {

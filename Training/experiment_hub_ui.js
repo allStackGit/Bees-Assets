@@ -77,6 +77,85 @@ function hubGenericMetricCatalog(runs) {
 function hubMetricValue(point,key) {
     return point.metrics?.[key.slice(7)]?.value;
 }
+
+// Observational scaling evidence only. Chart histories are bounded/decimated;
+// never use these summaries to tune a running job, select a winning model or
+// claim experimental equivalence. An allocation is not a measured CPU/GPU use.
+function hubScalingEvidence(runs,key) {
+    const name=typeof key==='string'&&key.startsWith('metric:')?key.slice(7):null;
+    if(!name)return [];
+    const median=values=>{
+        const sorted=values.slice().sort((a,b)=>a-b);
+        const middle=Math.floor(sorted.length/2);
+        return sorted.length%2?sorted[middle]:
+            (sorted[middle-1]+sorted[middle])/2;
+    };
+    const rows=runs.map(run=>{
+        const points=hubComparisonPoints(run);
+        // A chart may contain multiple segments or reset its step axis.
+        // Only the last contiguous segment is eligible for this summary.
+        let lastBreak=0;
+        for(let i=1;i<points.length;i++)
+            if(points[i].break_before)lastBreak=i;
+        const current=points.slice(lastBreak);
+        const observations=current.map(point=>point.metrics?.[name])
+            .filter(m=>m?.unit==='rate'&&
+                Number.isFinite(m.value)&&m.value>=0)
+            .map(m=>m.value);
+        const resources=run.job.resources;
+        const validCpus=Number.isSafeInteger(resources?.cpus)&&resources.cpus>0;
+        const validGpus=Number.isSafeInteger(resources?.gpu_count)&&
+            resources.gpu_count>=0;
+        return {
+            slot:run.slot,job_id:run.job.id,
+            configuration_sha256:run.job.configuration_sha256,
+            host:run.job.assigned_machine_id,
+            lineage:run.job.artifact_lineage_root_id||run.job.id,
+            status:run.job.status,
+            distributed:run.job.distributed_rollout_managed===true,
+            cpus:validCpus?resources.cpus:null,
+            gpus:validGpus?resources.gpu_count:null,
+            gpu_mode:resources?.gpu_mode||'exclusive',
+            sample_count:observations.length,
+            median_rate:observations.length?median(observations):null,
+            low_rate:observations.length?Math.min(...observations):null,
+            high_rate:observations.length?Math.max(...observations):null,
+            comparison:null,
+        };
+    });
+    for(const row of rows) {
+        if(row.distributed||row.sample_count<5||
+            !['finished','stopped','completed','ended_early'].includes(row.status)||
+            row.cpus===null||row.gpus===null||
+            !/^[0-9a-f]{64}$/.test(row.configuration_sha256||''))continue;
+        const comparable=rows.filter(other=>other!==row&&
+            other.cpus!==null&&other.gpus!==null&&
+            other.sample_count>=5&&!other.distributed&&
+            ['finished','stopped','completed','ended_early'].includes(other.status)&&
+            other.host&&other.host===row.host&&
+            other.configuration_sha256===row.configuration_sha256&&
+            other.gpu_mode===row.gpu_mode&&
+            other.median_rate!==null);
+        // Isolate one allocation dimension. Never infer a marginal GPU
+        // benefit from changing CPUs, configuration, or physical host too.
+        const cpuBase=comparable.filter(other=>other.gpus===row.gpus&&
+            other.cpus<row.cpus).sort((a,b)=>b.cpus-a.cpus)[0];
+        const gpuBase=comparable.filter(other=>other.cpus===row.cpus&&
+            other.gpus<row.gpus).sort((a,b)=>b.gpus-a.gpus)[0];
+        const baseline=cpuBase||gpuBase;
+        if(baseline) {
+            const resource=cpuBase?'cpu':'gpu';
+            const delta=row[resource+'s']-baseline[resource+'s'];
+            row.comparison={
+                resource,baseline_slot:baseline.slot,delta_resources:delta,
+                median_delta:row.median_rate-baseline.median_rate,
+                marginal_rate:(row.median_rate-baseline.median_rate)/delta,
+                shared_lineage:row.lineage===baseline.lineage,
+            };
+        }
+    }
+    return rows;
+}
 function trialBatchLabel(job) {
     const batch=job.trial_batch;
     return batch?' · batch '+batch.id.slice(-8)+' · trial '+batch.index+'/'+batch.size:'';
@@ -89,6 +168,7 @@ function hubComparisonCsv(exported) {
         'observed_at','source_modified_at','experiment_id','segment_id',
         'break_before','steps_completed',
         'trial_batch_id','trial_batch_index','trial_batch_size',
+        'resource_bundle_id','resource_bundle_index','resource_bundle_size',
     ];
     const metrics=new Set(exported.metrics||[]);
     for(const key of [...metrics].sort())
@@ -119,6 +199,9 @@ function hubComparisonCsv(exported) {
         trial_batch_id:run.trial_batch?.id,
         trial_batch_index:run.trial_batch?.index,
         trial_batch_size:run.trial_batch?.size,
+        resource_bundle_id:run.resource_bundle?.id,
+        resource_bundle_index:run.resource_bundle?.index,
+        resource_bundle_size:run.resource_bundle?.size,
         status:run.status,...point,
         ...Object.fromEntries(Object.entries(point.metrics||{}).flatMap(
             ([key,metric])=>[
@@ -361,6 +444,120 @@ document.addEventListener('DOMContentLoaded', () => {
         $('hub-pipeline-add').disabled=['bees','ants'].includes(project)||rows.length>=16;
         $('hub-pipeline-queue').disabled=['bees','ants'].includes(project)||
             rows.length<2||!configs.length;
+    }
+    // Build capacity bundles from the same saved project configurations and
+    // authenticated machine choices used by normal job Start. A bundle never
+    // transmits arbitrary executable paths or worker network endpoints.
+    function addResourceBundleMember() {
+        const container=$('hub-resource-bundle-rows');
+        if(container.children.length>=16)return;
+        const row=document.createElement('div');
+        row.className='hub-pipeline-stage';
+        const configLabel=document.createElement('label');
+        const configCaption=document.createElement('span');
+        configCaption.className='hub-bundle-caption';
+        const config=document.createElement('select');
+        config.className='hub-bundle-config';
+        config.addEventListener('change',renderResourceBundleMembers);
+        configLabel.append(configCaption,config);
+        const machineLabel=document.createElement('label');
+        const machineCaption=document.createElement('span');
+        machineCaption.className='hub-bundle-caption';
+        const machine=document.createElement('select');
+        machine.className='hub-bundle-machine';
+        machineLabel.append(machineCaption,machine);
+        const resourceLabel=document.createElement('label');
+        resourceLabel.textContent='Fixed CPU/RAM/GPU budget (JSON)';
+        const resources=document.createElement('input');
+        resources.type='text';
+        resources.className='hub-bundle-resources';
+        try{
+            resources.value=JSON.stringify(JSON.parse($('hub-job-resources').value));
+        }catch(error){
+            resources.value='{"cpus":2,"ram_mb":2048,"gpu_count":0}';
+        }
+        resourceLabel.append(resources);
+        const remove=button('Remove',()=>{
+            if(container.children.length<=2)return;
+            row.remove();
+            renderResourceBundleMembers();
+        });
+        row.append(configLabel,machineLabel,resourceLabel,remove);
+        container.append(row);
+    }
+    function renderResourceBundleMembers() {
+        const rows=[...$('hub-resource-bundle-rows').children];
+        const configs=(state?.configurations||[]).filter(c=>
+            !['bees','ants','tinybrains_rollout'].includes(c.project_id));
+        const machines=state?.machines||[];
+        for(const [i,row] of rows.entries()) {
+            const captions=row.querySelectorAll('.hub-bundle-caption');
+            const config=row.querySelector('.hub-bundle-config');
+            const machine=row.querySelector('.hub-bundle-machine');
+            const oldConfig=config.value,oldMachine=machine.value;
+            captions[0].textContent='Member '+(i+1)+' saved configuration';
+            captions[1].textContent='Machine';
+            config.replaceChildren(...configs.map(c=>new Option(
+                c.project_id+' · '+c.name+' · revision '+c.revision,c.id)));
+            if(configs.some(c=>c.id===oldConfig))config.value=oldConfig;
+            else {
+                const own=configs.find(c=>c.project_id===project);
+                if(own)config.value=own.id;
+            }
+            const selected=configs.find(c=>c.id===config.value);
+            const eligible=machines.filter(m=>
+                m.status==='connected'&&m.local_executor_enabled===true&&
+                m.native_preflight_passed===true&&
+                m.installed_projects?.includes(selected?.project_id));
+            machine.replaceChildren(...eligible.map(m=>
+                new Option(m.name+' ('+m.id+')',m.id)));
+            if(eligible.some(m=>m.id===oldMachine))machine.value=oldMachine;
+            row.querySelector('button').disabled=rows.length<=2;
+        }
+        $('hub-resource-bundle-add').disabled=rows.length>=16;
+        $('hub-resource-bundle-queue').disabled=rows.length<2||
+            !rows.every(row=>row.querySelector('.hub-bundle-machine').value);
+        const container=$('hub-resource-bundle-existing');
+        container.replaceChildren();
+        const groups=new Map();
+        for(const job of state?.jobs||[]) {
+            const id=job.resource_bundle?.id;
+            if(!id)continue;
+            if(!groups.has(id))groups.set(id,[]);
+            groups.get(id).push(job);
+        }
+        for(const [id,members] of [...groups].slice(-8).reverse()) {
+            const row=document.createElement('div');
+            row.className='hub-pipeline-stage';
+            const active=members.filter(j=>j.status!=='cancelled');
+            const claims=active.filter(j=>
+                (state.reservations||[]).some(lease=>lease.id===j.lease_id&&
+                    ['offered','acknowledged'].includes(lease.status)));
+            const details=document.createElement('span');
+            details.textContent='Bundle '+id.slice(-8)+' · '+
+                members.length+' jobs · '+claims.length+' outstanding claims · '+
+                members.map(j=>j.project_id+' on '+
+                    (j.assigned_machine_id||'unassigned')+': '+j.status).join('; ');
+            row.append(details);
+            const canCancel=members.length===members[0].resource_bundle.size&&
+                active.length>0&&active.every(j=>
+                    j.status==='waiting_adapter'&&!j.dispatch_id);
+            if(canCancel)row.append(button('Cancel all unstarted members',async()=>{
+                if(!confirm('Cancel '+active.length+' unstarted bundle members and release their Hub claims? No native process will be stopped.'))return;
+                try{
+                    const result=await action('hub/resource-bundles/cancel',{
+                        bundle_id:id,expected_job_ids:active.map(j=>j.id),
+                        confirm_cancel:true,
+                    });
+                    feedback('hub-resource-bundle-message',
+                        'Cancelled '+result.cancelled_count+' unstarted members in bundle '+id.slice(-8)+'.');
+                    await reload();
+                }catch(error){
+                    feedback('hub-resource-bundle-message',String(error.message||error));
+                }
+            }));
+            container.append(row);
+        }
     }
     // Only a fresh, authenticated native report can distinguish a Stop
     // still awaiting delivery from a service already shutting down.
@@ -770,8 +967,58 @@ document.addEventListener('DOMContentLoaded', () => {
             table.append(tr);
         }
         renderComparisonEvaluations(runs);
+        renderScalingEvidence(runs,selectedMetrics);
         drawComparisonCharts(runs,selectedMetrics,
             $('hub-compare-x-axis').value);
+    }
+    function renderScalingEvidence(runs,keys) {
+        const table=$('hub-compare-scaling-rows');
+        table.replaceChildren();
+        // Rates are the only sensible common unit for marginal throughput.
+        // Time metrics, CPU/GPU busy percentages and losses are not throughput.
+        const available=[...new Set(runs.flatMap(run=>
+            hubComparisonPoints(run).flatMap(point=>
+                Object.entries(point.metrics||{})
+                    .filter(([,value])=>value.unit==='rate')
+                    .map(([name])=>'metric:'+name))))];
+        const key=keys.find(value=>available.includes(value))||null;
+        const rows=hubScalingEvidence(runs,key);
+        feedback('hub-compare-scaling-note',key
+            ?'Showing '+key.slice(7)+'. Medians use bounded chart samples from each run’s latest segment, not complete histories. '+
+              'CPU/GPU values are allocations, not measured utilization. Marginal comparisons require five samples per job, completed jobs, matching frozen configuration and host, and only one changed resource dimension. '+
+              'They remain observational, not guaranteed improvements or independent learning evaluations.'
+            :'Select a recorded throughput metric (unit: rate) above to inspect resource scaling. No CPU/GPU efficiency can be inferred from utilization alone.');
+        for(const row of rows) {
+            const tr=document.createElement('tr');
+            cell(tr,row.slot+' · '+row.job_id.slice(-8));
+            cell(tr,row.cpus===null?'Unknown':row.cpus.toLocaleString()+
+                (row.distributed?' (learner only)':''));
+            cell(tr,row.gpus===null?'Unknown':row.gpus.toLocaleString());
+            cell(tr,row.host||'Unknown');
+            cell(tr,String(row.sample_count));
+            cell(tr,row.median_rate===null?'—':
+                row.median_rate.toLocaleString(undefined,{maximumFractionDigits:2}));
+            cell(tr,row.cpus&&row.median_rate!==null&&!row.distributed
+                ?(row.median_rate/row.cpus).toLocaleString(undefined,{
+                    maximumFractionDigits:2}):'—');
+            const diff=row.comparison;
+            cell(tr,diff
+                ?'Compared with '+diff.baseline_slot+': '+
+                    (diff.marginal_rate>=0?'+':'')+
+                    diff.marginal_rate.toLocaleString(undefined,{
+                        maximumFractionDigits:2})+
+                    ' rate units per added '+diff.resource+
+                    (diff.shared_lineage?' (same checkpoint lineage)':'')
+                :'Not comparable');
+            table.append(tr);
+        }
+        if(!rows.length) {
+            const tr=document.createElement('tr');
+            cell(tr,runs.length
+                ?'No recorded rate samples for the selected runs and metric.'
+                :'Select one or more runs to review observed scaling.').colSpan=8;
+            table.append(tr);
+        }
     }
     function renderComparisonEvaluations(runs) {
         const table=$('hub-compare-evaluation-rows');
@@ -1002,6 +1249,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 artifact_lineage_root_id:job.artifact_lineage_root_id||job.id,
                 continuation_of_job_id:job.continuation_of_job_id||null,
                 trial_batch:job.trial_batch||null,
+                resource_bundle:job.resource_bundle||null,
                 status:job.status,
                 execution_diagnostic:job.execution_diagnostic||null,
                 ...(project==='tinybrains'?{profile_sha256:job.frozen_parameters?.profile_sha256||null}:{}),
@@ -1124,7 +1372,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const tinyBrainsThreads=document.createElement('input');
     const tinyBrainsDevice=document.createElement('select');
     const tinyBrainsRemote=document.createElement('input');
+    const tinyBrainsWeights=document.createElement('input');
     tinyBrainsRemote.type='checkbox';
+    tinyBrainsWeights.type='text';
+    tinyBrainsWeights.placeholder='Optional: 2,8,4 (local, then each remote)';
     tinyBrainsDevice.append(new Option('Profile default',''),
         new Option('CPU-only fallback (no GPU)','cpu'),
         new Option('Dedicated two-GPU split PPO (ROCm)','dual'));
@@ -1146,6 +1397,18 @@ document.addEventListener('DOMContentLoaded', () => {
         const cpuFallback=tinyBrainsDevice.value==='cpu';
         const dualGpu=tinyBrainsDevice.value==='dual';
         const remoteRollouts=tinyBrainsRemote.checked;
+        const weightText=tinyBrainsWeights.value.trim();
+        const weights=weightText?weightText.split(',').map(s=>Number(s.trim())):[];
+        if(weightText&&(!remoteRollouts||weights.length<2||weights.length>9||
+            weights.some(w=>!Number.isSafeInteger(w)||w<1||w>1024)||
+            !(state?.machines||[]).some(machine=>
+                machine.status==='connected'&&
+                machine.tinybrains_profiles?.[profile]===digest&&
+                machine.tinybrains_remote_rollout_endpoints?.length===weights.length-1))) {
+            feedback('hub-config-message',
+                'Fixed action weights require one integer from 1–1024 for the learner and each approved remote endpoint.');
+            return;
+        }
         if(hasThreads&&(!Number.isSafeInteger(threads)||threads<1||threads>256)) {
             feedback('hub-config-message','CPU threads must be a whole number from 1 to 256.');
             return;
@@ -1185,6 +1448,7 @@ document.addEventListener('DOMContentLoaded', () => {
             ...(hasThreads?{threads}:{}),
             ...(cpuFallback?{device:'cpu'}:dualGpu?{device:'dual'}:{}),
             ...(remoteRollouts?{remote_rollouts:true}:{}),
+            ...(weights.length?{rollout_action_weights:weights}:{}),
             ...(sourceId&&sourceDigest?{
                 import_checkpoint:sourceId,
                 import_checkpoint_sha256:sourceDigest,
@@ -1203,12 +1467,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 :'Use a configuration without an import for checkpoint-continuation stages. ')+
             (hasThreads?'The CPU thread override does not change the job CPU quota. ':'')+
             (remoteRollouts?'In Train, use Queue and reserve entire group to atomically assign learner and approved remote collector CPU/GPU budgets before any Start. ':'')+
+            (weights.length?'Fixed action weights change rollout work shares, not hardware reservations. ':'')+
             'Save the draft to retain these settings.');
     });
     for(const [caption,control] of [['Approved profile ',tinyBrainsSelect],
         ['Updates ',tinyBrainsUpdates],['CPU threads (optional) ',tinyBrainsThreads],
         ['Execution device ',tinyBrainsDevice],
         ['Use approved remote CPU rollout collectors ',tinyBrainsRemote],
+        ['Fixed rollout action weights (optional; local then remotes) ',tinyBrainsWeights],
         ['Approved checkpoint import (optional) ',tinyBrainsImport]]) {
         const label=document.createElement('label');
         label.append(caption,control);
@@ -1327,10 +1593,13 @@ document.addEventListener('DOMContentLoaded', () => {
         'total_ppo_updates','update_wall_time','elapsed_training_seconds',
         'engine_steps','engine_steps_per_second','ant_decisions',
         'ant_decisions_per_second','group_states','group_states_per_second',
-        'collection_seconds','optimization_seconds','overlap_seconds',
-        'ppo_microbatches','states_per_microbatch','actor_grad_norm',
+        'collection_seconds','rollout_model_refresh_seconds',
+        'optimization_seconds','overlap_seconds',
+        'remote_policy_snapshot_seconds',
+        'remote_opponent_snapshot_seconds','ppo_microbatches','states_per_microbatch','actor_grad_norm',
         'group_grad_norm','baseline_grad_norm','policy_lag',
         'rss_mb','job_memory_mb','job_peak_memory_mb','job_cpu_cores',
+        'job_cpu_lease_utilization_pct',
         'host_cpu_busy_pct','host_gpu_busy_pct','host_gpu_vram_mb',
         'host_gpu_0_busy_pct','host_gpu_0_used_vram_mb',
         'host_gpu_1_busy_pct','host_gpu_1_used_vram_mb',
@@ -1347,8 +1616,19 @@ document.addEventListener('DOMContentLoaded', () => {
         'ppo_parameter_finite_check_seconds','ppo_gpu_stream_sync_seconds',
         'ppo_minibatches','ppo_microbatches','ppo_board_pixel_samples',
         'ppo_max_board_cells','ppo_unique_board_shapes',
-        'evaluation_seconds','collector_count','collector_0_ant_decisions',
-        'collector_1_ant_decisions','collector_1_roundtrip_seconds'];
+        'evaluation_seconds','collector_count',
+        // The TinyBrains learner contributes slot 0; up to eight remote
+        // workers contribute slots 1–8. Let the operator select every slot.
+        ...Array.from({length:9},(_,i)=>[
+            'collector_'+i+'_ant_decisions',
+            'collector_'+i+'_engine_steps',
+            'collector_'+i+'_action_target',
+            'collector_'+i+'_elapsed_seconds',
+            'collector_'+i+'_roundtrip_seconds',
+            'collector_'+i+'_model_prepare_seconds',
+            'collector_'+i+'_decisions_per_second',
+            'collector_'+i+'_engine_steps_per_second',
+        ]).flat()];
     function renderJobMetricSelection() {
         const select=$('hub-job-metrics');
         if(!select)return;
@@ -1604,6 +1884,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 addPipelineStage();
             }
             renderPipelineStages();
+            if(!$('hub-resource-bundle-rows').children.length) {
+                addResourceBundleMember();
+                addResourceBundleMember();
+            }
+            renderResourceBundleMembers();
         }
         $('hub-job-queue').disabled=['bees','ants'].includes(project)||!configs.length;
         const previousMachine=$('hub-job-machine').value;
@@ -1768,8 +2053,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     (worker.assigned_machine_id||'unassigned')+' '+worker.status+
                     (worker.capacity_released_at?' (released)':'')).join('; ')
                 :'';
+            const bundleLabel=j.resource_bundle
+                ?' · Resource bundle '+j.resource_bundle.id.slice(-8)+
+                    ' ('+j.resource_bundle.index+'/'+j.resource_bundle.size+')'
+                :'';
             const statusCell=cell(tr,status+lineage+promoted+gpuProof+readinessText+
-                checkpointRecovery+noTrainer+distributedSummary+
+                checkpointRecovery+noTrainer+distributedSummary+bundleLabel+
                 (hasSuccessor&&['waiting_adapter','waiting_predecessor'].includes(j.status)
                     ?' · Cancel downstream stage first':''));
 
@@ -1971,7 +2260,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     }catch(e){feedback('hub-job-message',e.message);}
                 }));
             if(j.status==='waiting_adapter'&&j.lease_id&&!j.dispatch_id&&
-                !j.continuation_machine_id&&!probeHoldsClaim) {
+                !j.continuation_machine_id&&!j.resource_bundle&&
+                !probeHoldsClaim) {
                 actions.append(button('Move claim',async()=>{
                     const destination=selectedMoveDestination(j);
                     if(!destination)return;
@@ -2879,6 +3169,39 @@ document.addEventListener('DOMContentLoaded', () => {
         }catch(e){feedback('hub-plan-result',e.message);}
     });
 
+    $('hub-resource-bundle-add').addEventListener('click',()=>{
+        addResourceBundleMember();
+        renderResourceBundleMembers();
+    });
+    $('hub-resource-bundle-queue').addEventListener('click',async()=>{
+        if(!state||project==='bees')return;
+        try{
+            const rows=[...$('hub-resource-bundle-rows').children];
+            if(rows.length<2||rows.length>16)
+                throw Error('Select 2–16 members.');
+            const members=rows.map(row=>{
+                const cfg=state.configurations.find(c=>c.id===
+                    row.querySelector('.hub-bundle-config').value);
+                const machine=row.querySelector('.hub-bundle-machine').value;
+                if(!cfg||!machine)throw Error('Select a saved configuration and qualified machine for every member.');
+                return {configuration_id:cfg.id,expected_revision:cfg.revision,
+                    machine_id:machine,
+                    resources:JSON.parse(row.querySelector('.hub-bundle-resources').value)};
+            });
+            if(!confirm('Atomically reserve fixed resources for '+members.length+
+                ' independent jobs on the selected machines? Each job requires its own native Start authorization. '+
+                'This does not enable distributed training, automatic checkpoint sharing or simultaneous worker starts.'))return;
+            const result=await action('hub/resource-bundles',{
+                confirm_queue:true,members,
+            });
+            feedback('hub-resource-bundle-message',
+                'Reserved all '+result.members.length+' jobs · bundle '+
+                result.bundle_id.slice(-8)+'. No Starts authorized.');
+            await reload();
+        }catch(error){
+            feedback('hub-resource-bundle-message',String(error.message||error));
+        }
+    });
     $('hub-pipeline-add').addEventListener('click',()=>{
         addPipelineStage();
         renderPipelineStages();

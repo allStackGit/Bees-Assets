@@ -7,6 +7,9 @@ const {validateProgress} = require('./experiment_hub_progress');
 
 const PROJECT = 'bees_native';
 const UUID = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
+const PCI = /^[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]$/;
+const ROCM_UUID = /^GPU-(?:[0-9a-f]{16}|[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})$/i;
+const CUDA_UUID = /^GPU-[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
 const sha256 = data => crypto.createHash('sha256').update(data).digest('hex');
 
 function trustedFile(file) {
@@ -17,18 +20,84 @@ function trustedFile(file) {
     return resolved;
 }
 
+
+// The manifest is the complete runnable model set, not just the learner
+// checkpoint. Resolve every slot against its declared digest before leasing
+// compute or advertising a checkpoint as resumable. Reuse already-verified
+// learner digests to avoid hashing the same large file twice.
+function verifyModelDependencies(manifest, checked, checkpoint, learnerSlot) {
+    const document = JSON.parse(fs.readFileSync(manifest, 'utf8'));
+    if (document?.format !== 'bees-native-model-v1' ||
+        document.abi_version !== 26 ||
+        typeof document.policy_signature !== 'string' ||
+        !Buffer.byteLength(document.policy_signature, 'utf8') ||
+        Buffer.byteLength(document.policy_signature, 'utf8') > 8192 ||
+        !Array.isArray(document.models) || !document.models.length)
+        throw Error('Invalid native Bees v26 model manifest.');
+    const slots = new Set();
+    let learnerMatches = 0;
+    let requiresGpuInference = false;
+    for (const model of document.models) {
+        if (!model || !Number.isSafeInteger(model.slot) || model.slot < 0 ||
+            model.slot > 0xffffffff || slots.has(model.slot) ||
+            !['mlagents', 'onnx', 'torchscript'].includes(model.backend) ||
+            typeof model.path !== 'string' || !model.path ||
+            !/^[a-f0-9]{64}$/.test(model.sha256))
+            throw Error('Invalid native Bees model slot.');
+        slots.add(model.slot);
+        if (model.backend === 'onnx') {
+            const providers = model.providers ?? ['CPUExecutionProvider'];
+            if (!Array.isArray(providers) || !providers.length ||
+                providers.some(provider => typeof provider !== 'string' || !provider))
+                throw Error('Invalid native Bees ONNX inference providers.');
+            requiresGpuInference ||= providers.some(provider => provider !== 'CPUExecutionProvider');
+        } else {
+            // The Hub leases at most one GPU to the Bees optimizer. A
+            // second CUDA ordinal cannot be reached through that lease.
+            const device = model.device ?? 'cpu';
+            if (!['cpu', 'cuda', 'cuda:0'].includes(device))
+                throw Error('Native Bees inference device exceeds the supported single-GPU lease.');
+            requiresGpuInference ||= device !== 'cpu';
+        }
+        const artifact = path.resolve(path.dirname(manifest), model.path);
+        let digest = checked.get(artifact);
+        if (digest === undefined) {
+            digest = sha256(fs.readFileSync(trustedFile(artifact)));
+            checked.set(artifact, digest);
+        }
+        if (digest !== model.sha256)
+            throw Error('Native Bees model artifact differs from its manifest.');
+        if (learnerSlot === undefined || model.slot === learnerSlot) {
+            if (model.backend === 'mlagents' && artifact === checkpoint)
+                learnerMatches++;
+            else if (learnerSlot === undefined)
+                throw Error('Mixed native Bees models require an explicit learner slot.');
+        }
+    }
+    if (learnerMatches !== (learnerSlot === undefined ? document.models.length : 1))
+        throw Error('Native Bees learner slot does not reference the pinned ML-Agents checkpoint.');
+    return requiresGpuInference;
+}
+
 function learnerMeasurements(metrics) {
     const report = {};
     const add = (name, unit, value = metrics[name]) => {
         if (value != null) report[name] = {value, unit};
     };
     add('capture_read_and_validation_wall_seconds', 'seconds');
+    add('capture_read_and_validation_cpu_seconds', 'seconds');
     add('trajectory_assembly_and_ingest_seconds', 'seconds', metrics.trajectory_assembly_and_ingest_wall_seconds);
+    add('trajectory_ingest_cpu_seconds', 'seconds');
+    add('trajectory_processing_cpu_seconds', 'seconds');
+    add('optimizer_update_cpu_seconds', 'seconds');
     add('total_wall_seconds', 'seconds');
+    add('total_cpu_seconds', 'seconds');
     for (const name of ['capture_peak_inflight_decisions', 'capture_peak_inflight_episodes',
         'capture_compact_opponent_decisions', 'capture_compact_opponent_boundaries',
+        'reward_journal_events',
         'optimizer_torch_intraop_threads', 'optimizer_torch_interop_threads'])
         add(name, 'count');
+    add('reward_journal_payload_bytes', 'bytes');
     add('optimizer_steps_per_update_second', 'rate');
     add('torch_cuda_process_peak_allocated_bytes', 'bytes');
     add('torch_cuda_process_peak_reserved_bytes', 'bytes');
@@ -62,9 +131,15 @@ function learnerMeasurements(metrics) {
 
 function createNativeBeesAdapter({
     pythonPath, rolloutBinary, runConfig, trainerConfig, checkpoint, artifactRoot,
-    learnerSlot, collectOnly = false, bundleInbox,
+    learnerSlot, collectOnly = false, bundleInbox, rocrGpuUuids = {},
 }) {
     if (typeof collectOnly !== 'boolean') throw Error('Invalid native Bees collection mode.');
+    // Local operator-owned PCI to ROCr UUID mappings are never job parameters.
+    if (!rocrGpuUuids || typeof rocrGpuUuids !== 'object' || Array.isArray(rocrGpuUuids) ||
+        Object.entries(rocrGpuUuids).some(([pci, uuid]) =>
+            !PCI.test(pci) || typeof uuid !== 'string' || !ROCM_UUID.test(uuid)))
+        throw Error('Invalid locally approved native Bees ROCm GPU UUID bindings.');
+    const rocr_gpu_uuids = Object.freeze({...rocrGpuUuids});
     const project = collectOnly ? 'bees_native_collect' : PROJECT;
     const executable = trustedFile(pythonPath);
     const run = trustedFile(runConfig);
@@ -105,6 +180,9 @@ function createNativeBeesAdapter({
         [run, sha256(runBytes)],
         ...[trainer, input, manifest].map(file => [file, sha256(fs.readFileSync(file))]),
     ]);
+    const initialGpuInference = verifyModelDependencies(
+        manifest, new Map([[input, pins.get(input)]]), input, learnerSlot,
+    );
     const configIdentity = [...pins.values(), learnerSlot ?? null];
     if (collectOnly) configIdentity.push(project);
     if (inbox) configIdentity.push(inbox);
@@ -175,14 +253,21 @@ function createNativeBeesAdapter({
                 sha256(fs.readFileSync(file)) !== digest)
                 throw Error('Native Bees output differs from its completion receipt.');
         }
+        // A manifest may retain opponent artifacts outside the round output.
+        // The complete runnable model set, not just checkpoint.pt, is the
+        // unit of continuation readiness.
+        const requiresGpuInference = verifyModelDependencies(
+            manifest, new Map([[checkpoint, receipt.next_checkpoint_sha256]]),
+            checkpoint, learnerSlot,
+        );
         return {checkpoint, manifest, checkpointDigest: receipt.next_checkpoint_sha256,
-            manifestDigest: receipt.next_manifest_sha256};
+            manifestDigest: receipt.next_manifest_sha256, requiresGpuInference};
     }
 
     function roundInputs(context) {
         if (!context.continuation_of_job_id)
             return {checkpoint: input, manifest, checkpointDigest: pins.get(input),
-                manifestDigest: pins.get(manifest)};
+                manifestDigest: pins.get(manifest), requiresGpuInference: initialGpuInference};
         if (collectOnly) throw Error('Native Bees collection requires an independent job.');
         if (!UUID.test(context.continuation_of_job_id) || context.continuation_of_job_id === context.job_id)
             throw Error('Invalid native Bees predecessor.');
@@ -206,20 +291,61 @@ function createNativeBeesAdapter({
         cwd: path.dirname(runner),
         stop_policy: 'terminate-group',
         config_sha256: configSha256,
+        ...(!collectOnly ? {
+            gpu_execution: 'cuda',
+            rocr_gpu_uuids,
+            // The existing bounded Hub verifier validates actual HIP ordinal
+            // identity against this frozen PCI lease before any model loads.
+            gpu_verify_args(_parameters, context) {
+                if (!PCI.test(String(context?.gpu_pci_address || '')) ||
+                    context?.gpu_pci_addresses !== undefined)
+                    throw Error('Native Bees ROCm verification requires one leased physical GPU.');
+                return ['-B', path.join(__dirname, 'experiment_hub_tinybrains_rocm_verify.py'),
+                    context.gpu_pci_address];
+            },
+        } : {}),
         args(parameters, context) {
             const output = jobRoot(context);
-            const {config_sha256, seed_offset, rollout_bundles} = parameters;
-            const allowed = inboxLearner ? ['config_sha256', 'seed_offset', 'rollout_bundles'] :
-                ['config_sha256', 'seed_offset'];
+            const {config_sha256, seed_offset, rollout_bundles, optimizer_threads, rollout_workers} = parameters;
+            const allowed = inboxLearner
+                ? ['config_sha256', 'seed_offset', 'rollout_bundles', 'optimizer_threads']
+                : collectOnly
+                    ? ['config_sha256', 'seed_offset', 'rollout_workers']
+                    : ['config_sha256', 'seed_offset', 'optimizer_threads', 'rollout_workers'];
             if (Object.keys(parameters).some(key => !allowed.includes(key)) ||
                 config_sha256 !== configSha256 || !Number.isSafeInteger(seed_offset) || seed_offset < 0 ||
                 (bundleRound && seed_offset !== 0))
                 throw Error('Native Bees requires the approved configuration digest and a seed offset.');
+            if (optimizer_threads !== undefined &&
+                (collectOnly || !Number.isSafeInteger(optimizer_threads) ||
+                    optimizer_threads < 1 || optimizer_threads > 256 ||
+                    !Number.isSafeInteger(context.cpu_quota) ||
+                    optimizer_threads > context.cpu_quota))
+                throw Error('Optimizer threads must be positive and within the fixed Hub CPU quota.');
+            if (rollout_workers !== undefined &&
+                (bundleRound || inboxLearner || !Number.isSafeInteger(rollout_workers) ||
+                    rollout_workers < 1 || rollout_workers > 256 ||
+                    !Number.isSafeInteger(context.cpu_quota) ||
+                    rollout_workers > context.cpu_quota ||
+                    !Array.isArray(config.levels) ||
+                    rollout_workers > config.levels.length))
+                throw Error('Rollout workers must fit the fixed Hub CPU quota and the authored Level count.');
             for (const [file, digest] of pins) {
                 if (sha256(fs.readFileSync(file)) !== digest)
                     throw Error('Native Bees pinned input changed after adapter installation.');
             }
+            verifyModelDependencies(manifest, new Map([[input, pins.get(input)]]), input, learnerSlot);
+            const pci = context.gpu_pci_address;
+            const cudaUuid = context.gpu_cuda_uuid;
+            const gpu = pci !== undefined;
+            if (context.gpu_pci_addresses !== undefined ||
+                (gpu && (!PCI.test(String(pci)) || context.gpu_mode !== 'exclusive' ||
+                    (cudaUuid !== undefined && !CUDA_UUID.test(String(cudaUuid))))) ||
+                (!gpu && cudaUuid !== undefined) || (collectOnly && gpu))
+                throw Error('Native Bees execution requires an exclusive single-GPU lease or CPU-only placement.');
             const inputs = roundInputs(context);
+            if (!gpu && inputs.requiresGpuInference)
+                throw Error('Native Bees GPU inference requires an exclusive GPU lease.');
             if (context.continuation_of_job_id &&
                 context.expected_parent_model_sha256 !== inputs.checkpointDigest)
                 throw Error('Native Bees predecessor differs from the verified Hub checkpoint.');
@@ -229,6 +355,11 @@ function createNativeBeesAdapter({
                 ...(collectOnly ? ['--collect-only'] : []),
                 ...(collectOnly && inbox ? ['--bundle-inbox', inbox] : []),
                 ...(inboxLearner ? bundleArguments(rollout_bundles) : []),
+                '--device', gpu ? 'cuda' : 'cpu',
+                ...(optimizer_threads === undefined ? [] :
+                    ['--torch-threads', String(optimizer_threads)]),
+                ...(rollout_workers === undefined ? [] :
+                    ['--rollout-workers', String(rollout_workers)]),
                 '--seed-offset', String(seed_offset),
                 ...(learnerSlot === undefined ? [] : ['--learner-slot', String(learnerSlot)])];
         },
@@ -266,6 +397,20 @@ function createNativeBeesAdapter({
                         rollout_policy_rows: {value: rollout.successful_policy_rows, unit: 'count'},
                         rollout_wall_seconds: {value: rollout.wall_seconds, unit: 'seconds'},
                         rollout_workers: {value: receipt.captures.length, unit: 'count'},
+                        ...(rollout.worker_execution_min_seconds !== undefined ? {
+                            rollout_worker_execution_min_seconds: {
+                                value: rollout.worker_execution_min_seconds, unit: 'seconds',
+                            },
+                            rollout_worker_execution_max_seconds: {
+                                value: rollout.worker_execution_max_seconds, unit: 'seconds',
+                            },
+                            rollout_worker_world_steps_min: {
+                                value: rollout.worker_world_steps_min, unit: 'count',
+                            },
+                            rollout_worker_world_steps_max: {
+                                value: rollout.worker_world_steps_max, unit: 'count',
+                            },
+                        } : {}),
                         ...(receipt.delivery ? {
                             rollout_delivery_bytes: {value: receipt.delivery.bytes, unit: 'bytes'},
                             rollout_delivery_seconds: {value: receipt.delivery.copy_wall_seconds, unit: 'seconds'},
@@ -290,6 +435,20 @@ function createNativeBeesAdapter({
                         rollout_wall_seconds: {value: rollout.wall_seconds, unit: 'seconds'},
                         ...(rollout.workers ? {
                             rollout_workers: {value: rollout.workers, unit: 'count'},
+                            ...(rollout.worker_execution_min_seconds !== undefined ? {
+                                rollout_worker_execution_min_seconds: {
+                                    value: rollout.worker_execution_min_seconds, unit: 'seconds',
+                                },
+                                rollout_worker_execution_max_seconds: {
+                                    value: rollout.worker_execution_max_seconds, unit: 'seconds',
+                                },
+                                rollout_worker_world_steps_min: {
+                                    value: rollout.worker_world_steps_min, unit: 'count',
+                                },
+                                rollout_worker_world_steps_max: {
+                                    value: rollout.worker_world_steps_max, unit: 'count',
+                                },
+                            } : {}),
                         } : {
                             rollout_startup_seconds: {value: rollout.startup_wall_seconds, unit: 'seconds'},
                             rollout_execution_seconds: {value: rollout.execution_wall_seconds, unit: 'seconds'},
@@ -297,6 +456,9 @@ function createNativeBeesAdapter({
                         }),
                         rollout_policy_rows_per_second: {
                             value: rollout.successful_policy_rows / rollout.wall_seconds, unit: 'rate',
+                        },
+                        rollout_world_steps_per_second: {
+                            value: rollout.successful_world_steps / rollout.wall_seconds, unit: 'rate',
                         },
                     } : {}),
                     ...(receipt.rollout_bundles ? {
@@ -312,6 +474,18 @@ function createNativeBeesAdapter({
                     terminal_steps: {value: metrics.terminal_steps, unit: 'count'},
                     optimizer_update_wall_seconds: {value: metrics.optimizer_update_wall_seconds, unit: 'seconds'},
                     trajectory_processing_wall_seconds: {value: metrics.trajectory_processing_wall_seconds, unit: 'seconds'},
+                    ...(rollout?.wall_seconds > 0 && metrics.total_wall_seconds > 0 ? {
+                        training_round_input_steps_per_second: {
+                            value: metrics.optimizer_input_steps /
+                                (rollout.wall_seconds + metrics.total_wall_seconds),
+                            unit: 'rate',
+                        },
+                        training_round_world_steps_per_second: {
+                            value: rollout.successful_world_steps /
+                                (rollout.wall_seconds + metrics.total_wall_seconds),
+                            unit: 'rate',
+                        },
+                    } : {}),
                     ...learnerMeasurements(metrics),
                 },
             }, PROJECT);

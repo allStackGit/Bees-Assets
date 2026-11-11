@@ -315,9 +315,10 @@ def checked_manifest(path: Path, expected_digest: bytes | None = None):
         if file_sha256(model_file) != expected_sha256:
             raise ValueError(f"model artifact changed during load: slot {slot}")
         policies[slot] = model
-    sampled_slots = sum(isinstance(model, MlagentsPolicy) for model in policies.values())
-    if sampled_slots not in (0, len(policies)):
-        raise ValueError("ML-Agents sampling requires all manifest slots to provide behavior statistics")
+    # Mixed manifests are supported: ML-Agents slots supply sampled behavior
+    # statistics, while ONNX/TorchScript opponent slots supply only actions.
+    # collect_predictions emits a behavior frame only when this particular
+    # inference batch contains a sampled policy, zero-filling nonlearner rows.
     return signature_bytes, policies, manifest_digest
 
 
@@ -386,13 +387,32 @@ def collect_predictions(
                 indices = slice(first, last + 1)
             sub_obs, sub_mask = observations[indices], allowed[indices]
         prediction = model.predict(sub_obs, sub_mask)
+        if not isinstance(prediction, (tuple, list)) or len(prediction) not in (2, 3):
+            raise ValueError("policy backend must return two actions and optional behavior statistics")
+        sampled = isinstance(model, MlagentsPolicy)
+        if (len(prediction) == 3) != sampled:
+            raise ValueError("ML-Agents slots must return behavior statistics; inference-only slots must not")
         out_cont, out_disc = prediction[:2]
-        if len(prediction) == 3:
+        if sampled:
             stats = prediction[2]
             if stats.shape != (count, CONTINUOUS * 2 + DISCRETE) or not np.isfinite(stats).all():
                 raise ValueError("invalid sampled action or behavior log probabilities")
             if behavior is None:
-                behavior = np.empty((rows, CONTINUOUS * 2 + DISCRETE), dtype="<f4")
+                # A batch may combine a trainable ML-Agents slot with ONNX
+                # or TorchScript opponents that do not return log probabilities.
+                # The capture uses one all-row behavior frame. Mixed-backend
+                # batches must zero-fill non-sampled opponent rows, while
+                # all-ML-Agents batches overwrite every statistics row and
+                # can retain the allocation-free initialization fast path.
+                shape = (rows, CONTINUOUS * 2 + DISCRETE)
+                fully_sampled = all(
+                    isinstance(policy_map[int(key)], MlagentsPolicy)
+                    for key in unique_slots
+                )
+                behavior = (
+                    np.empty(shape, dtype="<f4") if fully_sampled
+                    else np.zeros(shape, dtype="<f4")
+                )
             behavior[indices] = stats
         expected_cont = (count, CONTINUOUS)
         expected_disc = (count, DISCRETE)
