@@ -362,7 +362,7 @@ async function main() {
                         gpuResult||orders[0].action==='start'||
                         orders[0].refresh_native_observation===true||
                         ['stop_requested','finished','failed','stopped'].includes(result?.state)))
-                        setTimeout(()=>poll(),0);
+                        setTimeout(()=>poll(true),0);
                 }
             }
             if(last!=='connected')
