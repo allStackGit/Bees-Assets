@@ -367,8 +367,20 @@ impl DurableDiagnosticNotifications {
                     CampaignCue::FireTankDestroyed { object_id } => ("fire_tank_destroyed", Some(*object_id)),
                     CampaignCue::MinesweeperVictory => ("minesweeper_victory", None),
                     CampaignCue::MinesweeperDefeat => ("minesweeper_defeat", None),
+                    CampaignCue::BeenocularsBriefing { .. } => ("beenoculars_briefing", None),
+                    CampaignCue::BeenocularsUpload(_) => ("beenoculars_upload", None),
+                    CampaignCue::BeenocularsVictory => ("beenoculars_victory", None),
+                    CampaignCue::BeenocularsDefeat => ("beenoculars_defeat", None),
                 };
-                Some(json!({"section": section, "object_id": object_id}))
+                let mut payload = json!({"section": section, "object_id": object_id});
+                match cue {
+                    CampaignCue::BeenocularsBriefing { under_heavy_fire } =>
+                        payload["under_heavy_fire"] = json!(under_heavy_fire),
+                    CampaignCue::BeenocularsUpload(milestone) =>
+                        payload["percent"] = json!(milestone.percent()),
+                    _ => {}
+                }
+                Some(payload)
             },
             NativeLevelNotificationKind::Gameplay(bees_sim::combat_world::CombatEvent::ShipExtracted {
                 ship_id, side, preserved_tsv,

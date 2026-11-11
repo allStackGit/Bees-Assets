@@ -97,6 +97,12 @@ before the battle starts. Fire Tank discovery, destruction of that tank,
 and the mission outcome select the later sections. Press L to advance a
 line or K to dismiss the section. The same cues appear in headless journals.
 
+Use `"campaign_dialogue": {"titania_beenoculars": {"player_side": 1}}`
+with a defense objective for Titania II. Its briefing gates the clock and
+reinforcements in the client. The upload milestones and ending use the
+shared defense clock and result. Set `under_heavy_fire` to `true` in the
+defeat-route configuration to include the evacuation warning.
+
 To add either authored Titania obstacle field to an ordinary fleet
 snapshot, run `python native/tools/import-titania-field.py Minesweeper
 fleet.json scene.json` with PyYAML installed. Use `Bee-noculars` for

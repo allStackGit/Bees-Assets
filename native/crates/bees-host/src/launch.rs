@@ -100,7 +100,7 @@ struct LevelConfig {
     groups: Option<GroupConfig>,
     extraction: Option<ExtractionConfig>,
     survival: Option<SurvivalConfig>,
-    campaign_dialogue: Option<CampaignDialogueConfig>,
+    campaign_dialogue: Option<bees_gameplay::campaign_dialogue::CampaignDialogueSpec>,
     #[serde(default)]
     reinforcements: Vec<ReinforcementConfig>,
 }
@@ -111,12 +111,6 @@ struct ReinforcementConfig {
     after_seconds: f32,
     squad_item_ids: Vec<i64>,
     entry: Option<[f32; 2]>,
-}
-
-#[derive(Clone, Copy, Deserialize)]
-#[serde(rename_all = "snake_case", deny_unknown_fields)]
-enum CampaignDialogueConfig {
-    TitaniaMinesweeper { player_side: i32 },
 }
 
 #[derive(Deserialize, Serialize)]
@@ -385,9 +379,7 @@ fn make_setup(
             protected_ship_id: objective.protected_ship_id,
             seconds: objective.seconds,
         }),
-        minesweeper_dialogue_side: level.campaign_dialogue.as_ref().map(|dialogue| match dialogue {
-            CampaignDialogueConfig::TitaniaMinesweeper { player_side } => *player_side,
-        }),
+        campaign_dialogue: level.campaign_dialogue,
         reinforcements: level.reinforcements.iter().map(|wave| bees_host::NativeReinforcementPlan {
             after_seconds: wave.after_seconds,
             squad_item_ids: wave.squad_item_ids.iter().map(|id| remapped_squads.get(id).copied().unwrap_or(*id)).collect(),
@@ -1215,13 +1207,14 @@ fn run_battle(
                 return Err(invalid("Survival must use the authored campaign player side").into());
             }
         }
-        if let Some(CampaignDialogueConfig::TitaniaMinesweeper { player_side }) = level.campaign_dialogue {
+        if let Some(dialogue) = level.campaign_dialogue {
+            let player_side = dialogue.player_side();
             if !single_level || !sides.contains(&player_side) ||
                 mission.is_some_and(|mission| mission.player_side != player_side) ||
                 !source.source_squads.iter().any(|squad|
                     squad.side == player_side && squad.player_permissions.user_controlled)
             {
-                return Err(invalid("Minesweeper dialogue requires one Level and its authored player side").into());
+                return Err(invalid("Campaign dialogue requires one Level and its authored player side").into());
             }
         }
         if model_source.is_none() && !source.source_policy_bindings.is_empty() {

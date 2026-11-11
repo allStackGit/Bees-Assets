@@ -1,6 +1,6 @@
-//! Dialogue ported from the Titania_Minesweeper sections in CutsceneManager.cs.
+//! Authored Titania dialogue from CutsceneManager.cs and CampaignDialogueOverrides.cs.
 
-use bees_gameplay::campaign_dialogue::CampaignCue;
+use bees_gameplay::campaign_dialogue::{CampaignCue, UploadMilestone};
 
 pub(crate) fn lines(cue: CampaignCue) -> &'static [(&'static str, &'static str)] {
     match cue {
@@ -44,6 +44,59 @@ pub(crate) fn lines(cue: CampaignCue) -> &'static [(&'static str, &'static str)]
             ("Samuel", "Don't worry, ma'am, we will get you out."),
             ("Marco", "...Don't make promises you can't keep, son."),
             ("Samuel", "Lives are at stake! Commander, what do we do?"),
+        ],
+        CampaignCue::BeenocularsBriefing { under_heavy_fire } => {
+            const BRIEFING: &[(&str, &str)] = &[
+            ("Samuel", "Commander, we have to defend Titania's base long enough for all of their personnel to escape the surface."),
+            ("Alejandra", "Our personnel are preparing for evacuation. Rebooting base systems now."),
+            ("Emilia", "I'm gonna get A.M.I.!"),
+            ("Alejandra", "Em- ugh, she's already run off."),
+            ("Yoshiko", "Amy?"),
+            ("Alejandra", "A.M.I. She's a strategy AI our team was developing for military applications."),
+            ("Joey", "Sounds mighty helpful. Is there a problem with that?"),
+            ("Alejandra", "It will consume a considerable amount of time to transfer her to a portable device. Time that I don't surmise we have."),
+            ("Samuel", "We'll do our best, ma'am."),
+            ("Marco", "If this goes sideways, make damn sure that child is ready to leave on our orders."),
+            ("Alejandra", "Affirmative. Good luck, commander."),
+            ("Alejandra", "We're already under heavy fire. You have your work cut out for you, but we'll focus our efforts on an expedient evacuation."),
+            ];
+            let count = BRIEFING.len() - usize::from(!under_heavy_fire);
+            &BRIEFING[..count]
+        },
+        CampaignCue::BeenocularsUpload(UploadMilestone::Ten) => &[
+            ("Alejandra", "Upload is at ten percent, commander."),
+            ("Oviya", "The bees are definitely starting to take notice!"),
+            ("Marco", "Keep your wits about you, team."),
+        ],
+        CampaignCue::BeenocularsUpload(UploadMilestone::TwentyFour) => &[
+            ("Emilia", "Upload's at twenty four percent!"),
+            ("Alejandra", "Why would you not wait until twenty five? It's a good fraction of one hundred."),
+            ("Yoshiko", "It's turning into a real fight out here!"),
+        ],
+        CampaignCue::BeenocularsUpload(UploadMilestone::Fifty) => &[
+            ("Alejandra", "Fifty percent, now, commander."),
+            ("Emilia", "You're doing awesome! Keep it up!"),
+            ("Marco", "Don't get too comfortable now."),
+        ],
+        CampaignCue::BeenocularsUpload(UploadMilestone::SeventyFive) => &[
+            ("Emilia", "Seventy fo-"),
+            ("Alejandra", "Seventy five percent."),
+            ("Marco", "Things are getting dicey out here. That AI better be worth the trouble."),
+        ],
+        CampaignCue::BeenocularsUpload(UploadMilestone::Ninety) => &[
+            ("Alejandra", "Upload is at ninety percent, commander. You are doing an excellent job out there."),
+            ("Joey", "Just another day, ma'am."),
+        ],
+        CampaignCue::BeenocularsVictory => &[
+            ("Alejandra", "A.M.I. is fully uploaded, commander. We are engaging the ship's liftoff now."),
+            ("Emilia", "Let's go! You guys are the real deal!"),
+        ],
+        CampaignCue::BeenocularsDefeat => &[
+            ("Samuel", "Commander is calling a retreat!"),
+            ("Emilia", "But-"),
+            ("Alejandra", "Emilia, no. We are leaving now."),
+            ("Emilia", "Sorry..."),
+            ("Alejandra", "We'll join your formation shortly, commander."),
         ],
     }
 }

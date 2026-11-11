@@ -188,7 +188,7 @@ pub struct NativeAuthoredGroups {
 pub struct NativeAuthoredLevel<M, A> {
     pub reserved_ship_ids: Vec<i64>,
     pub extraction: Option<bees_sim::combat_world::ExtractionZone>,
-    pub minesweeper_dialogue_side: Option<i32>,
+    pub campaign_dialogue: Option<bees_gameplay::campaign_dialogue::CampaignDialogueSpec>,
     pub weapon_rank_frame: Option<i32>,
     pub level_geometry: Option<NativeLevelGeometry>,
     pub world_id: WorldId,
@@ -434,8 +434,8 @@ impl NativeSceneAssets {
             combat, events, authored.metadata, authored.allocate_minion,
             authored.decision_period,
         );
-        if let Some(side) = authored.minesweeper_dialogue_side {
-            state.configure_minesweeper_dialogue(side).map_err(NativeSceneBuildError::CampaignDialogue)?;
+        if let Some(dialogue) = authored.campaign_dialogue {
+            state.configure_campaign_dialogue(dialogue).map_err(NativeSceneBuildError::CampaignDialogue)?;
         }
         let mut world = World::new(authored.world_id, authored.seed, state);
         for _ in 0..authored.initial_full_asteroids {

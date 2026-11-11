@@ -700,7 +700,7 @@ pub struct NativeExportedPolicyLevelSetup<A> {
     pub model_slots: HashMap<u8, u32>,
     pub extraction: Option<bees_sim::combat_world::ExtractionZone>,
     pub survival: Option<bees_sim::episode_terminal::SurvivalObjective>,
-    pub minesweeper_dialogue_side: Option<i32>,
+    pub campaign_dialogue: Option<bees_gameplay::campaign_dialogue::CampaignDialogueSpec>,
     pub reinforcements: Vec<crate::reinforcements::NativeReinforcementPlan>,
     // Team-owned exploration starts fresh for the newly constructed
     // episode, and then follows the actual fixed-step ship movement.
@@ -714,6 +714,7 @@ pub enum NativePolicyOnlyLevelError {
     Metadata(PolicyOnlyMetadataError),
     InvalidControllerBinding(i64),
     InvalidSurvivalObjective,
+    InvalidCampaignDialogue,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -827,15 +828,22 @@ impl NativePhysicalScene {
             NativeEpisodeRewardCoordinator::new_game(bee_side, human_side)
                 .map_err(NativeSnapshotError::Episode)
         }.map_err(NativePolicyOnlyLevelError::Snapshot)?;
+        use bees_gameplay::campaign_dialogue::CampaignDialogueSpec;
+        match setup.campaign_dialogue {
+            Some(CampaignDialogueSpec::TitaniaBeenoculars { player_side, .. })
+                if !setup.survival.is_some_and(|objective| objective.defending_side == player_side) =>
+                return Err(NativePolicyOnlyLevelError::InvalidCampaignDialogue),
+            Some(CampaignDialogueSpec::TitaniaMinesweeper { .. }) if setup.survival.is_some() =>
+                return Err(NativePolicyOnlyLevelError::InvalidCampaignDialogue),
+            _ => {}
+        }
         if let Some(objective) = setup.survival {
             let target_is_live_ally = self.entities.iter().any(|entity| matches!(
                 entity,
                 NativeAuthoredEntity::Ship(ship) if ship.entity_id == objective.protected_ship_id &&
                     ship.side == objective.defending_side && !ship.vitals.is_dead()
             ));
-            if setup.extraction.is_some() || setup.minesweeper_dialogue_side.is_some() ||
-                !target_is_live_ally
-            {
+            if setup.extraction.is_some() || !target_is_live_ally {
                 return Err(NativePolicyOnlyLevelError::InvalidSurvivalObjective);
             }
             episode.arm_survival(objective, self.fixed_dt_seconds)
@@ -885,7 +893,7 @@ impl NativePhysicalScene {
             allocate_minion: setup.allocate_minion,
         })?;
         authored.extraction = setup.extraction;
-        authored.minesweeper_dialogue_side = setup.minesweeper_dialogue_side;
+        authored.campaign_dialogue = setup.campaign_dialogue;
         authored.stage_reinforcements(setup.reinforcements, dt)
             .map_err(NativePolicyOnlyLevelError::InvalidReinforcements)?;
         Ok(authored)
@@ -1032,7 +1040,7 @@ impl NativePhysicalScene {
         Ok(NativeAuthoredLevel {
             reserved_ship_ids: Vec::new(),
             extraction: None,
-            minesweeper_dialogue_side: None,
+            campaign_dialogue: None,
             weapon_rank_frame: if self.schema_version >= 23 { self.source_frame_count } else { None },
             level_geometry: (self.schema_version >= 22).then_some(NativeLevelGeometry {
                 map_bounds: self.bounds, has_obstacles: self.has_obstacles,

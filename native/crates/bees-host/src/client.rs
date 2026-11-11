@@ -195,8 +195,7 @@ impl NativeClient {
             lines.get(self.dialogue_line).map(|&(speaker, line)| (cue, speaker, line))
         });
         self.dialogue_visible = dialogue.is_some();
-        let briefing = dialogue.is_some_and(|(cue, _, _)| matches!(cue,
-            bees_gameplay::campaign_dialogue::CampaignCue::MinesweeperBriefing));
+        let briefing = dialogue.is_some_and(|(cue, _, _)| cue.is_briefing());
         if view.terminal_result.is_some() { self.held_fire_target = None; }
         self.bounds = bounds;
         if self.window.is_key_pressed(Key::Space, KeyRepeat::No) {

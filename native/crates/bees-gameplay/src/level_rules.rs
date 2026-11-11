@@ -464,7 +464,7 @@ pub struct NativeLevelState<M, A> {
     /// Individual agent clocks follow the active native policy registry.
     /// The source's default decision period is 5 physics steps.
     pub decisions: NativeDecisionCadence,
-    pub campaign_dialogue: Option<crate::campaign_dialogue::MinesweeperDialogue>,
+    pub campaign_dialogue: Option<crate::campaign_dialogue::CampaignDialogue>,
     pub(crate) held_fire_ships: Vec<i64>,
     /// Reused source Level.State.Squads snapshot; no per-frame allocation.
     command_friendlies: Vec<NativeFriendlySquad>,
@@ -538,10 +538,10 @@ impl<M, A> NativeLevelState<M, A> {
         }
     }
 
-    pub fn configure_minesweeper_dialogue(&mut self, player_side: i32)
-        -> Result<(), NativeLevelEventError>
-    {
-        let dialogue = crate::campaign_dialogue::MinesweeperDialogue::new(player_side);
+    pub fn configure_campaign_dialogue(
+        &mut self, spec: crate::campaign_dialogue::CampaignDialogueSpec,
+    ) -> Result<(), NativeLevelEventError> {
+        let dialogue = crate::campaign_dialogue::CampaignDialogue::new(spec);
         self.events.queue_campaign_dialogue(0, dialogue.current().1)?;
         self.campaign_dialogue = Some(dialogue);
         Ok(())
@@ -786,17 +786,19 @@ where
             |id| metadata.current_mined_tsv(id),
         )?;
         if let Some(dialogue) = &mut state.campaign_dialogue {
-            use crate::campaign_dialogue::CampaignCue;
             if let Some(cue) = dialogue.observe_combat(&state.combat) {
                 dialogue.set_cue(cue);
                 state.events.queue_campaign_dialogue(completed_tick, cue)?;
             }
             if let Some(finalized) = state.events.latest_finalized_episode() {
-                let cue = if finalized.result.winner_side == dialogue.player_side {
-                    CampaignCue::MinesweeperVictory
-                } else { CampaignCue::MinesweeperDefeat };
+                let cue = dialogue.outcome(finalized.result.winner_side);
                 dialogue.set_cue(cue);
                 state.events.queue_campaign_dialogue(completed_tick, cue)?;
+            } else if let Some(survival) = state.events.survival_status() {
+                while let Some(cue) = dialogue.take_upload_cue(survival) {
+                    dialogue.set_cue(cue);
+                    state.events.queue_campaign_dialogue(completed_tick, cue)?;
+                }
             }
         }
         if !state.events.completed() {
