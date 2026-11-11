@@ -201,6 +201,11 @@ The single JSON configuration file requires:
   actual seeds, model provenance, authored controller routes by side, and
   MA-POCA group assignments when present. Compare two
   stopped journals using `python native/tools/compare_evaluation.py reference.jsonl candidate.jsonl --focus-side bee`.
+  To aggregate multiple completed shard journals per side, repeat
+  `--reference-extra other-reference.jsonl` or `--candidate-extra other-candidate.jsonl`.
+  Each shard is validated independently; repeated evaluation inputs are rejected
+  rather than counted as additional matches. The report counts matching input
+  prefixes to identify the first disagreement when episodes do not pair.
   For changing-policy comparisons, pass both original manifests to verify the
   opposing artifacts and model settings. This mode requires recorded policy
   controllers on both sides with disjoint model slots. The recorded configuration covers
