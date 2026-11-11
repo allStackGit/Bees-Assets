@@ -943,7 +943,7 @@ where
         // state in both cases. Quiet ticks reuse the core counts.
         if ships_deployed || counts.events != state.combat.events().len() as u64 {
             counts.events = state.combat.events().len() as u64;
-            counts.active_ships = state.combat.physics().ships().iter().filter(|body| body.active).count() as u32;
+            counts.active_ships = state.combat.total_living_ships() as u32;
             counts.active_projectiles = state.combat.physics().projectiles().iter().filter(|body| body.active).count() as u32;
         }
         Ok(counts)
