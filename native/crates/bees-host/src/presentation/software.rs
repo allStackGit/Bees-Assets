@@ -279,6 +279,11 @@ impl NativeSoftwareRenderer {
         self.shape(&ShipShape::Box { offset: (bounds.min + bounds.max) * 0.5,
             half_extents: (bounds.max - bounds.min) * 0.5 },
             Pose { position: Vec2::ZERO, rotation_degrees: 0.0 }, 0x33455e);
+        if let Some(zone) = view.combat.active_extraction_bounds() {
+            self.shape(&ShipShape::Box { offset: (zone.min + zone.max) * 0.5,
+                half_extents: (zone.max - zone.min) * 0.5 },
+                Pose { position: Vec2::ZERO, rotation_degrees: 0.0 }, 0x75dbab);
+        }
         for (obstacle, body) in view.combat.render_obstacles() {
             counts.obstacles += 1;
             if body.primary_bounds().is_some_and(|hull| !hull.overlaps(viewport)) {
@@ -462,7 +467,8 @@ impl NativeSoftwareRenderer {
         &mut self, view: &NativeRenderWorldView<'_>, result: bees_sim::episode_terminal::EpisodeTerminalResult,
     ) {
         let title = battle_outcome_label(result);
-        let reason = if result.timed_out { "Time limit" } else { "Elimination" };
+        let reason = if result.extraction_victory { "Extraction" }
+            else if result.timed_out { "Time limit" } else { "Elimination" };
         let detail = format!("{reason}  /  {:.2} s", result.duration_seconds);
         let context = format!("World {}  /  Episode {}", view.world_id.0, view.episode_revision + 1);
         let title_scale = if self.width >= 400 && self.height >= 176 { 2 } else { 1 };

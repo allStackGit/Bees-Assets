@@ -754,6 +754,7 @@ where
                 )?;
             }
         }
+        state.combat.step_extraction(&self.collision_matrix)?;
         state.combat.consume_weapon_rank_events()?;
         state.metadata.register_scout_beacons(&state.combat, state.combat.events())?;
         state.refresh_vision_and_rewards(completed_tick)

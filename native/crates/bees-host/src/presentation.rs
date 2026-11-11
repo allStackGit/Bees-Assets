@@ -21,6 +21,7 @@ pub use selection::{NativeSquadSelection, NativeSupportMode};
 
 pub(crate) fn battle_outcome_label(result: bees_sim::episode_terminal::EpisodeTerminalResult) -> String {
     if result.winner_side == 0 { "Draw".to_owned() }
+    else if result.extraction_victory { format!("Side {} extracted", result.winner_side) }
     else { format!("Side {} wins", result.winner_side) }
 }
 

@@ -176,6 +176,7 @@ pub struct NativeAuthoredGroups {
 }
 
 pub struct NativeAuthoredLevel<M, A> {
+    pub extraction: Option<bees_sim::combat_world::ExtractionZone>,
     pub weapon_rank_frame: Option<i32>,
     pub level_geometry: Option<NativeLevelGeometry>,
     pub world_id: WorldId,
@@ -314,6 +315,9 @@ impl NativeSceneAssets {
         )
             .map_err(NativeSceneBuildError::Combat)?;
         combat.shots_harmless = authored.shots_harmless;
+        if let Some(zone) = authored.extraction {
+            combat.configure_extraction(zone).map_err(NativeSceneBuildError::Combat)?;
+        }
         if let Some(frame) = authored.weapon_rank_frame {
             combat.enable_automatic_weapon_targeting(frame).map_err(NativeSceneBuildError::Combat)?;
         }

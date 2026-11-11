@@ -697,6 +697,7 @@ pub struct NativeExportedPolicyLevelSetup<A> {
     /// Existing model slots selected by the learner/opponent scheduler,
     /// keyed by the Unity policy team (0 or 1), never inferred from side.
     pub model_slots: HashMap<u8, u32>,
+    pub extraction: Option<bees_sim::combat_world::ExtractionZone>,
     // Team-owned exploration starts fresh for the newly constructed
     // episode, and then follows the actual fixed-step ship movement.
     pub allocate_minion: A,
@@ -838,7 +839,7 @@ impl NativePhysicalScene {
             .map_err(NativePolicyOnlyLevelError::Snapshot)?;
         self.bind_exported_policy_ships()
             .map_err(NativePolicyOnlyLevelError::Snapshot)?;
-        self.into_policy_only_level(NativePolicyOnlyLevelSetup {
+        let mut authored = self.into_policy_only_level(NativePolicyOnlyLevelSetup {
             world_id: setup.world_id,
             level_id: setup.level_id,
             seed: setup.seed,
@@ -855,7 +856,9 @@ impl NativePhysicalScene {
             policy_agents: agents,
             sides,
             allocate_minion: setup.allocate_minion,
-        })
+        })?;
+        authored.extraction = setup.extraction;
+        Ok(authored)
     }
 
     /// Compose observation-capable policy agents exclusively from verified
@@ -997,6 +1000,7 @@ impl NativePhysicalScene {
             .filter_map(|(source, squad)| source.hivemind.map(|inputs| (squad.owner, inputs)))
             .collect();
         Ok(NativeAuthoredLevel {
+            extraction: None,
             weapon_rank_frame: if self.schema_version >= 23 { self.source_frame_count } else { None },
             level_geometry: (self.schema_version >= 22).then_some(NativeLevelGeometry {
                 map_bounds: self.bounds, has_obstacles: self.has_obstacles,

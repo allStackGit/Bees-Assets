@@ -355,6 +355,10 @@ impl DurableDiagnosticNotifications {
         // diagnostics. MA-POCA's ELO marker and EndEpisode command must
         // NEVER become PPO reward when this log is inspected or migrated.
         let payload = match &notification.kind {
+            NativeLevelNotificationKind::Gameplay(bees_sim::combat_world::CombatEvent::ShipExtracted {
+                ship_id, side, preserved_tsv,
+            }) => Some(json!({"event": "ship_extracted", "ship_id": ship_id,
+                "side": side, "preserved_tsv": preserved_tsv})),
             NativeLevelNotificationKind::PolicyControllerRetired { ship_id, binding_revision } =>
                 Some(json!({"ship_id": ship_id, "binding_revision": binding_revision})),
             NativeLevelNotificationKind::TargetingSelected { owner, choice } => Some(json!({
@@ -464,6 +468,7 @@ impl DurableDiagnosticNotifications {
             NativeLevelNotificationKind::EpisodeFinal(value) => Some(json!({
                 "winner_side": value.result.winner_side,
                 "timed_out": value.result.timed_out,
+                "extraction_victory": value.result.extraction_victory,
                 "duration_seconds": value.result.duration_seconds,
                 "bee_side_eliminated": value.result.bee_side_eliminated,
                 "human_side_eliminated": value.result.human_side_eliminated,

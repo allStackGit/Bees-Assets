@@ -20,6 +20,7 @@ pub enum EpisodeTerminalError {
 pub struct EpisodeTerminalResult {
     pub winner_side: i32,
     pub timed_out: bool,
+    pub extraction_victory: bool,
     pub duration_seconds: f32,
     /// Frozen at termination, just like the Unity GameState snapshot.
     pub bee_side_eliminated: bool,
@@ -345,17 +346,21 @@ impl NativeEpisodeTerminal {
         self.measurements.ticks_observed += 1;
         let bee_dead = world.living_mobile_ships_on_side(self.bee_side) == 0;
         let human_dead = world.living_mobile_ships_on_side(self.human_side) == 0;
-        if squad_was_retired {
+        let extraction_outcome = world.extraction_outcome();
+        if squad_was_retired || extraction_outcome.is_some() {
             self.measurements.elimination_checks += 1;
-            if bee_dead || human_dead {
-                let winner = if bee_dead == human_dead { 0 } else if bee_dead {
+            let elimination = || if bee_dead || human_dead {
+                Some((if bee_dead == human_dead { 0 } else if bee_dead {
                     self.human_side
                 } else {
                     self.bee_side
-                };
+                }, false))
+            } else { None };
+            if let Some((winner, extraction_victory)) = extraction_outcome.or_else(elimination) {
                 let outcome = EpisodeTerminalResult {
                     winner_side: winner,
                     timed_out: false,
+                    extraction_victory,
                     duration_seconds: self.elapsed_seconds,
                     bee_side_eliminated: bee_dead,
                     human_side_eliminated: human_dead,
@@ -369,7 +374,7 @@ impl NativeEpisodeTerminal {
         }
         if self.elapsed_seconds >= self.timeout_seconds {
             let outcome = EpisodeTerminalResult {
-                winner_side: 0, timed_out: true,
+                winner_side: 0, timed_out: true, extraction_victory: false,
                 duration_seconds: self.elapsed_seconds,
                 bee_side_eliminated: bee_dead,
                 human_side_eliminated: human_dead,

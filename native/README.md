@@ -60,6 +60,20 @@ battle outcome. Closing early and watching recordings grant no progress.
 The picker restores progress from completed run summaries in the same
 output directory. Keep those summaries to keep the unlocks.
 
+For an extraction mission, add `extraction` to the run configuration's
+Level entry. Titania I's exit-zone geometry is:
+
+```json
+{"player_side": 1, "center": [-32, 55], "half_extents": [20, 20],
+ "activation_radius": 50, "layer": 20}
+```
+
+Set `player_side` to the side the scene grants player control. A ship on
+that side activates the zone when it approaches. Player hulls that enter
+the active zone through the configured collision layer return safely.
+Extracting the final mobile player ship wins the mission. The journal
+records each departure and distinguishes an extraction victory.
+
 Space pauses all worlds; N advances one fixed round while paused; Tab changes
 the inspected world without replaying input from the previous one. Each
 Level uses its authored fixed timestep for physics, timers, and presentation.

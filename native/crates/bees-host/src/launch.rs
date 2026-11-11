@@ -98,6 +98,17 @@ struct LevelConfig {
     model_slots: HashMap<u8, u32>,
     /// Omit only for a game Level without MA-POCA group rewards.
     groups: Option<GroupConfig>,
+    extraction: Option<ExtractionConfig>,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct ExtractionConfig {
+    player_side: i32,
+    center: [f32; 2],
+    half_extents: [f32; 2],
+    activation_radius: f32,
+    layer: u8,
 }
 
 impl LevelConfig {
@@ -338,6 +349,10 @@ fn make_setup(
         groups,
         ship_catalog: assets.shared_ship_catalog(),
         model_slots: level.model_slots.clone(),
+        extraction: level.extraction.as_ref().map(|zone| bees_sim::combat_world::ExtractionZone {
+            player_side: zone.player_side, center: vec2(zone.center), half_extents: vec2(zone.half_extents),
+            activation_radius: zone.activation_radius, layer: zone.layer,
+        }),
         allocate_minion: allocate_from_stage(next_id),
     })
 }
@@ -403,7 +418,7 @@ fn gameplay_config_sha256(
         "issue_source_commands": network.issue_source_commands,
         "command_poll_rounds": if interactive { 1 } else { config.rounds_per_window },
     }));
-    let inputs = json!({
+    let mut inputs = json!({
         "source_assets_sha256": assets.source_assets_sha256(),
         "fragment_spawn": config.fragment_spawn,
         "decision_period": config.decision_period,
@@ -411,6 +426,10 @@ fn gameplay_config_sha256(
         "interactive": interactive,
         "hivemind": hivemind,
     });
+    let extraction = config.levels.iter().filter_map(|level|
+        level.extraction.as_ref().map(|zone| (level.world_id, zone)))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    if !extraction.is_empty() { inputs["extraction"] = json!(extraction); }
     format!("{:x}", Sha256::digest(inputs.to_string().as_bytes()))
 }
 
@@ -1121,6 +1140,15 @@ fn run_battle(
             squad.side == mission.player_side && squad.player_permissions.user_controlled))
         {
             return Err(invalid("The campaign player side has no authored player squad").into());
+        }
+        if let Some(zone) = &level.extraction {
+            if !sides.contains(&zone.player_side) ||
+                mission.is_some_and(|mission| mission.player_side != zone.player_side) ||
+                !source.source_squads.iter().any(|squad|
+                    squad.side == zone.player_side && squad.player_permissions.user_controlled)
+            {
+                return Err(invalid("Extraction must use the authored campaign player side").into());
+            }
         }
         if model_source.is_none() && !source.source_policy_bindings.is_empty() {
             return Err(invalid("authored policy controllers require a model worker").into());

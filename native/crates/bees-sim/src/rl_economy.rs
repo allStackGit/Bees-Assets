@@ -183,7 +183,7 @@ impl EpisodeEconomicLedger {
         self.returned_this_tick.clear();
         for event in events {
             match event {
-                CombatEvent::ShipWarped { ship_id, .. } => {
+                CombatEvent::ShipWarped { ship_id, .. } | CombatEvent::ShipExtracted { ship_id, .. } => {
                     self.returned_this_tick.insert(*ship_id);
                 }
                 CombatEvent::ShipDied { victim_id, killer_id, .. } => {

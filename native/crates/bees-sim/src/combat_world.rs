@@ -74,6 +74,8 @@ use crate::vision::{HiveMindObserver, VisionError, VisionSweepCounts, VisionFirs
 // the 140K+ combat gameplay implementation focused on authoritative state.
 mod vision;
 mod map_object;
+mod extraction;
+pub use extraction::ExtractionZone;
 mod policy;
 mod weapons;
 mod weapon_ranges;
@@ -132,6 +134,7 @@ pub enum CombatWorldError {
     UnknownShip,
     UnknownObstacle,
     InvalidObstacle,
+    InvalidExtractionZone,
     MissingShipCollisionProfile,
     InvalidShipCollisionProfile,
     InvalidFragmentationConfiguration,
@@ -325,6 +328,7 @@ pub enum CombatEvent {
     /// Emitted for projectile impacts against static geometry; the
     /// dedicated RL coordinator determines the corresponding reward.
     StaticObstacleImpact { projectile_id: i64, obstacle_id: i64 },
+    ShipExtracted { ship_id: i64, side: i32, preserved_tsv: i32 },
     MapObjectDamaged {
         projectile_id: i64,
         object_id: i64,
@@ -719,6 +723,7 @@ pub struct CombatWorld {
     /// the same KinematicPhysics world, not perception-only replicas.
     map_objects: HashMap<i64, CombatMapObject>,
     range_visible_map_objects: HashSet<i64>,
+    extraction: Option<extraction::ExtractionState>,
     /// Same Level-owned learned visibility in gameplay, evaluation and
     /// training. Replaced with the world on episode reset.
     discovery: LevelDiscovery,
@@ -906,6 +911,7 @@ impl CombatWorld {
             ships: Vec::new(),
             map_objects: HashMap::new(),
             range_visible_map_objects: HashSet::new(),
+            extraction: None,
             discovery: LevelDiscovery::new(),
             vision_observer_ids: HashSet::new(),
             vision_live_enemy_sides: HashSet::new(),
