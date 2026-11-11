@@ -173,6 +173,10 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         add('collector_'+i+'_elapsed_seconds',worker.elapsed_seconds,'seconds');
         add('collector_'+i+'_model_prepare_seconds',
             worker.model_prepare_seconds,'seconds');
+        add('collector_'+i+'_snapshot_cache_files',
+            worker.snapshot_cache_files,'count');
+        add('collector_'+i+'_snapshot_cache_bytes',
+            worker.snapshot_cache_bytes,'bytes');
         // This includes input transfer, remote compute and returned data;
         // unlike GPU busy time, it measures useful delivered experience.
         const elapsed=Number.isFinite(worker.elapsed_seconds)
