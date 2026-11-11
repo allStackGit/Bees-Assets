@@ -44,12 +44,23 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         add('group_states_per_second',row.group_states/updateWall,'rate');
     }
     for(const name of ['collection_seconds','optimization_seconds',
-        'overlap_seconds'])add(name,row[name],'seconds');
+        'overlap_seconds',
+        'ppo_profile_host_seconds','ppo_advantages_seconds',
+        'ppo_ordering_seconds','ppo_zero_grad_seconds',
+        'ppo_grouping_seconds','ppo_data_preparation_seconds',
+        'ppo_forward_loss_seconds','ppo_loss_finite_check_seconds',
+        'ppo_backward_seconds','ppo_metric_readback_seconds',
+        'ppo_gradient_processing_seconds','ppo_optimizer_step_seconds',
+        'ppo_parameter_finite_check_seconds','ppo_gpu_stream_sync_seconds'])
+        add(name,row[name],'seconds');
     for(const name of ['ant_decisions','group_states','births','deaths',
         'episodes_ended','multi_ant_states','terminal_rewards',
         'carried_matches','open_matches','peak_live_matches',
         'truncated_groups','terminal_groups','collector_count',
-        'ppo_microbatches','policy_lag','action_target'])add(name,row[name],'count');
+        'ppo_minibatches','ppo_microbatches',
+        'ppo_board_pixel_samples','ppo_max_board_cells',
+        'ppo_unique_board_shapes','policy_lag','action_target'])
+        add(name,row[name],'count');
     // These optimizer observations can be negative; they are scalar values,
     // never performance or strength certification.
     for(const name of ['loss','policy_loss','value_loss','baseline_loss',
@@ -171,8 +182,10 @@ function createTinyBrainsPersistentDockerAdapter({
     projectRoot,hubRoot,artifactRoot,sourceRunRoot,engineCacheRoot,
     seedCheckpointSha256,seedPpoUpdates,profiles,
     image='tinybrains-rocm:halifax-node',sourceWindowsRoot='B:/TinyBrains/Ants-MAPOCA',
-    enableDualGpu=false,remoteCollectors=null,
+    enableDualGpu=false,remoteCollectors=null,profilePpo=false,
 }) {
+    if(typeof profilePpo!=='boolean')
+        throw Error('PPO profiling requires an explicit local boolean opt-in.');
     if(typeof enableDualGpu!=='boolean')
         throw Error('Dual GPU enablement requires an explicit local boolean opt-in.');
     let remote=null;
@@ -309,6 +322,7 @@ function createTinyBrainsPersistentDockerAdapter({
             TINYBRAINS_REGISTRY:PROJECT_IN+'/games.toml',
             TINYBRAINS:PROJECT_IN+'/tools/tinybrains-0.5.0/tinybrains',
             PYTHONPATH:PROJECT_IN+'/src:'+PROJECT_IN+'/upstream/ants/baselines/src:'+HUB_IN+'/Training',
+            ...(profilePpo?{TINYBRAINS_PPO_PROFILE:'1'}:{}),
         },
     };
     const executable='/opt/tinybrains-venv/bin/python';
