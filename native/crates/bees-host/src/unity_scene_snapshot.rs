@@ -849,6 +849,27 @@ impl NativePhysicalScene {
             episode.arm_survival(objective, self.fixed_dt_seconds)
                 .map_err(NativeSnapshotError::Episode)
                 .map_err(NativePolicyOnlyLevelError::Snapshot)?;
+            if matches!(setup.campaign_dialogue,
+                Some(CampaignDialogueSpec::TitaniaBeenoculars { .. }))
+            {
+                // Titania2EnhancementGuard / StartTitania2Enhancements:
+                // the target is a real HumanTarget, made fully healthy at
+                // 10,000 HP when the briefing ends. Native play holds
+                // physics during the briefing, so applying that authored
+                // change once during construction is equivalent. Generic
+                // survival objectives keep their imported ship health.
+                let target = self.entities.iter_mut().find_map(|entity| match entity {
+                    NativeAuthoredEntity::Ship(ship)
+                        if ship.entity_id == objective.protected_ship_id => Some(ship),
+                    _ => None,
+                }).ok_or(NativePolicyOnlyLevelError::InvalidCampaignDialogue)?;
+                if target.ship_type != bees_sim::ship_assets::HUMAN_TARGET_TYPE {
+                    return Err(NativePolicyOnlyLevelError::InvalidCampaignDialogue);
+                }
+                target.vitals.set_full_health_capacity(10_000)
+                    .map_err(|_| NativePolicyOnlyLevelError::InvalidCampaignDialogue)?;
+                target.original_health = 10_000;
+            }
         }
         let agents = self.exported_policy_agents(&setup.model_slots)
             .map_err(NativePolicyOnlyLevelError::Snapshot)?;
