@@ -24,7 +24,6 @@ pub struct NativeReinforcementPlan {
 
 pub(crate) struct ReinforcementWave {
     tick: u64,
-    spawn: Option<Vec2>,
     entry: Option<Vec2>,
     squads: Vec<NativeAuthoredSquad>,
     ships: Vec<NativeAuthoredShip>,
@@ -37,6 +36,7 @@ impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
         if plans.is_empty() { return Ok(()); }
         let mut squad_waves = HashMap::new();
         let mut waves = Vec::with_capacity(plans.len());
+        let mut spawn_centers = Vec::with_capacity(plans.len());
         let mut previous = 0.0;
         // Equal-time waves are valid: Titania II stages two distinct
         // formations at 375 seconds with different entry destinations.
@@ -57,8 +57,9 @@ impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
                 }
             }
             previous = plan.after_seconds;
+            spawn_centers.push(plan.spawn);
             waves.push(ReinforcementWave {
-                tick: tick as u64, spawn: plan.spawn, entry: plan.entry,
+                tick: tick as u64, entry: plan.entry,
                 squads: Vec::new(), ships: Vec::new(),
             });
         }
@@ -94,7 +95,29 @@ impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
         }
         self.squads = initial_squads;
         self.entities = initial_entities;
-        for wave in &mut waves { wave.ships.sort_unstable_by_key(|ship| ship.entity_id); }
+        // Preflight and apply physical spawn positions during setup, not
+        // hundreds of seconds into a battle. Unity
+        // Squad.SetOffscreenStartingPosition preserves saved formation
+        // adjustments and bypasses obstacle-aware relocation entirely.
+        for (wave, spawn) in waves.iter_mut().zip(spawn_centers) {
+            if let Some(spawn) = spawn {
+                for ship in &mut wave.ships {
+                    let squad = wave.squads.iter().find(|squad|
+                        squad.members.contains(&ship.entity_id))
+                        .ok_or("Reinforcement ship has no staged squad")?;
+                    let offset = if squad.members.len() == 1 { Vec2::ZERO } else {
+                        self.metadata.stored_formation_offset(ship.entity_id)
+                            .ok_or("Reinforcement ship has no source formation offset")?
+                    };
+                    let position = spawn + offset;
+                    if !position.is_finite() {
+                        return Err("Reinforcement spawn and formation overflowed world coordinates");
+                    }
+                    ship.motion.position = position;
+                }
+            }
+            wave.ships.sort_unstable_by_key(|ship| ship.entity_id);
+        }
         self.metadata.reinforcements = VecDeque::from(waves);
         Ok(())
     }
@@ -108,37 +131,8 @@ impl NativePolicyOnlyMetadata {
             let wave = self.reinforcements.pop_front().expect("due wave");
             let (ships, squads) = (wave.ships.len(), wave.squads.len());
             let invalid = |error| NativeLevelStepError::Reinforcements(error);
-            // Unity Squad.SetOffscreenStartingPosition places an intact
-            // formation directly at the authored spawn, bypassing ordinary
-            // obstacle-aware startup placement. The existing ship geometry,
-            // identity and weapon configuration remain source-authored.
-            // Preflight every placement before spawning any ship.
-            let mut spawned_ships = wave.ships;
-            if let Some(spawn) = wave.spawn {
-                for ship in &mut spawned_ships {
-                    let squad = wave.squads.iter().find(|squad|
-                        squad.members.contains(&ship.entity_id))
-                        .ok_or_else(|| invalid(format!(
-                            "Reinforcement ship {} has no staged squad", ship.entity_id,
-                        )))?;
-                    let offset = if squad.members.len() == 1 { Vec2::ZERO } else {
-                        self.stored_formation_offset(ship.entity_id).ok_or_else(||
-                            invalid(format!(
-                                "Missing reinforcement formation for ship {}", ship.entity_id,
-                            ))
-                        )?
-                    };
-                    let position = spawn + offset;
-                    if !position.is_finite() {
-                        return Err(invalid(format!(
-                            "Nonfinite reinforcement spawn for ship {}", ship.entity_id,
-                        )));
-                    }
-                    ship.motion.position = position;
-                }
-            }
             let mut attachments = Vec::new();
-            for ship in spawned_ships {
+            for ship in wave.ships {
                 attachments.extend(spawn_authored_ship(&self.ship_catalog, world, ship, true)
                     .map_err(|error| invalid(format!("{error:?}")))?);
             }
