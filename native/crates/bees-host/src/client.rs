@@ -61,6 +61,9 @@ pub struct NativeClient {
     input_feedback: &'static str,
     result_controls: Option<NativeResultControls>,
     playback: bool,
+    dialogue_sequence: Option<u8>,
+    dialogue_line: usize,
+    dialogue_visible: bool,
     held_fire_target: Option<Vec2>,
     selection_drag: Option<(Vec2, Vec2)>,
     support_mode: Option<NativeTargetMode>,
@@ -94,6 +97,9 @@ impl NativeClient {
             input_feedback: "",
             result_controls: None,
             playback: false,
+            dialogue_sequence: None,
+            dialogue_line: 0,
+            dialogue_visible: false,
             held_fire_target: None,
             selection_drag: None, support_mode: None,
             rendered_frames: 0, rendered_pixels: 0, render_wall_seconds: 0.0,
@@ -114,6 +120,7 @@ impl NativeClient {
     pub fn set_playback(&mut self) { self.playback = true; }
 
     pub fn result_action(&self) -> Option<NativeResultAction> {
+        if self.dialogue_visible { return None; }
         let controls = self.result_controls?;
         if matches!(controls, NativeResultControls::PlayAgainOrWatch) &&
             self.window.is_key_pressed(Key::W, KeyRepeat::No)
@@ -170,9 +177,26 @@ impl NativeClient {
                 self.renderer.camera = NativeCamera::fit(bounds, width, height);
             }
             self.selection_owner = Some(owner);
+            self.dialogue_sequence = None;
             self.held_fire_target = None;
         }
         self.renderer.selection.synchronize(&view);
+        let dialogue = view.campaign_dialogue.and_then(|(sequence, cue)| {
+            if self.dialogue_sequence != Some(sequence) {
+                self.dialogue_sequence = Some(sequence);
+                self.dialogue_line = 0;
+            }
+            let lines = crate::presentation::campaign_dialogue::lines(cue);
+            if self.window.is_key_pressed(Key::K, KeyRepeat::No) {
+                self.dialogue_line = lines.len();
+            } else if self.dialogue_line < lines.len() && self.window.is_key_pressed(Key::L, KeyRepeat::No) {
+                self.dialogue_line += 1;
+            }
+            lines.get(self.dialogue_line).map(|&(speaker, line)| (cue, speaker, line))
+        });
+        self.dialogue_visible = dialogue.is_some();
+        let briefing = dialogue.is_some_and(|(cue, _, _)| matches!(cue,
+            bees_gameplay::campaign_dialogue::CampaignCue::MinesweeperBriefing));
         if view.terminal_result.is_some() { self.held_fire_target = None; }
         self.bounds = bounds;
         if self.window.is_key_pressed(Key::Space, KeyRepeat::No) {
@@ -216,7 +240,7 @@ impl NativeClient {
         if let (Some((_, scroll)), Some((x, y))) = (self.window.get_scroll_wheel(), mouse) {
             self.renderer.camera.zoom_at(1.15_f32.powf(scroll.clamp(-10.0, 10.0)), x, y, width, height);
         }
-        let accepts_orders = !self.playback && view.terminal_result.is_none();
+        let accepts_orders = !briefing && !self.playback && view.terminal_result.is_none();
         let pointer_active = self.window.is_active();
         let stop_fire = self.window.is_key_pressed(Key::X, KeyRepeat::No);
         let held_fire = if accepts_orders {
@@ -431,6 +455,9 @@ impl NativeClient {
         self.right_was_down = right_down;
         let render_started = Instant::now();
         let counts = self.renderer.render(&view, self.bounds);
+        if let Some((_, speaker, line)) = dialogue {
+            self.renderer.draw_campaign_dialogue(speaker, line);
+        }
         self.render_wall_seconds += render_started.elapsed().as_secs_f64();
         let ui_started = Instant::now();
         let selected = self.renderer.selected_ship.and_then(|id| view.combat.ship(id))
@@ -455,7 +482,10 @@ impl NativeClient {
                         .map(|paused| if paused { "CEASE FIRE" } else { "ATTACK ON SIGHT" })
                         .unwrap_or("FIRING STATUS UNKNOWN"))
             }).unwrap_or_default();
-        let title = if let Some(result) = view.terminal_result {
+        let title = if let Some((_, speaker, _)) = dialogue {
+            format!("Bees native | World {} | Tick {} | {speaker} speaking | L continue, K dismiss, Esc close",
+                view.world_id.0, view.tick)
+        } else if let Some(result) = view.terminal_result {
             let outcome = crate::presentation::battle_outcome_label(result);
             format!("Bees native | World {} | Episode {} | {}{} | {:.2} s | {}Tab world, Esc close",
                 view.world_id.0, view.episode_revision + 1, outcome,
@@ -503,7 +533,7 @@ impl NativeClient {
             if let Some(action) = action { return Ok(NativeClientAction::Input { action, step: false }); }
         }
         let after_frame = Instant::now();
-        let step = single_step || (!self.paused && after_frame >= self.next_step);
+        let step = !briefing && (single_step || (!self.paused && after_frame >= self.next_step));
         if step {
             // At most one authoritative step per poll. A slow inference or
             // render pass slows playback instead of changing dt or skipping

@@ -336,6 +336,7 @@ impl DurableDiagnosticNotifications {
         notification: &NativeLevelNotification,
     ) -> io::Result<()> {
         let kind = match &notification.kind {
+            NativeLevelNotificationKind::CampaignDialogue(_) => "campaign_dialogue",
             NativeLevelNotificationKind::TargetingSelected { .. } => "targeting_selected",
             NativeLevelNotificationKind::SquadChange(_) => "squad_change",
             NativeLevelNotificationKind::Gameplay(_) => "gameplay",
@@ -355,6 +356,17 @@ impl DurableDiagnosticNotifications {
         // diagnostics. MA-POCA's ELO marker and EndEpisode command must
         // NEVER become PPO reward when this log is inspected or migrated.
         let payload = match &notification.kind {
+            NativeLevelNotificationKind::CampaignDialogue(cue) => {
+                use bees_gameplay::campaign_dialogue::CampaignCue;
+                let (section, object_id) = match cue {
+                    CampaignCue::MinesweeperBriefing => ("minesweeper_briefing", None),
+                    CampaignCue::FireTankSpotted { object_id } => ("fire_tank_spotted", Some(*object_id)),
+                    CampaignCue::FireTankDestroyed { object_id } => ("fire_tank_destroyed", Some(*object_id)),
+                    CampaignCue::MinesweeperVictory => ("minesweeper_victory", None),
+                    CampaignCue::MinesweeperDefeat => ("minesweeper_defeat", None),
+                };
+                Some(json!({"section": section, "object_id": object_id}))
+            },
             NativeLevelNotificationKind::Gameplay(bees_sim::combat_world::CombatEvent::ShipExtracted {
                 ship_id, side, preserved_tsv,
             }) => Some(json!({"event": "ship_extracted", "ship_id": ship_id,

@@ -941,6 +941,7 @@ where
             tick: world.tick(),
             fixed_step_seconds: self.simulation.world_fixed_step_seconds(index)?,
             terminal_result: world.state.events.latest_finalized_episode().map(|episode| episode.result),
+            campaign_dialogue: world.state.campaign_dialogue.as_ref().map(|dialogue| dialogue.current()),
             combat: &world.state.combat,
             collision_matrix: &self.simulation.rules().collision_matrix,
             roster: world.state.events.roster(),

@@ -74,6 +74,12 @@ the active zone through the configured collision layer return safely.
 Extracting the final mobile player ship wins the mission. The journal
 records each departure and distinguishes an extraction victory.
 
+Add `"campaign_dialogue": {"titania_minesweeper": {"player_side": 1}}`
+to the Level entry for Titania I dialogue. The briefing waits for input
+before the battle starts. Fire Tank discovery, destruction of that tank,
+and the mission outcome select the later sections. Press L to advance a
+line or K to dismiss the section. The same cues appear in headless journals.
+
 Space pauses all worlds; N advances one fixed round while paused; Tab changes
 the inspected world without replaying input from the previous one. Each
 Level uses its authored fixed timestep for physics, timers, and presentation.

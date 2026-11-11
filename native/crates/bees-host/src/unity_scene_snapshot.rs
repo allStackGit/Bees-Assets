@@ -698,6 +698,7 @@ pub struct NativeExportedPolicyLevelSetup<A> {
     /// keyed by the Unity policy team (0 or 1), never inferred from side.
     pub model_slots: HashMap<u8, u32>,
     pub extraction: Option<bees_sim::combat_world::ExtractionZone>,
+    pub minesweeper_dialogue_side: Option<i32>,
     // Team-owned exploration starts fresh for the newly constructed
     // episode, and then follows the actual fixed-step ship movement.
     pub allocate_minion: A,
@@ -858,6 +859,7 @@ impl NativePhysicalScene {
             allocate_minion: setup.allocate_minion,
         })?;
         authored.extraction = setup.extraction;
+        authored.minesweeper_dialogue_side = setup.minesweeper_dialogue_side;
         Ok(authored)
     }
 
@@ -1001,6 +1003,7 @@ impl NativePhysicalScene {
             .collect();
         Ok(NativeAuthoredLevel {
             extraction: None,
+            minesweeper_dialogue_side: None,
             weapon_rank_frame: if self.schema_version >= 23 { self.source_frame_count } else { None },
             level_geometry: (self.schema_version >= 22).then_some(NativeLevelGeometry {
                 map_bounds: self.bounds, has_obstacles: self.has_obstacles,

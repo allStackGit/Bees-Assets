@@ -13,6 +13,8 @@ mod software;
 mod selection;
 mod text;
 #[cfg(feature = "client")]
+pub(crate) mod campaign_dialogue;
+#[cfg(feature = "client")]
 mod battle_menu;
 #[cfg(feature = "client")]
 pub use battle_menu::{BattleMenuRow, select_battle};
@@ -34,6 +36,7 @@ pub struct NativeRenderWorldView<'a> {
     pub tick: u64,
     pub fixed_step_seconds: f32,
     pub terminal_result: Option<bees_sim::episode_terminal::EpisodeTerminalResult>,
+    pub campaign_dialogue: Option<(u8, bees_gameplay::campaign_dialogue::CampaignCue)>,
     pub combat: &'a CombatWorld,
     pub collision_matrix: &'a bees_sim::physics::CollisionMatrix,
     pub roster: &'a NativeSquadRoster,

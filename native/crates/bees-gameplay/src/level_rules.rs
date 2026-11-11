@@ -459,6 +459,7 @@ pub struct NativeLevelState<M, A> {
     /// Individual agent clocks follow the active native policy registry.
     /// The source's default decision period is 5 physics steps.
     pub decisions: NativeDecisionCadence,
+    pub campaign_dialogue: Option<crate::campaign_dialogue::MinesweeperDialogue>,
     pub(crate) held_fire_ships: Vec<i64>,
     /// Reused source Level.State.Squads snapshot; no per-frame allocation.
     command_friendlies: Vec<NativeFriendlySquad>,
@@ -516,6 +517,7 @@ impl<M, A> NativeLevelState<M, A> {
         Self {
             combat, events, metadata, allocate_minion,
             decisions: NativeDecisionCadence::new(period),
+            campaign_dialogue: None,
             held_fire_ships: Vec::new(),
             command_friendlies: Vec::new(),
             command_bomber_contacts: Vec::new(),
@@ -529,6 +531,15 @@ impl<M, A> NativeLevelState<M, A> {
             mining_credit_totals: HashMap::new(),
             mining_credit_order: Vec::new(),
         }
+    }
+
+    pub fn configure_minesweeper_dialogue(&mut self, player_side: i32)
+        -> Result<(), NativeLevelEventError>
+    {
+        let dialogue = crate::campaign_dialogue::MinesweeperDialogue::new(player_side);
+        self.events.queue_campaign_dialogue(0, dialogue.current().1)?;
+        self.campaign_dialogue = Some(dialogue);
+        Ok(())
     }
 }
 
@@ -768,6 +779,20 @@ where
             |id| metadata.damage_metadata(id),
             |id| metadata.current_mined_tsv(id),
         )?;
+        if let Some(dialogue) = &mut state.campaign_dialogue {
+            use crate::campaign_dialogue::CampaignCue;
+            if let Some(cue) = dialogue.observe_combat(&state.combat) {
+                dialogue.set_cue(cue);
+                state.events.queue_campaign_dialogue(completed_tick, cue)?;
+            }
+            if let Some(finalized) = state.events.latest_finalized_episode() {
+                let cue = if finalized.result.winner_side == dialogue.player_side {
+                    CampaignCue::MinesweeperVictory
+                } else { CampaignCue::MinesweeperDefeat };
+                dialogue.set_cue(cue);
+                state.events.queue_campaign_dialogue(completed_tick, cue)?;
+            }
+        }
         // Unity Ship.Kill removes the casualty, then calls Squad.SetOffsets
         // on its survivors in the SAME kill transaction. The roster's
         // MemberLost changes are the authoritative signal. Other commands

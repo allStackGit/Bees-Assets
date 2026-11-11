@@ -488,6 +488,36 @@ impl NativeSoftwareRenderer {
             &detail, 1, [194, 211, 230]);
     }
 
+    #[cfg(feature = "client")]
+    pub(crate) fn draw_campaign_dialogue(&mut self, speaker: &str, message: &str) {
+        let panel_width = self.width.min(680);
+        let max_text_width = panel_width.saturating_sub(32).max(1);
+        let mut rest = message;
+        let mut lines = Vec::new();
+        while !rest.is_empty() {
+            let prefix = text::fit(rest, max_text_width);
+            if prefix.is_empty() { break; }
+            let length = if prefix.len() == rest.len() { prefix.len() }
+                else { prefix.rfind(' ').filter(|&index| index != 0).unwrap_or(prefix.len()) };
+            lines.push(&rest[..length]);
+            rest = rest[length..].trim_start();
+        }
+        let panel_height = ((lines.len() + 2) * text::HEIGHT + 22).min(self.height);
+        let top = self.height - panel_height;
+        let left = (self.width - panel_width) / 2;
+        for y in top..self.height {
+            let color = if y == top { 0x75dbab } else { 0x111e2e };
+            self.pixels[y * self.width + left..y * self.width + left + panel_width].fill(color);
+        }
+        text::draw_centered(&mut self.pixels, self.width, top + 6, speaker, 1, [117, 219, 171]);
+        let mut y = top + 9 + text::HEIGHT;
+        for line in lines {
+            text::draw_centered(&mut self.pixels, self.width, y, line, 1, [239, 247, 255]);
+            y += text::HEIGHT;
+        }
+        text::draw_centered(&mut self.pixels, self.width, y + 4, "L continue  /  K dismiss", 1, [155, 178, 206]);
+    }
+
     fn render_obstacle_debris(
         &mut self, view: &NativeRenderWorldView<'_>, counts: &mut NativeRenderCounts,
     ) {

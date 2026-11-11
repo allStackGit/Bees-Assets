@@ -12,6 +12,7 @@
 #![forbid(unsafe_code)]
 
 pub mod commands;
+pub mod campaign_dialogue;
 pub mod command_credit;
 pub mod matchup_targeting;
 pub mod squads;

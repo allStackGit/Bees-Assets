@@ -143,6 +143,7 @@ struct DamageCommandOwners {
 
 #[derive(Clone, Debug)]
 pub enum NativeLevelNotificationKind {
+    CampaignDialogue(crate::campaign_dialogue::CampaignCue),
     TargetingSelected { owner: SquadLifetime, choice: crate::squad_targeting::NativeInstalledTargeting },
     SquadChange(SquadRosterChange),
     /// Sparse, source-authored capability outcomes for the native game's
@@ -826,6 +827,16 @@ impl NativeLevelEventProcessor {
     /// acknowledge only the prefix they durably accepted.
     pub fn pending_notifications(&self) -> &[NativeLevelNotification] {
         &self.pending_notifications
+    }
+
+    pub(crate) fn queue_campaign_dialogue(
+        &mut self, tick: u64, cue: crate::campaign_dialogue::CampaignCue,
+    ) -> Result<(), NativeLevelEventError> {
+        Self::reserve_output_records(&mut self.pending_notifications, &mut self.failed, 1)?;
+        self.pending_notifications.push(NativeLevelNotification {
+            tick, kind: NativeLevelNotificationKind::CampaignDialogue(cue),
+        });
+        Ok(())
     }
 
     /// The first pending event's stable, zero-based sequence within this

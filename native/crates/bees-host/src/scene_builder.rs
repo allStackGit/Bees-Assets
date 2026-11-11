@@ -177,6 +177,7 @@ pub struct NativeAuthoredGroups {
 
 pub struct NativeAuthoredLevel<M, A> {
     pub extraction: Option<bees_sim::combat_world::ExtractionZone>,
+    pub minesweeper_dialogue_side: Option<i32>,
     pub weapon_rank_frame: Option<i32>,
     pub level_geometry: Option<NativeLevelGeometry>,
     pub world_id: WorldId,
@@ -219,6 +220,7 @@ pub enum NativeSceneBuildError {
     Vision(NativeLevelVisionError),
     Group(GroupRewardError),
     GroupConfiguration(NativeLevelEventError),
+    CampaignDialogue(NativeLevelEventError),
 }
 
 #[derive(Debug)]
@@ -505,10 +507,13 @@ impl NativeSceneAssets {
         if !events.roster().covers_live_roster(&combat) {
             return Err(NativeSceneBuildError::IncompleteSquadRoster);
         }
-        let state = NativeLevelState::with_decision_period(
+        let mut state = NativeLevelState::with_decision_period(
             combat, events, authored.metadata, authored.allocate_minion,
             authored.decision_period,
         );
+        if let Some(side) = authored.minesweeper_dialogue_side {
+            state.configure_minesweeper_dialogue(side).map_err(NativeSceneBuildError::CampaignDialogue)?;
+        }
         let mut world = World::new(authored.world_id, authored.seed, state);
         for _ in 0..authored.initial_full_asteroids {
             world.state.combat.spawn_next_full_collision_asteroid(

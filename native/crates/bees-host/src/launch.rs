@@ -99,6 +99,13 @@ struct LevelConfig {
     /// Omit only for a game Level without MA-POCA group rewards.
     groups: Option<GroupConfig>,
     extraction: Option<ExtractionConfig>,
+    campaign_dialogue: Option<CampaignDialogueConfig>,
+}
+
+#[derive(Clone, Copy, Deserialize)]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+enum CampaignDialogueConfig {
+    TitaniaMinesweeper { player_side: i32 },
 }
 
 #[derive(Deserialize, Serialize)]
@@ -352,6 +359,9 @@ fn make_setup(
         extraction: level.extraction.as_ref().map(|zone| bees_sim::combat_world::ExtractionZone {
             player_side: zone.player_side, center: vec2(zone.center), half_extents: vec2(zone.half_extents),
             activation_radius: zone.activation_radius, layer: zone.layer,
+        }),
+        minesweeper_dialogue_side: level.campaign_dialogue.as_ref().map(|dialogue| match dialogue {
+            CampaignDialogueConfig::TitaniaMinesweeper { player_side } => *player_side,
         }),
         allocate_minion: allocate_from_stage(next_id),
     })
@@ -1015,6 +1025,7 @@ fn run_battle(
     let mut source_jsons = Vec::with_capacity(config.levels.len());
     let mut source_templates: HashMap<PathBuf, (Arc<str>, String)> = HashMap::new();
     let mut source_digests = Vec::with_capacity(config.levels.len());
+    let single_level = config.levels.len() == 1;
     for level in &mut config.levels {
         if level.level_id <= 0 || level.world_id == 0 ||
             !level_ids.insert(level.level_id) ||
@@ -1148,6 +1159,15 @@ fn run_battle(
                     squad.side == zone.player_side && squad.player_permissions.user_controlled)
             {
                 return Err(invalid("Extraction must use the authored campaign player side").into());
+            }
+        }
+        if let Some(CampaignDialogueConfig::TitaniaMinesweeper { player_side }) = level.campaign_dialogue {
+            if !single_level || !sides.contains(&player_side) ||
+                mission.is_some_and(|mission| mission.player_side != player_side) ||
+                !source.source_squads.iter().any(|squad|
+                    squad.side == player_side && squad.player_permissions.user_controlled)
+            {
+                return Err(invalid("Minesweeper dialogue requires one Level and its authored player side").into());
             }
         }
         if model_source.is_none() && !source.source_policy_bindings.is_empty() {
