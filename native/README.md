@@ -134,19 +134,21 @@ before issuing the ordinary squad move to `entry`. For example, with
 [{"after_seconds": 90, "squad_item_ids": [51], "spawn": [280, -225], "entry": [200, -225]}]
 ```
 
-Omitting `spawn` retains the imported ship positions, as before; omitting
-`entry` places the wave without a movement order. Both are expressed in
-the source scene's coordinate frame. Single-ship squads spawn exactly at
-`spawn`; larger squads use Unity's ship-type-adjusted authored
-formation offsets and two-pass placement around their sprite bounds.
-The original unadjusted offsets remain the source for movement orders.
-A plan with `spawn` must contain only one squad: Unity places multiple squads at
-different centers based on their live widths. Use separate plans with
-source-authored centers, or omit `spawn` and retain their actual captured
-positions. These squads
-enter on the first fixed tick after the scheduled time while the battle
-is active. Use nondecreasing times and unique squad item IDs. Same-time
-waves retain their authored order and distinct positions. All ship,
+Omitting `spawn` retains the imported ship positions. Omitting `entry`,
+or setting it to Unity's zero-vector sentinel, places the wave without
+a movement order. Both coordinates use the source scene's frame.
+Single-ship squads spawn exactly at `spawn`; larger squads use Unity's
+ship-type-adjusted authored offsets and two-pass placement around their
+sprite bounds. Original unadjusted offsets remain the source for movement.
+A plan with `spawn` must contain only one squad: Unity independently
+spawns separate saved squads but positions Carrier child squads together,
+so a combined spawn plan cannot distinguish their source layouts. For
+multi-squad arrivals, omit `spawn` and preserve captured physical positions
+or author separate known single-squad plans. Multi-squad waves deploy in
+`squad_item_ids` order, even when the captured scene arrays differ.
+The squads arrive on the first fixed tick after their scheduled time while
+the battle is active. Use nondecreasing times and unique squad item IDs.
+Same-time waves retain their authored order and distinct positions. All ship,
 weapon and squad attributes must come from the authentic scene capture,
 not synthesized from ship type. The battle journal records their arrival
 tick and counts.
