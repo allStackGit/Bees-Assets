@@ -203,6 +203,34 @@ class JobExporter {
             return [{job_id:job.id,label:'mounted-artifacts',
                 path:path.join(root,job.id)}];
         });
+        // A managed TinyBrains learner's collector is a separate Hub job.
+        // Include its coordinator-received observations in the learner export,
+        // even when no worker-local log directory is mounted. All IDs are
+        // frozen Hub UUIDs, not browser-supplied filesystem paths.
+        const linkedCollectorSources=legacy?[]:jobs.flatMap(selected=>{
+            const learner=snapshot.jobs.find(job=>
+                job.id===selected.id&&job.project_id==='tinybrains'&&
+                job.distributed_rollout_managed===true);
+            if(!learner)return [];
+            const children=snapshot.jobs.filter(job=>
+                job.project_id==='tinybrains_rollout'&&UUID.test(job.id)&&
+                job.frozen_parameters?.learner_job_id===learner.id);
+            if(children.length>8)
+                throw Error('Distributed learner has more than eight collector jobs.');
+            const archive=path.join(this.dataRoot,'hub-observations-v1');
+            return children.flatMap(child=>{
+                const labelId=child.id.replace(/-/g,'');
+                const source=path.join(archive,child.id+'.jsonl');
+                return [
+                    ...(fs.existsSync(source)?[{
+                        job_id:learner.id,label:'collector_'+labelId+'_src',
+                        path:source,
+                    }]:[]),
+                    {job_id:learner.id,label:'collector_'+labelId+'_host',
+                        path:path.join(archive,child.id+'-resources.jsonl')},
+                ];
+            });
+        });
         const dir=fs.mkdtempSync(path.join(this.dataRoot,'job-export-'));
         fs.chmodSync(dir,0o700);
         const spec=path.join(dir,'request.json');
@@ -225,7 +253,7 @@ class JobExporter {
                         job_id:job.id,label:'hub-host-observations',
                         path:hostFile,
                     }]:[])];
-                }),...mounted],
+                }),...linkedCollectorSources,...mounted],
         }),{flag:'wx',mode:0o600});
         const id=crypto.randomUUID();
         const session={id,dir,project,status:'preparing',parts:[],error:null};

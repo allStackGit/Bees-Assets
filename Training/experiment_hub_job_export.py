@@ -26,6 +26,7 @@ CHUNK_BYTES = 24_000_000
 UUID = re.compile(r"^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$")
 PROJECT = re.compile(r"^[a-z][a-z0-9_-]{0,47}$")
 METRIC = re.compile(r"^[a-z][a-z0-9_]{0,39}$")
+COLLECTOR_OBSERVATION = re.compile(r"^collector_([0-9a-f]{32})_(host|src)$")
 SUFFIXES = {".json", ".jsonl", ".ndjson", ".csv", ".tsv", ".txt", ".log"}
 DENIED_PARTS = {
     ".git", "private", "secrets", "credentials", "keys", "checkpoints",
@@ -146,6 +147,28 @@ def export(spec: dict, output: Path) -> dict:
         for entry in additional
     ):
         raise ValueError("Invalid operator-owned extra artifact sources")
+    # Resolve collector identities from frozen Hub job provenance. The
+    # selected learner owns each linked worker; a source label alone is not
+    # sufficient authority to import another job's observations.
+    provenance_jobs = (spec.get("resource_provenance") or {}).get("jobs", [])
+    collector_pairs = {
+        (parent["job_id"], child["job_id"])
+        for parent in provenance_jobs for child in parent.get("collectors", [])
+    }
+    collector_sources: dict[str, str] = {}
+    for entry in additional:
+        match = COLLECTOR_OBSERVATION.fullmatch(entry["label"])
+        if not match:
+            continue
+        key, kind = match.groups()
+        child_id = (key[:8] + "-" + key[8:12] + "-" + key[12:16] +
+                    "-" + key[16:20] + "-" + key[20:])
+        expected = child_id + ("-resources.jsonl" if kind == "host" else ".jsonl")
+        if (project != "tinybrains" or
+            (entry["job_id"], child_id) not in collector_pairs or
+            Path(entry["path"]).name != expected):
+            raise ValueError("Collector observation source is not a managed child")
+        collector_sources[entry["label"]] = child_id
     if output.exists() or not output.parent.is_dir():
         raise ValueError("Export location already exists or is unavailable")
     if root.is_symlink() or not root.is_dir() or root.resolve() != root.absolute():
@@ -358,6 +381,7 @@ def export(spec: dict, output: Path) -> dict:
         selected_observation_writer = None
         if (metrics or all_recorded_metrics) and any(
                 source["label"] in ("hub-observations", "hub-host-observations")
+                or source["label"] in collector_sources
                 for source in additional):
             selected_observation_stream = tempfile.NamedTemporaryFile(
                 mode="w", encoding="utf-8", newline="", dir=output.parent,
@@ -427,18 +451,24 @@ def export(spec: dict, output: Path) -> dict:
                 scan_directory(source, prefix, job_id)
                 reason = "no_approved_logs"
             elif source.is_file() and safe_source(source.parent, source, False):
-                observer = (SelectedObservationRows(job_id, project,
+                child_id = collector_sources.get(entry["label"])
+                is_observation = entry["label"] in (
+                    "hub-observations", "hub-host-observations"
+                ) or child_id is not None
+                observer = (SelectedObservationRows(
+                    child_id or job_id,
+                    "tinybrains_rollout" if child_id else project,
                     None if all_recorded_metrics else set(metrics),
                     selected_observation_writer)
-                    if entry["label"] in ("hub-observations", "hub-host-observations") and
-                    (metrics or all_recorded_metrics) else None)
+                    if is_observation and (metrics or all_recorded_metrics)
+                    else None)
                 add_file(source, prefix + "/" + source.name, observer)
                 if observer is not None:
                     observation_sources += 1
                     observation_rows += observer.rows
                     partial_observation_files += int(observer.finish())
                 found_by_job[job_id] += 1
-                if entry["label"] not in ("hub-observations", "hub-host-observations"):
+                if not is_observation:
                     trainer_files_by_job[job_id] += 1
                 reason = None
             else:
