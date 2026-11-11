@@ -115,14 +115,34 @@ impl CombatWorld {
             let range_squared = range * range;
             counts.active_observers += 1;
 
-            for target in 0..self.ships.len() {
+            // A distant enemy's collider AABB cannot intersect the sight
+            // circle. Reuse the physical ship grid instead of scanning every
+            // hull for every observer (quadratic in large sparse battles).
+            // The grid includes out-of-bounds and oversized hulls, so no
+            // valid edge-of-collider sighting is discarded.
+            self.physics.circle_ship_contact_candidates(
+                origin, range, &mut self.vision_ship_candidates,
+            );
+            // Unity first-sighting credit follows Level.State.Ships order.
+            // Grid cells are not ordered that way. For dense queries avoid
+            // a costly sort: visiting the complete roster is cheaper.
+            if self.vision_ship_candidates.len().saturating_mul(2) >= self.ships.len() {
+                self.vision_ship_candidates.clear();
+                self.vision_ship_candidates.extend(0..self.ships.len());
+            } else {
+                self.vision_ship_candidates.sort_unstable();
+            }
+            let eligible_enemies = self.total_living_ships()
+                .saturating_sub(self.living_ships_on_side(side)) as u64;
+            let mut checked_enemies = 0u64;
+            for &target in &self.vision_ship_candidates {
                 let other = &self.ships[target];
                 if other.side == side || other.vitals.is_dead() ||
                     !self.physics.ships()[target].active {
                     continue;
                 }
+                checked_enemies += 1;
                 let target_id = other.entity_id;
-                counts.live_ship_pairs += 1;
                 let proximity = self.physics.ships_mut()[target]
                     .vision_proximity(origin, range_squared);
                 if counts.record_proximity(proximity) {
@@ -141,6 +161,11 @@ impl CombatWorld {
                     }
                 }
             }
+            // Skipped grid cells are provably outside the circle's AABB.
+            // Retain the ORIGINAL total-pair and bounds-rejection counters
+            // so before/after profiles remain comparable.
+            counts.live_ship_pairs += eligible_enemies;
+            counts.aabb_rejections += eligible_enemies.saturating_sub(checked_enemies);
 
             for target in 0..self.obstacles.len() {
                 let obstacle = &self.obstacles[target];
