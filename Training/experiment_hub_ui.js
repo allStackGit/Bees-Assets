@@ -1975,8 +1975,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     (worker.assigned_machine_id||'unassigned')+' '+worker.status+
                     (worker.capacity_released_at?' (released)':'')).join('; ')
                 :'';
+            const bundleLabel=j.resource_bundle
+                ?' · Resource bundle '+j.resource_bundle.id.slice(-8)+
+                    ' ('+j.resource_bundle.index+'/'+j.resource_bundle.size+')'
+                :'';
             const statusCell=cell(tr,status+lineage+promoted+gpuProof+readinessText+
-                checkpointRecovery+noTrainer+distributedSummary+
+                checkpointRecovery+noTrainer+distributedSummary+bundleLabel+
                 (hasSuccessor&&['waiting_adapter','waiting_predecessor'].includes(j.status)
                     ?' · Cancel downstream stage first':''));
 
