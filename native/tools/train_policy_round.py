@@ -238,7 +238,9 @@ def optimize(args, output, python, manifest, checkpoint, trainer_config, result,
     train_command = [
         python, str(Path(__file__).with_name("train_policy_capture.py")),
         *primary, str(manifest), str(checkpoint), str(trainer_config), str(learner_dir),
-        "--device", args.device, *rollout_args,
+        "--device", args.device,
+        *([] if args.torch_threads is None else ["--torch-threads", str(args.torch_threads)]),
+        *rollout_args,
     ]
     if args.learner_slot is not None:
         train_command += ["--learner-slot", str(args.learner_slot)]
@@ -289,6 +291,8 @@ def main() -> None:
                         help="override the run configuration's manifest for the next round")
     parser.add_argument("--learner-slot", type=int)
     parser.add_argument("--device", default="cpu")
+    parser.add_argument("--torch-threads", type=int,
+                        help="fixed optimizer intra-op threads, not rollout parallelism")
     parser.add_argument(
         "--seed-offset", type=int, default=0,
         help="unsigned offset to all authored episode seeds for a new reproducible round",
@@ -304,6 +308,8 @@ def main() -> None:
     parser.add_argument("--pinned-rollout-bundle", nargs=2, action="append", default=[],
                         metavar=("RECEIPT", "SHA256"), help="supply an approved receipt to an empty bundle template")
     args = parser.parse_args()
+    if args.torch_threads is not None and not 1 <= args.torch_threads <= 256:
+        parser.error("--torch-threads must be between 1 and 256")
     if not 0 <= args.seed_offset < (1 << 64):
         parser.error("--seed-offset must fit uint64")
     inbox = args.bundle_inbox.resolve(strict=True) if args.bundle_inbox else None
