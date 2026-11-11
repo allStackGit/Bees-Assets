@@ -138,13 +138,13 @@ def matching_input_prefixes(reference, candidate):
     return matches
 
 
-def compare(reference, candidate):
-    shared = reference.keys() & candidate.keys()
+def paired_summary(reference, candidate, shared):
+    """Summarize only strictly paired episodes, for a run or one source scene."""
     transitions = Counter()
     score = {"loss": 0.0, "draw": 0.5, "win": 1.0}
     reference_score = candidate_score = 0.0
-    duration_delta = 0.0
     timeout_delta = 0
+    duration_delta = 0.0
     for key in sorted(shared):
         before, after = reference[key], candidate[key]
         transitions[f"{before[0]}_to_{after[0]}"] += 1
@@ -155,9 +155,6 @@ def compare(reference, candidate):
     count = len(shared)
     return {
         "matched_episodes": count,
-        "unmatched_reference_episodes": len(reference) - count,
-        "unmatched_candidate_episodes": len(candidate) - count,
-        "matching_input_prefixes": matching_input_prefixes(reference, candidate),
         "outcome_transitions": dict(transitions),
         "reference_mean_score": reference_score / count if count else None,
         "candidate_mean_score": candidate_score / count if count else None,
@@ -165,6 +162,42 @@ def compare(reference, candidate):
         "timeout_count_delta": timeout_delta if count else None,
         "mean_episode_seconds_delta": duration_delta / count if count else None,
     }
+
+
+def compare(reference, candidate):
+    shared = reference.keys() & candidate.keys()
+    report = paired_summary(reference, candidate, shared)
+    report.update(
+        unmatched_reference_episodes=len(reference) - len(shared),
+        unmatched_candidate_episodes=len(candidate) - len(shared),
+        matching_input_prefixes=matching_input_prefixes(reference, candidate),
+    )
+
+    # Scene-level comparisons make failures in one authored battle visible
+    # even when another scene lifts the aggregate score. Only the original
+    # fully matched episode keys contribute to any score or outcome metric.
+    scenes = {}
+    for key in reference:
+        scene = json.loads(key)[0]
+        bucket = scenes.setdefault(scene, {"reference": 0, "candidate": 0, "paired": []})
+        bucket["reference"] += 1
+    for key in candidate:
+        scene = json.loads(key)[0]
+        bucket = scenes.setdefault(scene, {"reference": 0, "candidate": 0, "paired": []})
+        bucket["candidate"] += 1
+    for key in shared:
+        scenes[json.loads(key)[0]]["paired"].append(key)
+
+    report["by_scene_sha256"] = {}
+    for scene in sorted(scenes):
+        bucket = scenes[scene]
+        summary = paired_summary(reference, candidate, bucket["paired"])
+        summary.update(
+            unmatched_reference_episodes=bucket["reference"] - summary["matched_episodes"],
+            unmatched_candidate_episodes=bucket["candidate"] - summary["matched_episodes"],
+        )
+        report["by_scene_sha256"][scene] = summary
+    return report
 
 
 def main():
