@@ -129,6 +129,7 @@ function hubScalingEvidence(runs,key) {
             row.cpus===null||row.gpus===null||
             !/^[0-9a-f]{64}$/.test(row.configuration_sha256||''))continue;
         const comparable=rows.filter(other=>other!==row&&
+            other.cpus!==null&&other.gpus!==null&&
             other.sample_count>=5&&!other.distributed&&
             ['finished','stopped','completed','ended_early'].includes(other.status)&&
             other.host&&other.host===row.host&&
