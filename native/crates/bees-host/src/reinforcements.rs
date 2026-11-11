@@ -7,7 +7,7 @@ use bees_gameplay::level_host::NativeLevelActivationContext;
 use bees_gameplay::level_rules::NativeLevelStepError;
 use bees_gameplay::player_inputs::NativeLevelPlayerContext;
 use bees_sim::{combat_world::CombatWorld, geometry::Vec2, squad_movement::{
-    SquadFormationMember, authored_placement_offset, issue_squad_move,
+    SquadFormationMember, issue_squad_move,
 }};
 
 use crate::policy_only_metadata::NativePolicyOnlyMetadata;
@@ -110,9 +110,10 @@ impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
             }
         }
         // Preflight and apply physical spawn positions during setup, not
-        // hundreds of seconds into a battle. Unity
-        // Squad.SetOffscreenStartingPosition preserves saved formation
-        // adjustments and bypasses obstacle-aware relocation entirely.
+        // hundreds of seconds into a battle. The source Unity LevelConstructor
+        // calls Squad.SetOffsets after physical placement: a LIVE scene
+        // snapshot already stores the adjusted OffsetFromCenter. Multiplying
+        // that offset again would spread wide and Queen hulls twice.
         for (wave, spawn) in waves.iter_mut().zip(spawn_centers) {
             if let Some(spawn) = spawn {
                 for ship in &mut wave.ships {
@@ -121,9 +122,11 @@ impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
                         .ok_or("Reinforcement ship has no staged squad")?;
                     let offset = self.metadata.stored_formation_offset(ship.entity_id)
                         .ok_or("Reinforcement ship has no source formation offset")?;
-                    let position = spawn + authored_placement_offset(
-                        ship.ship_type, squad.members.len(), offset,
-                    );
+                    let position = spawn + if squad.members.len() == 1 {
+                        Vec2::ZERO
+                    } else {
+                        offset
+                    };
                     if !position.is_finite() {
                         return Err("Reinforcement spawn and formation overflowed world coordinates");
                     }
