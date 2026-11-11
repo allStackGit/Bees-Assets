@@ -2088,6 +2088,9 @@ document.addEventListener('DOMContentLoaded', () => {
         'host_cpu_busy_pct','host_gpu_busy_pct','host_gpu_vram_mb',
         'host_gpu_0_busy_pct','host_gpu_0_used_vram_mb',
         'host_gpu_1_busy_pct','host_gpu_1_used_vram_mb',
+        'host_gpu_temperature_c','host_gpu_hotspot_temperature_c',
+        'host_gpu_0_temperature_c','host_gpu_0_hotspot_temperature_c',
+        'host_gpu_1_temperature_c','host_gpu_1_hotspot_temperature_c',
         'data_preparation_seconds','inference_seconds','forward_seconds',
         'backward_seconds','optimizer_step_seconds','cpu_wait_seconds',
         'gpu_transfer_seconds','network_transfer_seconds',
@@ -2562,7 +2565,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     return description+(observed==null?''
                         :' · '+observed+' MiB host GPU used')+
                         (physical?.gpu_busy_pct==null?''
-                            :' · '+physical.gpu_busy_pct+'% host GPU busy');
+                            :' · '+physical.gpu_busy_pct+'% host GPU busy')+
+                        (physical?.temperature_c==null?''
+                            :' · '+physical.temperature_c+'°C GPU')+
+                        (physical?.hotspot_temperature_c==null?''
+                            :' · '+physical.hotspot_temperature_c+'°C hotspot');
                 });
             const resourceText=j.resources.cpus+' CPU / '+j.resources.ram_mb+
                 ' MiB / '+j.resources.gpu_count+' GPUs'+
@@ -3009,7 +3016,10 @@ document.addEventListener('DOMContentLoaded', () => {
             const discovered=(m.observed_gpus||[]).map(g=>
                 g.pci_address+' ('+g.vram_mb+' MiB'+
                 (g.used_vram_mb==null?'':', '+g.used_vram_mb+' MiB used')+
-                (g.gpu_busy_pct==null?'':', '+g.gpu_busy_pct+'% host busy')+')');
+                (g.gpu_busy_pct==null?'':', '+g.gpu_busy_pct+'% host busy')+
+                (g.temperature_c==null?'':', '+g.temperature_c+'°C GPU')+
+                (g.hotspot_temperature_c==null?'':', '+g.hotspot_temperature_c+
+                    '°C hotspot')+')');
             cell(tr,(configured.join(' / ')||'No configured GPUs')+
                 (discovered.length?' · Detected '+(m.agent_platform==='win32'?'NVIDIA':'AMD')+' GPUs: '+
                     discovered.join(', '):''));
