@@ -3210,7 +3210,9 @@ class ExperimentHub {
                 throw Error('Bundle member '+(index+1)+' requires a connected, qualified native machine.');
             const job=this.queueIn(next,selection);
             if(job.project_id==='tinybrains_rollout'||job.project_id==='bees'||
-                job.project_id==='ants'||job.status!=='waiting_adapter'||
+                job.project_id==='ants'||
+                (job.project_id==='tinybrains'&&job.frozen_parameters?.remote_rollouts===true)||
+                job.status!=='waiting_adapter'||
                 job.continuation_of_job_id||job.after_job_id||
                 !machine.installed_projects?.includes(job.project_id)||
                 !supportsEvaluation(machine.evaluation_suites,job)||
