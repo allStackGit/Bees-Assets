@@ -3095,7 +3095,8 @@ class ExperimentHub {
                 // step count or source timestamp. An archive failure stays
                 // visible rather than being hidden by another write.
                 if(!archived&&(!progress||!this.observations.error))
-                    this.observations.recordResources(job,observed,received);
+                    this.observations.recordResources(job,observed,received,
+                        progress?'not_advanced':'absent');
                 if(progress)
                     chartProgress={...progress,metrics:selectChartMetrics(
                         progress.metrics,observed,job.metric_selection,
