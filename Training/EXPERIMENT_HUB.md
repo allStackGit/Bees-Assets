@@ -1913,7 +1913,14 @@ intentionally included. Every part has a segment manifest for reconstructing
 large logs. The overall manifest reports jobs without local artifacts and
 individual unavailable or excluded log sources by job ID and source label;
 no private host paths are included in that report.
-When metrics are selected, the archive also includes
+Select **Export every recorded metric** to include all locally retained
+project-neutral source and host-resource measurements in the derived CSVs,
+including fields missing from the 96-metric chart cache. This does not require
+a script or guessing metric names. The existing selected-metrics mode remains
+available; complete exports may contain much more data and still split into
+independently downloadable ZIP parts of at most 500 MB. Remote-only trainer
+artifacts are still reported missing until a trusted transfer is installed.
+When metrics are selected (or all recorded metrics are requested), the archive also includes
 `hub-selected-metric-samples.csv`: a metric-filtered, long-form CSV from the
 bounded Hub comparison history, with job IDs, timestamps, project steps,
 segments, values, and units. This CSV is **not** the full-resolution training
