@@ -106,6 +106,9 @@ def export(spec: dict, output: Path) -> dict:
     project = spec["project_id"]
     jobs = spec["jobs"]
     root = Path(spec["artifact_root"])
+    missing_local_root = spec.get("local_artifact_root_missing", False)
+    if type(missing_local_root) is not bool:
+        raise ValueError("Invalid local artifact availability flag")
     if not PROJECT.fullmatch(project) or not isinstance(jobs, list) or not 1 <= len(jobs) <= 1000:
         raise ValueError("Invalid selected project or job count")
     if len({job["id"] for job in jobs}) != len(jobs) or any(
@@ -147,6 +150,7 @@ def export(spec: dict, output: Path) -> dict:
         "selected_metrics": metrics,
         "all_recorded_metrics": all_recorded_metrics,
         "full_project_histories": "available local files only",
+        "local_artifact_root_missing": missing_local_root,
         "include_replays": bool(spec.get("include_replays", False)),
         "excluded": [
             "checkpoints and model binaries", "secrets and credentials",
@@ -365,7 +369,12 @@ def export(spec: dict, output: Path) -> dict:
 
         # Legacy Bees run artifacts live in separately approved named sources,
         # not a job-ID directory under the coordinator data root.
-        scanned_jobs = [] if project == "bees" else jobs
+        scanned_jobs = [] if project == "bees" or missing_local_root else jobs
+        if missing_local_root:
+            missing_sources.extend({
+                "job_id": job["id"], "label": "artifacts",
+                "reason": "not_available",
+            } for job in jobs)
         for job in scanned_jobs:
             job_id = job["id"]
             folder = root / job_id
