@@ -12,6 +12,10 @@ use bees_sim::simulation::WorldId;
 mod software;
 mod selection;
 mod text;
+#[cfg(feature = "client")]
+mod battle_menu;
+#[cfg(feature = "client")]
+pub use battle_menu::select_battle;
 pub use software::{NativeCamera, NativeSoftwareRenderer, NativeRenderCounts};
 pub use selection::{NativeSquadSelection, NativeSupportMode};
 

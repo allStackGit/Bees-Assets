@@ -21,6 +21,23 @@ template enables policy capture, the capture also goes in that directory.
 Scene and model paths still resolve relative to the configuration file.
 Network and recovery runs use their configured checkpoint and journal.
 
+To choose among local battle configurations in a window, create a catalog:
+
+```json
+{
+  "battles": [
+    {"title": "Training arena", "config": "arena/run.json"},
+    {"title": "Fire Tank practice", "config": "fire-tank/run.json"}
+  ]
+}
+```
+
+Run `bees menu catalog.json --output-dir battle-runs`. Config paths are
+relative to the catalog. Click a battle or use the arrow keys and Enter.
+Closing the battle returns to the picker. Each launch stores its journal
+and any recording under a new `battle-NNNN/run` directory. Catalog play uses
+offline run configurations.
+
 Space pauses all worlds; N advances one fixed round while paused; Tab changes
 the inspected world without replaying input from the previous one. Each
 Level uses its authored fixed timestep for physics, timers, and presentation.

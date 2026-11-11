@@ -6,14 +6,24 @@ pub(super) const HEIGHT: usize = FONT[1] as usize;
 const LEFT_PADDING: usize = FONT[2] as usize;
 const STRIDE: usize = WIDTH * HEIGHT + 1;
 
-fn glyph(character: u8) -> &'static [u8] {
-    let character = if (32..127).contains(&character) { character } else { b'?' };
+fn glyph(character: char) -> &'static [u8] {
+    let character = if (' '..='~').contains(&character) { character as u8 } else { b'?' };
     let offset = 3 + usize::from(character - 32) * STRIDE;
     &FONT[offset..offset + STRIDE]
 }
 
 pub(super) fn width(text: &str, scale: usize) -> usize {
-    text.bytes().map(|character| usize::from(glyph(character)[0]) * scale).sum()
+    text.chars().map(|character| usize::from(glyph(character)[0]) * scale).sum()
+}
+
+#[cfg(feature = "client")]
+pub(super) fn fit(text: &str, max_width: usize) -> &str {
+    let mut advance = 0;
+    for (index, character) in text.char_indices() {
+        advance += usize::from(glyph(character)[0]);
+        if advance > max_width { return &text[..index]; }
+    }
+    text
 }
 
 pub(super) fn blend(destination: u32, color: [u8; 3], opacity: u32) -> u32 {
@@ -31,7 +41,7 @@ pub(super) fn draw_centered(
 ) {
     let height = pixels.len() / stride;
     let mut cursor = stride.saturating_sub(width(text, scale)) / 2;
-    for character in text.bytes() {
+    for character in text.chars() {
         let glyph = glyph(character);
         let left = cursor as isize - (LEFT_PADDING * scale) as isize;
         for (row, scanline) in glyph[1..].chunks_exact(WIDTH).enumerate() {

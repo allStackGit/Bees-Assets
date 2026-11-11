@@ -715,6 +715,7 @@ fn apply_player_input(host: &mut RolloutHost, action: NativePlayerInput) -> Resu
 }
 
 const USAGE: &str = "Usage: bees [play|run] <run.json> [--output-dir <new-dir>] [--capture <frame.ppm>]
+       bees menu <catalog.json> --output-dir <battle-runs>
   play  Open the native battle window (requires the client feature)
   run   Run the battle headlessly (default)
   --replay-inputs <player-inputs.jsonl>  Play back a recorded offline battle";
@@ -729,6 +730,20 @@ pub fn run() -> Result<(), Box<dyn Error>> {
     if first == "--help" || first == "-h" {
         println!("{USAGE}");
         return Ok(());
+    }
+    if first == "menu" {
+        #[cfg(feature = "client")]
+        {
+            let catalog = PathBuf::from(args.next().ok_or_else(|| invalid(USAGE))?);
+            if args.next().is_none_or(|flag| flag != "--output-dir") {
+                return Err(invalid(USAGE).into());
+            }
+            let output = PathBuf::from(args.next().ok_or_else(|| invalid(USAGE))?);
+            if args.next().is_some() { return Err(invalid(USAGE).into()); }
+            return run_menu(&catalog, &output);
+        }
+        #[cfg(not(feature = "client"))]
+        return Err(invalid("The battle menu requires building with --features client").into());
     }
     let play = first == "play";
     let mut view = play;
@@ -759,6 +774,13 @@ pub fn run() -> Result<(), Box<dyn Error>> {
     if replay_inputs.is_some() && output.is_none() {
         return Err(invalid("--replay-inputs requires --output-dir").into());
     }
+    run_session(&config_path, play, view, output, capture, replay_inputs)
+}
+
+fn run_session(
+    config_path: &Path, play: bool, view: bool, output: Option<PathBuf>,
+    capture: Option<PathBuf>, mut replay_inputs: Option<PathBuf>,
+) -> Result<(), Box<dyn Error>> {
     let config_path = config_path.canonicalize()?;
     let mut replay_number = 0_u64;
     let mut battle_output = output.clone();
@@ -771,6 +793,52 @@ pub fn run() -> Result<(), Box<dyn Error>> {
         battle_capture = capture.as_ref().map(|_| next.join("final.ppm"));
         battle_output = Some(next);
         replay_inputs = restart.replay_inputs;
+    }
+    Ok(())
+}
+
+#[cfg(feature = "client")]
+fn run_menu(catalog_path: &Path, output_root: &Path) -> Result<(), Box<dyn Error>> {
+    #[derive(Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct BattleEntry { title: String, config: PathBuf }
+
+    #[derive(Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct BattleCatalog { battles: Vec<BattleEntry> }
+
+    let catalog_path = catalog_path.canonicalize()?;
+    let catalog: BattleCatalog = serde_json::from_slice(&fs::read(&catalog_path)?)?;
+    if catalog.battles.is_empty() || catalog.battles.iter().any(|entry|
+        entry.title.trim().is_empty() || entry.config.as_os_str().is_empty())
+    {
+        return Err(invalid("The battle catalog needs at least one battle, each with a title and run configuration").into());
+    }
+    let root = catalog_path.parent().ok_or_else(|| invalid("missing catalog directory"))?;
+    fs::create_dir_all(output_root)?;
+    let titles = catalog.battles.iter().map(|entry| entry.title.trim()).collect::<Vec<_>>();
+    let mut selected = 0;
+    let mut number = 0_u64;
+    let mut launch_failed = false;
+    while let Some(index) = bees_host::presentation::select_battle(&titles, &mut selected, launch_failed)? {
+        let entry = &catalog.battles[index];
+        let config = resolve(root, &entry.config);
+        // Reserve a parent atomically so another launcher cannot claim the
+        // same output. The battle owns creation of its normal run directory.
+        let output = loop {
+            number = number.checked_add(1).ok_or_else(|| invalid("battle count exhausted"))?;
+            let directory = output_root.join(format!("battle-{number:04}"));
+            match fs::create_dir(&directory) {
+                Ok(()) => break directory.join("run"),
+                Err(error) if error.kind() == ErrorKind::AlreadyExists => continue,
+                Err(error) => return Err(error.into()),
+            }
+        };
+        let result = run_session(&config, true, true, Some(output), None, None);
+        launch_failed = result.is_err();
+        if let Err(error) = result {
+            eprintln!("Could not play {} ({}): {error}", entry.title, config.display());
+        }
     }
     Ok(())
 }
