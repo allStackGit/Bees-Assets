@@ -25,13 +25,21 @@ const JOB_FIELDS=[
 ];
 // Exported job metadata is operator-readable but can leave the machine when
 // downloaded. Never copy credential-like configuration fields verbatim.
+function isCredentialField(key) {
+    // JSON configuration keys can be camelCase, PascalCase, snake_case or
+    // kebab-case. Split word boundaries before identifying private fields.
+    const words=key.replace(/([A-Z]+)([A-Z][a-z])/g,'$1_$2')
+        .replace(/([a-z0-9])([A-Z])/g,'$1_$2')
+        .replace(/[^a-zA-Z0-9]+/g,'_').toLowerCase();
+    return /(?:^|_)(?:token|password|passwd|secret|credential|api_key|private_key|key_file|authorization|access_key|ssh_key|signing_key|encryption_key)(?:_|$)/.test(words);
+}
 function redactMetadata(value,depth=0) {
     if(depth>20)return '[nested configuration omitted]';
     if(Array.isArray(value))
         return value.map(item=>redactMetadata(item,depth+1));
     if(value&&typeof value==='object')
         return Object.fromEntries(Object.entries(value).map(([key,item])=>[
-            key,/(?:^|_)(?:token|password|secret|credential|api_key|private_key|key_file|authorization)(?:_|$)/i.test(key)
+            key,isCredentialField(key)
                 ?'[redacted]':redactMetadata(item,depth+1),
         ]));
     return value;
