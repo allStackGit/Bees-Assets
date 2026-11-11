@@ -7,6 +7,9 @@ const {validateProgress} = require('./experiment_hub_progress');
 
 const PROJECT = 'bees_native';
 const UUID = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
+const PCI = /^[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]$/;
+const ROCM_UUID = /^GPU-(?:[0-9a-f]{16}|[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})$/i;
+const CUDA_UUID = /^GPU-[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
 const sha256 = data => crypto.createHash('sha256').update(data).digest('hex');
 
 function trustedFile(file) {
@@ -62,9 +65,15 @@ function learnerMeasurements(metrics) {
 
 function createNativeBeesAdapter({
     pythonPath, rolloutBinary, runConfig, trainerConfig, checkpoint, artifactRoot,
-    learnerSlot, collectOnly = false, bundleInbox,
+    learnerSlot, collectOnly = false, bundleInbox, rocrGpuUuids = {},
 }) {
     if (typeof collectOnly !== 'boolean') throw Error('Invalid native Bees collection mode.');
+    // Local operator-owned PCI to ROCr UUID mappings are never job parameters.
+    if (!rocrGpuUuids || typeof rocrGpuUuids !== 'object' || Array.isArray(rocrGpuUuids) ||
+        Object.entries(rocrGpuUuids).some(([pci, uuid]) =>
+            !PCI.test(pci) || typeof uuid !== 'string' || !ROCM_UUID.test(uuid)))
+        throw Error('Invalid locally approved native Bees ROCm GPU UUID bindings.');
+    const rocr_gpu_uuids = Object.freeze({...rocrGpuUuids});
     const project = collectOnly ? 'bees_native_collect' : PROJECT;
     const executable = trustedFile(pythonPath);
     const run = trustedFile(runConfig);
@@ -206,6 +215,19 @@ function createNativeBeesAdapter({
         cwd: path.dirname(runner),
         stop_policy: 'terminate-group',
         config_sha256: configSha256,
+        ...(!collectOnly ? {
+            gpu_execution: 'cuda',
+            rocr_gpu_uuids,
+            // The existing bounded Hub verifier validates actual HIP ordinal
+            // identity against this frozen PCI lease before any model loads.
+            gpu_verify_args(_parameters, context) {
+                if (!PCI.test(String(context?.gpu_pci_address || '')) ||
+                    context?.gpu_pci_addresses !== undefined)
+                    throw Error('Native Bees ROCm verification requires one leased physical GPU.');
+                return ['-B', path.join(__dirname, 'experiment_hub_tinybrains_rocm_verify.py'),
+                    context.gpu_pci_address];
+            },
+        } : {}),
         args(parameters, context) {
             const output = jobRoot(context);
             const {config_sha256, seed_offset, rollout_bundles} = parameters;
@@ -219,6 +241,14 @@ function createNativeBeesAdapter({
                 if (sha256(fs.readFileSync(file)) !== digest)
                     throw Error('Native Bees pinned input changed after adapter installation.');
             }
+            const pci = context.gpu_pci_address;
+            const cudaUuid = context.gpu_cuda_uuid;
+            const gpu = pci !== undefined;
+            if (context.gpu_pci_addresses !== undefined ||
+                (gpu && (!PCI.test(String(pci)) || context.gpu_mode !== 'exclusive' ||
+                    (cudaUuid !== undefined && !CUDA_UUID.test(String(cudaUuid))))) ||
+                (!gpu && cudaUuid !== undefined) || (collectOnly && gpu))
+                throw Error('Native Bees execution requires an exclusive single-GPU lease or CPU-only placement.');
             const inputs = roundInputs(context);
             if (context.continuation_of_job_id &&
                 context.expected_parent_model_sha256 !== inputs.checkpointDigest)
@@ -229,6 +259,7 @@ function createNativeBeesAdapter({
                 ...(collectOnly ? ['--collect-only'] : []),
                 ...(collectOnly && inbox ? ['--bundle-inbox', inbox] : []),
                 ...(inboxLearner ? bundleArguments(rollout_bundles) : []),
+                '--device', gpu ? 'cuda' : 'cpu',
                 '--seed-offset', String(seed_offset),
                 ...(learnerSlot === undefined ? [] : ['--learner-slot', String(learnerSlot)])];
         },
