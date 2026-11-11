@@ -48,14 +48,31 @@ def completed_rollouts(capture, journal, manifest, manifest_sha, checkpoint_sha,
     # aggregates, not individual hit events, until their episode closes.
     combat_by_episode = defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
     journal_id = None
+    run_id = None
+    world_sequences = {}
     with journal.open(encoding="utf-8") as stream:
         for sequence, line in enumerate(stream):
             row = json.loads(line)
             if journal_id is None:
                 journal_id = row["journal_id"]
-            if row["journal_id"] != journal_id or row["journal_sequence"] != sequence:
+                run_id = row["run_id"]
+            if (row.get("schema_version") != 2 or
+                    not isinstance(run_id, str) or not run_id.strip() or
+                    row["journal_id"] != journal_id or row["run_id"] != run_id or
+                    type(row["journal_sequence"]) is not int or
+                    row["journal_sequence"] != sequence):
                 raise ValueError("mixed or incomplete reward journal")
-            key = row["world_id"], row["episode_revision"]
+            world, revision = row["world_id"], row["episode_revision"]
+            previous = world_sequences.get(world)
+            if (type(world) is not int or type(revision) is not int or
+                    world <= 0 or revision <= 0 or
+                    (previous is not None and revision < previous[0])):
+                raise ValueError("invalid or retired world episode in reward journal")
+            expected = previous[1] if previous is not None and revision == previous[0] else 0
+            if type(row["event_sequence"]) is not int or row["event_sequence"] != expected:
+                raise ValueError("missing or repeated world notification in reward journal")
+            world_sequences[world] = (revision, expected + 1)
+            key = world, revision
             if row["kind"] == "episode_final":
                 context = row["evaluation_context"]
                 if key in all_terminals:
