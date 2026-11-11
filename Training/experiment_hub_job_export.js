@@ -47,8 +47,10 @@ function trustedRoot(file) {
     }catch { return null; }
 }
 function loadRoots(dataRoot) {
-    const roots={tinybrains:path.join(dataRoot,'tinybrains-jobs')};
-    const machineRoots={};
+    const roots=Object.assign(Object.create(null),{
+        tinybrains:path.join(dataRoot,'tinybrains-jobs'),
+    });
+    const machineRoots=Object.create(null);
     // The coordinator selects all export directories from this private
     // operator-owned config. An optional machine mount is never an authority
     // to change native job ownership or execute a remote command.
@@ -159,7 +161,9 @@ class JobExporter {
         const project=value.project_id;
         const legacy=project==='bees'&&this.legacyBees;
         const configured=legacy?null:loadRoots(this.dataRoot);
-        const configuredRoot=legacy?this.dataRoot:configured.roots[project];
+        const configuredRoot=legacy?this.dataRoot:
+            Object.hasOwn(configured.roots,project)
+                ?configured.roots[project]:undefined;
         const approvedRoot=trustedRoot(configuredRoot);
         // The Hub's received observation archive is useful even if the
         // project's training artifacts live only on a remote machine.
@@ -193,7 +197,11 @@ class JobExporter {
         // trusted project ID. Job IDs are UUIDs from the Hub registry, never
         // arbitrary caller path components.
         const mounted=legacy?[]:jobs.flatMap(job=>{
-            const root=configured.machineRoots[job.assigned_machine_id]?.[project];
+            const machine=Object.hasOwn(configured.machineRoots,
+                job.assigned_machine_id)
+                ?configured.machineRoots[job.assigned_machine_id]:null;
+            const root=machine&&Object.hasOwn(machine,project)
+                ?machine[project]:null;
             if(!root)return [];
             // Other machines may be offline or have a temporarily unsafe
             // mount. Never let their paths block an unrelated selected job,
