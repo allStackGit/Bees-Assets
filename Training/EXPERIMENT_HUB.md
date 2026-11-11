@@ -2555,6 +2555,13 @@ service to the public Internet.
    artifacts after each successful update. These measure the worker's
    temporary snapshot disk footprint, not the learner's checkpoint storage;
    they should remain bounded by the active opponent manifest.
+   With locally approved TinyBrains `profilePpo:true`, the collector's
+   `rollout_engine_step_seconds` and `rollout_learner_inference_seconds`
+   distinguish official-engine stepping (including transport) from
+   learner policy/critic inference, CPU readbacks and record assembly.
+   They are host-wall observations on each collector, not exclusive CPU
+   consumption or GPU kernel time. The Hub exposes both per-collector
+   measurements; legacy histories without them remain valid.
    The Hub also derives `collector_N_decisions_per_second` and
    `collector_N_engine_steps_per_second` from delivered work divided
    by `collector_N_elapsed_seconds`. For the learner's local collector
