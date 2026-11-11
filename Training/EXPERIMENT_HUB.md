@@ -2453,8 +2453,11 @@ preflight; GPUs additionally need matching physical device registration
 and the locally approved GPU mode. All members and claims are committed in
 one durable registry update, or none are committed. Duplicate jobs are
 not launched, machines are not re-enrolled, and the allocation does not
-change during execution. Each member receives its own native owner, lease,
-artifact lineage and existing GPU qualification/Start/Stop gates.
+change during execution. Bundle machines cannot be moved by manual claim
+changes or the Hub's automatic queued-claim rebalancing: cancel a fully
+unstarted bundle and submit a new one to change placement. Each member
+receives its own native owner, lease, artifact lineage and existing GPU
+qualification/Start/Stop gates.
 
 A bundle is **resource coordination**, not a distributed learner.
 There is no automatic rollout transport, policy synchronization, gradient
