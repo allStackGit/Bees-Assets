@@ -232,13 +232,12 @@ def expand(run, scene, manifest, read_capture=None):
                     # Require the capture to precede the first physics
                     # movement tick, preserving its real spawn position,
                     # speed, health, weapons and physical identity.
-                    velocity = ship.get("body_velocity")
-                    if not isinstance(velocity, dict) or (
-                        abs(number(velocity.get("x"), "ship velocity x")) > 0.0001 or
-                        abs(number(velocity.get("y"), "ship velocity y")) > 0.0001 or
-                        ship.get("is_moving") is not False or
-                        ship.get("has_target_coordinates") is not True
-                    ):
+                    # Ship.ClearData assigns CurrentSpeed = Speed and
+                    # does not establish zero rigidbody velocity as a
+                    # source invariant. Preserve the actual velocity;
+                    # only require the pre-FixedUpdate movement flags.
+                    if (ship.get("is_moving") is not False or
+                        ship.get("has_target_coordinates") is not True):
                         fail(f"{label} ship {eid} must be captured after its entry order but before movement")
                     ship["has_target_coordinates"] = False
                     ship["target_coordinates"] = {"x": 0.0, "y": 0.0}
