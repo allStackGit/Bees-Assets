@@ -3094,7 +3094,7 @@ class ExperimentHub {
                 // authenticated host observation with no invented trainer
                 // step count or source timestamp. An archive failure stays
                 // visible rather than being hidden by another write.
-                if(!archived&&!this.observations.error)
+                if(!archived&&(!progress||!this.observations.error))
                     this.observations.recordResources(job,observed,received);
                 if(progress)
                     chartProgress={...progress,metrics:selectChartMetrics(
