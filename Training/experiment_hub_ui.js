@@ -1679,7 +1679,9 @@ document.addEventListener('DOMContentLoaded', () => {
             feedback('hub-compare-export-message','Preparing complete job archives; no training files will be modified.');
             const requested=await action('hub/exports',{
                 project_id:project,job_ids:ids,
-                metrics:selectedComparisonMetrics().map(key=>key.slice(7)),
+                metrics:exportAllMetricsToggle.checked?[]:
+                    selectedComparisonMetrics().map(key=>key.slice(7)),
+                all_recorded_metrics:exportAllMetricsToggle.checked,
                 include_replays:$('hub-compare-export-replays').checked,
             });
             // An export is read-only and asynchronous. Poll its status rather
@@ -3058,6 +3060,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 feedback('hub-compare-export-message',String(error.message||error));
             }
         });
+    const exportAllMetricsLabel=document.createElement('label');
+    const exportAllMetricsToggle=document.createElement('input');
+    exportAllMetricsToggle.type='checkbox';
+    exportAllMetricsToggle.id='hub-export-all-recorded-metrics';
+    exportAllMetricsLabel.append(exportAllMetricsToggle,
+        document.createTextNode(' Export every recorded metric, including those not retained in charts'));
+    $('hub-compare-export-full').insertAdjacentElement(
+        'beforebegin',exportAllMetricsLabel);
     $('hub-compare-export-full').addEventListener('click',async()=>{
         try{await exportCompleteComparison();}
         catch(error){

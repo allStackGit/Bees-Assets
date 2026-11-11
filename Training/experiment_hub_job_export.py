@@ -56,7 +56,7 @@ def safe_source(root: Path, source: Path, include_replays: bool) -> bool:
 class SelectedObservationRows:
     """Stream one captured native observation file into a selected-metric CSV."""
 
-    def __init__(self, job_id: str, project: str, names: set[str], writer) -> None:
+    def __init__(self, job_id: str, project: str, names: set[str] | None, writer) -> None:
         self.job_id = job_id
         self.project = project
         self.names = names
@@ -74,7 +74,7 @@ class SelectedObservationRows:
             raise ValueError("Observation archive lineage does not match the selected job")
         for origin, field in (("trainer", "metrics"), ("resource", "resource_metrics")):
             for name, measurement in (row.get(field) or {}).items():
-                if name not in self.names:
+                if self.names is not None and name not in self.names:
                     continue
                 self.writer.writerow((
                     self.job_id, self.project, row.get("observed_at"),
@@ -119,6 +119,9 @@ def export(spec: dict, output: Path) -> dict:
         for name in metrics
     ) or len(set(metrics)) != len(metrics):
         raise ValueError("Invalid metric selection")
+    all_recorded_metrics = spec.get("all_recorded_metrics", False)
+    if type(all_recorded_metrics) is not bool or (all_recorded_metrics and metrics):
+        raise ValueError("Export all metrics must not include a separate metric selection")
     additional = spec.get("additional_sources", [])
     selected_ids = {job["id"] for job in jobs}
     if not isinstance(additional, list) or len(additional) > 6000 or any(
@@ -142,6 +145,7 @@ def export(spec: dict, output: Path) -> dict:
         "exported_at": datetime.now(timezone.utc).isoformat(),
         "selected_job_ids": [job["id"] for job in jobs],
         "selected_metrics": metrics,
+        "all_recorded_metrics": all_recorded_metrics,
         "full_project_histories": "available local files only",
         "include_replays": bool(spec.get("include_replays", False)),
         "excluded": [
@@ -287,7 +291,7 @@ def export(spec: dict, output: Path) -> dict:
                         continue
                     for point in entry.get("points", []):
                         for name, measurement in (point.get("metrics") or {}).items():
-                            if name not in selected:
+                            if not all_recorded_metrics and name not in selected:
                                 continue
                             writer.writerow((
                                 entry["job_id"], point.get("observed_at"),
@@ -309,6 +313,7 @@ def export(spec: dict, output: Path) -> dict:
         metadata = {
             "schema_version": 1, "project_id": project,
             "jobs": jobs, "selected_metrics": metrics,
+            "all_recorded_metrics": all_recorded_metrics,
         }
         add_bytes("hub-jobs.json", json.dumps(metadata, indent=2).encode("utf-8"))
         add_bytes(
@@ -316,7 +321,7 @@ def export(spec: dict, output: Path) -> dict:
             json.dumps(spec.get("progress", {}), indent=2).encode("utf-8"),
         )
         manifest["selected_metric_sample_rows"] = (
-            add_selected_metric_history() if metrics else 0
+            add_selected_metric_history() if metrics or all_recorded_metrics else 0
         )
         manifest["selected_metric_sample_resolution"] = (
             "bounded Hub chart history; full project logs remain separate"
@@ -327,7 +332,8 @@ def export(spec: dict, output: Path) -> dict:
         selected_observation_path = None
         selected_observation_stream = None
         selected_observation_writer = None
-        if metrics and any(source["label"] == "hub-observations" for source in additional):
+        if (metrics or all_recorded_metrics) and any(
+                source["label"] == "hub-observations" for source in additional):
             selected_observation_stream = tempfile.NamedTemporaryFile(
                 mode="w", encoding="utf-8", newline="", dir=output.parent,
                 prefix="hub-selected-observations-", suffix=".csv", delete=False,
@@ -385,9 +391,11 @@ def export(spec: dict, output: Path) -> dict:
                 scan_directory(source, prefix, job_id)
                 reason = "no_approved_logs"
             elif source.is_file() and safe_source(source.parent, source, False):
-                observer = (SelectedObservationRows(job_id, project, set(metrics),
+                observer = (SelectedObservationRows(job_id, project,
+                    None if all_recorded_metrics else set(metrics),
                     selected_observation_writer)
-                    if entry["label"] == "hub-observations" and metrics else None)
+                    if entry["label"] == "hub-observations" and
+                    (metrics or all_recorded_metrics) else None)
                 add_file(source, prefix + "/" + source.name, observer)
                 if observer is not None:
                     observation_sources += 1

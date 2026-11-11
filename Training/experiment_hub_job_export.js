@@ -77,7 +77,8 @@ class JobExporter {
     start(value) {
         if(!value||typeof value!=='object'||Array.isArray(value)||
             Object.keys(value).some(key=>![
-                'project_id','job_ids','metrics','include_replays'].includes(key))||
+                'project_id','job_ids','metrics','all_recorded_metrics',
+                'include_replays'].includes(key))||
             !PROJECT.test(String(value.project_id||''))||
             !Array.isArray(value.job_ids)||value.job_ids.length<1||
             value.job_ids.length>1000||
@@ -86,6 +87,9 @@ class JobExporter {
             !Array.isArray(value.metrics)||value.metrics.length>256||
             value.metrics.some(m=>!METRIC.test(String(m)))||
             new Set(value.metrics).size!==value.metrics.length||
+            (value.all_recorded_metrics!==undefined&&
+                typeof value.all_recorded_metrics!=='boolean')||
+            (value.all_recorded_metrics===true&&value.metrics.length>0)||
             (value.include_replays!==undefined&&typeof value.include_replays!=='boolean'))
             throw Error('Choose distinct managed jobs and up to 256 metric names.');
         if([...this.sessions.values()].some(item=>item.status==='preparing'))
@@ -118,6 +122,7 @@ class JobExporter {
         const spec=path.join(dir,'request.json');
         fs.writeFileSync(spec,JSON.stringify({
             project_id:project,jobs,metrics:value.metrics,
+            all_recorded_metrics:value.all_recorded_metrics===true,
             include_replays:value.include_replays===true,
             artifact_root:root,progress,
             additional_sources:legacy?this.legacyBees.sources(jobs):jobs.map(job=>({
