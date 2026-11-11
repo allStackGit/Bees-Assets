@@ -20,6 +20,36 @@ function trustedFile(file) {
     return resolved;
 }
 
+
+// The manifest is the complete runnable model set, not just the learner
+// checkpoint. Resolve every slot against its declared digest before leasing
+// compute or advertising a checkpoint as resumable. Reuse already-verified
+// learner digests to avoid hashing the same large file twice.
+function verifyModelDependencies(manifest, checked = new Map()) {
+    const document = JSON.parse(fs.readFileSync(manifest, 'utf8'));
+    if (document?.format !== 'bees-native-model-v1' ||
+        !Array.isArray(document.models) || !document.models.length)
+        throw Error('Invalid native Bees model manifest.');
+    const slots = new Set();
+    for (const model of document.models) {
+        if (!model || !Number.isSafeInteger(model.slot) || model.slot < 0 ||
+            model.slot > 0xffffffff || slots.has(model.slot) ||
+            !['mlagents', 'onnx', 'torchscript'].includes(model.backend) ||
+            typeof model.path !== 'string' || !model.path ||
+            !/^[a-f0-9]{64}$/.test(model.sha256))
+            throw Error('Invalid native Bees model slot.');
+        slots.add(model.slot);
+        const artifact = path.resolve(path.dirname(manifest), model.path);
+        let digest = checked.get(artifact);
+        if (digest === undefined) {
+            digest = sha256(fs.readFileSync(trustedFile(artifact)));
+            checked.set(artifact, digest);
+        }
+        if (digest !== model.sha256)
+            throw Error('Native Bees model artifact differs from its manifest.');
+    }
+}
+
 function learnerMeasurements(metrics) {
     const report = {};
     const add = (name, unit, value = metrics[name]) => {
@@ -121,6 +151,7 @@ function createNativeBeesAdapter({
         [run, sha256(runBytes)],
         ...[trainer, input, manifest].map(file => [file, sha256(fs.readFileSync(file))]),
     ]);
+    verifyModelDependencies(manifest, new Map([[input, pins.get(input)]]));
     const configIdentity = [...pins.values(), learnerSlot ?? null];
     if (collectOnly) configIdentity.push(project);
     if (inbox) configIdentity.push(inbox);
@@ -191,33 +222,12 @@ function createNativeBeesAdapter({
                 sha256(fs.readFileSync(file)) !== digest)
                 throw Error('Native Bees output differs from its completion receipt.');
         }
-        // A manifest can retain opponent weights outside the round output.
-        // Check those immutable dependencies before advertising a resumable
-        // checkpoint or passing it to a continuation. Checking only the
-        // learner weights would report a broken lineage as ready.
-        const document = JSON.parse(fs.readFileSync(manifest, 'utf8'));
-        if (document?.format !== 'bees-native-model-v1' ||
-            !Array.isArray(document.models) || !document.models.length)
-            throw Error('Invalid native Bees completed model manifest.');
-        const checked = new Map([[checkpoint, receipt.next_checkpoint_sha256]]);
-        const slots = new Set();
-        for (const model of document.models) {
-            if (!model || !Number.isSafeInteger(model.slot) || model.slot < 0 ||
-                model.slot > 0xffffffff || slots.has(model.slot) ||
-                !['mlagents', 'onnx', 'torchscript'].includes(model.backend) ||
-                typeof model.path !== 'string' || !model.path ||
-                !/^[a-f0-9]{64}$/.test(model.sha256))
-                throw Error('Invalid native Bees completed model slot.');
-            slots.add(model.slot);
-            const artifact = path.resolve(path.dirname(manifest), model.path);
-            let digest = checked.get(artifact);
-            if (digest === undefined) {
-                digest = sha256(fs.readFileSync(trustedFile(artifact)));
-                checked.set(artifact, digest);
-            }
-            if (digest !== model.sha256)
-                throw Error('Native Bees continuation model artifact differs from its manifest.');
-        }
+        // A manifest may retain opponent artifacts outside the round output.
+        // The complete runnable model set, not just checkpoint.pt, is the
+        // unit of continuation readiness.
+        verifyModelDependencies(
+            manifest, new Map([[checkpoint, receipt.next_checkpoint_sha256]]),
+        );
         return {checkpoint, manifest, checkpointDigest: receipt.next_checkpoint_sha256,
             manifestDigest: receipt.next_manifest_sha256};
     }
@@ -284,6 +294,7 @@ function createNativeBeesAdapter({
                 if (sha256(fs.readFileSync(file)) !== digest)
                     throw Error('Native Bees pinned input changed after adapter installation.');
             }
+            verifyModelDependencies(manifest, new Map([[input, pins.get(input)]]));
             const pci = context.gpu_pci_address;
             const cudaUuid = context.gpu_cuda_uuid;
             const gpu = pci !== undefined;
