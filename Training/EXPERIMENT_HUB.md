@@ -2376,9 +2376,14 @@ Compare includes **Observed resource scaling** for selected runs with a
 recorded throughput metric (unit `rate`). It summarizes bounded chart
 samples from the latest continuous segment and shows throughput per allocated
 CPU core. Marginal figures are shown only for completed jobs with at least
-five samples and matching frozen configuration, physical host ID, GPU mode,
-and one varied resource dimension. Multi-machine TinyBrains jobs report
-learner-only CPU budgets and never receive a misleading marginal estimate.
+five samples, matching frozen configurations, and exactly one monotonically
+increased resource dimension. For distributed TinyBrains learners, the
+allocator sums the learner and its separately leased remote collectors;
+the comparison requires the same set of machines, the same learner/collector
+roles, and unchanged GPU modes. It refuses incomplete group records and
+CPU/GPU reallocations that reduce resources on one host while increasing
+another. These remain *reserved* resources: they do not prove the remote
+thread count, useful utilization or incremental speed for arbitrary scaling.
 All such comparisons remain observational, not independent evidence of
 causality, energy efficiency, or full-resolution training performance.
 Export the complete job histories for definitive throughput investigation.
