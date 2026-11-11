@@ -3176,6 +3176,73 @@ class ExperimentHub {
         this.commit(next);
         return copy(job);
     }
+    // Atomically reserve fixed resources for independently executable jobs
+    // across projects and machines. This is the common *control-plane*
+    // foundation for distributed workloads, not a data-plane protocol or a
+    // simultaneous-Start guarantee. Every member retains its own native
+    // owner, checkpoint, Stop policy, and explicit Start authorization.
+    queueResourceBundle(value) {
+        if(!object(value)||value.confirm_queue!==true||
+            Object.keys(value).some(key=>!['confirm_queue','members'].includes(key))||
+            !Array.isArray(value.members)||value.members.length<2||
+            value.members.length>16)
+            throw Error('Confirm 2–16 machine-pinned job allocations in one resource bundle.');
+        const machines=this.snapshot().machines;
+        const next=copy(this.state);
+        const bundleId=crypto.randomUUID(),jobs=[],leases=[];
+        for(const [index,selection] of value.members.entries()) {
+            if(!object(selection)||
+                Object.keys(selection).some(key=>![
+                    'configuration_id','expected_revision','machine_id',
+                    'resources','metric_selection',
+                ].includes(key))||
+                !ID.test(String(selection.machine_id||'')))
+                throw Error('Each bundle member requires a saved configuration, machine ID and fixed resource budget.');
+            const machine=machines.find(host=>host.id===selection.machine_id);
+            if(!machine||machine.status!=='connected'||
+                machine.local_executor_enabled!==true||
+                machine.native_preflight_passed!==true||
+                !['win32','linux'].includes(machine.agent_platform)||
+                (machine.agent_platform==='linux'&&
+                    (machine.execution_capabilities?.cgroup_v2_detected!==true||
+                     !['cpu','memory'].every(controller=>
+                         machine.execution_capabilities?.cgroup_controllers?.includes(controller)))))
+                throw Error('Bundle member '+(index+1)+' requires a connected, qualified native machine.');
+            const job=this.queueIn(next,selection);
+            if(job.project_id==='tinybrains_rollout'||job.project_id==='bees'||
+                job.project_id==='ants'||job.status!=='waiting_adapter'||
+                job.continuation_of_job_id||job.after_job_id||
+                !machine.installed_projects?.includes(job.project_id)||
+                !supportsEvaluation(machine.evaluation_suites,job)||
+                !supportsTinyBrainsProfile(machine,job))
+                throw Error('Bundle member '+(index+1)+' requires an approved independent project adapter and configuration.');
+            if(job.resources.ram_mb<128||
+                (job.resources.gpu_count>0&&
+                    (!machine.gpu_projects?.includes(job.project_id)||
+                     (job.resources.gpu_mode==='shared'&&
+                         !machine.gpu_shared_projects?.includes(job.project_id))||
+                     (job.resources.gpu_count===2&&
+                         (job.project_id!=='tinybrains'||
+                          job.frozen_parameters?.device!=='dual'||
+                          machine.agent_platform!=='linux'|| 
+                          !machine.tinybrains_dual_gpu_profiles
+                              ?.includes(job.frozen_parameters.profile)))||
+                     job.resources.gpu_count>2)))
+                throw Error('Bundle member '+(index+1)+' is not eligible for its requested native CPU/GPU mode.');
+            // Use the actual lease allocator, not a separate capacity
+            // estimate. Earlier members consume budget in the same draft;
+            // any failure abandons the draft without queued jobs or leases.
+            const lease=this.claimJobIn(next,job,machine.id,machine);
+            job.resource_bundle={id:bundleId,index:index+1,size:value.members.length};
+            jobs.push(job);
+            leases.push(lease);
+        }
+        this.commit(next);
+        return {bundle_id:bundleId,members:jobs.map(copy),
+            leases:leases.map(lease=>({...copy(lease),receipt_fresh:false})),
+            starts_authorized:0,
+            note:'Every member has a durable machine claim, but no Start was authorized. Jobs are independent until a trusted project-specific transport and learner barrier are installed.'};
+    }
     // Queue and reserve an entire TinyBrains rollout group as one durable
     // transaction. The operator supplies resource budgets; physical worker
     // endpoints and identities come only from authenticated machine agents.
