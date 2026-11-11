@@ -278,7 +278,13 @@ impl NativeSoftwareRenderer {
                             Err(_) => { counts.missing_range_data += 1; continue; },
                         };
                         if let Ok(Some(automatic)) = view.combat.weapon_automatic_status(ship.entity_id, slot) {
-                            counts.automatic_targets += usize::from(automatic.target_ship.is_some());
+                            counts.automatic_targets += usize::from(
+                                automatic.target_ship.is_some() || automatic.asteroid_aim_point.is_some(),
+                            );
+                            if let Some(point) = automatic.asteroid_aim_point {
+                                self.cross(point, 2.5, 0xf6df85);
+                                counts.aim_points += 1;
+                            }
                         }
                         if let Ok(Some(contacts)) = view.combat.weapon_range_contacts(ship.entity_id, slot) {
                             counts.range_contacts += contacts.ship_ids.len();

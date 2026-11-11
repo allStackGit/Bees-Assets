@@ -204,7 +204,7 @@ pub(super) struct MountedTurret {
     /// Unity BeamCannon.IsFiringLaserBeam is set on its single active beam.
     /// Cleared by the canonical CombatWorld::end_projectile on any kill path.
     pub(super) active_beam_projectile_id: Option<i64>,
-    manual_target: Option<Vec2>,
+    pub(super) manual_target: Option<Vec2>,
     pub(super) automatic: Option<Box<super::automatic_weapons::AutomaticTurret>>,
 }
 
@@ -328,7 +328,7 @@ pub(super) struct PendingTurretShot {
     ship_position: Vec2,
     turret_rotation: f32,
     target_world: Vec2,
-    target_ship: Option<i64>,
+    automatic_targeted: bool,
     projectile_base_id: i64,
     spec: NativeTurretSpec,
     policy_controlled: bool,
@@ -644,7 +644,7 @@ impl CombatWorld {
                 )?;
                 let projectile_index = self.projectile_by_id[&projectile_id];
                 self.projectiles[projectile_index].source_turret_slot = Some(shot.slot);
-                if shot.target_ship.is_some() { self.automatic_weapon_measurements.shots += 1; }
+                if shot.automatic_targeted { self.automatic_weapon_measurements.shots += 1; }
                 // Source DualCannon increments FleetShip.ShotsFired twice.
                 // Emit once per actual shot so reward and telemetry counts
                 // match the physical projectiles, not timer passes.
@@ -924,7 +924,8 @@ impl CombatWorld {
                     }
                     if automatic && mount.manual_target.is_some() { mount.automatic_state_mut().target = None; }
                     self.pending_turret_shots.push(PendingTurretShot {
-                        target_ship, projectile_base_id: base,
+                        automatic_targeted: target_ship.is_some() || aiming_at_asteroid[slot],
+                        projectile_base_id: base,
                         ship_id,
                         slot: slot as u8,
                         shooter_side: ship.side,

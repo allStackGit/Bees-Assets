@@ -5,6 +5,16 @@ Read the full goal and fresh root AGENTS.md before further work. The complete
 Unity replacement remains incomplete. The latest Experiment Hub and queue
 work has been merged locally.
 
+## 2026-11-10 asteroid fallback in gameplay
+
+Ordinary turrets use ordered asteroid proximity contacts for fallback and
+wait for map entry. The tactical view shows the active asteroid aim point,
+and automatic-shot telemetry counts these projectiles. Windows fixtures
+exercised ordinary, Beam Cannon, and Laser Builder firing through the
+native host. Each landed a four-point hit after map entry. The Beam Cannon
+and Laser Builder fixtures also checked the rendered aim marker and shot
+count. MapObject targeting and a matched Unity comparison remain open.
+
 ## 2026-11-10 Windows collection and learner dispatch
 
 The isolated Experiment Hub registry at
