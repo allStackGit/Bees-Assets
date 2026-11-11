@@ -35,7 +35,8 @@ function courierMetrics(source) {
             !/^[a-z][a-z0-9_]{0,39}$/.test(name)||
             !Number.isFinite(value)||Math.abs(value)>1e12)continue;
         const unit=/(?:^|_)(?:seconds|duration|time_s)$/.test(name)
-            ?'seconds':/(?:^|_)(?:rate|ratio|fraction)$/.test(name)&&
+            ?'seconds':name.endsWith('_per_second')
+                ?'rate':/(?:^|_)(?:rate|ratio|fraction)$/.test(name)&&
                 value>=0&&value<=1?'ratio':'scalar';
         if(unit==='seconds'&&value<0)continue;
         metrics[name]={value,unit};
