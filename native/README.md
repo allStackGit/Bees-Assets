@@ -476,7 +476,12 @@ explicitly requests them or configures the headless runner's
 run/episode identities and policy generation for scientific attribution. The initial model
 generation is zero and each accepted replacement increments it. The
 status interval reports the last validated generation and exact
-authenticated MA-POCA actor rows. This is not yet a native PPO learner;
+authenticated MA-POCA actor rows. Its `vision_step_work` is a reset-safe
+delta of successful fixed-step HiveMind vision checks across all worlds;
+the final `vision_completed_step_totals` persists across episode resets.
+Neither includes tick-zero source-scene discovery; the separate
+`vision_current_episodes` gauge includes those observations but resets
+with each new episode. This is not yet a native PPO learner;
 the inference-only TorchScript/ONNX model manifest does not provide
 action log probabilities or a group critic. Loading a replacement model
 can temporarily require space for both the old and new weights.
