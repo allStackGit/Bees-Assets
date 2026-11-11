@@ -2440,6 +2440,44 @@ live eligible dispatch and persists its cursor and pending receipt in
 `--scratch`. Retain or remove completed dispatch directories under the
 worker's artifact retention policy.
 
+## Atomic multi-machine resource bundles (all native projects)
+
+For independent native jobs across TinyBrains, Courier and any newly
+installed project adapter, **Train → Reserve a multi-machine resource
+bundle** selects 2–16 saved configurations, explicit connected machines,
+and immutable CPU/RAM/GPU resource budgets. The operator confirms one
+atomic `POST /api/hub/resource-bundles` request:
+`{"confirm_queue":true,"members":[{"configuration_id":"<saved-uuid>","expected_revision":1,"machine_id":"<registered-machine>","resources":{"cpus":2,"ram_mb":2048,"gpu_count":0}},...]}`.
+Every member must have an approved local project adapter and native CPU/RAM
+preflight; GPUs additionally need matching physical device registration
+and the locally approved GPU mode. All members and claims are committed in
+one durable registry update, or none are committed. Duplicate jobs are
+not launched, machines are not re-enrolled, and the allocation does not
+change during execution. Bundle machines cannot be moved by manual claim
+changes or the Hub's automatic queued-claim rebalancing: cancel a fully
+unstarted bundle and submit a new one to change placement. Each member
+receives its own native owner, lease, artifact lineage and existing GPU
+qualification/Start/Stop gates.
+
+A bundle is **resource coordination**, not a distributed learner.
+There is no automatic rollout transport, policy synchronization, gradient
+aggregation, common checkpoint or simultaneous Start across members. The
+existing project-specific TinyBrains remote rollout group (below) remains
+the only supported Hub multi-machine *single training* path; do not
+substitute an ordinary resource bundle for it. A continuation job or
+TinyBrains remote-rollout service is not eligible for an independent bundle.
+Bees still uses its own operator.
+
+Bundle membership and native statuses remain in the registry after restart
+and appear in Train. To withdraw an entirely unstarted bundle, use
+**Cancel all unstarted members** or
+`POST /api/hub/resource-bundles/cancel` with
+`{"bundle_id":"<uuid>","expected_job_ids":["<uuid>",...],"confirm_cancel":true}`.
+The exact current members are checked before claims are released, and
+a started, dispatched, or uncertain member blocks cancellation of the
+whole bundle. Existing native Stop and checkpoint verification remain
+mandatory for active jobs. Canceling a bundle never terminates a process.
+
 ## Trusted distributed TinyBrains rollout group (opt-in)
 
 The `feat/hub-resource-experiments-20261110` Hub branch and matching

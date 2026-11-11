@@ -168,6 +168,7 @@ function hubComparisonCsv(exported) {
         'observed_at','source_modified_at','experiment_id','segment_id',
         'break_before','steps_completed',
         'trial_batch_id','trial_batch_index','trial_batch_size',
+        'resource_bundle_id','resource_bundle_index','resource_bundle_size',
     ];
     const metrics=new Set(exported.metrics||[]);
     for(const key of [...metrics].sort())
@@ -198,6 +199,9 @@ function hubComparisonCsv(exported) {
         trial_batch_id:run.trial_batch?.id,
         trial_batch_index:run.trial_batch?.index,
         trial_batch_size:run.trial_batch?.size,
+        resource_bundle_id:run.resource_bundle?.id,
+        resource_bundle_index:run.resource_bundle?.index,
+        resource_bundle_size:run.resource_bundle?.size,
         status:run.status,...point,
         ...Object.fromEntries(Object.entries(point.metrics||{}).flatMap(
             ([key,metric])=>[
@@ -440,6 +444,120 @@ document.addEventListener('DOMContentLoaded', () => {
         $('hub-pipeline-add').disabled=['bees','ants'].includes(project)||rows.length>=16;
         $('hub-pipeline-queue').disabled=['bees','ants'].includes(project)||
             rows.length<2||!configs.length;
+    }
+    // Build capacity bundles from the same saved project configurations and
+    // authenticated machine choices used by normal job Start. A bundle never
+    // transmits arbitrary executable paths or worker network endpoints.
+    function addResourceBundleMember() {
+        const container=$('hub-resource-bundle-rows');
+        if(container.children.length>=16)return;
+        const row=document.createElement('div');
+        row.className='hub-pipeline-stage';
+        const configLabel=document.createElement('label');
+        const configCaption=document.createElement('span');
+        configCaption.className='hub-bundle-caption';
+        const config=document.createElement('select');
+        config.className='hub-bundle-config';
+        config.addEventListener('change',renderResourceBundleMembers);
+        configLabel.append(configCaption,config);
+        const machineLabel=document.createElement('label');
+        const machineCaption=document.createElement('span');
+        machineCaption.className='hub-bundle-caption';
+        const machine=document.createElement('select');
+        machine.className='hub-bundle-machine';
+        machineLabel.append(machineCaption,machine);
+        const resourceLabel=document.createElement('label');
+        resourceLabel.textContent='Fixed CPU/RAM/GPU budget (JSON)';
+        const resources=document.createElement('input');
+        resources.type='text';
+        resources.className='hub-bundle-resources';
+        try{
+            resources.value=JSON.stringify(JSON.parse($('hub-job-resources').value));
+        }catch(error){
+            resources.value='{"cpus":2,"ram_mb":2048,"gpu_count":0}';
+        }
+        resourceLabel.append(resources);
+        const remove=button('Remove',()=>{
+            if(container.children.length<=2)return;
+            row.remove();
+            renderResourceBundleMembers();
+        });
+        row.append(configLabel,machineLabel,resourceLabel,remove);
+        container.append(row);
+    }
+    function renderResourceBundleMembers() {
+        const rows=[...$('hub-resource-bundle-rows').children];
+        const configs=(state?.configurations||[]).filter(c=>
+            !['bees','ants','tinybrains_rollout'].includes(c.project_id));
+        const machines=state?.machines||[];
+        for(const [i,row] of rows.entries()) {
+            const captions=row.querySelectorAll('.hub-bundle-caption');
+            const config=row.querySelector('.hub-bundle-config');
+            const machine=row.querySelector('.hub-bundle-machine');
+            const oldConfig=config.value,oldMachine=machine.value;
+            captions[0].textContent='Member '+(i+1)+' saved configuration';
+            captions[1].textContent='Machine';
+            config.replaceChildren(...configs.map(c=>new Option(
+                c.project_id+' · '+c.name+' · revision '+c.revision,c.id)));
+            if(configs.some(c=>c.id===oldConfig))config.value=oldConfig;
+            else {
+                const own=configs.find(c=>c.project_id===project);
+                if(own)config.value=own.id;
+            }
+            const selected=configs.find(c=>c.id===config.value);
+            const eligible=machines.filter(m=>
+                m.status==='connected'&&m.local_executor_enabled===true&&
+                m.native_preflight_passed===true&&
+                m.installed_projects?.includes(selected?.project_id));
+            machine.replaceChildren(...eligible.map(m=>
+                new Option(m.name+' ('+m.id+')',m.id)));
+            if(eligible.some(m=>m.id===oldMachine))machine.value=oldMachine;
+            row.querySelector('button').disabled=rows.length<=2;
+        }
+        $('hub-resource-bundle-add').disabled=rows.length>=16;
+        $('hub-resource-bundle-queue').disabled=rows.length<2||
+            !rows.every(row=>row.querySelector('.hub-bundle-machine').value);
+        const container=$('hub-resource-bundle-existing');
+        container.replaceChildren();
+        const groups=new Map();
+        for(const job of state?.jobs||[]) {
+            const id=job.resource_bundle?.id;
+            if(!id)continue;
+            if(!groups.has(id))groups.set(id,[]);
+            groups.get(id).push(job);
+        }
+        for(const [id,members] of [...groups].slice(-8).reverse()) {
+            const row=document.createElement('div');
+            row.className='hub-pipeline-stage';
+            const active=members.filter(j=>j.status!=='cancelled');
+            const claims=active.filter(j=>
+                (state.reservations||[]).some(lease=>lease.id===j.lease_id&&
+                    ['offered','acknowledged'].includes(lease.status)));
+            const details=document.createElement('span');
+            details.textContent='Bundle '+id.slice(-8)+' · '+
+                members.length+' jobs · '+claims.length+' outstanding claims · '+
+                members.map(j=>j.project_id+' on '+
+                    (j.assigned_machine_id||'unassigned')+': '+j.status).join('; ');
+            row.append(details);
+            const canCancel=members.length===members[0].resource_bundle.size&&
+                active.length>0&&active.every(j=>
+                    j.status==='waiting_adapter'&&!j.dispatch_id);
+            if(canCancel)row.append(button('Cancel all unstarted members',async()=>{
+                if(!confirm('Cancel '+active.length+' unstarted bundle members and release their Hub claims? No native process will be stopped.'))return;
+                try{
+                    const result=await action('hub/resource-bundles/cancel',{
+                        bundle_id:id,expected_job_ids:active.map(j=>j.id),
+                        confirm_cancel:true,
+                    });
+                    feedback('hub-resource-bundle-message',
+                        'Cancelled '+result.cancelled_count+' unstarted members in bundle '+id.slice(-8)+'.');
+                    await reload();
+                }catch(error){
+                    feedback('hub-resource-bundle-message',String(error.message||error));
+                }
+            }));
+            container.append(row);
+        }
     }
     // Only a fresh, authenticated native report can distinguish a Stop
     // still awaiting delivery from a service already shutting down.
@@ -1131,6 +1249,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 artifact_lineage_root_id:job.artifact_lineage_root_id||job.id,
                 continuation_of_job_id:job.continuation_of_job_id||null,
                 trial_batch:job.trial_batch||null,
+                resource_bundle:job.resource_bundle||null,
                 status:job.status,
                 execution_diagnostic:job.execution_diagnostic||null,
                 ...(project==='tinybrains'?{profile_sha256:job.frozen_parameters?.profile_sha256||null}:{}),
@@ -1733,6 +1852,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 addPipelineStage();
             }
             renderPipelineStages();
+            if(!$('hub-resource-bundle-rows').children.length) {
+                addResourceBundleMember();
+                addResourceBundleMember();
+            }
+            renderResourceBundleMembers();
         }
         $('hub-job-queue').disabled=['bees','ants'].includes(project)||!configs.length;
         const previousMachine=$('hub-job-machine').value;
@@ -1897,8 +2021,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     (worker.assigned_machine_id||'unassigned')+' '+worker.status+
                     (worker.capacity_released_at?' (released)':'')).join('; ')
                 :'';
+            const bundleLabel=j.resource_bundle
+                ?' · Resource bundle '+j.resource_bundle.id.slice(-8)+
+                    ' ('+j.resource_bundle.index+'/'+j.resource_bundle.size+')'
+                :'';
             const statusCell=cell(tr,status+lineage+promoted+gpuProof+readinessText+
-                checkpointRecovery+noTrainer+distributedSummary+
+                checkpointRecovery+noTrainer+distributedSummary+bundleLabel+
                 (hasSuccessor&&['waiting_adapter','waiting_predecessor'].includes(j.status)
                     ?' · Cancel downstream stage first':''));
 
@@ -2100,7 +2228,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     }catch(e){feedback('hub-job-message',e.message);}
                 }));
             if(j.status==='waiting_adapter'&&j.lease_id&&!j.dispatch_id&&
-                !j.continuation_machine_id&&!probeHoldsClaim) {
+                !j.continuation_machine_id&&!j.resource_bundle&&
+                !probeHoldsClaim) {
                 actions.append(button('Move claim',async()=>{
                     const destination=selectedMoveDestination(j);
                     if(!destination)return;
@@ -3008,6 +3137,39 @@ document.addEventListener('DOMContentLoaded', () => {
         }catch(e){feedback('hub-plan-result',e.message);}
     });
 
+    $('hub-resource-bundle-add').addEventListener('click',()=>{
+        addResourceBundleMember();
+        renderResourceBundleMembers();
+    });
+    $('hub-resource-bundle-queue').addEventListener('click',async()=>{
+        if(!state||project==='bees')return;
+        try{
+            const rows=[...$('hub-resource-bundle-rows').children];
+            if(rows.length<2||rows.length>16)
+                throw Error('Select 2–16 members.');
+            const members=rows.map(row=>{
+                const cfg=state.configurations.find(c=>c.id===
+                    row.querySelector('.hub-bundle-config').value);
+                const machine=row.querySelector('.hub-bundle-machine').value;
+                if(!cfg||!machine)throw Error('Select a saved configuration and qualified machine for every member.');
+                return {configuration_id:cfg.id,expected_revision:cfg.revision,
+                    machine_id:machine,
+                    resources:JSON.parse(row.querySelector('.hub-bundle-resources').value)};
+            });
+            if(!confirm('Atomically reserve fixed resources for '+members.length+
+                ' independent jobs on the selected machines? Each job requires its own native Start authorization. '+
+                'This does not enable distributed training, automatic checkpoint sharing or simultaneous worker starts.'))return;
+            const result=await action('hub/resource-bundles',{
+                confirm_queue:true,members,
+            });
+            feedback('hub-resource-bundle-message',
+                'Reserved all '+result.members.length+' jobs · bundle '+
+                result.bundle_id.slice(-8)+'. No Starts authorized.');
+            await reload();
+        }catch(error){
+            feedback('hub-resource-bundle-message',String(error.message||error));
+        }
+    });
     $('hub-pipeline-add').addEventListener('click',()=>{
         addPipelineStage();
         renderPipelineStages();
