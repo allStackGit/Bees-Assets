@@ -49,7 +49,7 @@ impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
                 plan.spawn.is_some_and(|spawn| !spawn.is_finite()) ||
                 plan.entry.is_some_and(|entry| !entry.is_finite())
             {
-                return Err("Reinforcements need positive nondecreasing times, nonempty squads, and finite entries");
+                return Err("Reinforcements need positive nondecreasing times, nonempty squads, and finite spawn/entry coordinates");
             }
             for id in plan.squad_item_ids {
                 if squad_waves.insert(id, waves.len()).is_some() {
