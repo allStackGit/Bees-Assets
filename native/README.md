@@ -148,8 +148,10 @@ tick and counts.
 For Titania II's *obstacle-free* mission, the authored approach lanes
 can be generated instead of transcribed. Unity selects reinforcement squads
 from the saved fleet *when the timer fires*: they are normally absent from
-the starting physical scene. Capture each wave immediately after it spawns
-in the **same Unity Stage run**, before losses or subsequent changes. Give
+the starting physical scene. Capture each wave in the **same Unity Stage
+run**, after Unity issues its entry order but before the first movement
+FixedUpdate (`has_target_coordinates=true`, `is_moving=false`). Later
+captures are not equivalent initial spawn records. Give
 `waves.json` the actual spawned squad item IDs, source-normalized directions,
 and paths to those later scene captures (illustrative IDs):
 
@@ -170,8 +172,13 @@ python3 native/tools/author-titania2-waves.py run.json waves.json \
 ```
 
 The command copies **only** the selected real Unity ship and squad records
-from later captures into a new native scene and makes one source-equivalent
-`spawn`/`entry` lane per squad, including Unity's 0.16 tangent offsets.
+from later captures into a new native scene. It retains their actual
+off-map positions and other physical attributes, clears the already-issued
+Unity point order (which the native runtime cannot restore), and schedules
+a new source-equivalent `entry` order on native deployment. Captured waves
+therefore have `spawn: null`: their live position is authoritative.
+Waves present in the initial scene instead use computed `spawn` and
+`entry` coordinates. Both paths preserve Unity's 0.16 tangent offsets.
 When a Unity `GetSquadByComposition` lookup returns null, retain its original
 list position using `null` in `squad_item_ids` (for example
 `[null, 52]`). The missing squad is skipped but the surviving squad keeps
