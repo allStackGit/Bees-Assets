@@ -107,15 +107,41 @@ impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
         self.squads = initial_squads;
         self.entities = initial_entities;
         // Deferred squads bypass the ordinary initial roster registration.
-        // Verify their physical membership here; a missing imported hull or
-        // repeated ship ID must not fail only after a long training run.
+        // Match the same physical ownership/side invariants that
+        // NativeSquadRoster::register_squad checks for initial squads.
+        // Validate immutable formation inputs here too: a missing offset
+        // or clearance must not abort a long-running battle on arrival.
         for wave in &waves {
             let expected = wave.squads.iter().try_fold(0usize, |total, squad| {
-                if squad.members.is_empty() { return None; }
+                if squad.members.is_empty() || squad.side <= 0 || !squad.owner.valid() {
+                    return None;
+                }
                 total.checked_add(squad.members.len())
-            }).ok_or("Reinforcement squads need nonempty, bounded membership")?;
-            if wave.ships.len() != expected {
-                return Err("Reinforcement squads need one authored physical ship per member");
+            }).ok_or("Reinforcement squads need valid owners and nonempty, bounded membership")?;
+            let mut member_sides = HashMap::with_capacity(expected);
+            for squad in &wave.squads {
+                for &ship_id in &squad.members {
+                    if ship_id <= 0 || member_sides.insert(ship_id, squad.side).is_some() {
+                        return Err("Reinforcement ship membership must be unique and positive");
+                    }
+                }
+            }
+            if member_sides.len() != expected || wave.ships.len() != expected ||
+                wave.ships.iter().any(|ship|
+                    member_sides.get(&ship.entity_id) != Some(&ship.side))
+            {
+                return Err("Reinforcement squads need one physical ship of the matching side per member");
+            }
+            if wave.entry.is_some() {
+                for ship in &wave.ships {
+                    if self.metadata.stored_formation_offset(ship.entity_id)
+                        .is_none_or(|offset| !offset.is_finite()) ||
+                        self.metadata.current_path_clearance(ship.entity_id)
+                        .is_none_or(|clearance| clearance < 0)
+                    {
+                        return Err("Reinforcement entry orders need finite source offsets and nonnegative clearance");
+                    }
+                }
             }
         }
         // Unity LevelConstructor.PositionSquads sets the starting position
