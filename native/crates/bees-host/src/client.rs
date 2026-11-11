@@ -19,6 +19,13 @@ pub enum NativeClientAction { Wait, Step, Quit, WorldChanged, Move(NativePlayerS
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum NativeTargetMode { Support(NativeSupportMode), ManualFire }
 
+const RIGHT_DRAG_INTERVAL: Duration = Duration::from_millis(250);
+
+struct RightPress {
+    next_move_at: Instant,
+    last_move_pixel: Option<Vec2>,
+}
+
 pub struct NativeClient {
     window: Window,
     renderer: NativeSoftwareRenderer,
@@ -30,6 +37,7 @@ pub struct NativeClient {
     previous_frame: Instant,
     left_was_down: bool,
     right_was_down: bool,
+    right_press: Option<RightPress>,
     last_left_press: Option<Instant>,
     double_left_press: bool,
     input_feedback: &'static str,
@@ -62,7 +70,7 @@ impl NativeClient {
         let now = Instant::now();
         Ok(Self { window, renderer, bounds, selected_world: 0, selection_owner: None,
             paused: false, next_step: now, previous_frame: now, left_was_down: false,
-            right_was_down: false, last_left_press: None, double_left_press: false,
+            right_was_down: false, right_press: None, last_left_press: None, double_left_press: false,
             input_feedback: "",
             replay_available: false,
             selection_drag: None, support_mode: None,
@@ -97,6 +105,7 @@ impl NativeClient {
             // Minimized windows have no drawable surface; pump OS events
             // without trying to submit a zero-sized bitmap.
             self.window.update();
+            self.right_press = None;
             self.previous_frame = Instant::now();
             return Ok(NativeClientAction::Wait);
         }
@@ -104,6 +113,7 @@ impl NativeClient {
             // A drag's original screen coordinates no longer describe
             // the same selection box after a window resize.
             self.selection_drag = None;
+            self.right_press = None;
             self.last_left_press = None;
             self.double_left_press = false;
             self.viewport_resizes += 1;
@@ -115,6 +125,7 @@ impl NativeClient {
         if self.selection_owner != Some(owner) {
             self.renderer.selected_ship = None;
             self.selection_drag = None;
+            self.right_press = None;
             self.support_mode = None;
             self.last_left_press = None;
             self.double_left_press = false;
@@ -151,6 +162,7 @@ impl NativeClient {
             // button held across the switch as a new click in that World.
             self.left_was_down = self.window.get_mouse_down(MouseButton::Left);
             self.right_was_down = self.window.get_mouse_down(MouseButton::Right);
+            self.right_press = None;
             self.window.update();
             self.next_step = Instant::now();
             return Ok(NativeClientAction::WorldChanged);
@@ -198,7 +210,17 @@ impl NativeClient {
             }
         }
         let right_down = self.window.get_mouse_down(MouseButton::Right);
-        let cancel_support = right_down && !self.right_was_down && self.support_mode.is_some();
+        let right_pressed = right_down && !self.right_was_down;
+        let right_released = !right_down && self.right_was_down;
+        let pointer_active = self.window.is_active();
+        let cancel_support = right_pressed && pointer_active && self.support_mode.is_some();
+        if !pointer_active {
+            self.right_press = None;
+        } else if right_pressed {
+            self.right_press = (mouse.is_some() && !cancel_support &&
+                !self.renderer.selection.squads().is_empty() && view.terminal_result.is_none())
+                .then_some(RightPress { next_move_at: now + RIGHT_DRAG_INTERVAL, last_move_pixel: None });
+        }
         if cancel_support {
             self.support_mode = None;
             self.selection_drag = None;
@@ -317,13 +339,25 @@ impl NativeClient {
             self.double_left_press = false;
         }
         self.left_was_down = left_down;
-        let player_move = if !cancel_support && support_command.is_none() && manual_fire.is_none() &&
-            right_down && !self.right_was_down {
+        let release_click = right_released && self.right_press.take().is_some();
+        let player_move = if support_command.is_none() && manual_fire.is_none() &&
+            cease_fire_input.is_none() && view.terminal_result.is_none() {
             mouse.filter(|_| !self.renderer.selection.squads().is_empty()).and_then(|(x, y)| {
                 let destination = self.renderer.camera.screen_to_world(x, y, width, height);
-                if let Some(action) = self.renderer.pick_right_click_action(&view, destination) {
-                    support_command = self.renderer.selection.support_command(&view, action);
-                    return None;
+                if release_click {
+                    if let Some(action) = self.renderer.pick_right_click_action(&view, destination) {
+                        support_command = self.renderer.selection.support_command(&view, action);
+                        return None;
+                    }
+                } else {
+                    if !right_down || self.paused { return None; }
+                    let press = self.right_press.as_mut()?;
+                    let pixel = Vec2::new(x, y);
+                    if now < press.next_move_at || press.last_move_pixel.is_some_and(|last|
+                        (pixel - last).length_squared() <= 25.0
+                    ) { return None; }
+                    press.next_move_at = now + RIGHT_DRAG_INTERVAL;
+                    press.last_move_pixel = Some(pixel);
                 }
                 Some(NativePlayerSquadMoves { world_id: view.world_id,
                     episode_revision: view.episode_revision,
