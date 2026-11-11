@@ -2549,7 +2549,11 @@ service to the public Internet.
    time spent reading and hashing each frozen opponent artifact once per
    update, instead of repeating disk I/O and hashing for every remote host.
    Both are preparation costs within full `collection_seconds`. Compare
-   them with delivered decisions/s to identify bottlenecks.
+   them with delivered decisions/s to identify bottlenecks. The learner
+   also reports `rollout_model_refresh_seconds` for its local frozen actor
+   and critic copies, now reused after each completed collection instead
+   of being reallocated on every update. `collection_seconds` includes
+   this model refresh from submission to completed collection.
    The Hub creates each worker configuration, all jobs and all machine
    reservations atomically; if any physical worker or capacity is missing,
    no job or claim is committed. No process is started by this action.
