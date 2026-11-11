@@ -1876,9 +1876,9 @@ archive/visualization preference; it never changes PPO model settings or
 manufactures metrics the project's adapter did not record. The native Hub
 retains a bounded history of up to 256 chart points for each of 256 jobs;
 project-owned full-resolution histories remain authoritative. When explicit
-metric preferences are present, the Hub filters trainer metrics before adding
-requested CPU/GPU observations, so a larger trainer report cannot crowd out
-a selected host measurement. With no explicit preference, measured host resource
+metric preferences are present, the Hub retains operator-selected fields first
+and then fills spare chart slots with observed host CPU/GPU resources, without
+adding unrelated trainer fields. With no explicit preference, measured host resource
 usage and the PPO update counter take priority within the 96-field chart cap;
 remaining slots retain trainer metrics. Source reports may contain up to 192
 metrics, while charts retain at most 96 per observation. Select high-index
