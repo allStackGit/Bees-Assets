@@ -568,9 +568,9 @@ def main():
     cuda_metrics = {}
     if device.type == "cuda":
         cuda_metrics = {
-            "optimizer_cuda_device_name": torch.cuda.get_device_name(device),
-            "optimizer_cuda_peak_allocated_bytes": torch.cuda.max_memory_allocated(device),
-            "optimizer_cuda_peak_reserved_bytes": torch.cuda.max_memory_reserved(device),
+            "torch_cuda_device_name": torch.cuda.get_device_name(device),
+            "torch_cuda_process_peak_allocated_bytes": torch.cuda.max_memory_allocated(device),
+            "torch_cuda_process_peak_reserved_bytes": torch.cuda.max_memory_reserved(device),
         }
     # Bundle receipts pin the artifact digests, not only their own JSON.
     # Files may change while an update runs on a different worker; refuse
