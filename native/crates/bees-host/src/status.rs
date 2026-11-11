@@ -79,6 +79,9 @@ pub struct NativeHostStatusInterval {
     pub elapsed_seconds: f64,
     pub world_steps: u64,
     pub world_steps_per_second: f64,
+    /// Actual fixed-step vision work across all worlds in this status
+    /// interval. Unlike per-episode gauges, survives clean episode resets.
+    pub vision_step_work: bees_sim::vision::VisionSweepCounts,
     pub model_rows: u64,
     pub model_rows_per_second: f64,
     /// Successfully validated model rows with authenticated MA-POCA
@@ -232,6 +235,7 @@ impl NativeStatusSampler {
                 elapsed_seconds: elapsed,
                 world_steps,
                 world_steps_per_second: world_steps as f64 / elapsed,
+                vision_step_work: s.vision.checked_delta(p.vision)?,
                 model_rows,
                 model_rows_per_second: model_rows as f64 / elapsed,
                 grouped_actor_rows: diff(
