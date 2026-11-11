@@ -266,6 +266,12 @@ in its template. Each job supplies `rollout_bundles` as a list of
 configuration digest and zero seed offset. The adapter resolves each
 collector job ID inside the configured inbox. The learner verifies the
 approved receipt and its checkpoint, manifest, and capture digests.
+
+Completed learner jobs report capture processing time, optimizer throughput,
+and training combat outcomes to Experiment Hub. Faction totals cover the
+whole batch. Learner and opponent totals cover episodes with only one
+learner side. Compare these as training observations, since each batch
+can use different opponents, seats, and scenarios.
 The adapter reports completed-round metrics from the receipt and uses
 the Hub's process-group stop. Each job runs one CPU update. A checkpoint
 pipeline keeps the approved configuration digest and uses each predecessor's

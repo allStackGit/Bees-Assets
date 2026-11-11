@@ -17,6 +17,49 @@ function trustedFile(file) {
     return resolved;
 }
 
+function learnerMeasurements(metrics) {
+    const report = {};
+    const add = (name, unit, value = metrics[name]) => {
+        if (value != null) report[name] = {value, unit};
+    };
+    add('capture_read_and_validation_wall_seconds', 'seconds');
+    add('trajectory_assembly_and_ingest_seconds', 'seconds', metrics.trajectory_assembly_and_ingest_wall_seconds);
+    add('total_wall_seconds', 'seconds');
+    for (const name of ['capture_peak_inflight_decisions', 'capture_peak_inflight_episodes',
+        'capture_compact_opponent_decisions', 'capture_compact_opponent_boundaries',
+        'optimizer_torch_intraop_threads', 'optimizer_torch_interop_threads'])
+        add(name, 'count');
+    add('optimizer_steps_per_update_second', 'rate');
+    add('torch_cuda_process_peak_allocated_bytes', 'bytes');
+    add('torch_cuda_process_peak_reserved_bytes', 'bytes');
+
+    const outcomes = metrics.training_outcomes;
+    if (!outcomes || !outcomes.episodes) return report;
+    const outcome = (name, unit) => {
+        if (outcomes[name] != null) report['training_' + name] = {value: outcomes[name], unit};
+    };
+    for (const name of ['head_to_head_episodes', 'self_play_episodes', 'timed_out_episodes',
+        'bee_wins', 'human_wins', 'draws'])
+        outcome(name, 'count');
+    outcome('mean_episode_seconds', 'seconds');
+    const owners = ['bee', 'human'];
+    if (outcomes.head_to_head_episodes > 0) {
+        for (const name of ['learner_wins', 'learner_losses', 'learner_draws',
+            'learner_as_bee_episodes', 'learner_as_human_episodes'])
+            outcome(name, 'count');
+        outcome('head_to_head_win_rate', 'ratio');
+        owners.push('learner', 'opponent');
+    }
+    for (const owner of owners) {
+        for (const name of ['enemy_hits', 'enemy_damage', 'enemy_tsv_loss', 'enemy_kills',
+            'friendly_hits', 'friendly_damage', 'friendly_tsv_loss', 'friendly_kills'])
+            outcome(owner + '_' + name, 'count');
+        for (const name of ['retained_mined_tsv', 'retained_reward', 'ppo_reward_sum'])
+            outcome(owner + '_' + name, 'scalar');
+    }
+    return report;
+}
+
 function createNativeBeesAdapter({
     pythonPath, rolloutBinary, runConfig, trainerConfig, checkpoint, artifactRoot,
     learnerSlot, collectOnly = false, bundleInbox,
@@ -269,6 +312,7 @@ function createNativeBeesAdapter({
                     terminal_steps: {value: metrics.terminal_steps, unit: 'count'},
                     optimizer_update_wall_seconds: {value: metrics.optimizer_update_wall_seconds, unit: 'seconds'},
                     trajectory_processing_wall_seconds: {value: metrics.trajectory_processing_wall_seconds, unit: 'seconds'},
+                    ...learnerMeasurements(metrics),
                 },
             }, PROJECT);
         },
