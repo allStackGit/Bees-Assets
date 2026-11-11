@@ -95,7 +95,7 @@ function hubComparisonAxisValue(point,key) {
 // Observational scaling evidence only. Chart histories are bounded/decimated;
 // never use these summaries to tune a running job, select a winning model or
 // claim experimental equivalence. An allocation is not a measured CPU/GPU use.
-function hubScalingEvidence(runs,key,allJobs=[]) {
+function hubScalingEvidence(runs,key,allJobs=[],leases=[]) {
     const name=typeof key==='string'&&key.startsWith('metric:')?key.slice(7):null;
     if(!name)return [];
     const median=values=>{
@@ -113,13 +113,26 @@ function hubScalingEvidence(runs,key,allJobs=[]) {
             other.project_id==='tinybrains_rollout'&&
             other.frozen_parameters?.learner_job_id===job.id):[];
         if(distributed&&(workers.length<1||workers.length>8))return null;
-        const members=[job,...workers].map((member,index)=>({
-            host:member.assigned_machine_id,
-            role:index===0?'learner':'collector',
-            cpus:member.resources?.cpus,
-            gpus:member.resources?.gpu_count,
-            mode:member.resources?.gpu_mode||'exclusive',
-        }));
+        const members=[job,...workers].map((member,index)=>{
+            const gpuCount=member.resources?.gpu_count;
+            const lease=leases.find(item=>item.id===member.lease_id&&
+                item.job_id===member.id&&
+                item.machine_id===member.assigned_machine_id);
+            const pinned=lease?.gpu_bindings;
+            const physical=Number.isSafeInteger(gpuCount)&&gpuCount===0
+                ?[]:Array.isArray(pinned)&&pinned.length===gpuCount&&
+                    pinned.every(item=>/^[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]$/.test(
+                        item.pci_address||''))
+                    ?pinned.map(item=>item.pci_address).sort():null;
+            return {
+                host:member.assigned_machine_id,
+                role:index===0?'learner':'collector',
+                cpus:member.resources?.cpus,
+                gpus:gpuCount,
+                mode:member.resources?.gpu_mode||'exclusive',
+                gpu_ids:physical,
+            };
+        });
         if(members.some(member=>!member.host||
             !Number.isSafeInteger(member.cpus)||member.cpus<1||
             !Number.isSafeInteger(member.gpus)||member.gpus<0)||
@@ -133,6 +146,7 @@ function hubScalingEvidence(runs,key,allJobs=[]) {
             host:members.map(m=>m.host).join(' + '),
             topology:members.map(m=>m.host+':'+m.role).join('|'),
             gpu_mode:members.map(m=>m.mode).join('|'),
+            gpu_verified:members.every(m=>m.gpu_ids!==null),
         };
     };
     const rows=runs.map(run=>{
@@ -151,6 +165,7 @@ function hubScalingEvidence(runs,key,allJobs=[]) {
             configuration_sha256:run.job.configuration_sha256,
             host:resources?.host||null,
             topology:resources?.topology||null,
+            gpu_verified:resources?.gpu_verified===true,
             members:resources?.members||null,
             lineage:run.job.artifact_lineage_root_id||run.job.id,
             status:run.job.status,
@@ -167,14 +182,19 @@ function hubScalingEvidence(runs,key,allJobs=[]) {
     });
     const samePerHost=(a,b,key)=>a.members.every((m,i)=>
         m[key]===b.members[i][key]);
+    const samePhysicalGpus=(a,b)=>a.members.every((m,i)=>
+        m.gpu_ids.length===b.members[i].gpu_ids.length&&
+        m.gpu_ids.every((id,j)=>id===b.members[i].gpu_ids[j]));
+    const retainsPhysicalGpus=(a,b)=>a.members.every((m,i)=>
+        b.members[i].gpu_ids.every(id=>m.gpu_ids.includes(id)));
     const nondecreasing=(a,b,key)=>a.members.every((m,i)=>
         m[key]>=b.members[i][key]);
     for(const row of rows) {
-        if(!row.members||row.sample_count<5||
+        if(!row.members||!row.gpu_verified||row.sample_count<5||
             !['finished','stopped','completed','ended_early'].includes(row.status)||
             !/^[0-9a-f]{64}$/.test(row.configuration_sha256||''))continue;
         const comparable=rows.filter(other=>other!==row&&
-            other.members&&other.sample_count>=5&&
+            other.members&&other.gpu_verified&&other.sample_count>=5&&
             other.distributed===row.distributed&&
             ['finished','stopped','completed','ended_early'].includes(other.status)&&
             other.topology===row.topology&&
@@ -186,10 +206,12 @@ function hubScalingEvidence(runs,key,allJobs=[]) {
         // or silently exchange GPU/CPU allocation with another member.
         const cpuBase=comparable.filter(other=>
             other.gpus===row.gpus&&samePerHost(row,other,'gpus')&&
+            samePhysicalGpus(row,other)&&
             other.cpus<row.cpus&&nondecreasing(row,other,'cpus'))
             .sort((a,b)=>b.cpus-a.cpus)[0];
         const gpuBase=comparable.filter(other=>
             other.cpus===row.cpus&&samePerHost(row,other,'cpus')&&
+            retainsPhysicalGpus(row,other)&&
             other.gpus<row.gpus&&nondecreasing(row,other,'gpus'))
             .sort((a,b)=>b.gpus-a.gpus)[0];
         const baseline=cpuBase||gpuBase;
@@ -1218,10 +1240,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     .filter(([,value])=>value.unit==='rate')
                     .map(([name])=>'metric:'+name))))];
         const key=keys.find(value=>available.includes(value))||null;
-        const rows=hubScalingEvidence(runs,key,state?.jobs||[]);
+        const rows=hubScalingEvidence(runs,key,state?.jobs||[],
+            state?.reservations||[]);
         feedback('hub-compare-scaling-note',key
             ?'Showing '+key.slice(7)+'. Medians use bounded chart samples from each run’s latest segment, not complete histories. '+
-              'CPU/GPU values are allocations, not measured utilization. Distributed TinyBrains groups sum only their explicitly reserved learner and remote worker resources. Marginal comparisons require five samples per job, completed jobs, matching frozen configuration and exact machine group, and one monotonically increased resource dimension. '+
+              'CPU/GPU values are allocations, not measured utilization. Distributed TinyBrains groups sum only their explicitly reserved learner and remote worker resources. Marginal comparisons require five samples per job, completed jobs, matching frozen configuration and exact machine group, physical GPU lease identities, and one monotonically increased resource dimension. '+
               'They remain observational, not guaranteed improvements or independent learning evaluations.'
             :'Select a recorded throughput metric (unit: rate) above to inspect resource scaling. No CPU/GPU efficiency can be inferred from utilization alone.');
         for(const row of rows) {

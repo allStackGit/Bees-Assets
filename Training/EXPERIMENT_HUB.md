@@ -2380,9 +2380,14 @@ five samples, matching frozen configurations, and exactly one monotonically
 increased resource dimension. For distributed TinyBrains learners, the
 allocator sums the learner and its separately leased remote collectors;
 the comparison requires the same set of machines, the same learner/collector
-roles, and unchanged GPU modes. It refuses incomplete group records and
-CPU/GPU reallocations that reduce resources on one host while increasing
-another. These remain *reserved* resources: they do not prove the remote
+roles, and unchanged GPU modes. Comparisons also require frozen
+physical PCI GPU identities from each job's persisted resource lease:
+CPU scaling must use the same devices, while GPU scaling may add devices
+but must retain existing ones. Missing historical GPU bindings disable the
+marginal estimate rather than guessing device equivalence. It refuses
+incomplete group records and CPU/GPU reallocations that reduce resources
+on one host while increasing another. These remain *reserved* resources:
+they do not prove the remote
 thread count, useful utilization or incremental speed for arbitrary scaling.
 All such comparisons remain observational, not independent evidence of
 causality, energy efficiency, or full-resolution training performance.
