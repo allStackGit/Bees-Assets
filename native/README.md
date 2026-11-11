@@ -191,9 +191,10 @@ When a Unity `GetSquadByComposition` lookup returns null, retain its original
 list position using `null` in `squad_item_ids` (for example
 `[null, 52]`). The missing squad is skipped but the surviving squad keeps
 its source lane offset; do not collapse the list to `[52]`.
-It also checks that captured ship positions agree on one off-map
-placement origin after Unity's ship-type formation adjustments, and that
-the source point orders match one of Unity's scanned entry lanes. It rejects incompatible scene metadata
+It reconstructs both Unity formation-placement passes using
+the captured ship sprite dimensions and authored offsets, then requires
+each ship's captured position and point order to match the same scanned
+source entry lane. A later shifted formation is not a valid spawn capture. It rejects incompatible scene metadata
 and persistent ship identities, live policy-controlled ships, missing
 members and insufficient configured `next_squad_item_id`. The latter must reflect the *real Stage pool* after
 all captured squads, not an inferred substitute. Original scenes and run
