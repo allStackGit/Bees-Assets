@@ -98,14 +98,17 @@ def source_placement_offset(ship_type, members, offset, label):
 
 
 def verify_entry_orders(members, ships, spawn, entry, bounds, label):
-    """Match Unity's authored physical formation and entry point orders.
+    """Verify Unity's two-pass physical spawn and resulting entry orders.
 
-    LevelConstructor.PositionSquads uses source-adjusted placement
-    offsets and Squad.Move uses the original, unadjusted offsets.
-    Distinguishing them is required for valid wide-ship captures.
+    LevelConstructor.PositionSquads calls SetStartingPosition(spawn),
+    measures Squad.GetCenterPoint from live sprite extents, and calls
+    SetStartingPosition again at that center. Its first SetOffsets preserves
+    original offsets, so movement orders use the unadjusted formation.
     """
     min_x, min_y, max_x, max_y = bounds
-    center = None
+    left, right = math.inf, -math.inf
+    bottom, top = math.inf, -math.inf
+    recorded = []
     for eid in members:
         ship = ships[eid]
         if ship.get("mobile") is not True:
@@ -113,21 +116,28 @@ def verify_entry_orders(members, ships, spawn, entry, bounds, label):
         offset = ship.get("offset_from_center")
         target = ship.get("target_coordinates")
         position = ship.get("position")
-        if not all(isinstance(value, dict) for value in (offset, target, position)):
-            fail(f"{label} ship {eid} is missing source formation, position, or entry order")
+        size = ship.get("size_pixels")
+        if not all(isinstance(value, dict) for value in (offset, target, position, size)):
+            fail(f"{label} ship {eid} is missing physical size, formation, position, or order")
         offset_x = number(offset.get("x"), f"{label} ship {eid} offset.x")
         offset_y = number(offset.get("y"), f"{label} ship {eid} offset.y")
         position_x = number(position.get("x"), f"{label} ship {eid} position.x")
         position_y = number(position.get("y"), f"{label} ship {eid} position.y")
+        width_pixels = size.get("x")
+        height_pixels = size.get("y")
+        if (type(width_pixels) is not int or width_pixels <= 0 or
+            type(height_pixels) is not int or height_pixels <= 0):
+            fail(f"{label} ship {eid} needs positive source sprite dimensions")
         placement = source_placement_offset(
             ship.get("ship_type"), len(members), (offset_x, offset_y), f"{label} ship {eid}"
         )
-        placement_center = (position_x - placement[0], position_y - placement[1])
-        if center is None:
-            center = placement_center
-        elif any(not math.isclose(value, expected, rel_tol=1e-6, abs_tol=0.005)
-                 for value, expected in zip(placement_center, center)):
-            fail(f"{label} has inconsistent captured initial formation placement")
+        first_x, first_y = spawn[0] + placement[0], spawn[1] + placement[1]
+        # Unity's ConfigData.PixelsPerUnit is 8; Ship.GetSize is an
+        # unrotated sprite extent, not the physics collider's bounds.
+        half_width, half_height = width_pixels / 16.0, height_pixels / 16.0
+        left, right = min(left, first_x - half_width), max(right, first_x + half_width)
+        bottom, top = min(bottom, first_y - half_height), max(top, first_y + half_height)
+        recorded.append((position_x, position_y, placement))
         target_x = number(target.get("x"), f"{label} ship {eid} target.x")
         target_y = number(target.get("y"), f"{label} ship {eid} target.y")
         expected_x = min(max(entry[0] + offset_x, min_x), max_x)
@@ -135,12 +145,16 @@ def verify_entry_orders(members, ships, spawn, entry, bounds, label):
         if not (math.isclose(target_x, expected_x, rel_tol=1e-6, abs_tol=0.005) and
                 math.isclose(target_y, expected_y, rel_tol=1e-6, abs_tol=0.005)):
             return False
-    if ((spawn[0] < min_x and center[0] >= min_x) or
-        (spawn[0] > max_x and center[0] <= max_x) or
-        (spawn[1] < min_y and center[1] >= min_y)):
-        fail(f"{label} no longer has its captured squad center off the source entry edge")
+    first_center = ((left + right) * 0.5, (bottom + top) * 0.5)
+    for position_x, position_y, placement in recorded:
+        # A later moved formation can keep plausible source entry orders.
+        # Match the physical source spawn too, not merely an off-map edge.
+        expected = (first_center[0] + placement[0],
+                    first_center[1] + placement[1])
+        if not all(math.isclose(a, b, rel_tol=1e-6, abs_tol=0.005)
+                   for a, b in zip((position_x, position_y), expected)):
+            return False
     return True
-
 
 def _source_records(scene, label):
     if not all(isinstance(scene.get(key), list)
