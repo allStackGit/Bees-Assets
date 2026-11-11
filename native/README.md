@@ -64,8 +64,10 @@ bees run run.json --replay-inputs first-run/player-inputs.jsonl --output-dir new
 
 Playback checks the run and scene digests, applies orders at their recorded
 round and tick, and stops at the trace's final round. It uses the same
-player command admission as live play. Asynchronous pathfinding parity
-across machines and platforms remains unverified.
+player command admission as live play. Use `bees play` with the same
+arguments to watch the recording. The viewer supports pause, stepping,
+and camera controls while gameplay follows the recorded orders. Playback
+parity across platforms remains unverified.
 
 The view draws authored primary collider outlines, current health, live
 projectiles, obstacles and fading debris directly from borrowed combat bodies.

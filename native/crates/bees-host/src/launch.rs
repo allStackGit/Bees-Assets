@@ -702,7 +702,7 @@ fn apply_player_input(host: &mut RolloutHost, action: NativePlayerInput) -> Resu
 const USAGE: &str = "Usage: bees [play|run] <run.json> [--output-dir <new-dir>] [--capture <frame.ppm>]
   play  Open the native battle window (requires the client feature)
   run   Run the battle headlessly (default)
-  --replay-inputs <player-inputs.jsonl>  Play back a recorded offline battle headlessly";
+  --replay-inputs <player-inputs.jsonl>  Play back a recorded offline battle";
 
 pub fn run() -> Result<(), Box<dyn Error>> {
     let mut args = env::args_os().skip(1);
@@ -737,8 +737,8 @@ pub fn run() -> Result<(), Box<dyn Error>> {
     }
     #[cfg(not(feature = "client"))]
     if view { return Err(invalid("Windowed play requires building with --features client").into()); }
-    if replay_inputs.is_some() && (view || output.is_none()) {
-        return Err(invalid("--replay-inputs requires a headless run and --output-dir").into());
+    if replay_inputs.is_some() && output.is_none() {
+        return Err(invalid("--replay-inputs requires --output-dir").into());
     }
     let config_path = config_path.canonicalize()?;
     let mut replay_number = 0_u64;
@@ -1051,8 +1051,11 @@ fn run_battle(
     // Open the optional window before starting the model or creating durable
     // run outputs. A window setup failure leaves no live episode to abandon.
     #[cfg(feature = "client")]
-    let mut client = if view { Some(bees_host::client::NativeClient::new(client_bounds[0])?) }
-        else { None };
+    let mut client = if view {
+        let mut client = bees_host::client::NativeClient::new(client_bounds[0])?;
+        if replay_inputs.is_some() { client.set_playback(); }
+        Some(client)
+    } else { None };
     let mut launches = Vec::with_capacity(source_levels.len());
     for (index, (source, level)) in source_levels.into_iter()
         .zip(&config.levels).enumerate()
@@ -1146,7 +1149,7 @@ fn run_battle(
     }
     host.set_timing_sample_period(timing);
     #[cfg(feature = "client")]
-    let mut input_trace = if let (true, Some(directory)) = (play, output) {
+    let mut input_trace = if let (true, None, Some(directory)) = (play, replay_inputs, output) {
         let mut trace = fs::OpenOptions::new().write(true).create_new(true)
             .open(directory.join("player-inputs.jsonl"))?;
         writeln!(trace, "{}", json!({
@@ -1535,7 +1538,7 @@ fn run_battle(
         if counts.stopped_with_no_live_worlds && recycled == 0 { break; }
     }
 
-    if failed_window.is_none() && playback.as_ref().is_some_and(|trace|
+    if failed_window.is_none() && !user_closed && playback.as_ref().is_some_and(|trace|
         rounds != trace.end_round || !trace.inputs.is_empty()
     ) {
         failed_window = Some(format!("player trace ended at a different round than the battle ({rounds})"));
@@ -1744,6 +1747,8 @@ fn run_battle(
         "cleanup_errors": cleanup_errors,
         "user_closed": user_closed,
         "player_input_playback": playback.is_some(),
+        "player_input_playback_complete": playback.as_ref().map(|trace|
+            rounds == trace.end_round && trace.inputs.is_empty() && failed_window.is_none()),
     });
     println!("{final_summary}");
     #[cfg(feature = "client")]
@@ -1774,7 +1779,8 @@ fn run_battle(
         serde_json::to_writer(&file, &final_summary)?;
         file.sync_all()?;
     }
-    if play && !user_closed && completed_episodes.iter().all(|&count| count == config.episodes_per_world) {
+    if play && !user_closed && (playback.is_some() ||
+        completed_episodes.iter().all(|&count| count == config.episodes_per_world)) {
         #[cfg(feature = "client")]
         if let Some(client) = &mut client {
             if output.is_some() {

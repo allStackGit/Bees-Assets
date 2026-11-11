@@ -40,6 +40,7 @@ pub struct NativeClient {
     double_left_press: bool,
     input_feedback: &'static str,
     replay_available: bool,
+    playback: bool,
     selection_drag: Option<(Vec2, Vec2)>,
     support_mode: Option<NativeTargetMode>,
     pub rendered_frames: u64,
@@ -71,6 +72,7 @@ impl NativeClient {
             right_was_down: false, right_press: None, last_left_press: None, double_left_press: false,
             input_feedback: "",
             replay_available: false,
+            playback: false,
             selection_drag: None, support_mode: None,
             rendered_frames: 0, rendered_pixels: 0, render_wall_seconds: 0.0,
             ui_wall_seconds: 0.0, window_update_wall_seconds: 0.0,
@@ -87,6 +89,7 @@ impl NativeClient {
     pub fn report_move(&mut self, feedback: &'static str) { self.input_feedback = feedback; }
 
     pub fn allow_replay(&mut self) { self.replay_available = true; }
+    pub fn set_playback(&mut self) { self.playback = true; }
 
     pub fn replay_requested(&self) -> bool {
         self.replay_available && self.window.is_key_pressed(Key::Enter, KeyRepeat::No)
@@ -178,7 +181,8 @@ impl NativeClient {
         if let (Some((_, scroll)), Some((x, y))) = (self.window.get_scroll_wheel(), mouse) {
             self.renderer.camera.zoom_at(1.15_f32.powf(scroll.clamp(-10.0, 10.0)), x, y, width, height);
         }
-        {
+        let accepts_orders = !self.playback && view.terminal_result.is_none();
+        if accepts_orders {
             for (key, mode, prompt) in [
                 (Key::G, NativeTargetMode::Support(NativeSupportMode::Guard), "Guard: click a friendly ship"),
                 (Key::P, NativeTargetMode::Support(NativeSupportMode::Patrol), "Patrol: drag the patrol area"),
@@ -214,9 +218,9 @@ impl NativeClient {
         let cancel_support = right_pressed && pointer_active && self.support_mode.is_some();
         if !pointer_active {
             self.right_press = None;
-        } else if right_pressed {
+        } else if right_pressed && accepts_orders {
             self.right_press = (mouse.is_some() && !cancel_support &&
-                !self.renderer.selection.squads().is_empty() && view.terminal_result.is_none())
+                !self.renderer.selection.squads().is_empty())
                 .then_some(RightPress { next_move_at: now + RIGHT_DRAG_INTERVAL, last_move_pixel: None });
         }
         if cancel_support {
@@ -225,7 +229,7 @@ impl NativeClient {
             self.renderer.selection_box = None;
             self.input_feedback = "Target selection cancelled";
         }
-        let mut manual_fire = if self.window.is_key_pressed(Key::X, KeyRepeat::No) &&
+        let mut manual_fire = if accepts_orders && self.window.is_key_pressed(Key::X, KeyRepeat::No) &&
             !self.renderer.selection.squads().is_empty() {
             self.support_mode = None;
             self.selection_drag = None;
@@ -233,9 +237,9 @@ impl NativeClient {
             Some(NativePlayerSquadFire { world_id: view.world_id, episode_revision: view.episode_revision,
                 squads: self.renderer.selection.squads().to_vec(), target: None })
         } else { None };
-        let firing_mode = if self.window.is_key_pressed(Key::V, KeyRepeat::No) {
+        let firing_mode = if accepts_orders && self.window.is_key_pressed(Key::V, KeyRepeat::No) {
             Some(true)
-        } else if self.window.is_key_pressed(Key::A, KeyRepeat::No) {
+        } else if accepts_orders && self.window.is_key_pressed(Key::A, KeyRepeat::No) {
             Some(false)
         } else { None };
         let cease_fire_input = firing_mode.and_then(|cease_fire| {
@@ -253,7 +257,7 @@ impl NativeClient {
             }
         });
         let mut support_command = None;
-        if self.window.is_key_pressed(Key::C, KeyRepeat::No) {
+        if accepts_orders && self.window.is_key_pressed(Key::C, KeyRepeat::No) {
             if self.renderer.selection.squads().is_empty() {
                 self.input_feedback = "Select squads first";
             } else {
@@ -339,7 +343,7 @@ impl NativeClient {
         self.left_was_down = left_down;
         let release_click = right_released && self.right_press.take().is_some();
         let player_move = if support_command.is_none() && manual_fire.is_none() &&
-            cease_fire_input.is_none() && view.terminal_result.is_none() {
+            cease_fire_input.is_none() && accepts_orders {
             mouse.filter(|_| !self.renderer.selection.squads().is_empty()).and_then(|(x, y)| {
                 let destination = self.renderer.camera.screen_to_world(x, y, width, height);
                 if release_click {
@@ -396,6 +400,12 @@ impl NativeClient {
                 view.world_id.0, view.episode_revision + 1, outcome,
                 if result.timed_out { " (time limit)" } else { "" }, result.duration_seconds,
                 if self.replay_available { "Enter replay, " } else { "" })
+        } else if self.playback {
+            let status = if self.replay_available { "Playback complete" }
+                else if self.paused { "Playback paused" } else { "Playback" };
+            format!("Bees native | World {} | Tick {} | {}{} | {}Tab world, Esc close",
+                view.world_id.0, view.tick, status, selected,
+                if self.replay_available { "Enter replay, " } else { "Space pause, N step, " })
         } else { format!(
             "Bees native | World {} | Episode {} | Tick {} | {} ships, {} shots | {} squads selected | {}{} | {} | range/obstruction {} | Left select/drag, double-click type, Ctrl add, right move/attack | C stop chase, V cease fire, A attack on sight, G guard, P patrol, M mine, H heal, R retreat, T point fire, X stop, B ranges, Backspace cancel | Space pause, N step, Tab world, arrows pan, wheel zoom, F fit, Esc exit",
             view.world_id.0, view.episode_revision, view.tick, counts.ships, counts.projectiles,
@@ -424,7 +434,7 @@ impl NativeClient {
         self.window.update_with_buffer(self.renderer.pixels(), width, height)?;
         self.window_update_wall_seconds += window_update_started.elapsed().as_secs_f64();
         if !self.window.is_open() { return Ok(NativeClientAction::Quit); }
-        if view.terminal_result.is_none() {
+        if accepts_orders {
             if let Some(input) = cease_fire_input { return Ok(NativeClientAction::Input(NativePlayerInput::CeaseFire(input))); }
             if let Some(input) = manual_fire { return Ok(NativeClientAction::Input(NativePlayerInput::Fire(input))); }
             if let Some(input) = support_command { return Ok(NativeClientAction::Input(NativePlayerInput::Support(input))); }
