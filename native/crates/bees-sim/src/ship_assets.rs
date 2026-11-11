@@ -18,6 +18,8 @@ const ASSET_JSON: &str = include_str!(concat!(
 pub const SHIP_TYPE_COUNT: usize = 24;
 /// ConfigData.ShipTypes.Beacon in the same frozen native asset catalog.
 pub const BEACON_TYPE: u8 = 1;
+/// Unity ConfigData.ShipTypes.HumanTarget: Titania II's protected base hull.
+pub const HUMAN_TARGET_TYPE: u8 = 23;
 
 /// Unity ConfigData.ShipSizes / ConfigData.PixelsPerUnit (8), in world
 /// units, indexed by ConfigData.ShipTypes. These are the UNROTATED sprite
