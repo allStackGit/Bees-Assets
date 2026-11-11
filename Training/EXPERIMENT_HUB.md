@@ -1453,6 +1453,10 @@ training an ML-Agents model against ONNX or TorchScript opponents must
 configure the approved adapter's `learnerSlot` to that ML-Agents slot.
 Mixed-backend batches preserve learner action probabilities; opponent-only
 batches legitimately contain actions without policy log probabilities.
+Adapter installation, dispatch and checkpoint-continuation readiness verify
+the full manifest model set, including any externally referenced opponent
+artifacts. This ensures local resumability but does not copy models to another
+machine; the current Hub continuation remains tied to the original host.
 On multi-GPU Linux hosts, provide the optional machine-local `rocrGpuUuids` PCI-to-ROCr-UUID
 map to the adapter when the runtime cannot otherwise prove one visible
 leased device. The fixed HIP/PyTorch PCI verifier is shared with TinyBrains.
