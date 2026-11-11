@@ -42,6 +42,11 @@ Escape or closing the window cancels unfinished episodes through the existing
 durable abort/delivery boundary. The configured step duration
 is preserved; a slow model slows playback rather than skipping battle ticks.
 Status intervals still include all elapsed host time, including pauses.
+When a `bees play` run completes its configured episodes, it writes the
+final outputs and keeps the completed battle open. The title shows the
+selected Level's result and duration. Tab inspects other Levels and Escape
+closes the window. The existing `--view` diagnostic invocation exits
+automatically at the run boundary.
 
 The view draws authored primary collider outlines, current health, live
 projectiles, obstacles and fading debris directly from borrowed combat bodies.

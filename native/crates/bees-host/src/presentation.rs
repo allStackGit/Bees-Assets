@@ -22,6 +22,7 @@ pub struct NativeRenderWorldView<'a> {
     pub episode_revision: u64,
     pub tick: u64,
     pub fixed_step_seconds: f32,
+    pub terminal_result: Option<bees_sim::episode_terminal::EpisodeTerminalResult>,
     pub combat: &'a CombatWorld,
     pub collision_matrix: &'a bees_sim::physics::CollisionMatrix,
     pub roster: &'a NativeSquadRoster,

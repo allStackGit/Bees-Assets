@@ -671,7 +671,8 @@ pub fn run() -> Result<(), Box<dyn Error>> {
         println!("{USAGE}");
         return Ok(());
     }
-    let mut view = first == "play";
+    let play = first == "play";
+    let mut view = play;
     let config_path = PathBuf::from(if view || first == "run" {
         args.next().ok_or_else(|| invalid(USAGE))?
     } else { first });
@@ -1675,6 +1676,20 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             .open(summary_path)?;
         serde_json::to_writer(&file, &final_summary)?;
         file.sync_all()?;
+    }
+    #[cfg(feature = "client")]
+    if play && !user_closed && completed_episodes.iter().all(|&count| count == config.episodes_per_world) {
+        if let Some(client) = &mut client {
+            loop {
+                let index = client.selected_world();
+                let current = host.render_world(index)
+                    .ok_or_else(|| invalid("completed Level disappeared"))?;
+                if matches!(client.poll(current, client_bounds[index], host.simulation().world_count(),
+                    client_fixed_dt_by_level[index])?, bees_host::client::NativeClientAction::Quit) {
+                    break;
+                }
+            }
+        }
     }
     Ok(())
 }

@@ -350,7 +350,13 @@ impl NativeClient {
                         .map(|paused| if paused { "CEASE FIRE" } else { "ATTACK ON SIGHT" })
                         .unwrap_or("FIRING STATUS UNKNOWN"))
             }).unwrap_or_default();
-        self.window.set_title(&format!(
+        let title = if let Some(result) = view.terminal_result {
+            let outcome = if result.winner_side == 0 { "Draw".to_owned() }
+                else { format!("Side {} wins", result.winner_side) };
+            format!("Bees native | World {} | Episode {} | {}{} | {:.2} s | Tab world, Esc close",
+                view.world_id.0, view.episode_revision + 1, outcome,
+                if result.timed_out { " (time limit)" } else { "" }, result.duration_seconds)
+        } else { format!(
             "Bees native | World {} | Episode {} | Tick {} | {} ships, {} shots | {} squads selected | {}{} | {} | range/obstruction {} | Left select/drag, double-click type, Ctrl add, right move/attack | C stop chase, V cease fire, A attack on sight, G guard, P patrol, M mine, H heal, R retreat, T point fire, X stop, B ranges, Backspace cancel | Space pause, N step, Tab world, arrows pan, wheel zoom, F fit, Esc exit",
             view.world_id.0, view.episode_revision, view.tick, counts.ships, counts.projectiles,
             self.renderer.selection.squads().len(),
@@ -360,7 +366,8 @@ impl NativeClient {
                 counts.range_queries, counts.range_candidates_culled, counts.missing_range_data,
                 counts.aim_points, counts.missing_aim_data) }
             else { "off".to_owned() },
-        ));
+        ) };
+        self.window.set_title(&title);
         self.ui_wall_seconds += ui_started.elapsed().as_secs_f64();
         self.rendered_frames += 1;
         self.rendered_pixels = self.rendered_pixels.saturating_add(
@@ -377,10 +384,12 @@ impl NativeClient {
         self.window.update_with_buffer(self.renderer.pixels(), width, height)?;
         self.window_update_wall_seconds += window_update_started.elapsed().as_secs_f64();
         if !self.window.is_open() { return Ok(NativeClientAction::Quit); }
-        if let Some(input) = cease_fire_input { return Ok(NativeClientAction::CeaseFire(input)); }
-        if let Some(input) = manual_fire { return Ok(NativeClientAction::Fire(input)); }
-        if let Some(input) = support_command { return Ok(NativeClientAction::Support(input)); }
-        if let Some(input) = player_move { return Ok(NativeClientAction::Move(input)); }
+        if view.terminal_result.is_none() {
+            if let Some(input) = cease_fire_input { return Ok(NativeClientAction::CeaseFire(input)); }
+            if let Some(input) = manual_fire { return Ok(NativeClientAction::Fire(input)); }
+            if let Some(input) = support_command { return Ok(NativeClientAction::Support(input)); }
+            if let Some(input) = player_move { return Ok(NativeClientAction::Move(input)); }
+        }
         let after_frame = Instant::now();
         if single_step || (!self.paused && after_frame >= self.next_step) {
             // At most one authoritative step per poll. A slow inference or
