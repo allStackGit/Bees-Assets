@@ -870,6 +870,11 @@ impl NativePhysicalScene {
                 target.vitals.set_full_health_capacity(10_000)
                     .map_err(|_| NativePolicyOnlyLevelError::InvalidCampaignDialogue)?;
                 target.original_health = 10_000;
+                // Unity CreateHumanTarget(Titania2Center) runs when the
+                // briefing ends. The native briefing holds physics, so
+                // placing this same real hull during Level construction
+                // preserves the gameplay start without a second spawn.
+                target.motion.position = crate::campaign_staging::TITANIA_CENTER;
             }
         }
         let agents = self.exported_policy_agents(&setup.model_slots)
