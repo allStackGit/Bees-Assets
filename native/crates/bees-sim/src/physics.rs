@@ -1070,6 +1070,10 @@ pub enum ShipHullOverlap {
     Contact,
 }
 
+/// The spatial grid is reused for both physical populations, never duplicated.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum GridContents { Stale, Ships, Obstacles }
+
 /// The same physical scene type will be owned by graphical and headless
 /// worlds. The caller supplies authored movement velocities and consumes
 /// trigger entries; no PPO/Unity/rendering dependency is present.
@@ -1078,9 +1082,9 @@ pub struct KinematicPhysics {
     projectiles: Vec<ProjectileBody>,
     obstacles: Vec<ObstacleBody>,
     grid: SpatialGrid,
-    /// The one shared grid is rebound to obstacles later in step().
-    /// The Barge ship contact query lazily rebuilds ships only if needed.
-    grid_contains_ships: bool,
+    /// One spatial grid, rebound lazily between ship and obstacle indices.
+    /// Explicit ownership prevents treating an invalidated grid as obstacles.
+    grid_contents: GridContents,
     candidates: Vec<usize>,
     overlaps_previous: Vec<TriggerEnter>,
     overlaps_current: Vec<TriggerEnter>,
@@ -1114,7 +1118,7 @@ impl KinematicPhysics {
             projectiles: Vec::new(),
             obstacles: Vec::new(),
             grid: SpatialGrid::new(area, cell_size)?,
-            grid_contains_ships: false,
+            grid_contents: GridContents::Stale,
             candidates: Vec::new(),
             overlaps_previous: Vec::new(),
             overlaps_current: Vec::new(),
@@ -1205,12 +1209,12 @@ impl KinematicPhysics {
             return false;
         }
         let mut rebuilt = false;
-        if !self.grid_contains_ships {
+        if self.grid_contents != GridContents::Ships {
             self.grid.rebuild_with(self.ships.len(), |index| {
                 let ship = &self.ships[index];
                 if ship.active { ship.collider.bounds } else { None }
             });
-            self.grid_contains_ships = true;
+            self.grid_contents = GridContents::Ships;
             rebuilt = true;
         }
         let bounds = self.ships[index].collider.bounds
@@ -1225,16 +1229,38 @@ impl KinematicPhysics {
     pub(crate) fn circle_ship_contact_candidates(&mut self, center: Vec2, radius: f32,
         output: &mut Vec<usize>,
     ) -> bool {
-        let rebuilt = !self.grid_contains_ships;
+        let rebuilt = self.grid_contents != GridContents::Ships;
         if rebuilt {
             self.grid.rebuild_with(self.ships.len(), |index| {
                 let ship = &self.ships[index];
                 if ship.active { ship.collider.bounds } else { None }
             });
-            self.grid_contains_ships = true;
+            self.grid_contents = GridContents::Ships;
         }
         self.grid.candidates(Aabb { min: center - Vec2::new(radius, radius),
             max: center + Vec2::new(radius, radius) }, output);
+        rebuilt
+    }
+
+    /// Query MapObject range circles against the SAME obstacle grid used by
+    /// projectile collisions. Immediately after physics.step the grid is
+    /// already obstacle-bound, so all weapons share it without a rebuild.
+    /// Dynamic obstacle insertion/replacement invalidates the grid first.
+    pub(crate) fn circle_obstacle_contact_candidates(
+        &mut self, center: Vec2, radius: f32, output: &mut Vec<usize>,
+    ) -> bool {
+        let rebuilt = self.grid_contents != GridContents::Obstacles;
+        if rebuilt {
+            self.grid.rebuild_with(self.obstacles.len(), |index| {
+                let obstacle = &self.obstacles[index];
+                if obstacle.active { obstacle.collider.bounds } else { None }
+            });
+            self.grid_contents = GridContents::Obstacles;
+        }
+        self.grid.candidates(Aabb {
+            min: center - Vec2::new(radius, radius),
+            max: center + Vec2::new(radius, radius),
+        }, output);
         rebuilt
     }
 
@@ -1250,7 +1276,7 @@ impl KinematicPhysics {
     pub fn current_ship_contact_candidates(
         &mut self, index: usize, output: &mut Vec<usize>,
     ) -> bool {
-        if !self.grid_contains_ships {
+        if self.grid_contents != GridContents::Ships {
             for ship in &mut self.ships {
                 if ship.active {
                     ship.update_hull();
@@ -1293,12 +1319,12 @@ impl KinematicPhysics {
             ),
         };
         let mut rebuilt = false;
-        if !self.grid_contains_ships {
+        if self.grid_contents != GridContents::Ships {
             self.grid.rebuild_with(self.ships.len(), |index| {
                 let ship = &self.ships[index];
                 if ship.active { ship.collider.bounds } else { None }
             });
-            self.grid_contains_ships = true;
+            self.grid_contents = GridContents::Ships;
             rebuilt = true;
         }
         self.grid.candidates(sweep, output);
@@ -1524,6 +1550,7 @@ impl KinematicPhysics {
         }
         let index = self.obstacles.len();
         self.obstacles.push(body);
+        self.grid_contents = GridContents::Stale;
         Ok(index)
     }
 
@@ -1536,7 +1563,7 @@ impl KinematicPhysics {
         // Dynamic Scout/Carrier spawns may be followed by sight queries
         // before the next physics tick. Invalidate the reused ship grid so
         // it includes the new collider on its next lazy rebuild.
-        self.grid_contains_ships = false;
+        self.grid_contents = GridContents::Stale;
         Ok(index)
     }
 
@@ -1579,6 +1606,7 @@ impl KinematicPhysics {
             return Err(PhysicsError::ActiveObstacleSlot);
         }
         *slot = obstacle;
+        self.grid_contents = GridContents::Stale;
         Ok(())
     }
 
@@ -1615,7 +1643,7 @@ impl KinematicPhysics {
             let ship = &self.ships[index];
             if ship.active { ship.collider.bounds } else { None }
         });
-        self.grid_contains_ships = true;
+        self.grid_contents = GridContents::Ships;
         self.counts.ship_grid_overflow_bodies = self.grid.overflow.len() as u64;
         self.overlaps_current.clear();
         for projectile in &self.projectiles {
@@ -1683,7 +1711,7 @@ impl KinematicPhysics {
             let obstacle = &self.obstacles[index];
             if obstacle.active { obstacle.collider.bounds } else { None }
         });
-        self.grid_contains_ships = false;
+        self.grid_contents = GridContents::Obstacles;
         self.counts.obstacle_grid_overflow_bodies = self.grid.overflow.len() as u64;
         // Obstacle contacts retain their own overlap history and queue.
         // A shot can contact a ship and an obstacle in the same physics tick.
