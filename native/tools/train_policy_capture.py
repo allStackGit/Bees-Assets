@@ -467,6 +467,7 @@ def bundle_captures(receipt_path, manifest_sha, checkpoint_sha, learner_slot, ex
 
 def main():
     started_at = time.perf_counter()
+    process_cpu_started_at = time.process_time()
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ("capture", "journal"):
         parser.add_argument(name, type=Path, nargs="?")
@@ -577,12 +578,15 @@ def main():
         for name, module in optimizer_modules.items():
             module.load_state_dict(checkpoint[name])
     processing_started = time.perf_counter()
+    processing_cpu_started = time.process_time()
     terminal_steps = 0
     episode_keys = set()
     opponent_steps = 0
     capture_stats = {}
     capture_read_wall_seconds = 0.0
     trajectory_ingest_wall_seconds = 0.0
+    capture_read_cpu_seconds = 0.0
+    trajectory_ingest_cpu_seconds = 0.0
     for capture, journal, path in inputs:
         manifest, manifest_sha = manifests[path]
         rollouts = iter(completed_rollouts(
@@ -595,13 +599,17 @@ def main():
         # and ML-Agents buffer ingestion. The existing total includes both.
         while True:
             capture_started = time.perf_counter()
+            capture_cpu_started = time.process_time()
             try:
                 rollout = next(rollouts)
             except StopIteration:
                 capture_read_wall_seconds += time.perf_counter() - capture_started
+                capture_read_cpu_seconds += time.process_time() - capture_cpu_started
                 break
             capture_read_wall_seconds += time.perf_counter() - capture_started
+            capture_read_cpu_seconds += time.process_time() - capture_cpu_started
             ingest_started = time.perf_counter()
+            ingest_cpu_started = time.process_time()
             key, _, ticks, _, _, _, learning_agents = rollout
             if key in episode_keys:
                 parser.error("the same completed episode was supplied more than once")
@@ -614,16 +622,20 @@ def main():
                 trainer._process_trajectory(trajectory)
                 terminal_steps += int(trajectory.done_reached)
             trajectory_ingest_wall_seconds += time.perf_counter() - ingest_started
+            trajectory_ingest_cpu_seconds += time.process_time() - ingest_cpu_started
     steps = trainer.update_buffer.num_experiences
     if steps < settings.hyperparameters.batch_size:
         parser.error("capture contains fewer observed intervals than one optimizer minibatch")
     processing_wall_seconds = time.perf_counter() - processing_started
+    processing_cpu_seconds = time.process_time() - processing_cpu_started
     update_started = time.perf_counter()
+    update_cpu_started = time.process_time()
     if not trainer._update_policy():
         raise RuntimeError("MA-POCA did not update its policy")
     if device.type == "cuda":
         torch.cuda.synchronize(device)
     update_wall_seconds = time.perf_counter() - update_started
+    update_cpu_seconds = time.process_time() - update_cpu_started
     # PyTorch allocator peaks describe this process, not total device VRAM.
     # Read once per round, never in the simulation or optimizer hot loop.
     cuda_metrics = {}
@@ -695,11 +707,16 @@ def main():
         **cuda_metrics,
         "optimizer_input_steps": steps,
         "trajectory_processing_wall_seconds": processing_wall_seconds,
+        "trajectory_processing_cpu_seconds": processing_cpu_seconds,
         "capture_read_and_validation_wall_seconds": capture_read_wall_seconds,
+        "capture_read_and_validation_cpu_seconds": capture_read_cpu_seconds,
         "trajectory_assembly_and_ingest_wall_seconds": trajectory_ingest_wall_seconds,
+        "trajectory_ingest_cpu_seconds": trajectory_ingest_cpu_seconds,
         "optimizer_update_wall_seconds": update_wall_seconds,
+        "optimizer_update_cpu_seconds": update_cpu_seconds,
         "optimizer_steps_per_update_second": steps / update_wall_seconds if update_wall_seconds else None,
         "total_wall_seconds": time.perf_counter() - started_at,
+        "total_cpu_seconds": time.process_time() - process_cpu_started_at,
         "terminal_steps": terminal_steps,
         "episodes": len(episode_keys),
         "opponent_steps": opponent_steps,
