@@ -12,16 +12,25 @@ const PAGE_SIZE: usize = 7;
 const TEXT: [u8; 3] = [232, 240, 250];
 const MUTED: [u8; 3] = [155, 178, 206];
 
+pub struct BattleMenuRow<'a> {
+    pub title: &'a str,
+    pub status: &'a str,
+    pub unlocked: bool,
+}
+
 /// Returns the selected catalog entry, or None when leaving the launcher.
 pub fn select_battle(
-    titles: &[&str], selected: &mut usize, launch_failed: bool,
+    rows: &[BattleMenuRow<'_>], selected: &mut usize, launch_failed: bool,
 ) -> Result<Option<usize>, minifb::Error> {
-    if titles.is_empty() { return Ok(None); }
-    *selected = (*selected).min(titles.len() - 1);
+    if rows.is_empty() { return Ok(None); }
+    *selected = (*selected).min(rows.len() - 1);
     let mut window = Window::new("Bees | Offline battles", WIDTH, HEIGHT, WindowOptions::default())?;
     window.set_target_fps(30);
     let mut pixels = vec![0; WIDTH * HEIGHT];
-    let titles = titles.iter().map(|title| text::fit(title, 560)).collect::<Vec<_>>();
+    let titles = rows.iter().map(|row| {
+        let available = 560_usize.saturating_sub(text::width(row.status, 1));
+        format!("{}{}", text::fit(row.title, available), row.status)
+    }).collect::<Vec<_>>();
     let mut first = (*selected / PAGE_SIZE) * PAGE_SIZE;
     let mut mouse_down = false;
     while window.is_open() && !window.is_key_down(Key::Escape) {
@@ -33,7 +42,9 @@ pub fn select_battle(
         }
         if *selected < first { first = *selected; }
         if *selected >= first + PAGE_SIZE { first = *selected + 1 - PAGE_SIZE; }
-        if window.is_key_pressed(Key::Enter, KeyRepeat::No) { return Ok(Some(*selected)); }
+        if window.is_key_pressed(Key::Enter, KeyRepeat::No) && rows[*selected].unlocked {
+            return Ok(Some(*selected));
+        }
         let pressed = window.get_mouse_down(MouseButton::Left);
         if pressed && !mouse_down {
             if let Some((x, y)) = window.get_mouse_pos(MouseMode::Discard) {
@@ -42,7 +53,7 @@ pub fn select_battle(
                     let row = (y - LIST_TOP) / ROW_HEIGHT;
                     if first + row < titles.len() && (y - LIST_TOP) % ROW_HEIGHT < ROW_HEIGHT - 4 {
                         *selected = first + row;
-                        return Ok(Some(*selected));
+                        if rows[*selected].unlocked { return Ok(Some(*selected)); }
                     }
                 }
             }
@@ -58,7 +69,8 @@ pub fn select_battle(
             for y in top..top + ROW_HEIGHT - 4 {
                 pixels[y * WIDTH + 100..y * WIDTH + 700].fill(color);
             }
-            text::draw_centered(&mut pixels, WIDTH, top + 8, title, 1, TEXT);
+            let text_color = if rows[first + row].unlocked { TEXT } else { MUTED };
+            text::draw_centered(&mut pixels, WIDTH, top + 8, title, 1, text_color);
         }
         if titles.len() > PAGE_SIZE {
             let page = format!("{}-{} of {} battles", first + 1, (first + PAGE_SIZE).min(titles.len()), titles.len());

@@ -38,6 +38,28 @@ Closing the battle returns to the picker. Each launch stores its journal
 and any recording under a new `battle-NNNN/run` directory. Catalog play uses
 offline run configurations.
 
+To enable mission progression, give the catalog a stable `campaign_id` and
+add `mission` to each campaign entry. For example:
+
+```json
+{
+  "campaign_id": "titania",
+  "battles": [
+    {"title": "Minesweeper", "config": "minesweeper/run.json",
+     "mission": {"id": "minesweeper", "player_side": 1}},
+    {"title": "Beenoculars", "config": "beenoculars/run.json",
+     "mission": {"id": "beenoculars", "player_side": 1, "requires": ["minesweeper"]}}
+  ]
+}
+```
+
+Each mission runs one Level and one episode. Prerequisites must appear
+earlier in the catalog. By default a mission advances on victory. Use
+`"advance_on": "finished"` for a mission that advances after any finalized
+battle outcome. Closing early and watching recordings grant no progress.
+The picker restores progress from completed run summaries in the same
+output directory. Keep those summaries to keep the unlocks.
+
 Space pauses all worlds; N advances one fixed round while paused; Tab changes
 the inspected world without replaying input from the previous one. Each
 Level uses its authored fixed timestep for physics, timers, and presentation.

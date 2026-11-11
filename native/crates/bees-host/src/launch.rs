@@ -46,6 +46,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
+#[cfg(feature = "client")]
+#[path = "battle_catalog.rs"]
+mod battle_catalog;
+
 type MinionAllocator = Box<
     dyn FnMut(SquadLifetime, i64) -> Result<SquadLifetime, SquadRosterError>,
 >;
@@ -724,6 +728,21 @@ struct BattleRestart {
     replay_inputs: Option<PathBuf>,
 }
 
+#[derive(Clone, Copy)]
+struct CampaignMission<'a> {
+    campaign_id: &'a str,
+    mission_id: &'a str,
+    player_side: i32,
+}
+
+#[derive(Serialize, Deserialize)]
+struct CampaignOutcome {
+    campaign_id: String,
+    mission_id: String,
+    player_side: i32,
+    winner_side: i32,
+}
+
 pub fn run() -> Result<(), Box<dyn Error>> {
     let mut args = env::args_os().skip(1);
     let first = args.next().ok_or_else(|| invalid(USAGE))?;
@@ -774,19 +793,20 @@ pub fn run() -> Result<(), Box<dyn Error>> {
     if replay_inputs.is_some() && output.is_none() {
         return Err(invalid("--replay-inputs requires --output-dir").into());
     }
-    run_session(&config_path, play, view, output, capture, replay_inputs)
+    run_session(&config_path, play, view, output, capture, replay_inputs, None)
 }
 
 fn run_session(
     config_path: &Path, play: bool, view: bool, output: Option<PathBuf>,
     capture: Option<PathBuf>, mut replay_inputs: Option<PathBuf>,
+    mission: Option<CampaignMission<'_>>,
 ) -> Result<(), Box<dyn Error>> {
     let config_path = config_path.canonicalize()?;
     let mut replay_number = 0_u64;
     let mut battle_output = output.clone();
     let mut battle_capture = capture.clone();
     while let Some(restart) = run_battle(&config_path, play, view, battle_output.as_deref(), battle_capture.as_deref(),
-        replay_number, replay_inputs.as_deref())? {
+        replay_number, replay_inputs.as_deref(), mission)? {
         replay_number = replay_number.checked_add(1).ok_or_else(|| invalid("replay count exhausted"))?;
         let next = output.as_ref().ok_or_else(|| invalid("replay requires --output-dir"))?
             .join(format!("replay-{replay_number:04}"));
@@ -799,30 +819,34 @@ fn run_session(
 
 #[cfg(feature = "client")]
 fn run_menu(catalog_path: &Path, output_root: &Path) -> Result<(), Box<dyn Error>> {
-    #[derive(Deserialize)]
-    #[serde(deny_unknown_fields)]
-    struct BattleEntry { title: String, config: PathBuf }
-
-    #[derive(Deserialize)]
-    #[serde(deny_unknown_fields)]
-    struct BattleCatalog { battles: Vec<BattleEntry> }
+    use bees_host::presentation::{BattleMenuRow, select_battle};
 
     let catalog_path = catalog_path.canonicalize()?;
-    let catalog: BattleCatalog = serde_json::from_slice(&fs::read(&catalog_path)?)?;
-    if catalog.battles.is_empty() || catalog.battles.iter().any(|entry|
-        entry.title.trim().is_empty() || entry.config.as_os_str().is_empty())
-    {
-        return Err(invalid("The battle catalog needs at least one battle, each with a title and run configuration").into());
-    }
+    let catalog: battle_catalog::BattleCatalog = serde_json::from_slice(&fs::read(&catalog_path)?)?;
+    catalog.validate()?;
     let root = catalog_path.parent().ok_or_else(|| invalid("missing catalog directory"))?;
     fs::create_dir_all(output_root)?;
-    let titles = catalog.battles.iter().map(|entry| entry.title.trim()).collect::<Vec<_>>();
+    let mut progress = catalog.load_progress(output_root)?;
     let mut selected = 0;
     let mut number = 0_u64;
     let mut launch_failed = false;
-    while let Some(index) = bees_host::presentation::select_battle(&titles, &mut selected, launch_failed)? {
+    loop {
+        let rows = catalog.battles.iter().map(|entry| {
+            let unlocked = entry.mission.as_ref().is_none_or(|mission|
+                mission.requires.iter().all(|id| progress.contains(id.as_str())));
+            let status = if !unlocked { "  [Locked]" }
+                else if entry.mission.as_ref().is_some_and(|mission| progress.contains(mission.id.as_str())) {
+                    "  [Complete]"
+                } else { "" };
+            BattleMenuRow { title: entry.title.trim(), status, unlocked }
+        }).collect::<Vec<_>>();
+        let Some(index) = select_battle(&rows, &mut selected, launch_failed)? else { break };
         let entry = &catalog.battles[index];
         let config = resolve(root, &entry.config);
+        let mission = catalog.campaign_id.as_deref().zip(entry.mission.as_ref())
+            .map(|(campaign_id, mission)| CampaignMission {
+                campaign_id, mission_id: &mission.id, player_side: mission.player_side,
+            });
         // Reserve a parent atomically so another launcher cannot claim the
         // same output. The battle owns creation of its normal run directory.
         let output = loop {
@@ -834,7 +858,8 @@ fn run_menu(catalog_path: &Path, output_root: &Path) -> Result<(), Box<dyn Error
                 Err(error) => return Err(error.into()),
             }
         };
-        let result = run_session(&config, true, true, Some(output), None, None);
+        let result = run_session(&config, true, true, Some(output.clone()), None, None, mission);
+        if mission.is_some() { catalog.add_battle_progress(&output, &mut progress)?; }
         launch_failed = result.is_err();
         if let Err(error) = result {
             eprintln!("Could not play {} ({}): {error}", entry.title, config.display());
@@ -846,11 +871,15 @@ fn run_menu(catalog_path: &Path, output_root: &Path) -> Result<(), Box<dyn Error
 fn run_battle(
     config_path: &Path, play: bool, view: bool, output: Option<&Path>,
     capture: Option<&Path>, replay_number: u64, replay_inputs: Option<&Path>,
+    mission: Option<CampaignMission<'_>>,
 ) -> Result<Option<BattleRestart>, Box<dyn Error>> {
     let run_start = Instant::now();
     let root = config_path.parent().ok_or_else(|| invalid("missing config directory"))?;
     let config_bytes = fs::read(config_path)?;
     let mut config: RunConfig = serde_json::from_slice(&config_bytes)?;
+    if mission.is_some() && (config.levels.len() != 1 || config.episodes_per_world != 1) {
+        return Err(invalid("A campaign mission requires one Level and one episode").into());
+    }
     if replay_inputs.is_some() && !config.model_updates.is_empty() {
         return Err(invalid("player input playback requires one policy manifest for the whole battle").into());
     }
@@ -1087,6 +1116,11 @@ fn run_battle(
         }
         for squad in &source.source_squads {
             highest_squad_item_id = highest_squad_item_id.max(squad.item_id);
+        }
+        if mission.is_some_and(|mission| !source.source_squads.iter().any(|squad|
+            squad.side == mission.player_side && squad.player_permissions.user_controlled))
+        {
+            return Err(invalid("The campaign player side has no authored player squad").into());
         }
         if model_source.is_none() && !source.source_policy_bindings.is_empty() {
             return Err(invalid("authored policy controllers require a model worker").into());
@@ -1802,6 +1836,15 @@ fn run_battle(
     let rate = |count: u64, seconds: f64| {
         (seconds > 0.0).then(|| count as f64 / seconds)
     };
+    let campaign_outcome = mission.filter(|_| replay_inputs.is_none() && !user_closed &&
+        failed_window.is_none() && cleanup_errors.is_empty() && completed_episodes == [1])
+        .and_then(|mission| {
+            let result = host.simulation().world(0)?.state.events.latest_finalized_episode()?.result;
+            Some(CampaignOutcome {
+                campaign_id: mission.campaign_id.to_owned(), mission_id: mission.mission_id.to_owned(),
+                player_side: mission.player_side, winner_side: result.winner_side,
+            })
+        });
     let final_summary = json!({
         "kind": "run_final",
         "run_id": config.run_id,
@@ -1829,6 +1872,7 @@ fn run_battle(
         "completed_episodes": completed_episodes.iter()
             .map(|&count| u64::from(count)).sum::<u64>(),
         "completed_worlds": status.completed_worlds,
+        "campaign_outcome": campaign_outcome,
         "aborted_worlds": status.aborted_worlds,
         "failed_worlds": status.failed_worlds,
         "running_worlds": status.running_worlds,
@@ -1894,10 +1938,18 @@ fn run_battle(
         ).into());
     }
     if let Some(summary_path) = summary {
+        let file_path = if campaign_outcome.is_some() { summary_path.with_extension("tmp") }
+            else { summary_path.clone() };
         let file = fs::OpenOptions::new().write(true).create_new(true)
-            .open(summary_path)?;
+            .open(&file_path)?;
         serde_json::to_writer(&file, &final_summary)?;
         file.sync_all()?;
+        drop(file);
+        if file_path != summary_path {
+            fs::rename(file_path, &summary_path)?;
+            #[cfg(unix)]
+            fs::File::open(summary_path.parent().ok_or_else(|| invalid("missing summary directory"))?)?.sync_all()?;
+        }
     }
     if play && !user_closed && (playback.is_some() ||
         completed_episodes.iter().all(|&count| count == config.episodes_per_world)) {
