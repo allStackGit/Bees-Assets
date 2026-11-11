@@ -168,6 +168,7 @@ function hubComparisonCsv(exported) {
         'observed_at','source_modified_at','experiment_id','segment_id',
         'break_before','steps_completed',
         'trial_batch_id','trial_batch_index','trial_batch_size',
+        'resource_bundle_id','resource_bundle_index','resource_bundle_size',
     ];
     const metrics=new Set(exported.metrics||[]);
     for(const key of [...metrics].sort())
@@ -198,6 +199,9 @@ function hubComparisonCsv(exported) {
         trial_batch_id:run.trial_batch?.id,
         trial_batch_index:run.trial_batch?.index,
         trial_batch_size:run.trial_batch?.size,
+        resource_bundle_id:run.resource_bundle?.id,
+        resource_bundle_index:run.resource_bundle?.index,
+        resource_bundle_size:run.resource_bundle?.size,
         status:run.status,...point,
         ...Object.fromEntries(Object.entries(point.metrics||{}).flatMap(
             ([key,metric])=>[
@@ -1245,6 +1249,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 artifact_lineage_root_id:job.artifact_lineage_root_id||job.id,
                 continuation_of_job_id:job.continuation_of_job_id||null,
                 trial_batch:job.trial_batch||null,
+                resource_bundle:job.resource_bundle||null,
                 status:job.status,
                 execution_diagnostic:job.execution_diagnostic||null,
                 ...(project==='tinybrains'?{profile_sha256:job.frozen_parameters?.profile_sha256||null}:{}),
