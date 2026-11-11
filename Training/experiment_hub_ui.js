@@ -1579,6 +1579,7 @@ document.addEventListener('DOMContentLoaded', () => {
         'ppo_microbatches','states_per_microbatch','actor_grad_norm',
         'group_grad_norm','baseline_grad_norm','policy_lag',
         'rss_mb','job_memory_mb','job_peak_memory_mb','job_cpu_cores',
+        'job_cpu_lease_utilization_pct',
         'host_cpu_busy_pct','host_gpu_busy_pct','host_gpu_vram_mb',
         'host_gpu_0_busy_pct','host_gpu_0_used_vram_mb',
         'host_gpu_1_busy_pct','host_gpu_1_used_vram_mb',

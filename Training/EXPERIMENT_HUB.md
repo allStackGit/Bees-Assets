@@ -1932,7 +1932,11 @@ contain sensitive content.
 Generic metric names do not grant stopping, model promotion or benchmark
 authority. A concrete project adapter must be installed and qualified to
 produce real measurements. Host GPU utilization and VRAM values are physical
-device observations, **not per-job GPU accounting**.
+device observations, **not per-job GPU accounting**. For native jobs,
+`job_cpu_lease_utilization_pct` reports sampled process CPU-core equivalents
+as a percentage of the job's fixed CPU budget, using continuous authenticated
+CPU-time observations. It is not a measure of marginal throughput, and short
+sampling intervals may show values above 100%.
 
 ### Selecting and promoting independently trained models
 
