@@ -520,12 +520,27 @@ def main():
     episode_keys = set()
     opponent_steps = 0
     capture_stats = {}
+    capture_read_wall_seconds = 0.0
+    trajectory_ingest_wall_seconds = 0.0
     for capture, journal, path in inputs:
         manifest, manifest_sha = manifests[path]
-        for rollout in completed_rollouts(
+        rollouts = iter(completed_rollouts(
             capture, journal, manifest, manifest_sha, input_sha, args.learner_slot,
             stats=capture_stats,
-        ):
+        ))
+        # Measure at episode boundaries rather than on every decision.
+        # The capture phase includes journal parsing, frame decoding and
+        # cohort validation; the other phase includes trajectory assembly
+        # and ML-Agents buffer ingestion. The existing total includes both.
+        while True:
+            capture_started = time.perf_counter()
+            try:
+                rollout = next(rollouts)
+            except StopIteration:
+                capture_read_wall_seconds += time.perf_counter() - capture_started
+                break
+            capture_read_wall_seconds += time.perf_counter() - capture_started
+            ingest_started = time.perf_counter()
             key, _, ticks, _, _, _, learning_agents = rollout
             if key in episode_keys:
                 parser.error("the same completed episode was supplied more than once")
@@ -537,6 +552,7 @@ def main():
             for trajectory in trajectories((rollout,), settings.time_horizon, behavior.behavior_id):
                 trainer._process_trajectory(trajectory)
                 terminal_steps += int(trajectory.done_reached)
+            trajectory_ingest_wall_seconds += time.perf_counter() - ingest_started
     steps = trainer.update_buffer.num_experiences
     if steps < settings.hyperparameters.batch_size:
         parser.error("capture contains fewer observed intervals than one optimizer minibatch")
@@ -606,6 +622,8 @@ def main():
         "optimizer_device": str(device),
         "optimizer_input_steps": steps,
         "trajectory_processing_wall_seconds": processing_wall_seconds,
+        "capture_read_and_validation_wall_seconds": capture_read_wall_seconds,
+        "trajectory_assembly_and_ingest_wall_seconds": trajectory_ingest_wall_seconds,
         "optimizer_update_wall_seconds": update_wall_seconds,
         "optimizer_steps_per_update_second": steps / update_wall_seconds if update_wall_seconds else None,
         "total_wall_seconds": time.perf_counter() - started_at,
