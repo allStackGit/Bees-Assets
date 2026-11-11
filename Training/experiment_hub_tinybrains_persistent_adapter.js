@@ -169,6 +169,15 @@ function recordedTinyBrainsMetrics(row,updateWall) {
             worker.transport_roundtrip_seconds,'seconds');
         add('collector_'+i+'_model_prepare_seconds',
             worker.model_prepare_seconds,'seconds');
+        // This includes input transfer, remote compute and returned data;
+        // unlike GPU busy time, it measures useful delivered experience.
+        const roundtrip=worker.transport_roundtrip_seconds;
+        if(Number.isFinite(roundtrip)&&roundtrip>0) {
+            add('collector_'+i+'_decisions_per_second',
+                worker.ant_decisions/roundtrip,'rate');
+            add('collector_'+i+'_engine_steps_per_second',
+                worker.engine_steps/roundtrip,'rate');
+        }
     }
     return metrics;
 }

@@ -2529,6 +2529,11 @@ service to the public Internet.
    Updated remote workers report `collector_N_model_prepare_seconds`
    (policy/critic weight loading plus first-use allocation) so that model
    reuse can be measured separately from end-to-end collection time.
+   The Hub also derives `collector_N_decisions_per_second` and
+   `collector_N_engine_steps_per_second` from a collector's delivered
+   work divided by its recorded full request/response roundtrip. These
+   remote rates include worker compute, serialization and transport:
+   they are **not** network-only timings or marginal CPU-core gains.
    The Hub creates each worker configuration, all jobs and all machine
    reservations atomically; if any physical worker or capacity is missing,
    no job or claim is committed. No process is started by this action.
