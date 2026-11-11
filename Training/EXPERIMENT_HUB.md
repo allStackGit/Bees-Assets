@@ -1947,10 +1947,29 @@ The native coordinator reads TinyBrains jobs under the Hub data root's
 `tinybrains-jobs/` directory. For another project (including Courier),
 install a private mode-0600 `job-export-roots.json` in the same Hub data
 root, mapping project IDs to approved, absolute, owner-owned artifact
-directories; these are never specified in HTTP requests. The legacy Bees
-coordinator uses its operator-owned metrics and run-scoped log paths.
-Remote-only worker data is **not** collected through the coordinator;
-copy or upload those logs through a separately approved mechanism.
+directories; these are never specified in HTTP requests. For jobs on other
+machines, the same file can additionally map **operator-mounted, read-only**
+worker artifact directories to the enrolled machine IDs and project IDs:
+
+```json
+{
+  "@machine_roots": {
+    "exeter": {"tinybrains": "/mnt/exeter/tinybrains"},
+    "warwick": {"courier": "/mnt/warwick/courier"}
+  }
+}
+```
+
+The coordinator uses the mounted `<root>/<job-uuid>/` only for jobs
+actually assigned to that machine and project, preserving the existing
+approved file-extension, symlink and credential exclusions. A missing mount
+is reported in the export manifest; an existing redirected/unowned mount
+is rejected. Project-owned histories remain on their training machines
+unless the operator independently provides a secure mounted directory
+(e.g., read-only SSHFS/SMB with appropriate owner mapping). This is
+**not** automatic file transfer and does not grant the Hub SSH access or
+allow arbitrary commands. The legacy Bees coordinator continues to use
+its existing operator-owned metrics and run-scoped log paths.
 Inspect archives before sharing them, as ordinary application logs can
 contain sensitive content.
 
