@@ -5,14 +5,21 @@ created from the current `feat/experiment-queue-ui` branch.
 
 ## Native tactical view (development)
 
-The existing policy runner can now open an optional native Windows/Linux-X11
-window around the **same** `NativeHostRuntime`, model inference and fixed-step
-Levels used headlessly:
+The `bees` executable opens a native Windows/Linux-X11 window around the
+same `NativeHostRuntime`, model inference, and fixed-step Levels used
+headlessly. Build it with the client feature:
 
 ```sh
-cargo run --release --manifest-path native/Cargo.toml -p bees-host \
-  --features client --example policy_rollout -- /absolute/path/to/run.json --view
+cargo build --release --manifest-path native/Cargo.toml -p bees-host --features client --bin bees
+bees play /absolute/path/to/run.json --output-dir /path/to/new-run
 ```
+
+Run the built executable from `native/target/release` or add it to your
+PATH. For offline play and evaluation, `--output-dir` creates a fresh
+directory for the connection checkpoint, journal, and summary. If the
+template enables policy capture, the capture also goes in that directory.
+Scene and model paths still resolve relative to the configuration file.
+Network and recovery runs use their configured checkpoint and journal.
 
 Space pauses all worlds; N advances one fixed round while paused; Tab changes
 the inspected world without replaying input from the previous one. Each
@@ -69,15 +76,18 @@ See `HANDOFF.md` for the remaining integration boundary and local evidence.
 
 ## Headless policy-only execution (development)
 
-The executable `bees-host/examples/policy_rollout.rs` connects the exported
+The same executable connects the exported
 physical scenes to the **same** shared `CombatWorld`, multi-Level driver,
 resident v26 TorchScript/ONNX inference, durable HiveMind identity and
 notification delivery, and interval throughput counters:
 
 ```sh
 cargo run --release --manifest-path native/Cargo.toml -p bees-host \
-  --example policy_rollout -- /absolute/path/to/run.json
+  --bin bees -- run /absolute/path/to/run.json
 ```
+
+The `policy_rollout` example and direct `bees run.json` invocation still
+accept the existing training command line.
 
 The single JSON configuration file requires:
 
