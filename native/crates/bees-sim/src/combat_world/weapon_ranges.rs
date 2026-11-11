@@ -64,18 +64,23 @@ impl CombatWorld {
                     let Ok(range) = mount.world_range(position, rotation, weapons.last_hull_rotation)
                         else { continue };
                     if !range.enabled { continue; }
-                    self.physics.circle_obstacle_contact_candidates(
-                        range.center, range.radius, &mut self.weapon_range_candidates,
+                    counts.weapon_range_map_object_grid_rebuilds += u64::from(
+                        self.physics.circle_obstacle_contact_candidates(
+                            range.center, range.radius, &mut self.weapon_range_candidates,
+                        ),
                     );
+                    counts.weapon_range_map_object_candidates += self.weapon_range_candidates.len() as u64;
                     for &index in &self.weapon_range_candidates {
                         let obstacle = &self.physics.obstacles()[index];
                         let id = obstacle.id;
                         if self.map_objects.contains_key(&id) &&
                             !self.range_visible_map_objects.contains(&id) &&
-                            collisions.allows(range.layer, obstacle.layer) &&
-                            obstacle.primary_overlaps_circle(range.center, range.radius)
+                            collisions.allows(range.layer, obstacle.layer)
                         {
-                            self.range_visible_map_objects.insert(id);
+                            counts.weapon_range_map_object_exact_tests += 1;
+                            if obstacle.primary_overlaps_circle(range.center, range.radius) {
+                                self.range_visible_map_objects.insert(id);
+                            }
                         }
                     }
                 }
