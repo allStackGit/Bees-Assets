@@ -392,7 +392,13 @@ def collect_predictions(
             if stats.shape != (count, CONTINUOUS * 2 + DISCRETE) or not np.isfinite(stats).all():
                 raise ValueError("invalid sampled action or behavior log probabilities")
             if behavior is None:
-                behavior = np.empty((rows, CONTINUOUS * 2 + DISCRETE), dtype="<f4")
+                # A batch may combine a trainable ML-Agents slot with ONNX
+                # or TorchScript opponents that do not return log probabilities.
+                # The capture uses one all-row behavior frame; initialize its
+                # unused opponent rows deterministically rather than exporting
+                # uninitialized allocator contents. Only ML-Agents learner
+                # rows consume these statistics during PPO updates.
+                behavior = np.zeros((rows, CONTINUOUS * 2 + DISCRETE), dtype="<f4")
             behavior[indices] = stats
         expected_cont = (count, CONTINUOUS)
         expected_disc = (count, DISCRETE)
