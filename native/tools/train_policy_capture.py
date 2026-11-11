@@ -153,6 +153,7 @@ def completed_rollouts(capture, journal, manifest, manifest_sha, checkpoint_sha,
     # Validate each team's owner and numeric amounts without rebuilding one
     # Python reward tuple per event; bisect_right uses the original tick order.
     reward_events = 0
+    reward_payload_bytes = 0
     for (episode_key, team), events in rewards.items():
         final = all_terminals.get(episode_key)
         if final is None:
@@ -165,11 +166,15 @@ def completed_rollouts(capture, journal, manifest, manifest_sha, checkpoint_sha,
         ).all():
             raise ValueError("invalid or out-of-order group reward journal")
         reward_events += len(events.ticks)
+        reward_payload_bytes += (
+            len(events.ticks) * events.ticks.itemsize +
+            len(events.amounts) * events.amounts.itemsize
+        )
     if stats is not None:
         stats["reward_journal_events"] = stats.get("reward_journal_events", 0) + reward_events
         # Logical numeric payload, not Python allocator or peak RSS usage.
         stats["reward_journal_payload_bytes"] = (
-            stats.get("reward_journal_payload_bytes", 0) + reward_events * 16
+            stats.get("reward_journal_payload_bytes", 0) + reward_payload_bytes
         )
     # Resolve learner ownership only for episodes whose terminal boundaries
     # are being processed, rather than retaining IDs for the whole run.
