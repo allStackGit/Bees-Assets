@@ -100,8 +100,13 @@ line or K to dismiss the section. The same cues appear in headless journals.
 Use `"campaign_dialogue": {"titania_beenoculars": {"player_side": 1}}`
 with a defense objective for Titania II. Its briefing gates the clock and
 reinforcements in the client. The upload milestones and ending use the
-shared defense clock and result. Set `under_heavy_fire` to `true` in the
-defeat-route configuration to include the evacuation warning.
+shared defense clock and result. The protected ship must be the imported
+HumanTarget; native scene setup applies the source mission's 10,000
+current/maximum/original HP before play and shows its live Planetary
+Shield health beside the defense clock. Generic defense targets retain
+their imported health. Campaign `max_rounds` must cover the full survival
+duration at the scene's fixed step. Set `under_heavy_fire` to `true` in
+the defeat-route configuration to include the evacuation warning.
 
 To add either authored Titania obstacle field to an ordinary fleet
 snapshot, run `python native/tools/import-titania-field.py Minesweeper
