@@ -113,6 +113,11 @@ pub struct NativeBomberContact {
     /// geometry, preserving Level.State.Squads order. Command activation
     /// and timer callbacks use this same authoritative view.
 pub trait NativeLevelCommandContext {
+    /// Admit scheduled source squads at the completed fixed-tick boundary.
+    fn deploy_reinforcements(
+        &mut self, _world: &mut CombatWorld, _events: &mut NativeLevelEventProcessor, _tick: u64,
+    ) -> Result<(), NativeLevelStepError> { Ok(()) }
+
     /// Current source squad strategy and native command identity. A Level with
     /// authored automatic weapons must provide these genuine values.
     fn automatic_weapon_inputs(&self, _ship_id: i64, _roster: &NativeSquadRoster,
@@ -636,6 +641,7 @@ impl<M: NativeLevelRewardMetadata, A> NativeLevelState<M, A> {
 
 #[derive(Debug)]
 pub enum NativeLevelStepError {
+    Reinforcements(String),
     Combat(CombatWorldError),
     Events(NativeLevelEventError),
     EpisodeComplete,
@@ -792,6 +798,9 @@ where
                 dialogue.set_cue(cue);
                 state.events.queue_campaign_dialogue(completed_tick, cue)?;
             }
+        }
+        if !state.events.completed() {
+            state.metadata.deploy_reinforcements(&mut state.combat, &mut state.events, completed_tick)?;
         }
         // Unity Ship.Kill removes the casualty, then calls Squad.SetOffsets
         // on its survivors in the SAME kill transaction. The roster's

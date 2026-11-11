@@ -167,6 +167,16 @@ pub struct NativeAuthoredSquad {
     pub members: Vec<i64>,
 }
 
+impl NativeAuthoredSquad {
+    pub(crate) fn register(self, combat: &CombatWorld, roster: &mut bees_gameplay::squads::NativeSquadRoster)
+        -> Result<(), SquadRosterError>
+    {
+        roster.register_squad(combat, self.owner, self.side, &self.members)?;
+        if let Some(bans) = self.command_bans { roster.set_command_bans(self.owner, bans)?; }
+        Ok(())
+    }
+}
+
 /// The original MA-POCA group agent IDs are NOT necessarily runtime ship
 /// IDs. Retain their exact source identity and true side; never infer a
 /// synthetic group participant from a physical hull.
@@ -176,6 +186,7 @@ pub struct NativeAuthoredGroups {
 }
 
 pub struct NativeAuthoredLevel<M, A> {
+    pub reserved_ship_ids: Vec<i64>,
     pub extraction: Option<bees_sim::combat_world::ExtractionZone>,
     pub minesweeper_dialogue_side: Option<i32>,
     pub weapon_rank_frame: Option<i32>,
@@ -331,92 +342,19 @@ impl NativeSceneAssets {
         // Imported ship/obstacle lists arrive separately; sort their
         // original IDs once at setup, never in the simulation hot path.
         let mut entities = authored.entities;
-        let mut specials = Vec::new();
-        let mut special_weapons = Vec::new();
-        let mut drone_carriers = Vec::new();
+        let mut reserved = authored.reserved_ship_ids;
+        reserved.sort_unstable();
+        let mut reserved = reserved.into_iter().peekable();
+        let mut attachments = Vec::new();
         entities.sort_unstable_by_key(NativeAuthoredEntity::entity_id);
         for entity in entities {
+            while reserved.peek().is_some_and(|&id| id < entity.entity_id()) {
+                combat.reserve_future_ship_id(reserved.next().expect("next reserved ship"))
+                    .map_err(NativeSceneBuildError::Combat)?;
+            }
             match entity {
                 NativeAuthoredEntity::Ship(ship) => {
-                if let Some(spec) = ship.special_weapon { special_weapons.push((ship.entity_id, spec)); }
-                if let Some(carrier_id) = ship.drone_carrier_id {
-                    drone_carriers.push((ship.entity_id, carrier_id));
-                }
-                if let Some(special) = ship.special {
-                    specials.push((ship.entity_id, ship.policy.is_some(), special));
-                }
-                let asset = self.ship_catalog().by_type(ship.ship_type)
-                    .ok_or(NativeSceneBuildError::MissingShipAsset(ship.ship_type))?;
-                combat.spawn_ship(
-                    asset, ship.entity_id, ship.side, ship.vitals, ship.motion,
-                ).map_err(NativeSceneBuildError::Combat)?;
-                if let Some(source) = ship.combat_activity {
-                    combat.configure_combat_activity(ship.entity_id, source)
-                        .map_err(NativeSceneBuildError::Combat)?;
-                }
-                combat.configure_ship_game_movement(ship.entity_id, ship.game_movement)
-                    .map_err(NativeSceneBuildError::Combat)?;
-                combat.configure_game_ship_original_health(
-                    ship.entity_id, ship.original_health,
-                ).map_err(NativeSceneBuildError::Combat)?;
-                combat.set_ship_collision_profile(ship.entity_id, ShipCollisionProfile {
-                    size_class: ship.size_class, original_health: ship.original_health,
-                }).map_err(NativeSceneBuildError::Combat)?;
-                if let Some(shape) = ship.healing_zone {
-                    combat.configure_beehive_healing_zone(ship.entity_id, shape)
-                        .map_err(NativeSceneBuildError::Combat)?;
-                }
-                if let Some(shape) = ship.warp_zone {
-                    combat.configure_warp_gate_zone(ship.entity_id, shape)
-                        .map_err(NativeSceneBuildError::Combat)?;
-                }
-                if let Some(fleet_id) = ship.fleet_ship_id {
-                    combat.set_ship_fleet_identity(ship.entity_id, fleet_id)
-                        .map_err(NativeSceneBuildError::Combat)?;
-                }
-                let is_policy = ship.policy.is_some();
-                if let Some(policy) = ship.policy {
-                    combat.bind_policy_ship(
-                        ship.entity_id, policy.frame, policy.movement_disabled,
-                    ).map_err(NativeSceneBuildError::Combat)?;
-                    if ship.policy_capabilities.mining {
-                        combat.configure_policy_mining(ship.entity_id)
-                            .map_err(NativeSceneBuildError::Combat)?;
-                    }
-                    if let Some(heal) = ship.policy_capabilities.healing {
-                        combat.configure_policy_healing(ship.entity_id, heal.bee_side,
-                            heal.ship_size_pixels, heal.beehive_size_pixels)
-                            .map_err(NativeSceneBuildError::Combat)?;
-                    }
-                    if let Some(side) = ship.policy_capabilities.warp_human_side {
-                        combat.configure_policy_warp(ship.entity_id, side)
-                            .map_err(NativeSceneBuildError::Combat)?;
-                    }
-                }
-                if let Some(source) = ship.weapon_rank_source {
-                    combat.configure_weapon_rank_source(source).map_err(NativeSceneBuildError::Combat)?;
-                }
-                if let Some(geometry) = ship.target_geometry {
-                    combat.configure_ship_target_geometry(ship.entity_id, geometry)
-                        .map_err(NativeSceneBuildError::Combat)?;
-                }
-                combat.set_ship_cease_fire(ship.entity_id, ship.cease_fire)
-                    .map_err(NativeSceneBuildError::Combat)?;
-                for turret in ship.turrets {
-                    if is_policy {
-                        combat.configure_policy_turret(ship.entity_id, turret.slot, turret.spec)
-                    } else {
-                        combat.configure_game_turret(ship.entity_id, turret.slot, turret.spec)
-                    }.map_err(NativeSceneBuildError::Combat)?;
-                    if let Some(front) = turret.aim_at_front_of_ship {
-                        combat.configure_turret_target_geometry(ship.entity_id, turret.slot, front)
-                            .map_err(NativeSceneBuildError::Combat)?;
-                    }
-                    if let Some(range) = turret.range_collider {
-                        combat.configure_turret_range(ship.entity_id, turret.slot, range)
-                            .map_err(NativeSceneBuildError::Combat)?;
-                    }
-                }
+                    attachments.extend(spawn_authored_ship(self.ship_catalog(), &mut combat, ship, false)?);
                 }
                 NativeAuthoredEntity::BoxObstacle {
                     entity_id, prefab_name, pose, live_corners,
@@ -470,19 +408,10 @@ impl NativeSceneAssets {
                 }
             }
         }
-        // Carrier links can point forward in source creation order. Install
-        // specials only after every authored ship and fleet identity exists.
-        for (id, spec) in special_weapons {
-            combat.configure_special_weapon(id, spec).map_err(NativeSceneBuildError::Combat)?;
+        for id in reserved {
+            combat.reserve_future_ship_id(id).map_err(NativeSceneBuildError::Combat)?;
         }
-        for (id, policy, special) in specials {
-            special.configure(&mut combat, id, policy)
-                .map_err(NativeSceneBuildError::Combat)?;
-        }
-        for (id, carrier_id) in drone_carriers {
-            combat.configure_drone_carrier(id, carrier_id)
-                .map_err(NativeSceneBuildError::Combat)?;
-        }
+        install_ship_attachments(&mut combat, attachments)?;
         if combat.total_living_ships() == 0 {
             return Err(NativeSceneBuildError::EmptyScene);
         }
@@ -496,13 +425,7 @@ impl NativeSceneAssets {
                 .map_err(NativeSceneBuildError::GroupConfiguration)?;
         }
         for squad in authored.squads {
-            events.roster_mut().register_squad(
-                &combat, squad.owner, squad.side, &squad.members,
-            ).map_err(NativeSceneBuildError::Squad)?;
-            if let Some(bans) = squad.command_bans {
-                events.roster_mut().set_command_bans(squad.owner, bans)
-                    .map_err(NativeSceneBuildError::Squad)?;
-            }
+            squad.register(&combat, events.roster_mut()).map_err(NativeSceneBuildError::Squad)?;
         }
         if !events.roster().covers_live_roster(&combat) {
             return Err(NativeSceneBuildError::IncompleteSquadRoster);
@@ -536,4 +459,121 @@ impl NativeSceneAssets {
         ).map_err(NativeSceneBuildError::Perception)?;
         Ok(world)
     }
+}
+
+pub(crate) struct SpawnedShipAttachments {
+    id: i64,
+    policy: bool,
+    weapon: Option<bees_sim::combat_world::NativeSpecialWeaponSpec>,
+    special: Option<NativeAuthoredShipSpecial>,
+    carrier: Option<i64>,
+}
+
+pub(crate) fn spawn_authored_ship(
+    catalog: &bees_sim::ship_assets::ShipAssetCatalog,
+    combat: &mut CombatWorld,
+    ship: NativeAuthoredShip,
+    reserved: bool,
+) -> Result<Option<SpawnedShipAttachments>, NativeSceneBuildError> {
+    let asset = catalog.by_type(ship.ship_type)
+        .ok_or(NativeSceneBuildError::MissingShipAsset(ship.ship_type))?;
+    if reserved {
+        combat.spawn_reserved_ship(asset, ship.entity_id, ship.side, ship.vitals, ship.motion)
+    } else {
+        combat.spawn_ship(asset, ship.entity_id, ship.side, ship.vitals, ship.motion)
+    }.map_err(NativeSceneBuildError::Combat)?;
+    if let Some(source) = ship.combat_activity {
+        combat.configure_combat_activity(ship.entity_id, source)
+            .map_err(NativeSceneBuildError::Combat)?;
+    }
+    combat.configure_ship_game_movement(ship.entity_id, ship.game_movement)
+        .map_err(NativeSceneBuildError::Combat)?;
+    combat.configure_game_ship_original_health(
+        ship.entity_id, ship.original_health,
+    ).map_err(NativeSceneBuildError::Combat)?;
+    combat.set_ship_collision_profile(ship.entity_id, ShipCollisionProfile {
+        size_class: ship.size_class, original_health: ship.original_health,
+    }).map_err(NativeSceneBuildError::Combat)?;
+    if let Some(shape) = ship.healing_zone {
+        combat.configure_beehive_healing_zone(ship.entity_id, shape)
+            .map_err(NativeSceneBuildError::Combat)?;
+    }
+    if let Some(shape) = ship.warp_zone {
+        combat.configure_warp_gate_zone(ship.entity_id, shape)
+            .map_err(NativeSceneBuildError::Combat)?;
+    }
+    if let Some(fleet_id) = ship.fleet_ship_id {
+        combat.set_ship_fleet_identity(ship.entity_id, fleet_id)
+            .map_err(NativeSceneBuildError::Combat)?;
+    }
+    let is_policy = ship.policy.is_some();
+    if let Some(policy) = ship.policy {
+        combat.bind_policy_ship(
+            ship.entity_id, policy.frame, policy.movement_disabled,
+        ).map_err(NativeSceneBuildError::Combat)?;
+        if ship.policy_capabilities.mining {
+            combat.configure_policy_mining(ship.entity_id)
+                .map_err(NativeSceneBuildError::Combat)?;
+        }
+        if let Some(heal) = ship.policy_capabilities.healing {
+            combat.configure_policy_healing(ship.entity_id, heal.bee_side,
+                heal.ship_size_pixels, heal.beehive_size_pixels)
+                .map_err(NativeSceneBuildError::Combat)?;
+        }
+        if let Some(side) = ship.policy_capabilities.warp_human_side {
+            combat.configure_policy_warp(ship.entity_id, side)
+                .map_err(NativeSceneBuildError::Combat)?;
+        }
+    }
+    if let Some(source) = ship.weapon_rank_source {
+        combat.configure_weapon_rank_source(source).map_err(NativeSceneBuildError::Combat)?;
+    }
+    if let Some(geometry) = ship.target_geometry {
+        combat.configure_ship_target_geometry(ship.entity_id, geometry)
+            .map_err(NativeSceneBuildError::Combat)?;
+    }
+    combat.set_ship_cease_fire(ship.entity_id, ship.cease_fire)
+        .map_err(NativeSceneBuildError::Combat)?;
+    for turret in ship.turrets {
+        if is_policy {
+            combat.configure_policy_turret(ship.entity_id, turret.slot, turret.spec)
+        } else {
+            combat.configure_game_turret(ship.entity_id, turret.slot, turret.spec)
+        }.map_err(NativeSceneBuildError::Combat)?;
+        if let Some(front) = turret.aim_at_front_of_ship {
+            combat.configure_turret_target_geometry(ship.entity_id, turret.slot, front)
+                .map_err(NativeSceneBuildError::Combat)?;
+        }
+        if let Some(range) = turret.range_collider {
+            combat.configure_turret_range(ship.entity_id, turret.slot, range)
+                .map_err(NativeSceneBuildError::Combat)?;
+        }
+    }
+    Ok((ship.special_weapon.is_some() || ship.special.is_some() || ship.drone_carrier_id.is_some())
+        .then_some(SpawnedShipAttachments {
+        id: ship.entity_id, policy: is_policy, weapon: ship.special_weapon,
+        special: ship.special, carrier: ship.drone_carrier_id,
+    }))
+}
+
+pub(crate) fn install_ship_attachments(
+    combat: &mut CombatWorld, mut attachments: Vec<SpawnedShipAttachments>,
+) -> Result<(), NativeSceneBuildError> {
+    // Source carrier links can point forward within the same deployment.
+    for ship in &attachments {
+        if let Some(spec) = ship.weapon {
+            combat.configure_special_weapon(ship.id, spec).map_err(NativeSceneBuildError::Combat)?;
+        }
+    }
+    for ship in &mut attachments {
+        if let Some(special) = ship.special.take() {
+            special.configure(combat, ship.id, ship.policy).map_err(NativeSceneBuildError::Combat)?;
+        }
+    }
+    for ship in attachments {
+        if let Some(carrier) = ship.carrier {
+            combat.configure_drone_carrier(ship.id, carrier).map_err(NativeSceneBuildError::Combat)?;
+        }
+    }
+    Ok(())
 }

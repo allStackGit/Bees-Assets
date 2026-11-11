@@ -144,6 +144,7 @@ struct DamageCommandOwners {
 #[derive(Clone, Debug)]
 pub enum NativeLevelNotificationKind {
     CampaignDialogue(crate::campaign_dialogue::CampaignCue),
+    ReinforcementsArrived { ships: usize, squads: usize },
     TargetingSelected { owner: SquadLifetime, choice: crate::squad_targeting::NativeInstalledTargeting },
     SquadChange(SquadRosterChange),
     /// Sparse, source-authored capability outcomes for the native game's
@@ -835,6 +836,16 @@ impl NativeLevelEventProcessor {
         Self::reserve_output_records(&mut self.pending_notifications, &mut self.failed, 1)?;
         self.pending_notifications.push(NativeLevelNotification {
             tick, kind: NativeLevelNotificationKind::CampaignDialogue(cue),
+        });
+        Ok(())
+    }
+
+    pub fn record_reinforcements(&mut self, tick: u64, ships: usize, squads: usize)
+        -> Result<(), NativeLevelEventError>
+    {
+        Self::reserve_output_records(&mut self.pending_notifications, &mut self.failed, 1)?;
+        self.pending_notifications.push(NativeLevelNotification {
+            tick, kind: NativeLevelNotificationKind::ReinforcementsArrived { ships, squads },
         });
         Ok(())
     }

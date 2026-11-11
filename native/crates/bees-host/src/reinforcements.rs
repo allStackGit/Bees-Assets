@@ -1,0 +1,129 @@
+//! Deferred deployment of authored, non-policy squads into a live Level.
+
+use std::collections::{HashMap, VecDeque};
+
+use bees_gameplay::level_events::NativeLevelEventProcessor;
+use bees_gameplay::level_host::NativeLevelActivationContext;
+use bees_gameplay::level_rules::NativeLevelStepError;
+use bees_gameplay::player_inputs::NativeLevelPlayerContext;
+use bees_sim::{combat_world::CombatWorld, geometry::Vec2, squad_movement::{SquadFormationMember, issue_squad_move}};
+
+use crate::policy_only_metadata::NativePolicyOnlyMetadata;
+use crate::scene_builder::{NativeAuthoredEntity, NativeAuthoredLevel, NativeAuthoredShip, NativeAuthoredSquad,
+    install_ship_attachments, spawn_authored_ship};
+use crate::ship_specials::NativeAuthoredShipSpecial;
+
+pub struct NativeReinforcementPlan {
+    pub after_seconds: f32,
+    pub squad_item_ids: Vec<i64>,
+    pub entry: Option<Vec2>,
+}
+
+pub(crate) struct ReinforcementWave {
+    tick: u64,
+    entry: Option<Vec2>,
+    squads: Vec<NativeAuthoredSquad>,
+    ships: Vec<NativeAuthoredShip>,
+}
+
+impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
+    pub(crate) fn stage_reinforcements(&mut self, plans: Vec<NativeReinforcementPlan>, dt: f32)
+        -> Result<(), &'static str>
+    {
+        if plans.is_empty() { return Ok(()); }
+        let mut squad_waves = HashMap::new();
+        let mut waves = Vec::with_capacity(plans.len());
+        let mut previous = 0.0;
+        for plan in plans {
+            let tick = (f64::from(plan.after_seconds) / f64::from(dt)).floor() + 1.0;
+            if !plan.after_seconds.is_finite() || plan.after_seconds <= previous ||
+                !tick.is_finite() || tick >= u64::MAX as f64 || plan.squad_item_ids.is_empty() ||
+                plan.entry.is_some_and(|entry| !entry.is_finite())
+            {
+                return Err("Reinforcements need strictly increasing positive times, nonempty squads, and finite entries");
+            }
+            for id in plan.squad_item_ids {
+                if squad_waves.insert(id, waves.len()).is_some() {
+                    return Err("A squad may arrive in only one reinforcement wave");
+                }
+            }
+            previous = plan.after_seconds;
+            waves.push(ReinforcementWave { tick: tick as u64, entry: plan.entry, squads: Vec::new(), ships: Vec::new() });
+        }
+        let mut ship_waves = HashMap::new();
+        let mut initial_squads = Vec::new();
+        for squad in std::mem::take(&mut self.squads) {
+            if let Some(wave) = squad_waves.remove(&squad.owner.squad_id) {
+                ship_waves.extend(squad.members.iter().map(|&id| (id, wave)));
+                waves[wave].squads.push(squad);
+            } else { initial_squads.push(squad); }
+        }
+        if !squad_waves.is_empty() { return Err("Reinforcements reference an unknown source squad item ID"); }
+        let mut initial_entities = Vec::new();
+        for entity in std::mem::take(&mut self.entities) {
+            let NativeAuthoredEntity::Ship(ship) = entity else { initial_entities.push(entity); continue };
+            let wave = ship_waves.get(&ship.entity_id).copied();
+            let striker_carrier = match &ship.special {
+                Some(NativeAuthoredShipSpecial::Striker { carrier, .. }) => carrier.carrier_id,
+                _ => None,
+            };
+            if [ship.drone_carrier_id, striker_carrier].into_iter().flatten().any(|id|
+                ship_waves.get(&id).copied() != wave)
+            {
+                return Err("Reinforcement carrier and child must deploy together");
+            }
+            if let Some(wave) = wave {
+                if ship.policy.is_some() || ship.motion.is_policy_controlled {
+                    return Err("Reinforcements cannot reserve a live policy controller");
+                }
+                self.reserved_ship_ids.push(ship.entity_id);
+                waves[wave].ships.push(ship);
+            } else { initial_entities.push(NativeAuthoredEntity::Ship(ship)); }
+        }
+        self.squads = initial_squads;
+        self.entities = initial_entities;
+        for wave in &mut waves { wave.ships.sort_unstable_by_key(|ship| ship.entity_id); }
+        self.metadata.reinforcements = VecDeque::from(waves);
+        Ok(())
+    }
+}
+
+impl NativePolicyOnlyMetadata {
+    pub(crate) fn activate_reinforcements(
+        &mut self, world: &mut CombatWorld, events: &mut NativeLevelEventProcessor, tick: u64,
+    ) -> Result<(), NativeLevelStepError> {
+        while self.reinforcements.front().is_some_and(|wave| wave.tick <= tick) {
+            let wave = self.reinforcements.pop_front().expect("due wave");
+            let (ships, squads) = (wave.ships.len(), wave.squads.len());
+            let invalid = |error| NativeLevelStepError::Reinforcements(error);
+            let mut attachments = Vec::new();
+            for ship in wave.ships {
+                attachments.extend(spawn_authored_ship(&self.ship_catalog, world, ship, true)
+                    .map_err(|error| invalid(format!("{error:?}")))?);
+            }
+            install_ship_attachments(world, attachments).map_err(|error| invalid(format!("{error:?}")))?;
+            let options = self.player_formation_options();
+            for squad in wave.squads {
+                if let Some(entry) = wave.entry {
+                    let members = squad.members.iter().map(|&ship_id| {
+                        let missing = || invalid(format!("Missing reinforcement formation for ship {ship_id}"));
+                        Ok(SquadFormationMember {
+                            ship_id,
+                            offset_from_center: self.stored_formation_offset(ship_id).ok_or_else(missing)?,
+                            clearance: self.current_path_clearance(ship_id).ok_or_else(missing)?,
+                            mobile: world.ship_body(ship_id).ok_or_else(missing)?.motion.mobile,
+                        })
+                    }).collect::<Result<Vec<_>, NativeLevelStepError>>()?;
+                    if members.iter().any(|member| member.mobile) {
+                        let plan = issue_squad_move(world, &self.navigation, &members, entry, options)
+                            .map_err(|error| invalid(format!("{error:?}")))?;
+                        if plan.is_none() { return Err(invalid(format!("Reinforcement squad {} has no reachable entry", squad.owner.squad_id))); }
+                    }
+                }
+                squad.register(world, events.roster_mut()).map_err(|error| invalid(format!("{error:?}")))?;
+            }
+            events.record_reinforcements(tick, ships, squads)?;
+        }
+        Ok(())
+    }
+}

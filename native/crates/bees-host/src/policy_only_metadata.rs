@@ -142,6 +142,7 @@ pub struct NativePolicyOnlyMetadata {
     sides: HashMap<i32, AuthoredPolicySide>,
     beacon_templates: HashMap<i64, Arc<NativeBeaconTemplate>>,
     player: NativeSourcePlayerInputs,
+    pub(crate) reinforcements: std::collections::VecDeque<crate::reinforcements::ReinforcementWave>,
 }
 
 impl NativePolicyOnlyMetadata {
@@ -252,6 +253,7 @@ impl NativePolicyOnlyMetadata {
             source_static_discovery_values,
             explorers: Vec::new(),
             agents: agent_map, sides: side_map, beacon_templates, player,
+            reinforcements: std::collections::VecDeque::new(),
         })
     }
 
@@ -417,6 +419,12 @@ impl NativeLevelRewardMetadata for NativePolicyOnlyMetadata {
 }
 
 impl NativeLevelCommandContext for NativePolicyOnlyMetadata {
+    fn deploy_reinforcements(
+        &mut self, world: &mut CombatWorld, events: &mut bees_gameplay::level_events::NativeLevelEventProcessor, tick: u64,
+    ) -> Result<(), bees_gameplay::level_rules::NativeLevelStepError> {
+        self.activate_reinforcements(world, events, tick)
+    }
+
     fn collect_bomber_contacts(&mut self, world: &CombatWorld, roster: &NativeSquadRoster,
         output: &mut Vec<bees_gameplay::level_rules::NativeBomberContact>,
     ) -> Result<(), GameCommandError> {

@@ -699,6 +699,7 @@ pub struct NativeExportedPolicyLevelSetup<A> {
     pub model_slots: HashMap<u8, u32>,
     pub extraction: Option<bees_sim::combat_world::ExtractionZone>,
     pub minesweeper_dialogue_side: Option<i32>,
+    pub reinforcements: Vec<crate::reinforcements::NativeReinforcementPlan>,
     // Team-owned exploration starts fresh for the newly constructed
     // episode, and then follows the actual fixed-step ship movement.
     pub allocate_minion: A,
@@ -706,6 +707,7 @@ pub struct NativeExportedPolicyLevelSetup<A> {
 
 #[derive(Debug)]
 pub enum NativePolicyOnlyLevelError {
+    InvalidReinforcements(&'static str),
     Snapshot(NativeSnapshotError),
     Metadata(PolicyOnlyMetadataError),
     InvalidControllerBinding(i64),
@@ -840,6 +842,7 @@ impl NativePhysicalScene {
             .map_err(NativePolicyOnlyLevelError::Snapshot)?;
         self.bind_exported_policy_ships()
             .map_err(NativePolicyOnlyLevelError::Snapshot)?;
+        let dt = self.fixed_dt_seconds;
         let mut authored = self.into_policy_only_level(NativePolicyOnlyLevelSetup {
             world_id: setup.world_id,
             level_id: setup.level_id,
@@ -860,6 +863,8 @@ impl NativePhysicalScene {
         })?;
         authored.extraction = setup.extraction;
         authored.minesweeper_dialogue_side = setup.minesweeper_dialogue_side;
+        authored.stage_reinforcements(setup.reinforcements, dt)
+            .map_err(NativePolicyOnlyLevelError::InvalidReinforcements)?;
         Ok(authored)
     }
 
@@ -1002,6 +1007,7 @@ impl NativePhysicalScene {
             .filter_map(|(source, squad)| source.hivemind.map(|inputs| (squad.owner, inputs)))
             .collect();
         Ok(NativeAuthoredLevel {
+            reserved_ship_ids: Vec::new(),
             extraction: None,
             minesweeper_dialogue_side: None,
             weapon_rank_frame: if self.schema_version >= 23 { self.source_frame_count } else { None },

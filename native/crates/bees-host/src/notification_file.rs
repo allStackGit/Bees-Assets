@@ -337,6 +337,7 @@ impl DurableDiagnosticNotifications {
     ) -> io::Result<()> {
         let kind = match &notification.kind {
             NativeLevelNotificationKind::CampaignDialogue(_) => "campaign_dialogue",
+            NativeLevelNotificationKind::ReinforcementsArrived { .. } => "reinforcements_arrived",
             NativeLevelNotificationKind::TargetingSelected { .. } => "targeting_selected",
             NativeLevelNotificationKind::SquadChange(_) => "squad_change",
             NativeLevelNotificationKind::Gameplay(_) => "gameplay",
@@ -356,6 +357,8 @@ impl DurableDiagnosticNotifications {
         // diagnostics. MA-POCA's ELO marker and EndEpisode command must
         // NEVER become PPO reward when this log is inspected or migrated.
         let payload = match &notification.kind {
+            NativeLevelNotificationKind::ReinforcementsArrived { ships, squads } =>
+                Some(json!({"ships": ships, "squads": squads})),
             NativeLevelNotificationKind::CampaignDialogue(cue) => {
                 use bees_gameplay::campaign_dialogue::CampaignCue;
                 let (section, object_id) = match cue {

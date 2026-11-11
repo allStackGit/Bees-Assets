@@ -80,6 +80,20 @@ before the battle starts. Fire Tank discovery, destruction of that tank,
 and the mission outcome select the later sections. Press L to advance a
 line or K to dismiss the section. The same cues appear in headless journals.
 
+To stage timed reinforcements, include the wave's authored ships and squads
+at their starting positions in the scene export. Add `reinforcements` to
+the Level entry. Each entry identifies the source squad item IDs and can
+give their formation an in-map destination:
+
+```json
+[{"after_seconds": 90, "squad_item_ids": [51, 52, 53], "entry": [200, -225]}]
+```
+
+These squads enter on the first fixed tick after the scheduled time while
+the battle is active. Use increasing times and unique squad item IDs. Waves
+use ordinary game ships without live policy bindings. The battle journal
+records the arrival tick and counts of ships and squads.
+
 Space pauses all worlds; N advances one fixed round while paused; Tab changes
 the inspected world without replaying input from the previous one. Each
 Level uses its authored fixed timestep for physics, timers, and presentation.

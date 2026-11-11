@@ -718,6 +718,7 @@ pub struct CombatWorld {
     physics: KinematicPhysics,
     projectile_assets: Arc<ProjectileAssetCatalog>,
     next_entity_id: i64,
+    reserved_ship_ids: HashSet<i64>,
     ships: Vec<CombatShip>,
     /// Actual live MapObjects: paired with ObstacleBody collider slots in
     /// the same KinematicPhysics world, not perception-only replicas.
@@ -911,6 +912,7 @@ impl CombatWorld {
             physics: KinematicPhysics::new(area, cell_size)?,
             projectile_assets,
             next_entity_id: 1,
+            reserved_ship_ids: HashSet::new(),
             ships: Vec::new(),
             map_objects: HashMap::new(),
             range_visible_map_objects: HashSet::new(),
@@ -1554,6 +1556,25 @@ impl CombatWorld {
         self.add_ship(CombatShip {
             entity_id, side, ship_type: asset.ship_type, vitals,
         }, body)
+    }
+
+    /// Reserve an authored future hull in the same source-ordered stream
+    /// that assigns initial entities. Dynamic shots and minions skip it.
+    pub fn reserve_future_ship_id(&mut self, id: i64) -> Result<(), CombatWorldError> {
+        if id < self.next_entity_id { return Err(CombatWorldError::DuplicateEntity); }
+        self.next_entity_id = id.checked_add(1).ok_or(CombatWorldError::EntityIdExhausted)?;
+        self.reserved_ship_ids.insert(id);
+        Ok(())
+    }
+
+    pub fn spawn_reserved_ship(
+        &mut self, asset: &ShipAsset, entity_id: i64, side: i32, vitals: ShipVitals, motion: ShipMotion,
+    ) -> Result<(), CombatWorldError> {
+        if !self.reserved_ship_ids.contains(&entity_id) { return Err(CombatWorldError::UnknownShip); }
+        let body = asset.spawn_physics_body(entity_id, motion)?;
+        self.add_ship_inner(CombatShip { entity_id, side, ship_type: asset.ship_type, vitals }, body, true)?;
+        self.reserved_ship_ids.remove(&entity_id);
+        Ok(())
     }
 
     /// Projectile kind and shape are supplied by the SAME authored prefab
@@ -2285,6 +2306,12 @@ impl CombatWorld {
         ship: CombatShip,
         body: ShipBody,
     ) -> Result<(), CombatWorldError> {
+        self.add_ship_inner(ship, body, false)
+    }
+
+    fn add_ship_inner(&mut self, ship: CombatShip, body: ShipBody, reserved: bool)
+        -> Result<(), CombatWorldError>
+    {
         if ship.side <= 0 { return Err(CombatWorldError::InvalidSide); }
         // Ship.Setup spawns living active hulls. Dead/despawned wrappers
         // may be represented by ShipVitals but cannot join the live world:
@@ -2293,7 +2320,7 @@ impl CombatWorld {
         if ship.vitals.is_dead() || !body.active {
             return Err(CombatWorldError::InvalidLiveShipSpawn);
         }
-        if body.id != ship.entity_id || body.id < self.next_entity_id ||
+        if body.id != ship.entity_id || (!reserved && body.id < self.next_entity_id) ||
             self.ship_by_id.contains_key(&ship.entity_id) ||
             self.projectile_by_id.contains_key(&ship.entity_id) ||
             self.obstacle_by_id.contains_key(&ship.entity_id)

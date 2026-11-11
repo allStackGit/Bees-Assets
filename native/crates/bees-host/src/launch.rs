@@ -100,6 +100,16 @@ struct LevelConfig {
     groups: Option<GroupConfig>,
     extraction: Option<ExtractionConfig>,
     campaign_dialogue: Option<CampaignDialogueConfig>,
+    #[serde(default)]
+    reinforcements: Vec<ReinforcementConfig>,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct ReinforcementConfig {
+    after_seconds: f32,
+    squad_item_ids: Vec<i64>,
+    entry: Option<[f32; 2]>,
 }
 
 #[derive(Clone, Copy, Deserialize)]
@@ -332,6 +342,7 @@ fn make_setup(
     seed: u64,
     episode_offset: u32,
     sides: [i32; 2],
+    remapped_squads: &HashMap<i64, i64>,
 ) -> io::Result<NativeExportedPolicyLevelSetup<MinionAllocator>> {
     let groups = level.groups.as_ref().map(|group| -> io::Result<NativeAuthoredGroups> {
         let number = episode_number(group, episode_offset)?;
@@ -363,6 +374,11 @@ fn make_setup(
         minesweeper_dialogue_side: level.campaign_dialogue.as_ref().map(|dialogue| match dialogue {
             CampaignDialogueConfig::TitaniaMinesweeper { player_side } => *player_side,
         }),
+        reinforcements: level.reinforcements.iter().map(|wave| bees_host::NativeReinforcementPlan {
+            after_seconds: wave.after_seconds,
+            squad_item_ids: wave.squad_item_ids.iter().map(|id| remapped_squads.get(id).copied().unwrap_or(*id)).collect(),
+            entry: wave.entry.map(vec2),
+        }).collect(),
         allocate_minion: allocate_from_stage(next_id),
     })
 }
@@ -440,6 +456,9 @@ fn gameplay_config_sha256(
         level.extraction.as_ref().map(|zone| (level.world_id, zone)))
         .collect::<std::collections::BTreeMap<_, _>>();
     if !extraction.is_empty() { inputs["extraction"] = json!(extraction); }
+    let reinforcements = config.levels.iter().filter(|level| !level.reinforcements.is_empty())
+        .map(|level| (level.world_id, &level.reinforcements)).collect::<std::collections::BTreeMap<_, _>>();
+    if !reinforcements.is_empty() { inputs["reinforcements"] = json!(reinforcements); }
     format!("{:x}", Sha256::digest(inputs.to_string().as_bytes()))
 }
 
@@ -1147,6 +1166,11 @@ fn run_battle(
         for squad in &source.source_squads {
             highest_squad_item_id = highest_squad_item_id.max(squad.item_id);
         }
+        if level.reinforcements.iter().flat_map(|wave| &wave.squad_item_ids)
+            .any(|id| !source.source_squads.iter().any(|squad| squad.item_id == *id))
+        {
+            return Err(invalid("Reinforcements reference an unknown source squad item ID").into());
+        }
         if mission.is_some_and(|mission| !source.source_squads.iter().any(|squad|
             squad.side == mission.player_side && squad.player_permissions.user_controlled))
         {
@@ -1197,17 +1221,21 @@ fn run_battle(
     // duplicates. Keep the first source lifetime and allocate fresh IDs
     // for subsequent copies so session ownership remains unambiguous.
     let mut seen_squad_ids = HashSet::new();
+    let mut remapped_squads_by_level = Vec::with_capacity(source_levels.len());
     for source in &mut source_levels {
+        let mut remapped = HashMap::new();
         for squad in &mut source.source_squads {
             if !seen_squad_ids.insert(squad.item_id) {
                 let item_id = next_id.get();
                 let following = item_id.checked_add(1)
                     .ok_or_else(|| invalid("Stage squad identities exhausted"))?;
                 next_id.set(following);
+                remapped.insert(squad.item_id, item_id);
                 squad.item_id = item_id;
                 seen_squad_ids.insert(item_id);
             }
         }
+        remapped_squads_by_level.push(remapped);
     }
     let source_fixed_dt_by_level: Vec<f32> =
         source_levels.iter().map(|source| source.fixed_dt_seconds).collect();
@@ -1234,7 +1262,7 @@ fn run_battle(
             source,
             make_setup(
                 &config, level, &assets, period,
-                Rc::clone(&next_id), level.episode_seed(0), 0, source_sides[index],
+                Rc::clone(&next_id), level.episode_seed(0), 0, source_sides[index], &remapped_squads_by_level[index],
             )?,
         ));
     }
@@ -1642,11 +1670,13 @@ fn run_battle(
                     .map_err(|error| contextual("cached authored Level", error))?;
                 // Replaying an authored template creates new real Stage
                 // squad lifetimes, not aliases of retired pooled wrappers.
+                let mut remapped = HashMap::new();
                 for squad in &mut scene.source_squads {
                     let item_id = next_id.get();
                     let following = item_id.checked_add(1)
                         .ok_or_else(|| invalid("Stage squad identities exhausted"))?;
                     next_id.set(following);
+                    remapped.insert(squad.item_id, item_id);
                     squad.item_id = item_id;
                 }
                 let seed = level.episode_seed(completed_episodes[index]);
@@ -1658,7 +1688,7 @@ fn run_battle(
                 }
                 let setup = make_setup(
                     &config, level, &assets, period, Rc::clone(&next_id), seed,
-                    completed_episodes[index], source_sides[index],
+                    completed_episodes[index], source_sides[index], &remapped,
                 )?;
                 let authored = scene.into_exported_policy_only_level(setup)
                     .map_err(|error| contextual("replayed Level source", error))?;

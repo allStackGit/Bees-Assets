@@ -15,6 +15,8 @@ pub mod socket;
 pub mod socket_worker;
 pub mod scene_assets;
 pub mod scene_builder;
+mod reinforcements;
+pub use reinforcements::NativeReinforcementPlan;
 pub mod ship_specials;
 pub mod fleet_inventory;
 pub mod policy_only_metadata;
