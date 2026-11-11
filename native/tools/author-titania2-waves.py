@@ -224,7 +224,24 @@ def expand(run, scene, manifest, read_capture=None):
                 scene["squads"].append(squad)
                 source_squads[squad_id] = squad
                 for eid in members:
-                    ship = captured_ships[eid]
+                    ship = dict(captured_ships[eid])
+                    # Unity has already issued the entry MoveToPoint when
+                    # a live wave is captured. A fresh native scene cannot
+                    # import that in-progress command: the deferred native
+                    # wave will issue its own equivalent order on arrival.
+                    # Require the capture to precede the first physics
+                    # movement tick, preserving its real spawn position,
+                    # speed, health, weapons and physical identity.
+                    velocity = ship.get("body_velocity")
+                    if not isinstance(velocity, dict) or (
+                        abs(number(velocity.get("x"), "ship velocity x")) > 0.0001 or
+                        abs(number(velocity.get("y"), "ship velocity y")) > 0.0001 or
+                        ship.get("is_moving") is not False or
+                        ship.get("has_target_coordinates") is not True
+                    ):
+                        fail(f"{label} ship {eid} must be captured after its entry order but before movement")
+                    ship["has_target_coordinates"] = False
+                    ship["target_coordinates"] = {"x": 0.0, "y": 0.0}
                     scene["ships"].append(ship)
                     ships[eid] = ship
                     entity_ids.add(eid)
@@ -236,7 +253,10 @@ def expand(run, scene, manifest, read_capture=None):
             output.append({
                 "after_seconds": at,
                 "squad_item_ids": [squad_id],
-                "spawn": spawn,
+                # A live Unity capture already contains the authoritative
+                # off-map physical placement. Do not move it again (or
+                # re-apply its adjusted formation offsets) at native setup.
+                "spawn": None if capture is not None else spawn,
                 "entry": entry,
             })
     level["reinforcements"] = output
