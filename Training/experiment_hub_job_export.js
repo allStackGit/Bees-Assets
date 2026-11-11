@@ -215,10 +215,17 @@ class JobExporter {
             resource_provenance:legacy?null:resourceProvenance(snapshot,jobs),
             progress,
             additional_sources:legacy?this.legacyBees.sources(jobs):
-                [...jobs.map(job=>({
-                    job_id:job.id,label:'hub-observations',
-                    path:path.join(this.dataRoot,'hub-observations-v1',job.id+'.jsonl'),
-                })),...mounted],
+                [...jobs.flatMap(job=>{
+                    const base=path.join(this.dataRoot,'hub-observations-v1');
+                    const hostFile=path.join(base,job.id+'-resources.jsonl');
+                    return [{
+                        job_id:job.id,label:'hub-observations',
+                        path:path.join(base,job.id+'.jsonl'),
+                    },...(fs.existsSync(hostFile)?[{
+                        job_id:job.id,label:'hub-host-observations',
+                        path:hostFile,
+                    }]:[])];
+                }),...mounted],
         }),{flag:'wx',mode:0o600});
         const id=crypto.randomUUID();
         const session={id,dir,project,status:'preparing',parts:[],error:null};

@@ -1899,6 +1899,14 @@ the pinned physical device, not isolated per-job GPU consumption. The native
 Hub also appends each distinct **received** validated source update to private
 `hub-observations-v1/<job-id>.jsonl` in its data directory, retaining source
 trainer metrics and observed resource metrics independently of chart limits.
+When a valid native owner observation has no new trainer update, the Hub
+also appends host-only CPU, RAM and physical GPU measurements to
+`hub-observations-v1/<job-id>-resources.jsonl`. These records have
+`observation_kind:host_only`, no trainer step count and no fabricated
+trainer source timestamp. Complete Export includes both files and marks
+host-only rows separately in the long-form observation CSV. The host-only
+series may continue while the trainer is stalled, but still cannot prove
+GPU work or account for unobserved updates.
 These files are diagnostic observations, not authoritative trainer histories;
 missed worker updates cannot be reconstructed. A failed archive write does not
 stop training and appears as an archive warning in Compare. This archive is

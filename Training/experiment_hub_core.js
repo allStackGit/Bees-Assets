@@ -3053,7 +3053,7 @@ class ExperimentHub {
             // GPU values are HOST-WIDE observations on the physically bound
             // device; they are not measured per-job GPU consumption.
             let chartProgress=progress;
-            if(progress) {
+            {
                 const observed={};
                 const add=(key,value,unit)=>{
                     if(Number.isFinite(value)&&value>=0&&value<=1e12)
@@ -3088,10 +3088,18 @@ class ExperimentHub {
                 // Archive validated source and host measurements before the
                 // bounded chart selector/coalescer discards sampling detail.
                 // This archive is observational and cannot gate training.
-                this.observations.record(job,progress,observed,received);
-                chartProgress={...progress,metrics:selectChartMetrics(
-                    progress.metrics,observed,job.metric_selection,
-                    progress.steps_completed)};
+                const archived=progress?
+                    this.observations.record(job,progress,observed,received):false;
+                // When a source update is unchanged or absent, keep the
+                // authenticated host observation with no invented trainer
+                // step count or source timestamp. An archive failure stays
+                // visible rather than being hidden by another write.
+                if(!archived&&(!progress||!this.observations.error))
+                    this.observations.recordResources(job,observed,received);
+                if(progress)
+                    chartProgress={...progress,metrics:selectChartMetrics(
+                        progress.metrics,observed,job.metric_selection,
+                        progress.steps_completed)};
             }
             const progressAccepted=chartProgress&&this.progressHistory.record(
                 job.id,job.project_id,chartProgress,received);
