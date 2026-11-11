@@ -3094,9 +3094,14 @@ class ExperimentHub {
                 // authenticated host observation with no invented trainer
                 // step count or source timestamp. An archive failure stays
                 // visible rather than being hidden by another write.
-                if(!archived&&(!progress||!this.observations.error))
+                // Terminal Inspect may legitimately report the host's busy
+                // CPU/GPU after this job has exited. Do not append those
+                // physical-host samples as if the finished process used them.
+                if(['running','stop_requested'].includes(item.state)&&
+                    !archived&&(!progress||!this.observations.error))
                     this.observations.recordResources(job,observed,received,
-                        progress?'not_advanced':'absent');
+                        progress?'not_advanced':
+                        item.progress_issue?'read_error':'absent');
                 if(progress)
                     chartProgress={...progress,metrics:selectChartMetrics(
                         progress.metrics,observed,job.metric_selection,
