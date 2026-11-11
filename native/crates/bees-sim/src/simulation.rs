@@ -11,7 +11,7 @@ use std::time::{Duration, Instant};
 use crate::policy::Decision;
 use crate::telemetry::{Measurements, StepCounts};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct WorldId(pub u64);
 
 /// Fast, repeatable, per-world integer random stream. Gameplay porting must

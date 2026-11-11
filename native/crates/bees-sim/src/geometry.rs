@@ -6,7 +6,7 @@
 
 use core::ops::{Add, AddAssign, Mul, Sub};
 
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 #[repr(C)]
 pub struct Vec2 {
     pub x: f32,

@@ -6,6 +6,8 @@ use std::env;
 use std::error::Error;
 use std::fs::{self, File};
 use std::io::{self, ErrorKind};
+#[cfg(feature = "client")]
+use std::io::Write;
 use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -712,7 +714,8 @@ fn run_battle(
 ) -> Result<bool, Box<dyn Error>> {
     let run_start = Instant::now();
     let root = config_path.parent().ok_or_else(|| invalid("missing config directory"))?;
-    let mut config: RunConfig = serde_json::from_reader(File::open(config_path)?)?;
+    let config_bytes = fs::read(config_path)?;
+    let mut config: RunConfig = serde_json::from_slice(&config_bytes)?;
     if config.status_every_rounds == Some(0) {
         return Err(invalid("status_every_rounds must be positive").into());
     }
@@ -1075,6 +1078,27 @@ fn run_battle(
         )?;
     }
     host.set_timing_sample_period(timing);
+    #[cfg(feature = "client")]
+    let mut input_trace = if let (true, Some(directory)) = (play, output) {
+        let mut trace = fs::OpenOptions::new().write(true).create_new(true)
+            .open(directory.join("player-inputs.jsonl"))?;
+        writeln!(trace, "{}", json!({
+            "kind": "player_input_trace",
+            "schema_version": 1,
+            "run_id": config.run_id,
+            "run_config_sha256": format!("{:x}", Sha256::digest(&config_bytes)),
+            "gameplay_config_sha256": gameplay_digest,
+            "policy_manifest_sha256": host.model_mut().model_manifest_sha256(),
+            "levels": config.levels.iter().zip(source_digests.iter()).map(|(level, digest)| json!({
+                "world_id": level.world_id,
+                "level_id": level.level_id,
+                "scene_sha256": digest,
+                "seed": level.seed,
+                "episode_seeds": level.episode_seeds,
+            })).collect::<Vec<_>>(),
+        }))?;
+        Some(trace)
+    } else { None };
     let mut network = config.hivemind.as_ref().map(|settings|
         RunNetwork::start(settings, &config.levels, &source_fixed_dt_by_level, host.connection_mut())).transpose()?;
     println!("{}", json!({
@@ -1138,8 +1162,23 @@ fn run_battle(
                 failed_window = Some("selected Level disappeared".to_owned());
                 break;
             };
-            match client.poll(current, client_bounds[client.selected_world()],
-                host.simulation().world_count(), client_fixed_dt_by_level[client.selected_world()]) {
+            let tick = current.tick;
+            let action = client.poll(current, client_bounds[client.selected_world()],
+                host.simulation().world_count(), client_fixed_dt_by_level[client.selected_world()]);
+            if let (Some(trace), Ok(input)) = (&mut input_trace, &action) {
+                if input.is_player_input() {
+                    if let Err(error) = writeln!(trace, "{}", json!({
+                        "kind": "player_input",
+                        "round": rounds,
+                        "tick": tick,
+                        "action": input,
+                    })) {
+                        failed_window = Some(format!("recording player input: {error}"));
+                        break;
+                    }
+                }
+            }
+            match action {
                 Ok(bees_host::client::NativeClientAction::Wait |
                     bees_host::client::NativeClientAction::WorldChanged) => continue,
                 Ok(bees_host::client::NativeClientAction::Step) => {},
@@ -1490,6 +1529,18 @@ fn run_battle(
     let count = host.simulation().world_count();
     let finalization_start = Instant::now();
     let mut cleanup_errors = Vec::new();
+    #[cfg(feature = "client")]
+    if let Some(mut trace) = input_trace {
+        let finished = writeln!(trace, "{}", json!({
+            "kind": "player_input_trace_end",
+            "rounds": rounds,
+            "user_closed": user_closed,
+            "failed_window": failed_window,
+        })).and_then(|()| trace.sync_all());
+        if let Err(error) = finished {
+            cleanup_errors.push(format!("player input trace: {error}"));
+        }
+    }
     if let Some(path) = &capture {
         // Captures are diagnostic output, never a replacement world or model
         // input. Failure joins cleanup reporting so live Levels still retire.

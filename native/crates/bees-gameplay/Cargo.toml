@@ -10,3 +10,4 @@ publish = false
 [dependencies]
 bees-sim = { path = "../bees-sim" }
 bees-hivemind = { path = "../bees-hivemind" }
+serde = { version = "1", features = ["derive"] }

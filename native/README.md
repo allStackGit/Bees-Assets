@@ -51,6 +51,10 @@ automatically at the run boundary.
 With `--output-dir`, press Enter on the result screen to replay the same
 configuration and seeds. Each replay opens a new battle window and saves
 its own journal and summary in a numbered directory under the first run.
+`bees play --output-dir` also saves `player-inputs.jsonl`. It records
+the scene digests and seed plans, then each submitted order with its
+global round, world tick, and squad lifetime. These are input attempts.
+The gameplay journal and summary record the resulting battle outcomes.
 
 The view draws authored primary collider outlines, current health, live
 projectiles, obstacles and fading debris directly from borrowed combat bodies.

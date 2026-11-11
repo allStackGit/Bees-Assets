@@ -51,7 +51,7 @@ pub struct NativePlayerCommand<'a> {
 
 /// Owned UI intent; targets remain identities in the canonical world. Heal
 /// owns its ordered ID list so input can cross the window's borrowed frame.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum NativePlayerSupportAction {
     /// Source Hold button: stop an active Aggressive chase, not a new order.
     Hold,
@@ -79,7 +79,7 @@ impl NativePlayerSupportAction {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct NativePlayerSquadCommands {
     pub world_id: WorldId,
     pub episode_revision: u64,
@@ -87,7 +87,7 @@ pub struct NativePlayerSquadCommands {
     pub action: NativePlayerSupportAction,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct NativePlayerSquadFire {
     pub world_id: WorldId,
     pub episode_revision: u64,
@@ -100,7 +100,7 @@ pub struct NativePlayerSquadFire {
 /// Player Cease Fire / Attack on Sight changes only the same native weapon
 /// runtime used by headless simulation. It does not replace or settle an
 /// existing movement/strategy command.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct NativePlayerSquadCeaseFire {
     pub world_id: WorldId,
     pub episode_revision: u64,
@@ -454,7 +454,7 @@ pub struct NativePlayerMove {
     pub destination: Vec2,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct NativePlayerSquadMoves {
     pub world_id: WorldId,
     pub episode_revision: u64,

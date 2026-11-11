@@ -13,8 +13,15 @@ use bees_gameplay::player_inputs::{
 };
 use bees_sim::geometry::Vec2;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "kind", content = "input", rename_all = "snake_case")]
 pub enum NativeClientAction { Wait, Step, Quit, WorldChanged, Move(NativePlayerSquadMoves), Support(NativePlayerSquadCommands), Fire(NativePlayerSquadFire), CeaseFire(NativePlayerSquadCeaseFire) }
+
+impl NativeClientAction {
+    pub fn is_player_input(&self) -> bool {
+        matches!(self, Self::Move(_) | Self::Support(_) | Self::Fire(_) | Self::CeaseFire(_))
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum NativeTargetMode { Support(NativeSupportMode), ManualFire }
