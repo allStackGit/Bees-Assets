@@ -1626,7 +1626,8 @@ class ExperimentHub {
                 canHostJob(machine,job)&&distributedRolloutHost(snapshot,job,machine));
             if(session.rebalance_queued) {
                 for(const job of pendingClaims) {
-                    if(!owned.has(job.lease_id)||job.dispatch_id||job.continuation_machine_id)
+                    if(!owned.has(job.lease_id)||job.dispatch_id||
+                        job.continuation_machine_id||job.resource_bundle)
                         continue;
                     const gpu=job.resources.gpu_count!==0;
                     // Keep any already requested or observed probe with its claim.
@@ -2034,6 +2035,8 @@ class ExperimentHub {
             const job=next.jobs.find(j=>j.id===move.job_id);
             if(!job||job.adapter!=='unconfigured'||job.status!=='waiting_adapter'||job.dispatch_id)
                 throw Error('Only an unstarted non-Bees job claim can move.');
+            if(job.resource_bundle)
+                throw Error('Bundle machine allocations are fixed. Cancel the unstarted bundle and queue a new allocation.');
             if(job.lease_id!==move.expected_lease_id)
                 throw Error('A job claim changed. Refresh Train before moving it.');
             const predecessor=predecessorBlock(next,job);
