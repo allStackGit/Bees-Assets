@@ -25,8 +25,10 @@ collider and selects its source-authorized player squad. Ctrl-click adds squads;
 left-drag selects squads whose real hulls overlap the box, and Ctrl-drag
 extends that selection. C stops Aggressive chase, V enables Cease Fire,
 and A restores Attack on Sight (except during Heal). These update the same
-squad/weapon state as headless play. Right-click moves the selected squads, once per
-live squad lifetime; locked or unavailable squads are skipped. Move requests carry
+squad/weapon state as headless play. Right-click issues an attack, retreat,
+heal, or mining order when it hits the corresponding target. Right-click on
+open ground moves selected squads, once per live squad lifetime. Locked or
+unavailable squads are skipped. Move requests carry
 world/episode identity, finalize prior commands through the normal outcome outbox,
 and invalidate pending AI request authority before shared formation/path movement.
 Escape or closing the window cancels unfinished episodes through the existing

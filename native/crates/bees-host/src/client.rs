@@ -313,7 +313,7 @@ impl NativeClient {
             right_down && !self.right_was_down {
             mouse.filter(|_| !self.renderer.selection.squads().is_empty()).and_then(|(x, y)| {
                 let destination = self.renderer.camera.screen_to_world(x, y, width, height);
-                if let Some(action) = self.renderer.pick_support_action(&view, NativeSupportMode::Attack, destination, None) {
+                if let Some(action) = self.renderer.pick_right_click_action(&view, destination) {
                     support_command = self.renderer.selection.support_command(&view, action);
                     return None;
                 }

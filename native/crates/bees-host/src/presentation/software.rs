@@ -184,6 +184,17 @@ impl NativeSoftwareRenderer {
         }
     }
 
+    /// Right-click uses the same target resolution as the explicit tools.
+    /// Ground movement is the caller's fallback when no command target is hit.
+    pub fn pick_right_click_action(
+        &self, view: &NativeRenderWorldView<'_>, point: Vec2,
+    ) -> Option<bees_gameplay::player_inputs::NativePlayerSupportAction> {
+        use super::NativeSupportMode as Mode;
+        if self.selection.squads().is_empty() { return None; }
+        [Mode::Attack, Mode::FullRetreat, Mode::Heal, Mode::Mining].into_iter()
+            .find_map(|mode| self.pick_support_action(view, mode, point, None))
+    }
+
     pub fn render(&mut self, view: &NativeRenderWorldView<'_>, bounds: Aabb) -> NativeRenderCounts {
         self.selection.synchronize(view);
         // Selected squad count can approach ship count in large battles.
