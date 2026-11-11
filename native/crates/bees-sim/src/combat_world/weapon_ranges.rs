@@ -47,6 +47,40 @@ impl CombatWorld {
     {
         let mut counts = StepCounts { weapon_range_exits: std::mem::take(&mut self.pending_weapon_range_exits), ..StepCounts::default() };
         self.range_visible_map_objects.clear();
+        // Physics.step leaves the ONE spatial grid bound to obstacles.
+        // Resolve the faction-wide MapObject union first, before ship
+        // contact queries rebind the grid to ships. This avoids scanning
+        // every MapObject for every turret in large obstacle-rich battles.
+        if !self.map_objects.is_empty() {
+            for (&ship_id, weapons) in &self.ship_weapons {
+                if self.range_visible_map_objects.len() == self.map_objects.len() { break; }
+                let owner_index = self.ship_by_id[&ship_id];
+                let body = &self.physics.ships()[owner_index];
+                if !body.active || self.ships[owner_index].vitals.is_dead() { continue; }
+                let position = body.motion.position;
+                let rotation = body.motion.rotation_degrees;
+                for mount in weapons.turrets.iter().flatten() {
+                    if self.range_visible_map_objects.len() == self.map_objects.len() { break; }
+                    let Ok(range) = mount.world_range(position, rotation, weapons.last_hull_rotation)
+                        else { continue };
+                    if !range.enabled { continue; }
+                    self.physics.circle_obstacle_contact_candidates(
+                        range.center, range.radius, &mut self.weapon_range_candidates,
+                    );
+                    for &index in &self.weapon_range_candidates {
+                        let obstacle = &self.physics.obstacles()[index];
+                        let id = obstacle.id;
+                        if self.map_objects.contains_key(&id) &&
+                            !self.range_visible_map_objects.contains(&id) &&
+                            collisions.allows(range.layer, obstacle.layer) &&
+                            obstacle.primary_overlaps_circle(range.center, range.radius)
+                        {
+                            self.range_visible_map_objects.insert(id);
+                        }
+                    }
+                }
+            }
+        }
         let mut has_ranges = false;
         for (&ship_id, weapons) in &mut self.ship_weapons {
             let owner_index = self.ship_by_id[&ship_id];
@@ -65,20 +99,6 @@ impl CombatWorld {
                 refresh_circle_contacts(&mut self.physics, &self.ships, side, active, range,
                     &mut weapons.range_contacts[slot], &mut self.weapon_range_candidates,
                     &mut self.weapon_range_entering_ids, collisions, &mut counts);
-                // Source RangeCollider registers every MapObject contact
-                // permitted by the layer matrix. Visibility is the union of
-                // active ranges, independent of learned HiveMind sightings.
-                if active && range.enabled && self.range_visible_map_objects.len() < self.map_objects.len() {
-                    for id in self.map_objects.keys() {
-                        if self.range_visible_map_objects.contains(id) { continue; }
-                        let body = &self.physics.obstacles()[self.obstacle_by_id[id]];
-                        if collisions.allows(range.layer, body.layer) &&
-                            body.primary_overlaps_circle(range.center, range.radius)
-                        {
-                            self.range_visible_map_objects.insert(*id);
-                        }
-                    }
-                }
             }
         }
 
