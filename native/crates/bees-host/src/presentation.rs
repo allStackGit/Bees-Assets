@@ -11,8 +11,14 @@ use bees_sim::simulation::WorldId;
 
 mod software;
 mod selection;
+mod text;
 pub use software::{NativeCamera, NativeSoftwareRenderer, NativeRenderCounts};
 pub use selection::{NativeSquadSelection, NativeSupportMode};
+
+pub(crate) fn battle_outcome_label(result: bees_sim::episode_terminal::EpisodeTerminalResult) -> String {
+    if result.winner_side == 0 { "Draw".to_owned() }
+    else { format!("Side {} wins", result.winner_side) }
+}
 
 /// This view is valid only between fixed steps, and cannot outlive the
 /// NativeHostRuntime's immutable borrow. Presentation event effects are

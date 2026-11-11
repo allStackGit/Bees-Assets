@@ -351,8 +351,7 @@ impl NativeClient {
                         .unwrap_or("FIRING STATUS UNKNOWN"))
             }).unwrap_or_default();
         let title = if let Some(result) = view.terminal_result {
-            let outcome = if result.winner_side == 0 { "Draw".to_owned() }
-                else { format!("Side {} wins", result.winner_side) };
+            let outcome = crate::presentation::battle_outcome_label(result);
             format!("Bees native | World {} | Episode {} | {}{} | {:.2} s | Tab world, Esc close",
                 view.world_id.0, view.episode_revision + 1, outcome,
                 if result.timed_out { " (time limit)" } else { "" }, result.duration_seconds)

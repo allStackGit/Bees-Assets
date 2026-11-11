@@ -8,7 +8,7 @@ use bees_sim::collision::{Aabb, Pose};
 use bees_sim::geometry::Vec2;
 use bees_sim::physics::ShipShape;
 use bees_sim::simulation::{RandomStream, WorldId};
-use super::{NativeRenderWorldView, NativeSquadSelection};
+use super::{NativeRenderWorldView, NativeSquadSelection, battle_outcome_label, text};
 
 #[derive(Clone, Copy, Debug)]
 pub struct NativeCamera {
@@ -452,7 +452,34 @@ impl NativeSoftwareRenderer {
                 half_extents: (bounds.max - bounds.min) * 0.5 },
                 Pose { position: Vec2::ZERO, rotation_degrees: 0.0 }, 0xddeaff);
         }
+        if let Some(result) = view.terminal_result {
+            self.draw_battle_result(view, result);
+        }
         counts
+    }
+
+    fn draw_battle_result(
+        &mut self, view: &NativeRenderWorldView<'_>, result: bees_sim::episode_terminal::EpisodeTerminalResult,
+    ) {
+        let title = battle_outcome_label(result);
+        let reason = if result.timed_out { "Time limit" } else { "Elimination" };
+        let detail = format!("{reason}  /  {:.2} s", result.duration_seconds);
+        let context = format!("World {}  /  Episode {}", view.world_id.0, view.episode_revision + 1);
+        let title_scale = if self.width >= 400 && self.height >= 176 { 2 } else { 1 };
+        let top = if self.height >= 200 { 20 } else { 0 };
+        let width = (text::width(&title, title_scale).max(text::width(&detail, 1))
+            .max(text::width(&context, 1)) + 40).min(self.width);
+        let left = (self.width - width) / 2;
+        let panel_height = (title_scale + 2) * text::HEIGHT + 20;
+        for y in top..(top + panel_height).min(self.height) {
+            let start = y * self.width + left;
+            self.pixels[start..start + width].fill(if y < top + 2 { 0xe1a34b } else { 0x152133 });
+        }
+        text::draw_centered(&mut self.pixels, self.width, top + 8, &context, 1, [155, 178, 206]);
+        let title_top = top + 8 + text::HEIGHT;
+        text::draw_centered(&mut self.pixels, self.width, title_top, &title, title_scale, [239, 247, 255]);
+        text::draw_centered(&mut self.pixels, self.width, title_top + title_scale * text::HEIGHT,
+            &detail, 1, [194, 211, 230]);
     }
 
     fn render_obstacle_debris(
@@ -564,13 +591,7 @@ impl NativeSoftwareRenderer {
                 let opacity = (f32::from(rgba[3]) * alpha).round() as u32;
                 if opacity == 0 { continue; }
                 let pixel = &mut self.pixels[y * self.width + x];
-                let mut rgb = 0;
-                for (source, shift) in rgba[..3].iter().zip([16, 8, 0]) {
-                    let destination = (*pixel >> shift) & 255;
-                    let blended = (u32::from(*source) * opacity + destination * (255 - opacity) + 127) / 255;
-                    rgb |= blended << shift;
-                }
-                *pixel = rgb;
+                *pixel = text::blend(*pixel, [rgba[0], rgba[1], rgba[2]], opacity);
             }
         }
         true
