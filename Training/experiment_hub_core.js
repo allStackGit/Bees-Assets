@@ -11,6 +11,7 @@ const {tinyBrainsProfiles,tinyBrainsImports,supportsTinyBrainsProfile}=require('
 const {evaluationPolicy,evaluationEvidence,evaluationRules,evaluationComplete,suiteIds,supportsEvaluation}=
     require('./experiment_hub_evaluation');
 const {ProgressHistory}=require('./experiment_hub_history');
+const {ObservationArchive}=require('./experiment_hub_observations');
 const ID = /^[a-z][a-z0-9_-]{0,47}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const SHA256 = /^[0-9a-f]{64}$/;
@@ -1023,6 +1024,7 @@ class ExperimentHub {
         // Native process usage observations are ephemeral, not registry history.
         this.executionTelemetry = new Map();
         this.progressHistory = new ProgressHistory(path.join(root,'hub-chart-v1.json'));
+        this.observations = new ObservationArchive(root);
         this.executionOrderCursor = new Map();
         // Native queue automation is an explicitly armed, process-local
         // session. Durable opt-in recovery still requires fresh native and
@@ -1057,6 +1059,7 @@ class ExperimentHub {
     }
     snapshot() {
         const snapshot = copy(this.state);
+        snapshot.hub_observation_archive_issue=this.observations.error;
         // Preserve existing Ants-v2 registry provenance without presenting
         // it as a supported executable project.
         snapshot.projects=snapshot.projects.map(project=>project.id==='ants'
@@ -3062,6 +3065,10 @@ class ExperimentHub {
                         add('host_gpu_vram_mb',device.used_vram_mb,'mb');
                     }
                 }
+                // Archive validated source and host measurements before the
+                // bounded chart selector/coalescer discards sampling detail.
+                // This archive is observational and cannot gate training.
+                this.observations.record(job,progress,observed,received);
                 chartProgress={...progress,metrics:selectChartMetrics(
                     progress.metrics,observed,job.metric_selection,
                     progress.steps_completed)};

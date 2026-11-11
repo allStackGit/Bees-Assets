@@ -402,6 +402,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if(tab==='machines') loadLiveBeesWorkers();
     }
     const compareSlots=[];
+    const comparisonMetricOverrides=new Map();
     let compareSerial=0;
     const compareColor=i=>'hsl('+((i*137.508+211)%360).toFixed(2)+' 65% 38%)';
     function addComparisonSlot() {
@@ -421,6 +422,109 @@ document.addEventListener('DOMContentLoaded', () => {
         label.append(select,remove);
         $('hub-compare-run-list').append(label);
         return slot;
+    }
+    // Keep the native multi-select as the single source of selected IDs.
+    // This searchable panel changes only its options, not the job/export API.
+    function renderMetricPicker(selectId,pickerId) {
+        const source=$(selectId),panel=$(pickerId);
+        if(!source||!panel)return;
+        if(!panel._metricView) {
+            const toolbar=document.createElement('div');
+            toolbar.className='hub-metric-toolbar';
+            const search=document.createElement('input');
+            search.type='search';
+            search.placeholder='Search metric names or units';
+            search.setAttribute('aria-label','Search metrics');
+            const shownButton=document.createElement('button');
+            shownButton.type='button';
+            shownButton.textContent='Select shown';
+            const clearButton=document.createElement('button');
+            clearButton.type='button';
+            clearButton.textContent='Clear selection';
+            const count=document.createElement('span');
+            count.className='hub-metric-count';
+            count.setAttribute('aria-live','polite');
+            const rows=document.createElement('div');
+            rows.className='hub-metric-options';
+            rows.setAttribute('role','group');
+            rows.setAttribute('aria-label','Available metrics');
+            toolbar.append(search,shownButton,clearButton,count);
+            panel.append(toolbar,rows);
+            const matches=()=>[...source.options].filter(option=>
+                (option.value+' '+option.textContent).toLowerCase()
+                    .includes(search.value.trim().toLowerCase()));
+            function draw(focusKey=null) {
+                const scroll=rows.scrollTop;
+                const visible=matches();
+                const groups=new Map();
+                for(const option of visible) {
+                    const group=option.dataset.category||'Other metrics';
+                    if(!groups.has(group))groups.set(group,[]);
+                    groups.get(group).push(option);
+                }
+                const nodes=[];
+                for(const [group,options] of groups) {
+                    const heading=document.createElement('div');
+                    heading.className='hub-metric-group-title';
+                    heading.textContent=group+' · '+options.length;
+                    nodes.push(heading);
+                    for(const option of options) {
+                        const label=document.createElement('label');
+                        label.className='hub-metric-choice';
+                        const check=document.createElement('input');
+                        check.type='checkbox';
+                        check.checked=option.selected;
+                        check.dataset.metricValue=option.value;
+                        const key=option.value.replace(/^metric:/,'');
+                        const name=document.createElement('span');
+                        name.textContent=key;
+                        const note=document.createElement('small');
+                        note.textContent=option.textContent.slice(key.length).trim();
+                        check.addEventListener('change',()=>{
+                            option.selected=check.checked;
+                            source.dispatchEvent(new Event('change',{bubbles:true}));
+                            draw(option.value);
+                        });
+                        label.append(check,name,note);
+                        nodes.push(label);
+                    }
+                }
+                if(!visible.length) {
+                    const empty=document.createElement('div');
+                    empty.className='hub-metric-empty';
+                    empty.textContent=source.options.length
+                        ?'No metrics match this search.'
+                        :'No metrics have been recorded for this project yet.';
+                    nodes.push(empty);
+                }
+                rows.replaceChildren(...nodes);
+                rows.scrollTop=scroll;
+                count.textContent=source.selectedOptions.length+' selected · '+
+                    visible.length+' of '+source.options.length+' shown';
+                if(focusKey!==null)
+                    for(const check of rows.querySelectorAll('input[type="checkbox"]'))
+                        if(check.dataset.metricValue===focusKey) {
+                            check.focus({preventScroll:true});
+                            break;
+                        }
+            }
+            function toggle(checked,visibleOnly) {
+                for(const option of visibleOnly?matches():[...source.options])
+                    option.selected=checked;
+                source.dispatchEvent(new Event('change',{bubbles:true}));
+                draw();
+            }
+            search.addEventListener('input',()=>{rows.scrollTop=0;draw();});
+            shownButton.addEventListener('click',()=>toggle(true,true));
+            clearButton.addEventListener('click',()=>toggle(false,false));
+            panel._metricView={search,draw};
+        }
+        if(panel.dataset.metricProject!==project) {
+            panel.dataset.metricProject=project;
+            panel._metricView.search.value='';
+        }
+        panel._metricView.draw();
+        source.classList.add('is-enhanced');
     }
     function selectedComparisonMetrics() {
         return [...$('hub-compare-metric').selectedOptions].map(option=>option.value);
@@ -546,22 +650,32 @@ document.addEventListener('DOMContentLoaded', () => {
                 points:history.get(id)||[]}:null;
         }).filter(Boolean);
         const metricSelect=$('hub-compare-metric');
-        const oldMetrics=selectedComparisonMetrics();
+        const oldMetrics=metricSelect.dataset.metricProject===project
+            ?selectedComparisonMetrics():[];
         const metricOptions=hubGenericMetricCatalog(chartable.map(job=>({
             job,points:history.get(job.id)||[],
         }))).map(metric=>({
             key:'metric:'+metric.key,
             label:metric.key+' ('+metric.units.join('/')+')',
         }));
-        metricSelect.replaceChildren(...metricOptions.map(m=>
-            new Option(m.label,m.key)));
+        metricSelect.replaceChildren(...metricOptions.map(m=>{
+            const option=new Option(m.label,m.key);
+            const key=m.key.slice(7);
+            option.dataset.category=knownLearningMetrics.includes(key)
+                ?'Learning outcomes':knownPerformanceMetrics.includes(key)
+                    ?'Performance and resources':'Other recorded metrics';
+            return option;
+        }));
         const keep=oldMetrics.filter(key=>metricOptions.some(m=>m.key===key));
         const preferred=[...new Set(runs.flatMap(run=>run.job.metric_selection||[]))]
             .map(key=>'metric:'+key)
             .filter(key=>metricOptions.some(m=>m.key===key));
+        const metricChoices=comparisonMetricOverrides.get(project) ??
+            (keep.length?keep:preferred.length?preferred:[metricOptions[0]?.key]);
         for(const option of metricSelect.options)
-            option.selected=(keep.length?keep:
-                preferred.length?preferred:[metricOptions[0]?.key]).includes(option.value);
+            option.selected=metricChoices.includes(option.value);
+        metricSelect.dataset.metricProject=project;
+        renderMetricPicker('hub-compare-metric','hub-compare-metric-picker');
         const selectedMetrics=selectedComparisonMetrics();
         const axisSelect=$('hub-compare-x-axis'),oldAxis=axisSelect.value;
         axisSelect.replaceChildren(
@@ -572,7 +686,7 @@ document.addEventListener('DOMContentLoaded', () => {
             !document.documentElement.dataset.hubDefaultProject;
         $('hub-compare-export-full').disabled=!runs.length||
             (project==='bees'&&!legacyBeesCoordinator);
-        $('hub-compare-export-csv').disabled=!hasExportData;
+        $('hub-compare-export-csv').disabled=!hasExportData||!selectedMetrics.length;
         $('hub-compare-export-json').disabled=!hasExportData&&!runs.some(run=>
             hubComparisonTerminal(run.job)||hubComparisonEvaluation(run.job));
         const note=comparisonError&&comparisonProject===project
@@ -584,7 +698,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     :comparisonData?.ephemeral
                         ?'Live chart samples are held in memory only. Final summaries remain available.'
                         :'Bounded chart history is saved separately from the training registry. For detailed investigation export the complete project-owned job history.';
-        feedback('hub-compare-notice',note);
+        feedback('hub-compare-notice',
+            (state?.hub_observation_archive_issue
+                ?state.hub_observation_archive_issue+' '
+                :'')+note);
         const knownRoots=new Set(runs.map(r=>
             r.job.artifact_lineage_root_id||r.job.id));
         const warnings=[];
@@ -726,6 +843,17 @@ document.addEventListener('DOMContentLoaded', () => {
     function drawComparisonCharts(runs,keys,xKey) {
         const container=$('hub-compare-plots');
         container.replaceChildren();
+        if(!runs.length||!keys.length) {
+            const notice=document.createElement('p');
+            notice.className='hub-notice';
+            notice.textContent=!runs.length
+                ?'Select a run above to display recorded metric charts.'
+                :$('hub-compare-metric').options.length
+                    ?'No chart metrics are selected. Check one or more metrics above to display a graph.'
+                    :'No recorded chart metrics are available for this project yet.';
+            container.append(notice);
+            return;
+        }
         for(const key of keys) {
             const section=document.createElement('div');
             section.className='hub-progress-plot';
@@ -1238,9 +1366,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 ?'This metric has been published by a job in this project.'
                 :'Selecting a metric does not install missing project instrumentation.';
             option.selected=prior.has(key);
+            option.dataset.category=knownLearningMetrics.includes(key)
+                ?'Learning outcomes':knownPerformanceMetrics.includes(key)
+                    ?'Performance and resources':'Other observed metrics';
             return option;
         }));
         jobMetricSelectionProject=project;
+        renderMetricPicker('hub-job-metrics','hub-job-metric-picker');
     }
     function selectedJobMetrics() {
         return [...$('hub-job-metrics').selectedOptions].map(o=>o.value);
@@ -2242,7 +2374,10 @@ document.addEventListener('DOMContentLoaded', () => {
         addComparisonSlot();
         renderComparison();
     });
-    $('hub-compare-metric').addEventListener('change',renderComparison);
+    $('hub-compare-metric').addEventListener('change',()=>{
+        comparisonMetricOverrides.set(project,selectedComparisonMetrics());
+        renderComparison();
+    });
     $('hub-compare-x-axis').addEventListener('change',renderComparison);
     for(const format of ['csv','json'])
         $('hub-compare-export-'+format).addEventListener('click',()=>{
