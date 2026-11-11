@@ -406,6 +406,11 @@ def trajectories(rollouts, horizon, behavior_id):
             # individual policy controller. Cache only for larger active
             # cohorts; 1v1 avoids the per-frame dictionary allocation.
             interval_rewards = {} if len(actions) > 4 else None
+            # AgentStatus is an immutable ML-Agents named tuple. Share its
+            # observation/action references within this decision interval
+            # rather than building an O(team_size**2) number of identical
+            # status objects for each agent's centralized critic input.
+            group_status_cache = {} if len(actions) > 4 else None
             for agent in actions:
                 row = frame[agent]
                 end = min(next_tick, closing[agent])
@@ -416,10 +421,27 @@ def trajectories(rollouts, horizon, behavior_id):
                     if members_by_team is not None else
                     [mate for mate in frame if mate != agent and teams[mate] == team]
                 )
-                group_status = [
-                    AgentStatus([frame[mate]["observations"]], 0.0, actions[mate], closing[mate] <= end)
-                    for mate in mates
-                ]
+                if group_status_cache is None:
+                    group_status = [
+                        AgentStatus([frame[mate]["observations"]], 0.0, actions[mate], closing[mate] <= end)
+                        for mate in mates
+                    ]
+                else:
+                    interval = (team, end)
+                    statuses = group_status_cache.get(interval)
+                    if statuses is None:
+                        statuses = {
+                            member: AgentStatus(
+                                [frame[member]["observations"]], 0.0,
+                                actions[member], closing[member] <= end,
+                            )
+                            for member in members_by_team[team]
+                        }
+                        group_status_cache[interval] = statuses
+                    # Retain the authored teammate order and exclude self.
+                    # The status records are immutable, but each experience
+                    # still owns a distinct group list for ML-Agents.
+                    group_status = [statuses[mate] for mate in mates]
                 mask = [np.array([False, not bit]) for bit in row["fire_allowed"]]
                 mask.append(row["special_allowed"] == 0)
                 if interval_rewards is None:
