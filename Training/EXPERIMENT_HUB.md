@@ -1388,6 +1388,18 @@ update count: the Linux TinyBrains `--max-ppo-updates` option accepts this
 per-invocation count and can extend training beyond the original frozen run
 spec's ceiling. The source run spec and imported checkpoint are not rewritten.
 
+The Halifax example now opts into TinyBrains' `TINYBRAINS_PPO_PROFILE=1` via its
+locally trusted Docker adapter. It records per-update PPO host-wall stages
+(data preparation, forward/loss, backward, metric readback, gradient
+processing, Adam step, finite checks), minibatch counts, and board-shape
+workload in the normal job history and Hub Compare/export data. These times
+include existing GPU synchronization and are **not** GPU kernel-only times.
+The profiler adds no extra CUDA synchronization; disable it by setting
+`profilePpo:false` in the locally approved adapter for normal throughput
+runs. The fixed profile digest, checkpoint lineage and PPO settings do not
+change when profiling is enabled. The TinyBrains source checkout must have
+the matching instrumented optimizer before enabling the adapter flag.
+
 The agent needs *noninteractive* Docker permission: direct access to the
 Docker Unix socket or, only after explicit administrator approval, a working
 `sudo -n /usr/bin/docker info` with
