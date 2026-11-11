@@ -357,6 +357,9 @@ def export(spec: dict, output: Path) -> dict:
                 "metric", "value", "unit",
             ))
         found_by_job = {job["id"]: 0 for job in jobs}
+        # Hub observations prove that telemetry reached the coordinator,
+        # not that the remote trainer's original histories were collected.
+        trainer_files_by_job = {job["id"]: 0 for job in jobs}
         missing_sources: list[dict] = []
         def scan_directory(folder: Path, name_prefix: str, job_id: str) -> None:
             for dirpath, dirs, files in os.walk(folder, followlinks=False):
@@ -371,6 +374,7 @@ def export(spec: dict, output: Path) -> dict:
                     add_file(source, name_prefix + "/" +
                              source.relative_to(folder).as_posix())
                     found_by_job[job_id] += 1
+                    trainer_files_by_job[job_id] += 1
                     if entry_count > MAX_SOURCE_FILES:
                         raise ValueError("Too many export entries")
 
@@ -420,6 +424,8 @@ def export(spec: dict, output: Path) -> dict:
                     observation_rows += observer.rows
                     partial_observation_files += int(observer.finish())
                 found_by_job[job_id] += 1
+                if entry["label"] != "hub-observations":
+                    trainer_files_by_job[job_id] += 1
                 reason = None
             else:
                 reason = "no_approved_logs"
@@ -440,7 +446,7 @@ def export(spec: dict, output: Path) -> dict:
         )
         manifest["missing_sources"] = missing_sources
         manifest["missing_artifact_job_ids"] = [
-            job_id for job_id, found in found_by_job.items() if not found
+            job_id for job_id, found in trainer_files_by_job.items() if not found
         ]
         manifest["exported_segments"] = entry_count
         add_bytes("export-manifest.json", json.dumps(manifest, indent=2).encode("utf-8"))
