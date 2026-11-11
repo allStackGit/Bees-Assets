@@ -397,6 +397,20 @@ function createNativeBeesAdapter({
                         rollout_policy_rows: {value: rollout.successful_policy_rows, unit: 'count'},
                         rollout_wall_seconds: {value: rollout.wall_seconds, unit: 'seconds'},
                         rollout_workers: {value: receipt.captures.length, unit: 'count'},
+                        ...(rollout.worker_execution_min_seconds !== undefined ? {
+                            rollout_worker_execution_min_seconds: {
+                                value: rollout.worker_execution_min_seconds, unit: 'seconds',
+                            },
+                            rollout_worker_execution_max_seconds: {
+                                value: rollout.worker_execution_max_seconds, unit: 'seconds',
+                            },
+                            rollout_worker_world_steps_min: {
+                                value: rollout.worker_world_steps_min, unit: 'count',
+                            },
+                            rollout_worker_world_steps_max: {
+                                value: rollout.worker_world_steps_max, unit: 'count',
+                            },
+                        } : {}),
                         ...(receipt.delivery ? {
                             rollout_delivery_bytes: {value: receipt.delivery.bytes, unit: 'bytes'},
                             rollout_delivery_seconds: {value: receipt.delivery.copy_wall_seconds, unit: 'seconds'},
@@ -421,6 +435,20 @@ function createNativeBeesAdapter({
                         rollout_wall_seconds: {value: rollout.wall_seconds, unit: 'seconds'},
                         ...(rollout.workers ? {
                             rollout_workers: {value: rollout.workers, unit: 'count'},
+                            ...(rollout.worker_execution_min_seconds !== undefined ? {
+                                rollout_worker_execution_min_seconds: {
+                                    value: rollout.worker_execution_min_seconds, unit: 'seconds',
+                                },
+                                rollout_worker_execution_max_seconds: {
+                                    value: rollout.worker_execution_max_seconds, unit: 'seconds',
+                                },
+                                rollout_worker_world_steps_min: {
+                                    value: rollout.worker_world_steps_min, unit: 'count',
+                                },
+                                rollout_worker_world_steps_max: {
+                                    value: rollout.worker_world_steps_max, unit: 'count',
+                                },
+                            } : {}),
                         } : {
                             rollout_startup_seconds: {value: rollout.startup_wall_seconds, unit: 'seconds'},
                             rollout_execution_seconds: {value: rollout.execution_wall_seconds, unit: 'seconds'},

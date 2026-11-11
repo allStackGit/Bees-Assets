@@ -169,6 +169,14 @@ def combined_rollout_metrics(shards, wall_seconds):
         **{key: sum(shard[key] for shard in shards)
            for key in ("successful_world_steps", "successful_policy_rows")},
     }
+    # Summary-only imbalance evidence. No per-world/per-frame logging or
+    # scheduler feedback; each shard keeps its frozen share of Levels.
+    metrics.update({
+        "worker_execution_min_seconds": min(shard["execution_wall_seconds"] for shard in shards),
+        "worker_execution_max_seconds": max(shard["execution_wall_seconds"] for shard in shards),
+        "worker_world_steps_min": min(shard["successful_world_steps"] for shard in shards),
+        "worker_world_steps_max": max(shard["successful_world_steps"] for shard in shards),
+    })
     samples = [shard["sampled_model_timing"] for shard in shards if "sampled_model_timing" in shard]
     if samples:
         metrics["sampled_model_timing"] = {
