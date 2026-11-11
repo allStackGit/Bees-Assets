@@ -2004,9 +2004,10 @@ fn run_battle(
         "completed_episodes": completed_episodes.iter()
             .map(|&count| u64::from(count)).sum::<u64>(),
         "completed_worlds": status.completed_worlds,
-        // The world-owned counters are reset with each episode; this is a
-        // final snapshot, not a fabricated full-run vision total.
+        // The world-owned counters reset on episode turnover; the simulation
+        // records completed fixed-step work separately across all episodes.
         "vision_current_episodes": status.vision,
+        "vision_completed_step_totals": status.simulation.vision,
         "campaign_outcome": campaign_outcome,
         "aborted_worlds": status.aborted_worlds,
         "failed_worlds": status.failed_worlds,
