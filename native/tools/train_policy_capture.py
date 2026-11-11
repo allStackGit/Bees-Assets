@@ -474,6 +474,10 @@ def main():
         parser.add_argument(name, type=Path)
     parser.add_argument("--learner-slot", type=int, help="train only on this manifest slot")
     parser.add_argument(
+        "--torch-threads", type=int,
+        help="fixed CPU intra-op thread count for the optimizer, independent of rollout workers",
+    )
+    parser.add_argument(
         "--device", default="cpu",
         help="optimizer device: cpu, cuda, or cuda:N (ROCm PyTorch also uses cuda)",
     )
@@ -493,7 +497,11 @@ def main():
             args.capture is None and not (bundles or args.rollout)):
         parser.error("supply a capture and journal or completed rollout inputs")
 
+    if args.torch_threads is not None and not 1 <= args.torch_threads <= 256:
+        parser.error("--torch-threads must be between 1 and 256")
     import torch
+    if args.torch_threads is not None:
+        torch.set_num_threads(args.torch_threads)
     import yaml
     from mlagents.plugins.trainer_type import register_trainer_plugins
     from mlagents.trainers.behavior_id_utils import BehaviorIdentifiers
