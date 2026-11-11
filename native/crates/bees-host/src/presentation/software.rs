@@ -50,8 +50,8 @@ pub struct NativeRenderCounts {
     pub culled_projectiles: usize,
     pub culled_pieces: usize,
     pub range_queries: usize,
-    /// Enemy hulls ruled out by authoritative cached bounds before an
-    /// expensive exact geometry/obstacle linecast diagnostic.
+    /// Enemy ships excluded by the simulator's existing weapon-range
+    /// contact cache, without inspecting their hulls in the renderer.
     pub range_candidates_culled: usize,
     pub range_contacts: usize,
     pub aim_points: usize,
@@ -376,9 +376,15 @@ impl NativeSoftwareRenderer {
                                 counts.aim_points += 1;
                             }
                         }
-                        if let Ok(Some(contacts)) = view.combat.weapon_range_contacts(ship.entity_id, slot) {
-                            counts.range_contacts += contacts.ship_ids.len();
-                        }
+                        // The same post-physics RangeCollider contact list
+                        // used by automatic firing is already indexed by
+                        // weapon. Do not scan the whole fleet again for each
+                        // selected turret merely to render its range overlay.
+                        let contacts = match view.combat.weapon_range_contacts(ship.entity_id, slot) {
+                            Ok(Some(contacts)) => contacts,
+                            _ => { counts.missing_range_data += 1; continue; },
+                        };
+                        counts.range_contacts += contacts.ship_ids.len();
                         self.shape(&ShipShape::Circle { offset: Vec2::ZERO, radius: range.radius },
                             Pose { position: range.center, rotation_degrees: 0.0 },
                             if range.enabled { 0x355b80 } else { 0x555555 });
@@ -386,25 +392,17 @@ impl NativeSoftwareRenderer {
                             else { counts.missing_range_data += 1; continue; };
                         // An inactive range cannot draw a valid contact.
                         if !range.enabled { continue; }
-                        let range_bounds = Aabb::circle(range.center, range.radius);
-                        for (target, target_body) in view.combat.render_ships() {
-                            if target.side == ship.side { continue; }
-                            // Exact range overlap requires intersecting
-                            // primary hull bounds. Reject distant enemies
-                            // before query_weapon_target_geometry performs
-                            // both exact hull work and obstacle linecasts.
-                            if target_body.primary_bounds().is_some_and(|hull|
-                                !hull.overlaps(range_bounds)
-                            ) {
-                                counts.range_candidates_culled += 1;
-                                continue;
-                            }
+                        let enemies = view.combat.total_living_ships()
+                            .saturating_sub(view.combat.living_ships_on_side(ship.side));
+                        counts.range_candidates_culled +=
+                            enemies.saturating_sub(contacts.ship_ids.len());
+                        for &target_id in contacts.ship_ids {
                             counts.range_queries += 1;
                             match view.combat.query_weapon_target_geometry(ship.entity_id, slot,
-                                target.entity_id, view.collision_matrix, has_obstacles) {
+                                target_id, view.collision_matrix, has_obstacles) {
                                 Ok(Some(geometry)) if geometry.enemy_hull_overlaps_range => {
                                     counts.range_overlaps += 1;
-                                    match view.combat.weapon_target_point(ship.entity_id, slot, target.entity_id) {
+                                    match view.combat.weapon_target_point(ship.entity_id, slot, target_id) {
                                         Ok(point) => { self.cross(point, 2.5, 0xf6df85); counts.aim_points += 1; },
                                         Err(_) => counts.missing_aim_data += 1,
                                     }
