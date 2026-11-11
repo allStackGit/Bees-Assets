@@ -345,6 +345,9 @@ function createNativeBeesAdapter({
                         rollout_policy_rows_per_second: {
                             value: rollout.successful_policy_rows / rollout.wall_seconds, unit: 'rate',
                         },
+                        rollout_world_steps_per_second: {
+                            value: rollout.successful_world_steps / rollout.wall_seconds, unit: 'rate',
+                        },
                     } : {}),
                     ...(receipt.rollout_bundles ? {
                         imported_rollout_bundles: {value: receipt.rollout_bundles.length, unit: 'count'},
@@ -362,6 +365,11 @@ function createNativeBeesAdapter({
                     ...(rollout?.wall_seconds > 0 && metrics.total_wall_seconds > 0 ? {
                         training_round_input_steps_per_second: {
                             value: metrics.optimizer_input_steps /
+                                (rollout.wall_seconds + metrics.total_wall_seconds),
+                            unit: 'rate',
+                        },
+                        training_round_world_steps_per_second: {
+                            value: rollout.successful_world_steps /
                                 (rollout.wall_seconds + metrics.total_wall_seconds),
                             unit: 'rate',
                         },
