@@ -35,8 +35,10 @@ function learnerMeasurements(metrics) {
     add('total_cpu_seconds', 'seconds');
     for (const name of ['capture_peak_inflight_decisions', 'capture_peak_inflight_episodes',
         'capture_compact_opponent_decisions', 'capture_compact_opponent_boundaries',
+        'reward_journal_events',
         'optimizer_torch_intraop_threads', 'optimizer_torch_interop_threads'])
         add(name, 'count');
+    add('reward_journal_payload_bytes', 'bytes');
     add('optimizer_steps_per_update_second', 'rate');
     add('torch_cuda_process_peak_allocated_bytes', 'bytes');
     add('torch_cuda_process_peak_reserved_bytes', 'bytes');
