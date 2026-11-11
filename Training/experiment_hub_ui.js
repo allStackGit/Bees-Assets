@@ -228,6 +228,37 @@ function hubScalingEvidence(runs,key,allJobs=[],leases=[]) {
     }
     return rows;
 }
+// Generic, observational profile of recorded second-valued measurements.
+// Unit "seconds" is not proof that a metric is a per-update stage duration:
+// cumulative clocks and overlapping work must not be added or compared as
+// exclusive CPU/GPU time.
+function hubMeasuredSeconds(run) {
+    const points=hubComparisonPoints(run);
+    let lastBreak=0;
+    for(let i=1;i<points.length;i++)
+        if(points[i].break_before)lastBreak=i;
+    const recent=points.slice(lastBreak).slice(-64);
+    const values=new Map();
+    for(const point of recent)
+        for(const [key,item] of Object.entries(point.metrics||{})) {
+            if(item?.unit!=='seconds'||!Number.isFinite(item.value)||
+                item.value<0||item.value>1e12)continue;
+            if(!values.has(key))values.set(key,[]);
+            values.get(key).push(item.value);
+        }
+    const rows=[];
+    for(const [key,samples] of values) {
+        if(samples.length<5)continue;
+        const sorted=samples.slice().sort((a,b)=>a-b);
+        const mid=Math.floor(sorted.length/2);
+        const median=sorted.length%2?sorted[mid]:
+            (sorted[mid-1]+sorted[mid])/2;
+        rows.push({key,samples:samples.length,median,
+            minimum:sorted[0],maximum:sorted.at(-1)});
+    }
+    return rows.sort((a,b)=>b.median-a.median||
+        a.key.localeCompare(b.key)).slice(0,12);
+}
 // Read-only, next-run guidance from actual paired per-update collector rates.
 // Never modify a running job or infer unmeasured machine scaling.
 function hubRolloutWeightRecommendation(run) {
@@ -841,6 +872,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const collectorStageProfiles=document.createElement('details');
     collectorStageProfiles.id='hub-compare-collector-stages';
     rolloutRecommendations.insertAdjacentElement('afterend',collectorStageProfiles);
+    const secondsMetricsDetails=document.createElement('details');
+    secondsMetricsDetails.id='hub-compare-recorded-seconds';
+    collectorStageProfiles.insertAdjacentElement('afterend',secondsMetricsDetails);
     const comparisonMetricOverrides=new Map();
     let compareSerial=0;
     const compareColor=i=>'hsl('+((i*137.508+211)%360).toFixed(2)+' 65% 38%)';
@@ -1226,6 +1260,7 @@ document.addEventListener('DOMContentLoaded', () => {
         renderScalingEvidence(runs,selectedMetrics);
         renderRolloutRecommendations(runs);
         renderCollectorStageProfiles(runs);
+        renderMeasuredSeconds(runs);
         drawComparisonCharts(runs,selectedMetrics,
             $('hub-compare-x-axis').value);
     }
@@ -1328,6 +1363,48 @@ document.addEventListener('DOMContentLoaded', () => {
         const note=document.createElement('p');
         note.textContent='Medians use up to 32 paired observations from the latest chart segment. Engine and inference timings are host-wall stage observations, not exclusive CPU or GPU time; stages may overlap. Remote roundtrip includes transfer and worker computation, not network latency alone. Missing columns mean the recorded samples did not contain the metric consistently; no values are inferred.';
         collectorStageProfiles.append(note);
+    }
+    function renderMeasuredSeconds(runs) {
+        secondsMetricsDetails.replaceChildren();
+        const profiles=runs.map(run=>({run,metrics:hubMeasuredSeconds(run)}))
+            .filter(item=>item.metrics.length);
+        secondsMetricsDetails.hidden=!profiles.length;
+        if(!profiles.length)return;
+        const heading=document.createElement('summary');
+        heading.textContent='Recorded seconds metrics ('+profiles.length+
+            ' run'+(profiles.length===1?'':'s')+', all projects)';
+        secondsMetricsDetails.append(heading);
+        const format=value=>value.toLocaleString(undefined,{
+            maximumFractionDigits:4});
+        for(const {run,metrics} of profiles) {
+            const caption=document.createElement('p');
+            caption.textContent='Run '+run.slot+' · '+run.job.id.slice(-8)+
+                ' · top '+metrics.length+' metrics by recorded median';
+            secondsMetricsDetails.append(caption);
+            const table=document.createElement('table');
+            const header=document.createElement('tr');
+            for(const title of ['Metric','Samples','Median (s)',
+                'Minimum (s)','Maximum (s)']) {
+                const th=document.createElement('th');
+                th.textContent=title;
+                header.append(th);
+            }
+            const thead=document.createElement('thead');
+            thead.append(header);
+            const tbody=document.createElement('tbody');
+            for(const metric of metrics) {
+                const tr=document.createElement('tr');
+                for(const item of [metric.key,String(metric.samples),
+                    format(metric.median),format(metric.minimum),
+                    format(metric.maximum)])cell(tr,item);
+                tbody.append(tr);
+            }
+            table.append(thead,tbody);
+            secondsMetricsDetails.append(table);
+        }
+        const note=document.createElement('p');
+        note.textContent='Read-only medians from up to 64 observations in each run’s latest contiguous chart segment, with at least five samples per metric. A seconds-valued metric may be cumulative rather than a per-update stage; overlapping stages cannot be added. These chart samples are not full-resolution profiling evidence. Export the histories for definitive bottleneck analysis.';
+        secondsMetricsDetails.append(note);
     }
     function renderRolloutRecommendations(runs) {
         rolloutRecommendations.replaceChildren();
