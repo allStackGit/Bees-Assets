@@ -73,13 +73,36 @@ def lane(bounds, direction):
     return next(lane_candidates(bounds, direction))
 
 
-def verify_entry_orders(members, ships, spawn, entry, bounds, label):
-    """Match Unity's pre-movement formation and its actual entry orders.
+def source_placement_offset(ship_type, members, offset, label):
+    """Squad.GetFormationAdjustment during initial source placement.
 
-    Position - OffsetFromCenter must be one common Squad.GetCenterPoint,
-    because LevelConstructor.PositionSquads calls Squad.SetOffsets before
-    Squad.Move. An already-arrived or inconsistent capture cannot stand in
-    for a future, off-map wave even when its target coordinates still match.
+    Squad.Setup preserves the original OffsetFromCenter on the first
+    SetOffsets call. It is not the physical position-minus-center for
+    wide hulls: SetStartingPosition multiplies that authored offset.
+    """
+    if type(ship_type) is not int:
+        fail(f"{label} is missing the authored ship type")
+    if members == 1:
+        return (0.0, 0.0)
+    if ship_type == 17:  # Queen
+        scale = (2.75, 2.0)
+    elif ship_type == 3:  # Bumblebee
+        scale = (1.2, 1.2)
+    elif ship_type in (0, 10, 11, 4):  # Barge / FireBarge / Flagship / CarpenterBee
+        scale = (1.4, 1.0)
+    elif ship_type in (2, 20):  # Beehive / WarpGate
+        scale = (2.5, 1.0)
+    else:
+        scale = (1.0, 1.0)
+    return (offset[0] * scale[0], offset[1] * scale[1])
+
+
+def verify_entry_orders(members, ships, spawn, entry, bounds, label):
+    """Match Unity's authored physical formation and entry point orders.
+
+    LevelConstructor.PositionSquads uses source-adjusted placement
+    offsets and Squad.Move uses the original, unadjusted offsets.
+    Distinguishing them is required for valid wide-ship captures.
     """
     min_x, min_y, max_x, max_y = bounds
     center = None
@@ -96,12 +119,15 @@ def verify_entry_orders(members, ships, spawn, entry, bounds, label):
         offset_y = number(offset.get("y"), f"{label} ship {eid} offset.y")
         position_x = number(position.get("x"), f"{label} ship {eid} position.x")
         position_y = number(position.get("y"), f"{label} ship {eid} position.y")
-        ship_center = (position_x - offset_x, position_y - offset_y)
+        placement = source_placement_offset(
+            ship.get("ship_type"), len(members), (offset_x, offset_y), f"{label} ship {eid}"
+        )
+        placement_center = (position_x - placement[0], position_y - placement[1])
         if center is None:
-            center = ship_center
+            center = placement_center
         elif any(not math.isclose(value, expected, rel_tol=1e-6, abs_tol=0.005)
-                 for value, expected in zip(ship_center, center)):
-            fail(f"{label} has inconsistent captured Squad.SetOffsets formation")
+                 for value, expected in zip(placement_center, center)):
+            fail(f"{label} has inconsistent captured initial formation placement")
         target_x = number(target.get("x"), f"{label} ship {eid} target.x")
         target_y = number(target.get("y"), f"{label} ship {eid} target.y")
         expected_x = min(max(entry[0] + offset_x, min_x), max_x)
