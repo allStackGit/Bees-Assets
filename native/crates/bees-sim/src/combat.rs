@@ -60,6 +60,18 @@ impl ShipVitals {
     pub fn health(&self) -> i32 { self.health }
     pub fn max_health(&self) -> i32 { self.max_health }
     pub fn tsv(&self) -> i32 { self.tsv }
+
+    /// Apply an authored mission's full-health capacity change at scene
+    /// construction, before any combat or reward delivery. Preserve the
+    /// source ship's immutable base TSV and mineral cargo; only its health
+    /// fraction changes. Ordinary damage/healing cannot change capacity.
+    pub fn set_full_health_capacity(&mut self, health: i32) -> Result<(), CombatError> {
+        if health <= 0 || self.is_dead() { return Err(CombatError::InvalidHealth); }
+        self.health = health;
+        self.max_health = health;
+        self.tsv = self.calculate_tsv();
+        Ok(())
+    }
     pub fn is_dead(&self) -> bool { self.health <= 0 }
     pub fn mined_cargo(&self) -> i32 { self.mined_cargo }
 
