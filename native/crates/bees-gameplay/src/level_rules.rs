@@ -801,9 +801,17 @@ where
                 }
             }
         }
+        // Deferred reinforcements are added after the core combat step.
+        // Their arrival is a Level notification, not a CombatEvent, so the
+        // ordinary event-count refresh below would otherwise leave the
+        // reported active-ship total at its pre-arrival value on quiet ticks.
+        // An O(1) storage-length comparison avoids rescanning large battles
+        // unless a real deployment changed the physical ship population.
+        let ships_before_deployment = state.combat.physics().ships().len();
         if !state.events.completed() {
             state.metadata.deploy_reinforcements(&mut state.combat, &mut state.events, completed_tick)?;
         }
+        let ships_deployed = state.combat.physics().ships().len() != ships_before_deployment;
         // Unity Ship.Kill removes the casualty, then calls Squad.SetOffsets
         // on its survivors in the SAME kill transaction. The roster's
         // MemberLost changes are the authoritative signal. Other commands
@@ -930,9 +938,10 @@ where
         // game/physics driver. No separate Level hit ledger is kept here.
         CombatWorld::count_step_outcomes(state.combat.events(), &mut counts);
         // Contact/timer callbacks can detonate a ship or spawn a Beacon after
-        // the core physical transaction. Report the final same-tick state.
-        // Quiet ticks reuse the core counts without another world scan.
-        if counts.events != state.combat.events().len() as u64 {
+        // the core physical transaction; reinforcement deployment can add
+        // hulls without producing any CombatEvent. Report the final same-tick
+        // state in both cases. Quiet ticks reuse the core counts.
+        if ships_deployed || counts.events != state.combat.events().len() as u64 {
             counts.events = state.combat.events().len() as u64;
             counts.active_ships = state.combat.physics().ships().iter().filter(|body| body.active).count() as u32;
             counts.active_projectiles = state.combat.physics().projectiles().iter().filter(|body| body.active).count() as u32;
