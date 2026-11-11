@@ -301,6 +301,8 @@ def main() -> None:
                         help="publish a portable rollout bundle without running the optimizer")
     parser.add_argument("--bundle-inbox", type=Path,
                         help="also deliver the collected bundle to an existing shared inbox")
+    parser.add_argument("--pinned-rollout-bundle", nargs=2, action="append", default=[],
+                        metavar=("RECEIPT", "SHA256"), help="supply an approved receipt to an empty bundle template")
     args = parser.parse_args()
     if not 0 <= args.seed_offset < (1 << 64):
         parser.error("--seed-offset must fit uint64")
@@ -315,6 +317,8 @@ def main() -> None:
     run_document = json.loads(run_bytes)
     if not isinstance(run_document, dict):
         parser.error("run configuration must be an object")
+    if args.pinned_rollout_bundle and run_document.get("rollout_bundles") != []:
+        parser.error("--pinned-rollout-bundle requires an empty rollout_bundles template")
     manifest_value = args.model_manifest or run_document.get("model_manifest")
     if not manifest_value:
         parser.error("run configuration needs model_manifest or --model-manifest")
@@ -336,7 +340,9 @@ def main() -> None:
                     "hivemind", "model_updates", "recover_notifications", "recover_outcome_journals",
                 ))):
             parser.error("bundle rounds use completed captures without live Levels or seed shifts")
-        bundles = run_document["rollout_bundles"]
+        bundles = run_document["rollout_bundles"] or [
+            {"path": path, "sha256": digest} for path, digest in args.pinned_rollout_bundle
+        ]
         if not isinstance(bundles, list) or not bundles:
             parser.error("rollout_bundles must list at least one pinned receipt")
         run_id = run_document.get("run_id")

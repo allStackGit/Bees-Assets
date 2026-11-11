@@ -34,8 +34,8 @@ function createNativeBeesAdapter({
     if (!fs.statSync(artifacts).isDirectory()) throw Error('Native Bees artifact root is not a directory.');
     let inbox;
     if (bundleInbox !== undefined) {
-        if (!collectOnly || typeof bundleInbox !== 'string' || !path.isAbsolute(bundleInbox))
-            throw Error('Native Bees bundle inbox requires a collection job and an absolute path.');
+        if (typeof bundleInbox !== 'string' || !path.isAbsolute(bundleInbox))
+            throw Error('Native Bees bundle inbox requires an absolute path.');
         inbox = fs.realpathSync(bundleInbox);
         if (!fs.statSync(inbox).isDirectory() || inbox === artifacts)
             throw Error('Native Bees bundle inbox must be a separate existing directory.');
@@ -47,6 +47,9 @@ function createNativeBeesAdapter({
     const runBytes = fs.readFileSync(run);
     const config = JSON.parse(runBytes);
     const bundleRound = Object.hasOwn(config, 'rollout_bundles');
+    const inboxLearner = !collectOnly && Boolean(inbox);
+    if (inboxLearner && (!Array.isArray(config.rollout_bundles) || config.rollout_bundles.length))
+        throw Error('Native Bees inbox learners require an empty rollout_bundles template.');
     if (collectOnly && bundleRound) throw Error('Native Bees collection requires live Levels.');
     const binary = bundleRound ? null : trustedFile(rolloutBinary);
     if (config.hivemind != null || config.recover_notifications?.length ||
@@ -68,6 +71,23 @@ function createNativeBeesAdapter({
         if (context.project_id !== project || !UUID.test(context.job_id))
             throw Error('Invalid native Bees job identity.');
         return path.join(artifacts, context.job_id);
+    }
+
+    function bundleArguments(bundles) {
+        if (!Array.isArray(bundles) || !bundles.length)
+            throw Error('Native Bees inbox learners require approved rollout bundles.');
+        const seen = new Set();
+        return bundles.flatMap(bundle => {
+            const {job_id, sha256: digest} = bundle ?? {};
+            if (typeof job_id !== 'string' || !UUID.test(job_id) || seen.has(job_id) ||
+                typeof digest !== 'string' || !/^[a-f0-9]{64}$/.test(digest))
+                throw Error('Invalid or duplicate native Bees rollout bundle identity.');
+            seen.add(job_id);
+            const receipt = path.join(inbox, job_id, 'rollout-bundle.json');
+            if (trustedFile(receipt) !== receipt)
+                throw Error('Native Bees rollout receipt must be inside its inbox job directory.');
+            return ['--pinned-rollout-bundle', receipt, digest];
+        });
     }
 
     function completionReceipt(output, name) {
@@ -145,8 +165,10 @@ function createNativeBeesAdapter({
         config_sha256: configSha256,
         args(parameters, context) {
             const output = jobRoot(context);
-            const {config_sha256, seed_offset} = parameters;
-            if (Object.keys(parameters).some(key => !['config_sha256', 'seed_offset'].includes(key)) ||
+            const {config_sha256, seed_offset, rollout_bundles} = parameters;
+            const allowed = inboxLearner ? ['config_sha256', 'seed_offset', 'rollout_bundles'] :
+                ['config_sha256', 'seed_offset'];
+            if (Object.keys(parameters).some(key => !allowed.includes(key)) ||
                 config_sha256 !== configSha256 || !Number.isSafeInteger(seed_offset) || seed_offset < 0 ||
                 (bundleRound && seed_offset !== 0))
                 throw Error('Native Bees requires the approved configuration digest and a seed offset.');
@@ -162,7 +184,8 @@ function createNativeBeesAdapter({
                 '--model-manifest', inputs.manifest, ...(binary ? ['--rollout-binary', binary] : []),
                 '--stage-diagnostics',
                 ...(collectOnly ? ['--collect-only'] : []),
-                ...(inbox ? ['--bundle-inbox', inbox] : []),
+                ...(collectOnly && inbox ? ['--bundle-inbox', inbox] : []),
+                ...(inboxLearner ? bundleArguments(rollout_bundles) : []),
                 '--seed-offset', String(seed_offset),
                 ...(learnerSlot === undefined ? [] : ['--learner-slot', String(learnerSlot)])];
         },

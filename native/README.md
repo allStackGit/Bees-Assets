@@ -258,6 +258,14 @@ directory to deliver bundles automatically. Each bundle becomes visible at
 `<bundleInbox>/<job_id>/rollout-bundle.json` after its files are copied and
 verified. Use that receipt path and digest in the learner job. The
 collector reports copy duration and bytes delivered.
+
+To reuse one learner installation for successive bundle jobs, set
+`bundleInbox` on the learner adapter and use `"rollout_bundles": []`
+in its template. Each job supplies `rollout_bundles` as a list of
+`{job_id, sha256}` records in its saved configuration, along with the
+configuration digest and zero seed offset. The adapter resolves each
+collector job ID inside the configured inbox. The learner verifies the
+approved receipt and its checkpoint, manifest, and capture digests.
 The adapter reports completed-round metrics from the receipt and uses
 the Hub's process-group stop. Each job runs one CPU update. A checkpoint
 pipeline keeps the approved configuration digest and uses each predecessor's
