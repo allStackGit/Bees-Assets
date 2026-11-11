@@ -97,6 +97,23 @@ def completed_episodes(path, focus, manifest):
 # The serialized identity is constructed in completed_episodes above. These
 # prefixes identify where paired comparison stops matching without requiring
 # operators to inspect huge per-episode keys or relax strict matching.
+def aggregate_completed_episodes(paths, focus, manifest):
+    """Combine independently journaled native shards without losing pair identity.
+
+    Each file retains its own run/journal identity validation. Repeated
+    evaluation inputs across files are ambiguous, not extra samples.
+    """
+    episodes = {}
+    counts = Counter()
+    for path in paths:
+        shard, shard_counts = completed_episodes(path, focus, manifest)
+        if episodes.keys() & shard.keys():
+            raise ValueError(f"{path}: duplicate evaluation inputs across journal files")
+        episodes.update(shard)
+        counts.update(shard_counts)
+    return episodes, counts
+
+
 MATCH_FIELDS = (
     "scene_sha256", "seed", "bee_side", "human_side",
     "group_episode_number", "group_team_by_side",
@@ -157,19 +174,27 @@ def main():
     parser.add_argument("--focus-side", choices=("bee", "human"), required=True)
     parser.add_argument("--reference-manifest", type=Path)
     parser.add_argument("--candidate-manifest", type=Path)
+    parser.add_argument("--reference-extra", type=Path, action="append", default=[],
+                        help="additional reference shard/journal; repeat for each file")
+    parser.add_argument("--candidate-extra", type=Path, action="append", default=[],
+                        help="additional candidate shard/journal; repeat for each file")
     args = parser.parse_args()
     paths = (args.reference_manifest, args.candidate_manifest)
     if (paths[0] is None) != (paths[1] is None):
         parser.error("supply both model manifests or omit both")
     try:
         manifests = [manifest_identity(path) if path else None for path in paths]
-        reference, reference_counts = completed_episodes(args.reference, args.focus_side, manifests[0])
-        candidate, candidate_counts = completed_episodes(args.candidate, args.focus_side, manifests[1])
+        reference, reference_counts = aggregate_completed_episodes(
+            [args.reference, *args.reference_extra], args.focus_side, manifests[0])
+        candidate, candidate_counts = aggregate_completed_episodes(
+            [args.candidate, *args.candidate_extra], args.focus_side, manifests[1])
         report = compare(reference, candidate)
     except (OSError, KeyError, TypeError, ValueError) as error:
         parser.error(str(error))
     report.update(
         focus_side=args.focus_side,
+        reference_journal_files=1 + len(args.reference_extra),
+        candidate_journal_files=1 + len(args.candidate_extra),
         model_matching="fixed_opponent_artifact" if paths[0] else "same_manifest_and_slots",
         reference_aborted_episodes=reference_counts["aborted"],
         candidate_aborted_episodes=candidate_counts["aborted"],
