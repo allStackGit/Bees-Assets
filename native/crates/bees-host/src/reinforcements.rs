@@ -34,13 +34,17 @@ impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
         let mut squad_waves = HashMap::new();
         let mut waves = Vec::with_capacity(plans.len());
         let mut previous = 0.0;
+        // Equal-time waves are valid: Titania II stages two distinct
+        // formations at 375 seconds with different entry destinations.
+        // Preserve authored order for a common due tick.
         for plan in plans {
             let tick = (f64::from(plan.after_seconds) / f64::from(dt)).floor() + 1.0;
-            if !plan.after_seconds.is_finite() || plan.after_seconds <= previous ||
+            if !plan.after_seconds.is_finite() || plan.after_seconds <= 0.0 ||
+                plan.after_seconds < previous ||
                 !tick.is_finite() || tick >= u64::MAX as f64 || plan.squad_item_ids.is_empty() ||
                 plan.entry.is_some_and(|entry| !entry.is_finite())
             {
-                return Err("Reinforcements need strictly increasing positive times, nonempty squads, and finite entries");
+                return Err("Reinforcements need positive nondecreasing times, nonempty squads, and finite entries");
             }
             for id in plan.squad_item_ids {
                 if squad_waves.insert(id, waves.len()).is_some() {
