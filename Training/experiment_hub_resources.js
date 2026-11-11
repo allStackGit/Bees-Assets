@@ -36,6 +36,17 @@ function request(input) {
         gpu_mode,gpu_vram_mb,gpu_compute_pct};
 }
 
+// Resolve worker concurrency only once from the fixed, OS-limited CPU lease.
+// This is a resource planner primitive, not a feedback loop or dynamic scaler.
+// The project-specific upper bound is the maximum workload concurrency that
+// its trusted adapter currently supports; it does not promise ideal scaling.
+function fixedCpuParallelism(cpuQuota, maximum) {
+    if(!Number.isSafeInteger(cpuQuota)||cpuQuota<1||
+        !Number.isSafeInteger(maximum)||maximum<1||maximum>65536)
+        throw Error('Fixed CPU worker count requires a positive leased CPU budget and approved upper bound.');
+    return Math.min(cpuQuota,maximum);
+}
+
 // Check the original job budget against the reservation made for it.
  // The planner may choose GPU IDs when the request was unpinned, but
  // may not alter any requested resource quantity or GPU mode.
@@ -327,4 +338,4 @@ function ensureLocalCpuRamCapacity(records,cpus,ramMb,hostCpus,hostRamMb) {
     }
 }
 module.exports={request,matchingLeaseBudget,remaining,placements,plan,startHeadroom,
-    observedLoadPreference,ensureLocalCpuRamCapacity};
+    observedLoadPreference,ensureLocalCpuRamCapacity,fixedCpuParallelism};
