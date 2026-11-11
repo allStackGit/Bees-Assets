@@ -65,7 +65,8 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         add('ant_decisions_per_second',row.ant_decisions/updateWall,'rate');
         add('group_states_per_second',row.group_states/updateWall,'rate');
     }
-    for(const name of ['collection_seconds','optimization_seconds',
+    for(const name of ['collection_seconds','rollout_model_refresh_seconds',
+        'optimization_seconds',
         'overlap_seconds','remote_policy_snapshot_seconds',
         'remote_opponent_snapshot_seconds',
         'ppo_profile_host_seconds','ppo_advantages_seconds',
