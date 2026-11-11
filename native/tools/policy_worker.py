@@ -387,8 +387,13 @@ def collect_predictions(
                 indices = slice(first, last + 1)
             sub_obs, sub_mask = observations[indices], allowed[indices]
         prediction = model.predict(sub_obs, sub_mask)
+        if not isinstance(prediction, (tuple, list)) or len(prediction) not in (2, 3):
+            raise ValueError("policy backend must return two actions and optional behavior statistics")
+        sampled = isinstance(model, MlagentsPolicy)
+        if (len(prediction) == 3) != sampled:
+            raise ValueError("ML-Agents slots must return behavior statistics; inference-only slots must not")
         out_cont, out_disc = prediction[:2]
-        if len(prediction) == 3:
+        if sampled:
             stats = prediction[2]
             if stats.shape != (count, CONTINUOUS * 2 + DISCRETE) or not np.isfinite(stats).all():
                 raise ValueError("invalid sampled action or behavior log probabilities")
