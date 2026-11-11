@@ -126,11 +126,19 @@ impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
                     }
                 }
             }
-            if member_sides.len() != expected || wave.ships.len() != expected ||
-                wave.ships.iter().any(|ship|
-                    member_sides.get(&ship.entity_id) != Some(&ship.side))
-            {
-                return Err("Reinforcement squads need one physical ship of the matching side per member");
+            if member_sides.len() != expected || wave.ships.len() != expected {
+                return Err("Reinforcement squads need one physical ship per member");
+            }
+            // Consume each expected identity exactly once, including side.
+            // A simple membership lookup would admit [ship A, ship A]
+            // for a squad whose true membership is [A, B].
+            for ship in &wave.ships {
+                if member_sides.remove(&ship.entity_id) != Some(ship.side) {
+                    return Err("Reinforcement physical ships must uniquely match squad membership and side");
+                }
+            }
+            if !member_sides.is_empty() {
+                return Err("Reinforcement squad has a missing physical ship");
             }
             if wave.entry.is_some() {
                 for ship in &wave.ships {
