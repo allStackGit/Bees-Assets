@@ -215,6 +215,10 @@ def main():
     parser.add_argument("run_config", type=Path)
     parser.add_argument("wave_manifest", type=Path)
     parser.add_argument("output_config", type=Path)
+    parser.add_argument(
+        "--scene-output", type=Path,
+        help="new native scene JSON, required when any wave names a later capture",
+    )
     args = parser.parse_args()
     run_path = args.run_config.resolve()
     output_path = args.output_config.resolve()
@@ -224,18 +228,58 @@ def main():
         fail("output must stay beside the run config so relative asset paths remain valid")
     run = json.loads(run_path.read_text(encoding="utf-8"))
     manifest = json.loads(args.wave_manifest.read_text(encoding="utf-8"))
+    if not isinstance(manifest, dict) or not isinstance(manifest.get("waves"), list):
+        fail("wave manifest must have a waves array")
+    capture_requested = any(
+        isinstance(wave, dict) and "capture" in wave for wave in manifest["waves"]
+    )
+    if capture_requested != (args.scene_output is not None):
+        fail("--scene-output is required exactly when captures are supplied")
+    scene_output = args.scene_output.resolve() if args.scene_output else None
+    if scene_output is not None:
+        if (scene_output.parent != run_path.parent or
+            scene_output == run_path or scene_output == output_path or
+            scene_output.exists()):
+            fail("new native scene must be a nonexistent file beside the run config")
     levels = run.get("levels", [])
     if not isinstance(levels, list) or len(levels) != 1:
         fail("expected exactly one Level")
     scene_path = (run_path.parent / levels[0]["scene"]).resolve()
     scene = json.loads(scene_path.read_text(encoding="utf-8"))
-    plans = expand(run, scene, manifest)
-    # Complete serialization before creating a new output file; a
-    # malformed configuration must not leave a partial run.json behind.
+    captures = {}
+    def read_capture(name):
+        path = (args.wave_manifest.resolve().parent / name).resolve()
+        if path == scene_path:
+            fail("a wave capture cannot be the starting scene")
+        if path not in captures:
+            captures[path] = json.loads(path.read_text(encoding="utf-8"))
+        return captures[path]
+
+    plans = expand(run, scene, manifest, read_capture)
+    if scene_output is not None:
+        highest = max(squad["item_id"] for squad in scene["squads"])
+        next_id = run.get("next_squad_item_id")
+        if type(next_id) is not int or next_id <= highest:
+            fail(
+                "next_squad_item_id must be the real Stage pool successor "
+                "above every captured squad; do not invent an ID"
+            )
+        level = run["levels"][0]
+        level["scene"] = scene_output.name
+    # Serialize both outputs before creating either one, preserving inputs.
     result = json.dumps(run, indent=2, ensure_ascii=False, allow_nan=False) + "\n"
+    scene_result = (
+        json.dumps(scene, indent=2, ensure_ascii=False, allow_nan=False) + "\n"
+        if scene_output is not None else None
+    )
+    if scene_output is not None:
+        with scene_output.open("x", encoding="utf-8") as handle:
+            handle.write(scene_result)
     with output_path.open("x", encoding="utf-8") as handle:
         handle.write(result)
     print(f"Authored {len(plans)} source-verified squad arrivals in {output_path}")
+    if scene_output is not None:
+        print(f"Merged authentic deferred physical records into {scene_output}")
 
 
 if __name__ == "__main__":
