@@ -243,8 +243,16 @@ def completed_rollouts(capture, journal, manifest, manifest_sha, checkpoint_sha,
             if stats is not None:
                 accumulate_training_outcome(
                     stats, terminals[key], rollout[5], learner_slots,
-                    combat_by_episode.pop(key, {}),
+                    combat_by_episode.get(key, {}),
                 )
+            # The rollout retains its own reward-list references. Drop the
+            # journal's completed-episode indices before ingesting the next
+            # episode, without weakening post-terminal identity checks.
+            combat_by_episode.pop(key, None)
+            ended_teams.pop(key, None)
+            retirements.pop(key, None)
+            for team in set(rollout[1].values()):
+                rewards.pop((key, team), None)
             yield rollout
 
     if completed != terminals.keys():
