@@ -5,8 +5,9 @@ Usage:
     python native/tools/author-titania2-waves.py run.json waves.json run-with-waves.json
 
 The wave manifest lists authored source squad IDs, times, and directional
-coordinates. This tool computes only Unity's off-map spawn/entry positions;
-it never synthesizes a ship, squad, upgrade, weapon, or entity ID.
+coordinates. A wave may name a later physical Unity capture containing its
+actual spawned ships and squad. --scene-output writes their merged native
+scene alongside a new run config; no ship attributes or IDs are synthesized.
 """
 import argparse
 import json
@@ -59,7 +60,41 @@ def lane(bounds, direction):
     return spawn, entry
 
 
-def expand(run, scene, manifest):
+def _source_records(scene, label):
+    if not all(isinstance(scene.get(key), list)
+               for key in ("ships", "squads", "obstacles", "map_objects")):
+        fail(f"{label} needs real ship, squad, obstacle, and MapObject lists")
+    squads = {}
+    ships = {}
+    entities = set()
+    for item in scene["squads"]:
+        sid = item.get("item_id")
+        if type(sid) is not int or sid <= 0 or sid in squads:
+            fail(f"{label} has duplicate/invalid source squad IDs")
+        squads[sid] = item
+    for key in ("ships", "obstacles", "map_objects"):
+        for item in scene[key]:
+            eid = item.get("entity_id")
+            if type(eid) is not int or eid <= 0 or eid in entities:
+                fail(f"{label} has duplicate/invalid physical entity IDs")
+            entities.add(eid)
+            if key == "ships":
+                ships[eid] = item
+    return squads, ships, entities
+
+
+def _verify_capture(initial, capture):
+    # Capture provenance cannot be established from legacy Unity exports.
+    # Enforce every stable source-world field we can, and keep all conflicting
+    # identities fatal. Never import the later capture's moved initial units.
+    for key in ("schema_version", "stage_name", "level_name", "bee_side",
+                "human_side", "fixed_dt_seconds", "has_obstacles", "min",
+                "max", "beehive_size_pixels"):
+        if capture.get(key) != initial.get(key):
+            fail(f"wave capture has a different source {key}")
+
+
+def expand(run, scene, manifest, read_capture=None):
     levels = run.get("levels")
     if not isinstance(levels, list) or len(levels) != 1:
         fail("Titania II authoring requires a one-Level run configuration")
@@ -89,8 +124,7 @@ def expand(run, scene, manifest):
         fail("source scene bounds are invalid")
     bounds = (min_x, min_y, max_x, max_y)
 
-    source_squads = {s["item_id"]: s for s in scene.get("squads", [])}
-    ships = {ship["entity_id"]: ship for ship in scene.get("ships", [])}
+    source_squads, ships, entity_ids = _source_records(scene, "starting scene")
     bee_side = scene.get("bee_side")
     if not isinstance(bee_side, int) or bee_side <= 0:
         fail("source scene has no valid Bee side")
@@ -102,8 +136,18 @@ def expand(run, scene, manifest):
     output = []
     for wi, wave in enumerate(waves):
         label = f"wave {wi + 1}"
-        if set(wave) != {"after_seconds", "direction", "squad_item_ids"}:
-            fail(f"{label} must contain exactly after_seconds, direction and squad_item_ids")
+        allowed = {"after_seconds", "direction", "squad_item_ids", "capture"}
+        if not {"after_seconds", "direction", "squad_item_ids"} <= set(wave) or (
+            set(wave) - allowed
+        ):
+            fail(f"{label} needs time, direction, captured squad IDs and optional capture")
+        capture = None
+        if "capture" in wave:
+            name = wave["capture"]
+            if not isinstance(name, str) or not name.strip() or read_capture is None:
+                fail(f"{label} needs an accessible Unity wave capture")
+            capture = read_capture(name)
+            _verify_capture(scene, capture)
         at = number(wave["after_seconds"], f"{label}.after_seconds")
         if at <= 0 or at < prior:
             fail(f"{label} must have a positive, nondecreasing time")
@@ -113,22 +157,44 @@ def expand(run, scene, manifest):
         if not isinstance(ids, list) or not ids:
             fail(f"{label} must name at least one captured squad")
         horizontal = abs(dx) >= abs(dy)
+        captured_squads, captured_ships = ({}, {})
+        if capture is not None:
+            captured_squads, captured_ships, _ = _source_records(
+                capture, f"{label} capture"
+            )
         for si, squad_id in enumerate(ids):
             if isinstance(squad_id, bool) or not isinstance(squad_id, int) or squad_id <= 0:
                 fail(f"{label} has an invalid source squad ID")
             if squad_id in used:
                 fail(f"source squad {squad_id} appears in multiple waves")
             used.add(squad_id)
-            squad = source_squads.get(squad_id)
+            squad = (captured_squads if capture is not None else source_squads).get(squad_id)
             if squad is None or squad.get("side") != bee_side or squad.get("user_controlled"):
                 fail(f"{label} requires an authentic, non-player Bee squad {squad_id}")
             members = squad.get("member_ids")
-            if not isinstance(members, list) or not members:
-                fail(f"source squad {squad_id} has no physical members")
+            if not isinstance(members, list) or not members or (
+                len(set(members)) != len(members)
+            ):
+                fail(f"source squad {squad_id} has invalid physical membership")
+            selected_ships = captured_ships if capture is not None else ships
             for entity_id in members:
-                ship = ships.get(entity_id)
-                if ship is None or ship.get("side") != bee_side or ship.get("is_rl_policy_controlled"):
+                ship = selected_ships.get(entity_id)
+                if ship is None or ship.get("side") != bee_side or (
+                    ship.get("is_rl_policy_controlled") or ship.get("has_bound_policy")
+                ):
                     fail(f"source squad {squad_id} has missing or policy-controlled physical ships")
+            if capture is not None:
+                if squad_id in source_squads or any(eid in entity_ids for eid in members):
+                    fail(f"{label} capture conflicts with an existing source identity")
+                # Retain the real source records, including weapons, movement,
+                # HiveMind authority and each member's authored formation.
+                scene["squads"].append(squad)
+                source_squads[squad_id] = squad
+                for eid in members:
+                    ship = captured_ships[eid]
+                    scene["ships"].append(ship)
+                    ships[eid] = ship
+                    entity_ids.add(eid)
             # Source AddTitania2BeeWave offsets one tangent lane per squad.
             lane_offset = (si - (len(ids) - 1) * 0.5) * 0.16
             direction = [dx if horizontal else dx + lane_offset,
