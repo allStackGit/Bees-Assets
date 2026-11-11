@@ -1623,6 +1623,7 @@ document.addEventListener('DOMContentLoaded', () => {
             'collector_'+i+'_ant_decisions',
             'collector_'+i+'_engine_steps',
             'collector_'+i+'_action_target',
+            'collector_'+i+'_elapsed_seconds',
             'collector_'+i+'_roundtrip_seconds',
             'collector_'+i+'_model_prepare_seconds',
             'collector_'+i+'_decisions_per_second',
