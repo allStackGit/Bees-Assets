@@ -91,11 +91,23 @@ def _verify_capture(initial, capture):
     # Capture provenance cannot be established from legacy Unity exports.
     # Enforce every stable source-world field we can, and keep all conflicting
     # identities fatal. Never import the later capture's moved initial units.
+    # Current HiveMind command authority and parent/carrier source identity
+    # are not available in legacy scene exports. Those cannot safely
+    # establish authentic deferred non-policy squads.
+    if type(initial.get("schema_version")) is not int or initial["schema_version"] < 28:
+        fail("future-wave captures require current Unity scene schema 28 or later")
     for key in ("schema_version", "stage_name", "level_name", "bee_side",
                 "human_side", "fixed_dt_seconds", "has_obstacles", "min",
-                "max", "beehive_size_pixels"):
+                "max", "beehive_size_pixels", "navigation_map_width",
+                "navigation_map_height", "navigation_origin_world",
+                "navigation_x_axis_world", "navigation_y_axis_world"):
         if key not in initial or key not in capture or capture[key] != initial[key]:
             fail(f"wave capture has a missing or different source {key}")
+    start_frame = initial.get("source_frame_count")
+    capture_frame = capture.get("source_frame_count")
+    if (type(start_frame) is not int or type(capture_frame) is not int or
+        start_frame < 0 or capture_frame <= start_frame):
+        fail("wave capture needs a later source frame than the starting scene")
     initial_squads, initial_ships, _ = _source_records(initial, "starting scene")
     later_squads, later_ships, _ = _source_records(capture, "wave capture")
     # Stage IDs are never reassigned in one run. Motion, health and roster
@@ -152,6 +164,8 @@ def expand(run, scene, manifest, read_capture=None):
     if not isinstance(waves, list) or not waves:
         fail("manifest must contain at least one wave")
     prior = 0.0
+    prior_capture_frame = None
+    prior_capture_time = None
     used = set()
     output = []
     for wi, wave in enumerate(waves):
@@ -171,6 +185,13 @@ def expand(run, scene, manifest, read_capture=None):
         at = number(wave["after_seconds"], f"{label}.after_seconds")
         if at <= 0 or at < prior:
             fail(f"{label} must have a positive, nondecreasing time")
+        if capture is not None:
+            frame = capture["source_frame_count"]
+            if (prior_capture_frame is not None and
+                (frame < prior_capture_frame or
+                 (frame == prior_capture_frame and at != prior_capture_time))):
+                fail(f"{label} has a capture frame inconsistent with wave order")
+            prior_capture_frame, prior_capture_time = frame, at
         prior = at
         dx, dy = pair(wave["direction"], f"{label}.direction")
         ids = wave["squad_item_ids"]
