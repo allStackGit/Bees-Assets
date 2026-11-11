@@ -47,6 +47,9 @@ final outputs and keeps the completed battle open. The battle view shows the
 selected Level's result, end reason, and duration. Tab inspects other Levels and Escape
 closes the window. The existing `--view` diagnostic invocation exits
 automatically at the run boundary.
+With `--output-dir`, press Enter on the result screen to replay the same
+configuration and seeds. Each replay opens a new battle window and saves
+its own journal and summary in a numbered directory under the first run.
 
 The view draws authored primary collider outlines, current health, live
 projectiles, obstacles and fading debris directly from borrowed combat bodies.

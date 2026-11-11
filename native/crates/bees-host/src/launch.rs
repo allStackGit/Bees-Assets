@@ -664,7 +664,6 @@ const USAGE: &str = "Usage: bees [play|run] <run.json> [--output-dir <new-dir>] 
   run   Run the battle headlessly (default)";
 
 pub fn run() -> Result<(), Box<dyn Error>> {
-    let run_start = Instant::now();
     let mut args = env::args_os().skip(1);
     let first = args.next().ok_or_else(|| invalid(USAGE))?;
     if first == "--help" || first == "-h" {
@@ -694,8 +693,26 @@ pub fn run() -> Result<(), Box<dyn Error>> {
     #[cfg(not(feature = "client"))]
     if view { return Err(invalid("Windowed play requires building with --features client").into()); }
     let config_path = config_path.canonicalize()?;
+    let mut replay_number = 0_u64;
+    let mut battle_output = output.clone();
+    let mut battle_capture = capture.clone();
+    while run_battle(&config_path, play, view, battle_output.as_deref(), battle_capture.as_deref(), replay_number)? {
+        replay_number = replay_number.checked_add(1).ok_or_else(|| invalid("replay count exhausted"))?;
+        let next = output.as_ref().ok_or_else(|| invalid("replay requires --output-dir"))?
+            .join(format!("replay-{replay_number:04}"));
+        battle_capture = capture.as_ref().map(|_| next.join("final.ppm"));
+        battle_output = Some(next);
+    }
+    Ok(())
+}
+
+fn run_battle(
+    config_path: &Path, play: bool, view: bool, output: Option<&Path>,
+    capture: Option<&Path>, replay_number: u64,
+) -> Result<bool, Box<dyn Error>> {
+    let run_start = Instant::now();
     let root = config_path.parent().ok_or_else(|| invalid("missing config directory"))?;
-    let mut config: RunConfig = serde_json::from_reader(File::open(&config_path)?)?;
+    let mut config: RunConfig = serde_json::from_reader(File::open(config_path)?)?;
     if config.status_every_rounds == Some(0) {
         return Err(invalid("status_every_rounds must be positive").into());
     }
@@ -715,6 +732,9 @@ pub fn run() -> Result<(), Box<dyn Error>> {
         config.next_squad_item_id == i64::MAX
     {
         return Err(invalid("invalid run identity, bounds, allocator or round budget").into());
+    }
+    if replay_number > 0 {
+        config.run_id.push_str(&format!("-replay-{replay_number}"));
     }
     for level in &config.levels {
         level.validate_seeds(config.episodes_per_world)?;
@@ -1677,9 +1697,12 @@ pub fn run() -> Result<(), Box<dyn Error>> {
         serde_json::to_writer(&file, &final_summary)?;
         file.sync_all()?;
     }
-    #[cfg(feature = "client")]
     if play && !user_closed && completed_episodes.iter().all(|&count| count == config.episodes_per_world) {
+        #[cfg(feature = "client")]
         if let Some(client) = &mut client {
+            if output.is_some() {
+                client.allow_replay();
+            }
             loop {
                 let index = client.selected_world();
                 let current = host.render_world(index)
@@ -1688,8 +1711,11 @@ pub fn run() -> Result<(), Box<dyn Error>> {
                     client_fixed_dt_by_level[index])?, bees_host::client::NativeClientAction::Quit) {
                     break;
                 }
+                if client.replay_requested() {
+                    return Ok(true);
+                }
             }
         }
     }
-    Ok(())
+    Ok(false)
 }

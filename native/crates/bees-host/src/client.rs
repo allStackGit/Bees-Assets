@@ -33,6 +33,7 @@ pub struct NativeClient {
     last_left_press: Option<Instant>,
     double_left_press: bool,
     input_feedback: &'static str,
+    replay_available: bool,
     selection_drag: Option<(Vec2, Vec2)>,
     support_mode: Option<NativeTargetMode>,
     pub rendered_frames: u64,
@@ -63,6 +64,7 @@ impl NativeClient {
             paused: false, next_step: now, previous_frame: now, left_was_down: false,
             right_was_down: false, last_left_press: None, double_left_press: false,
             input_feedback: "",
+            replay_available: false,
             selection_drag: None, support_mode: None,
             rendered_frames: 0, rendered_pixels: 0, render_wall_seconds: 0.0,
             ui_wall_seconds: 0.0, window_update_wall_seconds: 0.0,
@@ -77,6 +79,12 @@ impl NativeClient {
     pub fn viewport_size(&self) -> (usize, usize) { self.renderer.size() }
 
     pub fn report_move(&mut self, feedback: &'static str) { self.input_feedback = feedback; }
+
+    pub fn allow_replay(&mut self) { self.replay_available = true; }
+
+    pub fn replay_requested(&self) -> bool {
+        self.replay_available && self.window.is_key_pressed(Key::Enter, KeyRepeat::No)
+    }
 
     pub fn poll(
         &mut self, view: NativeRenderWorldView<'_>, bounds: Aabb, world_count: usize, fixed_dt: Duration,
@@ -352,9 +360,10 @@ impl NativeClient {
             }).unwrap_or_default();
         let title = if let Some(result) = view.terminal_result {
             let outcome = crate::presentation::battle_outcome_label(result);
-            format!("Bees native | World {} | Episode {} | {}{} | {:.2} s | Tab world, Esc close",
+            format!("Bees native | World {} | Episode {} | {}{} | {:.2} s | {}Tab world, Esc close",
                 view.world_id.0, view.episode_revision + 1, outcome,
-                if result.timed_out { " (time limit)" } else { "" }, result.duration_seconds)
+                if result.timed_out { " (time limit)" } else { "" }, result.duration_seconds,
+                if self.replay_available { "Enter replay, " } else { "" })
         } else { format!(
             "Bees native | World {} | Episode {} | Tick {} | {} ships, {} shots | {} squads selected | {}{} | {} | range/obstruction {} | Left select/drag, double-click type, Ctrl add, right move/attack | C stop chase, V cease fire, A attack on sight, G guard, P patrol, M mine, H heal, R retreat, T point fire, X stop, B ranges, Backspace cancel | Space pause, N step, Tab world, arrows pan, wheel zoom, F fit, Esc exit",
             view.world_id.0, view.episode_revision, view.tick, counts.ships, counts.projectiles,
