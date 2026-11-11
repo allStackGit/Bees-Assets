@@ -1975,7 +1975,9 @@ to the learner. A missing collector observation is listed in the manifest.
 When an operator provides an approved `tinybrains_rollout` machine mount
 with per-collector directories named by the collector job UUID, the learner
 export includes those child-owned text/JSON log files as distinct sources
-as well. Missing collector mounts appear in `missing_sources` and child
+as well. A missing collector mount appears in `missing_sources`; the reason
+`mount_not_configured` explicitly marks a collector with no approved mount
+mapping, rather than silently treating its original logs as complete. Child
 files never count as evidence that the learner's own trainer histories
 were obtained. This is an operator-provided read-only mount, **not**
 automatic worker-to-coordinator artifact transfer. Neither Hub observation

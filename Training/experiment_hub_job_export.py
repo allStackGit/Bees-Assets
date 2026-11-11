@@ -406,6 +406,16 @@ def export(spec: dict, output: Path) -> dict:
         # not that the remote trainer's original histories were collected.
         trainer_files_by_job = {job["id"]: 0 for job in jobs}
         missing_sources: list[dict] = []
+        # A distributed collector's original logs are still unavailable when
+        # no machine mount was configured. Report that explicitly rather than
+        # allowing its Hub observations to make a learner export appear complete.
+        for learner_id, child_id in sorted(collector_pairs):
+            label = "collector_" + child_id.replace("-", "") + "_logs"
+            if label not in collector_log_sources:
+                missing_sources.append({
+                    "job_id": learner_id, "label": label,
+                    "reason": "mount_not_configured",
+                })
         def scan_directory(folder: Path, name_prefix: str, job_id: str,
                            counts_as_trainer: bool = True) -> None:
             for dirpath, dirs, files in os.walk(folder, followlinks=False):
