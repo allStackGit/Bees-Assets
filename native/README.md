@@ -454,8 +454,8 @@ state. Exact enemy lifetimes travel through activation and every timer poll;
 retired targets never resolve to a newer squad with the same numeric ID.
 Ordinary turrets, Beam Cannons, and Laser Builders can fall back to nearby
 collision asteroids. They use the ship's ordered proximity contacts and wait
-for the asteroid to enter the map. MapObject targeting and some
-BombingRun/Charge adapters remain incomplete.
+for the asteroid to enter the map. Some BombingRun/Charge adapters remain
+incomplete.
 Exports also capture actual `source_sight`: Scouting uses Ship.Sight, whereas
 HiveMind vision substitutes weapon range when Sight is zero. Older captures
 without this field cannot supply Scouting context.
@@ -1457,6 +1457,10 @@ authoritative gameplay records paired with actual native obstacle colliders.
 Projectile hits reduce their health, produce gameplay events and retire
 their collider and faction discovery when destroyed. Learned MapObjects
 use the primary Collider2D equivalent for vision and map-object observations.
+Active authored weapon ranges also supply a current MapObject visibility
+set, using the collision-layer matrix and exact primary collider overlap.
+The tactical view highlights these objects and displays their live health.
+Manual point-fire can hit them through the shared projectile path.
 Fire Tanks require explicit authored `CanisterBomb.Power` and optional
 linked static-obstacle ID. A fatal projectile hit spawns the existing
 type-15 explosion with inherited shooter/root-shot/command attribution;

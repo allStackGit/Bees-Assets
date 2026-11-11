@@ -716,6 +716,7 @@ pub struct CombatWorld {
     /// Actual live MapObjects: paired with ObstacleBody collider slots in
     /// the same KinematicPhysics world, not perception-only replicas.
     map_objects: HashMap<i64, CombatMapObject>,
+    range_visible_map_objects: HashSet<i64>,
     /// Same Level-owned learned visibility in gameplay, evaluation and
     /// training. Replaced with the world on episode reset.
     discovery: LevelDiscovery,
@@ -902,6 +903,7 @@ impl CombatWorld {
             next_entity_id: 1,
             ships: Vec::new(),
             map_objects: HashMap::new(),
+            range_visible_map_objects: HashSet::new(),
             discovery: LevelDiscovery::new(),
             vision_observer_ids: HashSet::new(),
             vision_live_enemy_sides: HashSet::new(),
@@ -1216,6 +1218,11 @@ impl CombatWorld {
         self.map_objects.get(&entity_id)
     }
     pub fn map_object_count(&self) -> usize { self.map_objects.len() }
+
+    /// Live MapObjects in at least one active authored weapon trigger.
+    pub fn range_visible_map_object_ids(&self) -> &HashSet<i64> {
+        &self.range_visible_map_objects
+    }
     /// Learned faction vision belongs to this Level's game state. Sight
     /// events must be validated by the authoritative vision detector before
     /// insertion, and removed entities retired via Level teardown.

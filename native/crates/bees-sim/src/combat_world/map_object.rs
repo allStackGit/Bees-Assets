@@ -76,6 +76,7 @@ impl CombatWorld {
         self.physics.obstacles_mut()[index].active = false;
         self.obstacle_by_id.remove(&entity_id);
         self.map_objects.remove(&entity_id);
+        self.range_visible_map_objects.remove(&entity_id);
         self.discovery.retire(DiscoveryKind::MapObject, entity_id);
         self.free_obstacle_slots.push(index);
         true

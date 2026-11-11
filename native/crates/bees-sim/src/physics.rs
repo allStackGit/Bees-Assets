@@ -833,6 +833,10 @@ impl ObstacleBody {
         self.collider.bounds
     }
 
+    pub(crate) fn primary_overlaps_circle(&self, center: Vec2, radius: f32) -> bool {
+        self.active && self.collider.overlaps_circle(center, radius)
+    }
+
     /// MapObject visibility uses its primary collider, whereas Obstacle
     /// visibility uses the clearance mapping collider when available.
     pub fn vision_proximity_primary(

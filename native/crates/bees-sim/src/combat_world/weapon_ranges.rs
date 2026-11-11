@@ -46,6 +46,7 @@ impl CombatWorld {
         -> StepCounts
     {
         let mut counts = StepCounts { weapon_range_exits: std::mem::take(&mut self.pending_weapon_range_exits), ..StepCounts::default() };
+        self.range_visible_map_objects.clear();
         let mut has_ranges = false;
         for (&ship_id, weapons) in &mut self.ship_weapons {
             let owner_index = self.ship_by_id[&ship_id];
@@ -64,6 +65,20 @@ impl CombatWorld {
                 refresh_circle_contacts(&mut self.physics, &self.ships, side, active, range,
                     &mut weapons.range_contacts[slot], &mut self.weapon_range_candidates,
                     &mut self.weapon_range_entering_ids, collisions, &mut counts);
+                // Source RangeCollider registers every MapObject contact
+                // permitted by the layer matrix. Visibility is the union of
+                // active ranges, independent of learned HiveMind sightings.
+                if active && range.enabled && self.range_visible_map_objects.len() < self.map_objects.len() {
+                    for id in self.map_objects.keys() {
+                        if self.range_visible_map_objects.contains(id) { continue; }
+                        let body = &self.physics.obstacles()[self.obstacle_by_id[id]];
+                        if collisions.allows(range.layer, body.layer) &&
+                            body.primary_overlaps_circle(range.center, range.radius)
+                        {
+                            self.range_visible_map_objects.insert(*id);
+                        }
+                    }
+                }
             }
         }
 

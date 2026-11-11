@@ -222,13 +222,29 @@ impl NativeSoftwareRenderer {
         self.shape(&ShipShape::Box { offset: (bounds.min + bounds.max) * 0.5,
             half_extents: (bounds.max - bounds.min) * 0.5 },
             Pose { position: Vec2::ZERO, rotation_degrees: 0.0 }, 0x33455e);
-        for (_, body) in view.combat.render_obstacles() {
+        for (obstacle, body) in view.combat.render_obstacles() {
             counts.obstacles += 1;
             if body.primary_bounds().is_some_and(|hull| !hull.overlaps(viewport)) {
                 counts.culled_obstacles += 1;
                 continue;
             }
-            self.shape(body.shape(), body.pose, 0x758496);
+            let object = if obstacle.kind == bees_sim::obstacle::ObstacleKind::MapObject &&
+                view.combat.range_visible_map_object_ids().contains(&obstacle.entity_id)
+            {
+                view.combat.map_object(obstacle.entity_id)
+            } else { None };
+            let color = match object.map(|object| object.kind) {
+                Some(bees_sim::map_object::MapObjectKind::FireTank) => 0xe1a34b,
+                Some(bees_sim::map_object::MapObjectKind::Generic) => 0x9bd2ae,
+                None => 0x758496,
+            };
+            self.shape(body.shape(), body.pose, color);
+            if let Some(object) = object {
+                let (x, y) = self.project(body.pose.position);
+                let health = (object.health as f32 / object.max_health as f32).clamp(0.0, 1.0);
+                self.line(x - 10.0, y - 12.0, x + 10.0, y - 12.0, 0x3c2837);
+                self.line(x - 10.0, y - 12.0, x - 10.0 + 20.0 * health, y - 12.0, color);
+            }
         }
         for piece in view.combat.render_asteroid_pieces() {
             counts.pieces += 1;
