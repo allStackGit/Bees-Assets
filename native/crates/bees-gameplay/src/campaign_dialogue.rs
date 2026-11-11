@@ -5,9 +5,9 @@ use bees_sim::{
     episode_terminal::SurvivalStatus,
     map_object::MapObjectKind,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Copy, Debug, Deserialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum CampaignDialogueSpec {
     TitaniaMinesweeper { player_side: i32 },
