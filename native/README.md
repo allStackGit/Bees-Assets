@@ -102,9 +102,16 @@ with a defense objective for Titania II. Its briefing gates the clock and
 reinforcements in the client. The upload milestones and ending use the
 shared defense clock and result. The protected ship must be the imported
 HumanTarget; native scene setup applies the source mission's 10,000
-current/maximum/original HP before play and shows its live Planetary
-Shield health beside the defense clock. Generic defense targets retain
-their imported health. Campaign `max_rounds` must cover the full survival
+current/maximum/original HP before play, anchors it at the source
+Titania center, and shows its live Planetary Shield health beside the
+defense clock. An unstaged, obstacle-free source scene also relocates
+its original player squads around the base using the Unity ring order,
+actual sprite sizes, and authored formation offsets. A source scene
+already staged by Unity is not moved again. Obstacle-bearing missions
+must supply the player fleet after Unity's collider-aware placement;
+otherwise native setup fails rather than choosing an unsafe location.
+Generic defense targets retain their imported health. Campaign
+`max_rounds` must cover the full survival
 duration at the scene's fixed step. Set `under_heavy_fire` to `true` in
 the defeat-route configuration to include the evacuation warning.
 
