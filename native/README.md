@@ -97,6 +97,13 @@ before the battle starts. Fire Tank discovery, destruction of that tank,
 and the mission outcome select the later sections. Press L to advance a
 line or K to dismiss the section. The same cues appear in headless journals.
 
+To add either authored Titania obstacle field to an ordinary fleet
+snapshot, run `python native/tools/import-titania-field.py Minesweeper
+fleet.json scene.json` with PyYAML installed. Use `Bee-noculars` for
+Titania II. The output preserves the fleet and imports the authored wall
+and Fire Tank colliders. Set the Level's `scene` to the new file. The
+input supplies the map bounds, ships, and squads.
+
 To stage timed reinforcements, include the wave's authored ships and squads
 at their starting positions in the scene export. Add `reinforcements` to
 the Level entry. Each entry identifies the source squad item IDs and can

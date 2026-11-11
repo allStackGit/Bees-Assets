@@ -39,7 +39,7 @@ function zQuaternion(str, label) {
         fail(label, 'non-planar prefab rotation');
     return [num(m[3],label),num(m[4],label)];
 }
-function rootBase(name, content, kind) {
+function rootBase(name, content, kind, isTrigger) {
     const docs=documents(name,content);
     const candidates=[...docs.entries()].filter(([,d]) =>
         d.kind==='MonoBehaviour' && property(d.text,'ObstacleType')===String(kind)
@@ -52,14 +52,14 @@ function rootBase(name, content, kind) {
     if (!game || game.kind!=='GameObject' || !coll ||
         coll.kind!=='BoxCollider2D' ||
         id(property(coll.text,'m_GameObject'),name)!==gameId ||
-        property(coll.text,'m_IsTrigger')!=='1')
-        fail(name,'primary collider must be root BoxCollider2D trigger');
+        property(coll.text,'m_IsTrigger')!==String(isTrigger))
+        fail(name,'primary collider must be the expected root BoxCollider2D');
     const transform=[...docs.entries()].find(([,d]) =>
         d.kind==='Transform' && id(property(d.text,'m_GameObject'),name)===gameId);
     if (!transform) fail(name,'missing root Transform');
     return {
         ids:{entity:entityId,transform:transform[0],collider:collId,game:gameId},
-        kind,
+        kind, isTrigger,
         layer:num(property(game.text,'m_Layer'),name),
         health:num(property(entity.text,'Health'),name),
         size:xy(property(coll.text,'m_Size'),name),
@@ -103,14 +103,14 @@ function variant(name,text,base,guid) {
         position:arr(base.ids.transform,'m_LocalPosition',base.position),
         rotation:[z,w],
         kind:value(base.ids.entity,'ObstacleType',base.kind),
-        isTrigger:value(base.ids.collider,'m_IsTrigger',1),
+        isTrigger:value(base.ids.collider,'m_IsTrigger',base.isTrigger),
     };
 }
 function toAsset(name,src) {
     if (![0,1].includes(src.kind) || src.layer<0 || src.layer>=32 ||
         !Number.isInteger(src.layer) || src.size.some(v=>v<=0) ||
-        src.scale.some(v=>v===0) || src.isTrigger===0)
-        fail(name,'invalid kind, collider dimensions, layer or trigger');
+        src.scale.some(v=>v===0))
+        fail(name,'invalid kind, collider dimensions or layer');
     const [z,w]=src.rotation;
     const len=z*z+w*w;
     if (Math.abs(len-1)>0.0002)
@@ -136,14 +136,14 @@ export function createBoxObstacleBatch(rootSources) {
     // followed by only its directly verified variants.
     const outputs=[];
     for (const group of rootSources) {
-        const {baseName,baseContent,baseGuid,obstacleType,variants}=group;
+        const {baseName,baseContent,baseGuid,obstacleType,variants,isTrigger=1}=group;
         if (!/^[0-9a-f]{32}$/.test(baseGuid))
             fail(baseName,'invalid metadata GUID');
-        const base=rootBase(baseName,baseContent,obstacleType);
+        const base=rootBase(baseName,baseContent,obstacleType,isTrigger);
         outputs.push(toAsset(baseName,base));
         for (const [name,source] of variants) {
             const input=variant(name,source,base,baseGuid);
-            if (input.kind!==obstacleType || input.isTrigger!==1)
+            if (input.kind!==obstacleType || input.isTrigger!==isTrigger)
                 fail(name,'primary collider kind/trigger changed');
             outputs.push(toAsset(name,input));
         }

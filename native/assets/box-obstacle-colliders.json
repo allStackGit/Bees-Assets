@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "source": "Prefabs/Entities/Obstacles root and Map Borders",
+  "source": "Prefabs/Entities/Obstacles root and Map Borders, Resources/Obstacles/_Obstacle Prefab",
   "obstacles": [
     {
       "name": "_Obstacle",
@@ -287,6 +287,30 @@
         "half_extents": [
           25,
           25
+        ]
+      }
+    },
+    {
+      "name": "_Obstacle Prefab",
+      "obstacle_type": 0,
+      "layer": 19,
+      "authored_health": 1000,
+      "default_pose": {
+        "position": [
+          0,
+          0
+        ],
+        "rotation_degrees": 0
+      },
+      "shape": {
+        "kind": "box",
+        "offset": [
+          0,
+          0
+        ],
+        "half_extents": [
+          0.5,
+          0.5
         ]
       }
     }

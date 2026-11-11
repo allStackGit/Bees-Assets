@@ -12,14 +12,14 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const obstacles = path.join(root, 'Prefabs', 'Entities', 'Obstacles');
 const output = path.join(root, 'native', 'assets', 'box-obstacle-colliders.json');
 
-function group(folder, baseName, obstacleType, variantNames) {
+function group(folder, baseName, obstacleType, variantNames, isTrigger = 1) {
     const basePath = path.join(folder, baseName + '.prefab');
     const baseContent = fs.readFileSync(basePath, 'utf8');
     const metadata = fs.readFileSync(basePath + '.meta', 'utf8');
     const baseGuid = /^guid: ([0-9a-f]{32})$/m.exec(metadata)?.[1];
     if (!baseGuid) throw new Error('Missing source .meta GUID: ' + basePath);
     return {
-        baseName, baseContent, baseGuid, obstacleType,
+        baseName, baseContent, baseGuid, obstacleType, isTrigger,
         variants: variantNames.map(name => [
             name, fs.readFileSync(path.join(folder, name + '.prefab'), 'utf8')
         ])
@@ -29,7 +29,7 @@ function group(folder, baseName, obstacleType, variantNames) {
 const names = [
     '_Obstacle', '1x1', '1x1 1', 'Big Wall', 'Corner Obstacle', 'Slanted',
     'Top Border', 'Bottom Border Variant', 'Left Border Variant', 'Right Border Variant',
-    'Slanted Variant', 'Box'
+    'Slanted Variant', 'Box', '_Obstacle Prefab'
 ];
 const sources = [
     group(obstacles, '_Obstacle', 0,
@@ -51,13 +51,16 @@ const parsed = appendNestedBoxVariants(parentAssets, [
     nested('Slanted Variant', 'Slanted'),
     nested('Box', 'Corner Obstacle'),
 ]);
+parsed.push(...createBoxObstacleBatch([
+    group(path.join(root, 'Resources', 'Obstacles'), '_Obstacle Prefab', 0, [], 0),
+]));
 if (parsed.length !== names.length ||
     parsed.some((entry,index) => entry.name !== names[index])) {
     throw new Error('Unexpected native obstacle prefab identity/order');
 }
 const data = JSON.stringify({
     schema_version: 1,
-    source: 'Prefabs/Entities/Obstacles root and Map Borders',
+    source: 'Prefabs/Entities/Obstacles root and Map Borders, Resources/Obstacles/_Obstacle Prefab',
     obstacles: parsed,
 }, null, 2) + '\n';
 

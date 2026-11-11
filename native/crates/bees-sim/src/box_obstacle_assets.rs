@@ -1,6 +1,6 @@
 //! Immutable source-authored box, nested box and map-border prefab catalog.
 //!
-//! Only primary Obstacle.Collider BoxCollider2D triggers are imported.
+//! Only primary Obstacle.Collider BoxCollider2D shapes are imported.
 //! Prefab-default positions and orientations are retained, but level/map
 //! placement may replace them without modifying immutable collider geometry.
 
@@ -18,7 +18,7 @@ const ASSET_JSON: &str = include_str!(concat!(
     "/../../assets/box-obstacle-colliders.json"
 ));
 
-pub const BOX_OBSTACLE_COUNT: usize = 12;
+pub const BOX_OBSTACLE_COUNT: usize = 13;
 
 #[derive(Clone, Debug)]
 pub struct BoxObstacleAsset {
