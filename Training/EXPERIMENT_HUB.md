@@ -1461,10 +1461,16 @@ transfer, run `python native/tools/package_policy_manifest.py
 <round>/learner/manifest.json <new-package-directory>` from the checkout.
 The output contains relative `models/` references and `receipt.json`
 written only after copy/hash verification. The destination must not exist;
-a failed copy leaves no completion receipt. This is an **on-demand model
-package**, not a cross-machine Hub continuation or automatic transfer.
-Use the destination's `manifest.json` and its referenced checkpoint when
-configuring a separate locally authorized job on the receiving machine.
+a failed copy leaves no completion receipt. After transferring the whole
+directory to another machine, run
+`python native/tools/package_policy_manifest.py --verify <package-directory>`
+on that machine. Verification checks the receipt, manifest, model digests
+and safe portable paths without loading untrusted model weights. It proves
+internal consistency, **not** sender authenticity or Hub authorization.
+Use the destination's `manifest.json` and its referenced learner checkpoint
+when configuring a new locally approved job; the Hub's predecessor
+continuation rule still requires the original machine. Automatic transfer
+and cross-host checkpoint lineage are not implemented.
 On multi-GPU Linux hosts, provide the optional machine-local `rocrGpuUuids` PCI-to-ROCr-UUID
 map to the adapter when the runtime cannot otherwise prove one visible
 leased device. The fixed HIP/PyTorch PCI verifier is shared with TinyBrains.
