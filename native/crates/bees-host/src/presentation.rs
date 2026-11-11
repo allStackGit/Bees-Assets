@@ -37,7 +37,7 @@ pub struct NativeRenderWorldView<'a> {
     pub fixed_step_seconds: f32,
     pub terminal_result: Option<bees_sim::episode_terminal::EpisodeTerminalResult>,
     pub campaign_dialogue: Option<(u8, bees_gameplay::campaign_dialogue::CampaignCue)>,
-    pub survival_seconds_remaining: Option<f32>,
+    pub survival: Option<bees_sim::episode_terminal::SurvivalStatus>,
     pub combat: &'a CombatWorld,
     pub collision_matrix: &'a bees_sim::physics::CollisionMatrix,
     pub roster: &'a NativeSquadRoster,

@@ -9,7 +9,7 @@ use bees_sim::combat_world::CombatWorld;
 use bees_sim::episode_terminal::{
     EpisodeDeathAttribution, EpisodeEconomicError, EpisodeEconomicRewards,
     EpisodeTerminalError, EpisodeTerminalMeasurements, EpisodeTerminalResult,
-    EpisodeTerminalRewards, NativeEpisodeTerminal, SurvivalObjective,
+    EpisodeTerminalRewards, NativeEpisodeTerminal, SurvivalObjective, SurvivalStatus,
 };
 use bees_sim::rl_economy::{
     EconomicLedgerError, EconomicLedgerMeasurements, EpisodeEconomicLedger,
@@ -197,8 +197,8 @@ impl NativeEpisodeRewardCoordinator {
         [self.bee_side, self.human_side]
     }
 
-    pub fn survival_seconds_remaining(&self) -> Option<f32> {
-        self.terminal.survival_seconds_remaining()
+    pub fn survival_status(&self) -> Option<SurvivalStatus> {
+        self.terminal.survival_status()
     }
 
     pub fn normalized_episode_progress(&self) -> f32 {

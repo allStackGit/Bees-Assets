@@ -345,6 +345,13 @@ impl NativeSoftwareRenderer {
                 rotation_degrees: body.motion.rotation_degrees }, color);
             self.cross(body.motion.position, 1.5, color);
             let (x, y) = self.project(body.motion.position);
+            if view.survival.is_some_and(|survival| survival.protected_ship_id == ship.entity_id) {
+                let marker = 0xffd873;
+                self.line(x - 5.0, y - 21.0, x, y - 16.0, marker);
+                self.line(x, y - 16.0, x + 5.0, y - 21.0, marker);
+                self.line(x + 5.0, y - 21.0, x, y - 26.0, marker);
+                self.line(x, y - 26.0, x - 5.0, y - 21.0, marker);
+            }
             let health = ship.vitals.health() as f32 / ship.vitals.max_health() as f32;
             self.line(x - 10.0, y - 12.0, x + 10.0, y - 12.0, 0x3c2837);
             self.line(x - 10.0, y - 12.0, x - 10.0 + 20.0 * health, y - 12.0, color);
@@ -457,9 +464,9 @@ impl NativeSoftwareRenderer {
         }
         if let Some(result) = view.terminal_result {
             self.draw_battle_result(view, result);
-        } else if let Some(remaining) = view.survival_seconds_remaining {
-            let seconds = remaining.ceil() as u64;
-            let label = format!("Protect the target  {:02}:{:02}", seconds / 60, seconds % 60);
+        } else if let Some(survival) = view.survival {
+            let seconds = survival.seconds_remaining.ceil() as u64;
+            let label = format!("Protect the marked ship  {:02}:{:02}", seconds / 60, seconds % 60);
             text::draw_centered(&mut self.pixels, self.width, 8, &label, 1, [239, 247, 255]);
         }
         counts
@@ -470,7 +477,7 @@ impl NativeSoftwareRenderer {
     ) {
         let title = battle_outcome_label(result);
         let reason = if result.extraction_victory { "Extraction" }
-            else if view.survival_seconds_remaining.is_some() { "Defense" }
+            else if view.survival.is_some() { "Defense" }
             else if result.timed_out { "Time limit" } else { "Elimination" };
         let detail = format!("{reason}  /  {:.2} s", result.duration_seconds);
         let context = format!("World {}  /  Episode {}", view.world_id.0, view.episode_revision + 1);

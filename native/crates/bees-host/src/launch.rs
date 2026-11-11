@@ -899,16 +899,16 @@ fn run_menu(catalog_path: &Path, output_root: &Path) -> Result<(), Box<dyn Error
     loop {
         let rows = catalog.battles.iter().map(|entry| {
             let unlocked = entry.mission.as_ref().is_none_or(|mission|
-                mission.requires.iter().all(|id| progress.contains(id.as_str())));
+                mission.requires.iter().all(|id| progress.completed(id)));
             let status = if !unlocked { "  [Locked]" }
-                else if entry.mission.as_ref().is_some_and(|mission| progress.contains(mission.id.as_str())) {
+                else if entry.mission.as_ref().is_some_and(|mission| progress.completed(&mission.id)) {
                     "  [Complete]"
                 } else { "" };
             BattleMenuRow { title: entry.title.trim(), status, unlocked }
         }).collect::<Vec<_>>();
         let Some(index) = select_battle(&rows, &mut selected, launch_failed)? else { break };
         let entry = &catalog.battles[index];
-        let config = resolve(root, &entry.config);
+        let config = resolve(root, entry.config_for(&progress));
         let mission = catalog.campaign_id.as_deref().zip(entry.mission.as_ref())
             .map(|(campaign_id, mission)| CampaignMission {
                 campaign_id, mission_id: &mission.id, player_side: mission.player_side,
@@ -924,8 +924,8 @@ fn run_menu(catalog_path: &Path, output_root: &Path) -> Result<(), Box<dyn Error
                 Err(error) => return Err(error.into()),
             }
         };
-        let result = run_session(&config, true, true, Some(output.clone()), None, None, mission);
-        if mission.is_some() { catalog.add_battle_progress(&output, &mut progress)?; }
+        let result = run_session(&config, true, true, Some(output), None, None, mission);
+        if mission.is_some() { progress = catalog.load_progress(output_root)?; }
         launch_failed = result.is_err();
         if let Err(error) = result {
             eprintln!("Could not play {} ({}): {error}", entry.title, config.display());

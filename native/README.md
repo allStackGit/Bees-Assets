@@ -48,9 +48,10 @@ add `mission` to each campaign entry. For example:
   "campaign_id": "titania",
   "battles": [
     {"title": "Minesweeper", "config": "minesweeper/run.json",
-     "mission": {"id": "minesweeper", "player_side": 1}},
-    {"title": "Beenoculars", "config": "beenoculars/run.json",
-     "mission": {"id": "beenoculars", "player_side": 1, "requires": ["minesweeper"]}}
+     "mission": {"id": "minesweeper", "player_side": 1, "advance_on": "finished"}},
+    {"title": "Beenoculars", "config": "beenoculars/480-seconds.json",
+     "mission": {"id": "beenoculars", "player_side": 1, "requires": ["minesweeper"],
+                 "on_victory": {"mission": "minesweeper", "config": "beenoculars/330-seconds.json"}}}
   ]
 }
 ```
@@ -61,6 +62,12 @@ earlier in the catalog. By default a mission advances on victory. Use
 battle outcome. Closing early and watching recordings grant no progress.
 The picker restores progress from completed run summaries in the same
 output directory. Keep those summaries to keep the unlocks.
+
+Use `on_victory` to select an alternate run configuration when the named
+prerequisite's latest completed attempt was a victory. Both paths keep the
+same mission ID. The example uses Titania II's 330-second defense after a
+Titania I victory and its 480-second defense after a defeat. The two run
+files supply the corresponding `survival.seconds` values.
 
 For an extraction mission, add `extraction` to the run configuration's
 Level entry. Titania I's exit-zone geometry is:
