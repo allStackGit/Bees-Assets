@@ -365,6 +365,48 @@ where
         -> Result<bees_gameplay::player_inputs::NativePlayerCommandCounts, HostPlayerInputError>
     where M: NativeLevelPlayerContext
     {
+        self.apply_player_fire(input, false)
+    }
+
+    pub fn player_held_fire(&mut self, input: bees_gameplay::player_inputs::NativePlayerHeldFire)
+        -> Result<&'static str, HostPlayerInputError>
+    where M: NativeLevelPlayerContext
+    {
+        use bees_gameplay::player_inputs::{NativeHeldFireAction, NativePlayerSquadFire};
+        let target = match input.action {
+            NativeHeldFireAction::Begin { squads, target } => {
+                let counts = self.apply_player_fire(&NativePlayerSquadFire {
+                    world_id: input.world_id, episode_revision: input.episode_revision, squads,
+                    target: Some(target),
+                }, true)?;
+                return Ok(if counts.accepted_squads == 0 { "No selected weapons accepted held fire" }
+                    else { "Manual fire active" });
+            }
+            NativeHeldFireAction::Aim { target } if target.is_finite() => Some(target),
+            NativeHeldFireAction::Aim { .. } => return Err(HostPlayerInputError::Gameplay(NativePlayerInputError::InvalidAction)),
+            NativeHeldFireAction::End => None,
+        };
+        let index = (0..self.simulation.world_count()).find(|&index|
+            self.simulation.world(index).is_some_and(|world| world.id == input.world_id &&
+                world.episode_revision() == input.episode_revision))
+            .ok_or(HostPlayerInputError::Gameplay(NativePlayerInputError::StaleWorld))?;
+        let world = self.simulation.world(index).expect("located world");
+        if world.is_failed() || world.state.events.is_failed() || world.state.events.completed() {
+            return Err(HostPlayerInputError::Gameplay(NativePlayerInputError::InactiveWorld));
+        }
+        if !world.state.has_held_fire() {
+            return Ok(if target.is_some() { "No selected weapons accepted held fire" } else { "Manual fire released" });
+        }
+        self.driver.invalidate_environment(index).map_err(HostPlayerInputError::Driver)?;
+        self.simulation.world_mut(index).expect("located world").state.update_held_fire(target)
+            .map_err(HostPlayerInputError::Gameplay)?;
+        Ok(if target.is_some() { "Manual fire active" } else { "Manual fire released" })
+    }
+
+    fn apply_player_fire(&mut self, input: &bees_gameplay::player_inputs::NativePlayerSquadFire, held: bool)
+        -> Result<bees_gameplay::player_inputs::NativePlayerCommandCounts, HostPlayerInputError>
+    where M: NativeLevelPlayerContext
+    {
         use bees_gameplay::player_inputs::{NativePlayerFirePlan, NativePlayerCommandCounts};
         let index = (0..self.simulation.world_count()).find(|&index|
             self.simulation.world(index).is_some_and(|world| world.id == input.world_id))
@@ -393,11 +435,13 @@ where
                 Err(error) => return Err(HostPlayerInputError::Gameplay(error)),
             }
         }
-        if plans.is_empty() { return Ok(counts); }
+        if plans.is_empty() && (!held || !world.state.has_held_fire()) { return Ok(counts); }
         self.driver.invalidate_environment(index).map_err(HostPlayerInputError::Driver)?;
+        let world = self.simulation.world_mut(index).expect("located world");
+        if held { world.state.update_held_fire(None).map_err(HostPlayerInputError::Gameplay)?; }
         for plan in plans {
-            if plan.execute(self.simulation.world_mut(index).expect("located world"))
-                .map_err(HostPlayerInputError::Gameplay)? > 0 {
+            let result = if held { plan.begin_held_fire(world) } else { plan.execute(world) };
+            if result.map_err(HostPlayerInputError::Gameplay)? > 0 {
                 counts.accepted_squads += 1;
             } else { counts.unavailable_squads += 1; }
         }

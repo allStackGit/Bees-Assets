@@ -374,7 +374,9 @@ schema20 `policy_cease_fire` field already records Ship.IsCeaseFire for every sh
 `NativeHostRuntime::player_fire_squads` accepts world/revision, selected squad
 lifetimes and an optional point. A point sets continuous manual fire; None releases
 it without resetting targeting cadence or ending the current squad command.
-The window uses T then left-click for point-fire and X to release selected weapons.
+Hold J to fire toward the cursor with the ships selected at key-down.
+Releasing J, pressing X, or switching focus releases those weapons. T then
+left-click sets a fixed firing point and X releases it for the current selection.
 Permissions, pooled identities and policy ownership are preflighted; duplicate
 squads execute once. Ordinary Single, DualCannon, BeamCannon, LaserBuilder and
 FullShipTurret use the same mounted scheduler. Game LaserBuilder charges directly

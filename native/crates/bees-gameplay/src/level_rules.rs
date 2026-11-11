@@ -459,6 +459,7 @@ pub struct NativeLevelState<M, A> {
     /// Individual agent clocks follow the active native policy registry.
     /// The source's default decision period is 5 physics steps.
     pub decisions: NativeDecisionCadence,
+    pub(crate) held_fire_ships: Vec<i64>,
     /// Reused source Level.State.Squads snapshot; no per-frame allocation.
     command_friendlies: Vec<NativeFriendlySquad>,
     command_bomber_contacts: Vec<NativeBomberContact>,
@@ -515,6 +516,7 @@ impl<M, A> NativeLevelState<M, A> {
         Self {
             combat, events, metadata, allocate_minion,
             decisions: NativeDecisionCadence::new(period),
+            held_fire_ships: Vec::new(),
             command_friendlies: Vec::new(),
             command_bomber_contacts: Vec::new(),
             hivemind_observers: Vec::new(),

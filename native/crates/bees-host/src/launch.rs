@@ -699,6 +699,7 @@ fn apply_player_input(host: &mut RolloutHost, action: NativePlayerInput) -> Resu
             else if input.target.is_some() { "Point fire set" }
             else { "Point fire stopped" }
         }), "Squad cannot accept manual fire"),
+        NativePlayerInput::HeldFire(input) => (host.player_held_fire(input), "Squad cannot accept manual fire"),
         NativePlayerInput::CeaseFire(input) => (host.player_cease_fire_squads(&input).map(|counts| {
             if counts.accepted_squads == 0 { "Selected squads cannot change firing mode" }
             else if counts.rejected_squads != 0 { "Firing mode updated; some squads unavailable" }
@@ -1281,7 +1282,7 @@ fn run_battle(
             let tick = current.tick;
             let action = client.poll(current, client_bounds[client.selected_world()],
                 host.simulation().world_count(), client_fixed_dt_by_level[client.selected_world()]);
-            if let (Some(trace), Ok(bees_host::client::NativeClientAction::Input(input))) = (&mut input_trace, &action) {
+            if let (Some(trace), Ok(bees_host::client::NativeClientAction::Input { action: input, .. })) = (&mut input_trace, &action) {
                 if let Err(error) = writeln!(trace, "{}", json!({
                         "kind": "player_input",
                         "round": rounds,
@@ -1296,7 +1297,7 @@ fn run_battle(
                 Ok(bees_host::client::NativeClientAction::Wait |
                     bees_host::client::NativeClientAction::WorldChanged) => continue,
                 Ok(bees_host::client::NativeClientAction::Step) => {},
-                Ok(bees_host::client::NativeClientAction::Input(input)) => {
+                Ok(bees_host::client::NativeClientAction::Input { action: input, step }) => {
                     match apply_player_input(&mut host, input) {
                         Ok(feedback) => client.report_move(feedback),
                         Err(error) => {
@@ -1304,7 +1305,7 @@ fn run_battle(
                             break;
                         },
                     }
-                    continue;
+                    if !step { continue; }
                 },
                 Ok(bees_host::client::NativeClientAction::Quit) => { user_closed = true; break; },
                 Err(error) => { failed_window = Some(format!("native window: {error}")); break; },

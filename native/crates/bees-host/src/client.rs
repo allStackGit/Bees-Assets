@@ -7,12 +7,16 @@ use bees_sim::collision::Aabb;
 use bees_sim::simulation::WorldId;
 use minifb::{Key, KeyRepeat, MouseButton, MouseMode, Window, WindowOptions};
 use crate::presentation::{NativeCamera, NativeRenderWorldView, NativeSoftwareRenderer, NativeSupportMode};
-use bees_gameplay::player_inputs::{NativePlayerSquadMoves, NativePlayerSquadFire, NativePlayerSquadCeaseFire};
+use bees_gameplay::player_inputs::{NativeHeldFireAction, NativePlayerHeldFire, NativePlayerSquadMoves,
+    NativePlayerSquadFire, NativePlayerSquadCeaseFire};
 use crate::player_trace::NativePlayerInput;
 use bees_sim::geometry::Vec2;
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum NativeClientAction { Wait, Step, Quit, WorldChanged, Input(NativePlayerInput) }
+pub enum NativeClientAction {
+    Wait, Step, Quit, WorldChanged,
+    Input { action: NativePlayerInput, step: bool },
+}
 
 #[derive(Clone, Copy)]
 pub enum NativeResultControls { Close, PlayAgain, PlayAgainOrWatch, WatchAgain }
@@ -57,6 +61,7 @@ pub struct NativeClient {
     input_feedback: &'static str,
     result_controls: Option<NativeResultControls>,
     playback: bool,
+    held_fire_target: Option<Vec2>,
     selection_drag: Option<(Vec2, Vec2)>,
     support_mode: Option<NativeTargetMode>,
     pub rendered_frames: u64,
@@ -89,6 +94,7 @@ impl NativeClient {
             input_feedback: "",
             result_controls: None,
             playback: false,
+            held_fire_target: None,
             selection_drag: None, support_mode: None,
             rendered_frames: 0, rendered_pixels: 0, render_wall_seconds: 0.0,
             ui_wall_seconds: 0.0, window_update_wall_seconds: 0.0,
@@ -164,8 +170,10 @@ impl NativeClient {
                 self.renderer.camera = NativeCamera::fit(bounds, width, height);
             }
             self.selection_owner = Some(owner);
+            self.held_fire_target = None;
         }
         self.renderer.selection.synchronize(&view);
+        if view.terminal_result.is_some() { self.held_fire_target = None; }
         self.bounds = bounds;
         if self.window.is_key_pressed(Key::Space, KeyRepeat::No) {
             self.paused = !self.paused;
@@ -175,7 +183,7 @@ impl NativeClient {
             self.renderer.show_weapon_ranges = !self.renderer.show_weapon_ranges;
         }
         let single_step = self.paused && self.window.is_key_pressed(Key::N, KeyRepeat::No);
-        if self.window.is_key_pressed(Key::Tab, KeyRepeat::No) && world_count > 1 {
+        if self.window.is_key_pressed(Key::Tab, KeyRepeat::No) && world_count > 1 && self.held_fire_target.is_none() {
             self.selected_world = (self.selected_world + 1) % world_count;
             self.renderer.selected_ship = None;
             self.renderer.selection.clear();
@@ -209,6 +217,31 @@ impl NativeClient {
             self.renderer.camera.zoom_at(1.15_f32.powf(scroll.clamp(-10.0, 10.0)), x, y, width, height);
         }
         let accepts_orders = !self.playback && view.terminal_result.is_none();
+        let pointer_active = self.window.is_active();
+        let stop_fire = self.window.is_key_pressed(Key::X, KeyRepeat::No);
+        let held_fire = if accepts_orders {
+            let cursor = mouse.map(|(x, y)| self.renderer.camera.screen_to_world(x, y, width, height));
+            if let Some(previous) = self.held_fire_target {
+                if !pointer_active || !self.window.is_key_down(Key::J) || stop_fire {
+                    self.held_fire_target = None;
+                    Some(NativeHeldFireAction::End)
+                } else if let Some(target) = cursor.filter(|point| *point != previous) {
+                    self.held_fire_target = Some(target);
+                    Some(NativeHeldFireAction::Aim { target })
+                } else { None }
+            } else if pointer_active && self.window.is_key_pressed(Key::J, KeyRepeat::No) &&
+                !self.renderer.selection.squads().is_empty()
+            {
+                cursor.map(|target| {
+                    self.held_fire_target = Some(target);
+                    self.support_mode = None;
+                    self.selection_drag = None;
+                    self.renderer.selection_box = None;
+                    NativeHeldFireAction::Begin { squads: self.renderer.selection.squads().to_vec(), target }
+                })
+            } else { None }
+        } else { None };
+        let point_fire_available = self.held_fire_target.is_none() && held_fire.is_none();
         if accepts_orders {
             for (key, mode, prompt) in [
                 (Key::G, NativeTargetMode::Support(NativeSupportMode::Guard), "Guard: click a friendly ship"),
@@ -218,7 +251,9 @@ impl NativeClient {
                 (Key::R, NativeTargetMode::Support(NativeSupportMode::FullRetreat), "Retreat: click a friendly WarpGate"),
                 (Key::T, NativeTargetMode::ManualFire, "Point fire: click a point; X stops selected weapons"),
             ] {
-                if self.window.is_key_pressed(key, KeyRepeat::No) {
+                if self.window.is_key_pressed(key, KeyRepeat::No) &&
+                    (mode != NativeTargetMode::ManualFire || point_fire_available)
+                {
                     self.selection_drag = None;
                     self.renderer.selection_box = None;
                     self.last_left_press = None;
@@ -241,7 +276,6 @@ impl NativeClient {
         let right_down = self.window.get_mouse_down(MouseButton::Right);
         let right_pressed = right_down && !self.right_was_down;
         let right_released = !right_down && self.right_was_down;
-        let pointer_active = self.window.is_active();
         let cancel_support = right_pressed && pointer_active && self.support_mode.is_some();
         if !pointer_active {
             self.right_press = None;
@@ -256,7 +290,7 @@ impl NativeClient {
             self.renderer.selection_box = None;
             self.input_feedback = "Target selection cancelled";
         }
-        let mut manual_fire = if accepts_orders && self.window.is_key_pressed(Key::X, KeyRepeat::No) &&
+        let mut manual_fire = if accepts_orders && point_fire_available && stop_fire &&
             !self.renderer.selection.squads().is_empty() {
             self.support_mode = None;
             self.selection_drag = None;
@@ -434,7 +468,7 @@ impl NativeClient {
                 view.world_id.0, view.tick, status, selected,
                 self.result_controls.map_or("Space pause, N step, ", NativeResultControls::hint))
         } else { format!(
-            "Bees native | World {} | Episode {} | Tick {} | {} ships, {} shots | {} squads selected | {}{} | {} | range/obstruction {} | Left select/drag, double-click type, Ctrl add, right move/attack | C stop chase, V cease fire, A attack on sight, G guard, P patrol, M mine, H heal, R retreat, T point fire, X stop, B ranges, Backspace cancel | Space pause, N step, Tab world, arrows pan, wheel zoom, F fit, Esc exit",
+            "Bees native | World {} | Episode {} | Tick {} | {} ships, {} shots | {} squads selected | {}{} | {} | range/obstruction {} | Left select/drag, double-click type, Ctrl add, right move/attack | C stop chase, V cease fire, A attack on sight, G guard, P patrol, M mine, H heal, R retreat, hold J manual fire, T point fire, X stop, B ranges, Backspace cancel | Space pause, N step, Tab world, arrows pan, wheel zoom, F fit, Esc exit",
             view.world_id.0, view.episode_revision, view.tick, counts.ships, counts.projectiles,
             self.renderer.selection.squads().len(),
             if self.paused { "PAUSED" } else { "RUNNING" }, selected, self.input_feedback,
@@ -461,18 +495,25 @@ impl NativeClient {
         self.window.update_with_buffer(self.renderer.pixels(), width, height)?;
         self.window_update_wall_seconds += window_update_started.elapsed().as_secs_f64();
         if !self.window.is_open() { return Ok(NativeClientAction::Quit); }
-        if accepts_orders {
-            if let Some(input) = cease_fire_input { return Ok(NativeClientAction::Input(NativePlayerInput::CeaseFire(input))); }
-            if let Some(input) = manual_fire { return Ok(NativeClientAction::Input(NativePlayerInput::Fire(input))); }
-            if let Some(input) = support_command { return Ok(NativeClientAction::Input(NativePlayerInput::Support(input))); }
-            if let Some(input) = player_move { return Ok(NativeClientAction::Input(NativePlayerInput::Move(input))); }
+        if accepts_orders && held_fire.is_none() {
+            let action = cease_fire_input.map(NativePlayerInput::CeaseFire)
+                .or_else(|| manual_fire.map(NativePlayerInput::Fire))
+                .or_else(|| support_command.map(NativePlayerInput::Support))
+                .or_else(|| player_move.map(NativePlayerInput::Move));
+            if let Some(action) = action { return Ok(NativeClientAction::Input { action, step: false }); }
         }
         let after_frame = Instant::now();
-        if single_step || (!self.paused && after_frame >= self.next_step) {
+        let step = single_step || (!self.paused && after_frame >= self.next_step);
+        if step {
             // At most one authoritative step per poll. A slow inference or
             // render pass slows playback instead of changing dt or skipping
             // battle ticks. Preserve fractional pacing when running on time.
             self.next_step = (self.next_step + fixed_dt).max(after_frame);
+        }
+        if let Some(action) = held_fire {
+            let input = NativePlayerHeldFire { world_id: view.world_id, episode_revision: view.episode_revision, action };
+            Ok(NativeClientAction::Input { action: NativePlayerInput::HeldFire(input), step })
+        } else if step {
             Ok(NativeClientAction::Step)
         } else {
             Ok(NativeClientAction::Wait)

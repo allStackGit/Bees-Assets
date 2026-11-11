@@ -7,6 +7,8 @@ use bees_sim::{geometry::Vec2, simulation::{World, WorldId},
 use crate::{commands::GameCommandError, level_events::NativeLevelEventError,
     level_host::NativeLevelActivationContext, level_rules::NativeLevelState};
 
+const FLAGSHIP_SHIP_TYPE: u8 = 11;
+
 #[derive(Clone, Copy, Debug)]
 pub struct NativePlayerPermissions {
     pub user_controlled: bool,
@@ -95,6 +97,20 @@ pub struct NativePlayerSquadFire {
     /// Manual point-fire, or None to release it. Does not replace movement or
     /// the squad's current command and never manufactures a policy decision.
     pub target: Option<Vec2>,
+}
+
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct NativePlayerHeldFire {
+    pub world_id: WorldId,
+    pub episode_revision: u64,
+    pub action: NativeHeldFireAction,
+}
+
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum NativeHeldFireAction {
+    Begin { squads: Vec<SquadLifetime>, target: Vec2 },
+    Aim { target: Vec2 },
+    End,
 }
 
 /// Player Cease Fire / Attack on Sight changes only the same native weapon
@@ -195,13 +211,40 @@ impl NativePlayerFirePlan {
     pub fn execute<M: NativeLevelPlayerContext, A>(self, world: &mut World<NativeLevelState<M, A>>)
         -> Result<usize, NativePlayerInputError>
     {
+        self.apply(world, false)
+    }
+
+    pub fn begin_held_fire<M: NativeLevelPlayerContext, A>(self, world: &mut World<NativeLevelState<M, A>>)
+        -> Result<usize, NativePlayerInputError>
+    {
+        self.apply(world, true)
+    }
+
+    fn apply<M: NativeLevelPlayerContext, A>(
+        self, world: &mut World<NativeLevelState<M, A>>, held: bool,
+    ) -> Result<usize, NativePlayerInputError>
+    {
         let current = Self::prepare(world, self.world_id, self.episode_revision,
             self.selected_ship, self.target)?;
         if current.authority != self.authority { return Err(NativePlayerInputError::StaleWorld); }
         let mut weapons = 0;
         for member in &self.authority.members {
-            match world.state.combat.set_game_manual_fire(member.ship_id, self.target) {
-                Ok(count) => weapons += count,
+            let state = &mut world.state;
+            let result = (|| {
+                // The source manual-fire hotkey stops a selected Flagship on
+                // key-down so its main cannon can turn the hull.
+                if held && member.mobile && state.combat.ship(member.ship_id)
+                    .is_some_and(|ship| ship.ship_type == FLAGSHIP_SHIP_TYPE)
+                {
+                    state.combat.stop_ship_game_movement(member.ship_id)?;
+                }
+                state.combat.set_game_manual_fire(member.ship_id, self.target)
+            })();
+            match result {
+                Ok(count) => {
+                    weapons += count;
+                    if held && count > 0 { state.held_fire_ships.push(member.ship_id); }
+                },
                 Err(error) => {
                     world.state.events.fail_player_input();
                     return Err(NativePlayerInputError::Source(error.into()));
@@ -209,6 +252,25 @@ impl NativePlayerFirePlan {
             }
         }
         Ok(weapons)
+    }
+}
+
+impl<M, A> NativeLevelState<M, A> {
+    pub fn has_held_fire(&self) -> bool { !self.held_fire_ships.is_empty() }
+
+    /// Follow or release the original live ships even if selection or the
+    /// squad roster changed after key-down. Episode turnover owns the reset.
+    pub fn update_held_fire(&mut self, target: Option<Vec2>) -> Result<(), NativePlayerInputError> {
+        self.held_fire_ships.retain(|&id| self.combat.ship_body(id).is_some_and(|body| body.active) &&
+            self.combat.ship(id).is_some_and(|ship| !ship.vitals.is_dead()) && self.combat.policy_frame(id).is_none());
+        for &id in &self.held_fire_ships {
+            if let Err(error) = self.combat.set_game_manual_fire(id, target) {
+                self.events.fail_player_input();
+                return Err(NativePlayerInputError::Source(error.into()));
+            }
+        }
+        if target.is_none() { self.held_fire_ships.clear(); }
+        Ok(())
     }
 }
 
