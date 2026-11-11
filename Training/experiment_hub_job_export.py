@@ -83,6 +83,7 @@ class SelectedObservationRows:
                     row.get("source_modified_at"), row.get("experiment_id"),
                     row.get("segment_id"), row.get("steps_completed"),
                     row.get("observation_kind", "trainer_update"),
+                    row.get("trainer_source_status"),
                     origin, name, measurement["value"], measurement["unit"],
                 ))
                 self.rows += 1
@@ -392,7 +393,8 @@ def export(spec: dict, output: Path) -> dict:
             selected_observation_writer.writerow((
                 "job_id", "project_id", "observed_at", "source_modified_at",
                 "experiment_id", "segment_id", "steps_completed",
-                "observation_kind", "origin", "metric", "value", "unit",
+                "observation_kind", "trainer_source_status", "origin",
+                "metric", "value", "unit",
             ))
         found_by_job = {job["id"]: 0 for job in jobs}
         # Hub observations prove that telemetry reached the coordinator,
