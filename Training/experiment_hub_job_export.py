@@ -80,6 +80,7 @@ class SelectedObservationRows:
                     self.job_id, self.project, row.get("observed_at"),
                     row.get("source_modified_at"), row.get("experiment_id"),
                     row.get("segment_id"), row.get("steps_completed"),
+                    row.get("observation_kind", "trainer_update"),
                     origin, name, measurement["value"], measurement["unit"],
                 ))
                 self.rows += 1
@@ -354,7 +355,8 @@ def export(spec: dict, output: Path) -> dict:
         selected_observation_stream = None
         selected_observation_writer = None
         if (metrics or all_recorded_metrics) and any(
-                source["label"] == "hub-observations" for source in additional):
+                source["label"] in ("hub-observations", "hub-host-observations")
+                for source in additional):
             selected_observation_stream = tempfile.NamedTemporaryFile(
                 mode="w", encoding="utf-8", newline="", dir=output.parent,
                 prefix="hub-selected-observations-", suffix=".csv", delete=False,
@@ -363,8 +365,8 @@ def export(spec: dict, output: Path) -> dict:
             selected_observation_writer = csv.writer(selected_observation_stream)
             selected_observation_writer.writerow((
                 "job_id", "project_id", "observed_at", "source_modified_at",
-                "experiment_id", "segment_id", "steps_completed", "origin",
-                "metric", "value", "unit",
+                "experiment_id", "segment_id", "steps_completed",
+                "observation_kind", "origin", "metric", "value", "unit",
             ))
         found_by_job = {job["id"]: 0 for job in jobs}
         # Hub observations prove that telemetry reached the coordinator,
@@ -426,7 +428,7 @@ def export(spec: dict, output: Path) -> dict:
                 observer = (SelectedObservationRows(job_id, project,
                     None if all_recorded_metrics else set(metrics),
                     selected_observation_writer)
-                    if entry["label"] == "hub-observations" and
+                    if entry["label"] in ("hub-observations", "hub-host-observations") and
                     (metrics or all_recorded_metrics) else None)
                 add_file(source, prefix + "/" + source.name, observer)
                 if observer is not None:
@@ -434,7 +436,7 @@ def export(spec: dict, output: Path) -> dict:
                     observation_rows += observer.rows
                     partial_observation_files += int(observer.finish())
                 found_by_job[job_id] += 1
-                if entry["label"] != "hub-observations":
+                if entry["label"] not in ("hub-observations", "hub-host-observations"):
                     trainer_files_by_job[job_id] += 1
                 reason = None
             else:
