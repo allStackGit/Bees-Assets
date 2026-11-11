@@ -25,12 +25,17 @@ function trustedFile(file) {
 // checkpoint. Resolve every slot against its declared digest before leasing
 // compute or advertising a checkpoint as resumable. Reuse already-verified
 // learner digests to avoid hashing the same large file twice.
-function verifyModelDependencies(manifest, checked = new Map()) {
+function verifyModelDependencies(manifest, checked, checkpoint, learnerSlot) {
     const document = JSON.parse(fs.readFileSync(manifest, 'utf8'));
     if (document?.format !== 'bees-native-model-v1' ||
+        document.abi_version !== 26 ||
+        typeof document.policy_signature !== 'string' ||
+        !Buffer.byteLength(document.policy_signature, 'utf8') ||
+        Buffer.byteLength(document.policy_signature, 'utf8') > 8192 ||
         !Array.isArray(document.models) || !document.models.length)
-        throw Error('Invalid native Bees model manifest.');
+        throw Error('Invalid native Bees v26 model manifest.');
     const slots = new Set();
+    let learnerMatches = 0;
     for (const model of document.models) {
         if (!model || !Number.isSafeInteger(model.slot) || model.slot < 0 ||
             model.slot > 0xffffffff || slots.has(model.slot) ||
@@ -47,7 +52,15 @@ function verifyModelDependencies(manifest, checked = new Map()) {
         }
         if (digest !== model.sha256)
             throw Error('Native Bees model artifact differs from its manifest.');
+        if (learnerSlot === undefined || model.slot === learnerSlot) {
+            if (model.backend === 'mlagents' && artifact === checkpoint)
+                learnerMatches++;
+            else if (learnerSlot === undefined)
+                throw Error('Mixed native Bees models require an explicit learner slot.');
+        }
     }
+    if (learnerMatches !== (learnerSlot === undefined ? document.models.length : 1))
+        throw Error('Native Bees learner slot does not reference the pinned ML-Agents checkpoint.');
 }
 
 function learnerMeasurements(metrics) {
@@ -151,7 +164,7 @@ function createNativeBeesAdapter({
         [run, sha256(runBytes)],
         ...[trainer, input, manifest].map(file => [file, sha256(fs.readFileSync(file))]),
     ]);
-    verifyModelDependencies(manifest, new Map([[input, pins.get(input)]]));
+    verifyModelDependencies(manifest, new Map([[input, pins.get(input)]]), input, learnerSlot);
     const configIdentity = [...pins.values(), learnerSlot ?? null];
     if (collectOnly) configIdentity.push(project);
     if (inbox) configIdentity.push(inbox);
@@ -227,6 +240,7 @@ function createNativeBeesAdapter({
         // unit of continuation readiness.
         verifyModelDependencies(
             manifest, new Map([[checkpoint, receipt.next_checkpoint_sha256]]),
+            checkpoint, learnerSlot,
         );
         return {checkpoint, manifest, checkpointDigest: receipt.next_checkpoint_sha256,
             manifestDigest: receipt.next_manifest_sha256};
@@ -294,7 +308,7 @@ function createNativeBeesAdapter({
                 if (sha256(fs.readFileSync(file)) !== digest)
                     throw Error('Native Bees pinned input changed after adapter installation.');
             }
-            verifyModelDependencies(manifest, new Map([[input, pins.get(input)]]));
+            verifyModelDependencies(manifest, new Map([[input, pins.get(input)]]), input, learnerSlot);
             const pci = context.gpu_pci_address;
             const cudaUuid = context.gpu_cuda_uuid;
             const gpu = pci !== undefined;
