@@ -81,6 +81,26 @@ impl VisionSweepCounts {
         }
     }
 
+    /// Status samples use monotonic successful-step totals. A counter reset
+    /// must invalidate the interval rather than fabricate negative work.
+    pub fn checked_delta(self, before: Self) -> Option<Self> {
+        Some(Self {
+            completed_sweeps: self.completed_sweeps.checked_sub(before.completed_sweeps)?,
+            suppressed_sweeps: self.suppressed_sweeps.checked_sub(before.suppressed_sweeps)?,
+            active_observers: self.active_observers.checked_sub(before.active_observers)?,
+            live_ship_pairs: self.live_ship_pairs.checked_sub(before.live_ship_pairs)?,
+            ship_pairs_tested: self.ship_pairs_tested.checked_sub(before.ship_pairs_tested)?,
+            unlearned_obstacle_pairs: self.unlearned_obstacle_pairs.checked_sub(before.unlearned_obstacle_pairs)?,
+            aabb_rejections: self.aabb_rejections.checked_sub(before.aabb_rejections)?,
+            exact_collider_tests: self.exact_collider_tests.checked_sub(before.exact_collider_tests)?,
+            visible_enemy_pairs: self.visible_enemy_pairs.checked_sub(before.visible_enemy_pairs)?,
+            first_ship_discoveries: self.first_ship_discoveries.checked_sub(before.first_ship_discoveries)?,
+            first_obstacle_discoveries: self.first_obstacle_discoveries.checked_sub(before.first_obstacle_discoveries)?,
+            first_mining_discoveries: self.first_mining_discoveries.checked_sub(before.first_mining_discoveries)?,
+            first_map_object_discoveries: self.first_map_object_discoveries.checked_sub(before.first_map_object_discoveries)?,
+        })
+    }
+
     pub fn merge(&mut self, other: &Self) {
         self.completed_sweeps += other.completed_sweeps;
         self.suppressed_sweeps += other.suppressed_sweeps;
