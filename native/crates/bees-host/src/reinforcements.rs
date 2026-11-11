@@ -39,6 +39,7 @@ impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
         let mut squad_waves = HashMap::new();
         let mut waves = Vec::with_capacity(plans.len());
         let mut spawn_centers = Vec::with_capacity(plans.len());
+        let mut planned_squad_order = Vec::with_capacity(plans.len());
         let mut previous = 0.0;
         // Equal-time waves are valid: Titania II stages two distinct
         // formations at 375 seconds with different entry destinations.
@@ -62,11 +63,12 @@ impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
             if plan.spawn.is_some() && plan.squad_item_ids.len() > 1 {
                 return Err("Multi-squad reinforcements need captured source positions or one plan per squad with its own spawn center");
             }
-            for id in plan.squad_item_ids {
+            for &id in &plan.squad_item_ids {
                 if squad_waves.insert(id, waves.len()).is_some() {
                     return Err("A squad may arrive in only one reinforcement wave");
                 }
             }
+            planned_squad_order.push(plan.squad_item_ids);
             previous = plan.after_seconds;
             spawn_centers.push(plan.spawn);
             waves.push(ReinforcementWave {
@@ -75,14 +77,29 @@ impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
             });
         }
         let mut ship_waves = HashMap::new();
+        let mut selected_squads = HashMap::new();
         let mut initial_squads = Vec::new();
         for squad in std::mem::take(&mut self.squads) {
-            if let Some(wave) = squad_waves.remove(&squad.owner.squad_id) {
-                ship_waves.extend(squad.members.iter().map(|&id| (id, wave)));
-                waves[wave].squads.push(squad);
+            if squad_waves.remove(&squad.owner.squad_id).is_some() {
+                if selected_squads.insert(squad.owner.squad_id, squad).is_some() {
+                    return Err("Reinforcements contain a duplicate source squad item ID");
+                }
             } else { initial_squads.push(squad); }
         }
-        if !squad_waves.is_empty() { return Err("Reinforcements reference an unknown source squad item ID"); }
+        if !squad_waves.is_empty() {
+            return Err("Reinforcements reference an unknown source squad item ID");
+        }
+        // The source LevelConstructor uses the requested squad list order
+        // when positioning and registering each wave. The initial scene's
+        // squad array can have a different order after merged captures.
+        for (wave_idx, ids) in planned_squad_order.into_iter().enumerate() {
+            for id in ids {
+                let squad = selected_squads.remove(&id)
+                    .ok_or("Reinforcement squad identity is missing from source")?;
+                ship_waves.extend(squad.members.iter().map(|&ship_id| (ship_id, wave_idx)));
+                waves[wave_idx].squads.push(squad);
+            }
+        }
         let mut initial_entities = Vec::new();
         for entity in std::mem::take(&mut self.entities) {
             let NativeAuthoredEntity::Ship(ship) = entity else { initial_entities.push(entity); continue };
