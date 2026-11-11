@@ -86,7 +86,7 @@ impl CombatWorld {
     /// static obstacle from gameplay and marks navigation dirty. The particle
     /// debris is emitted by the rendering client, not by the headless world.
     /// Missing IDs are already-destroyed Unity objects and are ignored.
-    fn break_fire_tank_obstacle(&mut self, tank_id: i64, linked_id: i64)
+    fn break_fire_tank_obstacle(&mut self, tank_id: i64, linked_id: i64, origin: Vec2)
         -> Result<(), CombatWorldError>
     {
         let Some(&index) = self.obstacle_by_id.get(&linked_id) else {
@@ -98,13 +98,19 @@ impl CombatWorld {
         if self.obstacles[index].kind != ObstacleKind::StaticObstacle {
             return Err(CombatWorldError::InvalidObstacle);
         }
-        self.physics.obstacles_mut()[index].active = false;
+        let body = &mut self.physics.obstacles_mut()[index];
+        let bounds = body.primary_bounds().unwrap_or(Aabb {
+            min: body.pose.position, max: body.pose.position,
+        });
+        body.active = false;
         self.obstacle_by_id.remove(&linked_id);
         self.discovery.retire(DiscoveryKind::Obstacle, linked_id);
         self.free_obstacle_slots.push(index);
         self.events.push(CombatEvent::FireTankObstacleBrokenApart {
             object_id: tank_id,
             obstacle_id: linked_id,
+            origin,
+            bounds,
         });
         Ok(())
     }
@@ -207,7 +213,7 @@ impl CombatWorld {
                 let origin = self.physics.obstacles()[obstacle_index].pose.position;
                 self.spawn_fire_tank_explosion(object_id, origin, shot_index, config)?;
                 if let Some(linked_id) = config.target_obstacle_id {
-                    self.break_fire_tank_obstacle(object_id, linked_id)?;
+                    self.break_fire_tank_obstacle(object_id, linked_id, origin)?;
                 }
             }
             self.retire_map_object(object_id);
@@ -379,7 +385,7 @@ mod tests {
         assert!(world.events().iter().any(|event| matches!(
             event,
             CombatEvent::FireTankObstacleBrokenApart {
-                object_id: 2, obstacle_id: 1,
+                object_id: 2, obstacle_id: 1, ..
             }
         )));
 

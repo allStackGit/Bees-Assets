@@ -219,6 +219,8 @@ impl<S, R: GameRules<S>> Simulation<S, R> {
         self.sample_every
     }
 
+    pub fn fixed_step_seconds(&self) -> f32 { self.dt_seconds }
+
     pub fn add_world(&mut self, world: World<S>) -> Result<usize, &'static str> {
         if self.worlds.iter().any(|existing| existing.id == world.id) {
             return Err("world IDs must be unique within a simulation");

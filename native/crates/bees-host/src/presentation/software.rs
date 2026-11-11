@@ -7,6 +7,7 @@ use std::sync::OnceLock;
 use bees_sim::collision::{Aabb, Pose};
 use bees_sim::geometry::Vec2;
 use bees_sim::physics::ShipShape;
+use bees_sim::simulation::{RandomStream, WorldId};
 use super::{NativeRenderWorldView, NativeSquadSelection};
 
 #[derive(Clone, Copy, Debug)]
@@ -74,6 +75,18 @@ pub struct NativeSoftwareRenderer {
     pub selection_box: Option<Aabb>,
     /// Optional inspection only. Disabled means no range or linecast work.
     pub show_weapon_ranges: bool,
+    debris_frame: Option<(WorldId, u64, u64)>,
+    obstacle_debris: Vec<ObstacleDebris>,
+}
+
+struct ObstacleDebris {
+    born: u64,
+    position: Vec2,
+    velocity: Vec2,
+    rotation: f32,
+    spin: f32,
+    lifetime: f32,
+    scale: f32,
 }
 
 impl NativeSoftwareRenderer {
@@ -87,7 +100,8 @@ impl NativeSoftwareRenderer {
             camera: NativeCamera::fit(bounds, width, height), selected_ship: None,
             selection: NativeSquadSelection::default(),
             selected_squad_lookup: HashSet::new(),
-            selection_box: None, show_weapon_ranges: false })
+            selection_box: None, show_weapon_ranges: false,
+            debris_frame: None, obstacle_debris: Vec::new() })
     }
 
     pub fn size(&self) -> (usize, usize) { (self.width, self.height) }
@@ -258,6 +272,7 @@ impl NativeSoftwareRenderer {
             let c = (piece.sprite_opacity() * 160.0) as u32;
             self.cross(position, 1.0, c * 0x010101);
         }
+        self.render_obstacle_debris(view, viewport, &mut counts);
         for (ship, body) in view.combat.render_ships() {
             counts.ships += 1;
             let selected_ship = view.roster.owning_squad(ship.entity_id).is_some_and(|owner|
@@ -395,6 +410,68 @@ impl NativeSoftwareRenderer {
                 Pose { position: Vec2::ZERO, rotation_degrees: 0.0 }, 0xddeaff);
         }
         counts
+    }
+
+    fn render_obstacle_debris(
+        &mut self, view: &NativeRenderWorldView<'_>, viewport: Aabb, counts: &mut NativeRenderCounts,
+    ) {
+        use bees_sim::combat_world::CombatEvent;
+        let frame = (view.world_id, view.episode_revision, view.tick);
+        if self.debris_frame != Some(frame) {
+            if self.debris_frame.is_some_and(|previous| (previous.0, previous.1) != (frame.0, frame.1)) {
+                self.obstacle_debris.clear();
+            }
+            self.debris_frame = Some(frame);
+            for event in view.combat.events() {
+                let CombatEvent::FireTankObstacleBrokenApart { obstacle_id, origin, bounds, .. } = *event else { continue };
+                // Fire Tank prefab defaults. This stream belongs exclusively
+                // to the tactical renderer and never touches world RNG.
+                let mut random = RandomStream::new((obstacle_id as u64).wrapping_mul(397) ^
+                    u64::from(origin.x.to_bits()) ^ u64::from(origin.y.to_bits()));
+                let mut unit = || (random.next_u64() >> 40) as f32 / 16_777_216.0;
+                for _ in 0..24 {
+                    let position = bounds.min + Vec2::new(
+                        (bounds.max.x - bounds.min.x) * unit(),
+                        (bounds.max.y - bounds.min.y) * unit(),
+                    );
+                    let radial = position - origin;
+                    let direction = if radial.length_squared() < 0.01 {
+                        let angle = unit() * std::f32::consts::TAU;
+                        Vec2::new(angle.cos(), angle.sin())
+                    } else {
+                        radial * radial.length_squared().sqrt().recip()
+                    };
+                    let spread = Vec2::new(unit() * 2.0 - 1.0, unit() * 2.0 - 1.0) * 0.35;
+                    let direction = direction + spread;
+                    let velocity = direction * ((4.0 + 7.0 * unit()) * direction.length_squared().sqrt().recip());
+                    self.obstacle_debris.push(ObstacleDebris {
+                        born: view.tick, position, velocity,
+                        rotation: unit() * 360.0, spin: (2.0 * unit() - 1.0) * 360.0,
+                        lifetime: 1.5 * (0.8 + 0.4 * unit()), scale: 3.0 + 3.0 * unit(),
+                    });
+                }
+            }
+        }
+        let age = |born| view.tick.saturating_sub(born) as f32 * view.fixed_step_seconds;
+        self.obstacle_debris.retain(|piece| age(piece.born) < piece.lifetime);
+        for index in 0..self.obstacle_debris.len() {
+            let piece = &self.obstacle_debris[index];
+            let seconds = age(piece.born);
+            let position = piece.position + piece.velocity * (-(-1.25 * seconds).exp_m1() / 1.25);
+            counts.pieces += 1;
+            if position.x < viewport.min.x || position.x > viewport.max.x ||
+                position.y < viewport.min.y || position.y > viewport.max.y {
+                counts.culled_pieces += 1;
+                continue;
+            }
+            let alpha = ((1.0 - seconds / piece.lifetime) / 0.4).min(1.0);
+            let color = (alpha * 192.0) as u32 * 0x010101;
+            let angle = (piece.rotation + piece.spin * seconds).to_radians();
+            let offset = Vec2::new(angle.cos(), angle.sin()) * (piece.scale * 0.2);
+            let (x0, y0) = self.project(position - offset);
+            let (x1, y1) = self.project(position + offset);
+            self.line(x0, y0, x1, y1, color);
+        }
     }
 
     /// Portable capture for diagnostics, using exactly the window's pixel buffer.

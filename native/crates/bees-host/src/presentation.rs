@@ -21,6 +21,7 @@ pub struct NativeRenderWorldView<'a> {
     pub world_id: WorldId,
     pub episode_revision: u64,
     pub tick: u64,
+    pub fixed_step_seconds: f32,
     pub combat: &'a CombatWorld,
     pub collision_matrix: &'a bees_sim::physics::CollisionMatrix,
     pub roster: &'a NativeSquadRoster,

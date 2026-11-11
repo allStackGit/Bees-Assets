@@ -895,6 +895,7 @@ where
             world_id: world.id,
             episode_revision: world.episode_revision(),
             tick: world.tick(),
+            fixed_step_seconds: self.simulation.fixed_step_seconds(),
             combat: &world.state.combat,
             collision_matrix: &self.simulation.rules().collision_matrix,
             roster: world.state.events.roster(),

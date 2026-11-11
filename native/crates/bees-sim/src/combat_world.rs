@@ -278,7 +278,7 @@ pub struct ShotOwner {
     pub self_detonation: bool,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum CombatEvent {
     Hit(HitEvent),
     UnattributedDamage { target_id: i64, delta: crate::combat::DamageDelta },
@@ -343,6 +343,8 @@ pub enum CombatEvent {
     FireTankObstacleBrokenApart {
         object_id: i64,
         obstacle_id: i64,
+        origin: Vec2,
+        bounds: Aabb,
     },
     AsteroidDamaged {
         projectile_id: i64,

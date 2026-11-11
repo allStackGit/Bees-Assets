@@ -1466,10 +1466,11 @@ linked static-obstacle ID. A fatal projectile hit spawns the existing
 type-15 explosion with inherited shooter/root-shot/command attribution;
 the blast uses normal explosion damage, including friendly fire. Linked
 static obstacles leave the physical world and learned discovery cache;
-the `FireTankObstacleBrokenApart` event tells the renderer to create its
-source-authored **cosmetic** debris and the Level to refresh static
-navigation. Other linked obstacle types remain unsupported rather than
-silently applying incorrect breakup behavior.
+the `FireTankObstacleBrokenApart` event carries the removed collider bounds
+and blast origin. The tactical renderer draws fading line fragments using
+the Fire Tank prefab's motion and lifetime settings and its own random
+stream. The Level refreshes static navigation. The breakup path supports
+linked static obstacles.
 
 Team exploration reads living allied ship positions and requires actual
 effective sight ranges. First-use ship
