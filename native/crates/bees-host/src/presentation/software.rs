@@ -90,17 +90,20 @@ struct ObstacleDebris {
     sprite: usize,
 }
 
-struct DebrisSprite {
+struct NativeSprite {
     width: usize,
     height: usize,
-    pixels: &'static [u8],
+    pixels: Vec<u8>,
 }
 
-fn fire_tank_debris_atlas() -> &'static (f32, Vec<DebrisSprite>) {
-    static ATLAS: OnceLock<(f32, Vec<DebrisSprite>)> = OnceLock::new();
-    ATLAS.get_or_init(|| {
-        let data = include_bytes!("../../../../assets/fire-tank-debris.rgba");
-        assert_eq!(&data[..4], b"BDS1");
+struct SpriteAtlas {
+    pixels_per_unit: f32,
+    sprites: Vec<NativeSprite>,
+}
+
+impl SpriteAtlas {
+    fn decode(data: &[u8]) -> Self {
+        assert_eq!(&data[..4], b"BDS2");
         let read_u16 = |bytes: &[u8]| usize::from(u16::from_le_bytes([bytes[0], bytes[1]]));
         let pixels_per_unit = read_u16(&data[4..]) as f32;
         let count = read_u16(&data[6..]);
@@ -108,13 +111,25 @@ fn fire_tank_debris_atlas() -> &'static (f32, Vec<DebrisSprite>) {
         let sprites = (0..count).map(|_| {
             let width = read_u16(rest);
             let height = read_u16(&rest[2..]);
-            let (pixels, remaining) = rest[4..].split_at(width * height * 4);
-            rest = remaining;
-            DebrisSprite { width, height, pixels }
+            rest = &rest[4..];
+            let size = width * height * 4;
+            let mut pixels = Vec::with_capacity(size);
+            while pixels.len() < size {
+                let length = read_u16(rest);
+                assert!(length > 0 && pixels.len() + length * 4 <= size);
+                for _ in 0..length { pixels.extend_from_slice(&rest[2..6]); }
+                rest = &rest[6..];
+            }
+            NativeSprite { width, height, pixels }
         }).collect();
         assert!(rest.is_empty() && count > 0 && pixels_per_unit > 0.0);
-        (pixels_per_unit, sprites)
-    })
+        Self { pixels_per_unit, sprites }
+    }
+}
+
+fn fire_tank_debris_atlas() -> &'static SpriteAtlas {
+    static ATLAS: OnceLock<SpriteAtlas> = OnceLock::new();
+    ATLAS.get_or_init(|| SpriteAtlas::decode(include_bytes!("../../../../assets/fire-tank-debris.rgba")))
 }
 
 impl NativeSoftwareRenderer {
@@ -270,18 +285,18 @@ impl NativeSoftwareRenderer {
                 counts.culled_obstacles += 1;
                 continue;
             }
-            let object = if obstacle.kind == bees_sim::obstacle::ObstacleKind::MapObject &&
-                view.combat.range_visible_map_object_ids().contains(&obstacle.entity_id)
-            {
+            let object = if obstacle.kind == bees_sim::obstacle::ObstacleKind::MapObject {
                 view.combat.map_object(obstacle.entity_id)
             } else { None };
-            let color = match object.map(|object| object.kind) {
-                Some(bees_sim::map_object::MapObjectKind::FireTank) => 0xe1a34b,
-                Some(bees_sim::map_object::MapObjectKind::Generic) => 0x9bd2ae,
-                None => 0x758496,
-            };
-            self.shape(body.shape(), body.pose, color);
-            if let Some(object) = object {
+            let visible = view.combat.range_visible_map_object_ids().contains(&obstacle.entity_id);
+            let is_fire_tank = object.is_some_and(|object| object.kind == bees_sim::map_object::MapObjectKind::FireTank);
+            if let Some(tank) = object.filter(|_| is_fire_tank) {
+                self.draw_fire_tank(tank, body.pose, view.tick as f32 * view.fixed_step_seconds);
+            } else {
+                self.shape(body.shape(), body.pose, if visible { 0x9bd2ae } else { 0x758496 });
+            }
+            if let Some(object) = object.filter(|_| visible) {
+                let color = if is_fire_tank { 0xe1a34b } else { 0x9bd2ae };
                 let (x, y) = self.project(body.pose.position);
                 let health = (object.health as f32 / object.max_health as f32).clamp(0.0, 1.0);
                 self.line(x - 10.0, y - 12.0, x + 10.0, y - 12.0, 0x3c2837);
@@ -457,7 +472,7 @@ impl NativeSoftwareRenderer {
                 let mut random = RandomStream::new((obstacle_id as u64).wrapping_mul(397) ^
                     u64::from(origin.x.to_bits()) ^ u64::from(origin.y.to_bits()));
                 let mut unit = || (random.next_u64() >> 40) as f32 / 16_777_216.0;
-                let sprite_count = fire_tank_debris_atlas().1.len();
+                let sprite_count = fire_tank_debris_atlas().sprites.len();
                 for _ in 0..24 {
                     let sprite = (unit() * sprite_count as f32) as usize;
                     let position = bounds.min + Vec2::new(
@@ -492,15 +507,40 @@ impl NativeSoftwareRenderer {
             counts.pieces += 1;
             let alpha = ((1.0 - seconds / piece.lifetime) / 0.4).min(1.0);
             let angle = (piece.rotation + piece.spin * seconds).to_radians();
-            let (pixels_per_unit, sprites) = fire_tank_debris_atlas();
-            let scale = piece.scale * self.camera.pixels_per_unit / pixels_per_unit;
-            if !self.draw_debris_sprite(&sprites[piece.sprite], position, angle, scale, alpha) {
+            let atlas = fire_tank_debris_atlas();
+            let scale = piece.scale * self.camera.pixels_per_unit / atlas.pixels_per_unit;
+            if !self.draw_sprite(&atlas.sprites[piece.sprite], position, angle, scale, alpha) {
                 counts.culled_pieces += 1;
             }
         }
     }
 
-    fn draw_debris_sprite(&mut self, sprite: &DebrisSprite, position: Vec2, angle: f32, scale: f32, alpha: f32) -> bool {
+    fn draw_fire_tank(&mut self, tank: &bees_sim::map_object::CombatMapObject, pose: Pose, seconds: f32) {
+        static BODY: OnceLock<SpriteAtlas> = OnceLock::new();
+        static SMOKE: OnceLock<SpriteAtlas> = OnceLock::new();
+        let body = BODY.get_or_init(|| SpriteAtlas::decode(include_bytes!("../../../../assets/fire-tank-body.rgba")));
+        const STAGES: usize = 4;
+        let lost = i64::from(tank.max_health) - i64::from(tank.health.max(0));
+        let stage = ((lost * STAGES as i64) / i64::from(tank.max_health))
+            .clamp(0, STAGES as i64 - 1) as usize;
+        // Stable cosmetic variation across frames, independent of gameplay RNG.
+        let variant = tank.entity_id as usize % (body.sprites.len() / STAGES);
+        let angle = pose.rotation_degrees.to_radians();
+        self.draw_sprite(&body.sprites[variant * STAGES + stage], pose.position, angle,
+            self.camera.pixels_per_unit / body.pixels_per_unit, 1.0);
+        if stage == 0 { return; }
+
+        let smoke = SMOKE.get_or_init(|| SpriteAtlas::decode(include_bytes!("../../../../assets/fire-tank-smoke.rgba")));
+        let frame = (seconds * 5.0) as usize;
+        // CanisterBomb.SmokePositions, in prefab-local coordinates.
+        let offsets = [Vec2::new(2.25, -1.2), Vec2::new(-2.65, 1.4), Vec2::new(-5.1, -0.2)];
+        for (plume, &offset) in offsets[..stage].iter().enumerate() {
+            self.draw_sprite(&smoke.sprites[(frame + plume) % smoke.sprites.len()],
+                pose.transform_point(offset), angle, self.camera.pixels_per_unit / smoke.pixels_per_unit, 1.0);
+        }
+    }
+
+    fn draw_sprite(&mut self, sprite: &NativeSprite, position: Vec2, angle: f32, scale: f32, alpha: f32) -> bool {
         let (center_x, center_y) = self.project(position);
         let (sin, cos) = angle.sin_cos();
         let half_w = sprite.width as f32 * 0.5;
