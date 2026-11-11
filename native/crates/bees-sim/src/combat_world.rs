@@ -730,6 +730,9 @@ pub struct CombatWorld {
     /// Reused across each native vision refresh so validating the live
     /// observer roster does not allocate for every training decision.
     vision_observer_ids: HashSet<i64>,
+    /// Reused broadphase ship indices for faction vision. The physics grid
+    /// remains the sole spatial index; sorting preserves Unity ship order.
+    vision_ship_candidates: Vec<usize>,
     /// Source GameState.HiveMindLiveEnemyVisible: recalculated on every
     /// vision refresh, never retained like the faction discovery cache.
     vision_live_enemy_sides: HashSet<i32>,
@@ -914,6 +917,7 @@ impl CombatWorld {
             extraction: None,
             discovery: LevelDiscovery::new(),
             vision_observer_ids: HashSet::new(),
+            vision_ship_candidates: Vec::new(),
             vision_live_enemy_sides: HashSet::new(),
             vision_measurements: VisionSweepCounts::default(),
             projectiles: Vec::new(),
