@@ -65,7 +65,6 @@ def completed_rollouts(capture, journal, manifest, manifest_sha, checkpoint_sha,
             world, revision = row["world_id"], row["episode_revision"]
             previous = world_sequences.get(world)
             if (type(world) is not int or type(revision) is not int or
-                    world <= 0 or revision <= 0 or
                     (previous is not None and revision < previous[0])):
                 raise ValueError("invalid or retired world episode in reward journal")
             expected = previous[1] if previous is not None and revision == previous[0] else 0
