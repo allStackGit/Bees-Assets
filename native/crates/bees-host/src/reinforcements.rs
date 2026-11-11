@@ -6,7 +6,9 @@ use bees_gameplay::level_events::NativeLevelEventProcessor;
 use bees_gameplay::level_host::NativeLevelActivationContext;
 use bees_gameplay::level_rules::NativeLevelStepError;
 use bees_gameplay::player_inputs::NativeLevelPlayerContext;
-use bees_sim::{combat_world::CombatWorld, geometry::Vec2, squad_movement::{SquadFormationMember, issue_squad_move}};
+use bees_sim::{combat_world::CombatWorld, geometry::Vec2, squad_movement::{
+    SquadFormationMember, authored_placement_offset, issue_squad_move,
+}};
 
 use crate::policy_only_metadata::NativePolicyOnlyMetadata;
 use crate::scene_builder::{NativeAuthoredEntity, NativeAuthoredLevel, NativeAuthoredShip, NativeAuthoredSquad,
@@ -117,11 +119,11 @@ impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
                     let squad = wave.squads.iter().find(|squad|
                         squad.members.contains(&ship.entity_id))
                         .ok_or("Reinforcement ship has no staged squad")?;
-                    let offset = if squad.members.len() == 1 { Vec2::ZERO } else {
-                        self.metadata.stored_formation_offset(ship.entity_id)
-                            .ok_or("Reinforcement ship has no source formation offset")?
-                    };
-                    let position = spawn + offset;
+                    let offset = self.metadata.stored_formation_offset(ship.entity_id)
+                        .ok_or("Reinforcement ship has no source formation offset")?;
+                    let position = spawn + authored_placement_offset(
+                        ship.ship_type, squad.members.len(), offset,
+                    );
                     if !position.is_finite() {
                         return Err("Reinforcement spawn and formation overflowed world coordinates");
                     }
