@@ -3,8 +3,9 @@
 //! Unity: HiveMindVision.CanSee and GameState.RefreshHiveMindMapObjectVision.
 //! The shared CombatWorld refreshes live ship and obstacle discoveries with
 //! its authoritative collider geometry and world-owned learned caches.
-//! MapObjects are not yet modeled in CombatWorld and remain an explicit
-//! gameplay adapter responsibility; their sightings must not be fabricated.
+//! MapObjects use their real CombatWorld primary colliders; obstacles
+//! use authored clearance-mapping colliders when present. Both discovery
+//! kinds share the same sticky faction-vision cache.
 
 use crate::physics::VisionProximity;
 
