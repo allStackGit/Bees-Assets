@@ -2447,9 +2447,12 @@ CPU scaling must use the same devices, while GPU scaling may add devices
 but must retain existing ones. Missing historical GPU bindings disable the
 marginal estimate rather than guessing device equivalence. It refuses
 incomplete group records and CPU/GPU reallocations that reduce resources
-on one host while increasing another. These remain *reserved* resources:
-they do not prove the remote
-thread count, useful utilization or incremental speed for arbitrary scaling.
+on one host while increasing another. Distributed rows also show the
+total frozen remote collector threads versus CPUs reserved for those
+collectors. A thread count smaller than the CPU lease is an observable
+allocation/concurrency mismatch, not proof that remaining CPUs are unused
+or that adding threads would improve throughput. These remain *reserved*
+resources: they do not prove useful utilization or incremental speed.
 All such comparisons remain observational, not independent evidence of
 causality, energy efficiency, or full-resolution training performance.
 Export the complete job histories for definitive throughput investigation.
