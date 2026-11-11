@@ -2534,6 +2534,11 @@ service to the public Internet.
    work divided by its recorded full request/response roundtrip. These
    remote rates include worker compute, serialization and transport:
    they are **not** network-only timings or marginal CPU-core gains.
+   The learner separately reports `remote_policy_snapshot_seconds`, the
+   time to prepare one frozen CPU weight snapshot shared by all remote
+   collector requests in that PPO update. It is absent for local-only
+   training. Compare it with the full `collection_seconds` and delivered
+   decisions/s to assess transfer overhead rather than GPU utilization.
    The Hub creates each worker configuration, all jobs and all machine
    reservations atomically; if any physical worker or capacity is missing,
    no job or claim is committed. No process is started by this action.
