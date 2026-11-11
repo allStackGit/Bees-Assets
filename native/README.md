@@ -206,6 +206,9 @@ The single JSON configuration file requires:
   Each shard is validated independently; repeated evaluation inputs are rejected
   rather than counted as additional matches. The report counts matching input
   prefixes to identify the first disagreement when episodes do not pair.
+  Each report also contains `by_scene_sha256` with paired outcome, score,
+  timeout and duration differences plus unpaired counts for each authored scene;
+  a scene without valid pairs retains null score/duration differences.
   For changing-policy comparisons, pass both original manifests to verify the
   opposing artifacts and model settings. This mode requires recorded policy
   controllers on both sides with disjoint model slots. The recorded configuration covers
