@@ -24,6 +24,27 @@ const SOURCE_IN='/workspace/experiments/tinybrains/mini-learning';
 const CACHE_IN='/workspace/cache/tinybrains';
 const REMOTE_KEY_IN='/workspace/private/tinybrains-rollouts';
 
+// Large completed-update rows may fit in the final 8 MiB scan without
+// including the *preceding* full row. Read that predecessor separately so
+// end-to-end actions/s remains available when match evidence is extensive.
+// This is optional telemetry: an oversized predecessor yields no rate.
+function previousHistoryRow(fd,endExclusive) {
+    let bytes=Math.min(endExclusive,TAIL);
+    while(bytes>0) {
+        const offset=endExclusive-bytes;
+        const buffer=Buffer.alloc(bytes);
+        if(fs.readSync(fd,buffer,0,bytes,offset)!==bytes)
+            throw Error('TinyBrains training history changed during read.');
+        const text=buffer.toString('utf8');
+        const lineStart=text.lastIndexOf('\n');
+        if(lineStart>=0||offset===0)
+            return JSON.parse(text.slice(lineStart+1));
+        if(bytes>=MAX_PROGRESS_ROW_TAIL)return null;
+        bytes=Math.min(endExclusive,MAX_PROGRESS_ROW_TAIL,bytes*2);
+    }
+    return null;
+}
+
 // Derive bounded, project-neutral chart measurements from the trainer's
 // committed update, not from GPU utilization guesses or incomplete rollouts.
 // Keep exact game events distinct from observation-based food/combat proxies.
@@ -513,14 +534,14 @@ function createTinyBrainsPersistentDockerAdapter({
                         updateWall=row.elapsed_seconds;
                     else {
                         const priorStart=str.lastIndexOf('\n',lineStart-1);
-                        if(priorStart>=0||offset===0) {
-                            const prior=JSON.parse(str.slice(priorStart+1,lineStart));
-                            if(prior.update===row.update-1&&
-                                Number.isFinite(prior.elapsed_seconds)&&
-                                prior.elapsed_seconds>=0&&
-                                row.elapsed_seconds>prior.elapsed_seconds)
-                                updateWall=row.elapsed_seconds-prior.elapsed_seconds;
-                        }
+                        const prior=(priorStart>=0||offset===0)
+                            ?JSON.parse(str.slice(priorStart+1,lineStart))
+                            :previousHistoryRow(fd,offset+lineStart);
+                        if(prior?.update===row.update-1&&
+                            Number.isFinite(prior.elapsed_seconds)&&
+                            prior.elapsed_seconds>=0&&
+                            row.elapsed_seconds>prior.elapsed_seconds)
+                            updateWall=row.elapsed_seconds-prior.elapsed_seconds;
                     }
                 }
                 const metrics=recordedTinyBrainsMetrics(row,updateWall);
