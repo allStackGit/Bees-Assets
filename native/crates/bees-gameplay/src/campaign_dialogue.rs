@@ -1,7 +1,7 @@
 //! Authored campaign dialogue driven by the shared Level state.
 
 use bees_sim::{
-    combat_world::{CombatEvent, CombatWorld},
+    combat_world::CombatWorld,
     episode_terminal::SurvivalStatus,
     map_object::MapObjectKind,
 };
@@ -127,9 +127,12 @@ impl CampaignDialogue {
     pub(crate) fn observe_combat(&mut self, world: &CombatWorld) -> Option<CampaignCue> {
         let DialogueMode::Minesweeper { tracked_tank } = &mut self.mode else { return None };
         if let Some(object_id) = *tracked_tank {
+            // Titania I tests the saved MapObject's persistent IsDead state,
+            // not whether its destruction event happened on this exact tick.
+            // The shared world retires the real object on death and never
+            // reuses its entity ID; this also covers owner-driven teardown.
             return (matches!(self.cue, CampaignCue::FireTankSpotted { .. }) &&
-                world.events().iter().any(|event| matches!(event,
-                    CombatEvent::MapObjectDestroyed { object_id: id, .. } if *id == object_id)))
+                world.map_object(object_id).is_none())
                 .then_some(CampaignCue::FireTankDestroyed { object_id });
         }
         // Resolve simultaneous discovery by source object ID for deterministic playback.
