@@ -6,6 +6,9 @@ use std::time::Duration;
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct StepCounts {
     pub decisions: u64,
+    /// One completed fixed tick's HiveMind vision work. Tick-zero scene
+    /// setup is deliberately excluded from per-step workload totals.
+    pub vision: crate::vision::VisionSweepCounts,
     pub active_ships: u32,
     pub active_projectiles: u32,
     pub events: u64,
@@ -60,6 +63,8 @@ pub struct StepCounts {
 pub struct Measurements {
     pub ticks: u64,
     pub decisions: u64,
+    /// Cumulative successful fixed-step vision work across episode resets.
+    pub vision: crate::vision::VisionSweepCounts,
     pub events: u64,
     pub enemy_hits: u64,
     pub friendly_hits: u64,
@@ -122,6 +127,7 @@ impl Default for Measurements {
         Self {
             ticks: 0,
             decisions: 0,
+            vision: crate::vision::VisionSweepCounts::default(),
             events: 0,
             enemy_hits: 0,
             friendly_hits: 0,
@@ -176,6 +182,7 @@ impl Measurements {
     pub fn record(&mut self, counts: StepCounts, sampled: Option<Duration>) {
         self.ticks += 1;
         self.decisions += counts.decisions;
+        self.vision.merge(&counts.vision);
         self.events += counts.events;
         self.enemy_hits += counts.enemy_hits;
         self.friendly_hits += counts.friendly_hits;
@@ -244,6 +251,7 @@ impl Measurements {
     pub fn merge(&mut self, other: &Self) {
         self.ticks += other.ticks;
         self.decisions += other.decisions;
+        self.vision.merge(&other.vision);
         self.events += other.events;
         self.enemy_hits += other.enemy_hits;
         self.friendly_hits += other.friendly_hits;
