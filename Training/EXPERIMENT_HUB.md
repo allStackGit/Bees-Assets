@@ -2550,6 +2550,11 @@ service to the public Internet.
    Updated remote workers report `collector_N_model_prepare_seconds`
    (policy/critic weight loading plus first-use allocation) so that model
    reuse can be measured separately from end-to-end collection time.
+   Remote workers also report optional `collector_N_snapshot_cache_files`
+   and `collector_N_snapshot_cache_bytes`: retained active frozen opponent
+   artifacts after each successful update. These measure the worker's
+   temporary snapshot disk footprint, not the learner's checkpoint storage;
+   they should remain bounded by the active opponent manifest.
    The Hub also derives `collector_N_decisions_per_second` and
    `collector_N_engine_steps_per_second` from delivered work divided
    by `collector_N_elapsed_seconds`. For the learner's local collector

@@ -1744,6 +1744,8 @@ document.addEventListener('DOMContentLoaded', () => {
             'collector_'+i+'_elapsed_seconds',
             'collector_'+i+'_roundtrip_seconds',
             'collector_'+i+'_model_prepare_seconds',
+            'collector_'+i+'_snapshot_cache_files',
+            'collector_'+i+'_snapshot_cache_bytes',
             'collector_'+i+'_decisions_per_second',
             'collector_'+i+'_engine_steps_per_second',
         ]).flat()];
