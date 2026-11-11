@@ -36,6 +36,7 @@ def main():
     if bool(args.remote_rollout_endpoint) != bool(args.remote_rollout_key_file):
         parser.error("Remote rollout requires locally approved worker endpoints and an HMAC key.")
     if args.remote_rollout_weight and (
+            not args.remote_rollout_endpoint or
             len(args.remote_rollout_weight) != len(args.remote_rollout_endpoint) + 1 or
             any(not 1 <= w <= 1024 for w in args.remote_rollout_weight)):
         parser.error("Fixed rollout weights require one positive weight for the learner and each remote worker.")
