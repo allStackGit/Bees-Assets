@@ -77,6 +77,20 @@ function hubGenericMetricCatalog(runs) {
 function hubMetricValue(point,key) {
     return point.metrics?.[key.slice(7)]?.value;
 }
+// A chart axis is either the recorded project step counter or an explicit,
+// correctly unit-tagged trainer measurement. Never infer elapsed training
+// time from asynchronous Hub heartbeat arrival or host utilization.
+function hubComparisonAxisValue(point,key) {
+    if(key==='steps_completed')
+        return Number.isSafeInteger(point.steps_completed)&&point.steps_completed>=0
+            ?point.steps_completed:null;
+    if(key==='elapsed_training_seconds') {
+        const metric=point.metrics?.elapsed_training_seconds;
+        return metric?.unit==='seconds'&&Number.isFinite(metric.value)&&
+            metric.value>=0?metric.value:null;
+    }
+    return null;
+}
 
 // Observational scaling evidence only. Chart histories are bounded/decimated;
 // never use these summaries to tune a running job, select a winning model or
@@ -329,7 +343,7 @@ function hubComparisonCsv(exported) {
         'selected_x_axis','selected_metric','selected_metrics','assigned_machine_id',
         'artifact_lineage_root_id','continuation_of_job_id','status',
         'observed_at','source_modified_at','experiment_id','segment_id',
-        'break_before','steps_completed',
+        'break_before','steps_completed','x_value',
         'trial_batch_id','trial_batch_index','trial_batch_size',
         'resource_bundle_id','resource_bundle_index','resource_bundle_size',
     ];
@@ -896,7 +910,10 @@ document.addEventListener('DOMContentLoaded', () => {
     function selectedComparisonMetrics() {
         return [...$('hub-compare-metric').selectedOptions].map(option=>option.value);
     }
-    const chartAxes={steps_completed:{label:'Cumulative project steps'}};
+    const chartAxes={
+        steps_completed:{label:'Cumulative project steps'},
+        elapsed_training_seconds:{label:'Reported elapsed training seconds'},
+    };
     async function loadComparison() {
         if(!state)return;
         const requested=project,serial=++comparisonRequest;
@@ -1045,9 +1062,17 @@ document.addEventListener('DOMContentLoaded', () => {
         renderMetricPicker('hub-compare-metric','hub-compare-metric-picker');
         const selectedMetrics=selectedComparisonMetrics();
         const axisSelect=$('hub-compare-x-axis'),oldAxis=axisSelect.value;
+        const hasTrainingTime=chartable.some(job=>
+            hubComparisonPoints({job,points:history.get(job.id)||[]})
+                .some(point=>hubComparisonAxisValue(
+                    point,'elapsed_training_seconds')!==null));
         axisSelect.replaceChildren(
-            new Option(comparisonAxisLabel('steps_completed'),'steps_completed'));
-        axisSelect.value='steps_completed';
+            new Option(comparisonAxisLabel('steps_completed'),'steps_completed'),
+            ...(hasTrainingTime?[new Option(
+                comparisonAxisLabel('elapsed_training_seconds'),
+                'elapsed_training_seconds')]:[]));
+        axisSelect.value=[...axisSelect.options].some(option=>
+            option.value===oldAxis)?oldAxis:'steps_completed';
         const hasExportData=runs.some(run=>hubComparisonPoints(run).length);
         const legacyBeesCoordinator=project==='bees'&&
             !document.documentElement.dataset.hubDefaultProject;
@@ -1102,7 +1127,10 @@ document.addEventListener('DOMContentLoaded', () => {
         feedback('hub-compare-chart-note',
             warnings.join(' ')+(warnings.length?' ':'')+
             'Horizontal axis: '+(comparisonAxisLabel($('hub-compare-x-axis').value)||
-                chartAxes.steps_completed.label)+'. Not wall-clock time. '+
+                chartAxes.steps_completed.label)+'. '+
+            ($('hub-compare-x-axis').value==='elapsed_training_seconds'
+                ?'Elapsed time comes from recorded trainer seconds, not the Hub heartbeat clock. Runs without this measurement are omitted from the time plots. '
+                :'Project step counts are not wall-clock time. ')+
             'Source timestamps show when a trusted adapter published a summary. No training decisions use chart data.');
         const table=$('hub-compare-rows');
         table.replaceChildren();
@@ -1421,14 +1449,14 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         svg.setAttribute('aria-label',metric.label+
             ' by '+axisLabel.toLowerCase()+' for selected runs');
-        const usable=p=>Number.isSafeInteger(p[xKey])&&p[xKey]>=0&&
+        const usable=p=>hubComparisonAxisValue(p,xKey)!==null&&
             Number.isFinite(hubMetricValue(p,key));
         const series=runs.map(run=>({
             ...run,valid:hubComparisonPoints(run),
         }));
         const values=series.flatMap(r=>r.valid
             .filter(usable)
-            .map(p=>({x:p[xKey],y:hubMetricValue(p,key)})));
+            .map(p=>({x:hubComparisonAxisValue(p,xKey),y:hubMetricValue(p,key)})));
         if(!values.length) {
             node('text',{x:450,y:160,'text-anchor':'middle'},
                 'No recorded samples for the selected runs and metric');
@@ -1467,25 +1495,33 @@ document.addEventListener('DOMContentLoaded', () => {
             axisLabel);
         const showPoints=series.reduce((n,run)=>n+run.valid.length,0)<=300;
         for(const run of series) {
-            let part=[];
+            let part=[],previousX=null;
             const flush=()=>{
                 if(part.length>1)
                     node('path',{d:part.map((p,i)=>(i?'L':'M')+
-                        x(p[xKey]).toFixed(1)+' '+
+                        x(hubComparisonAxisValue(p,xKey)).toFixed(1)+' '+
                         y(hubMetricValue(p,key)).toFixed(1)).join(' '),
                         stroke:run.color,class:'plot-line'});
                 else if(part.length===1&&!showPoints)
-                    node('circle',{cx:x(part[0][xKey]),
+                    node('circle',{cx:x(hubComparisonAxisValue(part[0],xKey)),
                         cy:y(hubMetricValue(part[0],key)),r:3.5,
                         fill:run.color,class:'plot-point'});
                 part=[];
             };
             for(const point of run.valid) {
-                if(point.break_before||!usable(point))flush();
-                if(!usable(point))continue;
+                const currentX=hubComparisonAxisValue(point,xKey);
+                if(point.break_before||!usable(point)||
+                    previousX!==null&&currentX!==null&&currentX<previousX)
+                    flush();
+                if(!usable(point)) {
+                    previousX=null;
+                    continue;
+                }
+                previousX=currentX;
                 part.push(point);
                 if(showPoints)
-                    node('circle',{cx:x(point[xKey]),cy:y(hubMetricValue(point,key)),
+                    node('circle',{cx:x(hubComparisonAxisValue(point,xKey)),
+                        cy:y(hubMetricValue(point,key)),
                         r:3.5,fill:run.color,class:'plot-point'});
             }
             flush();
@@ -1530,7 +1566,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 evaluation_candidates:job.evaluation_candidates||null,
                 stop_requested_at:job.stop_requested_at||null,
                 points:hubComparisonPoints({job,points:byJob.get(id)||[]})
-                    .map(point=>({...point,metrics:Object.fromEntries(
+                    .map(point=>({...point,
+                        x_value:hubComparisonAxisValue(
+                            point,$('hub-compare-x-axis').value),
+                        metrics:Object.fromEntries(
                         Object.entries(point.metrics||{})
                             .filter(([name])=>chosen.has(name)))})),
             };
