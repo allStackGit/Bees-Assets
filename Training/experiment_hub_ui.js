@@ -2228,7 +2228,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     }catch(e){feedback('hub-job-message',e.message);}
                 }));
             if(j.status==='waiting_adapter'&&j.lease_id&&!j.dispatch_id&&
-                !j.continuation_machine_id&&!probeHoldsClaim) {
+                !j.continuation_machine_id&&!j.resource_bundle&&
+                !probeHoldsClaim) {
                 actions.append(button('Move claim',async()=>{
                     const destination=selectedMoveDestination(j);
                     if(!destination)return;
