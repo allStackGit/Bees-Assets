@@ -115,20 +115,28 @@ Titania II. The output preserves the fleet and imports the authored wall
 and Fire Tank colliders. Set the Level's `scene` to the new file. The
 input supplies the map bounds, ships, and squads.
 
-To stage timed reinforcements, include the wave's authored ships and squads
-at their starting positions in the scene export. Add `reinforcements` to
-the Level entry. Each entry identifies the source squad item IDs and can
-give their formation an in-map destination:
+To stage timed reinforcements, include the wave's real authored ships
+and squads in the scene export (they are reserved rather than spawned
+immediately). Add `reinforcements` to the Level entry. Each wave identifies
+source squad item IDs. For source off-map approaches such as Titania II,
+`spawn` places each complete formation at its authored starting center
+before issuing the ordinary squad move to `entry`. For example, with
+*illustrative* coordinates and IDs:
 
 ```json
-[{"after_seconds": 90, "squad_item_ids": [51, 52, 53], "entry": [200, -225]}]
+[{"after_seconds": 90, "squad_item_ids": [51], "spawn": [280, -225], "entry": [200, -225]}]
 ```
 
-These squads enter on the first fixed tick after the scheduled time while
-the battle is active. Use nondecreasing times and unique squad item IDs. Multiple
-waves at the same time retain their authored order and separate entry positions. Waves
-use ordinary game ships without live policy bindings. The battle journal
-records the arrival tick and counts of ships and squads.
+Omitting `spawn` retains the imported ship positions, as before; omitting
+`entry` places the wave without a movement order. Both are expressed in
+the source scene's coordinate frame. Single-ship squads spawn exactly at
+`spawn`; larger squads retain their source formation offsets. These squads
+enter on the first fixed tick after the scheduled time while the battle
+is active. Use nondecreasing times and unique squad item IDs. Same-time
+waves retain their authored order and distinct positions. All ship,
+weapon and squad attributes must come from the authentic scene capture,
+not synthesized from ship type. The battle journal records their arrival
+tick and counts.
 
 Space pauses all worlds; N advances one fixed round while paused; Tab changes
 the inspected world without replaying input from the previous one. Each
