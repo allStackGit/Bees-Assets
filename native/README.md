@@ -125,7 +125,8 @@ give their formation an in-map destination:
 ```
 
 These squads enter on the first fixed tick after the scheduled time while
-the battle is active. Use increasing times and unique squad item IDs. Waves
+the battle is active. Use nondecreasing times and unique squad item IDs. Multiple
+waves at the same time retain their authored order and separate entry positions. Waves
 use ordinary game ships without live policy bindings. The battle journal
 records the arrival tick and counts of ships and squads.
 
