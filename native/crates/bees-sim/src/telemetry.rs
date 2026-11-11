@@ -46,6 +46,10 @@ pub struct StepCounts {
     pub weapon_range_grid_rebuilds: u64,
     pub weapon_range_candidates: u64,
     pub weapon_range_exact_tests: u64,
+    /// MapObject checks use the existing obstacle broadphase, not a second index.
+    pub weapon_range_map_object_grid_rebuilds: u64,
+    pub weapon_range_map_object_candidates: u64,
+    pub weapon_range_map_object_exact_tests: u64,
     pub weapon_range_projectile_tests: u64,
     pub weapon_range_enters: u64,
     pub weapon_range_exits: u64,
@@ -87,6 +91,10 @@ pub struct Measurements {
     pub weapon_range_grid_rebuilds: u64,
     pub weapon_range_candidates: u64,
     pub weapon_range_exact_tests: u64,
+    /// MapObject checks use the existing obstacle broadphase, not a second index.
+    pub weapon_range_map_object_grid_rebuilds: u64,
+    pub weapon_range_map_object_candidates: u64,
+    pub weapon_range_map_object_exact_tests: u64,
     pub weapon_range_projectile_tests: u64,
     pub weapon_range_enters: u64,
     pub weapon_range_exits: u64,
@@ -144,6 +152,9 @@ impl Default for Measurements {
             weapon_range_grid_rebuilds: 0,
             weapon_range_candidates: 0,
             weapon_range_exact_tests: 0,
+            weapon_range_map_object_grid_rebuilds: 0,
+            weapon_range_map_object_candidates: 0,
+            weapon_range_map_object_exact_tests: 0,
             weapon_range_projectile_tests: 0,
             weapon_range_enters: 0,
             weapon_range_exits: 0,
@@ -195,6 +206,9 @@ impl Measurements {
         self.weapon_range_grid_rebuilds += counts.weapon_range_grid_rebuilds;
         self.weapon_range_candidates += counts.weapon_range_candidates;
         self.weapon_range_exact_tests += counts.weapon_range_exact_tests;
+        self.weapon_range_map_object_grid_rebuilds += counts.weapon_range_map_object_grid_rebuilds;
+        self.weapon_range_map_object_candidates += counts.weapon_range_map_object_candidates;
+        self.weapon_range_map_object_exact_tests += counts.weapon_range_map_object_exact_tests;
         self.weapon_range_projectile_tests += counts.weapon_range_projectile_tests;
         self.weapon_range_enters += counts.weapon_range_enters;
         self.weapon_range_exits += counts.weapon_range_exits;
@@ -260,6 +274,9 @@ impl Measurements {
         self.weapon_range_grid_rebuilds += other.weapon_range_grid_rebuilds;
         self.weapon_range_candidates += other.weapon_range_candidates;
         self.weapon_range_exact_tests += other.weapon_range_exact_tests;
+        self.weapon_range_map_object_grid_rebuilds += other.weapon_range_map_object_grid_rebuilds;
+        self.weapon_range_map_object_candidates += other.weapon_range_map_object_candidates;
+        self.weapon_range_map_object_exact_tests += other.weapon_range_map_object_exact_tests;
         self.weapon_range_projectile_tests += other.weapon_range_projectile_tests;
         self.weapon_range_enters += other.weapon_range_enters;
         self.weapon_range_exits += other.weapon_range_exits;
