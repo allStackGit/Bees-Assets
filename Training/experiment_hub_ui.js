@@ -113,8 +113,9 @@ function hubScalingEvidence(runs,key,allJobs=[]) {
             other.project_id==='tinybrains_rollout'&&
             other.frozen_parameters?.learner_job_id===job.id):[];
         if(distributed&&(workers.length<1||workers.length>8))return null;
-        const members=[job,...workers].map(member=>({
+        const members=[job,...workers].map((member,index)=>({
             host:member.assigned_machine_id,
+            role:index===0?'learner':'collector',
             cpus:member.resources?.cpus,
             gpus:member.resources?.gpu_count,
             mode:member.resources?.gpu_mode||'exclusive',
@@ -130,6 +131,7 @@ function hubScalingEvidence(runs,key,allJobs=[]) {
             cpus:members.reduce((total,m)=>total+m.cpus,0),
             gpus:members.reduce((total,m)=>total+m.gpus,0),
             host:members.map(m=>m.host).join(' + '),
+            topology:members.map(m=>m.host+':'+m.role).join('|'),
             gpu_mode:members.map(m=>m.mode).join('|'),
         };
     };
@@ -148,6 +150,7 @@ function hubScalingEvidence(runs,key,allJobs=[]) {
             slot:run.slot,job_id:run.job.id,
             configuration_sha256:run.job.configuration_sha256,
             host:resources?.host||null,
+            topology:resources?.topology||null,
             members:resources?.members||null,
             lineage:run.job.artifact_lineage_root_id||run.job.id,
             status:run.job.status,
@@ -174,7 +177,7 @@ function hubScalingEvidence(runs,key,allJobs=[]) {
             other.members&&other.sample_count>=5&&
             other.distributed===row.distributed&&
             ['finished','stopped','completed','ended_early'].includes(other.status)&&
-            other.host===row.host&&
+            other.topology===row.topology&&
             other.configuration_sha256===row.configuration_sha256&&
             other.gpu_mode===row.gpu_mode&&
             other.median_rate!==null);
