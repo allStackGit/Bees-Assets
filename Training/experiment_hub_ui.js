@@ -243,8 +243,8 @@ function hubScalingEvidence(runs,key,allJobs=[],leases=[]) {
     }
     return rows;
 }
-// Generic, observational profile of recorded second-valued measurements.
-// Unit "seconds" is not proof that a metric is a per-update stage duration:
+// Generic, observational profile of recorded duration measurements.
+// Units of seconds or milliseconds do not prove a per-update stage duration:
 // cumulative clocks and overlapping work must not be added or compared as
 // exclusive CPU/GPU time.
 function hubMeasuredSeconds(run) {
@@ -256,10 +256,12 @@ function hubMeasuredSeconds(run) {
     const values=new Map();
     for(const point of recent)
         for(const [key,item] of Object.entries(point.metrics||{})) {
-            if(item?.unit!=='seconds'||!Number.isFinite(item.value)||
+            const scale=item?.unit==='seconds'?1:
+                item?.unit==='milliseconds'?0.001:null;
+            if(scale===null||!Number.isFinite(item.value)||
                 item.value<0||item.value>1e12)continue;
             if(!values.has(key))values.set(key,[]);
-            values.get(key).push(item.value);
+            values.get(key).push(item.value*scale);
         }
     const rows=[];
     for(const [key,samples] of values) {
@@ -1389,7 +1391,7 @@ document.addEventListener('DOMContentLoaded', () => {
         secondsMetricsDetails.hidden=!profiles.length;
         if(!profiles.length)return;
         const heading=document.createElement('summary');
-        heading.textContent='Recorded seconds metrics ('+profiles.length+
+        heading.textContent='Recorded time metrics ('+profiles.length+
             ' run'+(profiles.length===1?'':'s')+', all projects)';
         secondsMetricsDetails.append(heading);
         const format=value=>value.toLocaleString(undefined,{
@@ -1421,7 +1423,7 @@ document.addEventListener('DOMContentLoaded', () => {
             secondsMetricsDetails.append(table);
         }
         const note=document.createElement('p');
-        note.textContent='Read-only medians from up to 64 observations in each run’s latest contiguous chart segment, with at least five samples per metric. A seconds-valued metric may be cumulative rather than a per-update stage; overlapping stages cannot be added. These chart samples are not full-resolution profiling evidence. Export the histories for definitive bottleneck analysis.';
+        note.textContent='Read-only medians from up to 64 observations in each run’s latest contiguous chart segment, with at least five samples per metric. Second- and millisecond-valued measurements are normalized to seconds. A duration metric may be cumulative rather than a per-update stage; overlapping stages cannot be added. These chart samples are not full-resolution profiling evidence. Export the histories for definitive bottleneck analysis.';
         secondsMetricsDetails.append(note);
     }
     function renderRolloutRecommendations(runs) {
