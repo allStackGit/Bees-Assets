@@ -1463,8 +1463,11 @@ time; they are not GPU kernel throughput. Learner stage `*_cpu_seconds`
 counters are aggregate process CPU time, potentially greater than wall
 time when PyTorch uses multiple CPU threads; they exclude separate rollout
 worker processes. They allow bottleneck comparisons without inferring GPU
-efficiency from busy percentages alone. Imported bundle rounds have no
-single sequential collection interval, so no whole-round rate is invented.
+efficiency from busy percentages alone. Reward journal event counts and
+payload bytes quantify the packed tick/amount data across parsed journals;
+they are not peak process RSS or the full JSON journal's file size.
+Imported bundle rounds have no single sequential collection interval,
+so no whole-round rate is invented.
 
 Queue placement prefers fitting hosts advertising the adapter's GPU capability.
 Train requires explicit Start and a current device-access **plus runtime**
