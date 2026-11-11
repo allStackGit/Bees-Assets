@@ -174,8 +174,11 @@ def expand(run, scene, manifest, read_capture=None):
         prior = at
         dx, dy = pair(wave["direction"], f"{label}.direction")
         ids = wave["squad_item_ids"]
-        if not isinstance(ids, list) or not ids:
+        if not isinstance(ids, list) or not ids or all(sid is None for sid in ids):
             fail(f"{label} must name at least one captured squad")
+        # A null entry denotes an unavailable saved squad at that *original*
+        # Unity list slot. AddTitania2BeeWave uses the source list length and
+        # index for its lane offset even when a squad lookup returned null.
         horizontal = abs(dx) >= abs(dy)
         captured_squads, captured_ships = ({}, {})
         if capture is not None:
@@ -183,6 +186,8 @@ def expand(run, scene, manifest, read_capture=None):
                 capture, f"{label} capture"
             )
         for si, squad_id in enumerate(ids):
+            if squad_id is None:
+                continue
             if isinstance(squad_id, bool) or not isinstance(squad_id, int) or squad_id <= 0:
                 fail(f"{label} has an invalid source squad ID")
             if squad_id in used:
