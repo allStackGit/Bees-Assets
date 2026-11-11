@@ -501,6 +501,16 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
     <button type="button" id="hub-job-queue">Queue job</button>
     <button type="button" id="hub-job-preview">Preview queued placements</button>
     <p id="hub-job-message" class="hub-notice" role="status">No work scheduled or executing.</p>
+    <div class="hub-standalone" id="hub-resource-bundle-panel">
+      <h3>Reserve a multi-machine resource bundle</h3>
+      <p class="muted">Select two or more independently executable saved jobs, each with a fixed machine and CPU/RAM/GPU budget. All reservations succeed together or none are created. This is resource coordination only: no training data is exchanged, no Start is authorized, and no cross-project learner/worker synchronization is implied.</p>
+      <div id="hub-resource-bundle-rows"></div>
+      <div class="hub-controls">
+        <button type="button" id="hub-resource-bundle-add">Add member</button>
+        <button type="button" id="hub-resource-bundle-queue">Reserve entire bundle</button>
+      </div>
+      <p id="hub-resource-bundle-message" class="hub-notice" role="status">No resource bundle reserved.</p>
+    </div>
     <div class="hub-standalone" id="hub-pipeline-panel" hidden>
       <h3 id="hub-pipeline-title">Queue a multi-job pipeline</h3>
       <label>Relationship between jobs
