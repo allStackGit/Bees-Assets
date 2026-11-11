@@ -96,6 +96,22 @@ def _verify_capture(initial, capture):
                 "max", "beehive_size_pixels"):
         if key not in initial or key not in capture or capture[key] != initial[key]:
             fail(f"wave capture has a missing or different source {key}")
+    initial_squads, initial_ships, _ = _source_records(initial, "starting scene")
+    later_squads, later_ships, _ = _source_records(capture, "wave capture")
+    # Stage IDs are never reassigned in one run. Motion, health and roster
+    # membership may evolve, but these identities must not change.
+    for entity_id in initial_ships.keys() & later_ships.keys():
+        first = initial_ships[entity_id]
+        later = later_ships[entity_id]
+        for key in ("ship_type", "side", "fleet_ship_id", "persistent_fleet"):
+            if key not in first or key not in later or first[key] != later[key]:
+                fail(f"wave capture reuses physical ship {entity_id} with different {key}")
+    for item_id in initial_squads.keys() & later_squads.keys():
+        first = initial_squads[item_id]
+        later = later_squads[item_id]
+        for key in ("side", "user_controlled"):
+            if first.get(key) != later.get(key):
+                fail(f"wave capture reuses squad {item_id} with different {key}")
 
 
 def expand(run, scene, manifest, read_capture=None):
@@ -278,11 +294,21 @@ def main():
         json.dumps(scene, indent=2, ensure_ascii=False, allow_nan=False) + "\n"
         if scene_output is not None else None
     )
-    if scene_output is not None:
-        with scene_output.open("x", encoding="utf-8") as handle:
-            handle.write(scene_result)
-    with output_path.open("x", encoding="utf-8") as handle:
-        handle.write(result)
+    # The pair is a single logical output. If either new file cannot be
+    # written, remove only the files this invocation itself created.
+    created = []
+    try:
+        if scene_output is not None:
+            with scene_output.open("x", encoding="utf-8") as handle:
+                created.append(scene_output)
+                handle.write(scene_result)
+        with output_path.open("x", encoding="utf-8") as handle:
+            created.append(output_path)
+            handle.write(result)
+    except OSError:
+        for path in reversed(created):
+            path.unlink(missing_ok=True)
+        raise
     print(f"Authored {len(plans)} captured squad arrival plans in {output_path}")
     if scene_output is not None:
         print(f"Merged authentic deferred physical records into {scene_output}")
