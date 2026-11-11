@@ -194,7 +194,7 @@ def expand(run, scene, manifest, read_capture=None):
                 fail(f"source squad {squad_id} appears in multiple waves")
             used.add(squad_id)
             squad = (captured_squads if capture is not None else source_squads).get(squad_id)
-            if squad is None or squad.get("side") != bee_side or squad.get("user_controlled"):
+            if squad is None or squad.get("side") != bee_side or squad.get("user_controlled") is not False:
                 fail(f"{label} requires an authentic, non-player Bee squad {squad_id}")
             members = squad.get("member_ids")
             if not isinstance(members, list) or not members or (
@@ -205,14 +205,19 @@ def expand(run, scene, manifest, read_capture=None):
             for entity_id in members:
                 ship = selected_ships.get(entity_id)
                 if ship is None or ship.get("side") != bee_side or (
-                    "is_rl_policy_controlled" not in ship or
-                    "has_bound_policy" not in ship or
-                    ship["is_rl_policy_controlled"] or ship["has_bound_policy"]
+                    ship.get("is_rl_policy_controlled") is not False or
+                    ship.get("has_bound_policy") is not False
                 ):
                     fail(f"source squad {squad_id} has missing or policy-controlled physical ships")
             if capture is not None:
                 if squad_id in source_squads or any(eid in entity_ids for eid in members):
                     fail(f"{label} capture conflicts with an existing source identity")
+                # Unity's GameState.GetId uses a monotonically advancing
+                # Stage allocator. A ship spawned in a future wave must be
+                # newer than every entity already created in the source
+                # scene or an earlier captured wave.
+                if any(eid <= max(entity_ids, default=0) for eid in members):
+                    fail(f"{label} includes a nonmonotonic future ship ID")
                 # Retain the real source records, including weapons, movement,
                 # HiveMind authority and each member's authored formation.
                 scene["squads"].append(squad)
