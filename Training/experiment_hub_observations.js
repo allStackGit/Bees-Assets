@@ -24,7 +24,7 @@ class ObservationArchive {
     // stalls (for example, inside a long PPO update).
     recordResources(job,resourceMetrics,receivedMs,sourceStatus) {
         if(!resourceMetrics||!Object.keys(resourceMetrics).length)return false;
-        if(!['absent','not_advanced'].includes(sourceStatus))
+        if(!['absent','not_advanced','read_error'].includes(sourceStatus))
             throw Error('Host observation needs an explicit trainer source status.');
         return this.append(job,null,resourceMetrics,receivedMs,true,sourceStatus);
     }
