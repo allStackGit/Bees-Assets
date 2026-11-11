@@ -109,12 +109,14 @@ def export_model(source_manifest, destination):
 
 
 
-def verify_package(package):
+def verify_package(package, learner_slot=None):
     """Verify a copied package without reading its original source paths.
 
     This proves the portable directory's internal hash consistency; the
     receipt is not a signature or a claim of trusted model provenance.
     """
+    if learner_slot is not None and (type(learner_slot) is not int or not 0 <= learner_slot < (1 << 32)):
+        raise ValueError("learner slot must be a native uint32 model slot")
     if package.is_symlink():
         raise ValueError("portable package root cannot be a symlink")
     package = package.resolve(strict=True)
@@ -151,6 +153,7 @@ def verify_package(package):
             type(receipt.get("model_files")) is not int):
         raise ValueError("portable model completion receipt is invalid")
     slots, unique_files = set(), {}
+    selected_learner = None
     for model in manifest["models"]:
         if not isinstance(model, dict):
             raise ValueError("invalid portable model entry")
@@ -168,6 +171,10 @@ def verify_package(package):
             raise ValueError("model path escapes the verified portable package layout")
         slots.add(slot)
         unique_files[expected] = sha
+        if slot == learner_slot:
+            if backend != "mlagents":
+                raise ValueError("selected learner must be an ML-Agents model")
+            selected_learner = expected
     if (len(slots) != receipt["model_slots"] or
             len(unique_files) != receipt["model_files"]):
         raise ValueError("portable model file counts differ from the completion receipt")
@@ -181,12 +188,21 @@ def verify_package(package):
         Path(relative).name for relative in unique_files
     }:
         raise ValueError("portable model directory contains unexpected artifacts")
-    return {
+    if learner_slot is not None and selected_learner is None:
+        raise ValueError("selected learner slot is not in the portable manifest")
+    result = {
         "kind": "portable_bees_model_verified",
         "manifest_sha256": receipt["manifest_sha256"],
         "model_files": len(unique_files),
         "model_slots": len(slots),
     }
+    if selected_learner is not None:
+        result.update(
+            learner_slot=learner_slot,
+            manifest=str(manifest_file),
+            learner_checkpoint=str(package / selected_learner),
+        )
+    return result
 
 
 def main():
@@ -197,14 +213,16 @@ def main():
                         help="new destination directory (must not exist)")
     parser.add_argument("--verify", action="store_true",
                         help="verify a transferred package without exporting files")
+    parser.add_argument("--learner-slot", type=int,
+                        help="with --verify, select the ML-Agents learner checkpoint")
     args = parser.parse_args()
     if args.verify:
         if args.output is not None:
             parser.error("--verify accepts only the package directory")
-        result = verify_package(args.manifest)
+        result = verify_package(args.manifest, args.learner_slot)
     else:
-        if args.output is None:
-            parser.error("export requires the new destination directory")
+        if args.output is None or args.learner_slot is not None:
+            parser.error("export requires a destination and does not accept --learner-slot")
         result = export_model(args.manifest, args.output)
     print(json.dumps(result), flush=True)
 
