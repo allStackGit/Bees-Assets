@@ -1961,7 +1961,14 @@ Native project exports also include `hub-resource-claims.json`, which pins
 each selected job's persisted Hub CPU/RAM/GPU lease and physical GPU bindings.
 For managed distributed TinyBrains learners this file includes each linked
 collector's machine assignment, pinned thread count and matching resource
-lease, even if the collector's raw logs are unavailable. Missing leases
+lease, even if the collector's raw logs are unavailable.
+The same learner export also includes coordinator-received
+`tinybrains_rollout` collector observations under source labels containing
+each full collector UUID. The long-form observation CSV identifies these
+rows by their **collector job ID and project**, rather than attributing them
+to the learner. A missing collector observation is listed in the manifest.
+Neither Hub observation file proves that the worker's original trainer log
+was obtained or that the allocated cores performed useful work. Missing leases
 remain null. This is historical allocation evidence, **not** a measurement
 of utilization or proof that a GPU completed useful training work.
 The native coordinator reads TinyBrains jobs under the Hub data root's
