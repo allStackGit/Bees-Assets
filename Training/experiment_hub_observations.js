@@ -108,11 +108,23 @@ class ObservationArchive {
                 // Filesystems may accept fewer bytes than requested.
                 // Complete the *same* bounded JSONL record before advancing
                 // the durable size/timestamp cursor.
-                for(let offset=0;offset<body.length;) {
-                    const n=fs.writeSync(fd,body,offset,body.length-offset);
-                    if(!Number.isSafeInteger(n)||n<=0)
-                        throw Error('Incomplete observation archive append.');
-                    offset+=n;
+                try {
+                    for(let offset=0;offset<body.length;) {
+                        const n=fs.writeSync(fd,body,offset,body.length-offset);
+                        if(!Number.isSafeInteger(n)||n<=0)
+                            throw Error('Incomplete observation archive append.');
+                        offset+=n;
+                    }
+                }catch(writeError) {
+                    // A failed append must not leave a truncated JSON record
+                    // blocking every later observation for this job. Preserve
+                    // the previously validated complete archive prefix.
+                    try{fs.ftruncateSync(fd,stat.size);}
+                    catch(rollbackError) {
+                        throw Error('Observation append failed and its previous size could not be restored: '+
+                            String(rollbackError.message||rollbackError));
+                    }
+                    throw writeError;
                 }
                 this.lastByJob.set(key,{project_id:job.project_id,at,
                     size:stat.size+body.length,dev:stat.dev,ino:stat.ino});
