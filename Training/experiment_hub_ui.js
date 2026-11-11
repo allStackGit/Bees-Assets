@@ -843,6 +843,17 @@ document.addEventListener('DOMContentLoaded', () => {
     function drawComparisonCharts(runs,keys,xKey) {
         const container=$('hub-compare-plots');
         container.replaceChildren();
+        if(!runs.length||!keys.length) {
+            const notice=document.createElement('p');
+            notice.className='hub-notice';
+            notice.textContent=!runs.length
+                ?'Select a run above to display recorded metric charts.'
+                :$('hub-compare-metric').options.length
+                    ?'No chart metrics are selected. Check one or more metrics above to display a graph.'
+                    :'No recorded chart metrics are available for this project yet.';
+            container.append(notice);
+            return;
+        }
         for(const key of keys) {
             const section=document.createElement('div');
             section.className='hub-progress-plot';
