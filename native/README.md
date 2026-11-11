@@ -450,7 +450,10 @@ snapshots from the canonical roster and mounted weapon eligibility. Command
 callbacks borrow the mutable physical world because querying bounds can latch
 state. Exact enemy lifetimes travel through activation and every timer poll;
 retired targets never resolve to a newer squad with the same numeric ID.
-Asteroid/MapObject targeting fallback and BombingRun/Charge adapters remain incomplete.
+Ordinary turrets, Beam Cannons, and Laser Builders can fall back to nearby
+collision asteroids. They use the ship's ordered proximity contacts and wait
+for the asteroid to enter the map. MapObject targeting and some
+BombingRun/Charge adapters remain incomplete.
 Exports also capture actual `source_sight`: Scouting uses Ship.Sight, whereas
 HiveMind vision substitutes weapon range when Sight is zero. Older captures
 without this field cannot supply Scouting context.

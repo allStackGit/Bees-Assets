@@ -834,15 +834,12 @@ pub struct CombatWorld {
     pending_game_point_orders: HashMap<i64, GamePointOrder>,
     latest_game_point_orders: HashMap<i64, GamePointOrder>,
     ship_collision_profiles: HashMap<i64, ShipCollisionProfile>,
-    nearby_asteroid_ships: HashSet<(i64, i64)>,
+    /// Collision-asteroid proximity contacts in entry order for each ship.
+    nearby_asteroids_by_ship: HashMap<i64, Vec<i64>>,
     /// Unity NearbyAsteroidDoubleCheck runs at one-second intervals while
     /// the ship has nearby collision asteroids. One timer per ship avoids
     /// repeated route invalidation for multiple overlapping sensors.
     asteroid_navigation_refresh: HashMap<i64, ScaledTimer>,
-    /// Per-tick membership scratch, derived from nearby_asteroid_ships.
-    /// Avoids a ship-by-every-asteroid scan in large battles; it never
-    /// owns contact lifetimes or changes the authored timer schedule.
-    asteroid_navigation_present: HashSet<i64>,
     obstacle_by_id: HashMap<i64, usize>,
     asteroid_border_states: HashMap<i64, AsteroidBorderState>,
     /// Directional child-proximity contacts; a primary collider entry only
@@ -964,9 +961,8 @@ impl CombatWorld {
             pending_game_point_orders: HashMap::new(),
             latest_game_point_orders: HashMap::new(),
             ship_collision_profiles: HashMap::new(),
-            nearby_asteroid_ships: HashSet::new(),
+            nearby_asteroids_by_ship: HashMap::new(),
             asteroid_navigation_refresh: HashMap::new(),
-            asteroid_navigation_present: HashSet::new(),
             obstacle_by_id: HashMap::new(),
             asteroid_border_states: HashMap::new(),
             nearby_asteroid_pairs: HashSet::new(),
@@ -1190,7 +1186,7 @@ impl CombatWorld {
         self.pending_game_point_orders.remove(&victim_id);
         self.latest_game_point_orders.remove(&victim_id);
         self.asteroid_navigation_refresh.remove(&victim_id);
-        self.nearby_asteroid_ships.retain(|&(_, id)| id != victim_id);
+        self.nearby_asteroids_by_ship.remove(&victim_id);
         self.events.push(CombatEvent::ShipDied {
             victim_id, killer_id, command_outcome_id, policy_binding_revision,
         });
@@ -1852,14 +1848,15 @@ impl CombatWorld {
         Ok(())
     }
 
-    /// Rebuild a read-only ship membership index from canonical asteroid
-    /// proximity pairs. Reuse its allocation across fixed ticks and exit
-    /// batches; it never owns contact or navigation timer lifetimes.
-    fn refresh_nearby_asteroid_ship_lookup(&mut self) {
-        self.asteroid_navigation_present.clear();
-        self.asteroid_navigation_present.extend(
-            self.nearby_asteroid_ships.iter().map(|&(_, ship_id)| ship_id),
-        );
+    fn remove_nearby_asteroid(&mut self, ship_id: i64, asteroid_id: i64) {
+        if let std::collections::hash_map::Entry::Occupied(mut nearby) =
+            self.nearby_asteroids_by_ship.entry(ship_id)
+        {
+            nearby.get_mut().retain(|&id| id != asteroid_id);
+            if nearby.get().is_empty() {
+                nearby.remove();
+            }
+        }
     }
 
     /// Ship.NearbyAsteroidDoubleCheck, one shared recurring timer per ship.
@@ -1869,20 +1866,8 @@ impl CombatWorld {
     fn advance_asteroid_navigation_refresh(
         &mut self, dt: f32,
     ) -> Result<(), CombatWorldError> {
-        if self.asteroid_navigation_refresh.len() <= 1 {
-            // The single-squad/1v1 case avoids building a membership set.
-            let nearby = &self.nearby_asteroid_ships;
-            self.asteroid_navigation_refresh.retain(|&ship_id, _|
-                nearby.iter().any(|&(_, owner)| owner == ship_id)
-            );
-        } else {
-            // In asteroid-heavy battles, the previous per-timer scan cost
-            // O(timers * nearby pairs) each fixed step. Reuse an index of
-            // current ship IDs only; nearby pair ownership remains canonical.
-            self.refresh_nearby_asteroid_ship_lookup();
-            let present = &self.asteroid_navigation_present;
-            self.asteroid_navigation_refresh.retain(|&ship_id, _| present.contains(&ship_id));
-        }
+        let nearby = &self.nearby_asteroids_by_ship;
+        self.asteroid_navigation_refresh.retain(|ship_id, _| nearby.contains_key(ship_id));
         let mut ready = Vec::new();
         for (&ship_id, timer) in &mut self.asteroid_navigation_refresh {
             if let Some(due) = timer.begin_update(dt) {
@@ -3450,28 +3435,9 @@ impl CombatWorld {
         let exiting = self.physics.proximity_ship_exits().len();
         for index in 0..exiting {
             let contact = self.physics.proximity_ship_exits()[index];
-            self.nearby_asteroid_ships.remove(&(
-                contact.obstacle_id, contact.ship_id,
-            ));
-        }
-        // All exits precede new entries in the source callback phase.
-        // Prune each ship's timer after the exit batch, but before entries
-        // can re-arm it. This preserves the original reset semantics.
-        if exiting == 1 {
-            let ship_id = self.physics.proximity_ship_exits()[0].ship_id;
-            if !self.nearby_asteroid_ships.iter().any(|&(_, other)| other == ship_id) {
-                self.asteroid_navigation_refresh.remove(&ship_id);
-            }
-        } else if exiting > 1 {
-            // A large group of simultaneous exits must not scan all
-            // remaining asteroid contacts once for every exiting pair.
-            // The lookup is rebuilt from canonical pairs and reused.
-            self.refresh_nearby_asteroid_ship_lookup();
-            for index in 0..exiting {
-                let ship_id = self.physics.proximity_ship_exits()[index].ship_id;
-                if !self.asteroid_navigation_present.contains(&ship_id) {
-                    self.asteroid_navigation_refresh.remove(&ship_id);
-                }
+            self.remove_nearby_asteroid(contact.ship_id, contact.obstacle_id);
+            if !self.nearby_asteroids_by_ship.contains_key(&contact.ship_id) {
+                self.asteroid_navigation_refresh.remove(&contact.ship_id);
             }
         }
         for index in 0..self.physics.proximity_ship_entries().len() {
@@ -3483,9 +3449,9 @@ impl CombatWorld {
             if self.obstacles[asteroid_index].kind == ObstacleKind::CollisionAsteroid &&
                 self.physics.obstacles()[asteroid_index].active &&
                 self.physics.ships()[ship_index].active {
-                if self.nearby_asteroid_ships.insert((
-                    contact.obstacle_id, contact.ship_id,
-                )) {
+                let nearby = self.nearby_asteroids_by_ship.entry(contact.ship_id).or_default();
+                if !nearby.contains(&contact.obstacle_id) {
+                    nearby.push(contact.obstacle_id);
                     newly_nearby_ships.push(contact.ship_id);
                     self.asteroid_navigation_refresh
                         .entry(contact.ship_id)
@@ -3497,7 +3463,9 @@ impl CombatWorld {
             let contact = self.physics.ship_obstacle_entries()[index];
             let asteroid_id = contact.obstacle_id;
             let ship_id = contact.ship_id;
-            if !self.nearby_asteroid_ships.contains(&(asteroid_id, ship_id)) {
+            if !self.nearby_asteroids_by_ship.get(&ship_id)
+                .is_some_and(|nearby| nearby.contains(&asteroid_id))
+            {
                 continue;
             }
             let (Some(&asteroid_index), Some(&ship_index)) = (
@@ -3524,7 +3492,7 @@ impl CombatWorld {
                     asteroid_vitals, asteroid_size_class, profile.size_class,
                     profile.original_health, ship_health,
                 ) else { continue };
-            self.nearby_asteroid_ships.remove(&(asteroid_id, ship_id));
+            self.remove_nearby_asteroid(ship_id, asteroid_id);
             self.events.push(CombatEvent::AsteroidHitShip {
                 obstacle_id: asteroid_id, ship_id, asteroid_damage,
             });
@@ -3636,8 +3604,9 @@ impl CombatWorld {
         self.nearby_asteroid_pairs.retain(|&(source, target)| {
             source != entity_id && target != entity_id
         });
-        self.nearby_asteroid_ships.retain(|&(asteroid_id, _)| {
-            asteroid_id != entity_id
+        self.nearby_asteroids_by_ship.retain(|_, nearby| {
+            nearby.retain(|&id| id != entity_id);
+            !nearby.is_empty()
         });
         self.free_obstacle_slots.push(index);
         if with_breakup {

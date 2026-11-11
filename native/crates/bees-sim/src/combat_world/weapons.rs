@@ -699,6 +699,7 @@ impl CombatWorld {
                 Some(value)
             } else { None };
             let mut automatic_points = [None; 5];
+            let mut aiming_at_asteroid = [false; 5];
             let mut has_valid_targets = [false; 5];
             if let Some(inputs) = inputs {
                 for (slot, mount) in runtime.turrets.iter_mut().enumerate() {
@@ -707,6 +708,8 @@ impl CombatWorld {
                     if runtime.cease_fire || mount.manual_target.is_some() { continue; }
                     let range = mount.world_range(pose, initial_heading, runtime.last_hull_rotation)?;
                     automatic_points[slot] = self.automatic_aim_point(ship_id, mount, &runtime.range_contacts[slot], range)?;
+                    aiming_at_asteroid[slot] = automatic_points[slot].is_some() &&
+                        mount.automatic_state().target.is_none();
                     if automatic_points[slot].is_none() {
                         for &target in runtime.range_contacts[slot].ids() {
                             if self.automatic_target_valid(ship_id, &runtime.range_contacts[slot], range, target)? {
@@ -754,7 +757,9 @@ impl CombatWorld {
                                 mount.state.is_aligned_with_target = true;
                                 // Source automatic Leaf clips start in SetTargetShip,
                                 // not from Aim after a previous clip has completed.
-                                if mount.manual_target.is_some() { mount.charge_elapsed_seconds.get_or_insert(0.0); }
+                                if mount.manual_target.is_some() || aiming_at_asteroid[slot] {
+                                    mount.charge_elapsed_seconds.get_or_insert(0.0);
+                                }
                             } else {
                                 mount.state.is_aligned_with_target = false;
                                 // LaserBuilder.Aim deactivates its clip when
@@ -846,6 +851,7 @@ impl CombatWorld {
                         let range = mount.world_range(pose, heading, runtime.last_hull_rotation)?;
                         self.automatic_targeting_pass(ship_id, mount, &runtime.range_contacts[slot], range,
                             inputs.expect("authored automatic input"), runtime.cease_fire, body_user_controlled,
+                            aiming_at_asteroid[slot],
                             random.as_deref_mut().ok_or(CombatWorldError::MissingAutomaticTargetingInputs)?,
                             context.expect("authored automatic context"))?
                     } else {
@@ -855,6 +861,7 @@ impl CombatWorld {
                         if automatic && !attempting { mount.automatic_state_mut().target = None; }
                         fire
                     };
+                    if automatic { self.refresh_automatic_asteroid_target(ship_id, mount); }
                     if fire {
                         self.record_combat_activity(ship_id);
                         if automatic && mount.manual_target.is_none() {

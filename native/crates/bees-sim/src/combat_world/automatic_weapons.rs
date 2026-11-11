@@ -31,6 +31,7 @@ pub struct AutomaticWeaponMeasurements {
 
 pub struct NativeAutomaticTurretStatus<'a> {
     pub target_ship: Option<i64>,
+    pub target_asteroid: Option<i64>,
     /// Source cached target order. Live values remain in the physical world.
     pub cached_targets: &'a [i64],
     pub targeting_passes: u8,
@@ -40,6 +41,7 @@ pub struct NativeAutomaticTurretStatus<'a> {
 #[derive(Clone, Debug, Default)]
 pub(super) struct AutomaticTurret {
     pub(super) target: Option<i64>,
+    target_asteroid: Option<i64>,
     queue: Vec<i64>,
     cached_range: Option<u64>,
     cached_strategy: u8,
@@ -82,6 +84,7 @@ impl CombatWorld {
             else { return Ok(None) };
         let Some(automatic) = mount.automatic.as_deref() else { return Ok(None) };
         Ok(Some(NativeAutomaticTurretStatus { target_ship: automatic.target,
+            target_asteroid: automatic.target_asteroid,
             cached_targets: &automatic.queue, targeting_passes: mount.state.targeting_passes,
             ready_to_fire: mount.state.ready_to_fire }))
     }
@@ -96,10 +99,33 @@ impl CombatWorld {
     pub(super) fn automatic_aim_point(&mut self, ship_id: i64, mount: &MountedTurret,
         contacts: &WeaponRangeContacts, range: NativeWeaponRange,
     ) -> Result<Option<Vec2>, CombatWorldError> {
-        let Some(target) = mount.automatic_state().target else { return Ok(None) };
+        let automatic = mount.automatic_state();
+        let Some(target) = automatic.target else {
+            let Some(asteroid) = automatic.target_asteroid else { return Ok(None) };
+            let Some(index) = self.live_automatic_asteroid(asteroid) else { return Ok(None) };
+            return Ok(self.asteroid_border_states.get(&asteroid)
+                .filter(|state| state.has_entered_map)
+                .map(|_| self.physics.obstacles()[index].pose.position));
+        };
         if !self.automatic_target_valid(ship_id, contacts, range, target)? { return Ok(None); }
         Ok(Some(self.target_point_for_range(range, mount.aim_at_front_of_ship
             .ok_or(CombatWorldError::MissingWeaponTargetingGeometry)?, target)?))
+    }
+
+    fn live_automatic_asteroid(&self, id: i64) -> Option<usize> {
+        let index = *self.obstacle_by_id.get(&id)?;
+        let body = &self.physics.obstacles()[index];
+        (body.active && self.obstacles[index].vitals
+            .is_some_and(|vitals| !vitals.is_dead && vitals.health > 0)).then_some(index)
+    }
+
+    pub(super) fn refresh_automatic_asteroid_target(&self, ship_id: i64, mount: &mut MountedTurret) {
+        if mount.automatic_state().target.is_none() &&
+            !matches!(mount.spec.fire_pattern, NativeFirePattern::FullShipTurret)
+        {
+            mount.automatic_state_mut().target_asteroid = self.nearby_asteroids_by_ship.get(&ship_id)
+                .and_then(|ids| ids.iter().copied().find(|&id| self.live_automatic_asteroid(id).is_some()));
+        }
     }
 
     fn choose_automatic_target(&mut self, ship_id: i64, mount: &mut MountedTurret,
@@ -154,11 +180,16 @@ impl CombatWorld {
     pub(super) fn automatic_targeting_pass(&mut self, ship_id: i64, mount: &mut MountedTurret,
         contacts: &WeaponRangeContacts, range: NativeWeaponRange,
         inputs: NativeAutomaticWeaponInputs, cease_fire: bool, user_controlled: bool,
+        aiming_at_asteroid: bool,
         random: &mut RandomStream, context: &dyn NativeAutomaticWeaponContext,
     ) -> Result<bool, CombatWorldError> {
         mount.state.targeting_passes += 1;
         if (mount.state.ready_to_fire && mount.state.is_aligned_with_target) || mount.state.targeting_passes == 3 {
-            let fire = self.try_automatic_fire(ship_id, mount, contacts, range, cease_fire)?;
+            let fire = if aiming_at_asteroid {
+                mount.state.is_aligned_with_target && !cease_fire
+            } else {
+                self.try_automatic_fire(ship_id, mount, contacts, range, cease_fire)?
+            };
             mount.state.targeting_passes = 0;
             return Ok(fire);
         }
