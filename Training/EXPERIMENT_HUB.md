@@ -2503,6 +2503,19 @@ least one action to each collector and preserving the total. The chosen
 weights never change during a run and do not resize CPU/GPU leases; use
 measured per-collector delivered throughput to select meaningful weights.
 The Hub records each collector's assigned `action_target` as a chart metric.
+The distributed queue also freezes the Train metric selection and adds each
+collector's decisions/s and action target, plus the collector count (up to
+96 chart fields total). After a finished or stopped distributed learner has
+at least five **paired**, complete collector-rate/target observations in the
+latest uninterrupted chart segment, **Compare** displays advisory
+`rollout_action_weights` for a *future* run. The ratios use per-collector
+median delivered decisions/s, reduced to bounded integer weights; they are
+a starting estimate, not a guarantee of faster PPO updates. Rates from
+different action targets may change when their work shares change.
+**Use proposed weights in Design** only fills the input for an approved
+matching profile: review the full draft and save explicitly. Nothing
+rebalances a running job, changes its resource lease, or starts training.
+Re-measure when worker machines, assigned CPUs/GPUs, network or model change.
 Remote workers never publish or advance learner checkpoints.
 
 Install the *same* randomly generated 32+-byte HMAC key on each trusted host
