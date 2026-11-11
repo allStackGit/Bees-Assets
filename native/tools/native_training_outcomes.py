@@ -65,29 +65,32 @@ def accumulate_training_outcome(
             raise ValueError(f"training outcome has invalid {name}")
         values[name] = value
 
-    counts = stats.setdefault("training_outcomes", {
-        "episodes": 0, "head_to_head_episodes": 0,
-        "self_play_episodes": 0, "learner_wins": 0,
-        "learner_losses": 0, "learner_draws": 0,
-        "learner_as_bee_episodes": 0, "learner_as_human_episodes": 0,
-        "bee_wins": 0, "human_wins": 0, "draws": 0,
-        "timed_out_episodes": 0, "total_episode_seconds": 0.0,
-        "bee_retained_mined_tsv": 0.0, "human_retained_mined_tsv": 0.0,
-        "bee_retained_reward": 0.0, "human_retained_reward": 0.0,
-        "bee_ppo_reward_sum": 0.0, "human_ppo_reward_sum": 0.0,
-        "learner_retained_mined_tsv": 0.0, "opponent_retained_mined_tsv": 0.0,
-        "learner_retained_reward": 0.0, "opponent_retained_reward": 0.0,
-        "learner_ppo_reward_sum": 0.0, "opponent_ppo_reward_sum": 0.0,
-        **{
-            f"{owner}_{name}": 0
-            for owner in ("bee", "human", "learner", "opponent")
-            for name in (
-                "enemy_hits", "enemy_damage", "enemy_tsv_loss", "enemy_kills",
-                "friendly_hits", "friendly_damage", "friendly_tsv_loss",
-                "friendly_kills",
-            )
-        },
-    })
+    counts = stats.get("training_outcomes")
+    if counts is None:
+        counts = {
+            "episodes": 0, "head_to_head_episodes": 0,
+            "self_play_episodes": 0, "learner_wins": 0,
+            "learner_losses": 0, "learner_draws": 0,
+            "learner_as_bee_episodes": 0, "learner_as_human_episodes": 0,
+            "bee_wins": 0, "human_wins": 0, "draws": 0,
+            "timed_out_episodes": 0, "total_episode_seconds": 0.0,
+            "bee_retained_mined_tsv": 0.0, "human_retained_mined_tsv": 0.0,
+            "bee_retained_reward": 0.0, "human_retained_reward": 0.0,
+            "bee_ppo_reward_sum": 0.0, "human_ppo_reward_sum": 0.0,
+            "learner_retained_mined_tsv": 0.0, "opponent_retained_mined_tsv": 0.0,
+            "learner_retained_reward": 0.0, "opponent_retained_reward": 0.0,
+            "learner_ppo_reward_sum": 0.0, "opponent_ppo_reward_sum": 0.0,
+            **{
+                f"{owner}_{name}": 0
+                for owner in ("bee", "human", "learner", "opponent")
+                for name in (
+                    "enemy_hits", "enemy_damage", "enemy_tsv_loss", "enemy_kills",
+                    "friendly_hits", "friendly_damage", "friendly_tsv_loss",
+                    "friendly_kills",
+                )
+            },
+        }
+        stats["training_outcomes"] = counts
     counts["episodes"] += 1
     counts["total_episode_seconds"] += duration
     counts["timed_out_episodes"] += int(payload["timed_out"])
