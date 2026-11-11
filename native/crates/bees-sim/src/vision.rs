@@ -20,7 +20,7 @@ pub struct HiveMindObserver {
     pub enabled: bool,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize)]
 pub struct VisionSweepCounts {
     pub completed_sweeps: u64,
     pub suppressed_sweeps: u64,
