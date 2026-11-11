@@ -19,6 +19,9 @@ module.exports={
         // User verified that the Exeter and Halifax files have this same SHA.
         seedCheckpointSha256:'fae407ef8db3fab7620b1407b17380e2eea0f616c8d4d8816d3924cac6e005d7',
         seedPpoUpdates:7199,
+        // Diagnostic-only host-wall PPO stage timings. Does not change
+        // checkpoint formats, optimizer settings or the frozen profile digest.
+        profilePpo:true,
         // Dual GPU is OFF by default. Enable only after installing the
         // matching TinyBrains two-device runtime and verifying both physical
         // R9700 PCI identities in the Docker ROCm qualification.
