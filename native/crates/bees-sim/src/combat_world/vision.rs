@@ -165,6 +165,7 @@ impl CombatWorld {
             // Retain the ORIGINAL total-pair and bounds-rejection counters
             // so before/after profiles remain comparable.
             counts.live_ship_pairs += eligible_enemies;
+            counts.ship_pairs_tested += checked_enemies;
             counts.aabb_rejections += eligible_enemies.saturating_sub(checked_enemies);
 
             for target in 0..self.obstacles.len() {
