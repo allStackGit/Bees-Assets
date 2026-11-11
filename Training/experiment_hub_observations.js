@@ -17,16 +17,18 @@ class ObservationArchive {
     }
     record(job,progress,resourceMetrics,receivedMs) {
         if(!progress)return false;
-        return this.append(job,progress,resourceMetrics,receivedMs,false);
+        return this.append(job,progress,resourceMetrics,receivedMs,false,null);
     }
     // Host-only samples are distinct from trainer updates. They retain
     // observed CPU/GPU/memory behavior when the trainer's source timestamp
     // stalls (for example, inside a long PPO update).
-    recordResources(job,resourceMetrics,receivedMs) {
+    recordResources(job,resourceMetrics,receivedMs,sourceStatus) {
         if(!resourceMetrics||!Object.keys(resourceMetrics).length)return false;
-        return this.append(job,null,resourceMetrics,receivedMs,true);
+        if(!['absent','not_advanced'].includes(sourceStatus))
+            throw Error('Host observation needs an explicit trainer source status.');
+        return this.append(job,null,resourceMetrics,receivedMs,true,sourceStatus);
     }
-    append(job,progress,resourceMetrics,receivedMs,hostOnly) {
+    append(job,progress,resourceMetrics,receivedMs,hostOnly,sourceStatus) {
         try {
             if(!UUID.test(String(job?.id))||
                 !/^[a-z][a-z0-9_-]{0,47}$/.test(String(job?.project_id))||
@@ -95,7 +97,10 @@ class ObservationArchive {
                     steps_completed:hostOnly?null:progress.steps_completed,
                     metrics:hostOnly?{}:progress.metrics,
                     resource_metrics:resourceMetrics,
-                    ...(hostOnly?{observation_kind:'host_only'}:{}),
+                    ...(hostOnly?{
+                        observation_kind:'host_only',
+                        trainer_source_status:sourceStatus,
+                    }:{}),
                 };
                 const body=Buffer.from(JSON.stringify(observation)+'\n');
                 if(body.length>MAX_RECORD_BYTES)
