@@ -14,6 +14,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+from tempfile import TemporaryDirectory
 import time
 import traceback
 import uuid
@@ -176,7 +177,16 @@ def combined_rollout_metrics(shards, wall_seconds):
     return metrics
 
 
-def publish_receipt(output, filename, receipt):
+def sync_directory(path):
+    if os.name == "posix":
+        directory = os.open(path, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
+
+
+def publish_receipt(output, filename, receipt, *, announce=True):
     pending = output / (filename + ".pending")
     with pending.open("x", encoding="utf-8") as stream:
         json.dump(receipt, stream, indent=2)
@@ -184,13 +194,42 @@ def publish_receipt(output, filename, receipt):
         stream.flush()
         os.fsync(stream.fileno())
     os.replace(pending, output / filename)
-    if os.name == "posix":
-        directory = os.open(output, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
-        try:
-            os.fsync(directory)
-        finally:
-            os.close(directory)
-    print(json.dumps(receipt), flush=True)
+    sync_directory(output)
+    if announce:
+        print(json.dumps(receipt), flush=True)
+
+
+def deliver_bundle(output, inbox, receipt):
+    destination = inbox / output.name
+    if destination.exists():
+        raise FileExistsError(f"rollout inbox already contains {destination.name}")
+    started = time.perf_counter()
+    transferred = 0
+    with TemporaryDirectory(prefix=".rollout-", dir=inbox) as temporary:
+        stage = Path(temporary) / "bundle"
+        stage.mkdir()
+        for capture in receipt["captures"]:
+            for record in capture.values():
+                relative = Path(record["path"])
+                target = stage / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                digest = hashlib.sha256()
+                with (output / relative).open("rb") as source, target.open("xb") as sink:
+                    for chunk in iter(lambda: source.read(1024 * 1024), b""):
+                        digest.update(chunk)
+                        sink.write(chunk)
+                        transferred += len(chunk)
+                    sink.flush()
+                    os.fsync(sink.fileno())
+                if digest.hexdigest() != record["sha256"]:
+                    raise ValueError("rollout artifact changed before inbox publication")
+                if target.parent != stage:
+                    sync_directory(target.parent)
+        receipt["delivery"] = {"bytes": transferred, "copy_wall_seconds": time.perf_counter() - started}
+        publish_receipt(stage, "rollout-bundle.json", receipt, announce=False)
+        stage.rename(destination)
+        sync_directory(inbox)
+    return destination
 
 
 def optimize(args, output, python, manifest, checkpoint, trainer_config, result, rollout_args):
@@ -260,9 +299,14 @@ def main() -> None:
                         help="capture stage output in separate files for supervised execution")
     parser.add_argument("--collect-only", action="store_true",
                         help="publish a portable rollout bundle without running the optimizer")
+    parser.add_argument("--bundle-inbox", type=Path,
+                        help="also deliver the collected bundle to an existing shared inbox")
     args = parser.parse_args()
     if not 0 <= args.seed_offset < (1 << 64):
         parser.error("--seed-offset must fit uint64")
+    inbox = args.bundle_inbox.resolve(strict=True) if args.bundle_inbox else None
+    if inbox is not None and (not args.collect_only or not inbox.is_dir()):
+        parser.error("--bundle-inbox requires --collect-only and an existing directory")
 
     run_path = args.run_config.resolve(strict=True)
     checkpoint = args.checkpoint.resolve(strict=True)
@@ -387,7 +431,7 @@ def main() -> None:
         if (file_sha256(checkpoint) != input_checkpoint_sha or
                 file_sha256(manifest) != input_manifest_sha):
             raise ValueError("rollout input checkpoint or manifest changed during collection")
-        publish_receipt(output, "rollout-bundle.json", {
+        receipt = {
             "schema_version": 1,
             "kind": "native_rollout_bundle",
             "input_checkpoint_sha256": input_checkpoint_sha,
@@ -395,7 +439,11 @@ def main() -> None:
             "learner_slot": args.learner_slot,
             "captures": captures,
             "rollout_metrics": rollout,
-        })
+        }
+        if inbox is not None:
+            destination = deliver_bundle(output, inbox, receipt)
+            print(json.dumps({"kind": "native_rollout_delivered", "directory": str(destination)}), flush=True)
+        publish_receipt(output, "rollout-bundle.json", receipt)
         return
     rollout_args = []
     for shard, _ in shards[1:]:

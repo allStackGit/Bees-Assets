@@ -19,7 +19,7 @@ function trustedFile(file) {
 
 function createNativeBeesAdapter({
     pythonPath, rolloutBinary, runConfig, trainerConfig, checkpoint, artifactRoot,
-    learnerSlot, collectOnly = false,
+    learnerSlot, collectOnly = false, bundleInbox,
 }) {
     if (typeof collectOnly !== 'boolean') throw Error('Invalid native Bees collection mode.');
     const project = collectOnly ? 'bees_native_collect' : PROJECT;
@@ -32,6 +32,14 @@ function createNativeBeesAdapter({
         throw Error('Native Bees requires an absolute artifact root.');
     const artifacts = fs.realpathSync(artifactRoot);
     if (!fs.statSync(artifacts).isDirectory()) throw Error('Native Bees artifact root is not a directory.');
+    let inbox;
+    if (bundleInbox !== undefined) {
+        if (!collectOnly || typeof bundleInbox !== 'string' || !path.isAbsolute(bundleInbox))
+            throw Error('Native Bees bundle inbox requires a collection job and an absolute path.');
+        inbox = fs.realpathSync(bundleInbox);
+        if (!fs.statSync(inbox).isDirectory() || inbox === artifacts)
+            throw Error('Native Bees bundle inbox must be a separate existing directory.');
+    }
     if (learnerSlot !== undefined &&
         (!Number.isSafeInteger(learnerSlot) || learnerSlot < 0 || learnerSlot > 0xffffffff))
         throw Error('Invalid native Bees learner slot.');
@@ -53,6 +61,7 @@ function createNativeBeesAdapter({
     ]);
     const configIdentity = [...pins.values(), learnerSlot ?? null];
     if (collectOnly) configIdentity.push(project);
+    if (inbox) configIdentity.push(inbox);
     const configSha256 = sha256(JSON.stringify(configIdentity));
 
     function jobRoot(context) {
@@ -153,6 +162,7 @@ function createNativeBeesAdapter({
                 '--model-manifest', inputs.manifest, ...(binary ? ['--rollout-binary', binary] : []),
                 '--stage-diagnostics',
                 ...(collectOnly ? ['--collect-only'] : []),
+                ...(inbox ? ['--bundle-inbox', inbox] : []),
                 '--seed-offset', String(seed_offset),
                 ...(learnerSlot === undefined ? [] : ['--learner-slot', String(learnerSlot)])];
         },
@@ -190,6 +200,10 @@ function createNativeBeesAdapter({
                         rollout_policy_rows: {value: rollout.successful_policy_rows, unit: 'count'},
                         rollout_wall_seconds: {value: rollout.wall_seconds, unit: 'seconds'},
                         rollout_workers: {value: receipt.captures.length, unit: 'count'},
+                        ...(receipt.delivery ? {
+                            rollout_delivery_bytes: {value: receipt.delivery.bytes, unit: 'bytes'},
+                            rollout_delivery_seconds: {value: receipt.delivery.copy_wall_seconds, unit: 'seconds'},
+                        } : {}),
                     },
                 }, project);
             }

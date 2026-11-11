@@ -253,6 +253,11 @@ the collector's own configuration digest and seed offset. Its output is
 `<artifactRoot>/<job_id>/rollout-bundle.json` and the files it lists.
 Collection progress counts policy rows. The bundle can feed a separate
 `bees_native` learner job after transfer and receipt approval.
+Set the collector's optional `bundleInbox` to an existing shared
+directory to deliver bundles automatically. Each bundle becomes visible at
+`<bundleInbox>/<job_id>/rollout-bundle.json` after its files are copied and
+verified. Use that receipt path and digest in the learner job. The
+collector reports copy duration and bytes delivered.
 The adapter reports completed-round metrics from the receipt and uses
 the Hub's process-group stop. Each job runs one CPU update. A checkpoint
 pipeline keeps the approved configuration digest and uses each predecessor's
