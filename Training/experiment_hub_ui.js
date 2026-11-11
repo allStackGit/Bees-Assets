@@ -225,6 +225,68 @@ function hubRolloutWeightRecommendation(run) {
         // A new target can change throughput; this is a starting estimate.
     };
 }
+
+function hubCollectorStageProfile(run) {
+    const job=run.job;
+    if(job.project_id!=='tinybrains'||job.distributed_rollout_managed!==true||
+        job.frozen_parameters?.remote_rollouts!==true)return null;
+    const points=hubComparisonPoints(run);
+    let lastBreak=0;
+    for(let i=1;i<points.length;i++)
+        if(points[i].break_before)lastBreak=i;
+    const recent=points.slice(lastBreak).slice(-64);
+    let count=null;
+    for(const point of recent) {
+        const item=point.metrics?.collector_count;
+        if(item?.unit!=='count'||!Number.isSafeInteger(item.value)||
+            item.value<2||item.value>9)continue;
+        if(count!==null&&count!==item.value)return null;
+        count=item.value;
+    }
+    if(count===null)return null;
+    const value=(metrics,slot,name,unit)=>{
+        const item=metrics['collector_'+slot+'_'+name];
+        return item?.unit===unit&&Number.isFinite(item.value)&&
+            item.value>=0?item.value:null;
+    };
+    const median=values=>{
+        if(!values.length)return null;
+        const sorted=values.slice().sort((a,b)=>a-b);
+        const middle=Math.floor(sorted.length/2);
+        return sorted.length%2?sorted[middle]:
+            (sorted[middle-1]+sorted[middle])/2;
+    };
+    const slots=[];
+    for(let slot=0;slot<count;slot++) {
+        const samples=[];
+        for(const point of recent) {
+            const metrics=point.metrics||{};
+            if(metrics.collector_count?.value!==count)continue;
+            const engine=value(metrics,slot,'rollout_engine_step_seconds','seconds');
+            const inference=value(metrics,slot,'learner_inference_seconds','seconds');
+            const rate=value(metrics,slot,'decisions_per_second','rate');
+            if(engine===null||inference===null||rate===null)continue;
+            samples.push({
+                engine,inference,rate,
+                model:value(metrics,slot,'model_prepare_seconds','seconds'),
+                roundtrip:value(metrics,slot,'roundtrip_seconds','seconds'),
+            });
+        }
+        if(samples.length<5)continue;
+        const latest=samples.slice(-32);
+        const observed=key=>{
+            const values=latest.map(sample=>sample[key]);
+            return values.every(v=>v!==null)?median(values):null;
+        };
+        slots.push({
+            slot,samples:latest.length,
+            engine:observed('engine'),inference:observed('inference'),
+            rate:observed('rate'),model:observed('model'),
+            roundtrip:observed('roundtrip'),
+        });
+    }
+    return slots.length?{job_id:job.id,collector_count:count,slots}:null;
+}
 function trialBatchLabel(job) {
     const batch=job.trial_batch;
     return batch?' · batch '+batch.id.slice(-8)+' · trial '+batch.index+'/'+batch.size:'';
@@ -672,6 +734,9 @@ document.addEventListener('DOMContentLoaded', () => {
     rolloutRecommendations.id='hub-compare-rollout-recommendations';
     $('hub-compare-scaling-note').insertAdjacentElement('afterend',
         rolloutRecommendations);
+    const collectorStageProfiles=document.createElement('details');
+    collectorStageProfiles.id='hub-compare-collector-stages';
+    rolloutRecommendations.insertAdjacentElement('afterend',collectorStageProfiles);
     const comparisonMetricOverrides=new Map();
     let compareSerial=0;
     const compareColor=i=>'hsl('+((i*137.508+211)%360).toFixed(2)+' 65% 38%)';
@@ -1042,6 +1107,7 @@ document.addEventListener('DOMContentLoaded', () => {
         renderComparisonEvaluations(runs);
         renderScalingEvidence(runs,selectedMetrics);
         renderRolloutRecommendations(runs);
+        renderCollectorStageProfiles(runs);
         drawComparisonCharts(runs,selectedMetrics,
             $('hub-compare-x-axis').value);
     }
@@ -1093,6 +1159,56 @@ document.addEventListener('DOMContentLoaded', () => {
                 :'Select one or more runs to review observed scaling.').colSpan=8;
             table.append(tr);
         }
+    }
+
+    function renderCollectorStageProfiles(runs) {
+        collectorStageProfiles.replaceChildren();
+        const profiles=project==='tinybrains'
+            ?runs.map(run=>({run,profile:hubCollectorStageProfile(run)}))
+                .filter(item=>item.profile):[];
+        collectorStageProfiles.hidden=!profiles.length;
+        if(!profiles.length)return;
+        const summary=document.createElement('summary');
+        summary.textContent='Per-collector rollout stage timings ('+
+            profiles.length+' run'+(profiles.length===1?'':'s')+')';
+        collectorStageProfiles.append(summary);
+        const format=value=>value===null?'—':
+            value.toLocaleString(undefined,{maximumFractionDigits:2});
+        for(const {run,profile} of profiles) {
+            const heading=document.createElement('p');
+            heading.textContent='Run '+run.slot+' · '+profile.job_id.slice(-8)+
+                ' · '+profile.slots.length+'/'+profile.collector_count+
+                ' collectors with at least five complete recent samples';
+            collectorStageProfiles.append(heading);
+            const table=document.createElement('table');
+            const headers=['Collector','Samples','Decisions/s',
+                'Engine step (s)','Inference (s)','Model prepare (s)',
+                'Roundtrip (s)'];
+            const tr=document.createElement('tr');
+            for(const title of headers) {
+                const th=document.createElement('th');
+                th.textContent=title;
+                tr.append(th);
+            }
+            const thead=document.createElement('thead');
+            thead.append(tr);
+            const tbody=document.createElement('tbody');
+            for(const slot of profile.slots) {
+                const row=document.createElement('tr');
+                for(const value of [
+                    slot.slot===0?'0 · learner':' '+slot.slot+' · remote',
+                    String(slot.samples),format(slot.rate),format(slot.engine),
+                    format(slot.inference),format(slot.model),
+                    slot.slot===0?'—':format(slot.roundtrip),
+                ])cell(row,value);
+                tbody.append(row);
+            }
+            table.append(thead,tbody);
+            collectorStageProfiles.append(table);
+        }
+        const note=document.createElement('p');
+        note.textContent='Medians use up to 32 paired observations from the latest chart segment. Engine and inference timings are host-wall stage observations, not exclusive CPU or GPU time; stages may overlap. Remote roundtrip includes transfer and worker computation, not network latency alone. Missing columns mean the recorded samples did not contain the metric consistently; no values are inferred.';
+        collectorStageProfiles.append(note);
     }
     function renderRolloutRecommendations(runs) {
         rolloutRecommendations.replaceChildren();
