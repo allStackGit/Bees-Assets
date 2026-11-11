@@ -395,11 +395,19 @@ def collect_predictions(
             if behavior is None:
                 # A batch may combine a trainable ML-Agents slot with ONNX
                 # or TorchScript opponents that do not return log probabilities.
-                # The capture uses one all-row behavior frame; initialize its
-                # unused opponent rows deterministically rather than exporting
-                # uninitialized allocator contents. Only ML-Agents learner
-                # rows consume these statistics during PPO updates.
-                behavior = np.zeros((rows, CONTINUOUS * 2 + DISCRETE), dtype="<f4")
+                # The capture uses one all-row behavior frame. Mixed-backend
+                # batches must zero-fill non-sampled opponent rows, while
+                # all-ML-Agents batches overwrite every statistics row and
+                # can retain the allocation-free initialization fast path.
+                shape = (rows, CONTINUOUS * 2 + DISCRETE)
+                fully_sampled = all(
+                    isinstance(policy_map[int(key)], MlagentsPolicy)
+                    for key in unique_slots
+                )
+                behavior = (
+                    np.empty(shape, dtype="<f4") if fully_sampled
+                    else np.zeros(shape, dtype="<f4")
+                )
             behavior[indices] = stats
         expected_cont = (count, CONTINUOUS)
         expected_disc = (count, DISCRETE)
