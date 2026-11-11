@@ -306,12 +306,12 @@ function createNativeBeesAdapter({
         } : {}),
         args(parameters, context) {
             const output = jobRoot(context);
-            const {config_sha256, seed_offset, rollout_bundles, optimizer_threads} = parameters;
+            const {config_sha256, seed_offset, rollout_bundles, optimizer_threads, rollout_workers} = parameters;
             const allowed = inboxLearner
                 ? ['config_sha256', 'seed_offset', 'rollout_bundles', 'optimizer_threads']
                 : collectOnly
-                    ? ['config_sha256', 'seed_offset']
-                    : ['config_sha256', 'seed_offset', 'optimizer_threads'];
+                    ? ['config_sha256', 'seed_offset', 'rollout_workers']
+                    : ['config_sha256', 'seed_offset', 'optimizer_threads', 'rollout_workers'];
             if (Object.keys(parameters).some(key => !allowed.includes(key)) ||
                 config_sha256 !== configSha256 || !Number.isSafeInteger(seed_offset) || seed_offset < 0 ||
                 (bundleRound && seed_offset !== 0))
@@ -322,6 +322,14 @@ function createNativeBeesAdapter({
                     !Number.isSafeInteger(context.cpu_quota) ||
                     optimizer_threads > context.cpu_quota))
                 throw Error('Optimizer threads must be positive and within the fixed Hub CPU quota.');
+            if (rollout_workers !== undefined &&
+                (bundleRound || inboxLearner || !Number.isSafeInteger(rollout_workers) ||
+                    rollout_workers < 1 || rollout_workers > 256 ||
+                    !Number.isSafeInteger(context.cpu_quota) ||
+                    rollout_workers > context.cpu_quota ||
+                    !Array.isArray(config.levels) ||
+                    rollout_workers > config.levels.length))
+                throw Error('Rollout workers must fit the fixed Hub CPU quota and the authored Level count.');
             for (const [file, digest] of pins) {
                 if (sha256(fs.readFileSync(file)) !== digest)
                     throw Error('Native Bees pinned input changed after adapter installation.');
@@ -350,6 +358,8 @@ function createNativeBeesAdapter({
                 '--device', gpu ? 'cuda' : 'cpu',
                 ...(optimizer_threads === undefined ? [] :
                     ['--torch-threads', String(optimizer_threads)]),
+                ...(rollout_workers === undefined ? [] :
+                    ['--rollout-workers', String(rollout_workers)]),
                 '--seed-offset', String(seed_offset),
                 ...(learnerSlot === undefined ? [] : ['--learner-slot', String(learnerSlot)])];
         },

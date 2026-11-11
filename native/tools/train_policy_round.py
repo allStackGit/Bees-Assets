@@ -293,6 +293,8 @@ def main() -> None:
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--torch-threads", type=int,
                         help="fixed optimizer intra-op threads, not rollout parallelism")
+    parser.add_argument("--rollout-workers", type=int,
+                        help="fixed number of parallel native rollout processes")
     parser.add_argument(
         "--seed-offset", type=int, default=0,
         help="unsigned offset to all authored episode seeds for a new reproducible round",
@@ -310,6 +312,8 @@ def main() -> None:
     args = parser.parse_args()
     if args.torch_threads is not None and not 1 <= args.torch_threads <= 256:
         parser.error("--torch-threads must be between 1 and 256")
+    if args.rollout_workers is not None and not 1 <= args.rollout_workers <= 256:
+        parser.error("--rollout-workers must be between 1 and 256")
     if not 0 <= args.seed_offset < (1 << 64):
         parser.error("--seed-offset must fit uint64")
     inbox = args.bundle_inbox.resolve(strict=True) if args.bundle_inbox else None
@@ -341,6 +345,8 @@ def main() -> None:
         "input_manifest_sha256": input_manifest_sha,
     }
     if "rollout_bundles" in run_document:
+        if args.rollout_workers is not None:
+            parser.error("imported rollout bundles do not launch local rollout workers")
         if (args.collect_only or args.seed_offset or run_document.get("levels") or
                 any(run_document.get(key) for key in (
                     "hivemind", "model_updates", "recover_notifications", "recover_outcome_journals",
@@ -387,10 +393,11 @@ def main() -> None:
 
     config = source_config(run_path, manifest, output)
     shifted_seeds(config, args.seed_offset)
-    workers = config.pop("rollout_workers", 1)
+    template_workers = config.pop("rollout_workers", 1)
+    workers = args.rollout_workers if args.rollout_workers is not None else template_workers
     levels = config["levels"]
-    if type(workers) is not int or not 1 <= workers <= len(levels):
-        parser.error("rollout_workers must be between one and the number of Levels")
+    if type(workers) is not int or not 1 <= workers <= min(len(levels), 256):
+        parser.error("rollout_workers must be between one and the number of Levels (maximum 256)")
     if workers > 1 or args.collect_only:
         if args.rollout_binary is None or config.get("hivemind") is not None or any(
             config.get(key) for key in ("recover_notifications", "recover_outcome_journals")
