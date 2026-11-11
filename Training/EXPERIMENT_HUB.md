@@ -1868,8 +1868,13 @@ the trusted metric source and semantics. Example observational payload:
 ```
 
 The shared Compare view allows an arbitrary number of selected runs, with
-multiple independently plotted metrics. CSV keeps selected metric columns as
-numeric values (including negative rewards and losses); JSON includes only
+multiple independently plotted metrics. The horizontal axis can show recorded
+project steps or, where an adapter provides `elapsed_training_seconds` in
+seconds, trainer-reported elapsed training time. A missing or incompatible
+time measurement is never inferred from heartbeat timestamps. Both the CSV
+and JSON comparison exports retain the chosen axis and each point's x value.
+CSV keeps selected metric columns as numeric values (including negative
+rewards and losses); JSON includes only
 selected progress metrics while retaining job and evaluation provenance. **Train** can
 freeze an optional per-job list of preferred chart measurements. This is an
 archive/visualization preference; it never changes PPO model settings or
