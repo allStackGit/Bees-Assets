@@ -65,7 +65,8 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         add('ant_decisions_per_second',row.ant_decisions/updateWall,'rate');
         add('group_states_per_second',row.group_states/updateWall,'rate');
     }
-    for(const name of ['collection_seconds','optimization_seconds',
+    for(const name of ['collection_seconds','rollout_model_refresh_seconds',
+        'optimization_seconds',
         'overlap_seconds','remote_policy_snapshot_seconds',
         'remote_opponent_snapshot_seconds',
         'ppo_profile_host_seconds','ppo_advantages_seconds',
@@ -169,16 +170,18 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         add('collector_'+i+'_action_target',worker.action_target,'count');
         add('collector_'+i+'_roundtrip_seconds',
             worker.transport_roundtrip_seconds,'seconds');
+        add('collector_'+i+'_elapsed_seconds',worker.elapsed_seconds,'seconds');
         add('collector_'+i+'_model_prepare_seconds',
             worker.model_prepare_seconds,'seconds');
         // This includes input transfer, remote compute and returned data;
         // unlike GPU busy time, it measures useful delivered experience.
-        const roundtrip=worker.transport_roundtrip_seconds;
-        if(Number.isFinite(roundtrip)&&roundtrip>0) {
+        const elapsed=Number.isFinite(worker.elapsed_seconds)
+            ?worker.elapsed_seconds:worker.transport_roundtrip_seconds;
+        if(Number.isFinite(elapsed)&&elapsed>0) {
             add('collector_'+i+'_decisions_per_second',
-                worker.ant_decisions/roundtrip,'rate');
+                worker.ant_decisions/elapsed,'rate');
             add('collector_'+i+'_engine_steps_per_second',
-                worker.engine_steps/roundtrip,'rate');
+                worker.engine_steps/elapsed,'rate');
         }
     }
     return metrics;
