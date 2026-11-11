@@ -133,9 +133,10 @@ impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
             let radius = width.max(height) * 0.5 + 8.0;
             if !radius.is_finite() { return Err("Titania II fleet size is nonfinite"); }
             let chosen = place_at_center(radius, &occupied, bounds.min, bounds.max);
+            let member_count = slots.len();
             for slot in &mut slots {
                 slot.position = chosen + authored_placement_offset(
-                    slot.ship_type, slots.len(), slot.source_offset,
+                    slot.ship_type, member_count, slot.source_offset,
                 );
                 if !slot.position.is_finite() {
                     return Err("Titania II fleet placement is nonfinite");
