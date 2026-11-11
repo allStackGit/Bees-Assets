@@ -1946,6 +1946,13 @@ ready. Rewritten or redirected files fail export rather than silently mixing
 unverified bytes. Download the numbered parts before the private export
 session expires. Selected chart metrics never truncate the underlying source
 histories; files that change during export may require a later capture.
+Native project exports also include `hub-resource-claims.json`, which pins
+each selected job's persisted Hub CPU/RAM/GPU lease and physical GPU bindings.
+For managed distributed TinyBrains learners this file includes each linked
+collector's machine assignment, pinned thread count and matching resource
+lease, even if the collector's raw logs are unavailable. Missing leases
+remain null. This is historical allocation evidence, **not** a measurement
+of utilization or proof that a GPU completed useful training work.
 The native coordinator reads TinyBrains jobs under the Hub data root's
 `tinybrains-jobs/` directory. For another project (including Courier),
 install a private mode-0600 `job-export-roots.json` in the same Hub data
