@@ -16,11 +16,15 @@ use crate::ship_specials::NativeAuthoredShipSpecial;
 pub struct NativeReinforcementPlan {
     pub after_seconds: f32,
     pub squad_item_ids: Vec<i64>,
+    /// Source AddReinforcementSquads startingPosition. When supplied, the
+    /// authored formation is placed here before its entry move.
+    pub spawn: Option<Vec2>,
     pub entry: Option<Vec2>,
 }
 
 pub(crate) struct ReinforcementWave {
     tick: u64,
+    spawn: Option<Vec2>,
     entry: Option<Vec2>,
     squads: Vec<NativeAuthoredSquad>,
     ships: Vec<NativeAuthoredShip>,
@@ -42,6 +46,7 @@ impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
             if !plan.after_seconds.is_finite() || plan.after_seconds <= 0.0 ||
                 plan.after_seconds < previous ||
                 !tick.is_finite() || tick >= u64::MAX as f64 || plan.squad_item_ids.is_empty() ||
+                plan.spawn.is_some_and(|spawn| !spawn.is_finite()) ||
                 plan.entry.is_some_and(|entry| !entry.is_finite())
             {
                 return Err("Reinforcements need positive nondecreasing times, nonempty squads, and finite entries");
@@ -52,7 +57,10 @@ impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
                 }
             }
             previous = plan.after_seconds;
-            waves.push(ReinforcementWave { tick: tick as u64, entry: plan.entry, squads: Vec::new(), ships: Vec::new() });
+            waves.push(ReinforcementWave {
+                tick: tick as u64, spawn: plan.spawn, entry: plan.entry,
+                squads: Vec::new(), ships: Vec::new(),
+            });
         }
         let mut ship_waves = HashMap::new();
         let mut initial_squads = Vec::new();
@@ -100,8 +108,37 @@ impl NativePolicyOnlyMetadata {
             let wave = self.reinforcements.pop_front().expect("due wave");
             let (ships, squads) = (wave.ships.len(), wave.squads.len());
             let invalid = |error| NativeLevelStepError::Reinforcements(error);
+            // Unity Squad.SetOffscreenStartingPosition places an intact
+            // formation directly at the authored spawn, bypassing ordinary
+            // obstacle-aware startup placement. The existing ship geometry,
+            // identity and weapon configuration remain source-authored.
+            // Preflight every placement before spawning any ship.
+            let mut spawned_ships = wave.ships;
+            if let Some(spawn) = wave.spawn {
+                for ship in &mut spawned_ships {
+                    let squad = wave.squads.iter().find(|squad|
+                        squad.members.contains(&ship.entity_id))
+                        .ok_or_else(|| invalid(format!(
+                            "Reinforcement ship {} has no staged squad", ship.entity_id,
+                        )))?;
+                    let offset = if squad.members.len() == 1 { Vec2::ZERO } else {
+                        self.stored_formation_offset(ship.entity_id).ok_or_else(||
+                            invalid(format!(
+                                "Missing reinforcement formation for ship {}", ship.entity_id,
+                            ))
+                        )?
+                    };
+                    let position = spawn + offset;
+                    if !position.is_finite() {
+                        return Err(invalid(format!(
+                            "Nonfinite reinforcement spawn for ship {}", ship.entity_id,
+                        )));
+                    }
+                    ship.motion.position = position;
+                }
+            }
             let mut attachments = Vec::new();
-            for ship in wave.ships {
+            for ship in spawned_ships {
                 attachments.extend(spawn_authored_ship(&self.ship_catalog, world, ship, true)
                     .map_err(|error| invalid(format!("{error:?}")))?);
             }
