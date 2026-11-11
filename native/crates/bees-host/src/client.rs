@@ -110,6 +110,14 @@ impl NativeClient {
             viewport_resizes: 0 })
     }
 
+    /// Initial authored camera focus is a presentation-only concern. The
+    /// world, simulation coordinates and replayed player inputs are unchanged.
+    pub fn focus_camera(&mut self, center: Vec2) {
+        if center.is_finite() {
+            self.renderer.camera.center = center;
+        }
+    }
+
     pub fn selected_world(&self) -> usize { self.selected_world }
 
     pub fn viewport_size(&self) -> (usize, usize) { self.renderer.size() }
