@@ -34,8 +34,13 @@ def pair(value, name):
     return [number(value[i], f"{name}[{i}]") for i in range(2)]
 
 
-def lane(bounds, direction):
-    """GetTitania2OffMapEntry's first accepted lane in a clear battlefield."""
+def lane_candidates(bounds, direction):
+    """Source GetTitania2OffMapEntry's ordered candidate scan.
+
+    Later live captures can encounter moving asteroids even when the
+    starting scene has no obstacles. Reuse the source's thirteen candidate
+    lanes and select the one confirmed by actual Unity point orders.
+    """
     min_x, min_y, max_x, max_y = bounds
     x, y = direction
     horizontal = abs(x) >= abs(y)
@@ -49,23 +54,32 @@ def lane(bounds, direction):
     if hi < lo:
         fail("scene is too narrow for Titania II's 24-unit edge margins")
     fraction = (max(-1.0, min(1.0, tangent)) + 1.0) * 0.5
-    offset = lo + (hi - lo) * fraction
-    if horizontal:
-        spawn = [max_x + 80.0 if positive else min_x - 80.0, offset]
-        entry = [max_x - 28.0 if positive else min_x + 28.0, offset]
-    else:
-        spawn, entry = [offset, min_y - 80.0], [offset, min_y + 28.0]
-    if not all(map(math.isfinite, spawn + entry)):
-        fail("generated reinforcement coordinates overflowed")
-    return spawn, entry
+    preferred = lo + (hi - lo) * fraction
+    for step in range(13):
+        signed_step = 0 if step == 0 else ((step + 1) // 2) * (1 if step % 2 else -1)
+        offset = min(max(preferred + signed_step * 28.0, lo), hi)
+        if horizontal:
+            spawn = [max_x + 80.0 if positive else min_x - 80.0, offset]
+            entry = [max_x - 28.0 if positive else min_x + 28.0, offset]
+        else:
+            spawn, entry = [offset, min_y - 80.0], [offset, min_y + 28.0]
+        if not all(map(math.isfinite, spawn + entry)):
+            fail("generated reinforcement coordinates overflowed")
+        yield spawn, entry
+
+
+def lane(bounds, direction):
+    """First source lane, used only without a live wave capture."""
+    return next(lane_candidates(bounds, direction))
 
 
 def verify_entry_orders(members, ships, entry, bounds, label):
     """Verify the source's actual pre-movement Squad.Move point orders.
 
-    On a clear battlefield, Squad.MoveInternal applies Level.ForceBounds to
-    entry + Ship.OffsetFromCenter for each mobile member. The source capture
-    contains both values; a different actual order is not our wave to replay.
+    Without an obstacle map, Squad.MoveInternal applies Level.ForceBounds
+    to entry + Ship.OffsetFromCenter for each mobile member. Even a moving
+    collision asteroid may divert the source entry lane; only the capture's
+    actual orders can identify which of the source's scanned lanes was used.
     """
     min_x, min_y, max_x, max_y = bounds
     for eid in members:
@@ -84,7 +98,8 @@ def verify_entry_orders(members, ships, entry, bounds, label):
         expected_y = min(max(entry[1] + offset_y, min_y), max_y)
         if not (math.isclose(target_x, expected_x, rel_tol=1e-6, abs_tol=0.005) and
                 math.isclose(target_y, expected_y, rel_tol=1e-6, abs_tol=0.005)):
-            fail(f"{label} ship {eid} has a different Unity entry movement order")
+            return False
+    return True
 
 
 def _source_records(scene, label):
@@ -261,9 +276,16 @@ def expand(run, scene, manifest, read_capture=None):
             lane_offset = (si - (len(ids) - 1) * 0.5) * 0.16
             direction = [dx if horizontal else dx + lane_offset,
                          dy + lane_offset if horizontal else dy]
-            spawn, entry = lane(bounds, direction)
             if capture is not None:
-                verify_entry_orders(members, captured_ships, entry, bounds, label)
+                matches = [(spawn, entry) for spawn, entry in lane_candidates(bounds, direction)
+                           if verify_entry_orders(members, captured_ships, entry, bounds, label)]
+                if not matches:
+                    fail(f"{label} source movement orders match no authored entry lane")
+                spawn, entry = matches[0]
+                if any(not all(math.isclose(a, b, rel_tol=1e-6, abs_tol=0.005)
+                               for a, b in zip(entry, other_entry))
+                       for _, other_entry in matches[1:]):
+                    fail(f"{label} has ambiguous captured entry orders")
                 if squad_id in source_squads or any(eid in entity_ids for eid in members):
                     fail(f"{label} capture conflicts with an existing source identity")
                 # Unity's GameState.GetId uses a monotonically advancing
@@ -298,6 +320,8 @@ def expand(run, scene, manifest, read_capture=None):
                     scene["ships"].append(ship)
                     ships[eid] = ship
                     entity_ids.add(eid)
+            else:
+                spawn, entry = lane(bounds, direction)
             output.append({
                 "after_seconds": at,
                 "squad_item_ids": [squad_id],
