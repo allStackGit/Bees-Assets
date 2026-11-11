@@ -1210,6 +1210,22 @@ fn run_battle(
             {
                 return Err(invalid("Survival must use the authored campaign player side").into());
             }
+            if mission.is_some() {
+                // The shared survival controller wins only after
+                // ceil(seconds / fixed_dt) completed physics ticks.
+                // A campaign with fewer available rounds cannot win,
+                // regardless of tactical decisions or remaining health.
+                let required = (objective.seconds / source.fixed_dt_seconds).ceil();
+                if required.is_finite() && required >= 1.0 &&
+                    required < u64::MAX as f32 &&
+                    required as u64 > config.max_rounds
+                {
+                    return Err(invalid(format!(
+                        "Campaign defense requires at least {} rounds at the authored fixed step; max_rounds is {}",
+                        required as u64, config.max_rounds,
+                    )).into());
+                }
+            }
         }
         if let Some(dialogue) = level.campaign_dialogue {
             let player_side = dialogue.player_side();
