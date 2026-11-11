@@ -492,6 +492,10 @@ pub struct NativeRuntimeStatus {
     pub failed_worlds: usize,
     pub living_ships: usize,
     pub active_commands: usize,
+    /// Sum of the current episodes' authoritative vision measurements.
+    /// These reset on episode turnover, so they are gauges, not host-wide
+    /// monotonic counters for deriving cross-episode rates.
+    pub vision: bees_sim::vision::VisionSweepCounts,
     /// Sum of current episodes' lifecycle-checked navigation completions.
     /// Resets with worlds; this is not a host-lifetime rate counter.
     pub navigation_jobs_completed: u64,
@@ -1131,6 +1135,7 @@ impl NativeLevelBatchDriver {
             failed_worlds: 0,
             living_ships: 0,
             active_commands: 0,
+            vision: bees_sim::vision::VisionSweepCounts::default(),
             navigation_jobs_completed: 0,
             queued_notifications: 0,
             queued_squad_retirements: 0,
@@ -1170,6 +1175,7 @@ impl NativeLevelBatchDriver {
                 status.running_worlds += 1;
             }
             status.living_ships += world.state.combat.total_living_ships();
+            status.vision.merge(&world.state.combat.vision_measurements());
             let asteroids = world.state.combat.full_asteroid_pool_measurements();
             status.full_asteroids_active += asteroids.active;
             status.full_asteroid_profiles_cached += asteroids.inactive;
