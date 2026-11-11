@@ -1920,6 +1920,10 @@ a script or guessing metric names. The existing selected-metrics mode remains
 available; complete exports may contain much more data and still split into
 independently downloadable ZIP parts of at most 500 MB. Remote-only trainer
 artifacts are still reported missing until a trusted transfer is installed.
+When no project artifact root is locally mounted, the coordinator can still
+export its own recorded Hub observations and metadata, marking each selected
+job's project-owned artifacts as unavailable. An existing but unsafe or
+redirected configured root is never silently substituted.
 When metrics are selected (or all recorded metrics are requested), the archive also includes
 `hub-selected-metric-samples.csv`: a metric-filtered, long-form CSV from the
 bounded Hub comparison history, with job IDs, timestamps, project steps,
