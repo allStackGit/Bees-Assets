@@ -2336,10 +2336,13 @@ impl CombatWorld {
             return Err(CombatWorldError::DuplicateEntity);
         }
         let next_id = body.id.checked_add(1).ok_or(CombatWorldError::EntityIdExhausted)?;
+        // IDs are validated against every canonical entity registry above.
+        // Physics only appends a dense body; scanning historical ship IDs a
+        // second time would make initial fleet setup quadratic.
         // Each new entity gets its own lifecycle token, so results from a
         // dead or pooled ship cannot write into a new movement order.
         self.navigation_requests.register_ship(ship.entity_id)?;
-        let index = self.physics.add_ship(body)?;
+        let index = self.physics.insert_prevalidated_ship(body);
         self.next_entity_id = self.next_entity_id.max(next_id);
         debug_assert_eq!(index, self.ships.len());
         self.ship_by_id.insert(ship.entity_id, index);
@@ -2565,7 +2568,7 @@ impl CombatWorld {
             self.obstacle_by_id.insert(obstacle.entity_id, index);
             self.obstacles[index] = obstacle;
         } else {
-            let index = self.physics.add_obstacle(body)?;
+            let index = self.physics.insert_prevalidated_obstacle(body);
             debug_assert_eq!(index, self.obstacles.len());
             self.obstacle_by_id.insert(obstacle.entity_id, index);
             self.obstacles.push(obstacle);
@@ -2608,7 +2611,7 @@ impl CombatWorld {
             self.projectile_by_id.insert(projectile.entity_id, index);
             self.projectiles[index] = projectile;
         } else {
-            let index = self.physics.add_projectile(body)?;
+            let index = self.physics.insert_prevalidated_projectile(body);
             debug_assert_eq!(index, self.projectiles.len());
             self.projectile_by_id.insert(projectile.entity_id, index);
             self.projectiles.push(projectile);
