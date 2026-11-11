@@ -1912,7 +1912,10 @@ independent of the 96-field per-observation chart cache. No checkpoint, model, p
 intentionally included. Every part has a segment manifest for reconstructing
 large logs. The overall manifest reports jobs without local artifacts and
 individual unavailable or excluded log sources by job ID and source label;
-no private host paths are included in that report.
+no private host paths are included in that report. A job with only the Hub's
+received observation archive still appears in `missing_artifact_job_ids`:
+those observations do not prove that its original trainer histories were
+captured.
 Select **Export every recorded metric** to include all locally retained
 project-neutral source and host-resource measurements in the derived CSVs,
 including fields missing from the 96-metric chart cache. This does not require
