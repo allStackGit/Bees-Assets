@@ -1744,7 +1744,7 @@ document.addEventListener('DOMContentLoaded', () => {
             'collector_'+i+'_action_target',
             'collector_'+i+'_elapsed_seconds',
             'collector_'+i+'_rollout_engine_step_seconds',
-            'collector_'+i+'_rollout_learner_inference_seconds',
+            'collector_'+i+'_learner_inference_seconds',
             'collector_'+i+'_roundtrip_seconds',
             'collector_'+i+'_model_prepare_seconds',
             'collector_'+i+'_snapshot_cache_files',
