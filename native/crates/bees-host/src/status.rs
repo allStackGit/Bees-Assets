@@ -123,6 +123,9 @@ pub struct NativeHostStatusInterval {
     pub weapon_range_grid_rebuilds: u64,
     pub weapon_range_candidates: u64,
     pub weapon_range_exact_tests: u64,
+    pub weapon_range_map_object_grid_rebuilds: u64,
+    pub weapon_range_map_object_candidates: u64,
+    pub weapon_range_map_object_exact_tests: u64,
     pub weapon_range_projectile_tests: u64,
     pub weapon_range_enters: u64,
     pub weapon_range_exits: u64,
@@ -273,6 +276,15 @@ impl NativeStatusSampler {
                 weapon_range_grid_rebuilds: diff(s.weapon_range_grid_rebuilds, p.weapon_range_grid_rebuilds)?,
                 weapon_range_candidates: diff(s.weapon_range_candidates, p.weapon_range_candidates)?,
                 weapon_range_exact_tests: diff(s.weapon_range_exact_tests, p.weapon_range_exact_tests)?,
+                weapon_range_map_object_grid_rebuilds: diff(
+                    s.weapon_range_map_object_grid_rebuilds, p.weapon_range_map_object_grid_rebuilds,
+                )?,
+                weapon_range_map_object_candidates: diff(
+                    s.weapon_range_map_object_candidates, p.weapon_range_map_object_candidates,
+                )?,
+                weapon_range_map_object_exact_tests: diff(
+                    s.weapon_range_map_object_exact_tests, p.weapon_range_map_object_exact_tests,
+                )?,
                 weapon_range_projectile_tests: diff(s.weapon_range_projectile_tests, p.weapon_range_projectile_tests)?,
                 weapon_range_enters: diff(s.weapon_range_enters, p.weapon_range_enters)?,
                 weapon_range_exits: diff(s.weapon_range_exits, p.weapon_range_exits)?,
