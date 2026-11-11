@@ -454,14 +454,18 @@ document.addEventListener('DOMContentLoaded', () => {
         const row=document.createElement('div');
         row.className='hub-pipeline-stage';
         const configLabel=document.createElement('label');
+        const configCaption=document.createElement('span');
+        configCaption.className='hub-bundle-caption';
         const config=document.createElement('select');
         config.className='hub-bundle-config';
         config.addEventListener('change',renderResourceBundleMembers);
-        configLabel.append(config);
+        configLabel.append(configCaption,config);
         const machineLabel=document.createElement('label');
+        const machineCaption=document.createElement('span');
+        machineCaption.className='hub-bundle-caption';
         const machine=document.createElement('select');
         machine.className='hub-bundle-machine';
-        machineLabel.append(machine);
+        machineLabel.append(machineCaption,machine);
         const resourceLabel=document.createElement('label');
         resourceLabel.textContent='Fixed CPU/RAM/GPU budget (JSON)';
         const resources=document.createElement('input');
@@ -487,16 +491,12 @@ document.addEventListener('DOMContentLoaded', () => {
             !['bees','ants','tinybrains_rollout'].includes(c.project_id));
         const machines=state?.machines||[];
         for(const [i,row] of rows.entries()) {
-            const labels=row.querySelectorAll('label');
+            const captions=row.querySelectorAll('.hub-bundle-caption');
             const config=row.querySelector('.hub-bundle-config');
             const machine=row.querySelector('.hub-bundle-machine');
             const oldConfig=config.value,oldMachine=machine.value;
-            labels[0].firstChild && (labels[0].firstChild.nodeType===3)&&
-                labels[0].firstChild.remove();
-            labels[0].prepend(document.createTextNode('Member '+(i+1)+' saved configuration '));
-            labels[1].firstChild && (labels[1].firstChild.nodeType===3)&&
-                labels[1].firstChild.remove();
-            labels[1].prepend(document.createTextNode('Machine '));
+            captions[0].textContent='Member '+(i+1)+' saved configuration';
+            captions[1].textContent='Machine';
             config.replaceChildren(...configs.map(c=>new Option(
                 c.project_id+' · '+c.name+' · revision '+c.revision,c.id)));
             if(configs.some(c=>c.id===oldConfig))config.value=oldConfig;
