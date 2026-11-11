@@ -6,7 +6,9 @@
 const http=require('node:http');
 const AGENT_HOST='127.0.0.1';
 const AGENT_PORT=7149;
-const MAX_BODY_BYTES=32768;
+// A heartbeat includes machine/lease reports beyond the separately
+// validated 32-KiB trainer progress summary.
+const MAX_BODY_BYTES=65536;
 
 function respond(res,status,value) {
     const payload=JSON.stringify(value);
@@ -90,4 +92,4 @@ function createAgentServer(getHub) {
         }
     });
 }
-module.exports={createAgentServer,AGENT_HOST,AGENT_PORT};
+module.exports={createAgentServer,AGENT_HOST,AGENT_PORT,MAX_BODY_BYTES};
