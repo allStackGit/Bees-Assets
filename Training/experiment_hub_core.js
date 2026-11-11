@@ -979,6 +979,15 @@ function claimsFitCpuRam(reservations,machine,reportedCpus,reportedRam) {
         outstanding.reduce((sum,lease)=>sum+lease.resources.ram_mb,0)<=Math.min(machine.ram_mb,reportedRam);
 }
 
+// Diagnostic CPU seconds preserve useful utilization measurements after
+// the legacy nanosecond integer becomes unrepresentable over JSON.
+function observedCpuSeconds(report) {
+    if(Number.isFinite(report?.cpu_time_seconds)&&
+        report.cpu_time_seconds>=0&&report.cpu_time_seconds<=1e12)
+        return report.cpu_time_seconds;
+    return Number.isSafeInteger(report?.cpu_time_ns)&&report.cpu_time_ns>=0
+        ?report.cpu_time_ns/1e9:null;
+}
 function summarizeResourceSample(previous,report,observedAt) {
     if(!['running','stop_requested','finished','failed','stopped'].includes(report.state)||
         (report.cpu_time_ns==null&&report.memory_current_mb==null&&
@@ -2316,7 +2325,10 @@ class ExperimentHub {
                         report.progress_issue.length>160))||
                 ['memory_current_mb','cpu_time_ns','peak_job_memory_bytes','process_tasks'].some(k=>
                     report[k]!=null&&
-                    (!Number.isSafeInteger(report[k])||report[k]<0)))
+                    (!Number.isSafeInteger(report[k])||report[k]<0))||
+                (report.cpu_time_seconds!=null&&
+                    (!Number.isFinite(report.cpu_time_seconds)||
+                     report.cpu_time_seconds<0||report.cpu_time_seconds>1e12)))
                 throw Error('Invalid native execution report.');
             seen.add(report.job_id);
             const job=next.jobs.find(j=>j.id===report.job_id);
@@ -3023,17 +3035,18 @@ class ExperimentHub {
             // arrival times, not a worker-supplied wall clock. Neither a
             // restarted agent nor a replaced native dispatch is continuous.
             const elapsedMs=received-Date.parse(previousTelemetry?.at||'');
-            const cpuBefore=previousTelemetry?.cpu_time_ns;
             const cpuAfter=item.cpu_time_ns;
+            const cpuBeforeSeconds=observedCpuSeconds(previousTelemetry);
+            const cpuAfterSeconds=observedCpuSeconds(item);
             const continuous=previousTelemetry?.dispatch_id===item.dispatch_id&&
                 previousTelemetry.agent_instance_id===instance&&
                 ['running','stop_requested'].includes(previousTelemetry.state)&&
                 ['running','stop_requested'].includes(item.state);
             const cpuCores=continuous&&
-                Number.isSafeInteger(cpuBefore)&&Number.isSafeInteger(cpuAfter)&&
-                cpuAfter>=cpuBefore&&Number.isFinite(elapsedMs)&&
-                elapsedMs>=1000&&elapsedMs<=120000
-                ?(cpuAfter-cpuBefore)/(elapsedMs*1000000):null;
+                cpuBeforeSeconds!==null&&cpuAfterSeconds!==null&&
+                cpuAfterSeconds>=cpuBeforeSeconds&&
+                Number.isFinite(elapsedMs)&&elapsedMs>=1000&&elapsedMs<=120000
+                ?1000*(cpuAfterSeconds-cpuBeforeSeconds)/elapsedMs:null;
             // Resource samples are authenticated machine/job observations.
             // GPU values are HOST-WIDE observations on the physically bound
             // device; they are not measured per-job GPU consumption.
@@ -3089,6 +3102,7 @@ class ExperimentHub {
                 memory_current_mb:item.memory_current_mb??null,
                 peak_job_memory_bytes:item.peak_job_memory_bytes??null,
                 cpu_time_ns:cpuAfter??null,
+                cpu_time_seconds:cpuAfterSeconds,
                 cpu_cores_used:cpuCores,
                 resource_usage:resources,
                 process_tasks:item.process_tasks??null,

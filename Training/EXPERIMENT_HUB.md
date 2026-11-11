@@ -1941,8 +1941,12 @@ produce real measurements. Host GPU utilization and VRAM values are physical
 device observations, **not per-job GPU accounting**. For native jobs,
 `job_cpu_lease_utilization_pct` reports sampled process CPU-core equivalents
 as a percentage of the job's fixed CPU budget, using continuous authenticated
-CPU-time observations. It is not a measure of marginal throughput, and short
-sampling intervals may show values above 100%.
+CPU-time observations. Linux systemd and Windows native owners also supply
+optional cumulative CPU seconds for long-running multicore jobs once exact
+integer nanoseconds exceed JavaScript's safe range. This is diagnostic
+precision, not a change in enforcement or terminal receipt authentication.
+It is not a measure of marginal throughput, and short sampling intervals
+may show values above 100%.
 
 ### Selecting and promoting independently trained models
 

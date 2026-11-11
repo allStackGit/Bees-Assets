@@ -209,6 +209,13 @@ function verifyUnconfinedDeviceAccess(plan,fsApi) {
 const terminalStates=new Set(['finished','stopped','failed']);
 const numeric=value=>/^[0-9]+$/.test(value||'')&&
     Number.isSafeInteger(Number(value))?Number(value):null;
+// Decimal nanosecond uptime remains measurable as diagnostic seconds after
+// total CPU nanoseconds exceed the safe integer range.
+const cpuTimeSeconds=value=>{
+    if(!/^[0-9]+$/.test(value||''))return null;
+    const seconds=Number(value)/1e9;
+    return Number.isFinite(seconds)&&seconds<=1e12?seconds:null;
+};
 
 function terminalResult(record,result,exitStatus) {
     const expectedInterrupt=record.stop_requested_at&&
@@ -618,7 +625,8 @@ class LinuxSupervisor {
             if(record.stop_requested_at&&record.native_verified_at&&
                 p.MainPID==='0') {
                 return {state:'stop_requested',active:false,unit_exists:true,
-                    pid:null,cpu_time_ns:numeric(p.CPUUsageNSec)};
+                    pid:null,cpu_time_ns:numeric(p.CPUUsageNSec),
+                    cpu_time_seconds:cpuTimeSeconds(p.CPUUsageNSec)};
             }
             const kernel=requireKernel
                 ?verifyKernelLimits(p,record.cpus,record.ram_mb,this.fs):null;
@@ -629,6 +637,7 @@ class LinuxSupervisor {
                 memory_current_mb:memoryBytes==null?null:
                     Math.round(memoryBytes/1048576),
                 cpu_time_ns:numeric(p.CPUUsageNSec),
+                    cpu_time_seconds:cpuTimeSeconds(p.CPUUsageNSec),
                 process_tasks:numeric(p.TasksCurrent)};
         }
         if(p.ActiveState==='inactive'||p.ActiveState==='failed') {
@@ -636,7 +645,8 @@ class LinuxSupervisor {
             const receipt=['courier','tinybrains'].includes(record.project_id)&&record.stop_requested_at&&
                 result.state==='finished'?this.readTerminalReceipt(record):null;
             return {...result,checkpoint_stop_verified:checkpointStopVerified(record,receipt),
-                active:false,unit_exists:true,pid:null,cpu_time_ns:numeric(p.CPUUsageNSec)};
+                active:false,unit_exists:true,pid:null,cpu_time_ns:numeric(p.CPUUsageNSec),
+                    cpu_time_seconds:cpuTimeSeconds(p.CPUUsageNSec)};
         }
         return {state:'unverified',active:false,unit_exists:true};
     }
