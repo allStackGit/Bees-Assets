@@ -441,6 +441,79 @@ document.addEventListener('DOMContentLoaded', () => {
         $('hub-pipeline-queue').disabled=['bees','ants'].includes(project)||
             rows.length<2||!configs.length;
     }
+    // Build capacity bundles from the same saved project configurations and
+    // authenticated machine choices used by normal job Start. A bundle never
+    // transmits arbitrary executable paths or worker network endpoints.
+    function addResourceBundleMember() {
+        const container=$('hub-resource-bundle-rows');
+        if(container.children.length>=16)return;
+        const row=document.createElement('div');
+        row.className='hub-pipeline-stage';
+        const configLabel=document.createElement('label');
+        const config=document.createElement('select');
+        config.className='hub-bundle-config';
+        config.addEventListener('change',renderResourceBundleMembers);
+        configLabel.append(config);
+        const machineLabel=document.createElement('label');
+        const machine=document.createElement('select');
+        machine.className='hub-bundle-machine';
+        machineLabel.append(machine);
+        const resourceLabel=document.createElement('label');
+        resourceLabel.textContent='Fixed CPU/RAM/GPU budget (JSON)';
+        const resources=document.createElement('input');
+        resources.type='text';
+        resources.className='hub-bundle-resources';
+        try{
+            resources.value=JSON.stringify(JSON.parse($('hub-job-resources').value));
+        }catch(error){
+            resources.value='{"cpus":2,"ram_mb":2048,"gpu_count":0}';
+        }
+        resourceLabel.append(resources);
+        const remove=button('Remove',()=>{
+            if(container.children.length<=2)return;
+            row.remove();
+            renderResourceBundleMembers();
+        });
+        row.append(configLabel,machineLabel,resourceLabel,remove);
+        container.append(row);
+    }
+    function renderResourceBundleMembers() {
+        const rows=[...$('hub-resource-bundle-rows').children];
+        const configs=(state?.configurations||[]).filter(c=>
+            !['bees','ants','tinybrains_rollout'].includes(c.project_id));
+        const machines=state?.machines||[];
+        for(const [i,row] of rows.entries()) {
+            const labels=row.querySelectorAll('label');
+            const config=row.querySelector('.hub-bundle-config');
+            const machine=row.querySelector('.hub-bundle-machine');
+            const oldConfig=config.value,oldMachine=machine.value;
+            labels[0].firstChild && (labels[0].firstChild.nodeType===3)&&
+                labels[0].firstChild.remove();
+            labels[0].prepend(document.createTextNode('Member '+(i+1)+' saved configuration '));
+            labels[1].firstChild && (labels[1].firstChild.nodeType===3)&&
+                labels[1].firstChild.remove();
+            labels[1].prepend(document.createTextNode('Machine '));
+            config.replaceChildren(...configs.map(c=>new Option(
+                c.project_id+' · '+c.name+' · revision '+c.revision,c.id)));
+            if(configs.some(c=>c.id===oldConfig))config.value=oldConfig;
+            else {
+                const own=configs.find(c=>c.project_id===project);
+                if(own)config.value=own.id;
+            }
+            const selected=configs.find(c=>c.id===config.value);
+            const eligible=machines.filter(m=>
+                m.status==='connected'&&m.local_executor_enabled===true&&
+                m.native_preflight_passed===true&&
+                m.installed_projects?.includes(selected?.project_id));
+            machine.replaceChildren(...eligible.map(m=>
+                new Option(m.name+' ('+m.id+')',m.id)));
+            if(eligible.some(m=>m.id===oldMachine))machine.value=oldMachine;
+            row.querySelector('button').disabled=rows.length<=2;
+        }
+        $('hub-resource-bundle-add').disabled=rows.length>=16;
+        $('hub-resource-bundle-queue').disabled=rows.length<2||
+            !rows.every(row=>row.querySelector('.hub-bundle-machine').value);
+    }
     // Only a fresh, authenticated native report can distinguish a Stop
     // still awaiting delivery from a service already shutting down.
     function nativeJobLabel(job, fallback) {
@@ -1733,6 +1806,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 addPipelineStage();
             }
             renderPipelineStages();
+            if(!$('hub-resource-bundle-rows').children.length) {
+                addResourceBundleMember();
+                addResourceBundleMember();
+            }
+            renderResourceBundleMembers();
         }
         $('hub-job-queue').disabled=['bees','ants'].includes(project)||!configs.length;
         const previousMachine=$('hub-job-machine').value;
@@ -3008,6 +3086,39 @@ document.addEventListener('DOMContentLoaded', () => {
         }catch(e){feedback('hub-plan-result',e.message);}
     });
 
+    $('hub-resource-bundle-add').addEventListener('click',()=>{
+        addResourceBundleMember();
+        renderResourceBundleMembers();
+    });
+    $('hub-resource-bundle-queue').addEventListener('click',async()=>{
+        if(!state||project==='bees')return;
+        try{
+            const rows=[...$('hub-resource-bundle-rows').children];
+            if(rows.length<2||rows.length>16)
+                throw Error('Select 2–16 members.');
+            const members=rows.map(row=>{
+                const cfg=state.configurations.find(c=>c.id===
+                    row.querySelector('.hub-bundle-config').value);
+                const machine=row.querySelector('.hub-bundle-machine').value;
+                if(!cfg||!machine)throw Error('Select a saved configuration and qualified machine for every member.');
+                return {configuration_id:cfg.id,expected_revision:cfg.revision,
+                    machine_id:machine,
+                    resources:JSON.parse(row.querySelector('.hub-bundle-resources').value)};
+            });
+            if(!confirm('Atomically reserve fixed resources for '+members.length+
+                ' independent jobs on the selected machines? Each job requires its own native Start authorization. '+
+                'This does not enable distributed training, automatic checkpoint sharing or simultaneous worker starts.'))return;
+            const result=await action('hub/resource-bundles',{
+                confirm_queue:true,members,
+            });
+            feedback('hub-resource-bundle-message',
+                'Reserved all '+result.members.length+' jobs · bundle '+
+                result.bundle_id.slice(-8)+'. No Starts authorized.');
+            await reload();
+        }catch(error){
+            feedback('hub-resource-bundle-message',String(error.message||error));
+        }
+    });
     $('hub-pipeline-add').addEventListener('click',()=>{
         addPipelineStage();
         renderPipelineStages();
