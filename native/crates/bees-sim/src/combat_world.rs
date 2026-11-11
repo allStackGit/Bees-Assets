@@ -1334,6 +1334,15 @@ impl CombatWorld {
         self.live_ship_total
     }
 
+    /// One free slot is recorded when a projectile ends, exactly once, and
+    /// consumed when that slot is reused. All other slots are live, so this
+    /// avoids scanning the historical projectile pool on every fixed tick.
+    /// This is derived from the existing canonical slot lifecycle: no extra
+    /// counter or projectile registry is maintained.
+    pub fn total_active_projectiles(&self) -> usize {
+        self.projectiles.len() - self.free_projectile_slots.len()
+    }
+
     /// Source GameState.IsSideKilled: immobile living targets/minions do
     /// not preserve a side's ability to continue fighting.
     pub fn living_mobile_ships_on_side(&self, side: i32) -> usize {
@@ -1527,8 +1536,7 @@ impl CombatWorld {
     pub fn projectile_storage_metrics(&self) -> ProjectileStorageMetrics {
         ProjectileStorageMetrics {
             allocated_slots: self.projectiles.len(),
-            active_projectiles: self.physics.projectiles().iter()
-                .filter(|body| body.active).count(),
+            active_projectiles: self.total_active_projectiles(),
             slots_reused: self.projectile_slot_reuses,
         }
     }
@@ -3907,7 +3915,7 @@ impl CombatWorld {
         if self.frozen_after_elimination {
             return Ok(StepCounts {
                 active_ships: self.live_ship_total as u32,
-                active_projectiles: self.physics.projectiles().iter().filter(|p| p.active).count() as u32,
+                active_projectiles: self.total_active_projectiles() as u32,
                 ..StepCounts::default()
             });
         }
@@ -4059,7 +4067,7 @@ impl CombatWorld {
         // fixed tick, including long battles with many retired ships.
         Ok(StepCounts {
             active_ships: self.live_ship_total as u32,
-            active_projectiles: self.physics.projectiles().iter().filter(|shot| shot.active).count() as u32,
+            active_projectiles: self.total_active_projectiles() as u32,
             events: self.events.len() as u64,
             automatic_weapon_target_queries: self.automatic_weapon_measurements.target_queries - automatic_before.target_queries,
             automatic_weapon_queue_builds: self.automatic_weapon_measurements.queue_builds - automatic_before.queue_builds,
