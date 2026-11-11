@@ -113,6 +113,17 @@ function hubScalingEvidence(runs,key,allJobs=[],leases=[]) {
             other.project_id==='tinybrains_rollout'&&
             other.frozen_parameters?.learner_job_id===job.id):[];
         if(distributed&&(workers.length<1||workers.length>8))return null;
+        const pinnedThreads=distributed&&workers.every(worker=>
+            Number.isSafeInteger(worker.frozen_parameters?.threads)&&
+            worker.frozen_parameters.threads>=1&&
+            Number.isSafeInteger(worker.resources?.cpus)&&
+            worker.frozen_parameters.threads<=worker.resources.cpus)
+            ?{
+                threads:workers.reduce((sum,worker)=>
+                    sum+worker.frozen_parameters.threads,0),
+                cpus:workers.reduce((sum,worker)=>
+                    sum+worker.resources.cpus,0),
+            }:null;
         const members=[job,...workers].map((member,index)=>{
             const gpuCount=member.resources?.gpu_count;
             const lease=leases.find(item=>item.id===member.lease_id&&
@@ -147,6 +158,8 @@ function hubScalingEvidence(runs,key,allJobs=[],leases=[]) {
             topology:members.map(m=>m.host+':'+m.role).join('|'),
             gpu_mode:members.map(m=>m.mode).join('|'),
             gpu_verified:members.every(m=>m.gpu_ids!==null),
+            collector_threads:pinnedThreads?.threads??null,
+            collector_cpus:pinnedThreads?.cpus??null,
         };
     };
     const rows=runs.map(run=>{
@@ -166,6 +179,8 @@ function hubScalingEvidence(runs,key,allJobs=[],leases=[]) {
             host:resources?.host||null,
             topology:resources?.topology||null,
             gpu_verified:resources?.gpu_verified===true,
+            collector_threads:resources?.collector_threads??null,
+            collector_cpus:resources?.collector_cpus??null,
             members:resources?.members||null,
             lineage:run.job.artifact_lineage_root_id||run.job.id,
             status:run.job.status,
@@ -1279,7 +1294,7 @@ document.addEventListener('DOMContentLoaded', () => {
             state?.reservations||[]);
         feedback('hub-compare-scaling-note',key
             ?'Showing '+key.slice(7)+'. Medians use bounded chart samples from each run’s latest segment, not complete histories. '+
-              'CPU/GPU values are allocations, not measured utilization. Distributed TinyBrains groups sum only their explicitly reserved learner and remote worker resources. Marginal comparisons require five samples per job, completed jobs, matching frozen configuration and exact machine group, physical GPU lease identities, and one monotonically increased resource dimension. '+
+              'CPU/GPU values are allocations, not measured utilization. Distributed TinyBrains groups sum only their explicitly reserved learner and remote worker resources; the remote threads/CPU column shows frozen collector concurrency, not actual CPU occupancy. Marginal comparisons require five samples per job, completed jobs, matching frozen configuration and exact machine group, physical GPU lease identities, and one monotonically increased resource dimension. '+
               'They remain observational, not guaranteed improvements or independent learning evaluations.'
             :'Select a recorded throughput metric (unit: rate) above to inspect resource scaling. No CPU/GPU efficiency can be inferred from utilization alone.');
         for(const row of rows) {
@@ -1289,6 +1304,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 (row.distributed?' (group allocation)':''));
             cell(tr,row.gpus===null?'Unknown':row.gpus.toLocaleString());
             cell(tr,row.host||'Unknown');
+            cell(tr,!row.distributed?'—':
+                row.collector_threads===null?'Unknown':
+                    row.collector_threads+' / '+row.collector_cpus);
             cell(tr,String(row.sample_count));
             cell(tr,row.median_rate===null?'—':
                 row.median_rate.toLocaleString(undefined,{maximumFractionDigits:2}));
@@ -1310,7 +1328,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const tr=document.createElement('tr');
             cell(tr,runs.length
                 ?'No recorded rate samples for the selected runs and metric.'
-                :'Select one or more runs to review observed scaling.').colSpan=8;
+                :'Select one or more runs to review observed scaling.').colSpan=9;
             table.append(tr);
         }
     }
