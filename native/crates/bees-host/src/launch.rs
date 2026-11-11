@@ -469,6 +469,10 @@ fn gameplay_config_sha256(
     let reinforcements = config.levels.iter().filter(|level| !level.reinforcements.is_empty())
         .map(|level| (level.world_id, &level.reinforcements)).collect::<std::collections::BTreeMap<_, _>>();
     if !reinforcements.is_empty() { inputs["reinforcements"] = json!(reinforcements); }
+    let dialogue = config.levels.iter().filter_map(|level|
+        level.campaign_dialogue.map(|cue| (level.world_id, cue)))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    if !dialogue.is_empty() { inputs["campaign_dialogue"] = json!(dialogue); }
     format!("{:x}", Sha256::digest(inputs.to_string().as_bytes()))
 }
 
