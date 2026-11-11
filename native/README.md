@@ -1467,9 +1467,11 @@ type-15 explosion with inherited shooter/root-shot/command attribution;
 the blast uses normal explosion damage, including friendly fire. Linked
 static obstacles leave the physical world and learned discovery cache;
 the `FireTankObstacleBrokenApart` event carries the removed collider bounds
-and blast origin. The tactical renderer draws fading line fragments using
-the Fire Tank prefab's motion and lifetime settings and its own random
-stream. The Level refreshes static navigation. The breakup path supports
+and blast origin. The tactical renderer draws the Fire Tank prefab's
+original scrap sprites using its motion and lifetime settings and a
+separate random stream. Regenerate the packed sprite data with
+`python native/tools/import-fire-tank-debris.py` and Pillow. The Level
+refreshes static navigation. The breakup path supports
 linked static obstacles.
 
 Team exploration reads living allied ship positions and requires actual

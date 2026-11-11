@@ -87,6 +87,34 @@ struct ObstacleDebris {
     spin: f32,
     lifetime: f32,
     scale: f32,
+    sprite: usize,
+}
+
+struct DebrisSprite {
+    width: usize,
+    height: usize,
+    pixels: &'static [u8],
+}
+
+fn fire_tank_debris_atlas() -> &'static (f32, Vec<DebrisSprite>) {
+    static ATLAS: OnceLock<(f32, Vec<DebrisSprite>)> = OnceLock::new();
+    ATLAS.get_or_init(|| {
+        let data = include_bytes!("../../../../assets/fire-tank-debris.rgba");
+        assert_eq!(&data[..4], b"BDS1");
+        let read_u16 = |bytes: &[u8]| usize::from(u16::from_le_bytes([bytes[0], bytes[1]]));
+        let pixels_per_unit = read_u16(&data[4..]) as f32;
+        let count = read_u16(&data[6..]);
+        let mut rest = &data[8..];
+        let sprites = (0..count).map(|_| {
+            let width = read_u16(rest);
+            let height = read_u16(&rest[2..]);
+            let (pixels, remaining) = rest[4..].split_at(width * height * 4);
+            rest = remaining;
+            DebrisSprite { width, height, pixels }
+        }).collect();
+        assert!(rest.is_empty() && count > 0 && pixels_per_unit > 0.0);
+        (pixels_per_unit, sprites)
+    })
 }
 
 impl NativeSoftwareRenderer {
@@ -272,7 +300,7 @@ impl NativeSoftwareRenderer {
             let c = (piece.sprite_opacity() * 160.0) as u32;
             self.cross(position, 1.0, c * 0x010101);
         }
-        self.render_obstacle_debris(view, viewport, &mut counts);
+        self.render_obstacle_debris(view, &mut counts);
         for (ship, body) in view.combat.render_ships() {
             counts.ships += 1;
             let selected_ship = view.roster.owning_squad(ship.entity_id).is_some_and(|owner|
@@ -413,7 +441,7 @@ impl NativeSoftwareRenderer {
     }
 
     fn render_obstacle_debris(
-        &mut self, view: &NativeRenderWorldView<'_>, viewport: Aabb, counts: &mut NativeRenderCounts,
+        &mut self, view: &NativeRenderWorldView<'_>, counts: &mut NativeRenderCounts,
     ) {
         use bees_sim::combat_world::CombatEvent;
         let frame = (view.world_id, view.episode_revision, view.tick);
@@ -429,7 +457,9 @@ impl NativeSoftwareRenderer {
                 let mut random = RandomStream::new((obstacle_id as u64).wrapping_mul(397) ^
                     u64::from(origin.x.to_bits()) ^ u64::from(origin.y.to_bits()));
                 let mut unit = || (random.next_u64() >> 40) as f32 / 16_777_216.0;
+                let sprite_count = fire_tank_debris_atlas().1.len();
                 for _ in 0..24 {
+                    let sprite = (unit() * sprite_count as f32) as usize;
                     let position = bounds.min + Vec2::new(
                         (bounds.max.x - bounds.min.x) * unit(),
                         (bounds.max.y - bounds.min.y) * unit(),
@@ -448,6 +478,7 @@ impl NativeSoftwareRenderer {
                         born: view.tick, position, velocity,
                         rotation: unit() * 360.0, spin: (2.0 * unit() - 1.0) * 360.0,
                         lifetime: 1.5 * (0.8 + 0.4 * unit()), scale: 3.0 + 3.0 * unit(),
+                        sprite,
                     });
                 }
             }
@@ -459,19 +490,50 @@ impl NativeSoftwareRenderer {
             let seconds = age(piece.born);
             let position = piece.position + piece.velocity * (-(-1.25 * seconds).exp_m1() / 1.25);
             counts.pieces += 1;
-            if position.x < viewport.min.x || position.x > viewport.max.x ||
-                position.y < viewport.min.y || position.y > viewport.max.y {
-                counts.culled_pieces += 1;
-                continue;
-            }
             let alpha = ((1.0 - seconds / piece.lifetime) / 0.4).min(1.0);
-            let color = (alpha * 192.0) as u32 * 0x010101;
             let angle = (piece.rotation + piece.spin * seconds).to_radians();
-            let offset = Vec2::new(angle.cos(), angle.sin()) * (piece.scale * 0.2);
-            let (x0, y0) = self.project(position - offset);
-            let (x1, y1) = self.project(position + offset);
-            self.line(x0, y0, x1, y1, color);
+            let (pixels_per_unit, sprites) = fire_tank_debris_atlas();
+            let scale = piece.scale * self.camera.pixels_per_unit / pixels_per_unit;
+            if !self.draw_debris_sprite(&sprites[piece.sprite], position, angle, scale, alpha) {
+                counts.culled_pieces += 1;
+            }
         }
+    }
+
+    fn draw_debris_sprite(&mut self, sprite: &DebrisSprite, position: Vec2, angle: f32, scale: f32, alpha: f32) -> bool {
+        let (center_x, center_y) = self.project(position);
+        let (sin, cos) = angle.sin_cos();
+        let half_w = sprite.width as f32 * 0.5;
+        let half_h = sprite.height as f32 * 0.5;
+        let extent_x = scale * (half_w * cos.abs() + half_h * sin.abs());
+        let extent_y = scale * (half_w * sin.abs() + half_h * cos.abs());
+        let left = (center_x - extent_x).floor().max(0.0) as usize;
+        let right = (center_x + extent_x).ceil().clamp(0.0, self.width as f32) as usize;
+        let top = (center_y - extent_y).floor().max(0.0) as usize;
+        let bottom = (center_y + extent_y).ceil().clamp(0.0, self.height as f32) as usize;
+        if left >= right || top >= bottom { return false; }
+        for y in top..bottom {
+            let dy = (y as f32 + 0.5 - center_y) / scale;
+            for x in left..right {
+                let dx = (x as f32 + 0.5 - center_x) / scale;
+                let u = (dx * cos - dy * sin + half_w).floor() as isize;
+                let v = (dx * sin + dy * cos + half_h).floor() as isize;
+                if u < 0 || v < 0 || u as usize >= sprite.width || v as usize >= sprite.height { continue; }
+                let offset = (v as usize * sprite.width + u as usize) * 4;
+                let rgba = &sprite.pixels[offset..offset + 4];
+                let opacity = (f32::from(rgba[3]) * alpha).round() as u32;
+                if opacity == 0 { continue; }
+                let pixel = &mut self.pixels[y * self.width + x];
+                let mut rgb = 0;
+                for (source, shift) in rgba[..3].iter().zip([16, 8, 0]) {
+                    let destination = (*pixel >> shift) & 255;
+                    let blended = (u32::from(*source) * opacity + destination * (255 - opacity) + 127) / 255;
+                    rgb |= blended << shift;
+                }
+                *pixel = rgb;
+            }
+        }
+        true
     }
 
     /// Portable capture for diagnostics, using exactly the window's pixel buffer.
