@@ -57,7 +57,7 @@ async function run() {
         assert.equal(await probe(port,{origin:'http://127.0.0.1:7148'}),404);
         assert.equal(await probe(port,{contentType:'text/plain'}),400);
         assert.equal(await probe(port,{payload:'not-json'}),400);
-        assert.equal(await probe(port,{payload:'x'.repeat(32769)}),413);
+        assert.equal(await probe(port,{payload:'x'.repeat(65537)}),413);
         await assert.rejects(
             sendHeartbeat(url,'smoke','0'.repeat(64)),
             /Agent authentication failed/);
