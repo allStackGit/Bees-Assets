@@ -1294,6 +1294,16 @@ fn run_battle(
     #[cfg(feature = "client")]
     let mut client = if view {
         let mut client = bees_host::client::NativeClient::new(client_bounds[0])?;
+        // Unity StageTitania2HumanFleetAtCenter assigns this precise
+        // Stage.DefaultCameraPosition before the Beenoculars briefing.
+        // Keep this in the mission host; the reusable client only knows
+        // about an optional authored camera focus, never campaign rules.
+        if config.levels.len() == 1 && matches!(
+            config.levels[0].campaign_dialogue,
+            Some(bees_gameplay::campaign_dialogue::CampaignDialogueSpec::TitaniaBeenoculars { .. })
+        ) {
+            client.focus_camera(bees_sim::geometry::Vec2::new(-32.0, 55.0));
+        }
         if replay_inputs.is_some() { client.set_playback(); }
         Some(client)
     } else { None };
