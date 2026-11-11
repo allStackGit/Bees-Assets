@@ -96,9 +96,18 @@ class JobExporter {
             throw Error('Another complete job export is already in progress.');
         const project=value.project_id;
         const legacy=project==='bees'&&this.legacyBees;
-        const root=trustedRoot(legacy?this.dataRoot:loadRoots(this.dataRoot)[project]);
+        const configuredRoot=legacy?this.dataRoot:loadRoots(this.dataRoot)[project];
+        const approvedRoot=trustedRoot(configuredRoot);
+        // The Hub's received observation archive is useful even if the
+        // project's training artifacts live only on a remote machine.
+        // Never silently substitute for an existing but unsafe local path.
+        const missingLocalRoot=!legacy&&!approvedRoot&&(
+            configuredRoot===undefined||
+            typeof configuredRoot==='string'&&!fs.existsSync(configuredRoot));
+        const root=approvedRoot||(
+            missingLocalRoot?trustedRoot(this.dataRoot):null);
         if(!root)
-            throw Error('No approved local artifact directory for this project; configure job-export-roots.json in the private Hub data directory.');
+            throw Error('The approved local artifact directory is unsafe or unavailable. Remote-only exports require a trusted Hub data root.');
         const python=typeof this.pythonExecutable==='function'
             ?this.pythonExecutable():this.pythonExecutable||
                 (process.platform==='win32'?'python':'python3');
@@ -124,7 +133,8 @@ class JobExporter {
             project_id:project,jobs,metrics:value.metrics,
             all_recorded_metrics:value.all_recorded_metrics===true,
             include_replays:value.include_replays===true,
-            artifact_root:root,progress,
+            artifact_root:root,local_artifact_root_missing:missingLocalRoot,
+            progress,
             additional_sources:legacy?this.legacyBees.sources(jobs):jobs.map(job=>({
                 job_id:job.id,label:'hub-observations',
                 path:path.join(this.dataRoot,'hub-observations-v1',job.id+'.jsonl'),
