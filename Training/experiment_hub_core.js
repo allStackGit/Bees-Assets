@@ -3045,6 +3045,13 @@ class ExperimentHub {
                         observed[key]={value,unit};
                 };
                 add('job_cpu_cores',cpuCores,'scalar');
+                // Process CPU-time deltas are already tied to the verified
+                // native dispatch. Normalize against its frozen CPU budget,
+                // not host-wide activity or an inferred worker count.
+                const leasedCpus=job.resources?.cpus;
+                if(Number.isSafeInteger(leasedCpus)&&leasedCpus>0&&cpuCores!==null)
+                    add('job_cpu_lease_utilization_pct',
+                        100*cpuCores/leasedCpus,'scalar');
                 add('job_memory_mb',item.memory_current_mb,'mb');
                 add('job_peak_memory_mb',Number.isFinite(item.peak_job_memory_bytes)
                     ?item.peak_job_memory_bytes/1048576:null,'mb');
