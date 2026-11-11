@@ -145,29 +145,45 @@ weapon and squad attributes must come from the authentic scene capture,
 not synthesized from ship type. The battle journal records their arrival
 tick and counts.
 
-For Titania II's *obstacle-free* mission, the authored approach lanes can
-be generated rather than transcribed by hand. Prepare a `waves.json`
-manifest with the actual captured squad item IDs and Unity's normalized
-entry directions (illustrative IDs):
+For Titania II's *obstacle-free* mission, the authored approach lanes
+can be generated instead of transcribed. Unity selects reinforcement squads
+from the saved fleet *when the timer fires*: they are normally absent from
+the starting physical scene. Capture each wave immediately after it spawns
+in the **same Unity Stage run**, before losses or subsequent changes. Give
+`waves.json` the actual spawned squad item IDs, source-normalized directions,
+and paths to those later scene captures (illustrative IDs):
 
 ```json
 {"waves": [
-  {"after_seconds": 60, "direction": [1, -0.7], "squad_item_ids": [51, 52]},
-  {"after_seconds": 120, "direction": [-1, -0.85], "squad_item_ids": [53, 54]}
+  {"after_seconds": 60, "direction": [1, -0.7],
+   "squad_item_ids": [51, 52], "capture": "captures/60.json"},
+  {"after_seconds": 120, "direction": [-1, -0.85],
+   "squad_item_ids": [53, 54], "capture": "captures/120.json"}
 ]}
 ```
 
-Run `python3 native/tools/author-titania2-waves.py run.json waves.json
-run-with-waves.json` from the repository root (use actual config paths).
-The tool reads the Level's captured `scene` and expands each squad to its
-own source-equivalent `spawn`/`entry` lane, including the original 0.16
-tangent offset for multiple squads. It validates source IDs, sides, physical
-members and times; it never creates ship data. The generated run file must
-remain beside the original so its relative asset paths keep working.
-Existing output files and reinforcement lists are not overwritten. The
-initial four Titania II enemy groups arrive before timed waves and must
-already be in the starting scene. Obstacle-bearing variants require
-explicit routes validated against their real collider geometry.
+Run from the repository root with actual file paths:
+
+```sh
+python3 native/tools/author-titania2-waves.py run.json waves.json \
+  run-with-waves.json --scene-output scene-with-deferred-waves.json
+```
+
+The command copies **only** the selected real Unity ship and squad records
+from later captures into a new native scene and makes one source-equivalent
+`spawn`/`entry` lane per squad, including Unity's 0.16 tangent offsets.
+It rejects incompatible scene metadata, conflicting identities, live
+policy-controlled ships, missing members and insufficient configured
+`next_squad_item_id`. The latter must reflect the *real Stage pool* after
+all captured squads, not an inferred substitute. Original scenes and run
+configs are left intact, and both new files must reside beside the run
+config (captures resolve relative to the manifest). Only one Level is
+supported. Snapshots lack a reliable run-session ID: the operator must
+ensure all captures came from the same Stage run and recorded the intended
+wave composition. Obstacle-bearing variants require explicit routes
+validated against their physical colliders. If wave squads already exist
+in the initial scene, omit their `capture` entries and `--scene-output`;
+the command will only author their routes.
 
 Space pauses all worlds; N advances one fixed round while paused; Tab changes
 the inspected world without replaying input from the previous one. Each
