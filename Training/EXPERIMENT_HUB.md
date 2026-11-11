@@ -1456,6 +1456,15 @@ For reproducible CPU scaling experiments, a Bees training job may specify
 `optimizer_threads` in its frozen parameters (1–256, not exceeding the
 assigned Hub CPU count); this sets the learner's PyTorch intra-op threads
 only, not the rollout worker count. Omit it to retain PyTorch's default.
+For completed direct rounds, Compare reports separately the simulator's
+world steps, captured policy rows, and MA-POCA optimizer input steps per
+second. The whole-round rates use collection wall time plus learner wall
+time; they are not GPU kernel throughput. Learner stage `*_cpu_seconds`
+counters are aggregate process CPU time, potentially greater than wall
+time when PyTorch uses multiple CPU threads; they exclude separate rollout
+worker processes. They allow bottleneck comparisons without inferring GPU
+efficiency from busy percentages alone. Imported bundle rounds have no
+single sequential collection interval, so no whole-round rate is invented.
 
 Queue placement prefers fitting hosts advertising the adapter's GPU capability.
 Train requires explicit Start and a current device-access **plus runtime**
