@@ -36,6 +36,7 @@ function verifyModelDependencies(manifest, checked, checkpoint, learnerSlot) {
         throw Error('Invalid native Bees v26 model manifest.');
     const slots = new Set();
     let learnerMatches = 0;
+    let requiresGpuInference = false;
     for (const model of document.models) {
         if (!model || !Number.isSafeInteger(model.slot) || model.slot < 0 ||
             model.slot > 0xffffffff || slots.has(model.slot) ||
@@ -44,6 +45,20 @@ function verifyModelDependencies(manifest, checked, checkpoint, learnerSlot) {
             !/^[a-f0-9]{64}$/.test(model.sha256))
             throw Error('Invalid native Bees model slot.');
         slots.add(model.slot);
+        if (model.backend === 'onnx') {
+            const providers = model.providers ?? ['CPUExecutionProvider'];
+            if (!Array.isArray(providers) || !providers.length ||
+                providers.some(provider => typeof provider !== 'string' || !provider))
+                throw Error('Invalid native Bees ONNX inference providers.');
+            requiresGpuInference ||= providers.some(provider => provider !== 'CPUExecutionProvider');
+        } else {
+            // The Hub leases at most one GPU to the Bees optimizer. A
+            // second CUDA ordinal cannot be reached through that lease.
+            const device = model.device ?? 'cpu';
+            if (!['cpu', 'cuda', 'cuda:0'].includes(device))
+                throw Error('Native Bees inference device exceeds the supported single-GPU lease.');
+            requiresGpuInference ||= device !== 'cpu';
+        }
         const artifact = path.resolve(path.dirname(manifest), model.path);
         let digest = checked.get(artifact);
         if (digest === undefined) {
@@ -61,6 +76,7 @@ function verifyModelDependencies(manifest, checked, checkpoint, learnerSlot) {
     }
     if (learnerMatches !== (learnerSlot === undefined ? document.models.length : 1))
         throw Error('Native Bees learner slot does not reference the pinned ML-Agents checkpoint.');
+    return requiresGpuInference;
 }
 
 function learnerMeasurements(metrics) {
@@ -164,7 +180,9 @@ function createNativeBeesAdapter({
         [run, sha256(runBytes)],
         ...[trainer, input, manifest].map(file => [file, sha256(fs.readFileSync(file))]),
     ]);
-    verifyModelDependencies(manifest, new Map([[input, pins.get(input)]]), input, learnerSlot);
+    const initialGpuInference = verifyModelDependencies(
+        manifest, new Map([[input, pins.get(input)]]), input, learnerSlot,
+    );
     const configIdentity = [...pins.values(), learnerSlot ?? null];
     if (collectOnly) configIdentity.push(project);
     if (inbox) configIdentity.push(inbox);
@@ -238,18 +256,18 @@ function createNativeBeesAdapter({
         // A manifest may retain opponent artifacts outside the round output.
         // The complete runnable model set, not just checkpoint.pt, is the
         // unit of continuation readiness.
-        verifyModelDependencies(
+        const requiresGpuInference = verifyModelDependencies(
             manifest, new Map([[checkpoint, receipt.next_checkpoint_sha256]]),
             checkpoint, learnerSlot,
         );
         return {checkpoint, manifest, checkpointDigest: receipt.next_checkpoint_sha256,
-            manifestDigest: receipt.next_manifest_sha256};
+            manifestDigest: receipt.next_manifest_sha256, requiresGpuInference};
     }
 
     function roundInputs(context) {
         if (!context.continuation_of_job_id)
             return {checkpoint: input, manifest, checkpointDigest: pins.get(input),
-                manifestDigest: pins.get(manifest)};
+                manifestDigest: pins.get(manifest), requiresGpuInference: initialGpuInference};
         if (collectOnly) throw Error('Native Bees collection requires an independent job.');
         if (!UUID.test(context.continuation_of_job_id) || context.continuation_of_job_id === context.job_id)
             throw Error('Invalid native Bees predecessor.');
@@ -318,6 +336,8 @@ function createNativeBeesAdapter({
                 (!gpu && cudaUuid !== undefined) || (collectOnly && gpu))
                 throw Error('Native Bees execution requires an exclusive single-GPU lease or CPU-only placement.');
             const inputs = roundInputs(context);
+            if (!gpu && inputs.requiresGpuInference)
+                throw Error('Native Bees GPU inference requires an exclusive GPU lease.');
             if (context.continuation_of_job_id &&
                 context.expected_parent_model_sha256 !== inputs.checkpointDigest)
                 throw Error('Native Bees predecessor differs from the verified Hub checkpoint.');
