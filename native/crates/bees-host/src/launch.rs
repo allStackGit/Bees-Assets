@@ -1073,8 +1073,7 @@ fn run_battle(
         if source.stage_name != config.stage_name {
             return Err(invalid("exported Level belongs to a different Stage").into());
         }
-        let sides = source.exported_episode()
-            .map_err(|error| contextual("source episode", error))?.sides();
+        let sides = source.gameplay_sides();
         if config.hivemind.as_ref().is_some_and(|network| network.issue_source_commands) &&
             (source.schema_version < 27 ||
                 source.activate_hivemind.is_none() ||

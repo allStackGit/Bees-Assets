@@ -596,6 +596,7 @@ pub enum NativeSnapshotError {
 /// existing NativeSceneAssets Arc catalogs.
 pub struct NativePhysicalScene {
     pub targeting_context: Option<bees_gameplay::squad_targeting::NativeTargetingContext>,
+    bee_side: i32,
     pub human_side: i32,
     pub source_frame_count: Option<i32>,
     pub schema_version: u32,
@@ -775,6 +776,10 @@ impl NativePhysicalScene {
             .map_err(NativeSnapshotError::Navigation)
     }
 
+    pub fn gameplay_sides(&self) -> [i32; 2] {
+        [self.bee_side, self.human_side]
+    }
+
     /// Fresh native coordinator with the exact source *starting* TSV and
     /// all four source-defined discovery denominators per faction. This
     /// starts a NEW native episode; it does not replay Unity's consumed
@@ -811,16 +816,19 @@ impl NativePhysicalScene {
                 ));
             }
         }
-        let episode_source = self.source_episode.ok_or(
-            NativePolicyOnlyLevelError::Snapshot(
-                NativeSnapshotError::InvalidEpisodeSource,
-            ),
-        )?;
+        let [bee_side, human_side] = self.gameplay_sides();
+        let episode = if self.source_episode.is_some() {
+            self.exported_episode()
+        } else if setup.groups.is_some() {
+            Err(NativeSnapshotError::InvalidEpisodeSource)
+        } else {
+            NativeEpisodeRewardCoordinator::new_game(bee_side, human_side)
+                .map_err(NativeSnapshotError::Episode)
+        }.map_err(NativePolicyOnlyLevelError::Snapshot)?;
         let agents = self.exported_policy_agents(&setup.model_slots)
             .map_err(NativePolicyOnlyLevelError::Snapshot)?;
         if agents.iter().any(|agent|
-            agent.side != episode_source.bee_side &&
-            agent.side != episode_source.human_side
+            agent.side != bee_side && agent.side != human_side
         ) {
             return Err(NativePolicyOnlyLevelError::Snapshot(
                 NativeSnapshotError::InvalidEpisodeSource,
@@ -828,16 +836,14 @@ impl NativePhysicalScene {
         }
         let sides = vec![
             AuthoredPolicySide {
-                side: episode_source.bee_side,
+                side: bee_side,
                 exploration: TeamExplorationGrid::new(),
             },
             AuthoredPolicySide {
-                side: episode_source.human_side,
+                side: human_side,
                 exploration: TeamExplorationGrid::new(),
             },
         ];
-        let episode = self.exported_episode()
-            .map_err(NativePolicyOnlyLevelError::Snapshot)?;
         let navigation = self.exported_navigation_runtime()
             .map_err(NativePolicyOnlyLevelError::Snapshot)?;
         self.bind_exported_policy_ships()
@@ -2088,6 +2094,7 @@ impl NativePhysicalScene {
         let fleet = NativeFleetInventory::from_source(fleet_values)
             .map_err(NativeSnapshotError::Fleet)?;
         Ok(Self {
+            bee_side: raw.bee_side,
             human_side: raw.human_side,
             source_frame_count: raw.source_frame_count,
             targeting_context,

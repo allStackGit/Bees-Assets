@@ -29,7 +29,7 @@ pub struct EpisodeTerminalResult {
 
 /// Exactly RlOneVsOneReward.CalculateTerminalReward and
 /// CalculateTimePenalty, before economic or tactical shaping.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct EpisodeTerminalRewards {
     pub bee_terminal: f32,
     pub human_terminal: f32,
@@ -40,7 +40,7 @@ pub struct EpisodeTerminalRewards {
 /// Source GetRetainedMiningTsvForWinningSide and
 /// RlOneVsOneReward.CalculateEconomicValueReward. This economic channel is
 /// uncapped and separate from the 0.2 tactical-shaping budget.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct EpisodeEconomicRewards {
     pub bee_retained_mined_tsv: i32,
     pub human_retained_mined_tsv: i32,
@@ -166,7 +166,7 @@ impl EpisodeDeathAttribution {
 pub struct NativeEpisodeTerminal {
     bee_side: i32,
     human_side: i32,
-    timeout_seconds: f32,
+    timeout_seconds: Option<f32>,
     elapsed_seconds: f32,
     completed: Option<EpisodeTerminalResult>,
     measurements: EpisodeTerminalMeasurements,
@@ -176,11 +176,21 @@ impl NativeEpisodeTerminal {
     pub fn new(
         bee_side: i32, human_side: i32, timeout_seconds: f32,
     ) -> Result<Self, EpisodeTerminalError> {
-        if bee_side <= 0 || human_side <= 0 || bee_side == human_side {
-            return Err(EpisodeTerminalError::InvalidSides);
-        }
         if !timeout_seconds.is_finite() || timeout_seconds <= 0.0 {
             return Err(EpisodeTerminalError::InvalidTimeout);
+        }
+        Self::with_timeout(bee_side, human_side, Some(timeout_seconds))
+    }
+
+    pub fn new_game(bee_side: i32, human_side: i32) -> Result<Self, EpisodeTerminalError> {
+        Self::with_timeout(bee_side, human_side, None)
+    }
+
+    fn with_timeout(
+        bee_side: i32, human_side: i32, timeout_seconds: Option<f32>,
+    ) -> Result<Self, EpisodeTerminalError> {
+        if bee_side <= 0 || human_side <= 0 || bee_side == human_side {
+            return Err(EpisodeTerminalError::InvalidSides);
         }
         Ok(Self {
             bee_side, human_side, timeout_seconds,
@@ -201,7 +211,9 @@ impl NativeEpisodeTerminal {
     /// elapsed / length, clamped to [0,1]. This native controller is
     /// constructed when the timeout is armed, starting at elapsed=0.
     pub fn normalized_episode_progress(&self) -> f32 {
-        (self.elapsed_seconds / self.timeout_seconds).clamp(0.0, 1.0)
+        self.timeout_seconds.map_or(0.0, |timeout|
+            (self.elapsed_seconds / timeout).clamp(0.0, 1.0)
+        )
     }
 
     pub fn measurements(&self) -> EpisodeTerminalMeasurements {
@@ -221,6 +233,7 @@ impl NativeEpisodeTerminal {
         human_non_opponent_elimination: bool,
     ) -> Option<EpisodeTerminalRewards> {
         let outcome = self.completed?;
+        let timeout = self.timeout_seconds?;
         const WIN: f32 = 1.0;
         const LOSS: f32 = -1.0;
         const TIMEOUT: f32 = -1.1;
@@ -241,7 +254,7 @@ impl NativeEpisodeTerminal {
             }
         };
         let time_penalty = -(outcome.duration_seconds /
-            self.timeout_seconds.max(1.0)).clamp(0.0, 1.0)
+            timeout.max(1.0)).clamp(0.0, 1.0)
             * MAX_TIME_PENALTY;
         Some(EpisodeTerminalRewards {
             bee_terminal: terminal(self.bee_side,
@@ -341,8 +354,10 @@ impl NativeEpisodeTerminal {
         if self.completed.is_some() {
             return Ok(None);
         }
-        self.elapsed_seconds =
-            (self.elapsed_seconds + dt_seconds).min(self.timeout_seconds);
+        self.elapsed_seconds += dt_seconds;
+        if let Some(timeout) = self.timeout_seconds {
+            self.elapsed_seconds = self.elapsed_seconds.min(timeout);
+        }
         self.measurements.ticks_observed += 1;
         let bee_dead = world.living_mobile_ships_on_side(self.bee_side) == 0;
         let human_dead = world.living_mobile_ships_on_side(self.human_side) == 0;
@@ -372,7 +387,7 @@ impl NativeEpisodeTerminal {
                 return Ok(Some(outcome));
             }
         }
-        if self.elapsed_seconds >= self.timeout_seconds {
+        if self.timeout_seconds.is_some_and(|timeout| self.elapsed_seconds >= timeout) {
             let outcome = EpisodeTerminalResult {
                 winner_side: 0, timed_out: true, extraction_victory: false,
                 duration_seconds: self.elapsed_seconds,

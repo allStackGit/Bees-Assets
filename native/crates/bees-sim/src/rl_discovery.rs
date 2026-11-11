@@ -44,14 +44,43 @@ pub struct DiscoveryMeasurements {
     pub rewarded: u64,
 }
 
+/// Side-wide first-contact history shared by gameplay and training.
+#[derive(Default)]
+pub struct DiscoverySightings {
+    seen: [HashSet<(DiscoveryKind, i64)>; 2],
+    measurements: DiscoveryMeasurements,
+}
+
+impl DiscoverySightings {
+    pub fn measurements(&self) -> DiscoveryMeasurements {
+        self.measurements
+    }
+
+    pub fn record(
+        &mut self, sides: [i32; 2], side: i32, kind: DiscoveryKind,
+        entity_id: i64, value: i32,
+    ) -> Result<Option<usize>, DiscoveryError> {
+        let index = sides.iter().position(|&entry| entry == side)
+            .ok_or(DiscoveryError::InvalidSide)?;
+        if entity_id <= 0 || value < 0 {
+            return Err(DiscoveryError::InvalidValue);
+        }
+        if !self.seen[index].insert((kind, entity_id)) {
+            self.measurements.duplicate += 1;
+            return Ok(None);
+        }
+        self.measurements.first += 1;
+        Ok(Some(index))
+    }
+}
+
 pub struct EpisodeDiscoveryLedger {
     sides: [i32; 2],
     /// The four fixed-category starting value denominators, in
     /// EnemyShip/MiningAsteroid/StaticObstacle/MapObject order.
     baselines: [[i32; 4]; 2],
-    seen: [HashSet<(DiscoveryKind, i64)>; 2],
+    sightings: DiscoverySightings,
     collision_counts: [u32; 2],
-    measurements: DiscoveryMeasurements,
 }
 
 impl EpisodeDiscoveryLedger {
@@ -66,14 +95,13 @@ impl EpisodeDiscoveryLedger {
         }
         Ok(Self {
             sides, baselines,
-            seen: [HashSet::new(), HashSet::new()],
+            sightings: DiscoverySightings::default(),
             collision_counts: [0, 0],
-            measurements: DiscoveryMeasurements::default(),
         })
     }
 
     pub fn measurements(&self) -> DiscoveryMeasurements {
-        self.measurements
+        self.sightings.measurements()
     }
 
     /// The Level supplies verified sighting ID and source TSV/SizeClass.
@@ -96,16 +124,8 @@ impl EpisodeDiscoveryLedger {
         &mut self, shaping: &mut EpisodeShaping,
         side: i32, kind: DiscoveryKind, entity_id: i64, value: i32,
     ) -> Result<(bool, Option<RewardEmission>), DiscoveryError> {
-        let Some(index) = self.sides.iter().position(|&s| s == side)
-        else { return Err(DiscoveryError::InvalidSide) };
-        if entity_id <= 0 || value < 0 {
-            return Err(DiscoveryError::InvalidValue);
-        }
-        if !self.seen[index].insert((kind, entity_id)) {
-            self.measurements.duplicate += 1;
-            return Ok((false, None));
-        }
-        self.measurements.first += 1;
+        let Some(index) = self.sightings.record(self.sides, side, kind, entity_id, value)?
+        else { return Ok((false, None)) };
         let raw = if kind == DiscoveryKind::CollisionAsteroid {
             let n = self.collision_counts[index] as f32;
             self.collision_counts[index] =
@@ -131,7 +151,7 @@ impl EpisodeDiscoveryLedger {
             shaping.add_raw_for_side(side, raw)
         } else { None };
         if result.as_ref().is_some_and(|r| r.amount != 0.0) {
-            self.measurements.rewarded += 1;
+            self.sightings.measurements.rewarded += 1;
         }
         Ok((true, result))
     }

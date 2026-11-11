@@ -15,7 +15,7 @@ use bees_sim::rl_economy::{
     EconomicLedgerError, EconomicLedgerMeasurements, EpisodeEconomicLedger,
 };
 use bees_sim::rl_discovery::{
-    DiscoveryError, DiscoveryKind, DiscoveryMeasurements, EpisodeDiscoveryLedger,
+    DiscoveryError, DiscoveryKind, DiscoveryMeasurements, DiscoverySightings, EpisodeDiscoveryLedger,
 };
 use bees_sim::rl_shaping::{
     DamageRewardMetadata, DamageShapingError, DamageShapingMeasurements,
@@ -23,7 +23,7 @@ use bees_sim::rl_shaping::{
 };
 
 use crate::squads::{
-    observe_terminal_rewards_after_roster, SquadRosterChange,
+    observe_terminal_after_roster, observe_terminal_rewards_after_roster, SquadRosterChange,
 };
 
 #[derive(Debug)]
@@ -94,17 +94,26 @@ pub struct NativeEpisodeRewardMeasurements {
 pub struct NativeEpisodeRewardCoordinator {
     bee_side: i32,
     human_side: i32,
+    terminal: NativeEpisodeTerminal,
+    mode: EpisodeMode,
+    failed: bool,
+    merged_emissions: Vec<RewardEmission>,
+}
+
+enum EpisodeMode {
+    Game(DiscoverySightings),
+    Training(Box<TrainingRewards>),
+}
+
+struct TrainingRewards {
     bee_starting_tsv: i32,
     human_starting_tsv: i32,
-    terminal: NativeEpisodeTerminal,
     attribution: EpisodeDeathAttribution,
     shaping: EpisodeShaping,
     economy: EpisodeEconomicLedger,
     discovery: Option<EpisodeDiscoveryLedger>,
-    failed: bool,
     damage_emissions: Vec<RewardEmission>,
     economic_emissions: Vec<RewardEmission>,
-    merged_emissions: Vec<RewardEmission>,
 }
 
 impl NativeEpisodeRewardCoordinator {
@@ -130,25 +139,46 @@ impl NativeEpisodeRewardCoordinator {
             .map_err(NativeEpisodeRewardError::InvalidShaping)?;
         Ok(Self {
             bee_side, human_side,
-            bee_starting_tsv, human_starting_tsv,
-            terminal, attribution, shaping, economy,
-            discovery: None,
+            terminal,
+            mode: EpisodeMode::Training(Box::new(TrainingRewards {
+                bee_starting_tsv, human_starting_tsv,
+                attribution, shaping, economy,
+                discovery: None,
+                damage_emissions: Vec::new(),
+                economic_emissions: Vec::new(),
+            })),
             failed: false,
-            damage_emissions: Vec::new(),
-            economic_emissions: Vec::new(),
+            merged_emissions: Vec::new(),
+        })
+    }
+
+    pub fn new_game(bee_side: i32, human_side: i32) -> Result<Self, NativeEpisodeRewardError> {
+        Ok(Self {
+            bee_side, human_side,
+            terminal: NativeEpisodeTerminal::new_game(bee_side, human_side)?,
+            mode: EpisodeMode::Game(DiscoverySightings::default()),
+            failed: false,
             merged_emissions: Vec::new(),
         })
     }
 
     pub fn measurements(&self) -> NativeEpisodeRewardMeasurements {
-        NativeEpisodeRewardMeasurements {
-            combat_damage: self.shaping.damage_measurements(),
-            mining_economy: self.economy.measurements(),
-            discovery: self.discovery.as_ref().map_or(
-                DiscoveryMeasurements::default(),
-                EpisodeDiscoveryLedger::measurements,
-            ),
-            termination: self.terminal.measurements(),
+        let termination = self.terminal.measurements();
+        match &self.mode {
+            EpisodeMode::Game(sightings) => NativeEpisodeRewardMeasurements {
+                discovery: sightings.measurements(),
+                termination,
+                ..NativeEpisodeRewardMeasurements::default()
+            },
+            EpisodeMode::Training(training) => NativeEpisodeRewardMeasurements {
+                combat_damage: training.shaping.damage_measurements(),
+                mining_economy: training.economy.measurements(),
+                discovery: training.discovery.as_ref().map_or(
+                    DiscoveryMeasurements::default(),
+                    EpisodeDiscoveryLedger::measurements,
+                ),
+                termination,
+            },
         }
     }
 
@@ -182,12 +212,14 @@ impl NativeEpisodeRewardCoordinator {
         if self.failed {
             return Err(NativeEpisodeRewardError::FailedEpisode);
         }
-        if self.terminal.result().is_some() || self.discovery.is_some() {
+        let sides = self.sides();
+        let EpisodeMode::Training(training) = &mut self.mode else {
+            return Err(NativeEpisodeRewardError::DiscoveryNotConfigured);
+        };
+        if self.terminal.result().is_some() || training.discovery.is_some() {
             return Err(NativeEpisodeRewardError::AlreadyComplete);
         }
-        self.discovery = Some(EpisodeDiscoveryLedger::new(
-            [self.bee_side, self.human_side], baselines,
-        )?);
+        training.discovery = Some(EpisodeDiscoveryLedger::new(sides, baselines)?);
         Ok(())
     }
 
@@ -216,13 +248,21 @@ impl NativeEpisodeRewardCoordinator {
         if self.failed {
             return Err(NativeEpisodeRewardError::FailedEpisode);
         }
-        let Some(ledger) = self.discovery.as_mut() else {
-            self.failed = true;
-            return Err(NativeEpisodeRewardError::DiscoveryNotConfigured);
+        let sides = self.sides();
+        let sighting = match &mut self.mode {
+            EpisodeMode::Game(sightings) => sightings.record(sides, side, kind, entity_id, authored_value)
+                .map(|index| (index.is_some(), None)),
+            EpisodeMode::Training(training) => {
+                let Some(ledger) = training.discovery.as_mut() else {
+                    self.failed = true;
+                    return Err(NativeEpisodeRewardError::DiscoveryNotConfigured);
+                };
+                ledger.first_sighting_with_freshness(
+                    &mut training.shaping, side, kind, entity_id, authored_value,
+                )
+            }
         };
-        match ledger.first_sighting_with_freshness(
-            &mut self.shaping, side, kind, entity_id, authored_value,
-        ) {
+        match sighting {
             Ok(emission) => Ok(emission),
             Err(err) => {
                 self.failed = true;
@@ -247,9 +287,11 @@ impl NativeEpisodeRewardCoordinator {
             self.failed = true;
             return Err(NativeEpisodeRewardError::InvalidCapabilitySide(side));
         }
-        Ok(self.shaping.record_successful_capability_outcome(
-            side, tsv_value,
-        ))
+        Ok(match &mut self.mode {
+            EpisodeMode::Game(_) => None,
+            EpisodeMode::Training(training) => training.shaping
+                .record_successful_capability_outcome(side, tsv_value),
+        })
     }
 
     /// Called by the Level's real mining/campaign integration whenever
@@ -267,7 +309,10 @@ impl NativeEpisodeRewardCoordinator {
         if self.failed {
             return Err(NativeEpisodeRewardError::FailedEpisode);
         }
-        match self.economy.update_mined_value(
+        let EpisodeMode::Training(training) = &mut self.mode else {
+            return Ok(());
+        };
+        match training.economy.update_mined_value(
             world, ship_id, fleet_ship_mined_tsv,
         ) {
             Ok(()) => Ok(()),
@@ -329,30 +374,39 @@ impl NativeEpisodeRewardCoordinator {
                 EpisodeTerminalError::InvalidStep,
             ));
         }
+        let EpisodeMode::Training(training) = &mut self.mode else {
+            return Ok(observe_terminal_after_roster(
+                &mut self.terminal, world, dt_seconds, squad_changes,
+            )?.map(|result| NativeEpisodeFinal {
+                result,
+                terminal_rewards: EpisodeTerminalRewards::default(),
+                economic_rewards: EpisodeEconomicRewards::default(),
+            }));
+        };
         // Both consumers inspect the same world-owned event store. Scratch
         // buffers survive across ticks to avoid allocations in quiet steps.
-        self.shaping.consume_combat_shaping_events(
+        training.shaping.consume_combat_shaping_events(
             world, world.events(), damage_metadata,
-            &mut self.damage_emissions,
+            &mut training.damage_emissions,
         )?;
-        self.economy.consume_ship_deaths(
+        training.economy.consume_ship_deaths(
             world, world.events(), current_mined_tsv,
-            &mut self.economic_emissions,
+            &mut training.economic_emissions,
         )?;
         let completed = observe_terminal_rewards_after_roster(
             &mut self.terminal,
-            &mut self.attribution,
+            &mut training.attribution,
             world, dt_seconds, squad_changes,
         )?;
         self.merged_emissions.clear();
-        self.merged_emissions.extend_from_slice(&self.damage_emissions);
-        self.merged_emissions.extend_from_slice(&self.economic_emissions);
+        self.merged_emissions.extend_from_slice(&training.damage_emissions);
+        self.merged_emissions.extend_from_slice(&training.economic_emissions);
         let finalized = if let Some(done) = completed {
             let economic = self.terminal.terminal_economic_rewards(
-                self.bee_starting_tsv,
-                self.human_starting_tsv,
-                self.economy.retainable_mined_tsv(self.bee_side),
-                self.economy.retainable_mined_tsv(self.human_side),
+                training.bee_starting_tsv,
+                training.human_starting_tsv,
+                training.economy.retainable_mined_tsv(self.bee_side),
+                training.economy.retainable_mined_tsv(self.human_side),
             )?.expect("terminal outcome just latched");
             Some(NativeEpisodeFinal {
                 result: done.outcome,
