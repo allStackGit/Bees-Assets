@@ -4,8 +4,12 @@ use bees_sim::{
     combat_world::CombatWorld,
     episode_terminal::SurvivalStatus,
     map_object::MapObjectKind,
+    geometry::Vec2,
 };
 use serde::{Deserialize, Serialize};
+
+/// Titania II's authored defended base, player deployment focus, and camera.
+pub const TITANIA_II_CENTER: Vec2 = Vec2::new(-32.0, 55.0);
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
