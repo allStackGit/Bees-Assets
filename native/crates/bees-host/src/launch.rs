@@ -969,9 +969,14 @@ fn run_battle(
         }
         previous_update = update.at_round;
     }
-    if output.is_some() && (config.hivemind.is_some() || !config.recover_notifications.is_empty() ||
-        !config.recover_outcome_journals.is_empty()) {
-        return Err(invalid("--output-dir is for offline runs without HiveMind recovery").into());
+    if output.is_some() && (!config.recover_notifications.is_empty() ||
+        !config.recover_outcome_journals.is_empty() ||
+        config.hivemind.as_ref().is_some_and(|network| network.reconnect_game_id.is_some()))
+    {
+        return Err(invalid("HiveMind recovery and reconnection require the original configured checkpoint and journal paths").into());
+    }
+    if replay_inputs.is_some() && config.hivemind.is_some() {
+        return Err(invalid("Player input playback requires an offline battle").into());
     }
     let checkpoint = output.as_ref().map_or_else(
         || resolve(root, &config.connection_checkpoint), |dir| dir.join("connection-checkpoint.json"),
@@ -1285,7 +1290,8 @@ fn run_battle(
     if playback.as_ref().is_some_and(|trace| trace.end_round > config.max_rounds) {
         return Err(invalid("player trace exceeds the configured round budget").into());
     }
-    let trace_output = output.filter(|_| play && replay_inputs.is_none() && config.model_updates.is_empty());
+    let trace_output = output.filter(|_| play && replay_inputs.is_none() &&
+        config.hivemind.is_none() && config.model_updates.is_empty());
 
     let mut model = RolloutModel::default();
     if let (Some(path), Some(trace), Some((_, _, _, manifest_digest))) =

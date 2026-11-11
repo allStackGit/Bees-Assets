@@ -15,11 +15,13 @@ bees play /absolute/path/to/run.json --output-dir /path/to/new-run
 ```
 
 Run the built executable from `native/target/release` or add it to your
-PATH. For offline play and evaluation, `--output-dir` creates a fresh
+PATH. For fresh runs, `--output-dir` creates a new
 directory for the connection checkpoint, journal, and summary. If the
 template enables policy capture, the capture also goes in that directory.
 Scene and model paths still resolve relative to the configuration file.
-Network and recovery runs use their configured checkpoint and journal.
+HiveMind recovery and reconnection use their original configured checkpoint
+and journal paths. A fresh HiveMind run with `--output-dir` owns its own
+checkpoint and journal in that directory.
 
 To choose among local battle configurations in a window, create a catalog:
 
@@ -35,8 +37,8 @@ To choose among local battle configurations in a window, create a catalog:
 Run `bees menu catalog.json --output-dir battle-runs`. Config paths are
 relative to the catalog. Click a battle or use the arrow keys and Enter.
 Closing the battle returns to the picker. Each launch stores its journal
-and any recording under a new `battle-NNNN/run` directory. Catalog play uses
-offline run configurations.
+and any recording under a new `battle-NNNN/run` directory. A configuration
+with `hivemind` starts a fresh connection and uses the same output layout.
 
 To enable mission progression, give the catalog a stable `campaign_id` and
 add `mission` to each campaign entry. For example:
@@ -126,7 +128,7 @@ with the same configuration and seeds. Press W to watch the completed
 recording when available. In the viewer, Enter watches the recording again.
 Each new window saves its own journal and summary in a numbered directory
 under the first run.
-For battles with no scheduled model changes, `bees play --output-dir` also
+For offline battles with no scheduled model changes, `bees play --output-dir` also
 saves `player-inputs.jsonl`. It records the scene digests and seed plans,
 then each submitted order with its
 global round, world tick, and squad lifetime. These are input attempts.

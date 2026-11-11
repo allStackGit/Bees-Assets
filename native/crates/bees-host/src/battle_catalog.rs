@@ -1,4 +1,4 @@
-//! Authored offline battle lists and progress derived from completed runs.
+//! Authored battle lists and progress derived from completed runs.
 
 use std::collections::HashSet;
 use std::fs;

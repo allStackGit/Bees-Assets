@@ -1,4 +1,4 @@
-//! Offline scenario selection using the same window and bitmap font as play.
+//! Scenario selection using the same window and bitmap font as play.
 
 use minifb::{Key, KeyRepeat, MouseButton, MouseMode, Window, WindowOptions};
 
@@ -24,7 +24,7 @@ pub fn select_battle(
 ) -> Result<Option<usize>, minifb::Error> {
     if rows.is_empty() { return Ok(None); }
     *selected = (*selected).min(rows.len() - 1);
-    let mut window = Window::new("Bees | Offline battles", WIDTH, HEIGHT, WindowOptions::default())?;
+    let mut window = Window::new("Bees | Battles", WIDTH, HEIGHT, WindowOptions::default())?;
     window.set_target_fps(30);
     let mut pixels = vec![0; WIDTH * HEIGHT];
     let titles = rows.iter().map(|row| {
@@ -61,7 +61,7 @@ pub fn select_battle(
         mouse_down = pressed;
 
         pixels.fill(0x080e19);
-        text::draw_centered(&mut pixels, WIDTH, 24, "Offline battles", 2, TEXT);
+        text::draw_centered(&mut pixels, WIDTH, 24, "Battles", 2, TEXT);
         text::draw_centered(&mut pixels, WIDTH, 78, "Choose a battle to play", 1, MUTED);
         for (row, title) in titles.iter().skip(first).take(PAGE_SIZE).enumerate() {
             let top = LIST_TOP + row * ROW_HEIGHT;
