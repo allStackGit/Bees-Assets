@@ -38,7 +38,7 @@ function courierMetrics(source) {
             ?'seconds':name.endsWith('_per_second')
                 ?'rate':/(?:^|_)(?:rate|ratio|fraction)$/.test(name)&&
                 value>=0&&value<=1?'ratio':'scalar';
-        if(unit==='seconds'&&value<0)continue;
+        if((unit==='seconds'||unit==='rate')&&value<0)continue;
         metrics[name]={value,unit};
     }
     return metrics;
