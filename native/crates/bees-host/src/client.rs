@@ -14,6 +14,22 @@ use bees_sim::geometry::Vec2;
 #[derive(Clone, Debug, PartialEq)]
 pub enum NativeClientAction { Wait, Step, Quit, WorldChanged, Input(NativePlayerInput) }
 
+#[derive(Clone, Copy)]
+pub enum NativeResultControls { Close, PlayAgain, PlayAgainOrWatch, WatchAgain }
+
+pub enum NativeResultAction { PlayAgain, WatchRecording }
+
+impl NativeResultControls {
+    fn hint(self) -> &'static str {
+        match self {
+            Self::Close => "",
+            Self::PlayAgain => "Enter play again, ",
+            Self::PlayAgainOrWatch => "Enter play again, W watch recording, ",
+            Self::WatchAgain => "Enter watch again, ",
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum NativeTargetMode { Support(NativeSupportMode), ManualFire }
 
@@ -39,7 +55,7 @@ pub struct NativeClient {
     last_left_press: Option<Instant>,
     double_left_press: bool,
     input_feedback: &'static str,
-    replay_available: bool,
+    result_controls: Option<NativeResultControls>,
     playback: bool,
     selection_drag: Option<(Vec2, Vec2)>,
     support_mode: Option<NativeTargetMode>,
@@ -71,7 +87,7 @@ impl NativeClient {
             paused: false, next_step: now, previous_frame: now, left_was_down: false,
             right_was_down: false, right_press: None, last_left_press: None, double_left_press: false,
             input_feedback: "",
-            replay_available: false,
+            result_controls: None,
             playback: false,
             selection_drag: None, support_mode: None,
             rendered_frames: 0, rendered_pixels: 0, render_wall_seconds: 0.0,
@@ -88,11 +104,22 @@ impl NativeClient {
 
     pub fn report_move(&mut self, feedback: &'static str) { self.input_feedback = feedback; }
 
-    pub fn allow_replay(&mut self) { self.replay_available = true; }
+    pub fn show_result(&mut self, controls: NativeResultControls) { self.result_controls = Some(controls); }
     pub fn set_playback(&mut self) { self.playback = true; }
 
-    pub fn replay_requested(&self) -> bool {
-        self.replay_available && self.window.is_key_pressed(Key::Enter, KeyRepeat::No)
+    pub fn result_action(&self) -> Option<NativeResultAction> {
+        let controls = self.result_controls?;
+        if matches!(controls, NativeResultControls::PlayAgainOrWatch) &&
+            self.window.is_key_pressed(Key::W, KeyRepeat::No)
+        {
+            return Some(NativeResultAction::WatchRecording);
+        }
+        if !self.window.is_key_pressed(Key::Enter, KeyRepeat::No) { return None; }
+        match controls {
+            NativeResultControls::Close => None,
+            NativeResultControls::PlayAgain | NativeResultControls::PlayAgainOrWatch => Some(NativeResultAction::PlayAgain),
+            NativeResultControls::WatchAgain => Some(NativeResultAction::WatchRecording),
+        }
     }
 
     pub fn poll(
@@ -399,13 +426,13 @@ impl NativeClient {
             format!("Bees native | World {} | Episode {} | {}{} | {:.2} s | {}Tab world, Esc close",
                 view.world_id.0, view.episode_revision + 1, outcome,
                 if result.timed_out { " (time limit)" } else { "" }, result.duration_seconds,
-                if self.replay_available { "Enter replay, " } else { "" })
+                self.result_controls.map_or("", NativeResultControls::hint))
         } else if self.playback {
-            let status = if self.replay_available { "Playback complete" }
+            let status = if self.result_controls.is_some() { "Playback complete" }
                 else if self.paused { "Playback paused" } else { "Playback" };
             format!("Bees native | World {} | Tick {} | {}{} | {}Tab world, Esc close",
                 view.world_id.0, view.tick, status, selected,
-                if self.replay_available { "Enter replay, " } else { "Space pause, N step, " })
+                self.result_controls.map_or("Space pause, N step, ", NativeResultControls::hint))
         } else { format!(
             "Bees native | World {} | Episode {} | Tick {} | {} ships, {} shots | {} squads selected | {}{} | {} | range/obstruction {} | Left select/drag, double-click type, Ctrl add, right move/attack | C stop chase, V cease fire, A attack on sight, G guard, P patrol, M mine, H heal, R retreat, T point fire, X stop, B ranges, Backspace cancel | Space pause, N step, Tab world, arrows pan, wheel zoom, F fit, Esc exit",
             view.world_id.0, view.episode_revision, view.tick, counts.ships, counts.projectiles,

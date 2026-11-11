@@ -718,6 +718,10 @@ const USAGE: &str = "Usage: bees [play|run] <run.json> [--output-dir <new-dir>] 
   run   Run the battle headlessly (default)
   --replay-inputs <player-inputs.jsonl>  Play back a recorded offline battle";
 
+struct BattleRestart {
+    replay_inputs: Option<PathBuf>,
+}
+
 pub fn run() -> Result<(), Box<dyn Error>> {
     let mut args = env::args_os().skip(1);
     let first = args.next().ok_or_else(|| invalid(USAGE))?;
@@ -758,13 +762,14 @@ pub fn run() -> Result<(), Box<dyn Error>> {
     let mut replay_number = 0_u64;
     let mut battle_output = output.clone();
     let mut battle_capture = capture.clone();
-    while run_battle(&config_path, play, view, battle_output.as_deref(), battle_capture.as_deref(),
+    while let Some(restart) = run_battle(&config_path, play, view, battle_output.as_deref(), battle_capture.as_deref(),
         replay_number, replay_inputs.as_deref())? {
         replay_number = replay_number.checked_add(1).ok_or_else(|| invalid("replay count exhausted"))?;
         let next = output.as_ref().ok_or_else(|| invalid("replay requires --output-dir"))?
             .join(format!("replay-{replay_number:04}"));
         battle_capture = capture.as_ref().map(|_| next.join("final.ppm"));
         battle_output = Some(next);
+        replay_inputs = restart.replay_inputs;
     }
     Ok(())
 }
@@ -772,7 +777,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
 fn run_battle(
     config_path: &Path, play: bool, view: bool, output: Option<&Path>,
     capture: Option<&Path>, replay_number: u64, replay_inputs: Option<&Path>,
-) -> Result<bool, Box<dyn Error>> {
+) -> Result<Option<BattleRestart>, Box<dyn Error>> {
     let run_start = Instant::now();
     let root = config_path.parent().ok_or_else(|| invalid("missing config directory"))?;
     let config_bytes = fs::read(config_path)?;
@@ -1174,9 +1179,11 @@ fn run_battle(
     }
     host.set_timing_sample_period(timing);
     #[cfg(feature = "client")]
-    let mut input_trace = if let Some(directory) = trace_output {
+    let recorded_inputs = trace_output.map(|directory| directory.join("player-inputs.jsonl"));
+    #[cfg(feature = "client")]
+    let mut input_trace = if let Some(path) = &recorded_inputs {
         let mut trace = fs::OpenOptions::new().write(true).create_new(true)
-            .open(directory.join("player-inputs.jsonl"))?;
+            .open(path)?;
         writeln!(trace, "{}", json!({
             "kind": "player_input_trace",
             "schema_version": 1,
@@ -1827,9 +1834,14 @@ fn run_battle(
         completed_episodes.iter().all(|&count| count == config.episodes_per_world)) {
         #[cfg(feature = "client")]
         if let Some(client) = &mut client {
-            if output.is_some() {
-                client.allow_replay();
-            }
+            use bees_host::client::{NativeResultAction, NativeResultControls};
+            let controls = match (replay_inputs, recorded_inputs.as_ref(), output) {
+                (Some(_), _, _) => NativeResultControls::WatchAgain,
+                (None, Some(_), _) => NativeResultControls::PlayAgainOrWatch,
+                (None, None, Some(_)) => NativeResultControls::PlayAgain,
+                (None, None, None) => NativeResultControls::Close,
+            };
+            client.show_result(controls);
             loop {
                 let index = client.selected_world();
                 let current = host.render_world(index)
@@ -1838,11 +1850,15 @@ fn run_battle(
                     client_fixed_dt_by_level[index])?, bees_host::client::NativeClientAction::Quit) {
                     break;
                 }
-                if client.replay_requested() {
-                    return Ok(true);
+                if let Some(action) = client.result_action() {
+                    let replay_inputs = match action {
+                        NativeResultAction::PlayAgain => None,
+                        NativeResultAction::WatchRecording => replay_inputs.map(Path::to_path_buf).or(recorded_inputs),
+                    };
+                    return Ok(Some(BattleRestart { replay_inputs }));
                 }
             }
         }
     }
-    Ok(false)
+    Ok(None)
 }

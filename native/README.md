@@ -48,9 +48,11 @@ final outputs and keeps the completed battle open. The battle view shows the
 selected Level's result, end reason, and duration. Tab inspects other Levels and Escape
 closes the window. The existing `--view` diagnostic invocation exits
 automatically at the run boundary.
-With `--output-dir`, press Enter on the result screen to replay the same
-configuration and seeds. Each replay opens a new battle window and saves
-its own journal and summary in a numbered directory under the first run.
+With `--output-dir`, press Enter on the result screen to play a fresh battle
+with the same configuration and seeds. Press W to watch the completed
+recording when available. In the viewer, Enter watches the recording again.
+Each new window saves its own journal and summary in a numbered directory
+under the first run.
 For battles with no scheduled model changes, `bees play --output-dir` also
 saves `player-inputs.jsonl`. It records the scene digests and seed plans,
 then each submitted order with its
