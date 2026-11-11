@@ -128,9 +128,20 @@ function hubScalingEvidence(runs,key,allJobs=[],leases=[]) {
             const gpuCount=member.resources?.gpu_count;
             const lease=leases.find(item=>item.id===member.lease_id&&
                 item.job_id===member.id&&
-                item.machine_id===member.assigned_machine_id);
+                item.project_id===member.project_id&&
+                item.machine_id===member.assigned_machine_id&&
+                item.issued_by==='experiment-hub'&&
+                ['acknowledged','released'].includes(item.status)&&
+                item.resources?.cpus===member.resources?.cpus&&
+                item.resources?.ram_mb===member.resources?.ram_mb&&
+                item.resources?.gpu_count===gpuCount&&
+                (item.resources?.gpu_mode||'exclusive')===
+                    (member.resources?.gpu_mode||'exclusive'));
             const pinned=lease?.gpu_bindings;
-            const physical=Number.isSafeInteger(gpuCount)&&gpuCount===0
+            // A CPU-only job still requires its own genuine frozen lease.
+            // Otherwise project metadata could be mistaken for a proven
+            // physical allocation when drawing marginal CPU comparisons.
+            const physical=lease&&Number.isSafeInteger(gpuCount)&&gpuCount===0
                 ?[]:Array.isArray(pinned)&&pinned.length===gpuCount&&
                     pinned.every(item=>/^[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]$/.test(
                         item.pci_address||''))
@@ -1296,7 +1307,7 @@ document.addEventListener('DOMContentLoaded', () => {
             state?.reservations||[]);
         feedback('hub-compare-scaling-note',key
             ?'Showing '+key.slice(7)+'. Medians use bounded chart samples from each run’s latest segment, not complete histories. '+
-              'CPU/GPU values are allocations, not measured utilization. Distributed TinyBrains groups sum only their explicitly reserved learner and remote worker resources; the remote threads/CPU column shows frozen collector concurrency, not actual CPU occupancy. Marginal comparisons require five samples per job, completed jobs, matching frozen configuration and exact machine group, physical GPU lease identities, and one monotonically increased resource dimension. '+
+              'CPU/GPU values are allocations, not measured utilization. Distributed TinyBrains groups sum only their explicitly reserved learner and remote worker resources; the remote threads/CPU column shows frozen collector concurrency, not actual CPU occupancy. Marginal comparisons require five samples per job, completed jobs, matching frozen configuration and exact machine group, verified matching CPU/RAM/GPU Hub leases (including physical GPU identities where applicable), and one monotonically increased resource dimension. '+
               'They remain observational, not guaranteed improvements or independent learning evaluations.'
             :'Select a recorded throughput metric (unit: rate) above to inspect resource scaling. No CPU/GPU efficiency can be inferred from utilization alone.');
         for(const row of rows) {
