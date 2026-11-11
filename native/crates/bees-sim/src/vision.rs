@@ -25,7 +25,10 @@ pub struct VisionSweepCounts {
     pub completed_sweeps: u64,
     pub suppressed_sweeps: u64,
     pub active_observers: u64,
+    /// All logically eligible observer/enemy pairs (comparable to the old scan).
     pub live_ship_pairs: u64,
+    /// Pairs actually examined after the physics grid or dense fallback.
+    pub ship_pairs_tested: u64,
     pub unlearned_obstacle_pairs: u64,
     pub aabb_rejections: u64,
     pub exact_collider_tests: u64,
@@ -83,6 +86,7 @@ impl VisionSweepCounts {
         self.suppressed_sweeps += other.suppressed_sweeps;
         self.active_observers += other.active_observers;
         self.live_ship_pairs += other.live_ship_pairs;
+        self.ship_pairs_tested += other.ship_pairs_tested;
         self.unlearned_obstacle_pairs += other.unlearned_obstacle_pairs;
         self.aabb_rejections += other.aabb_rejections;
         self.exact_collider_tests += other.exact_collider_tests;
