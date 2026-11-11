@@ -67,11 +67,25 @@ def completed_rollouts(capture, journal, manifest, manifest_sha, checkpoint_sha,
             if (type(world) is not int or type(revision) is not int or
                     (previous is not None and revision < previous[0])):
                 raise ValueError("invalid or retired world episode in reward journal")
-            expected = previous[1] if previous is not None and revision == previous[0] else 0
-            if type(row["event_sequence"]) is not int or row["event_sequence"] != expected:
-                raise ValueError("missing or repeated world notification in reward journal")
-            world_sequences[world] = (revision, expected + 1)
+            same_episode = previous is not None and revision == previous[0]
+            expected = previous[1] if same_episode else 0
+            tick = row["tick"]
+            if (type(row["event_sequence"]) is not int or row["event_sequence"] != expected or
+                    type(tick) is not int or tick < 0 or
+                    (same_episode and tick < previous[2])):
+                raise ValueError("missing, repeated, or out-of-order world notification")
+            world_sequences[world] = (revision, expected + 1, tick)
             key = world, revision
+            # The source Level writes EpisodeFinal after all combat and
+            # group rewards. Only the immediate command-credit settlement
+            # batch may follow, exactly one event later at the same tick.
+            final = all_terminals.get(key)
+            if row["kind"] == "command_outcomes_ready":
+                if (final is None or row["event_sequence"] != final["event_sequence"] + 1 or
+                        tick != final["tick"]):
+                    raise ValueError("outcome batch is detached from the episode terminal")
+            elif final is not None:
+                raise ValueError("notification follows the completed episode terminal")
             if row["kind"] == "episode_final":
                 context = row["evaluation_context"]
                 if key in all_terminals:
