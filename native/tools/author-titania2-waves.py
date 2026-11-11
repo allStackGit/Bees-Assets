@@ -216,7 +216,8 @@ def expand(run, scene, manifest, read_capture=None):
                 # Stage allocator. A ship spawned in a future wave must be
                 # newer than every entity already created in the source
                 # scene or an earlier captured wave.
-                if any(eid <= max(entity_ids, default=0) for eid in members):
+                highest_created = max(entity_ids, default=0)
+                if any(eid <= highest_created for eid in members):
                     fail(f"{label} includes a nonmonotonic future ship ID")
                 # Retain the real source records, including weapons, movement,
                 # HiveMind authority and each member's authored formation.
