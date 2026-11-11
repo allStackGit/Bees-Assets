@@ -71,8 +71,12 @@ impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
             planned_squad_order.push(plan.squad_item_ids);
             previous = plan.after_seconds;
             spawn_centers.push(plan.spawn);
+            // Unity LevelConstructor.PositionSquads skips Squad.Move when
+            // moveToPoint == Vector2.zero. That is a source sentinel, not a
+            // physical point order; use Unity's epsilon-aware equality.
+            let entry = plan.entry.filter(|point| !point.unity_equal(Vec2::ZERO));
             waves.push(ReinforcementWave {
-                tick: tick as u64, entry: plan.entry,
+                tick: tick as u64, entry,
                 squads: Vec::new(), ships: Vec::new(),
             });
         }
