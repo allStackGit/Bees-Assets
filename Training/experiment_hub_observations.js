@@ -105,8 +105,15 @@ class ObservationArchive {
                 const body=Buffer.from(JSON.stringify(observation)+'\n');
                 if(body.length>MAX_RECORD_BYTES)
                     throw Error('Observation record exceeds its size limit.');
-                if(fs.writeSync(fd,body,0,body.length)!==body.length)
-                    throw Error('Incomplete observation archive append.');
+                // Filesystems may accept fewer bytes than requested.
+                // Complete the *same* bounded JSONL record before advancing
+                // the durable size/timestamp cursor.
+                for(let offset=0;offset<body.length;) {
+                    const n=fs.writeSync(fd,body,offset,body.length-offset);
+                    if(!Number.isSafeInteger(n)||n<=0)
+                        throw Error('Incomplete observation archive append.');
+                    offset+=n;
+                }
                 this.lastByJob.set(key,{project_id:job.project_id,at,
                     size:stat.size+body.length,dev:stat.dev,ino:stat.ino});
                 this.error=null;
