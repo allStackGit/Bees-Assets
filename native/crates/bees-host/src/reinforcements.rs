@@ -7,7 +7,7 @@ use bees_gameplay::level_host::NativeLevelActivationContext;
 use bees_gameplay::level_rules::NativeLevelStepError;
 use bees_gameplay::player_inputs::NativeLevelPlayerContext;
 use bees_sim::{combat_world::CombatWorld, geometry::Vec2, squad_movement::{
-    SquadFormationMember, issue_squad_move,
+    SquadFormationMember, authored_placement_offset, issue_squad_move,
 }};
 
 use crate::policy_only_metadata::NativePolicyOnlyMetadata;
@@ -118,29 +118,49 @@ impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
                 return Err("Reinforcement squads need one authored physical ship per member");
             }
         }
-        // Preflight and apply physical spawn positions during setup, not
-        // hundreds of seconds into a battle. The source Unity LevelConstructor
-        // calls Squad.SetOffsets after physical placement: a LIVE scene
-        // snapshot already stores the adjusted OffsetFromCenter. Multiplying
-        // that offset again would spread wide and Queen hulls twice.
+        // Unity LevelConstructor.PositionSquads sets the starting position
+        // twice for a single squad: first at the requested spawn, then at
+        // that placed formation's actual bounds center. Squad.Setup keeps
+        // authored OffsetFromCenter on its first SetOffsets call; wide hulls
+        // still need GetFormationAdjustment's type-specific scaling here.
+        // The same original offsets, without scaling, are used by Squad.Move.
         for (wave, spawn) in waves.iter_mut().zip(spawn_centers) {
             if let Some(spawn) = spawn {
+                let squad = wave.squads.first()
+                    .ok_or("Reinforcement spawn needs an authored squad")?;
+                let member_count = squad.members.len();
+                let mut left = f32::INFINITY;
+                let mut right = f32::NEG_INFINITY;
+                let mut bottom = f32::INFINITY;
+                let mut top = f32::NEG_INFINITY;
                 for ship in &mut wave.ships {
-                    let squad = wave.squads.iter().find(|squad|
-                        squad.members.contains(&ship.entity_id))
-                        .ok_or("Reinforcement ship has no staged squad")?;
                     let offset = self.metadata.stored_formation_offset(ship.entity_id)
                         .ok_or("Reinforcement ship has no source formation offset")?;
-                    let offset = if squad.members.len() == 1 {
-                        Vec2::ZERO
-                    } else {
-                        offset
-                    };
-                    let position = spawn + offset;
-                    if !position.is_finite() {
-                        return Err("Reinforcement spawn and formation overflowed world coordinates");
+                    let adjusted = authored_placement_offset(ship.ship_type, member_count, offset);
+                    let position = spawn + adjusted;
+                    let size = self.metadata.ship_catalog.sprite_size(ship.ship_type)
+                        .ok_or("Reinforcement ship has no authored sprite size")?;
+                    if !position.is_finite() || !size.is_finite() ||
+                        size.x <= 0.0 || size.y <= 0.0 {
+                        return Err("Reinforcement spawn and sprite geometry must be finite and positive");
                     }
+                    let half = size * 0.5;
+                    left = left.min(position.x - half.x);
+                    right = right.max(position.x + half.x);
+                    bottom = bottom.min(position.y - half.y);
+                    top = top.max(position.y + half.y);
                     ship.motion.position = position;
+                }
+                let placed_center = Vec2::new((left + right) * 0.5, (bottom + top) * 0.5);
+                let second_placement_shift = placed_center - spawn;
+                if !second_placement_shift.is_finite() {
+                    return Err("Reinforcement formation bounds overflowed world coordinates");
+                }
+                for ship in &mut wave.ships {
+                    ship.motion.position += second_placement_shift;
+                    if !ship.motion.position.is_finite() {
+                        return Err("Reinforcement second placement overflowed world coordinates");
+                    }
                 }
             }
             wave.ships.sort_unstable_by_key(|ship| ship.entity_id);
