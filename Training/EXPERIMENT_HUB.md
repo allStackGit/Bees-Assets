@@ -1903,7 +1903,10 @@ When a valid native owner observation has no new trainer update, the Hub
 also appends host-only CPU, RAM and physical GPU measurements to
 `hub-observations-v1/<job-id>-resources.jsonl`. These records have
 `observation_kind:host_only`, no trainer step count and no fabricated
-trainer source timestamp. Complete Export includes both files and marks
+trainer source timestamp. `trainer_source_status` distinguishes an adapter
+returning no progress (`absent`) from one returning a source version the Hub
+already recorded (`not_advanced`); neither observation alone proves the
+trainer has stalled. Complete Export includes both files and marks
 host-only rows separately in the long-form observation CSV. The host-only
 series may continue while the trainer is stalled, but still cannot prove
 GPU work or account for unobserved updates.
