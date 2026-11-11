@@ -14,7 +14,7 @@ const METRIC=/^[a-z][a-z0-9_]{0,39}$/;
 const KEEP_MS=2*60*60*1000;
 const JOB_FIELDS=[
     'id','project_id','configuration_name','configuration_sha256',
-    'frozen_parameters','metric_selection','resources','status',
+    'frozen_parameters','metric_selection','resources','resource_bundle','status',
     'assigned_machine_id','continuation_of_job_id','artifact_lineage_root_id',
     'checkpoint_model_sha256','checkpoint_ready_verified',
     'checkpoint_stop_verified','created_at','capacity_released_at',
