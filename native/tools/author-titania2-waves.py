@@ -68,12 +68,16 @@ def _source_records(scene, label):
     ships = {}
     entities = set()
     for item in scene["squads"]:
+        if not isinstance(item, dict):
+            fail(f"{label} contains a malformed squad")
         sid = item.get("item_id")
         if type(sid) is not int or sid <= 0 or sid in squads:
             fail(f"{label} has duplicate/invalid source squad IDs")
         squads[sid] = item
     for key in ("ships", "obstacles", "map_objects"):
         for item in scene[key]:
+            if not isinstance(item, dict):
+                fail(f"{label} contains a malformed physical entity")
             eid = item.get("entity_id")
             if type(eid) is not int or eid <= 0 or eid in entities:
                 fail(f"{label} has duplicate/invalid physical entity IDs")
@@ -90,8 +94,8 @@ def _verify_capture(initial, capture):
     for key in ("schema_version", "stage_name", "level_name", "bee_side",
                 "human_side", "fixed_dt_seconds", "has_obstacles", "min",
                 "max", "beehive_size_pixels"):
-        if capture.get(key) != initial.get(key):
-            fail(f"wave capture has a different source {key}")
+        if key not in initial or key not in capture or capture[key] != initial[key]:
+            fail(f"wave capture has a missing or different source {key}")
 
 
 def expand(run, scene, manifest, read_capture=None):
@@ -173,14 +177,16 @@ def expand(run, scene, manifest, read_capture=None):
                 fail(f"{label} requires an authentic, non-player Bee squad {squad_id}")
             members = squad.get("member_ids")
             if not isinstance(members, list) or not members or (
-                len(set(members)) != len(members)
-            ):
+                any(type(member) is not int or member <= 0 for member in members)
+            ) or len(set(members)) != len(members):
                 fail(f"source squad {squad_id} has invalid physical membership")
             selected_ships = captured_ships if capture is not None else ships
             for entity_id in members:
                 ship = selected_ships.get(entity_id)
                 if ship is None or ship.get("side") != bee_side or (
-                    ship.get("is_rl_policy_controlled") or ship.get("has_bound_policy")
+                    "is_rl_policy_controlled" not in ship or
+                    "has_bound_policy" not in ship or
+                    ship["is_rl_policy_controlled"] or ship["has_bound_policy"]
                 ):
                     fail(f"source squad {squad_id} has missing or policy-controlled physical ships")
             if capture is not None:
@@ -277,7 +283,7 @@ def main():
             handle.write(scene_result)
     with output_path.open("x", encoding="utf-8") as handle:
         handle.write(result)
-    print(f"Authored {len(plans)} source-verified squad arrivals in {output_path}")
+    print(f"Authored {len(plans)} captured squad arrival plans in {output_path}")
     if scene_output is not None:
         print(f"Merged authentic deferred physical records into {scene_output}")
 
