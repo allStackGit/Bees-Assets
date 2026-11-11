@@ -2495,6 +2495,14 @@ checkpoint, evaluation and STOP marker. Each remote machine owns an independent
 `tinybrains_rollout` native job under its own acknowledged CPU/RAM lease,
 optionally with **one exclusive Windows CUDA GPU**. The learner sends a frozen
 behavior policy and collects the returned on-policy shards before optimizing.
+By default, each collector receives an equal action target. For heterogeneous
+fixed machines, Design can freeze an optional `rollout_action_weights` array,
+for example `[2,8,4]` for the learner and two ordered remote collectors.
+This divides the configured total action target proportionally, assigning at
+least one action to each collector and preserving the total. The chosen
+weights never change during a run and do not resize CPU/GPU leases; use
+measured per-collector delivered throughput to select meaningful weights.
+The Hub records each collector's assigned `action_target` as a chart metric.
 Remote workers never publish or advance learner checkpoints.
 
 Install the *same* randomly generated 32+-byte HMAC key on each trusted host
