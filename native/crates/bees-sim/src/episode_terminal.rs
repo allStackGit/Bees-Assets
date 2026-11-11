@@ -13,6 +13,7 @@ use crate::combat_world::{CombatEvent, CombatWorld};
 pub enum EpisodeTerminalError {
     InvalidSides,
     InvalidTimeout,
+    InvalidSurvivalObjective,
     InvalidStep,
 }
 
@@ -163,10 +164,23 @@ impl EpisodeDeathAttribution {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
+pub struct SurvivalObjective {
+    pub defending_side: i32,
+    pub protected_ship_id: i64,
+    pub seconds: f32,
+}
+
+struct ArmedSurvival {
+    objective: SurvivalObjective,
+    deadline_tick: u64,
+}
+
 pub struct NativeEpisodeTerminal {
     bee_side: i32,
     human_side: i32,
     timeout_seconds: Option<f32>,
+    survival: Option<ArmedSurvival>,
     elapsed_seconds: f32,
     completed: Option<EpisodeTerminalResult>,
     measurements: EpisodeTerminalMeasurements,
@@ -193,14 +207,38 @@ impl NativeEpisodeTerminal {
             return Err(EpisodeTerminalError::InvalidSides);
         }
         Ok(Self {
-            bee_side, human_side, timeout_seconds,
+            bee_side, human_side, timeout_seconds, survival: None,
             elapsed_seconds: 0.0, completed: None,
             measurements: EpisodeTerminalMeasurements::default(),
         })
     }
 
+    pub fn arm_survival(
+        &mut self, objective: SurvivalObjective, fixed_dt_seconds: f32,
+    ) -> Result<(), EpisodeTerminalError> {
+        let ticks = (objective.seconds / fixed_dt_seconds).ceil();
+        if self.timeout_seconds.is_some() || self.survival.is_some() ||
+            self.measurements.ticks_observed != 0 ||
+            ![self.bee_side, self.human_side].contains(&objective.defending_side) ||
+            objective.protected_ship_id <= 0 ||
+            !objective.seconds.is_finite() || objective.seconds <= 0.0 ||
+            !fixed_dt_seconds.is_finite() || fixed_dt_seconds <= 0.0 ||
+            !ticks.is_finite() || ticks < 1.0 || ticks >= u64::MAX as f32
+        {
+            return Err(EpisodeTerminalError::InvalidSurvivalObjective);
+        }
+        self.survival = Some(ArmedSurvival { objective, deadline_tick: ticks as u64 });
+        Ok(())
+    }
+
     pub fn result(&self) -> Option<EpisodeTerminalResult> {
         self.completed
+    }
+
+    pub fn survival_seconds_remaining(&self) -> Option<f32> {
+        self.survival.as_ref().map(|survival|
+            (survival.objective.seconds - self.elapsed_seconds).max(0.0)
+        )
     }
 
     pub fn elapsed_seconds(&self) -> f32 {
@@ -354,13 +392,46 @@ impl NativeEpisodeTerminal {
         if self.completed.is_some() {
             return Ok(None);
         }
-        self.elapsed_seconds += dt_seconds;
-        if let Some(timeout) = self.timeout_seconds {
-            self.elapsed_seconds = self.elapsed_seconds.min(timeout);
-        }
         self.measurements.ticks_observed += 1;
+        self.elapsed_seconds = if self.survival.is_some() {
+            // The authored survival clock starts at tick zero, alongside the waves.
+            self.measurements.ticks_observed as f32 * dt_seconds
+        } else {
+            let elapsed = self.elapsed_seconds + dt_seconds;
+            self.timeout_seconds.map_or(elapsed, |timeout| elapsed.min(timeout))
+        };
         let bee_dead = world.living_mobile_ships_on_side(self.bee_side) == 0;
         let human_dead = world.living_mobile_ships_on_side(self.human_side) == 0;
+        if let Some(survival) = &self.survival {
+            let objective = survival.objective;
+            let defender_is_bee = objective.defending_side == self.bee_side;
+            let (defenders_dead, attacker_side) = if defender_is_bee {
+                (bee_dead, self.human_side)
+            } else {
+                (human_dead, self.bee_side)
+            };
+            let target_dead = world.ship(objective.protected_ship_id)
+                .is_none_or(|ship| ship.vitals.is_dead());
+            let winner = if defenders_dead || target_dead {
+                attacker_side
+            } else if self.measurements.ticks_observed >= survival.deadline_tick {
+                objective.defending_side
+            } else {
+                return Ok(None);
+            };
+            let outcome = EpisodeTerminalResult {
+                winner_side: winner,
+                timed_out: false,
+                extraction_victory: false,
+                duration_seconds: self.elapsed_seconds,
+                bee_side_eliminated: bee_dead,
+                human_side_eliminated: human_dead,
+            };
+            self.completed = Some(outcome);
+            world.frozen_after_elimination = true;
+            return Ok(Some(outcome));
+        }
+
         let extraction_outcome = world.extraction_outcome();
         if squad_was_retired || extraction_outcome.is_some() {
             self.measurements.elimination_checks += 1;

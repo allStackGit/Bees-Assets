@@ -76,6 +76,14 @@ the active zone through the configured collision layer return safely.
 Extracting the final mobile player ship wins the mission. The journal
 records each departure and distinguishes an extraction victory.
 
+A defense mission can add `"survival": {"defending_side": 2,
+"protected_ship_id": 123, "seconds": 330}` to its Level entry.
+Use the protected ship's exported entity ID. The mission ends in defeat
+if the target or the last mobile defender dies. It ends in victory when
+the defense clock expires with both still alive. Enemy elimination alone
+leaves the defense clock running. Survival requires a scene without an
+RL episode and cannot be combined with extraction.
+
 Add `"campaign_dialogue": {"titania_minesweeper": {"player_side": 1}}`
 to the Level entry for Titania I dialogue. The briefing waits for input
 before the battle starts. Fire Tank discovery, destruction of that tank,

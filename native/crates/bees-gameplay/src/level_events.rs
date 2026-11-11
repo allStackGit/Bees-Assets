@@ -1274,6 +1274,10 @@ impl NativeLevelEventProcessor {
 
     /// The same elapsed/timeout value used for terminal and exploration
     /// observations. No separately maintained training timer.
+    pub fn survival_seconds_remaining(&self) -> Option<f32> {
+        self.episode.survival_seconds_remaining()
+    }
+
     pub fn normalized_episode_progress(&self) -> f32 {
         self.episode.normalized_episode_progress()
     }

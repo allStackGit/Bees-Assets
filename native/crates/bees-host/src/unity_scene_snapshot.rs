@@ -699,6 +699,7 @@ pub struct NativeExportedPolicyLevelSetup<A> {
     /// keyed by the Unity policy team (0 or 1), never inferred from side.
     pub model_slots: HashMap<u8, u32>,
     pub extraction: Option<bees_sim::combat_world::ExtractionZone>,
+    pub survival: Option<bees_sim::episode_terminal::SurvivalObjective>,
     pub minesweeper_dialogue_side: Option<i32>,
     pub reinforcements: Vec<crate::reinforcements::NativeReinforcementPlan>,
     // Team-owned exploration starts fresh for the newly constructed
@@ -712,6 +713,7 @@ pub enum NativePolicyOnlyLevelError {
     Snapshot(NativeSnapshotError),
     Metadata(PolicyOnlyMetadataError),
     InvalidControllerBinding(i64),
+    InvalidSurvivalObjective,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -817,7 +819,7 @@ impl NativePhysicalScene {
             }
         }
         let [bee_side, human_side] = self.gameplay_sides();
-        let episode = if self.source_episode.is_some() {
+        let mut episode = if self.source_episode.is_some() {
             self.exported_episode()
         } else if setup.groups.is_some() {
             Err(NativeSnapshotError::InvalidEpisodeSource)
@@ -825,6 +827,21 @@ impl NativePhysicalScene {
             NativeEpisodeRewardCoordinator::new_game(bee_side, human_side)
                 .map_err(NativeSnapshotError::Episode)
         }.map_err(NativePolicyOnlyLevelError::Snapshot)?;
+        if let Some(objective) = setup.survival {
+            let target_is_live_ally = self.entities.iter().any(|entity| matches!(
+                entity,
+                NativeAuthoredEntity::Ship(ship) if ship.entity_id == objective.protected_ship_id &&
+                    ship.side == objective.defending_side && !ship.vitals.is_dead()
+            ));
+            if setup.extraction.is_some() || setup.minesweeper_dialogue_side.is_some() ||
+                !target_is_live_ally
+            {
+                return Err(NativePolicyOnlyLevelError::InvalidSurvivalObjective);
+            }
+            episode.arm_survival(objective, self.fixed_dt_seconds)
+                .map_err(NativeSnapshotError::Episode)
+                .map_err(NativePolicyOnlyLevelError::Snapshot)?;
+        }
         let agents = self.exported_policy_agents(&setup.model_slots)
             .map_err(NativePolicyOnlyLevelError::Snapshot)?;
         if agents.iter().any(|agent|

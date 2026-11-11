@@ -99,6 +99,7 @@ struct LevelConfig {
     /// Omit only for a game Level without MA-POCA group rewards.
     groups: Option<GroupConfig>,
     extraction: Option<ExtractionConfig>,
+    survival: Option<SurvivalConfig>,
     campaign_dialogue: Option<CampaignDialogueConfig>,
     #[serde(default)]
     reinforcements: Vec<ReinforcementConfig>,
@@ -126,6 +127,14 @@ struct ExtractionConfig {
     half_extents: [f32; 2],
     activation_radius: f32,
     layer: u8,
+}
+
+#[derive(Clone, Copy, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct SurvivalConfig {
+    defending_side: i32,
+    protected_ship_id: i64,
+    seconds: f32,
 }
 
 impl LevelConfig {
@@ -371,6 +380,11 @@ fn make_setup(
             player_side: zone.player_side, center: vec2(zone.center), half_extents: vec2(zone.half_extents),
             activation_radius: zone.activation_radius, layer: zone.layer,
         }),
+        survival: level.survival.map(|objective| bees_sim::episode_terminal::SurvivalObjective {
+            defending_side: objective.defending_side,
+            protected_ship_id: objective.protected_ship_id,
+            seconds: objective.seconds,
+        }),
         minesweeper_dialogue_side: level.campaign_dialogue.as_ref().map(|dialogue| match dialogue {
             CampaignDialogueConfig::TitaniaMinesweeper { player_side } => *player_side,
         }),
@@ -452,6 +466,10 @@ fn gameplay_config_sha256(
         "interactive": interactive,
         "hivemind": hivemind,
     });
+    let survival = config.levels.iter().filter_map(|level|
+        level.survival.map(|objective| (level.world_id, objective)))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    if !survival.is_empty() { inputs["survival"] = json!(survival); }
     let extraction = config.levels.iter().filter_map(|level|
         level.extraction.as_ref().map(|zone| (level.world_id, zone)))
         .collect::<std::collections::BTreeMap<_, _>>();
@@ -1187,6 +1205,14 @@ fn run_battle(
                     squad.side == zone.player_side && squad.player_permissions.user_controlled)
             {
                 return Err(invalid("Extraction must use the authored campaign player side").into());
+            }
+        }
+        if let Some(objective) = &level.survival {
+            if mission.is_some_and(|mission| mission.player_side != objective.defending_side) ||
+                !source.source_squads.iter().any(|squad|
+                    squad.side == objective.defending_side && squad.player_permissions.user_controlled)
+            {
+                return Err(invalid("Survival must use the authored campaign player side").into());
             }
         }
         if let Some(CampaignDialogueConfig::TitaniaMinesweeper { player_side }) = level.campaign_dialogue {
