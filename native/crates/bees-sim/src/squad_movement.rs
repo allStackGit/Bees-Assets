@@ -20,6 +20,23 @@ use crate::navigation_runtime::NavigationRuntime;
 
 pub const FORMATION_COMPRESSION_STEPS: u32 = 20;
 
+/// Unity Squad.GetFormationAdjustment, used by
+/// SetOffscreenStartingPosition and SetStartingPosition when physically
+/// placing a saved squad. It deliberately differs from Squad.MoveInternal,
+/// which uses the unadjusted Ship.OffsetFromCenter for movement orders.
+/// Ship types are the frozen ConfigData.ShipTypes IDs in ship_assets.rs.
+pub fn authored_placement_offset(ship_type: u8, member_count: usize, offset: Vec2) -> Vec2 {
+    if member_count <= 1 { return Vec2::ZERO; }
+    let (x_scale, y_scale) = match ship_type {
+        17 => (2.75, 2.0),          // Queen
+        3 => (1.2, 1.2),           // Bumblebee
+        0 | 10 | 11 | 4 => (1.4, 1.0), // Barge, FireBarge, Flagship, CarpenterBee
+        2 | 20 => (2.5, 1.0),     // Beehive, WarpGate
+        _ => (1.0, 1.0),
+    };
+    Vec2::new(offset.x * x_scale, offset.y * y_scale)
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct SquadFormationMember {
     pub ship_id: i64,
