@@ -61,6 +61,7 @@ pub struct World<S> {
     pub id: WorldId,
     pub state: S,
     pub random: RandomStream,
+    fixed_step_seconds: Option<f32>,
     tick: u64,
     /// Monotonic episode identity for rejecting delayed policy inference
     /// after a world is reset with the same WorldId and agent identifiers.
@@ -77,6 +78,7 @@ impl<S> World<S> {
             id,
             state,
             random: RandomStream::new(seed),
+            fixed_step_seconds: None,
             tick: 0,
             episode_revision: 0,
             failed: false,
@@ -219,7 +221,20 @@ impl<S, R: GameRules<S>> Simulation<S, R> {
         self.sample_every
     }
 
-    pub fn fixed_step_seconds(&self) -> f32 { self.dt_seconds }
+    pub fn world_fixed_step_seconds(&self, index: usize) -> Option<f32> {
+        self.worlds.get(index).map(|world| world.fixed_step_seconds.unwrap_or(self.dt_seconds))
+    }
+
+    /// An imported Level keeps its authored clock across episode resets.
+    pub fn add_world_with_fixed_step(&mut self, mut world: World<S>, seconds: f32)
+        -> Result<usize, &'static str>
+    {
+        if !seconds.is_finite() || seconds <= 0.0 {
+            return Err("fixed-step seconds must be finite and positive");
+        }
+        world.fixed_step_seconds = Some(seconds);
+        self.add_world(world)
+    }
 
     pub fn add_world(&mut self, world: World<S>) -> Result<usize, &'static str> {
         if self.worlds.iter().any(|existing| existing.id == world.id) {
@@ -386,7 +401,7 @@ fn step_one<S, R: GameRules<S>>(
         world.tick % u64::from(period.get()) == 0
     );
     let start = if sampled { Some(Instant::now()) } else { None };
-    let counts = match rules.step(world, decisions, dt) {
+    let counts = match rules.step(world, decisions, world.fixed_step_seconds.unwrap_or(dt)) {
         Ok(counts) => counts,
         Err(source) => {
             // Rules may have partially mutated a world. It cannot be stepped

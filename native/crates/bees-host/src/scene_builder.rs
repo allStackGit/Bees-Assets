@@ -228,7 +228,6 @@ pub enum NativeRuntimeBuildError {
     Imported(crate::unity_scene_snapshot::NativePolicyOnlyLevelError),
     /// A single batched native runtime has ONE physics fixed dt. Mixed
     /// source stage clocks must not silently run at the first one's rate.
-    MixedFixedStep { expected: f32, actual: f32 },
     MixedSourceStage { expected: String, actual: String },
     Scene(NativeSceneBuildError),
     Simulation(&'static str),
@@ -255,14 +254,33 @@ impl NativeSceneAssets {
         B: NativePolicyInference,
         S: NativeLevelNotificationSink,
     {
+        self.build_runtime_with_steps(fixed_dt_seconds, levels.into_iter()
+            .map(|level| (fixed_dt_seconds, level)), model, connection, sink)
+    }
+
+    pub(crate) fn build_runtime_with_steps<M, A, B, S>(
+        &self,
+        default_fixed_step: f32,
+        levels: impl IntoIterator<Item = (f32, NativeAuthoredLevel<M, A>)>,
+        model: B,
+        connection: DurableHiveMindConnection,
+        sink: S,
+    ) -> Result<NativeHostRuntime<M, A, B, S>, NativeRuntimeBuildError>
+    where
+        M: NativeLevelRewardMetadata + NativeLevelCommandContext +
+            NativeLevelActivationContext + NativeLevelObservationContext,
+        A: FnMut(SquadLifetime, i64) -> Result<SquadLifetime, SquadRosterError>,
+        B: NativePolicyInference,
+        S: NativeLevelNotificationSink,
+    {
         let mut simulation = Simulation::new(
-            self.level_rules(), fixed_dt_seconds,
+            self.level_rules(), default_fixed_step,
         ).map_err(NativeRuntimeBuildError::Simulation)?;
         let mut count = 0usize;
-        for authored in levels {
+        for (fixed_step, authored) in levels {
             let world = self.build_level(authored)
                 .map_err(NativeRuntimeBuildError::Scene)?;
-            simulation.add_world(world)
+            simulation.add_world_with_fixed_step(world, fixed_step)
                 .map_err(NativeRuntimeBuildError::Simulation)?;
             count += 1;
         }

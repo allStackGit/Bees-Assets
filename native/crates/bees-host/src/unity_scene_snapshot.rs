@@ -2139,7 +2139,6 @@ impl NativeSceneAssets {
         B: NativePolicyInference,
         S: NativeLevelNotificationSink,
     {
-        let mut fixed_dt_seconds = None;
         let mut levels = Vec::new();
         for (scene, setup) in imported {
             if scene.stage_name != self.stage_name() {
@@ -2149,19 +2148,10 @@ impl NativeSceneAssets {
                 });
             }
             let dt = scene.fixed_dt_seconds;
-            if let Some(expected) = fixed_dt_seconds {
-                if dt != expected {
-                    return Err(NativeRuntimeBuildError::MixedFixedStep {
-                        expected, actual: dt,
-                    });
-                }
-            } else {
-                fixed_dt_seconds = Some(dt);
-            }
-            levels.push(scene.into_exported_policy_only_level(setup)
-                .map_err(NativeRuntimeBuildError::Imported)?);
+            levels.push((dt, scene.into_exported_policy_only_level(setup)
+                .map_err(NativeRuntimeBuildError::Imported)?));
         }
-        let dt = fixed_dt_seconds.ok_or(NativeRuntimeBuildError::EmptyLevels)?;
-        self.build_runtime(dt, levels, model, connection, sink)
+        let default_step = levels.first().ok_or(NativeRuntimeBuildError::EmptyLevels)?.0;
+        self.build_runtime_with_steps(default_step, levels, model, connection, sink)
     }
 }
