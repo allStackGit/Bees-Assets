@@ -946,11 +946,13 @@ trainer-computed advantages using inverse live group-size weights; it does
 not construct them from rewards or actions. Its returned moments and
 effective sample weight support learner diagnostics. Native code does not
 generate old log-probabilities, policy versions or centralized group-critic
-estimates; those must come from the real trainer/model. The host still must supply an actual CPU/GPU model. **This is not yet a runnable game or distributed
-RL training replacement.** Renderer/input, full remaining gameplay,
-model execution, policy optimization/checkpoints, transport, and
-cross-engine/Windows/Linux qualification remain outstanding. No
-performance or parity gains are claimed without executable measurements.
+estimates; those must come from the real trainer/model. The native `bees play`
+client and campaign picker can run development battles using the same
+world, commands and inference interfaces as headless mode. They are **not
+yet a complete Unity game replacement or a distributed RL training
+replacement**. Remaining authored gameplay and presentation coverage,
+GPU/model backend qualification, policy optimization/checkpoints, and
+cross-engine/Windows/Linux parity still need work and measured validation.
 
 The OS host now includes a **blocking, certificate-verified WSS client**
 (`bees-host::socket::NativeHiveMindSocket`) for the production
