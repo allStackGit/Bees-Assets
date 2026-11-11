@@ -710,6 +710,7 @@ pub struct NativeExportedPolicyLevelSetup<A> {
 #[derive(Debug)]
 pub enum NativePolicyOnlyLevelError {
     InvalidReinforcements(&'static str),
+    InvalidCampaignPlacement(&'static str),
     Snapshot(NativeSnapshotError),
     Metadata(PolicyOnlyMetadataError),
     InvalidControllerBinding(i64),
@@ -917,6 +918,15 @@ impl NativePhysicalScene {
         authored.campaign_dialogue = setup.campaign_dialogue;
         authored.stage_reinforcements(setup.reinforcements, dt)
             .map_err(NativePolicyOnlyLevelError::InvalidReinforcements)?;
+        if let Some(CampaignDialogueSpec::TitaniaBeenoculars { player_side, .. }) =
+            authored.campaign_dialogue
+        {
+            // Source moves the original player fleet before briefing and
+            // before new enemy squads are added. Deferred wave ships were
+            // removed above, so only the actual starting roster is staged.
+            authored.stage_titania2_player_fleet(player_side)
+                .map_err(NativePolicyOnlyLevelError::InvalidCampaignPlacement)?;
+        }
         Ok(authored)
     }
 
