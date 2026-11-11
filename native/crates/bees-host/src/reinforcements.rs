@@ -95,6 +95,18 @@ impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
         }
         self.squads = initial_squads;
         self.entities = initial_entities;
+        // Deferred squads bypass the ordinary initial roster registration.
+        // Verify their physical membership here; a missing imported hull or
+        // repeated ship ID must not fail only after a long training run.
+        for wave in &waves {
+            let expected = wave.squads.iter().try_fold(0usize, |total, squad| {
+                if squad.members.is_empty() { return None; }
+                total.checked_add(squad.members.len())
+            }).ok_or("Reinforcement squads need nonempty, bounded membership")?;
+            if wave.ships.len() != expected {
+                return Err("Reinforcement squads need one authored physical ship per member");
+            }
+        }
         // Preflight and apply physical spawn positions during setup, not
         // hundreds of seconds into a battle. Unity
         // Squad.SetOffscreenStartingPosition preserves saved formation
