@@ -71,6 +71,12 @@ def expand(run, scene, manifest):
         fail("run configuration already has reinforcements; refusing to replace them")
     if scene.get("has_obstacles") is not False:
         fail("automatic lanes require Titania II's cleared obstacle-free battlefield")
+    # Unity checks real Physics2D colliders, not merely HasObstacles.
+    # The current mission clears both physical obstacle populations.
+    # Refuse first-lane prediction if source obstacles might block it.
+    if any(not isinstance(scene.get(key), list) or scene[key]
+           for key in ("obstacles", "map_objects")):
+        fail("automatic lanes need empty captured obstacle and MapObject lists")
     mn = scene.get("min")
     mx = scene.get("max")
     if not isinstance(mn, dict) or not isinstance(mx, dict):
@@ -158,9 +164,11 @@ def main():
     scene_path = (run_path.parent / levels[0]["scene"]).resolve()
     scene = json.loads(scene_path.read_text(encoding="utf-8"))
     plans = expand(run, scene, manifest)
+    # Complete serialization before creating a new output file; a
+    # malformed configuration must not leave a partial run.json behind.
+    result = json.dumps(run, indent=2, ensure_ascii=False, allow_nan=False) + "\n"
     with output_path.open("x", encoding="utf-8") as handle:
-        json.dump(run, handle, indent=2, ensure_ascii=False, allow_nan=False)
-        handle.write("\n")
+        handle.write(result)
     print(f"Authored {len(plans)} source-verified squad arrivals in {output_path}")
 
 
