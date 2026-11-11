@@ -1388,6 +1388,15 @@ update count: the Linux TinyBrains `--max-ppo-updates` option accepts this
 per-invocation count and can extend training beyond the original frozen run
 spec's ceiling. The source run spec and imported checkpoint are not rewritten.
 
+The locally trusted TinyBrains persistent adapter can use
+`cpuParallelism:'allocation'` to select its CPU thread count once from the
+job's frozen CPU lease instead of the profile's default threads. Explicit
+`threads` in a frozen job configuration still wins, preserving existing
+jobs. This is fixed-allocation concurrency, **not** measured optimal
+threading or an adaptive tuner; test larger core counts before asserting
+a throughput benefit. The Halifax example enables this mode. The default
+for other installations remains `'profile'`.
+
 The Halifax example now opts into TinyBrains' `TINYBRAINS_PPO_PROFILE=1` via its
 locally trusted Docker adapter. It records per-update PPO host-wall stages
 (data preparation, forward/loss, backward, metric readback, gradient
@@ -2326,6 +2335,29 @@ the pinned suite receipt and kept training when the result was below
 the stop threshold. A subsequent manual Stop produced a signed terminal
 receipt, and the released claim survived a registry reopen. Qualifying
 TinyBrains evaluation-triggered Stop and remote evaluation remain open.
+
+### Cross-project fixed CPU concurrency and scaling evidence
+
+The reusable `fixedCpuParallelism` rule selects worker count from a
+machine-local CPU lease exactly once, bounded by the adapter's approved
+maximum. It is currently used by the persistent TinyBrains and Courier
+adapters, but does **not** distribute a single job across machines by itself.
+Courier can opt into `cpuParallelism:'allocation'` in its trusted adapter;
+a configuration with `workers` omitted then uses up to 64 leased CPU cores.
+Explicit `workers` continues to use the saved count. The default is
+`'profile'` to preserve deployed configurations. Other project adapters
+must implement their own safe consumption of the fixed budget.
+
+Compare includes **Observed resource scaling** for selected runs with a
+recorded throughput metric (unit `rate`). It summarizes bounded chart
+samples from the latest continuous segment and shows throughput per allocated
+CPU core. Marginal figures are shown only for completed jobs with at least
+five samples and matching frozen configuration, physical host ID, GPU mode,
+and one varied resource dimension. Multi-machine TinyBrains jobs report
+learner-only CPU budgets and never receive a misleading marginal estimate.
+All such comparisons remain observational, not independent evidence of
+causality, energy efficiency, or full-resolution training performance.
+Export the complete job histories for definitive throughput investigation.
 
 ## Courier Ants (Basic Training)
 
