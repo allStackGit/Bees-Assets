@@ -537,14 +537,16 @@ struct SourceCommandClock {
 }
 
 /// Converts authored Stage timer lengths to fixed-step handoff points.
-/// Unity's time-scaled 0.25s timer is evaluated in Update; a native
-/// headless runner can only publish it at completed simulation ticks.
+/// Unity ScaledTimer.Update fires on Elapsed > Length (not >=), so an
+/// exactly-on-boundary command pulse must reach the following fixed tick.
+/// Unity evaluates this in variable-rate Update; fixed-tick delivery is the
+/// headless approximation, not a claim of identical rendering-frame timing.
 fn source_command_ticks(seconds: f64, fixed_dt: f32) -> io::Result<u64> {
     if !fixed_dt.is_finite() || fixed_dt <= 0.0 ||
         !seconds.is_finite() || seconds < 0.0 {
         return Err(invalid("invalid source HiveMind timer configuration"));
     }
-    let ticks = (seconds / f64::from(fixed_dt)).ceil().max(1.0);
+    let ticks = (seconds / f64::from(fixed_dt)).floor() + 1.0;
     if ticks >= u64::MAX as f64 {
         return Err(invalid("source HiveMind timer exceeds fixed-step clock range"));
     }
