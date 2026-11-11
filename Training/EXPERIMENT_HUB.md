@@ -2456,12 +2456,14 @@ resources: they do not prove useful utilization or incremental speed.
 All such comparisons remain observational, not independent evidence of
 causality, energy efficiency, or full-resolution training performance.
 Export the complete job histories for definitive throughput investigation.
-Compare also has a project-neutral **Recorded seconds metrics** panel showing
+Compare also has a project-neutral **Recorded time metrics** panel showing
 the top observed medians, minima, maxima and sample counts from each selected
-run's latest chart segment. This includes recorded optimizer/rollout phase
-timings when an adapter supplies them. The `seconds` unit alone cannot
-distinguish cumulative clocks from individual stage durations, so the panel
-does not add overlapping stages or infer a causal bottleneck.
+run's latest chart segment. Valid `seconds` and `milliseconds` source values
+are both displayed as seconds; the original stored units are not changed.
+This includes recorded optimizer/rollout phase timings when an adapter
+supplies them. A duration unit alone cannot distinguish cumulative clocks
+from individual stage durations, so the panel does not add overlapping
+stages or infer a causal bottleneck.
 
 ## Courier Ants (Basic Training)
 
