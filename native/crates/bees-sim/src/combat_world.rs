@@ -3906,7 +3906,7 @@ impl CombatWorld {
         self.events.clear();
         if self.frozen_after_elimination {
             return Ok(StepCounts {
-                active_ships: self.ships.iter().filter(|ship| !ship.vitals.is_dead()).count() as u32,
+                active_ships: self.live_ship_total as u32,
                 active_projectiles: self.physics.projectiles().iter().filter(|p| p.active).count() as u32,
                 ..StepCounts::default()
             });
@@ -4054,8 +4054,11 @@ impl CombatWorld {
 
         self.consume_weapon_rank_events()?;
         let physics_counts = self.physics.counts();
+        // Ship insertion and retirement already maintain this exact active
+        // population. Avoid an additional O(historical hulls) scan on every
+        // fixed tick, including long battles with many retired ships.
         Ok(StepCounts {
-            active_ships: self.physics.ships().iter().filter(|ship| ship.active).count() as u32,
+            active_ships: self.live_ship_total as u32,
             active_projectiles: self.physics.projectiles().iter().filter(|shot| shot.active).count() as u32,
             events: self.events.len() as u64,
             automatic_weapon_target_queries: self.automatic_weapon_measurements.target_queries - automatic_before.target_queries,
