@@ -8,6 +8,7 @@ const path=require('node:path');
 const crypto=require('node:crypto');
 const {spawnSync}=require('node:child_process');
 const {validateProgress}=require('./experiment_hub_progress');
+const {fixedCpuParallelism}=require('./experiment_hub_resources');
 const {modelFileSha256}=require('./experiment_hub_evaluation');
 
 const UUID=/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
@@ -183,7 +184,10 @@ function createTinyBrainsPersistentDockerAdapter({
     seedCheckpointSha256,seedPpoUpdates,profiles,
     image='tinybrains-rocm:halifax-node',sourceWindowsRoot='B:/TinyBrains/Ants-MAPOCA',
     enableDualGpu=false,remoteCollectors=null,profilePpo=false,
+    cpuParallelism='profile',
 }) {
+    if(!['profile','allocation'].includes(cpuParallelism))
+        throw Error('TinyBrains CPU concurrency must be pinned to its profile or allocated CPU budget.');
     if(typeof profilePpo!=='boolean')
         throw Error('PPO profiling requires an explicit local boolean opt-in.');
     if(typeof enableDualGpu!=='boolean')
@@ -429,8 +433,13 @@ function createTinyBrainsPersistentDockerAdapter({
                 fs.writeFileSync(path.join(out,'hub-start-update.json'),
                     JSON.stringify({update:startingUpdate})+'\n',{flag:'wx',mode:0o600});
             }
+            // A machine-local choice, resolved once at launch from the frozen
+            // CPU lease. Explicit per-job overrides keep their old meaning.
+            const chosenThreads=threads??(cpuParallelism==='allocation'
+                ?fixedCpuParallelism(context.cpu_quota,256)
+                :item.profile.threads);
             return ['-B',runner,'--run',JOBS_IN+'/'+context.job_id,
-                '--updates',String(updates),'--threads',String(threads??item.profile.threads),
+                '--updates',String(updates),'--threads',String(chosenThreads),
                 '--live-matches',String(item.profile.live_matches),
                 '--waves',String(item.profile.waves),
                 '--actions',String(item.profile.rollout_actions),

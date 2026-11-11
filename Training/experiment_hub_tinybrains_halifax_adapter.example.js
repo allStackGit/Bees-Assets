@@ -19,6 +19,10 @@ module.exports={
         // User verified that the Exeter and Halifax files have this same SHA.
         seedCheckpointSha256:'fae407ef8db3fab7620b1407b17380e2eea0f616c8d4d8816d3924cac6e005d7',
         seedPpoUpdates:7199,
+        // Derive CPU threads once from the leased cores, without changing
+        // the requested CPU allocation or retuning while the job runs.
+        // Larger allocations must still be benchmarked for useful scaling.
+        cpuParallelism:'allocation',
         // Diagnostic-only host-wall PPO stage timings. Does not change
         // checkpoint formats, optimizer settings or the frozen profile digest.
         profilePpo:true,
