@@ -4,6 +4,7 @@ const fs=require('node:fs');
 const path=require('node:path');
 const crypto=require('node:crypto');
 const {validateProgress}=require('./experiment_hub_progress');
+const {fixedCpuParallelism}=require('./experiment_hub_resources');
 const {evaluationReader,modelFileSha256}=require('./experiment_hub_evaluation');
 
 const UUID=/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
@@ -79,7 +80,10 @@ function liveWindowsProgress(root) {
     }
 }
 
-function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,evaluationRoot,evaluationSuites,snapshotRoot}) {
+function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,evaluationRoot,evaluationSuites,snapshotRoot,
+    cpuParallelism='profile'}) {
+    if(!['profile','allocation'].includes(cpuParallelism))
+        throw Error('Courier CPU concurrency must be explicitly profile-based or follow allocated CPU cores.');
     for(const target of [projectRoot,pythonPath,artifactRoot,configPath]) {
         if(typeof target!=='string'||!path.isAbsolute(target))
             throw Error('Courier requires absolute local project, Python, artifact and configuration paths.');
@@ -167,9 +171,16 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
             if(Object.keys(parameters).some(key=>
                 !['config_sha256','seed','workers','max_rounds','checkpoint_rounds'].includes(key))||
                 config_sha256!==configSha256||!within(seed,0,4294967295)||
-                !within(workers,1,64)||!within(max_rounds,0,10000000)||
+                !(workers===undefined&&cpuParallelism==='allocation')&&
+                    !within(workers,1,64)||
+                !within(max_rounds,0,10000000)||
                 !within(checkpoint_rounds,1,10000000))
                 throw Error('Courier requires the approved configuration digest and valid seed, worker and round counts.');
+            // The approved adapter may treat an omitted worker count as the
+            // immutable CPU lease size. Explicit worker counts retain their
+            // previous semantics for existing frozen configurations.
+            const chosenWorkers=workers===undefined
+                ?fixedCpuParallelism(context.cpu_quota,64):workers;
             const out=jobRoot(context);
             const publish=Boolean(snapshots&&context.evaluation_suite_id);
             if(publish&&(!UUID.test(String(context.dispatch_id||''))||
@@ -199,7 +210,7 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
                 path.join(out,'hub-stop.request')];
             const entry=windows?['-c',WINDOWS_ENTRY,path.join(out,'trainer.stderr.txt'),...launch]:launch;
             return ['-B',...entry,'--config',configFile,'--run-dir',out,'--port','0',
-                '--seed',String(seed),'--workers',String(workers),
+                '--seed',String(seed),'--workers',String(chosenWorkers),
                 '--max-rounds',String(limit),'--checkpoint-rounds',String(checkpoint_rounds),
                 ...(predecessor?['--resume']:[])];
         },
