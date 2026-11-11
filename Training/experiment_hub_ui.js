@@ -1372,7 +1372,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const tinyBrainsThreads=document.createElement('input');
     const tinyBrainsDevice=document.createElement('select');
     const tinyBrainsRemote=document.createElement('input');
+    const tinyBrainsWeights=document.createElement('input');
     tinyBrainsRemote.type='checkbox';
+    tinyBrainsWeights.type='text';
+    tinyBrainsWeights.placeholder='Optional: 2,8,4 (local, then each remote)';
     tinyBrainsDevice.append(new Option('Profile default',''),
         new Option('CPU-only fallback (no GPU)','cpu'),
         new Option('Dedicated two-GPU split PPO (ROCm)','dual'));
@@ -1394,6 +1397,18 @@ document.addEventListener('DOMContentLoaded', () => {
         const cpuFallback=tinyBrainsDevice.value==='cpu';
         const dualGpu=tinyBrainsDevice.value==='dual';
         const remoteRollouts=tinyBrainsRemote.checked;
+        const weightText=tinyBrainsWeights.value.trim();
+        const weights=weightText?weightText.split(',').map(s=>Number(s.trim())):[];
+        if(weightText&&(!remoteRollouts||weights.length<2||weights.length>9||
+            weights.some(w=>!Number.isSafeInteger(w)||w<1||w>1024)||
+            !(state?.machines||[]).some(machine=>
+                machine.status==='connected'&&
+                machine.tinybrains_profiles?.[profile]===digest&&
+                machine.tinybrains_remote_rollout_endpoints?.length===weights.length-1))) {
+            feedback('hub-config-message',
+                'Fixed action weights require one integer from 1–1024 for the learner and each approved remote endpoint.');
+            return;
+        }
         if(hasThreads&&(!Number.isSafeInteger(threads)||threads<1||threads>256)) {
             feedback('hub-config-message','CPU threads must be a whole number from 1 to 256.');
             return;
@@ -1433,6 +1448,7 @@ document.addEventListener('DOMContentLoaded', () => {
             ...(hasThreads?{threads}:{}),
             ...(cpuFallback?{device:'cpu'}:dualGpu?{device:'dual'}:{}),
             ...(remoteRollouts?{remote_rollouts:true}:{}),
+            ...(weights.length?{rollout_action_weights:weights}:{}),
             ...(sourceId&&sourceDigest?{
                 import_checkpoint:sourceId,
                 import_checkpoint_sha256:sourceDigest,
@@ -1451,12 +1467,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 :'Use a configuration without an import for checkpoint-continuation stages. ')+
             (hasThreads?'The CPU thread override does not change the job CPU quota. ':'')+
             (remoteRollouts?'In Train, use Queue and reserve entire group to atomically assign learner and approved remote collector CPU/GPU budgets before any Start. ':'')+
+            (weights.length?'Fixed action weights change rollout work shares, not hardware reservations. ':'')+
             'Save the draft to retain these settings.');
     });
     for(const [caption,control] of [['Approved profile ',tinyBrainsSelect],
         ['Updates ',tinyBrainsUpdates],['CPU threads (optional) ',tinyBrainsThreads],
         ['Execution device ',tinyBrainsDevice],
         ['Use approved remote CPU rollout collectors ',tinyBrainsRemote],
+        ['Fixed rollout action weights (optional; local then remotes) ',tinyBrainsWeights],
         ['Approved checkpoint import (optional) ',tinyBrainsImport]]) {
         const label=document.createElement('label');
         label.append(caption,control);
@@ -1603,6 +1621,7 @@ document.addEventListener('DOMContentLoaded', () => {
         ...Array.from({length:9},(_,i)=>[
             'collector_'+i+'_ant_decisions',
             'collector_'+i+'_engine_steps',
+            'collector_'+i+'_action_target',
             'collector_'+i+'_roundtrip_seconds',
             'collector_'+i+'_model_prepare_seconds',
             'collector_'+i+'_decisions_per_second',
