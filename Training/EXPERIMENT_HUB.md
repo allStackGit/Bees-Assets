@@ -1880,8 +1880,9 @@ metric preferences are present, the Hub retains operator-selected fields first
 and then fills spare chart slots with observed host CPU/GPU resources, without
 adding unrelated trainer fields. With no explicit preference, measured host resource
 usage and the PPO update counter take priority within the 96-field chart cap;
-remaining slots retain trainer metrics. Source reports may contain up to 192
-metrics, while charts retain at most 96 per observation. Select high-index
+remaining slots retain trainer metrics. Source reports may contain up to 256
+metrics (within the unchanged 32-KiB source-progress envelope), while charts
+retain at most 96 per observation. Select high-index
 collector metrics in Train before starting the job to prioritize their chart
 retention; all received source measurements remain in the raw diagnostic
 archive regardless of chart selection. Full project telemetry is not filtered
