@@ -1444,6 +1444,19 @@ the native launch must independently demonstrate exactly one visible
 correct PCI GPU. No enrollment token or saved experiment configuration
 may override this operator-owned mapping.
 
+The installed `createNativeBeesAdapter` supports the same preflight for
+`bees_native` **optimizer** jobs, but not collection-only jobs. A single
+exclusive GPU lease selects `--device cuda` (also the ROCm PyTorch device
+name); a CPU-only lease selects `--device cpu`. Shared and multi-GPU Bees
+optimizer leases are not supported by this adapter. On multi-GPU Linux
+hosts, provide the optional machine-local `rocrGpuUuids` PCI-to-ROCr-UUID
+map to the adapter when the runtime cannot otherwise prove one visible
+leased device. The fixed HIP/PyTorch PCI verifier is shared with TinyBrains.
+For reproducible CPU scaling experiments, a Bees training job may specify
+`optimizer_threads` in its frozen parameters (1–256, not exceeding the
+assigned Hub CPU count); this sets the learner's PyTorch intra-op threads
+only, not the rollout worker count. Omit it to retain PyTorch's default.
+
 Queue placement prefers fitting hosts advertising the adapter's GPU capability.
 Train requires explicit Start and a current device-access **plus runtime**
 probe for the same acknowledged exclusive single-GPU lease. Native Start
