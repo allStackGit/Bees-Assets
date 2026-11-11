@@ -43,6 +43,9 @@ def completed_rollouts(capture, journal, manifest, manifest_sha, checkpoint_sha,
     rewards = defaultdict(list)
     ended_teams = defaultdict(dict)
     retirements = defaultdict(dict)
+    # Source combat hits are logged once per physical hit. Retain
+    # aggregates, not individual hit events, until their episode closes.
+    combat_by_episode = defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
     journal_id = None
     with journal.open(encoding="utf-8") as stream:
         for sequence, line in enumerate(stream):
@@ -67,6 +70,21 @@ def completed_rollouts(capture, journal, manifest, manifest_sha, checkpoint_sha,
                 if controller in retirements[key]:
                     raise ValueError("duplicate policy controller retirement")
                 retirements[key][controller] = row["tick"]
+            elif row["kind"] == "combat_hit":
+                hit = row["payload"]
+                attacker = int(hit["attacker_side"])
+                target = int(hit["target_side"])
+                damage = int(hit["applied_damage"])
+                tsv_loss = int(hit["tsv_loss"])
+                if damage < 0 or tsv_loss < 0:
+                    raise ValueError("invalid negative combat hit measurement")
+                kind = "friendly" if attacker == target else "enemy"
+                counts = combat_by_episode[key][attacker]
+                counts[f"{kind}_hits"] += 1
+                counts[f"{kind}_damage"] += damage
+                counts[f"{kind}_tsv_loss"] += tsv_loss
+                if hit["killed"]:
+                    counts[f"{kind}_kills"] += 1
             elif row["kind"] == "group_reward":
                 event = row["payload"]
                 if event["group_kind"] in ("immediate", "terminal"):
@@ -237,6 +255,7 @@ def completed_rollouts(capture, journal, manifest, manifest_sha, checkpoint_sha,
             if stats is not None:
                 accumulate_training_outcome(
                     stats, terminals[key], rollout[5], learner_slots,
+                    combat_by_episode.pop(key, {}),
                 )
             yield rollout
 
@@ -312,7 +331,9 @@ def _validate_completed_episode(
     }, learning_agents
 
 
-def accumulate_training_outcome(stats, terminal, group_rewards, learner_slots):
+def accumulate_training_outcome(
+    stats, terminal, group_rewards, learner_slots, combat_by_side,
+):
     """Summarize authored outcomes by policy owner, never by fixed faction.
 
     Training wins/losses are meaningful only when exactly one side uses
@@ -364,6 +385,15 @@ def accumulate_training_outcome(stats, terminal, group_rewards, learner_slots):
         "learner_retained_mined_tsv": 0.0, "opponent_retained_mined_tsv": 0.0,
         "learner_retained_reward": 0.0, "opponent_retained_reward": 0.0,
         "learner_ppo_reward_sum": 0.0, "opponent_ppo_reward_sum": 0.0,
+        **{
+            f"{owner}_{name}": 0
+            for owner in ("bee", "human", "learner", "opponent")
+            for name in (
+                "enemy_hits", "enemy_damage", "enemy_tsv_loss", "enemy_kills",
+                "friendly_hits", "friendly_damage", "friendly_tsv_loss",
+                "friendly_kills",
+            )
+        },
     })
     counts["episodes"] += 1
     counts["total_episode_seconds"] += duration
@@ -383,6 +413,9 @@ def accumulate_training_outcome(stats, terminal, group_rewards, learner_slots):
         raise ValueError("training outcome has nonfinite PPO group reward")
     counts["bee_ppo_reward_sum"] += ppo_by_side[bee_side]
     counts["human_ppo_reward_sum"] += ppo_by_side[human_side]
+    for side, owner in ((bee_side, "bee"), (human_side, "human")):
+        for name, value in combat_by_side.get(side, {}).items():
+            counts[f"{owner}_{name}"] += value
 
     if bee_learner and human_learner:
         counts["self_play_episodes"] += 1
@@ -397,6 +430,9 @@ def accumulate_training_outcome(stats, terminal, group_rewards, learner_slots):
     counts["learner_losses"] += int(winner not in (0, learner_side))
     counts["learner_ppo_reward_sum"] += ppo_by_side[learner_side]
     counts["opponent_ppo_reward_sum"] += ppo_by_side[opponent_side]
+    for side, owner in ((learner_side, "learner"), (opponent_side, "opponent")):
+        for name, value in combat_by_side.get(side, {}).items():
+            counts[f"{owner}_{name}"] += value
     for kind in ("retained_mined_tsv", "retained_reward"):
         counts[f"learner_{kind}"] += values[
             f"{'bee' if bee_learner else 'human'}_{kind}"
