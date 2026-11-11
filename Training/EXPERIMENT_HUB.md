@@ -2538,10 +2538,14 @@ service to the public Internet.
    (policy/critic weight loading plus first-use allocation) so that model
    reuse can be measured separately from end-to-end collection time.
    The Hub also derives `collector_N_decisions_per_second` and
-   `collector_N_engine_steps_per_second` from a collector's delivered
-   work divided by its recorded full request/response roundtrip. These
-   remote rates include worker compute, serialization and transport:
-   they are **not** network-only timings or marginal CPU-core gains.
+   `collector_N_engine_steps_per_second` from delivered work divided
+   by `collector_N_elapsed_seconds`. For the learner's local collector
+   (slot 0), elapsed time includes collection and any GPU stream wait;
+   for remote workers (slots 1–8), it includes the complete request/
+   response roundtrip (serialization, transfer and worker compute).
+   These are measured delivered-work rates, **not** marginal CPU-core
+   gains. Older workers with only remote roundtrip timing remain
+   compatible, but cannot report local collector throughput.
    The learner separately reports `remote_policy_snapshot_seconds`, the
    time to prepare one frozen CPU weight snapshot shared by all remote
    collector requests in that PPO update. It is absent for local-only
