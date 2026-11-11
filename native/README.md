@@ -137,7 +137,11 @@ before issuing the ordinary squad move to `entry`. For example, with
 Omitting `spawn` retains the imported ship positions, as before; omitting
 `entry` places the wave without a movement order. Both are expressed in
 the source scene's coordinate frame. Single-ship squads spawn exactly at
-`spawn`; larger squads retain their source formation offsets. These squads
+`spawn`; larger squads retain their source formation offsets. A plan with
+`spawn` must contain only one squad: Unity places multiple squads at
+different centers based on their live widths. Use separate plans with
+source-authored centers, or omit `spawn` and retain their actual captured
+positions. These squads
 enter on the first fixed tick after the scheduled time while the battle
 is active. Use nondecreasing times and unique squad item IDs. Same-time
 waves retain their authored order and distinct positions. All ship,
@@ -183,9 +187,11 @@ When a Unity `GetSquadByComposition` lookup returns null, retain its original
 list position using `null` in `squad_item_ids` (for example
 `[null, 52]`). The missing squad is skipped but the surviving squad keeps
 its source lane offset; do not collapse the list to `[52]`.
-It rejects incompatible scene metadata and persistent ship identities, live
-policy-controlled ships, missing members and insufficient configured
-`next_squad_item_id`. The latter must reflect the *real Stage pool* after
+It also checks that captured ship positions and formation offsets agree
+on one off-map squad center, and that the source point orders match one
+of Unity's scanned entry lanes. It rejects incompatible scene metadata
+and persistent ship identities, live policy-controlled ships, missing
+members and insufficient configured `next_squad_item_id`. The latter must reflect the *real Stage pool* after
 all captured squads, not an inferred substitute. Original scenes and run
 configs are left intact, and both new files must reside beside the run
 config (captures resolve relative to the manifest). Only one Level is
