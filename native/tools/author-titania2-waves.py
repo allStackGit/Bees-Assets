@@ -73,25 +73,35 @@ def lane(bounds, direction):
     return next(lane_candidates(bounds, direction))
 
 
-def verify_entry_orders(members, ships, entry, bounds, label):
-    """Verify the source's actual pre-movement Squad.Move point orders.
+def verify_entry_orders(members, ships, spawn, entry, bounds, label):
+    """Match Unity's pre-movement formation and its actual entry orders.
 
-    Without an obstacle map, Squad.MoveInternal applies Level.ForceBounds
-    to entry + Ship.OffsetFromCenter for each mobile member. Even a moving
-    collision asteroid may divert the source entry lane; only the capture's
-    actual orders can identify which of the source's scanned lanes was used.
+    Position - OffsetFromCenter must be one common Squad.GetCenterPoint,
+    because LevelConstructor.PositionSquads calls Squad.SetOffsets before
+    Squad.Move. An already-arrived or inconsistent capture cannot stand in
+    for a future, off-map wave even when its target coordinates still match.
     """
     min_x, min_y, max_x, max_y = bounds
+    center = None
     for eid in members:
         ship = ships[eid]
         if ship.get("mobile") is not True:
             fail(f"{label} ship {eid} is not a mobile reinforcement")
         offset = ship.get("offset_from_center")
         target = ship.get("target_coordinates")
-        if not isinstance(offset, dict) or not isinstance(target, dict):
-            fail(f"{label} ship {eid} is missing an authored formation or entry order")
+        position = ship.get("position")
+        if not all(isinstance(value, dict) for value in (offset, target, position)):
+            fail(f"{label} ship {eid} is missing source formation, position, or entry order")
         offset_x = number(offset.get("x"), f"{label} ship {eid} offset.x")
         offset_y = number(offset.get("y"), f"{label} ship {eid} offset.y")
+        position_x = number(position.get("x"), f"{label} ship {eid} position.x")
+        position_y = number(position.get("y"), f"{label} ship {eid} position.y")
+        ship_center = (position_x - offset_x, position_y - offset_y)
+        if center is None:
+            center = ship_center
+        elif any(not math.isclose(value, expected, rel_tol=1e-6, abs_tol=0.005)
+                 for value, expected in zip(ship_center, center)):
+            fail(f"{label} has inconsistent captured Squad.SetOffsets formation")
         target_x = number(target.get("x"), f"{label} ship {eid} target.x")
         target_y = number(target.get("y"), f"{label} ship {eid} target.y")
         expected_x = min(max(entry[0] + offset_x, min_x), max_x)
@@ -99,6 +109,10 @@ def verify_entry_orders(members, ships, entry, bounds, label):
         if not (math.isclose(target_x, expected_x, rel_tol=1e-6, abs_tol=0.005) and
                 math.isclose(target_y, expected_y, rel_tol=1e-6, abs_tol=0.005)):
             return False
+    if ((spawn[0] < min_x and center[0] >= min_x) or
+        (spawn[0] > max_x and center[0] <= max_x) or
+        (spawn[1] < min_y and center[1] >= min_y)):
+        fail(f"{label} no longer has its captured squad center off the source entry edge")
     return True
 
 
@@ -278,7 +292,7 @@ def expand(run, scene, manifest, read_capture=None):
                          dy + lane_offset if horizontal else dy]
             if capture is not None:
                 matches = [(spawn, entry) for spawn, entry in lane_candidates(bounds, direction)
-                           if verify_entry_orders(members, captured_ships, entry, bounds, label)]
+                           if verify_entry_orders(members, captured_ships, spawn, entry, bounds, label)]
                 if not matches:
                     fail(f"{label} source movement orders match no authored entry lane")
                 spawn, entry = matches[0]
