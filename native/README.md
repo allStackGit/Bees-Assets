@@ -172,7 +172,11 @@ python3 native/tools/author-titania2-waves.py run.json waves.json \
 The command copies **only** the selected real Unity ship and squad records
 from later captures into a new native scene and makes one source-equivalent
 `spawn`/`entry` lane per squad, including Unity's 0.16 tangent offsets.
-It rejects incompatible scene metadata, conflicting identities, live
+When a Unity `GetSquadByComposition` lookup returns null, retain its original
+list position using `null` in `squad_item_ids` (for example
+`[null, 52]`). The missing squad is skipped but the surviving squad keeps
+its source lane offset; do not collapse the list to `[52]`.
+It rejects incompatible scene metadata and persistent ship identities, live
 policy-controlled ships, missing members and insufficient configured
 `next_squad_item_id`. The latter must reflect the *real Stage pool* after
 all captured squads, not an inferred substitute. Original scenes and run
