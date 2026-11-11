@@ -22,6 +22,9 @@ pub struct NativeHostGauges {
     pub worlds_failed: usize,
     pub ships_living: usize,
     pub commands_active: usize,
+    /// Current episodes' cumulative vision cost, not a process-lifetime
+    /// rate. After episode reset these counts restart from zero.
+    pub vision: bees_sim::vision::VisionSweepCounts,
     pub navigation_jobs_completed: u64,
     pub notifications_queued: usize,
     pub squad_retirements_queued: usize,
@@ -48,6 +51,7 @@ impl From<&NativeRuntimeStatus> for NativeHostGauges {
             worlds_failed: value.failed_worlds,
             ships_living: value.living_ships,
             commands_active: value.active_commands,
+            vision: value.vision,
             navigation_jobs_completed: value.navigation_jobs_completed,
             notifications_queued: value.queued_notifications,
             squad_retirements_queued: value.queued_squad_retirements,
