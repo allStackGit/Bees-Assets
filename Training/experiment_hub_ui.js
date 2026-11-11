@@ -136,7 +136,10 @@ function hubScalingEvidence(runs,key,allJobs=[],leases=[]) {
                 item.resources?.ram_mb===member.resources?.ram_mb&&
                 item.resources?.gpu_count===gpuCount&&
                 (item.resources?.gpu_mode||'exclusive')===
-                    (member.resources?.gpu_mode||'exclusive'));
+                    (member.resources?.gpu_mode||'exclusive')&&
+                (item.resources?.gpu_vram_mb??0)===(member.resources?.gpu_vram_mb??0)&&
+                (item.resources?.gpu_compute_pct??100)===(member.resources?.gpu_compute_pct??100)&&
+                (item.resources?.min_gpu_vram_mb??0)===(member.resources?.min_gpu_vram_mb??0));
             const pinned=lease?.gpu_bindings;
             // A CPU-only job still requires its own genuine frozen lease.
             // Otherwise project metadata could be mistaken for a proven
@@ -150,13 +153,18 @@ function hubScalingEvidence(runs,key,allJobs=[],leases=[]) {
                 host:member.assigned_machine_id,
                 role:index===0?'learner':'collector',
                 cpus:member.resources?.cpus,
+                ram_mb:member.resources?.ram_mb,
                 gpus:gpuCount,
                 mode:member.resources?.gpu_mode||'exclusive',
+                gpu_vram_mb:member.resources?.gpu_vram_mb??0,
+                gpu_compute_pct:member.resources?.gpu_compute_pct??100,
+                min_gpu_vram_mb:member.resources?.min_gpu_vram_mb??0,
                 gpu_ids:physical,
             };
         });
         if(members.some(member=>!member.host||
             !Number.isSafeInteger(member.cpus)||member.cpus<1||
+            !Number.isSafeInteger(member.ram_mb)||member.ram_mb<1||
             !Number.isSafeInteger(member.gpus)||member.gpus<0)||
             new Set(members.map(member=>member.host)).size!==members.length)
             return null;
@@ -168,7 +176,7 @@ function hubScalingEvidence(runs,key,allJobs=[],leases=[]) {
             host:members.map(m=>m.host).join(' + '),
             topology:members.map(m=>m.host+':'+m.role).join('|'),
             gpu_mode:members.map(m=>m.mode).join('|'),
-            gpu_verified:members.every(m=>m.gpu_ids!==null),
+            claims_verified:members.every(m=>m.gpu_ids!==null),
             collector_threads:pinnedThreads?.threads??null,
             collector_cpus:pinnedThreads?.cpus??null,
         };
@@ -189,7 +197,7 @@ function hubScalingEvidence(runs,key,allJobs=[],leases=[]) {
             configuration_sha256:run.job.configuration_sha256,
             host:resources?.host||null,
             topology:resources?.topology||null,
-            gpu_verified:resources?.gpu_verified===true,
+            claims_verified:resources?.claims_verified===true,
             collector_threads:resources?.collector_threads??null,
             collector_cpus:resources?.collector_cpus??null,
             members:resources?.members||null,
@@ -216,16 +224,18 @@ function hubScalingEvidence(runs,key,allJobs=[],leases=[]) {
     const nondecreasing=(a,b,key)=>a.members.every((m,i)=>
         m[key]>=b.members[i][key]);
     for(const row of rows) {
-        if(!row.members||!row.gpu_verified||row.sample_count<5||
+        if(!row.members||!row.claims_verified||row.sample_count<5||
             !['finished','stopped','completed','ended_early'].includes(row.status)||
             !/^[0-9a-f]{64}$/.test(row.configuration_sha256||''))continue;
         const comparable=rows.filter(other=>other!==row&&
-            other.members&&other.gpu_verified&&other.sample_count>=5&&
+            other.members&&other.claims_verified&&other.sample_count>=5&&
             other.distributed===row.distributed&&
             ['finished','stopped','completed','ended_early'].includes(other.status)&&
             other.topology===row.topology&&
             other.configuration_sha256===row.configuration_sha256&&
             other.gpu_mode===row.gpu_mode&&
+            ['ram_mb','gpu_vram_mb','gpu_compute_pct',
+                'min_gpu_vram_mb'].every(key=>samePerHost(row,other,key))&&
             other.median_rate!==null);
         // A group is comparable only if all member hosts and GPU modes
         // match. No machine may lose CPU capacity in an "added CPU" trial,
@@ -1307,7 +1317,7 @@ document.addEventListener('DOMContentLoaded', () => {
             state?.reservations||[]);
         feedback('hub-compare-scaling-note',key
             ?'Showing '+key.slice(7)+'. Medians use bounded chart samples from each run’s latest segment, not complete histories. '+
-              'CPU/GPU values are allocations, not measured utilization. Distributed TinyBrains groups sum only their explicitly reserved learner and remote worker resources; the remote threads/CPU column shows frozen collector concurrency, not actual CPU occupancy. Marginal comparisons require five samples per job, completed jobs, matching frozen configuration and exact machine group, verified matching CPU/RAM/GPU Hub leases (including physical GPU identities where applicable), and one monotonically increased resource dimension. '+
+              'CPU/GPU values are allocations, not measured utilization. Distributed TinyBrains groups sum only their explicitly reserved learner and remote worker resources; the remote threads/CPU column shows frozen collector concurrency, not actual CPU occupancy. Marginal comparisons require five samples per job, completed jobs, verified matching resource leases, identical per-host RAM and shared GPU budgets, fixed machine group/configuration, physical GPU identity, and one increased CPU or GPU dimension. '+
               'They remain observational, not guaranteed improvements or independent learning evaluations.'
             :'Select a recorded throughput metric (unit: rate) above to inspect resource scaling. No CPU/GPU efficiency can be inferred from utilization alone.');
         for(const row of rows) {

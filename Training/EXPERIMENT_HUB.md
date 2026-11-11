@@ -2452,8 +2452,12 @@ increased resource dimension. For distributed TinyBrains learners, the
 allocator sums the learner and its separately leased remote collectors;
 the comparison requires the same set of machines, the same learner/collector
 roles, and unchanged GPU modes. Comparisons also require a persisted Hub-issued resource lease for every
-job (including CPU-only jobs), with matching frozen CPU, RAM, GPU count and
-GPU mode. For GPU jobs they additionally require physical PCI GPU identities:
+job (including CPU-only jobs), with matching frozen CPU, RAM, GPU count,
+GPU mode and per-device shared compute/VRAM claims. Matched run groups
+must keep each host's RAM, shared-GPU budget and minimum GPU-VRAM
+constraint fixed; otherwise changing those alongside CPU/GPU counts
+would confound marginal throughput. For GPU jobs the comparison also
+requires physical PCI GPU identities:
 CPU scaling must use the same devices, while GPU scaling may add devices
 but must retain existing ones. Missing or mismatched historical claims
 disable marginal estimates rather than guessing allocation equivalence. It refuses
