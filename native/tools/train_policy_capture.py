@@ -1,6 +1,7 @@
 """Run one MA-POCA update on observed native decision intervals."""
 
 import argparse
+from array import array
 from bisect import bisect_right
 from collections import defaultdict, deque
 import hashlib
@@ -24,6 +25,36 @@ OPPONENT_IDENTITY = np.dtype([
 ])
 
 
+class GroupRewardSeries:
+    """Compact source-order group rewards with float64 journal precision.
+
+    Every reward from a completed world is needed to attribute PPO group
+    returns. Two typed arrays avoid one Python tuple and two boxed objects
+    per event; maintain the original timestamp and amount iteration contract.
+    """
+    __slots__ = ("ticks", "amounts")
+
+    def __init__(self):
+        self.ticks = array("Q")
+        self.amounts = array("d")
+
+    def add(self, tick, amount):
+        self.ticks.append(tick)
+        self.amounts.append(amount)
+
+    def __iter__(self):
+        return zip(self.ticks, self.amounts)
+
+    def prefix(self):
+        # Cumulative group rewards are float64 in the original learner.
+        # Take a borrowed numeric view; neither source array is modified
+        # once an episode has completed.
+        cumulative = np.empty(len(self.amounts) + 1, dtype=np.float64)
+        cumulative[0] = 0.0
+        np.cumsum(np.frombuffer(self.amounts, dtype=np.float64), out=cumulative[1:])
+        return self.ticks, cumulative
+
+
 def completed_rollouts(capture, journal, manifest, manifest_sha, checkpoint_sha, learner_slot=None, stats=None):
     models = {entry["slot"]: entry for entry in manifest["models"]}
     matching = {
@@ -41,7 +72,7 @@ def completed_rollouts(capture, journal, manifest, manifest_sha, checkpoint_sha,
     has_opponent_slots = learner_slots != set(models)
     terminals = {}
     all_terminals = {}
-    rewards = defaultdict(list)
+    rewards = defaultdict(GroupRewardSeries)
     ended_teams = defaultdict(dict)
     retirements = defaultdict(dict)
     # Source combat hits are logged once per physical hit. Retain
@@ -106,7 +137,7 @@ def completed_rollouts(capture, journal, manifest, manifest_sha, checkpoint_sha,
             elif row["kind"] == "group_reward":
                 event = row["payload"]
                 if event["group_kind"] in ("immediate", "terminal"):
-                    rewards[key, event["team_id"]].append((row["tick"], event["ppo_reward"]))
+                    rewards[key, event["team_id"]].add(row["tick"], event["ppo_reward"])
                 elif event["group_kind"] == "end_episode":
                     team = event["team_id"]
                     if team in ended_teams[key]:
@@ -383,8 +414,7 @@ def trajectories(rollouts, horizon, behavior_id):
         terminal_tick = max(boundaries)
         reward_prefix = {}
         for team, events in rewards.items():
-            reward_prefix[team] = ([tick for tick, _ in events],
-                                   np.cumsum([0.0] + [amount for _, amount in events]))
+            reward_prefix[team] = events.prefix()
         frames = frames + [(terminal_tick, boundaries[terminal_tick])]
         experiences = {agent: [] for agent in learning_agents}
         previous = {}
