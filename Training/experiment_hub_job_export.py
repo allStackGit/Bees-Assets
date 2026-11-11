@@ -26,7 +26,7 @@ CHUNK_BYTES = 24_000_000
 UUID = re.compile(r"^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$")
 PROJECT = re.compile(r"^[a-z][a-z0-9_-]{0,47}$")
 METRIC = re.compile(r"^[a-z][a-z0-9_]{0,39}$")
-COLLECTOR_OBSERVATION = re.compile(r"^collector_([0-9a-f]{32})_(host|src)$")
+COLLECTOR_SOURCE = re.compile(r"^collector_([0-9a-f]{32})_(host|src|logs)$")
 SUFFIXES = {".json", ".jsonl", ".ndjson", ".csv", ".tsv", ".txt", ".log"}
 DENIED_PARTS = {
     ".git", "private", "secrets", "credentials", "keys", "checkpoints",
@@ -157,19 +157,24 @@ def export(spec: dict, output: Path) -> dict:
         for parent in provenance_jobs for child in parent.get("collectors", [])
     }
     collector_sources: dict[str, str] = {}
+    collector_log_sources: set[str] = set()
     for entry in additional:
-        match = COLLECTOR_OBSERVATION.fullmatch(entry["label"])
+        match = COLLECTOR_SOURCE.fullmatch(entry["label"])
         if not match:
             continue
         key, kind = match.groups()
         child_id = (key[:8] + "-" + key[8:12] + "-" + key[12:16] +
                     "-" + key[16:20] + "-" + key[20:])
-        expected = child_id + ("-resources.jsonl" if kind == "host" else ".jsonl")
+        expected = (child_id + "-resources.jsonl" if kind == "host" else
+                    child_id + ".jsonl" if kind == "src" else child_id)
         if (project != "tinybrains" or
             (entry["job_id"], child_id) not in collector_pairs or
             Path(entry["path"]).name != expected):
-            raise ValueError("Collector observation source is not a managed child")
-        collector_sources[entry["label"]] = child_id
+            raise ValueError("Collector artifact source is not a managed child")
+        if kind == "logs":
+            collector_log_sources.add(entry["label"])
+        else:
+            collector_sources[entry["label"]] = child_id
     if output.exists() or not output.parent.is_dir():
         raise ValueError("Export location already exists or is unavailable")
     if root.is_symlink() or not root.is_dir() or root.resolve() != root.absolute():
@@ -401,7 +406,8 @@ def export(spec: dict, output: Path) -> dict:
         # not that the remote trainer's original histories were collected.
         trainer_files_by_job = {job["id"]: 0 for job in jobs}
         missing_sources: list[dict] = []
-        def scan_directory(folder: Path, name_prefix: str, job_id: str) -> None:
+        def scan_directory(folder: Path, name_prefix: str, job_id: str,
+                           counts_as_trainer: bool = True) -> None:
             for dirpath, dirs, files in os.walk(folder, followlinks=False):
                 current = Path(dirpath)
                 dirs[:] = sorted(d for d in dirs if d.lower() not in DENIED_PARTS
@@ -414,7 +420,8 @@ def export(spec: dict, output: Path) -> dict:
                     add_file(source, name_prefix + "/" +
                              source.relative_to(folder).as_posix())
                     found_by_job[job_id] += 1
-                    trainer_files_by_job[job_id] += 1
+                    if counts_as_trainer:
+                        trainer_files_by_job[job_id] += 1
                     if entry_count > MAX_SOURCE_FILES:
                         raise ValueError("Too many export entries")
 
@@ -450,7 +457,8 @@ def export(spec: dict, output: Path) -> dict:
             if source.is_symlink() or not source.exists():
                 reason = "not_available"
             elif source.is_dir() and source.resolve() == source.absolute():
-                scan_directory(source, prefix, job_id)
+                scan_directory(source, prefix, job_id,
+                               entry["label"] not in collector_log_sources)
                 reason = "no_approved_logs"
             elif source.is_file() and safe_source(source.parent, source, False):
                 child_id = collector_sources.get(entry["label"])
