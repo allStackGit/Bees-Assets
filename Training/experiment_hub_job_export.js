@@ -229,6 +229,16 @@ class JobExporter {
             return children.flatMap(child=>{
                 const labelId=child.id.replace(/-/g,'');
                 const source=path.join(archive,child.id+'.jsonl');
+                // A child has its own project ID and physical owner. Its
+                // original log files may be available through a separately
+                // approved machine mount, never through the learner's root.
+                const machine=Object.hasOwn(configured.machineRoots,
+                    child.assigned_machine_id)
+                    ?configured.machineRoots[child.assigned_machine_id]:null;
+                const root=machine&&Object.hasOwn(machine,'tinybrains_rollout')
+                    ?machine.tinybrains_rollout:null;
+                if(root&&fs.existsSync(root)&&!trustedRoot(root))
+                    throw Error('Selected collector mount is redirected or unowned.');
                 return [
                     ...(fs.existsSync(source)?[{
                         job_id:learner.id,label:'collector_'+labelId+'_src',
@@ -236,6 +246,10 @@ class JobExporter {
                     }]:[]),
                     {job_id:learner.id,label:'collector_'+labelId+'_host',
                         path:path.join(archive,child.id+'-resources.jsonl')},
+                    ...(root?[{
+                        job_id:learner.id,label:'collector_'+labelId+'_logs',
+                        path:path.join(root,child.id),
+                    }]:[]),
                 ];
             });
         });
