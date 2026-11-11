@@ -1845,7 +1845,7 @@ For a non-Bees project, a trusted local adapter may return a
 `hub-metrics-v1` observation through its existing `readProgress` method.
 The wire contract is strictly bounded: one project-owned experiment ID,
 segment ID, ISO source modification time, cumulative nonnegative
-`steps_completed`, and 1–96 numeric measurements named by lowercase
+`steps_completed`, and 1–192 numeric measurements named by lowercase
 slug. Every measurement has an explicit value and unit; supported units
 are `scalar`, `ratio`, `count`, `rate`, `seconds`, `milliseconds`,
 `mb` and `bytes`. Ratios are 0–1, counts are nonnegative integers,
@@ -1877,10 +1877,14 @@ manufactures metrics the project's adapter did not record. The native Hub
 retains a bounded history of up to 256 chart points for each of 256 jobs;
 project-owned full-resolution histories remain authoritative. When explicit
 metric preferences are present, the Hub filters trainer metrics before adding
-requested CPU/GPU observations, so a 96-metric trainer report cannot crowd out
+requested CPU/GPU observations, so a larger trainer report cannot crowd out
 a selected host measurement. With no explicit preference, measured host resource
 usage and the PPO update counter take priority within the 96-field chart cap;
-remaining slots retain trainer metrics. Full project telemetry is not filtered
+remaining slots retain trainer metrics. Source reports may contain up to 192
+metrics, while charts retain at most 96 per observation. Select high-index
+collector metrics in Train before starting the job to prioritize their chart
+retention; all received source measurements remain in the raw diagnostic
+archive regardless of chart selection. Full project telemetry is not filtered
 by these display choices. Host GPU utilization/VRAM measurements describe
 the pinned physical device, not isolated per-job GPU consumption. The native
 Hub also appends each distinct **received** validated source update to private
