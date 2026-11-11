@@ -19,6 +19,7 @@ pub mod ship_specials;
 pub mod fleet_inventory;
 pub mod policy_only_metadata;
 pub mod presentation;
+pub mod player_trace;
 #[cfg(feature = "client")]
 pub mod client;
 pub mod unity_scene_snapshot;

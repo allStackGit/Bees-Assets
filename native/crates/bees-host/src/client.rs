@@ -7,21 +7,12 @@ use bees_sim::collision::Aabb;
 use bees_sim::simulation::WorldId;
 use minifb::{Key, KeyRepeat, MouseButton, MouseMode, Window, WindowOptions};
 use crate::presentation::{NativeCamera, NativeRenderWorldView, NativeSoftwareRenderer, NativeSupportMode};
-use bees_gameplay::player_inputs::{
-    NativePlayerSquadMoves, NativePlayerSquadCommands, NativePlayerSquadFire,
-    NativePlayerSquadCeaseFire,
-};
+use bees_gameplay::player_inputs::{NativePlayerSquadMoves, NativePlayerSquadFire, NativePlayerSquadCeaseFire};
+use crate::player_trace::NativePlayerInput;
 use bees_sim::geometry::Vec2;
 
-#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
-#[serde(tag = "kind", content = "input", rename_all = "snake_case")]
-pub enum NativeClientAction { Wait, Step, Quit, WorldChanged, Move(NativePlayerSquadMoves), Support(NativePlayerSquadCommands), Fire(NativePlayerSquadFire), CeaseFire(NativePlayerSquadCeaseFire) }
-
-impl NativeClientAction {
-    pub fn is_player_input(&self) -> bool {
-        matches!(self, Self::Move(_) | Self::Support(_) | Self::Fire(_) | Self::CeaseFire(_))
-    }
-}
+#[derive(Clone, Debug, PartialEq)]
+pub enum NativeClientAction { Wait, Step, Quit, WorldChanged, Input(NativePlayerInput) }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum NativeTargetMode { Support(NativeSupportMode), ManualFire }
@@ -434,10 +425,10 @@ impl NativeClient {
         self.window_update_wall_seconds += window_update_started.elapsed().as_secs_f64();
         if !self.window.is_open() { return Ok(NativeClientAction::Quit); }
         if view.terminal_result.is_none() {
-            if let Some(input) = cease_fire_input { return Ok(NativeClientAction::CeaseFire(input)); }
-            if let Some(input) = manual_fire { return Ok(NativeClientAction::Fire(input)); }
-            if let Some(input) = support_command { return Ok(NativeClientAction::Support(input)); }
-            if let Some(input) = player_move { return Ok(NativeClientAction::Move(input)); }
+            if let Some(input) = cease_fire_input { return Ok(NativeClientAction::Input(NativePlayerInput::CeaseFire(input))); }
+            if let Some(input) = manual_fire { return Ok(NativeClientAction::Input(NativePlayerInput::Fire(input))); }
+            if let Some(input) = support_command { return Ok(NativeClientAction::Input(NativePlayerInput::Support(input))); }
+            if let Some(input) = player_move { return Ok(NativeClientAction::Input(NativePlayerInput::Move(input))); }
         }
         let after_frame = Instant::now();
         if single_step || (!self.paused && after_frame >= self.next_step) {

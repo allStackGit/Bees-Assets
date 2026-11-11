@@ -55,6 +55,17 @@ its own journal and summary in a numbered directory under the first run.
 the scene digests and seed plans, then each submitted order with its
 global round, world tick, and squad lifetime. These are input attempts.
 The gameplay journal and summary record the resulting battle outcomes.
+Replay a completed input trace from an offline battle without model
+inference using the original run configuration:
+
+```sh
+bees run run.json --replay-inputs first-run/player-inputs.jsonl --output-dir new-playback
+```
+
+Playback checks the run and scene digests, applies orders at their recorded
+round and tick, and stops at the trace's final round. It uses the same
+player command admission as live play. Asynchronous pathfinding parity
+across machines and platforms remains unverified.
 
 The view draws authored primary collider outlines, current health, live
 projectiles, obstacles and fading debris directly from borrowed combat bodies.

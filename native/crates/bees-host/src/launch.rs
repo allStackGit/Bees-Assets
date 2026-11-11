@@ -28,6 +28,7 @@ use bees_host::runtime::{
 use bees_host::policy_only_metadata::NativePolicyOnlyMetadata;
 use bees_host::notification_file::{DurableDiagnosticNotifications, EpisodeEvaluationContext, recover_command_outcomes};
 use bees_host::policy_process::{PolicyProcessError, ResidentPolicyProcess};
+use bees_host::player_trace::{NativePlayerInput, NativePlayerTrace, NativeTraceLevel};
 use bees_host::presentation::NativeSoftwareRenderer;
 use bees_host::scene_assets::NativeSceneAssets;
 use bees_host::scene_builder::{NativeAuthoredEntity, NativeAuthoredGroups};
@@ -661,9 +662,47 @@ impl RunNetwork {
     }
 }
 
+fn apply_player_input(host: &mut RolloutHost, action: NativePlayerInput) -> Result<&'static str, String> {
+    use bees_host::runtime::HostPlayerInputError;
+    use bees_gameplay::player_inputs::NativePlayerSupportAction;
+    let (result, rejection) = match action {
+        NativePlayerInput::Move(input) => (host.player_move_squads(input).map(|counts| {
+            if counts.accepted_squads == 0 { "Selected squads cannot accept that destination" }
+            else if counts.rejected_squads == 0 && counts.unreachable_squads == 0 { "Moves accepted" }
+            else { "Eligible squads moved; some unavailable" }
+        }), "Squad cannot accept that move"),
+        NativePlayerInput::Support(input) => (host.player_command_squads(&input).map(|counts| {
+            if input.action == NativePlayerSupportAction::Hold {
+                if counts.stopped_chases > 0 { "Chase stopped" }
+                else if counts.accepted_squads > 0 { "No active chase" }
+                else { "Selected squads cannot stop chase" }
+            } else if counts.accepted_squads == 0 { "Selected squads cannot accept that command" }
+            else if counts.rejected_squads == 0 && counts.unavailable_squads == 0 { "Commands accepted" }
+            else { "Eligible squads commanded; some unavailable" }
+        }), "Squad cannot accept that command"),
+        NativePlayerInput::Fire(input) => (host.player_fire_squads(&input).map(|counts| {
+            if counts.accepted_squads == 0 { "Selected squads have no eligible manual weapons" }
+            else if input.target.is_some() { "Point fire set" }
+            else { "Point fire stopped" }
+        }), "Squad cannot accept manual fire"),
+        NativePlayerInput::CeaseFire(input) => (host.player_cease_fire_squads(&input).map(|counts| {
+            if counts.accepted_squads == 0 { "Selected squads cannot change firing mode" }
+            else if counts.rejected_squads != 0 { "Firing mode updated; some squads unavailable" }
+            else if input.cease_fire { "Cease fire enabled" }
+            else { "Attack on sight enabled" }
+        }), "Cannot change firing mode"),
+    };
+    match result {
+        Ok(feedback) => Ok(feedback),
+        Err(HostPlayerInputError::Gameplay(error)) if error.is_rejection() => Ok(rejection),
+        Err(error) => Err(format!("native player input: {error:?}")),
+    }
+}
+
 const USAGE: &str = "Usage: bees [play|run] <run.json> [--output-dir <new-dir>] [--capture <frame.ppm>]
   play  Open the native battle window (requires the client feature)
-  run   Run the battle headlessly (default)";
+  run   Run the battle headlessly (default)
+  --replay-inputs <player-inputs.jsonl>  Play back a recorded offline battle headlessly";
 
 pub fn run() -> Result<(), Box<dyn Error>> {
     let mut args = env::args_os().skip(1);
@@ -679,6 +718,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
     } else { first });
     let mut capture = None;
     let mut output = None;
+    let mut replay_inputs = None;
     while let Some(flag) = args.next() {
         if flag == "--view" && !view {
             view = true;
@@ -688,17 +728,24 @@ pub fn run() -> Result<(), Box<dyn Error>> {
         } else if flag == "--output-dir" && output.is_none() {
             output = Some(PathBuf::from(args.next()
                 .ok_or_else(|| invalid("--output-dir requires a new directory path"))?));
+        } else if flag == "--replay-inputs" && replay_inputs.is_none() {
+            replay_inputs = Some(PathBuf::from(args.next()
+                .ok_or_else(|| invalid("--replay-inputs requires a trace path"))?));
         } else {
             return Err(invalid(USAGE).into());
         }
     }
     #[cfg(not(feature = "client"))]
     if view { return Err(invalid("Windowed play requires building with --features client").into()); }
+    if replay_inputs.is_some() && (view || output.is_none()) {
+        return Err(invalid("--replay-inputs requires a headless run and --output-dir").into());
+    }
     let config_path = config_path.canonicalize()?;
     let mut replay_number = 0_u64;
     let mut battle_output = output.clone();
     let mut battle_capture = capture.clone();
-    while run_battle(&config_path, play, view, battle_output.as_deref(), battle_capture.as_deref(), replay_number)? {
+    while run_battle(&config_path, play, view, battle_output.as_deref(), battle_capture.as_deref(),
+        replay_number, replay_inputs.as_deref())? {
         replay_number = replay_number.checked_add(1).ok_or_else(|| invalid("replay count exhausted"))?;
         let next = output.as_ref().ok_or_else(|| invalid("replay requires --output-dir"))?
             .join(format!("replay-{replay_number:04}"));
@@ -710,12 +757,15 @@ pub fn run() -> Result<(), Box<dyn Error>> {
 
 fn run_battle(
     config_path: &Path, play: bool, view: bool, output: Option<&Path>,
-    capture: Option<&Path>, replay_number: u64,
+    capture: Option<&Path>, replay_number: u64, replay_inputs: Option<&Path>,
 ) -> Result<bool, Box<dyn Error>> {
     let run_start = Instant::now();
     let root = config_path.parent().ok_or_else(|| invalid("missing config directory"))?;
     let config_bytes = fs::read(config_path)?;
     let mut config: RunConfig = serde_json::from_slice(&config_bytes)?;
+    if replay_inputs.is_some() && (config.model_manifest.is_some() || !config.model_updates.is_empty()) {
+        return Err(invalid("player input playback requires an offline battle without model inference").into());
+    }
     if config.status_every_rounds == Some(0) {
         return Err(invalid("status_every_rounds must be positive").into());
     }
@@ -1016,6 +1066,24 @@ fn run_battle(
         ));
     }
 
+    let gameplay_digest = gameplay_config_sha256(&config, &assets, view || replay_inputs.is_some());
+    let config_digest = format!("{:x}", Sha256::digest(&config_bytes));
+    let trace_levels = config.levels.iter().zip(source_digests.iter()).map(|(level, digest)|
+        NativeTraceLevel {
+            world_id: level.world_id,
+            level_id: level.level_id,
+            scene_sha256: digest.clone(),
+            seed: level.seed,
+            episode_seeds: level.episode_seeds.clone(),
+        }
+    ).collect::<Vec<_>>();
+    let mut playback = replay_inputs.map(|path|
+        NativePlayerTrace::read(path, &config_digest, &gameplay_digest, &trace_levels)
+    ).transpose()?;
+    if playback.as_ref().is_some_and(|trace| trace.end_round > config.max_rounds) {
+        return Err(invalid("player trace exceeds the configured round budget").into());
+    }
+
     if let Some(directory) = output {
         fs::create_dir(directory)?;
     }
@@ -1070,7 +1138,6 @@ fn run_battle(
     let mut host = assets.build_imported_policy_runtime(
         launches, model, connection, sink,
     ).map_err(|error| contextual("native Level construction", error))?;
-    let gameplay_digest = gameplay_config_sha256(&config, &assets, view);
     for (index, level) in config.levels.iter().enumerate() {
         bind_evaluation_episode(
             &mut host, index, level, level.episode_seed(0), &source_digests[index],
@@ -1086,16 +1153,10 @@ fn run_battle(
             "kind": "player_input_trace",
             "schema_version": 1,
             "run_id": config.run_id,
-            "run_config_sha256": format!("{:x}", Sha256::digest(&config_bytes)),
+            "run_config_sha256": config_digest,
             "gameplay_config_sha256": gameplay_digest,
             "policy_manifest_sha256": host.model_mut().model_manifest_sha256(),
-            "levels": config.levels.iter().zip(source_digests.iter()).map(|(level, digest)| json!({
-                "world_id": level.world_id,
-                "level_id": level.level_id,
-                "scene_sha256": digest,
-                "seed": level.seed,
-                "episode_seeds": level.episode_seeds,
-            })).collect::<Vec<_>>(),
+            "levels": trace_levels,
         }))?;
         Some(trace)
     } else { None };
@@ -1147,7 +1208,27 @@ fn run_battle(
     // model boundary. Count each physical episode revision exactly once.
     let mut counted_revisions = vec![None::<u64>; config.levels.len()];
     let mut next_model_update = 0usize;
-    while rounds < config.max_rounds {
+    'battle: loop {
+        if let Some(trace) = &mut playback {
+            while trace.inputs.front().is_some_and(|entry| entry.round == rounds) {
+                let entry = trace.inputs.pop_front().expect("checked next input");
+                let (id, episode_revision) = entry.action.episode();
+                let matching_world = (0..host.simulation().world_count()).any(|index| {
+                    host.simulation().world(index).is_some_and(|world| world.id == id &&
+                        world.episode_revision() == episode_revision && world.tick() == entry.tick)
+                });
+                if !matching_world {
+                    failed_window = Some(format!("player trace diverged at round {rounds}, world {}", id.0));
+                    break 'battle;
+                }
+                if let Err(error) = apply_player_input(&mut host, entry.action) {
+                    failed_window = Some(error);
+                    break 'battle;
+                }
+            }
+            if rounds == trace.end_round { break; }
+        }
+        if rounds == config.max_rounds { break; }
         // Poll before view pacing/input continues, so idle graphical frames
         // cannot starve acknowledgement or setup delivery.
         if let Some(network) = &mut network {
@@ -1165,88 +1246,26 @@ fn run_battle(
             let tick = current.tick;
             let action = client.poll(current, client_bounds[client.selected_world()],
                 host.simulation().world_count(), client_fixed_dt_by_level[client.selected_world()]);
-            if let (Some(trace), Ok(input)) = (&mut input_trace, &action) {
-                if input.is_player_input() {
-                    if let Err(error) = writeln!(trace, "{}", json!({
+            if let (Some(trace), Ok(bees_host::client::NativeClientAction::Input(input))) = (&mut input_trace, &action) {
+                if let Err(error) = writeln!(trace, "{}", json!({
                         "kind": "player_input",
                         "round": rounds,
                         "tick": tick,
                         "action": input,
-                    })) {
-                        failed_window = Some(format!("recording player input: {error}"));
-                        break;
-                    }
+                })) {
+                    failed_window = Some(format!("recording player input: {error}"));
+                    break;
                 }
             }
             match action {
                 Ok(bees_host::client::NativeClientAction::Wait |
                     bees_host::client::NativeClientAction::WorldChanged) => continue,
                 Ok(bees_host::client::NativeClientAction::Step) => {},
-                Ok(bees_host::client::NativeClientAction::Move(input)) => {
-                    match host.player_move_squads(input) {
-                        Ok(counts) if counts.accepted_squads > 0 && counts.rejected_squads == 0 &&
-                            counts.unreachable_squads == 0 => client.report_move("Moves accepted"),
-                        Ok(counts) if counts.accepted_squads > 0 => client.report_move("Eligible squads moved; some unavailable"),
-                        Ok(_) => client.report_move("Selected squads cannot accept that destination"),
-                        Err(bees_host::runtime::HostPlayerInputError::Gameplay(error))
-                            if error.is_rejection() => client.report_move("Squad cannot accept that move"),
+                Ok(bees_host::client::NativeClientAction::Input(input)) => {
+                    match apply_player_input(&mut host, input) {
+                        Ok(feedback) => client.report_move(feedback),
                         Err(error) => {
-                            failed_window = Some(format!("native player input: {error:?}"));
-                            break;
-                        },
-                    }
-                    continue;
-                },
-                Ok(bees_host::client::NativeClientAction::Support(input)) => {
-                    match host.player_command_squads(&input) {
-                        Ok(counts) if matches!(&input.action,
-                            bees_gameplay::player_inputs::NativePlayerSupportAction::Hold
-                        ) && counts.stopped_chases > 0 => client.report_move("Chase stopped"),
-                        Ok(counts) if matches!(&input.action,
-                            bees_gameplay::player_inputs::NativePlayerSupportAction::Hold
-                        ) && counts.accepted_squads > 0 => client.report_move("No active chase"),
-                        Ok(_) if matches!(&input.action,
-                            bees_gameplay::player_inputs::NativePlayerSupportAction::Hold
-                        ) => client.report_move("Selected squads cannot stop chase"),
-                        Ok(counts) if counts.accepted_squads > 0 && counts.rejected_squads == 0 &&
-                            counts.unavailable_squads == 0 => client.report_move("Commands accepted"),
-                        Ok(counts) if counts.accepted_squads > 0 => client.report_move("Eligible squads commanded; some unavailable"),
-                        Ok(_) => client.report_move("Selected squads cannot accept that command"),
-                        Err(bees_host::runtime::HostPlayerInputError::Gameplay(error))
-                            if error.is_rejection() => client.report_move("Squad cannot accept that command"),
-                        Err(error) => {
-                            failed_window = Some(format!("native player command: {error:?}"));
-                            break;
-                        },
-                    }
-                    continue;
-                },
-                Ok(bees_host::client::NativeClientAction::Fire(input)) => {
-                    match host.player_fire_squads(&input) {
-                        Ok(counts) if counts.accepted_squads > 0 => client.report_move(
-                            if input.target.is_some() { "Point fire set" } else { "Point fire stopped" }),
-                        Ok(_) => client.report_move("Selected squads have no eligible manual weapons"),
-                        Err(bees_host::runtime::HostPlayerInputError::Gameplay(error))
-                            if error.is_rejection() => client.report_move("Squad cannot accept manual fire"),
-                        Err(error) => {
-                            failed_window = Some(format!("native manual fire: {error:?}"));
-                            break;
-                        },
-                    }
-                    continue;
-                },
-                Ok(bees_host::client::NativeClientAction::CeaseFire(input)) => {
-                    match host.player_cease_fire_squads(&input) {
-                        Ok(counts) if counts.accepted_squads > 0 &&
-                            counts.rejected_squads == 0 => client.report_move(
-                            if input.cease_fire { "Cease fire enabled" } else { "Attack on sight enabled" }),
-                        Ok(counts) if counts.accepted_squads > 0 => client.report_move(
-                            "Firing mode updated; some squads unavailable"),
-                        Ok(_) => client.report_move("Selected squads cannot change firing mode"),
-                        Err(bees_host::runtime::HostPlayerInputError::Gameplay(error))
-                            if error.is_rejection() => client.report_move("Cannot change firing mode"),
-                        Err(error) => {
-                            failed_window = Some(format!("native firing mode: {error:?}"));
+                            failed_window = Some(error);
                             break;
                         },
                     }
@@ -1276,7 +1295,7 @@ fn run_battle(
             }
         } else { u64::MAX };
         let count = nonzero(remaining.min(source_pulse_limit)
-            .min(u64::from(if view { 1 } else { window.get() })) as u32, "window")?;
+            .min(u64::from(if view || playback.is_some() { 1 } else { window.get() })) as u32, "window")?;
         let counts = match host.run_window(count, delivery) {
             Ok(counts) => counts,
             Err(error) => {
@@ -1516,6 +1535,12 @@ fn run_battle(
         if counts.stopped_with_no_live_worlds && recycled == 0 { break; }
     }
 
+    if failed_window.is_none() && playback.as_ref().is_some_and(|trace|
+        rounds != trace.end_round || !trace.inputs.is_empty()
+    ) {
+        failed_window = Some(format!("player trace ended at a different round than the battle ({rounds})"));
+    }
+
     if failed_window.is_none() && next_model_update < config.model_updates.len() {
         failed_window = Some(format!(
             "{} scheduled policy updates were not reached before the run ended",
@@ -1718,6 +1743,7 @@ fn run_battle(
         "failed_window": failed_window,
         "cleanup_errors": cleanup_errors,
         "user_closed": user_closed,
+        "player_input_playback": playback.is_some(),
     });
     println!("{final_summary}");
     #[cfg(feature = "client")]
