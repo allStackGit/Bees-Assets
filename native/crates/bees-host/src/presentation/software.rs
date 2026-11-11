@@ -466,16 +466,19 @@ impl NativeSoftwareRenderer {
             self.draw_battle_result(view, result);
         } else if let Some(survival) = view.survival {
             let seconds = survival.seconds_remaining.ceil() as u64;
-            let clock = format!("{:02}:{:02}", seconds / 60, seconds % 60);
             let label = match view.combat.ship(survival.protected_ship_id) {
                 Some(target) => format!(
-                    "{}  {}/{} HP  |  Defend {}",
+                    "{}  {}/{} HP  |  Defend {:02}:{:02}",
                     if target.ship_type == bees_sim::ship_assets::HUMAN_TARGET_TYPE {
                         "Planetary Shield"
                     } else { "Protected ship" },
-                    target.vitals.health(), target.vitals.max_health(), clock,
+                    target.vitals.health(), target.vitals.max_health(),
+                    seconds / 60, seconds % 60,
                 ),
-                None => format!("Protected target lost  |  {}", clock),
+                None => format!(
+                    "Protected target lost  |  {:02}:{:02}",
+                    seconds / 60, seconds % 60,
+                ),
             };
             text::draw_centered(&mut self.pixels, self.width, 8, &label, 1, [239, 247, 255]);
         }
