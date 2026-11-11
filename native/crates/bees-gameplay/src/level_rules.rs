@@ -556,13 +556,13 @@ impl<M: NativeLevelRewardMetadata, A> NativeLevelState<M, A> {
     /// and duplicate observers never award second discovery reward.
     pub fn refresh_vision_and_rewards(
         &mut self, tick: u64,
-    ) -> Result<(), NativeLevelVisionError> {
+    ) -> Result<bees_sim::vision::VisionSweepCounts, NativeLevelVisionError> {
         self.hivemind_observers.clear();
         self.first_sightings.clear();
         self.metadata.collect_hivemind_observers(
             &self.combat, &mut self.hivemind_observers,
         )?;
-        self.combat.refresh_hivemind_vision_with_sightings(
+        let vision = self.combat.refresh_hivemind_vision_with_sightings(
             &self.hivemind_observers, false, &mut self.first_sightings,
         )?;
         for &sighting in &self.first_sightings {
@@ -590,7 +590,7 @@ impl<M: NativeLevelRewardMetadata, A> NativeLevelState<M, A> {
                 tick, sighting, kind, value, reward_squad, target_ship_tsv,
             )?;
         }
-        Ok(())
+        Ok(vision)
     }
 
 
@@ -774,7 +774,7 @@ where
         state.combat.step_extraction(&self.collision_matrix)?;
         state.combat.consume_weapon_rank_events()?;
         state.metadata.register_scout_beacons(&state.combat, state.combat.events())?;
-        state.refresh_vision_and_rewards(completed_tick)
+        counts.vision = state.refresh_vision_and_rewards(completed_tick)
             .map_err(NativeLevelStepError::Vision)?;
         state.credit_mining_since(0)?;
         let metadata = &state.metadata;
