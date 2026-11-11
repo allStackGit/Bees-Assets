@@ -635,6 +635,11 @@ including split children, through the existing reservation/beam/root cleanup.
 Shooter death preserves surviving shots; rocket/fire-tank explosions are excluded.
 Nominal projectile-distance expiry still operates independently. Host status counts
 grid rebuilds, candidates, ship/projectile hull checks, entries/exits and ended shots.
+For MapObject visibility, `weapon_range_map_object_candidates` counts obstacle-grid
+candidates (including non-MapObjects), `weapon_range_map_object_exact_tests`
+counts actual primary-collider checks on previously unseen MapObjects, and
+`weapon_range_map_object_grid_rebuilds` reports whether the physics grid
+had to be rebound. The same measurements apply in rendered and headless runs.
 
 Schema 22 additionally records each ship's existing bounds latch and exact
 front-of-ship aim offset, plus each turret's front/center aiming choice. Shared
