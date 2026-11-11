@@ -360,8 +360,10 @@ def accumulate_training_outcome(stats, terminal, group_rewards, learner_slots):
         "timed_out_episodes": 0, "total_episode_seconds": 0.0,
         "bee_retained_mined_tsv": 0.0, "human_retained_mined_tsv": 0.0,
         "bee_retained_reward": 0.0, "human_retained_reward": 0.0,
-        "learner_ppo_reward_sum": 0.0,
-        "opponent_ppo_reward_sum": 0.0,
+        "bee_ppo_reward_sum": 0.0, "human_ppo_reward_sum": 0.0,
+        "learner_retained_mined_tsv": 0.0, "opponent_retained_mined_tsv": 0.0,
+        "learner_retained_reward": 0.0, "opponent_retained_reward": 0.0,
+        "learner_ppo_reward_sum": 0.0, "opponent_ppo_reward_sum": 0.0,
     })
     counts["episodes"] += 1
     counts["total_episode_seconds"] += duration
@@ -371,6 +373,16 @@ def accumulate_training_outcome(stats, terminal, group_rewards, learner_slots):
     counts["draws"] += int(winner == 0)
     for name, value in values.items():
         counts[name] += value
+    # Side totals remain meaningful even in self-play, when "opponent"
+    # cannot be defined as a distinct policy checkpoint.
+    ppo_by_side = {
+        bee_side: sum(float(amount) for _, amount in group_rewards[bee_team]),
+        human_side: sum(float(amount) for _, amount in group_rewards[human_team]),
+    }
+    if any(not np.isfinite(value) for value in ppo_by_side.values()):
+        raise ValueError("training outcome has nonfinite PPO group reward")
+    counts["bee_ppo_reward_sum"] += ppo_by_side[bee_side]
+    counts["human_ppo_reward_sum"] += ppo_by_side[human_side]
 
     if bee_learner and human_learner:
         counts["self_play_episodes"] += 1
@@ -379,18 +391,19 @@ def accumulate_training_outcome(stats, terminal, group_rewards, learner_slots):
     counts["learner_as_bee_episodes"] += int(bee_learner)
     counts["learner_as_human_episodes"] += int(human_learner)
     learner_side = bee_side if bee_learner else human_side
-    learner_team, opponent_team = (
-        (bee_team, human_team) if bee_learner else (human_team, bee_team)
-    )
+    opponent_side = human_side if bee_learner else bee_side
     counts["learner_wins"] += int(winner == learner_side)
     counts["learner_draws"] += int(winner == 0)
     counts["learner_losses"] += int(winner not in (0, learner_side))
-    for team, target in (
-        (learner_team, "learner_ppo_reward_sum"),
-        (opponent_team, "opponent_ppo_reward_sum"),
-    ):
-        amounts = (float(value) for _, value in group_rewards[team])
-        counts[target] += sum(amounts)
+    counts["learner_ppo_reward_sum"] += ppo_by_side[learner_side]
+    counts["opponent_ppo_reward_sum"] += ppo_by_side[opponent_side]
+    for kind in ("retained_mined_tsv", "retained_reward"):
+        counts[f"learner_{kind}"] += values[
+            f"{'bee' if bee_learner else 'human'}_{kind}"
+        ]
+        counts[f"opponent_{kind}"] += values[
+            f"{'human' if bee_learner else 'bee'}_{kind}"
+        ]
 
 
 def trajectories(rollouts, horizon, behavior_id):
