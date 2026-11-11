@@ -60,6 +60,33 @@ def lane(bounds, direction):
     return spawn, entry
 
 
+def verify_entry_orders(members, ships, entry, bounds, label):
+    """Verify the source's actual pre-movement Squad.Move point orders.
+
+    On a clear battlefield, Squad.MoveInternal applies Level.ForceBounds to
+    entry + Ship.OffsetFromCenter for each mobile member. The source capture
+    contains both values; a different actual order is not our wave to replay.
+    """
+    min_x, min_y, max_x, max_y = bounds
+    for eid in members:
+        ship = ships[eid]
+        if ship.get("mobile") is not True:
+            fail(f"{label} ship {eid} is not a mobile reinforcement")
+        offset = ship.get("offset_from_center")
+        target = ship.get("target_coordinates")
+        if not isinstance(offset, dict) or not isinstance(target, dict):
+            fail(f"{label} ship {eid} is missing an authored formation or entry order")
+        offset_x = number(offset.get("x"), f"{label} ship {eid} offset.x")
+        offset_y = number(offset.get("y"), f"{label} ship {eid} offset.y")
+        target_x = number(target.get("x"), f"{label} ship {eid} target.x")
+        target_y = number(target.get("y"), f"{label} ship {eid} target.y")
+        expected_x = min(max(entry[0] + offset_x, min_x), max_x)
+        expected_y = min(max(entry[1] + offset_y, min_y), max_y)
+        if not (math.isclose(target_x, expected_x, rel_tol=1e-6, abs_tol=0.005) and
+                math.isclose(target_y, expected_y, rel_tol=1e-6, abs_tol=0.005)):
+            fail(f"{label} ship {eid} has a different Unity entry movement order")
+
+
 def _source_records(scene, label):
     if not all(isinstance(scene.get(key), list)
                for key in ("ships", "squads", "obstacles", "map_objects")):
@@ -230,7 +257,13 @@ def expand(run, scene, manifest, read_capture=None):
                     ship.get("has_bound_policy") is not False
                 ):
                     fail(f"source squad {squad_id} has missing or policy-controlled physical ships")
+            # Source AddTitania2BeeWave offsets one tangent lane per squad.
+            lane_offset = (si - (len(ids) - 1) * 0.5) * 0.16
+            direction = [dx if horizontal else dx + lane_offset,
+                         dy + lane_offset if horizontal else dy]
+            spawn, entry = lane(bounds, direction)
             if capture is not None:
+                verify_entry_orders(members, captured_ships, entry, bounds, label)
                 if squad_id in source_squads or any(eid in entity_ids for eid in members):
                     fail(f"{label} capture conflicts with an existing source identity")
                 # Unity's GameState.GetId uses a monotonically advancing
@@ -265,11 +298,6 @@ def expand(run, scene, manifest, read_capture=None):
                     scene["ships"].append(ship)
                     ships[eid] = ship
                     entity_ids.add(eid)
-            # Source AddTitania2BeeWave offsets one tangent lane per squad.
-            lane_offset = (si - (len(ids) - 1) * 0.5) * 0.16
-            direction = [dx if horizontal else dx + lane_offset,
-                         dy + lane_offset if horizontal else dy]
-            spawn, entry = lane(bounds, direction)
             output.append({
                 "after_seconds": at,
                 "squad_item_ids": [squad_id],
