@@ -47,8 +47,10 @@ function trustedRoot(file) {
 }
 function loadRoots(dataRoot) {
     const roots={tinybrains:path.join(dataRoot,'tinybrains-jobs')};
-    // Additional projects have separately configured, operator-owned artifact
-    // roots. The browser/API can never provide an arbitrary filesystem path.
+    const machineRoots={};
+    // The coordinator selects all export directories from this private
+    // operator-owned config. An optional machine mount is never an authority
+    // to change native job ownership or execute a remote command.
     const config=path.join(dataRoot,'job-export-roots.json');
     if(fs.existsSync(config)) {
         const stat=fs.lstatSync(config);
@@ -57,14 +59,27 @@ function loadRoots(dataRoot) {
             (stat.mode&0o077)!==0)
             throw Error('Project export root configuration must be a private regular file.');
         const entries=JSON.parse(fs.readFileSync(config,'utf8'));
-        if(!entries||typeof entries!=='object'||Array.isArray(entries)||
-            Object.keys(entries).length>32||
+        if(!entries||typeof entries!=='object'||Array.isArray(entries))
+            throw Error('Invalid project export root configuration.');
+        const mounts=entries['@machine_roots']||{};
+        delete entries['@machine_roots'];
+        if(Object.keys(entries).length>32||
             Object.entries(entries).some(([id,dir])=>!PROJECT.test(id)||
-                !trustedRoot(dir)))
-            throw Error('Project export roots must be approved absolute local directories.');
+                !trustedRoot(dir))||
+            !mounts||typeof mounts!=='object'||Array.isArray(mounts)||
+            Object.keys(mounts).length>32||
+            Object.entries(mounts).some(([machine,projects])=>
+                !PROJECT.test(machine)||!projects||typeof projects!=='object'||
+                Array.isArray(projects)||Object.keys(projects).length>32||
+                Object.entries(projects).some(([project,dir])=>
+                    !PROJECT.test(project)||typeof dir!=='string'||
+                    !path.isAbsolute(dir)||
+                    (fs.existsSync(dir)&&!trustedRoot(dir)))))
+            throw Error('Project/machine export roots must be approved, absolute directories or unavailable mounts.');
         Object.assign(roots,entries);
+        Object.assign(machineRoots,mounts);
     }
-    return roots;
+    return {roots,machineRoots};
 }
 class JobExporter {
     constructor(dataRoot,hub,legacyBees=null,pythonExecutable=null) {
@@ -96,7 +111,8 @@ class JobExporter {
             throw Error('Another complete job export is already in progress.');
         const project=value.project_id;
         const legacy=project==='bees'&&this.legacyBees;
-        const configuredRoot=legacy?this.dataRoot:loadRoots(this.dataRoot)[project];
+        const configured=legacy?null:loadRoots(this.dataRoot);
+        const configuredRoot=legacy?this.dataRoot:configured.roots[project];
         const approvedRoot=trustedRoot(configuredRoot);
         // The Hub's received observation archive is useful even if the
         // project's training artifacts live only on a remote machine.
@@ -126,6 +142,14 @@ class JobExporter {
         const progress=legacy?this.legacyBees.progress():
             this.hub.progressComparison(project);
         progress.samples=progress.samples.filter(sample=>value.job_ids.includes(sample.job_id));
+        // Each mounted root is keyed by an already assigned machine and a
+        // trusted project ID. Job IDs are UUIDs from the Hub registry, never
+        // arbitrary caller path components.
+        const mounted=legacy?[]:jobs.flatMap(job=>{
+            const root=configured.machineRoots[job.assigned_machine_id]?.[project];
+            return root?[{job_id:job.id,label:'mounted-artifacts',
+                path:path.join(root,job.id)}]:[];
+        });
         const dir=fs.mkdtempSync(path.join(this.dataRoot,'job-export-'));
         fs.chmodSync(dir,0o700);
         const spec=path.join(dir,'request.json');
@@ -134,11 +158,13 @@ class JobExporter {
             all_recorded_metrics:value.all_recorded_metrics===true,
             include_replays:value.include_replays===true,
             artifact_root:root,local_artifact_root_missing:missingLocalRoot,
+            mounted_artifact_job_ids:mounted.map(item=>item.job_id),
             progress,
-            additional_sources:legacy?this.legacyBees.sources(jobs):jobs.map(job=>({
-                job_id:job.id,label:'hub-observations',
-                path:path.join(this.dataRoot,'hub-observations-v1',job.id+'.jsonl'),
-            })),
+            additional_sources:legacy?this.legacyBees.sources(jobs):
+                [...jobs.map(job=>({
+                    job_id:job.id,label:'hub-observations',
+                    path:path.join(this.dataRoot,'hub-observations-v1',job.id+'.jsonl'),
+                })),...mounted],
         }),{flag:'wx',mode:0o600});
         const id=crypto.randomUUID();
         const session={id,dir,project,status:'preparing',parts:[],error:null};

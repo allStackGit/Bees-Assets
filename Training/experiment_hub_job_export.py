@@ -127,6 +127,13 @@ def export(spec: dict, output: Path) -> dict:
         raise ValueError("Export all metrics must not include a separate metric selection")
     additional = spec.get("additional_sources", [])
     selected_ids = {job["id"] for job in jobs}
+    mounted_ids = spec.get("mounted_artifact_job_ids", [])
+    if not isinstance(mounted_ids, list) or len(mounted_ids) > len(jobs) or (
+        any(not isinstance(job_id, str) or job_id not in selected_ids
+            for job_id in mounted_ids)
+    ) or len(set(mounted_ids)) != len(mounted_ids):
+        raise ValueError("Invalid selected machine-mounted job IDs")
+    mounted = set(mounted_ids)
     if not isinstance(additional, list) or len(additional) > 6000 or any(
         not isinstance(entry, dict) or
         set(entry) != {"job_id", "label", "path"} or
@@ -369,12 +376,14 @@ def export(spec: dict, output: Path) -> dict:
 
         # Legacy Bees run artifacts live in separately approved named sources,
         # not a job-ID directory under the coordinator data root.
-        scanned_jobs = [] if project == "bees" or missing_local_root else jobs
+        scanned_jobs = [] if project == "bees" or missing_local_root else [
+            job for job in jobs if job["id"] not in mounted
+        ]
         if missing_local_root:
             missing_sources.extend({
                 "job_id": job["id"], "label": "artifacts",
                 "reason": "not_available",
-            } for job in jobs)
+            } for job in jobs if job["id"] not in mounted)
         for job in scanned_jobs:
             job_id = job["id"]
             folder = root / job_id
