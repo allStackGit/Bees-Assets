@@ -110,6 +110,9 @@ struct LevelConfig {
 struct ReinforcementConfig {
     after_seconds: f32,
     squad_item_ids: Vec<i64>,
+    /// Explicit physical starting center (may be outside scene bounds).
+    /// Omitted for older captured waves whose ships are already positioned.
+    spawn: Option<[f32; 2]>,
     entry: Option<[f32; 2]>,
 }
 
@@ -383,6 +386,7 @@ fn make_setup(
         reinforcements: level.reinforcements.iter().map(|wave| bees_host::NativeReinforcementPlan {
             after_seconds: wave.after_seconds,
             squad_item_ids: wave.squad_item_ids.iter().map(|id| remapped_squads.get(id).copied().unwrap_or(*id)).collect(),
+            spawn: wave.spawn.map(vec2),
             entry: wave.entry.map(vec2),
         }).collect(),
         allocate_minion: allocate_from_stage(next_id),
