@@ -1604,6 +1604,8 @@ document.addEventListener('DOMContentLoaded', () => {
             'collector_'+i+'_engine_steps',
             'collector_'+i+'_roundtrip_seconds',
             'collector_'+i+'_model_prepare_seconds',
+            'collector_'+i+'_decisions_per_second',
+            'collector_'+i+'_engine_steps_per_second',
         ]).flat()];
     function renderJobMetricSelection() {
         const select=$('hub-job-metrics');
