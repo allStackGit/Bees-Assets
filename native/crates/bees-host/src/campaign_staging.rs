@@ -4,14 +4,13 @@
 use std::collections::HashMap;
 
 use bees_gameplay::player_inputs::NativeLevelPlayerContext;
+use bees_gameplay::campaign_dialogue::TITANIA_II_CENTER;
 use bees_sim::geometry::Vec2;
 use bees_sim::ship_assets::HUMAN_TARGET_TYPE;
 use bees_sim::squad_movement::authored_placement_offset;
 
 use crate::policy_only_metadata::NativePolicyOnlyMetadata;
 use crate::scene_builder::{NativeAuthoredEntity, NativeAuthoredLevel, NativeAuthoredShip};
-
-pub(crate) const TITANIA_CENTER: Vec2 = Vec2::new(-32.0, 55.0);
 
 struct Placement {
     index: usize,
@@ -44,12 +43,12 @@ fn place_at_center(radius: f32, occupied: &[(Vec2, f32)],
         for x in -ring..=ring {
             for y in -ring..=ring {
                 if x.abs().max(y.abs()) != ring { continue; }
-                let candidate = TITANIA_CENTER + Vec2::new(x as f32 * 24.0, y as f32 * 24.0);
+                let candidate = TITANIA_II_CENTER + Vec2::new(x as f32 * 24.0, y as f32 * 24.0);
                 if candidate.x - radius < min.x || candidate.x + radius > max.x ||
                     candidate.y - radius < min.y || candidate.y + radius > max.y {
                     continue;
                 }
-                let distance = (candidate - TITANIA_CENTER).length_squared().sqrt();
+                let distance = (candidate - TITANIA_II_CENTER).length_squared().sqrt();
                 if distance < 22.0 + radius { continue; }
                 if occupied.iter().any(|&(center, prior_radius)|
                     (candidate - center).length_squared().sqrt() < radius + prior_radius
@@ -61,7 +60,7 @@ fn place_at_center(radius: f32, occupied: &[(Vec2, f32)],
         }
     }
     // Unity's authored fallback when the map cannot fit another full ring.
-    TITANIA_CENTER + Vec2::new(0.0, -(22.0 + radius))
+    TITANIA_II_CENTER + Vec2::new(0.0, -(22.0 + radius))
 }
 
 impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
@@ -82,7 +81,7 @@ impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
         let index = (player_side - 1) as usize;
         let start_positions = self.metadata.hivemind_starting_positions
             .ok_or("Titania II needs source Stage starting positions")?;
-        if start_positions[index].unity_equal(TITANIA_CENTER) {
+        if start_positions[index].unity_equal(TITANIA_II_CENTER) {
             // Already positioned in a captured live Unity campaign scene.
             return Ok(());
         }
@@ -152,7 +151,7 @@ impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
             }
         }
         self.metadata.hivemind_starting_positions.as_mut()
-            .expect("source starting positions validated")[index] = TITANIA_CENTER;
+            .expect("source starting positions validated")[index] = TITANIA_II_CENTER;
         Ok(())
     }
 }
