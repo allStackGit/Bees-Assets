@@ -166,6 +166,7 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         ?row.collector_samples:[]).slice(0,9).entries()) {
         add('collector_'+i+'_ant_decisions',worker.ant_decisions,'count');
         add('collector_'+i+'_engine_steps',worker.engine_steps,'count');
+        add('collector_'+i+'_action_target',worker.action_target,'count');
         add('collector_'+i+'_roundtrip_seconds',
             worker.transport_roundtrip_seconds,'seconds');
         add('collector_'+i+'_model_prepare_seconds',
@@ -397,16 +398,21 @@ function createTinyBrainsPersistentDockerAdapter({
         },
         args(parameters,context) {
             const {profile,profile_sha256,updates,threads,device,remote_rollouts,
-                import_checkpoint,import_checkpoint_sha256}=parameters;
+                rollout_action_weights,import_checkpoint,import_checkpoint_sha256}=parameters;
             const item=approved.get(profile);
             if(remote_rollouts===true&&!frozenRemoteKeyIntact())
                 throw Error('Remote rollout key was rotated or changed after local adapter approval.');
             if(!item||item.sha256!==profile_sha256||
                 Object.keys(parameters).some(k=>!['profile','profile_sha256','updates',
-                    'threads','device','remote_rollouts','import_checkpoint',
-                    'import_checkpoint_sha256'].includes(k))||
+                    'threads','device','remote_rollouts','rollout_action_weights',
+                    'import_checkpoint','import_checkpoint_sha256'].includes(k))||
                 (remote_rollouts!==undefined&&
                     (remote_rollouts!==true||!remote||device==='cpu'))||
+                (rollout_action_weights!==undefined&&
+                    (remote_rollouts!==true||!Array.isArray(rollout_action_weights)||
+                     rollout_action_weights.length!==remote.endpoints.length+1||
+                     rollout_action_weights.some(w=>
+                         !Number.isSafeInteger(w)||w<1||w>1024)))||
                 (device!==undefined&&!['cpu','dual'].includes(device))||
                 (threads!==undefined&&(!Number.isSafeInteger(threads)||threads<1||threads>256))||
                 !Number.isSafeInteger(updates)||updates<1||updates>10000000||
@@ -479,6 +485,8 @@ function createTinyBrainsPersistentDockerAdapter({
                 ...(remote_rollouts===true?[...remote.endpoints.flatMap(endpoint=>
                     ['--remote-rollout-endpoint',endpoint]),
                     '--remote-rollout-key-file',REMOTE_KEY_IN+'/rollout.key']:[]),
+                ...(rollout_action_weights?rollout_action_weights.flatMap(w=>
+                    ['--remote-rollout-weight',String(w)]):[]),
                 ...(device==='cpu'?['--device','cpu']:
                     device==='dual'
                         ?['--device','dual',...context.gpu_pci_addresses.flatMap(pci=>
