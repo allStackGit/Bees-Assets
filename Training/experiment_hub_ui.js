@@ -95,7 +95,7 @@ function hubComparisonAxisValue(point,key) {
 // Observational scaling evidence only. Chart histories are bounded/decimated;
 // never use these summaries to tune a running job, select a winning model or
 // claim experimental equivalence. An allocation is not a measured CPU/GPU use.
-function hubScalingEvidence(runs,key) {
+function hubScalingEvidence(runs,key,allJobs=[]) {
     const name=typeof key==='string'&&key.startsWith('metric:')?key.slice(7):null;
     if(!name)return [];
     const median=values=>{
@@ -104,32 +104,57 @@ function hubScalingEvidence(runs,key) {
         return sorted.length%2?sorted[middle]:
             (sorted[middle-1]+sorted[middle])/2;
     };
+    // The learner's reservation is only one member of an atomic distributed
+    // group. Read the separately reserved remote jobs; never infer resources
+    // from collector counts, measured rates or machine CPU capacity.
+    const allocation=job=>{
+        const distributed=job.distributed_rollout_managed===true;
+        const workers=distributed?allJobs.filter(other=>
+            other.project_id==='tinybrains_rollout'&&
+            other.frozen_parameters?.learner_job_id===job.id):[];
+        if(distributed&&(workers.length<1||workers.length>8))return null;
+        const members=[job,...workers].map(member=>({
+            host:member.assigned_machine_id,
+            cpus:member.resources?.cpus,
+            gpus:member.resources?.gpu_count,
+            mode:member.resources?.gpu_mode||'exclusive',
+        }));
+        if(members.some(member=>!member.host||
+            !Number.isSafeInteger(member.cpus)||member.cpus<1||
+            !Number.isSafeInteger(member.gpus)||member.gpus<0)||
+            new Set(members.map(member=>member.host)).size!==members.length)
+            return null;
+        members.sort((a,b)=>a.host.localeCompare(b.host));
+        return {
+            members,
+            cpus:members.reduce((total,m)=>total+m.cpus,0),
+            gpus:members.reduce((total,m)=>total+m.gpus,0),
+            host:members.map(m=>m.host).join(' + '),
+            gpu_mode:members.map(m=>m.mode).join('|'),
+        };
+    };
     const rows=runs.map(run=>{
         const points=hubComparisonPoints(run);
-        // A chart may contain multiple segments or reset its step axis.
-        // Only the last contiguous segment is eligible for this summary.
         let lastBreak=0;
         for(let i=1;i<points.length;i++)
             if(points[i].break_before)lastBreak=i;
-        const current=points.slice(lastBreak);
-        const observations=current.map(point=>point.metrics?.[name])
+        const recent=points.slice(lastBreak);
+        const observations=recent.map(point=>point.metrics?.[name])
             .filter(m=>m?.unit==='rate'&&
                 Number.isFinite(m.value)&&m.value>=0)
             .map(m=>m.value);
-        const resources=run.job.resources;
-        const validCpus=Number.isSafeInteger(resources?.cpus)&&resources.cpus>0;
-        const validGpus=Number.isSafeInteger(resources?.gpu_count)&&
-            resources.gpu_count>=0;
+        const resources=allocation(run.job);
         return {
             slot:run.slot,job_id:run.job.id,
             configuration_sha256:run.job.configuration_sha256,
-            host:run.job.assigned_machine_id,
+            host:resources?.host||null,
+            members:resources?.members||null,
             lineage:run.job.artifact_lineage_root_id||run.job.id,
             status:run.job.status,
             distributed:run.job.distributed_rollout_managed===true,
-            cpus:validCpus?resources.cpus:null,
-            gpus:validGpus?resources.gpu_count:null,
-            gpu_mode:resources?.gpu_mode||'exclusive',
+            cpus:resources?.cpus??null,
+            gpus:resources?.gpus??null,
+            gpu_mode:resources?.gpu_mode||null,
             sample_count:observations.length,
             median_rate:observations.length?median(observations):null,
             low_rate:observations.length?Math.min(...observations):null,
@@ -137,25 +162,33 @@ function hubScalingEvidence(runs,key) {
             comparison:null,
         };
     });
+    const samePerHost=(a,b,key)=>a.members.every((m,i)=>
+        m[key]===b.members[i][key]);
+    const nondecreasing=(a,b,key)=>a.members.every((m,i)=>
+        m[key]>=b.members[i][key]);
     for(const row of rows) {
-        if(row.distributed||row.sample_count<5||
+        if(!row.members||row.sample_count<5||
             !['finished','stopped','completed','ended_early'].includes(row.status)||
-            row.cpus===null||row.gpus===null||
             !/^[0-9a-f]{64}$/.test(row.configuration_sha256||''))continue;
         const comparable=rows.filter(other=>other!==row&&
-            other.cpus!==null&&other.gpus!==null&&
-            other.sample_count>=5&&!other.distributed&&
+            other.members&&other.sample_count>=5&&
+            other.distributed===row.distributed&&
             ['finished','stopped','completed','ended_early'].includes(other.status)&&
-            other.host&&other.host===row.host&&
+            other.host===row.host&&
             other.configuration_sha256===row.configuration_sha256&&
             other.gpu_mode===row.gpu_mode&&
             other.median_rate!==null);
-        // Isolate one allocation dimension. Never infer a marginal GPU
-        // benefit from changing CPUs, configuration, or physical host too.
-        const cpuBase=comparable.filter(other=>other.gpus===row.gpus&&
-            other.cpus<row.cpus).sort((a,b)=>b.cpus-a.cpus)[0];
-        const gpuBase=comparable.filter(other=>other.cpus===row.cpus&&
-            other.gpus<row.gpus).sort((a,b)=>b.gpus-a.gpus)[0];
+        // A group is comparable only if all member hosts and GPU modes
+        // match. No machine may lose CPU capacity in an "added CPU" trial,
+        // or silently exchange GPU/CPU allocation with another member.
+        const cpuBase=comparable.filter(other=>
+            other.gpus===row.gpus&&samePerHost(row,other,'gpus')&&
+            other.cpus<row.cpus&&nondecreasing(row,other,'cpus'))
+            .sort((a,b)=>b.cpus-a.cpus)[0];
+        const gpuBase=comparable.filter(other=>
+            other.cpus===row.cpus&&samePerHost(row,other,'cpus')&&
+            other.gpus<row.gpus&&nondecreasing(row,other,'gpus'))
+            .sort((a,b)=>b.gpus-a.gpus)[0];
         const baseline=cpuBase||gpuBase;
         if(baseline) {
             const resource=cpuBase?'cpu':'gpu';
@@ -1182,23 +1215,23 @@ document.addEventListener('DOMContentLoaded', () => {
                     .filter(([,value])=>value.unit==='rate')
                     .map(([name])=>'metric:'+name))))];
         const key=keys.find(value=>available.includes(value))||null;
-        const rows=hubScalingEvidence(runs,key);
+        const rows=hubScalingEvidence(runs,key,state?.jobs||[]);
         feedback('hub-compare-scaling-note',key
             ?'Showing '+key.slice(7)+'. Medians use bounded chart samples from each run’s latest segment, not complete histories. '+
-              'CPU/GPU values are allocations, not measured utilization. Marginal comparisons require five samples per job, completed jobs, matching frozen configuration and host, and only one changed resource dimension. '+
+              'CPU/GPU values are allocations, not measured utilization. Distributed TinyBrains groups sum only their explicitly reserved learner and remote worker resources. Marginal comparisons require five samples per job, completed jobs, matching frozen configuration and exact machine group, and one monotonically increased resource dimension. '+
               'They remain observational, not guaranteed improvements or independent learning evaluations.'
             :'Select a recorded throughput metric (unit: rate) above to inspect resource scaling. No CPU/GPU efficiency can be inferred from utilization alone.');
         for(const row of rows) {
             const tr=document.createElement('tr');
             cell(tr,row.slot+' · '+row.job_id.slice(-8));
             cell(tr,row.cpus===null?'Unknown':row.cpus.toLocaleString()+
-                (row.distributed?' (learner only)':''));
+                (row.distributed?' (group allocation)':''));
             cell(tr,row.gpus===null?'Unknown':row.gpus.toLocaleString());
             cell(tr,row.host||'Unknown');
             cell(tr,String(row.sample_count));
             cell(tr,row.median_rate===null?'—':
                 row.median_rate.toLocaleString(undefined,{maximumFractionDigits:2}));
-            cell(tr,row.cpus&&row.median_rate!==null&&!row.distributed
+            cell(tr,row.cpus&&row.median_rate!==null
                 ?(row.median_rate/row.cpus).toLocaleString(undefined,{
                     maximumFractionDigits:2}):'—');
             const diff=row.comparison;
