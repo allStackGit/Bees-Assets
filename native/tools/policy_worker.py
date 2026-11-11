@@ -315,9 +315,10 @@ def checked_manifest(path: Path, expected_digest: bytes | None = None):
         if file_sha256(model_file) != expected_sha256:
             raise ValueError(f"model artifact changed during load: slot {slot}")
         policies[slot] = model
-    sampled_slots = sum(isinstance(model, MlagentsPolicy) for model in policies.values())
-    if sampled_slots not in (0, len(policies)):
-        raise ValueError("ML-Agents sampling requires all manifest slots to provide behavior statistics")
+    # Mixed manifests are supported: ML-Agents slots supply sampled behavior
+    # statistics, while ONNX/TorchScript opponent slots supply only actions.
+    # collect_predictions emits a behavior frame only when this particular
+    # inference batch contains a sampled policy, zero-filling nonlearner rows.
     return signature_bytes, policies, manifest_digest
 
 

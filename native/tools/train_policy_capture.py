@@ -259,8 +259,11 @@ def completed_rollouts(capture, journal, manifest, manifest_sha, checkpoint_sha,
                 if tick == terminals[key]["tick"]:
                     ready.add(key)
         else:
-            if "continuous_log_probs" not in rows.dtype.names:
-                raise ValueError("training requires captured behavior statistics")
+            # An inference batch containing no ML-Agents controllers uses a
+            # normal action frame without behavior probabilities. Preserve
+            # those genuine opponent decisions; only ML-Agents slots must
+            # carry sampled policy data for PPO.
+            has_behavior = "continuous_log_probs" in rows.dtype.names
             for row in source_rows:
                 key = int(row["world"]), int(row["episode"])
                 terminal = all_terminals.get(key)
@@ -275,6 +278,8 @@ def completed_rollouts(capture, journal, manifest, manifest_sha, checkpoint_sha,
                     raise ValueError("policy decision follows its completed boundary")
                 if row["model_slot"] not in models:
                     raise ValueError("rollout includes an unknown model slot")
+                if models[int(row["model_slot"])]["backend"] == "mlagents" and not has_behavior:
+                    raise ValueError("ML-Agents decision lacks captured behavior statistics")
                 tick, agent = int(row["tick"]), int(row["group_agent"])
                 team = int(row["team"])
                 if (tick >= terminal["tick"] or
