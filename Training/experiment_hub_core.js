@@ -1629,7 +1629,8 @@ class ExperimentHub {
                 canHostJob(machine,job)&&distributedRolloutHost(snapshot,job,machine));
             if(session.rebalance_queued) {
                 for(const job of pendingClaims) {
-                    if(!owned.has(job.lease_id)||job.dispatch_id||job.continuation_machine_id)
+                    if(!owned.has(job.lease_id)||job.dispatch_id||
+                        job.continuation_machine_id||job.resource_bundle)
                         continue;
                     const gpu=job.resources.gpu_count!==0;
                     // Keep any already requested or observed probe with its claim.
@@ -2037,6 +2038,8 @@ class ExperimentHub {
             const job=next.jobs.find(j=>j.id===move.job_id);
             if(!job||job.adapter!=='unconfigured'||job.status!=='waiting_adapter'||job.dispatch_id)
                 throw Error('Only an unstarted non-Bees job claim can move.');
+            if(job.resource_bundle)
+                throw Error('Bundle machine allocations are fixed. Cancel the unstarted bundle and queue a new allocation.');
             if(job.lease_id!==move.expected_lease_id)
                 throw Error('A job claim changed. Refresh Train before moving it.');
             const predecessor=predecessorBlock(next,job);
@@ -3047,6 +3050,13 @@ class ExperimentHub {
                         observed[key]={value,unit};
                 };
                 add('job_cpu_cores',cpuCores,'scalar');
+                // Process CPU-time deltas are already tied to the verified
+                // native dispatch. Normalize against its frozen CPU budget,
+                // not host-wide activity or an inferred worker count.
+                const leasedCpus=job.resources?.cpus;
+                if(Number.isSafeInteger(leasedCpus)&&leasedCpus>0&&cpuCores!==null)
+                    add('job_cpu_lease_utilization_pct',
+                        100*cpuCores/leasedCpus,'scalar');
                 add('job_memory_mb',item.memory_current_mb,'mb');
                 add('job_peak_memory_mb',Number.isFinite(item.peak_job_memory_bytes)
                     ?item.peak_job_memory_bytes/1048576:null,'mb');
@@ -3180,6 +3190,75 @@ class ExperimentHub {
         const job=this.queueIn(next,value);
         this.commit(next);
         return copy(job);
+    }
+    // Atomically reserve fixed resources for independently executable jobs
+    // across projects and machines. This is the common *control-plane*
+    // foundation for distributed workloads, not a data-plane protocol or a
+    // simultaneous-Start guarantee. Every member retains its own native
+    // owner, checkpoint, Stop policy, and explicit Start authorization.
+    queueResourceBundle(value) {
+        if(!object(value)||value.confirm_queue!==true||
+            Object.keys(value).some(key=>!['confirm_queue','members'].includes(key))||
+            !Array.isArray(value.members)||value.members.length<2||
+            value.members.length>16)
+            throw Error('Confirm 2–16 machine-pinned job allocations in one resource bundle.');
+        const machines=this.snapshot().machines;
+        const next=copy(this.state);
+        const bundleId=crypto.randomUUID(),jobs=[],leases=[];
+        for(const [index,selection] of value.members.entries()) {
+            if(!object(selection)||
+                Object.keys(selection).some(key=>![
+                    'configuration_id','expected_revision','machine_id',
+                    'resources','metric_selection',
+                ].includes(key))||
+                !ID.test(String(selection.machine_id||'')))
+                throw Error('Each bundle member requires a saved configuration, machine ID and fixed resource budget.');
+            const machine=machines.find(host=>host.id===selection.machine_id);
+            if(!machine||machine.status!=='connected'||
+                machine.local_executor_enabled!==true||
+                machine.native_preflight_passed!==true||
+                !['win32','linux'].includes(machine.agent_platform)||
+                (machine.agent_platform==='linux'&&
+                    (machine.execution_capabilities?.cgroup_v2_detected!==true||
+                     !['cpu','memory'].every(controller=>
+                         machine.execution_capabilities?.cgroup_controllers?.includes(controller)))))
+                throw Error('Bundle member '+(index+1)+' requires a connected, qualified native machine.');
+            const job=this.queueIn(next,selection);
+            if(job.project_id==='tinybrains_rollout'||job.project_id==='bees'||
+                job.project_id==='ants'||
+                (job.project_id==='tinybrains'&&job.frozen_parameters?.remote_rollouts===true)||
+                job.status!=='waiting_adapter'||
+                job.continuation_of_job_id||job.after_job_id||
+                !machine.installed_projects?.includes(job.project_id)||
+                !supportsEvaluation(machine.evaluation_suites,job)||
+                !supportsTinyBrainsProfile(machine,job))
+                throw Error('Bundle member '+(index+1)+' requires an approved independent project adapter and configuration.');
+            if(job.resources.ram_mb<128||
+                (job.resources.gpu_count>0&&
+                    (!machine.gpu_projects?.includes(job.project_id)||
+                     (job.resources.gpu_mode==='shared'&&
+                         !machine.gpu_shared_projects?.includes(job.project_id))||
+                     (job.resources.gpu_count===2&&
+                         (job.project_id!=='tinybrains'||
+                          job.frozen_parameters?.device!=='dual'||
+                          machine.agent_platform!=='linux'|| 
+                          !machine.tinybrains_dual_gpu_profiles
+                              ?.includes(job.frozen_parameters.profile)))||
+                     job.resources.gpu_count>2)))
+                throw Error('Bundle member '+(index+1)+' is not eligible for its requested native CPU/GPU mode.');
+            // Use the actual lease allocator, not a separate capacity
+            // estimate. Earlier members consume budget in the same draft;
+            // any failure abandons the draft without queued jobs or leases.
+            const lease=this.claimJobIn(next,job,machine.id,machine);
+            job.resource_bundle={id:bundleId,index:index+1,size:value.members.length};
+            jobs.push(job);
+            leases.push(lease);
+        }
+        this.commit(next);
+        return {bundle_id:bundleId,members:jobs.map(copy),
+            leases:leases.map(lease=>({...copy(lease),receipt_fresh:false})),
+            starts_authorized:0,
+            note:'Every member has a durable machine claim, but no Start was authorized. Jobs are independent until a trusted project-specific transport and learner barrier are installed.'};
     }
     // Queue and reserve an entire TinyBrains rollout group as one durable
     // transaction. The operator supplies resource budgets; physical worker
@@ -3771,6 +3850,36 @@ class ExperimentHub {
         this.cancelUnstartedJob(next,job,cancelledAt);
         this.commit(next);
         return copy(job);
+    }
+    // Undo a never-dispatched bundle as one durable transaction. If one
+    // member has started or is uncertain, do not release any of the group's
+    // claims: the local native owner must first be reconciled explicitly.
+    cancelResourceBundle(value) {
+        if(!object(value)||value.confirm_cancel!==true||
+            !UUID.test(String(value.bundle_id||''))||
+            !Array.isArray(value.expected_job_ids)||
+            value.expected_job_ids.length<1||value.expected_job_ids.length>16||
+            value.expected_job_ids.some(id=>!UUID.test(String(id)))||
+            new Set(value.expected_job_ids).size!==value.expected_job_ids.length)
+            throw Error('Confirm the exact resource bundle and outstanding member jobs.');
+        const next=copy(this.state);
+        const members=next.jobs.filter(job=>job.resource_bundle?.id===value.bundle_id);
+        if(!members.length||members.length!==members[0].resource_bundle.size||
+            members.some((job,index)=>job.resource_bundle.index!==index+1||
+                job.resource_bundle.size!==members.length))
+            throw Error('Resource bundle member ledger is incomplete or inconsistent.');
+        const active=members.filter(job=>job.status!=='cancelled');
+        const expected=new Set(value.expected_job_ids);
+        if(active.length!==expected.size||
+            active.some(job=>!expected.has(job.id)))
+            throw Error('Bundle members have changed. Refresh before cancelling.');
+        if(active.some(job=>job.dispatch_id||job.status!=='waiting_adapter'))
+            throw Error('A bundle member was started or changed state. Reconcile native ownership before cancelling.');
+        const at=now();
+        for(const job of active)this.cancelUnstartedJob(next,job,at);
+        this.commit(next);
+        return {bundle_id:value.bundle_id,cancelled_job_ids:active.map(job=>job.id),
+            cancelled_count:active.length,starts_stopped:0};
     }
     cancelQueuedTrials(value) {
         if(!object(value)||value.confirm_cancel!==true||!UUID.test(String(value.trial_batch_id||''))||

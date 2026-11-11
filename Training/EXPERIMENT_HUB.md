@@ -1388,6 +1388,15 @@ update count: the Linux TinyBrains `--max-ppo-updates` option accepts this
 per-invocation count and can extend training beyond the original frozen run
 spec's ceiling. The source run spec and imported checkpoint are not rewritten.
 
+The locally trusted TinyBrains persistent adapter can use
+`cpuParallelism:'allocation'` to select its CPU thread count once from the
+job's frozen CPU lease instead of the profile's default threads. Explicit
+`threads` in a frozen job configuration still wins, preserving existing
+jobs. This is fixed-allocation concurrency, **not** measured optimal
+threading or an adaptive tuner; test larger core counts before asserting
+a throughput benefit. The Halifax example enables this mode. The default
+for other installations remains `'profile'`.
+
 The Halifax example now opts into TinyBrains' `TINYBRAINS_PPO_PROFILE=1` via its
 locally trusted Docker adapter. It records per-update PPO host-wall stages
 (data preparation, forward/loss, backward, metric readback, gradient
@@ -1885,7 +1894,7 @@ For a non-Bees project, a trusted local adapter may return a
 `hub-metrics-v1` observation through its existing `readProgress` method.
 The wire contract is strictly bounded: one project-owned experiment ID,
 segment ID, ISO source modification time, cumulative nonnegative
-`steps_completed`, and 1–96 numeric measurements named by lowercase
+`steps_completed`, and 1–192 numeric measurements named by lowercase
 slug. Every measurement has an explicit value and unit; supported units
 are `scalar`, `ratio`, `count`, `rate`, `seconds`, `milliseconds`,
 `mb` and `bytes`. Ratios are 0–1, counts are nonnegative integers,
@@ -1917,10 +1926,14 @@ manufactures metrics the project's adapter did not record. The native Hub
 retains a bounded history of up to 256 chart points for each of 256 jobs;
 project-owned full-resolution histories remain authoritative. When explicit
 metric preferences are present, the Hub filters trainer metrics before adding
-requested CPU/GPU observations, so a 96-metric trainer report cannot crowd out
+requested CPU/GPU observations, so a larger trainer report cannot crowd out
 a selected host measurement. With no explicit preference, measured host resource
 usage and the PPO update counter take priority within the 96-field chart cap;
-remaining slots retain trainer metrics. Full project telemetry is not filtered
+remaining slots retain trainer metrics. Source reports may contain up to 192
+metrics, while charts retain at most 96 per observation. Select high-index
+collector metrics in Train before starting the job to prioritize their chart
+retention; all received source measurements remain in the raw diagnostic
+archive regardless of chart selection. Full project telemetry is not filtered
 by these display choices. Host GPU utilization/VRAM measurements describe
 the pinned physical device, not isolated per-job GPU consumption. The native
 Hub also appends each distinct **received** validated source update to private
@@ -1972,7 +1985,11 @@ contain sensitive content.
 Generic metric names do not grant stopping, model promotion or benchmark
 authority. A concrete project adapter must be installed and qualified to
 produce real measurements. Host GPU utilization and VRAM values are physical
-device observations, **not per-job GPU accounting**.
+device observations, **not per-job GPU accounting**. For native jobs,
+`job_cpu_lease_utilization_pct` reports sampled process CPU-core equivalents
+as a percentage of the job's fixed CPU budget, using continuous authenticated
+CPU-time observations. It is not a measure of marginal throughput, and short
+sampling intervals may show values above 100%.
 
 ### Selecting and promoting independently trained models
 
@@ -2376,6 +2393,29 @@ the stop threshold. A subsequent manual Stop produced a signed terminal
 receipt, and the released claim survived a registry reopen. Qualifying
 TinyBrains evaluation-triggered Stop and remote evaluation remain open.
 
+### Cross-project fixed CPU concurrency and scaling evidence
+
+The reusable `fixedCpuParallelism` rule selects worker count from a
+machine-local CPU lease exactly once, bounded by the adapter's approved
+maximum. It is currently used by the persistent TinyBrains and Courier
+adapters, but does **not** distribute a single job across machines by itself.
+Courier can opt into `cpuParallelism:'allocation'` in its trusted adapter;
+a configuration with `workers` omitted then uses up to 64 leased CPU cores.
+Explicit `workers` continues to use the saved count. The default is
+`'profile'` to preserve deployed configurations. Other project adapters
+must implement their own safe consumption of the fixed budget.
+
+Compare includes **Observed resource scaling** for selected runs with a
+recorded throughput metric (unit `rate`). It summarizes bounded chart
+samples from the latest continuous segment and shows throughput per allocated
+CPU core. Marginal figures are shown only for completed jobs with at least
+five samples and matching frozen configuration, physical host ID, GPU mode,
+and one varied resource dimension. Multi-machine TinyBrains jobs report
+learner-only CPU budgets and never receive a misleading marginal estimate.
+All such comparisons remain observational, not independent evidence of
+causality, energy efficiency, or full-resolution training performance.
+Export the complete job histories for definitive throughput investigation.
+
 ## Courier Ants (Basic Training)
 
 Register the project as `courier`. Add a `courier` entry to the worker's
@@ -2457,6 +2497,44 @@ live eligible dispatch and persists its cursor and pending receipt in
 `--scratch`. Retain or remove completed dispatch directories under the
 worker's artifact retention policy.
 
+## Atomic multi-machine resource bundles (all native projects)
+
+For independent native jobs across TinyBrains, Courier and any newly
+installed project adapter, **Train → Reserve a multi-machine resource
+bundle** selects 2–16 saved configurations, explicit connected machines,
+and immutable CPU/RAM/GPU resource budgets. The operator confirms one
+atomic `POST /api/hub/resource-bundles` request:
+`{"confirm_queue":true,"members":[{"configuration_id":"<saved-uuid>","expected_revision":1,"machine_id":"<registered-machine>","resources":{"cpus":2,"ram_mb":2048,"gpu_count":0}},...]}`.
+Every member must have an approved local project adapter and native CPU/RAM
+preflight; GPUs additionally need matching physical device registration
+and the locally approved GPU mode. All members and claims are committed in
+one durable registry update, or none are committed. Duplicate jobs are
+not launched, machines are not re-enrolled, and the allocation does not
+change during execution. Bundle machines cannot be moved by manual claim
+changes or the Hub's automatic queued-claim rebalancing: cancel a fully
+unstarted bundle and submit a new one to change placement. Each member
+receives its own native owner, lease, artifact lineage and existing GPU
+qualification/Start/Stop gates.
+
+A bundle is **resource coordination**, not a distributed learner.
+There is no automatic rollout transport, policy synchronization, gradient
+aggregation, common checkpoint or simultaneous Start across members. The
+existing project-specific TinyBrains remote rollout group (below) remains
+the only supported Hub multi-machine *single training* path; do not
+substitute an ordinary resource bundle for it. A continuation job or
+TinyBrains remote-rollout service is not eligible for an independent bundle.
+Bees still uses its own operator.
+
+Bundle membership and native statuses remain in the registry after restart
+and appear in Train. To withdraw an entirely unstarted bundle, use
+**Cancel all unstarted members** or
+`POST /api/hub/resource-bundles/cancel` with
+`{"bundle_id":"<uuid>","expected_job_ids":["<uuid>",...],"confirm_cancel":true}`.
+The exact current members are checked before claims are released, and
+a started, dispatched, or uncertain member blocks cancellation of the
+whole bundle. Existing native Stop and checkpoint verification remain
+mandatory for active jobs. Canceling a bundle never terminates a process.
+
 ## Trusted distributed TinyBrains rollout group (opt-in)
 
 The `feat/hub-resource-experiments-20261110` Hub branch and matching
@@ -2466,6 +2544,14 @@ checkpoint, evaluation and STOP marker. Each remote machine owns an independent
 `tinybrains_rollout` native job under its own acknowledged CPU/RAM lease,
 optionally with **one exclusive Windows CUDA GPU**. The learner sends a frozen
 behavior policy and collects the returned on-policy shards before optimizing.
+By default, each collector receives an equal action target. For heterogeneous
+fixed machines, Design can freeze an optional `rollout_action_weights` array,
+for example `[2,8,4]` for the learner and two ordered remote collectors.
+This divides the configured total action target proportionally, assigning at
+least one action to each collector and preserving the total. The chosen
+weights never change during a run and do not resize CPU/GPU leases; use
+measured per-collector delivered throughput to select meaningful weights.
+The Hub records each collector's assigned `action_target` as a chart metric.
 Remote workers never publish or advance learner checkpoints.
 
 Install the *same* randomly generated 32+-byte HMAC key on each trusted host
@@ -2495,7 +2581,24 @@ service to the public Internet.
    approved endpoint in the shown order. Each collector may set an independent
    `threads` count no greater than its leased CPUs or its locally approved
    thread limit. A worker budget may also request one exclusive Windows CUDA
-   GPU; no shared remote GPU is admitted.
+   GPU; no shared remote GPU is admitted. Collector slot 0 is the learner's
+   local rollout; slots 1–8 correspond to approved remote endpoints.
+   Updated remote workers report `collector_N_model_prepare_seconds`
+   (policy/critic weight loading plus first-use allocation) so that model
+   reuse can be measured separately from end-to-end collection time.
+   The Hub also derives `collector_N_decisions_per_second` and
+   `collector_N_engine_steps_per_second` from a collector's delivered
+   work divided by its recorded full request/response roundtrip. These
+   remote rates include worker compute, serialization and transport:
+   they are **not** network-only timings or marginal CPU-core gains.
+   The learner separately reports `remote_policy_snapshot_seconds`, the
+   time to prepare one frozen CPU weight snapshot shared by all remote
+   collector requests in that PPO update. It is absent for local-only
+   training. The separate `remote_opponent_snapshot_seconds` records the
+   time spent reading and hashing each frozen opponent artifact once per
+   update, instead of repeating disk I/O and hashing for every remote host.
+   Both are preparation costs within full `collection_seconds`. Compare
+   them with delivered decisions/s to identify bottlenecks.
    The Hub creates each worker configuration, all jobs and all machine
    reservations atomically; if any physical worker or capacity is missing,
    no job or claim is committed. No process is started by this action.

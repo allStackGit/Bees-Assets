@@ -8,6 +8,7 @@ const path=require('node:path');
 const crypto=require('node:crypto');
 const {spawnSync}=require('node:child_process');
 const {validateProgress}=require('./experiment_hub_progress');
+const {fixedCpuParallelism}=require('./experiment_hub_resources');
 const {modelFileSha256}=require('./experiment_hub_evaluation');
 
 const UUID=/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
@@ -22,6 +23,27 @@ const JOBS_IN='/workspace/experiments/experiment-hub/tinybrains-jobs';
 const SOURCE_IN='/workspace/experiments/tinybrains/mini-learning';
 const CACHE_IN='/workspace/cache/tinybrains';
 const REMOTE_KEY_IN='/workspace/private/tinybrains-rollouts';
+
+// Large completed-update rows may fit in the final 8 MiB scan without
+// including the *preceding* full row. Read that predecessor separately so
+// end-to-end actions/s remains available when match evidence is extensive.
+// This is optional telemetry: an oversized predecessor yields no rate.
+function previousHistoryRow(fd,endExclusive) {
+    let bytes=Math.min(endExclusive,TAIL);
+    while(bytes>0) {
+        const offset=endExclusive-bytes;
+        const buffer=Buffer.alloc(bytes);
+        if(fs.readSync(fd,buffer,0,bytes,offset)!==bytes)
+            throw Error('TinyBrains training history changed during read.');
+        const text=buffer.toString('utf8');
+        const lineStart=text.lastIndexOf('\n');
+        if(lineStart>=0||offset===0)
+            return JSON.parse(text.slice(lineStart+1));
+        if(bytes>=MAX_PROGRESS_ROW_TAIL)return null;
+        bytes=Math.min(endExclusive,MAX_PROGRESS_ROW_TAIL,bytes*2);
+    }
+    return null;
+}
 
 // Derive bounded, project-neutral chart measurements from the trainer's
 // committed update, not from GPU utilization guesses or incomplete rollouts.
@@ -44,7 +66,8 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         add('group_states_per_second',row.group_states/updateWall,'rate');
     }
     for(const name of ['collection_seconds','optimization_seconds',
-        'overlap_seconds',
+        'overlap_seconds','remote_policy_snapshot_seconds',
+        'remote_opponent_snapshot_seconds',
         'ppo_profile_host_seconds','ppo_advantages_seconds',
         'ppo_ordering_seconds','ppo_zero_grad_seconds',
         'ppo_grouping_seconds','ppo_data_preparation_seconds',
@@ -143,8 +166,20 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         ?row.collector_samples:[]).slice(0,9).entries()) {
         add('collector_'+i+'_ant_decisions',worker.ant_decisions,'count');
         add('collector_'+i+'_engine_steps',worker.engine_steps,'count');
+        add('collector_'+i+'_action_target',worker.action_target,'count');
         add('collector_'+i+'_roundtrip_seconds',
             worker.transport_roundtrip_seconds,'seconds');
+        add('collector_'+i+'_model_prepare_seconds',
+            worker.model_prepare_seconds,'seconds');
+        // This includes input transfer, remote compute and returned data;
+        // unlike GPU busy time, it measures useful delivered experience.
+        const roundtrip=worker.transport_roundtrip_seconds;
+        if(Number.isFinite(roundtrip)&&roundtrip>0) {
+            add('collector_'+i+'_decisions_per_second',
+                worker.ant_decisions/roundtrip,'rate');
+            add('collector_'+i+'_engine_steps_per_second',
+                worker.engine_steps/roundtrip,'rate');
+        }
     }
     return metrics;
 }
@@ -183,7 +218,10 @@ function createTinyBrainsPersistentDockerAdapter({
     seedCheckpointSha256,seedPpoUpdates,profiles,
     image='tinybrains-rocm:halifax-node',sourceWindowsRoot='B:/TinyBrains/Ants-MAPOCA',
     enableDualGpu=false,remoteCollectors=null,profilePpo=false,
+    cpuParallelism='profile',
 }) {
+    if(!['profile','allocation'].includes(cpuParallelism))
+        throw Error('TinyBrains CPU concurrency must be pinned to its profile or allocated CPU budget.');
     if(typeof profilePpo!=='boolean')
         throw Error('PPO profiling requires an explicit local boolean opt-in.');
     if(typeof enableDualGpu!=='boolean')
@@ -360,16 +398,21 @@ function createTinyBrainsPersistentDockerAdapter({
         },
         args(parameters,context) {
             const {profile,profile_sha256,updates,threads,device,remote_rollouts,
-                import_checkpoint,import_checkpoint_sha256}=parameters;
+                rollout_action_weights,import_checkpoint,import_checkpoint_sha256}=parameters;
             const item=approved.get(profile);
             if(remote_rollouts===true&&!frozenRemoteKeyIntact())
                 throw Error('Remote rollout key was rotated or changed after local adapter approval.');
             if(!item||item.sha256!==profile_sha256||
                 Object.keys(parameters).some(k=>!['profile','profile_sha256','updates',
-                    'threads','device','remote_rollouts','import_checkpoint',
-                    'import_checkpoint_sha256'].includes(k))||
+                    'threads','device','remote_rollouts','rollout_action_weights',
+                    'import_checkpoint','import_checkpoint_sha256'].includes(k))||
                 (remote_rollouts!==undefined&&
                     (remote_rollouts!==true||!remote||device==='cpu'))||
+                (rollout_action_weights!==undefined&&
+                    (remote_rollouts!==true||!Array.isArray(rollout_action_weights)||
+                     rollout_action_weights.length!==remote.endpoints.length+1||
+                     rollout_action_weights.some(w=>
+                         !Number.isSafeInteger(w)||w<1||w>1024)))||
                 (device!==undefined&&!['cpu','dual'].includes(device))||
                 (threads!==undefined&&(!Number.isSafeInteger(threads)||threads<1||threads>256))||
                 !Number.isSafeInteger(updates)||updates<1||updates>10000000||
@@ -429,14 +472,21 @@ function createTinyBrainsPersistentDockerAdapter({
                 fs.writeFileSync(path.join(out,'hub-start-update.json'),
                     JSON.stringify({update:startingUpdate})+'\n',{flag:'wx',mode:0o600});
             }
+            // A machine-local choice, resolved once at launch from the frozen
+            // CPU lease. Explicit per-job overrides keep their old meaning.
+            const chosenThreads=threads??(cpuParallelism==='allocation'
+                ?fixedCpuParallelism(context.cpu_quota,256)
+                :item.profile.threads);
             return ['-B',runner,'--run',JOBS_IN+'/'+context.job_id,
-                '--updates',String(updates),'--threads',String(threads??item.profile.threads),
+                '--updates',String(updates),'--threads',String(chosenThreads),
                 '--live-matches',String(item.profile.live_matches),
                 '--waves',String(item.profile.waves),
                 '--actions',String(item.profile.rollout_actions),
                 ...(remote_rollouts===true?[...remote.endpoints.flatMap(endpoint=>
                     ['--remote-rollout-endpoint',endpoint]),
                     '--remote-rollout-key-file',REMOTE_KEY_IN+'/rollout.key']:[]),
+                ...(rollout_action_weights?rollout_action_weights.flatMap(w=>
+                    ['--remote-rollout-weight',String(w)]):[]),
                 ...(device==='cpu'?['--device','cpu']:
                     device==='dual'
                         ?['--device','dual',...context.gpu_pci_addresses.flatMap(pci=>
@@ -504,14 +554,14 @@ function createTinyBrainsPersistentDockerAdapter({
                         updateWall=row.elapsed_seconds;
                     else {
                         const priorStart=str.lastIndexOf('\n',lineStart-1);
-                        if(priorStart>=0||offset===0) {
-                            const prior=JSON.parse(str.slice(priorStart+1,lineStart));
-                            if(prior.update===row.update-1&&
-                                Number.isFinite(prior.elapsed_seconds)&&
-                                prior.elapsed_seconds>=0&&
-                                row.elapsed_seconds>prior.elapsed_seconds)
-                                updateWall=row.elapsed_seconds-prior.elapsed_seconds;
-                        }
+                        const prior=(priorStart>=0||offset===0)
+                            ?JSON.parse(str.slice(priorStart+1,lineStart))
+                            :previousHistoryRow(fd,offset+lineStart);
+                        if(prior?.update===row.update-1&&
+                            Number.isFinite(prior.elapsed_seconds)&&
+                            prior.elapsed_seconds>=0&&
+                            row.elapsed_seconds>prior.elapsed_seconds)
+                            updateWall=row.elapsed_seconds-prior.elapsed_seconds;
                     }
                 }
                 const metrics=recordedTinyBrainsMetrics(row,updateWall);
