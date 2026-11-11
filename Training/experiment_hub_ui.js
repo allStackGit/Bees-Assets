@@ -513,6 +513,47 @@ document.addEventListener('DOMContentLoaded', () => {
         $('hub-resource-bundle-add').disabled=rows.length>=16;
         $('hub-resource-bundle-queue').disabled=rows.length<2||
             !rows.every(row=>row.querySelector('.hub-bundle-machine').value);
+        const container=$('hub-resource-bundle-existing');
+        container.replaceChildren();
+        const groups=new Map();
+        for(const job of state?.jobs||[]) {
+            const id=job.resource_bundle?.id;
+            if(!id)continue;
+            if(!groups.has(id))groups.set(id,[]);
+            groups.get(id).push(job);
+        }
+        for(const [id,members] of [...groups].slice(-8).reverse()) {
+            const row=document.createElement('div');
+            row.className='hub-pipeline-stage';
+            const active=members.filter(j=>j.status!=='cancelled');
+            const claims=active.filter(j=>
+                (state.reservations||[]).some(lease=>lease.id===j.lease_id&&
+                    ['offered','acknowledged'].includes(lease.status)));
+            const details=document.createElement('span');
+            details.textContent='Bundle '+id.slice(-8)+' · '+
+                members.length+' jobs · '+claims.length+' outstanding claims · '+
+                members.map(j=>j.project_id+' on '+
+                    (j.assigned_machine_id||'unassigned')+': '+j.status).join('; ');
+            row.append(details);
+            const canCancel=members.length===members[0].resource_bundle.size&&
+                active.length>0&&active.every(j=>
+                    j.status==='waiting_adapter'&&!j.dispatch_id);
+            if(canCancel)row.append(button('Cancel all unstarted members',async()=>{
+                if(!confirm('Cancel '+active.length+' unstarted bundle members and release their Hub claims? No native process will be stopped.'))return;
+                try{
+                    const result=await action('hub/resource-bundles/cancel',{
+                        bundle_id:id,expected_job_ids:active.map(j=>j.id),
+                        confirm_cancel:true,
+                    });
+                    feedback('hub-resource-bundle-message',
+                        'Cancelled '+result.cancelled_count+' unstarted members in bundle '+id.slice(-8)+'.');
+                    await reload();
+                }catch(error){
+                    feedback('hub-resource-bundle-message',String(error.message||error));
+                }
+            }));
+            container.append(row);
+        }
     }
     // Only a fresh, authenticated native report can distinguish a Stop
     // still awaiting delivery from a service already shutting down.
