@@ -330,33 +330,51 @@ impl NativeSoftwareRenderer {
     /// mask. Each observer costs one square root per covered scanline, not
     /// one geometry test for every pixel or other ship. No fog work happens
     /// in the headless simulation or in levels whose source disables fog.
-    fn reveal_fog_circle(&mut self, position: Vec2, source_radius: f32) {
+    /// The inexpensive fast path for a source mask covering all four
+    /// viewport corners. Only one fully covering disc is needed; unions
+    /// of smaller discs take the regular stencil path.
+    fn fog_covers_viewport(&self, position: Vec2, source_radius: f32) -> bool {
         let radius = source_radius * self.camera.pixels_per_unit;
+        if !radius.is_finite() || radius <= 0.0 { return false; }
+        let (x, y) = self.project(position);
+        if !x.is_finite() || !y.is_finite() { return false; }
+        let dx = x.abs().max((self.width as f32 - x).abs());
+        let dy = y.abs().max((self.height as f32 - y).abs());
+        radius * radius >= dx * dx + dy * dy
+    }
+
+    /// Fill only visible scanline intervals. Keeping this helper free of
+    /// renderer borrows allows iterating the reusable live-source map
+    /// without allocating/copying it into a second visual registry.
+    fn reveal_fog_circle(
+        stencil: &mut [u8], camera: NativeCamera, width: usize, height: usize,
+        position: Vec2, source_radius: f32,
+    ) {
+        let radius = source_radius * camera.pixels_per_unit;
         if !radius.is_finite() || radius <= 0.0 { return; }
-        let (cx, cy) = self.project(position);
+        let cx = (position.x - camera.center.x) * camera.pixels_per_unit + width as f32 * 0.5;
+        let cy = (camera.center.y - position.y) * camera.pixels_per_unit + height as f32 * 0.5;
         if !cx.is_finite() || !cy.is_finite() ||
-            cx + radius < 0.0 || cx - radius >= self.width as f32 ||
-            cy + radius < 0.0 || cy - radius >= self.height as f32 {
+            cx + radius < 0.0 || cx - radius >= width as f32 ||
+            cy + radius < 0.0 || cy - radius >= height as f32 {
             return;
         }
         let first_y = (cy - radius).floor().max(0.0) as usize;
-        let last_y = (cy + radius).ceil().min(self.height as f32 - 1.0) as usize;
+        let last_y = (cy + radius).ceil().min(height as f32 - 1.0) as usize;
         let radius_squared = radius * radius;
         for y in first_y..=last_y {
             let dy = y as f32 + 0.5 - cy;
             if dy.abs() > radius { continue; }
             let half_width = (radius_squared - dy * dy).max(0.0).sqrt();
-            // An offscreen circle must not reveal pixel zero merely
-            // because a negative float saturates when cast to usize.
-            if cx + half_width < 0.0 || cx - half_width >= self.width as f32 {
+            if cx + half_width < 0.0 || cx - half_width >= width as f32 {
                 continue;
             }
             let first_x = (cx - half_width).ceil().max(0.0) as usize;
             let last_x = (cx + half_width).floor()
-                .min(self.width as f32 - 1.0) as usize;
+                .min(width as f32 - 1.0) as usize;
             if first_x <= last_x {
-                let row = y * self.width;
-                self.fog_coverage[row + first_x..=row + last_x].fill(1);
+                let row = y * width;
+                stencil[row + first_x..=row + last_x].fill(1);
             }
         }
     }
@@ -379,13 +397,14 @@ impl NativeSoftwareRenderer {
         }
         self.fog_render_pass = self.fog_render_pass.wrapping_add(1);
         if self.fog_render_pass == 0 {
-            // A presentation counter wrap must never resurrect an old
-            // ship mask as if it had been observed in this frame.
             self.fog_render_pass = 1;
             self.fog_live.clear();
         }
+
+        // Minimap visibility reuses this buffer after the main viewport,
+        // including when one mask covers everything or none remains.
         self.fog_coverage.resize(self.pixels.len(), 0);
-        self.fog_coverage.fill(0);
+        let mut full_viewport = false;
         for (ship, body) in view.combat.render_ships() {
             let Some(radius) = Self::fog_source_radius(view, ship.entity_id)
                 else { continue };
@@ -394,14 +413,12 @@ impl NativeSoftwareRenderer {
                 position: body.motion.position, radius,
                 seen_pass: self.fog_render_pass,
             });
-            self.reveal_fog_circle(body.motion.position, radius);
+            full_viewport |= self.fog_covers_viewport(body.motion.position, radius);
         }
         self.pending_fog_fades.clear();
         let pass = self.fog_render_pass;
         self.fog_live.retain(|&id, last| {
             if last.seen_pass == pass { return true; }
-            // Unity Kill(false) starts a mask fade; a temporarily inactive
-            // but still-living ship must not fabricate a death animation.
             if view.combat.ship(id).is_some_and(|ship| ship.vitals.is_dead()) {
                 self.pending_fog_fades.push(FogFade {
                     position: last.position, radius: last.radius,
@@ -413,13 +430,39 @@ impl NativeSoftwareRenderer {
         self.fog_fades.append(&mut self.pending_fog_fades);
         self.fog_fades.retain(|fade|
             fade.current_radius(view.tick, view.fixed_step_seconds) >= 1.5);
-        for index in 0..self.fog_fades.len() {
-            let fade = self.fog_fades[index];
+        for fade in &self.fog_fades {
             counts.fog_fading_sources += 1;
-            self.reveal_fog_circle(fade.position,
+            full_viewport |= self.fog_covers_viewport(fade.position,
                 fade.current_radius(view.tick, view.fixed_step_seconds));
         }
-        for (pixel, visible) in self.pixels.iter_mut().zip(&self.fog_coverage) {
+        if full_viewport {
+            // Nothing is obscured; skip the O(screen pixels) fill, raster,
+            // and masking pass entirely. Minimap visibility is still
+            // computed from actual source discs.
+            return;
+        }
+        if counts.fog_sources == 0 && counts.fog_fading_sources == 0 {
+            // An empty player fleet has no sight. Clearing the final image
+            // directly avoids two full-resolution stencil passes.
+            self.pixels.fill(0x080e19);
+            counts.fog_occluded_pixels = self.pixels.len();
+            return;
+        }
+
+        self.fog_coverage.fill(0);
+        let stencil = &mut self.fog_coverage;
+        let camera = self.camera;
+        let width = self.width;
+        let height = self.height;
+        for source in self.fog_live.values() {
+            Self::reveal_fog_circle(stencil, camera, width, height,
+                source.position, source.radius);
+        }
+        for fade in &self.fog_fades {
+            Self::reveal_fog_circle(stencil, camera, width, height,
+                fade.position, fade.current_radius(view.tick, view.fixed_step_seconds));
+        }
+        for (pixel, visible) in self.pixels.iter_mut().zip(stencil.iter()) {
             if *visible == 0 {
                 *pixel = 0x080e19;
                 counts.fog_occluded_pixels += 1;
