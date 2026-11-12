@@ -26,12 +26,18 @@ const JOB_FIELDS=[
 // Exported job metadata is operator-readable but can leave the machine when
 // downloaded. Never copy credential-like configuration fields verbatim.
 function isCredentialField(key) {
-    // JSON configuration keys can be camelCase, PascalCase, snake_case or
-    // kebab-case. Split word boundaries before identifying private fields.
+    // JSON configuration keys can be camelCase, PascalCase, snake_case,
+    // kebab-case, or condensed acronyms (APIKEY, SSHKEY, CLIENTSECRET).
     const words=key.replace(/([A-Z]+)([A-Z][a-z])/g,'$1_$2')
         .replace(/([a-z0-9])([A-Z])/g,'$1_$2')
         .replace(/[^a-zA-Z0-9]+/g,'_').toLowerCase();
-    return /(?:^|_)(?:token|password|passwd|secret|credential|api_key|private_key|key_file|authorization|access_key|ssh_key|signing_key|encryption_key)(?:_|$)/.test(words);
+    if(/(?:^|_)(?:token|tokens|password|passwords|passwd|secret|secrets|credential|credentials|api_key|private_key|key_file|authorization|access_key|ssh_key|signing_key|encryption_key|connection_string|dsn)(?:_|$)/.test(words))
+        return true;
+    // Word-boundary splitting cannot infer boundaries within all-caps or
+    // all-lowercase identifiers. Check only established credential compounds,
+    // not bare 'key', so ordinary fields stay visible.
+    const collapsed=words.replace(/_/g,'');
+    return /(?:apikey|privatekey|keyfile|accesskey|sshkey|signingkey|encryptionkey|clientsecret|authtoken|accesstoken|refreshtoken|idtoken|bearertoken|connectionstring)/.test(collapsed);
 }
 function redactMetadata(value,depth=0) {
     if(depth>20)return '[nested configuration omitted]';
