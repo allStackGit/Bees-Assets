@@ -2074,7 +2074,8 @@ document.addEventListener('DOMContentLoaded', () => {
         'training_mean_match_turns','food_gathered_exact',
         'food_gathered_verified_matches',
         'food_disappearances_near_own_ant','visible_food_mean',
-        'combat_kills_exact','births_observed','deaths_observed',
+        'combat_kills_exact','combat_kills_verified_matches',
+        'births_observed','deaths_observed',
         'population_mean','population_peak','combat_exposure_fraction',
         'terminal_rewards','episodes_ended','loss','policy_loss',
         'value_loss','baseline_loss','entropy','local_elo','mean_reward'];
