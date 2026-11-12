@@ -75,7 +75,8 @@ function sendFile(res,source,contentType) {
 async function readJson(req) {
     if(!/^application\/json(?:\s*;|$)/i.test(String(req.headers['content-type']||'')))
         throw Error('JSON requests only.');
-    let length=0,raw='';
+    let length=0;
+    const chunks=[];
     for await(const chunk of req) {
         length+=chunk.length;
         if(length>BODY_LIMIT) {
@@ -83,8 +84,13 @@ async function readJson(req) {
             error.status=413;
             throw error;
         }
-        raw+=chunk.toString('utf8');
+        chunks.push(chunk);
     }
+    // UTF-8 code points may cross TCP chunk boundaries. Decode after
+    // bounded reassembly, rejecting malformed bytes rather than altering
+    // an operator's frozen JSON configuration.
+    const raw=new TextDecoder('utf-8',{fatal:true}).decode(
+        Buffer.concat(chunks,length));
     return JSON.parse(raw||'{}');
 }
 
