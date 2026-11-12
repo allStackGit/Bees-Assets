@@ -121,13 +121,22 @@ function dockerCgroupCounters(doc,fsApi=fs,pathApi=path) {
                 return Number.isSafeInteger(value)?value:null;
             }catch{return null;}
         };
-        let usage=null;
+        let usage=null,throttled=null,throttleEvents=null;
         try {
             const raw=fsApi.readFileSync(pathApi.join(dir,'cpu.stat'),'utf8');
             if(typeof raw==='string'&&raw.length<=2048) {
-                const match=/(?:^|\n)usage_usec ([0-9]{1,16})(?:\n|$)/.exec(raw);
-                if(match&&Number.isSafeInteger(Number(match[1])))
-                    usage=Number(match[1])/1000000;
+                const field=name=>{
+                    const match=new RegExp('(?:^|\\n)'+name+
+                        ' ([0-9]{1,16})(?:\\n|$)').exec(raw);
+                    const value=match?Number(match[1]):null;
+                    return Number.isSafeInteger(value)?value:null;
+                };
+                const cpuMicroseconds=field('usage_usec');
+                const throttledMicroseconds=field('throttled_usec');
+                usage=cpuMicroseconds===null?null:cpuMicroseconds/1000000;
+                throttled=throttledMicroseconds===null?null:
+                    throttledMicroseconds/1000000;
+                throttleEvents=field('nr_throttled');
             }
         }catch {
             // CPU accounting is unavailable; memory may still be readable.
@@ -136,6 +145,8 @@ function dockerCgroupCounters(doc,fsApi=fs,pathApi=path) {
         const tasks=counter('pids.current');
         return {
             ...(usage===null?{}:{cpu_time_seconds:usage}),
+            ...(throttled===null?{}:{cpu_throttled_seconds:throttled}),
+            ...(throttleEvents===null?{}:{cpu_throttle_events:throttleEvents}),
             ...(used===null?{}:{memory_current_mb:Math.floor(used/1048576)}),
             ...(peak===null?{}:{peak_job_memory_bytes:peak}),
             ...(tasks===null?{}:{process_tasks:tasks}),
