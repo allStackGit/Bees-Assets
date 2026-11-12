@@ -2357,7 +2357,15 @@ class ExperimentHub {
         delete job.dispatch_id;
         delete job.start_requested_at;
         delete job.start_first_offered_at;
-        delete job.release_on_terminal;
+        // A distributed sidecar's terminal-release policy was frozen at
+        // group queue time, not selected by this Start. Withdrawing an
+        // undelivered offer must not turn its next verified terminal receipt
+        // into a permanently held CPU/GPU reservation.
+        const groupOwnedCollector=job.project_id==='tinybrains_rollout'&&
+            next.jobs.some(parent=>parent.id===job.frozen_parameters?.learner_job_id&&
+                parent.project_id==='tinybrains'&&
+                parent.distributed_rollout_managed===true);
+        if(!groupOwnedCollector)delete job.release_on_terminal;
         delete job.automation_start_session_id;
         job.status_reason='Undelivered Start withdrawn. The queued job retains its existing claim.';
         this.commit(next);
