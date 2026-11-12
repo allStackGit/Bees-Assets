@@ -2220,6 +2220,19 @@ document.addEventListener('DOMContentLoaded', () => {
                         ?' (+'+(measuredWorkers.length-2)+' more)':'')+
                     ' (not hardware saturation)'
                 :'';
+            const enginePressure=[];
+            for(let i=0;i<9;i++) {
+                if(measured['collector_'+i+'_sim_straggler_pressure']?.value===1)
+                    enginePressure.push((i===0?'Learner':'Collector '+i)+
+                        ' waiting for slowest simulation');
+                if(measured['collector_'+i+'_sim_dispatch_pressure']?.value===1)
+                    enginePressure.push((i===0?'Learner':'Collector '+i)+
+                        ' simulation dispatch queueing');
+            }
+            const enginePressureSignal=enginePressure.length
+                ?' · Sustained simulation pressure: '+enginePressure.slice(0,2).join('; ')+
+                    (enginePressure.length>2?' (+'+(enginePressure.length-2)+' more)':'')
+                :'';
             const preferred=['total_ppo_updates','update_wall_time',
                 'ant_decisions_per_second','collection_seconds','optimization_seconds'];
             const priority=preferred.filter(key=>Object.hasOwn(p.metrics,key));
@@ -2234,6 +2247,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return 'Steps '+p.steps_completed.toLocaleString()+
                 ' · '+values.join(' · ')+
                 (remaining?' · +'+remaining+' more':'')+signal+workerSignal+
+                enginePressureSignal+
                 ' · Summary written '+new Date(p.source_modified_at).toLocaleString();
         }
         if(live?.progress_issue)
@@ -2370,6 +2384,10 @@ document.addEventListener('DOMContentLoaded', () => {
             'collector_'+i+'_sim_dispatch_queue_seconds',
             'collector_'+i+'_sim_batch_wall_seconds',
             'collector_'+i+'_sim_last_child_gap_seconds',
+            'collector_'+i+'_sim_last_child_gap_share',
+            'collector_'+i+'_sim_dispatch_queue_share',
+            'collector_'+i+'_sim_straggler_pressure',
+            'collector_'+i+'_sim_dispatch_pressure',
             'collector_'+i+'_action_target',
             'collector_'+i+'_elapsed_seconds',
             'collector_'+i+'_rollout_engine_step_seconds',
