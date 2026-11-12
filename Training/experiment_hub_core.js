@@ -1000,7 +1000,8 @@ function summarizeResourceSample(previous,report,observedAt) {
     if(!['running','stop_requested','finished','failed','stopped'].includes(report.state)||
         (observedCpuSeconds(report)===null&&report.memory_current_mb==null&&
          report.peak_job_memory_bytes==null&&
-         report.cpu_throttled_seconds==null&&report.cpu_throttle_events==null))
+         report.cpu_throttled_seconds==null&&report.cpu_throttle_events==null&&
+         report.cpu_quota_periods==null))
         return previous;
     const highest=(a,b)=>a==null?b??null:b==null?a:Math.max(a,b);
     return {
@@ -1013,6 +1014,8 @@ function summarizeResourceSample(previous,report,observedAt) {
             previous?.cpu_throttled_seconds_high_water,report.cpu_throttled_seconds),
         cpu_throttle_events_high_water:highest(
             previous?.cpu_throttle_events_high_water,report.cpu_throttle_events),
+        cpu_quota_periods_high_water:highest(
+            previous?.cpu_quota_periods_high_water,report.cpu_quota_periods),
         peak_observed_memory_mb:highest(previous?.peak_observed_memory_mb,report.memory_current_mb),
         peak_job_memory_bytes:highest(previous?.peak_job_memory_bytes,report.peak_job_memory_bytes),
     };
@@ -2342,7 +2345,7 @@ class ExperimentHub {
                     (typeof report.progress_issue!=='string'||
                         report.progress_issue.length>160))||
                 ['memory_current_mb','cpu_time_ns','peak_job_memory_bytes','process_tasks',
-                 'cpu_throttle_events'].some(k=>
+                 'cpu_throttle_events','cpu_quota_periods'].some(k=>
                     report[k]!=null&&
                     (!Number.isSafeInteger(report[k])||report[k]<0))||
                 ['cpu_time_seconds','cpu_throttled_seconds'].some(k=>
@@ -3063,11 +3066,31 @@ class ExperimentHub {
                 previousTelemetry.agent_instance_id===instance&&
                 ['running','stop_requested'].includes(previousTelemetry.state)&&
                 ['running','stop_requested'].includes(item.state);
-            const cpuCores=continuous&&
+            const sampleWindow=continuous&&Number.isFinite(elapsedMs)&&
+                elapsedMs>=1000&&elapsedMs<=120000;
+            const cpuCores=sampleWindow&&
                 cpuBeforeSeconds!==null&&cpuAfterSeconds!==null&&
-                cpuAfterSeconds>=cpuBeforeSeconds&&
-                Number.isFinite(elapsedMs)&&elapsedMs>=1000&&elapsedMs<=120000
+                cpuAfterSeconds>=cpuBeforeSeconds
                 ?1000*(cpuAfterSeconds-cpuBeforeSeconds)/elapsedMs:null;
+            // These counters belong to the same verified cgroup. Compare
+            // their deltas only across continuous authenticated samples;
+            // counters can reset when a native owner is replaced.
+            const beforePeriods=previousTelemetry?.cpu_quota_periods;
+            const beforeThrottled=previousTelemetry?.cpu_throttle_events;
+            const afterPeriods=item.cpu_quota_periods;
+            const afterThrottled=item.cpu_throttle_events;
+            const periodDelta=afterPeriods-beforePeriods;
+            const throttledDelta=afterThrottled-beforeThrottled;
+            const throttledPeriodPct=sampleWindow&&
+                Number.isSafeInteger(beforePeriods)&&
+                Number.isSafeInteger(beforeThrottled)&&
+                Number.isSafeInteger(afterPeriods)&&
+                Number.isSafeInteger(afterThrottled)&&
+                Number.isSafeInteger(periodDelta)&&
+                Number.isSafeInteger(throttledDelta)&&
+                periodDelta>0&&throttledDelta>=0&&
+                throttledDelta<=periodDelta
+                ?100*throttledDelta/periodDelta:null;
             // Resource samples are authenticated machine/job observations.
             // GPU values are HOST-WIDE observations on the physically bound
             // device; they are not measured per-job GPU consumption.
@@ -3096,6 +3119,9 @@ class ExperimentHub {
                 add('job_cpu_throttled_seconds',
                     item.cpu_throttled_seconds,'seconds');
                 add('job_cpu_throttle_events',item.cpu_throttle_events,'count');
+                add('job_cpu_quota_periods',item.cpu_quota_periods,'count');
+                add('job_cpu_quota_throttled_periods_pct',
+                    throttledPeriodPct,'scalar');
                 const leasedRam=job.resources?.ram_mb;
                 if(Number.isSafeInteger(leasedRam)&&leasedRam>0&&
                     Number.isSafeInteger(item.memory_current_mb)&&
@@ -3162,6 +3188,7 @@ class ExperimentHub {
                 cpu_time_seconds:cpuAfterSeconds,
                 cpu_throttled_seconds:item.cpu_throttled_seconds??null,
                 cpu_throttle_events:item.cpu_throttle_events??null,
+                cpu_quota_periods:item.cpu_quota_periods??null,
                 cpu_cores_used:cpuCores,
                 resource_usage:resources,
                 process_tasks:item.process_tasks??null,
