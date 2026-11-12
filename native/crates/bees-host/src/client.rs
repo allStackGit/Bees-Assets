@@ -62,6 +62,8 @@ pub struct NativeClient {
     /// The Unity game exposes mouse-edge scrolling as a user preference.
     /// F6 toggles it locally without adding a gameplay or persisted setting.
     edge_scroll_enabled: bool,
+    /// Source per-Level Map.MinZoom/MaxZoom. No gameplay-state copy.
+    source_zoom_by_world: Vec<Option<(f32, f32)>>,
     next_step: Instant,
     previous_frame: Instant,
     left_was_down: bool,
@@ -112,6 +114,7 @@ pub struct NativeClient {
     pub camera_pan_frames: u64,
     pub camera_wheel_pans: u64,
     pub camera_boundary_clamps: u64,
+    pub camera_zoom_clamps: u64,
     pub numbered_shortcut_selections: u64,
     pub cycled_shortcut_selections: u64,
     pub minimap_move_orders_submitted: u64,
@@ -131,6 +134,7 @@ impl NativeClient {
         let now = Instant::now();
         Ok(Self { window, renderer, bounds, selected_world: 0, selection_owner: None,
             paused: false, edge_scroll_enabled: false,
+            source_zoom_by_world: Vec::new(),
             next_step: now, previous_frame: now, left_was_down: false,
             right_was_down: false, right_press: None, last_left_press: None, double_left_press: false,
             input_feedback: "",
@@ -153,12 +157,28 @@ impl NativeClient {
             striker_bomb_indicators_drawn: 0,
             minimap_camera_moves: 0, camera_pan_frames: 0,
             camera_wheel_pans: 0, camera_boundary_clamps: 0,
-            numbered_shortcut_selections: 0,
+            camera_zoom_clamps: 0, numbered_shortcut_selections: 0,
             cycled_shortcut_selections: 0,
             minimap_move_orders_submitted: 0,
             tactical_button_clicks: 0, squad_tab_clicks: 0,
             shooting_priority_requests_submitted: 0,
             selected_command_rows_drawn: 0, command_target_markers_drawn: 0 })
+    }
+
+    /// Imported once from the source scene, not inferred from a UI map.
+    pub fn set_source_zoom_limits(&mut self, limits: Vec<Option<(f32, f32)>>) {
+        self.source_zoom_by_world = limits;
+        let (width, height) = self.renderer.size();
+        if self.renderer.camera.constrain_source_zoom(
+            self.active_source_zoom(), height,
+        ) {
+            self.camera_zoom_clamps += 1;
+        }
+        self.renderer.camera.constrain_to_map(self.bounds, width, height);
+    }
+
+    fn active_source_zoom(&self) -> Option<(f32, f32)> {
+        self.source_zoom_by_world.get(self.selected_world).copied().flatten()
     }
 
     /// Initial authored camera focus is a presentation-only concern. The
@@ -415,9 +435,10 @@ impl NativeClient {
                         self.renderer.camera.center = map_point;
                         self.minimap_camera_moves += 1;
                         self.renderer.camera.zoom_at(factor, width as f32 * 0.5,
-                            height as f32 * 0.5, width, height);
+                            height as f32 * 0.5, width, height, self.active_source_zoom());
                     } else {
-                        self.renderer.camera.zoom_at(factor, x, y, width, height);
+                        self.renderer.camera.zoom_at(factor, x, y, width, height,
+                            self.active_source_zoom());
                     }
                 }
             }
@@ -992,6 +1013,11 @@ impl NativeClient {
         // Clamp after all navigation inputs, numbered-squad focus, minimap
         // drags and window resizing. Never let a game-control input move
         // the graphical camera beyond the authored map.
+        if self.renderer.camera.constrain_source_zoom(
+            self.active_source_zoom(), height,
+        ) {
+            self.camera_zoom_clamps += 1;
+        }
         if self.renderer.camera.constrain_to_map(self.bounds, width, height) {
             self.camera_boundary_clamps += 1;
         }

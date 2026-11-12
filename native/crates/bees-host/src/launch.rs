@@ -1253,11 +1253,15 @@ fn run_battle(
                 .map_err(|_| invalid("source fixed duration cannot be represented by the host clock"))
         ).collect::<io::Result<_>>()?;
     let client_bounds: Vec<_> = source_levels.iter().map(|scene| scene.bounds).collect();
+    #[cfg(feature = "client")]
+    let client_zoom_limits: Vec<_> =
+        source_levels.iter().map(|scene| scene.camera_zoom).collect();
     // Open the optional window before starting the model or creating durable
     // run outputs. A window setup failure leaves no live episode to abandon.
     #[cfg(feature = "client")]
     let mut client = if view {
         let mut client = bees_host::client::NativeClient::new(client_bounds[0])?;
+        client.set_source_zoom_limits(client_zoom_limits);
         // Unity StageTitania2HumanFleetAtCenter assigns this precise
         // Stage.DefaultCameraPosition before the Beenoculars briefing.
         // Keep this in the mission host; the reusable client only knows
@@ -2181,6 +2185,7 @@ fn run_battle(
             "camera_pan_frames": client.camera_pan_frames,
             "camera_wheel_pans": client.camera_wheel_pans,
             "camera_boundary_clamps": client.camera_boundary_clamps,
+            "camera_zoom_clamps": client.camera_zoom_clamps,
             "minimap_move_orders_submitted": client.minimap_move_orders_submitted,
             "tactical_button_clicks": client.tactical_button_clicks,
             "squad_tab_clicks": client.squad_tab_clicks,

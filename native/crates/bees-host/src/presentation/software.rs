@@ -33,10 +33,32 @@ impl NativeCamera {
             * (1.0 / self.pixels_per_unit)
     }
 
-    pub fn zoom_at(&mut self, factor: f32, x: f32, y: f32, width: usize, height: usize) {
+    /// Convert the source's orthographic half-height limits into native
+    /// pixels per world unit using the current viewport height.
+    pub fn constrain_source_zoom(
+        &mut self, limits: Option<(f32, f32)>, height: usize,
+    ) -> bool {
+        let Some((min, max)) = limits else { return false };
+        if !min.is_finite() || !max.is_finite() ||
+            min <= 0.0 || max < min || height == 0 { return false; }
+        let low = height as f32 / (2.0 * max);
+        let high = height as f32 / (2.0 * min);
+        if !low.is_finite() || !high.is_finite() || low <= 0.0 {
+            return false;
+        }
+        let previous = self.pixels_per_unit;
+        self.pixels_per_unit = previous.clamp(low, high);
+        self.pixels_per_unit != previous
+    }
+
+    pub fn zoom_at(
+        &mut self, factor: f32, x: f32, y: f32, width: usize, height: usize,
+        authored: Option<(f32, f32)>,
+    ) {
         if !factor.is_finite() || factor <= 0.0 { return; }
         let before = self.screen_to_world(x, y, width, height);
         self.pixels_per_unit = (self.pixels_per_unit * factor).clamp(0.001, 1000.0);
+        self.constrain_source_zoom(authored, height);
         self.center += before - self.screen_to_world(x, y, width, height);
     }
 
