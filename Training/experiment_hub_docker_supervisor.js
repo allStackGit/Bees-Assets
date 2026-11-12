@@ -63,8 +63,15 @@ function fixedDockerSpec(adapter) {
 }
 function writeAtomic(file,value) {
     const tmp=file+'.'+crypto.randomBytes(8).toString('hex')+'.tmp';
-    fs.writeFileSync(tmp,JSON.stringify(value,null,2)+'\n',{flag:'wx',mode:0o600});
-    fs.renameSync(tmp,file);
+    try {
+        fs.writeFileSync(tmp,JSON.stringify(value,null,2)+'\n',
+            {flag:'wx',mode:0o600});
+        fs.renameSync(tmp,file);
+    }finally {
+        // A failed write or rename must not leave a private, stale copy
+        // of native ownership behind or consume disk on every retry.
+        if(fs.existsSync(tmp))fs.unlinkSync(tmp);
+    }
 }
 function parseInspect(text) {
     const result=JSON.parse(text);
