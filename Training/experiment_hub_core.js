@@ -3119,7 +3119,7 @@ class ExperimentHub {
                 // CPU/GPU after this job has exited. Do not append those
                 // physical-host samples as if the finished process used them.
                 if(liveOwner&&!archived&&
-                    (!progress||!this.observations.error))
+                    (!progress||!this.observations.errorFor(job)))
                     this.observations.recordResources(job,observed,received,
                         progress?'not_advanced':
                         item.progress_issue?'read_error':'absent');
