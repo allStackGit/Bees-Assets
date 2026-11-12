@@ -218,6 +218,10 @@ pub trait NativeLevelCommandContext {
         NativeReinforcementGauges::default()
     }
 
+    /// Next authored admission boundary on this Level's single fixed-step
+    /// clock. The frontend may show it, but must never execute the wave.
+    fn next_reinforcement_tick(&self) -> Option<u64> { None }
+
     /// Admit scheduled source squads at the completed fixed-tick boundary.
     fn deploy_reinforcements(
         &mut self, _world: &mut CombatWorld, _events: &mut NativeLevelEventProcessor, _tick: u64,

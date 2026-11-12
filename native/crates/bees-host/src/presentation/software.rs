@@ -598,6 +598,24 @@ impl NativeSoftwareRenderer {
             };
             text::draw_centered(&mut self.pixels, self.width, 8, &label, 1, [239, 247, 255]);
         }
+        // Reuse the canonical Level's due tick; this is a display-only
+        // warning, not another timer or authority capable of spawning ships.
+        if view.terminal_result.is_none() && view.reinforcement_waves_pending > 0 {
+            if let Some(next_tick) = view.next_reinforcement_tick {
+                let remaining_ticks = next_tick.saturating_sub(view.tick);
+                let seconds = ((remaining_ticks as f64) *
+                    f64::from(view.fixed_step_seconds)).ceil() as u64;
+                let label = format!(
+                    "Reinforcements: {} wave{}  |  Next {:02}:{:02}",
+                    view.reinforcement_waves_pending,
+                    if view.reinforcement_waves_pending == 1 { "" } else { "s" },
+                    seconds / 60, seconds % 60,
+                );
+                let y = if view.survival.is_some() { 8 + text::HEIGHT + 4 } else { 8 };
+                text::draw_centered(&mut self.pixels, self.width, y,
+                    &label, 1, [239, 196, 129]);
+            }
+        }
         if self.show_minimap {
             counts.minimap_ship_markers = self.draw_minimap(view, bounds);
         }

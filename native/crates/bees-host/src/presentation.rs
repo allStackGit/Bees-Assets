@@ -43,6 +43,10 @@ pub struct NativeRenderWorldView<'a> {
     pub terminal_result: Option<bees_sim::episode_terminal::EpisodeTerminalResult>,
     pub campaign_dialogue: Option<(u8, bees_gameplay::campaign_dialogue::CampaignCue)>,
     pub survival: Option<bees_sim::episode_terminal::SurvivalStatus>,
+    /// Status only: these are read from the Level's source wave queue.
+    /// The renderer never schedules, mutates, or owns reinforcements.
+    pub reinforcement_waves_pending: usize,
+    pub next_reinforcement_tick: Option<u64>,
     pub combat: &'a CombatWorld,
     pub collision_matrix: &'a bees_sim::physics::CollisionMatrix,
     pub roster: &'a NativeSquadRoster,
