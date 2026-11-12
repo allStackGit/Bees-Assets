@@ -1771,8 +1771,10 @@ impl KinematicPhysics {
             self.grid_contents = GridContents::Stale;
         }
         self.overlaps_current.clear();
-        if has_physical_projectiles {
-            for projectile in &self.projectiles {
+        let projectiles_to_check = if has_physical_projectiles {
+            self.projectiles.as_slice()
+        } else { &[] };
+        for projectile in projectiles_to_check {
             if !projectile.active { continue; }
             let Some(projectile_collider) = &projectile.collider else { continue };
             let Some(area) = projectile_collider.bounds else { continue };
@@ -1795,7 +1797,6 @@ impl KinematicPhysics {
                     });
                 }
             }
-        }
         }
         // Proximity-to-ship checks reuse the ship grid before it is rebuilt
         // for obstacles. Unity's child layer is evaluated independently
