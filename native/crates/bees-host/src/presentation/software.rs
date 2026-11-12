@@ -73,6 +73,10 @@ pub struct NativeRenderCounts {
     pub fog_sources: usize,
     pub fog_fading_sources: usize,
     pub fog_occluded_pixels: usize,
+    /// One non-stencil, fully exposed viewport this frame.
+    pub fog_full_viewport_skips: usize,
+    /// One direct dark fill with no player sight sources remaining.
+    pub fog_empty_viewport_fills: usize,
 }
 
 pub struct NativeSoftwareRenderer {
@@ -83,7 +87,7 @@ pub struct NativeSoftwareRenderer {
     fog_coverage: Vec<u8>,
     /// UI lifecycle only: Unity FogOfWarVision remains after a ship death,
     /// shrinking its mask by 0.8 every 0.1 simulation seconds.
-    fog_context: Option<(WorldId, u64)>,
+    fog_context: Option<(WorldId, u64, Option<i32>)>,
     fog_render_pass: u64,
     fog_live: HashMap<i64, FogLiveSource>,
     fog_fades: Vec<FogFade>,
@@ -318,7 +322,8 @@ impl NativeSoftwareRenderer {
         }
         // This is the same transient SpriteMask fade the renderer paints.
         // Never let a fade from a previous world/episode grant visibility.
-        self.fog_context == Some((view.world_id, view.episode_revision)) &&
+        self.fog_context == Some((view.world_id, view.episode_revision,
+            view.player_authority.player_viewer_side())) &&
             self.fog_fades.iter().any(|fade| {
                 let radius = fade.current_radius(view.tick, view.fixed_step_seconds);
                 radius >= 1.5 &&
@@ -388,7 +393,10 @@ impl NativeSoftwareRenderer {
             self.fog_context = None;
             return;
         }
-        let context = (view.world_id, view.episode_revision);
+        // A viewer-side switch in the same Level/episode must not inherit
+        // another player's dying-ship reveal masks.
+        let context = (view.world_id, view.episode_revision,
+            view.player_authority.player_viewer_side());
         if self.fog_context != Some(context) {
             self.fog_live.clear();
             self.fog_fades.clear();
@@ -439,6 +447,7 @@ impl NativeSoftwareRenderer {
             // Nothing is obscured; skip the O(screen pixels) fill, raster,
             // and masking pass entirely. Minimap visibility is still
             // computed from actual source discs.
+            counts.fog_full_viewport_skips = 1;
             return;
         }
         if counts.fog_sources == 0 && counts.fog_fading_sources == 0 {
@@ -446,6 +455,7 @@ impl NativeSoftwareRenderer {
             // directly avoids two full-resolution stencil passes.
             self.pixels.fill(0x080e19);
             counts.fog_occluded_pixels = self.pixels.len();
+            counts.fog_empty_viewport_fills = 1;
             return;
         }
 
