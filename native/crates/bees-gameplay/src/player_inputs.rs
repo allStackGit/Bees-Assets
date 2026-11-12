@@ -203,8 +203,10 @@ impl NativePlayerShootingPlan {
     }
 }
 
-/// Unity Squad.MatchSpeed / UnmatchSpeed. The user chooses an explicit mode,
-/// so recorded/replayed actions remain deterministic without guessing UI
+/// Unity Squad.MatchSpeed / UnmatchSpeed. The host calculates the one
+/// minimum authored speed over all selected, eligible squads; replaying
+/// the same selection reproduces that speed without cached UI state.
+/// The user chooses an explicit mode, so playback does not guess UI
 /// toggle state after a squad loses a ship.
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct NativePlayerSquadMatchSpeed {
@@ -227,6 +229,10 @@ pub struct NativePlayerMatchSpeedPlan {
 }
 
 impl NativePlayerMatchSpeedPlan {
+    /// The source action box chooses one minimum over ALL selected squads.
+    /// Do not silently calculate a different speed for each squad.
+    pub fn slowest_authored_speed(&self) -> f32 { self.speed }
+
     pub fn prepare<M: NativeLevelPlayerContext, A>(
         world: &World<NativeLevelState<M, A>>, world_id: WorldId,
         episode_revision: u64, selected_ship: i64, match_speed: bool,
@@ -260,6 +266,7 @@ impl NativePlayerMatchSpeedPlan {
 
     pub fn execute<M: NativeLevelPlayerContext, A>(
         self, world: &mut World<NativeLevelState<M, A>>,
+        shared_slowest_speed: f32,
     ) -> Result<usize, NativePlayerInputError> {
         let current = Self::prepare(world, self.world_id,
             self.episode_revision, self.selected_ship, self.match_speed)?;
@@ -267,8 +274,14 @@ impl NativePlayerMatchSpeedPlan {
             current.members != self.members || current.speed != self.speed {
             return Err(NativePlayerInputError::StaleWorld);
         }
+        if self.match_speed && (!shared_slowest_speed.is_finite() ||
+            shared_slowest_speed < 0.0 || shared_slowest_speed > self.speed) {
+            return Err(NativePlayerInputError::InvalidAction);
+        }
         for id in &self.members {
-            let requested_speed = if self.match_speed { self.speed } else {
+            let requested_speed = if self.match_speed {
+                shared_slowest_speed
+            } else {
                 world.state.combat.ship_body(*id)
                     .ok_or(NativePlayerInputError::MissingSquad)?
                     .motion.base_speed

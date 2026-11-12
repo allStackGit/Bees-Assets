@@ -586,9 +586,13 @@ where
             }
         }
         if plans.is_empty() { return Ok(counts); }
+        let shared_slowest_speed = plans.iter()
+            .map(NativePlayerMatchSpeedPlan::slowest_authored_speed)
+            .fold(f32::INFINITY, f32::min);
         self.driver.invalidate_environment(index).map_err(HostPlayerInputError::Driver)?;
         for plan in plans {
-            if plan.execute(self.simulation.world_mut(index).expect("located world"))
+            if plan.execute(self.simulation.world_mut(index).expect("located world"),
+                shared_slowest_speed)
                 .map_err(HostPlayerInputError::Gameplay)? > 0 {
                 counts.accepted_squads += 1;
             } else { counts.unavailable_squads += 1; }
