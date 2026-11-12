@@ -6,6 +6,7 @@ Windows run nor the copied Halifax source run is modified by this process.
 """
 import argparse
 import os
+from importlib.util import find_spec
 from pathlib import Path
 import runpy
 import sys
@@ -83,7 +84,6 @@ def main():
     # launch behavior until that trainer version is installed.
     auto_balance = False
     if args.remote_rollout_endpoint and not args.remote_rollout_weight:
-        from importlib.util import find_spec
         auto_balance = find_spec("ants_mapoca.rollout_balance") is not None
         if not auto_balance:
             print("TinyBrains backend lacks automatic collector balancing; "
