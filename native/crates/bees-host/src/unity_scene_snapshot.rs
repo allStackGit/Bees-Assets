@@ -259,6 +259,8 @@ struct UnityShip {
     observed_weapons: Vec<UnityObservedWeapon>,
     source_sight: Option<i32>,
     effective_vision_range: i32,
+    /// Legacy scene exports omit the initially created SpriteMask radius.
+    fog_vision_radius: Option<f32>,
     hivemind_registered: bool,
     hivemind_vision_enabled: bool,
     hivemind_sight_range: i32,
@@ -385,6 +387,7 @@ impl UnityShipSpecial {
                     vision: NativeSourceVision {
                         source_sight: Some(source.effective_vision_range),
                         effective_range: source.effective_vision_range, trigger_range: source.effective_vision_range,
+                        fog_radius: None,
                         registered: source.hivemind_registered, enabled: source.hivemind_vision_enabled,
                     },
                 }) }
@@ -1423,6 +1426,7 @@ impl NativePhysicalScene {
                 return Err(NativeSnapshotError::DuplicateEntity(ship.entity_id));
             }
             if ship.source_sight.is_some_and(|sight| sight < 0) || ship.effective_vision_range < 0 ||
+                ship.fog_vision_radius.is_some_and(|radius| !radius.is_finite() || radius < 0.0) ||
                 ship.hivemind_sight_range < 0 ||
                 (ship.hivemind_vision_enabled &&
                     (!ship.hivemind_registered ||
@@ -1434,6 +1438,7 @@ impl NativePhysicalScene {
                 source_sight: ship.source_sight,
                 effective_range: ship.effective_vision_range,
                 trigger_range: ship.hivemind_sight_range,
+                fog_radius: ship.fog_vision_radius,
                 registered: ship.hivemind_registered,
                 enabled: ship.hivemind_vision_enabled,
             });

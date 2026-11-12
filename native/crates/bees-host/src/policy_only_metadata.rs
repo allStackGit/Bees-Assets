@@ -114,6 +114,8 @@ pub struct NativeSourceVision {
     pub source_sight: Option<i32>,
     pub effective_range: i32,
     pub trigger_range: i32,
+    /// Fixed source FogOfWarVision.Range / 2. None is a legacy scene.
+    pub fog_radius: Option<f32>,
     pub registered: bool,
     pub enabled: bool,
 }
@@ -203,6 +205,7 @@ impl NativePolicyOnlyMetadata {
         for (id, source) in vision {
             if id <= 0 || source.source_sight.is_some_and(|sight| sight < 0) || source.effective_range < 0 ||
                 source.trigger_range < 0 ||
+                source.fog_radius.is_some_and(|radius| !radius.is_finite() || radius < 0.0) ||
                 (source.enabled &&
                     (!source.registered || source.trigger_range == 0)) ||
                 !authored_ships.contains_key(&id) ||
@@ -749,11 +752,12 @@ impl NativePlayerAuthority for NativePolicyOnlyMetadata {
     }
 
     fn player_fog_vision_radius(&self, ship_id: i64) -> Option<f32> {
-        // FogOfWarVision.Range is the sprite's diameter; the physical
-        // reveal radius is its half-width. Newly dropped Scout beacons
-        // are registered through the same effective_vision map.
+        // New source snapshots capture the Create-time mask radius
+        // directly. Older snapshots have only the static effective sight,
+        // which is the best available approximation. Beacons acquire
+        // source vision through the same authoritative registration.
         self.effective_vision.get(&ship_id)
-            .map(|vision| vision.effective_range as f32)
+            .map(|vision| vision.fog_radius.unwrap_or(vision.effective_range as f32))
     }
 
     fn weapon_obstacles_enabled(&self) -> Option<bool> { Some(self.player.has_obstacles) }

@@ -56,6 +56,9 @@ internal static class NativePhysicalSceneExporter
         // Frozen source v26 controller/capability observations.
         // Model slot remains a separately authenticated host decision.
         public int source_sight, effective_vision_range;
+        // Fixed at FogOfWarVision.Create, independent of later upgrades.
+        // Zero for ships without an activated player mask.
+        public float fog_vision_radius;
         public bool has_weapons, has_turrets, has_special_action, special_ready;
         public float special_resource_fraction, special_cooldown_fraction, special_phase;
         public bool mining_possible, healing_possible, warp_possible;
@@ -541,6 +544,9 @@ internal static class NativePhysicalSceneExporter
                 policy_cease_fire = ship.IsCeaseFire,
                 source_sight = ship.Sight,
                 effective_vision_range = HiveMindVision.GetEffectiveRange(ship),
+                fog_vision_radius = ship.HasUserFogOfWarVision &&
+                    ship.FogOfWarVision != null
+                    ? ship.FogOfWarVision.Range * 0.5f : 0f,
                 hivemind_registered = ship.IsHiveMindControlled,
                 hivemind_vision_enabled = ship.HiveMindVision != null &&
                     ship.HiveMindVision.enabled &&
