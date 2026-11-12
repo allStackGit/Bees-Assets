@@ -10,7 +10,8 @@
 use bees_sim::combat_world::CombatWorld;
 use bees_sim::geometry::Vec2;
 use bees_sim::simulation::WorldId;
-use bees_gameplay::commands::NativeSquadCommandDirector;
+use bees_gameplay::commands::{NativeSquadCommandDirector,
+    NativeCommandOrigin, NativeLocalCommandSource};
 use bees_gameplay::player_inputs::NativePlayerAuthority;
 use bees_gameplay::squads::NativeSquadRoster;
 use bees_hivemind::session::SquadLifetime;
@@ -163,6 +164,22 @@ pub fn gameplay_world_sha256(
         hash.update((squad.members.len() as u64).to_le_bytes());
         for &ship_id in &squad.members { number(&mut hash, ship_id); }
         maybe_owner(&mut hash, squad.mother_squad);
+        match squad.source_hotkey_number {
+            Some(number) => { hash.update([1_u8]); hash.update(number.to_le_bytes()); }
+            None => hash.update([0_u8]),
+        }
+        match squad.original_squad_count {
+            Some(number) => { hash.update([1_u8]); hash.update(number.to_le_bytes()); }
+            None => hash.update([0_u8]),
+        }
+        match &squad.command_bans {
+            Some(bans) => {
+                hash.update([1_u8]);
+                hash.update((bans.len() as u64).to_le_bytes());
+                for &kind in bans { hash.update([kind as u8]); }
+            }
+            None => hash.update([0_u8]),
+        }
         if let Some(kind) = commands.current_kind(key) {
             hash.update([1_u8, kind as u8]);
         } else { hash.update([0_u8]); }
@@ -174,6 +191,25 @@ pub fn gameplay_world_sha256(
         } else { hash.update([0_u8]); }
         if let Some(command) = commands.current_selection(key) {
             hash.update([1_u8, command.shooting().id]);
+            // Two identical local strategies can belong to DIFFERENT
+            // command lifetimes. A delayed HiveMind reservation must never
+            // be mistaken for a player/scripted order with the same kind.
+            match command.origin() {
+                NativeCommandOrigin::HiveMind(value) => {
+                    hash.update([1_u8, value.server_strategy.id,
+                        value.selected_shooting.id]);
+                    number(&mut hash, value.command_outcome_id);
+                    number(&mut hash, value.shooting_outcome_id);
+                }
+                NativeCommandOrigin::Local(value) => {
+                    let origin = match value.source {
+                        NativeLocalCommandSource::Player => 1_u8,
+                        NativeLocalCommandSource::Scripted => 2_u8,
+                    };
+                    hash.update([2_u8, origin]);
+                    hash.update(value.sequence.to_le_bytes());
+                }
+            }
         } else { hash.update([0_u8]); }
         if let Some(permission) = player.player_permissions(key) {
             hash.update([1_u8, u8::from(permission.user_controlled),
