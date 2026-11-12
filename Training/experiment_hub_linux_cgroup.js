@@ -57,10 +57,7 @@ function verifyKernelLimits(report,cpus,ramMb,fsApi=fs) {
     try {
         const stat=limitedRead(fsApi,path.join(actual,'cpu.stat'),2048);
         const value=name=>{
-            const match=new RegExp('^'+name+' ([0-9]+)
-}
-module.exports={verifyKernelLimits};
-,'m').exec(stat);
+            const match=new RegExp('^'+name+' ([0-9]+)$','m').exec(stat);
             return match?safeUint(match[1]):null;
         };
         const micros=value('throttled_usec'),events=value('nr_throttled');
