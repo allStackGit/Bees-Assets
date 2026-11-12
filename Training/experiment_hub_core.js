@@ -3444,9 +3444,6 @@ class ExperimentHub {
         }
         if(changedHistory||terminalHistory)
             this.progressHistory.persist(received,terminalHistory);
-        // The coordinator may authorize an explicitly preapproved learner
-        // only after this authenticated report and its receipts are visible.
-        this.advanceDistributedLaunches();
         if(value.close_agent_session===true) {
             // The final report of a --once agent closes its native session.
             // It has no further instruction loop. Do not leave a fictitious
@@ -3459,6 +3456,9 @@ class ExperimentHub {
                 heartbeat_ttl_seconds:Math.floor(AGENT_HEARTBEAT_TTL_MS/1000),
                 lease_offers:[],execution_orders:[]};
         }
+        // A --once agent closes its native session; never authorize a new
+        // learner on the closing heartbeat when it cannot receive a Start.
+        this.advanceDistributedLaunches();
         // An agent awaiting a slow native Start/Stop/probe can renew
         // authenticated liveness without receiving a second instruction.
         // This does not close the session or release native ownership.
