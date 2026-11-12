@@ -91,6 +91,10 @@ def main():
           for arg in ("--remote-rollout-endpoint", endpoint)],
         *[arg for weight in args.remote_rollout_weight
           for arg in ("--remote-rollout-weight", str(weight))],
+        # Prefer sustained delivered-SPS balancing only when the operator
+        # did not pin explicit immutable per-collector action weights.
+        *(["--auto-rollout-weights"] if args.remote_rollout_endpoint and
+           not args.remote_rollout_weight else []),
         *(["--remote-rollout-key-file", args.remote_rollout_key_file,
            "--remote-rollout-job-id", run.name] if args.remote_rollout_endpoint else []),
     ]
