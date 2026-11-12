@@ -182,12 +182,17 @@ python3 native/tools/author-titania2-waves.py run.json waves.json \
   run-with-waves.json --scene-output scene-with-deferred-waves.json
 ```
 
-The command copies **only** the selected real Unity ship and squad records
-from later captures into a new native scene. It retains their actual
-off-map positions and other physical attributes, clears the already-issued
-Unity point order (which the native runtime cannot restore), and schedules
-a new source-equivalent `entry` order on native deployment. Captured waves
-therefore have `spawn: null`: their live position is authoritative.
+The command copies **only** real Unity ship and squad records from
+later captures into a new native scene. Each manifest ID names an original
+SavedSquad slot; when it spawned a Carrier, the tool also imports its
+source-linked Drone/Striker child squads in Unity's construction order.
+Those children share their parent's approach lane and arrive in the
+same native wave, not as additional saved-squad lanes. The tool validates
+the full two-pass physical placement and every child's entry order.
+It retains actual off-map positions and physical attributes, clears
+the already-issued Unity point order (which native cannot restore), and
+schedules a new equivalent `entry` order on deployment. Captured waves
+therefore have `spawn: null`: their live positions are authoritative.
 Waves present in the initial scene instead use computed `spawn` and
 `entry` coordinates. Both paths preserve Unity's 0.16 tangent offsets.
 When a Unity `GetSquadByComposition` lookup returns null, retain its original
