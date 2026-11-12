@@ -2176,6 +2176,18 @@ document.addEventListener('DOMContentLoaded', () => {
         const live=job.live_execution;
         const p=live?.progress||job.final_progress;
         if(p?.source==='hub-metrics-v1') {
+            // Sustained stage evidence is deliberately narrower than a CPU/GPU
+            // hardware diagnosis; measured stage time alone cannot prove
+            // device saturation or justify buying additional resources.
+            const measured=p.metrics||{};
+            const stage=measured.pipeline_collection_dominant?.value===1
+                ?'collection':measured.pipeline_optimization_dominant?.value===1
+                    ?'optimization':null;
+            const signal=stage
+                ?' · Sustained longest stage: '+stage+' (not a hardware saturation claim)'
+                :measured.pipeline_timing_sample_count?.value>0
+                    ?' · Bottleneck stage: insufficient sustained evidence'
+                    :'';
             const preferred=['total_ppo_updates','update_wall_time',
                 'ant_decisions_per_second','collection_seconds','optimization_seconds'];
             const priority=preferred.filter(key=>Object.hasOwn(p.metrics,key));
@@ -2189,7 +2201,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const remaining=Math.max(0,Object.keys(p.metrics).length-values.length);
             return 'Steps '+p.steps_completed.toLocaleString()+
                 ' · '+values.join(' · ')+
-                (remaining?' · +'+remaining+' more':'')+
+                (remaining?' · +'+remaining+' more':'')+signal+
                 ' · Summary written '+new Date(p.source_modified_at).toLocaleString();
         }
         if(live?.progress_issue)
@@ -2240,6 +2252,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const knownPerformanceMetrics=[
         'total_ppo_updates','update_wall_time','elapsed_training_seconds',
         'active_training_time',
+        'pipeline_collection_work_share','pipeline_optimization_work_share',
+        'pipeline_collection_dominant','pipeline_optimization_dominant',
+        'pipeline_timing_sample_count','rollout_engine_measured_work_share',
+        'rollout_inference_measured_work_share',
+        ...Array.from({length:9},(_,i)=>'collector_'+i+'_turnaround_overhead_share'),
         'engine_steps','engine_steps_per_second','ant_decisions',
         'ant_decisions_per_second','group_states','group_states_per_second',
         'collection_seconds','rollout_model_refresh_seconds',
