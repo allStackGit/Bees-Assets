@@ -2228,6 +2228,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 if(measured['collector_'+i+'_sim_dispatch_pressure']?.value===1)
                     enginePressure.push((i===0?'Learner':'Collector '+i)+
                         ' simulation dispatch queueing');
+                if(measured['collector_'+i+'_record_encode_pressure']?.value===1)
+                    enginePressure.push((i===0?'Learner':'Collector '+i)+
+                        ' rollout record packing');
             }
             const enginePressureSignal=enginePressure.length
                 ?' · Sustained simulation pressure: '+enginePressure.slice(0,2).join('; ')+
@@ -2401,6 +2404,8 @@ document.addEventListener('DOMContentLoaded', () => {
             'collector_'+i+'_roundtrip_seconds',
             'collector_'+i+'_service_seconds',
             'collector_'+i+'_record_encode_seconds',
+            'collector_'+i+'_record_encode_work_share',
+            'collector_'+i+'_record_encode_pressure',
             'collector_'+i+'_serialize_seconds',
             'collector_'+i+'_compress_seconds',
             'collector_'+i+'_send_seconds',
