@@ -599,9 +599,23 @@ impl NativePlayerAuthority for NativePolicyOnlyMetadata {
     fn player_permissions(&self, owner: SquadLifetime) -> Option<NativePlayerPermissions> {
         self.player.squads.get(&owner).copied()
     }
+    fn player_shooting_strategy(&self, owner: SquadLifetime)
+        -> Option<bees_hivemind::protocol::StrategyIdentity>
+    {
+        self.player.commands.get(&owner).map(|command| command.shooting)
+    }
 }
 
 impl NativeLevelPlayerContext for NativePolicyOnlyMetadata {
+    fn set_player_shooting_strategy(&mut self, owner: SquadLifetime,
+        shooting: bees_hivemind::protocol::StrategyIdentity,
+    ) -> Result<(), GameCommandError> {
+        bees_gameplay::commands::NativeCommandSelection::validate_shooting(shooting)?;
+        self.player.commands.get_mut(&owner)
+            .ok_or(GameCommandError::MissingCombatSnapshot)?.shooting = shooting;
+        Ok(())
+    }
+
     fn player_command_inputs(&self, owner: SquadLifetime)
         -> Result<bees_gameplay::player_inputs::NativePlayerCommandInputs, GameCommandError>
     {

@@ -72,12 +72,30 @@ impl NativeCommandSelection {
     pub fn local(identity: NativeLocalCommandIdentity, command: LocalCommandKind,
         shooting: StrategyIdentity) -> Result<Self, GameCommandError>
     {
-        if shooting.id == 0 || SHOOTING_STRATEGIES.get(usize::from(shooting.id - 1))
-            .copied() != Some(shooting.name) {
-            return Err(GameCommandError::InvalidShootingStrategy);
-        }
+        Self::validate_shooting(shooting)?;
         Ok(Self { local_command: command, effective_shooting: shooting,
             origin: NativeCommandOrigin::Local(identity) })
+    }
+
+    /// The native equivalent of Squad.SetShootingStrategy on an active
+    /// Command: change its live prioritization without replacing its
+    /// origin, AI reservation, command lifetime or target selection.
+    pub fn set_shooting(&mut self, shooting: StrategyIdentity)
+        -> Result<(), GameCommandError> {
+        Self::validate_shooting(shooting)?;
+        self.effective_shooting = shooting;
+        Ok(())
+    }
+
+    pub fn validate_shooting(shooting: StrategyIdentity)
+        -> Result<(), GameCommandError> {
+        if shooting.id == 0 ||
+            SHOOTING_STRATEGIES.get(usize::from(shooting.id - 1))
+                .copied() != Some(shooting.name)
+        {
+            return Err(GameCommandError::InvalidShootingStrategy);
+        }
+        Ok(())
     }
 
     pub fn kind(&self) -> LocalCommandKind { self.local_command }

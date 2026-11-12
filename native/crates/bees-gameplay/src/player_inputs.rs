@@ -21,10 +21,17 @@ pub trait NativePlayerAuthority {
     /// Actual Level.HasObstacles; None means range/line inspection is unavailable.
     fn weapon_obstacles_enabled(&self) -> Option<bool> { None }
     fn player_permissions(&self, owner: SquadLifetime) -> Option<NativePlayerPermissions>;
+    /// Current mutable source Squad.GetShootingStrategy, not the initial
+    /// imported snapshot and not the server's immutable action identity.
+    fn player_shooting_strategy(&self, _owner: SquadLifetime)
+        -> Option<bees_hivemind::protocol::StrategyIdentity> { None }
 }
 
 pub trait NativeLevelPlayerContext: NativeLevelActivationContext + NativePlayerAuthority {
     fn player_formation_options(&self) -> SquadFormationOptions;
+    fn set_player_shooting_strategy(&mut self, owner: SquadLifetime,
+        shooting: bees_hivemind::protocol::StrategyIdentity)
+        -> Result<(), GameCommandError>;
     /// Current source Squad.GetShootingStrategy and loaded command settings.
     fn player_command_inputs(&self, _owner: SquadLifetime)
         -> Result<NativePlayerCommandInputs, GameCommandError>
@@ -122,6 +129,78 @@ pub struct NativePlayerSquadCeaseFire {
     pub episode_revision: u64,
     pub squads: Vec<SquadLifetime>,
     pub cease_fire: bool,
+}
+
+/// Change the chosen shooting target priority of an existing source squad.
+    /// Its weapon target ranking and any active Command share one strategy,
+    /// and the player trace records the explicit ID for deterministic replay.
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct NativePlayerSquadShooting {
+    pub world_id: WorldId,
+    pub episode_revision: u64,
+    pub squads: Vec<SquadLifetime>,
+    /// 1-40 in the shared source SHOOTING_STRATEGIES registry.
+    pub strategy_id: u8,
+}
+
+pub struct NativePlayerShootingPlan {
+    tick: u64,
+    owner: SquadLifetime,
+    selected_ship: i64,
+    world_id: WorldId,
+    episode_revision: u64,
+    shooting: bees_hivemind::protocol::StrategyIdentity,
+}
+
+impl NativePlayerShootingPlan {
+    pub fn prepare<M: NativeLevelPlayerContext, A>(
+        world: &World<NativeLevelState<M, A>>, world_id: WorldId,
+        episode_revision: u64, selected_ship: i64, strategy_id: u8,
+    ) -> Result<Self, NativePlayerInputError> {
+        let (owner, _) = authorized_player_squad(
+            world, world_id, episode_revision, selected_ship,
+        )?;
+        let Some(&name) = strategy_id.checked_sub(1).and_then(|index|
+            bees_hivemind::protocol::SHOOTING_STRATEGIES.get(index as usize)
+        ) else { return Err(NativePlayerInputError::InvalidAction); };
+        let shooting = bees_hivemind::protocol::StrategyIdentity {
+            id: strategy_id, name,
+        };
+        // The metadata must own a real mutable source squad preference.
+        // Never create a UI-only value that disagrees with weapons.
+        world.state.metadata.player_command_inputs(owner)
+            .map_err(|error| NativePlayerInputError::Source(error))?;
+        Ok(Self {
+            tick: world.tick(), owner, selected_ship, world_id,
+            episode_revision, shooting,
+        })
+    }
+
+    pub fn execute<M: NativeLevelPlayerContext, A>(
+        self, world: &mut World<NativeLevelState<M, A>>,
+    ) -> Result<(), NativePlayerInputError> {
+        let current = Self::prepare(world, self.world_id,
+            self.episode_revision, self.selected_ship, self.shooting.id)?;
+        if current.tick != self.tick || current.owner != self.owner {
+            return Err(NativePlayerInputError::StaleWorld);
+        }
+        let state = &mut world.state;
+        // Source first changes the squad/ships' chosen strategy, then
+        // refreshes the current Command's live shooting preference.
+        if let Err(error) = state.metadata.set_player_shooting_strategy(
+            self.owner, self.shooting,
+        ) {
+            state.events.fail_player_input();
+            return Err(NativePlayerInputError::Source(error));
+        }
+        if let Err(error) = state.events.commands_mut().set_player_shooting(
+            self.owner, self.shooting,
+        ) {
+            state.events.fail_player_input();
+            return Err(NativePlayerInputError::Source(error));
+        }
+        Ok(())
+    }
 }
 
 /// Unity Squad.MatchSpeed / UnmatchSpeed. The user chooses an explicit mode,

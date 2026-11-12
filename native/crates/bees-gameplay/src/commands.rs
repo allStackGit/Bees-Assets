@@ -577,6 +577,21 @@ impl NativeSquadCommandDirector {
     /// Source Squad.StopChasing finalizes an Aggressive command only.
     /// Do not treat every active strategy as a chase or install a Hold
     /// command in its place.
+    /// Update the effective shooting priority of an existing command
+    /// without superseding/retiring it or changing the command identity.
+    /// A squad without an active command uses its metadata's chosen
+    /// strategy through automatic_weapon_inputs.
+    pub fn set_player_shooting(
+        &mut self, owner: SquadLifetime,
+        shooting: bees_hivemind::protocol::StrategyIdentity,
+    ) -> Result<(), GameCommandError> {
+        NativeCommandSelection::validate_shooting(shooting)?;
+        if let Some(command) = self.active.get_mut(&owner) {
+            command.selection.set_shooting(shooting)?;
+        }
+        Ok(())
+    }
+
     pub fn current_kind(&self, owner: SquadLifetime) -> Option<LocalCommandKind> {
         self.active.get(&owner).map(|active| active.selection.kind())
     }
