@@ -249,6 +249,42 @@ impl NativeClient {
         }
         let accepts_orders = !briefing && !self.playback && view.terminal_result.is_none();
         let pointer_active = self.window.is_active();
+        // Cycle living, permitted source squads independently of the model
+        // and socket. This uses actual roster order, not an inferred Unity
+        // numeric hotkey map. The camera follows the current physical squad
+        // center, not a stale scene-imported position.
+        if accepts_orders && pointer_active && self.held_fire_target.is_none() {
+            let forward = self.window.is_key_pressed(Key::PageDown, KeyRepeat::No);
+            let backward = self.window.is_key_pressed(Key::PageUp, KeyRepeat::No);
+            if forward || backward {
+                if let Some(owner) = self.renderer.selection.cycle_source_squad(
+                    &view, forward,
+                ) {
+                    self.support_mode = None;
+                    self.selection_drag = None;
+                    self.renderer.selection_box = None;
+                    self.last_left_press = None;
+                    self.double_left_press = false;
+                    self.renderer.selected_ship = self.renderer.selection
+                        .representative_ships(&view).next();
+                    if let Some(squad) = view.roster.get(owner) {
+                        let mut center = Vec2::ZERO;
+                        let mut members = 0usize;
+                        for &ship_id in &squad.members {
+                            if let Some(body) = view.combat.ship_body(ship_id)
+                                .filter(|body| body.active)
+                            {
+                                center += body.motion.position;
+                                members += 1;
+                            }
+                        }
+                        if members > 0 {
+                            self.renderer.camera.center = center * (1.0 / members as f32);
+                        }
+                    }
+                }
+            }
+        }
         let stop_fire = self.window.is_key_pressed(Key::X, KeyRepeat::No);
         let held_fire = if accepts_orders {
             let cursor = mouse.map(|(x, y)| self.renderer.camera.screen_to_world(x, y, width, height));
@@ -505,7 +541,7 @@ impl NativeClient {
                 view.world_id.0, view.tick, status, selected,
                 self.result_controls.map_or("Space pause, N step, ", NativeResultControls::hint))
         } else { format!(
-            "Bees native | World {} | Episode {} | Tick {} | {} ships, {} shots | {} squads selected | {}{} | {} | range/obstruction {} | Left select/drag, double-click type, Ctrl add, right move/attack | C stop chase, V cease fire, A attack on sight, G guard, P patrol, M mine, H heal, R retreat, hold J manual fire, T point fire, X stop, B ranges, Backspace cancel | Space pause, N step, Tab world, arrows pan, wheel zoom, F fit, Esc exit",
+            "Bees native | World {} | Episode {} | Tick {} | {} ships, {} shots | {} squads selected | {}{} | {} | range/obstruction {} | Left select/drag, double-click type, Ctrl add, right move/attack | C stop chase, V cease fire, A attack on sight, G guard, P patrol, M mine, H heal, R retreat, hold J manual fire, T point fire, X stop, B ranges, Backspace cancel | Space pause, N step, Tab world, PgUp/PgDn squads, arrows pan, wheel zoom, F fit, Esc exit",
             view.world_id.0, view.episode_revision, view.tick, counts.ships, counts.projectiles,
             self.renderer.selection.squads().len(),
             if self.paused { "PAUSED" } else { "RUNNING" }, selected, self.input_feedback,

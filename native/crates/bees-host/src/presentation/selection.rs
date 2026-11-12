@@ -79,6 +79,36 @@ impl NativeSquadSelection {
         }
     }
 
+    /// Cycle the source-ordered living user-commandable squads without
+    /// inventing their Unity SquadNumber for older scene exports. This
+    /// intentionally excludes generated Scout minion squads: they are not
+    /// original player squad shortcuts. The exact lifetime is still checked
+    /// against the live roster and current player authority.
+    pub fn cycle_source_squad(
+        &mut self, view: &NativeRenderWorldView<'_>, forward: bool,
+    ) -> Option<SquadLifetime> {
+        self.synchronize(view);
+        let eligible: Vec<_> = view.roster.source_order().iter().copied()
+            .filter(|&owner| {
+                view.roster.get(owner).is_some_and(|squad|
+                    squad.mother_squad.is_none()
+                ) && selectable(view, owner)
+            }).collect();
+        if eligible.is_empty() { return None; }
+        let current = self.squads.first().copied()
+            .and_then(|owner| eligible.iter().position(|&candidate| candidate == owner));
+        let next = match (current, forward) {
+            (Some(index), true) => (index + 1) % eligible.len(),
+            (Some(index), false) => (index + eligible.len() - 1) % eligible.len(),
+            (None, true) => 0,
+            (None, false) => eligible.len() - 1,
+        };
+        let owner = eligible[next];
+        self.squads.clear();
+        self.squads.push(owner);
+        Some(owner)
+    }
+
     pub fn representative_ships<'a>(&'a self, view: &'a NativeRenderWorldView<'_>)
         -> impl Iterator<Item = i64> + 'a
     {
