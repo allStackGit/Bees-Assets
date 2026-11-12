@@ -1104,7 +1104,9 @@ class ExperimentHub {
             plan.status==='pending'&&plan.resume_after_restart!==true);
         const resetDistributed=(s.distributed_launch_plans||[]).some(plan=>
             plan.status==='pending');
-        if(resetBundles||resetDistributed) {
+        const resetQueuedDistributed=(s.distributed_group_plans||[]).some(plan=>
+            plan.status==='pending');
+        if(resetBundles||resetDistributed||resetQueuedDistributed) {
             const next=copy(s);
             for(const plan of next.bundle_start_plans||[])
                 if(plan.status==='pending'&&plan.resume_after_restart!==true) {
@@ -1120,6 +1122,17 @@ class ExperimentHub {
                     }else {
                         plan.status='disarmed';
                         plan.reason='Coordinator restarted without explicit learner recovery approval.';
+                        plan.resolved_at=now();
+                    }
+                }
+            for(const plan of next.distributed_group_plans||[])
+                if(plan.status==='pending') {
+                    if(plan.resume_after_restart===true) {
+                        plan.recovery_pending=true;
+                        plan.reason='Coordinator restarted; waiting for fresh native capacity and GPU proof.';
+                    }else {
+                        plan.status='disarmed';
+                        plan.reason='Coordinator restarted without a future distributed group Start approval.';
                         plan.resolved_at=now();
                     }
                 }
@@ -1149,6 +1162,14 @@ class ExperimentHub {
                     ?'A member changed native status; plan needs review.'
                 :'Waiting for matching fresh machine lease receipts and native Start readiness.'};
         });
+        snapshot.distributed_group_plans=(snapshot.distributed_group_plans||[]).map(plan=>({
+            id:plan.id,learner_job_id:plan.learner_job_id,
+            collector_job_ids:plan.collector_job_ids.slice(),
+            status:plan.status,reason:plan.reason,
+            expires_at:plan.expires_at,
+            resume_after_restart:plan.resume_after_restart===true,
+            recovery_pending:plan.recovery_pending===true,
+        }));
         snapshot.distributed_launches=(snapshot.distributed_launch_plans||[]).map(intent=>({
             learner_job_id:intent.learner_job_id,
             collector_job_ids:Object.keys(intent.collector_dispatches),
@@ -2321,6 +2342,11 @@ class ExperimentHub {
             ['pending','needs_review'].includes(plan.status)&&
             plan.member_job_ids.includes(value.job_id)))
             throw Error('Cancel the approved bundle launch before starting one of its members separately.');
+        if((this.state.distributed_group_plans||[]).some(plan=>
+            ['pending','needs_review'].includes(plan.status)&&
+            (plan.learner_job_id===value.job_id||
+             plan.collector_job_ids.includes(value.job_id))))
+            throw Error('Cancel the frozen distributed group plan before individually starting one of its members.');
         const snapshot=this.snapshot();
         const job=snapshot.jobs.find(j=>j.id===value.job_id);
         const readiness=nativeStartReadiness(snapshot,job);
@@ -2361,7 +2387,18 @@ class ExperimentHub {
     // transition. No partial Starts are offered if any collector, endpoint, or
     // native owner has lost eligibility since the operator's last refresh.
     // Learner Start retains its independent running-collector safety barrier.
-    authorizeDistributedCollectors(value) {
+    authorizeDistributedCollectors(value,sourcePlanId=null) {
+        if(sourcePlanId!==null&&
+            !UUID.test(String(sourcePlanId)))
+            throw Error('Invalid frozen distributed group approval.');
+        const pending=sourcePlanId===null?null:(this.state.distributed_group_plans||[])
+            .find(plan=>plan.id===sourcePlanId&&plan.status==='pending');
+        if(sourcePlanId!==null&&!pending)
+            throw Error('This future distributed group launch is no longer approved.');
+        if(sourcePlanId===null&&(this.state.distributed_group_plans||[])
+            .some(plan=>['pending','needs_review'].includes(plan.status)&&
+                plan.learner_job_id===value?.learner_job_id))
+            throw Error('Cancel the outstanding frozen group plan before manually launching its collectors.');
         if(!object(value)||value.confirm_start!==true||
             Object.keys(value).some(key=>![
                 'learner_job_id','expected_collector_job_ids','confirm_start',
@@ -2451,6 +2488,11 @@ class ExperimentHub {
                 agents[id]=report.instance_id;
             }
         }
+        if(pending&&(pending.learner_job_id!==learner.id||
+            pending.resume_after_restart!==(value.resume_after_restart===true)||
+            pending.collector_job_ids.length!==workers.length||
+            pending.collector_job_ids.some(id=>!expected.has(id))))
+            throw Error('Frozen distributed group approval changed before Start.');
         const next=copy(this.state),requestedAt=now();
         const collectorDispatches={};
         for(const worker of workers) {
@@ -2492,6 +2534,12 @@ class ExperimentHub {
                 expires_at:new Date(approvedMs+DISTRIBUTED_LAUNCH_TTL_MS).toISOString(),
             });
             next.distributed_launch_plans=plans;
+        }
+        if(pending) {
+            const resolved=next.distributed_group_plans.find(item=>item.id===pending.id);
+            resolved.status='authorized';
+            resolved.reason='Every original native collector Start and the future learner gate were committed atomically.';
+            resolved.resolved_at=requestedAt;
         }
         // Collector Start authorizations and future learner permission form
         // one crash-atomic commit. Restart cannot observe only half of them.
@@ -3769,6 +3817,7 @@ class ExperimentHub {
         }
         // A --once agent closes its native session; never authorize a new
         // learner on the closing heartbeat when it cannot receive a Start.
+        this.advancePendingDistributedGroups();
         this.advanceDistributedLaunches();
         this.advancePendingResourceBundles();
         // An agent awaiting a slow native Start/Stop/probe can renew
