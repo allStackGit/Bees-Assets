@@ -86,6 +86,9 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
         // before filling the remaining slots from the trusted trainer data.
         for(const [name,value] of Object.entries(observed))retain(name,value);
         retain('total_ppo_updates',reported.total_ppo_updates);
+        retain('ant_decisions_per_second',reported.ant_decisions_per_second);
+        retain('simulation_match_steps_per_second',
+            reported.simulation_match_steps_per_second);
         // Show measured stage pressure before unrelated high-cardinality
         // project metrics consume the default 96-chart-field cache.
         for(const name of ['pipeline_remote_wait_dominant',
