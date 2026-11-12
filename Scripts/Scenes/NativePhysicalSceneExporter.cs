@@ -281,6 +281,7 @@ internal static class NativePhysicalSceneExporter
         public bool shots_harmless;
         public bool activate_collision_asteroids;
         public bool activate_mining;
+        public bool activate_fog_of_war;
         public bool activate_hivemind;
         public int hivemind_initial_command_delay_seconds;
         public bool has_obstacles;
@@ -345,6 +346,7 @@ internal static class NativePhysicalSceneExporter
             shots_harmless = level.Stage.MakeShotsHarmless,
             activate_collision_asteroids = level.ActivateCollisionAsteroids,
             activate_mining = level.ActivateMining,
+            activate_fog_of_war = level.ActivateFogOfWar,
             activate_hivemind = level.Stage.ActivateHiveMind,
             hivemind_initial_command_delay_seconds = level.Stage.InitialCommandDelay,
             has_obstacles = level.HasObstacles,
