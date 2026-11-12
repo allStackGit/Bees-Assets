@@ -66,11 +66,11 @@ enum TraceRecord {
         levels: Vec<NativeTraceLevel>,
     },
     PlayerInput { round: u64, tick: u64, action: NativePlayerInput },
-    /// Version-2 optional sampled physical state. Never implies all
-    /// command, random, network, or reward state is identical.
+    /// Schema4 adds a gameplay/command/faction-memory signature.
+    /// Older traces have no gameplay_sha256 and remain readable.
     PhysicalStateCheckpoint {
         round: u64, world_id: u64, episode_revision: u64,
-        tick: u64, sha256: String,
+        tick: u64, sha256: String, gameplay_sha256: Option<String>,
     },
     PlayerInputTraceEnd {
         rounds: u64,
@@ -91,6 +91,7 @@ pub struct NativeTraceCheckpoint {
     pub episode_revision: u64,
     pub tick: u64,
     pub sha256: String,
+    pub gameplay_sha256: Option<String>,
 }
 
 /// Source-validation and bounded-memory replay coverage; measured once
@@ -134,12 +135,17 @@ fn read_record(reader: &mut BufReader<File>, line: &mut String)
     serde_json::from_str(line).map(Some).map_err(io::Error::from)
 }
 
+fn valid_sha256(value: &str) -> bool {
+    value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
+}
+
 impl NativePlayerTrace {
     /// Validate the complete recorded sequence *before* accepting any
     /// gameplay inputs, without allocating one Vec per trace line.
     /// Backward-compatible schema1 traces have no physical checkpoints.
-    /// Schema2 requires sampled checkpoints; schema3 additionally requires
-    /// a terminal-round checkpoint for every configured World.
+    /// Schema2 requires sampled physical checkpoints; schema3 adds final
+    /// per-World coverage; schema4 includes the authoritative gameplay
+    /// fingerprint in each physical checkpoint.
     pub fn read(
         path: &Path, config_sha256: &str, gameplay_sha256: &str, expected_levels: &[NativeTraceLevel],
         expected_model: Option<&str>,
@@ -149,7 +155,7 @@ impl NativePlayerTrace {
         let schema_version = match read_record(&mut reader, &mut line)? {
             Some(TraceRecord::PlayerInputTrace { schema_version, run_config_sha256,
                 gameplay_config_sha256, policy_manifest_sha256, levels })
-                if (1..=3).contains(&schema_version) &&
+                if (1..=4).contains(&schema_version) &&
                     run_config_sha256 == config_sha256 &&
                     gameplay_config_sha256 == gameplay_sha256 && levels == expected_levels &&
                     policy_manifest_sha256.as_deref() == expected_model => schema_version,
@@ -185,10 +191,10 @@ impl NativePlayerTrace {
                     measurements.validated_inputs += 1;
                 }
                 Some(TraceRecord::PhysicalStateCheckpoint {
-                    round, world_id, tick, sha256, ..
+                    round, world_id, tick, sha256, gameplay_sha256, ..
                 }) if schema_version >= 2 && round >= previous_round && tick <= round &&
-                    sha256.len() == 64 &&
-                    sha256.bytes().all(|byte| byte.is_ascii_hexdigit()) &&
+                    valid_sha256(&sha256) &&
+                    (schema_version < 4 || gameplay_sha256.as_deref().is_some_and(valid_sha256)) &&
                     expected_worlds.contains(&world_id) => {
                     saw_checkpoint = true;
                     previous_round = round;
@@ -284,10 +290,11 @@ impl NativePlayerTrace {
                     self.measurements.loaded_inputs += 1;
                 }
                 TraceRecord::PhysicalStateCheckpoint {
-                    round, world_id, episode_revision, tick, sha256,
+                    round, world_id, episode_revision, tick, sha256, gameplay_sha256,
                 } => {
                     self.checkpoints.push_back(NativeTraceCheckpoint {
-                        round, world_id: WorldId(world_id), episode_revision, tick, sha256,
+                        round, world_id: WorldId(world_id), episode_revision, tick,
+                        sha256, gameplay_sha256,
                     });
                     self.measurements.loaded_checkpoints += 1;
                 }
