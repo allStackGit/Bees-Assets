@@ -49,13 +49,16 @@ DENIED_NAMES = (
 MAX_SOURCE_FILES = 200_000
 
 
+def forbidden_part(name: str) -> bool:
+    lowered = name.lower()
+    return lowered in DENIED_PARTS or any(term in lowered for term in DENIED_NAMES)
+
+
 def safe_source(root: Path, source: Path, include_replays: bool) -> bool:
     rel = source.relative_to(root)
-    if not rel.parts or any(part.lower() in DENIED_PARTS for part in rel.parts):
+    if not rel.parts or any(forbidden_part(part) for part in rel.parts):
         return False
     if not include_replays and any(part.lower() == "replays" for part in rel.parts):
-        return False
-    if any(term in part.lower() for part in rel.parts for term in DENIED_NAMES):
         return False
     if source.suffix.lower() not in SUFFIXES:
         return False
@@ -433,7 +436,9 @@ def export(spec: dict, output: Path) -> dict:
                            counts_as_trainer: bool = True) -> None:
             for dirpath, dirs, files in os.walk(folder, followlinks=False):
                 current = Path(dirpath)
-                dirs[:] = sorted(d for d in dirs if d.lower() not in DENIED_PARTS
+                # Do not traverse sensitive folders at all; the same rule
+                # also rejects individual files and nested credential paths.
+                dirs[:] = sorted(d for d in dirs if not forbidden_part(d)
                     and (bool(spec.get("include_replays", False)) or d.lower() != "replays")
                     and not (current / d).is_symlink())
                 for filename in sorted(files):
