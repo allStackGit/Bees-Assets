@@ -11,7 +11,7 @@ use crate::presentation::{HudAction, NativeCamera, NativeRenderWorldView, Native
 use bees_gameplay::player_inputs::{NativeHeldFireAction, NativePlayerHeldFire, NativePlayerSquadMoves,
     NativePlayerSquadFire, NativePlayerSquadCeaseFire,
     NativePlayerSquadSpecial, NativePlayerShipSpecialKind,
-    NativePlayerSquadMatchSpeed};
+    NativePlayerSquadMatchSpeed, NativePlayerSquadShooting};
 use crate::player_trace::NativePlayerInput;
 use bees_sim::geometry::Vec2;
 
@@ -79,6 +79,9 @@ pub struct NativeClient {
     /// cancels; a HUD press never begins a gameplay selection drag.
     hud_press: Option<HudAction>,
     squad_tab_press: Option<SquadLifetime>,
+    /// UI modal captures a shooting option's press/release, never a world
+    /// click. Strategy choice is committed only through player input.
+    shooting_press: Option<u8>,
     support_mode: Option<NativeTargetMode>,
     pub rendered_frames: u64,
     /// Total software framebuffer pixels actually drawn across changing sizes.
@@ -103,6 +106,7 @@ pub struct NativeClient {
     pub minimap_move_orders_submitted: u64,
     pub tactical_button_clicks: u64,
     pub squad_tab_clicks: u64,
+    pub shooting_priority_changes: u64,
 }
 
 impl NativeClient {
@@ -123,7 +127,8 @@ impl NativeClient {
             dialogue_visible: false,
             held_fire_target: None,
             selection_drag: None, minimap_dragging: false,
-            hud_press: None, squad_tab_press: None, support_mode: None,
+            hud_press: None, squad_tab_press: None, shooting_press: None,
+            support_mode: None,
             rendered_frames: 0, rendered_pixels: 0, render_wall_seconds: 0.0,
             ui_wall_seconds: 0.0, window_update_wall_seconds: 0.0,
             culled_ship_draws: 0, culled_obstacle_draws: 0,
@@ -134,7 +139,8 @@ impl NativeClient {
             minimap_camera_moves: 0, numbered_shortcut_selections: 0,
             cycled_shortcut_selections: 0,
             minimap_move_orders_submitted: 0,
-            tactical_button_clicks: 0, squad_tab_clicks: 0 })
+            tactical_button_clicks: 0, squad_tab_clicks: 0,
+            shooting_priority_changes: 0 })
     }
 
     /// Initial authored camera focus is a presentation-only concern. The
@@ -222,6 +228,8 @@ impl NativeClient {
             self.minimap_dragging = false;
             self.hud_press = None;
             self.squad_tab_press = None;
+            self.shooting_press = None;
+            self.renderer.show_shooting_menu = false;
             self.previous_frame = Instant::now();
             return Ok(NativeClientAction::Wait);
         }
@@ -232,6 +240,8 @@ impl NativeClient {
             self.minimap_dragging = false;
             self.hud_press = None;
             self.squad_tab_press = None;
+            self.shooting_press = None;
+            self.renderer.show_shooting_menu = false;
             self.right_press = None;
             self.last_left_press = None;
             self.double_left_press = false;
@@ -247,6 +257,8 @@ impl NativeClient {
             self.minimap_dragging = false;
             self.hud_press = None;
             self.squad_tab_press = None;
+            self.shooting_press = None;
+            self.renderer.show_shooting_menu = false;
             self.right_press = None;
             self.support_mode = None;
             self.last_left_press = None;
@@ -309,6 +321,8 @@ impl NativeClient {
             self.right_press = None;
             self.hud_press = None;
             self.squad_tab_press = None;
+            self.shooting_press = None;
+            self.renderer.show_shooting_menu = false;
             self.window.update();
             self.next_step = Instant::now();
             return Ok(NativeClientAction::WorldChanged);
@@ -337,9 +351,48 @@ impl NativeClient {
                 self.renderer.camera.zoom_at(factor, x, y, width, height);
             }
         }
-        let accepts_orders = !briefing && !self.playback && view.terminal_result.is_none();
+        let allows_input = !briefing && !self.playback && view.terminal_result.is_none();
         let pointer_active = self.window.is_active();
         let left_down = self.window.get_mouse_down(MouseButton::Left);
+        // The strategy picker is purely presentational. It never changes
+        // a weapon state until the native host accepts a typed input. A
+        // press captured by this modal cannot become a world selection.
+        if !allows_input || self.renderer.selection.squads().is_empty() ||
+            self.renderer.size().0 < 980 || self.renderer.size().1 < 520 {
+            self.renderer.show_shooting_menu = false;
+        }
+        let menu_was_open = self.renderer.show_shooting_menu;
+        if menu_was_open && pointer_active && left_down && !self.left_was_down {
+            self.shooting_press = mouse.and_then(|(x, y)|
+                self.renderer.shooting_strategy_at(x, y));
+            self.selection_drag = None;
+            self.minimap_dragging = false;
+            self.renderer.selection_box = None;
+            self.last_left_press = None;
+            self.double_left_press = false;
+        }
+        let clicked_shooting = if menu_was_open && self.left_was_down && !left_down {
+            let selection = self.shooting_press.take().filter(|&id|
+                mouse.and_then(|(x, y)| self.renderer.shooting_strategy_at(x, y))
+                    == Some(id));
+            self.renderer.show_shooting_menu = false;
+            selection
+        } else { None };
+        if menu_was_open &&
+            (self.window.is_key_pressed(Key::S, KeyRepeat::No) ||
+             self.window.is_key_pressed(Key::Backspace, KeyRepeat::No)) {
+            self.renderer.show_shooting_menu = false;
+            self.shooting_press = None;
+        }
+        let shooting_input = clicked_shooting.map(|strategy_id| {
+            self.shooting_priority_changes += 1;
+            NativePlayerSquadShooting {
+                world_id: view.world_id, episode_revision: view.episode_revision,
+                squads: self.renderer.selection.squads().to_vec(), strategy_id,
+            }
+        });
+        let accepts_orders = allows_input && !menu_was_open;
+        if menu_was_open && !left_down { self.shooting_press = None; }
         if !accepts_orders || !pointer_active {
             self.hud_press = None;
             self.squad_tab_press = None;
@@ -363,6 +416,23 @@ impl NativeClient {
                     == Some(action))
         } else { None };
         if clicked_hud.is_some() { self.tactical_button_clicks += 1; }
+        if accepts_orders && pointer_active && (
+            clicked_hud == Some(HudAction::Shooting) ||
+            self.window.is_key_pressed(Key::S, KeyRepeat::No)
+        ) {
+            if self.renderer.selection.squads().is_empty() {
+                self.input_feedback = "Select squads first";
+            } else if self.renderer.size().0 < 980 || self.renderer.size().1 < 520 {
+                self.input_feedback = "Enlarge the window to choose shooting priorities";
+            } else {
+                self.renderer.show_shooting_menu = true;
+                self.support_mode = None;
+                self.selection_drag = None;
+                self.renderer.selection_box = None;
+                self.last_left_press = None;
+                self.double_left_press = false;
+            }
+        }
         let clicked_tab = if self.left_was_down && !left_down {
             self.squad_tab_press.take().filter(|&owner|
                 mouse.and_then(|(x, y)| self.renderer.squad_tab_at(&view, x, y))
@@ -619,7 +689,7 @@ impl NativeClient {
         if !pointer_active { self.minimap_dragging = false; }
         if pointer_active && left_down && !self.left_was_down &&
             self.hud_press.is_none() && self.squad_tab_press.is_none() &&
-            self.support_mode.is_none() &&
+            !menu_was_open && self.support_mode.is_none() &&
             self.held_fire_target.is_none() &&
             mouse.is_some_and(|(x, y)|
                 self.renderer.minimap_world_at(self.bounds, x, y).is_some())
@@ -642,6 +712,7 @@ impl NativeClient {
         }
         if !cancel_support && !self.minimap_dragging &&
             self.hud_press.is_none() && self.squad_tab_press.is_none() &&
+            !menu_was_open &&
             left_down && !self.left_was_down {
             // Unity treats two presses within 0.25 real seconds as a
             // double-click. The second release must also be prompt.
@@ -654,7 +725,8 @@ impl NativeClient {
         }
         if !cancel_support && !self.minimap_dragging &&
             self.hud_press.is_none() && clicked_hud.is_none() &&
-            self.squad_tab_press.is_none() && clicked_tab.is_none() {
+            self.squad_tab_press.is_none() && clicked_tab.is_none() &&
+            !menu_was_open {
             if let (Some((start, start_pixel)), Some((x, y))) = (self.selection_drag, mouse) {
                 let end = self.renderer.camera.screen_to_world(x, y, width, height);
                 let dragging = (Vec2::new(x, y) - start_pixel).length_squared() > 16.0;
@@ -826,7 +898,7 @@ impl NativeClient {
                 view.world_id.0, view.tick, status, selected,
                 self.result_controls.map_or("Space pause, N step, ", NativeResultControls::hint))
         } else { format!(
-            "Bees native | World {} | Episode {} | Tick {} | {} ships, {} shots | {} squads selected | {}{} | {} | range/obstruction {} | Left select/drag, double-click type, Ctrl add, right move/attack (also on map) | C stop chase, V cease fire, A attack on sight, Ctrl+A all squads, K beacon, D detonate, Q charge, Y match, U unmatch, G guard, P patrol, M mine, H heal, R retreat, hold J manual fire, T point fire, X stop, B ranges, Backspace cancel | Space pause, N step, Tab world, 1-0 squads, PgUp/PgDn cycle, arrows pan, wheel zoom, F fit, I map, Esc exit",
+            "Bees native | World {} | Episode {} | Tick {} | {} ships, {} shots | {} squads selected | {}{} | {} | range/obstruction {} | Left select/drag, double-click type, Ctrl add, right move/attack (also on map) | C stop chase, V cease fire, A attack on sight, Ctrl+A all squads, K beacon, D detonate, Q charge, Y match, U unmatch, S targets, G guard, P patrol, M mine, H heal, R retreat, hold J manual fire, T point fire, X stop, B ranges, Backspace cancel | Space pause, N step, Tab world, 1-0 squads, PgUp/PgDn cycle, arrows pan, wheel zoom, F fit, I map, Esc exit",
             view.world_id.0, view.episode_revision, view.tick, counts.ships, counts.projectiles,
             self.renderer.selection.squads().len(),
             if self.paused { "PAUSED" } else { "RUNNING" }, selected, self.input_feedback,
@@ -855,8 +927,9 @@ impl NativeClient {
         self.window.update_with_buffer(self.renderer.pixels(), width, height)?;
         self.window_update_wall_seconds += window_update_started.elapsed().as_secs_f64();
         if !self.window.is_open() { return Ok(NativeClientAction::Quit); }
-        if accepts_orders && held_fire.is_none() {
-            let action = special_input.map(NativePlayerInput::Special)
+        if allows_input && held_fire.is_none() {
+            let action = shooting_input.map(NativePlayerInput::Shooting)
+                .or_else(|| special_input.map(NativePlayerInput::Special))
                 .or_else(|| match_speed_input.map(NativePlayerInput::MatchSpeed))
                 .or_else(|| cease_fire_input.map(NativePlayerInput::CeaseFire))
                 .or_else(|| manual_fire.map(NativePlayerInput::Fire))
