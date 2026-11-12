@@ -1,6 +1,6 @@
 //! Native player inputs shared by the client, trace recorder, and playback.
 
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::fs::File;
 use std::io::{self, BufRead, BufReader, Seek, SeekFrom};
 use std::path::Path;
@@ -137,8 +137,9 @@ fn read_record(reader: &mut BufReader<File>, line: &mut String)
 impl NativePlayerTrace {
     /// Validate the complete recorded sequence *before* accepting any
     /// gameplay inputs, without allocating one Vec per trace line.
-    /// Backward-compatible schema1 traces have no physical checkpoints;
-    /// schema2 requires at least one and retains each exact world identity.
+    /// Backward-compatible schema1 traces have no physical checkpoints.
+    /// Schema2 requires sampled checkpoints; schema3 additionally requires
+    /// a terminal-round checkpoint for every configured World.
     pub fn read(
         path: &Path, config_sha256: &str, gameplay_sha256: &str, expected_levels: &[NativeTraceLevel],
         expected_model: Option<&str>,
@@ -148,7 +149,7 @@ impl NativePlayerTrace {
         let schema_version = match read_record(&mut reader, &mut line)? {
             Some(TraceRecord::PlayerInputTrace { schema_version, run_config_sha256,
                 gameplay_config_sha256, policy_manifest_sha256, levels })
-                if (schema_version == 1 || schema_version == 2) &&
+                if (1..=3).contains(&schema_version) &&
                     run_config_sha256 == config_sha256 &&
                     gameplay_config_sha256 == gameplay_sha256 && levels == expected_levels &&
                     policy_manifest_sha256.as_deref() == expected_model => schema_version,
@@ -164,6 +165,10 @@ impl NativePlayerTrace {
         };
         let mut previous_round = 0;
         let mut saw_checkpoint = false;
+        // A terminal checkpoint per World proves the complete run was
+        // compared; an intermediate sample cannot certify its final steps.
+        // Memory scales with world count, never with trace length.
+        let mut last_checkpoint_round = HashMap::<u64, u64>::new();
         loop {
             let next_record = read_record(&mut reader, &mut line)?;
             measurements.largest_record_bytes =
@@ -176,13 +181,14 @@ impl NativePlayerTrace {
                 }
                 Some(TraceRecord::PhysicalStateCheckpoint {
                     round, world_id, tick, sha256, ..
-                }) if schema_version == 2 && round >= previous_round && tick <= round &&
+                }) if schema_version >= 2 && round >= previous_round && tick <= round &&
                     sha256.len() == 64 &&
                     sha256.bytes().all(|byte| byte.is_ascii_hexdigit()) &&
                     expected_levels.iter().any(|level| level.world_id == world_id) => {
                     saw_checkpoint = true;
                     previous_round = round;
                     measurements.validated_checkpoints += 1;
+                    last_checkpoint_round.insert(world_id, round);
                 }
                 Some(TraceRecord::PlayerInputTraceEnd {
                     rounds, failed_window: None, policy_actions_sha256,
@@ -193,9 +199,16 @@ impl NativePlayerTrace {
                             "records follow the end of the player trace",
                         ));
                     }
-                    if schema_version == 2 && !saw_checkpoint {
+                    if schema_version >= 2 && !saw_checkpoint {
                         return Err(trace_error(
-                            "version-2 player trace has no physical state checkpoints",
+                            "versioned player trace has no physical state checkpoints",
+                        ));
+                    }
+                    if schema_version >= 3 && expected_levels.iter().any(|level|
+                        last_checkpoint_round.get(&level.world_id).copied() != Some(rounds)
+                    ) {
+                        return Err(trace_error(
+                            "player trace is missing a final physical checkpoint for a World",
                         ));
                     }
                     reader.seek(SeekFrom::Start(data_start))?;

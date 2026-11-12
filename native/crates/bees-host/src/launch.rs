@@ -1363,7 +1363,7 @@ fn run_battle(
             .open(path)?;
         writeln!(trace, "{}", json!({
             "kind": "player_input_trace",
-            "schema_version": 2,
+            "schema_version": 3,
             "run_id": config.run_id,
             "run_config_sha256": config_digest,
             "gameplay_config_sha256": gameplay_digest,
@@ -1865,6 +1865,38 @@ fn run_battle(
             }))
         }).collect::<Vec<_>>()
     });
+    // A trace must cover the physical state of EVERY Level at its final
+    // execution boundary, even when the game quits between the sampled
+    // 64-round checkpoints. No gameplay owner is modified here.
+    // Match the v3 reader contract before finite-budget cancellation.
+    #[cfg(feature = "client")]
+    if let Some(trace) = &mut input_trace {
+        if last_physical_checkpoint_round != Some(rounds) {
+            for index in 0..count {
+                let world = host.simulation().world(index)
+                    .expect("registered source World during final trace capture");
+                let digest = physical_world_sha256(
+                    world.id, world.episode_revision(), world.tick(),
+                    &world.state.combat,
+                );
+                if let Err(error) = writeln!(trace, "{}", json!({
+                    "kind": "physical_state_checkpoint",
+                    "round": rounds,
+                    "world_id": world.id.0,
+                    "episode_revision": world.episode_revision(),
+                    "tick": world.tick(),
+                    "sha256": digest,
+                })) {
+                    failed_window.get_or_insert_with(||
+                        format!("recording final native physical checkpoint: {error}")
+                    );
+                    break;
+                }
+                recorded_physical_checkpoints += 1;
+            }
+            last_physical_checkpoint_round = Some(rounds);
+        }
+    }
     let finalization_start = Instant::now();
     let mut cleanup_errors = Vec::new();
     if failed_window.is_none() && !user_closed {
