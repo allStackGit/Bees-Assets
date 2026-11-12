@@ -86,11 +86,14 @@ function dockerCgroupCounters(doc,fsApi=fs,pathApi=path) {
         if(lines.length!==1)return {};
         const segments=lines[0].slice(4).split('/').filter(Boolean);
         if(!segments.length||segments.length>32||
-            segments.some(s=>s==='.'||s==='..'||!/^[-A-Za-z0-9_.:@]{1,128}$/.test(s))||
-            !segments.some(s=>s===id||s==='docker-'+id||
-                s==='docker-'+id+'.scope'))return {};
+            segments.some(s=>s==='.'||s==='..'||!/^[-A-Za-z0-9_.:@]{1,128}$/.test(s)))return {};
+        const ownerIndex=segments.findIndex(s=>s===id||s==='docker-'+id||
+            s==='docker-'+id+'.scope');
+        if(ownerIndex<0)return {};
         const root=fsApi.realpathSync('/sys/fs/cgroup');
-        const dir=pathApi.join(root,...segments);
+        // The entrypoint may move into a delegated child cgroup; read
+        // Docker's owning cgroup so sibling worker tasks are included.
+        const dir=pathApi.join(root,...segments.slice(0,ownerIndex+1));
         if(fsApi.realpathSync(dir)!==dir)return {};
         const counter=name=>{
             try {
