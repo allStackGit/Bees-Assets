@@ -148,6 +148,17 @@ class ArtifactMirror {
         if(count>=MAX_FILES||size+info.size>MAX_JOB)
             fail('Job artifact storage limit reached.',413);
     }
+    finalize(info) {
+        if(shaFile(info.partFile)!==info.sha) {
+            fs.unlinkSync(info.partFile);
+            fail('Artifact snapshot checksum changed; retry a fresh snapshot.',409);
+        }
+        regular(info.destination,true);
+        fs.renameSync(info.partFile,info.destination);
+        durableJson(info.metaFile,{relative:info.relative,
+            sha:info.sha,size:info.size,complete:true});
+        return {offset:info.size,complete:true};
+    }
     status(machineId,token,jobId,relative,sha,size) {
         const info=this.authorize(machineId,token,jobId,relative,sha,size);
         const meta=this.metadata(info);
@@ -161,6 +172,10 @@ class ArtifactMirror {
         const pending=regular(info.partFile,true);
         if(!pending)return {offset:0,complete:false};
         if(pending.size>size)fail('Artifact staging file exceeds snapshot.',409);
+        // A crash or a Windows file lock can interrupt publication after
+        // the last chunk was synced. Complete that existing verified stage
+        // instead of stranding its upload at offset == total size.
+        if(pending.size===size)return this.finalize(info);
         return {offset:pending.size,complete:false};
     }
     append(machineId,token,jobId,relative,sha,size,offset,bytes) {
@@ -202,18 +217,7 @@ class ArtifactMirror {
             fs.fsyncSync(fd);
         }finally{fs.closeSync(fd);}
         const next=offset+bytes.length;
-        if(next===size) {
-            if(shaFile(info.partFile)!==sha) {
-                fs.unlinkSync(info.partFile);
-                fail('Artifact snapshot checksum changed; retry a fresh snapshot.',409);
-            }
-            regular(info.destination,true);
-            // Rename over the previous complete snapshot atomically. Never
-            // expose the partially received version as an export source.
-            fs.renameSync(info.partFile,info.destination);
-            durableJson(info.metaFile,{relative,sha,size,complete:true});
-            return {offset:size,complete:true};
-        }
+        if(next===size)return this.finalize(info);
         return {offset:next,complete:false};
     }
 }
