@@ -47,10 +47,12 @@ impl CombatWorld {
     {
         let mut counts = StepCounts { weapon_range_exits: std::mem::take(&mut self.pending_weapon_range_exits), ..StepCounts::default() };
         self.range_visible_map_objects.clear();
-        // Physics.step leaves the ONE spatial grid bound to obstacles.
-        // Resolve the faction-wide MapObject union first, before ship
-        // contact queries rebind the grid to ships. This avoids scanning
-        // every MapObject for every turret in large obstacle-rich battles.
+        // Active-obstacle physics ticks leave the shared grid bound to
+        // obstacles; clear arenas keep its already-built ship population.
+        // Resolve the faction-wide MapObject union first, allowing the
+        // obstacle query to rebind lazily when necessary, before ship
+        // contact queries reuse the one ship grid. This avoids scanning
+        // every MapObject for every turret in obstacle-rich battles.
         if !self.map_objects.is_empty() {
             for (&ship_id, weapons) in &self.ship_weapons {
                 if self.range_visible_map_objects.len() == self.map_objects.len() { break; }
