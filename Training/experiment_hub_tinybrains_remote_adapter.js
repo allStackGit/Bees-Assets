@@ -64,6 +64,13 @@ function createTinyBrainsRemoteRolloutAdapter({
     });
     if(probe.status!==0)
         throw Error('Installed TinyBrains worker lacks authenticated remote rollout support.');
+    // Older installed workers remain runnable with their established fixed
+    // native engine concurrency until they provide the new implementation.
+    const poolProbe=spawnSync(pythonPath,['-B','-c',
+        'import ants_mapoca.engine_pool'],{
+        cwd:project,timeout:15000,encoding:'utf8',windowsHide:true,
+    });
+    const supportsAutoPool=poolProbe.status===0;
     if(enableCuda) {
         const check=spawnSync(pythonPath,['-B','-c',
             'import torch; assert torch.version.cuda and torch.cuda.is_available()'],{
@@ -80,6 +87,9 @@ function createTinyBrainsRemoteRolloutAdapter({
         ...(enableCuda?{gpu_execution:'cuda'}:{}),
         args(parameters,context) {
             const desired=parameters?.threads??Math.min(threads,context.cpu_quota);
+            if(supportsAutoPool&&(!Number.isSafeInteger(context.ram_quota_mb)||
+                context.ram_quota_mb<128||context.ram_quota_mb>1000000))
+                throw Error('Automatic remote simulation requires its original RAM lease.');
             if(!Number.isSafeInteger(context.cpu_quota)||context.cpu_quota<1||
                 !Number.isSafeInteger(desired)||desired<1||
                 desired>threads||desired>context.cpu_quota)
@@ -101,6 +111,8 @@ function createTinyBrainsRemoteRolloutAdapter({
                 '--job-id',parameters.learner_job_id,
                 '--threads',String(desired),'--key-file',secret,
                 '--cache-dir',cache,
+                ...(supportsAutoPool?['--auto-env-pool',
+                    '--ram-budget-mb',String(context.ram_quota_mb)]:[]),
                 ...(context.gpu_cuda_uuid
                     ?['--device','cuda','--cuda-uuid',context.gpu_cuda_uuid]
                     :['--device','cpu'])];
