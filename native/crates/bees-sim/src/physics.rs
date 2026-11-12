@@ -1782,28 +1782,28 @@ impl KinematicPhysics {
         self.proximity_obstacle_current.clear();
         if has_body_contact_obstacles {
             for source in &self.obstacles {
-            if !source.active || !source.tracks_body_contacts { continue; }
-            let (Some(proximity), Some(layer)) = (
-                source.proximity_collider.as_ref(), source.proximity_layer,
-            ) else { continue };
-            let Some(bounds) = proximity.bounds else { continue };
-            self.grid.candidates(bounds, &mut self.candidates);
-            self.counts.broadphase_candidates += self.candidates.len() as u64;
-            for &index in &self.candidates {
-                let other = &self.obstacles[index];
-                if !other.active || other.id == source.id ||
-                    !collision_matrix.allows(layer, other.layer) {
-                    continue;
+                if !source.active || !source.tracks_body_contacts { continue; }
+                let (Some(proximity), Some(layer)) = (
+                    source.proximity_collider.as_ref(), source.proximity_layer,
+                ) else { continue };
+                let Some(bounds) = proximity.bounds else { continue };
+                self.grid.candidates(bounds, &mut self.candidates);
+                self.counts.broadphase_candidates += self.candidates.len() as u64;
+                for &index in &self.candidates {
+                    let other = &self.obstacles[index];
+                    if !other.active || other.id == source.id ||
+                        !collision_matrix.allows(layer, other.layer) {
+                        continue;
+                    }
+                    let Some(other_bounds) = other.collider.bounds else { continue };
+                    if !bounds.overlaps(other_bounds) { continue; }
+                    self.counts.narrowphase_tests += 1;
+                    if proximity.overlaps(&other.collider) {
+                        self.proximity_obstacle_current.push(ObstacleProximityContact {
+                            source_obstacle_id: source.id, other_obstacle_id: other.id,
+                        });
+                    }
                 }
-                let Some(other_bounds) = other.collider.bounds else { continue };
-                if !bounds.overlaps(other_bounds) { continue; }
-                self.counts.narrowphase_tests += 1;
-                if proximity.overlaps(&other.collider) {
-                    self.proximity_obstacle_current.push(ObstacleProximityContact {
-                        source_obstacle_id: source.id, other_obstacle_id: other.id,
-                    });
-                }
-            }
             }
         }
         update_contact_changes(
@@ -1843,27 +1843,27 @@ impl KinematicPhysics {
         self.obstacle_pairs_current.clear();
         if has_body_contact_obstacles {
             for (source_index, source) in self.obstacles.iter().enumerate() {
-            if !source.active || !source.tracks_body_contacts { continue; }
-            let Some(bounds) = source.collider.bounds else { continue };
-            self.grid.candidates(bounds, &mut self.candidates);
-            self.counts.broadphase_candidates += self.candidates.len() as u64;
-            for &index in &self.candidates {
-                let other = &self.obstacles[index];
-                if !other.active || index == source_index ||
-                    (other.tracks_body_contacts && index < source_index) ||
-                    !collision_matrix.allows(source.layer, other.layer) {
-                    continue;
+                if !source.active || !source.tracks_body_contacts { continue; }
+                let Some(bounds) = source.collider.bounds else { continue };
+                self.grid.candidates(bounds, &mut self.candidates);
+                self.counts.broadphase_candidates += self.candidates.len() as u64;
+                for &index in &self.candidates {
+                    let other = &self.obstacles[index];
+                    if !other.active || index == source_index ||
+                        (other.tracks_body_contacts && index < source_index) ||
+                        !collision_matrix.allows(source.layer, other.layer) {
+                        continue;
+                    }
+                    let Some(other_bounds) = other.collider.bounds else { continue };
+                    if !bounds.overlaps(other_bounds) { continue; }
+                    self.counts.narrowphase_tests += 1;
+                    if source.collider.overlaps(&other.collider) {
+                        self.obstacle_pairs_current.push(ObstaclePairContact {
+                            first_obstacle_id: source.id.min(other.id),
+                            second_obstacle_id: source.id.max(other.id),
+                        });
+                    }
                 }
-                let Some(other_bounds) = other.collider.bounds else { continue };
-                if !bounds.overlaps(other_bounds) { continue; }
-                self.counts.narrowphase_tests += 1;
-                if source.collider.overlaps(&other.collider) {
-                    self.obstacle_pairs_current.push(ObstaclePairContact {
-                        first_obstacle_id: source.id.min(other.id),
-                        second_obstacle_id: source.id.max(other.id),
-                    });
-                }
-            }
             }
         }
         update_contact_changes(
