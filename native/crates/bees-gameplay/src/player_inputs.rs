@@ -32,6 +32,9 @@ pub trait NativeLevelPlayerContext: NativeLevelActivationContext + NativePlayerA
     fn set_player_shooting_strategy(&mut self, owner: SquadLifetime,
         shooting: bees_hivemind::protocol::StrategyIdentity)
         -> Result<(), GameCommandError>;
+    /// SquadActionBox.LockOn is a live command-associated player choice.
+    fn set_player_locked_on(&mut self, owner: SquadLifetime, locked: bool)
+        -> Result<(), GameCommandError>;
     /// Current source Squad.GetShootingStrategy and loaded command settings.
     fn player_command_inputs(&self, _owner: SquadLifetime)
         -> Result<NativePlayerCommandInputs, GameCommandError>
@@ -129,6 +132,62 @@ pub struct NativePlayerSquadCeaseFire {
     pub episode_revision: u64,
     pub squads: Vec<SquadLifetime>,
     pub cease_fire: bool,
+}
+
+/// Unity SquadActionBox.LockOn toggles only a squad with an enemy
+/// command. Locked squads remain selectable and can receive new commands;
+/// LevelInputManager excludes them from ordinary ground movement only.
+/// Store the chosen boolean in the recorded input, not an inferred toggle.
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct NativePlayerSquadLockOn {
+    pub world_id: WorldId,
+    pub episode_revision: u64,
+    pub squads: Vec<SquadLifetime>,
+    pub locked: bool,
+}
+
+pub struct NativePlayerLockOnPlan {
+    tick: u64,
+    owner: SquadLifetime,
+    world_id: WorldId,
+    episode_revision: u64,
+    selected_ship: i64,
+    locked: bool,
+}
+
+impl NativePlayerLockOnPlan {
+    pub fn prepare<M: NativeLevelPlayerContext, A>(
+        world: &World<NativeLevelState<M, A>>, world_id: WorldId,
+        episode_revision: u64, selected_ship: i64, locked: bool,
+    ) -> Result<Self, NativePlayerInputError> {
+        let (owner, _) = authorized_player_squad(
+            world, world_id, episode_revision, selected_ship,
+        )?;
+        let permission = world.state.metadata.player_permissions(owner)
+            .ok_or(NativePlayerInputError::NotControllable)?;
+        if !world.state.events.commands().selected_enemy(owner).is_some() ||
+            permission.locked_on == locked
+        {
+            return Err(NativePlayerInputError::InvalidAction);
+        }
+        Ok(Self { tick: world.tick(), owner, world_id,
+            episode_revision, selected_ship, locked })
+    }
+
+    pub fn execute<M: NativeLevelPlayerContext, A>(
+        self, world: &mut World<NativeLevelState<M, A>>,
+    ) -> Result<(), NativePlayerInputError> {
+        let current = Self::prepare(world, self.world_id,
+            self.episode_revision, self.selected_ship, self.locked)?;
+        if current.tick != self.tick || current.owner != self.owner {
+            return Err(NativePlayerInputError::StaleWorld);
+        }
+        world.state.metadata.set_player_locked_on(self.owner, self.locked)
+            .map_err(|error| {
+                world.state.events.fail_player_input();
+                NativePlayerInputError::Source(error)
+            })
+    }
 }
 
 /// Change the chosen shooting target priority of an existing source squad.
@@ -849,7 +908,9 @@ fn authorized_player_squad<'a, M: NativeLevelPlayerContext, A>(
         .ok_or(NativePlayerInputError::MissingSquad)?;
     let permission = state.metadata.player_permissions(owner)
         .ok_or(NativePlayerInputError::NotControllable)?;
-    if !permission.user_controlled || !permission.can_accept_input || permission.locked_on {
+    // Unity permits tactical commands and action-box changes while
+    // locked; only LevelInputManager.MoveSquads excludes a locked squad.
+    if !permission.user_controlled || !permission.can_accept_input {
         return Err(NativePlayerInputError::NotControllable);
     }
     let squad = state.events.roster().get(owner)
@@ -926,6 +987,11 @@ impl NativePlayerMovePlan {
         }
         let authority = NativePlayerSquadPlan::prepare(world, input.world_id,
             input.episode_revision, input.selected_ship)?;
+        if world.state.metadata.player_permissions(authority.owner)
+            .is_some_and(|permission| permission.locked_on)
+        {
+            return Err(NativePlayerInputError::NotControllable);
+        }
         Ok(Self { input, authority })
     }
 

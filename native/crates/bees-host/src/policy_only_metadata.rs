@@ -607,6 +607,17 @@ impl NativePlayerAuthority for NativePolicyOnlyMetadata {
 }
 
 impl NativeLevelPlayerContext for NativePolicyOnlyMetadata {
+    fn set_player_locked_on(&mut self, owner: SquadLifetime, locked: bool)
+        -> Result<(), GameCommandError> {
+        let permission = self.player.squads.get_mut(&owner)
+            .ok_or(GameCommandError::InvalidSquad)?;
+        if !permission.user_controlled || !permission.can_accept_input {
+            return Err(GameCommandError::InvalidSquad);
+        }
+        permission.locked_on = locked;
+        Ok(())
+    }
+
     fn set_player_shooting_strategy(&mut self, owner: SquadLifetime,
         shooting: bees_hivemind::protocol::StrategyIdentity,
     ) -> Result<(), GameCommandError> {
