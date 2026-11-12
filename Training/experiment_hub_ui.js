@@ -279,8 +279,8 @@ function hubMeasuredSeconds(run) {
         for(const [key,item] of Object.entries(point.metrics||{})) {
             // This explicitly cumulative run clock is already an X-axis
             // choice; ranking its median among phases hides useful timings.
-            if(key==='elapsed_training_seconds'||key==='active_training_time')
-                continue;
+            if(key==='elapsed_training_seconds'||key==='active_training_time'||
+                key==='job_cpu_throttled_seconds')continue;
             const scale=item?.unit==='seconds'?1:
                 item?.unit==='milliseconds'?0.001:null;
             if(scale===null||!Number.isFinite(item.value)||
@@ -2114,6 +2114,7 @@ document.addEventListener('DOMContentLoaded', () => {
         'group_grad_norm','baseline_grad_norm','policy_lag',
         'rss_mb','job_memory_mb','job_peak_memory_mb','job_cpu_cores',
         'job_cpu_lease_utilization_pct','job_process_tasks',
+        'job_cpu_throttled_seconds','job_cpu_throttle_events',
         'job_memory_lease_utilization_pct',
         'host_cpu_busy_pct','host_gpu_busy_pct','host_gpu_vram_mb',
         'host_gpu_temperature_c','host_gpu_hotspot_temperature_c',
