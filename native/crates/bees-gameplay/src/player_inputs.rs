@@ -179,11 +179,10 @@ impl NativePlayerSpecialPlan {
             let eligible = match kind {
                 NativePlayerShipSpecialKind::DropBeacon =>
                     ship.ship_type == 18 &&
-                    world.state.combat.game_scout_beacon_ready(ship_id),
+                    world.state.combat.player_scout_beacon_ready(ship_id),
                 NativePlayerShipSpecialKind::Detonate =>
                     ship.ship_type == 10 &&
-                    world.state.combat.configured_fire_barge_bomb_power(ship_id)
-                        .is_some(),
+                    world.state.combat.player_fire_barge_detonation_ready(ship_id),
                 NativePlayerShipSpecialKind::Charge =>
                     ship.ship_type == 0 &&
                     world.state.combat.player_game_barge_charge_ready(ship_id),

@@ -646,12 +646,13 @@ impl NativeSoftwareRenderer {
                     18 if view.combat.game_scout_configured(ship_id) => {
                         scouts += 1;
                         scouts_ready += usize::from(
-                            view.combat.game_scout_beacon_ready(ship_id));
+                            view.combat.player_scout_beacon_ready(ship_id));
                     }
                     10 if view.combat.configured_fire_barge_bomb_power(ship_id)
                         .is_some() => {
                         barges += 1;
-                        barges_ready += 1;
+                        barges_ready += usize::from(
+                            view.combat.player_fire_barge_detonation_ready(ship_id));
                     }
                     0 => {
                         // Legacy snapshots intentionally lack authenticated

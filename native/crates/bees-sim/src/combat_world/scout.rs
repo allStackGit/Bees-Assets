@@ -193,6 +193,13 @@ impl CombatWorld {
     /// the regular fixed-step event pipeline must record its creation so
     /// the squad/minion registry, reward ledger and group notifications
     /// all observe the new ship exactly once.
+    pub fn player_scout_beacon_ready(&self, scout_id: i64) -> bool {
+        !self.frozen_after_elimination &&
+        !self.policy_ship_runtime.contains_key(&scout_id) &&
+        !self.pending_player_scout_beacons.contains(&scout_id) &&
+        self.game_scout_beacon_ready(scout_id)
+    }
+
     pub fn queue_player_scout_beacon(
         &mut self, scout_id: i64,
     ) -> Result<bool, CombatWorldError> {
@@ -203,8 +210,7 @@ impl CombatWorld {
             self.policy_ship_runtime.contains_key(&scout_id) {
             return Err(CombatWorldError::InvalidPolicyScout);
         }
-        if !self.game_scout_beacon_ready(scout_id) ||
-            self.pending_player_scout_beacons.contains(&scout_id) {
+        if !self.player_scout_beacon_ready(scout_id) {
             return Ok(false);
         }
         self.pending_player_scout_beacons.push(scout_id);

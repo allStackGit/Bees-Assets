@@ -148,6 +148,16 @@ impl CombatWorld {
     /// The player authority adapter validates the exact squad lifetime
     /// before queuing; game specials resolve in the SAME fixed-step death
     /// and explosion transaction as automatic BombingRun detonations.
+    pub fn player_fire_barge_detonation_ready(&self, ship_id: i64) -> bool {
+        !self.frozen_after_elimination &&
+        self.configured_fire_barge_bomb_power(ship_id).is_some() &&
+        !self.policy_ship_runtime.contains_key(&ship_id) &&
+        !self.pending_game_fire_barges.iter().any(|&(id, _)| id == ship_id) &&
+        self.ship(ship_id).is_some_and(|ship|
+            ship.ship_type == 10 && !ship.vitals.is_dead()) &&
+        self.ship_body(ship_id).is_some_and(|body| body.active)
+    }
+
     pub fn queue_player_fire_barge_detonation(
         &mut self, ship_id: i64,
     ) -> Result<bool, CombatWorldError> {
@@ -159,9 +169,7 @@ impl CombatWorld {
             !self.fire_barge_bomb_powers.contains_key(&ship_id) {
             return Err(CombatWorldError::InvalidPolicyFireBarge);
         }
-        if self.ships[index].vitals.is_dead() ||
-            !self.physics.ships()[index].active ||
-            self.pending_game_fire_barges.iter().any(|&(id, _)| id == ship_id) {
+        if !self.player_fire_barge_detonation_ready(ship_id) {
             return Ok(false);
         }
         self.pending_game_fire_barges.push((ship_id, None));
