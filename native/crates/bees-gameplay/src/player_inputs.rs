@@ -18,6 +18,12 @@ pub struct NativePlayerPermissions {
 
 /// Object-safe read-only authority, also borrowed by native presentation.
 pub trait NativePlayerAuthority {
+    /// Unity activates fog only for a Level with a user controller. Old
+    /// snapshots lacking Level.ActivateFogOfWar remain unmasked.
+    fn player_fog_of_war_enabled(&self) -> bool { false }
+    /// Source FogOfWarVision.Range = 2 * (Sight != 0 ? Sight : MaxRange).
+    /// This is display-only and must never replace HiveMind perception.
+    fn player_fog_vision_radius(&self, _ship_id: i64) -> Option<f32> { None }
     /// Actual Level.HasObstacles; None means range/line inspection is unavailable.
     fn weapon_obstacles_enabled(&self) -> Option<bool> { None }
     fn player_permissions(&self, owner: SquadLifetime) -> Option<NativePlayerPermissions>;

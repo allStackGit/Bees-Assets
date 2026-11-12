@@ -127,6 +127,9 @@ pub struct NativePolicyOnlyMetadata {
     /// Exact Level.ActivateMining from the source scene; unavailable for
     /// older physical exports, never inferred from present asteroids.
     pub activate_mining: Option<bool>,
+    /// Exact source Level.ActivateFogOfWar for the displayed player.
+    /// None means an older export that did not capture the option.
+    pub activate_fog_of_war: Option<bool>,
     /// Source Stage command-authority gate, distinct from game physics
     /// and not inferred from whether a model controller is present.
     pub hivemind_active: Option<bool>,
@@ -269,7 +272,7 @@ impl NativePolicyOnlyMetadata {
         }
         Ok(Self {
             targeting_context: None, activate_mining: None,
-            hivemind_active: None, hivemind_initial_delay_seconds: None,
+            activate_fog_of_war: None, hivemind_active: None, hivemind_initial_delay_seconds: None,
             hivemind_starting_positions: None,
             hivemind_squads: HashMap::new(),
             bounds, navigation, activate_collision_asteroids, fleet, ship_catalog,
@@ -741,6 +744,17 @@ impl NativeLevelActivationContext for NativePolicyOnlyMetadata {
 }
 
 impl NativePlayerAuthority for NativePolicyOnlyMetadata {
+    fn player_fog_of_war_enabled(&self) -> bool {
+        self.activate_fog_of_war == Some(true)
+    }
+
+    fn player_fog_vision_radius(&self, ship_id: i64) -> Option<f32> {
+        // The exact source effective range is captured for original ships;
+        // a Scout-created minion also carries its template's authored sight.
+        self.effective_vision.get(&ship_id)
+            .map(|vision| vision.effective_range as f32 * 2.0)
+    }
+
     fn weapon_obstacles_enabled(&self) -> Option<bool> { Some(self.player.has_obstacles) }
     fn player_permissions(&self, owner: SquadLifetime) -> Option<NativePlayerPermissions> {
         self.player.squads.get(&owner).copied()

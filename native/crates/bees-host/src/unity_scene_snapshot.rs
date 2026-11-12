@@ -126,6 +126,7 @@ struct UnitySnapshot {
     shots_harmless: bool,
     activate_collision_asteroids: bool,
     activate_mining: Option<bool>,
+    activate_fog_of_war: Option<bool>,
     activate_hivemind: Option<bool>,
     hivemind_initial_command_delay_seconds: Option<i32>,
     has_obstacles: bool,
@@ -624,6 +625,8 @@ pub struct NativePhysicalScene {
     pub activate_collision_asteroids: bool,
     /// Optional only for legacy schema26 exports predating request bans.
     pub activate_mining: Option<bool>,
+    /// Source Level.ActivateFogOfWar. Optional for historical exports.
+    pub activate_fog_of_war: Option<bool>,
     /// Source Stage.ActivateHiveMind, required for autonomous native
     /// command requests. Legacy imports remain runnable but cannot
     /// silently assume gameplay AI eligibility.
@@ -1105,6 +1108,7 @@ impl NativePhysicalScene {
         ).map_err(NativePolicyOnlyLevelError::Metadata)?;
         metadata.targeting_context = self.targeting_context;
         metadata.activate_mining = self.activate_mining;
+        metadata.activate_fog_of_war = self.activate_fog_of_war;
         metadata.hivemind_active = self.activate_hivemind;
         metadata.hivemind_initial_delay_seconds = self.hivemind_initial_command_delay_seconds;
         metadata.hivemind_starting_positions = self.starting_positions;
@@ -2257,6 +2261,7 @@ impl NativePhysicalScene {
             shots_harmless: raw.shots_harmless,
             activate_collision_asteroids: raw.activate_collision_asteroids,
             activate_mining: raw.activate_mining,
+            activate_fog_of_war: raw.activate_fog_of_war,
             activate_hivemind: raw.activate_hivemind,
             hivemind_initial_command_delay_seconds: raw.hivemind_initial_command_delay_seconds,
             has_obstacles: raw.has_obstacles,
