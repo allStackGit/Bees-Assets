@@ -657,8 +657,7 @@ impl NativeSoftwareRenderer {
                         // Legacy snapshots intentionally lack authenticated
                         // CanOverrideBounds and player Charge configuration.
                         // Do not advertise an unsupported ability.
-                        if view.combat.game_barge_charge_completed(ship_id).is_some() ||
-                            view.combat.player_game_barge_charge_ready(ship_id) {
+                        if view.combat.player_game_barge_configured(ship_id) {
                             charge_barges += 1;
                             charges_ready += usize::from(
                                 view.combat.player_game_barge_charge_ready(ship_id));

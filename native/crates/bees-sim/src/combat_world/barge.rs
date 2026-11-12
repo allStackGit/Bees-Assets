@@ -113,6 +113,10 @@ impl CombatWorld {
         Ok(())
     }
 
+    pub fn player_game_barge_configured(&self, ship_id: i64) -> bool {
+        self.game_barge_player_config.contains_key(&ship_id)
+    }
+
     pub fn player_game_barge_charge_ready(&self, ship_id: i64) -> bool {
         if self.frozen_after_elimination ||
             !self.game_barge_player_config.contains_key(&ship_id) ||
@@ -316,6 +320,17 @@ impl CombatWorld {
                         charge.phase = 4;
                     }
                     self.game_barge_measurements.completions += 1;
+                    // A manually triggered ChargeForward has no command
+                    // owner that will later retire the completed state.
+                    // Release it at the normal cooldown boundary to avoid
+                    // scanning inert per-ship timers forever. Targeted
+                    // commands retain their completion token until their
+                    // existing command-finalization path observes it.
+                    if self.game_barge_charges.get(&ship_id)
+                        .is_some_and(|charge| charge.target_id.is_none())
+                    {
+                        self.reset_game_barge_charge(ship_id);
+                    }
                 }
                 _ => unreachable!("authored game Barge phase"),
             }
