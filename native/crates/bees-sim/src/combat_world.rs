@@ -735,16 +735,15 @@ pub struct CombatWorld {
     /// Reused broadphase ship indices for faction vision. The physics grid
     /// remains the sole spatial index; sorting preserves Unity ship order.
     vision_ship_candidates: Vec<usize>,
-    /// Candidate obstacle indices, one reused allocation per observer.
-    /// Build all queries while the ONE physics grid holds obstacle hulls,
-    /// then recover exact Unity observer/entity first-discovery ordering.
-    vision_obstacle_candidates: Vec<Vec<usize>>,
-    /// Remaining unlearned obstacle counts during this one sweep. This
-    /// is scratch, not a second persistent faction-discovery registry.
+    /// One reused broadphase buffer, not a per-observer candidate list.
+    /// Obstacle vision runs for all observers before ship-grid queries.
+    vision_obstacle_candidates: Vec<usize>,
+    /// Only real first sightings need buffering to restore the exact Unity
+    /// observer-major ship-before-obstacle event order after grid batching.
+    vision_obstacle_sightings: Vec<VisionFirstSighting>,
+    vision_obstacle_offsets: Vec<usize>,
+    /// Transient remaining-unlearned count per side during one refresh.
     vision_unlearned_obstacles: HashMap<i32, u64>,
-    /// Factions that have learned every active obstacle in this sweep.
-    /// Reused across fixed steps; no persistent discovery state is duplicated.
-    vision_all_obstacles_learned_sides: HashSet<i32>,
     /// Source GameState.HiveMindLiveEnemyVisible: recalculated on every
     /// vision refresh, never retained like the faction discovery cache.
     vision_live_enemy_sides: HashSet<i32>,
@@ -941,8 +940,9 @@ impl CombatWorld {
             vision_observer_ids: HashSet::new(),
             vision_ship_candidates: Vec::new(),
             vision_obstacle_candidates: Vec::new(),
+            vision_obstacle_sightings: Vec::new(),
+            vision_obstacle_offsets: Vec::new(),
             vision_unlearned_obstacles: HashMap::new(),
-            vision_all_obstacles_learned_sides: HashSet::new(),
             vision_live_enemy_sides: HashSet::new(),
             vision_measurements: VisionSweepCounts::default(),
             projectiles: Vec::new(),
