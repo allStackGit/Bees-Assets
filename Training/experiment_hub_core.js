@@ -2483,6 +2483,7 @@ class ExperimentHub {
                         key_fingerprint:host.tinybrains_rollout_key_fingerprint};
                 }),
                 key_fingerprint:learnerHost.tinybrains_remote_key_fingerprint,
+                learner_endpoints:endpoints.slice(),
                 agent_instances:agents,
                 resume_after_restart:value.resume_after_restart===true,
                 recovery_pending:false,status:'pending',
@@ -2774,6 +2775,7 @@ class ExperimentHub {
                 host.id===learner.assigned_machine_id);
             const endpoints=learnerHost?.tinybrains_remote_rollout_endpoints||[];
             if(learnerHost?.tinybrains_remote_key_fingerprint!==intent.key_fingerprint||
+                JSON.stringify(endpoints)!==JSON.stringify(intent.learner_endpoints)||
                 endpoints.length!==workers.length||
                 new Set(endpoints).size!==workers.length||
                 workers.some(worker=>{
