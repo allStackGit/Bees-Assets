@@ -1,6 +1,6 @@
 //! Native player inputs shared by the client, trace recorder, and playback.
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs::File;
 use std::io::{self, BufRead, BufReader, Seek, SeekFrom};
 use std::path::Path;
@@ -157,6 +157,11 @@ impl NativePlayerTrace {
                 "player trace does not match the offline battle configuration",
             )),
         };
+        let expected_worlds = expected_levels.iter()
+            .map(|level| level.world_id).collect::<HashSet<_>>();
+        if expected_worlds.len() != expected_levels.len() {
+            return Err(trace_error("player trace has duplicate expected World IDs"));
+        }
         let largest_header = line.len();
         let data_start = reader.stream_position()?;
         let mut measurements = NativeTraceStreamMeasurements {
@@ -184,7 +189,7 @@ impl NativePlayerTrace {
                 }) if schema_version >= 2 && round >= previous_round && tick <= round &&
                     sha256.len() == 64 &&
                     sha256.bytes().all(|byte| byte.is_ascii_hexdigit()) &&
-                    expected_levels.iter().any(|level| level.world_id == world_id) => {
+                    expected_worlds.contains(&world_id) => {
                     saw_checkpoint = true;
                     previous_round = round;
                     measurements.validated_checkpoints += 1;
