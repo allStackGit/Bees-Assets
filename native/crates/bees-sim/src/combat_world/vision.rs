@@ -151,68 +151,67 @@ impl CombatWorld {
                         counts.obstacle_candidates += self.vision_obstacle_candidates.len() as u64;
                         self.vision_obstacle_candidates.sort_unstable();
                         counts.unlearned_obstacle_pairs += pending;
-                    let mut considered = 0_u64;
-                    let mut first_seen = 0_u64;
-                    for &target in &self.vision_obstacle_candidates {
-                        let obstacle = &self.obstacles[target];
-                        if !obstacle.live() ||
-                            !self.physics.obstacles()[target].active {
-                            continue;
-                        }
-                        let kind = match obstacle.kind {
-                            ObstacleKind::MiningAsteroid => DiscoveryKind::MiningAsteroid,
-                            ObstacleKind::MapObject => DiscoveryKind::MapObject,
-                            _ => DiscoveryKind::Obstacle,
-                        };
-                        let target_id = obstacle.entity_id;
-                        if self.discovery.has(side, kind, target_id) {
-                            continue;
-                        }
-                        considered += 1;
-                        if self.physics.obstacles()[target].outside_vision_radius(
-                            origin, range, kind == DiscoveryKind::MapObject,
-                        ) {
-                            counts.obstacle_radius_rejections += 1;
-                            counts.aabb_rejections += 1;
-                            continue;
-                        }
-                        let proximity = if kind == DiscoveryKind::MapObject {
-                            self.physics.map_object_vision_proximity(
-                                target, origin, range_squared,
-                            )
-                        } else {
-                            self.physics.obstacle_vision_proximity(
-                                target, origin, range_squared,
-                            )
-                        };
-                        if counts.record_proximity(proximity) &&
-                            self.discovery.record(side, kind, target_id)
-                                .expect("prevalidated side and entity ID")
-                        {
-                            first_seen += 1;
-                            self.vision_obstacle_sightings.push(VisionFirstSighting {
-                                observer_id: observer.ship_id, side,
-                                target_id, kind,
-                            });
-                            match kind {
-                                DiscoveryKind::MiningAsteroid => {
-                                    counts.first_mining_discoveries += 1;
+                        let mut considered = 0_u64;
+                        let mut first_seen = 0_u64;
+                        for &target in &self.vision_obstacle_candidates {
+                            let obstacle = &self.obstacles[target];
+                            if !obstacle.live() ||
+                                !self.physics.obstacles()[target].active {
+                                continue;
+                            }
+                            let kind = match obstacle.kind {
+                                ObstacleKind::MiningAsteroid => DiscoveryKind::MiningAsteroid,
+                                ObstacleKind::MapObject => DiscoveryKind::MapObject,
+                                _ => DiscoveryKind::Obstacle,
+                            };
+                            let target_id = obstacle.entity_id;
+                            if self.discovery.has(side, kind, target_id) {
+                                continue;
+                            }
+                            considered += 1;
+                            if self.physics.obstacles()[target].outside_vision_radius(
+                                origin, range, kind == DiscoveryKind::MapObject,
+                            ) {
+                                counts.obstacle_radius_rejections += 1;
+                                counts.aabb_rejections += 1;
+                                continue;
+                            }
+                            let proximity = if kind == DiscoveryKind::MapObject {
+                                self.physics.map_object_vision_proximity(
+                                    target, origin, range_squared,
+                                )
+                            } else {
+                                self.physics.obstacle_vision_proximity(
+                                    target, origin, range_squared,
+                                )
+                            };
+                            if counts.record_proximity(proximity) &&
+                                self.discovery.record(side, kind, target_id)
+                                    .expect("prevalidated side and entity ID")
+                            {
+                                first_seen += 1;
+                                self.vision_obstacle_sightings.push(VisionFirstSighting {
+                                    observer_id: observer.ship_id, side,
+                                    target_id, kind,
+                                });
+                                match kind {
+                                    DiscoveryKind::MiningAsteroid => {
+                                        counts.first_mining_discoveries += 1;
+                                    }
+                                    DiscoveryKind::MapObject => {
+                                        counts.first_map_object_discoveries += 1;
+                                    }
+                                    _ => { counts.first_obstacle_discoveries += 1; }
                                 }
-                                DiscoveryKind::MapObject => {
-                                    counts.first_map_object_discoveries += 1;
-                                }
-                                _ => { counts.first_obstacle_discoveries += 1; }
                             }
                         }
-                    }
-                    // A primary/clearance AABB outside the sight-square cannot
-                    // contain a collider within the actual source sight-circle.
-                    // No omitted obstacle was discovered, so every omitted
-                    // unlearned pair is an equivalent cheap bounds rejection.
-                    counts.aabb_rejections += pending.saturating_sub(considered);
-                    let still_unlearned = pending.saturating_sub(first_seen);
-                    self.vision_unlearned_obstacles.insert(side, still_unlearned);
-                                self.vision_unlearned_obstacles.insert(side, still_unlearned);
+                        // A primary/clearance AABB outside the sight-square cannot
+                        // contain a collider within the actual source sight-circle.
+                        // No omitted obstacle was discovered, so every omitted
+                        // unlearned pair is an equivalent cheap bounds rejection.
+                        counts.aabb_rejections += pending.saturating_sub(considered);
+                        let still_unlearned = pending.saturating_sub(first_seen);
+                        self.vision_unlearned_obstacles.insert(side, still_unlearned);
                     }
                 }
             }
