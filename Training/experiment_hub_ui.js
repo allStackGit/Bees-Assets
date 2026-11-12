@@ -2322,6 +2322,8 @@ document.addEventListener('DOMContentLoaded', () => {
         'simulation_tuner_settled','simulation_target_restored',
         'simulation_proven_target','simulation_engine_memory_mb',
         'ppo_minibatches','ppo_gpu_pixel_budget',
+        'ppo_prestaged_board_bytes','ppo_prestaged_board_states',
+        'ppo_reused_board_states',
         'rollout_inference_shape_groups','rollout_inference_readbacks',
         'ppo_board_pixel_samples',
         'ppo_max_board_cells','ppo_unique_board_shapes',
