@@ -1345,8 +1345,16 @@ document.addEventListener('DOMContentLoaded', () => {
         const preferred=[...new Set(runs.flatMap(run=>run.job.metric_selection||[]))]
             .map(key=>'metric:'+key)
             .filter(key=>metricOptions.some(m=>m.key===key));
+        // On a new project view, show actual learning outcomes before the
+        // alphabetically first resource counter. Explicit user choices win.
+        const learningDefaults=['training_win_rate','training_score_rate',
+            'training_mean_score','loss','entropy',
+            'ant_decisions_per_second'].map(name=>'metric:'+name)
+            .filter(key=>metricOptions.some(option=>option.key===key));
         const metricChoices=comparisonMetricOverrides.get(project) ??
-            (keep.length?keep:preferred.length?preferred:[metricOptions[0]?.key]);
+            (keep.length?keep:preferred.length?preferred:
+                learningDefaults.length?learningDefaults.slice(0,5):
+                    [metricOptions[0]?.key]);
         for(const option of metricSelect.options)
             option.selected=metricChoices.includes(option.value);
         metricSelect.dataset.metricProject=project;
@@ -2176,8 +2184,14 @@ document.addEventListener('DOMContentLoaded', () => {
         const live=job.live_execution;
         const p=live?.progress||job.final_progress;
         if(p?.source==='hub-metrics-v1') {
-            const preferred=['total_ppo_updates','update_wall_time',
-                'ant_decisions_per_second','collection_seconds','optimization_seconds'];
+            // Compact Monitor summaries should show the trainer's recorded
+            // learning outcomes as well as steps; timing-only summaries
+            // can misleadingly look like missing learning telemetry.
+            const preferred=['training_completed_matches','training_win_rate',
+                'training_score_rate','training_mean_score_margin',
+                'training_mean_score','loss','policy_loss','value_loss',
+                'entropy','total_ppo_updates','ant_decisions_per_second',
+                'update_wall_time','collection_seconds','optimization_seconds'];
             const priority=preferred.filter(key=>Object.hasOwn(p.metrics,key));
             const entries=[...priority.map(key=>[key,p.metrics[key]]),
                 ...Object.entries(p.metrics).filter(([key])=>!priority.includes(key))];
