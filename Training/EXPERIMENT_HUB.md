@@ -1895,12 +1895,14 @@ retain at most 96 per observation. Select high-index
 collector metrics in Train before starting the job to prioritize their chart
 retention; all received source measurements remain in the raw diagnostic
 archive regardless of chart selection. Full project telemetry is not filtered
-by these display choices. Host GPU utilization/VRAM measurements describe
+by these display choices. Host GPU utilization/VRAM/power measurements describe
 the pinned physical device, not isolated per-job GPU consumption. Passive
 optional temperature readings are reported in °C from identified AMD
-edge/junction hwmon labels or NVIDIA's GPU-core sensor. Unknown or
-unreadable sensors remain absent. A high temperature alone does not
-establish throttling, and these measurements never alter GPU admission,
+edge/junction hwmon labels or NVIDIA's GPU-core sensor. Passive power
+measurements in W come from AMD hwmon (microwatt readings) or NVIDIA
+nvidia-smi. Unknown, unavailable or unreadable sensors remain absent.
+Power draw is not per-job energy consumption, and a high temperature
+alone does not establish throttling. These measurements never alter GPU admission,
 resource leases, job execution or training workloads. The native
 Hub also appends each distinct **received** validated source update to private
 `hub-observations-v1/<job-id>.jsonl` in its data directory, retaining source
