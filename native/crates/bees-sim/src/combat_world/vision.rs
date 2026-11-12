@@ -7,6 +7,27 @@
 use super::*;
 
 impl CombatWorld {
+    /// Compute each faction's remaining physical obstacle discoveries once
+    /// per refresh, not for every observer. No persistent duplicate cache:
+    /// callers clear this work map before the one authoritative sight sweep.
+    fn remaining_obstacle_vision_discoveries(&mut self, side: i32) -> u64 {
+        if let Some(&count) = self.vision_unlearned_obstacles.get(&side) {
+            return count;
+        }
+        let count = self.obstacles.iter()
+            .zip(self.physics.obstacles()).filter(|(obstacle, body)| {
+                if !obstacle.live() || !body.active { return false; }
+                let kind = match obstacle.kind {
+                    ObstacleKind::MiningAsteroid => DiscoveryKind::MiningAsteroid,
+                    ObstacleKind::MapObject => DiscoveryKind::MapObject,
+                    _ => DiscoveryKind::Obstacle,
+                };
+                !self.discovery.has(side, kind, obstacle.entity_id)
+            }).count() as u64;
+        self.vision_unlearned_obstacles.insert(side, count);
+        count
+    }
+
     /// Refresh Hive Mind learned discoveries with the SAME ship/obstacle
     /// collider geometry as native gameplay. The outer Level adapter owns
     /// real observer registration, HiveMindVision.enabled and effective
@@ -107,8 +128,7 @@ impl CombatWorld {
         // vectors retain capacity across all fixed-step calls.
         self.vision_obstacle_candidates.resize_with(observers.len(), Vec::new);
         for (observer_index, observer) in observers.iter().enumerate() {
-            let candidates = &mut self.vision_obstacle_candidates[observer_index];
-            candidates.clear();
+            self.vision_obstacle_candidates[observer_index].clear();
             if self.obstacles.is_empty() || !observer.registered ||
                 !observer.enabled || observer.effective_range == 0 {
                 continue;
@@ -118,8 +138,16 @@ impl CombatWorld {
             let ship = &self.ships[index];
             let body = &self.physics.ships()[index];
             if !body.active || ship.vitals.is_dead() { continue; }
+            let origin = body.motion.position;
+            let side = ship.side;
+            // No map-wide grid rebuild in the common steady-state case
+            // where this side has already discovered all active obstacles.
+            if self.remaining_obstacle_vision_discoveries(side) == 0 {
+                continue;
+            }
+            let candidates = &mut self.vision_obstacle_candidates[observer_index];
             let rebuilt = self.physics.circle_obstacle_vision_candidates(
-                body.motion.position, observer.effective_range as f32, candidates,
+                origin, observer.effective_range as f32, candidates,
             );
             counts.obstacle_vision_grid_rebuilds += u64::from(rebuilt);
             counts.obstacle_candidates += candidates.len() as u64;
@@ -209,23 +237,7 @@ impl CombatWorld {
             // once per side instead of rescanning all obstacles per ship.
             // Keep historical logically eligible-pair statistics, including
             // pairs excluded by the new broadphase.
-            let pending = match self.vision_unlearned_obstacles.get(&side) {
-                Some(&count) => count,
-                None => {
-                    let count = self.obstacles.iter()
-                        .zip(self.physics.obstacles()).filter(|(obstacle, body)| {
-                            if !obstacle.live() || !body.active { return false; }
-                            let kind = match obstacle.kind {
-                                ObstacleKind::MiningAsteroid => DiscoveryKind::MiningAsteroid,
-                                ObstacleKind::MapObject => DiscoveryKind::MapObject,
-                                _ => DiscoveryKind::Obstacle,
-                            };
-                            !self.discovery.has(side, kind, obstacle.entity_id)
-                        }).count() as u64;
-                    self.vision_unlearned_obstacles.insert(side, count);
-                    count
-                }
-            };
+            let pending = self.remaining_obstacle_vision_discoveries(side);
             counts.unlearned_obstacle_pairs += pending;
             let mut considered = 0_u64;
             let mut first_seen = 0_u64;
