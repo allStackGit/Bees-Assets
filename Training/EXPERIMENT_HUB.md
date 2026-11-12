@@ -1390,8 +1390,8 @@ authenticated reports of the same owner. A missing, reset, or nonadvancing
 denominator produces no percentage. These measures describe local quota
 pressure, not necessarily all CPU contention: inherited ancestor limits
 and other scheduling delays may not appear. Totals are not per-update PPO
-phase timings, and their growth is not a measure of marginal throughput. These host kernel counters describe
-the owned workload, not GPU kernel efficiency.
+phase timings, and their growth is not a measure of marginal throughput.
+These kernel counters describe the owned workload, not GPU kernel efficiency.
 
 For Halifax, create the dedicated
 `~/ai/experiments/experiment-hub/tinybrains-jobs` directory and use
