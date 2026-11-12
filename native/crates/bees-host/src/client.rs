@@ -5,6 +5,7 @@
 use std::time::{Duration, Instant};
 use bees_sim::collision::Aabb;
 use bees_sim::simulation::WorldId;
+use bees_hivemind::session::SquadLifetime;
 use minifb::{Key, KeyRepeat, MouseButton, MouseMode, Window, WindowOptions};
 use crate::presentation::{NativeCamera, NativeRenderWorldView, NativeSoftwareRenderer, NativeSupportMode};
 use bees_gameplay::player_inputs::{NativeHeldFireAction, NativePlayerHeldFire, NativePlayerSquadMoves,
@@ -118,6 +119,43 @@ impl NativeClient {
     pub fn focus_camera(&mut self, center: Vec2) {
         if center.is_finite() {
             self.renderer.camera.center = center;
+        }
+    }
+
+    /// Presentation-only focus shared by source number hotkeys and the
+    /// source-order cycle. The Unity squad center is the live hull bounds
+    /// center, not the average of ship-center positions.
+    fn focus_selected_squad(
+        &mut self, view: &NativeRenderWorldView<'_>, owner: SquadLifetime,
+    ) {
+        self.support_mode = None;
+        self.selection_drag = None;
+        self.renderer.selection_box = None;
+        self.last_left_press = None;
+        self.double_left_press = false;
+        self.renderer.selected_ship = self.renderer.selection
+            .representative_ships(view).next();
+        let Some(squad) = view.roster.get(owner) else { return };
+        let mut bounds: Option<Aabb> = None;
+        for &ship_id in &squad.members {
+            let Some(body) = view.combat.ship_body(ship_id)
+                .filter(|body| body.active) else { continue };
+            let hull = body.primary_bounds().unwrap_or(Aabb {
+                min: body.motion.position,
+                max: body.motion.position,
+            });
+            bounds = Some(match bounds {
+                None => hull,
+                Some(previous) => Aabb {
+                    min: Vec2::new(previous.min.x.min(hull.min.x),
+                        previous.min.y.min(hull.min.y)),
+                    max: Vec2::new(previous.max.x.max(hull.max.x),
+                        previous.max.y.max(hull.max.y)),
+                },
+            });
+        }
+        if let Some(bounds) = bounds {
+            self.renderer.camera.center = (bounds.min + bounds.max) * 0.5;
         }
     }
 
@@ -259,52 +297,30 @@ impl NativeClient {
         }
         let accepts_orders = !briefing && !self.playback && view.terminal_result.is_none();
         let pointer_active = self.window.is_active();
-        // Cycle living, permitted source squads independently of the model
-        // and socket. This uses actual roster order, not an inferred Unity
-        // numeric hotkey map. The camera follows the current physical squad
-        // center, not a stale scene-imported position.
+        // Schema-29 snapshots carry Unity's exact numbered squads and
+        // original per-side count. Legacy exports retain PgUp/PgDn cycling
+        // but do not guess 1-0 hotkey assignments from live roster order.
         if accepts_orders && pointer_active && self.held_fire_target.is_none() {
-            let forward = self.window.is_key_pressed(Key::PageDown, KeyRepeat::No);
-            let backward = self.window.is_key_pressed(Key::PageUp, KeyRepeat::No);
-            if forward || backward {
-                if let Some(owner) = self.renderer.selection.cycle_source_squad(
-                    &view, forward,
-                ) {
-                    self.support_mode = None;
-                    self.selection_drag = None;
-                    self.renderer.selection_box = None;
-                    self.last_left_press = None;
-                    self.double_left_press = false;
-                    self.renderer.selected_ship = self.renderer.selection
-                        .representative_ships(&view).next();
-                    if let Some(squad) = view.roster.get(owner) {
-                        // Unity Squad.GetPosition is the center of the
-                        // entire live squad bounds, not the mean of its ship
-                        // centers. Prefer each current authored physical hull.
-                        let mut bounds: Option<Aabb> = None;
-                        for &ship_id in &squad.members {
-                            let Some(body) = view.combat.ship_body(ship_id)
-                                .filter(|body| body.active) else { continue };
-                            let hull = body.primary_bounds().unwrap_or(Aabb {
-                                min: body.motion.position,
-                                max: body.motion.position,
-                            });
-                            bounds = Some(match bounds {
-                                None => hull,
-                                Some(previous) => Aabb {
-                                    min: Vec2::new(previous.min.x.min(hull.min.x),
-                                        previous.min.y.min(hull.min.y)),
-                                    max: Vec2::new(previous.max.x.max(hull.max.x),
-                                        previous.max.y.max(hull.max.y)),
-                                },
-                            });
-                        }
-                        if let Some(bounds) = bounds {
-                            self.renderer.camera.center =
-                                (bounds.min + bounds.max) * 0.5;
-                        }
-                    }
-                }
+            let selected = [
+                (Key::Key1, 1), (Key::Key2, 2), (Key::Key3, 3),
+                (Key::Key4, 4), (Key::Key5, 5), (Key::Key6, 6),
+                (Key::Key7, 7), (Key::Key8, 8), (Key::Key9, 9),
+                (Key::Key0, 0),
+            ].into_iter().find_map(|(key, number)| {
+                self.window.is_key_pressed(key, KeyRepeat::No)
+                    .then_some(number)
+            }).and_then(|number|
+                self.renderer.selection.select_source_number(&view, number)
+            ).or_else(|| {
+                let forward = self.window.is_key_pressed(
+                    Key::PageDown, KeyRepeat::No);
+                let backward = self.window.is_key_pressed(
+                    Key::PageUp, KeyRepeat::No);
+                (forward || backward).then(|| self.renderer.selection
+                    .cycle_source_squad(&view, forward)).flatten()
+            });
+            if let Some(owner) = selected {
+                self.focus_selected_squad(&view, owner);
             }
         }
         let stop_fire = self.window.is_key_pressed(Key::X, KeyRepeat::No);
@@ -585,7 +601,7 @@ impl NativeClient {
                 view.world_id.0, view.tick, status, selected,
                 self.result_controls.map_or("Space pause, N step, ", NativeResultControls::hint))
         } else { format!(
-            "Bees native | World {} | Episode {} | Tick {} | {} ships, {} shots | {} squads selected | {}{} | {} | range/obstruction {} | Left select/drag, double-click type, Ctrl add, right move/attack | C stop chase, V cease fire, A attack on sight, G guard, P patrol, M mine, H heal, R retreat, hold J manual fire, T point fire, X stop, B ranges, Backspace cancel | Space pause, N step, Tab world, PgUp/PgDn squads, arrows pan, wheel zoom, F fit, I map, Esc exit",
+            "Bees native | World {} | Episode {} | Tick {} | {} ships, {} shots | {} squads selected | {}{} | {} | range/obstruction {} | Left select/drag, double-click type, Ctrl add, right move/attack | C stop chase, V cease fire, A attack on sight, G guard, P patrol, M mine, H heal, R retreat, hold J manual fire, T point fire, X stop, B ranges, Backspace cancel | Space pause, N step, Tab world, 1-0 squads, PgUp/PgDn cycle, arrows pan, wheel zoom, F fit, I map, Esc exit",
             view.world_id.0, view.episode_revision, view.tick, counts.ships, counts.projectiles,
             self.renderer.selection.squads().len(),
             if self.paused { "PAUSED" } else { "RUNNING" }, selected, self.input_feedback,
