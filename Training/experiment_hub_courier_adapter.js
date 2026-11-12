@@ -29,8 +29,10 @@ function courierMetrics(source) {
     const metrics={};
     const stats=source?.metrics;
     if(!stats||typeof stats!=='object'||Array.isArray(stats))return metrics;
+    // The wire contract accepts 256 measurements. Reserve room for the
+    // mandatory checkpoint fields; chart downselection happens separately.
     for(const [name,value] of Object.entries(stats)) {
-        if(Object.keys(metrics).length>=90)break;
+        if(Object.keys(metrics).length>=253)break;
         if(['generation','active_training_time','checkpoint_write_time'].includes(name)||
             !/^[a-z][a-z0-9_]{0,39}$/.test(name)||
             !Number.isFinite(value)||Math.abs(value)>1e12)continue;
