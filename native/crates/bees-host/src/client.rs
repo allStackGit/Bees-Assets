@@ -293,7 +293,17 @@ impl NativeClient {
         if self.window.is_key_down(Key::Down) { self.renderer.camera.center.y -= distance; }
         let mouse = self.window.get_mouse_pos(MouseMode::Discard);
         if let (Some((_, scroll)), Some((x, y))) = (self.window.get_scroll_wheel(), mouse) {
-            self.renderer.camera.zoom_at(1.15_f32.powf(scroll.clamp(-10.0, 10.0)), x, y, width, height);
+            let factor = 1.15_f32.powf(scroll.clamp(-10.0, 10.0));
+            if let Some(map_point) = self.renderer.minimap_world_at(bounds, x, y) {
+                // The minimap cursor is in map coordinates, not the camera
+                // framebuffer. Zoom toward that actual world point rather
+                // than shifting by a potentially massive false offset.
+                self.renderer.camera.center = map_point;
+                self.renderer.camera.zoom_at(factor, width as f32 * 0.5,
+                    height as f32 * 0.5, width, height);
+            } else {
+                self.renderer.camera.zoom_at(factor, x, y, width, height);
+            }
         }
         let accepts_orders = !briefing && !self.playback && view.terminal_result.is_none();
         let pointer_active = self.window.is_active();
