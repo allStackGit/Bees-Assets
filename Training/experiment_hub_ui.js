@@ -2583,6 +2583,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const launchText=distributedLaunch
                 ?' · Coordinated Start '+distributedLaunch.status+': '+distributedLaunch.reason
                 :'';
+            const abortText=j.distributed_abort_requested_at
+                ?' · Startup abort requested: native collector shutdown and verified claim release pending'
+                :'';
             const distributedSummary=groupWorkers.length
                 ?' · Distributed collectors: '+groupWorkers.map(worker=>
                     (worker.assigned_machine_id||'unassigned')+' '+worker.status+
@@ -2593,7 +2596,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     ' ('+j.resource_bundle.index+'/'+j.resource_bundle.size+')'
                 :'';
             const statusCell=cell(tr,status+lineage+promoted+gpuProof+readinessText+
-                checkpointRecovery+noTrainer+distributedSummary+launchText+bundleLabel+
+                checkpointRecovery+noTrainer+distributedSummary+launchText+abortText+bundleLabel+
                 (hasSuccessor&&['waiting_adapter','waiting_predecessor'].includes(j.status)
                     ?' · Cancel downstream stage first':''));
 
@@ -2723,7 +2726,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             ?'Also authorize ONE learner GPU Start after all collectors have fresh verified running receipts. '+
                                 'This permission expires after 20 minutes, is lost on coordinator restart, '+
                                 'and is disarmed if any machine, dispatch or lease identity changes. '+
-                                'The learner is never retried automatically. '
+                                'The learner is never retried automatically. If any collector exits before learner Start, the remaining sidecars receive native Stop/cleanup requests. '
                             :'The GPU learner must be started separately after verification. ')+
                         'All resource allocations stay fixed.'))return;
                     try {
@@ -2759,6 +2762,29 @@ document.addEventListener('DOMContentLoaded', () => {
                         });
                         feedback('hub-job-message',
                             'Future learner Start disarmed. Native collectors and reservations remain unchanged.');
+                    }catch(error){feedback('hub-job-message',error.message);}
+                    await reload();
+                }));
+            if(j.distributed_rollout_managed===true&&
+                j.status==='waiting_adapter'&&!j.dispatch_id&&
+                !j.distributed_abort_requested_at&&groupWorkers.length>0)
+                actions.append(button('Abort distributed startup',async()=>{
+                    if(!confirm('Abandon this unstarted TinyBrains learner and its '+
+                        groupWorkers.length+' remote collectors? Undelivered Starts will be cancelled; '+
+                        'already dispatched collectors receive native Stop requests. '+
+                        'No running or uncertain process claim will be released without verified termination. '+
+                        'The learner GPU claim is released only after every sidecar is proven stopped '+
+                        'or absent. Native stops can remain pending on offline machines. '+
+                        'Existing checkpoints and runs are never deleted.'))return;
+                    try{
+                        const result=await action('hub/distributed/tinybrains/abort-startup',{
+                            learner_job_id:j.id,
+                            expected_collector_job_ids:groupWorkers.map(worker=>worker.id),
+                            confirm_abort:true,
+                        });
+                        feedback('hub-job-message',result.learner_cancelled
+                            ?'Distributed startup cancelled; all native collector claims safely released.'
+                            :'Distributed startup abort requested; awaiting sidecar Stop/absence receipts.');
                     }catch(error){feedback('hub-job-message',error.message);}
                     await reload();
                 }));
