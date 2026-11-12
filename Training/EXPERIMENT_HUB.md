@@ -1987,7 +1987,20 @@ through its size when opened, not as one atomic multi-machine snapshot;
 captured byte boundary. The Hub also warns about such files when parts are
 ready. Rewritten or redirected files fail export rather than silently mixing
 unverified bytes. Download the numbered parts before the private export
-session expires. Selected chart metrics never truncate the underlying source
+session expires. The loopback CLI also supports the same export sessions
+without loading ZIP parts into Node.js memory:
+
+```sh
+node Training/experiment_hub_cli.js post exports --data request.json
+node Training/experiment_hub_cli.js get exports/<session-id>
+node Training/experiment_hub_cli.js get exports/<session-id>/part/1 --output part-0001.zip
+```
+
+Use the returned session ID and repeat the last command for each numbered
+part. Output files are created exclusively: an existing download is never
+overwritten, and incomplete transfers are rejected. Export sessions and
+artifact access remain governed by the local coordinator, not a new remote
+transfer endpoint. Selected chart metrics never truncate the underlying source
 histories; files that change during export may require a later capture.
 Native project exports also include `hub-resource-claims.json`, which pins
 each selected job's persisted Hub CPU/RAM/GPU lease and physical GPU bindings.
