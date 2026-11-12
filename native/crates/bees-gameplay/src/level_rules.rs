@@ -113,6 +113,10 @@ pub struct NativeBomberContact {
     /// geometry, preserving Level.State.Squads order. Command activation
     /// and timer callbacks use this same authoritative view.
 pub trait NativeLevelCommandContext {
+    /// Unity Command.SetFinalize releases user squads' IsLockedOn state.
+    /// Level command completion is the one authoritative event source.
+    fn player_command_finished(&mut self, _owner: SquadLifetime) {}
+
     /// Admit scheduled source squads at the completed fixed-tick boundary.
     fn deploy_reinforcements(
         &mut self, _world: &mut CombatWorld, _events: &mut NativeLevelEventProcessor, _tick: u64,
@@ -929,6 +933,11 @@ where
                 &state.combat.events()[previous_event_count..],
                 |mother, beacon| allocate_late_minion(mother, beacon),
             )?;
+        }
+        // Use the Level's finished-command list, not a second per-frame
+        // scan of all player squads, to release source Lock On state.
+        for finished in state.events.latest_finished_commands() {
+            state.metadata.player_command_finished(finished.owner);
         }
         // The observation history is part of the same World lifetime:
         // sample after physical movement and combat events, never via

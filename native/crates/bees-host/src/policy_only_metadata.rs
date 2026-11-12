@@ -419,6 +419,12 @@ impl NativeLevelRewardMetadata for NativePolicyOnlyMetadata {
 }
 
 impl NativeLevelCommandContext for NativePolicyOnlyMetadata {
+    fn player_command_finished(&mut self, owner: SquadLifetime) {
+        if let Some(permission) = self.player.squads.get_mut(&owner) {
+            permission.locked_on = false;
+        }
+    }
+
     fn deploy_reinforcements(
         &mut self, world: &mut CombatWorld, events: &mut bees_gameplay::level_events::NativeLevelEventProcessor, tick: u64,
     ) -> Result<(), bees_gameplay::level_rules::NativeLevelStepError> {

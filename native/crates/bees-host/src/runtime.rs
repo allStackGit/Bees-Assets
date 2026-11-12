@@ -335,12 +335,19 @@ where
             self.driver.invalidate_environment(index).map_err(HostPlayerInputError::Driver)?;
         }
         for plan in plans {
-            if plan.retires_pending_authority() {
-                self.connection.retire_player_requests(plan.owner())
+            let owner = plan.owner();
+            let replacing_command = plan.retires_pending_authority();
+            if replacing_command {
+                self.connection.retire_player_requests(owner)
                     .map_err(HostPlayerInputError::Connection)?;
             }
-            match plan.execute(self.simulation.world_mut(index).expect("located world"))
-                .map_err(HostPlayerInputError::Gameplay)? {
+            let outcome = plan.execute(self.simulation.world_mut(index).expect("located world"))
+                .map_err(HostPlayerInputError::Gameplay)?;
+            let stopped_chase = matches!(
+                outcome,
+                bees_gameplay::player_inputs::NativePlayerCommandOutcome::StopChasing { stopped: true },
+            );
+            match outcome {
                 bees_gameplay::player_inputs::NativePlayerCommandOutcome::Command(
                     bees_gameplay::commands::Activation::Applied { .. }) |
                 bees_gameplay::player_inputs::NativePlayerCommandOutcome::Move { reachable: true } =>
@@ -350,6 +357,15 @@ where
                     counts.stopped_chases += usize::from(stopped);
                 },
                 _ => counts.unavailable_squads += 1,
+            }
+            // A replaced command finalizes immediately even when the
+            // game is paused. Timed completions are handled by Level.step.
+            if replacing_command || stopped_chase {
+                self.simulation.world_mut(index).expect("located world")
+                    .state.metadata.set_player_locked_on(owner, false)
+                    .map_err(|error| HostPlayerInputError::Gameplay(
+                        NativePlayerInputError::Source(error)
+                    ))?;
             }
         }
         Ok(counts)
