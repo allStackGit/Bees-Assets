@@ -25,6 +25,7 @@ def main():
     parser.add_argument("--remote-rollout-endpoint", action="append", default=[])
     parser.add_argument("--remote-rollout-weight", action="append", type=int, default=[])
     parser.add_argument("--remote-rollout-key-file")
+    parser.add_argument("--ram-budget-mb", type=int)
     args = parser.parse_args()
     if min(args.updates, args.threads, args.live_matches, args.waves, args.actions) < 1:
         parser.error("All training limits must be positive.")
@@ -40,6 +41,8 @@ def main():
             len(args.remote_rollout_weight) != len(args.remote_rollout_endpoint) + 1 or
             any(not 1 <= w <= 1024 for w in args.remote_rollout_weight)):
         parser.error("Fixed rollout weights require one positive weight for the learner and each remote worker.")
+    if args.ram_budget_mb is not None and not 128 <= args.ram_budget_mb <= 1000000:
+        parser.error("The approved RAM lease must be 128–1000000 MiB.")
     if args.gpu_vram_mb is not None and (args.device != "cuda" or args.gpu_vram_mb < 1):
         parser.error("A positive GPU memory ceiling requires the ROCm device.")
     run = args.run.resolve(strict=True)
@@ -85,6 +88,7 @@ def main():
         if not auto_balance:
             print("TinyBrains backend lacks automatic collector balancing; "
                   "using existing fixed equal collector targets.", file=sys.stderr)
+    auto_env_pool = find_spec("ants_mapoca.engine_pool") is not None
     sys.argv = [
         "ants_mapoca.learning_path",
         "--config", str(spec),
@@ -93,6 +97,8 @@ def main():
         "--self-play-device", optimization_device,
         *(["--self-play-collection-device", collection_device] if collection_device else []),
         "--self-play-threads", str(args.threads),
+        *(["--auto-env-pool", "--ram-budget-mb", str(args.ram_budget_mb)]
+          if auto_env_pool and args.ram_budget_mb is not None else []),
         "--live-matches", str(args.live_matches),
         "--waves", str(args.waves),
         "--rollout-actions", str(args.actions),
