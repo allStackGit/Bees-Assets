@@ -228,9 +228,18 @@ class BottleneckEvidence {
         // Optional derived measures must not crowd out project-owned source
         // metrics or violate the existing bounded wire contract.
         const available=Math.max(0,MAX_SOURCE_METRICS-Object.keys(metrics).length);
-        const extras=Object.fromEntries(Object.entries(derived).slice(0,available));
-        const enriched={...progress,metrics:{...metrics,...extras}};
-        return JSON.stringify(enriched).length<=32768?enriched:progress;
+        const additions=Object.entries(derived).slice(0,available);
+        // A heavily instrumented job can approach the 32-KiB report limit.
+        // Retain the earliest, most important completed-stage evidence
+        // instead of discarding *all* derived metrics when the full set
+        // would exceed the unchanged wire envelope.
+        while(additions.length) {
+            const enriched={...progress,metrics:{
+                ...metrics,...Object.fromEntries(additions)}};
+            if(JSON.stringify(enriched).length<=32768)return enriched;
+            additions.pop();
+        }
+        return progress;
     }
 }
 function validateProgress(value,projectId) {
