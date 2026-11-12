@@ -77,7 +77,7 @@ async function main(argv=process.argv.slice(2)) {
         JSON.parse(body);
     }else if(values.data!==undefined)throw Error('GET does not accept --data.');
     const response=await fetch(url,{method,redirect:'error',
-        signal:AbortSignal.timeout(exportPart?300000:30000),
+        signal:AbortSignal.timeout(exportPart?3600000:30000),
         ...(body!==undefined?{body,headers:{'Content-Type':'application/json'}}:{})});
     if(exportPart) {
         if(!response.ok) {
@@ -92,7 +92,9 @@ async function main(argv=process.argv.slice(2)) {
         // Open exclusively. Failed transfers only remove the inode we
         // created; never overwrite or delete an operator's existing file.
         const fd=fs.openSync(values.output,'wx',0o600);
-        const created=fs.fstatSync(fd);
+        let created;
+        try{created=fs.fstatSync(fd);}
+        catch(error){fs.closeSync(fd);throw error;}
         let handedOff=false,received=0;
         try {
             const destination=fs.createWriteStream(values.output,{fd,autoClose:true});
