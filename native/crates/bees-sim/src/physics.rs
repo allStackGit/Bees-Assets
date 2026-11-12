@@ -920,6 +920,10 @@ pub struct PhysicsStepCounts {
     /// bounds cross the grid edge or span >64 cells (ship/obstacle phases).
     pub ship_grid_overflow_bodies: u64,
     pub obstacle_grid_overflow_bodies: u64,
+    /// Actual shared-grid population rebuilds during the fixed-step
+    /// measurement window, including late collision/weapon queries.
+    pub ship_grid_rebuilds: u64,
+    pub obstacle_grid_rebuilds: u64,
     pub narrowphase_tests: u64,
     pub trigger_enters: u64,
     pub obstacle_trigger_enters: u64,
@@ -1232,6 +1236,7 @@ impl KinematicPhysics {
             let ship = &self.ships[index];
             if ship.active { ship.collider.bounds } else { None }
         });
+        self.counts.ship_grid_rebuilds += 1;
         self.grid_contents = GridContents::Ships;
         true
     }
@@ -1295,6 +1300,7 @@ impl KinematicPhysics {
                 let obstacle = &self.obstacles[index];
                 if obstacle.active { obstacle.collider.bounds } else { None }
             });
+            self.counts.obstacle_grid_rebuilds += 1;
             self.grid_contents = GridContents::Obstacles;
         }
         self.grid.candidates(Aabb {
@@ -1745,6 +1751,7 @@ impl KinematicPhysics {
             let ship = &self.ships[index];
             if ship.active { ship.collider.bounds } else { None }
         });
+        self.counts.ship_grid_rebuilds += 1;
         self.grid_contents = GridContents::Ships;
         self.counts.ship_grid_overflow_bodies = self.grid.overflow.len() as u64;
         self.overlaps_current.clear();
@@ -1818,6 +1825,7 @@ impl KinematicPhysics {
                 let obstacle = &self.obstacles[index];
                 if obstacle.active { obstacle.collider.bounds } else { None }
             });
+            self.counts.obstacle_grid_rebuilds += 1;
             self.grid_contents = GridContents::Obstacles;
             self.counts.obstacle_grid_overflow_bodies = self.grid.overflow.len() as u64;
         }
@@ -2003,6 +2011,8 @@ impl crate::simulation::GameRules<KinematicPhysics> for KinematicPhysicsRules {
             broadphase_candidates: counts.broadphase_candidates,
             ship_grid_overflow_bodies: counts.ship_grid_overflow_bodies,
             obstacle_grid_overflow_bodies: counts.obstacle_grid_overflow_bodies,
+            ship_grid_rebuilds: counts.ship_grid_rebuilds,
+            obstacle_grid_rebuilds: counts.obstacle_grid_rebuilds,
             narrowphase_tests: counts.narrowphase_tests,
             trigger_enters: counts.trigger_enters + counts.obstacle_trigger_enters +
                 counts.ship_obstacle_enters + counts.obstacle_pair_enters +
