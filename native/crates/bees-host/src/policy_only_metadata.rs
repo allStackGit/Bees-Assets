@@ -749,10 +749,11 @@ impl NativePlayerAuthority for NativePolicyOnlyMetadata {
     }
 
     fn player_fog_vision_radius(&self, ship_id: i64) -> Option<f32> {
-        // The exact source effective range is captured for original ships;
-        // a Scout-created minion also carries its template's authored sight.
+        // FogOfWarVision.Range is the sprite's diameter; the physical
+        // reveal radius is its half-width. Newly dropped Scout beacons
+        // are registered through the same effective_vision map.
         self.effective_vision.get(&ship_id)
-            .map(|vision| vision.effective_range as f32 * 2.0)
+            .map(|vision| vision.effective_range as f32)
     }
 
     fn weapon_obstacles_enabled(&self) -> Option<bool> { Some(self.player.has_obstacles) }

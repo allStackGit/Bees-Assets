@@ -1,7 +1,7 @@
 //! Small, window-independent tactical renderer of authoritative live geometry.
 //! Owns only pixels/camera/selection; it never mutates or steps a battle.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::io::{self, Write};
 use std::sync::OnceLock;
 use bees_sim::collision::{Aabb, Pose};
@@ -70,6 +70,7 @@ pub struct NativeRenderCounts {
     pub command_target_markers: usize,
     /// Presentation-only pixel coverage; headless physics does no work.
     pub fog_sources: usize,
+    pub fog_fading_sources: usize,
     pub fog_occluded_pixels: usize,
 }
 
@@ -79,6 +80,13 @@ pub struct NativeSoftwareRenderer {
     pixels: Vec<u32>,
     /// Allocated only for fog-enabled graphical Levels and reused by frame.
     fog_coverage: Vec<u8>,
+    /// UI lifecycle only: Unity FogOfWarVision remains after a ship death,
+    /// shrinking its mask by 0.8 every 0.1 simulation seconds.
+    fog_context: Option<(WorldId, u64)>,
+    fog_render_pass: u64,
+    fog_live: HashMap<i64, FogLiveSource>,
+    fog_fades: Vec<FogFade>,
+    pending_fog_fades: Vec<FogFade>,
     pub camera: NativeCamera,
     /// Selection is scoped to a WorldId AND episode revision by the client.
     pub selected_ship: Option<i64>,
@@ -106,6 +114,28 @@ pub struct NativeSoftwareRenderer {
     pub hovered_tactical_action: Option<super::HudAction>,
     debris_frame: Option<(WorldId, u64, u64)>,
     obstacle_debris: Vec<ObstacleDebris>,
+}
+
+#[derive(Clone, Copy)]
+struct FogLiveSource {
+    position: Vec2,
+    radius: f32,
+    seen_pass: u64,
+}
+
+#[derive(Clone, Copy)]
+struct FogFade {
+    position: Vec2,
+    radius: f32,
+    born_tick: u64,
+}
+
+impl FogFade {
+    fn current_radius(self, tick: u64, dt: f32) -> f32 {
+        let elapsed = tick.saturating_sub(self.born_tick) as f32 * dt;
+        let phases = (elapsed / 0.1).floor().max(0.0);
+        self.radius * 0.8f32.powf(phases)
+    }
 }
 
 struct ObstacleDebris {
@@ -169,7 +199,9 @@ impl NativeSoftwareRenderer {
             return Err(io::Error::new(io::ErrorKind::InvalidInput, "invalid viewport or bounds"));
         }
         Ok(Self { width, height, pixels: vec![0; width * height],
-            fog_coverage: Vec::new(),
+            fog_coverage: Vec::new(), fog_context: None, fog_render_pass: 0,
+            fog_live: HashMap::new(), fog_fades: Vec::new(),
+            pending_fog_fades: Vec::new(),
             camera: NativeCamera::fit(bounds, width, height), selected_ship: None,
             selection: NativeSquadSelection::default(),
             selected_squad_lookup: HashSet::new(),
@@ -261,8 +293,8 @@ impl NativeSoftwareRenderer {
         tactical_hud::shooting_hit(self.width, self.height, x, y)
     }
 
-    /// Reuse the player squad's actual current ownership, and the source's
-    /// 2x FogOfWarVision range. A policy-controlled or enemy hull can never
+    /// Reuse the player squad's actual current ownership, and the source
+    /// FogOfWarVision mask radius (half its 2x sight-range diameter). A policy-controlled or enemy hull can never
     /// reveal the local player's map merely because its geometry is nearby.
     fn fog_source_radius(view: &NativeRenderWorldView<'_>, ship_id: i64) -> Option<f32> {
         let owner = view.roster.owning_squad(ship_id)?;
@@ -279,54 +311,119 @@ impl NativeSoftwareRenderer {
     fn fog_visible_at(&self, view: &NativeRenderWorldView<'_>, point: Vec2) -> bool {
         if !view.player_authority.player_fog_of_war_enabled() { return true; }
         if !point.is_finite() { return false; }
-        view.combat.render_ships().any(|(ship, body)| {
+        if view.combat.render_ships().any(|(ship, body)| {
             let Some(radius) = Self::fog_source_radius(view, ship.entity_id)
                 else { return false };
             let delta = body.motion.position - point;
             delta.length_squared() <= radius * radius
-        })
+        }) {
+            return true;
+        }
+        // This is the same transient SpriteMask fade the renderer paints.
+        // Never let a fade from a previous world/episode grant visibility.
+        self.fog_context == Some((view.world_id, view.episode_revision)) &&
+            self.fog_fades.iter().any(|fade| {
+                let radius = fade.current_radius(view.tick, view.fixed_step_seconds);
+                radius >= 1.5 &&
+                    (fade.position - point).length_squared() <= radius * radius
+            })
     }
 
     /// Rasterize overlapping source sight discs into one reusable screen
     /// mask. Each observer costs one square root per covered scanline, not
     /// one geometry test for every pixel or other ship. No fog work happens
     /// in the headless simulation or in levels whose source disables fog.
+    fn reveal_fog_circle(&mut self, position: Vec2, source_radius: f32) {
+        let radius = source_radius * self.camera.pixels_per_unit;
+        if !radius.is_finite() || radius <= 0.0 { return; }
+        let (cx, cy) = self.project(position);
+        if !cx.is_finite() || !cy.is_finite() ||
+            cx + radius < 0.0 || cx - radius >= self.width as f32 ||
+            cy + radius < 0.0 || cy - radius >= self.height as f32 {
+            return;
+        }
+        let first_y = (cy - radius).floor().max(0.0) as usize;
+        let last_y = (cy + radius).ceil().min(self.height as f32 - 1.0) as usize;
+        let radius_squared = radius * radius;
+        for y in first_y..=last_y {
+            let dy = y as f32 + 0.5 - cy;
+            if dy.abs() > radius { continue; }
+            let half_width = (radius_squared - dy * dy).max(0.0).sqrt();
+            // An offscreen circle must not reveal pixel zero merely
+            // because a negative float saturates when cast to usize.
+            if cx + half_width < 0.0 || cx - half_width >= self.width as f32 {
+                continue;
+            }
+            let first_x = (cx - half_width).ceil().max(0.0) as usize;
+            let last_x = (cx + half_width).floor()
+                .min(self.width as f32 - 1.0) as usize;
+            if first_x <= last_x {
+                let row = y * self.width;
+                self.fog_coverage[row + first_x..=row + last_x].fill(1);
+            }
+        }
+    }
+
     fn apply_player_fog(&mut self, view: &NativeRenderWorldView<'_>,
         counts: &mut NativeRenderCounts,
     ) {
-        if !view.player_authority.player_fog_of_war_enabled() { return; }
+        if !view.player_authority.player_fog_of_war_enabled() {
+            self.fog_live.clear();
+            self.fog_fades.clear();
+            self.fog_context = None;
+            return;
+        }
+        let context = (view.world_id, view.episode_revision);
+        if self.fog_context != Some(context) {
+            self.fog_live.clear();
+            self.fog_fades.clear();
+            self.fog_context = Some(context);
+            self.fog_render_pass = 0;
+        }
+        self.fog_render_pass = self.fog_render_pass.wrapping_add(1);
+        if self.fog_render_pass == 0 {
+            // A presentation counter wrap must never resurrect an old
+            // ship mask as if it had been observed in this frame.
+            self.fog_render_pass = 1;
+            self.fog_live.clear();
+        }
         self.fog_coverage.resize(self.pixels.len(), 0);
         self.fog_coverage.fill(0);
         for (ship, body) in view.combat.render_ships() {
-            let Some(source_radius) = Self::fog_source_radius(view, ship.entity_id)
+            let Some(radius) = Self::fog_source_radius(view, ship.entity_id)
                 else { continue };
             counts.fog_sources += 1;
-            let radius = source_radius * self.camera.pixels_per_unit;
-            if !radius.is_finite() || radius <= 0.0 { continue; }
-            let (cx, cy) = self.project(body.motion.position);
-            if !cx.is_finite() || !cy.is_finite() { continue; }
-            let first_y = (cy - radius).floor().max(0.0) as usize;
-            let last_y = (cy + radius).ceil()
-                .min(self.height as f32 - 1.0) as usize;
-            if first_y > last_y { continue; }
-            let radius_squared = radius * radius;
-            for y in first_y..=last_y {
-                let dy = y as f32 + 0.5 - cy;
-                if dy.abs() > radius { continue; }
-                let half_width = (radius_squared - dy * dy).max(0.0).sqrt();
-                let first_x = (cx - half_width).ceil().max(0.0) as usize;
-                let last_x = (cx + half_width).floor()
-                    .min(self.width as f32 - 1.0) as usize;
-                if first_x <= last_x {
-                    let row = y * self.width;
-                    self.fog_coverage[row + first_x..=row + last_x].fill(1);
-                }
+            self.fog_live.insert(ship.entity_id, FogLiveSource {
+                position: body.motion.position, radius,
+                seen_pass: self.fog_render_pass,
+            });
+            self.reveal_fog_circle(body.motion.position, radius);
+        }
+        self.pending_fog_fades.clear();
+        let pass = self.fog_render_pass;
+        self.fog_live.retain(|&id, last| {
+            if last.seen_pass == pass { return true; }
+            // Unity Kill(false) starts a mask fade; a temporarily inactive
+            // but still-living ship must not fabricate a death animation.
+            if view.combat.ship(id).is_some_and(|ship| ship.vitals.is_dead()) {
+                self.pending_fog_fades.push(FogFade {
+                    position: last.position, radius: last.radius,
+                    born_tick: view.tick,
+                });
             }
+            false
+        });
+        self.fog_fades.append(&mut self.pending_fog_fades);
+        self.fog_fades.retain(|fade|
+            fade.current_radius(view.tick, view.fixed_step_seconds) >= 1.5);
+        for index in 0..self.fog_fades.len() {
+            let fade = self.fog_fades[index];
+            counts.fog_fading_sources += 1;
+            self.reveal_fog_circle(fade.position,
+                fade.current_radius(view.tick, view.fixed_step_seconds));
         }
         for (pixel, visible) in self.pixels.iter_mut().zip(&self.fog_coverage) {
             if *visible == 0 {
-                // The source SpriteMask hides every battlefield sprite,
-                // projectile, health bar and target marker outside sight.
                 *pixel = 0x080e19;
                 counts.fog_occluded_pixels += 1;
             }
