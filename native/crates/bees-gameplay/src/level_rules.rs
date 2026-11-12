@@ -221,6 +221,7 @@ pub trait NativeLevelCommandContext {
     /// Next authored admission boundary on this Level's single fixed-step
     /// clock. The frontend may show it, but must never execute the wave.
     fn next_reinforcement_tick(&self) -> Option<u64> { None }
+    fn pending_reinforcement_waves(&self) -> usize { 0 }
 
     /// Admit scheduled source squads at the completed fixed-tick boundary.
     fn deploy_reinforcements(

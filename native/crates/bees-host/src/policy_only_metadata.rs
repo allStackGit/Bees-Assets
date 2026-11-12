@@ -453,6 +453,10 @@ impl NativeLevelCommandContext for NativePolicyOnlyMetadata {
         self.reinforcements.front().map(|wave| wave.scheduled_tick())
     }
 
+    fn pending_reinforcement_waves(&self) -> usize {
+        self.reinforcements.len()
+    }
+
     fn reinforcement_gauges(&self) -> bees_gameplay::level_rules::NativeReinforcementGauges {
         // Source owns the queue. Sample it on status requests only;
         // never walk deferred squads during an ordinary physics tick.
