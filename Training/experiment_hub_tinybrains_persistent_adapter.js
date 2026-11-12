@@ -295,7 +295,7 @@ function createTinyBrainsPersistentDockerAdapter({
     seedCheckpointSha256,seedPpoUpdates,profiles,
     image='tinybrains-rocm:halifax-node',sourceWindowsRoot='B:/TinyBrains/Ants-MAPOCA',
     enableDualGpu=false,remoteCollectors=null,profilePpo=false,
-    cpuParallelism='profile',
+    cpuParallelism='allocation',
 }) {
     if(!['profile','allocation'].includes(cpuParallelism))
         throw Error('TinyBrains CPU concurrency must be pinned to its profile or allocated CPU budget.');
