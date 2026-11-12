@@ -8,6 +8,7 @@ const path=require('node:path');
 const crypto=require('node:crypto');
 const {LinuxSupervisor,gpuRuntimeProof}=require('./experiment_hub_linux_supervisor');
 const {DockerSupervisor}=require('./experiment_hub_docker_supervisor');
+const {MixedLinuxSupervisor}=require('./experiment_hub_mixed_linux_supervisor');
 const {WindowsSupervisor}=require('./experiment_hub_windows_supervisor');
 const {inspectHost}=require('./experiment_hub_host');
 const {matchingLeaseBudget}=require('./experiment_hub_resources');
@@ -16,6 +17,9 @@ const {evaluationEvidence,evaluationRules,suiteIds,supportsEvaluation}=
     require('./experiment_hub_evaluation');
 const ID=/^[a-z][a-z0-9_-]{0,47}$/;
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+const dockerCapable=supervisor=>supervisor instanceof DockerSupervisor||
+    supervisor?.dockerSupervisor instanceof DockerSupervisor;
 
 class LocalExecution {
     constructor({machineId,supervisor,projects}) {
@@ -51,12 +55,13 @@ class LocalExecution {
             tinybrains_rollout_key_fingerprint:this.supervisor.adapters?.tinybrains_rollout?.tinybrains_rollout_key_fingerprint||null,
             tinybrains_rollout_thread_limit:this.supervisor.adapters?.tinybrains_rollout?.tinybrains_rollout_thread_limit||0,
             tinybrains_dual_gpu_profiles:this.supervisor.gpuEnabled===true&&
-                this.supervisor instanceof DockerSupervisor&&
+                dockerCapable(this.supervisor)&&
                 this.supervisor.adapters?.tinybrains?.gpu_dual_execution==='split-ppo'
                 ?[...(this.supervisor.adapters.tinybrains.tinybrains_dual_gpu_profiles||[])]:[],
             tinybrains_imports:{...this.supervisor.adapters?.tinybrains?.tinybrains_imports},
             gpu_projects:this.projects.filter(project=>
                 this.supervisor.gpuEnabled===true&&
+                (!this.supervisor.gpuProjects||this.supervisor.gpuProjects.includes(project))&&
                 (this.supervisor.gpuExecution==='cuda'
                     ?this.supervisor.adapters?.[project]?.gpu_execution==='cuda'
                     :typeof this.supervisor.adapters?.[project]?.gpu_verify_args==='function')),
@@ -64,7 +69,7 @@ class LocalExecution {
                 this.supervisor.gpuEnabled===true&&
                 this.supervisor.adapters?.[project]?.gpu_execution==='cuda'&&
                 this.supervisor.adapters?.[project]?.gpu_sharing==='cooperative-pytorch'&&
-                (this.supervisor.gpuExecution==='cuda'||this.supervisor instanceof DockerSupervisor))};
+                (this.supervisor.gpuExecution==='cuda'||dockerCapable(this.supervisor)))};
     }
     async handle(order) {
         if(!order||!['start','stop','inspect','qualify_gpu'].includes(order.action)||
@@ -108,7 +113,7 @@ class LocalExecution {
                     throw Error('GPU access probe frozen configuration fingerprint mismatch.');
                 const count=job.resources?.gpu_count;
                 const dual=count===2&&
-                    this.supervisor instanceof DockerSupervisor&&
+                    dockerCapable(this.supervisor)&&
                     localAdapter?.gpu_dual_execution==='split-ppo'&&
                     job.frozen_parameters?.device==='dual'&&
                     job.resources?.gpu_mode==='exclusive';
@@ -118,7 +123,7 @@ class LocalExecution {
                     job.status!=='waiting_adapter'||
                     !(dual||single&&(job.resources?.gpu_mode==='exclusive'||
                         job.resources?.gpu_mode==='shared'&&
-                        this.supervisor instanceof DockerSupervisor&&
+                        dockerCapable(this.supervisor)&&
                         localAdapter?.gpu_sharing==='cooperative-pytorch'))||
                     lease.resources?.gpu_mode!==job.resources?.gpu_mode||
                     lease.resources?.gpu_count!==count||
@@ -182,7 +187,7 @@ class LocalExecution {
                 // Native Linux and Windows keep missing ownership unverified.
                 if(order.action==='inspect'&&
                     typeof this.supervisor.reconcileAbsent==='function')
-                    observed=await this.supervisor.reconcileAbsent(job.id);
+                    observed=await this.supervisor.reconcileAbsent(job.id,job.project_id);
                 else {
                     observed={state:'unverified'};
                     diagnostic='Missing local ownership record; inspect the native supervisor before recovery.';
@@ -202,7 +207,7 @@ class LocalExecution {
                 typeof this.supervisor.reconcileAbsent==='function') {
                 // Preserve the actual pre-launch rejection when Docker proves
                 // that no owned container could have started.
-                try{observed=await this.supervisor.reconcileAbsent(job.id);}
+                try{observed=await this.supervisor.reconcileAbsent(job.id,job.project_id);}
                 catch{observed=null;}
             }
             if(!observed)observed={state:'unverified'};
@@ -373,10 +378,11 @@ function fromEnvironment(env=process.env,options={}) {
                 throw Error('Required Linux CPU and memory controllers are not available.');
         }
         const docker=env.EXPERIMENT_HUB_LINUX_BACKEND==='docker';
+        const mixed=env.EXPERIMENT_HUB_LINUX_BACKEND==='mixed';
         if(env.EXPERIMENT_HUB_LINUX_BACKEND!==undefined&&
-            !['native','docker'].includes(env.EXPERIMENT_HUB_LINUX_BACKEND))
+            !['native','docker','mixed'].includes(env.EXPERIMENT_HUB_LINUX_BACKEND))
             throw Error('Unknown local Linux execution backend.');
-        if(!docker) {
+        if(!docker&&!mixed) {
             const journal=path.join(root,'docker-owner.json');
             if(fs.existsSync(journal)) {
                 const saved=JSON.parse(fs.readFileSync(journal,'utf8'));
@@ -389,10 +395,11 @@ function fromEnvironment(env=process.env,options={}) {
         }
         const local={root,machineId,adapters,
             gpuEnabled:env.EXPERIMENT_HUB_ENABLE_ROCM==='1',
-            dockerSudo:docker&&env.EXPERIMENT_HUB_DOCKER_SUDO==='1'};
+            dockerSudo:(docker||mixed)&&env.EXPERIMENT_HUB_DOCKER_SUDO==='1'};
         supervisor=options.createSupervisor
             ?options.createSupervisor(local)
-            :docker?new DockerSupervisor(local):new LinuxSupervisor(local);
+            :mixed?new MixedLinuxSupervisor(local)
+                :docker?new DockerSupervisor(local):new LinuxSupervisor(local);
     }else {
         const helperPath=env.EXPERIMENT_HUB_WINDOWS_HELPER;
         const helperSha256=env.EXPERIMENT_HUB_WINDOWS_HELPER_SHA256;

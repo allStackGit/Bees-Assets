@@ -160,7 +160,7 @@ function dockerCgroupCounters(doc,fsApi=fs,pathApi=path) {
     }
 }
 class DockerSupervisor {
-    constructor({root,machineId,adapters,gpuEnabled=false,dockerSudo=false}) {
+    constructor({root,machineId,adapters,gpuEnabled=false,dockerSudo=false,allowNativePeer=false}) {
         this.root=fs.realpathSync(root);
         this.machineId=machineId;
         this.adapters=adapters;
@@ -181,7 +181,7 @@ class DockerSupervisor {
         if(fs.existsSync(native)) {
             const existing=JSON.parse(fs.readFileSync(native,'utf8'));
             if(!Array.isArray(existing.records)||
-                existing.records.some(r=>ACTIVE.has(r.state)))
+                (!allowNativePeer&&existing.records.some(r=>ACTIVE.has(r.state))))
                 throw Error('An unresolved native supervisor owner blocks Docker adoption.');
         }
         this.journal=fs.existsSync(this.file)

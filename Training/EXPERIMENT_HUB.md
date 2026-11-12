@@ -1449,6 +1449,60 @@ waits for the trainer to flush a checkpoint and exit, and does not kill
 unfinished PPO updates. Containers remain available for inspect/recovery;
 the supervisor does not delete a container whose ownership is ambiguous.
 
+### Halifax mixed Courier CPU + TinyBrains ROCm Docker owner (opt-in)
+
+To run both projects under the **same enrolled Halifax machine**, select
+`EXPERIMENT_HUB_LINUX_BACKEND=mixed`. This is an explicit third execution
+mode; the existing `native` and `docker` modes retain their exclusive
+ownership checks. Mixed mode requires the trusted Courier native adapter and
+the trusted TinyBrains persistent Docker adapter, not two independently
+enrolled agents. The operator-approved example is
+`Training/experiment_hub_halifax_mixed_adapter.example.js`.
+
+The mixed agent keeps the original, independent systemd and Docker durable
+journals in one private `EXPERIMENT_HUB_LOCAL_ROOT`. It serializes launches
+using `mixed-launch.lock` and checks the **combined** unresolved CPU/RAM
+commitment against the real host before invoking either owner. Both projects
+still use their existing adapter-specific checkpoint/STOP and progress
+contracts. Courier has no GPU lease; only TinyBrains may request a Docker
+ROCm device. An unresolved native GPU owner blocks a new Docker GPU claim.
+The Hub's normal machine reservations remain the cross-job scheduling budget.
+Do not run a second local agent or an independent supervisor writer against
+the same owner root. A leftover mixed launch lock after a crash is an
+ownership-recovery condition, **not** a reason to delete its file blindly.
+
+Before opting in, check both existing owner ledgers and any GPU preflight
+journals, ensure that their identities belong to this machine, and reconcile
+any unresolved launches. The agent will not resume or start previous jobs on
+startup. Existing terminal jobs remain in their respective ledgers; do not
+delete or migrate them to change modes. Create only the new Courier artifacts
+directory; do not modify TinyBrains' imported checkpoint or original run.
+
+For the Halifax layout in the example:
+
+```sh
+mkdir -p "$HOME/ai/experiments/experiment-hub/courier-jobs"
+chmod 700 "$HOME/ai/experiments/experiment-hub/courier-jobs"
+# Configure these variables in the existing private agent environment:
+# EXPERIMENT_HUB_LINUX_BACKEND=mixed
+# EXPERIMENT_HUB_LOCAL_ADAPTERS=/home/halifax/ai/projects/experiment-hub/Assets/Training/experiment_hub_halifax_mixed_adapter.example.js
+# EXPERIMENT_HUB_ENABLE_EXECUTION=1
+# EXPERIMENT_HUB_ENABLE_ROCM=1
+# EXPERIMENT_HUB_DOCKER_SUDO=1  # ONLY with explicitly approved noninteractive Docker access
+```
+
+Both systemd CPU/memory enforcement and Docker cgroup-v2 enforcement must
+pass local preflight before either backend advertises Start readiness. A
+TinyBrains GPU job still requires its **current** bounded, leased PCI/HIP
+runtime proof and a real successful container launch. This mode has not
+established live Halifax qualification until the operator observes Courier
+and TinyBrains concurrently running, with distinct durable owners, correct
+combined CPU/RAM limits, a single selected R9700, and completed checkpoint
+stops. In Compare, run the 6+6 CPU pair before the 12+12 pair with frozen
+per-project configuration, identical GPU binding, and original learning
+metrics. Missing PPO metrics or sample counts must be reported as missing,
+not inferred from throughput.
+
 #### Opt-in native Linux GPU launch
 
 After deployment qualification, a Linux agent can set
