@@ -233,6 +233,9 @@ class LocalExecution {
             ...(Number.isSafeInteger(observed.cpu_throttle_events)&&
                 observed.cpu_throttle_events>=0
                 ?{cpu_throttle_events:observed.cpu_throttle_events}:{}),
+            ...(Number.isSafeInteger(observed.cpu_quota_periods)&&
+                observed.cpu_quota_periods>=0
+                ?{cpu_quota_periods:observed.cpu_quota_periods}:{}),
             ...(Number.isSafeInteger(observed.peak_job_memory_bytes)&&
                 observed.peak_job_memory_bytes>=0
                 ?{peak_job_memory_bytes:observed.peak_job_memory_bytes}:{}),
