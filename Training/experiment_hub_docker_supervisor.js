@@ -66,7 +66,18 @@ function writeAtomic(file,value) {
     try {
         fs.writeFileSync(tmp,JSON.stringify(value,null,2)+'\n',
             {flag:'wx',mode:0o600});
+        // A successful rename alone does not prove the ownership journal
+        // survives power loss. Sync the new file before publishing its name.
+        const fd=fs.openSync(tmp,'r');
+        try{fs.fsyncSync(fd);}
+        finally{fs.closeSync(fd);}
         fs.renameSync(tmp,file);
+        // Persist the directory entry before the local owner is authorized
+        // to continue. An fsync failure remains an ambiguous, fail-closed
+        // condition rather than proof that a trainer can be relaunched.
+        const directory=fs.openSync(path.dirname(file),'r');
+        try{fs.fsyncSync(directory);}
+        finally{fs.closeSync(directory);}
     }finally {
         // A failed write or rename must not leave a private, stale copy
         // of native ownership behind or consume disk on every retry.
