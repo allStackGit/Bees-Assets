@@ -24,6 +24,7 @@ pub mod fleet_inventory;
 pub mod policy_only_metadata;
 pub mod presentation;
 pub mod player_trace;
+pub mod world_fingerprint;
 pub mod policy_action_trace;
 #[cfg(feature = "client")]
 pub mod client;

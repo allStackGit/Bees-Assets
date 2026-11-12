@@ -66,6 +66,12 @@ enum TraceRecord {
         levels: Vec<NativeTraceLevel>,
     },
     PlayerInput { round: u64, tick: u64, action: NativePlayerInput },
+    /// Version-2 optional sampled physical state. Never implies all
+    /// command, random, network, or reward state is identical.
+    PhysicalStateCheckpoint {
+        round: u64, world_id: u64, episode_revision: u64,
+        tick: u64, sha256: String,
+    },
     PlayerInputTraceEnd {
         rounds: u64,
         failed_window: Option<String>,
@@ -79,8 +85,17 @@ pub struct NativeTraceInput {
     pub action: NativePlayerInput,
 }
 
+pub struct NativeTraceCheckpoint {
+    pub round: u64,
+    pub world_id: WorldId,
+    pub episode_revision: u64,
+    pub tick: u64,
+    pub sha256: String,
+}
+
 pub struct NativePlayerTrace {
     pub inputs: VecDeque<NativeTraceInput>,
+    pub checkpoints: VecDeque<NativeTraceCheckpoint>,
     pub end_round: u64,
     pub policy_actions_sha256: Option<String>,
 }
@@ -94,15 +109,17 @@ impl NativePlayerTrace {
         let mut records = BufReader::new(File::open(path)?).lines()
             .map(|line| serde_json::from_str::<TraceRecord>(&line?).map_err(io::Error::from));
         let header = records.next().transpose()?;
-        match header {
-            Some(TraceRecord::PlayerInputTrace { schema_version: 1, run_config_sha256,
+        let schema_version = match header {
+            Some(TraceRecord::PlayerInputTrace { schema_version, run_config_sha256,
                 gameplay_config_sha256, policy_manifest_sha256, levels })
-                if run_config_sha256 == config_sha256 &&
+                if (schema_version == 1 || schema_version == 2) &&
+                    run_config_sha256 == config_sha256 &&
                     gameplay_config_sha256 == gameplay_sha256 && levels == expected_levels &&
-                    policy_manifest_sha256.as_deref() == expected_model => {}
+                    policy_manifest_sha256.as_deref() == expected_model => schema_version,
             _ => return Err(invalid("player trace does not match the offline battle configuration")),
-        }
+        };
         let mut inputs = VecDeque::new();
+        let mut checkpoints = VecDeque::new();
         let mut previous = 0;
         while let Some(record) = records.next().transpose()? {
             match record {
@@ -110,12 +127,27 @@ impl NativePlayerTrace {
                     previous = round;
                     inputs.push_back(NativeTraceInput { round, tick, action });
                 }
+                TraceRecord::PhysicalStateCheckpoint {
+                    round, world_id, episode_revision, tick, sha256,
+                } if schema_version == 2 && round >= previous && tick <= round &&
+                    sha256.len() == 64 &&
+                    sha256.bytes().all(|byte| byte.is_ascii_hexdigit()) &&
+                    expected_levels.iter().any(|level| level.world_id == world_id) => {
+                    previous = round;
+                    checkpoints.push_back(NativeTraceCheckpoint {
+                        round, world_id: WorldId(world_id),
+                        episode_revision, tick, sha256,
+                    });
+                }
                 TraceRecord::PlayerInputTraceEnd { rounds, failed_window: None, policy_actions_sha256 }
                     if rounds >= previous && policy_actions_sha256.is_some() == expected_model.is_some() => {
                     if records.next().is_some() {
                         return Err(invalid("records follow the end of the player trace"));
                     }
-                    return Ok(Self { inputs, end_round: rounds, policy_actions_sha256 });
+                    if schema_version == 2 && checkpoints.is_empty() {
+                        return Err(invalid("version-2 player trace has no physical state checkpoints"));
+                    }
+                    return Ok(Self { inputs, checkpoints, end_round: rounds, policy_actions_sha256 });
                 }
                 _ => return Err(invalid("invalid, out-of-order, or failed player trace")),
             }
