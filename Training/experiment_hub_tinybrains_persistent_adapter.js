@@ -206,6 +206,22 @@ function recordedTinyBrainsMetrics(row,updateWall) {
             worker.transport_roundtrip_seconds,'seconds');
         add('collector_'+i+'_elapsed_seconds',worker.elapsed_seconds,'seconds');
         add('collector_'+i+'_service_seconds',worker.collector_service_seconds,'seconds');
+        // Separately timed remote/learner stages are observational; never
+        // treat socket send/receive blocking as measured network bandwidth.
+        for(const [suffix,name] of [
+            ['serialize_seconds','collector_client_serialize_seconds'],
+            ['compress_seconds','collector_client_compress_seconds'],
+            ['send_seconds','collector_client_send_seconds'],
+            ['receive_seconds','collector_client_receive_seconds'],
+            ['decode_seconds','collector_client_decode_seconds'],
+            ['ingestion_seconds','collector_learner_ingestion_seconds'],
+            ['worker_receive_seconds','collector_worker_receive_seconds'],
+            ['worker_decode_seconds','collector_worker_decode_seconds']])
+            add('collector_'+i+'_'+suffix,worker[name],'seconds');
+        add('collector_'+i+'_request_wire_bytes',
+            worker.collector_request_wire_bytes,'bytes');
+        add('collector_'+i+'_response_wire_bytes',
+            worker.collector_response_wire_bytes,'bytes');
         add('collector_'+i+'_rollout_engine_step_seconds',
             worker.rollout_engine_step_seconds,'seconds');
         add('collector_'+i+'_learner_inference_seconds',
