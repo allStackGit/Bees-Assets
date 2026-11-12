@@ -59,6 +59,9 @@ pub struct NativeClient {
     selected_world: usize,
     selection_owner: Option<(WorldId, u64)>,
     paused: bool,
+    /// The Unity game exposes mouse-edge scrolling as a user preference.
+    /// F6 toggles it locally without adding a gameplay or persisted setting.
+    edge_scroll_enabled: bool,
     next_step: Instant,
     previous_frame: Instant,
     left_was_down: bool,
@@ -106,6 +109,9 @@ pub struct NativeClient {
     pub numbered_squad_rows_drawn: u64,
     pub striker_bomb_indicators_drawn: u64,
     pub minimap_camera_moves: u64,
+    pub camera_pan_frames: u64,
+    pub camera_wheel_pans: u64,
+    pub camera_boundary_clamps: u64,
     pub numbered_shortcut_selections: u64,
     pub cycled_shortcut_selections: u64,
     pub minimap_move_orders_submitted: u64,
@@ -124,7 +130,8 @@ impl NativeClient {
         window.set_target_fps(60);
         let now = Instant::now();
         Ok(Self { window, renderer, bounds, selected_world: 0, selection_owner: None,
-            paused: false, next_step: now, previous_frame: now, left_was_down: false,
+            paused: false, edge_scroll_enabled: false,
+            next_step: now, previous_frame: now, left_was_down: false,
             right_was_down: false, right_press: None, last_left_press: None, double_left_press: false,
             input_feedback: "",
             result_controls: None,
@@ -144,7 +151,9 @@ impl NativeClient {
             viewport_resizes: 0,
             minimap_markers_drawn: 0, numbered_squad_rows_drawn: 0,
             striker_bomb_indicators_drawn: 0,
-            minimap_camera_moves: 0, numbered_shortcut_selections: 0,
+            minimap_camera_moves: 0, camera_pan_frames: 0,
+            camera_wheel_pans: 0, camera_boundary_clamps: 0,
+            numbered_shortcut_selections: 0,
             cycled_shortcut_selections: 0,
             minimap_move_orders_submitted: 0,
             tactical_button_clicks: 0, squad_tab_clicks: 0,
@@ -157,6 +166,8 @@ impl NativeClient {
     pub fn focus_camera(&mut self, center: Vec2) {
         if center.is_finite() {
             self.renderer.camera.center = center;
+            let (width, height) = self.renderer.size();
+            self.renderer.camera.constrain_to_map(self.bounds, width, height);
         }
     }
 
@@ -351,24 +362,68 @@ impl NativeClient {
         if self.window.is_key_pressed(Key::F, KeyRepeat::No) {
             self.renderer.camera = NativeCamera::fit(self.bounds, width, height);
         }
-        let distance = 500.0 * elapsed / self.renderer.camera.pixels_per_unit;
-        if self.window.is_key_down(Key::Left) { self.renderer.camera.center.x -= distance; }
-        if self.window.is_key_down(Key::Right) { self.renderer.camera.center.x += distance; }
-        if self.window.is_key_down(Key::Up) { self.renderer.camera.center.y += distance; }
-        if self.window.is_key_down(Key::Down) { self.renderer.camera.center.y -= distance; }
+        if self.window.is_active() && self.window.is_key_pressed(Key::F6, KeyRepeat::No) {
+            self.edge_scroll_enabled = !self.edge_scroll_enabled;
+            self.input_feedback = if self.edge_scroll_enabled {
+                "Mouse-edge scrolling enabled"
+            } else { "Mouse-edge scrolling disabled" };
+        }
+        let speed = 500.0 * elapsed / self.renderer.camera.pixels_per_unit;
+        let mut pan_x = 0.0;
+        let mut pan_y = 0.0;
+        if self.window.is_key_down(Key::Left) { pan_x -= speed; }
+        if self.window.is_key_down(Key::Right) { pan_x += speed; }
+        if self.window.is_key_down(Key::Up) { pan_y += speed; }
+        if self.window.is_key_down(Key::Down) { pan_y -= speed; }
         let mouse = self.window.get_mouse_pos(MouseMode::Discard);
-        if let (Some((_, scroll)), Some((x, y))) = (self.window.get_scroll_wheel(), mouse) {
-            let factor = 1.15_f32.powf(scroll.clamp(-10.0, 10.0));
-            if let Some(map_point) = self.renderer.minimap_world_at(bounds, x, y) {
-                // The minimap cursor is in map coordinates, not the camera
-                // framebuffer. Zoom toward that actual world point rather
-                // than shifting by a potentially massive false offset.
-                self.renderer.camera.center = map_point;
-                self.minimap_camera_moves += 1;
-                self.renderer.camera.zoom_at(factor, width as f32 * 0.5,
-                    height as f32 * 0.5, width, height);
-            } else {
-                self.renderer.camera.zoom_at(factor, x, y, width, height);
+        if self.edge_scroll_enabled && self.window.is_active() &&
+            !self.renderer.show_shooting_menu {
+            if let Some((x, y)) = mouse.filter(|&(x, y)|
+                self.renderer.minimap_world_at(bounds, x, y).is_none()) {
+                // Unity's left/right and top/bottom edge pan, adapted to
+                // framebuffer coordinates. Fixed physical pixels produce
+                // consistent input across 4K and small windows.
+                const EDGE: f32 = 18.0;
+                if x <= EDGE { pan_x -= speed; }
+                else if x >= width as f32 - EDGE { pan_x += speed; }
+                if y <= EDGE { pan_y += speed; }
+                else if y >= height as f32 - EDGE { pan_y -= speed; }
+            }
+        }
+        if pan_x != 0.0 || pan_y != 0.0 {
+            self.renderer.camera.center += Vec2::new(pan_x, pan_y);
+            self.camera_pan_frames += 1;
+        }
+        // Source Shift+wheel pans horizontally and Control+wheel vertically,
+        // rather than zooming. Native mouse drivers may also provide a
+        // genuine horizontal wheel axis; use the same camera owner.
+        if let Some((horizontal, vertical)) = self.window.get_scroll_wheel() {
+            let shift = self.window.is_key_down(Key::LeftShift) ||
+                self.window.is_key_down(Key::RightShift);
+            let control = self.window.is_key_down(Key::LeftCtrl) ||
+                self.window.is_key_down(Key::RightCtrl);
+            let wheel_pixels = 120.0 / self.renderer.camera.pixels_per_unit;
+            let mut pan = Vec2::new(horizontal.clamp(-10.0, 10.0) * wheel_pixels, 0.0);
+            if shift {
+                pan.x -= vertical.clamp(-10.0, 10.0) * wheel_pixels;
+            } else if control {
+                pan.y += vertical.clamp(-10.0, 10.0) * wheel_pixels;
+            } else if vertical != 0.0 {
+                if let Some((x, y)) = mouse {
+                    let factor = 1.15_f32.powf(vertical.clamp(-10.0, 10.0));
+                    if let Some(map_point) = self.renderer.minimap_world_at(bounds, x, y) {
+                        self.renderer.camera.center = map_point;
+                        self.minimap_camera_moves += 1;
+                        self.renderer.camera.zoom_at(factor, width as f32 * 0.5,
+                            height as f32 * 0.5, width, height);
+                    } else {
+                        self.renderer.camera.zoom_at(factor, x, y, width, height);
+                    }
+                }
+            }
+            if pan.x != 0.0 || pan.y != 0.0 {
+                self.renderer.camera.center += pan;
+                self.camera_wheel_pans += 1;
             }
         }
         let allows_input = !briefing && !self.playback && view.terminal_result.is_none();
@@ -934,6 +989,12 @@ impl NativeClient {
             Some(NativeTargetMode::ManualFire) => Some(HudAction::PointFire),
             None => None,
         };
+        // Clamp after all navigation inputs, numbered-squad focus, minimap
+        // drags and window resizing. Never let a game-control input move
+        // the graphical camera beyond the authored map.
+        if self.renderer.camera.constrain_to_map(self.bounds, width, height) {
+            self.camera_boundary_clamps += 1;
+        }
         let render_started = Instant::now();
         let counts = self.renderer.render(&view, self.bounds);
         if accepts_orders {
