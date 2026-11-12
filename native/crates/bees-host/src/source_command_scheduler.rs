@@ -145,8 +145,16 @@ impl NativeSourceCommandScheduler {
 
     fn ensure_clock(
         &mut self, index: usize, revision: u64, first_delay: i32,
+        roster_order: &[SquadLifetime],
     ) -> io::Result<()> {
         if self.worlds[index].clock.is_none_or(|clock| clock.revision != revision) {
+            // Validate this source Level's owner once per episode, not on
+            // every fixed step. A misplaced registration must not issue
+            // a targeting request for another world's SquadLifetime.
+            let level_id = i64::from(self.worlds[index].level_id);
+            if roster_order.iter().any(|owner| owner.level_id != level_id) {
+                return Err(invalid("source HiveMind scheduler Level ID does not match its squads"));
+            }
             self.schedule_measurements.episode_clock_resets += 1;
             // Unity SetupHivemind's initial one-shot timer is
             // (InitialDelay - 0.25) followed by recurring quarter seconds.
@@ -186,17 +194,25 @@ impl NativeSourceCommandScheduler {
         for index in 0..self.worlds.len() {
             let world = host.simulation().world(index)
                 .ok_or_else(|| invalid("registered native Level disappeared"))?;
+            // A Stage that has disabled HiveMind does not have a source
+            // command timer. Do not require an initial delay, construct
+            // a dormant clock, or consume a quarter-second callback for it.
+            match world.state.metadata.source_hivemind_active() {
+                Some(false) => continue,
+                Some(true) => {},
+                None => return Err(invalid("source HiveMind authorization missing from Level")),
+            }
             let initial = world.state.metadata.source_hivemind_initial_delay_seconds()
                 .ok_or_else(|| invalid("source HiveMind delay missing from Level"))?;
             let tick = world.tick();
-            self.ensure_clock(index, world.episode_revision(), initial)?;
+            self.ensure_clock(index, world.episode_revision(), initial,
+                world.state.events.roster().source_order())?;
             let level_id = self.worlds[index].level_id;
             let fixed_dt = self.worlds[index].fixed_dt;
             let clock = self.worlds[index].clock.as_mut().expect("initialized source clock");
             if tick >= clock.next_due_tick {
                 self.schedule_measurements.due_beats += 1;
-                let active = world.state.metadata.source_hivemind_active() == Some(true) &&
-                    !world.is_failed() && !world.state.events.is_failed() &&
+                let active = !world.is_failed() && !world.state.events.is_failed() &&
                     !world.state.events.completed() && !world.state.events.was_aborted();
                 if ready && active {
                     self.schedule_measurements.ready_beats += 1;
@@ -265,7 +281,8 @@ impl NativeSourceCommandScheduler {
             }
             let initial = world.state.metadata.source_hivemind_initial_delay_seconds()
                 .ok_or_else(|| invalid("source HiveMind delay missing from Level"))?;
-            self.ensure_clock(index, world.episode_revision(), initial)?;
+            self.ensure_clock(index, world.episode_revision(), initial,
+                world.state.events.roster().source_order())?;
             let due = self.worlds[index].clock.expect("initialized source clock").next_due_tick;
             limit = limit.min(due.saturating_sub(world.tick()).max(1));
         }
