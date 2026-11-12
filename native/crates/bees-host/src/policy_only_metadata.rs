@@ -516,7 +516,7 @@ impl NativeLevelCommandContext for NativePolicyOnlyMetadata {
             self.player.cease_fire.insert(child, enabled);
             if world.ship(beacon_id).is_some_and(|ship| !ship.vitals.is_dead()) {
                 world.set_ship_cease_fire(beacon_id, enabled)
-                    .map_err(GameCommandError::Combat)?;
+                    .map_err(GameCommandError::World)?;
             }
         }
         Ok(())
