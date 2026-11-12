@@ -2258,6 +2258,90 @@ class ExperimentHub {
         this.commit(next);
         return {id:selected.id,status:selected.status,dispatch_id:selected.dispatch_id};
     }
+    // Authorize an entire already-reserved remote rollout tier in one durable
+    // transition. No partial Starts are offered if any collector, endpoint, or
+    // native owner has lost eligibility since the operator's last refresh.
+    // Learner Start retains its independent running-collector safety barrier.
+    authorizeDistributedCollectors(value) {
+        if(!object(value)||value.confirm_start!==true||
+            Object.keys(value).some(key=>![
+                'learner_job_id','expected_collector_job_ids','confirm_start',
+            ].includes(key))||
+            !UUID.test(String(value.learner_job_id||''))||
+            !Array.isArray(value.expected_collector_job_ids)||
+            value.expected_collector_job_ids.length<1||
+            value.expected_collector_job_ids.length>8||
+            value.expected_collector_job_ids.some(id=>!UUID.test(String(id)))||
+            new Set(value.expected_collector_job_ids).size!==
+                value.expected_collector_job_ids.length)
+            throw Error('Confirm the learner and exact 1–8 remote collector jobs to start.');
+        const snapshot=this.snapshot();
+        const learner=snapshot.jobs.find(job=>job.id===value.learner_job_id);
+        if(!learner||learner.project_id!=='tinybrains'||
+            learner.distributed_rollout_managed!==true||
+            learner.frozen_parameters?.remote_rollouts!==true||
+            learner.status!=='waiting_adapter'||learner.dispatch_id||
+            !learner.lease_id||predecessorBlock(snapshot,learner))
+            throw Error('Only an unstarted, checkpoint-eligible distributed TinyBrains learner can authorize its collectors.');
+        const learnerHost=snapshot.machines.find(host=>
+            host.id===learner.assigned_machine_id);
+        const endpoints=learnerHost?.tinybrains_remote_rollout_endpoints;
+        const learnerLease=snapshot.reservations.find(lease=>
+            lease.id===learner.lease_id&&lease.job_id===learner.id&&
+            lease.project_id==='tinybrains'&&
+            lease.machine_id===learner.assigned_machine_id&&
+            lease.issued_by==='experiment-hub'&&
+            lease.status==='acknowledged'&&lease.receipt_fresh===true);
+        if(!learnerHost||learnerHost.status!=='connected'||
+            learnerHost.local_executor_enabled!==true||
+            learnerHost.native_preflight_passed!==true||
+            !learnerHost.installed_projects?.includes('tinybrains')||
+            !learnerLease||nativeResourceBlock(learner,learnerLease)||
+            gpuStartBlock(learner,learnerLease,learnerHost)||
+            !supportsTinyBrainsProfile(learnerHost,learner)||
+            !Array.isArray(endpoints)||endpoints.length<1||
+            endpoints.length>8||new Set(endpoints).size!==endpoints.length)
+            throw Error('The learner must retain its fresh native resource claim, GPU access qualification and pinned remote endpoints.');
+        const workers=snapshot.jobs.filter(job=>
+            job.project_id==='tinybrains_rollout'&&
+            job.frozen_parameters?.learner_job_id===learner.id&&
+            job.status!=='cancelled');
+        const expected=new Set(value.expected_collector_job_ids);
+        if(workers.length!==endpoints.length||workers.length!==expected.size||
+            workers.some(job=>!expected.has(job.id)))
+            throw Error('Collector membership changed; refresh before authorizing any Start.');
+        const seenEndpoints=new Set(),seenMachines=new Set([learnerHost.id]);
+        for(const worker of workers) {
+            if(worker.status!=='waiting_adapter'||worker.dispatch_id)
+                throw Error('A collector already started or changed state; no group Starts authorized.');
+            const readiness=nativeStartReadiness(snapshot,worker);
+            if(!readiness.eligible)
+                throw Error('Collector '+worker.id+' is not ready: '+readiness.reason);
+            const host=snapshot.machines.find(item=>item.id===worker.assigned_machine_id);
+            if(!host||seenMachines.has(host.id)||
+                !endpoints.includes(host.tinybrains_rollout_endpoint)||
+                seenEndpoints.has(host.tinybrains_rollout_endpoint)||
+                host.tinybrains_rollout_key_fingerprint!==
+                    learnerHost.tinybrains_remote_key_fingerprint)
+                throw Error('Collector host or pinned HMAC endpoint identity changed; no Starts authorized.');
+            seenMachines.add(host.id);
+            seenEndpoints.add(host.tinybrains_rollout_endpoint);
+        }
+        const next=copy(this.state),requestedAt=now();
+        for(const worker of workers) {
+            const selected=next.jobs.find(job=>job.id===worker.id);
+            selected.status='start_requested';
+            selected.dispatch_id=crypto.randomUUID();
+            selected.start_requested_at=requestedAt;
+            selected.start_first_offered_at=null;
+            selected.status_reason='Remote collector Start authorized as part of the learner group; awaiting native OS enforcement.';
+        }
+        this.commit(next);
+        return {learner_job_id:learner.id,
+            collector_job_ids:workers.map(job=>job.id),
+            starts_authorized:workers.length,
+            learner_start_authorized:false};
+    }
     withdrawStart(value) {
         if(!object(value)||value.confirm_withdraw!==true||
             !UUID.test(String(value.expected_dispatch_id||'')))
