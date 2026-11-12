@@ -98,7 +98,7 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'ppo_gpu_pixel_budget',
         'ppo_prestaged_board_states','ppo_reused_board_states',
         'rollout_inference_shape_groups','rollout_inference_readbacks',
-        'rollout_opponent_shape_groups','rollout_opponent_readbacks',
+        'rollout_inference_forward_chunks','rollout_opponent_shape_groups','rollout_opponent_readbacks',
         'collector_auto_balance_adjustments',
         'collector_auto_balance_accepted','collector_auto_balance_settled',
         'collector_balance_changed_next_update',
@@ -221,6 +221,8 @@ function recordedTinyBrainsMetrics(row,updateWall) {
             worker.rollout_inference_shape_groups,'count');
         add('collector_'+i+'_inference_readbacks',
             worker.rollout_inference_readbacks,'count');
+        add('collector_'+i+'_inference_forward_chunks',
+            worker.rollout_inference_forward_chunks,'count');
         add('collector_'+i+'_opponent_shape_groups',
             worker.rollout_opponent_shape_groups,'count');
         add('collector_'+i+'_opponent_readbacks',
