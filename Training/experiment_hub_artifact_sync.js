@@ -111,8 +111,10 @@ class ArtifactMirror {
             !Number.isSafeInteger(size)||size<1||size>MAX_FILE)
             fail('Invalid artifact snapshot.',400);
         const root=path.dirname(hub.file);
-        const storage=privateTree(root,['hub-remote-artifacts',jobId]);
-        const staging=privateTree(root,['hub-remote-artifact-staging',jobId]);
+        // The coordinator data root may have ordinary parent permissions.
+        // Its mirroring subdirectories, not the whole Hub root, are private.
+        const storage=privateTree(path.join(root,'hub-remote-artifacts'),[jobId]);
+        const staging=privateTree(path.join(root,'hub-remote-artifact-staging'),[jobId]);
         const parts=relative.split('/');
         const destination=path.join(privateTree(storage,parts.slice(0,-1)),
             parts[parts.length-1]);
@@ -205,8 +207,9 @@ class ArtifactMirror {
                 fs.unlinkSync(info.partFile);
                 fail('Artifact snapshot checksum changed; retry a fresh snapshot.',409);
             }
-            const existing=regular(info.destination,true);
-            if(existing)fs.unlinkSync(info.destination);
+            regular(info.destination,true);
+            // Rename over the previous complete snapshot atomically. Never
+            // expose the partially received version as an export source.
             fs.renameSync(info.partFile,info.destination);
             durableJson(info.metaFile,{relative,sha,size,complete:true});
             return {offset:size,complete:true};
