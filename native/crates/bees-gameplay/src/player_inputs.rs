@@ -21,9 +21,9 @@ pub trait NativePlayerAuthority {
     /// Unity activates fog only for a Level with a user controller. Old
     /// snapshots lacking Level.ActivateFogOfWar remain unmasked.
     fn player_fog_of_war_enabled(&self) -> bool { false }
-    /// Authentic local viewer side, not any squad marked user-controlled.
-    /// A fog-enabled scene without this information reveals nothing.
-    fn player_fog_viewer_side(&self) -> Option<i32> { None }
+    /// Source Stage owner of the local player's tactical viewport.
+    /// Unlike squad permission flags, this is one side per view.
+    fn player_viewer_side(&self) -> Option<i32> { None }
     /// Unity uses Range = 2 * (Sight or MaxRange) as a SpriteMask
     /// *diameter*, hence the visibility radius is Sight or MaxRange.
     /// This display-only value never replaces HiveMind perception.

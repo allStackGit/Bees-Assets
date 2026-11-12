@@ -270,8 +270,7 @@ impl NativeSoftwareRenderer {
         for &owner in view.roster.source_order() {
             let Some(squad) = view.roster.get(owner) else { continue };
             let Some(number) = squad.source_hotkey_number else { continue };
-            if number > 10 || !view.player_authority.player_permissions(owner)
-                .is_some_and(|permission| permission.user_controlled) {
+            if number > 10 || !view.is_local_player_squad(owner) {
                 continue;
             }
             let Some(&ship_id) = squad.members.first() else { continue };
@@ -299,11 +298,7 @@ impl NativeSoftwareRenderer {
     /// reveal the local player's map merely because its geometry is nearby.
     fn fog_source_radius(view: &NativeRenderWorldView<'_>, ship_id: i64) -> Option<f32> {
         let owner = view.roster.owning_squad(ship_id)?;
-        if view.roster.get(owner)?.side != view.player_authority.player_fog_viewer_side()? ||
-            !view.player_authority.player_permissions(owner)
-                .is_some_and(|permission| permission.user_controlled) {
-            return None;
-        }
+        if !view.is_local_player_squad(owner) { return None; }
         view.player_authority.player_fog_vision_radius(ship_id)
             .filter(|radius| radius.is_finite() && *radius > 0.0)
     }
@@ -906,7 +901,6 @@ impl NativeSoftwareRenderer {
         self.line(x0, y1, x0, y0, edge);
 
         let fog = view.player_authority.player_fog_of_war_enabled();
-        let viewer_side = view.player_authority.player_fog_viewer_side();
         if fog {
             // The same allocation already holds the main-view fog stencil.
             // It has already been used for that viewport's pixel mask; only
@@ -929,10 +923,7 @@ impl NativeSoftwareRenderer {
 
         for (ship, body) in view.combat.render_ships() {
             let owner = view.roster.owning_squad(ship.entity_id);
-            let controlled = owner.is_some_and(|id|
-                view.player_authority.player_permissions(id)
-                    .is_some_and(|permission| permission.user_controlled)
-            ) && (!fog || viewer_side == Some(ship.side));
+            let controlled = owner.is_some_and(|id| view.is_local_player_squad(id));
             let Some((x, y)) = layout.project(body.motion.position)
                 else { continue };
             let px = x.round() as i32;
@@ -992,8 +983,7 @@ impl NativeSoftwareRenderer {
         for &owner in view.roster.source_order() {
             let Some(squad) = view.roster.get(owner) else { continue };
             let Some(number) = squad.source_hotkey_number else { continue };
-            if number > 10 || !view.player_authority.player_permissions(owner)
-                .is_some_and(|permission| permission.user_controlled) {
+            if number > 10 || !view.is_local_player_squad(owner) {
                 continue;
             }
             let Some(&ship_id) = squad.members.first() else { continue };

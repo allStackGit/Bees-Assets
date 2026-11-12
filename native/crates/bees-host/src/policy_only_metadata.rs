@@ -751,7 +751,7 @@ impl NativePlayerAuthority for NativePolicyOnlyMetadata {
         self.activate_fog_of_war == Some(true)
     }
 
-    fn player_fog_viewer_side(&self) -> Option<i32> {
+    fn player_viewer_side(&self) -> Option<i32> {
         self.targeting_context.filter(|source| source.has_player && source.user_side > 0)
             .map(|source| source.user_side)
     }

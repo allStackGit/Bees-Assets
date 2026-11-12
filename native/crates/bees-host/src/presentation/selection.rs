@@ -218,6 +218,7 @@ impl NativeSquadSelection {
 }
 
 fn selectable(view: &NativeRenderWorldView<'_>, owner: SquadLifetime) -> bool {
-    view.player_authority.player_permissions(owner)
-        .is_some_and(|permission| permission.user_controlled && permission.can_accept_input)
+    view.is_local_player_squad(owner) &&
+        view.player_authority.player_permissions(owner)
+            .is_some_and(|permission| permission.can_accept_input)
 }

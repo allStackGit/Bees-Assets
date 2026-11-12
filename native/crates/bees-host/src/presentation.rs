@@ -10,6 +10,7 @@ use bees_gameplay::{squads::NativeSquadRoster,
     player_inputs::NativePlayerAuthority};
 use bees_sim::combat_world::CombatWorld;
 use bees_sim::simulation::WorldId;
+use bees_hivemind::session::SquadLifetime;
 
 mod software;
 mod selection;
@@ -60,6 +61,22 @@ pub struct NativeRenderWorldView<'a> {
 }
 
 impl<'a> NativeRenderWorldView<'a> {
+    /// One source-scoped player ownership predicate for selection, squad
+    /// shortcuts, fog and the minimap. A different side's ships cannot
+    /// inherit this viewer's UI access just because another controller
+    /// marked its squads user-controlled in the shared Level.
+    pub fn is_local_player_squad(&self, owner: SquadLifetime) -> bool {
+        let Some(squad) = self.roster.get(owner) else { return false };
+        if !self.player_authority.player_permissions(owner)
+            .is_some_and(|permission| permission.user_controlled) {
+            return false;
+        }
+        match self.player_authority.player_viewer_side() {
+            Some(side) => squad.side == side,
+            None => !self.player_authority.player_fog_of_war_enabled(),
+        }
+    }
+
     /// Iterate directly over the canonical live bodies. Projectiles,
     /// asteroids and ships all retain their authored collider/gameplay
     /// types; no display-only positional cache or fake interpolator.
