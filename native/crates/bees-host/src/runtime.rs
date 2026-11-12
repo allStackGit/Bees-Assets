@@ -367,6 +367,15 @@ where
                         NativePlayerInputError::Source(error)
                     ))?;
             }
+            if input.action == bees_gameplay::player_inputs::NativePlayerSupportAction::Hold {
+                // Unity StopChasing disables the preference even if no
+                // Aggressive command happened to be active at this instant.
+                self.simulation.world_mut(index).expect("located world")
+                    .state.metadata.set_player_chasing(owner, false)
+                    .map_err(|error| HostPlayerInputError::Gameplay(
+                        NativePlayerInputError::Source(error)
+                    ))?;
+            }
         }
         Ok(counts)
     }
@@ -510,6 +519,50 @@ where
             } else {
                 counts.unavailable_squads += 1;
             }
+        }
+        Ok(counts)
+    }
+
+    /// Enable or disable the original one-second source CheckChase timer
+    /// behavior for user squads without replacing an active command.
+    pub fn player_chase_squads(
+        &mut self, input: &bees_gameplay::player_inputs::NativePlayerSquadChase,
+    ) -> Result<bees_gameplay::player_inputs::NativePlayerCommandCounts, HostPlayerInputError>
+    where M: NativeLevelPlayerContext
+    {
+        use bees_gameplay::player_inputs::{
+            NativePlayerChasePlan, NativePlayerCommandCounts,
+        };
+        let index = (0..self.simulation.world_count()).find(|&index|
+            self.simulation.world(index).is_some_and(|world| world.id == input.world_id))
+            .ok_or(HostPlayerInputError::Gameplay(NativePlayerInputError::StaleWorld))?;
+        let world = self.simulation.world(index).expect("located world");
+        if world.episode_revision() != input.episode_revision {
+            return Err(HostPlayerInputError::Gameplay(NativePlayerInputError::StaleWorld));
+        }
+        let mut counts = NativePlayerCommandCounts::default();
+        let mut plans = Vec::with_capacity(input.squads.len());
+        let mut seen = std::collections::HashSet::with_capacity(input.squads.len());
+        for &owner in &input.squads {
+            if !seen.insert(owner) { continue; }
+            let Some(selected_ship) = world.state.events.roster().get(owner)
+                .and_then(|squad| squad.members.first()).copied() else {
+                counts.rejected_squads += 1;
+                continue;
+            };
+            match NativePlayerChasePlan::prepare(world, input.world_id,
+                input.episode_revision, selected_ship, input.chasing) {
+                Ok(plan) => plans.push(plan),
+                Err(error) if error.is_rejection() => counts.rejected_squads += 1,
+                Err(error) => return Err(HostPlayerInputError::Gameplay(error)),
+            }
+        }
+        if plans.is_empty() { return Ok(counts); }
+        self.driver.invalidate_environment(index).map_err(HostPlayerInputError::Driver)?;
+        for plan in plans {
+            plan.execute(self.simulation.world_mut(index).expect("located world"))
+                .map_err(HostPlayerInputError::Gameplay)?;
+            counts.accepted_squads += 1;
         }
         Ok(counts)
     }
