@@ -389,14 +389,10 @@ impl NativeClient {
             } else if self.window.is_key_pressed(Key::Right, KeyRepeat::No) {
                 focus = (focus + 10) % 40;
             }
+            // Hover alone must not steal keyboard focus: a stationary
+            // cursor over one cell would otherwise undo every arrow key.
+            // Mouse users still click any option directly.
             self.shooting_focus = (focus + 1) as u8;
-            if pointer_active {
-                if let Some(hovered) = mouse.and_then(|(x, y)|
-                    self.renderer.shooting_strategy_at(x, y))
-                {
-                    self.shooting_focus = hovered;
-                }
-            }
         }
         if menu_was_open && pointer_active && left_down && !self.left_was_down {
             self.shooting_press = mouse.and_then(|(x, y)|
