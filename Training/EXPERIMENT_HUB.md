@@ -1891,9 +1891,9 @@ adding unrelated trainer fields. With no explicit preference, measured host reso
 usage and the PPO update counter take priority within the 96-field chart cap;
 remaining slots retain trainer metrics. Source reports may contain up to 256
 metrics (within the unchanged 32-KiB source-progress envelope), while charts
-retain at most 96 per observation. Select high-index
-collector metrics in Train before starting the job to prioritize their chart
-retention; all received source measurements remain in the raw diagnostic
+retain at most 96 per observation. Select high-index collector metrics or any of the 32 supported
+indexed physical-GPU measurements in Train before starting the job to
+prioritize their chart retention; all received source measurements remain in the raw diagnostic
 archive regardless of chart selection. Full project telemetry is not filtered
 by these display choices. Host GPU utilization/VRAM/power measurements describe
 the pinned physical device, not isolated per-job GPU consumption. Passive
