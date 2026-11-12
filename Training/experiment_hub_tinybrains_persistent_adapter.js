@@ -78,7 +78,10 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'ppo_gradient_processing_seconds','ppo_optimizer_step_seconds',
         'ppo_parameter_finite_check_seconds','ppo_gpu_stream_sync_seconds'])
         add(name,row[name],'seconds');
-    for(const name of ['ant_decisions','group_states','births','deaths',
+    for(const name of ['simulation_active_matches','simulation_target_matches',
+        'simulation_concurrency_adjustments','simulation_tuner_accepted',
+        'simulation_tuner_settled',
+        'ant_decisions','group_states','births','deaths',
         'episodes_ended','multi_ant_states','terminal_rewards',
         'carried_matches','open_matches','peak_live_matches',
         'truncated_groups','terminal_groups','collector_count',
@@ -99,6 +102,7 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'states_per_microbatch'])add(name,row[name],'scalar');
     add('gae_lambda',row.gae_lambda,'ratio');
     add('rss_mb',row.rss_mb,'mb');
+    add('simulation_engine_memory_mb',row.simulation_engine_memory_mb,'mb');
     if(Number.isFinite(row.elapsed_seconds))
         add('elapsed_training_seconds',row.elapsed_seconds,'seconds');
 
@@ -183,6 +187,15 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         ?row.collector_samples:[]).slice(0,9).entries()) {
         add('collector_'+i+'_ant_decisions',worker.ant_decisions,'count');
         add('collector_'+i+'_engine_steps',worker.engine_steps,'count');
+        for(const [suffix,name] of [
+            ['sim_matches','simulation_active_matches'],
+            ['sim_target','simulation_target_matches'],
+            ['sim_changes','simulation_concurrency_adjustments'],
+            ['sim_accepted','simulation_tuner_accepted'],
+            ['sim_settled','simulation_tuner_settled']])
+            add('collector_'+i+'_'+suffix,worker[name],'count');
+        add('collector_'+i+'_sim_rss_mb',
+            worker.simulation_engine_memory_mb,'mb');
         add('collector_'+i+'_inference_shape_groups',
             worker.rollout_inference_shape_groups,'count');
         add('collector_'+i+'_inference_readbacks',
