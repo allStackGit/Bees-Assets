@@ -80,9 +80,12 @@ async function main(argv=process.argv.slice(2)) {
         signal:AbortSignal.timeout(exportPart?3600000:30000),
         ...(body!==undefined?{body,headers:{'Content-Type':'application/json'}}:{})});
     if(exportPart) {
-        if(!response.ok) {
-            const error=await response.json();
-            throw Error('HTTP '+response.status+': '+(error?.error||response.statusText));
+        if(response.status!==200) {
+            if(!response.ok) {
+                const error=await response.json();
+                throw Error('HTTP '+response.status+': '+(error?.error||response.statusText));
+            }
+            throw Error('Unexpected ZIP part HTTP status '+response.status+'.');
         }
         const bytes=Number(response.headers.get('content-length'));
         if(response.headers.get('content-type')?.split(';')[0].toLowerCase()!=='application/zip'||
