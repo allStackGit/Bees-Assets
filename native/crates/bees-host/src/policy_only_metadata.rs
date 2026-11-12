@@ -476,6 +476,52 @@ impl NativeLevelCommandContext for NativePolicyOnlyMetadata {
         self.advance_source_chase(world, events, random, completed_tick, dt_seconds)
     }
 
+    fn player_scout_minion_created(
+        &mut self, world: &mut CombatWorld,
+        mother: SquadLifetime, child: SquadLifetime, beacon_id: i64,
+    ) -> Result<(), GameCommandError> {
+        let parent = self.player.squads.get(&mother).copied()
+            .ok_or(GameCommandError::InvalidSquad)?;
+        let source = *self.player.commands.get(&mother)
+            .ok_or(GameCommandError::MissingCombatSnapshot)?;
+        if self.player.squads.contains_key(&child) ||
+            self.player.commands.contains_key(&child) ||
+            self.player.ships.contains_key(&beacon_id) ||
+            world.ship(beacon_id).is_none() {
+            return Err(GameCommandError::InvalidSquad);
+        }
+
+        // Scout.CreateMinionSquad copies these exact source fields.
+        // Scout.DropBeacon then sets CanAcceptUserInput=false. Inherit
+        // read-only state but never grant direct command authority.
+        let mut inherited = source;
+        inherited.is_carrier_squad = Some(false);
+        self.player.squads.insert(child, NativePlayerPermissions {
+            user_controlled: parent.user_controlled,
+            can_accept_input: false, locked_on: false,
+        });
+        self.player.commands.insert(child, inherited);
+        self.player.ships.insert(beacon_id, NativeSourceFormation {
+            offset: Vec2::ZERO, clearance: 0,
+        });
+        if self.player.chasing.contains(&mother) {
+            self.player.chasing.insert(child);
+        }
+        if self.player.matching_speeds.contains_key(&mother) {
+            // Beacon is immobile. Unity's new minion Squad.CurrentSpeed
+            // begins at zero even if its inherited IsMatchingSpeed is true.
+            self.player.matching_speeds.insert(child, 0.0);
+        }
+        if let Some(&enabled) = self.player.cease_fire.get(&mother) {
+            self.player.cease_fire.insert(child, enabled);
+            if world.ship(beacon_id).is_some_and(|ship| !ship.vitals.is_dead()) {
+                world.set_ship_cease_fire(beacon_id, enabled)
+                    .map_err(GameCommandError::Combat)?;
+            }
+        }
+        Ok(())
+    }
+
     fn player_squad_retired(&mut self, owner: SquadLifetime) {
         // A dead source squad cannot reappear under the same lifetime.
         // Drop mutable UI/command preferences without touching original

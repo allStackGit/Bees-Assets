@@ -169,6 +169,15 @@ pub trait NativeLevelCommandContext {
     /// (damage/fleet history) survives as required for reward settlement.
     fn player_squad_retired(&mut self, _owner: SquadLifetime) {}
 
+    /// Scout.CreateMinionSquad inherits its parent's chosen shooting and
+    /// stance state but explicitly disables direct input after AddShip.
+    /// The physical Beacon and exact minion lifetime are already created
+    /// by CombatWorld + NativeSquadRoster; only source metadata is added.
+    fn player_scout_minion_created(
+        &mut self, _world: &mut CombatWorld,
+        _mother: SquadLifetime, _child: SquadLifetime, _beacon_id: i64,
+    ) -> Result<(), GameCommandError> { Ok(()) }
+
     /// The original Squad.CheckChase runs a 1-second source timer.
     /// Only a Level with actual source sight, movement and weapon inputs
     /// may trigger it. The game and headless learner use this same phase
@@ -910,6 +919,11 @@ where
                 }
                 SquadRosterChange::SquadRetired { squad } =>
                     state.metadata.player_squad_retired(squad),
+                SquadRosterChange::MinionCreated {
+                    squad, mother_squad, beacon_id, ..
+                } => state.metadata.player_scout_minion_created(
+                    &mut state.combat, mother_squad, squad, beacon_id,
+                )?,
                 _ => {}
             }
         }
