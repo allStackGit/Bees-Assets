@@ -1595,13 +1595,18 @@ impl KinematicPhysics {
         Ok(self.insert_prevalidated_ship(ship))
     }
 
-    pub(crate) fn insert_prevalidated_ship(&mut self, ship: ShipBody) -> usize {
+    pub(crate) fn insert_prevalidated_ship(&mut self, mut ship: ShipBody) -> usize {
+        // A newly constructed body normally has current world hulls, but
+        // callers may have adjusted its pose or child colliders before
+        // registration. Refresh only that body, not every existing ship:
+        // inserting a fleet must not trigger O(fleet size) geometry work
+        // on the next between-tick spatial query.
+        ship.update_hull();
         let index = self.ships.len();
         self.ships.push(ship);
-        // Dynamic Scout/Carrier spawns may be queried before the next
-        // physics tick. Invalidate only ship geometry and a ship-owned grid;
-        // an existing obstacle grid remains correct.
-        self.ship_hulls_dirty = true;
+        // Invalidate a ship-owned grid so it includes the new collider.
+        // Keep any pending dirtiness from prior ships_mut() calls intact;
+        // the newly inserted hull does not make old hulls dirty.
         if self.grid_contents == GridContents::Ships {
             self.grid_contents = GridContents::Stale;
         }
