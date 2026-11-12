@@ -570,6 +570,7 @@ class LinuxSupervisor {
         const absent={state:'unverified',active:false,unit_exists:false};
         if(record.native_terminal_at&&terminalStates.has(record.state))
             return {...absent,state:record.state,cpu_time_ns:record.terminal_cpu_time_ns??null,
+                cpu_time_seconds:record.terminal_cpu_time_seconds??null,
                 diagnostic:record.diagnostic||null};
         const receipt=this.readTerminalReceipt(record);
         if(!receipt)return absent;
@@ -642,6 +643,8 @@ class LinuxSupervisor {
             const memoryBytes=numeric(p.MemoryCurrent);
             return {state:'running',active:true,unit_exists:true,
                 kernel_limits_verified:kernel?.verified===true,
+                cpu_throttled_seconds:kernel?.cpu_throttled_seconds??null,
+                cpu_throttle_events:kernel?.cpu_throttle_events??null,
                 pid:numeric(p.MainPID)||null,
                 memory_current_mb:memoryBytes==null?null:
                     Math.round(memoryBytes/1048576),
@@ -701,6 +704,7 @@ class LinuxSupervisor {
         if(!record.native_terminal_at&&terminalStates.has(state)) {
             updated.native_terminal_at=updated.observed_at;
             updated.terminal_cpu_time_ns=result.cpu_time_ns??null;
+            updated.terminal_cpu_time_seconds=result.cpu_time_seconds??null;
         }
         if(record.state!==updated.state||
             record.native_verified_at!==updated.native_verified_at||
@@ -713,6 +717,12 @@ class LinuxSupervisor {
             memory_current_mb:result.memory_current_mb??null,
             cpu_time_ns:result.cpu_time_ns??
                 (terminalStates.has(state)?updated.terminal_cpu_time_ns??null:null),
+            // Preserve the decimal seconds path even when total nanoseconds
+            // exceed JavaScript's safe integer range, including after unload.
+            cpu_time_seconds:result.cpu_time_seconds??
+                (terminalStates.has(state)?updated.terminal_cpu_time_seconds??null:null),
+            cpu_throttled_seconds:result.cpu_throttled_seconds??null,
+            cpu_throttle_events:result.cpu_throttle_events??null,
             process_tasks:result.process_tasks??null};
     }
     async quarantineUnverified(jobId,reason) {
