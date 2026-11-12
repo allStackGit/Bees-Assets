@@ -1191,9 +1191,12 @@ reconcile previously owned native work. One-shot sign-off disarms armed
 native automation; unattended scheduling requires a continuous agent.
 Repeated launch instructions are reconciled against the durable local
 journal, never executed twice. One directive is delivered per heartbeat:
-stops take priority, then starts, then GPU device probes, then
-inspections. Jobs rotate fairly within each priority level using
-independent cursors. Once an authenticated native report confirms local
+stops take priority; pending starts and overdue native inspections share
+a fair rotation so neither can indefinitely starve the other. GPU
+device probes and fresh native inspections follow. Explicit checkpoint
+reinspection remains ahead of ordinary fresh inspection. Jobs rotate
+fairly within each priority level using independent cursors. Once an
+authenticated native report confirms local
 Stop intent, that job moves into ordinary inspection while it shuts down;
 a lost or expired report restores urgent Stop priority. This prevents a
 slow shutdown from monopolizing observations of unrelated jobs. The
