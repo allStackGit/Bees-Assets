@@ -277,6 +277,9 @@ function hubMeasuredSeconds(run) {
     const values=new Map();
     for(const point of recent)
         for(const [key,item] of Object.entries(point.metrics||{})) {
+            // This explicitly cumulative run clock is already an X-axis
+            // choice; ranking its median among phases hides useful timings.
+            if(key==='elapsed_training_seconds')continue;
             const scale=item?.unit==='seconds'?1:
                 item?.unit==='milliseconds'?0.001:null;
             if(scale===null||!Number.isFinite(item.value)||
@@ -1444,7 +1447,7 @@ document.addEventListener('DOMContentLoaded', () => {
             secondsMetricsDetails.append(table);
         }
         const note=document.createElement('p');
-        note.textContent='Read-only medians from up to 64 observations in each run’s latest contiguous chart segment, with at least five samples per metric. Second- and millisecond-valued measurements are normalized to seconds. A duration metric may be cumulative rather than a per-update stage; overlapping stages cannot be added. These chart samples are not full-resolution profiling evidence. Export the histories for definitive bottleneck analysis.';
+        note.textContent='Read-only medians from up to 64 observations in each run’s latest contiguous chart segment, with at least five samples per metric. Second- and millisecond-valued measurements are normalized to seconds. Known cumulative elapsed_training_seconds is omitted from this ranking but remains chartable and exportable. Other duration metrics may be cumulative; overlapping stages cannot be added. These chart samples are not full-resolution profiling evidence. Export the histories for definitive bottleneck analysis.';
         secondsMetricsDetails.append(note);
     }
     function renderRolloutRecommendations(runs) {
