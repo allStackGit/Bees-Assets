@@ -7,10 +7,10 @@ pub enum HudAction {
     Attack, Guard, Patrol, Mine, Heal,
     Retreat, Hold, CeaseFire, AttackOnSight, PointFire,
     StopFire, Beacon, Detonate, Charge, SelectAll,
-    MatchSpeed, FreeSpeed, Shooting, LockOn,
+    MatchSpeed, FreeSpeed, Shooting, LockOn, Chase,
 }
 
-pub const ACTIONS: [HudAction; 19] = [
+pub const ACTIONS: [HudAction; 20] = [
     HudAction::Attack, HudAction::Guard, HudAction::Patrol,
     HudAction::Mine, HudAction::Heal,
     HudAction::Retreat, HudAction::Hold, HudAction::CeaseFire,
@@ -18,7 +18,7 @@ pub const ACTIONS: [HudAction; 19] = [
     HudAction::StopFire, HudAction::Beacon, HudAction::Detonate,
     HudAction::Charge, HudAction::SelectAll,
     HudAction::MatchSpeed, HudAction::FreeSpeed, HudAction::Shooting,
-    HudAction::LockOn,
+    HudAction::LockOn, HudAction::Chase,
 ];
 
 impl HudAction {
@@ -43,6 +43,7 @@ impl HudAction {
             Self::FreeSpeed => "Restore every selected ship's authored speed (U)",
             Self::Shooting => "Choose any of the 40 native shooting priorities (S)",
             Self::LockOn => "Lock/unlock enemy commands; locked squads ignore ground moves (O)",
+            Self::Chase => "Enable automatic nearest-visible-enemy pursuit (E); Hold stops it",
         }
     }
 
@@ -67,6 +68,7 @@ impl HudAction {
             Self::FreeSpeed => "UNMATCH",
             Self::Shooting => "TARGETS",
             Self::LockOn => "LOCK ON",
+            Self::Chase => "CHASE",
         }
     }
 }

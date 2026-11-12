@@ -94,6 +94,7 @@ pub struct NativeSoftwareRenderer {
     pub focused_shooting_strategy: u8,
     pub active_tactical_action: Option<super::HudAction>,
     pub locked_selection_all: bool,
+    pub chasing_selection_all: bool,
     pub hovered_tactical_action: Option<super::HudAction>,
     debris_frame: Option<(WorldId, u64, u64)>,
     obstacle_debris: Vec<ObstacleDebris>,
@@ -168,6 +169,7 @@ impl NativeSoftwareRenderer {
             show_minimap: true, show_shooting_menu: false,
             focused_shooting_strategy: 1,
             active_tactical_action: None, locked_selection_all: false,
+            chasing_selection_all: false,
             hovered_tactical_action: None,
             debris_frame: None, obstacle_debris: Vec::new() })
     }
@@ -595,6 +597,9 @@ impl NativeSoftwareRenderer {
         }
         counts.numbered_squad_rows = self.draw_squad_shortcuts(view);
         counts.special_ready_ships = self.draw_special_readiness(view);
+        self.chasing_selection_all = !self.selection.squads().is_empty() &&
+            self.selection.squads().iter().all(|&owner|
+                view.player_authority.player_should_chase(owner));
         self.locked_selection_all = !self.selection.squads().is_empty() &&
             self.selection.squads().iter().all(|&owner|
                 view.player_authority.player_permissions(owner)
@@ -805,6 +810,9 @@ impl NativeSoftwareRenderer {
                 0x172334
             } else if self.show_shooting_menu && action == tactical_hud::HudAction::Shooting {
                 0x456c78
+            } else if action == tactical_hud::HudAction::Chase &&
+                self.chasing_selection_all {
+                0x456c78
             } else if action == tactical_hud::HudAction::LockOn &&
                 !self.selection.squads().is_empty() &&
                 self.locked_selection_all {
@@ -902,6 +910,15 @@ impl NativeSoftwareRenderer {
         let x = self.width.saturating_sub(w) / 2;
         text::draw_at(&mut self.pixels, self.width, x,
             self.height - 190, &label, 1, [175, 207, 227]);
+        let chase_count = self.selection.squads().iter().filter(|&&owner|
+            view.player_authority.player_should_chase(owner)).count();
+        if chase_count > 0 {
+            let label = format!("{chase_count}/{} squads chasing (E to enable, C to hold)",
+                self.selection.squads().len());
+            let x = self.width.saturating_sub(text::width(&label, 1)) / 2;
+            text::draw_at(&mut self.pixels, self.width,
+                x, self.height - 203, &label, 1, [197, 222, 165]);
+        }
         let locked_count = self.selection.squads().iter().filter(|&&owner|
             view.player_authority.player_permissions(owner)
                 .is_some_and(|permission| permission.locked_on)
