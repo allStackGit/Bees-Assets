@@ -13,7 +13,15 @@ class ObservationArchive {
     constructor(root) {
         this.directory=path.join(root,dirName);
         this.lastByJob=new Map();
-        this.error=null;
+        // A healthy job must never hide a different job's archive failure.
+        // Track trainer and host-only streams independently.
+        this.issues=new Map();
+    }
+    get error() {
+        return this.issues.values().next().value||null;
+    }
+    errorFor(job) {
+        return this.issues.has(job.id)||this.issues.has(job.id+':host');
     }
     record(job,progress,resourceMetrics,receivedMs) {
         if(!progress)return false;
@@ -29,6 +37,7 @@ class ObservationArchive {
         return this.append(job,null,resourceMetrics,receivedMs,true,sourceStatus);
     }
     append(job,progress,resourceMetrics,receivedMs,hostOnly,sourceStatus) {
+        const key=hostOnly?String(job?.id)+':host':String(job?.id);
         try {
             if(!UUID.test(String(job?.id))||
                 !/^[a-z][a-z0-9_-]{0,47}$/.test(String(job?.project_id))||
@@ -41,7 +50,6 @@ class ObservationArchive {
                 (typeof process.getuid==='function'&&(
                     directory.uid!==process.getuid()||(directory.mode&0o077)!==0)))
                 throw Error('Observation archive directory is redirected or unowned.');
-            const key=hostOnly?job.id+':host':job.id;
             const file=path.join(this.directory,job.id+
                 (hostOnly?'-resources':'')+'.jsonl');
             const flags=fs.constants.O_CREAT|fs.constants.O_RDWR|
@@ -85,7 +93,7 @@ class ObservationArchive {
                 if(!Number.isFinite(at))
                     throw Error('Observation source timestamp is invalid.');
                 if(last&&at<=last.at) {
-                    this.error=null;
+                    this.issues.delete(key);
                     return false;
                 }
                 const observation={
@@ -128,14 +136,14 @@ class ObservationArchive {
                 }
                 this.lastByJob.set(key,{project_id:job.project_id,at,
                     size:stat.size+body.length,dev:stat.dev,ino:stat.ino});
-                this.error=null;
+                this.issues.delete(key);
                 return true;
             }finally{fs.closeSync(fd);}
         }catch(error) {
             // Optional diagnostics must never fail an authenticated heartbeat
             // or alter any training lease or process lifecycle.
-            this.error='Hub observation archive unavailable: '+
-                String(error.message||error).slice(0,180);
+            this.issues.set(key,'Hub observation archive unavailable: '+
+                String(error.message||error).slice(0,180));
             return false;
         }
     }
