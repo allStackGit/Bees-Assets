@@ -2717,7 +2717,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const distributedLaunch=(state.distributed_launches||[]).find(launch=>
                 launch.learner_job_id===j.id);
             const launchText=distributedLaunch
-                ?' · Coordinated Start '+distributedLaunch.status+': '+distributedLaunch.reason
+                ?' · Coordinated Start '+distributedLaunch.status+
+                    (distributedLaunch.recovery_pending?' (coordinator restart recovery)':'')+
+                    ': '+distributedLaunch.reason
                 :'';
             const abortText=j.distributed_abort_requested_at
                 ?' · Startup abort requested: native collector shutdown and verified claim release pending'
@@ -2846,7 +2848,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 j.distributed_rollout_managed===true&&groupWorkers.length>0&&
                 groupWorkers.every(worker=>worker.status==='waiting_adapter'&&
                     !worker.dispatch_id&&worker.native_start_readiness?.eligible===true)) {
-                const startDistributed=async coordinated=>{
+                const startDistributed=async (coordinated,recovery=false)=>{
                     const hosts=groupWorkers.map(worker=>worker.assigned_machine_id);
                     const gpus=groupWorkers.reduce((sum,worker)=>
                         sum+worker.resources.gpu_count,0);
@@ -2860,9 +2862,12 @@ document.addEventListener('DOMContentLoaded', () => {
                         'If any host, lease or native Start proof is invalid, no collector is authorized. '+
                         (coordinated
                             ?'Also authorize ONE learner GPU Start after all collectors have fresh verified running receipts. '+
-                                'This permission expires after 20 minutes, is lost on coordinator restart, '+
-                                'and is disarmed if any machine, dispatch or lease identity changes. '+
-                                'The learner is never retried automatically. If any collector exits before learner Start, the remaining sidecars receive native Stop/cleanup requests. '
+                                'This permission expires after 20 minutes. '+
+                                (recovery
+                                    ?'You separately approve coordinator restart recovery, but ONLY after all ORIGINAL remote dispatches are freshly verified running and the GPU learner passes its native admission and HMAC endpoint checks again. The learner and remote workers are NEVER retried. '
+                                    :'Coordinator restart disarms learner Start. ')+
+                                'Changed collector dispatches, lease owners, HMAC identities or unsafe machine states disarm launch. '+
+                                'If any collector exits before learner Start, remaining sidecars receive native Stop/cleanup requests. '
                             :'The GPU learner must be started separately after verification. ')+
                         'All resource allocations stay fixed.'))return;
                     try {
@@ -2872,12 +2877,17 @@ document.addEventListener('DOMContentLoaded', () => {
                             confirm_start:true,
                             ...(coordinated?{
                                 start_learner_when_ready:true,confirm_learner_start:true,
+                                ...(recovery?{
+                                    resume_after_restart:true,confirm_restart_rearm:true,
+                                }:{}),
                             }:{}),
                         });
                         feedback('hub-job-message',result.starts_authorized+
                             ' remote collector Starts authorized atomically. '+
                             (coordinated
-                                ?'Learner Start preapproved for this live coordinator; awaiting verified collector receipts.'
+                                ?'Learner Start preapproved'+
+                                    (recovery?' for bounded restart-reconciled recovery':' for this coordinator session')+
+                                    '; awaiting verified remote native owners.'
                                 :'Start the learner separately after the collectors are verified.'));
                         await reload();
                     }catch(error){
@@ -2887,6 +2897,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 };
                 actions.append(button('Start collectors only',()=>startDistributed(false)));
                 actions.append(button('Start coordinated group',()=>startDistributed(true)));
+                actions.append(button('Start recoverable coordinated group',()=>startDistributed(true,true)));
             }
             if(distributedLaunch?.status==='pending')
                 actions.append(button('Cancel future learner Start',async()=>{
