@@ -2400,6 +2400,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 stage=>'collector_'+i+'_stage_'+stage+'_dominant'),
             'collector_'+i+'_roundtrip_seconds',
             'collector_'+i+'_service_seconds',
+            'collector_'+i+'_record_encode_seconds',
             'collector_'+i+'_serialize_seconds',
             'collector_'+i+'_compress_seconds',
             'collector_'+i+'_send_seconds',
