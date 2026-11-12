@@ -180,6 +180,12 @@ class BottleneckEvidence {
                     add('collector_'+i+'_sim_last_child_gap_share',tailShare);
                 if(queueShare!==null)
                     add('collector_'+i+'_sim_dispatch_queue_share',queueShare);
+                if(batch>0&&worker!==null)
+                    // Sum of parallel engine request durations divided by
+                    // batch wall: effective in-flight request overlap, not
+                    // exclusive CPU parallelism or GPU saturation.
+                    add('collector_'+i+'_sim_inflight_factor',
+                        worker/batch,'scalar');
                 simHints[i]={
                     tail:tailShare!==null&&tailShare>=0.25,
                     queue:queueShare!==null&&queueShare>=0.20
