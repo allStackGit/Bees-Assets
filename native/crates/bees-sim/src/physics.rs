@@ -479,6 +479,18 @@ impl WorldCollider {
         current.overlaps(other)
     }
 
+    /// Two mutable gameplay bodies can move between fixed steps. Most
+    /// mining and command checks hit the cached fast path for both hulls;
+    /// only a changed pose requires a temporary read-only transform.
+    fn overlaps_at_poses(&self, other: &Self, pose: Pose, other_pose: Pose) -> bool {
+        if self.cached_pose == Some(pose) {
+            return other.overlaps_at_pose(self, other_pose);
+        }
+        let mut current = self.clone();
+        current.update(pose);
+        other.overlaps_at_pose(&current, other_pose)
+    }
+
     #[inline]
     fn overlaps(&self, other: &Self) -> bool {
         if !self.bounds.zip(other.bounds)
@@ -1170,15 +1182,17 @@ impl KinematicPhysics {
         })
     }
 
-    /// Cached equivalent of Collider2D.IsTouching between a ship's
-    /// authored hull and an obstacle's primary collider. The fixed-step
-    /// physics update maintains these poses; no geometry is allocated or
-    /// reconstructed for every mining action-mask check.
+    /// Source Collider2D.IsTouching for mining eligibility and the
+    /// ordinary Mining command. The fixed step keeps cached hulls current
+    /// on the hot path; between-step movement uses actual ship/asteroid
+    /// poses without committing contact events or changing those caches.
     pub fn ship_obstacle_hulls_touch(&self, ship: usize, obstacle: usize) -> bool {
         let Some(ship) = self.ships.get(ship) else { return false; };
         let Some(obstacle) = self.obstacles.get(obstacle) else { return false; };
+        let pose = Pose { position: ship.motion.position,
+            rotation_degrees: ship.motion.rotation_degrees };
         ship.active && obstacle.active &&
-            ship.collider.overlaps(&obstacle.collider)
+            ship.collider.overlaps_at_poses(&obstacle.collider, pose, obstacle.pose)
     }
 
     /// Reject distant hull pairs before any polygon transform. A close
