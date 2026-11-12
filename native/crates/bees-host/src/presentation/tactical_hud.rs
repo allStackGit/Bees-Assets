@@ -75,6 +75,24 @@ pub fn action_rect(width: usize, height: usize, index: usize) -> Option<HudRect>
     })
 }
 
+/// One source-ordered squad-tab coordinate contract for drawing and
+/// click targets. The tab's text length is measured with the same glyph
+/// advances as the renderer; no second cached roster lives in the UI.
+pub fn squad_tab_rect(width: usize, height: usize,
+    row: usize, text_height: usize, label_width: usize,
+) -> Option<HudRect> {
+    if width < 560 || height < 360 { return None; }
+    let y = 14 + row * (text_height + 6);
+    if y + text_height + 5 >= height / 2 { return None; }
+    let x = 14usize;
+    let box_width = (label_width + 16).min(228);
+    Some(HudRect {
+        left: x - 5, top: y - 2,
+        right: (x - 5 + box_width).min(width),
+        bottom: (y + text_height + 4).min(height),
+    })
+}
+
 pub fn hit(width: usize, height: usize, x: f32, y: f32) -> Option<HudAction> {
     ACTIONS.iter().copied().enumerate().find_map(|(index, action)|
         action_rect(width, height, index)

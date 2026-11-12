@@ -185,8 +185,37 @@ impl NativeSoftwareRenderer {
     /// UI-only action hit-test; the client converts intent into the exact
     /// same typed player inputs used by keyboard shortcuts and replay.
     pub fn tactical_action_at(&self, x: f32, y: f32) -> Option<super::HudAction> {
-        (!self.selection.squads().is_empty()).then(||
-            tactical_hud::hit(self.width, self.height, x, y)).flatten()
+        let action = tactical_hud::hit(self.width, self.height, x, y)?;
+        (action == super::HudAction::SelectAll ||
+            !self.selection.squads().is_empty()).then_some(action)
+    }
+
+    /// Pick a live, user-controllable source squad by the exact tab drawn in
+    /// this same render frame, not from a guessed row/squad index.
+    pub fn squad_tab_at(&self, view: &NativeRenderWorldView<'_>,
+        x: f32, y: f32,
+    ) -> Option<bees_hivemind::session::SquadLifetime> {
+        let mut row = 0usize;
+        for &owner in view.roster.source_order() {
+            let Some(squad) = view.roster.get(owner) else { continue };
+            let Some(number) = squad.source_hotkey_number else { continue };
+            if number > 10 || !view.player_authority.player_permissions(owner)
+                .is_some_and(|permission| permission.user_controlled) {
+                continue;
+            }
+            let Some(&ship_id) = squad.members.first() else { continue };
+            let Some(ship) = view.combat.ship(ship_id) else { continue };
+            let key = if number == 10 { 0 } else { number };
+            let label = format!("{key}: type {} / {} ships",
+                ship.ship_type, squad.members.len());
+            let rect = tactical_hud::squad_tab_rect(
+                self.width, self.height, row, text::HEIGHT,
+                text::width(&label, 1))?;
+            if rect.contains(x, y) { return Some(owner); }
+            row += 1;
+            if row == 10 { break; }
+        }
+        None
     }
 
     /// Use the authoritative hull and healing-zone colliders for clicks,
@@ -610,16 +639,16 @@ impl NativeSoftwareRenderer {
             let key = if number == 10 { 0 } else { number };
             let label = format!("{key}: type {} / {} ships",
                 ship.ship_type, squad.members.len());
-            let x = 14usize;
-            let y = 14 + row * (text::HEIGHT + 6);
-            if y + text::HEIGHT + 5 >= self.height / 2 { break; }
-            let width = (text::width(&label, 1) + 16).min(228usize);
-            for scanline in y.saturating_sub(2)..(y + text::HEIGHT + 4) {
-                let start = scanline * self.width + x.saturating_sub(5);
-                self.pixels[start..start + width].fill(
+            let Some(rect) = tactical_hud::squad_tab_rect(
+                self.width, self.height, row, text::HEIGHT,
+                text::width(&label, 1)) else { break };
+            for scanline in rect.top..rect.bottom {
+                let start = scanline * self.width + rect.left;
+                self.pixels[start..start + rect.right - rect.left].fill(
                     if selected { 0x35465d } else { 0x142338 });
             }
-            text::draw_at(&mut self.pixels, self.width, x, y,
+            text::draw_at(&mut self.pixels, self.width, 14,
+                rect.top + 2,
                 &label, 1, if selected { [255, 241, 194] }
                     else { [182, 211, 239] });
             row += 1;
@@ -704,12 +733,15 @@ impl NativeSoftwareRenderer {
     }
 
     fn draw_tactical_bar(&mut self) -> usize {
-        if self.selection.squads().is_empty() { return 0; }
+        let has_selection = !self.selection.squads().is_empty();
         let mut drawn = 0usize;
         for (index, action) in tactical_hud::ACTIONS.iter().copied().enumerate() {
             let Some(rect) = tactical_hud::action_rect(self.width, self.height, index)
                 else { return drawn };
-            let background = if self.active_tactical_action == Some(action) {
+            let background = if !has_selection &&
+                action != tactical_hud::HudAction::SelectAll {
+                0x172334
+            } else if self.active_tactical_action == Some(action) {
                 0x456c78
             } else if matches!(action,
                 tactical_hud::HudAction::Detonate |
@@ -724,8 +756,12 @@ impl NativeSoftwareRenderer {
                 .saturating_sub(text::width(label, 1)) / 2;
             let y = rect.top + (rect.bottom - rect.top)
                 .saturating_sub(text::HEIGHT) / 2;
+            let tone = if has_selection ||
+                action == tactical_hud::HudAction::SelectAll {
+                [232, 241, 251]
+            } else { [101, 114, 132] };
             text::draw_at(&mut self.pixels, self.width, x, y,
-                label, 1, [232, 241, 251]);
+                label, 1, tone);
             drawn += 1;
         }
         drawn

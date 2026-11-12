@@ -77,6 +77,7 @@ pub struct NativeClient {
     /// Clicks execute on release over the same button. Crossing its edge
     /// cancels; a HUD press never begins a gameplay selection drag.
     hud_press: Option<HudAction>,
+    squad_tab_press: Option<SquadLifetime>,
     support_mode: Option<NativeTargetMode>,
     pub rendered_frames: u64,
     /// Total software framebuffer pixels actually drawn across changing sizes.
@@ -100,6 +101,7 @@ pub struct NativeClient {
     pub cycled_shortcut_selections: u64,
     pub minimap_move_orders_submitted: u64,
     pub tactical_button_clicks: u64,
+    pub squad_tab_clicks: u64,
 }
 
 impl NativeClient {
@@ -120,7 +122,7 @@ impl NativeClient {
             dialogue_visible: false,
             held_fire_target: None,
             selection_drag: None, minimap_dragging: false,
-            hud_press: None, support_mode: None,
+            hud_press: None, squad_tab_press: None, support_mode: None,
             rendered_frames: 0, rendered_pixels: 0, render_wall_seconds: 0.0,
             ui_wall_seconds: 0.0, window_update_wall_seconds: 0.0,
             culled_ship_draws: 0, culled_obstacle_draws: 0,
@@ -131,7 +133,7 @@ impl NativeClient {
             minimap_camera_moves: 0, numbered_shortcut_selections: 0,
             cycled_shortcut_selections: 0,
             minimap_move_orders_submitted: 0,
-            tactical_button_clicks: 0 })
+            tactical_button_clicks: 0, squad_tab_clicks: 0 })
     }
 
     /// Initial authored camera focus is a presentation-only concern. The
@@ -218,6 +220,7 @@ impl NativeClient {
             self.right_press = None;
             self.minimap_dragging = false;
             self.hud_press = None;
+            self.squad_tab_press = None;
             self.previous_frame = Instant::now();
             return Ok(NativeClientAction::Wait);
         }
@@ -227,6 +230,7 @@ impl NativeClient {
             self.selection_drag = None;
             self.minimap_dragging = false;
             self.hud_press = None;
+            self.squad_tab_press = None;
             self.right_press = None;
             self.last_left_press = None;
             self.double_left_press = false;
@@ -241,6 +245,7 @@ impl NativeClient {
             self.selection_drag = None;
             self.minimap_dragging = false;
             self.hud_press = None;
+            self.squad_tab_press = None;
             self.right_press = None;
             self.support_mode = None;
             self.last_left_press = None;
@@ -302,6 +307,7 @@ impl NativeClient {
             self.right_was_down = self.window.get_mouse_down(MouseButton::Right);
             self.right_press = None;
             self.hud_press = None;
+            self.squad_tab_press = None;
             self.window.update();
             self.next_step = Instant::now();
             return Ok(NativeClientAction::WorldChanged);
@@ -335,10 +341,14 @@ impl NativeClient {
         let left_down = self.window.get_mouse_down(MouseButton::Left);
         if !accepts_orders || !pointer_active {
             self.hud_press = None;
+            self.squad_tab_press = None;
         } else if left_down && !self.left_was_down {
             self.hud_press = mouse.and_then(|(x, y)|
                 self.renderer.tactical_action_at(x, y));
-            if self.hud_press.is_some() {
+            self.squad_tab_press = if self.hud_press.is_none() {
+                mouse.and_then(|(x, y)| self.renderer.squad_tab_at(&view, x, y))
+            } else { None };
+            if self.hud_press.is_some() || self.squad_tab_press.is_some() {
                 self.selection_drag = None;
                 self.minimap_dragging = false;
                 self.renderer.selection_box = None;
@@ -352,6 +362,24 @@ impl NativeClient {
                     == Some(action))
         } else { None };
         if clicked_hud.is_some() { self.tactical_button_clicks += 1; }
+        let clicked_tab = if self.left_was_down && !left_down {
+            self.squad_tab_press.take().filter(|&owner|
+                mouse.and_then(|(x, y)| self.renderer.squad_tab_at(&view, x, y))
+                    == Some(owner))
+        } else { None };
+        if let Some(owner) = clicked_tab {
+            let additive = self.window.is_key_down(Key::LeftCtrl) ||
+                self.window.is_key_down(Key::RightCtrl);
+            if self.renderer.selection.select_squad(&view, owner, additive) {
+                self.squad_tab_clicks += 1;
+                if !additive { self.focus_selected_squad(&view, owner); }
+                else {
+                    self.renderer.selected_ship = self.renderer.selection
+                        .representative_ships(&view).next();
+                    self.support_mode = None;
+                }
+            }
+        }
         if accepts_orders && pointer_active &&
             (clicked_hud == Some(HudAction::SelectAll) ||
              ((self.window.is_key_down(Key::LeftCtrl) ||
@@ -564,7 +592,8 @@ impl NativeClient {
         }
         if !pointer_active { self.minimap_dragging = false; }
         if pointer_active && left_down && !self.left_was_down &&
-            self.hud_press.is_none() && self.support_mode.is_none() &&
+            self.hud_press.is_none() && self.squad_tab_press.is_none() &&
+            self.support_mode.is_none() &&
             self.held_fire_target.is_none() &&
             mouse.is_some_and(|(x, y)|
                 self.renderer.minimap_world_at(self.bounds, x, y).is_some())
@@ -586,7 +615,7 @@ impl NativeClient {
             }
         }
         if !cancel_support && !self.minimap_dragging &&
-            self.hud_press.is_none() &&
+            self.hud_press.is_none() && self.squad_tab_press.is_none() &&
             left_down && !self.left_was_down {
             // Unity treats two presses within 0.25 real seconds as a
             // double-click. The second release must also be prompt.
@@ -598,7 +627,8 @@ impl NativeClient {
                 self.renderer.camera.screen_to_world(x, y, width, height), Vec2::new(x, y)));
         }
         if !cancel_support && !self.minimap_dragging &&
-            self.hud_press.is_none() && clicked_hud.is_none() {
+            self.hud_press.is_none() && clicked_hud.is_none() &&
+            self.squad_tab_press.is_none() && clicked_tab.is_none() {
             if let (Some((start, start_pixel)), Some((x, y))) = (self.selection_drag, mouse) {
                 let end = self.renderer.camera.screen_to_world(x, y, width, height);
                 let dragging = (Vec2::new(x, y) - start_pixel).length_squared() > 16.0;

@@ -33,6 +33,28 @@ impl NativeSquadSelection {
         self.squads.retain(|owner| view.roster.get(*owner).is_some() && selectable(view, *owner));
     }
 
+    /// Explicit source lifetime selection for the clickable numbered tabs.
+    /// Ctrl-click toggles one squad, preserving other selected lifetimes
+    /// and the current selected side. Unavailable/retired squads cannot
+    /// enter selection through presentation shortcuts.
+    pub fn select_squad(&mut self, view: &NativeRenderWorldView<'_>,
+        owner: SquadLifetime, additive: bool,
+    ) -> bool {
+        self.synchronize(view);
+        if !selectable(view, owner) { return false; }
+        if additive {
+            if let Some(index) = self.squads.iter().position(|&id| id == owner) {
+                self.squads.remove(index);
+            } else {
+                self.squads.push(owner);
+            }
+        } else {
+            self.squads.clear();
+            self.squads.push(owner);
+        }
+        true
+    }
+
     pub fn select_ship(&mut self, view: &NativeRenderWorldView<'_>, ship: i64, additive: bool) {
         self.synchronize(view);
         let Some(owner) = view.roster.owning_squad(ship) else { return };
