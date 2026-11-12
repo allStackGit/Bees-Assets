@@ -6,7 +6,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const {request: resourceRequest,matchingLeaseBudget,placements: resourcePlacements,
     startHeadroom,observedLoadPreference} = require('./experiment_hub_resources');
-const {validateProgress,selectChartMetrics}=require('./experiment_hub_progress');
+const {validateProgress,selectChartMetrics,BottleneckEvidence}=require('./experiment_hub_progress');
 const {tinyBrainsProfiles,tinyBrainsImports,supportsTinyBrainsProfile}=require('./experiment_hub_tinybrains_adapter');
 const {evaluationPolicy,evaluationEvidence,evaluationRules,evaluationComplete,suiteIds,supportsEvaluation}=
     require('./experiment_hub_evaluation');
@@ -1073,6 +1073,7 @@ class ExperimentHub {
         this.executionTelemetry = new Map();
         this.progressHistory = new ProgressHistory(path.join(root,'hub-chart-v1.json'));
         this.observations = new ObservationArchive(root);
+        this.bottleneckEvidence = new BottleneckEvidence();
         this.executionOrderCursor = new Map();
         // Coordinated learner Starts are one-use durable approvals bound
         // to the exact already-reserved collector dispatches. A coordinator
@@ -3953,7 +3954,9 @@ class ExperimentHub {
             // Resource samples are authenticated machine/job observations.
             // GPU values are HOST-WIDE observations on the physically bound
             // device; they are not measured per-job GPU consumption.
-            let chartProgress=progress;
+            // Diagnoses are observational only: neither native ownership nor
+            // checkpoint, stop, admission or promotion decisions use them.
+            let chartProgress=this.bottleneckEvidence.enrich(job,progress);
             {
                 const liveOwner=['running','stop_requested'].includes(item.state);
                 const observed={};
@@ -4014,8 +4017,8 @@ class ExperimentHub {
                 // Archive validated source and host measurements before the
                 // bounded chart selector/coalescer discards sampling detail.
                 // This archive is observational and cannot gate training.
-                const archived=progress?
-                    this.observations.record(job,progress,observed,received):false;
+                const archived=chartProgress?
+                    this.observations.record(job,chartProgress,observed,received):false;
                 // When a source update is unchanged or absent, keep the
                 // authenticated host observation with no invented trainer
                 // step count or source timestamp. An archive failure stays
@@ -4028,10 +4031,10 @@ class ExperimentHub {
                     this.observations.recordResources(job,observed,received,
                         progress?'not_advanced':
                         item.progress_issue?'read_error':'absent');
-                if(progress)
-                    chartProgress={...progress,metrics:selectChartMetrics(
-                        progress.metrics,observed,job.metric_selection,
-                        progress.steps_completed)};
+                if(chartProgress)
+                    chartProgress={...chartProgress,metrics:selectChartMetrics(
+                        chartProgress.metrics,observed,job.metric_selection,
+                        chartProgress.steps_completed)};
             }
             const progressAccepted=chartProgress&&this.progressHistory.record(
                 job.id,job.project_id,chartProgress,received);
