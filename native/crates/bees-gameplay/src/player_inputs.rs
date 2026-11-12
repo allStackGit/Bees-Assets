@@ -25,6 +25,7 @@ pub trait NativePlayerAuthority {
     /// imported snapshot and not the server's immutable action identity.
     fn player_shooting_strategy(&self, _owner: SquadLifetime)
         -> Option<bees_hivemind::protocol::StrategyIdentity> { None }
+    fn player_should_chase(&self, _owner: SquadLifetime) -> bool { false }
 }
 
 pub trait NativeLevelPlayerContext: NativeLevelActivationContext + NativePlayerAuthority {
@@ -34,6 +35,8 @@ pub trait NativeLevelPlayerContext: NativeLevelActivationContext + NativePlayerA
         -> Result<(), GameCommandError>;
     /// SquadActionBox.LockOn is a live command-associated player choice.
     fn set_player_locked_on(&mut self, owner: SquadLifetime, locked: bool)
+        -> Result<(), GameCommandError>;
+    fn set_player_chasing(&mut self, owner: SquadLifetime, chasing: bool)
         -> Result<(), GameCommandError>;
     /// Current source Squad.GetShootingStrategy and loaded command settings.
     fn player_command_inputs(&self, _owner: SquadLifetime)
@@ -132,6 +135,56 @@ pub struct NativePlayerSquadCeaseFire {
     pub episode_revision: u64,
     pub squads: Vec<SquadLifetime>,
     pub cease_fire: bool,
+}
+
+/// Unity SquadActionBox.Chase changes a persistent user preference:
+/// the one-second source timer starts an Aggressive command only when a
+/// visible nearest enemy exists. Hold disables this preference but never
+/// fabricates a Hold command for an otherwise idle squad.
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct NativePlayerSquadChase {
+    pub world_id: WorldId,
+    pub episode_revision: u64,
+    pub squads: Vec<SquadLifetime>,
+    pub chasing: bool,
+}
+
+pub struct NativePlayerChasePlan {
+    tick: u64,
+    owner: SquadLifetime,
+    world_id: WorldId,
+    episode_revision: u64,
+    selected_ship: i64,
+    chasing: bool,
+}
+
+impl NativePlayerChasePlan {
+    pub fn prepare<M: NativeLevelPlayerContext, A>(
+        world: &World<NativeLevelState<M, A>>, world_id: WorldId,
+        episode_revision: u64, selected_ship: i64, chasing: bool,
+    ) -> Result<Self, NativePlayerInputError> {
+        let (owner, _) = authorized_player_squad(
+            world, world_id, episode_revision, selected_ship,
+        )?;
+        Ok(Self { tick: world.tick(), owner, world_id,
+            episode_revision, selected_ship, chasing })
+    }
+
+    pub fn execute<M: NativeLevelPlayerContext, A>(
+        self, world: &mut World<NativeLevelState<M, A>>,
+    ) -> Result<(), NativePlayerInputError> {
+        let current = Self::prepare(world, self.world_id,
+            self.episode_revision, self.selected_ship, self.chasing)?;
+        if current.tick != self.tick || current.owner != self.owner {
+            return Err(NativePlayerInputError::StaleWorld);
+        }
+        let state = &mut world.state;
+        if let Err(error) = state.metadata.set_player_chasing(self.owner, self.chasing) {
+            state.events.fail_player_input();
+            return Err(NativePlayerInputError::Source(error));
+        }
+        Ok(())
+    }
 }
 
 /// Unity SquadActionBox.LockOn toggles only a squad with an enemy

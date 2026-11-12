@@ -630,9 +630,24 @@ impl NativePlayerAuthority for NativePolicyOnlyMetadata {
     {
         self.player.commands.get(&owner).map(|command| command.shooting)
     }
+    fn player_should_chase(&self, owner: SquadLifetime) -> bool {
+        self.player.chasing.contains(&owner)
+    }
 }
 
 impl NativeLevelPlayerContext for NativePolicyOnlyMetadata {
+    fn set_player_chasing(&mut self, owner: SquadLifetime, chasing: bool)
+        -> Result<(), GameCommandError> {
+        if !self.player.squads.get(&owner)
+            .is_some_and(|permission| permission.user_controlled &&
+                permission.can_accept_input) {
+            return Err(GameCommandError::InvalidSquad);
+        }
+        if chasing { self.player.chasing.insert(owner); }
+        else { self.player.chasing.remove(&owner); }
+        Ok(())
+    }
+
     fn set_player_locked_on(&mut self, owner: SquadLifetime, locked: bool)
         -> Result<(), GameCommandError> {
         let permission = self.player.squads.get_mut(&owner)
