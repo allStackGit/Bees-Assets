@@ -82,6 +82,7 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'ppo_grouping_seconds','ppo_data_preparation_seconds',
         'ppo_forward_loss_seconds','ppo_loss_finite_check_seconds',
         'ppo_backward_seconds','ppo_metric_readback_seconds',
+        'ppo_diagnostic_aggregation_seconds',
         'ppo_gradient_processing_seconds','ppo_optimizer_step_seconds',
         'ppo_parameter_finite_check_seconds','ppo_gpu_stream_sync_seconds',
         'ppo_gpu_stream_interval_seconds'])
@@ -95,6 +96,7 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'carried_matches','open_matches','peak_live_matches',
         'truncated_groups','terminal_groups','collector_count',
         'ppo_minibatches','ppo_microbatches',
+        'ppo_diagnostic_readbacks','ppo_diagnostic_rows',
         'ppo_gpu_pixel_budget',
         'ppo_prestaged_board_states','ppo_reused_board_states',
         'rollout_inference_shape_groups','rollout_inference_readbacks',
