@@ -2805,7 +2805,11 @@ service to the public Internet.
    All collector Starts are one durable transition, with no partial
    authorization if any host is ineligible. Neither action promises
    simultaneous native execution; each machine's supervisor still enforces
-   its fixed resources.
+   its fixed resources. If a collector reports a verified terminal failure
+   before learner Start under coordinated approval, the Hub automatically
+   abandons the pending launch and issues durable native Stops for its other
+   sidecars, retaining claims until verified termination. Unverified native
+   owners are never treated as safe to release.
 5. Without coordinated approval, wait for the collectors' fresh running
    receipts and explicitly Start the learner. Check `self-play/history.jsonl`: `collector_samples` reports
    each shard's ant decisions and engine steps plus remote transfer time and
@@ -2817,6 +2821,21 @@ service to the public Internet.
    resource release. Unverified or failed native owners retain their
    reservations for operator inspection. Do not delete source runs,
    checkpoints or independent trainer directories.
+
+To abort a **never-dispatched** learner with already-started collectors,
+choose **Abort distributed startup** in Train, or POST
+`/api/hub/distributed/tinybrains/abort-startup` with
+`{"learner_job_id":"<uuid>","expected_collector_job_ids":["<uuid>",...],"confirm_abort":true}`.
+This durably withdraws undelivered Starts, sends native Stop requests to
+dispatched sidecars, and blocks any new group Starts. Verified terminal
+collector claims are released, while failed services lacking explicit
+prelaunch-absence evidence and unverified processes retain their reservations
+for manual review. Only after **all** sidecars are cancelled or their native
+leases have been safely released does the Hub cancel the unstarted learner
+and release its GPU/CPU claim. This cleanup intent survives coordinator
+restart, unlike the optional future learner Start approval. It never stops a
+dispatched learner or deletes checkpoints. Group members cannot change
+machines or accept a new queued dependency during teardown.
 
 This path is initially queued as one atomic resource group but is not
 live-rebalanced or automatically restarted as one native process.
