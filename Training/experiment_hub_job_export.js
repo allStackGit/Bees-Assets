@@ -236,6 +236,14 @@ class JobExporter {
                 throw Error('Received job artifacts were redirected or unowned.');
             return [{job_id:job.id,label:'agent-artifacts',path:folder}];
         });
+        // A mirror is additional evidence, not a reason to suppress an
+        // independently available local original job folder. Only substitute
+        // its root when the original trainer files are genuinely absent.
+        const mirrorFallbackIds=new Set(mirrored.filter(item=>{
+            if(!approvedRoot)return true;
+            const local=path.join(approvedRoot,item.job_id);
+            return !fs.existsSync(local)||!trustedRoot(local);
+        }).map(item=>item.job_id));
         // A managed TinyBrains learner's collector is a separate Hub job.
         // Include its coordinator-received observations in the learner export,
         // even when no worker-local log directory is mounted. All IDs are
@@ -290,7 +298,8 @@ class JobExporter {
             all_recorded_metrics:value.all_recorded_metrics===true,
             include_replays:value.include_replays===true,
             artifact_root:root,local_artifact_root_missing:missingLocalRoot,
-            mounted_artifact_job_ids:[...mounted,...mirrored].map(item=>item.job_id),
+            mounted_artifact_job_ids:[...mounted.map(item=>item.job_id),
+                ...mirrorFallbackIds],
             resource_provenance:legacy?null:resourceProvenance(snapshot,jobs),
             progress,
             additional_sources:legacy?this.legacyBees.sources(jobs):
