@@ -29,6 +29,7 @@ pub trait NativePlayerAuthority {
     /// The source's currently chosen match-speed state. None means the
     /// squad is moving at its own ship speeds (not an unknown value).
     fn player_matched_speed(&self, _owner: SquadLifetime) -> Option<f32> { None }
+    fn player_cease_fire(&self, _owner: SquadLifetime) -> Option<bool> { None }
 }
 
 pub trait NativeLevelPlayerContext: NativeLevelActivationContext + NativePlayerAuthority {
@@ -42,6 +43,8 @@ pub trait NativeLevelPlayerContext: NativeLevelActivationContext + NativePlayerA
     fn set_player_chasing(&mut self, owner: SquadLifetime, chasing: bool)
         -> Result<(), GameCommandError>;
     fn set_player_matched_speed(&mut self, owner: SquadLifetime, speed: Option<f32>)
+        -> Result<(), GameCommandError>;
+    fn set_player_cease_fire(&mut self, owner: SquadLifetime, enabled: bool)
         -> Result<(), GameCommandError>;
     /// Current source Squad.GetShootingStrategy and loaded command settings.
     fn player_command_inputs(&self, _owner: SquadLifetime)
@@ -529,7 +532,9 @@ impl NativePlayerSpecialPlan {
 }
 
 pub struct NativePlayerCeaseFirePlan {
-    authority: NativePlayerSquadPlan,
+    tick: u64,
+    owner: SquadLifetime,
+    members: Vec<i64>,
     world_id: WorldId,
     episode_revision: u64,
     selected_ship: i64,
@@ -537,25 +542,42 @@ pub struct NativePlayerCeaseFirePlan {
 }
 
 impl NativePlayerCeaseFirePlan {
-    pub fn owner(&self) -> SquadLifetime { self.authority.owner }
+    pub fn owner(&self) -> SquadLifetime { self.owner }
 
     pub fn prepare<M: NativeLevelPlayerContext, A>(
         world: &World<NativeLevelState<M, A>>,
         world_id: WorldId, episode_revision: u64, selected_ship: i64,
         cease_fire: bool,
     ) -> Result<Self, NativePlayerInputError> {
-        let authority = NativePlayerSquadPlan::prepare(
+        // CeaseFire changes weapons without moving a squad. The old
+        // formation preflight rejected stationary ships and squads missing
+        // pathfinder clearance even though Unity accepts their fire mode.
+        let (owner, squad) = authorized_player_squad(
             world, world_id, episode_revision, selected_ship,
         )?;
         // Source SquadActionBox.AttackOnSight skips Heal squads rather than
         // implicitly canceling their healing command or firing during Heal.
         if !cease_fire &&
-            world.state.events.commands().current_kind(authority.owner) ==
+            world.state.events.commands().current_kind(owner) ==
                 Some(bees_hivemind::dispatch::LocalCommandKind::Heal)
         {
             return Err(NativePlayerInputError::InvalidAction);
         }
-        Ok(Self { authority, world_id, episode_revision, selected_ship, cease_fire })
+        let mut members = Vec::with_capacity(squad.members.len());
+        for &ship_id in &squad.members {
+            if !world.state.combat.ship(ship_id)
+                .is_some_and(|ship| !ship.vitals.is_dead()) ||
+                !world.state.combat.ship_body(ship_id)
+                    .is_some_and(|body| body.active) {
+                return Err(NativePlayerInputError::MissingSquad);
+            }
+            members.push(ship_id);
+        }
+        if members.is_empty() { return Err(NativePlayerInputError::MissingSquad); }
+        Ok(Self {
+            tick: world.tick(), owner, members, world_id,
+            episode_revision, selected_ship, cease_fire,
+        })
     }
 
     pub fn execute<M: NativeLevelPlayerContext, A>(
@@ -565,22 +587,29 @@ impl NativePlayerCeaseFirePlan {
             world, self.world_id, self.episode_revision, self.selected_ship,
             self.cease_fire,
         )?;
-        if current.authority != self.authority {
+        if current.tick != self.tick || current.owner != self.owner ||
+            current.members != self.members {
             return Err(NativePlayerInputError::StaleWorld);
         }
         let state = &mut world.state;
-        for member in &self.authority.members {
-            let result = if state.combat.policy_frame(member.ship_id).is_some() {
-                state.combat.set_policy_ship_cease_fire(member.ship_id, self.cease_fire)
+        for &ship_id in &self.members {
+            let result = if state.combat.policy_frame(ship_id).is_some() {
+                state.combat.set_policy_ship_cease_fire(ship_id, self.cease_fire)
             } else {
-                state.combat.set_ship_cease_fire(member.ship_id, self.cease_fire)
+                state.combat.set_ship_cease_fire(ship_id, self.cease_fire)
             };
             if let Err(error) = result {
                 state.events.fail_player_input();
                 return Err(NativePlayerInputError::Source(error.into()));
             }
         }
-        Ok(self.authority.members.len())
+        if let Err(error) = state.metadata
+            .set_player_cease_fire(self.owner, self.cease_fire)
+        {
+            state.events.fail_player_input();
+            return Err(NativePlayerInputError::Source(error));
+        }
+        Ok(self.members.len())
     }
 }
 
