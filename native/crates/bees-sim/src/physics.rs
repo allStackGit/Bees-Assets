@@ -1852,10 +1852,10 @@ impl KinematicPhysics {
         // A shot can contact a ship and an obstacle in the same physics tick.
         self.obstacle_overlaps_current.clear();
         // There is no obstacle grid to query when no active obstacle
-        // exists: the shared grid still contains ships in that case.
-        // Also skip an empty obstacle grid. Reconcile historic contacts
-        // below in both cases so the last obstacle generates exits.
-        if has_active_obstacles && !self.grid.is_empty() {
+        // exists, and no projectile overlap to detect without an active
+        // physical shot. Skip historical inactive projectile slots in those
+        // cases, but still reconcile the previous overlap history below.
+        if has_active_obstacles && has_physical_projectiles && !self.grid.is_empty() {
             for projectile in &self.projectiles {
                 if !projectile.active { continue; }
                 let Some(projectile_collider) = &projectile.collider else { continue };
