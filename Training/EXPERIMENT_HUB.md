@@ -2041,7 +2041,10 @@ optional cumulative CPU seconds for long-running multicore jobs once exact
 integer nanoseconds exceed JavaScript's safe range. This is diagnostic
 precision, not a change in enforcement or terminal receipt authentication.
 It is not a measure of marginal throughput, and short sampling intervals
-may show values above 100%.
+may show values above 100%. Where a trusted native supervisor provides
+per-job task and memory counters, `job_process_tasks` reports the observed
+task count and `job_memory_lease_utilization_pct` compares sampled job
+memory against its frozen RAM allocation. Missing counters remain absent.
 
 ### Selecting and promoting independently trained models
 
