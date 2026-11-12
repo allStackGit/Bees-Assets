@@ -442,11 +442,15 @@ impl NativeClient {
                     if let Some(map_point) = self.renderer.minimap_world_at(bounds, x, y) {
                         self.renderer.camera.center = map_point;
                         self.minimap_camera_moves += 1;
-                        self.renderer.camera.zoom_at(factor, width as f32 * 0.5,
-                            height as f32 * 0.5, width, height, authored_zoom);
+                        if self.renderer.camera.zoom_at(factor, width as f32 * 0.5,
+                            height as f32 * 0.5, width, height, authored_zoom) {
+                            self.camera_zoom_clamps += 1;
+                        }
                     } else {
-                        self.renderer.camera.zoom_at(factor, x, y, width, height,
-                            authored_zoom);
+                        if self.renderer.camera.zoom_at(factor, x, y, width, height,
+                            authored_zoom) {
+                            self.camera_zoom_clamps += 1;
+                        }
                     }
                 }
             }

@@ -54,12 +54,13 @@ impl NativeCamera {
     pub fn zoom_at(
         &mut self, factor: f32, x: f32, y: f32, width: usize, height: usize,
         authored: Option<(f32, f32)>,
-    ) {
-        if !factor.is_finite() || factor <= 0.0 { return; }
+    ) -> bool {
+        if !factor.is_finite() || factor <= 0.0 { return false; }
         let before = self.screen_to_world(x, y, width, height);
         self.pixels_per_unit = (self.pixels_per_unit * factor).clamp(0.001, 1000.0);
-        self.constrain_source_zoom(authored, height);
+        let constrained = self.constrain_source_zoom(authored, height);
         self.center += before - self.screen_to_world(x, y, width, height);
+        constrained
     }
 
     /// Source LevelInputManager.MaintainScrollBoundary uses the map extent
