@@ -2282,6 +2282,7 @@ document.addEventListener('DOMContentLoaded', () => {
             'host_gpu_'+i+'_hotspot_temperature_c',
             'host_gpu_'+i+'_power_w',
         ]).flat(),
+        'remote_collector_join_wait_seconds','collection_merge_seconds',
         'data_preparation_seconds','inference_seconds','forward_seconds',
         'backward_seconds','optimizer_step_seconds','cpu_wait_seconds',
         'gpu_transfer_seconds','network_transfer_seconds',
