@@ -967,6 +967,11 @@ struct SpatialGrid {
     cell_to_bucket: HashMap<usize, usize>,
     buckets: Vec<Vec<usize>>,
     active_buckets: usize,
+    /// Sorted only on demand for very wide queries. Small contact casts
+    /// use direct cell lookups, while large vision circles avoid probing
+    /// thousands of empty grid coordinates per observer.
+    sorted_cells: Vec<(usize, usize)>,
+    sorted_cells_dirty: bool,
     /// Off-grid or wide bodies still participate in contact queries, but
     /// their retained exact bounds reject unrelated far-away queries before
     /// the expensive candidate/narrowphase stages.
@@ -997,6 +1002,7 @@ impl SpatialGrid {
             // The pool retains only peak *occupied* bucket storage.
             cell_to_bucket: HashMap::new(),
             buckets: Vec::new(), active_buckets: 0,
+            sorted_cells: Vec::new(), sorted_cells_dirty: false,
             overflow: Vec::new(),
             seen: Vec::new(), generation: 0,
         })
@@ -1022,6 +1028,7 @@ impl SpatialGrid {
         }
         self.cell_to_bucket.clear();
         self.active_buckets = 0;
+        self.sorted_cells_dirty = true;
         self.overflow.clear();
         self.seen.resize(item_count, 0);
         for ship_index in 0..item_count {
@@ -1086,19 +1093,48 @@ impl SpatialGrid {
             self.seen[ship_index] = self.generation;
             output.push(ship_index);
         }
-        // Iterate coordinates, not HashMap entries: this preserves the
-        // exact source-order broadphase traversal (row then column) and
-        // deterministic downstream contact/event ordering.
-        if let Some((min_x, max_x, min_y, max_y)) = self.range(bounds) {
+        if self.active_buckets == 0 { return; }
+        let Some((min_x, max_x, min_y, max_y)) = self.range(bounds)
+            else { return };
+        let query_cells = (max_x - min_x + 1)
+            .saturating_mul(max_y - min_y + 1);
+        // Wide queries (e.g. faction sight over a large empty arena) must
+        // not spend O(arena cells) hashing positions that have no occupants.
+        // Sort on first use after a rebuild and retain the scratch buffer.
+        // Both paths traverse cells in the original row-major order.
+        let use_sparse_scan = query_cells >
+            self.active_buckets.saturating_mul(8);
+        if use_sparse_scan && self.sorted_cells_dirty {
+            self.sorted_cells.clear();
+            self.sorted_cells.extend(self.cell_to_bucket.iter()
+                .map(|(&cell, &bucket)| (cell, bucket)));
+            self.sorted_cells.sort_unstable_by_key(|&(cell, _)| cell);
+            self.sorted_cells_dirty = false;
+        }
+        let generation = self.generation;
+        let mut append_bucket = |bucket: usize| {
+            for &ship_index in &self.buckets[bucket] {
+                if self.seen[ship_index] != generation {
+                    self.seen[ship_index] = generation;
+                    output.push(ship_index);
+                }
+            }
+        };
+        if use_sparse_scan {
+            for &(cell, bucket) in &self.sorted_cells {
+                let y = cell / self.width;
+                let x = cell % self.width;
+                if (min_y..=max_y).contains(&y) &&
+                    (min_x..=max_x).contains(&x)
+                {
+                    append_bucket(bucket);
+                }
+            }
+        } else {
             for y in min_y..=max_y {
                 for x in min_x..=max_x {
-                    let Some(&bucket) = self.cell_to_bucket.get(&(y * self.width + x))
-                        else { continue };
-                    for &ship_index in &self.buckets[bucket] {
-                        if self.seen[ship_index] != self.generation {
-                            self.seen[ship_index] = self.generation;
-                            output.push(ship_index);
-                        }
+                    if let Some(&bucket) = self.cell_to_bucket.get(&(y * self.width + x)) {
+                        append_bucket(bucket);
                     }
                 }
             }
