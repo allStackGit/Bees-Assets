@@ -498,6 +498,55 @@ where
         Ok(counts)
     }
 
+    /// Change the original squad's chosen shooting priority, including
+    /// the currently active command's effective weapon ranking. This
+    /// requires neither a HiveMind reservation nor command supersession.
+    /// The host preflights all participants before invalidating the
+    /// driver's borrowed environment view and executing any mutation.
+    pub fn player_shooting_squads(
+        &mut self, input: &bees_gameplay::player_inputs::NativePlayerSquadShooting,
+    ) -> Result<bees_gameplay::player_inputs::NativePlayerCommandCounts, HostPlayerInputError>
+    where M: NativeLevelPlayerContext
+    {
+        use bees_gameplay::player_inputs::{
+            NativePlayerShootingPlan, NativePlayerCommandCounts,
+        };
+        let index = (0..self.simulation.world_count()).find(|&index|
+            self.simulation.world(index).is_some_and(|world| world.id == input.world_id))
+            .ok_or(HostPlayerInputError::Gameplay(NativePlayerInputError::StaleWorld))?;
+        let world = self.simulation.world(index).expect("located world");
+        if world.episode_revision() != input.episode_revision {
+            return Err(HostPlayerInputError::Gameplay(NativePlayerInputError::StaleWorld));
+        }
+        let mut counts = NativePlayerCommandCounts::default();
+        let mut plans = Vec::with_capacity(input.squads.len());
+        let mut seen = std::collections::HashSet::with_capacity(input.squads.len());
+        for &owner in &input.squads {
+            if !seen.insert(owner) { continue; }
+            let Some(selected_ship) = world.state.events.roster().get(owner)
+                .and_then(|squad| squad.members.first()).copied() else {
+                counts.rejected_squads += 1;
+                continue;
+            };
+            match NativePlayerShootingPlan::prepare(
+                world, input.world_id, input.episode_revision,
+                selected_ship, input.strategy_id,
+            ) {
+                Ok(plan) => plans.push(plan),
+                Err(error) if error.is_rejection() => counts.rejected_squads += 1,
+                Err(error) => return Err(HostPlayerInputError::Gameplay(error)),
+            }
+        }
+        if plans.is_empty() { return Ok(counts); }
+        self.driver.invalidate_environment(index).map_err(HostPlayerInputError::Driver)?;
+        for plan in plans {
+            plan.execute(self.simulation.world_mut(index).expect("located world"))
+                .map_err(HostPlayerInputError::Gameplay)?;
+            counts.accepted_squads += 1;
+        }
+        Ok(counts)
+    }
+
     /// Source MatchSpeed / UnmatchSpeed changes the already-authored
     /// current speed on each live ship, not its immutable base speed or
     /// the squad's active AI/strategic command. Preflight all squads before
