@@ -2095,12 +2095,17 @@ document.addEventListener('DOMContentLoaded', () => {
         'rss_mb','job_memory_mb','job_peak_memory_mb','job_cpu_cores',
         'job_cpu_lease_utilization_pct',
         'host_cpu_busy_pct','host_gpu_busy_pct','host_gpu_vram_mb',
-        'host_gpu_0_busy_pct','host_gpu_0_used_vram_mb',
-        'host_gpu_1_busy_pct','host_gpu_1_used_vram_mb',
         'host_gpu_temperature_c','host_gpu_hotspot_temperature_c',
-        'host_gpu_power_w','host_gpu_0_power_w','host_gpu_1_power_w',
-        'host_gpu_0_temperature_c','host_gpu_0_hotspot_temperature_c',
-        'host_gpu_1_temperature_c','host_gpu_1_hotspot_temperature_c',
+        'host_gpu_power_w',
+        // The wire inventory supports up to 32 physical devices. Operators
+        // can prioritize metrics for any pinned GPU before its first run.
+        ...Array.from({length:32},(_,i)=>[
+            'host_gpu_'+i+'_busy_pct',
+            'host_gpu_'+i+'_used_vram_mb',
+            'host_gpu_'+i+'_temperature_c',
+            'host_gpu_'+i+'_hotspot_temperature_c',
+            'host_gpu_'+i+'_power_w',
+        ]).flat(),
         'data_preparation_seconds','inference_seconds','forward_seconds',
         'backward_seconds','optimizer_step_seconds','cpu_wait_seconds',
         'gpu_transfer_seconds','network_transfer_seconds',
