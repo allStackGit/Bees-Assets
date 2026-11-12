@@ -1085,6 +1085,10 @@ pub struct KinematicPhysics {
     /// One spatial grid, rebound lazily between ship and obstacle indices.
     /// Explicit ownership prevents treating an invalidated grid as obstacles.
     grid_contents: GridContents,
+    /// Mutable ship access can invalidate hull poses even while the shared
+    /// grid currently contains obstacles. Keep that pending geometry change
+    /// independent of which population owns the grid.
+    ship_hulls_dirty: bool,
     candidates: Vec<usize>,
     overlaps_previous: Vec<TriggerEnter>,
     overlaps_current: Vec<TriggerEnter>,
@@ -1119,6 +1123,7 @@ impl KinematicPhysics {
             obstacles: Vec::new(),
             grid: SpatialGrid::new(area, cell_size)?,
             grid_contents: GridContents::Stale,
+            ship_hulls_dirty: false,
             candidates: Vec::new(),
             overlaps_previous: Vec::new(),
             overlaps_current: Vec::new(),
@@ -1191,18 +1196,18 @@ impl KinematicPhysics {
             ShipHullOverlap::Contact
     }
 
-    /// A mutable ship borrow may change its pose, active status, or
-    /// collider geometry between physics ticks. Only a Stale grid needs
-    /// hull refresh; an Obstacle grid after a completed physics step has
-    /// current ship hulls already and only needs a population switch.
+    /// Reuse the one shared grid, refreshing ship hulls only when the
+    /// authoritative mutable ship API could have changed their geometry.
+    /// Switching to an obstacle grid does not consume that pending work.
     fn ensure_ship_grid(&mut self) -> bool {
-        if self.grid_contents == GridContents::Ships {
+        if self.grid_contents == GridContents::Ships && !self.ship_hulls_dirty {
             return false;
         }
-        if self.grid_contents == GridContents::Stale {
+        if self.ship_hulls_dirty {
             for ship in &mut self.ships {
                 if ship.active { ship.update_hull(); }
             }
+            self.ship_hulls_dirty = false;
         }
         self.grid.rebuild_with(self.ships.len(), |index| {
             let ship = &self.ships[index];
@@ -1257,15 +1262,8 @@ impl KinematicPhysics {
     ) -> bool {
         let rebuilt = self.grid_contents != GridContents::Obstacles;
         if rebuilt {
-            // A preceding ships_mut() can invalidate ship hull poses as
-            // well as the shared grid. Refresh that deferred geometry
-            // before changing the grid population, or the later ship
-            // query would mistake the obstacle grid for a clean hull cache.
-            if self.grid_contents == GridContents::Stale {
-                for ship in &mut self.ships {
-                    if ship.active { ship.update_hull(); }
-                }
-            }
+            // Ship hull refresh is independent of obstacle-grid ownership.
+            // An obstacle query never eagerly consumes ship geometry work.
             self.grid.rebuild_with(self.obstacles.len(), |index| {
                 let obstacle = &self.obstacles[index];
                 if obstacle.active { obstacle.collider.bounds } else { None }
@@ -1425,9 +1423,13 @@ impl KinematicPhysics {
     }
 
     /// Any mutable access can change ship positions or hull geometry.
-    /// Defer rebuilding until a spatial query actually needs the grid.
+    /// Do not invalidate a currently valid obstacle grid for a ship-only
+    /// mutation; defer hull refresh until a ship-grid query actually occurs.
     pub fn ships_mut(&mut self) -> &mut [ShipBody] {
-        self.grid_contents = GridContents::Stale;
+        self.ship_hulls_dirty = true;
+        if self.grid_contents == GridContents::Ships {
+            self.grid_contents = GridContents::Stale;
+        }
         &mut self.ships
     }
 
@@ -1573,10 +1575,13 @@ impl KinematicPhysics {
     pub(crate) fn insert_prevalidated_ship(&mut self, ship: ShipBody) -> usize {
         let index = self.ships.len();
         self.ships.push(ship);
-        // Dynamic Scout/Carrier spawns may be followed by sight queries
-        // before the next physics tick. Invalidate the reused ship grid so
-        // it includes the new collider on its next lazy rebuild.
-        self.grid_contents = GridContents::Stale;
+        // Dynamic Scout/Carrier spawns may be queried before the next
+        // physics tick. Invalidate only ship geometry and a ship-owned grid;
+        // an existing obstacle grid remains correct.
+        self.ship_hulls_dirty = true;
+        if self.grid_contents == GridContents::Ships {
+            self.grid_contents = GridContents::Stale;
+        }
         index
     }
 
@@ -1641,6 +1646,9 @@ impl KinematicPhysics {
             ship.update_hull();
             self.counts.integrated_bodies += 1;
         }
+        // The fixed-step integration refreshed every active hull. No
+        // between-tick ship mutation remains unrefreshed at this boundary.
+        self.ship_hulls_dirty = false;
         for projectile in &mut self.projectiles {
             if !projectile.active { continue; }
             if projectile.has_body {
