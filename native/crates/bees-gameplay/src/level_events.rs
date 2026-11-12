@@ -268,6 +268,10 @@ pub struct NativeLevelEventProcessor {
     acknowledged_notification_count: u64,
     peak_pending_notifications: usize,
     reinforcement_arrivals: NativeReinforcementArrivals,
+    /// Last canonical admission tick, independent of notification ACKs.
+    /// The native UI can show transient feedback without storing gameplay
+    /// state or replaying the durable outbox.
+    last_reinforcement_tick: Option<u64>,
     episode: NativeEpisodeRewardCoordinator,
     group_delivery: Option<NativeGroupRewardDelivery>,
     next_tick: u64,
@@ -302,6 +306,7 @@ impl NativeLevelEventProcessor {
             acknowledged_notification_count: 0,
             peak_pending_notifications: 0,
             reinforcement_arrivals: NativeReinforcementArrivals::default(),
+            last_reinforcement_tick: None,
             episode,
             group_delivery: None,
             next_tick: 1,
@@ -872,11 +877,16 @@ impl NativeLevelEventProcessor {
         self.reinforcement_arrivals.waves += 1;
         self.reinforcement_arrivals.squads += squads as u64;
         self.reinforcement_arrivals.ships += ships as u64;
+        self.last_reinforcement_tick = Some(tick);
         Ok(())
     }
 
     pub fn reinforcement_arrivals(&self) -> NativeReinforcementArrivals {
         self.reinforcement_arrivals
+    }
+
+    pub fn last_reinforcement_tick(&self) -> Option<u64> {
+        self.last_reinforcement_tick
     }
 
     /// The first pending event's stable, zero-based sequence within this

@@ -1271,6 +1271,8 @@ where
                 world.state.metadata.reinforcement_gauges().pending_waves,
             next_reinforcement_tick:
                 world.state.metadata.next_reinforcement_tick(),
+            last_reinforcement_tick:
+                world.state.events.last_reinforcement_tick(),
             combat: &world.state.combat,
             collision_matrix: &self.simulation.rules().collision_matrix,
             roster: world.state.events.roster(),

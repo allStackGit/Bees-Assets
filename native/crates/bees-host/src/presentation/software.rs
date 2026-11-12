@@ -598,10 +598,20 @@ impl NativeSoftwareRenderer {
             };
             text::draw_centered(&mut self.pixels, self.width, 8, &label, 1, [239, 247, 255]);
         }
-        // Reuse the canonical Level's due tick; this is a display-only
-        // warning, not another timer or authority capable of spawning ships.
-        if view.terminal_result.is_none() && view.reinforcement_waves_pending > 0 {
-            if let Some(next_tick) = view.next_reinforcement_tick {
+        // The durable Level notification records arrivals exactly once.
+        // A short visual acknowledgement survives an outbox ACK, but
+        // vanishes naturally with the canonical simulation clock; paused
+        // games do not consume its time and no frame timer is allocated.
+        if view.terminal_result.is_none() {
+            let y = if view.survival.is_some() { 8 + text::HEIGHT + 4 } else { 8 };
+            let recently_arrived = view.last_reinforcement_tick
+                .is_some_and(|tick| view.tick >= tick &&
+                    (view.tick - tick) as f64 *
+                        f64::from(view.fixed_step_seconds) < 3.0);
+            if recently_arrived {
+                text::draw_centered(&mut self.pixels, self.width, y,
+                    "Reinforcements arrived", 1, [239, 196, 129]);
+            } else if let Some(next_tick) = view.next_reinforcement_tick {
                 let remaining_ticks = next_tick.saturating_sub(view.tick);
                 let seconds = ((remaining_ticks as f64) *
                     f64::from(view.fixed_step_seconds)).ceil() as u64;
@@ -611,7 +621,6 @@ impl NativeSoftwareRenderer {
                     if view.reinforcement_waves_pending == 1 { "" } else { "s" },
                     seconds / 60, seconds % 60,
                 );
-                let y = if view.survival.is_some() { 8 + text::HEIGHT + 4 } else { 8 };
                 text::draw_centered(&mut self.pixels, self.width, y,
                     &label, 1, [239, 196, 129]);
             }

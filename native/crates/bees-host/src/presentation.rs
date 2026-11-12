@@ -47,6 +47,9 @@ pub struct NativeRenderWorldView<'a> {
     /// The renderer never schedules, mutates, or owns reinforcements.
     pub reinforcement_waves_pending: usize,
     pub next_reinforcement_tick: Option<u64>,
+    /// One authoritative, successfully published arrival. Acknowledging
+    /// the durable notification must not extinguish the gameplay banner.
+    pub last_reinforcement_tick: Option<u64>,
     pub combat: &'a CombatWorld,
     pub collision_matrix: &'a bees_sim::physics::CollisionMatrix,
     pub roster: &'a NativeSquadRoster,
