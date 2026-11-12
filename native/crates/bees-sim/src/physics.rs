@@ -1598,6 +1598,12 @@ impl KinematicPhysics {
     pub fn trigger_entries(&self) -> &[TriggerEnter] { &self.entries }
     pub fn obstacle_trigger_entries(&self) -> &[ObstacleTriggerEnter] { &self.obstacle_entries }
     pub fn obstacles(&self) -> &[ObstacleBody] { &self.obstacles }
+    /// Current shared-grid occupancy and retained bucket count. The latter
+    /// is a per-world high-water memory gauge, not an arena-size estimate.
+    /// Both numbers are read without scanning the physics population.
+    pub fn spatial_grid_bucket_usage(&self) -> (usize, usize) {
+        (self.grid.active_buckets, self.grid.buckets.len())
+    }
     /// A mutable obstacle borrow can retire or move a collider between
     /// fixed ticks. Preserve an existing ship grid; rebuild obstacle
     /// geometry only if an obstacle query actually needs it.

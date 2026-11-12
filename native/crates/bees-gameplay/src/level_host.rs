@@ -492,6 +492,10 @@ pub struct NativeRuntimeStatus {
     pub failed_worlds: usize,
     pub living_ships: usize,
     pub active_commands: usize,
+    /// Current sum of occupied grid cells and retained bucket pools across
+    /// all worlds; one shared physical grid per world, never per agent.
+    pub spatial_grid_active_buckets: usize,
+    pub spatial_grid_retained_buckets: usize,
     /// Sum of the current episodes' authoritative vision measurements.
     /// These reset on episode turnover, so they are gauges, not host-wide
     /// monotonic counters for deriving cross-episode rates.
@@ -1135,6 +1139,8 @@ impl NativeLevelBatchDriver {
             failed_worlds: 0,
             living_ships: 0,
             active_commands: 0,
+            spatial_grid_active_buckets: 0,
+            spatial_grid_retained_buckets: 0,
             vision: bees_sim::vision::VisionSweepCounts::default(),
             navigation_jobs_completed: 0,
             queued_notifications: 0,
@@ -1175,6 +1181,10 @@ impl NativeLevelBatchDriver {
                 status.running_worlds += 1;
             }
             status.living_ships += world.state.combat.total_living_ships();
+            let (occupied, retained) = world.state.combat.physics()
+                .spatial_grid_bucket_usage();
+            status.spatial_grid_active_buckets += occupied;
+            status.spatial_grid_retained_buckets += retained;
             status.vision.merge(&world.state.combat.vision_measurements());
             let asteroids = world.state.combat.full_asteroid_pool_measurements();
             status.full_asteroids_active += asteroids.active;
