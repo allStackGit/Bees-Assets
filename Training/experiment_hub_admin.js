@@ -19,6 +19,8 @@ const POST_ACTIONS={
     '/api/hub/jobs':[201,'queueConfiguration'],
     '/api/hub/pipelines':[201,'queuePipeline'],
     '/api/hub/distributed/tinybrains':[201,'queueDistributedTinyBrains'],
+    '/api/hub/distributed/tinybrains/schedule-start':[200,'scheduleDistributedGroup'],
+    '/api/hub/distributed/tinybrains/cancel-start-plan':[200,'cancelScheduledDistributedGroup'],
     '/api/hub/distributed/tinybrains/start-collectors':[200,'authorizeDistributedCollectors'],
     '/api/hub/distributed/tinybrains/cancel-launch':[200,'cancelDistributedLaunch'],
     '/api/hub/distributed/tinybrains/abort-startup':[200,'abortDistributedStartup'],

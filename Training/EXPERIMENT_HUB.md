@@ -2849,6 +2849,30 @@ service to the public Internet.
    "confirm_learner_start":true`. Restart recovery additionally supplies
    `"resume_after_restart":true,"confirm_restart_rearm":true`.
 
+   To approve the **entire group before its leases or GPU probes finish**,
+   choose **Schedule full group when ready** in Train, or POST
+   `/api/hub/distributed/tinybrains/schedule-start` with
+   `{"learner_job_id":"<uuid>","expected_collector_job_ids":["<uuid>",...],"confirm_schedule":true,"confirm_learner_start":true}`.
+   The coordinator freezes the original learner/collector host assignments,
+   leases, ordered HMAC endpoints and key fingerprint. Once every original
+   machine has freshly acknowledged capacity and passed native admission,
+   the existing atomic collector Start action is authorized together with
+   one bounded future learner Start. The learner still waits for every
+   original collector's authenticated running dispatch; this is not a
+   second training protocol. All members, including the learner, release
+   their capacity after verified native terminal receipts.
+
+   This preapproved group launch expires after 20 minutes. Separately pass
+   `"resume_after_restart":true,"confirm_restart_rearm":true` only to
+   retain its *unfulfilled* authorization through coordinator restart;
+   fresh machine/lease/GPU/HMAC proof is still mandatory and neither
+   a failed nor interrupted native owner is retried. Without approval,
+   restart disarms the future Start. Cancel before dispatch with
+   `POST /api/hub/distributed/tinybrains/cancel-start-plan` and
+   `{"plan_id":"<uuid>","confirm_cancel":true}`. Cancellation preserves
+   the reserved group. Individual Start/cancellation must first resolve
+   the outstanding group plan.
+
    Both the original remote collector Starts and the one-use future learner
    permission are committed **atomically** and expire after 20 minutes.
    Ordinary approval is disarmed on coordinator restart, agent replacement,
@@ -2903,8 +2927,10 @@ coordinator restart, but only after fresh native proof; ordinary approvals do
 not. Abort never stops a dispatched learner or deletes checkpoints. Group members cannot change
 machines or accept a new queued dependency during teardown.
 
-This path is initially queued as one atomic resource group but is not
-live-rebalanced or automatically restarted as one native process.
+This path is initially queued as one atomic resource group and can receive
+one bounded unattended launch approval. It is not live-rebalanced, and
+unknown, failed or interrupted native services are never automatically
+restarted.
 Collector interruptions fail the learner's active PPO update rather than
 allowing incomplete or mixed-policy data into its optimizer. After a
 **checkpoint-verified finished or stopped** learner has released its capacity,
