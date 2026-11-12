@@ -288,6 +288,8 @@ internal static class NativePhysicalSceneExporter
         // Authored Map orthographic half-height zoom limits. Zero means
         // the source map did not configure this optional presentation field.
         public int camera_min_zoom, camera_max_zoom;
+        // Source Stage or persisted user setting; graphical input only.
+        public bool camera_edge_scrolling;
         public bool activate_hivemind;
         public int hivemind_initial_command_delay_seconds;
         public bool has_obstacles;
@@ -357,6 +359,9 @@ internal static class NativePhysicalSceneExporter
                 level.Map.MaxZoom >= level.Map.MinZoom ? level.Map.MinZoom : 0,
             camera_max_zoom = level.Map.MinZoom > 0 &&
                 level.Map.MaxZoom >= level.Map.MinZoom ? level.Map.MaxZoom : 0,
+            camera_edge_scrolling = level.Stage.UseMouseScrolling ||
+                (ConfigData.UserProgressData != null &&
+                 ConfigData.UserProgressData.UseMouseScrolling),
             activate_hivemind = level.Stage.ActivateHiveMind,
             hivemind_initial_command_delay_seconds = level.Stage.InitialCommandDelay,
             has_obstacles = level.HasObstacles,

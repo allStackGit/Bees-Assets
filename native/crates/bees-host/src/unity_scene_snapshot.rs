@@ -129,6 +129,7 @@ struct UnitySnapshot {
     activate_fog_of_war: Option<bool>,
     camera_min_zoom: Option<i32>,
     camera_max_zoom: Option<i32>,
+    camera_edge_scrolling: Option<bool>,
     activate_hivemind: Option<bool>,
     hivemind_initial_command_delay_seconds: Option<i32>,
     has_obstacles: bool,
@@ -637,6 +638,9 @@ pub struct NativePhysicalScene {
     /// This is a graphical camera setting only and does not change the
     /// authoritative simulation broadphase or training observations.
     pub camera_zoom: Option<(f32, f32)>,
+    /// Source Stage.UseMouseScrolling || UserProgressData.UseMouseScrolling.
+    /// None is a legacy snapshot lacking the source user preference.
+    pub camera_edge_scrolling: Option<bool>,
     /// Source Stage.ActivateHiveMind, required for autonomous native
     /// command requests. Legacy imports remain runnable but cannot
     /// silently assume gameplay AI eligibility.
@@ -2281,6 +2285,7 @@ impl NativePhysicalScene {
             activate_mining: raw.activate_mining,
             activate_fog_of_war: raw.activate_fog_of_war,
             camera_zoom,
+            camera_edge_scrolling: raw.camera_edge_scrolling,
             activate_hivemind: raw.activate_hivemind,
             hivemind_initial_command_delay_seconds: raw.hivemind_initial_command_delay_seconds,
             has_obstacles: raw.has_obstacles,

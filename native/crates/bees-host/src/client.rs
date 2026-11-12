@@ -166,6 +166,12 @@ impl NativeClient {
     }
 
     /// Imported once from the source scene, not inferred from a UI map.
+    pub fn set_source_edge_scrolling(&mut self, enabled: Option<bool>) {
+        if let Some(enabled) = enabled {
+            self.edge_scroll_enabled = enabled;
+        }
+    }
+
     pub fn set_source_zoom_limits(&mut self, limits: Vec<Option<(f32, f32)>>) {
         self.source_zoom_by_world = limits;
         let (width, height) = self.renderer.size();

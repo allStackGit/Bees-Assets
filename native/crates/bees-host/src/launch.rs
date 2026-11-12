@@ -1262,6 +1262,11 @@ fn run_battle(
     let mut client = if view {
         let mut client = bees_host::client::NativeClient::new(client_bounds[0])?;
         client.set_source_zoom_limits(client_zoom_limits);
+        // Stage/user settings are common to these simultaneously captured
+        // Levels, while an operator can override edge panning with F6.
+        client.set_source_edge_scrolling(
+            source_levels[0].camera_edge_scrolling,
+        );
         // Unity StageTitania2HumanFleetAtCenter assigns this precise
         // Stage.DefaultCameraPosition before the Beenoculars briefing.
         // Keep this in the mission host; the reusable client only knows
