@@ -1720,6 +1720,10 @@ impl KinematicPhysics {
         // The fixed-step integration refreshed every active hull. No
         // between-tick ship mutation remains unrefreshed at this boundary.
         self.ship_hulls_dirty = false;
+        // An uncollidable scripted shot cannot query ship contacts. Gather
+        // this during the mandatory integration pass rather than scanning
+        // allocated (often retired) projectile slots again.
+        let mut has_physical_projectiles = false;
         for projectile in &mut self.projectiles {
             if !projectile.active { continue; }
             if projectile.has_body {
@@ -1727,6 +1731,8 @@ impl KinematicPhysics {
                 self.counts.integrated_bodies += 1;
             }
             projectile.update_hull();
+            has_physical_projectiles |= projectile.collider.as_ref()
+                .is_some_and(|collider| collider.bounds.is_some());
         }
         // All contact phases share these frame-local eligibility flags.
         // Derive them during mandatory obstacle integration, not through a
@@ -1747,15 +1753,26 @@ impl KinematicPhysics {
             self.counts.integrated_bodies += 1;
         }
         self.obstacle_hulls_dirty = false;
-        self.grid.rebuild_with(self.ships.len(), |index| {
-            let ship = &self.ships[index];
-            if ship.active { ship.collider.bounds } else { None }
-        });
-        self.counts.ship_grid_rebuilds += 1;
-        self.grid_contents = GridContents::Ships;
-        self.counts.ship_grid_overflow_bodies = self.grid.overflow.len() as u64;
+        // Only real projectile hulls and CollisionAsteroid child proximity
+        // shapes query the ship grid during physics.step. Clear arenas
+        // without either can skip its O(ship population) rebuild entirely.
+        // Invalidate the previous grid after movement; later weapon/vision
+        // queries will lazily rebuild the current ship population if needed.
+        let needs_ship_grid = has_physical_projectiles || has_body_contact_obstacles;
+        if needs_ship_grid {
+            self.grid.rebuild_with(self.ships.len(), |index| {
+                let ship = &self.ships[index];
+                if ship.active { ship.collider.bounds } else { None }
+            });
+            self.counts.ship_grid_rebuilds += 1;
+            self.grid_contents = GridContents::Ships;
+            self.counts.ship_grid_overflow_bodies = self.grid.overflow.len() as u64;
+        } else {
+            self.grid_contents = GridContents::Stale;
+        }
         self.overlaps_current.clear();
-        for projectile in &self.projectiles {
+        if has_physical_projectiles {
+            for projectile in &self.projectiles {
             if !projectile.active { continue; }
             let Some(projectile_collider) = &projectile.collider else { continue };
             let Some(area) = projectile_collider.bounds else { continue };
@@ -1778,6 +1795,7 @@ impl KinematicPhysics {
                     });
                 }
             }
+        }
         }
         // Proximity-to-ship checks reuse the ship grid before it is rebuilt
         // for obstacles. Unity's child layer is evaluated independently
