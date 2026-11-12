@@ -943,6 +943,9 @@ document.addEventListener('DOMContentLoaded', () => {
     function renderMetricPicker(selectId,pickerId) {
         const source=$(selectId),panel=$(pickerId);
         if(!source||!panel)return;
+        // Frozen Hub jobs accept up to 96 preferred chart metrics.
+        // Compare charts are intentionally not subject to this cap.
+        const selectionLimit=selectId==='hub-job-metrics'?96:null;
         if(!panel._metricView) {
             const toolbar=document.createElement('div');
             toolbar.className='hub-metric-toolbar';
@@ -989,6 +992,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         const check=document.createElement('input');
                         check.type='checkbox';
                         check.checked=option.selected;
+                        check.disabled=!check.checked&&selectionLimit!==null&&
+                            source.selectedOptions.length>=selectionLimit;
                         check.dataset.metricValue=option.value;
                         const key=option.value.replace(/^metric:/,'');
                         const name=document.createElement('span');
@@ -996,6 +1001,12 @@ document.addEventListener('DOMContentLoaded', () => {
                         const note=document.createElement('small');
                         note.textContent=option.textContent.slice(key.length).trim();
                         check.addEventListener('change',()=>{
+                            if(check.checked&&selectionLimit!==null&&
+                                source.selectedOptions.length>=selectionLimit) {
+                                check.checked=false;
+                                draw(option.value);
+                                return;
+                            }
                             option.selected=check.checked;
                             source.dispatchEvent(new Event('change',{bubbles:true}));
                             draw(option.value);
@@ -1014,8 +1025,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 rows.replaceChildren(...nodes);
                 rows.scrollTop=scroll;
-                count.textContent=source.selectedOptions.length+' selected · '+
-                    visible.length+' of '+source.options.length+' shown';
+                count.textContent=source.selectedOptions.length+
+                    (selectionLimit===null?'':' / '+selectionLimit)+
+                    ' selected · '+visible.length+' of '+
+                    source.options.length+' shown';
                 if(focusKey!==null)
                     for(const check of rows.querySelectorAll('input[type="checkbox"]'))
                         if(check.dataset.metricValue===focusKey) {
@@ -1024,8 +1037,15 @@ document.addEventListener('DOMContentLoaded', () => {
                         }
             }
             function toggle(checked,visibleOnly) {
-                for(const option of visibleOnly?matches():[...source.options])
-                    option.selected=checked;
+                let available=selectionLimit===null?Infinity:
+                    Math.max(0,selectionLimit-source.selectedOptions.length);
+                for(const option of visibleOnly?matches():[...source.options]) {
+                    if(!checked)option.selected=false;
+                    else if(!option.selected&&available>0) {
+                        option.selected=true;
+                        available--;
+                    }
+                }
                 source.dispatchEvent(new Event('change',{bubbles:true}));
                 draw();
             }
@@ -2095,12 +2115,17 @@ document.addEventListener('DOMContentLoaded', () => {
         'rss_mb','job_memory_mb','job_peak_memory_mb','job_cpu_cores',
         'job_cpu_lease_utilization_pct',
         'host_cpu_busy_pct','host_gpu_busy_pct','host_gpu_vram_mb',
-        'host_gpu_0_busy_pct','host_gpu_0_used_vram_mb',
-        'host_gpu_1_busy_pct','host_gpu_1_used_vram_mb',
         'host_gpu_temperature_c','host_gpu_hotspot_temperature_c',
-        'host_gpu_power_w','host_gpu_0_power_w','host_gpu_1_power_w',
-        'host_gpu_0_temperature_c','host_gpu_0_hotspot_temperature_c',
-        'host_gpu_1_temperature_c','host_gpu_1_hotspot_temperature_c',
+        'host_gpu_power_w',
+        // The wire inventory supports up to 32 physical devices. Operators
+        // can prioritize metrics for any pinned GPU before its first run.
+        ...Array.from({length:32},(_,i)=>[
+            'host_gpu_'+i+'_busy_pct',
+            'host_gpu_'+i+'_used_vram_mb',
+            'host_gpu_'+i+'_temperature_c',
+            'host_gpu_'+i+'_hotspot_temperature_c',
+            'host_gpu_'+i+'_power_w',
+        ]).flat(),
         'data_preparation_seconds','inference_seconds','forward_seconds',
         'backward_seconds','optimizer_step_seconds','cpu_wait_seconds',
         'gpu_transfer_seconds','network_transfer_seconds',
@@ -2112,7 +2137,7 @@ document.addEventListener('DOMContentLoaded', () => {
         'ppo_backward_seconds','ppo_metric_readback_seconds',
         'ppo_gradient_processing_seconds','ppo_optimizer_step_seconds',
         'ppo_parameter_finite_check_seconds','ppo_gpu_stream_sync_seconds',
-        'ppo_minibatches','ppo_microbatches','ppo_board_pixel_samples',
+        'ppo_minibatches','ppo_board_pixel_samples',
         'ppo_max_board_cells','ppo_unique_board_shapes',
         'evaluation_seconds','collector_count',
         // The TinyBrains learner contributes slot 0; up to eight remote
