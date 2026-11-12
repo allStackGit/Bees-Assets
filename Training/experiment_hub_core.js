@@ -2510,10 +2510,14 @@ class ExperimentHub {
         const expected=new Set(value.expected_collector_job_ids);
         if(children.length!==expected.size||children.some(job=>!expected.has(job.id)))
             throw Error('Collector membership changed; refresh before abandoning the group.');
+        const members=[learner,...children];
         if(next.jobs.some(job=>job.status!=='cancelled'&&
-            (job.after_job_id===learner.id||
-             job.continuation_of_job_id===learner.id)))
-            throw Error('Cancel downstream jobs before abandoning a distributed learner.');
+            members.some(parent=>job.after_job_id===parent.id||
+                job.continuation_of_job_id===parent.id))||
+            (next.candidate_selections||[]).some(plan=>
+                ['waiting','needs_review'].includes(plan.status)&&
+                members.some(job=>plan.candidate_job_ids?.includes(job.id))))
+            throw Error('Cancel outstanding group dependencies and candidate selections before abandoning startup.');
         learner.distributed_abort_requested_at??=now();
         learner.status_reason='Distributed startup abort requested; stopping collectors and awaiting native ownership receipts.';
         this.reconcileDistributedAborts(next);
@@ -2579,6 +2583,24 @@ class ExperimentHub {
                 job.frozen_parameters?.learner_job_id===learner.id&&
                 job.status!=='cancelled');
             const expectedIds=Object.keys(intent.collector_dispatches);
+            // The operator approved one coordinated launch. A confirmed
+            // terminal collector failure before learner dispatch makes
+            // that launch impossible; safely wind down its other workers
+            // instead of leaving them consuming CPU/GPU indefinitely.
+            if(workers.some(job=>['failed','finished','stopped'].includes(job.status))) {
+                try {
+                    this.abortDistributedStartup({
+                        learner_job_id:learner.id,
+                        expected_collector_job_ids:expectedIds,
+                        confirm_abort:true,
+                    });
+                    disarm('A collector exited before learner launch; distributed startup abort and native sidecar cleanup requested.');
+                }catch(error) {
+                    disarm('Collector exited before learner launch; manual abort review required: '+
+                        String(error.message||error).slice(0,120));
+                }
+                continue;
+            }
             if(workers.length!==expectedIds.length||workers.some(job=>
                 intent.collector_dispatches[job.id]!==job.dispatch_id||
                 !['start_requested','launch_requested','running'].includes(job.status))) {
@@ -4191,6 +4213,9 @@ class ExperimentHub {
             dependency=next.jobs.find(j=>j.id===afterId);
             if(dependency?.distributed_abort_requested_at)
                 throw Error('An abandoned distributed group cannot accept a new dependent job.');
+            if(dependency?.project_id==='tinybrains_rollout'||
+                dependency?.distributed_rollout_managed===true)
+                throw Error('Distributed group services cannot be independent-stage predecessors.');
             const completed=independentSequenceComplete(dependency);
             if(!dependency||['bees','ants'].includes(dependency.project_id)||
                 !(['waiting_adapter','waiting_predecessor',
