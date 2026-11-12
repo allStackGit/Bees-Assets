@@ -2695,6 +2695,42 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                     await reload();
                 }));
+            // A distributed group is reserved atomically. Authorize the
+            // collector tier atomically as well, then wait for verified native
+            // running receipts before separately starting its GPU learner.
+            if(j.status==='waiting_adapter'&&
+                j.distributed_rollout_managed===true&&groupWorkers.length>0&&
+                groupWorkers.every(worker=>worker.status==='waiting_adapter'&&
+                    !worker.dispatch_id&&worker.native_start_readiness?.eligible===true))
+                actions.append(button('Start all remote collectors',async()=>{
+                    const hosts=groupWorkers.map(worker=>worker.assigned_machine_id);
+                    const gpuCount=groupWorkers.reduce((count,worker)=>
+                        count+worker.resources.gpu_count,0);
+                    const cpus=groupWorkers.reduce((count,worker)=>
+                        count+worker.resources.cpus,0);
+                    if(!confirm('Authorize all '+groupWorkers.length+
+                        ' remotely pinned TinyBrains collectors on '+hosts.join(', ')+
+                        ' in one operation? They reserve '+cpus+' CPUs'+
+                        (gpuCount?' and '+gpuCount+' exclusive CUDA GPU(s)':'')+
+                        '. Every collector must retain a fresh native lease and pinned HMAC endpoint. '+
+                        'This starts real machine-local worker processes; GPU access on Windows remains cooperative. '+
+                        'If any collector is no longer eligible, no collector Start will be authorized. '+
+                        'The learner is NOT started: it still requires verified running collectors and a separate GPU Start.'))return;
+                    try {
+                        const result=await action('hub/distributed/tinybrains/start-collectors',{
+                            learner_job_id:j.id,
+                            expected_collector_job_ids:groupWorkers.map(worker=>worker.id),
+                            confirm_start:true,
+                        });
+                        feedback('hub-job-message',
+                            result.starts_authorized+' remote collector Starts authorized atomically. '+
+                            'Wait for verified running receipts before starting the learner.');
+                        await reload();
+                    }catch(error){
+                        feedback('hub-job-message',error.message);
+                        await reload();
+                    }
+                }));
             if(j.status==='waiting_adapter'&&readiness?.eligible===true)
                 actions.append(button('Start native job',async()=>{
                     const windows=machine.agent_platform==='win32';
