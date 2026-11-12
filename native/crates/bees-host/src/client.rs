@@ -317,6 +317,20 @@ impl NativeClient {
         }
         let accepts_orders = !briefing && !self.playback && view.terminal_result.is_none();
         let pointer_active = self.window.is_active();
+        if accepts_orders && pointer_active &&
+            (self.window.is_key_down(Key::LeftCtrl) ||
+             self.window.is_key_down(Key::RightCtrl)) &&
+            self.window.is_key_pressed(Key::A, KeyRepeat::No)
+        {
+            self.renderer.selection.select_all_player_squads(&view);
+            self.renderer.selected_ship = self.renderer.selection
+                .representative_ships(&view).next();
+            self.support_mode = None;
+            self.selection_drag = None;
+            self.renderer.selection_box = None;
+            self.last_left_press = None;
+            self.double_left_press = false;
+        }
         // Schema-29 snapshots carry Unity's exact numbered squads and
         // original per-side count. Legacy exports retain PgUp/PgDn cycling
         // but do not guess 1-0 hotkey assignments from live roster order.
@@ -429,7 +443,10 @@ impl NativeClient {
         } else { None };
         let firing_mode = if accepts_orders && self.window.is_key_pressed(Key::V, KeyRepeat::No) {
             Some(true)
-        } else if accepts_orders && self.window.is_key_pressed(Key::A, KeyRepeat::No) {
+        } else if accepts_orders &&
+            !self.window.is_key_down(Key::LeftCtrl) &&
+            !self.window.is_key_down(Key::RightCtrl) &&
+            self.window.is_key_pressed(Key::A, KeyRepeat::No) {
             Some(false)
         } else { None };
         let cease_fire_input = firing_mode.and_then(|cease_fire| {
@@ -657,7 +674,7 @@ impl NativeClient {
                 view.world_id.0, view.tick, status, selected,
                 self.result_controls.map_or("Space pause, N step, ", NativeResultControls::hint))
         } else { format!(
-            "Bees native | World {} | Episode {} | Tick {} | {} ships, {} shots | {} squads selected | {}{} | {} | range/obstruction {} | Left select/drag, double-click type, Ctrl add, right move/attack | C stop chase, V cease fire, A attack on sight, K beacon, D detonate, G guard, P patrol, M mine, H heal, R retreat, hold J manual fire, T point fire, X stop, B ranges, Backspace cancel | Space pause, N step, Tab world, 1-0 squads, PgUp/PgDn cycle, arrows pan, wheel zoom, F fit, I map, Esc exit",
+            "Bees native | World {} | Episode {} | Tick {} | {} ships, {} shots | {} squads selected | {}{} | {} | range/obstruction {} | Left select/drag, double-click type, Ctrl add, right move/attack | C stop chase, V cease fire, A attack on sight, Ctrl+A all squads, K beacon, D detonate, G guard, P patrol, M mine, H heal, R retreat, hold J manual fire, T point fire, X stop, B ranges, Backspace cancel | Space pause, N step, Tab world, 1-0 squads, PgUp/PgDn cycle, arrows pan, wheel zoom, F fit, I map, Esc exit",
             view.world_id.0, view.episode_revision, view.tick, counts.ships, counts.projectiles,
             self.renderer.selection.squads().len(),
             if self.paused { "PAUSED" } else { "RUNNING" }, selected, self.input_feedback,

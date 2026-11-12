@@ -111,6 +111,28 @@ impl NativeSquadSelection {
         Some(owner)
     }
 
+    /// RTS convenience for large formations. Choose the current selection
+    /// side, or the first user-controlled side, and never merge different
+    /// players' squads into a single player command. Source order is stable
+    /// and duplicates cannot enter the selection.
+    pub fn select_all_player_squads(&mut self, view: &NativeRenderWorldView<'_>) {
+        self.synchronize(view);
+        let side = self.squads.first().and_then(|owner|
+            view.roster.get(*owner).map(|squad| squad.side)
+        ).or_else(|| view.roster.source_order().iter().find_map(|&owner|
+            selectable(view, owner).then(|| view.roster.get(owner)?.side).flatten()
+        ));
+        self.squads.clear();
+        let Some(side) = side else { return };
+        for &owner in view.roster.source_order() {
+            if view.roster.get(owner).is_some_and(|squad|
+                squad.side == side && squad.mother_squad.is_none()
+            ) && selectable(view, owner) {
+                self.squads.push(owner);
+            }
+        }
+    }
+
     /// Source LevelInputManager.SelectSquadByNumber: 0 is 10, then
     /// wraps against the ORIGINAL side count even after casualties.
     /// Do not silently remap a dead numbered squad to a survivor.

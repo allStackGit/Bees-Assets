@@ -63,6 +63,7 @@ pub struct NativeRenderCounts {
     pub missing_range_data: usize,
     pub minimap_ship_markers: usize,
     pub numbered_squad_rows: usize,
+    pub special_ready_ships: usize,
 }
 
 pub struct NativeSoftwareRenderer {
@@ -499,6 +500,7 @@ impl NativeSoftwareRenderer {
             counts.minimap_ship_markers = self.draw_minimap(view, bounds);
         }
         counts.numbered_squad_rows = self.draw_squad_shortcuts(view);
+        counts.special_ready_ships = self.draw_special_readiness(view);
         counts
     }
 
@@ -613,6 +615,63 @@ impl NativeSoftwareRenderer {
             if row == 10 { break; }
         }
         row
+    }
+
+    /// Inspect only selected, currently authorized squads. The availability
+    /// indicators are sourced from the same combat capability state and
+    /// fleet Bomb registration consumed by the player input plan.
+    fn draw_special_readiness(&mut self, view: &NativeRenderWorldView<'_>) -> usize {
+        if self.width < 560 || self.height < 320 ||
+            self.selection.squads().is_empty() { return 0; }
+        let mut scouts = 0usize;
+        let mut scouts_ready = 0usize;
+        let mut barges = 0usize;
+        let mut barges_ready = 0usize;
+        for &owner in self.selection.squads() {
+            if !view.player_authority.player_permissions(owner)
+                .is_some_and(|permission| permission.user_controlled &&
+                    permission.can_accept_input && !permission.locked_on) {
+                continue;
+            }
+            let Some(squad) = view.roster.get(owner) else { continue };
+            for &ship_id in &squad.members {
+                let Some(ship) = view.combat.ship(ship_id) else { continue };
+                let Some(body) = view.combat.ship_body(ship_id) else { continue };
+                if ship.vitals.is_dead() || !body.active ||
+                    body.motion.is_policy_controlled ||
+                    view.combat.policy_frame(ship_id).is_some() { continue; }
+                match ship.ship_type {
+                    18 if view.combat.game_scout_configured(ship_id) => {
+                        scouts += 1;
+                        scouts_ready += usize::from(
+                            view.combat.game_scout_beacon_ready(ship_id));
+                    }
+                    10 if view.combat.configured_fire_barge_bomb_power(ship_id)
+                        .is_some() => {
+                        barges += 1;
+                        barges_ready += 1;
+                    }
+                    _ => {}
+                }
+            }
+        }
+        if scouts == 0 && barges == 0 { return 0; }
+        let x = self.width - 268;
+        let y = self.height - 64;
+        for row in y.saturating_sub(5)..(y + 52).min(self.height) {
+            self.pixels[row * self.width + x - 7
+                ..row * self.width + x + 256].fill(0x15243a);
+        }
+        let beacon = format!("K: Beacons ready {scouts_ready}/{scouts}");
+        let detonate = format!("D: Fire Barges ready {barges_ready}/{barges}");
+        text::draw_at(&mut self.pixels, self.width, x, y,
+            &beacon, 1, if scouts_ready > 0 { [178, 230, 188] }
+                else { [136, 151, 172] });
+        text::draw_at(&mut self.pixels, self.width, x,
+            y + text::HEIGHT + 9, &detonate, 1,
+            if barges_ready > 0 { [255, 202, 148] }
+            else { [136, 151, 172] });
+        scouts_ready + barges_ready
     }
 
     fn draw_battle_result(
