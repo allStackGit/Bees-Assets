@@ -1097,6 +1097,20 @@ class ExperimentHub {
             throw Error('Experiment Hub registry invalid; refusing to start.');
         if (!s.projects.some(p=>p.id==='bees' && p.adapter==='bees'))
             throw Error('Experiment Hub Bees project identity changed; refusing to start.');
+        // A pending GPU/native Start approval is only valid inside the
+        // coordinator process that received it. CPU-only recovery requires
+        // independent explicit operator consent at plan creation time.
+        if((s.bundle_start_plans||[]).some(plan=>
+            plan.status==='pending'&&plan.resume_after_restart!==true)) {
+            const next=copy(s);
+            for(const plan of next.bundle_start_plans)
+                if(plan.status==='pending'&&plan.resume_after_restart!==true) {
+                    plan.status='disarmed';
+                    plan.reason='Coordinator restarted; this launch requires a new explicit approval.';
+                    plan.resolved_at=now();
+                }
+            this.commit(next);
+        }
     }
     // Publish in-memory changes only after the complete registry is durably
     // written. A full disk must not leave the API believing a draft was saved.
@@ -1112,6 +1126,15 @@ class ExperimentHub {
     snapshot() {
         const snapshot = copy(this.state);
         snapshot.hub_observation_archive_issue=this.observations.error;
+        snapshot.bundle_start_plans=(snapshot.bundle_start_plans||[]).map(plan=>{
+            if(plan.status!=='pending')return plan;
+            const jobs=plan.member_job_ids.map(id=>snapshot.jobs.find(job=>job.id===id));
+            return {...plan,waiting_reason:jobs.some(job=>!job)
+                ?'A saved bundle member is missing.'
+                :jobs.some(job=>job.status!=='waiting_adapter'||job.dispatch_id)
+                    ?'A member changed native status; plan needs review.'
+                :'Waiting for matching fresh machine lease receipts and native Start readiness.'};
+        });
         snapshot.distributed_launches=[...this.distributedLaunches.values()].map(intent=>({
             learner_job_id:intent.learner_job_id,
             collector_job_ids:Object.keys(intent.collector_dispatches),
@@ -1624,7 +1647,12 @@ class ExperimentHub {
                         ' needs review: '+String(error.message||error));
                 }
             }
+            const reservedForBundlePlans=new Set(
+                (this.state.bundle_start_plans||[])
+                    .filter(plan=>['pending','needs_review'].includes(plan.status))
+                    .flatMap(plan=>plan.member_job_ids));
             const pending=snapshot.jobs.filter(j=>
+                !reservedForBundlePlans.has(j.id)&&
                 j.adapter==='unconfigured'&&j.status==='waiting_adapter'&&
                 !['bees','ants'].includes(j.project_id)&&
                 !predecessorBlock(snapshot,j));
@@ -2272,6 +2300,10 @@ class ExperimentHub {
         if(!object(value)||value.confirm_start!==true||
             typeof value.job_id!=='string')
             throw Error('Explicitly confirm which queued job to start.');
+        if((this.state.bundle_start_plans||[]).some(plan=>
+            ['pending','needs_review'].includes(plan.status)&&
+            plan.member_job_ids.includes(value.job_id)))
+            throw Error('Cancel the approved bundle launch before starting one of its members separately.');
         const snapshot=this.snapshot();
         const job=snapshot.jobs.find(j=>j.id===value.job_id);
         const readiness=nativeStartReadiness(snapshot,job);
@@ -3646,6 +3678,7 @@ class ExperimentHub {
         // A --once agent closes its native session; never authorize a new
         // learner on the closing heartbeat when it cannot receive a Start.
         this.advanceDistributedLaunches();
+        this.advancePendingResourceBundles();
         // An agent awaiting a slow native Start/Stop/probe can renew
         // authenticated liveness without receiving a second instruction.
         // This does not close the session or release native ownership.
@@ -3810,6 +3843,13 @@ class ExperimentHub {
                 job.project_id==='tinybrains_rollout')
                 throw Error('Distributed rollout groups use their own verified learner barrier.');
         }
+        const pending=(this.state.bundle_start_plans||[]).find(plan=>
+            plan.bundle_id===value.bundle_id&&
+            ['pending','needs_review'].includes(plan.status));
+        if(pending?.status==='needs_review')
+            throw Error('Cancel the review-required bundle launch plan before manually starting its members.');
+        if(pending&&value.release_on_terminal!==true)
+            throw Error('This preapproved bundle has frozen terminal release enabled; cancel the pending plan before changing the release policy.');
         const next=copy(this.state),startedAt=now(),dispatches=[];
         for(const job of members) {
             const selected=next.jobs.find(item=>item.id===job.id);
@@ -3823,10 +3863,170 @@ class ExperimentHub {
             dispatches.push({job_id:selected.id,dispatch_id:selected.dispatch_id,
                 machine_id:selected.assigned_machine_id});
         }
+        if(pending) {
+            const resolved=next.bundle_start_plans.find(plan=>plan.id===pending.id);
+            resolved.status='authorized';
+            resolved.reason='All native member Starts authorized in one durable transaction.';
+            resolved.resolved_at=startedAt;
+        }
         this.commit(next);
         return {bundle_id:value.bundle_id,starts_authorized:dispatches.length,
             dispatches,simultaneous_start_guaranteed:false,
             release_on_terminal:value.release_on_terminal===true};
+    }
+    // The operator preapproves an exact frozen group's future native Starts,
+    // not an open-ended machine scheduler. The group may wait for lease/GPU
+    // readiness with no trainer running. CPU-only plans can explicitly opt
+    // into fresh-reconciled coordinator restart; GPU approval cannot.
+    scheduleResourceBundleStart(value) {
+        if(!object(value)||Object.keys(value).some(key=>![
+            'bundle_id','expected_job_ids','confirm_schedule',
+            'confirm_gpu_start','resume_after_restart','confirm_restart_rearm',
+        ].includes(key)))
+            throw Error('Choose an exact group and its unattended Start policy.');
+        const members=exactResourceBundle(this.state,value,'confirm_schedule');
+        if(members.some(job=>job.status!=='waiting_adapter'||job.dispatch_id||
+            !job.lease_id||!job.assigned_machine_id))
+            throw Error('Only entirely unstarted, reserved resource bundles can schedule a future Start.');
+        const gpu=members.some(job=>job.resources?.gpu_count>0);
+        if(gpu&&value.confirm_gpu_start!==true)
+            throw Error('Explicit GPU Start confirmation is required for this group.');
+        if(value.resume_after_restart===true&&
+            (gpu||value.confirm_restart_rearm!==true))
+            throw Error('Unattended coordinator restart needs separate approval and CPU-only members.');
+        if(value.confirm_restart_rearm===true&&value.resume_after_restart!==true)
+            throw Error('Restart approval must accompany an explicit CPU-only resume choice.');
+        const prior=(this.state.bundle_start_plans||[]).find(plan=>
+            plan.bundle_id===value.bundle_id&&
+            ['pending','needs_review'].includes(plan.status));
+        if(prior)throw Error('Cancel the previous pending or review-required bundle launch first.');
+        const snapshot=this.snapshot(),agentInstances={};
+        const frozenMembers=members.map(job=>{
+            const lease=this.state.reservations.find(lease=>
+                lease.id===job.lease_id&&lease.job_id===job.id&&
+                lease.machine_id===job.assigned_machine_id&&
+                lease.project_id===job.project_id&&
+                lease.issued_by==='experiment-hub'&&
+                ['offered','acknowledged'].includes(lease.status));
+            if(!lease)throw Error('Every scheduled member requires its unchanged Hub-owned resource claim.');
+            if(gpu) {
+                const host=snapshot.machines.find(machine=>
+                    machine.id===job.assigned_machine_id);
+                const instance=this.agentReports.get(job.assigned_machine_id)?.instance_id;
+                if(host?.status!=='connected'||!UUID.test(String(instance||'')))
+                    throw Error('GPU group preapproval requires each machine to have a current authenticated agent session.');
+                agentInstances[job.assigned_machine_id]=instance;
+            }
+            return {job_id:job.id,machine_id:job.assigned_machine_id,
+                lease_id:lease.id};
+        });
+        const next=copy(this.state),plans=next.bundle_start_plans||[];
+        // Prune completed historical authorizations only; an unresolved
+        // plan must never be erased to make room for a newer approval.
+        if(plans.length>=64) {
+            const old=plans.findIndex(p=>
+                ['authorized','cancelled','disarmed','expired'].includes(p.status));
+            if(old<0)throw Error('Resolve old pending bundle launch plans before scheduling another.');
+            plans.splice(old,1);
+        }
+        const current=Date.now();
+        const plan={id:crypto.randomUUID(),bundle_id:value.bundle_id,
+            member_job_ids:members.map(job=>job.id),
+            frozen_members:frozenMembers,
+            agent_instances:agentInstances,
+            gpu_approval:gpu,
+            resume_after_restart:value.resume_after_restart===true,
+            release_on_terminal:true,
+            status:'pending',reason:'Waiting for every native member and lease to become eligible.',
+            approved_at:new Date(current).toISOString(),
+            expires_at:new Date(current+(gpu?20*60*1000:24*60*60*1000)).toISOString()};
+        plans.push(plan);
+        next.bundle_start_plans=plans;
+        this.commit(next);
+        // Authorize immediately if all workers were already ready. Otherwise
+        // the next authenticated heartbeat can complete this exact plan.
+        this.advancePendingResourceBundles();
+        return copy(this.state.bundle_start_plans.find(item=>item.id===plan.id));
+    }
+    cancelScheduledResourceBundleStart(value) {
+        if(!object(value)||value.confirm_cancel!==true||
+            !UUID.test(String(value.plan_id||''))||
+            Object.keys(value).some(key=>!['plan_id','confirm_cancel'].includes(key)))
+            throw Error('Explicitly confirm which unattended bundle launch to cancel.');
+        const next=copy(this.state);
+        const plan=(next.bundle_start_plans||[]).find(item=>item.id===value.plan_id);
+        if(!plan||!['pending','needs_review'].includes(plan.status))
+            throw Error('Only a pending or review-required bundle launch can be cancelled.');
+        plan.status='cancelled';
+        plan.reason='Future native group Start cancelled by operator; existing jobs and claims are unchanged.';
+        plan.resolved_at=now();
+        this.commit(next);
+        return {plan_id:plan.id,bundle_id:plan.bundle_id,status:plan.status,
+            native_starts_withdrawn:0};
+    }
+    // A restart or missed heartbeat cannot authorize a duplicate Start.
+    // All jobs and the plan's terminal decision commit in the same write.
+    // Fresh claims and machine-local native proof remain the sole authority.
+    advancePendingResourceBundles() {
+        const ids=(this.state.bundle_start_plans||[])
+            .filter(plan=>plan.status==='pending').map(plan=>plan.id);
+        for(const id of ids) {
+            const plan=this.state.bundle_start_plans.find(item=>item.id===id);
+            if(!plan||plan.status!=='pending')continue;
+            const halt=(status,reason)=>{
+                const next=copy(this.state),item=next.bundle_start_plans.find(p=>p.id===id);
+                if(item?.status!=='pending')return;
+                item.status=status;
+                item.reason=reason;
+                item.resolved_at=now();
+                this.commit(next);
+            };
+            if(Date.now()>=Date.parse(plan.expires_at)) {
+                halt('expired','The frozen launch window elapsed before all native members were ready.');
+                continue;
+            }
+            const snapshot=this.snapshot();
+            const members=snapshot.jobs.filter(job=>job.resource_bundle?.id===plan.bundle_id)
+                .sort((a,b)=>a.resource_bundle.index-b.resource_bundle.index);
+            if(members.length!==plan.frozen_members.length||
+                members.some((job,i)=>job.id!==plan.frozen_members[i].job_id||
+                    job.assigned_machine_id!==plan.frozen_members[i].machine_id||
+                    job.lease_id!==plan.frozen_members[i].lease_id||
+                    job.status!=='waiting_adapter'||job.dispatch_id)) {
+                halt('needs_review','A bundle member, dispatch or reserved machine changed; no unattended Start was issued.');
+                continue;
+            }
+            if(members.some(job=>{
+                const expected=plan.frozen_members.find(item=>item.job_id===job.id);
+                return !snapshot.reservations.some(lease=>
+                    lease.id===expected.lease_id&&
+                    lease.job_id===job.id&&
+                    lease.project_id===job.project_id&&
+                    lease.machine_id===expected.machine_id&&
+                    lease.issued_by==='experiment-hub'&&
+                    ['offered','acknowledged'].includes(lease.status));
+            })) {
+                halt('needs_review','Frozen native resource ownership changed; no unattended Start was issued.');
+                continue;
+            }
+            if(plan.gpu_approval&&members.some(job=>
+                this.agentReports.get(job.assigned_machine_id)?.instance_id!==
+                    plan.agent_instances[job.assigned_machine_id])) {
+                halt('disarmed','An authenticated GPU machine agent was replaced; fresh operator approval is required.');
+                continue;
+            }
+            if(!members.every(job=>nativeStartReadiness(snapshot,job).eligible))
+                continue;
+            try {
+                this.authorizeResourceBundle({
+                    bundle_id:plan.bundle_id,expected_job_ids:plan.member_job_ids,
+                    confirm_start:true,release_on_terminal:true,
+                });
+            }catch(error) {
+                halt('needs_review','Native bundle admission changed: '+
+                    String(error.message||error).slice(0,170));
+            }
+        }
     }
     // Stop a mixed-project bundle without releasing any unknown or active
     // native owner. The native Stop intent and terminal-release policy both
@@ -3840,6 +4040,15 @@ class ExperimentHub {
         const members=exactResourceBundle(this.state,value,'confirm_stop');
         const next=copy(this.state),at=now();
         let changed=false;
+        const planned=(next.bundle_start_plans||[]).find(plan=>
+            plan.bundle_id===value.bundle_id&&
+            ['pending','needs_review'].includes(plan.status));
+        if(planned) {
+            planned.status='disarmed';
+            planned.reason='Operator requested group shutdown before auto-start.';
+            planned.resolved_at=at;
+            changed=true;
+        }
         for(const member of members) {
             const job=next.jobs.find(item=>item.id===member.id);
             if(job.status==='cancelled'||job.capacity_released_at)continue;
@@ -4530,6 +4739,14 @@ class ExperimentHub {
             throw Error('A bundle member was started or changed state. Reconcile native ownership before cancelling.');
         const at=now();
         for(const job of active)this.cancelUnstartedJob(next,job,at);
+        const planned=(next.bundle_start_plans||[]).find(plan=>
+            plan.bundle_id===value.bundle_id&&
+            ['pending','needs_review'].includes(plan.status));
+        if(planned) {
+            planned.status='disarmed';
+            planned.reason='Operator cancelled the unstarted reserved bundle.';
+            planned.resolved_at=at;
+        }
         this.commit(next);
         return {bundle_id:value.bundle_id,cancelled_job_ids:active.map(job=>job.id),
             cancelled_count:active.length,starts_stopped:0};

@@ -2674,6 +2674,36 @@ The last flag is optional and releases each member's claim only after a
 verified native `finished` or `stopped` report. Machine supervisors still
 launch independently, and physical GPU compute shares are advisory.
 
+To leave a reserved bundle awaiting machine readiness without repeatedly
+returning to Train, choose **Schedule auto-start when ready**, or POST
+`/api/hub/resource-bundles/schedule-start` with
+`{"bundle_id":"<uuid>","expected_job_ids":["<ordered-member-uuid>",...],"confirm_schedule":true}`.
+This grants **one future atomic group Start** only after every pinned job,
+machine, outstanding lease and native Start gate is freshly qualified.
+It never changes resource requests, automatically retries a dispatched job,
+or assumes a persisted `running` label proves ownership. Every such
+launch freezes `release_on_terminal:true` for safe unattended terminal
+capacity release. If a member's dispatch, machine or lease identity changes,
+the approval needs review; no partial Start is issued. Ordinary CPU queue
+automation cannot start individual members while a group approval is pending.
+
+CPU-only groups may additionally set
+`"resume_after_restart":true,"confirm_restart_rearm":true` (separate
+explicit approval) to retain their pending *unstarted* permission after
+a coordinator restart. Fresh agent/lease/native preflight proof is required
+again. Without that approval, a restart disarms the plan. CPU approvals
+expire after 24 hours. For bundles containing a GPU, the operator must
+set `"confirm_gpu_start":true`; GPU approval lasts at most 20 minutes,
+requires the originally authenticated agent identities, and **never**
+survives a coordinator restart or agent replacement.
+
+Train shows pending, authorized, cancelled and review-required launch
+states. **Cancel scheduled launch** leaves the original reserved jobs
+untouched; the API is
+`POST /api/hub/resource-bundles/cancel-start-plan` with
+`{"plan_id":"<uuid>","confirm_cancel":true}`. The existing bundle
+Stop/cancel operations also revoke any outstanding future launch authority.
+
 **Stop / close bundle** performs the corresponding atomic native shutdown
 request for its exact current members:
 `POST /api/hub/resource-bundles/stop` with
