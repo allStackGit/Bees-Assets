@@ -41,59 +41,24 @@ impl ReinforcementWave {
 /// Each plan represents ONE source construction call, including any Carrier
 /// child squads. The authored squad order controls alternating left/right
 /// placement, independently of the imported scene entity-array order.
-fn place_reinforcement_wave(
-    wave: &mut ReinforcementWave, spawn: Vec2, metadata: &NativePolicyOnlyMetadata,
-) -> Result<(), &'static str> {
-    let ship_indices: HashMap<i64, usize> = wave.ships.iter().enumerate()
-        .map(|(index, ship)| (ship.entity_id, index)).collect();
-
-    // Unity AddReinforcementSquads calls SpawnShipsAndSquads once for each
-    // SavedSquad. Within that single construction call, LevelConstructor
-    // can append only Carrier-generated Drone and Striker child squads.
-    // Do not accidentally treat two independent saved squads as one
-    // alternating left/right formation just because a manifest grouped
-    // their IDs. Validate the existing source carrier links, not a new
-    // parent-child registry.
-    if wave.squads.len() > 1 {
-        let root = &wave.squads[0];
-        let carriers: HashSet<i64> = root.members.iter().copied().filter(|id| {
-            ship_indices.get(id).is_some_and(|&index| wave.ships[index].ship_type == 5)
-        }).collect();
-        for squad in wave.squads.iter().skip(1) {
-            if squad.side != root.side {
-                return Err("Carrier child reinforcement squad has a different side from its source squad");
-            }
-            let mut parent = None;
-            for &id in &squad.members {
-                let ship = &wave.ships[*ship_indices.get(&id)
-                    .ok_or("Reinforcement child squad has no physical ship")?];
-                let carrier_id = match ship.ship_type {
-                    8 => ship.drone_carrier_id,
-                    19 => match &ship.special {
-                        Some(NativeAuthoredShipSpecial::Striker { carrier, .. }) => carrier.carrier_id,
-                        _ => None,
-                    },
-                    _ => None,
-                }.ok_or("Multi-squad reinforcement spawn requires source-linked Carrier children")?;
-                if !carriers.contains(&carrier_id) || parent.is_some_and(|p| p != carrier_id) {
-                    return Err("Reinforcement Carrier child squad must share a parent in the primary squad");
-                }
-                parent = Some(carrier_id);
-            }
-        }
-    }
-
-    // Unity first calls SetStartingPosition(spawn) on EVERY squad, before
-    // querying any squad's GetPosition/GetWidth for the second pass.
-    let mut first_pass = Vec::with_capacity(wave.squads.len());
-    for squad in &wave.squads {
+fn plan_reinforcement_wave(
+    squads: &[&NativeAuthoredSquad],
+    ships: &HashMap<i64, &NativeAuthoredShip>,
+    spawn: Vec2,
+    metadata: &NativePolicyOnlyMetadata,
+) -> Result<HashMap<i64, Vec2>, &'static str> {
+    // Unity sets every squad's initial formation before querying any
+    // source GetPosition/GetWidth. Calculate first-pass bounds without
+    // changing the authored ships; failures preserve the entire scene.
+    let mut first_pass = Vec::with_capacity(squads.len());
+    for squad in squads {
         let mut left = f32::INFINITY;
         let mut right = f32::NEG_INFINITY;
         let mut bottom = f32::INFINITY;
         let mut top = f32::NEG_INFINITY;
         for &ship_id in &squad.members {
-            let ship = &mut wave.ships[*ship_indices.get(&ship_id)
-                .ok_or("Reinforcement squad has no physical ship")?];
+            let ship = ships.get(&ship_id)
+                .ok_or("Reinforcement squad has no physical ship")?;
             let offset = metadata.stored_formation_offset(ship_id)
                 .ok_or("Reinforcement ship has no source formation offset")?;
             let adjusted = authored_placement_offset(
@@ -111,7 +76,6 @@ fn place_reinforcement_wave(
             right = right.max(position.x + half.x);
             bottom = bottom.min(position.y - half.y);
             top = top.max(position.y + half.y);
-            ship.motion.position = position;
         }
         let center = Vec2::new((left + right) * 0.5, (bottom + top) * 0.5);
         let width = right - left;
@@ -121,16 +85,18 @@ fn place_reinforcement_wave(
         first_pass.push((center, width));
     }
 
-    // Reinforcement setup suppresses Unity's level-edge wrapping branch.
-    // The first actual squad's center after its second placement becomes
-    // the Y anchor. Later squads alternate left, right, left, right, with
-    // a 10-unit gap added between neighboring live sprite-width extents.
+    // Source PositionSquads disables level-edge wrapping for reinforcements.
+    // Parent and Carrier descendants alternate left/right with a 10-unit
+    // extent gap, using the first squad's actual centered Y coordinate.
     let mut first_squad_center = Vec2::ZERO;
     let mut previous_left_width = 0.0f32;
     let mut previous_right_width = 0.0f32;
     let mut left_span = 0.0f32;
     let mut right_span = 0.0f32;
-    for (ordinal, squad) in wave.squads.iter().enumerate() {
+    let mut placements = HashMap::with_capacity(
+        squads.iter().map(|squad| squad.members.len()).sum(),
+    );
+    for (ordinal, squad) in squads.iter().enumerate() {
         let (initial_center, width) = first_pass[ordinal];
         let mut position = initial_center;
         if ordinal == 0 {
@@ -151,32 +117,32 @@ fn place_reinforcement_wave(
         if !position.is_finite() {
             return Err("Reinforcement second placement overflowed world coordinates");
         }
-        // The second SetStartingPosition overwrites, rather than shifts,
-        // each ship's first-pass physical pose. Its authored placement
-        // offset remains adjusted; Squad.Move later uses the raw offset.
+        // The second SetStartingPosition overwrites the first-pass pose,
+        // but still uses the adjusted placement offset. Squad.Move later
+        // reads the original, unadjusted formation offset.
         for &ship_id in &squad.members {
-            let ship = &mut wave.ships[*ship_indices.get(&ship_id)
-                .ok_or("Reinforcement squad has no physical ship")?];
+            let ship = ships.get(&ship_id)
+                .ok_or("Reinforcement squad has no physical ship")?;
             let offset = metadata.stored_formation_offset(ship_id)
                 .ok_or("Reinforcement ship has no source formation offset")?;
             let adjusted = authored_placement_offset(
                 ship.ship_type, squad.members.len(), offset,
             );
-            ship.motion.position = position + adjusted;
-            if !ship.motion.position.is_finite() {
+            let physical_position = position + adjusted;
+            if !physical_position.is_finite() {
                 return Err("Reinforcement second placement overflowed world coordinates");
             }
+            placements.insert(ship_id, physical_position);
         }
         if ordinal == 0 {
-            // SetStartingPosition changes the first squad's actual
-            // GetPosition by the same sprite-bounds bias as the first pass.
+            // Unity's GetPosition includes the authored sprite-bounds bias.
             first_squad_center = position + (initial_center - spawn);
             if !first_squad_center.is_finite() {
                 return Err("Reinforcement first squad center is invalid");
             }
         }
     }
-    Ok(())
+    Ok(placements)
 }
 
 impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
@@ -284,16 +250,6 @@ impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
                     .is_none_or(|clearance| clearance < 0)) {
                 return Err("Reinforcement entry orders need finite source offsets and nonnegative clearance");
             }
-            if let Some(spawn) = spawn_centers[wave_idx] {
-                let offset = self.metadata.stored_formation_offset(ship.entity_id)
-                    .ok_or("Reinforcement ship has no source formation offset")?;
-                let size = self.metadata.ship_catalog.sprite_size(ship.ship_type)
-                    .ok_or("Reinforcement ship has no authored sprite size")?;
-                if !size.is_finite() || size.x <= 0.0 || size.y <= 0.0 ||
-                    !offset.is_finite() || !(spawn + offset).is_finite() {
-                    return Err("Reinforcement spawn and sprite geometry must be finite and positive");
-                }
-            }
         }
         if source_ships.len() != expected_ships.len() {
             return Err("Reinforcement squads need one physical ship per member");
@@ -330,106 +286,55 @@ impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
                 }
             }
         }
-        let mut ship_waves = HashMap::new();
+        // Resolve ALL wave positions before extracting the first deferred
+        // ship or squad. The subsequent commit phase cannot fail on late
+        // formation geometry or Carrier group membership.
+        let mut planned_positions = HashMap::new();
+        for (wave_idx, ids) in planned_squad_order.iter().enumerate() {
+            let Some(spawn) = spawn_centers[wave_idx] else { continue };
+            let squads: Vec<&NativeAuthoredSquad> = ids.iter()
+                .map(|id| source_squads[id]).collect();
+            planned_positions.extend(plan_reinforcement_wave(
+                &squads, &source_ships, spawn, &self.metadata,
+            )?);
+        }
         let mut selected_squads = HashMap::new();
         let mut initial_squads = Vec::new();
         for squad in std::mem::take(&mut self.squads) {
             if squad_waves.remove(&squad.owner.squad_id).is_some() {
-                if selected_squads.insert(squad.owner.squad_id, squad).is_some() {
-                    return Err("Reinforcements contain a duplicate source squad item ID");
-                }
+                selected_squads.insert(squad.owner.squad_id, squad);
             } else { initial_squads.push(squad); }
         }
-        if !squad_waves.is_empty() {
-            return Err("Reinforcements reference an unknown source squad item ID");
-        }
+        debug_assert!(squad_waves.is_empty());
         // The source LevelConstructor uses the requested squad list order
         // when positioning and registering each wave. The initial scene's
         // squad array can have a different order after merged captures.
         for (wave_idx, ids) in planned_squad_order.into_iter().enumerate() {
             for id in ids {
                 let squad = selected_squads.remove(&id)
-                    .ok_or("Reinforcement squad identity is missing from source")?;
-                ship_waves.extend(squad.members.iter().map(|&ship_id| (ship_id, wave_idx)));
+                    .expect("source reinforcement squad preflighted");
                 waves[wave_idx].squads.push(squad);
             }
         }
         let mut initial_entities = Vec::new();
         for entity in std::mem::take(&mut self.entities) {
-            let NativeAuthoredEntity::Ship(ship) = entity else { initial_entities.push(entity); continue };
-            let wave = ship_waves.get(&ship.entity_id).copied();
-            let striker_carrier = match &ship.special {
-                Some(NativeAuthoredShipSpecial::Striker { carrier, .. }) => carrier.carrier_id,
-                _ => None,
-            };
-            if [ship.drone_carrier_id, striker_carrier].into_iter().flatten().any(|id|
-                ship_waves.get(&id).copied() != wave)
-            {
-                return Err("Reinforcement carrier and child must deploy together");
-            }
-            if let Some(wave) = wave {
-                if ship.policy.is_some() || ship.motion.is_policy_controlled {
-                    return Err("Reinforcements cannot reserve a live policy controller");
+            let NativeAuthoredEntity::Ship(mut ship) = entity else { initial_entities.push(entity); continue };
+            if let Some(&(wave, _)) = expected_ships.get(&ship.entity_id) {
+                if let Some(&position) = planned_positions.get(&ship.entity_id) {
+                    ship.motion.position = position;
                 }
                 self.reserved_ship_ids.push(ship.entity_id);
                 waves[wave].ships.push(ship);
-            } else { initial_entities.push(NativeAuthoredEntity::Ship(ship)); }
+            } else {
+                initial_entities.push(NativeAuthoredEntity::Ship(ship));
+            }
         }
         self.squads = initial_squads;
         self.entities = initial_entities;
-        // Deferred squads bypass the ordinary initial roster registration.
-        // Match the same physical ownership/side invariants that
-        // NativeSquadRoster::register_squad checks for initial squads.
-        // Validate immutable formation inputs here too: a missing offset
-        // or clearance must not abort a long-running battle on arrival.
-        for wave in &waves {
-            let expected = wave.squads.iter().try_fold(0usize, |total, squad| {
-                if squad.members.is_empty() || squad.side <= 0 || !squad.owner.valid() {
-                    return None;
-                }
-                total.checked_add(squad.members.len())
-            }).ok_or("Reinforcement squads need valid owners and nonempty, bounded membership")?;
-            let mut member_sides = HashMap::with_capacity(expected);
-            for squad in &wave.squads {
-                for &ship_id in &squad.members {
-                    if ship_id <= 0 || member_sides.insert(ship_id, squad.side).is_some() {
-                        return Err("Reinforcement ship membership must be unique and positive");
-                    }
-                }
-            }
-            if member_sides.len() != expected || wave.ships.len() != expected {
-                return Err("Reinforcement squads need one physical ship per member");
-            }
-            // Consume each expected identity exactly once, including side.
-            // A simple membership lookup would admit [ship A, ship A]
-            // for a squad whose true membership is [A, B].
-            for ship in &wave.ships {
-                if member_sides.remove(&ship.entity_id) != Some(ship.side) {
-                    return Err("Reinforcement physical ships must uniquely match squad membership and side");
-                }
-            }
-            if !member_sides.is_empty() {
-                return Err("Reinforcement squad has a missing physical ship");
-            }
-            if wave.entry.is_some() {
-                for ship in &wave.ships {
-                    if self.metadata.stored_formation_offset(ship.entity_id)
-                        .is_none_or(|offset| !offset.is_finite()) ||
-                        self.metadata.current_path_clearance(ship.entity_id)
-                        .is_none_or(|clearance| clearance < 0)
-                    {
-                        return Err("Reinforcement entry orders need finite source offsets and nonnegative clearance");
-                    }
-                }
-            }
-        }
-        // Source two-pass formation placement includes all squads in
-        // this construction call; a Carrier's transient child squads are
-        // not independent overlapping spawn points.
-        for (wave, spawn) in waves.iter_mut().zip(spawn_centers) {
-            if let Some(spawn) = spawn {
-                place_reinforcement_wave(wave, spawn, &self.metadata)?;
-            }
+        // Membership, source links, entry eligibility and two-pass
+        // placement have all been validated against the unmodified scene.
+        // This phase only preserves canonical physical creation order.
+        for wave in &mut waves {
             wave.ships.sort_unstable_by_key(|ship| ship.entity_id);
         }
         self.metadata.reinforcements = VecDeque::from(waves);
