@@ -133,11 +133,19 @@ const CUDA_UUID=/^GPU-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{1
 // GPU isolation and VRAM/compute quotas are not enforced by this probe.
 function discoverNvidiaGpus(options={}) {
     const run=options.run||spawnSync;
-    const result=run('nvidia-smi',[
-        '--query-gpu=pci.bus_id,memory.total,memory.used,utilization.gpu,uuid,temperature.gpu,power.draw',
-        '--format=csv,noheader,nounits',
-    ],{encoding:'utf8',windowsHide:true,timeout:5000,maxBuffer:8192});
+    const runOptions={encoding:'utf8',windowsHide:true,timeout:5000,maxBuffer:8192};
+    const common='pci.bus_id,memory.total,memory.used,utilization.gpu,uuid,temperature.gpu';
+    const query=fields=>run('nvidia-smi',[
+        '--query-gpu='+fields,'--format=csv,noheader,nounits',
+    ],runOptions);
+    let result=query(common+',power.draw'),hasPower=true;
     if(result.error?.code==='ENOENT')return [];
+    // An optional power field must not remove otherwise valid CUDA devices
+    // from machine inventory on drivers that cannot query power.draw.
+    if(result.error||result.status!==0) {
+        result=query(common);
+        hasPower=false;
+    }
     if(result.error||result.status!==0)
         throw Error('NVIDIA GPU inventory unavailable: '+
             String(result.error?.message||result.stderr||'nvidia-smi failed').trim().slice(0,160));
@@ -146,7 +154,8 @@ function discoverNvidiaGpus(options={}) {
     const seenPci=new Set(),seenUuid=new Set(),devices=[];
     for(const row of rows) {
         const columns=row.split(',').map(v=>v.trim());
-        if(columns.length!==7)throw Error('Invalid NVIDIA GPU inventory row.');
+        if(columns.length!==(hasPower?7:6))
+            throw Error('Invalid NVIDIA GPU inventory row.');
         let pci=columns[0].toLowerCase();
         if(/^0000[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]$/.test(pci))
             pci=pci.slice(4);
@@ -158,7 +167,7 @@ function discoverNvidiaGpus(options={}) {
             ?null:Number(columns[5]);
         // nvidia-smi may report N/A or an unsupported optional power
         // sensor. Do not turn an absent value into a fabricated zero.
-        const watts=/^[0-9]+(?:\.[0-9]+)?$/.test(columns[6])
+        const watts=hasPower&&/^[0-9]+(?:\.[0-9]+)?$/.test(columns[6])
             ?Number(columns[6]):null;
         const powerW=watts!==null&&watts<=1500?watts:null;
         if(!PCI.test(pci)||!Number.isSafeInteger(memory)||
