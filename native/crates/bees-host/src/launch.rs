@@ -1973,6 +1973,7 @@ fn run_battle(
                 "home_unreachable": network.scheduler.measurements().home_unreachable,
                 "unauthored_minions": network.scheduler.measurements().unauthored_minions,
             },
+            "source_command_timer": network.scheduler.schedule_measurements(),
         })),
         "model_updates_applied": next_model_update,
         "model_updates_remaining": config.model_updates.len() - next_model_update,
