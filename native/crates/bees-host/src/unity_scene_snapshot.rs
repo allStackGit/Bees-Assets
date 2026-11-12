@@ -127,6 +127,8 @@ struct UnitySnapshot {
     activate_collision_asteroids: bool,
     activate_mining: Option<bool>,
     activate_fog_of_war: Option<bool>,
+    camera_min_zoom: Option<i32>,
+    camera_max_zoom: Option<i32>,
     activate_hivemind: Option<bool>,
     hivemind_initial_command_delay_seconds: Option<i32>,
     has_obstacles: bool,
@@ -579,6 +581,7 @@ pub enum NativeSnapshotError {
     Malformed(serde_json::Error),
     UnsupportedSchema(u32),
     InvalidLevelBounds,
+    InvalidCameraZoom,
     MissingWeaponRankingClock,
     MissingTargetingSource,
     MissingHiveMindSource,
@@ -630,6 +633,10 @@ pub struct NativePhysicalScene {
     pub activate_mining: Option<bool>,
     /// Source Level.ActivateFogOfWar. Optional for historical exports.
     pub activate_fog_of_war: Option<bool>,
+    /// Optional authored Map.MinZoom/MaxZoom orthographic half-heights.
+    /// This is a graphical camera setting only and does not change the
+    /// authoritative simulation broadphase or training observations.
+    pub camera_zoom: Option<(f32, f32)>,
     /// Source Stage.ActivateHiveMind, required for autonomous native
     /// command requests. Legacy imports remain runnable but cannot
     /// silently assume gameplay AI eligibility.
@@ -1394,6 +1401,12 @@ impl NativePhysicalScene {
             return Err(NativeSnapshotError::InvalidLevelBounds);
         }
 
+        let camera_zoom = match (raw.camera_min_zoom, raw.camera_max_zoom) {
+            (None, None) | (Some(0), Some(0)) => None,
+            (Some(min), Some(max)) if min > 0 && max >= min =>
+                Some((min as f32, max as f32)),
+            _ => return Err(NativeSnapshotError::InvalidCameraZoom),
+        };
         let mut entities = Vec::with_capacity(
             raw.ships.len().saturating_add(raw.obstacles.len())
                 .saturating_add(raw.map_objects.len())
@@ -2267,6 +2280,7 @@ impl NativePhysicalScene {
             activate_collision_asteroids: raw.activate_collision_asteroids,
             activate_mining: raw.activate_mining,
             activate_fog_of_war: raw.activate_fog_of_war,
+            camera_zoom,
             activate_hivemind: raw.activate_hivemind,
             hivemind_initial_command_delay_seconds: raw.hivemind_initial_command_delay_seconds,
             has_obstacles: raw.has_obstacles,

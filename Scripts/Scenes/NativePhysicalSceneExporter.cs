@@ -285,6 +285,9 @@ internal static class NativePhysicalSceneExporter
         public bool activate_collision_asteroids;
         public bool activate_mining;
         public bool activate_fog_of_war;
+        // Authored Map orthographic half-height zoom limits. Zero means
+        // the source map did not configure this optional presentation field.
+        public int camera_min_zoom, camera_max_zoom;
         public bool activate_hivemind;
         public int hivemind_initial_command_delay_seconds;
         public bool has_obstacles;
@@ -350,6 +353,10 @@ internal static class NativePhysicalSceneExporter
             activate_collision_asteroids = level.ActivateCollisionAsteroids,
             activate_mining = level.ActivateMining,
             activate_fog_of_war = level.ActivateFogOfWar,
+            camera_min_zoom = level.Map.MinZoom > 0 &&
+                level.Map.MaxZoom >= level.Map.MinZoom ? level.Map.MinZoom : 0,
+            camera_max_zoom = level.Map.MinZoom > 0 &&
+                level.Map.MaxZoom >= level.Map.MinZoom ? level.Map.MaxZoom : 0,
             activate_hivemind = level.Stage.ActivateHiveMind,
             hivemind_initial_command_delay_seconds = level.Stage.InitialCommandDelay,
             has_obstacles = level.HasObstacles,
