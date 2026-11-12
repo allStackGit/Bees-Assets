@@ -1652,17 +1652,28 @@ impl CombatWorld {
     /// otherwise a missing asset profile or policy-owned ship could leave
     /// a half-issued formation.
     pub fn validate_ship_game_order(&self, ship_id: i64) -> Result<(), CombatWorldError> {
+        self.validate_ship_game_speed(ship_id)?;
+        if !self.game_ship_steering.contains_key(&ship_id) {
+            return Err(CombatWorldError::MissingGameMovementProfile);
+        }
+        Ok(())
+    }
+
+    /// Unity Ship.SetCurrentSpeed is not a pathfinding command. It is legal
+    /// for stationary user-controlled ships without GameShipSteering, even
+    /// though issuing a destination to those ships is unavailable.
+    pub fn validate_ship_game_speed(&self, ship_id: i64) -> Result<(), CombatWorldError> {
         let &index = self.ship_by_id.get(&ship_id)
             .ok_or(CombatWorldError::UnknownShip)?;
         if !self.physics.ships()[index].active || self.ships[index].vitals.is_dead() {
             return Err(CombatWorldError::UnknownShip);
         }
-        if !self.game_ship_steering.contains_key(&ship_id) {
-            return Err(CombatWorldError::MissingGameMovementProfile);
-        }
         let motion = &self.physics.ships()[index].motion;
         if motion.is_policy_controlled && !motion.user_controlled {
             return Err(CombatWorldError::UnsupportedPolicyActions);
+        }
+        if !motion.base_speed.is_finite() || motion.base_speed < 0.0 {
+            return Err(CombatWorldError::InvalidGameSpeed);
         }
         Ok(())
     }
@@ -1679,13 +1690,9 @@ impl CombatWorld {
         if !requested_speed.is_finite() || requested_speed < 0.0 {
             return Err(CombatWorldError::InvalidGameSpeed);
         }
-        self.validate_ship_game_order(ship_id)?;
-        let &index = self.ship_by_id.get(&ship_id)
-            .ok_or(CombatWorldError::UnknownShip)?;
+        self.validate_ship_game_speed(ship_id)?;
+        let index = self.ship_by_id[&ship_id];
         let motion = &mut self.physics.ships_mut()[index].motion;
-        if !motion.base_speed.is_finite() || motion.base_speed < 0.0 {
-            return Err(CombatWorldError::InvalidGameSpeed);
-        }
         motion.current_speed = requested_speed.min(motion.base_speed);
         Ok(())
     }

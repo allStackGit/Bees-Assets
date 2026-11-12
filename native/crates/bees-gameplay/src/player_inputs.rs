@@ -363,14 +363,13 @@ impl NativePlayerMatchSpeedPlan {
         let mut members = Vec::with_capacity(squad.members.len());
         let mut minimum_speed = f32::INFINITY;
         for &id in &squad.members {
-            world.state.combat.validate_ship_game_order(id)
+            // Speed setting is not a movement order: stationary ships
+            // do not need a pathfinder or steering profile.
+            world.state.combat.validate_ship_game_speed(id)
                 .map_err(|error| NativePlayerInputError::Source(error.into()))?;
             let body = world.state.combat.ship_body(id)
                 .ok_or(NativePlayerInputError::MissingSquad)?;
             if !body.motion.base_speed.is_finite() || body.motion.base_speed < 0.0 {
-                return Err(NativePlayerInputError::InvalidAction);
-            }
-            if body.motion.cannot_change_movement_orders {
                 return Err(NativePlayerInputError::InvalidAction);
             }
             minimum_speed = minimum_speed.min(body.motion.base_speed);
