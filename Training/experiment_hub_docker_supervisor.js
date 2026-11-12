@@ -130,9 +130,12 @@ class DockerSupervisor {
             if(current.version!==1||current.machine_id!==this.machineId||
                 current.revision!==this.journal.revision)
                 throw Error('Docker journal changed concurrently; reopen supervisor.');
-            this.journal={version:1,machine_id:this.machineId,
+            const committed={version:1,machine_id:this.machineId,
                 revision:current.revision+1,records};
-            writeAtomic(this.file,this.journal);
+            // Publish ownership in memory only after the journal is written.
+            // A failed write must leave the same revision retryable.
+            writeAtomic(this.file,committed);
+            this.journal=committed;
             this.state=records;
         }finally{
             fs.closeSync(fd);
