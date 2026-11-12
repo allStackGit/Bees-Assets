@@ -2386,6 +2386,7 @@ document.addEventListener('DOMContentLoaded', () => {
             'collector_'+i+'_sim_last_child_gap_seconds',
             'collector_'+i+'_sim_last_child_gap_share',
             'collector_'+i+'_sim_dispatch_queue_share',
+            'collector_'+i+'_sim_inflight_factor',
             'collector_'+i+'_sim_straggler_pressure',
             'collector_'+i+'_sim_dispatch_pressure',
             'collector_'+i+'_action_target',
