@@ -89,6 +89,7 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'ppo_gpu_pixel_budget',
         'rollout_inference_shape_groups','rollout_inference_readbacks',
         'collector_auto_balance_adjustments',
+        'collector_auto_balance_accepted','collector_auto_balance_settled',
         'collector_balance_changed_for_next_update',
         'ppo_board_pixel_samples','ppo_max_board_cells',
         'ppo_unique_board_shapes','policy_lag','action_target'])
