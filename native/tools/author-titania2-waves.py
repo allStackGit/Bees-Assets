@@ -201,6 +201,45 @@ def _source_records(scene, label):
     return squads, ships, entities
 
 
+
+def carrier_child_squads(root_id, root_members, squads, ships, bee_side, label):
+    """Find real CarrierSquads created in this SavedSquad construction call.
+
+    Source LevelConstructor builds the saved parent first, then appends one
+    homogeneous Drone/Striker Squad per Carrier child group. Parent links
+    are the source runtime CarrierShip.Carrier.Id; do not infer children
+    from formation proximity or manufacture transient IDs.
+    """
+    parents = {eid for eid in root_members if ships[eid].get("ship_type") == 5}
+    if not parents:
+        return []
+    children = []
+    seen_root = False
+    for sid, squad in squads.items():
+        if sid == root_id:
+            seen_root = True
+            continue
+        if squad.get("is_carrier_squad") is not True:
+            continue
+        members = squad.get("member_ids")
+        if not isinstance(members, list) or not members or any(
+            type(eid) is not int or eid <= 0 or eid not in ships for eid in members
+        ):
+            fail(f"{label} has a malformed Carrier child squad")
+        links = [ships[eid].get("parent_carrier_id") for eid in members]
+        if not any(carrier in parents for carrier in links):
+            continue
+        if not seen_root or len(set(members)) != len(members) or (
+            any(carrier not in parents or carrier != links[0] for carrier in links)
+        ) or squad.get("side") != bee_side or squad.get("user_controlled") is not False:
+            fail(f"{label} has invalid source Carrier child ownership")
+        types = {ships[eid].get("ship_type") for eid in members}
+        if len(types) != 1 or not types <= {8, 19}:
+            fail(f"{label} Carrier child squad must be homogeneous Drone or Striker")
+        children.append((sid, squad, members))
+    return children
+
+
 def _verify_capture(initial, capture):
     # Capture provenance cannot be established from legacy Unity exports.
     # Enforce every stable source-world field we can, and keep all conflicting
