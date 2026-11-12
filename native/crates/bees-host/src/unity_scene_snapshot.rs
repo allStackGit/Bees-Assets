@@ -70,7 +70,7 @@ use crate::runtime::NativeHostRuntime;
 use crate::ship_specials::{NativeAuthoredShipSpecial, NativeBeaconTemplate};
 use crate::durable_connection::DurableHiveMindConnection;
 
-const SNAPSHOT_VERSION: u32 = 28;
+const SNAPSHOT_VERSION: u32 = 29;
 
 #[derive(Deserialize, Clone, Copy)]
 struct UnityVec2 { x: f32, y: f32 }
@@ -138,6 +138,7 @@ struct UnitySnapshot {
     min: UnityVec2,
     max: UnityVec2,
     starting_positions: Option<Vec<UnityVec2>>,
+    original_squad_counts: Option<Vec<i32>>,
     navigation_map_width: i32,
     navigation_map_height: i32,
     navigation_origin_world: UnityVec2,
@@ -505,6 +506,8 @@ impl From<UnityCommandSettings> for bees_gameplay::commands::HiveMindCommandSett
 struct UnitySquad {
     banned_strategies: Option<Vec<String>>,
     is_carrier_squad: Option<bool>,
+    squad_number: Option<i32>,
+    is_minion_squad: Option<bool>,
     is_hivemind_controlled: Option<bool>,
     is_immobile: Option<bool>,
     opponent_id_decimal: Option<String>,
@@ -742,6 +745,10 @@ struct NativeSourcePolicyInputs {
 pub struct NativeSourceSquad {
     pub command_bans: Option<Vec<bees_hivemind::dispatch::LocalCommandKind>>,
     pub is_carrier_squad: Option<bool>,
+    /// Exact source shortcut index; generated minion squads are unnumbered.
+    pub hotkey_number: Option<u32>,
+    /// Unity GameState.OriginalSquadCounts[Side-1], never live count.
+    pub original_squad_count: Option<u32>,
     pub hivemind: Option<bees_gameplay::level_host::NativeHiveMindSquadSource>,
     pub item_id: i64,
     pub side: i32,
@@ -1116,6 +1123,8 @@ impl NativePhysicalScene {
         Ok(self.source_squads.iter().map(|source|
             NativeAuthoredSquad {
                 command_bans: source.command_bans.clone(),
+                hotkey_number: source.hotkey_number,
+                original_squad_count: source.original_squad_count,
                 owner: SquadLifetime {
                     level_id, squad_id: source.item_id,
                     lifecycle_id: source.item_id as u64,
@@ -1220,6 +1229,13 @@ impl NativePhysicalScene {
              raw.starting_positions.is_none()) {
             return Err(NativeSnapshotError::MissingHiveMindSource);
         }
+        let original_squad_counts = if raw.schema_version >= 29 {
+            match raw.original_squad_counts.as_deref() {
+                Some([first, second]) if *first >= 0 && *second >= 0 =>
+                    Some([*first as u32, *second as u32]),
+                _ => return Err(NativeSnapshotError::InvalidSquad(0)),
+            }
+        } else { None };
         let starting_positions = match raw.starting_positions.as_deref() {
             Some([first, second]) => {
                 let pair = [first.into_vec(), second.into_vec()];
@@ -2009,6 +2025,7 @@ impl NativePhysicalScene {
         let mut source_squads = Vec::with_capacity(raw.squads.len());
         let mut squad_ids = HashSet::with_capacity(raw.squads.len());
         let mut registered_ships = HashSet::with_capacity(live_ships.len());
+        let mut used_numbers = HashSet::with_capacity(raw.squads.len());
         for squad in raw.squads {
             if squad.item_id <= 0 || squad.side <= 0 || squad.member_ids.is_empty() {
                 return Err(NativeSnapshotError::InvalidSquad(squad.item_id));
@@ -2016,6 +2033,23 @@ impl NativePhysicalScene {
             if !squad_ids.insert(squad.item_id) {
                 return Err(NativeSnapshotError::DuplicateSquad(squad.item_id));
             }
+            let (hotkey_number, original_squad_count) =
+                if let Some(counts) = original_squad_counts {
+                    let side = usize::try_from(squad.side - 1)
+                        .ok().filter(|&side| side < 2)
+                        .ok_or(NativeSnapshotError::InvalidSquad(squad.item_id))?;
+                    let number = squad.squad_number
+                        .and_then(|number| u32::try_from(number).ok())
+                        .filter(|&number| number > 0)
+                        .ok_or(NativeSnapshotError::InvalidSquad(squad.item_id))?;
+                    let minion = squad.is_minion_squad
+                        .ok_or(NativeSnapshotError::InvalidSquad(squad.item_id))?;
+                    if !used_numbers.insert((squad.side, number)) ||
+                        (!minion && number > counts[side]) {
+                        return Err(NativeSnapshotError::InvalidSquad(squad.item_id));
+                    }
+                    ((!minion).then_some(number), Some(counts[side]))
+                } else { (None, None) };
             for &ship_id in &squad.member_ids {
                 if live_ships.get(&ship_id) != Some(&squad.side) {
                     return Err(NativeSnapshotError::InvalidSquad(squad.item_id));
@@ -2083,6 +2117,8 @@ impl NativePhysicalScene {
                 command_bans,
                 hivemind,
                 is_carrier_squad: squad.is_carrier_squad,
+                hotkey_number,
+                original_squad_count,
                 shooting: bees_hivemind::protocol::StrategyIdentity {
                     id: (shooting_index + 1) as u8,
                     name: bees_hivemind::protocol::SHOOTING_STRATEGIES[shooting_index],

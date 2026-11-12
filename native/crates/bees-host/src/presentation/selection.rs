@@ -91,7 +91,9 @@ impl NativeSquadSelection {
         let eligible: Vec<_> = view.roster.source_order().iter().copied()
             .filter(|&owner| {
                 view.roster.get(owner).is_some_and(|squad|
-                    squad.mother_squad.is_none()
+                    squad.source_hotkey_number.is_some() ||
+                    (squad.original_squad_count.is_none() &&
+                        squad.mother_squad.is_none())
                 ) && selectable(view, owner)
             }).collect();
         if eligible.is_empty() { return None; }
@@ -104,6 +106,47 @@ impl NativeSquadSelection {
             (None, false) => eligible.len() - 1,
         };
         let owner = eligible[next];
+        self.squads.clear();
+        self.squads.push(owner);
+        Some(owner)
+    }
+
+    /// Source LevelInputManager.SelectSquadByNumber: 0 is 10, then
+    /// wraps against the ORIGINAL side count even after casualties.
+    /// Do not silently remap a dead numbered squad to a survivor.
+    /// Mixed user-controlled sides require an existing selected side,
+    /// otherwise the intended player's faction is ambiguous.
+    pub fn select_source_number(
+        &mut self, view: &NativeRenderWorldView<'_>, key: u32,
+    ) -> Option<SquadLifetime> {
+        self.synchronize(view);
+        if key > 9 { return None; }
+        let selected_side = self.squads.first()
+            .and_then(|owner| view.roster.get(*owner)).map(|s| s.side);
+        let mut side = selected_side;
+        for &owner in view.roster.source_order() {
+            let Some(squad) = view.roster.get(owner) else { continue };
+            if squad.source_hotkey_number.is_none() || !selectable(view, owner) {
+                continue;
+            }
+            if side.is_none() { side = Some(squad.side); }
+            else if selected_side.is_none() && side != Some(squad.side) {
+                return None;
+            }
+        }
+        let side = side?;
+        let count = view.roster.source_order().iter()
+            .filter_map(|owner| view.roster.get(*owner))
+            .find(|squad| squad.side == side && squad.source_hotkey_number.is_some())?
+            .original_squad_count?;
+        if count == 0 { return None; }
+        let input = if key == 0 { 10 } else { key };
+        let target = (input - 1) % count + 1;
+        let owner = view.roster.source_order().iter().copied().find(|&owner|
+            view.roster.get(owner).is_some_and(|squad|
+                squad.side == side && squad.source_hotkey_number == Some(target)
+            ) && selectable(view, owner)
+        )?;
         self.squads.clear();
         self.squads.push(owner);
         Some(owner)

@@ -162,6 +162,8 @@ impl NativeAuthoredEntity {
 
 pub struct NativeAuthoredSquad {
     pub command_bans: Option<Vec<bees_hivemind::dispatch::LocalCommandKind>>,
+    pub hotkey_number: Option<u32>,
+    pub original_squad_count: Option<u32>,
     pub owner: SquadLifetime,
     pub side: i32,
     pub members: Vec<i64>,
@@ -172,6 +174,9 @@ impl NativeAuthoredSquad {
         -> Result<(), SquadRosterError>
     {
         roster.register_squad(combat, self.owner, self.side, &self.members)?;
+        if let Some(count) = self.original_squad_count {
+            roster.set_source_hotkey(self.owner, self.hotkey_number, count)?;
+        }
         if let Some(bans) = self.command_bans { roster.set_command_bans(self.owner, bans)?; }
         Ok(())
     }

@@ -26,6 +26,7 @@ const SCOUT_TYPE: u8 = 18;
 pub enum SquadRosterError {
     InvalidOwner,
     InvalidMembers,
+    InvalidSourceHotkey,
     DuplicateSquad,
     MissingSquad,
     DuplicateShip(i64),
@@ -92,6 +93,8 @@ pub struct NativeSquadEntry {
     pub side: i32,
     pub members: Vec<i64>,
     pub mother_squad: Option<SquadLifetime>,
+    pub source_hotkey_number: Option<u32>,
+    pub original_squad_count: Option<u32>,
 }
 
 #[derive(Default)]
@@ -141,6 +144,35 @@ impl NativeSquadRoster {
     }
 
     pub fn source_order(&self) -> &[SquadLifetime] { &self.source_order }
+
+    /// Install source-initial shortcut metadata once at construction.
+    /// The original count never changes when a ship/squad dies; minions
+    /// receive the count but cannot acquire an original number.
+    pub fn set_source_hotkey(&mut self, owner: SquadLifetime,
+        number: Option<u32>, original_count: u32,
+    ) -> Result<(), SquadRosterError> {
+        let side = self.active.get(&owner)
+            .ok_or(SquadRosterError::MissingSquad)?.side;
+        if number.is_some_and(|n| n == 0 || n > original_count) {
+            return Err(SquadRosterError::InvalidSourceHotkey);
+        }
+        if self.active.iter().any(|(&id, squad)| id != owner &&
+            squad.side == side && (
+                squad.original_squad_count.is_some_and(|count| count != original_count) ||
+                (number.is_some() && squad.source_hotkey_number == number)
+            )
+        ) {
+            return Err(SquadRosterError::InvalidSourceHotkey);
+        }
+        let squad = self.active.get_mut(&owner)
+            .ok_or(SquadRosterError::MissingSquad)?;
+        if squad.original_squad_count.is_some() {
+            return Err(SquadRosterError::InvalidSourceHotkey);
+        }
+        squad.source_hotkey_number = number;
+        squad.original_squad_count = Some(original_count);
+        Ok(())
+    }
 
     /// A full native Level cannot emit valid rollout samples when ships
     /// are missing from the squad registry. Both counts are maintained
@@ -207,6 +239,7 @@ impl NativeSquadRoster {
             command_bans: None,
             targeting: None,
             owner, side, members: members.to_vec(), mother_squad: None,
+            source_hotkey_number: None, original_squad_count: None,
         };
         self.active.insert(owner, entry);
         self.source_order.push(owner);
@@ -305,6 +338,7 @@ impl NativeSquadRoster {
             side: beacon.side,
             members: vec![*beacon_id],
             mother_squad: Some(mother_squad),
+            source_hotkey_number: None, original_squad_count: None,
         };
         self.active.insert(minion_owner, entry);
         self.source_order.push(minion_owner);

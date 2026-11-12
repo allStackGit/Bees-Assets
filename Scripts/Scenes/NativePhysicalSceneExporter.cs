@@ -209,6 +209,8 @@ internal static class NativePhysicalSceneExporter
         // every Squad.Setup, including reuse of a pooled Squad wrapper.
         public long item_id;
         public int side;
+        public int squad_number;
+        public bool is_minion_squad;
         public List<long> member_ids = new List<long>();
         public bool user_controlled, can_accept_input, locked_on, is_carrier_squad;
         public bool is_hivemind_controlled, is_immobile;
@@ -262,7 +264,7 @@ internal static class NativePhysicalSceneExporter
     [Serializable]
     private sealed class PhysicalScene
     {
-        public int schema_version = 28;
+        public int schema_version = 29;
         public SourceTargetingContext targeting_context;
         public int source_frame_count = Time.frameCount;
         public string level_name;
@@ -283,6 +285,9 @@ internal static class NativePhysicalSceneExporter
         // Source Level.StartingPositions[Side-1] for a squad returning
         // in bounds before requesting its next HiveMind target.
         public Vector2[] starting_positions;
+        // Counts survive original squad deaths, unlike the live roster.
+        // Unity's 1-0 hotkeys wrap against this original side-specific count.
+        public int[] original_squad_counts;
         // Exact Pathfinder grid dimensions and map-to-Unity affine frame,
         // not approximations from gameplay ForceBounds or broadphase.
         public int navigation_map_width, navigation_map_height;
@@ -349,6 +354,7 @@ internal static class NativePhysicalSceneExporter
             min = new Vector2(level.MinX, level.MinY),
             max = new Vector2(level.MaxX, level.MaxY),
             starting_positions = (Vector2[])level.StartingPositions.Clone(),
+            original_squad_counts = (int[])level.State.OriginalSquadCounts.Clone(),
             navigation_map_width = level.MapWidth,
             navigation_map_height = level.MapHeight,
             navigation_origin_world = level.Map.Transform.TransformPoint(
@@ -360,6 +366,15 @@ internal static class NativePhysicalSceneExporter
                 level.Map.Transform.TransformPoint(Vector3.up) -
                 level.Map.Transform.TransformPoint(Vector3.zero)
         };
+
+        if (snapshot.original_squad_counts == null ||
+            snapshot.original_squad_counts.Length != 2 ||
+            snapshot.original_squad_counts[0] < 0 ||
+            snapshot.original_squad_counts[1] < 0)
+        {
+            throw new InvalidOperationException(
+                "Native squad hotkeys require the source's original side counts.");
+        }
 
         if (snapshot.navigation_map_width <= 0 ||
             snapshot.navigation_map_height <= 0 ||
@@ -634,18 +649,30 @@ internal static class NativePhysicalSceneExporter
         var liveIds = new HashSet<long>();
         foreach (var ship in snapshot.ships) liveIds.Add(ship.entity_id);
         var registered = new HashSet<long>();
+        var liveSquadNumbers = new HashSet<long>();
         foreach (Squad squad in level.State.Squads)
         {
             if (squad == null || squad.IsDead) continue;
             if (squad.ItemId <= 0 || squad.Side <= 0)
                 throw new InvalidOperationException(
                     "Cannot export a Squad without an allocated source identity.");
+            if (squad.Side > snapshot.original_squad_counts.Length ||
+                squad.SquadNumber <= 0 ||
+                (!squad.IsMinionSquad &&
+                 squad.SquadNumber > snapshot.original_squad_counts[squad.Side - 1]) ||
+                !liveSquadNumbers.Add(((long)squad.Side << 32) | (uint)squad.SquadNumber))
+            {
+                throw new InvalidOperationException(
+                    "Invalid or repeated source squad number for side " + squad.Side);
+            }
             var members = squad.GetShips();
             if (members == null || members.Count == 0)
                 throw new InvalidOperationException(
                     "Cannot export an empty living Squad " + squad.ItemId);
             var sourceSquad = new SourceSquad {
                 item_id = squad.ItemId, side = squad.Side,
+                squad_number = squad.SquadNumber,
+                is_minion_squad = squad.IsMinionSquad,
                 user_controlled = squad.IsUserControlled,
                 can_accept_input = squad.CanAcceptUserInput,
                 locked_on = squad.IsLockedOn,
