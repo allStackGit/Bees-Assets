@@ -943,6 +943,9 @@ document.addEventListener('DOMContentLoaded', () => {
     function renderMetricPicker(selectId,pickerId) {
         const source=$(selectId),panel=$(pickerId);
         if(!source||!panel)return;
+        // Frozen Hub jobs accept up to 96 preferred chart metrics.
+        // Compare charts are intentionally not subject to this cap.
+        const selectionLimit=selectId==='hub-job-metrics'?96:null;
         if(!panel._metricView) {
             const toolbar=document.createElement('div');
             toolbar.className='hub-metric-toolbar';
@@ -989,6 +992,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         const check=document.createElement('input');
                         check.type='checkbox';
                         check.checked=option.selected;
+                        check.disabled=!check.checked&&selectionLimit!==null&&
+                            source.selectedOptions.length>=selectionLimit;
                         check.dataset.metricValue=option.value;
                         const key=option.value.replace(/^metric:/,'');
                         const name=document.createElement('span');
@@ -996,6 +1001,12 @@ document.addEventListener('DOMContentLoaded', () => {
                         const note=document.createElement('small');
                         note.textContent=option.textContent.slice(key.length).trim();
                         check.addEventListener('change',()=>{
+                            if(check.checked&&selectionLimit!==null&&
+                                source.selectedOptions.length>=selectionLimit) {
+                                check.checked=false;
+                                draw(option.value);
+                                return;
+                            }
                             option.selected=check.checked;
                             source.dispatchEvent(new Event('change',{bubbles:true}));
                             draw(option.value);
@@ -1014,8 +1025,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 rows.replaceChildren(...nodes);
                 rows.scrollTop=scroll;
-                count.textContent=source.selectedOptions.length+' selected · '+
-                    visible.length+' of '+source.options.length+' shown';
+                count.textContent=source.selectedOptions.length+
+                    (selectionLimit===null?'':' / '+selectionLimit)+
+                    ' selected · '+visible.length+' of '+
+                    source.options.length+' shown';
                 if(focusKey!==null)
                     for(const check of rows.querySelectorAll('input[type="checkbox"]'))
                         if(check.dataset.metricValue===focusKey) {
@@ -1024,8 +1037,15 @@ document.addEventListener('DOMContentLoaded', () => {
                         }
             }
             function toggle(checked,visibleOnly) {
-                for(const option of visibleOnly?matches():[...source.options])
-                    option.selected=checked;
+                let available=selectionLimit===null?Infinity:
+                    Math.max(0,selectionLimit-source.selectedOptions.length);
+                for(const option of visibleOnly?matches():[...source.options]) {
+                    if(!checked)option.selected=false;
+                    else if(!option.selected&&available>0) {
+                        option.selected=true;
+                        available--;
+                    }
+                }
                 source.dispatchEvent(new Event('change',{bubbles:true}));
                 draw();
             }
