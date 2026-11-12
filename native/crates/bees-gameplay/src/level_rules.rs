@@ -108,6 +108,31 @@ pub struct NativeBomberContact {
     pub contacted_target_id: i64,
 }
 
+/// Instantaneous active source squad stances. These are sampled only
+/// when the host reports status, never in the hot physics loop. Older
+/// snapshots can have CeaseFire unknown at squad level even if per-ship
+/// IsCeaseFire was imported; the known count makes that explicit.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize)]
+pub struct NativePlayerControlGauges {
+    pub active_player_squads: usize,
+    pub matched_speed_squads: usize,
+    pub chase_enabled_squads: usize,
+    pub locked_on_squads: usize,
+    pub cease_fire_known_squads: usize,
+    pub cease_fire_enabled_squads: usize,
+}
+
+impl NativePlayerControlGauges {
+    pub fn merge(&mut self, other: Self) {
+        self.active_player_squads += other.active_player_squads;
+        self.matched_speed_squads += other.matched_speed_squads;
+        self.chase_enabled_squads += other.chase_enabled_squads;
+        self.locked_on_squads += other.locked_on_squads;
+        self.cease_fire_known_squads += other.cease_fire_known_squads;
+        self.cease_fire_enabled_squads += other.cease_fire_enabled_squads;
+    }
+}
+
 /// Current episode's actual source Squad.CheckChase work. These counters
 /// are incremented only at the one-second source timer boundary, not on
 /// every fixed physics or inference step.
@@ -157,6 +182,9 @@ pub trait NativeLevelCommandContext {
 
     fn player_chase_measurements(&self) -> NativePlayerChaseMeasurements {
         NativePlayerChaseMeasurements::default()
+    }
+    fn player_control_gauges(&self) -> NativePlayerControlGauges {
+        NativePlayerControlGauges::default()
     }
 
     /// Admit scheduled source squads at the completed fixed-tick boundary.

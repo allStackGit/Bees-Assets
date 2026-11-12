@@ -19,7 +19,7 @@ use bees_gameplay::level_host::{
 };
 use bees_gameplay::level_rules::{
     NativeLevelRewardMetadata, NativeLevelCommandContext,
-    NativePlayerChaseMeasurements,
+    NativePlayerChaseMeasurements, NativePlayerControlGauges,
 };
 use bees_gameplay::perception_world::NativeLevelPerceptionInputs;
 use bees_gameplay::squads::NativeSquadRoster;
@@ -445,6 +445,26 @@ impl NativeLevelRewardMetadata for NativePolicyOnlyMetadata {
 impl NativeLevelCommandContext for NativePolicyOnlyMetadata {
     fn player_chase_measurements(&self) -> NativePlayerChaseMeasurements {
         self.chase_measurements
+    }
+
+    fn player_control_gauges(&self) -> NativePlayerControlGauges {
+        let player = &self.player;
+        let eligible = |owner: &SquadLifetime| player.squads.get(owner)
+            .is_some_and(|p| p.user_controlled);
+        NativePlayerControlGauges {
+            active_player_squads: player.squads.values()
+                .filter(|p| p.user_controlled).count(),
+            matched_speed_squads: player.matching_speeds.keys()
+                .filter(|owner| eligible(owner)).count(),
+            chase_enabled_squads: player.chasing.iter()
+                .filter(|owner| eligible(owner)).count(),
+            locked_on_squads: player.squads.values()
+                .filter(|p| p.user_controlled && p.locked_on).count(),
+            cease_fire_known_squads: player.cease_fire.keys()
+                .filter(|owner| eligible(owner)).count(),
+            cease_fire_enabled_squads: player.cease_fire.iter()
+                .filter(|(owner, &enabled)| enabled && eligible(owner)).count(),
+        }
     }
 
     fn advance_player_chase(
