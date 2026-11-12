@@ -2915,6 +2915,14 @@ class ExperimentHub {
         learner.distributed_abort_requested_at??=now();
         learner.status_reason='Distributed startup abort requested; stopping collectors and awaiting native ownership receipts.';
         this.reconcileDistributedAborts(next);
+        const queued=(next.distributed_group_plans||[]).find(plan=>
+            plan.learner_job_id===learner.id&&
+            ['pending','needs_review'].includes(plan.status));
+        if(queued) {
+            queued.status='disarmed';
+            queued.reason='Operator abandoned the unstarted distributed group.';
+            queued.resolved_at=now();
+        }
         const intent=(next.distributed_launch_plans||[]).find(plan=>
             plan.learner_job_id===learner.id&&plan.status==='pending');
         if(intent) {
@@ -5075,6 +5083,11 @@ class ExperimentHub {
         const next=copy(this.state);
         const job=next.jobs.find(j=>j.id===value.job_id);
         if (!job) throw Error('Job not found.');
+        if((next.distributed_group_plans||[]).some(plan=>
+            ['pending','needs_review'].includes(plan.status)&&
+            (plan.learner_job_id===job.id||
+             plan.collector_job_ids.includes(job.id))))
+            throw Error('Cancel the pending distributed group approval before cancelling an individual native job.');
         if (job.status==='cancelled') return copy(job);
         const cancelledAt=now();
         if(job.project_id==='tinybrains'&&job.distributed_rollout_managed===true) {
