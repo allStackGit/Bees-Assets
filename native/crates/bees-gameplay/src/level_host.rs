@@ -1218,7 +1218,7 @@ impl NativeLevelBatchDriver {
                 world.state.metadata.player_chase_measurements(),
             );
             status.player_controls.merge(
-                world.state.metadata.player_control_gauges(),
+                world.state.metadata.player_control_gauges(events.roster()),
             );
             status.reinforcements.merge(
                 world.state.metadata.reinforcement_gauges(),

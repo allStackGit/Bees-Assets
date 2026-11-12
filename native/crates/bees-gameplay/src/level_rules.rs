@@ -210,7 +210,7 @@ pub trait NativeLevelCommandContext {
     fn player_chase_measurements(&self) -> NativePlayerChaseMeasurements {
         NativePlayerChaseMeasurements::default()
     }
-    fn player_control_gauges(&self) -> NativePlayerControlGauges {
+    fn player_control_gauges(&self, _roster: &NativeSquadRoster) -> NativePlayerControlGauges {
         NativePlayerControlGauges::default()
     }
 
