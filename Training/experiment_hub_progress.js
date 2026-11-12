@@ -102,7 +102,8 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
         // At most one sustained stage can dominate each fully instrumented
         // collector. Give confirmed per-worker evidence a default chart slot.
         for(let i=0;i<9;i++) {
-            for(const suffix of ['sim_straggler_pressure','sim_dispatch_pressure'])
+            for(const suffix of ['sim_straggler_pressure','sim_dispatch_pressure',
+                'record_encode_pressure'])
                 retain('collector_'+i+'_'+suffix,reported['collector_'+i+'_'+suffix]);
             for(const stage of ['engine','observation','inference','opponent'])
                 retain('collector_'+i+'_stage_'+stage+'_dominant',
@@ -182,13 +183,19 @@ class BottleneckEvidence {
                     add('collector_'+i+'_sim_dispatch_queue_share',queueShare);
                 if(batch>0&&worker!==null)
                     // Sum of parallel engine request durations divided by
-                    // batch wall: effective in-flight request overlap, not
-                    // exclusive CPU parallelism or GPU saturation.
+                    // batch wall: in-flight request overlap, not GPU/CPU busy.
                     add('collector_'+i+'_sim_inflight_factor',
                         worker/batch,'scalar');
+                const packing=seconds('collector_'+i+'_record_encode_seconds');
+                const service=seconds('collector_'+i+'_service_seconds');
+                const packingShare=(service>0&&packing!==null&&packing<=service)
+                    ?packing/service:null;
+                if(packingShare!==null)
+                    add('collector_'+i+'_record_encode_work_share',packingShare);
                 simHints[i]={
                     tail:tailShare!==null&&tailShare>=0.25,
-                    queue:queueShare!==null&&queueShare>=0.20
+                    queue:queueShare!==null&&queueShare>=0.20,
+                    packing:packingShare!==null&&packingShare>=0.30
                 };
                 const durations=sourceNames.map(name=>
                     seconds('collector_'+i+'_'+name));
@@ -227,6 +234,8 @@ class BottleneckEvidence {
                         add('collector_'+i+'_sim_straggler_pressure',1,'count');
                     if(recent.filter(x=>x.simHints?.[i]?.queue).length>=5)
                         add('collector_'+i+'_sim_dispatch_pressure',1,'count');
+                    if(recent.filter(x=>x.simHints?.[i]?.packing).length>=5)
+                        add('collector_'+i+'_record_encode_pressure',1,'count');
                     for(let stage=0;stage<stageNames.length;stage++) {
                         if(recent.filter(x=>x.stageHints?.[i]===stage).length>=5)
                             add('collector_'+i+'_stage_'+stageNames[stage]+
