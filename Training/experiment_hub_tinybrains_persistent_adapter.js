@@ -185,6 +185,7 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         add('collector_'+i+'_roundtrip_seconds',
             worker.transport_roundtrip_seconds,'seconds');
         add('collector_'+i+'_elapsed_seconds',worker.elapsed_seconds,'seconds');
+        add('collector_'+i+'_service_seconds',worker.collector_service_seconds,'seconds');
         add('collector_'+i+'_rollout_engine_step_seconds',
             worker.rollout_engine_step_seconds,'seconds');
         add('collector_'+i+'_learner_inference_seconds',
