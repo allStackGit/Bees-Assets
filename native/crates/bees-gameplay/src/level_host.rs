@@ -496,6 +496,14 @@ pub struct NativeRuntimeStatus {
     /// all worlds; one shared physical grid per world, never per agent.
     pub spatial_grid_active_buckets: usize,
     pub spatial_grid_retained_buckets: usize,
+    /// These are episode-local physical effects from ALL controllers,
+    /// not only player buttons. They reset on episode recycling and must
+    /// never be interpreted as host-lifetime counter deltas.
+    pub special_scout_beacons_spawned: u64,
+    pub special_fire_barge_self_detonations: u64,
+    pub special_game_barge_charges_started: u64,
+    pub special_game_barge_charge_hits: u64,
+    pub special_game_barge_charge_completions: u64,
     /// Sum of the current episodes' authoritative vision measurements.
     /// These reset on episode turnover, so they are gauges, not host-wide
     /// monotonic counters for deriving cross-episode rates.
@@ -1141,6 +1149,11 @@ impl NativeLevelBatchDriver {
             active_commands: 0,
             spatial_grid_active_buckets: 0,
             spatial_grid_retained_buckets: 0,
+            special_scout_beacons_spawned: 0,
+            special_fire_barge_self_detonations: 0,
+            special_game_barge_charges_started: 0,
+            special_game_barge_charge_hits: 0,
+            special_game_barge_charge_completions: 0,
             vision: bees_sim::vision::VisionSweepCounts::default(),
             navigation_jobs_completed: 0,
             queued_notifications: 0,
@@ -1185,6 +1198,13 @@ impl NativeLevelBatchDriver {
                 .spatial_grid_bucket_usage();
             status.spatial_grid_active_buckets += occupied;
             status.spatial_grid_retained_buckets += retained;
+            let policy_specials = world.state.combat.policy_special_measurements();
+            let game_barges = world.state.combat.game_barge_measurements();
+            status.special_scout_beacons_spawned += policy_specials.scout_beacons_spawned;
+            status.special_fire_barge_self_detonations += policy_specials.fire_barge_detonations;
+            status.special_game_barge_charges_started += game_barges.starts;
+            status.special_game_barge_charge_hits += game_barges.hits;
+            status.special_game_barge_charge_completions += game_barges.completions;
             status.vision.merge(&world.state.combat.vision_measurements());
             let asteroids = world.state.combat.full_asteroid_pool_measurements();
             status.full_asteroids_active += asteroids.active;

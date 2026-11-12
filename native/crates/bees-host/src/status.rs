@@ -26,6 +26,13 @@ pub struct NativeHostGauges {
     /// worlds, sampled at the same cadence as all other host gauges.
     pub spatial_grid_active_buckets: usize,
     pub spatial_grid_retained_buckets: usize,
+    /// Live episode-local physical special effects (all controllers).
+    /// Snapshot gauges, not cross-episode rates or host lifetime totals.
+    pub special_scout_beacons_spawned: u64,
+    pub special_fire_barge_self_detonations: u64,
+    pub special_game_barge_charges_started: u64,
+    pub special_game_barge_charge_hits: u64,
+    pub special_game_barge_charge_completions: u64,
     /// Current episodes' cumulative vision cost, not a process-lifetime
     /// rate. After episode reset these counts restart from zero.
     pub vision: bees_sim::vision::VisionSweepCounts,
@@ -57,6 +64,11 @@ impl From<&NativeRuntimeStatus> for NativeHostGauges {
             commands_active: value.active_commands,
             spatial_grid_active_buckets: value.spatial_grid_active_buckets,
             spatial_grid_retained_buckets: value.spatial_grid_retained_buckets,
+            special_scout_beacons_spawned: value.special_scout_beacons_spawned,
+            special_fire_barge_self_detonations: value.special_fire_barge_self_detonations,
+            special_game_barge_charges_started: value.special_game_barge_charges_started,
+            special_game_barge_charge_hits: value.special_game_barge_charge_hits,
+            special_game_barge_charge_completions: value.special_game_barge_charge_completions,
             vision: value.vision,
             navigation_jobs_completed: value.navigation_jobs_completed,
             notifications_queued: value.queued_notifications,
