@@ -1730,26 +1730,33 @@ impl KinematicPhysics {
         // Obstacle contacts retain their own overlap history and queue.
         // A shot can contact a ship and an obstacle in the same physics tick.
         self.obstacle_overlaps_current.clear();
-        for projectile in &self.projectiles {
-            if !projectile.active { continue; }
-            let Some(projectile_collider) = &projectile.collider else { continue };
-            let Some(area) = projectile_collider.bounds else { continue };
-            self.grid.candidates(area, &mut self.candidates);
-            self.counts.broadphase_candidates += self.candidates.len() as u64;
-            for &index in &self.candidates {
-                let obstacle = &self.obstacles[index];
-                if !obstacle.active ||
-                    !collision_matrix.allows(projectile.layer, obstacle.layer) {
-                    continue;
-                }
-                let Some(bounds) = obstacle.collider.bounds else { continue };
-                if !area.overlaps(bounds) { continue; }
-                self.counts.narrowphase_tests += 1;
-                if obstacle.collider.overlaps(projectile_collider) {
-                    self.obstacle_overlaps_current.push(ObstacleTriggerEnter {
-                        projectile_id: projectile.id,
-                        obstacle_id: obstacle.id,
-                    });
+        // An empty obstacle broadphase cannot produce shot-obstacle
+        // contacts. Skipping the projectile population matters in clear
+        // training arenas with many shots (including dormant pool slots).
+        // Still reconcile empty contacts below so any previous overlaps
+        // produce their normal exits when the last obstacle disappears.
+        if !self.grid.is_empty() {
+            for projectile in &self.projectiles {
+                if !projectile.active { continue; }
+                let Some(projectile_collider) = &projectile.collider else { continue };
+                let Some(area) = projectile_collider.bounds else { continue };
+                self.grid.candidates(area, &mut self.candidates);
+                self.counts.broadphase_candidates += self.candidates.len() as u64;
+                for &index in &self.candidates {
+                    let obstacle = &self.obstacles[index];
+                    if !obstacle.active ||
+                        !collision_matrix.allows(projectile.layer, obstacle.layer) {
+                        continue;
+                    }
+                    let Some(bounds) = obstacle.collider.bounds else { continue };
+                    if !area.overlaps(bounds) { continue; }
+                    self.counts.narrowphase_tests += 1;
+                    if obstacle.collider.overlaps(projectile_collider) {
+                        self.obstacle_overlaps_current.push(ObstacleTriggerEnter {
+                            projectile_id: projectile.id,
+                            obstacle_id: obstacle.id,
+                        });
+                    }
                 }
             }
         }
