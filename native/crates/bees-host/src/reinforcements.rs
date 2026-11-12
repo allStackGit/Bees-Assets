@@ -38,13 +38,6 @@ pub(crate) struct ReinforcementWave {
 fn place_reinforcement_wave(
     wave: &mut ReinforcementWave, spawn: Vec2, metadata: &NativePolicyOnlyMetadata,
 ) -> Result<(), &'static str> {
-    // With obstacles, Unity SetStartingPosition searches for an occupiable
-    // formation center and may fall back to individual ship slots. A
-    // source spawn alone cannot reproduce that path without the authored
-    // Pathfinder query. Require actual captured physical positions instead.
-    if metadata.player_formation_options().has_obstacles {
-        return Err("Obstacle-bearing reinforcement spawns need captured physical ship positions (omit spawn)");
-    }
     let ship_indices: HashMap<i64, usize> = wave.ships.iter().enumerate()
         .map(|(index, ship)| (ship.entity_id, index)).collect();
 
@@ -149,6 +142,14 @@ impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
         -> Result<(), &'static str>
     {
         if plans.is_empty() { return Ok(()); }
+        // Source SetStartingPosition may use Pathfinder to search a nearby
+        // formation center or separate slots in obstacle-bearing maps.
+        // A requested spawn alone cannot reproduce that decision. Reject
+        // such plans before consuming any authored squads or entities.
+        if self.metadata.player_formation_options().has_obstacles &&
+            plans.iter().any(|plan| plan.spawn.is_some()) {
+            return Err("Obstacle-bearing reinforcement spawns need captured physical ship positions (omit spawn)");
+        }
         let mut squad_waves = HashMap::new();
         let mut waves = Vec::with_capacity(plans.len());
         let mut spawn_centers = Vec::with_capacity(plans.len());
