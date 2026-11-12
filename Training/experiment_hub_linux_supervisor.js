@@ -277,7 +277,16 @@ function writeAtomic(file,data,fsApi=fs) {
     try{
         fsApi.writeFileSync(pending,JSON.stringify(data,null,2)+'\n',
             {flag:'wx',mode:0o600});
+        // The durable owner journal is recorded before asking systemd to
+        // launch a native trainer. Flush data and the renamed directory
+        // entry before publishing its new in-memory revision.
+        const fd=fsApi.openSync(pending,'r');
+        try{fsApi.fsyncSync(fd);}
+        finally{fsApi.closeSync(fd);}
         fsApi.renameSync(pending,file);
+        const dirFd=fsApi.openSync(path.dirname(file),'r');
+        try{fsApi.fsyncSync(dirFd);}
+        finally{fsApi.closeSync(dirFd);}
     }finally{
         if(fsApi.existsSync(pending))fsApi.unlinkSync(pending);
     }
