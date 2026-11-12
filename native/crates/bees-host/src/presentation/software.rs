@@ -61,6 +61,8 @@ pub struct NativeRenderCounts {
     pub range_overlaps: usize,
     pub obstructed_ranges: usize,
     pub missing_range_data: usize,
+    pub minimap_ship_markers: usize,
+    pub numbered_squad_rows: usize,
 }
 
 pub struct NativeSoftwareRenderer {
@@ -494,18 +496,19 @@ impl NativeSoftwareRenderer {
             text::draw_centered(&mut self.pixels, self.width, 8, &label, 1, [239, 247, 255]);
         }
         if self.show_minimap {
-            self.draw_minimap(view, bounds);
+            counts.minimap_ship_markers = self.draw_minimap(view, bounds);
         }
-        self.draw_squad_shortcuts(view);
+        counts.numbered_squad_rows = self.draw_squad_shortcuts(view);
         counts
     }
 
     /// Render only known player-owned units. Unlike the full spectator
     /// viewport, this map must not expose hidden enemy locations. Read
     /// permissions and current hull poses from the authoritative world.
-    fn draw_minimap(&mut self, view: &NativeRenderWorldView<'_>, bounds: Aabb) {
+    fn draw_minimap(&mut self, view: &NativeRenderWorldView<'_>, bounds: Aabb) -> usize {
         let Some(layout) = MiniMapLayout::new(self.width, self.height, bounds)
-            else { return };
+            else { return 0 };
+        let mut markers = 0usize;
         for y in layout.top..layout.bottom {
             self.pixels[y * self.width + layout.left
                 ..y * self.width + layout.right].fill(0x101c2e);
@@ -532,6 +535,7 @@ impl NativeSoftwareRenderer {
             }
             let Some((x, y)) = layout.project(body.motion.position)
                 else { continue };
+            markers += 1;
             let selected = if self.selection.squads().len() > 8 {
                 self.selected_squad_lookup.contains(&owner)
             } else {
@@ -566,14 +570,15 @@ impl NativeSoftwareRenderer {
             self.line(x1, y1, x0, y1, color);
             self.line(x0, y1, x0, y0, color);
         }
+        markers
     }
 
     /// A lightweight source-squad tab strip. Shortcut numbers come from the
     /// actual schema-29 Unity export, not an index assigned by the renderer.
     /// It is omitted for legacy scenes lacking authoritative squad numbers.
     /// Only user-controlled ships are listed; enemy roster data stays private.
-    fn draw_squad_shortcuts(&mut self, view: &NativeRenderWorldView<'_>) {
-        if self.width < 560 || self.height < 360 { return; }
+    fn draw_squad_shortcuts(&mut self, view: &NativeRenderWorldView<'_>) -> usize {
+        if self.width < 560 || self.height < 360 { return 0; }
         let mut row = 0usize;
         for &owner in view.roster.source_order() {
             let Some(squad) = view.roster.get(owner) else { continue };
@@ -607,6 +612,7 @@ impl NativeSoftwareRenderer {
             row += 1;
             if row == 10 { break; }
         }
+        row
     }
 
     fn draw_battle_result(

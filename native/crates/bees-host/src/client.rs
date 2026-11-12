@@ -85,6 +85,11 @@ pub struct NativeClient {
     pub weapon_geometry_queries: u64,
     pub weapon_range_candidates_culled: u64,
     pub viewport_resizes: u64,
+    pub minimap_markers_drawn: u64,
+    pub numbered_squad_rows_drawn: u64,
+    pub minimap_camera_moves: u64,
+    pub numbered_shortcut_selections: u64,
+    pub cycled_shortcut_selections: u64,
 }
 
 impl NativeClient {
@@ -111,7 +116,10 @@ impl NativeClient {
             culled_ship_draws: 0, culled_obstacle_draws: 0,
             culled_projectile_draws: 0, culled_piece_draws: 0,
             weapon_geometry_queries: 0, weapon_range_candidates_culled: 0,
-            viewport_resizes: 0 })
+            viewport_resizes: 0,
+            minimap_markers_drawn: 0, numbered_squad_rows_drawn: 0,
+            minimap_camera_moves: 0, numbered_shortcut_selections: 0,
+            cycled_shortcut_selections: 0 })
     }
 
     /// Initial authored camera focus is a presentation-only concern. The
@@ -299,6 +307,7 @@ impl NativeClient {
                 // framebuffer. Zoom toward that actual world point rather
                 // than shifting by a potentially massive false offset.
                 self.renderer.camera.center = map_point;
+                self.minimap_camera_moves += 1;
                 self.renderer.camera.zoom_at(factor, width as f32 * 0.5,
                     height as f32 * 0.5, width, height);
             } else {
@@ -321,7 +330,9 @@ impl NativeClient {
                     .then_some(number)
             }).and_then(|number|
                 self.renderer.selection.select_source_number(&view, number)
-            ).or_else(|| {
+            );
+            let was_numbered = selected.is_some();
+            let selected = selected.or_else(|| {
                 let forward = self.window.is_key_pressed(
                     Key::PageDown, KeyRepeat::No);
                 let backward = self.window.is_key_pressed(
@@ -330,6 +341,8 @@ impl NativeClient {
                     .cycle_source_squad(&view, forward)).flatten()
             });
             if let Some(owner) = selected {
+                if was_numbered { self.numbered_shortcut_selections += 1; }
+                else { self.cycled_shortcut_selections += 1; }
                 self.focus_selected_squad(&view, owner);
             }
         }
@@ -463,7 +476,10 @@ impl NativeClient {
             if let Some(center) = mouse.and_then(|(x, y)|
                 self.renderer.minimap_world_at(self.bounds, x, y))
             {
-                self.renderer.camera.center = center;
+                if self.renderer.camera.center != center {
+                    self.renderer.camera.center = center;
+                    self.minimap_camera_moves += 1;
+                }
             }
         }
         if !cancel_support && !self.minimap_dragging &&
@@ -631,6 +647,8 @@ impl NativeClient {
         self.culled_obstacle_draws = self.culled_obstacle_draws.saturating_add(counts.culled_obstacles as u64);
         self.culled_projectile_draws = self.culled_projectile_draws.saturating_add(counts.culled_projectiles as u64);
         self.culled_piece_draws = self.culled_piece_draws.saturating_add(counts.culled_pieces as u64);
+        self.minimap_markers_drawn = self.minimap_markers_drawn.saturating_add(counts.minimap_ship_markers as u64);
+        self.numbered_squad_rows_drawn = self.numbered_squad_rows_drawn.saturating_add(counts.numbered_squad_rows as u64);
         self.weapon_geometry_queries = self.weapon_geometry_queries.saturating_add(counts.range_queries as u64);
         self.weapon_range_candidates_culled = self.weapon_range_candidates_culled
             .saturating_add(counts.range_candidates_culled as u64);
