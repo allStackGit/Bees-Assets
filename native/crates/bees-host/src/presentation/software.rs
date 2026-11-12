@@ -10,6 +10,7 @@ use bees_sim::physics::ShipShape;
 use bees_sim::simulation::{RandomStream, WorldId};
 use super::{NativeRenderWorldView, NativeSquadSelection, battle_outcome_label, text};
 use super::minimap::MiniMapLayout;
+use super::tactical_hud;
 
 #[derive(Clone, Copy, Debug)]
 pub struct NativeCamera {
@@ -64,6 +65,7 @@ pub struct NativeRenderCounts {
     pub minimap_ship_markers: usize,
     pub numbered_squad_rows: usize,
     pub special_ready_ships: usize,
+    pub tactical_buttons_drawn: usize,
 }
 
 pub struct NativeSoftwareRenderer {
@@ -177,6 +179,12 @@ impl NativeSoftwareRenderer {
     pub fn minimap_world_at(&self, bounds: Aabb, x: f32, y: f32) -> Option<Vec2> {
         self.show_minimap.then(|| MiniMapLayout::new(self.width, self.height, bounds))
             .flatten()?.world_at(x, y)
+    }
+
+    /// UI-only action hit-test; the client converts intent into the exact
+    /// same typed player inputs used by keyboard shortcuts and replay.
+    pub fn tactical_action_at(&self, x: f32, y: f32) -> Option<super::HudAction> {
+        tactical_hud::hit(self.width, self.height, x, y)
     }
 
     /// Use the authoritative hull and healing-zone colliders for clicks,
@@ -501,6 +509,7 @@ impl NativeSoftwareRenderer {
         }
         counts.numbered_squad_rows = self.draw_squad_shortcuts(view);
         counts.special_ready_ships = self.draw_special_readiness(view);
+        counts.tactical_buttons_drawn = self.draw_tactical_bar();
         counts
     }
 
@@ -690,6 +699,32 @@ impl NativeSoftwareRenderer {
             if charges_ready > 0 { [244, 211, 142] }
             else { [136, 151, 172] });
         scouts_ready + barges_ready + charges_ready
+    }
+
+    fn draw_tactical_bar(&mut self) -> usize {
+        if self.selection.squads().is_empty() { return 0; }
+        let mut drawn = 0usize;
+        for (index, action) in tactical_hud::ACTIONS.iter().copied().enumerate() {
+            let Some(rect) = tactical_hud::action_rect(self.width, self.height, index)
+                else { return drawn };
+            let background = if matches!(action,
+                tactical_hud::HudAction::Detonate |
+                tactical_hud::HudAction::StopFire
+            ) { 0x503a38 } else { 0x23334a };
+            for y in rect.top..rect.bottom {
+                self.pixels[y * self.width + rect.left
+                    ..y * self.width + rect.right].fill(background);
+            }
+            let label = action.label();
+            let x = rect.left + (rect.right - rect.left)
+                .saturating_sub(text::width(label, 1)) / 2;
+            let y = rect.top + (rect.bottom - rect.top)
+                .saturating_sub(text::HEIGHT) / 2;
+            text::draw_at(&mut self.pixels, self.width, x, y,
+                label, 1, [232, 241, 251]);
+            drawn += 1;
+        }
+        drawn
     }
 
     fn draw_battle_result(

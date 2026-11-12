@@ -12,6 +12,7 @@ use bees_sim::simulation::WorldId;
 mod software;
 mod selection;
 mod minimap;
+mod tactical_hud;
 mod text;
 #[cfg(feature = "client")]
 pub(crate) mod campaign_dialogue;
@@ -21,6 +22,7 @@ mod battle_menu;
 pub use battle_menu::{BattleMenuRow, select_battle};
 pub use software::{NativeCamera, NativeSoftwareRenderer, NativeRenderCounts};
 pub use selection::{NativeSquadSelection, NativeSupportMode};
+pub use tactical_hud::HudAction;
 
 pub(crate) fn battle_outcome_label(result: bees_sim::episode_terminal::EpisodeTerminalResult) -> String {
     if result.winner_side == 0 { "Draw".to_owned() }
