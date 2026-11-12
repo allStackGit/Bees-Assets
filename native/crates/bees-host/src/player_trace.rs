@@ -2,7 +2,7 @@
 
 use std::collections::VecDeque;
 use std::fs::File;
-use std::io::{self, BufRead, BufReader};
+use std::io::{self, BufRead, BufReader, Seek, SeekFrom};
 use std::path::Path;
 
 use bees_gameplay::player_inputs::{
@@ -93,65 +93,156 @@ pub struct NativeTraceCheckpoint {
     pub sha256: String,
 }
 
+/// A validated trace is read only through the current battle round.
+/// A first linear scan checks the complete file and its finalization before
+/// gameplay startup, then seeks back to the first event. Playback retains at
+/// most one lookahead record and one round of actions/checkpoints; long
+/// recordings never become an unbounded in-memory input queue.
 pub struct NativePlayerTrace {
     pub inputs: VecDeque<NativeTraceInput>,
     pub checkpoints: VecDeque<NativeTraceCheckpoint>,
     pub end_round: u64,
     pub policy_actions_sha256: Option<String>,
+    reader: BufReader<File>,
+    line: String,
+    next: Option<TraceRecord>,
+    reached_end: bool,
+}
+
+fn trace_error(message: &'static str) -> io::Error {
+    io::Error::new(io::ErrorKind::InvalidData, message)
+}
+
+fn read_record(reader: &mut BufReader<File>, line: &mut String)
+    -> io::Result<Option<TraceRecord>>
+{
+    line.clear();
+    if reader.read_line(line)? == 0 { return Ok(None); }
+    serde_json::from_str(line).map(Some).map_err(io::Error::from)
 }
 
 impl NativePlayerTrace {
+    /// Validate the complete recorded sequence *before* accepting any
+    /// gameplay inputs, without allocating one Vec per trace line.
+    /// Backward-compatible schema1 traces have no physical checkpoints;
+    /// schema2 requires at least one and retains each exact world identity.
     pub fn read(
         path: &Path, config_sha256: &str, gameplay_sha256: &str, expected_levels: &[NativeTraceLevel],
         expected_model: Option<&str>,
     ) -> io::Result<Self> {
-        let invalid = |message: &str| io::Error::new(io::ErrorKind::InvalidData, message);
-        let mut records = BufReader::new(File::open(path)?).lines()
-            .map(|line| serde_json::from_str::<TraceRecord>(&line?).map_err(io::Error::from));
-        let header = records.next().transpose()?;
-        let schema_version = match header {
+        let mut reader = BufReader::new(File::open(path)?);
+        let mut line = String::new();
+        let schema_version = match read_record(&mut reader, &mut line)? {
             Some(TraceRecord::PlayerInputTrace { schema_version, run_config_sha256,
                 gameplay_config_sha256, policy_manifest_sha256, levels })
                 if (schema_version == 1 || schema_version == 2) &&
                     run_config_sha256 == config_sha256 &&
                     gameplay_config_sha256 == gameplay_sha256 && levels == expected_levels &&
                     policy_manifest_sha256.as_deref() == expected_model => schema_version,
-            _ => return Err(invalid("player trace does not match the offline battle configuration")),
+            _ => return Err(trace_error(
+                "player trace does not match the offline battle configuration",
+            )),
         };
-        let mut inputs = VecDeque::new();
-        let mut checkpoints = VecDeque::new();
-        let mut previous = 0;
-        while let Some(record) = records.next().transpose()? {
-            match record {
-                TraceRecord::PlayerInput { round, tick, action } if round >= previous && tick <= round => {
-                    previous = round;
-                    inputs.push_back(NativeTraceInput { round, tick, action });
+        let data_start = reader.stream_position()?;
+        let mut previous_round = 0;
+        let mut saw_checkpoint = false;
+        loop {
+            match read_record(&mut reader, &mut line)? {
+                Some(TraceRecord::PlayerInput { round, tick, .. })
+                    if round >= previous_round && tick <= round => {
+                    previous_round = round;
                 }
-                TraceRecord::PhysicalStateCheckpoint {
-                    round, world_id, episode_revision, tick, sha256,
-                } if schema_version == 2 && round >= previous && tick <= round &&
+                Some(TraceRecord::PhysicalStateCheckpoint {
+                    round, world_id, tick, sha256, ..
+                }) if schema_version == 2 && round >= previous_round && tick <= round &&
                     sha256.len() == 64 &&
                     sha256.bytes().all(|byte| byte.is_ascii_hexdigit()) &&
                     expected_levels.iter().any(|level| level.world_id == world_id) => {
-                    previous = round;
-                    checkpoints.push_back(NativeTraceCheckpoint {
-                        round, world_id: WorldId(world_id),
-                        episode_revision, tick, sha256,
+                    saw_checkpoint = true;
+                    previous_round = round;
+                }
+                Some(TraceRecord::PlayerInputTraceEnd {
+                    rounds, failed_window: None, policy_actions_sha256,
+                }) if rounds >= previous_round &&
+                    policy_actions_sha256.is_some() == expected_model.is_some() => {
+                    if read_record(&mut reader, &mut line)?.is_some() {
+                        return Err(trace_error(
+                            "records follow the end of the player trace",
+                        ));
+                    }
+                    if schema_version == 2 && !saw_checkpoint {
+                        return Err(trace_error(
+                            "version-2 player trace has no physical state checkpoints",
+                        ));
+                    }
+                    reader.seek(SeekFrom::Start(data_start))?;
+                    return Ok(Self {
+                        inputs: VecDeque::new(),
+                        checkpoints: VecDeque::new(),
+                        end_round: rounds,
+                        policy_actions_sha256,
+                        reader,
+                        line: String::new(),
+                        next: None,
+                        reached_end: false,
                     });
                 }
-                TraceRecord::PlayerInputTraceEnd { rounds, failed_window: None, policy_actions_sha256 }
-                    if rounds >= previous && policy_actions_sha256.is_some() == expected_model.is_some() => {
-                    if records.next().is_some() {
-                        return Err(invalid("records follow the end of the player trace"));
-                    }
-                    if schema_version == 2 && checkpoints.is_empty() {
-                        return Err(invalid("version-2 player trace has no physical state checkpoints"));
-                    }
-                    return Ok(Self { inputs, checkpoints, end_round: rounds, policy_actions_sha256 });
-                }
-                _ => return Err(invalid("invalid, out-of-order, or failed player trace")),
+                Some(_) => return Err(trace_error(
+                    "invalid, out-of-order, or failed player trace",
+                )),
+                None => return Err(trace_error(
+                    "player trace is missing its final record",
+                )),
             }
         }
-        Err(invalid("player trace is missing its final record"))
+    }
+
+    /// Load only the events occurring at the caller's current physical
+    /// round. The launcher must consume them before advancing simulation.
+    /// Reading forward beyond this boundary would pre-allocate huge
+    /// traces and lose the precise input/observation ordering.
+    pub fn load_round(&mut self, round: u64) -> io::Result<()> {
+        if self.inputs.front().is_some_and(|entry| entry.round < round) ||
+            self.checkpoints.front().is_some_and(|entry| entry.round < round) {
+            return Err(trace_error("unconsumed native trace events before round"));
+        }
+        if self.reached_end { return Ok(()); }
+        loop {
+            let record = match self.next.take() {
+                Some(record) => record,
+                None => read_record(&mut self.reader, &mut self.line)?
+                    .ok_or_else(|| trace_error(
+                        "player trace truncated after validation",
+                    ))?,
+            };
+            let event_round = match &record {
+                TraceRecord::PlayerInput { round, .. } |
+                TraceRecord::PhysicalStateCheckpoint { round, .. } => *round,
+                TraceRecord::PlayerInputTraceEnd { .. } => {
+                    self.reached_end = true;
+                    break;
+                }
+                TraceRecord::PlayerInputTrace { .. } =>
+                    return Err(trace_error("unexpected player trace header")),
+            };
+            if event_round > round {
+                self.next = Some(record);
+                break;
+            }
+            if event_round < round {
+                return Err(trace_error("player trace event missed its assigned round"));
+            }
+            match record {
+                TraceRecord::PlayerInput { round, tick, action } =>
+                    self.inputs.push_back(NativeTraceInput { round, tick, action }),
+                TraceRecord::PhysicalStateCheckpoint {
+                    round, world_id, episode_revision, tick, sha256,
+                } => self.checkpoints.push_back(NativeTraceCheckpoint {
+                    round, world_id: WorldId(world_id), episode_revision, tick, sha256,
+                }),
+                _ => unreachable!("validated trace event"),
+            }
+        }
+        Ok(())
     }
 }
