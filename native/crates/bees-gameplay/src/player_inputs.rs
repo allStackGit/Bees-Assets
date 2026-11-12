@@ -124,6 +124,101 @@ pub struct NativePlayerSquadCeaseFire {
     pub cease_fire: bool,
 }
 
+/// Authoritative player ship-special input. Like cease-fire, this affects
+/// physical abilities without replacing a squad strategy or retiring its
+/// pending HiveMind command. The queued effects execute inside the next
+/// fixed step, where normal combat events become visible to every consumer.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum NativePlayerShipSpecialKind {
+    DropBeacon,
+    Detonate,
+}
+
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct NativePlayerSquadSpecial {
+    pub world_id: WorldId,
+    pub episode_revision: u64,
+    pub squads: Vec<SquadLifetime>,
+    pub kind: NativePlayerShipSpecialKind,
+}
+
+pub struct NativePlayerSpecialPlan {
+    authority: NativePlayerSquadPlan,
+    world_id: WorldId,
+    episode_revision: u64,
+    selected_ship: i64,
+    kind: NativePlayerShipSpecialKind,
+    eligible_ships: Vec<i64>,
+}
+
+impl NativePlayerSpecialPlan {
+    pub fn owner(&self) -> SquadLifetime { self.authority.owner }
+
+    pub fn prepare<M: NativeLevelPlayerContext, A>(
+        world: &World<NativeLevelState<M, A>>,
+        world_id: WorldId, episode_revision: u64, selected_ship: i64,
+        kind: NativePlayerShipSpecialKind,
+    ) -> Result<Self, NativePlayerInputError> {
+        let authority = NativePlayerSquadPlan::prepare(
+            world, world_id, episode_revision, selected_ship,
+        )?;
+        let eligible_ships = authority.members.iter().filter_map(|member| {
+            let ship = world.state.combat.ship(member.ship_id)?;
+            let body = world.state.combat.ship_body(member.ship_id)?;
+            if !body.active || ship.vitals.is_dead() ||
+                body.motion.is_policy_controlled ||
+                world.state.combat.policy_frame(member.ship_id).is_some() {
+                return None;
+            }
+            let eligible = match kind {
+                NativePlayerShipSpecialKind::DropBeacon =>
+                    ship.ship_type == 18 &&
+                    world.state.combat.game_scout_beacon_ready(member.ship_id),
+                NativePlayerShipSpecialKind::Detonate =>
+                    ship.ship_type == 10 &&
+                    world.state.combat.configured_fire_barge_bomb_power(member.ship_id)
+                        .is_some(),
+            };
+            eligible.then_some(member.ship_id)
+        }).collect();
+        Ok(Self {
+            authority, world_id, episode_revision, selected_ship,
+            kind, eligible_ships,
+        })
+    }
+
+    /// Recheck immutable ownership and live readiness before queueing.
+    /// No projectile/death/spawn event is emitted from the UI thread.
+    pub fn execute<M: NativeLevelPlayerContext, A>(
+        self, world: &mut World<NativeLevelState<M, A>>,
+    ) -> Result<usize, NativePlayerInputError> {
+        let current = Self::prepare(world, self.world_id,
+            self.episode_revision, self.selected_ship, self.kind)?;
+        if current.authority != self.authority ||
+            current.eligible_ships != self.eligible_ships {
+            return Err(NativePlayerInputError::StaleWorld);
+        }
+        let mut queued = 0usize;
+        for ship_id in self.eligible_ships {
+            let result = match self.kind {
+                NativePlayerShipSpecialKind::DropBeacon =>
+                    world.state.combat.queue_player_scout_beacon(ship_id),
+                NativePlayerShipSpecialKind::Detonate =>
+                    world.state.combat.queue_player_fire_barge_detonation(ship_id),
+            };
+            match result {
+                Ok(true) => queued += 1,
+                Ok(false) => {},
+                Err(error) => {
+                    world.state.events.fail_player_input();
+                    return Err(NativePlayerInputError::Source(error.into()));
+                }
+            }
+        }
+        Ok(queued)
+    }
+}
+
 pub struct NativePlayerCeaseFirePlan {
     authority: NativePlayerSquadPlan,
     world_id: WorldId,
