@@ -2578,6 +2578,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 j.distributed_rollout_managed===true
                 ?state.jobs.filter(worker=>worker.project_id==='tinybrains_rollout'&&
                     worker.frozen_parameters?.learner_job_id===j.id):[];
+            const distributedLaunch=(state.distributed_launches||[]).find(launch=>
+                launch.learner_job_id===j.id);
+            const launchText=distributedLaunch
+                ?' · Coordinated Start '+distributedLaunch.status+': '+distributedLaunch.reason
+                :'';
             const distributedSummary=groupWorkers.length
                 ?' · Distributed collectors: '+groupWorkers.map(worker=>
                     (worker.assigned_machine_id||'unassigned')+' '+worker.status+
@@ -2588,7 +2593,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     ' ('+j.resource_bundle.index+'/'+j.resource_bundle.size+')'
                 :'';
             const statusCell=cell(tr,status+lineage+promoted+gpuProof+readinessText+
-                checkpointRecovery+noTrainer+distributedSummary+bundleLabel+
+                checkpointRecovery+noTrainer+distributedSummary+launchText+bundleLabel+
                 (hasSuccessor&&['waiting_adapter','waiting_predecessor'].includes(j.status)
                     ?' · Cancel downstream stage first':''));
 
@@ -2695,41 +2700,67 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                     await reload();
                 }));
-            // A distributed group is reserved atomically. Authorize the
-            // collector tier atomically as well, then wait for verified native
-            // running receipts before separately starting its GPU learner.
+            // The operator may start only the collectors, or preapprove one
+            // bounded learner Start that waits for authenticated running
+            // receipts. Neither control changes the group's fixed leases.
             if(j.status==='waiting_adapter'&&
                 j.distributed_rollout_managed===true&&groupWorkers.length>0&&
                 groupWorkers.every(worker=>worker.status==='waiting_adapter'&&
-                    !worker.dispatch_id&&worker.native_start_readiness?.eligible===true))
-                actions.append(button('Start all remote collectors',async()=>{
+                    !worker.dispatch_id&&worker.native_start_readiness?.eligible===true)) {
+                const startDistributed=async coordinated=>{
                     const hosts=groupWorkers.map(worker=>worker.assigned_machine_id);
-                    const gpuCount=groupWorkers.reduce((count,worker)=>
-                        count+worker.resources.gpu_count,0);
-                    const cpus=groupWorkers.reduce((count,worker)=>
-                        count+worker.resources.cpus,0);
-                    if(!confirm('Authorize all '+groupWorkers.length+
-                        ' remotely pinned TinyBrains collectors on '+hosts.join(', ')+
-                        ' in one operation? They reserve '+cpus+' CPUs'+
-                        (gpuCount?' and '+gpuCount+' exclusive CUDA GPU(s)':'')+
-                        '. Every collector must retain a fresh native lease and pinned HMAC endpoint. '+
-                        'This starts real machine-local worker processes; GPU access on Windows remains cooperative. '+
-                        'If any collector is no longer eligible, no collector Start will be authorized. '+
-                        'The learner is NOT started: it still requires verified running collectors and a separate GPU Start.'))return;
+                    const gpus=groupWorkers.reduce((sum,worker)=>
+                        sum+worker.resources.gpu_count,0);
+                    const cpus=groupWorkers.reduce((sum,worker)=>
+                        sum+worker.resources.cpus,0);
+                    if(!confirm('Authorize '+groupWorkers.length+
+                        ' pinned remote collectors across '+hosts.join(', ')+
+                        ' with '+cpus+' leased CPUs'+
+                        (gpus?' and '+gpus+' exclusive CUDA GPUs':'')+'? '+
+                        'These are real native processes; CUDA access on Windows is cooperative. '+
+                        'If any host, lease or native Start proof is invalid, no collector is authorized. '+
+                        (coordinated
+                            ?'Also authorize ONE learner GPU Start after all collectors have fresh verified running receipts. '+
+                                'This permission expires after 20 minutes, is lost on coordinator restart, '+
+                                'and is disarmed if any machine, dispatch or lease identity changes. '+
+                                'The learner is never retried automatically. '
+                            :'The GPU learner must be started separately after verification. ')+
+                        'All resource allocations stay fixed.'))return;
                     try {
                         const result=await action('hub/distributed/tinybrains/start-collectors',{
                             learner_job_id:j.id,
                             expected_collector_job_ids:groupWorkers.map(worker=>worker.id),
                             confirm_start:true,
+                            ...(coordinated?{
+                                start_learner_when_ready:true,confirm_learner_start:true,
+                            }:{}),
                         });
-                        feedback('hub-job-message',
-                            result.starts_authorized+' remote collector Starts authorized atomically. '+
-                            'Wait for verified running receipts before starting the learner.');
+                        feedback('hub-job-message',result.starts_authorized+
+                            ' remote collector Starts authorized atomically. '+
+                            (coordinated
+                                ?'Learner Start preapproved for this live coordinator; awaiting verified collector receipts.'
+                                :'Start the learner separately after the collectors are verified.'));
                         await reload();
                     }catch(error){
                         feedback('hub-job-message',error.message);
                         await reload();
                     }
+                };
+                actions.append(button('Start collectors only',()=>startDistributed(false)));
+                actions.append(button('Start coordinated group',()=>startDistributed(true)));
+            }
+            if(distributedLaunch?.status==='pending')
+                actions.append(button('Cancel future learner Start',async()=>{
+                    if(!confirm('Disarm this pending coordinated learner Start? '+
+                        'The existing remote collector processes and all resource claims remain unchanged.'))return;
+                    try{
+                        await action('hub/distributed/tinybrains/cancel-launch',{
+                            learner_job_id:j.id,confirm_cancel:true,
+                        });
+                        feedback('hub-job-message',
+                            'Future learner Start disarmed. Native collectors and reservations remain unchanged.');
+                    }catch(error){feedback('hub-job-message',error.message);}
+                    await reload();
                 }));
             if(j.status==='waiting_adapter'&&readiness?.eligible===true)
                 actions.append(button('Start native job',async()=>{
