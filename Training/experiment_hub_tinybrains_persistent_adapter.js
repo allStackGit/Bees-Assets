@@ -59,9 +59,12 @@ function recordedTinyBrainsMetrics(row,updateWall) {
     }
     add('total_ppo_updates',row.update,'count');
     add('engine_steps',row.engine_steps,'count');
+    add('simulation_match_steps',row.simulation_match_steps,'count');
     if(updateWall!==null&&updateWall>0) {
         add('update_wall_time',updateWall,'seconds');
         add('engine_steps_per_second',row.engine_steps/updateWall,'rate');
+        add('simulation_match_steps_per_second',
+            row.simulation_match_steps/updateWall,'rate');
         add('ant_decisions_per_second',row.ant_decisions/updateWall,'rate');
         add('group_states_per_second',row.group_states/updateWall,'rate');
     }
@@ -191,6 +194,8 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         ?row.collector_samples:[]).slice(0,9).entries()) {
         add('collector_'+i+'_ant_decisions',worker.ant_decisions,'count');
         add('collector_'+i+'_engine_steps',worker.engine_steps,'count');
+        add('collector_'+i+'_simulation_match_steps',
+            worker.simulation_match_steps,'count');
         for(const [suffix,name] of [
             ['sim_matches','simulation_active_matches'],
             ['sim_target','simulation_target_matches'],
@@ -248,6 +253,8 @@ function recordedTinyBrainsMetrics(row,updateWall) {
                 worker.ant_decisions/elapsed,'rate');
             add('collector_'+i+'_engine_steps_per_second',
                 worker.engine_steps/elapsed,'rate');
+            add('collector_'+i+'_match_steps_per_second',
+                worker.simulation_match_steps/elapsed,'rate');
         }
     }
     return metrics;
