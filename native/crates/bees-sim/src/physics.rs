@@ -1089,6 +1089,9 @@ pub struct KinematicPhysics {
     /// grid currently contains obstacles. Keep that pending geometry change
     /// independent of which population owns the grid.
     ship_hulls_dirty: bool,
+    /// Separate obstacle mutation from grid population ownership, just
+    /// as for mutable ship geometry.
+    obstacle_hulls_dirty: bool,
     candidates: Vec<usize>,
     overlaps_previous: Vec<TriggerEnter>,
     overlaps_current: Vec<TriggerEnter>,
@@ -1124,6 +1127,7 @@ impl KinematicPhysics {
             grid: SpatialGrid::new(area, cell_size)?,
             grid_contents: GridContents::Stale,
             ship_hulls_dirty: false,
+            obstacle_hulls_dirty: false,
             candidates: Vec::new(),
             overlaps_previous: Vec::new(),
             overlaps_current: Vec::new(),
@@ -1260,10 +1264,18 @@ impl KinematicPhysics {
     pub(crate) fn circle_obstacle_contact_candidates(
         &mut self, center: Vec2, radius: f32, output: &mut Vec<usize>,
     ) -> bool {
-        let rebuilt = self.grid_contents != GridContents::Obstacles;
+        let rebuilt = self.grid_contents != GridContents::Obstacles ||
+            self.obstacle_hulls_dirty;
         if rebuilt {
-            // Ship hull refresh is independent of obstacle-grid ownership.
-            // An obstacle query never eagerly consumes ship geometry work.
+            // Mutating an obstacle may move its pose as well as retire it.
+            // Update its authored primary/child hulls only when that
+            // mutable API was used, never for an unrelated ship mutation.
+            if self.obstacle_hulls_dirty {
+                for obstacle in &mut self.obstacles {
+                    if obstacle.active { obstacle.update_hull(); }
+                }
+                self.obstacle_hulls_dirty = false;
+            }
             self.grid.rebuild_with(self.obstacles.len(), |index| {
                 let obstacle = &self.obstacles[index];
                 if obstacle.active { obstacle.collider.bounds } else { None }
@@ -1461,7 +1473,16 @@ impl KinematicPhysics {
     pub fn trigger_entries(&self) -> &[TriggerEnter] { &self.entries }
     pub fn obstacle_trigger_entries(&self) -> &[ObstacleTriggerEnter] { &self.obstacle_entries }
     pub fn obstacles(&self) -> &[ObstacleBody] { &self.obstacles }
-    pub fn obstacles_mut(&mut self) -> &mut [ObstacleBody] { &mut self.obstacles }
+    /// A mutable obstacle borrow can retire or move a collider between
+    /// fixed ticks. Preserve an existing ship grid; rebuild obstacle
+    /// geometry only if an obstacle query actually needs it.
+    pub fn obstacles_mut(&mut self) -> &mut [ObstacleBody] {
+        self.obstacle_hulls_dirty = true;
+        if self.grid_contents == GridContents::Obstacles {
+            self.grid_contents = GridContents::Stale;
+        }
+        &mut self.obstacles
+    }
 
     /// Exact shape sweep of the same rotated sprite-sized rectangle that
     /// Ship.Geometry.GetObstacleInPath passes to Physics2D.BoxCastNonAlloc.
@@ -1561,7 +1582,9 @@ impl KinematicPhysics {
     pub(crate) fn insert_prevalidated_obstacle(&mut self, body: ObstacleBody) -> usize {
         let index = self.obstacles.len();
         self.obstacles.push(body);
-        self.grid_contents = GridContents::Stale;
+        if self.grid_contents == GridContents::Obstacles {
+            self.grid_contents = GridContents::Stale;
+        }
         index
     }
 
@@ -1628,7 +1651,9 @@ impl KinematicPhysics {
             return Err(PhysicsError::ActiveObstacleSlot);
         }
         *slot = obstacle;
-        self.grid_contents = GridContents::Stale;
+        if self.grid_contents == GridContents::Obstacles {
+            self.grid_contents = GridContents::Stale;
+        }
         Ok(())
     }
 
@@ -1675,6 +1700,7 @@ impl KinematicPhysics {
             has_body_contact_obstacles |= obstacle.tracks_body_contacts;
             self.counts.integrated_bodies += 1;
         }
+        self.obstacle_hulls_dirty = false;
         self.grid.rebuild_with(self.ships.len(), |index| {
             let ship = &self.ships[index];
             if ship.active { ship.collider.bounds } else { None }
