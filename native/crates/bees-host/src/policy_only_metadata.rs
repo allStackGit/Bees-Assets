@@ -65,6 +65,9 @@ pub struct NativeSourcePlayerInputs {
     /// Source Squad.IsMatchingSpeed / CurrentSpeed: shared command and UI
     /// ownership; the physics ShipMotion owns the current per-ship speed.
     pub matching_speeds: HashMap<SquadLifetime, f32>,
+    /// The real source Squad.CeaseFire, separate from individual authored
+    /// Ship.IsCeaseFire. Older exports intentionally leave this unknown.
+    pub cease_fire: HashMap<SquadLifetime, bool>,
     pub ships: HashMap<i64, NativeSourceFormation>,
 }
 
@@ -257,6 +260,8 @@ impl NativePolicyOnlyMetadata {
                     .is_some_and(|permissions| permissions.user_controlled)) ||
             player.matching_speeds.iter().any(|(owner, &speed)|
                 !speed.is_finite() || speed < 0.0 ||
+                !player.squads.contains_key(owner)) ||
+            player.cease_fire.keys().any(|owner|
                 !player.squads.contains_key(owner)) {
             return Err(PolicyOnlyMetadataError::InvalidSource);
         }

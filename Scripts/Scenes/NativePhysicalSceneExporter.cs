@@ -220,6 +220,7 @@ internal static class NativePhysicalSceneExporter
         public bool should_chase;
         public bool is_matching_speed;
         public float current_speed;
+        public bool cease_fire;
         public bool is_hivemind_controlled, is_immobile;
         // Preserve ulong exactly; JsonUtility's numeric roundtrips can
         // lose 64-bit client identity through JavaScript intermediaries.
@@ -271,7 +272,7 @@ internal static class NativePhysicalSceneExporter
     [Serializable]
     private sealed class PhysicalScene
     {
-        public int schema_version = 32;
+        public int schema_version = 33;
         public SourceTargetingContext targeting_context;
         public int source_frame_count = Time.frameCount;
         public string level_name;
@@ -686,6 +687,7 @@ internal static class NativePhysicalSceneExporter
                 should_chase = squad.ShouldChase(),
                 is_matching_speed = squad.IsMatchingSpeed,
                 current_speed = squad.CurrentSpeed,
+                cease_fire = squad.CeaseFire,
                 is_carrier_squad = squad.IsCarrierSquad,
                 is_hivemind_controlled = squad.IsHiveMindControlled,
                 is_immobile = squad.IsImmobile,

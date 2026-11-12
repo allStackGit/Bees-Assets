@@ -70,7 +70,7 @@ use crate::runtime::NativeHostRuntime;
 use crate::ship_specials::{NativeAuthoredShipSpecial, NativeBeaconTemplate};
 use crate::durable_connection::DurableHiveMindConnection;
 
-const SNAPSHOT_VERSION: u32 = 32;
+const SNAPSHOT_VERSION: u32 = 33;
 
 #[derive(Deserialize, Clone, Copy)]
 struct UnityVec2 { x: f32, y: f32 }
@@ -526,6 +526,7 @@ struct UnitySquad {
     should_chase: Option<bool>,
     is_matching_speed: Option<bool>,
     current_speed: Option<f32>,
+    cease_fire: Option<bool>,
     shooting_strategy: String,
 }
 
@@ -770,6 +771,9 @@ pub struct NativeSourceSquad {
     /// Preserve the exact active setting rather than deriving it from
     /// the fastest surviving ship or the collision asset.
     pub matching_speed: Option<f32>,
+    /// Source Squad.CeaseFire. None on older exports, which recorded
+    /// per-ship cease-fire but not the squad action-box state.
+    pub cease_fire: Option<bool>,
     pub shooting: bees_hivemind::protocol::StrategyIdentity,
 }
 
@@ -1092,6 +1096,10 @@ impl NativePhysicalScene {
                 matching_speeds: self.source_squads.iter().zip(&squads)
                     .filter_map(|(source, squad)| source.matching_speed
                         .map(|speed| (squad.owner, speed)))
+                    .collect(),
+                cease_fire: self.source_squads.iter().zip(&squads)
+                    .filter_map(|(source, squad)| source.cease_fire
+                        .map(|enabled| (squad.owner, enabled)))
                     .collect(),
             },
         ).map_err(NativePolicyOnlyLevelError::Metadata)?;
@@ -2092,6 +2100,9 @@ impl NativePhysicalScene {
             {
                 return Err(NativeSnapshotError::InvalidSquad(squad.item_id));
             }
+            if raw.schema_version >= 33 && squad.cease_fire.is_none() {
+                return Err(NativeSnapshotError::InvalidSquad(squad.item_id));
+            }
             let matching_speed = if squad.is_matching_speed == Some(true) {
                 let speed = squad.current_speed
                     .ok_or(NativeSnapshotError::InvalidSquad(squad.item_id))?;
@@ -2158,6 +2169,7 @@ impl NativePhysicalScene {
                 is_carrier_squad: squad.is_carrier_squad,
                 should_chase: squad.should_chase.unwrap_or(false),
                 matching_speed,
+                cease_fire: squad.cease_fire,
                 hotkey_number,
                 original_squad_count,
                 shooting: bees_hivemind::protocol::StrategyIdentity {
