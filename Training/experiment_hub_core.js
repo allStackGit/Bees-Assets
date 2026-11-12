@@ -1649,7 +1649,7 @@ class ExperimentHub {
             }
             const reservedForBundlePlans=new Set(
                 (this.state.bundle_start_plans||[])
-                    .filter(plan=>plan.status==='pending')
+                    .filter(plan=>['pending','needs_review'].includes(plan.status))
                     .flatMap(plan=>plan.member_job_ids));
             const pending=snapshot.jobs.filter(j=>
                 !reservedForBundlePlans.has(j.id)&&
@@ -2301,7 +2301,8 @@ class ExperimentHub {
             typeof value.job_id!=='string')
             throw Error('Explicitly confirm which queued job to start.');
         if((this.state.bundle_start_plans||[]).some(plan=>
-            plan.status==='pending'&&plan.member_job_ids.includes(value.job_id)))
+            ['pending','needs_review'].includes(plan.status)&&
+            plan.member_job_ids.includes(value.job_id)))
             throw Error('Cancel the approved bundle launch before starting one of its members separately.');
         const snapshot=this.snapshot();
         const job=snapshot.jobs.find(j=>j.id===value.job_id);
@@ -3843,7 +3844,10 @@ class ExperimentHub {
                 throw Error('Distributed rollout groups use their own verified learner barrier.');
         }
         const pending=(this.state.bundle_start_plans||[]).find(plan=>
-            plan.bundle_id===value.bundle_id&&plan.status==='pending');
+            plan.bundle_id===value.bundle_id&&
+            ['pending','needs_review'].includes(plan.status));
+        if(pending?.status==='needs_review')
+            throw Error('Cancel the review-required bundle launch plan before manually starting its members.');
         if(pending&&value.release_on_terminal!==true)
             throw Error('This preapproved bundle has frozen terminal release enabled; cancel the pending plan before changing the release policy.');
         const next=copy(this.state),startedAt=now(),dispatches=[];
@@ -4037,7 +4041,8 @@ class ExperimentHub {
         const next=copy(this.state),at=now();
         let changed=false;
         const planned=(next.bundle_start_plans||[]).find(plan=>
-            plan.bundle_id===value.bundle_id&&plan.status==='pending');
+            plan.bundle_id===value.bundle_id&&
+            ['pending','needs_review'].includes(plan.status));
         if(planned) {
             planned.status='disarmed';
             planned.reason='Operator requested group shutdown before auto-start.';
@@ -4735,7 +4740,8 @@ class ExperimentHub {
         const at=now();
         for(const job of active)this.cancelUnstartedJob(next,job,at);
         const planned=(next.bundle_start_plans||[]).find(plan=>
-            plan.bundle_id===value.bundle_id&&plan.status==='pending');
+            plan.bundle_id===value.bundle_id&&
+            ['pending','needs_review'].includes(plan.status));
         if(planned) {
             planned.status='disarmed';
             planned.reason='Operator cancelled the unstarted reserved bundle.';
