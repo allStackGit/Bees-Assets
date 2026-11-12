@@ -124,6 +124,87 @@ pub struct NativePlayerSquadCeaseFire {
     pub cease_fire: bool,
 }
 
+/// Unity Squad.MatchSpeed / UnmatchSpeed. The user chooses an explicit mode,
+/// so recorded/replayed actions remain deterministic without guessing UI
+/// toggle state after a squad loses a ship.
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct NativePlayerSquadMatchSpeed {
+    pub world_id: WorldId,
+    pub episode_revision: u64,
+    pub squads: Vec<SquadLifetime>,
+    pub match_speed: bool,
+}
+
+pub struct NativePlayerMatchSpeedPlan {
+    tick: u64,
+    owner: SquadLifetime,
+    selected_ship: i64,
+    world_id: WorldId,
+    episode_revision: u64,
+    match_speed: bool,
+    /// Live source squad GetShips order; revalidated before mutation.
+    members: Vec<i64>,
+    speed: f32,
+}
+
+impl NativePlayerMatchSpeedPlan {
+    pub fn prepare<M: NativeLevelPlayerContext, A>(
+        world: &World<NativeLevelState<M, A>>, world_id: WorldId,
+        episode_revision: u64, selected_ship: i64, match_speed: bool,
+    ) -> Result<Self, NativePlayerInputError> {
+        let (owner, squad) = authorized_player_squad(
+            world, world_id, episode_revision, selected_ship,
+        )?;
+        let mut members = Vec::with_capacity(squad.members.len());
+        let mut minimum_speed = f32::INFINITY;
+        for &id in &squad.members {
+            world.state.combat.validate_ship_game_order(id)
+                .map_err(|error| NativePlayerInputError::Source(error.into()))?;
+            let body = world.state.combat.ship_body(id)
+                .ok_or(NativePlayerInputError::MissingSquad)?;
+            if !body.motion.base_speed.is_finite() || body.motion.base_speed < 0.0 {
+                return Err(NativePlayerInputError::InvalidAction);
+            }
+            if body.motion.cannot_change_movement_orders {
+                return Err(NativePlayerInputError::InvalidAction);
+            }
+            minimum_speed = minimum_speed.min(body.motion.base_speed);
+            members.push(id);
+        }
+        if members.is_empty() { return Err(NativePlayerInputError::MissingSquad); }
+        Ok(Self {
+            tick: world.tick(), owner, selected_ship, world_id,
+            episode_revision, match_speed, members,
+            speed: if match_speed { minimum_speed } else { 0.0 },
+        })
+    }
+
+    pub fn execute<M: NativeLevelPlayerContext, A>(
+        self, world: &mut World<NativeLevelState<M, A>>,
+    ) -> Result<usize, NativePlayerInputError> {
+        let current = Self::prepare(world, self.world_id,
+            self.episode_revision, self.selected_ship, self.match_speed)?;
+        if current.tick != self.tick || current.owner != self.owner ||
+            current.members != self.members || current.speed != self.speed {
+            return Err(NativePlayerInputError::StaleWorld);
+        }
+        for id in &self.members {
+            let requested_speed = if self.match_speed { self.speed } else {
+                world.state.combat.ship_body(*id)
+                    .ok_or(NativePlayerInputError::MissingSquad)?
+                    .motion.base_speed
+            };
+            if let Err(error) = world.state.combat
+                .set_ship_game_speed(*id, requested_speed)
+            {
+                world.state.events.fail_player_input();
+                return Err(NativePlayerInputError::Source(error.into()));
+            }
+        }
+        Ok(self.members.len())
+    }
+}
+
 /// Authoritative player ship-special input. Like cease-fire, this affects
 /// physical abilities without replacing a squad strategy or retiring its
 /// pending HiveMind command. The queued effects execute inside the next
