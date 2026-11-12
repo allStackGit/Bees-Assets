@@ -31,6 +31,12 @@ pub(crate) struct ReinforcementWave {
     ships: Vec<NativeAuthoredShip>,
 }
 
+impl ReinforcementWave {
+    pub(crate) fn scheduled_tick(&self) -> u64 { self.tick }
+    pub(crate) fn squad_count(&self) -> usize { self.squads.len() }
+    pub(crate) fn ship_count(&self) -> usize { self.ships.len() }
+}
+
 /// Source LevelConstructor.PositionSquads with squadsAreReinforcements=true.
 /// Each plan represents ONE source construction call, including any Carrier
 /// child squads. The authored squad order controls alternating left/right

@@ -450,7 +450,7 @@ impl NativeLevelCommandContext for NativePolicyOnlyMetadata {
     }
 
     fn next_reinforcement_tick(&self) -> Option<u64> {
-        self.reinforcements.front().map(|wave| wave.tick)
+        self.reinforcements.front().map(|wave| wave.scheduled_tick())
     }
 
     fn reinforcement_gauges(&self) -> bees_gameplay::level_rules::NativeReinforcementGauges {
@@ -459,9 +459,9 @@ impl NativeLevelCommandContext for NativePolicyOnlyMetadata {
         bees_gameplay::level_rules::NativeReinforcementGauges {
             pending_waves: self.reinforcements.len(),
             pending_squads: self.reinforcements.iter()
-                .map(|wave| wave.squads.len()).sum(),
+                .map(|wave| wave.squad_count()).sum(),
             pending_ships: self.reinforcements.iter()
-                .map(|wave| wave.ships.len()).sum(),
+                .map(|wave| wave.ship_count()).sum(),
         }
     }
 
