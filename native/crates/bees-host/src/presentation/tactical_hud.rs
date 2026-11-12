@@ -7,15 +7,17 @@ pub enum HudAction {
     Attack, Guard, Patrol, Mine, Heal,
     Retreat, Hold, CeaseFire, AttackOnSight, PointFire,
     StopFire, Beacon, Detonate, Charge, SelectAll,
+    MatchSpeed, FreeSpeed,
 }
 
-pub const ACTIONS: [HudAction; 15] = [
+pub const ACTIONS: [HudAction; 17] = [
     HudAction::Attack, HudAction::Guard, HudAction::Patrol,
     HudAction::Mine, HudAction::Heal,
     HudAction::Retreat, HudAction::Hold, HudAction::CeaseFire,
     HudAction::AttackOnSight, HudAction::PointFire,
     HudAction::StopFire, HudAction::Beacon, HudAction::Detonate,
     HudAction::Charge, HudAction::SelectAll,
+    HudAction::MatchSpeed, HudAction::FreeSpeed,
 ];
 
 impl HudAction {
@@ -36,6 +38,8 @@ impl HudAction {
             Self::Detonate => "Detonate selected Fire Barges (D)",
             Self::Charge => "Charge forward with ready Barges (Q)",
             Self::SelectAll => "Select all authorized squads on your current side (Ctrl+A)",
+            Self::MatchSpeed => "Match the slowest authored speed of each squad (Y)",
+            Self::FreeSpeed => "Restore every selected ship's authored speed (U)",
         }
     }
 
@@ -56,6 +60,8 @@ impl HudAction {
             Self::Detonate => "DETONATE",
             Self::Charge => "CHARGE",
             Self::SelectAll => "ALL",
+            Self::MatchSpeed => "MATCH",
+            Self::FreeSpeed => "UNMATCH",
         }
     }
 }
@@ -89,7 +95,7 @@ pub fn action_rect(width: usize, height: usize, index: usize) -> Option<HudRect>
     const GAP: usize = 5;
     let panel_width = COLS * BUTTON_W + (COLS - 1) * GAP;
     let left = (width - panel_width) / 2 + index % COLS * (BUTTON_W + GAP);
-    let top = height - 104 + index / COLS * (BUTTON_H + GAP);
+    let top = height - 134 + index / COLS * (BUTTON_H + GAP);
     Some(HudRect {
         left, top, right: left + BUTTON_W, bottom: top + BUTTON_H,
     })
