@@ -70,7 +70,7 @@ use crate::runtime::NativeHostRuntime;
 use crate::ship_specials::{NativeAuthoredShipSpecial, NativeBeaconTemplate};
 use crate::durable_connection::DurableHiveMindConnection;
 
-const SNAPSHOT_VERSION: u32 = 31;
+const SNAPSHOT_VERSION: u32 = 32;
 
 #[derive(Deserialize, Clone, Copy)]
 struct UnityVec2 { x: f32, y: f32 }
@@ -524,6 +524,8 @@ struct UnitySquad {
     can_accept_input: bool,
     locked_on: bool,
     should_chase: Option<bool>,
+    is_matching_speed: Option<bool>,
+    current_speed: Option<f32>,
     shooting_strategy: String,
 }
 
@@ -764,6 +766,10 @@ pub struct NativeSourceSquad {
     /// Explicit source Squad.ShouldChase. Old schemas did not export it,
     /// so their behavior stays disabled rather than being fabricated.
     pub should_chase: bool,
+    /// Unity Squad.CurrentSpeed is meaningful only while IsMatchingSpeed.
+    /// Preserve the exact active setting rather than deriving it from
+    /// the fastest surviving ship or the collision asset.
+    pub matching_speed: Option<f32>,
     pub shooting: bees_hivemind::protocol::StrategyIdentity,
 }
 
@@ -1082,6 +1088,10 @@ impl NativePhysicalScene {
                     .map(|(source, squad)| (squad.owner, source.player_permissions)).collect(),
                 chasing: self.source_squads.iter().zip(&squads)
                     .filter_map(|(source, squad)| source.should_chase.then_some(squad.owner))
+                    .collect(),
+                matching_speeds: self.source_squads.iter().zip(&squads)
+                    .filter_map(|(source, squad)| source.matching_speed
+                        .map(|speed| (squad.owner, speed)))
                     .collect(),
             },
         ).map_err(NativePolicyOnlyLevelError::Metadata)?;
@@ -2077,6 +2087,19 @@ impl NativePhysicalScene {
             if raw.schema_version >= 31 && squad.should_chase.is_none() {
                 return Err(NativeSnapshotError::InvalidSquad(squad.item_id));
             }
+            if raw.schema_version >= 32 &&
+                (squad.is_matching_speed.is_none() || squad.current_speed.is_none())
+            {
+                return Err(NativeSnapshotError::InvalidSquad(squad.item_id));
+            }
+            let matching_speed = if squad.is_matching_speed == Some(true) {
+                let speed = squad.current_speed
+                    .ok_or(NativeSnapshotError::InvalidSquad(squad.item_id))?;
+                if !speed.is_finite() || speed <= 0.0 {
+                    return Err(NativeSnapshotError::InvalidSquad(squad.item_id));
+                }
+                Some(speed)
+            } else { None };
             if raw.schema_version >= 24 && squad.is_carrier_squad.is_none() {
                 return Err(NativeSnapshotError::InvalidSquad(squad.item_id));
             }
@@ -2134,6 +2157,7 @@ impl NativePhysicalScene {
                 hivemind,
                 is_carrier_squad: squad.is_carrier_squad,
                 should_chase: squad.should_chase.unwrap_or(false),
+                matching_speed,
                 hotkey_number,
                 original_squad_count,
                 shooting: bees_hivemind::protocol::StrategyIdentity {

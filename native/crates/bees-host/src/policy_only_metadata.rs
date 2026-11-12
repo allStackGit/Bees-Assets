@@ -62,6 +62,9 @@ pub struct NativeSourcePlayerInputs {
     /// Mutable source Squad.ShouldChase state; command director continues
     /// to own actual Aggressive command lifetimes.
     pub chasing: HashSet<SquadLifetime>,
+    /// Source Squad.IsMatchingSpeed / CurrentSpeed: shared command and UI
+    /// ownership; the physics ShipMotion owns the current per-ship speed.
+    pub matching_speeds: HashMap<SquadLifetime, f32>,
     pub ships: HashMap<i64, NativeSourceFormation>,
 }
 
@@ -251,7 +254,10 @@ impl NativePolicyOnlyMetadata {
             .is_some_and(|data| data.offset.is_finite() && data.clearance >= 0)) ||
             player.chasing.iter().any(|owner|
                 !player.squads.get(owner)
-                    .is_some_and(|permissions| permissions.user_controlled)) {
+                    .is_some_and(|permissions| permissions.user_controlled)) ||
+            player.matching_speeds.iter().any(|(owner, &speed)|
+                !speed.is_finite() || speed <= 0.0 ||
+                !player.squads.contains_key(owner)) {
             return Err(PolicyOnlyMetadataError::InvalidSource);
         }
         Ok(Self {
