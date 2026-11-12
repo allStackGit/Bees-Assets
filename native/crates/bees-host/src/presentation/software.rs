@@ -83,6 +83,8 @@ pub struct NativeSoftwareRenderer {
     pub show_weapon_ranges: bool,
     /// Presentation-only tactical overview, never used by headless worlds.
     pub show_minimap: bool,
+    /// Only affects the window; training runs keep the same headless world.
+    pub show_shooting_menu: bool,
     pub active_tactical_action: Option<super::HudAction>,
     pub hovered_tactical_action: Option<super::HudAction>,
     debris_frame: Option<(WorldId, u64, u64)>,
@@ -154,7 +156,8 @@ impl NativeSoftwareRenderer {
             selection: NativeSquadSelection::default(),
             selected_squad_lookup: HashSet::new(),
             selection_box: None, show_weapon_ranges: false,
-            show_minimap: true, active_tactical_action: None,
+            show_minimap: true, show_shooting_menu: false,
+            active_tactical_action: None,
             hovered_tactical_action: None,
             debris_frame: None, obstacle_debris: Vec::new() })
     }
@@ -174,12 +177,16 @@ impl NativeSoftwareRenderer {
         self.width = width;
         self.height = height;
         self.selection_box = None;
+        if tactical_hud::shooting_rect(width, height, 0).is_none() {
+            self.show_shooting_menu = false;
+        }
         Ok(true)
     }
 
     /// The same coordinate frame used by drawing and click/drag navigation.
     /// Returns None when the overview is hidden or the window is too small.
     pub fn minimap_world_at(&self, bounds: Aabb, x: f32, y: f32) -> Option<Vec2> {
+        if self.show_shooting_menu { return None; }
         self.show_minimap.then(|| MiniMapLayout::new(self.width, self.height, bounds))
             .flatten()?.world_at(x, y)
     }
@@ -187,6 +194,7 @@ impl NativeSoftwareRenderer {
     /// UI-only action hit-test; the client converts intent into the exact
     /// same typed player inputs used by keyboard shortcuts and replay.
     pub fn tactical_action_at(&self, x: f32, y: f32) -> Option<super::HudAction> {
+        if self.show_shooting_menu { return None; }
         let action = tactical_hud::hit(self.width, self.height, x, y)?;
         (action == super::HudAction::SelectAll ||
             !self.selection.squads().is_empty()).then_some(action)
@@ -197,6 +205,7 @@ impl NativeSoftwareRenderer {
     pub fn squad_tab_at(&self, view: &NativeRenderWorldView<'_>,
         x: f32, y: f32,
     ) -> Option<bees_hivemind::session::SquadLifetime> {
+        if self.show_shooting_menu { return None; }
         let mut row = 0usize;
         for &owner in view.roster.source_order() {
             let Some(squad) = view.roster.get(owner) else { continue };
@@ -218,6 +227,11 @@ impl NativeSoftwareRenderer {
             if row == 10 { break; }
         }
         None
+    }
+
+    pub fn shooting_strategy_at(&self, x: f32, y: f32) -> Option<u8> {
+        if !self.show_shooting_menu { return None; }
+        tactical_hud::shooting_hit(self.width, self.height, x, y)
     }
 
     /// Use the authoritative hull and healing-zone colliders for clicks,
@@ -543,6 +557,7 @@ impl NativeSoftwareRenderer {
         counts.numbered_squad_rows = self.draw_squad_shortcuts(view);
         counts.special_ready_ships = self.draw_special_readiness(view);
         counts.tactical_buttons_drawn = self.draw_tactical_bar();
+        if self.show_shooting_menu { self.draw_shooting_menu(view); }
         counts
     }
 
@@ -743,6 +758,8 @@ impl NativeSoftwareRenderer {
             let background = if !has_selection &&
                 action != tactical_hud::HudAction::SelectAll {
                 0x172334
+            } else if self.show_shooting_menu && action == tactical_hud::HudAction::Shooting {
+                0x456c78
             } else if self.active_tactical_action == Some(action) {
                 0x456c78
             } else if self.hovered_tactical_action == Some(action) {
@@ -769,6 +786,33 @@ impl NativeSoftwareRenderer {
             drawn += 1;
         }
         drawn
+    }
+
+    /// Present the canonical 40-entry source registry. Current selection
+    /// is read from the SAME live metadata used by automatic weapon inputs;
+    /// different selected strategies produce no misleading highlighted value.
+    fn draw_shooting_menu(&mut self, view: &NativeRenderWorldView<'_>) {
+        let selected = self.selection.squads().iter()
+            .filter_map(|&owner| view.player_authority.player_shooting_strategy(owner))
+            .map(|value| value.id)
+            .fold(None, |current, value| match current {
+                None => Some(value),
+                Some(other) if other == value => Some(value),
+                _ => Some(0),
+            });
+        for (index, &name) in bees_hivemind::protocol::SHOOTING_STRATEGIES.iter().enumerate() {
+            let Some(rect) = tactical_hud::shooting_rect(self.width, self.height, index)
+                else { return };
+            let active = selected == Some((index + 1) as u8);
+            for y in rect.top..rect.bottom {
+                self.pixels[y * self.width + rect.left
+                    ..y * self.width + rect.right].fill(if active { 0x476b70 } else { 0x23344d });
+            }
+            let label = format!("{:>2}: {name}", index + 1);
+            text::draw_at(&mut self.pixels, self.width,
+                rect.left + 8, rect.top + 5, &label, 1,
+                if active { [247, 255, 204] } else { [227, 239, 252] });
+        }
     }
 
     /// Keep the current command prompt, feedback, and hovered action

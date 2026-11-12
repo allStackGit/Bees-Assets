@@ -7,17 +7,17 @@ pub enum HudAction {
     Attack, Guard, Patrol, Mine, Heal,
     Retreat, Hold, CeaseFire, AttackOnSight, PointFire,
     StopFire, Beacon, Detonate, Charge, SelectAll,
-    MatchSpeed, FreeSpeed,
+    MatchSpeed, FreeSpeed, Shooting,
 }
 
-pub const ACTIONS: [HudAction; 17] = [
+pub const ACTIONS: [HudAction; 18] = [
     HudAction::Attack, HudAction::Guard, HudAction::Patrol,
     HudAction::Mine, HudAction::Heal,
     HudAction::Retreat, HudAction::Hold, HudAction::CeaseFire,
     HudAction::AttackOnSight, HudAction::PointFire,
     HudAction::StopFire, HudAction::Beacon, HudAction::Detonate,
     HudAction::Charge, HudAction::SelectAll,
-    HudAction::MatchSpeed, HudAction::FreeSpeed,
+    HudAction::MatchSpeed, HudAction::FreeSpeed, HudAction::Shooting,
 ];
 
 impl HudAction {
@@ -40,6 +40,7 @@ impl HudAction {
             Self::SelectAll => "Select all authorized squads on your current side (Ctrl+A)",
             Self::MatchSpeed => "Match the slowest authored speed of each squad (Y)",
             Self::FreeSpeed => "Restore every selected ship's authored speed (U)",
+            Self::Shooting => "Choose any of the 40 native shooting priorities (S)",
         }
     }
 
@@ -62,6 +63,7 @@ impl HudAction {
             Self::SelectAll => "ALL",
             Self::MatchSpeed => "MATCH",
             Self::FreeSpeed => "UNMATCH",
+            Self::Shooting => "TARGETS",
         }
     }
 }
@@ -117,6 +119,33 @@ pub fn squad_tab_rect(width: usize, height: usize,
         right: (x - 5 + box_width).min(width),
         bottom: (y + text_height + 4).min(height),
     })
+}
+
+/// The full source registry (16 general + 24 ship-type priorities) is
+/// offered without guessing which targets happen to be present. Use one
+/// pure coordinate contract for display and click handling; never cache
+/// button identities or duplicate registry indexes in client state.
+pub fn shooting_rect(width: usize, height: usize, index: usize) -> Option<HudRect> {
+    if width < 980 || height < 520 || index >= 40 { return None; }
+    const COLS: usize = 4;
+    const ROWS: usize = 10;
+    const W: usize = 170;
+    const H: usize = 24;
+    const GAP_X: usize = 7;
+    const GAP_Y: usize = 5;
+    let panel_width = COLS * W + (COLS - 1) * GAP_X;
+    let panel_height = ROWS * H + (ROWS - 1) * GAP_Y;
+    let left = (width - panel_width) / 2 + index / ROWS * (W + GAP_X);
+    let top = (height - panel_height) / 2 + index % ROWS * (H + GAP_Y);
+    Some(HudRect {
+        left, top, right: left + W, bottom: top + H,
+    })
+}
+
+pub fn shooting_hit(width: usize, height: usize, x: f32, y: f32) -> Option<u8> {
+    (0..40).find(|&index| shooting_rect(width, height, index)
+        .is_some_and(|rect| rect.contains(x, y)))
+        .map(|index| (index + 1) as u8)
 }
 
 pub fn hit(width: usize, height: usize, x: f32, y: f32) -> Option<HudAction> {
