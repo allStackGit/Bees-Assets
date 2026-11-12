@@ -1425,6 +1425,9 @@ fn run_battle(
     // never per physics step or on every idle graphical frame.
     #[cfg(feature = "client")]
     let mut last_physical_checkpoint_round: Option<u64> = None;
+    #[cfg(feature = "client")]
+    let mut recorded_physical_checkpoints = 0_u64;
+    let mut verified_physical_checkpoints = 0_u64;
     'battle: loop {
         #[cfg(feature = "client")]
         if let Some(trace) = &mut input_trace {
@@ -1449,6 +1452,7 @@ fn run_battle(
                         failed_window = Some(format!("recording native physical checkpoint: {error}"));
                         break 'battle;
                     }
+                    recorded_physical_checkpoints += 1;
                 }
                 last_physical_checkpoint_round = Some(rounds);
             }
@@ -1479,6 +1483,7 @@ fn run_battle(
                     ));
                     break 'battle;
                 }
+                verified_physical_checkpoints += 1;
             }
             if trace.checkpoints.front().is_some_and(|entry| entry.round < rounds) {
                 failed_window = Some(format!(
@@ -1819,7 +1824,8 @@ fn run_battle(
     }
 
     if failed_window.is_none() && !user_closed && playback.as_ref().is_some_and(|trace|
-        rounds != trace.end_round || !trace.inputs.is_empty()
+        rounds != trace.end_round || !trace.inputs.is_empty() ||
+        !trace.checkpoints.is_empty()
     ) {
         failed_window = Some(format!("player trace ended at a different round than the battle ({rounds})"));
     }
@@ -1835,6 +1841,24 @@ fn run_battle(
     // win or a completed PPO episode. Durable EpisodeAborted notifications
     // explicitly mark partial trajectories as unusable for learning.
     let count = host.simulation().world_count();
+    // Fingerprint each Level once at the original execution boundary,
+    // BEFORE finite-budget cancellation/abort notifications can alter
+    // runtime state. This is opt-in summary output, not simulation work.
+    // The exact same bitwise physical-world signature is used by replay.
+    let final_physical_worlds = summary.as_ref().map(|_| {
+        (0..count).filter_map(|index| {
+            let world = host.simulation().world(index)?;
+            Some(json!({
+                "world_id": world.id.0,
+                "episode_revision": world.episode_revision(),
+                "tick": world.tick(),
+                "sha256": physical_world_sha256(
+                    world.id, world.episode_revision(), world.tick(),
+                    &world.state.combat,
+                ),
+            }))
+        }).collect::<Vec<_>>()
+    });
     let finalization_start = Instant::now();
     let mut cleanup_errors = Vec::new();
     if failed_window.is_none() && !user_closed {
@@ -1974,6 +1998,10 @@ fn run_battle(
     }
     let policy_generation = host.model_mut().model_generation();
     let policy_manifest_sha256 = host.model_mut().model_manifest_sha256();
+    #[cfg(feature = "client")]
+    let captured_checkpoints = recorded_physical_checkpoints;
+    #[cfg(not(feature = "client"))]
+    let captured_checkpoints = 0_u64;
     drop(host.model_mut().resident.take());
     let run_end = Instant::now();
     let wall_seconds = run_end.duration_since(run_start).as_secs_f64();
@@ -2062,7 +2090,11 @@ fn run_battle(
         "user_closed": user_closed,
         "player_input_playback": playback.is_some(),
         "player_input_playback_complete": playback.as_ref().map(|trace|
-            rounds == trace.end_round && trace.inputs.is_empty() && failed_window.is_none()),
+            rounds == trace.end_round && trace.inputs.is_empty() &&
+            trace.checkpoints.is_empty() && failed_window.is_none()),
+        "recorded_physical_checkpoints": captured_checkpoints,
+        "verified_physical_checkpoints": verified_physical_checkpoints,
+        "final_physical_worlds": final_physical_worlds,
     });
     println!("{final_summary}");
     #[cfg(feature = "client")]
