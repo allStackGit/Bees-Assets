@@ -72,6 +72,59 @@ function parseInspect(text) {
         throw Error('Docker returned an invalid container inspection.');
     return result[0];
 }
+// Read optional cgroup-v2 counters only after Docker's persisted ownership
+// identity has been verified. A PID alone is never sufficient: the host
+// cgroup must also contain the full, inspected Docker container ID.
+function dockerCgroupCounters(doc,fsApi=fs,pathApi=path) {
+    try {
+        const id=String(doc?.Id||'').toLowerCase(),pid=doc?.State?.Pid;
+        if(!/^[a-f0-9]{64}$/.test(id)||
+            !Number.isSafeInteger(pid)||pid<1)return {};
+        const membership=fsApi.readFileSync('/proc/'+pid+'/cgroup','utf8');
+        if(typeof membership!=='string'||membership.length>8192)return {};
+        const lines=membership.trim().split(/\r?\n/).filter(s=>s.startsWith('0::/'));
+        if(lines.length!==1)return {};
+        const segments=lines[0].slice(4).split('/').filter(Boolean);
+        if(!segments.length||segments.length>32||
+            segments.some(s=>s==='.'||s==='..'||!/^[-A-Za-z0-9_.:@]{1,128}$/.test(s))||
+            !segments.some(s=>s===id||s==='docker-'+id||
+                s==='docker-'+id+'.scope'))return {};
+        const root=fsApi.realpathSync('/sys/fs/cgroup');
+        const dir=pathApi.join(root,...segments);
+        if(fsApi.realpathSync(dir)!==dir)return {};
+        const counter=name=>{
+            try {
+                const raw=fsApi.readFileSync(pathApi.join(dir,name),'utf8').trim();
+                if(!/^[0-9]{1,16}$/.test(raw))return null;
+                const value=Number(raw);
+                return Number.isSafeInteger(value)?value:null;
+            }catch{return null;}
+        };
+        let usage=null;
+        try {
+            const raw=fsApi.readFileSync(pathApi.join(dir,'cpu.stat'),'utf8');
+            if(typeof raw==='string'&&raw.length<=2048) {
+                const match=/(?:^|\n)usage_usec ([0-9]{1,16})(?:\n|$)/.exec(raw);
+                if(match&&Number.isSafeInteger(Number(match[1])))
+                    usage=Number(match[1])/1000000;
+            }
+        }catch {
+            // CPU accounting is unavailable; memory may still be readable.
+        }
+        const used=counter('memory.current'),peak=counter('memory.peak');
+        const tasks=counter('pids.current');
+        return {
+            ...(usage===null?{}:{cpu_time_seconds:usage}),
+            ...(used===null?{}:{memory_current_mb:Math.floor(used/1048576)}),
+            ...(peak===null?{}:{peak_job_memory_bytes:peak}),
+            ...(tasks===null?{}:{process_tasks:tasks}),
+        };
+    }catch {
+        // Missing, unreadable, or renamed optional sensors are unknown.
+        // Never let telemetry change Docker owner or training state.
+        return {};
+    }
+}
 class DockerSupervisor {
     constructor({root,machineId,adapters,gpuEnabled=false,dockerSudo=false}) {
         this.root=fs.realpathSync(root);
@@ -474,8 +527,9 @@ class DockerSupervisor {
         if(record.state!==state||record.container_id!==doc.Id||
             record.checkpoint_stop_verified!==updated.checkpoint_stop_verified)
             this.commit(this.state.map(r=>r.job_id===jobId?updated:r));
-        return {state,checkpoint_stop_verified:verified,
-            memory_current_mb:null,cpu_time_ns:null,process_tasks:null,
+        const measured=['running','stop_requested'].includes(state)
+            ?dockerCgroupCounters(doc):{};
+        return {state,checkpoint_stop_verified:verified,...measured,
             ...(state==='failed'?{diagnostic:'Docker trainer exit code '+doc.State.ExitCode}:{}),
         };
     }
