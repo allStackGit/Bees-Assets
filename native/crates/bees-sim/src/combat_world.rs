@@ -735,6 +735,9 @@ pub struct CombatWorld {
     /// Reused broadphase ship indices for faction vision. The physics grid
     /// remains the sole spatial index; sorting preserves Unity ship order.
     vision_ship_candidates: Vec<usize>,
+    /// Factions that have learned every active obstacle in this sweep.
+    /// Reused across fixed steps; no persistent discovery state is duplicated.
+    vision_all_obstacles_learned_sides: HashSet<i32>,
     /// Source GameState.HiveMindLiveEnemyVisible: recalculated on every
     /// vision refresh, never retained like the faction discovery cache.
     vision_live_enemy_sides: HashSet<i32>,
@@ -921,6 +924,7 @@ impl CombatWorld {
             discovery: LevelDiscovery::new(),
             vision_observer_ids: HashSet::new(),
             vision_ship_candidates: Vec::new(),
+            vision_all_obstacles_learned_sides: HashSet::new(),
             vision_live_enemy_sides: HashSet::new(),
             vision_measurements: VisionSweepCounts::default(),
             projectiles: Vec::new(),

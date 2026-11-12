@@ -46,6 +46,9 @@ impl CombatWorld {
         first_sightings: &mut Vec<VisionFirstSighting>,
     ) -> Result<VisionSweepCounts, VisionError> {
         first_sightings.clear();
+        // The obstacle roster is stable throughout one exclusive vision
+        // sweep, but new spawns and retirement can occur between sweeps.
+        self.vision_all_obstacles_learned_sides.clear();
         // Unity returns immediately during RL scene setup. The roster and
         // storage can legitimately be incomplete while ships are spawning,
         // so do not run visibility validation until setup has finished.
@@ -169,6 +172,13 @@ impl CombatWorld {
             counts.ship_pairs_tested += checked_enemies;
             counts.aabb_rejections += eligible_enemies.saturating_sub(checked_enemies);
 
+            // Once every active obstacle is learned, subsequent observers
+            // on this side cannot produce new obstacle sightings or geometry
+            // measurements. Preserve source order for any unfinished side.
+            if self.vision_all_obstacles_learned_sides.contains(&side) {
+                continue;
+            }
+            let mut all_obstacles_learned = true;
             for target in 0..self.obstacles.len() {
                 let obstacle = &self.obstacles[target];
                 if !obstacle.live() ||
@@ -214,7 +224,12 @@ impl CombatWorld {
                             _ => { counts.first_obstacle_discoveries += 1; }
                         }
                     }
+                } else {
+                    all_obstacles_learned = false;
                 }
+            }
+            if all_obstacles_learned {
+                self.vision_all_obstacles_learned_sides.insert(side);
             }
         }
         self.vision_measurements.merge(&counts);
