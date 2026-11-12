@@ -1257,6 +1257,15 @@ impl KinematicPhysics {
     ) -> bool {
         let rebuilt = self.grid_contents != GridContents::Obstacles;
         if rebuilt {
+            // A preceding ships_mut() can invalidate ship hull poses as
+            // well as the shared grid. Refresh that deferred geometry
+            // before changing the grid population, or the later ship
+            // query would mistake the obstacle grid for a clean hull cache.
+            if self.grid_contents == GridContents::Stale {
+                for ship in &mut self.ships {
+                    if ship.active { ship.update_hull(); }
+                }
+            }
             self.grid.rebuild_with(self.obstacles.len(), |index| {
                 let obstacle = &self.obstacles[index];
                 if obstacle.active { obstacle.collider.bounds } else { None }
