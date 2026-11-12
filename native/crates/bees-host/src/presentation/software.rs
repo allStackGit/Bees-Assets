@@ -66,6 +66,8 @@ pub struct NativeRenderCounts {
     pub minimap_visible_enemy_markers: usize,
     pub numbered_squad_rows: usize,
     pub special_ready_ships: usize,
+    /// Real game/policy Striker loaded indicators drawn for visible hulls.
+    pub striker_bomb_indicators: usize,
     pub tactical_buttons_drawn: usize,
     pub selected_command_rows: usize,
     pub command_target_markers: usize,
@@ -698,6 +700,18 @@ impl NativeSoftwareRenderer {
                 self.line(x, y + 11.0, x - 11.0, y, marker);
                 counts.command_target_markers += 1;
             }
+            // Source Striker.LoadedIndicator follows its persistent
+            // ship-owned Bomb readiness, not the current command or
+            // selection. The same post-pass fog mask hides enemy markers
+            // outside the local player's authentic vision.
+            if ship.ship_type == 19 {
+                if let Some(loaded) = view.combat.game_striker_bomb_ready(ship.entity_id)
+                    .or_else(|| view.combat.policy_striker_bomb_ready(ship.entity_id)) {
+                    self.line(x + 12.0, y - 9.0, x + 17.0, y - 9.0,
+                        if loaded { 0x87dfad } else { 0x987d7d });
+                    counts.striker_bomb_indicators += 1;
+                }
+            }
             let health = ship.vitals.health() as f32 / ship.vitals.max_health() as f32;
             self.line(x - 10.0, y - 12.0, x + 10.0, y - 12.0, 0x3c2837);
             self.line(x - 10.0, y - 12.0, x - 10.0 + 20.0 * health, y - 12.0, color);
@@ -1133,33 +1147,46 @@ impl NativeSoftwareRenderer {
                 }
             }
         }
-        if scouts == 0 && barges == 0 && charge_barges == 0 &&
-            strikers == 0 { return 0; }
+        let rows = usize::from(scouts > 0) + usize::from(barges > 0) +
+            usize::from(charge_barges > 0) + usize::from(strikers > 0);
+        if rows == 0 { return 0; }
         let x = self.width - 268;
-        let y = self.height - 84;
-        for row in y.saturating_sub(5)..(y + 78).min(self.height) {
-            self.pixels[row * self.width + x - 7
-                ..row * self.width + x + 256].fill(0x15243a);
+        let line_height = text::HEIGHT + 9;
+        let panel_height = rows * line_height + 12;
+        let y = self.height.saturating_sub(panel_height + 5);
+        for scanline in y.saturating_sub(5)..(y + panel_height).min(self.height) {
+            self.pixels[scanline * self.width + x - 7
+                ..scanline * self.width + x + 256].fill(0x15243a);
         }
-        let beacon = format!("K: Beacons ready {scouts_ready}/{scouts}");
-        let detonate = format!("D: Fire Barges ready {barges_ready}/{barges}");
-        text::draw_at(&mut self.pixels, self.width, x, y,
-            &beacon, 1, if scouts_ready > 0 { [178, 230, 188] }
+        // Only draw capabilities actually present in the selection, and
+        // calculate the panel height from the same rows. A Striker-only
+        // squad must not reserve three empty special-action lines.
+        let mut row = 0;
+        if scouts > 0 {
+            let label = format!("K: Beacons ready {scouts_ready}/{scouts}");
+            text::draw_at(&mut self.pixels, self.width, x, y + row * line_height,
+                &label, 1, if scouts_ready > 0 { [178, 230, 188] }
                 else { [136, 151, 172] });
-        text::draw_at(&mut self.pixels, self.width, x,
-            y + text::HEIGHT + 9, &detonate, 1,
-            if barges_ready > 0 { [255, 202, 148] }
-            else { [136, 151, 172] });
-        let charge = format!("Q: Barge charge ready {charges_ready}/{charge_barges}");
-        text::draw_at(&mut self.pixels, self.width, x,
-            y + (text::HEIGHT + 9) * 2, &charge, 1,
-            if charges_ready > 0 { [244, 211, 142] }
-            else { [136, 151, 172] });
+            row += 1;
+        }
+        if barges > 0 {
+            let label = format!("D: Fire Barges ready {barges_ready}/{barges}");
+            text::draw_at(&mut self.pixels, self.width, x, y + row * line_height,
+                &label, 1, if barges_ready > 0 { [255, 202, 148] }
+                else { [136, 151, 172] });
+            row += 1;
+        }
+        if charge_barges > 0 {
+            let label = format!("Q: Barge charge ready {charges_ready}/{charge_barges}");
+            text::draw_at(&mut self.pixels, self.width, x, y + row * line_height,
+                &label, 1, if charges_ready > 0 { [244, 211, 142] }
+                else { [136, 151, 172] });
+            row += 1;
+        }
         if strikers > 0 {
-            let loaded = format!("Strikers loaded {strikers_ready}/{strikers}");
-            text::draw_at(&mut self.pixels, self.width, x,
-                y + (text::HEIGHT + 9) * 3, &loaded, 1,
-                if strikers_ready > 0 { [178, 230, 188] }
+            let label = format!("Strikers loaded {strikers_ready}/{strikers}");
+            text::draw_at(&mut self.pixels, self.width, x, y + row * line_height,
+                &label, 1, if strikers_ready > 0 { [178, 230, 188] }
                 else { [136, 151, 172] });
         }
         scouts_ready + barges_ready + charges_ready + strikers_ready
@@ -1235,10 +1262,7 @@ impl NativeSoftwareRenderer {
         let mut row = 0usize;
         for &owner in self.selection.squads() {
             let Some(squad) = view.roster.get(owner) else { continue };
-            if !view.player_authority.player_permissions(owner)
-                .is_some_and(|permission| permission.user_controlled) {
-                continue;
-            }
+            if !view.is_local_player_squad(owner) { continue; }
             let mut label = squad.source_hotkey_number
                 .map_or_else(|| "Squad".to_owned(),
                     |number| format!("Squad {number}"));
