@@ -112,7 +112,7 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         }
     }
     const games=Array.isArray(row.match_results)?row.match_results:[];
-    let scoreSum=0,marginSum=0,turnsSum=0,scored=0,turns=0;
+    let scoreSum=0,marginSum=0,turnsSum=0,scored=0,margins=0,turns=0;
     let exactFood=0,exactKills=0,foodGames=0,killGames=0;
     for(const game of games) {
         if(Array.isArray(game.scores)&&
@@ -122,7 +122,10 @@ function recordedTinyBrainsMetrics(row,updateWall) {
             const own=game.scores[game.learner_seat];
             const others=game.scores.filter((_,i)=>i!==game.learner_seat);
             scoreSum+=own;
-            if(others.length)marginSum+=own-others.reduce((a,b)=>a+b,0)/others.length;
+            if(others.length) {
+                marginSum+=own-others.reduce((a,b)=>a+b,0)/others.length;
+                margins++;
+            }
             scored++;
         }
         if(Number.isFinite(game.turns)&&game.turns>=0) {
@@ -138,10 +141,9 @@ function recordedTinyBrainsMetrics(row,updateWall) {
             }
         }
     }
-    if(scored) {
-        add('training_mean_score',scoreSum/scored,'scalar');
-        add('training_mean_score_margin',marginSum/scored,'scalar');
-    }
+    if(scored)add('training_mean_score',scoreSum/scored,'scalar');
+    // A solo match has a score but no opponent-relative margin.
+    if(margins)add('training_mean_score_margin',marginSum/margins,'scalar');
     if(turns)add('training_mean_match_turns',turnsSum/turns,'scalar');
     if(foodGames) {
         add('food_gathered_exact',exactFood,'count');
