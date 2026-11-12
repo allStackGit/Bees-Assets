@@ -367,18 +367,33 @@ class JobExporter {
         const stat=fs.lstatSync(target);
         if(!stat.isFile()||stat.isSymbolicLink()||stat.size!==record.bytes)
             throw Error('Export part changed or disappeared.');
-        res.writeHead(200,{
-            'Content-Type':'application/zip',
-            'Content-Length':stat.size,
-            'Content-Disposition':'attachment; filename="'+record.name+'"',
-            'Cache-Control':'no-store','X-Content-Type-Options':'nosniff',
-        });
-        const stream=fs.createReadStream(target);
-        // A file can disappear after lstat (session expiry, storage failure).
-        // Never let a failed optional download crash the training coordinator.
-        stream.on('error',()=>res.destroy());
-        res.on('close',()=>stream.destroy());
-        stream.pipe(res);
+        // Validate and stream the *same* opened inode. A local file swap
+        // between lstat and createReadStream must not serve other bytes.
+        const fd=fs.openSync(target,fs.constants.O_RDONLY|
+            (fs.constants.O_NOFOLLOW||0));
+        let stream=null;
+        try {
+            const opened=fs.fstatSync(fd);
+            if(!opened.isFile()||opened.nlink!==1||
+                opened.size!==record.bytes||opened.dev!==stat.dev||
+                opened.ino!==stat.ino)
+                throw Error('Export part changed or disappeared.');
+            stream=fs.createReadStream(target,{fd,autoClose:true});
+            // Optional downloads must not crash the training coordinator.
+            stream.on('error',()=>res.destroy());
+            res.on('close',()=>stream.destroy());
+            res.writeHead(200,{
+                'Content-Type':'application/zip',
+                'Content-Length':opened.size,
+                'Content-Disposition':'attachment; filename="'+record.name+'"',
+                'Cache-Control':'no-store','X-Content-Type-Options':'nosniff',
+            });
+            stream.pipe(res);
+        }catch(error) {
+            if(stream)stream.destroy();
+            else fs.closeSync(fd);
+            throw error;
+        }
     }
 }
 module.exports={JobExporter};
