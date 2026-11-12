@@ -463,7 +463,7 @@ impl NativeLevelCommandContext for NativePolicyOnlyMetadata {
             cease_fire_known_squads: player.cease_fire.keys()
                 .filter(|owner| eligible(owner)).count(),
             cease_fire_enabled_squads: player.cease_fire.iter()
-                .filter(|(owner, &enabled)| enabled && eligible(owner)).count(),
+                .filter(|entry| *entry.1 && eligible(entry.0)).count(),
         }
     }
 
