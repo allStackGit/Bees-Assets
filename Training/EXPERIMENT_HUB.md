@@ -1380,8 +1380,12 @@ Running Docker owners also expose optional read-only cgroup-v2 CPU time
 (`cpu.stat: usage_usec`), memory use/peak, and task counts when the host
 process cgroup matches the verified full Docker container identity.
 The Hub derives job CPU-core usage from consecutive cumulative CPU samples;
-missing or inaccessible counters are not interpreted as zero. These host
-kernel counters describe the owned container, not GPU kernel efficiency.
+missing or inaccessible counters are not interpreted as zero. If available,
+`job_cpu_throttled_seconds` and `job_cpu_throttle_events` expose cumulative
+CPU-quota throttling from the same verified Docker cgroup. These totals are
+not per-update PPO phase timings, and their growth is diagnostic evidence
+of throttling rather than a measure of marginal training throughput. These
+host kernel counters describe the owned container, not GPU kernel efficiency.
 
 For Halifax, create the dedicated
 `~/ai/experiments/experiment-hub/tinybrains-jobs` directory and use
