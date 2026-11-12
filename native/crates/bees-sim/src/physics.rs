@@ -951,7 +951,7 @@ pub enum PhysicsError {
     UnsupportedPolicyActions,
 }
 
-/// A dense, world-local uniform spatial grid. Ship hulls span all their
+/// A sparse, world-local uniform spatial grid. Ship hulls span all their
 /// occupied cells. All allocations are reused between ticks. Out-of-bounds
 /// or very large colliders use a bounded list of exact AABBs rather than
 /// entering hundreds of cells; no collider is silently dropped.
@@ -1112,10 +1112,14 @@ impl SpatialGrid {
             self.sorted_cells_dirty = false;
         }
         let generation = self.generation;
+        // Explicit disjoint borrows allow the ordered cell table and
+        // lookup map to be read while only the generation marks mutate.
+        let seen = &mut self.seen;
+        let buckets = &self.buckets;
         let mut append_bucket = |bucket: usize| {
-            for &ship_index in &self.buckets[bucket] {
-                if self.seen[ship_index] != generation {
-                    self.seen[ship_index] = generation;
+            for &ship_index in &buckets[bucket] {
+                if seen[ship_index] != generation {
+                    seen[ship_index] = generation;
                     output.push(ship_index);
                 }
             }
