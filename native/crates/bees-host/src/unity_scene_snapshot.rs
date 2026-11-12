@@ -70,7 +70,7 @@ use crate::runtime::NativeHostRuntime;
 use crate::ship_specials::{NativeAuthoredShipSpecial, NativeBeaconTemplate};
 use crate::durable_connection::DurableHiveMindConnection;
 
-const SNAPSHOT_VERSION: u32 = 30;
+const SNAPSHOT_VERSION: u32 = 31;
 
 #[derive(Deserialize, Clone, Copy)]
 struct UnityVec2 { x: f32, y: f32 }
@@ -523,6 +523,7 @@ struct UnitySquad {
     user_controlled: bool,
     can_accept_input: bool,
     locked_on: bool,
+    should_chase: Option<bool>,
     shooting_strategy: String,
 }
 
@@ -760,6 +761,9 @@ pub struct NativeSourceSquad {
     pub side: i32,
     pub members: Vec<i64>,
     pub player_permissions: bees_gameplay::player_inputs::NativePlayerPermissions,
+    /// Explicit source Squad.ShouldChase. Old schemas did not export it,
+    /// so their behavior stays disabled rather than being fabricated.
+    pub should_chase: bool,
     pub shooting: bees_hivemind::protocol::StrategyIdentity,
 }
 
@@ -1076,6 +1080,9 @@ impl NativePhysicalScene {
                     })).collect(),
                 squads: self.source_squads.iter().zip(&squads)
                     .map(|(source, squad)| (squad.owner, source.player_permissions)).collect(),
+                chasing: self.source_squads.iter().zip(&squads)
+                    .filter_map(|(source, squad)| source.should_chase.then_some(squad.owner))
+                    .collect(),
             },
         ).map_err(NativePolicyOnlyLevelError::Metadata)?;
         metadata.targeting_context = self.targeting_context;
@@ -2067,6 +2074,9 @@ impl NativePhysicalScene {
             let shooting_index = bees_hivemind::protocol::SHOOTING_STRATEGIES.iter()
                 .position(|&name| name == squad.shooting_strategy)
                 .ok_or(NativeSnapshotError::InvalidSquad(squad.item_id))?;
+            if raw.schema_version >= 31 && squad.should_chase.is_none() {
+                return Err(NativeSnapshotError::InvalidSquad(squad.item_id));
+            }
             if raw.schema_version >= 24 && squad.is_carrier_squad.is_none() {
                 return Err(NativeSnapshotError::InvalidSquad(squad.item_id));
             }
@@ -2123,6 +2133,7 @@ impl NativePhysicalScene {
                 command_bans,
                 hivemind,
                 is_carrier_squad: squad.is_carrier_squad,
+                should_chase: squad.should_chase.unwrap_or(false),
                 hotkey_number,
                 original_squad_count,
                 shooting: bees_hivemind::protocol::StrategyIdentity {

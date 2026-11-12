@@ -8,7 +8,7 @@
 
 mod commands;
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::sync::Arc;
 use bees_gameplay::commands::{
     GameCommandError, NativeBombWeapon, NativeEnemyTargetStats,
@@ -58,6 +58,9 @@ pub struct NativeSourcePlayerInputs {
     pub has_obstacles: bool,
     pub commands: HashMap<SquadLifetime, bees_gameplay::player_inputs::NativePlayerCommandInputs>,
     pub squads: HashMap<SquadLifetime, NativePlayerPermissions>,
+    /// Mutable source Squad.ShouldChase state; command director continues
+    /// to own actual Aggressive command lifetimes.
+    pub chasing: HashSet<SquadLifetime>,
     pub ships: HashMap<i64, NativeSourceFormation>,
 }
 

@@ -216,6 +216,8 @@ internal static class NativePhysicalSceneExporter
         public bool is_minion_squad;
         public List<long> member_ids = new List<long>();
         public bool user_controlled, can_accept_input, locked_on, is_carrier_squad;
+        // Source Squad.Setup sets this separately from any active command.
+        public bool should_chase;
         public bool is_hivemind_controlled, is_immobile;
         // Preserve ulong exactly; JsonUtility's numeric roundtrips can
         // lose 64-bit client identity through JavaScript intermediaries.
@@ -267,7 +269,7 @@ internal static class NativePhysicalSceneExporter
     [Serializable]
     private sealed class PhysicalScene
     {
-        public int schema_version = 30;
+        public int schema_version = 31;
         public SourceTargetingContext targeting_context;
         public int source_frame_count = Time.frameCount;
         public string level_name;
@@ -679,6 +681,7 @@ internal static class NativePhysicalSceneExporter
                 user_controlled = squad.IsUserControlled,
                 can_accept_input = squad.CanAcceptUserInput,
                 locked_on = squad.IsLockedOn,
+                should_chase = squad.ShouldChase(),
                 is_carrier_squad = squad.IsCarrierSquad,
                 is_hivemind_controlled = squad.IsHiveMindControlled,
                 is_immobile = squad.IsImmobile,
