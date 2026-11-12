@@ -1373,6 +1373,12 @@ identity, read-only source mounts and a persistent, named container per job.
 The host's Docker service, not a systemd client process, owns the workload.
 The local journal and unresolved GPU proof are retained across restarts;
 ambiguous operations are never automatically retried or removed.
+Running Docker owners also expose optional read-only cgroup-v2 CPU time
+(`cpu.stat: usage_usec`), memory use/peak, and task counts when the host
+process cgroup matches the verified full Docker container identity.
+The Hub derives job CPU-core usage from consecutive cumulative CPU samples;
+missing or inaccessible counters are not interpreted as zero. These host
+kernel counters describe the owned container, not GPU kernel efficiency.
 
 For Halifax, create the dedicated
 `~/ai/experiments/experiment-hub/tinybrains-jobs` directory and use
