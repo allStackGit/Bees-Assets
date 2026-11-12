@@ -22,9 +22,8 @@ use bees_hivemind::session::SquadLifetime;
 use bees_host::durable_connection::DurableHiveMindConnection;
 use bees_host::socket_worker::NativeSocketWorker;
 use bees_host::socket::{SetupKind, SetupLevelIdentity};
-use bees_host::runtime::{
-    NativeHostRuntime, NativeHostSocketEvent, NativeSourceCommandPulse,
-};
+use bees_host::runtime::{NativeHostRuntime, NativeHostSocketEvent};
+use bees_host::source_command_scheduler::NativeSourceCommandScheduler;
 use bees_host::policy_only_metadata::NativePolicyOnlyMetadata;
 use bees_host::notification_file::{DurableDiagnosticNotifications, EpisodeEvaluationContext, recover_command_outcomes};
 use bees_host::policy_process::{PolicyProcessError, ResidentPolicyProcess};
@@ -526,33 +525,6 @@ fn bind_evaluation_episode(
     host.sink_mut().bind_evaluation_episode(id, revision, context)
 }
 
-#[derive(Clone, Copy, Debug)]
-struct SourceCommandClock {
-    revision: u64,
-    next_due_tick: u64,
-    /// Retain the source ScaledTimer's fractional interval across ticks.
-    /// Rounding each 0.25-second period to a whole tick would accumulate
-    /// drift whenever the Level's fixed_dt does not divide that interval.
-    next_due_seconds: f64,
-}
-
-/// Converts authored Stage timer lengths to fixed-step handoff points.
-/// Unity ScaledTimer.Update fires on Elapsed > Length (not >=), so an
-/// exactly-on-boundary command pulse must reach the following fixed tick.
-/// Unity evaluates this in variable-rate Update; fixed-tick delivery is the
-/// headless approximation, not a claim of identical rendering-frame timing.
-fn source_command_ticks(seconds: f64, fixed_dt: f32) -> io::Result<u64> {
-    if !fixed_dt.is_finite() || fixed_dt <= 0.0 ||
-        !seconds.is_finite() || seconds < 0.0 {
-        return Err(invalid("invalid source HiveMind timer configuration"));
-    }
-    let ticks = (seconds / f64::from(fixed_dt)).floor() + 1.0;
-    if ticks >= u64::MAX as f64 {
-        return Err(invalid("source HiveMind timer exceeds fixed-step clock range"));
-    }
-    Ok(ticks as u64)
-}
-
 struct RunNetwork {
     worker: NativeSocketWorker,
     levels: Vec<i32>,
@@ -562,9 +534,7 @@ struct RunNetwork {
     auth_ticket: Option<String>,
     flush_seconds: u32,
     issue_source_commands: bool,
-    fixed_dt_by_level: Vec<f32>,
-    command_clocks: Vec<Option<SourceCommandClock>>,
-    command_measurements: NativeSourceCommandPulse,
+    scheduler: NativeSourceCommandScheduler,
 }
 
 impl RunNetwork {
@@ -580,18 +550,14 @@ impl RunNetwork {
         if fixed_dt_by_level.len() != levels.len() {
             return Err(invalid("HiveMind command clock has mismatched Level timesteps"));
         }
-        for &dt in fixed_dt_by_level {
-            source_command_ticks(0.25, dt)?;
-        }
+        let scheduler = NativeSourceCommandScheduler::new(fixed_dt_by_level)?;
         let mut network = Self {
             worker: NativeSocketWorker::start(config.endpoint.clone(), config.allow_insecure_loopback)
                 .map_err(|error| contextual("HiveMind network startup", error))?,
-            command_clocks: vec![None; levels.len()],
             levels, next_level: 0, user_id: config.user_id, version: config.version,
             auth_ticket, flush_seconds: config.shutdown_flush_seconds,
             issue_source_commands: config.issue_source_commands,
-            fixed_dt_by_level: fixed_dt_by_level.to_vec(),
-            command_measurements: NativeSourceCommandPulse::default(),
+            scheduler,
         };
         let (kind, server_game_id) = config.reconnect_game_id
             .map_or((SetupKind::Initial, 0), |game| (SetupKind::Reconnect, game));
@@ -608,102 +574,20 @@ impl RunNetwork {
         }).map_err(|error| contextual("HiveMind Level setup", error))
     }
 
-    fn ensure_source_clock(&mut self, index: usize, revision: u64,
-        first_delay: i32,
-    ) -> io::Result<()> {
-        if self.command_clocks[index].is_none_or(|clock|
-            clock.revision != revision
-        ) {
-            // SetupHivemind schedules a one-off delay of (InitialDelay -
-            // 0.25) before starting its 0.25-second recurring timer.
-            // A zero/negative initial delay still waits for the first
-            // recurring timer callback, rather than issuing at tick zero.
-            let initial_seconds = f64::from(first_delay.max(0)).max(0.25);
-            self.command_clocks[index] = Some(SourceCommandClock {
-                revision,
-                next_due_tick: source_command_ticks(initial_seconds, self.fixed_dt_by_level[index])?,
-                next_due_seconds: initial_seconds,
-            });
-        }
-        Ok(())
-    }
-
-    /// Scheduler state is solely the per-Level timer and episode revision.
-    /// The authoritative gameplay roster decides which squads may request.
-    /// Already-missed timer beats do not become bursts of duplicate orders.
+    // The shared scheduler is also available to other native host adapters.
+    // The launcher remains only the source of socket/setup readiness.
     fn issue_due_source_commands(&mut self, host: &mut RolloutHost) -> io::Result<()> {
         if !self.issue_source_commands { return Ok(()); }
-        let ready = self.worker.ready() && self.next_level == self.levels.len();
-        let mut due_levels = HashSet::new();
-        for index in 0..self.levels.len() {
-            let world = host.simulation().world(index)
-                .ok_or_else(|| invalid("registered native Level disappeared"))?;
-            let initial = world.state.metadata.hivemind_initial_delay_seconds
-                .ok_or_else(|| invalid("source HiveMind delay missing from Level"))?;
-            let tick = world.tick();
-            self.ensure_source_clock(index, world.episode_revision(), initial)?;
-            let clock = self.command_clocks[index].as_mut()
-                .expect("source clock initialized");
-            if tick >= clock.next_due_tick {
-                if ready && world.state.metadata.hivemind_active == Some(true) &&
-                    !world.is_failed() && !world.state.events.is_failed() &&
-                    !world.state.events.completed() && !world.state.events.was_aborted()
-                {
-                    due_levels.insert(i64::from(self.levels[index]));
-                }
-                // Unity ScaledTimer subtracts the *actual* quarter-second
-                // length, retaining time leftover from the previous frame.
-                // Do not add ceil(0.25 / fixed_dt) ticks each period: e.g.
-                // 0.02s simulation steps otherwise drift from 0.25s pulses
-                // to 0.26s pulses for the lifetime of the Level.
-                let elapsed_seconds = tick as f64 * f64::from(self.fixed_dt_by_level[index]);
-                let overdue = (elapsed_seconds - clock.next_due_seconds).max(0.0);
-                let periods = (overdue / 0.25).floor() + 1.0;
-                clock.next_due_seconds += periods * 0.25;
-                clock.next_due_tick = source_command_ticks(
-                    clock.next_due_seconds, self.fixed_dt_by_level[index],
-                )?.max(tick.saturating_add(1));
-            }
-        }
-        if due_levels.is_empty() { return Ok(()); }
-        let result = host.issue_due_source_targeting(
-            &self.worker, usize::MAX,
-            |level_id| due_levels.contains(&level_id),
-        ).map_err(|error| contextual("source HiveMind command pulse", error))?;
-        self.command_measurements.eligible += result.eligible;
-        self.command_measurements.issued += result.issued;
-        self.command_measurements.out_of_bounds += result.out_of_bounds;
-        self.command_measurements.home_moves += result.home_moves;
-        self.command_measurements.home_unreachable += result.home_unreachable;
-        self.command_measurements.unauthored_minions += result.unauthored_minions;
-        Ok(())
+        self.scheduler.issue_due(host, &self.worker, &self.levels,
+            self.next_level == self.levels.len())
     }
 
-    /// Prevent large headless inference windows from stepping straight
-    /// past a source HiveMind 0.25-second pulse. Graphical mode already
-    /// advances a single fixed tick at a time.
     fn rounds_until_next_source_pulse(&mut self, host: &RolloutHost) -> io::Result<u64> {
-        if !self.issue_source_commands || !self.worker.ready() ||
-            self.next_level != self.levels.len() {
+        if !self.issue_source_commands || !self.worker.ready() {
             return Ok(u64::MAX);
         }
-        let mut limit = u64::MAX;
-        for index in 0..self.levels.len() {
-            let world = host.simulation().world(index)
-                .ok_or_else(|| invalid("registered native Level disappeared"))?;
-            if world.is_failed() || world.state.events.is_failed() ||
-                world.state.events.completed() || world.state.events.was_aborted() ||
-                world.state.metadata.hivemind_active != Some(true) {
-                continue;
-            }
-            let initial = world.state.metadata.hivemind_initial_delay_seconds
-                .ok_or_else(|| invalid("source HiveMind delay missing from Level"))?;
-            self.ensure_source_clock(index, world.episode_revision(), initial)?;
-            let due = self.command_clocks[index]
-                .expect("source clock initialized").next_due_tick;
-            limit = limit.min(due.saturating_sub(world.tick()).max(1));
-        }
-        Ok(limit)
+        self.scheduler.rounds_until_next_pulse(host,
+            self.next_level == self.levels.len())
     }
 
     fn poll(&mut self, host: &mut RolloutHost) -> io::Result<()> {
@@ -2082,12 +1966,12 @@ fn run_battle(
             "queue_backpressure": network.worker.queue_backpressure(),
             "setups_remaining": network.levels.len() - network.next_level,
             "source_commands": {
-                "eligible": network.command_measurements.eligible,
-                "issued": network.command_measurements.issued,
-                "out_of_bounds": network.command_measurements.out_of_bounds,
-                "home_moves": network.command_measurements.home_moves,
-                "home_unreachable": network.command_measurements.home_unreachable,
-                "unauthored_minions": network.command_measurements.unauthored_minions,
+                "eligible": network.scheduler.measurements().eligible,
+                "issued": network.scheduler.measurements().issued,
+                "out_of_bounds": network.scheduler.measurements().out_of_bounds,
+                "home_moves": network.scheduler.measurements().home_moves,
+                "home_unreachable": network.scheduler.measurements().home_unreachable,
+                "unauthored_minions": network.scheduler.measurements().unauthored_minions,
             },
         })),
         "model_updates_applied": next_model_update,

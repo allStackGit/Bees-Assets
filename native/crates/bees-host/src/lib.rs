@@ -8,6 +8,7 @@ pub mod status;
 pub mod durable_connection;
 pub mod journal_recovery;
 pub mod runtime;
+pub mod source_command_scheduler;
 
 pub mod policy_process;
 
