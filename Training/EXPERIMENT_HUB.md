@@ -1,5 +1,8 @@
 # Experiment Hub foundation
 
+For a compact record of completed implementation and outstanding substantive
+work, see [Experiment Hub implementation status](EXPERIMENT_HUB_IMPLEMENTATION_STATUS.md).
+
 The dashboard remains at `http://127.0.0.1:7148` and now has Design, Train,
 Monitor, Compare, and Machines tabs. The existing Bees experiment coordinator,
 operator, queue, checkpoint history, release compatibility checks, and evaluations
