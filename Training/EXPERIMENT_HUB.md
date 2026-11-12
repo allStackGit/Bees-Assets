@@ -2839,22 +2839,33 @@ service to the public Internet.
 4. Allow each host's authenticated agent to acknowledge its offered claim,
    and qualify the learner's GPU access before launch. In **Train**, use
    **Start collectors only** to authorize all remote native Starts atomically
-   without authorizing the learner, or **Start coordinated group** to
-   explicitly preapprove one learner GPU Start *after* every collector is
-   freshly verified running. The latter is bounded to this live coordinator
-   and 20 minutes. A coordinator restart, changed/lost agent session,
-   worker dispatch, physical endpoint, HMAC identity or lease receipt
-   disarms the future learner Start. No failed or interrupted process is
-   automatically restarted. The Hub never starts an unqualified learner
-   or assumes a persisted `running` label is live ownership. The Train
-   row shows the pending/authorized/disarmed status and can **Cancel future
-   learner Start** without stopping any existing collectors.
-   Both choices use `POST /api/hub/distributed/tinybrains/start-collectors`
-   with `{"learner_job_id":"<uuid>","expected_collector_job_ids":["<uuid>",...],"confirm_start":true}`.
-   Coordinated approval additionally supplies `"start_learner_when_ready":true,
-   "confirm_learner_start":true`. The operator CLI can submit the same
-   explicit JSON. To disarm a pending approval, POST
-   `/api/hub/distributed/tinybrains/cancel-launch` with
+   without authorizing the learner, **Start coordinated group** to preapprove
+   one learner GPU Start when every collector is freshly verified running, or
+   **Start recoverable coordinated group** to separately approve resumption of
+   that *pending* learner Start after a coordinator restart. All three use
+   `POST /api/hub/distributed/tinybrains/start-collectors` with
+   `{"learner_job_id":"<uuid>","expected_collector_job_ids":["<uuid>",...],"confirm_start":true}`.
+   Coordinated launch also supplies `"start_learner_when_ready":true,
+   "confirm_learner_start":true`. Restart recovery additionally supplies
+   `"resume_after_restart":true,"confirm_restart_rearm":true`.
+
+   Both the original remote collector Starts and the one-use future learner
+   permission are committed **atomically** and expire after 20 minutes.
+   Ordinary approval is disarmed on coordinator restart, agent replacement,
+   lost lease or HMAC identity mismatch. Separately approved recovery retains
+   only that *one unfulfilled* future permission; after a coordinator restart
+   the Hub must see fresh authenticated agent/lease receipts and every
+   **original native collector dispatch** verified running. It checks the
+   exact pinned machine, lease, HMAC fingerprint, endpoint ordering and the
+   learner's current GPU/native access qualification before authorizing the
+   learner. Replacing the agent does not bypass these barriers. No previously
+   failed, uncertain, or interrupted trainer is automatically retried, and
+   persisted `running` status alone cannot authorize GPU training.
+
+   The Train row shows pending, authorized or disarmed launch status and
+   offers **Cancel future learner Start** without stopping any collectors.
+   The equivalent API is
+   `POST /api/hub/distributed/tinybrains/cancel-launch` with
    `{"learner_job_id":"<uuid>","confirm_cancel":true}`.
    All collector Starts are one durable transition, with no partial
    authorization if any host is ineligible. Neither action promises
@@ -2887,8 +2898,9 @@ prelaunch-absence evidence and unverified processes retain their reservations
 for manual review. Only after **all** sidecars are cancelled or their native
 leases have been safely released does the Hub cancel the unstarted learner
 and release its GPU/CPU claim. This cleanup intent survives coordinator
-restart, unlike the optional future learner Start approval. It never stops a
-dispatched learner or deletes checkpoints. Group members cannot change
+restart. A separately approved, bounded pending learner Start may also survive
+coordinator restart, but only after fresh native proof; ordinary approvals do
+not. Abort never stops a dispatched learner or deletes checkpoints. Group members cannot change
 machines or accept a new queued dependency during teardown.
 
 This path is initially queued as one atomic resource group but is not
