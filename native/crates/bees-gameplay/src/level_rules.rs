@@ -749,6 +749,11 @@ where
                 .and_then(|owner| events.commands().current_server_outcome(owner)),
             &LevelAutomaticWeapons { metadata: &state.metadata, roster: events.roster(), commands: events.commands() },
         )?;
+        // CombatWorld returns its counts before Level-owned vision,
+        // reinforcement orders and timed command callbacks run. Those
+        // phases also use the same shared spatial grid; retain a baseline
+        // so their actual rebuilds enter this tick's telemetry exactly once.
+        let grid_at_combat_end = state.combat.physics().counts();
         // Unity's YellowJacket.OnTriggerEnter2D is independent of the
         // command timer. Consume these source-ordered contacts INSIDE the
         // owning completed tick, before the sole reward/roster event pass.
@@ -946,6 +951,14 @@ where
             counts.active_ships = state.combat.total_living_ships() as u32;
             counts.active_projectiles = state.combat.total_active_projectiles() as u32;
         }
+        // No second physics.step runs during the Level's late phases.
+        // Include only the additional rebuilds since CombatWorld's
+        // snapshot: the core collision/weapon rebuilds are already counted.
+        let grid_at_level_end = state.combat.physics().counts();
+        counts.ship_grid_rebuilds +=
+            grid_at_level_end.ship_grid_rebuilds - grid_at_combat_end.ship_grid_rebuilds;
+        counts.obstacle_grid_rebuilds +=
+            grid_at_level_end.obstacle_grid_rebuilds - grid_at_combat_end.obstacle_grid_rebuilds;
         Ok(counts)
     }
 }
