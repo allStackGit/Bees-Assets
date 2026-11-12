@@ -49,6 +49,7 @@ impl CombatWorld {
         // The obstacle roster is stable throughout one exclusive vision
         // sweep, but new spawns and retirement can occur between sweeps.
         self.vision_all_obstacles_learned_sides.clear();
+        self.vision_unlearned_obstacles.clear();
         // Unity returns immediately during RL scene setup. The roster and
         // storage can legitimately be incomplete while ships are spawning,
         // so do not run visibility validation until setup has finished.
@@ -100,7 +101,32 @@ impl CombatWorld {
         self.vision_live_enemy_sides.clear();
         let mut counts = VisionSweepCounts::default();
         counts.completed_sweeps = 1;
-        for observer in observers {
+        // One obstacle-grid binding for the entire sweep. The subsequent
+        // source-ordered pass performs ship sight with the same shared grid,
+        // without rebuilding obstacle geometry for every observer. Output
+        // vectors retain capacity across all fixed-step calls.
+        self.vision_obstacle_candidates.resize_with(observers.len(), Vec::new);
+        for (observer_index, observer) in observers.iter().enumerate() {
+            let candidates = &mut self.vision_obstacle_candidates[observer_index];
+            candidates.clear();
+            if self.obstacles.is_empty() || !observer.registered ||
+                !observer.enabled || observer.effective_range == 0 {
+                continue;
+            }
+            let &index = self.ship_by_id.get(&observer.ship_id)
+                .expect("roster prevalidated");
+            let ship = &self.ships[index];
+            let body = &self.physics.ships()[index];
+            if !body.active || ship.vitals.is_dead() { continue; }
+            let rebuilt = self.physics.circle_obstacle_vision_candidates(
+                body.motion.position, observer.effective_range as f32, candidates,
+            );
+            counts.obstacle_vision_grid_rebuilds += u64::from(rebuilt);
+            counts.obstacle_candidates += candidates.len() as u64;
+            candidates.sort_unstable();
+        }
+
+        for (observer_index, observer) in observers.iter().enumerate() {
             if !observer.registered || !observer.enabled ||
                 observer.effective_range == 0 {
                 continue;
@@ -178,8 +204,32 @@ impl CombatWorld {
             if self.vision_all_obstacles_learned_sides.contains(&side) {
                 continue;
             }
-            let mut all_obstacles_learned = true;
-            for target in 0..self.obstacles.len() {
+            // The exact number of not-yet-learned obstacles changes only
+            // on first discoveries during this synchronous sweep. Count it
+            // once per side instead of rescanning all obstacles per ship.
+            // Keep historical logically eligible-pair statistics, including
+            // pairs excluded by the new broadphase.
+            let pending = match self.vision_unlearned_obstacles.get(&side) {
+                Some(&count) => count,
+                None => {
+                    let count = self.obstacles.iter()
+                        .zip(self.physics.obstacles()).filter(|(obstacle, body)| {
+                            if !obstacle.live() || !body.active { return false; }
+                            let kind = match obstacle.kind {
+                                ObstacleKind::MiningAsteroid => DiscoveryKind::MiningAsteroid,
+                                ObstacleKind::MapObject => DiscoveryKind::MapObject,
+                                _ => DiscoveryKind::Obstacle,
+                            };
+                            !self.discovery.has(side, kind, obstacle.entity_id)
+                        }).count() as u64;
+                    self.vision_unlearned_obstacles.insert(side, count);
+                    count
+                }
+            };
+            counts.unlearned_obstacle_pairs += pending;
+            let mut considered = 0_u64;
+            let mut first_seen = 0_u64;
+            for &target in &self.vision_obstacle_candidates[observer_index] {
                 let obstacle = &self.obstacles[target];
                 if !obstacle.live() ||
                     !self.physics.obstacles()[target].active {
@@ -191,23 +241,15 @@ impl CombatWorld {
                     _ => DiscoveryKind::Obstacle,
                 };
                 let target_id = obstacle.entity_id;
-                // Learned obstacle memory is sticky and no gameplay
-                // feature needs transient obstacle-visibility pairs.
-                // Skip expensive geometry checks once the side knows it.
                 if self.discovery.has(side, kind, target_id) {
                     continue;
                 }
-                counts.unlearned_obstacle_pairs += 1;
-                // Authored primary and clearance shapes keep conservative
-                // local-space radii even while their World pose changes.
-                // A far object can be rejected without updating its polygon
-                // or evaluating the much costlier exact collider geometry.
+                considered += 1;
                 if self.physics.obstacles()[target].outside_vision_radius(
                     origin, range, kind == DiscoveryKind::MapObject,
                 ) {
                     counts.obstacle_radius_rejections += 1;
                     counts.aabb_rejections += 1;
-                    all_obstacles_learned = false;
                     continue;
                 }
                 let proximity = if kind == DiscoveryKind::MapObject {
@@ -219,28 +261,34 @@ impl CombatWorld {
                         target, origin, range_squared,
                     )
                 };
-                if counts.record_proximity(proximity) {
-                    if self.discovery.record(side, kind, target_id)
-                        .expect("prevalidated side and entity ID") {
-                        first_sightings.push(VisionFirstSighting {
-                            observer_id: observer.ship_id, side,
-                            target_id, kind,
-                        });
-                        match kind {
-                            DiscoveryKind::MiningAsteroid => {
-                                counts.first_mining_discoveries += 1;
-                            }
-                            DiscoveryKind::MapObject => {
-                                counts.first_map_object_discoveries += 1;
-                            }
-                            _ => { counts.first_obstacle_discoveries += 1; }
+                if counts.record_proximity(proximity) &&
+                    self.discovery.record(side, kind, target_id)
+                        .expect("prevalidated side and entity ID")
+                {
+                    first_seen += 1;
+                    first_sightings.push(VisionFirstSighting {
+                        observer_id: observer.ship_id, side,
+                        target_id, kind,
+                    });
+                    match kind {
+                        DiscoveryKind::MiningAsteroid => {
+                            counts.first_mining_discoveries += 1;
                         }
+                        DiscoveryKind::MapObject => {
+                            counts.first_map_object_discoveries += 1;
+                        }
+                        _ => { counts.first_obstacle_discoveries += 1; }
                     }
-                } else {
-                    all_obstacles_learned = false;
                 }
             }
-            if all_obstacles_learned {
+            // A primary/clearance AABB outside the sight-square cannot
+            // contain a collider within the actual source sight-circle.
+            // No omitted obstacle was discovered, so every omitted
+            // unlearned pair is an equivalent cheap bounds rejection.
+            counts.aabb_rejections += pending.saturating_sub(considered);
+            let still_unlearned = pending.saturating_sub(first_seen);
+            self.vision_unlearned_obstacles.insert(side, still_unlearned);
+            if still_unlearned == 0 {
                 self.vision_all_obstacles_learned_sides.insert(side);
             }
         }

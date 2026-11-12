@@ -884,6 +884,21 @@ impl ObstacleBody {
         delta.length_squared() > limit * limit
     }
 
+    /// Broadphase envelope of both source sight hulls. MapObjects use
+    /// their primary collider, other obstacles use their authored clearance
+    /// shape when present. The union prevents missed sightings without
+    /// adding another collider or changing any exact vision semantics.
+    pub(crate) fn vision_bounds(&self) -> Option<Aabb> {
+        let primary = self.primary_bounds()?;
+        let clearance = self.navigation_bounds()?;
+        Some(Aabb {
+            min: Vec2::new(primary.min.x.min(clearance.min.x),
+                primary.min.y.min(clearance.min.y)),
+            max: Vec2::new(primary.max.x.max(clearance.max.x),
+                primary.max.y.max(clearance.max.y)),
+        })
+    }
+
     /// MapObject visibility uses its primary collider, whereas Obstacle
     /// visibility uses the clearance mapping collider when available.
     pub fn vision_proximity_primary(
@@ -1191,7 +1206,7 @@ pub enum ShipHullOverlap {
 
 /// The spatial grid is reused for both physical populations, never duplicated.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum GridContents { Stale, Ships, Obstacles }
+enum GridContents { Stale, Ships, Obstacles, VisionObstacles }
 
 /// The same physical scene type will be owned by graphical and headless
 /// worlds. The caller supplies authored movement velocities and consumes
@@ -1436,6 +1451,37 @@ impl KinematicPhysics {
         rebuilt
     }
 
+    /// One shared grid, rebound once for an entire faction-vision prepass.
+    /// Unlike ordinary obstacle contacts, include clearance-mapping hulls;
+    /// otherwise a sight circle could miss an obstacle whose source
+    /// clearance collider extends beyond its primary physical hull.
+    /// Call for all active observers BEFORE making ship grid queries.
+    pub(crate) fn circle_obstacle_vision_candidates(
+        &mut self, center: Vec2, radius: f32, output: &mut Vec<usize>,
+    ) -> bool {
+        let rebuilt = self.grid_contents != GridContents::VisionObstacles ||
+            self.obstacle_hulls_dirty;
+        if rebuilt {
+            if self.obstacle_hulls_dirty {
+                for obstacle in &mut self.obstacles {
+                    if obstacle.active { obstacle.update_hull(); }
+                }
+                self.obstacle_hulls_dirty = false;
+            }
+            self.grid.rebuild_with(self.obstacles.len(), |index| {
+                self.obstacles[index].vision_bounds()
+            });
+            self.counts.obstacle_grid_rebuilds += 1;
+            self.counts.obstacle_grid_cells_indexed += self.grid.active_buckets as u64;
+            self.grid_contents = GridContents::VisionObstacles;
+        }
+        self.grid.candidates(Aabb {
+            min: center - Vec2::new(radius, radius),
+            max: center + Vec2::new(radius, radius),
+        }, output);
+        rebuilt
+    }
+
     pub(crate) fn ship_primary_overlaps_circle(&self, index: usize, center: Vec2, radius: f32) -> bool {
         self.ships.get(index).is_some_and(|ship| ship.active && ship.collider.overlaps_circle(center, radius))
     }
@@ -1640,7 +1686,8 @@ impl KinematicPhysics {
     /// geometry only if an obstacle query actually needs it.
     pub fn obstacles_mut(&mut self) -> &mut [ObstacleBody] {
         self.obstacle_hulls_dirty = true;
-        if self.grid_contents == GridContents::Obstacles {
+        if matches!(self.grid_contents,
+            GridContents::Obstacles | GridContents::VisionObstacles) {
             self.grid_contents = GridContents::Stale;
         }
         &mut self.obstacles
@@ -1748,7 +1795,8 @@ impl KinematicPhysics {
         body.update_hull();
         let index = self.obstacles.len();
         self.obstacles.push(body);
-        if self.grid_contents == GridContents::Obstacles {
+        if matches!(self.grid_contents,
+            GridContents::Obstacles | GridContents::VisionObstacles) {
             self.grid_contents = GridContents::Stale;
         }
         index
@@ -1829,7 +1877,8 @@ impl KinematicPhysics {
         }
         obstacle.update_hull();
         *slot = obstacle;
-        if self.grid_contents == GridContents::Obstacles {
+        if matches!(self.grid_contents,
+            GridContents::Obstacles | GridContents::VisionObstacles) {
             self.grid_contents = GridContents::Stale;
         }
         Ok(())

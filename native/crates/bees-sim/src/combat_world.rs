@@ -735,6 +735,13 @@ pub struct CombatWorld {
     /// Reused broadphase ship indices for faction vision. The physics grid
     /// remains the sole spatial index; sorting preserves Unity ship order.
     vision_ship_candidates: Vec<usize>,
+    /// Candidate obstacle indices, one reused allocation per observer.
+    /// Build all queries while the ONE physics grid holds obstacle hulls,
+    /// then recover exact Unity observer/entity first-discovery ordering.
+    vision_obstacle_candidates: Vec<Vec<usize>>,
+    /// Remaining unlearned obstacle counts during this one sweep. This
+    /// is scratch, not a second persistent faction-discovery registry.
+    vision_unlearned_obstacles: HashMap<i32, u64>,
     /// Factions that have learned every active obstacle in this sweep.
     /// Reused across fixed steps; no persistent discovery state is duplicated.
     vision_all_obstacles_learned_sides: HashSet<i32>,
@@ -933,6 +940,8 @@ impl CombatWorld {
             discovery: LevelDiscovery::new(),
             vision_observer_ids: HashSet::new(),
             vision_ship_candidates: Vec::new(),
+            vision_obstacle_candidates: Vec::new(),
+            vision_unlearned_obstacles: HashMap::new(),
             vision_all_obstacles_learned_sides: HashSet::new(),
             vision_live_enemy_sides: HashSet::new(),
             vision_measurements: VisionSweepCounts::default(),

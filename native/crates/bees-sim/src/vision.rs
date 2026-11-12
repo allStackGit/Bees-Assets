@@ -31,6 +31,12 @@ pub struct VisionSweepCounts {
     /// Pairs actually examined after the physics grid or dense fallback.
     pub ship_pairs_tested: u64,
     pub unlearned_obstacle_pairs: u64,
+    /// Obstacle spatial candidate count across all source observers.
+    /// Compare with unlearned_obstacle_pairs for broadphase savings.
+    pub obstacle_candidates: u64,
+    /// Rebindings of the existing shared ship/obstacle spatial grid for
+    /// visibility; a multi-observer vision pass should need at most one.
+    pub obstacle_vision_grid_rebuilds: u64,
     /// Cheap conservative source-hull radius rejects before any geometry
     /// refresh/exact Collider2D.ClosestPoint call. Included in the usual
     /// bounds-rejection total for comparable historical profiling.
@@ -113,6 +119,8 @@ impl VisionSweepCounts {
         self.live_ship_pairs += other.live_ship_pairs;
         self.ship_pairs_tested += other.ship_pairs_tested;
         self.unlearned_obstacle_pairs += other.unlearned_obstacle_pairs;
+        self.obstacle_candidates += other.obstacle_candidates;
+        self.obstacle_vision_grid_rebuilds += other.obstacle_vision_grid_rebuilds;
         self.obstacle_radius_rejections += other.obstacle_radius_rejections;
         self.aabb_rejections += other.aabb_rejections;
         self.exact_collider_tests += other.exact_collider_tests;
