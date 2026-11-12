@@ -111,6 +111,7 @@ pub struct NativeClient {
     pub tactical_button_clicks: u64,
     pub squad_tab_clicks: u64,
     pub shooting_priority_requests_submitted: u64,
+    pub selected_command_rows_drawn: u64,
 }
 
 impl NativeClient {
@@ -144,7 +145,8 @@ impl NativeClient {
             cycled_shortcut_selections: 0,
             minimap_move_orders_submitted: 0,
             tactical_button_clicks: 0, squad_tab_clicks: 0,
-            shooting_priority_requests_submitted: 0 })
+            shooting_priority_requests_submitted: 0,
+            selected_command_rows_drawn: 0 })
     }
 
     /// Initial authored camera focus is a presentation-only concern. The
@@ -983,6 +985,8 @@ impl NativeClient {
         self.culled_piece_draws = self.culled_piece_draws.saturating_add(counts.culled_pieces as u64);
         self.minimap_markers_drawn = self.minimap_markers_drawn.saturating_add(counts.minimap_ship_markers as u64);
         self.numbered_squad_rows_drawn = self.numbered_squad_rows_drawn.saturating_add(counts.numbered_squad_rows as u64);
+        self.selected_command_rows_drawn = self.selected_command_rows_drawn
+            .saturating_add(counts.selected_command_rows as u64);
         self.weapon_geometry_queries = self.weapon_geometry_queries.saturating_add(counts.range_queries as u64);
         self.weapon_range_candidates_culled = self.weapon_range_candidates_culled
             .saturating_add(counts.range_candidates_culled as u64);

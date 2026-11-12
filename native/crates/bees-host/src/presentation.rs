@@ -5,7 +5,9 @@
 //! geometry, health, active projectiles, movement, obstacles and fade timers.
 
 use bees_gameplay::level_events::NativeLevelNotification;
-use bees_gameplay::{squads::NativeSquadRoster, player_inputs::NativePlayerAuthority};
+use bees_gameplay::{squads::NativeSquadRoster,
+    commands::NativeSquadCommandDirector,
+    player_inputs::NativePlayerAuthority};
 use bees_sim::combat_world::CombatWorld;
 use bees_sim::simulation::WorldId;
 
@@ -44,6 +46,8 @@ pub struct NativeRenderWorldView<'a> {
     pub combat: &'a CombatWorld,
     pub collision_matrix: &'a bees_sim::physics::CollisionMatrix,
     pub roster: &'a NativeSquadRoster,
+    /// Same live director as combat weapon targeting and gameplay timers.
+    pub commands: &'a NativeSquadCommandDirector,
     pub player_authority: &'a dyn NativePlayerAuthority,
     pub pending_notifications: &'a [NativeLevelNotification],
 }

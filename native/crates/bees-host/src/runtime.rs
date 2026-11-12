@@ -1166,6 +1166,7 @@ where
             combat: &world.state.combat,
             collision_matrix: &self.simulation.rules().collision_matrix,
             roster: world.state.events.roster(),
+            commands: world.state.events.commands(),
             player_authority: &world.state.metadata,
             pending_notifications:
                 world.state.events.pending_notifications(),

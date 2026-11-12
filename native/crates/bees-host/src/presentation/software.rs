@@ -66,6 +66,7 @@ pub struct NativeRenderCounts {
     pub numbered_squad_rows: usize,
     pub special_ready_ships: usize,
     pub tactical_buttons_drawn: usize,
+    pub selected_command_rows: usize,
 }
 
 pub struct NativeSoftwareRenderer {
@@ -564,6 +565,7 @@ impl NativeSoftwareRenderer {
                 view.player_authority.player_permissions(owner)
                     .is_some_and(|permission| permission.locked_on));
         counts.tactical_buttons_drawn = self.draw_tactical_bar();
+        counts.selected_command_rows = self.draw_selected_command_status(view);
         self.draw_selected_priority(view);
         if self.show_shooting_menu { self.draw_shooting_menu(view); }
         counts
@@ -798,6 +800,49 @@ impl NativeSoftwareRenderer {
             drawn += 1;
         }
         drawn
+    }
+
+    /// Selected-squad command status is borrowed from the same canonical
+    /// director as timed AI command execution, weapon strategy selection
+    /// and durable outcome settlement. Avoid a second UI status machine.
+    fn draw_selected_command_status(&mut self, view: &NativeRenderWorldView<'_>) -> usize {
+        if self.selection.squads().is_empty() ||
+            self.width < 750 || self.height < 400 {
+            return 0;
+        }
+        let left = self.width - 318;
+        let mut row = 0usize;
+        for &owner in self.selection.squads() {
+            let Some(squad) = view.roster.get(owner) else { continue };
+            if !view.player_authority.player_permissions(owner)
+                .is_some_and(|permission| permission.user_controlled) {
+                continue;
+            }
+            let label = squad.source_hotkey_number
+                .map_or_else(|| "Squad".to_owned(),
+                    |number| format!("Squad {number}"));
+            let command = view.commands.current_kind(owner)
+                .map_or_else(|| "Idle".to_owned(), |kind| format!("{kind:?}"));
+            let status = if let Some(enemy) = view.commands.selected_enemy(owner)
+                .and_then(|enemy| view.roster.get(enemy))
+            {
+                format!("{label}: {command} (enemy side {})", enemy.side)
+            } else {
+                format!("{label}: {command}")
+            };
+            let y = 16 + row * (text::HEIGHT + 9);
+            if y + text::HEIGHT + 10 >= self.height / 2 { break; }
+            for pixel_y in (y - 3)..(y + text::HEIGHT + 6) {
+                self.pixels[pixel_y * self.width + left
+                    ..pixel_y * self.width + left + 306].fill(0x17283e);
+            }
+            let status = if status.len() > 44 { &status[..44] } else { &status };
+            text::draw_at(&mut self.pixels, self.width,
+                left + 8, y, status, 1, [221, 236, 249]);
+            row += 1;
+            if row == 8 { break; }
+        }
+        row
     }
 
     /// The live source Squad.GetShootingStrategy, including user changes
