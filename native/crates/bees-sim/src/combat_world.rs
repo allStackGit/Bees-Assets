@@ -2546,9 +2546,13 @@ impl CombatWorld {
         {
             return Err(CombatWorldError::DuplicateEntity);
         }
-        if matches!(obstacle.kind,
+        // The canonical obstacle registry represents physical participants
+        // that are active at spawn. Accepting a disabled collider here would
+        // leave a live gameplay obstacle that targeting and mining can see
+        // while physics excludes it from all collisions.
+        if !body.active || (matches!(obstacle.kind,
             ObstacleKind::CollisionAsteroid | ObstacleKind::MiningAsteroid) &&
-            !obstacle.vitals.is_some_and(|v| !v.is_dead && v.health > 0)
+            !obstacle.vitals.is_some_and(|v| !v.is_dead && v.health > 0))
         {
             return Err(CombatWorldError::InvalidObstacle);
         }
