@@ -285,10 +285,10 @@ class JobExporter {
                     return [{
                         job_id:job.id,label:'hub-observations',
                         path:path.join(base,job.id+'.jsonl'),
-                    },...(fs.existsSync(hostFile)?[{
+                    },{
                         job_id:job.id,label:'hub-host-observations',
                         path:hostFile,
-                    }]:[])];
+                    }];
                 }),...linkedCollectorSources,...mounted],
         }),{flag:'wx',mode:0o600});
         const id=crypto.randomUUID();
