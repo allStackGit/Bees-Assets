@@ -83,7 +83,7 @@ class MixedLinuxSupervisor {
         const owner=job?.project_id==='courier'?this.native:
             job?.project_id==='tinybrains'?this.docker:null;
         if(!owner)throw Error('Unknown mixed Linux project.');
-        if(owner===this.native&&job.resources?.gpu_count!==0)
+        if(owner===this.native&&(job.resources?.gpu_count??0)!==0)
             throw Error('Courier must use native CPU-only execution.');
         // Serialize admission and the durable owner launch across mixed agents.
         // A crash leaves this lock behind for deliberate, manual reconciliation.
@@ -116,6 +116,8 @@ class MixedLinuxSupervisor {
         return owner.stop(jobId);
     }
     async reconcileAbsent(jobId,projectId) {
+        if(this.fs.existsSync(this.lock))
+            return {state:'unverified',diagnostic:'Mixed launch lock may still own an unrecorded job.'};
         if(this.ownerForJob(jobId))
             return {state:'unverified',diagnostic:'Mixed ownership exists; reconcile the recorded owner.'};
         return projectId==='tinybrains'
