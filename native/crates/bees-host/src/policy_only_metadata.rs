@@ -255,9 +255,11 @@ impl NativePolicyOnlyMetadata {
         ) { return Err(PolicyOnlyMetadataError::InvalidSource); }
         if authored_ships.keys().any(|id| !player.ships.get(id)
             .is_some_and(|data| data.offset.is_finite() && data.clearance >= 0)) ||
+            // AI squads can carry the saved ShouldChase value even
+            // though Unity arms CheckChase timers only on user squads.
+            // Preserve their authored state; the timer checks authority.
             player.chasing.iter().any(|owner|
-                !player.squads.get(owner)
-                    .is_some_and(|permissions| permissions.user_controlled)) ||
+                !player.squads.contains_key(owner)) ||
             player.matching_speeds.iter().any(|(owner, &speed)|
                 !speed.is_finite() || speed < 0.0 ||
                 !player.squads.contains_key(owner)) ||
