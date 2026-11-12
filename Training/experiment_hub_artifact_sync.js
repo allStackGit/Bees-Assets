@@ -11,6 +11,7 @@ const MAX_CHUNK=1024*1024;
 const MAX_FILE=500000000;
 const MAX_FILES=256;
 const MAX_JOB=5000000000;
+const FREE_SPACE_RESERVE=2_000_000_000n;
 const SUFFIXES=new Set(['.json','.jsonl','.ndjson','.csv','.tsv','.txt','.log']);
 const DENIED=new Set(['.git','private','secrets','credentials','keys','checkpoints',
     'models','opponents','replays','__pycache__','build','node_modules']);
@@ -184,6 +185,15 @@ class ArtifactMirror {
             !Buffer.isBuffer(bytes)||bytes.length<1||bytes.length>MAX_CHUNK||
             bytes.length>size-offset)
             fail('Invalid artifact transfer offset or chunk.',400);
+        // The mirror is optional diagnostics. Never exhaust the filesystem
+        // shared with trainer journals, checkpoints or the coordinator.
+        let free;
+        try {
+            const stat=fs.statfsSync(info.staging,{bigint:true});
+            free=BigInt(stat.bavail)*BigInt(stat.bsize);
+        }catch {fail('Artifact transfer requires verifiable free disk space.',409);}
+        if(free<FREE_SPACE_RESERVE+BigInt(bytes.length))
+            fail('Artifact transfer would violate the disk reserve.',413);
         let meta=this.metadata(info);
         if(meta?.sha!==sha||meta?.size!==size||meta?.complete) {
             if(meta?.complete&&meta.sha===sha&&meta.size===size) {
