@@ -1,6 +1,6 @@
 //! Deferred deployment of authored, non-policy squads into a live Level.
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use bees_gameplay::level_events::NativeLevelEventProcessor;
 use bees_gameplay::level_host::NativeLevelActivationContext;
@@ -40,6 +40,42 @@ fn place_reinforcement_wave(
 ) -> Result<(), &'static str> {
     let ship_indices: HashMap<i64, usize> = wave.ships.iter().enumerate()
         .map(|(index, ship)| (ship.entity_id, index)).collect();
+
+    // Unity AddReinforcementSquads calls SpawnShipsAndSquads once for each
+    // SavedSquad. Within that single construction call, LevelConstructor
+    // can append only Carrier-generated Drone and Striker child squads.
+    // Do not accidentally treat two independent saved squads as one
+    // alternating left/right formation just because a manifest grouped
+    // their IDs. Validate the existing source carrier links, not a new
+    // parent-child registry.
+    if wave.squads.len() > 1 {
+        let root = &wave.squads[0];
+        let carriers: HashSet<i64> = root.members.iter().copied().filter(|id| {
+            ship_indices.get(id).is_some_and(|&index| wave.ships[index].ship_type == 5)
+        }).collect();
+        for squad in wave.squads.iter().skip(1) {
+            if squad.side != root.side {
+                return Err("Carrier child reinforcement squad has a different side from its source squad");
+            }
+            let mut parent = None;
+            for &id in &squad.members {
+                let ship = &wave.ships[*ship_indices.get(&id)
+                    .ok_or("Reinforcement child squad has no physical ship")?];
+                let carrier_id = match ship.ship_type {
+                    8 => ship.drone_carrier_id,
+                    19 => match &ship.special {
+                        Some(NativeAuthoredShipSpecial::Striker { carrier, .. }) => carrier.carrier_id,
+                        _ => None,
+                    },
+                    _ => None,
+                }.ok_or("Multi-squad reinforcement spawn requires source-linked Carrier children")?;
+                if !carriers.contains(&carrier_id) || parent.is_some_and(|p| p != carrier_id) {
+                    return Err("Reinforcement Carrier child squad must share a parent in the primary squad");
+                }
+                parent = Some(carrier_id);
+            }
+        }
+    }
 
     // Unity first calls SetStartingPosition(spawn) on EVERY squad, before
     // querying any squad's GetPosition/GetWidth for the second pass.
