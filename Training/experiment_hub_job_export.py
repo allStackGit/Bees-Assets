@@ -36,7 +36,7 @@ DENIED_PARTS = {
 # Credential material can be hidden under an ordinary-looking child filename
 # inside a sensitive subfolder, or use unseparated key names.
 DENIED_NAMES = (
-    "token", "secret", "password", "credential", "rollout.key",
+    "token", "secret", "password", "credential", "checkpoint", "rollout.key",
     "api_key", "api-key", "api.key", "apikey",
     "access_key", "access-key", "accesskey",
     "private_key", "private-key", "privatekey",
