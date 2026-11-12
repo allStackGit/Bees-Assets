@@ -38,7 +38,7 @@ function filesForJob(folder) {
     }
     return names.sort();
 }
-function snapshotFile(root,relative) {
+async function snapshotFile(root,relative) {
     const source=path.join(root,...relative.split('/'));
     const real=fs.realpathSync(source);
     if(real!==source||!real.startsWith(path.resolve(root)+path.sep))
@@ -56,6 +56,11 @@ function snapshotFile(root,relative) {
                 Math.min(MAX_CHUNK,before.size-offset),offset);
             if(size<1)throw Error('Job log shortened during hashing.');
             digest.update(buffer.subarray(0,size));offset+=size;
+            // Native heartbeats and urgent Stop/Inspect instructions share
+            // this Node process. Yield between bounded reads, particularly
+            // for large diagnostics on slower or removable media.
+            if(offset<before.size)
+                await new Promise(resolve=>setImmediate(resolve));
         }
         const after=fs.fstatSync(fd);
         // Appended bytes beyond the captured size do not change the prefix.
@@ -131,7 +136,7 @@ async function syncArtifacts(executor,endpoint,machineId,token,cache=new Map()) 
                 st.ino===cached.ino&&st.size===cached.size&&
                 st.mtimeMs===cached.mtimeMs;
             if(unchanged&&cached.complete)continue;
-            const proof=unchanged?cached:snapshotFile(root,relative);
+            const proof=unchanged?cached:await snapshotFile(root,relative);
             if(!proof)continue;
             const snapshot={size:proof.size,sha:proof.sha};
             cache.set(key,{...proof,mtimeMs:st.mtimeMs,complete:false});
