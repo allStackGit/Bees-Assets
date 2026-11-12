@@ -31,6 +31,112 @@ pub(crate) struct ReinforcementWave {
     ships: Vec<NativeAuthoredShip>,
 }
 
+/// Source LevelConstructor.PositionSquads with squadsAreReinforcements=true.
+/// Each plan represents ONE source construction call, including any Carrier
+/// child squads. The authored squad order controls alternating left/right
+/// placement, independently of the imported scene entity-array order.
+fn place_reinforcement_wave(
+    wave: &mut ReinforcementWave, spawn: Vec2, metadata: &NativePolicyOnlyMetadata,
+) -> Result<(), &'static str> {
+    let ship_indices: HashMap<i64, usize> = wave.ships.iter().enumerate()
+        .map(|(index, ship)| (ship.entity_id, index)).collect();
+
+    // Unity first calls SetStartingPosition(spawn) on EVERY squad, before
+    // querying any squad's GetPosition/GetWidth for the second pass.
+    let mut first_pass = Vec::with_capacity(wave.squads.len());
+    for squad in &wave.squads {
+        let mut left = f32::INFINITY;
+        let mut right = f32::NEG_INFINITY;
+        let mut bottom = f32::INFINITY;
+        let mut top = f32::NEG_INFINITY;
+        for &ship_id in &squad.members {
+            let ship = &mut wave.ships[*ship_indices.get(&ship_id)
+                .ok_or("Reinforcement squad has no physical ship")?];
+            let offset = metadata.stored_formation_offset(ship_id)
+                .ok_or("Reinforcement ship has no source formation offset")?;
+            let adjusted = authored_placement_offset(
+                ship.ship_type, squad.members.len(), offset,
+            );
+            let position = spawn + adjusted;
+            let size = metadata.ship_catalog.sprite_size(ship.ship_type)
+                .ok_or("Reinforcement ship has no authored sprite size")?;
+            if !position.is_finite() || !size.is_finite() ||
+                size.x <= 0.0 || size.y <= 0.0 {
+                return Err("Reinforcement spawn and sprite geometry must be finite and positive");
+            }
+            let half = size * 0.5;
+            left = left.min(position.x - half.x);
+            right = right.max(position.x + half.x);
+            bottom = bottom.min(position.y - half.y);
+            top = top.max(position.y + half.y);
+            ship.motion.position = position;
+        }
+        let center = Vec2::new((left + right) * 0.5, (bottom + top) * 0.5);
+        let width = right - left;
+        if !center.is_finite() || !width.is_finite() || width <= 0.0 {
+            return Err("Reinforcement source formation bounds are invalid");
+        }
+        first_pass.push((center, width));
+    }
+
+    // Reinforcement setup suppresses Unity's level-edge wrapping branch.
+    // The first actual squad's center after its second placement becomes
+    // the Y anchor. Later squads alternate left, right, left, right, with
+    // a 10-unit gap added between neighboring live sprite-width extents.
+    let mut first_squad_center = Vec2::ZERO;
+    let mut previous_left_width = 0.0f32;
+    let mut previous_right_width = 0.0f32;
+    let mut left_span = 0.0f32;
+    let mut right_span = 0.0f32;
+    for (ordinal, squad) in wave.squads.iter().enumerate() {
+        let (initial_center, width) = first_pass[ordinal];
+        let mut position = initial_center;
+        if ordinal == 0 {
+            previous_left_width = width;
+            previous_right_width = width;
+        } else {
+            position.y = first_squad_center.y;
+            if ordinal % 2 == 0 {
+                right_span += width * 0.5 + 10.0 + previous_right_width * 0.5;
+                position.x += right_span;
+                previous_right_width = width;
+            } else {
+                left_span += width * 0.5 + 10.0 + previous_left_width * 0.5;
+                position.x -= left_span;
+                previous_left_width = width;
+            }
+        }
+        if !position.is_finite() {
+            return Err("Reinforcement second placement overflowed world coordinates");
+        }
+        // The second SetStartingPosition overwrites, rather than shifts,
+        // each ship's first-pass physical pose. Its authored placement
+        // offset remains adjusted; Squad.Move later uses the raw offset.
+        for &ship_id in &squad.members {
+            let ship = &mut wave.ships[*ship_indices.get(&ship_id)
+                .ok_or("Reinforcement squad has no physical ship")?];
+            let offset = metadata.stored_formation_offset(ship_id)
+                .ok_or("Reinforcement ship has no source formation offset")?;
+            let adjusted = authored_placement_offset(
+                ship.ship_type, squad.members.len(), offset,
+            );
+            ship.motion.position = position + adjusted;
+            if !ship.motion.position.is_finite() {
+                return Err("Reinforcement second placement overflowed world coordinates");
+            }
+        }
+        if ordinal == 0 {
+            // SetStartingPosition changes the first squad's actual
+            // GetPosition by the same sprite-bounds bias as the first pass.
+            first_squad_center = position + (initial_center - spawn);
+            if !first_squad_center.is_finite() {
+                return Err("Reinforcement first squad center is invalid");
+            }
+        }
+    }
+    Ok(())
+}
+
 impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
     pub(crate) fn stage_reinforcements(&mut self, plans: Vec<NativeReinforcementPlan>, dt: f32)
         -> Result<(), &'static str>
@@ -54,15 +160,9 @@ impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
             {
                 return Err("Reinforcements need positive nondecreasing times, nonempty squads, and finite spawn/entry coordinates");
             }
-            // Unity LevelConstructor.PositionSquads spreads multiple squads
-            // sideways according to their live bounds. One shared spawn
-            // center cannot represent that layout: placing every squad at
-            // the same center silently overlaps their physical hulls.
-            // Multiple squads are valid only when their individual source
-            // positions are already present in the captured scene.
-            if plan.spawn.is_some() && plan.squad_item_ids.len() > 1 {
-                return Err("Multi-squad reinforcements need captured source positions or one plan per squad with its own spawn center");
-            }
+            // Multiple IDs within a single plan share the source
+            // LevelConstructor.PositionSquads call, including Carrier
+            // children. Their authored order determines physical spacing.
             for &id in &plan.squad_item_ids {
                 if squad_waves.insert(id, waves.len()).is_some() {
                     return Err("A squad may arrive in only one reinforcement wave");
@@ -173,50 +273,12 @@ impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
                 }
             }
         }
-        // Unity LevelConstructor.PositionSquads sets the starting position
-        // twice for a single squad: first at the requested spawn, then at
-        // that placed formation's actual bounds center. Squad.Setup keeps
-        // authored OffsetFromCenter on its first SetOffsets call; wide hulls
-        // still need GetFormationAdjustment's type-specific scaling here.
-        // The same original offsets, without scaling, are used by Squad.Move.
+        // Source two-pass formation placement includes all squads in
+        // this construction call; a Carrier's transient child squads are
+        // not independent overlapping spawn points.
         for (wave, spawn) in waves.iter_mut().zip(spawn_centers) {
             if let Some(spawn) = spawn {
-                let squad = wave.squads.first()
-                    .ok_or("Reinforcement spawn needs an authored squad")?;
-                let member_count = squad.members.len();
-                let mut left = f32::INFINITY;
-                let mut right = f32::NEG_INFINITY;
-                let mut bottom = f32::INFINITY;
-                let mut top = f32::NEG_INFINITY;
-                for ship in &mut wave.ships {
-                    let offset = self.metadata.stored_formation_offset(ship.entity_id)
-                        .ok_or("Reinforcement ship has no source formation offset")?;
-                    let adjusted = authored_placement_offset(ship.ship_type, member_count, offset);
-                    let position = spawn + adjusted;
-                    let size = self.metadata.ship_catalog.sprite_size(ship.ship_type)
-                        .ok_or("Reinforcement ship has no authored sprite size")?;
-                    if !position.is_finite() || !size.is_finite() ||
-                        size.x <= 0.0 || size.y <= 0.0 {
-                        return Err("Reinforcement spawn and sprite geometry must be finite and positive");
-                    }
-                    let half = size * 0.5;
-                    left = left.min(position.x - half.x);
-                    right = right.max(position.x + half.x);
-                    bottom = bottom.min(position.y - half.y);
-                    top = top.max(position.y + half.y);
-                    ship.motion.position = position;
-                }
-                let placed_center = Vec2::new((left + right) * 0.5, (bottom + top) * 0.5);
-                let second_placement_shift = placed_center - spawn;
-                if !second_placement_shift.is_finite() {
-                    return Err("Reinforcement formation bounds overflowed world coordinates");
-                }
-                for ship in &mut wave.ships {
-                    ship.motion.position += second_placement_shift;
-                    if !ship.motion.position.is_finite() {
-                        return Err("Reinforcement second placement overflowed world coordinates");
-                    }
-                }
+                place_reinforcement_wave(wave, spawn, &self.metadata)?;
             }
             wave.ships.sort_unstable_by_key(|ship| ship.entity_id);
         }
