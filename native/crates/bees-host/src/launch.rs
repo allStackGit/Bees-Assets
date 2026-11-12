@@ -2100,6 +2100,7 @@ fn run_battle(
             trace.checkpoints.is_empty() && failed_window.is_none()),
         "recorded_physical_checkpoints": captured_checkpoints,
         "verified_physical_checkpoints": verified_physical_checkpoints,
+        "player_trace_stream": playback.as_ref().map(|trace| trace.measurements()),
         "final_physical_worlds": final_physical_worlds,
     });
     println!("{final_summary}");

@@ -93,6 +93,18 @@ pub struct NativeTraceCheckpoint {
     pub sha256: String,
 }
 
+/// Source-validation and bounded-memory replay coverage; measured once
+/// per file record, never in the fixed simulation step.
+#[derive(Clone, Copy, Debug, Default, serde::Serialize)]
+pub struct NativeTraceStreamMeasurements {
+    pub validated_inputs: u64,
+    pub validated_checkpoints: u64,
+    pub loaded_inputs: u64,
+    pub loaded_checkpoints: u64,
+    pub peak_round_events: usize,
+    pub largest_record_bytes: usize,
+}
+
 /// A validated trace is read only through the current battle round.
 /// A first linear scan checks the complete file and its finalization before
 /// gameplay startup, then seeks back to the first event. Playback retains at
@@ -107,6 +119,7 @@ pub struct NativePlayerTrace {
     line: String,
     next: Option<TraceRecord>,
     reached_end: bool,
+    measurements: NativeTraceStreamMeasurements,
 }
 
 fn trace_error(message: &'static str) -> io::Error {
@@ -143,14 +156,23 @@ impl NativePlayerTrace {
                 "player trace does not match the offline battle configuration",
             )),
         };
+        let largest_header = line.len();
         let data_start = reader.stream_position()?;
+        let mut measurements = NativeTraceStreamMeasurements {
+            largest_record_bytes: largest_header,
+            ..NativeTraceStreamMeasurements::default()
+        };
         let mut previous_round = 0;
         let mut saw_checkpoint = false;
         loop {
-            match read_record(&mut reader, &mut line)? {
+            let next_record = read_record(&mut reader, &mut line)?;
+            measurements.largest_record_bytes =
+                measurements.largest_record_bytes.max(line.len());
+            match next_record {
                 Some(TraceRecord::PlayerInput { round, tick, .. })
                     if round >= previous_round && tick <= round => {
                     previous_round = round;
+                    measurements.validated_inputs += 1;
                 }
                 Some(TraceRecord::PhysicalStateCheckpoint {
                     round, world_id, tick, sha256, ..
@@ -160,6 +182,7 @@ impl NativePlayerTrace {
                     expected_levels.iter().any(|level| level.world_id == world_id) => {
                     saw_checkpoint = true;
                     previous_round = round;
+                    measurements.validated_checkpoints += 1;
                 }
                 Some(TraceRecord::PlayerInputTraceEnd {
                     rounds, failed_window: None, policy_actions_sha256,
@@ -185,6 +208,7 @@ impl NativePlayerTrace {
                         line: String::new(),
                         next: None,
                         reached_end: false,
+                        measurements,
                     });
                 }
                 Some(_) => return Err(trace_error(
@@ -195,6 +219,10 @@ impl NativePlayerTrace {
                 )),
             }
         }
+    }
+
+    pub fn measurements(&self) -> NativeTraceStreamMeasurements {
+        self.measurements
     }
 
     /// Load only the events occurring at the caller's current physical
@@ -233,15 +261,24 @@ impl NativePlayerTrace {
                 return Err(trace_error("player trace event missed its assigned round"));
             }
             match record {
-                TraceRecord::PlayerInput { round, tick, action } =>
-                    self.inputs.push_back(NativeTraceInput { round, tick, action }),
+                TraceRecord::PlayerInput { round, tick, action } => {
+                    self.inputs.push_back(NativeTraceInput { round, tick, action });
+                    self.measurements.loaded_inputs += 1;
+                }
                 TraceRecord::PhysicalStateCheckpoint {
                     round, world_id, episode_revision, tick, sha256,
-                } => self.checkpoints.push_back(NativeTraceCheckpoint {
-                    round, world_id: WorldId(world_id), episode_revision, tick, sha256,
-                }),
+                } => {
+                    self.checkpoints.push_back(NativeTraceCheckpoint {
+                        round, world_id: WorldId(world_id), episode_revision, tick, sha256,
+                    });
+                    self.measurements.loaded_checkpoints += 1;
+                }
                 _ => unreachable!("validated trace event"),
             }
+            self.measurements.peak_round_events =
+                self.measurements.peak_round_events.max(
+                    self.inputs.len() + self.checkpoints.len(),
+                );
         }
         Ok(())
     }

@@ -714,9 +714,11 @@ impl NativePlayerFirePlan {
     }
 }
 
-impl<M: NativePlayerAuthority, A> NativeLevelState<M, A> {
+impl<M, A> NativeLevelState<M, A> {
     pub fn has_held_fire(&self) -> bool { !self.held_fire_ships.is_empty() }
+}
 
+impl<M: NativePlayerAuthority, A> NativeLevelState<M, A> {
     /// Follow the original live ships even when selection has changed,
     /// but do not let a viewer-side switch or roster transfer continue to
     /// aim ships controlled by another player. A valid released/retired
