@@ -627,6 +627,8 @@ impl NativeSoftwareRenderer {
         let mut scouts_ready = 0usize;
         let mut barges = 0usize;
         let mut barges_ready = 0usize;
+        let mut charge_barges = 0usize;
+        let mut charges_ready = 0usize;
         for &owner in self.selection.squads() {
             if !view.player_authority.player_permissions(owner)
                 .is_some_and(|permission| permission.user_controlled &&
@@ -651,14 +653,25 @@ impl NativeSoftwareRenderer {
                         barges += 1;
                         barges_ready += 1;
                     }
+                    0 => {
+                        // Legacy snapshots intentionally lack authenticated
+                        // CanOverrideBounds and player Charge configuration.
+                        // Do not advertise an unsupported ability.
+                        if view.combat.game_barge_charge_completed(ship_id).is_some() ||
+                            view.combat.player_game_barge_charge_ready(ship_id) {
+                            charge_barges += 1;
+                            charges_ready += usize::from(
+                                view.combat.player_game_barge_charge_ready(ship_id));
+                        }
+                    }
                     _ => {}
                 }
             }
         }
-        if scouts == 0 && barges == 0 { return 0; }
+        if scouts == 0 && barges == 0 && charge_barges == 0 { return 0; }
         let x = self.width - 268;
-        let y = self.height - 64;
-        for row in y.saturating_sub(5)..(y + 52).min(self.height) {
+        let y = self.height - 84;
+        for row in y.saturating_sub(5)..(y + 78).min(self.height) {
             self.pixels[row * self.width + x - 7
                 ..row * self.width + x + 256].fill(0x15243a);
         }
@@ -671,7 +684,12 @@ impl NativeSoftwareRenderer {
             y + text::HEIGHT + 9, &detonate, 1,
             if barges_ready > 0 { [255, 202, 148] }
             else { [136, 151, 172] });
-        scouts_ready + barges_ready
+        let charge = format!("Q: Barge charge ready {charges_ready}/{charge_barges}");
+        text::draw_at(&mut self.pixels, self.width, x,
+            y + (text::HEIGHT + 9) * 2, &charge, 1,
+            if charges_ready > 0 { [244, 211, 142] }
+            else { [136, 151, 172] });
+        scouts_ready + barges_ready + charges_ready
     }
 
     fn draw_battle_result(

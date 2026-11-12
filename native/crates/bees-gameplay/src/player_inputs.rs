@@ -132,6 +132,7 @@ pub struct NativePlayerSquadCeaseFire {
 pub enum NativePlayerShipSpecialKind {
     DropBeacon,
     Detonate,
+    Charge,
 }
 
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -183,6 +184,9 @@ impl NativePlayerSpecialPlan {
                     ship.ship_type == 10 &&
                     world.state.combat.configured_fire_barge_bomb_power(ship_id)
                         .is_some(),
+                NativePlayerShipSpecialKind::Charge =>
+                    ship.ship_type == 0 &&
+                    world.state.combat.player_game_barge_charge_ready(ship_id),
             };
             eligible.then_some(ship_id)
         }).collect();
@@ -210,6 +214,8 @@ impl NativePlayerSpecialPlan {
                     world.state.combat.queue_player_scout_beacon(ship_id),
                 NativePlayerShipSpecialKind::Detonate =>
                     world.state.combat.queue_player_fire_barge_detonation(ship_id),
+                NativePlayerShipSpecialKind::Charge =>
+                    world.state.combat.queue_player_barge_charge(ship_id),
             };
             match result {
                 Ok(true) => queued += 1,

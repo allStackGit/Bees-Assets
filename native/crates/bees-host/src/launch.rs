@@ -780,6 +780,7 @@ fn apply_player_input(host: &mut RolloutHost, action: NativePlayerInput) -> Resu
                 match input.kind {
                     NativePlayerShipSpecialKind::DropBeacon => "Beacon deployment queued",
                     NativePlayerShipSpecialKind::Detonate => "Detonation queued",
+                    NativePlayerShipSpecialKind::Charge => "Barge charge queued",
                 }
             }
         }), "Squad cannot accept that special"),
