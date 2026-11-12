@@ -7,7 +7,7 @@ use std::path::Path;
 
 use bees_gameplay::player_inputs::{
     NativePlayerHeldFire, NativePlayerSquadCeaseFire, NativePlayerSquadCommands, NativePlayerSquadFire,
-    NativePlayerSquadMoves,
+    NativePlayerSquadMoves, NativePlayerSquadSpecial,
 };
 use bees_sim::simulation::WorldId;
 use serde::{Deserialize, Serialize};
@@ -20,6 +20,7 @@ pub enum NativePlayerInput {
     Fire(NativePlayerSquadFire),
     HeldFire(NativePlayerHeldFire),
     CeaseFire(NativePlayerSquadCeaseFire),
+    Special(NativePlayerSquadSpecial),
 }
 
 impl NativePlayerInput {
@@ -30,6 +31,7 @@ impl NativePlayerInput {
             Self::Fire(input) => (input.world_id, input.episode_revision),
             Self::HeldFire(input) => (input.world_id, input.episode_revision),
             Self::CeaseFire(input) => (input.world_id, input.episode_revision),
+            Self::Special(input) => (input.world_id, input.episode_revision),
         }
     }
 }

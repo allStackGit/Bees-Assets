@@ -9,7 +9,8 @@ use bees_hivemind::session::SquadLifetime;
 use minifb::{Key, KeyRepeat, MouseButton, MouseMode, Window, WindowOptions};
 use crate::presentation::{NativeCamera, NativeRenderWorldView, NativeSoftwareRenderer, NativeSupportMode};
 use bees_gameplay::player_inputs::{NativeHeldFireAction, NativePlayerHeldFire, NativePlayerSquadMoves,
-    NativePlayerSquadFire, NativePlayerSquadCeaseFire};
+    NativePlayerSquadFire, NativePlayerSquadCeaseFire,
+    NativePlayerSquadSpecial, NativePlayerShipSpecialKind};
 use crate::player_trace::NativePlayerInput;
 use bees_sim::geometry::Vec2;
 
@@ -445,6 +446,35 @@ impl NativeClient {
                 })
             }
         });
+        // UI ship specials are queued on the physical world, without
+        // altering selected squad commands or their HiveMind reservations.
+        // K doubles as dialogue skip when narrative is visible, so it
+        // must never also issue a Beacon in that frame.
+        let special_kind = if accepts_orders && pointer_active &&
+            !self.dialogue_visible && self.held_fire_target.is_none() &&
+            self.window.is_key_pressed(Key::K, KeyRepeat::No) {
+            Some(NativePlayerShipSpecialKind::DropBeacon)
+        } else if accepts_orders && pointer_active &&
+            self.held_fire_target.is_none() &&
+            self.window.is_key_pressed(Key::D, KeyRepeat::No) {
+            Some(NativePlayerShipSpecialKind::Detonate)
+        } else { None };
+        let special_input = special_kind.and_then(|kind| {
+            if self.renderer.selection.squads().is_empty() {
+                self.input_feedback = "Select squads first";
+                None
+            } else {
+                self.support_mode = None;
+                self.selection_drag = None;
+                self.renderer.selection_box = None;
+                Some(NativePlayerSquadSpecial {
+                    world_id: view.world_id,
+                    episode_revision: view.episode_revision,
+                    squads: self.renderer.selection.squads().to_vec(),
+                    kind,
+                })
+            }
+        });
         let mut support_command = None;
         if accepts_orders && self.window.is_key_pressed(Key::C, KeyRepeat::No) {
             if self.renderer.selection.squads().is_empty() {
@@ -627,7 +657,7 @@ impl NativeClient {
                 view.world_id.0, view.tick, status, selected,
                 self.result_controls.map_or("Space pause, N step, ", NativeResultControls::hint))
         } else { format!(
-            "Bees native | World {} | Episode {} | Tick {} | {} ships, {} shots | {} squads selected | {}{} | {} | range/obstruction {} | Left select/drag, double-click type, Ctrl add, right move/attack | C stop chase, V cease fire, A attack on sight, G guard, P patrol, M mine, H heal, R retreat, hold J manual fire, T point fire, X stop, B ranges, Backspace cancel | Space pause, N step, Tab world, 1-0 squads, PgUp/PgDn cycle, arrows pan, wheel zoom, F fit, I map, Esc exit",
+            "Bees native | World {} | Episode {} | Tick {} | {} ships, {} shots | {} squads selected | {}{} | {} | range/obstruction {} | Left select/drag, double-click type, Ctrl add, right move/attack | C stop chase, V cease fire, A attack on sight, K beacon, D detonate, G guard, P patrol, M mine, H heal, R retreat, hold J manual fire, T point fire, X stop, B ranges, Backspace cancel | Space pause, N step, Tab world, 1-0 squads, PgUp/PgDn cycle, arrows pan, wheel zoom, F fit, I map, Esc exit",
             view.world_id.0, view.episode_revision, view.tick, counts.ships, counts.projectiles,
             self.renderer.selection.squads().len(),
             if self.paused { "PAUSED" } else { "RUNNING" }, selected, self.input_feedback,
@@ -657,7 +687,8 @@ impl NativeClient {
         self.window_update_wall_seconds += window_update_started.elapsed().as_secs_f64();
         if !self.window.is_open() { return Ok(NativeClientAction::Quit); }
         if accepts_orders && held_fire.is_none() {
-            let action = cease_fire_input.map(NativePlayerInput::CeaseFire)
+            let action = special_input.map(NativePlayerInput::Special)
+                .or_else(|| cease_fire_input.map(NativePlayerInput::CeaseFire))
                 .or_else(|| manual_fire.map(NativePlayerInput::Fire))
                 .or_else(|| support_command.map(NativePlayerInput::Support))
                 .or_else(|| player_move.map(NativePlayerInput::Move));

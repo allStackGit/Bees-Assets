@@ -750,7 +750,7 @@ impl RunNetwork {
 
 fn apply_player_input(host: &mut RolloutHost, action: NativePlayerInput) -> Result<&'static str, String> {
     use bees_host::runtime::HostPlayerInputError;
-    use bees_gameplay::player_inputs::NativePlayerSupportAction;
+    use bees_gameplay::player_inputs::{NativePlayerSupportAction, NativePlayerShipSpecialKind};
     let (result, rejection) = match action {
         NativePlayerInput::Move(input) => (host.player_move_squads(input).map(|counts| {
             if counts.accepted_squads == 0 { "Selected squads cannot accept that destination" }
@@ -772,6 +772,17 @@ fn apply_player_input(host: &mut RolloutHost, action: NativePlayerInput) -> Resu
             else { "Point fire stopped" }
         }), "Squad cannot accept manual fire"),
         NativePlayerInput::HeldFire(input) => (host.player_held_fire(input), "Squad cannot accept manual fire"),
+        NativePlayerInput::Special(input) => (host.player_special_squads(&input).map(|counts| {
+            if counts.accepted_squads == 0 { "No selected ships have a ready special" }
+            else if counts.rejected_squads > 0 || counts.unavailable_squads > 0 {
+                "Ready specials queued; some squads unavailable"
+            } else {
+                match input.kind {
+                    NativePlayerShipSpecialKind::DropBeacon => "Beacon deployment queued",
+                    NativePlayerShipSpecialKind::Detonate => "Detonation queued",
+                }
+            }
+        }), "Squad cannot accept that special"),
         NativePlayerInput::CeaseFire(input) => (host.player_cease_fire_squads(&input).map(|counts| {
             if counts.accepted_squads == 0 { "Selected squads cannot change firing mode" }
             else if counts.rejected_squads != 0 { "Firing mode updated; some squads unavailable" }
