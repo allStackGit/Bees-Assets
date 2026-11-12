@@ -620,7 +620,8 @@ impl NativeClient {
         let released_press = if right_released {
             self.right_press.take()
         } else { None };
-        let player_move = if support_command.is_none() && manual_fire.is_none() &&
+        let player_move = if special_input.is_none() &&
+            support_command.is_none() && manual_fire.is_none() &&
             cease_fire_input.is_none() && accepts_orders {
             mouse.filter(|_| !self.renderer.selection.squads().is_empty()).and_then(|(x, y)| {
                 let captured_minimap = if right_released {
