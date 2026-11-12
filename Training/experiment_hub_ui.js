@@ -2303,7 +2303,7 @@ document.addEventListener('DOMContentLoaded', () => {
         'evaluation_seconds','collector_count',
         'collector_auto_balance_adjustments',
         'collector_auto_balance_accepted','collector_auto_balance_settled',
-        'collector_balance_changed_for_next_update',
+        'collector_balance_changed_next_update',
         // The TinyBrains learner contributes slot 0; up to eight remote
         // workers contribute slots 1–8. Let the operator select every slot.
         ...Array.from({length:9},(_,i)=>[
