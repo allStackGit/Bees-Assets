@@ -38,6 +38,9 @@ pub struct NativeHostGauges {
     /// Pending authored reinforcements summed across the active Levels;
     /// not lifetime deployments, and never counted as living ships.
     pub reinforcements: bees_gameplay::level_rules::NativeReinforcementGauges,
+    /// Counts published by the Level event owner, surviving outbox ACKs.
+    /// Like pending waves, these reset on episode turnover.
+    pub reinforcement_arrivals: bees_gameplay::level_events::NativeReinforcementArrivals,
     /// Current episodes' cumulative vision cost, not a process-lifetime
     /// rate. After episode reset these counts restart from zero.
     pub vision: bees_sim::vision::VisionSweepCounts,
@@ -77,6 +80,7 @@ impl From<&NativeRuntimeStatus> for NativeHostGauges {
             player_chase: value.player_chase,
             player_controls: value.player_controls,
             reinforcements: value.reinforcements,
+            reinforcement_arrivals: value.reinforcement_arrivals,
             vision: value.vision,
             navigation_jobs_completed: value.navigation_jobs_completed,
             notifications_queued: value.queued_notifications,

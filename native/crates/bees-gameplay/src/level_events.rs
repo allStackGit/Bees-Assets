@@ -235,6 +235,24 @@ pub struct NativeLevelEventMeasurements {
     /// several Levels; this processor only publishes retirement messages.
 /// It does not own a second CombatWorld: the caller passes the same world
 /// used by graphics and the Simulation fixed-step rules.
+/// Per-episode admissions observed at the same one-way Level event
+/// publication boundary as the durable ReinforcementsArrived notification.
+/// Unlike the sparse notification outbox, these counters survive ACKs.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize)]
+pub struct NativeReinforcementArrivals {
+    pub waves: u64,
+    pub squads: u64,
+    pub ships: u64,
+}
+
+impl NativeReinforcementArrivals {
+    pub fn merge(&mut self, other: Self) {
+        self.waves += other.waves;
+        self.squads += other.squads;
+        self.ships += other.ships;
+    }
+}
+
 pub struct NativeLevelEventProcessor {
     roster: NativeSquadRoster,
     commands: NativeSquadCommandDirector,
@@ -249,6 +267,7 @@ pub struct NativeLevelEventProcessor {
     /// delivery never changes the identities of undelivered notifications.
     acknowledged_notification_count: u64,
     peak_pending_notifications: usize,
+    reinforcement_arrivals: NativeReinforcementArrivals,
     episode: NativeEpisodeRewardCoordinator,
     group_delivery: Option<NativeGroupRewardDelivery>,
     next_tick: u64,
@@ -282,6 +301,7 @@ impl NativeLevelEventProcessor {
             pending_notifications: Vec::new(),
             acknowledged_notification_count: 0,
             peak_pending_notifications: 0,
+            reinforcement_arrivals: NativeReinforcementArrivals::default(),
             episode,
             group_delivery: None,
             next_tick: 1,
@@ -847,7 +867,16 @@ impl NativeLevelEventProcessor {
         self.pending_notifications.push(NativeLevelNotification {
             tick, kind: NativeLevelNotificationKind::ReinforcementsArrived { ships, squads },
         });
+        // Count only committed event publications, not attempted admissions.
+        // No replay scan or additional per-step instrumentation is needed.
+        self.reinforcement_arrivals.waves += 1;
+        self.reinforcement_arrivals.squads += squads as u64;
+        self.reinforcement_arrivals.ships += ships as u64;
         Ok(())
+    }
+
+    pub fn reinforcement_arrivals(&self) -> NativeReinforcementArrivals {
+        self.reinforcement_arrivals
     }
 
     /// The first pending event's stable, zero-based sequence within this
