@@ -8,10 +8,11 @@ const safeInt=n=>Number.isSafeInteger(n)&&n>=0;
 // training, benchmark decisions, lease release, or policy promotion.
 const GENERIC_METRIC=/^[a-z][a-z0-9_]{0,39}$/;
 const GENERIC_UNITS=new Set(['scalar','ratio','count','rate','seconds','mb','bytes','milliseconds','watts']);
-// Keep a larger bounded source envelope than the 96-metric chart cache.
-// Complete trainer metrics must reach the observation archive before display
-// downselection; the transport's separate 32-KiB limit still applies.
-const MAX_SOURCE_METRICS=256;
+// Keep the bounded source envelope larger than the 96-metric chart cache.
+// Nine TinyBrains collectors can legitimately publish about 290 independent
+// measurements; the existing 32-KiB envelope still bounds payload size.
+// Complete trainer metrics reach the archive before chart downselection.
+const MAX_SOURCE_METRICS=384;
 function validateGenericProgress(value,projectId) {
     const metrics=value?.metrics;
     if(!/^[a-z][a-z0-9_-]{0,47}$/.test(String(projectId||''))||
