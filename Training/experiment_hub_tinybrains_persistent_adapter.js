@@ -93,7 +93,7 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'carried_matches','open_matches','peak_live_matches',
         'truncated_groups','terminal_groups','collector_count',
         'ppo_minibatches','ppo_microbatches',
-        'ppo_gpu_pixel_budget','ppo_prestaged_board_bytes',
+        'ppo_gpu_pixel_budget',
         'ppo_prestaged_board_states','ppo_reused_board_states',
         'rollout_inference_shape_groups','rollout_inference_readbacks',
         'collector_auto_balance_adjustments',
@@ -112,6 +112,7 @@ function recordedTinyBrainsMetrics(row,updateWall) {
     add('gae_lambda',row.gae_lambda,'ratio');
     add('rss_mb',row.rss_mb,'mb');
     add('simulation_engine_memory_mb',row.simulation_engine_memory_mb,'mb');
+    add('ppo_prestaged_board_bytes',row.ppo_prestaged_board_bytes,'bytes');
     if(Number.isFinite(row.elapsed_seconds))
         add('elapsed_training_seconds',row.elapsed_seconds,'seconds');
 
