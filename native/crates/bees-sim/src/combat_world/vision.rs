@@ -143,8 +143,9 @@ impl CombatWorld {
                 }
                 checked_enemies += 1;
                 let target_id = other.entity_id;
-                let proximity = self.physics.ships_mut()[target]
-                    .vision_proximity(origin, range_squared);
+                let proximity = self.physics.ship_vision_proximity(
+                    target, origin, range_squared,
+                );
                 if counts.record_proximity(proximity) {
                     counts.visible_enemy_pairs += 1;
                     self.vision_live_enemy_sides.insert(side);
@@ -188,11 +189,13 @@ impl CombatWorld {
                 }
                 counts.unlearned_obstacle_pairs += 1;
                 let proximity = if kind == DiscoveryKind::MapObject {
-                    self.physics.obstacles_mut()[target]
-                        .vision_proximity_primary(origin, range_squared)
+                    self.physics.map_object_vision_proximity(
+                        target, origin, range_squared,
+                    )
                 } else {
-                    self.physics.obstacles_mut()[target]
-                        .vision_proximity(origin, range_squared)
+                    self.physics.obstacle_vision_proximity(
+                        target, origin, range_squared,
+                    )
                 };
                 if counts.record_proximity(proximity) {
                     if self.discovery.record(side, kind, target_id)

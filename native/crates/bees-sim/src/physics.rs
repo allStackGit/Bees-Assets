@@ -1185,6 +1185,30 @@ impl KinematicPhysics {
         })
     }
 
+    /// Exact vision queries own only the corresponding collider's cached
+    /// pose. The public ships_mut/obstacles_mut accessors conservatively
+    /// invalidate the whole spatial index because arbitrary callers can
+    /// move bodies. Sight queries do not move bodies or change their shapes,
+    /// so they must not evict the index between consecutive observers.
+    /// A changed pose is still refreshed by the existing body query.
+    pub(crate) fn ship_vision_proximity(
+        &mut self, index: usize, origin: Vec2, range_squared: f32,
+    ) -> VisionProximity {
+        self.ships[index].vision_proximity(origin, range_squared)
+    }
+
+    pub(crate) fn obstacle_vision_proximity(
+        &mut self, index: usize, origin: Vec2, range_squared: f32,
+    ) -> VisionProximity {
+        self.obstacles[index].vision_proximity(origin, range_squared)
+    }
+
+    pub(crate) fn map_object_vision_proximity(
+        &mut self, index: usize, origin: Vec2, range_squared: f32,
+    ) -> VisionProximity {
+        self.obstacles[index].vision_proximity_primary(origin, range_squared)
+    }
+
     /// Cached equivalent of Collider2D.IsTouching between a ship's
     /// authored hull and an obstacle's primary collider. The fixed-step
     /// physics update maintains these poses; no geometry is allocated or
