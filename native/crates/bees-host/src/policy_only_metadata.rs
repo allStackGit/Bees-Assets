@@ -19,6 +19,7 @@ use bees_gameplay::level_host::{
 };
 use bees_gameplay::level_rules::{
     NativeLevelRewardMetadata, NativeLevelCommandContext,
+    NativePlayerChaseMeasurements,
 };
 use bees_gameplay::perception_world::NativeLevelPerceptionInputs;
 use bees_gameplay::squads::NativeSquadRoster;
@@ -149,7 +150,7 @@ pub struct NativePolicyOnlyMetadata {
     /// One source-second chase clock shared by the player's starting
     /// squads, whose Unity timers are all armed at Squad.Setup.
     chase_elapsed_seconds: f32,
-    pub auto_chase_activations: u64,
+    pub chase_measurements: NativePlayerChaseMeasurements,
 }
 
 impl NativePolicyOnlyMetadata {
@@ -264,7 +265,8 @@ impl NativePolicyOnlyMetadata {
             explorers: Vec::new(),
             agents: agent_map, sides: side_map, beacon_templates, player,
             reinforcements: std::collections::VecDeque::new(),
-            chase_elapsed_seconds: 0.0, auto_chase_activations: 0,
+            chase_elapsed_seconds: 0.0,
+            chase_measurements: NativePlayerChaseMeasurements::default(),
         })
     }
 
@@ -430,6 +432,10 @@ impl NativeLevelRewardMetadata for NativePolicyOnlyMetadata {
 }
 
 impl NativeLevelCommandContext for NativePolicyOnlyMetadata {
+    fn player_chase_measurements(&self) -> NativePlayerChaseMeasurements {
+        self.chase_measurements
+    }
+
     fn advance_player_chase(
         &mut self, world: &mut CombatWorld,
         events: &mut bees_gameplay::level_events::NativeLevelEventProcessor,

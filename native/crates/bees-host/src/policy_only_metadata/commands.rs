@@ -193,7 +193,16 @@ impl NativePolicyOnlyMetadata {
         self.chase_elapsed_seconds += dt_seconds;
         if self.chase_elapsed_seconds < 1.0 { return Ok(0); }
         self.chase_elapsed_seconds %= 1.0;
-        if self.player.chasing.is_empty() { return Ok(0); }
+        self.chase_measurements.timer_callbacks += 1;
+        if self.player.chasing.is_empty() ||
+            !self.player.chasing.iter().any(|&owner|
+                events.roster().get(owner).is_some() &&
+                !events.commands().is_chasing_command(owner) &&
+                self.player.squads.get(&owner)
+                    .is_some_and(|p| p.user_controlled && p.can_accept_input))
+        {
+            return Ok(0);
+        }
 
         // Compute only one center per live squad per due callback. Unity's
         // Squad.DistanceToPoint compares these authored sprite AABB centers
@@ -214,6 +223,7 @@ impl NativePolicyOnlyMetadata {
                 !self.player.squads.get(&owner).is_some_and(|p|
                     p.user_controlled && p.can_accept_input)
             { continue; }
+            self.chase_measurements.eligible_squads += 1;
             let mut nearest = None;
             let mut nearest_distance = f32::INFINITY;
             for &(enemy_owner, enemy_side, enemy_center) in &centers {
@@ -241,6 +251,7 @@ impl NativePolicyOnlyMetadata {
                 for &target_id in &enemy.members {
                     let Some(target) = world.ship_body(target_id)
                         .filter(|body| body.active) else { continue };
+                    self.chase_measurements.sight_pairs_checked += 1;
                     let can_see = if source_sight > 0 {
                         (observer_position - target.motion.position).length_squared()
                             <= (source_sight as f32).powi(2)
@@ -253,7 +264,10 @@ impl NativePolicyOnlyMetadata {
                     if can_see { visible = true; break 'sight; }
                 }
             }
-            if visible { chosen.push((owner, enemy_owner)); }
+            if visible {
+                self.chase_measurements.visible_targets += 1;
+                chosen.push((owner, enemy_owner));
+            }
         }
         if chosen.is_empty() { return Ok(0); }
         world.refresh_world_navigation(
@@ -315,7 +329,7 @@ impl NativePolicyOnlyMetadata {
                 }
             }
         }
-        self.auto_chase_activations += started;
+        self.chase_measurements.commands_started += started;
         Ok(started)
     }
 }

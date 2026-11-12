@@ -108,6 +108,28 @@ pub struct NativeBomberContact {
     pub contacted_target_id: i64,
 }
 
+/// Current episode's actual source Squad.CheckChase work. These counters
+/// are incremented only at the one-second source timer boundary, not on
+/// every fixed physics or inference step.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize)]
+pub struct NativePlayerChaseMeasurements {
+    pub timer_callbacks: u64,
+    pub eligible_squads: u64,
+    pub visible_targets: u64,
+    pub sight_pairs_checked: u64,
+    pub commands_started: u64,
+}
+
+impl NativePlayerChaseMeasurements {
+    pub fn merge(&mut self, other: Self) {
+        self.timer_callbacks += other.timer_callbacks;
+        self.eligible_squads += other.eligible_squads;
+        self.visible_targets += other.visible_targets;
+        self.sight_pairs_checked += other.sight_pairs_checked;
+        self.commands_started += other.commands_started;
+    }
+}
+
 /// Source-facing gameplay inputs for timed Hive Mind commands.
     /// Must be refreshed after the combat/roster step from live Level
     /// geometry, preserving Level.State.Squads order. Command activation
@@ -127,6 +149,10 @@ pub trait NativeLevelCommandContext {
         _random: &mut bees_sim::simulation::RandomStream,
         _completed_tick: u64, _dt_seconds: f32,
     ) -> Result<u64, NativeLevelEventError> { Ok(0) }
+
+    fn player_chase_measurements(&self) -> NativePlayerChaseMeasurements {
+        NativePlayerChaseMeasurements::default()
+    }
 
     /// Admit scheduled source squads at the completed fixed-tick boundary.
     fn deploy_reinforcements(

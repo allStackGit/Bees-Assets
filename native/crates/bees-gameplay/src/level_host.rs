@@ -504,6 +504,10 @@ pub struct NativeRuntimeStatus {
     pub special_game_barge_charges_started: u64,
     pub special_game_barge_charge_hits: u64,
     pub special_game_barge_charge_completions: u64,
+    /// Actual one-second player chase timer/visibility/activation work,
+    /// summed over current episodes and never interpreted as a lifetime
+    /// rate without accounting for world resets.
+    pub player_chase: crate::level_rules::NativePlayerChaseMeasurements,
     /// Sum of the current episodes' authoritative vision measurements.
     /// These reset on episode turnover, so they are gauges, not host-wide
     /// monotonic counters for deriving cross-episode rates.
@@ -1154,6 +1158,7 @@ impl NativeLevelBatchDriver {
             special_game_barge_charges_started: 0,
             special_game_barge_charge_hits: 0,
             special_game_barge_charge_completions: 0,
+            player_chase: crate::level_rules::NativePlayerChaseMeasurements::default(),
             vision: bees_sim::vision::VisionSweepCounts::default(),
             navigation_jobs_completed: 0,
             queued_notifications: 0,
@@ -1205,6 +1210,9 @@ impl NativeLevelBatchDriver {
             status.special_game_barge_charges_started += game_barges.starts;
             status.special_game_barge_charge_hits += game_barges.hits;
             status.special_game_barge_charge_completions += game_barges.completions;
+            status.player_chase.merge(
+                world.state.metadata.player_chase_measurements(),
+            );
             status.vision.merge(&world.state.combat.vision_measurements());
             let asteroids = world.state.combat.full_asteroid_pool_measurements();
             status.full_asteroids_active += asteroids.active;
