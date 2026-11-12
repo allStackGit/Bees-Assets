@@ -646,6 +646,8 @@ function predecessorBlock(snapshot,job) {
 // does not claim a reservation or dispatch any native process.
 function nativeStartReadiness(snapshot, job) {
     const block=reason=>({eligible:false,reason});
+    if(job?.distributed_abort_requested_at)
+        return block('The distributed group is aborting; no new learner Start is permitted.');
     if(!job||job.status!=='waiting_adapter'||
         job.adapter!=='unconfigured'||['bees','ants'].includes(job.project_id))
         return block('Only queued non-Bees jobs support Hub native starts.');
@@ -842,6 +844,7 @@ function distributedRolloutHost(snapshot,job,machine) {
     if(job.project_id!=='tinybrains_rollout')return true;
     const parent=snapshot.jobs.find(j=>j.id===job.frozen_parameters?.learner_job_id);
     if(!parent||parent.project_id!=='tinybrains'||
+        parent.distributed_abort_requested_at||
         parent.frozen_parameters?.remote_rollouts!==true||
         !['waiting_adapter','start_requested','launch_requested','running'].includes(parent.status)||
         !parent.assigned_machine_id||!machine||
@@ -2389,6 +2392,144 @@ class ExperimentHub {
             learner_start_authorized:false,
             learner_start_pending:coordinated};
     }
+    // A never-started learner may abandon its already-dispatched sidecars
+    // without inventing a second process owner. Stops remain native orders;
+    // no claim is released while a process/probe is active or unverified.
+    reconcileDistributedAborts(next) {
+        let changed=false;
+        for(const learner of next.jobs.filter(job=>
+            job.project_id==='tinybrains'&&
+            job.distributed_rollout_managed===true&&
+            job.distributed_abort_requested_at&&
+            job.status==='waiting_adapter'&&!job.dispatch_id)) {
+            const children=next.jobs.filter(job=>
+                job.project_id==='tinybrains_rollout'&&
+                job.frozen_parameters?.learner_job_id===learner.id);
+            for(const child of children) {
+                if(child.status==='start_requested'&&
+                    child.start_first_offered_at===null) {
+                    // No instruction left the coordinator. Forget this
+                    // undelivered authority before releasing its CPU claim.
+                    child.status='waiting_adapter';
+                    delete child.dispatch_id;
+                    delete child.start_requested_at;
+                    delete child.start_first_offered_at;
+                    delete child.automation_start_session_id;
+                    changed=true;
+                }
+                if(child.status==='waiting_adapter'&&!child.dispatch_id) {
+                    if(!gpuProbeHoldsClaim(child)) {
+                        this.cancelUnstartedJob(next,child,now());
+                        changed=true;
+                    }
+                    continue;
+                }
+                if(['start_requested','launch_requested','running','unverified']
+                    .includes(child.status)) {
+                    const lease=next.reservations.find(item=>
+                        item.id===child.lease_id&&item.job_id===child.id&&
+                        item.project_id==='tinybrains_rollout'&&
+                        item.machine_id===child.assigned_machine_id&&
+                        item.issued_by==='experiment-hub'&&
+                        item.status==='acknowledged');
+                    if(!lease||!child.dispatch_id)continue;
+                    // First-offered native Starts cannot be safely withdrawn.
+                    // Convert them to native Stop orders and require receipts.
+                    child.status='stop_requested';
+                    child.stop_requested_at=now();
+                    child.status_reason='Distributed learner startup aborted; stopping this owned remote collector.';
+                    changed=true;
+                    continue;
+                }
+                const lease=next.reservations.find(item=>
+                    item.id===child.lease_id&&item.job_id===child.id&&
+                    item.machine_id===child.assigned_machine_id&&
+                    item.project_id==='tinybrains_rollout'&&
+                    item.issued_by==='experiment-hub');
+                if(lease&&lease.status==='acknowledged'&&
+                    ['finished','stopped','failed'].includes(child.status)&&
+                    child.dispatch_id&&child.execution_updated_at&&
+                    (child.status!=='failed'||
+                        child.prelaunch_absence_verified===true)) {
+                    // A verified terminal service has no active native
+                    // owner; failed services without prelaunch absence proof
+                    // deliberately retain the claim for operator review.
+                    this.releaseIn(next,lease);
+                    changed=true;
+                }
+            }
+            const safe=children.length>0&&children.every(child=>{
+                if(child.status==='cancelled')
+                    return !child.lease_id||next.reservations.some(lease=>
+                        lease.id===child.lease_id&&lease.status==='released');
+                if(!['finished','stopped','failed'].includes(child.status)||
+                    !child.capacity_released_at)return false;
+                const lease=next.reservations.find(item=>
+                    item.id===child.lease_id&&item.job_id===child.id&&
+                    item.project_id==='tinybrains_rollout'&&
+                    item.status==='released');
+                return Boolean(lease);
+            });
+            if(safe&&!gpuProbeHoldsClaim(learner)) {
+                this.cancelUnstartedJob(next,learner,now());
+                learner.status_reason='Distributed startup abandoned: every collector was cancelled or released after verified native termination.';
+                changed=true;
+            }
+        }
+        return changed;
+    }
+    // Explicit abort is available only while the learner has never been
+    // authorized to start. A GPU learner that was dispatched must use its
+    // normal checkpoint-preserving native Stop and reconciliation.
+    abortDistributedStartup(value) {
+        if(!object(value)||value.confirm_abort!==true||
+            !UUID.test(String(value.learner_job_id||''))||
+            !Array.isArray(value.expected_collector_job_ids)||
+            value.expected_collector_job_ids.length<1||
+            value.expected_collector_job_ids.length>8||
+            value.expected_collector_job_ids.some(id=>!UUID.test(String(id)))||
+            new Set(value.expected_collector_job_ids).size!==
+                value.expected_collector_job_ids.length||
+            Object.keys(value).some(key=>![
+                'learner_job_id','expected_collector_job_ids','confirm_abort',
+            ].includes(key)))
+            throw Error('Confirm the exact distributed group and its remote collector IDs to abort.');
+        const next=copy(this.state);
+        const learner=next.jobs.find(job=>job.id===value.learner_job_id);
+        if(!learner||learner.project_id!=='tinybrains'||
+            learner.distributed_rollout_managed!==true||
+            learner.frozen_parameters?.remote_rollouts!==true||
+            learner.status!=='waiting_adapter'||learner.dispatch_id)
+            throw Error('Only a never-dispatched distributed learner can abort startup.');
+        const children=next.jobs.filter(job=>
+            job.project_id==='tinybrains_rollout'&&
+            job.frozen_parameters?.learner_job_id===learner.id);
+        const expected=new Set(value.expected_collector_job_ids);
+        if(children.length!==expected.size||children.some(job=>!expected.has(job.id)))
+            throw Error('Collector membership changed; refresh before abandoning the group.');
+        if(next.jobs.some(job=>job.status!=='cancelled'&&
+            (job.after_job_id===learner.id||
+             job.continuation_of_job_id===learner.id)))
+            throw Error('Cancel downstream jobs before abandoning a distributed learner.');
+        learner.distributed_abort_requested_at??=now();
+        learner.status_reason='Distributed startup abort requested; stopping collectors and awaiting native ownership receipts.';
+        this.reconcileDistributedAborts(next);
+        this.commit(next);
+        const intent=this.distributedLaunches.get(learner.id);
+        if(intent?.status==='pending') {
+            intent.status='disarmed';
+            intent.reason='Operator abandoned distributed startup; future learner Start revoked.';
+        }
+        const member=next.jobs.find(job=>job.id===learner.id);
+        return {learner_job_id:learner.id,
+            learner_cancelled:member.status==='cancelled',
+            collector_statuses:next.jobs.filter(job=>
+                job.project_id==='tinybrains_rollout'&&
+                job.frozen_parameters?.learner_job_id===learner.id)
+                .map(job=>({job_id:job.id,status:job.status,
+                    released:Boolean(job.capacity_released_at)})),
+            note:'Native Stops are durable requests, not proof that a process exited. Claims remain held until verified absence or terminal receipts.'};
+    }
     // Cancel only the future automatic learner authorization. Remote
     // processes keep their own durable native owners, Stops and reservations.
     cancelDistributedLaunch(value) {
@@ -2881,6 +3022,7 @@ class ExperimentHub {
                 }
             }
         }
+        if(this.reconcileDistributedAborts(next))changed=true;
         return changed;
     }
     executionOrders(machineId) {
