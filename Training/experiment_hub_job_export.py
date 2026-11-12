@@ -32,7 +32,20 @@ DENIED_PARTS = {
     ".git", "private", "secrets", "credentials", "keys", "checkpoints",
     "models", "opponents", "__pycache__", "build", "node_modules",
 }
-DENIED_NAMES = ("token", "secret", "password", "credential", "rollout.key")
+# The export walks trusted job artifact folders, not just known log files.
+# Credential material can be hidden under an ordinary-looking child filename
+# inside a sensitive subfolder, or use unseparated key names.
+DENIED_NAMES = (
+    "token", "secret", "password", "credential", "rollout.key",
+    "api_key", "api-key", "api.key", "apikey",
+    "access_key", "access-key", "accesskey",
+    "private_key", "private-key", "privatekey",
+    "ssh_key", "ssh-key", "sshkey",
+    "key_file", "key-file", "keyfile",
+    "id_rsa", "id_ed25519", "service_account", "service-account",
+    "connection_string", "connection-string", "connectionstring",
+    "bearer", "authorization", "authentication",
+)
 MAX_SOURCE_FILES = 200_000
 
 
@@ -42,7 +55,7 @@ def safe_source(root: Path, source: Path, include_replays: bool) -> bool:
         return False
     if not include_replays and any(part.lower() == "replays" for part in rel.parts):
         return False
-    if any(term in source.name.lower() for term in DENIED_NAMES):
+    if any(term in part.lower() for part in rel.parts for term in DENIED_NAMES):
         return False
     if source.suffix.lower() not in SUFFIXES:
         return False
