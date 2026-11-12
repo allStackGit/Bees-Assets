@@ -844,6 +844,10 @@ document.addEventListener('DOMContentLoaded', () => {
         for(const [id,members] of [...pending,...completed].slice(0,32)) {
             const row=document.createElement('div');
             row.className='hub-pipeline-stage';
+            const launchPlan=(state.bundle_start_plans||[])
+                .filter(plan=>plan.bundle_id===id).at(-1);
+            const unresolvedLaunch=launchPlan&&
+                ['pending','needs_review'].includes(launchPlan.status);
             const active=members.filter(j=>j.status!=='cancelled');
             const claims=active.filter(j=>
                 (state.reservations||[]).some(lease=>lease.id===j.lease_id&&
@@ -852,14 +856,85 @@ document.addEventListener('DOMContentLoaded', () => {
             details.textContent='Bundle '+id.slice(-8)+' · '+
                 members.length+' jobs · '+claims.length+' outstanding claims · '+
                 members.map(j=>j.project_id+' on '+
-                    (j.assigned_machine_id||'unassigned')+': '+j.status).join('; ');
+                    (j.assigned_machine_id||'unassigned')+': '+j.status).join('; ')+
+                (launchPlan?' · Scheduled launch '+launchPlan.status+
+                    ' (expires '+new Date(launchPlan.expires_at).toLocaleString()+')'+
+                    (launchPlan.status==='pending'&&launchPlan.waiting_reason
+                        ?': '+launchPlan.waiting_reason
+                        :launchPlan.reason?': '+launchPlan.reason:''):'');
             row.append(details);
             const complete=members.length===members[0].resource_bundle.size&&
                 members.every((job,index)=>job.resource_bundle.index===index+1);
             const ids=members.map(job=>job.id);
-            const canStart=complete&&members.every(job=>
+            const canStart=complete&&!unresolvedLaunch&&members.every(job=>
                 job.status==='waiting_adapter'&&!job.dispatch_id&&
                 job.native_start_readiness?.eligible===true);
+            const reserved=complete&&members.every(job=>
+                job.status==='waiting_adapter'&&!job.dispatch_id&&
+                Boolean(job.lease_id)&&Boolean(job.assigned_machine_id));
+            if(reserved&&!unresolvedLaunch) {
+                const usesGpu=members.some(job=>job.resources?.gpu_count>0);
+                let keepAcrossRestart=false;
+                if(!usesGpu) {
+                    const label=document.createElement('label');
+                    const check=document.createElement('input');
+                    check.type='checkbox';
+                    check.checked=false;
+                    label.append(check,document.createTextNode(
+                        ' Keep CPU-only approval across coordinator restart'));
+                    label.title='Requires fresh authenticated agents, native preflight and the original matching resource claims. No ambiguous process is retried.';
+                    row.append(label);
+                    label.dataset.bundleRestart='1';
+                    row.append(button('Schedule auto-start when ready',async()=>{
+                        keepAcrossRestart=check.checked;
+                        await scheduleLaunch(keepAcrossRestart,false);
+                    }));
+                }else {
+                    row.append(button('Schedule GPU auto-start when ready',async()=>{
+                        await scheduleLaunch(false,true);
+                    }));
+                }
+                async function scheduleLaunch(restart,gpu) {
+                    if(!confirm('Approve one native Start for each of the '+members.length+
+                        ' reserved jobs as soon as ALL native lease receipts and Start checks pass? '+
+                        'No work starts until every machine is qualified. '+
+                        'Every finished/stopped member will release its own claim after a verified native report. '+
+                        (gpu?'This includes GPU execution, expires after 20 minutes and NEVER survives a coordinator restart. ':
+                            'This CPU-only approval expires after 24 hours. '+
+                            (restart?'You explicitly authorize recovery after coordinator restart, only after fresh machine and lease reconciliation. ':
+                                'It is disarmed on coordinator restart. '))+
+                        'No failed, unverified or previously dispatched job is ever retried.'))return;
+                    try{
+                        const plan=await action('hub/resource-bundles/schedule-start',{
+                            bundle_id:id,expected_job_ids:ids,confirm_schedule:true,
+                            ...(gpu?{confirm_gpu_start:true}:{}),
+                            ...(restart?{resume_after_restart:true,
+                                confirm_restart_rearm:true}:{}),
+                        });
+                        feedback('hub-resource-bundle-message',
+                            plan.status==='authorized'
+                                ?'All '+members.length+' bundle Starts authorized after verifying native readiness.'
+                                :'Unattended bundle launch '+plan.status+'; waiting for fresh machine-local proof.');
+                        await reload();
+                    }catch(error){
+                        feedback('hub-resource-bundle-message',String(error.message||error));
+                    }
+                }
+            }
+            if(unresolvedLaunch)
+                row.append(button('Cancel scheduled launch',async()=>{
+                    if(!confirm('Cancel this unattended group Start approval? The reserved jobs and native claims remain unchanged.'))return;
+                    try{
+                        await action('hub/resource-bundles/cancel-start-plan',{
+                            plan_id:launchPlan.id,confirm_cancel:true,
+                        });
+                        feedback('hub-resource-bundle-message',
+                            'Unattended Start permission revoked; reserved jobs remain unchanged.');
+                        await reload();
+                    }catch(error){
+                        feedback('hub-resource-bundle-message',String(error.message||error));
+                    }
+                }));
             if(canStart)row.append(button('Start entire bundle',async()=>{
                 const autoRelease=$('hub-native-release-on-terminal').checked;
                 if(!confirm('Authorize '+members.length+
