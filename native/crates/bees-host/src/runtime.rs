@@ -683,14 +683,14 @@ where
                     }
                     continue;
                 }
-                let enemy_side = if squad.side == bee_side { human_side }
-                    else if squad.side == human_side { bee_side }
-                    else { return Err(HostSourceCommandError::InvalidSquadSide(owner)); };
                 // Network admission is bounded, but the source timer must
                 // still inspect later squads for local return-home orders.
-                // An earlier in-bounds squad must not starve an out-of-bounds
-                // squad merely because the send budget was exhausted.
+                // Validate enemy routing only for requests admitted this
+                // pulse; exhausted-budget squads have no wire destination.
                 if issue.len() < max_new_requests {
+                    let enemy_side = if squad.side == bee_side { human_side }
+                        else if squad.side == human_side { bee_side }
+                        else { return Err(HostSourceCommandError::InvalidSquadSide(owner)); };
                     issue.push((owner, source.opponent_id, enemy_side));
                 }
             }
