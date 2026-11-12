@@ -1746,8 +1746,10 @@ impl KinematicPhysics {
             return Err(PhysicsError::InvalidStep);
         }
         self.counts = PhysicsStepCounts::default();
+        let mut has_active_ships = false;
         for ship in &mut self.ships {
             if !ship.active { continue; }
+            has_active_ships = true;
             ship.motion.position += ship.motion.body_velocity * dt;
             ship.update_hull();
             self.counts.integrated_bodies += 1;
@@ -1776,6 +1778,7 @@ impl KinematicPhysics {
         let mut has_active_obstacles = false;
         let mut has_ship_contact_obstacles = false;
         let mut has_body_contact_obstacles = false;
+        let mut has_ship_proximity_sources = false;
         for obstacle in &mut self.obstacles {
             if !obstacle.active { continue; }
             has_active_obstacles = true;
@@ -1785,15 +1788,20 @@ impl KinematicPhysics {
             has_ship_contact_obstacles |= obstacle.tracks_ship_contacts &&
                 obstacle.collider.bounds.is_some();
             has_body_contact_obstacles |= obstacle.tracks_body_contacts;
+            has_ship_proximity_sources |= obstacle.tracks_body_contacts &&
+                obstacle.proximity_layer.is_some() &&
+                obstacle.proximity_collider.as_ref()
+                    .is_some_and(|collider| collider.bounds.is_some());
             self.counts.integrated_bodies += 1;
         }
         self.obstacle_hulls_dirty = false;
-        // Only real projectile hulls and CollisionAsteroid child proximity
-        // shapes query the ship grid during physics.step. Clear arenas
-        // without either can skip its O(ship population) rebuild entirely.
-        // Invalidate the previous grid after movement; later weapon/vision
-        // queries will lazily rebuild the current ship population if needed.
-        let needs_ship_grid = has_physical_projectiles || has_body_contact_obstacles;
+        // Ship contacts require both a live ship and an actual contact
+        // source. Empty fleets and asteroids without an authored proximity
+        // collider do not justify rebuilding the ship population. Preserve
+        // the overlap-history reconciliation below even in these cases.
+        // Later weapon/vision queries can rebuild the grid on demand.
+        let needs_ship_grid = has_active_ships &&
+            (has_physical_projectiles || has_ship_proximity_sources);
         if needs_ship_grid {
             self.grid.rebuild_with(self.ships.len(), |index| {
                 let ship = &self.ships[index];
@@ -1806,7 +1814,7 @@ impl KinematicPhysics {
             self.grid_contents = GridContents::Stale;
         }
         self.overlaps_current.clear();
-        let projectiles_to_check = if has_physical_projectiles {
+        let projectiles_to_check = if has_active_ships && has_physical_projectiles {
             self.projectiles.as_slice()
         } else { &[] };
         for projectile in projectiles_to_check {
@@ -1838,7 +1846,7 @@ impl KinematicPhysics {
         // from the primary asteroid hull layer. With no collision asteroid,
         // preserve exits but skip scanning static obstacles.
         self.proximity_ship_current.clear();
-        if has_body_contact_obstacles {
+        if has_active_ships && has_ship_proximity_sources {
             for obstacle in &self.obstacles {
                 if !obstacle.active || !obstacle.tracks_body_contacts { continue; }
                 let (Some(proximity), Some(layer)) = (
@@ -1958,7 +1966,7 @@ impl KinematicPhysics {
         self.ship_obstacle_current.clear();
         // Keep the exit reconciliation below even when the last eligible
         // asteroid/border was retired during the preceding combat tick.
-        let ships_to_check = if has_ship_contact_obstacles {
+        let ships_to_check = if has_active_ships && has_ship_contact_obstacles {
             self.ships.as_slice()
         } else { &[] };
         for ship in ships_to_check {
