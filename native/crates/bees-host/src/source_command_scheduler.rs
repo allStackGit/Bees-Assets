@@ -19,6 +19,22 @@ use crate::policy_only_metadata::NativePolicyOnlyMetadata;
 use crate::runtime::{NativeHostRuntime, NativeSourceCommandPulse};
 use crate::socket_worker::NativeSocketWorker;
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize)]
+pub struct NativeSourceScheduleMeasurements {
+    /// Real source timer beats, not per-step or per-ship work.
+    pub due_beats: u64,
+    /// Due beats which had a connected transport and an active Level.
+    pub ready_beats: u64,
+    /// Beats missed while setup/transport was not ready.
+    pub transport_blocked_beats: u64,
+    /// Due beats discarded because this Level is inactive or complete.
+    pub inactive_level_beats: u64,
+    /// Additional periods skipped when a caller advances past a pulse.
+    pub skipped_overdue_beats: u64,
+    /// Episode-boundary clock reinitializations.
+    pub episode_clock_resets: u64,
+}
+
 #[derive(Clone, Copy, Debug)]
 struct SourceCommandClock {
     revision: u64,
@@ -49,6 +65,7 @@ pub struct NativeSourceCommandScheduler {
     clocks: Vec<Option<SourceCommandClock>>,
     due_levels: HashSet<i64>,
     measurements: NativeSourceCommandPulse,
+    schedule_measurements: NativeSourceScheduleMeasurements,
 }
 
 impl NativeSourceCommandScheduler {
@@ -64,6 +81,7 @@ impl NativeSourceCommandScheduler {
             clocks: vec![None; fixed_dt_by_world.len()],
             due_levels: HashSet::new(),
             measurements: NativeSourceCommandPulse::default(),
+            schedule_measurements: NativeSourceScheduleMeasurements::default(),
         })
     }
 
@@ -71,10 +89,45 @@ impl NativeSourceCommandScheduler {
         self.measurements
     }
 
+    pub fn schedule_measurements(&self) -> NativeSourceScheduleMeasurements {
+        self.schedule_measurements
+    }
+
+    pub fn registered_worlds(&self) -> usize {
+        self.clocks.len()
+    }
+
+    /// The shared native host can add an independently seeded Level
+    /// in-place. Admit its source clock AFTER successful host registration;
+    /// all existing worlds preserve their absolute timer deadlines.
+    /// No scheduler-side copy of the Level or its commands is created.
+    pub fn register_added_world<A, B, S>(
+        &mut self,
+        host: &NativeHostRuntime<NativePolicyOnlyMetadata, A, B, S>,
+        index: usize,
+    ) -> io::Result<()>
+    where
+        A: FnMut(SquadLifetime, i64) -> Result<SquadLifetime, SquadRosterError>,
+        B: NativePolicyInference,
+        S: NativeLevelNotificationSink,
+    {
+        if index != self.clocks.len() ||
+            host.simulation().world_count() != index + 1 {
+            return Err(invalid("source HiveMind scheduler requires append-only registration"));
+        }
+        let dt = host.simulation().world_fixed_step_seconds(index)
+            .ok_or_else(|| invalid("added native Level has no fixed-step clock"))?;
+        source_command_ticks(0.25, dt)?;
+        self.fixed_dt_by_world.push(dt);
+        self.clocks.push(None);
+        Ok(())
+    }
+
     fn ensure_clock(
         &mut self, index: usize, revision: u64, first_delay: i32,
     ) -> io::Result<()> {
         if self.clocks[index].is_none_or(|clock| clock.revision != revision) {
+            self.schedule_measurements.episode_clock_resets += 1;
             // Unity SetupHivemind's initial one-shot timer is
             // (InitialDelay - 0.25) followed by recurring quarter seconds.
             // Even a zero initial delay starts at the first timer callback.
@@ -119,17 +172,25 @@ impl NativeSourceCommandScheduler {
             self.ensure_clock(index, world.episode_revision(), initial)?;
             let clock = self.clocks[index].as_mut().expect("initialized source clock");
             if tick >= clock.next_due_tick {
-                if ready && world.state.metadata.hivemind_active == Some(true) &&
+                self.schedule_measurements.due_beats += 1;
+                let active = world.state.metadata.hivemind_active == Some(true) &&
                     !world.is_failed() && !world.state.events.is_failed() &&
-                    !world.state.events.completed() && !world.state.events.was_aborted()
-                {
+                    !world.state.events.completed() && !world.state.events.was_aborted();
+                if ready && active {
+                    self.schedule_measurements.ready_beats += 1;
                     self.due_levels.insert(i64::from(level_ids[index]));
+                } else if !ready {
+                    self.schedule_measurements.transport_blocked_beats += 1;
+                } else {
+                    self.schedule_measurements.inactive_level_beats += 1;
                 }
                 // Accumulate the original fractional timer duration and
                 // skip overdue callbacks without duplicating requests.
                 let elapsed = tick as f64 * f64::from(self.fixed_dt_by_world[index]);
                 let overdue = (elapsed - clock.next_due_seconds).max(0.0);
                 let periods = (overdue / 0.25).floor() + 1.0;
+                self.schedule_measurements.skipped_overdue_beats +=
+                    (periods - 1.0).min(u64::MAX as f64) as u64;
                 clock.next_due_seconds += periods * 0.25;
                 clock.next_due_tick = source_command_ticks(
                     clock.next_due_seconds, self.fixed_dt_by_world[index],
