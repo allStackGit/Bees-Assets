@@ -7,7 +7,7 @@ const safeInt=n=>Number.isSafeInteger(n)&&n>=0;
 // Values and units are explicit; neither metrics nor steps authorize
 // training, benchmark decisions, lease release, or policy promotion.
 const GENERIC_METRIC=/^[a-z][a-z0-9_]{0,39}$/;
-const GENERIC_UNITS=new Set(['scalar','ratio','count','rate','seconds','mb','bytes','milliseconds']);
+const GENERIC_UNITS=new Set(['scalar','ratio','count','rate','seconds','mb','bytes','milliseconds','watts']);
 // Keep a larger bounded source envelope than the 96-metric chart cache.
 // Complete trainer metrics must reach the observation archive before display
 // downselection; the transport's separate 32-KiB limit still applies.
@@ -46,7 +46,7 @@ function validateGenericProgress(value,projectId) {
             !Number.isFinite(item.value)||Math.abs(item.value)>1e12||
             (item.unit==='ratio'&&(item.value<0||item.value>1))||
             (item.unit==='count'&&!safeInt(item.value))||
-            (['rate','seconds','mb','bytes','milliseconds'].includes(item.unit)&&item.value<0))
+            (['rate','seconds','mb','bytes','milliseconds','watts'].includes(item.unit)&&item.value<0))
             throw Error('Invalid project-neutral progress measurement: '+key);
         normalized[key]={value:item.value,unit:item.unit};
     }

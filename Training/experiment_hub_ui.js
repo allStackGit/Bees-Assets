@@ -2098,6 +2098,7 @@ document.addEventListener('DOMContentLoaded', () => {
         'host_gpu_0_busy_pct','host_gpu_0_used_vram_mb',
         'host_gpu_1_busy_pct','host_gpu_1_used_vram_mb',
         'host_gpu_temperature_c','host_gpu_hotspot_temperature_c',
+        'host_gpu_power_w','host_gpu_0_power_w','host_gpu_1_power_w',
         'host_gpu_0_temperature_c','host_gpu_0_hotspot_temperature_c',
         'host_gpu_1_temperature_c','host_gpu_1_hotspot_temperature_c',
         'data_preparation_seconds','inference_seconds','forward_seconds',
@@ -2575,6 +2576,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         :' · '+observed+' MiB host GPU used')+
                         (physical?.gpu_busy_pct==null?''
                             :' · '+physical.gpu_busy_pct+'% host GPU busy')+
+                        (physical?.power_w==null?''
+                            :' · '+physical.power_w+' W host GPU')+
                         (physical?.temperature_c==null?''
                             :' · '+physical.temperature_c+'°C GPU')+
                         (physical?.hotspot_temperature_c==null?''
@@ -3026,6 +3029,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 g.pci_address+' ('+g.vram_mb+' MiB'+
                 (g.used_vram_mb==null?'':', '+g.used_vram_mb+' MiB used')+
                 (g.gpu_busy_pct==null?'':', '+g.gpu_busy_pct+'% host busy')+
+                (g.power_w==null?'':', '+g.power_w+' W host GPU')+
                 (g.temperature_c==null?'':', '+g.temperature_c+'°C GPU')+
                 (g.hotspot_temperature_c==null?'':', '+g.hotspot_temperature_c+
                     '°C hotspot')+')');
