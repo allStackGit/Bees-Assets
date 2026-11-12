@@ -149,8 +149,28 @@ class BottleneckEvidence {
                     this.byJob.delete(this.byJob.keys().next().value);
                 this.byJob.set(job.id,prior);
             }
+            // Per-collector stage times are independent *wall intervals*.
+            // Compare only a complete set from one collector. A dominant
+            // measured stage is not evidence that a specific CPU/GPU is full.
+            const stageNames=['engine','observation','inference','opponent'];
+            const sourceNames=['rollout_engine_step_seconds',
+                'observation_prepare_seconds','learner_inference_seconds',
+                'opponent_processing_seconds'];
+            const stageHints=[];
+            for(let i=0;i<9;i++) {
+                const durations=sourceNames.map(name=>
+                    seconds('collector_'+i+'_'+name));
+                if(durations.some(x=>x===null))continue;
+                const total=durations.reduce((sum,x)=>sum+x,0);
+                if(total<=0)continue;
+                const maximum=Math.max(...durations);
+                const stage=durations.indexOf(maximum);
+                add('collector_'+i+'_max_stage_work_share',maximum/total);
+                if(maximum/total>=0.65)
+                    stageHints[i]=stage;
+            }
             if(Number.isFinite(at)&&at>prior.lastAt) {
-                prior.samples.push({at,fraction,waitShare,mergeShare});
+                prior.samples.push({at,fraction,waitShare,mergeShare,stageHints});
                 if(prior.samples.length>8)prior.samples.shift();
                 prior.lastAt=at;
             }
@@ -168,6 +188,13 @@ class BottleneckEvidence {
                     add('pipeline_remote_wait_dominant',1,'count');
                 if(recent.filter(x=>x.mergeShare!==null&&x.mergeShare>=0.3).length>=5)
                     add('pipeline_merge_dominant',1,'count');
+                for(let i=0;i<9;i++) {
+                    for(let stage=0;stage<stageNames.length;stage++) {
+                        if(recent.filter(x=>x.stageHints?.[i]===stage).length>=5)
+                            add('collector_'+i+'_stage_'+stageNames[stage]+
+                                '_dominant',1,'count');
+                    }
+                }
             }
         } else {
             // Don't carry a prior timing conclusion into a source version
