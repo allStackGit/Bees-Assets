@@ -29,7 +29,7 @@ use bees_host::notification_file::{DurableDiagnosticNotifications, EpisodeEvalua
 use bees_host::policy_process::{PolicyProcessError, ResidentPolicyProcess};
 use bees_host::policy_action_trace::{PolicyActionPlayback, PolicyActionRecorder};
 use bees_host::player_trace::{NativePlayerInput, NativePlayerTrace, NativeTraceLevel};
-use bees_host::world_fingerprint::physical_world_sha256;
+use bees_host::world_fingerprint::{physical_world_sha256, gameplay_world_sha256};
 use bees_host::presentation::NativeSoftwareRenderer;
 use bees_host::scene_assets::NativeSceneAssets;
 use bees_host::scene_builder::{NativeAuthoredEntity, NativeAuthoredGroups};
@@ -441,6 +441,26 @@ impl NativePolicyInference for RolloutModel {
 
 type RolloutHost = NativeHostRuntime<NativePolicyOnlyMetadata, MinionAllocator,
     RolloutModel, DurableDiagnosticNotifications>;
+
+/// One canonical capture path for periodic and final v4 checkpoints.
+fn replay_world_checkpoint(host: &RolloutHost, index: usize, round: u64) -> Value {
+    let world = host.simulation().world(index).expect("registered native replay World");
+    json!({
+        "kind": "physical_state_checkpoint",
+        "round": round,
+        "world_id": world.id.0,
+        "episode_revision": world.episode_revision(),
+        "tick": world.tick(),
+        "sha256": physical_world_sha256(
+            world.id, world.episode_revision(), world.tick(), &world.state.combat,
+        ),
+        "gameplay_sha256": gameplay_world_sha256(
+            world.id, world.episode_revision(), world.tick(),
+            &world.state.combat, world.state.events.roster(),
+            world.state.events.commands(), &world.state.metadata,
+        ),
+    })
+}
 
 fn gameplay_config_sha256(
     config: &RunConfig, assets: &NativeSceneAssets, interactive: bool,
@@ -1363,7 +1383,7 @@ fn run_battle(
             .open(path)?;
         writeln!(trace, "{}", json!({
             "kind": "player_input_trace",
-            "schema_version": 3,
+            "schema_version": 4,
             "run_id": config.run_id,
             "run_config_sha256": config_digest,
             "gameplay_config_sha256": gameplay_digest,
@@ -1428,6 +1448,7 @@ fn run_battle(
     #[cfg(feature = "client")]
     let mut recorded_physical_checkpoints = 0_u64;
     let mut verified_physical_checkpoints = 0_u64;
+    let mut verified_gameplay_checkpoints = 0_u64;
     'battle: loop {
         #[cfg(feature = "client")]
         if let Some(trace) = &mut input_trace {
@@ -1435,20 +1456,8 @@ fn run_battle(
                 last_physical_checkpoint_round != Some(rounds)
             {
                 for index in 0..host.simulation().world_count() {
-                    let world = host.simulation().world(index)
-                        .expect("registered source World");
-                    let digest = physical_world_sha256(
-                        world.id, world.episode_revision(), world.tick(),
-                        &world.state.combat,
-                    );
-                    if let Err(error) = writeln!(trace, "{}", json!({
-                        "kind": "physical_state_checkpoint",
-                        "round": rounds,
-                        "world_id": world.id.0,
-                        "episode_revision": world.episode_revision(),
-                        "tick": world.tick(),
-                        "sha256": digest,
-                    })) {
+                    if let Err(error) = writeln!(trace, "{}",
+                        replay_world_checkpoint(&host, index, rounds)) {
                         failed_window = Some(format!("recording native physical checkpoint: {error}"));
                         break 'battle;
                     }
@@ -1490,6 +1499,21 @@ fn run_battle(
                     break 'battle;
                 }
                 verified_physical_checkpoints += 1;
+                if let Some(expected) = &entry.gameplay_sha256 {
+                    let actual = gameplay_world_sha256(
+                        world.id, world.episode_revision(), world.tick(),
+                        &world.state.combat, world.state.events.roster(),
+                        world.state.events.commands(), &world.state.metadata,
+                    );
+                    if actual != *expected {
+                        failed_window = Some(format!(
+                            "native gameplay control diverged at round {rounds}, world {}, episode {}, tick {}",
+                            entry.world_id.0, entry.episode_revision, entry.tick,
+                        ));
+                        break 'battle;
+                    }
+                    verified_gameplay_checkpoints += 1;
+                }
             }
             if trace.checkpoints.front().is_some_and(|entry| entry.round < rounds) {
                 failed_window = Some(format!(
@@ -1851,6 +1875,21 @@ fn run_battle(
     // BEFORE finite-budget cancellation/abort notifications can alter
     // runtime state. This is opt-in summary output, not simulation work.
     // The exact same bitwise physical-world signature is used by replay.
+    let final_gameplay_worlds = summary.as_ref().map(|_| {
+        (0..count).filter_map(|index| {
+            let world = host.simulation().world(index)?;
+            Some(json!({
+                "world_id": world.id.0,
+                "episode_revision": world.episode_revision(),
+                "tick": world.tick(),
+                "sha256": gameplay_world_sha256(
+                    world.id, world.episode_revision(), world.tick(),
+                    &world.state.combat, world.state.events.roster(),
+                    world.state.events.commands(), &world.state.metadata,
+                ),
+            }))
+        }).collect::<Vec<_>>()
+    });
     let final_physical_worlds = summary.as_ref().map(|_| {
         (0..count).filter_map(|index| {
             let world = host.simulation().world(index)?;
@@ -1868,25 +1907,13 @@ fn run_battle(
     // A trace must cover the physical state of EVERY Level at its final
     // execution boundary, even when the game quits between the sampled
     // 64-round checkpoints. No gameplay owner is modified here.
-    // Match the v3 reader contract before finite-budget cancellation.
+    // Match the v4 reader contract before finite-budget cancellation.
     #[cfg(feature = "client")]
     if let Some(trace) = &mut input_trace {
         if last_physical_checkpoint_round != Some(rounds) {
             for index in 0..count {
-                let world = host.simulation().world(index)
-                    .expect("registered source World during final trace capture");
-                let digest = physical_world_sha256(
-                    world.id, world.episode_revision(), world.tick(),
-                    &world.state.combat,
-                );
-                if let Err(error) = writeln!(trace, "{}", json!({
-                    "kind": "physical_state_checkpoint",
-                    "round": rounds,
-                    "world_id": world.id.0,
-                    "episode_revision": world.episode_revision(),
-                    "tick": world.tick(),
-                    "sha256": digest,
-                })) {
+                if let Err(error) = writeln!(trace, "{}",
+                    replay_world_checkpoint(&host, index, rounds)) {
                     failed_window.get_or_insert_with(||
                         format!("recording final native physical checkpoint: {error}")
                     );
@@ -2132,8 +2159,10 @@ fn run_battle(
             trace.checkpoints.is_empty() && failed_window.is_none()),
         "recorded_physical_checkpoints": captured_checkpoints,
         "verified_physical_checkpoints": verified_physical_checkpoints,
+        "verified_gameplay_checkpoints": verified_gameplay_checkpoints,
         "player_trace_stream": playback.as_ref().map(|trace| trace.measurements()),
         "final_physical_worlds": final_physical_worlds,
+        "final_gameplay_worlds": final_gameplay_worlds,
     });
     println!("{final_summary}");
     #[cfg(feature = "client")]
