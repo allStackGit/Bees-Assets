@@ -2205,6 +2205,21 @@ document.addEventListener('DOMContentLoaded', () => {
                     :measured.pipeline_timing_sample_count?.value>0
                         ?' · Bottleneck stage: insufficient sustained evidence'
                         :'';
+            const measuredWorkers=[];
+            for(let i=0;i<9;i++) {
+                for(const stageName of ['engine','observation','inference','opponent']) {
+                    if(measured['collector_'+i+'_stage_'+stageName+
+                            '_dominant']?.value===1)
+                        measuredWorkers.push((i===0?'Learner':'Collector '+i)+
+                            ': '+stageName);
+                }
+            }
+            const workerSignal=measuredWorkers.length
+                ?' · Sustained measured stage: '+measuredWorkers.slice(0,2).join('; ')+
+                    (measuredWorkers.length>2
+                        ?' (+'+(measuredWorkers.length-2)+' more)':'')+
+                    ' (not hardware saturation)'
+                :'';
             const preferred=['total_ppo_updates','update_wall_time',
                 'ant_decisions_per_second','collection_seconds','optimization_seconds'];
             const priority=preferred.filter(key=>Object.hasOwn(p.metrics,key));
@@ -2218,7 +2233,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const remaining=Math.max(0,Object.keys(p.metrics).length-values.length);
             return 'Steps '+p.steps_completed.toLocaleString()+
                 ' · '+values.join(' · ')+
-                (remaining?' · +'+remaining+' more':'')+signal+
+                (remaining?' · +'+remaining+' more':'')+signal+workerSignal+
                 ' · Summary written '+new Date(p.source_modified_at).toLocaleString();
         }
         if(live?.progress_issue)
@@ -2355,6 +2370,9 @@ document.addEventListener('DOMContentLoaded', () => {
             'collector_'+i+'_observation_prepare_seconds',
             'collector_'+i+'_learner_inference_seconds',
             'collector_'+i+'_opponent_processing_seconds',
+            'collector_'+i+'_max_stage_work_share',
+            ...['engine','observation','inference','opponent'].map(
+                stage=>'collector_'+i+'_stage_'+stage+'_dominant'),
             'collector_'+i+'_roundtrip_seconds',
             'collector_'+i+'_service_seconds',
             'collector_'+i+'_serialize_seconds',
