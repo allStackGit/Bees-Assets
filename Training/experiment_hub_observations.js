@@ -20,8 +20,10 @@ class ObservationArchive {
     get error() {
         return this.issues.values().next().value||null;
     }
-    errorFor(job) {
-        return this.issues.has(job.id)||this.issues.has(job.id+':host');
+    trainerErrorFor(job) {
+        // Only a trainer-stream failure prevents the normal host-only
+        // fallback. A host-stream failure must be allowed to retry.
+        return this.issues.has(job.id);
     }
     record(job,progress,resourceMetrics,receivedMs) {
         if(!progress)return false;
