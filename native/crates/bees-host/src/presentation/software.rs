@@ -85,6 +85,7 @@ pub struct NativeSoftwareRenderer {
     pub show_minimap: bool,
     /// Only affects the window; training runs keep the same headless world.
     pub show_shooting_menu: bool,
+    pub focused_shooting_strategy: u8,
     pub active_tactical_action: Option<super::HudAction>,
     pub hovered_tactical_action: Option<super::HudAction>,
     debris_frame: Option<(WorldId, u64, u64)>,
@@ -157,6 +158,7 @@ impl NativeSoftwareRenderer {
             selected_squad_lookup: HashSet::new(),
             selection_box: None, show_weapon_ranges: false,
             show_minimap: true, show_shooting_menu: false,
+            focused_shooting_strategy: 1,
             active_tactical_action: None,
             hovered_tactical_action: None,
             debris_frame: None, obstacle_debris: Vec::new() })
@@ -832,7 +834,7 @@ impl NativeSoftwareRenderer {
                 ..y * self.width + right].fill(0x101d2e);
         }
         text::draw_at(&mut self.pixels, self.width, left + 12,
-            top + 6, "SHOOTING PRIORITY  -  click one / S or Esc cancels",
+            top + 6, "SHOOTING PRIORITY - arrows + Enter or click / S or Esc cancels",
             1, [225, 235, 250]);
         let selected = self.selection.squads().iter()
             .filter_map(|&owner| view.player_authority.player_shooting_strategy(owner))
@@ -846,14 +848,19 @@ impl NativeSoftwareRenderer {
             let Some(rect) = tactical_hud::shooting_rect(self.width, self.height, index)
                 else { return };
             let active = selected == Some((index + 1) as u8);
+            let focused = self.focused_shooting_strategy == (index + 1) as u8;
             for y in rect.top..rect.bottom {
                 self.pixels[y * self.width + rect.left
-                    ..y * self.width + rect.right].fill(if active { 0x476b70 } else { 0x23344d });
+                    ..y * self.width + rect.right].fill(
+                        if focused { 0x546d83 }
+                        else if active { 0x476b70 } else { 0x23344d });
             }
             let label = format!("{:>2}: {name}", index + 1);
             text::draw_at(&mut self.pixels, self.width,
                 rect.left + 8, rect.top + 5, &label, 1,
-                if active { [247, 255, 204] } else { [227, 239, 252] });
+                if active { [247, 255, 204] }
+                else if focused { [255, 255, 255] }
+                else { [227, 239, 252] });
         }
     }
 

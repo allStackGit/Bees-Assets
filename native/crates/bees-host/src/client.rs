@@ -82,6 +82,9 @@ pub struct NativeClient {
     /// UI modal captures a shooting option's press/release, never a world
     /// click. Strategy choice is committed only through player input.
     shooting_press: Option<u8>,
+    /// Cursor for keyboard/hover selection within the source's fixed
+    /// 40-strategy registry. Presentation only; never a second weapon state.
+    shooting_focus: u8,
     support_mode: Option<NativeTargetMode>,
     pub rendered_frames: u64,
     /// Total software framebuffer pixels actually drawn across changing sizes.
@@ -128,7 +131,7 @@ impl NativeClient {
             held_fire_target: None,
             selection_drag: None, minimap_dragging: false,
             hud_press: None, squad_tab_press: None, shooting_press: None,
-            support_mode: None,
+            shooting_focus: 1, support_mode: None,
             rendered_frames: 0, rendered_pixels: 0, render_wall_seconds: 0.0,
             ui_wall_seconds: 0.0, window_update_wall_seconds: 0.0,
             culled_ship_draws: 0, culled_obstacle_draws: 0,
@@ -373,6 +376,28 @@ impl NativeClient {
             self.renderer.show_shooting_menu = false;
         }
         let menu_was_open = self.renderer.show_shooting_menu;
+        if menu_was_open {
+            let mut focus = usize::from(self.shooting_focus.saturating_sub(1));
+            // Grid is column-major (4 columns of ten choices); arrow
+            // navigation must follow the exact buttons drawn on screen.
+            if self.window.is_key_pressed(Key::Up, KeyRepeat::No) {
+                focus = focus / 10 * 10 + (focus % 10 + 9) % 10;
+            } else if self.window.is_key_pressed(Key::Down, KeyRepeat::No) {
+                focus = focus / 10 * 10 + (focus % 10 + 1) % 10;
+            } else if self.window.is_key_pressed(Key::Left, KeyRepeat::No) {
+                focus = (focus + 30) % 40;
+            } else if self.window.is_key_pressed(Key::Right, KeyRepeat::No) {
+                focus = (focus + 10) % 40;
+            }
+            self.shooting_focus = (focus + 1) as u8;
+            if pointer_active {
+                if let Some(hovered) = mouse.and_then(|(x, y)|
+                    self.renderer.shooting_strategy_at(x, y))
+                {
+                    self.shooting_focus = hovered;
+                }
+            }
+        }
         if menu_was_open && pointer_active && left_down && !self.left_was_down {
             self.shooting_press = mouse.and_then(|(x, y)|
                 self.renderer.shooting_strategy_at(x, y));
@@ -382,7 +407,12 @@ impl NativeClient {
             self.last_left_press = None;
             self.double_left_press = false;
         }
-        let clicked_shooting = if menu_was_open && self.left_was_down && !left_down {
+        let clicked_shooting = if menu_was_open &&
+            self.window.is_key_pressed(Key::Enter, KeyRepeat::No)
+        {
+            self.renderer.show_shooting_menu = false;
+            Some(self.shooting_focus)
+        } else if menu_was_open && self.left_was_down && !left_down {
             let selection = self.shooting_press.take().filter(|&id|
                 mouse.and_then(|(x, y)| self.renderer.shooting_strategy_at(x, y))
                     == Some(id));
@@ -438,6 +468,9 @@ impl NativeClient {
                 self.input_feedback = "Enlarge the window to choose shooting priorities";
             } else {
                 self.renderer.show_shooting_menu = true;
+                self.shooting_focus = self.renderer.selection.squads().first()
+                    .and_then(|&owner| view.player_authority.player_shooting_strategy(owner))
+                    .map_or(1, |strategy| strategy.id);
                 self.support_mode = None;
                 self.selection_drag = None;
                 self.renderer.selection_box = None;
@@ -849,6 +882,7 @@ impl NativeClient {
             })
         } else { None };
         self.right_was_down = right_down;
+        self.renderer.focused_shooting_strategy = self.shooting_focus;
         self.renderer.hovered_tactical_action = if accepts_orders && pointer_active {
             mouse.and_then(|(x, y)| self.renderer.tactical_action_at(x, y))
         } else { None };
