@@ -2661,11 +2661,12 @@ class ExperimentHub {
             const action=actionFor(j);
             if(action!=='inspect')return {stop:0,start:1,qualify_gpu:2}[action];
             if(j.checkpoint_reinspection_requested_at)return 3;
-            // Reserve time to refresh native observations before they expire.
-            // Final receipt collection can share the normal rotation while
-            // the worker's unreleased jobs have fresh observations.
+            // Starts and overdue native Inspects share one rotating tier.
+            // Otherwise a sustained Start backlog can starve the inspection
+            // that establishes which earlier jobs are still running. Stops
+            // remain urgent and unexpired Inspects remain low priority.
             const age=observedAt-Date.parse(j.live_execution?.at||'');
-            return !j.capacity_released_at&&!(age>=0&&age<AGENT_HEARTBEAT_TTL_MS/2)?3:4;
+            return !j.capacity_released_at&&!(age>=0&&age<AGENT_HEARTBEAT_TTL_MS/2)?1:4;
         };
         jobs.sort((a,b)=>priority(a)-priority(b));
         const ordered=[];
@@ -2751,7 +2752,7 @@ class ExperimentHub {
             return [{
                 action,dispatch_id:action==='qualify_gpu'
                     ?job.gpu_qualification.request_id:job.dispatch_id,
-                ...(action==='inspect'&&priority(job)===3?{refresh_native_observation:true}:{}),
+                ...(action==='inspect'&&priority(job)<=3?{refresh_native_observation:true}:{}),
                 job:{
                     id:job.id,project_id:job.project_id,adapter:job.adapter,
                     lease_id:job.lease_id,status:'waiting_adapter',
