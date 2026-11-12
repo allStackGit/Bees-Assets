@@ -456,6 +456,17 @@ impl NativeLevelCommandContext for NativePolicyOnlyMetadata {
         self.advance_source_chase(world, events, random, completed_tick, dt_seconds)
     }
 
+    fn player_squad_retired(&mut self, owner: SquadLifetime) {
+        // A dead source squad cannot reappear under the same lifetime.
+        // Drop mutable UI/command preferences without touching original
+        // fleet, reward, sight or discovery history.
+        self.player.chasing.remove(&owner);
+        self.player.matching_speeds.remove(&owner);
+        self.player.cease_fire.remove(&owner);
+        self.player.squads.remove(&owner);
+        self.player.commands.remove(&owner);
+    }
+
     fn player_command_finished(&mut self, owner: SquadLifetime) {
         if let Some(permission) = self.player.squads.get_mut(&owner) {
             permission.locked_on = false;

@@ -139,6 +139,11 @@ pub trait NativeLevelCommandContext {
     /// Level command completion is the one authoritative event source.
     fn player_command_finished(&mut self, _owner: SquadLifetime) {}
 
+    /// Retire per-squad source controls at the authoritative Squad.Kill
+    /// event, not by polling the roster each fixed step. Other metadata
+    /// (damage/fleet history) survives as required for reward settlement.
+    fn player_squad_retired(&mut self, _owner: SquadLifetime) {}
+
     /// The original Squad.CheckChase runs a 1-second source timer.
     /// Only a Level with actual source sight, movement and weapon inputs
     /// may trigger it. The game and headless learner use this same phase
@@ -867,12 +872,17 @@ where
         state.formation_changed_squads.clear();
         state.formation_changed_seen.clear();
         for &change in state.events.latest_squad_changes() {
-            if let SquadRosterChange::MemberLost { squad, .. } = change {
-                if state.events.roster().get(squad).is_some() &&
-                    state.formation_changed_seen.insert(squad)
-                {
-                    state.formation_changed_squads.push(squad);
+            match change {
+                SquadRosterChange::MemberLost { squad, .. } => {
+                    if state.events.roster().get(squad).is_some() &&
+                        state.formation_changed_seen.insert(squad)
+                    {
+                        state.formation_changed_squads.push(squad);
+                    }
                 }
+                SquadRosterChange::SquadRetired { squad } =>
+                    state.metadata.player_squad_retired(squad),
+                _ => {}
             }
         }
         for &owner in &state.formation_changed_squads {
