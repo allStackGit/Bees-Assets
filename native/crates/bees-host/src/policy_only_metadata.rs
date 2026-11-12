@@ -751,6 +751,11 @@ impl NativePlayerAuthority for NativePolicyOnlyMetadata {
         self.activate_fog_of_war == Some(true)
     }
 
+    fn player_fog_viewer_side(&self) -> Option<i32> {
+        self.targeting_context.filter(|source| source.has_player && source.user_side > 0)
+            .map(|source| source.user_side)
+    }
+
     fn player_fog_vision_radius(&self, ship_id: i64) -> Option<f32> {
         // New source snapshots capture the Create-time mask radius
         // directly. Older snapshots have only the static effective sight,

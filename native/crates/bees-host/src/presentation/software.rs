@@ -298,8 +298,9 @@ impl NativeSoftwareRenderer {
     /// reveal the local player's map merely because its geometry is nearby.
     fn fog_source_radius(view: &NativeRenderWorldView<'_>, ship_id: i64) -> Option<f32> {
         let owner = view.roster.owning_squad(ship_id)?;
-        if !view.player_authority.player_permissions(owner)
-            .is_some_and(|permission| permission.user_controlled) {
+        if view.roster.get(owner)?.side != view.player_authority.player_fog_viewer_side()? ||
+            !view.player_authority.player_permissions(owner)
+                .is_some_and(|permission| permission.user_controlled) {
             return None;
         }
         view.player_authority.player_fog_vision_radius(ship_id)
@@ -864,7 +865,9 @@ impl NativeSoftwareRenderer {
             let Some(owner) = view.roster.owning_squad(ship.entity_id)
                 else { continue };
             if !view.player_authority.player_permissions(owner)
-                .is_some_and(|permissions| permissions.user_controlled) {
+                .is_some_and(|permissions| permissions.user_controlled) ||
+                (view.player_authority.player_fog_of_war_enabled() &&
+                    view.player_authority.player_fog_viewer_side() != Some(ship.side)) {
                 continue;
             }
             let Some((x, y)) = layout.project(body.motion.position)
