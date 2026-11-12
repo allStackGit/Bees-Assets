@@ -225,6 +225,28 @@ class JobExporter {
             return [{job_id:job.id,label:'mounted-artifacts',
                 path:path.join(root,job.id)}];
         });
+        // A verified completed upload is an alternate, locally stored
+        // source for machine-owned text histories. Do not mistake mere
+        // Hub heartbeat observations for project-owned artifacts.
+        const mirrored=legacy?[]:jobs.filter(job=>
+            !mounted.some(item=>item.job_id===job.id)).flatMap(job=>{
+            const folder=path.join(this.dataRoot,'hub-remote-artifacts',job.id);
+            if(!fs.existsSync(folder))return [];
+            if(!trustedRoot(folder))
+                throw Error('Received job artifacts were redirected or unowned.');
+            return [{job_id:job.id,label:'agent-artifacts',path:folder}];
+        });
+        // A mirror is additional evidence, not a reason to suppress an
+        // independently available local original job folder. Only substitute
+        // its root when the original trainer files are genuinely absent.
+        const mirrorFallbackIds=new Set(mirrored.filter(item=>{
+            if(!approvedRoot)return true;
+            const local=path.join(approvedRoot,item.job_id);
+            if(!fs.existsSync(local))return true;
+            if(!trustedRoot(local))
+                throw Error('Original job artifacts were redirected or unowned.');
+            return false;
+        }).map(item=>item.job_id));
         // A managed TinyBrains learner's collector is a separate Hub job.
         // Include its coordinator-received observations in the learner export,
         // even when no worker-local log directory is mounted. All IDs are
@@ -253,6 +275,10 @@ class JobExporter {
                     ?machine.tinybrains_rollout:null;
                 if(root&&fs.existsSync(root)&&!trustedRoot(root))
                     throw Error('Selected collector mount is redirected or unowned.');
+                const synced=path.join(this.dataRoot,'hub-remote-artifacts',child.id);
+                if(fs.existsSync(synced)&&!trustedRoot(synced))
+                    throw Error('Received collector artifacts were redirected or unowned.');
+                const collectorRoot=root||(fs.existsSync(synced)?synced:null);
                 return [
                     {
                         job_id:learner.id,label:'collector_'+labelId+'_src',
@@ -260,9 +286,9 @@ class JobExporter {
                     },
                     {job_id:learner.id,label:'collector_'+labelId+'_host',
                         path:path.join(archive,child.id+'-resources.jsonl')},
-                    ...(root?[{
+                    ...(collectorRoot?[{
                         job_id:learner.id,label:'collector_'+labelId+'_logs',
-                        path:path.join(root,child.id),
+                        path:root?path.join(root,child.id):collectorRoot,
                     }]:[]),
                 ];
             });
@@ -275,7 +301,8 @@ class JobExporter {
             all_recorded_metrics:value.all_recorded_metrics===true,
             include_replays:value.include_replays===true,
             artifact_root:root,local_artifact_root_missing:missingLocalRoot,
-            mounted_artifact_job_ids:mounted.map(item=>item.job_id),
+            mounted_artifact_job_ids:[...mounted.map(item=>item.job_id),
+                ...mirrorFallbackIds],
             resource_provenance:legacy?null:resourceProvenance(snapshot,jobs),
             progress,
             additional_sources:legacy?this.legacyBees.sources(jobs):
@@ -289,7 +316,7 @@ class JobExporter {
                         job_id:job.id,label:'hub-host-observations',
                         path:hostFile,
                     }];
-                }),...linkedCollectorSources,...mounted],
+                }),...linkedCollectorSources,...mounted,...mirrored],
         }),{flag:'wx',mode:0o600});
         const id=crypto.randomUUID();
         const session={id,dir,project,status:'preparing',parts:[],error:null};

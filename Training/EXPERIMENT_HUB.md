@@ -1964,8 +1964,40 @@ project-neutral source and host-resource measurements in the derived CSVs,
 including fields missing from the 96-metric chart cache. This does not require
 a script or guessing metric names. The existing selected-metrics mode remains
 available; complete exports may contain much more data and still split into
-independently downloadable ZIP parts of at most 500 MB. Remote-only trainer
-artifacts are still reported missing until a trusted transfer is installed.
+independently downloadable ZIP parts of at most 500 MB. Remote-only trainer artifacts that have not been collected are reported
+missing. An optional, authenticated artifact mirror can collect selected
+finished-job text histories without a shared filesystem mount.
+
+Set `EXPERIMENT_HUB_SYNC_ARTIFACTS=1` on a machine already configured with
+`EXPERIMENT_HUB_ENABLE_EXECUTION=1` and an installed Courier or persistent
+TinyBrains adapter. The adapter—not the Hub or a saved configuration—selects
+the job's private artifact directory. After the local native owner reaches a
+terminal state, the agent sends approved log snapshots to the existing
+loopback/SSH-forwarded machine endpoint on port 7149. Heartbeats and native
+Stop/Inspect commands are independent of this lower-priority transfer.
+Each HTTP chunk is limited to 1 MiB, a single file snapshot to 500 MB,
+and the receiving Hub to 256 files / 5 GB per job. The Hub also
+requires at least 2 GB of verified free filesystem space after each chunk
+so optional diagnostics cannot consume the checkpoint/journal disk reserve.
+Each cycle transfers up to 32 MiB, resumes from a verified staging offset,
+and
+publishes a file atomically only after its complete SHA-256 matches.
+The coordinator stores private completed snapshots in
+`hub-remote-artifacts/<job-id>/`; unfinished pieces are not export inputs.
+Complete Export includes these original trainer-log copies as
+`agent-artifacts` alongside Hub observation histories, or under the
+managed collector's linked-log source if collected separately.
+
+Automatic mirroring is opt-in because **text logs can contain secrets even
+when their filenames are innocuous**. It excludes credential-related paths,
+model/checkpoint files, symlinks and replays, but does not inspect and redact
+arbitrary log *contents*. Use only with trusted project adapters and trusted
+training outputs. It copies selected supported files, not model weights or
+a guaranteed full-resolution snapshot of every original run: files too
+large, unsupported names, unavailable owners, or machine failures remain
+outside the mirror. The `--once` agent does not run background log mirroring.
+Uncollected trainer artifacts remain explicitly unavailable in the export
+manifest rather than inferred from heartbeat summaries.
 When no project artifact root is locally mounted, the coordinator can still
 export its own recorded Hub observations and metadata, marking each selected
 job's project-owned artifacts as unavailable. An existing but unsafe or
