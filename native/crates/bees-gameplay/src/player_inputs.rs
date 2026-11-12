@@ -153,6 +153,7 @@ pub struct NativePlayerSpecialPlan {
 
 impl NativePlayerSpecialPlan {
     pub fn owner(&self) -> SquadLifetime { self.authority.owner }
+    pub fn is_available(&self) -> bool { !self.eligible_ships.is_empty() }
 
     pub fn prepare<M: NativeLevelPlayerContext, A>(
         world: &World<NativeLevelState<M, A>>,

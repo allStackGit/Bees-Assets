@@ -498,6 +498,58 @@ where
         Ok(counts)
     }
 
+    /// Physical Scout/Fire Barge player specials do not replace any active
+    /// command. The shared combat simulation defers their effects to its
+    /// next fixed-step event boundary so roster, reward and death consumers
+    /// see exactly the same transaction as AI and policy actions.
+    pub fn player_special_squads(
+        &mut self, input: &bees_gameplay::player_inputs::NativePlayerSquadSpecial,
+    ) -> Result<bees_gameplay::player_inputs::NativePlayerCommandCounts, HostPlayerInputError>
+    where M: NativeLevelPlayerContext
+    {
+        use bees_gameplay::player_inputs::{
+            NativePlayerSpecialPlan, NativePlayerCommandCounts,
+        };
+        let index = (0..self.simulation.world_count()).find(|&index|
+            self.simulation.world(index).is_some_and(|world| world.id == input.world_id))
+            .ok_or(HostPlayerInputError::Gameplay(NativePlayerInputError::StaleWorld))?;
+        let world = self.simulation.world(index).expect("located world");
+        if world.episode_revision() != input.episode_revision {
+            return Err(HostPlayerInputError::Gameplay(NativePlayerInputError::StaleWorld));
+        }
+        let mut counts = NativePlayerCommandCounts::default();
+        let mut plans = Vec::with_capacity(input.squads.len());
+        let mut seen = std::collections::HashSet::with_capacity(input.squads.len());
+        for &owner in &input.squads {
+            if !seen.insert(owner) { continue; }
+            let Some(selected_ship) = world.state.events.roster().get(owner)
+                .and_then(|squad| squad.members.first()).copied() else {
+                counts.rejected_squads += 1;
+                continue;
+            };
+            match NativePlayerSpecialPlan::prepare(world, input.world_id,
+                input.episode_revision, selected_ship, input.kind) {
+                Ok(plan) if plan.is_available() => plans.push(plan),
+                Ok(_) => counts.unavailable_squads += 1,
+                Err(error) if error.is_rejection() => counts.rejected_squads += 1,
+                Err(error) => return Err(HostPlayerInputError::Gameplay(error)),
+            }
+        }
+        if plans.is_empty() { return Ok(counts); }
+        self.driver.invalidate_environment(index).map_err(HostPlayerInputError::Driver)?;
+        // No HiveMind request retirement or squad command finalization:
+        // pressing DropBeacon/Detonate is orthogonal to that strategy.
+        for plan in plans {
+            if plan.execute(self.simulation.world_mut(index).expect("located world"))
+                .map_err(HostPlayerInputError::Gameplay)? > 0 {
+                counts.accepted_squads += 1;
+            } else {
+                counts.unavailable_squads += 1;
+            }
+        }
+        Ok(counts)
+    }
+
     /// Schema1 compatibility: only runs registered in the original
     /// connection checkpoint may be replayed. Normal journals use schema2.
     pub fn recover_prior_outcome_journal(
