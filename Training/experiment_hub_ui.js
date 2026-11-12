@@ -2714,12 +2714,21 @@ document.addEventListener('DOMContentLoaded', () => {
                 j.distributed_rollout_managed===true
                 ?state.jobs.filter(worker=>worker.project_id==='tinybrains_rollout'&&
                     worker.frozen_parameters?.learner_job_id===j.id):[];
+            const scheduledGroup=(state.distributed_group_plans||[])
+                .filter(plan=>plan.learner_job_id===j.id).at(-1);
+            const unresolvedScheduledGroup=scheduledGroup&&
+                ['pending','needs_review'].includes(scheduledGroup.status);
             const distributedLaunch=(state.distributed_launches||[]).find(launch=>
                 launch.learner_job_id===j.id);
             const launchText=distributedLaunch
                 ?' · Coordinated Start '+distributedLaunch.status+
                     (distributedLaunch.recovery_pending?' (coordinator restart recovery)':'')+
                     ': '+distributedLaunch.reason
+                :'';
+            const scheduleText=scheduledGroup
+                ?' · Group scheduled Start '+scheduledGroup.status+
+                    (scheduledGroup.recovery_pending?' (restart reconciliation)':'')+
+                    ': '+scheduledGroup.reason
                 :'';
             const abortText=j.distributed_abort_requested_at
                 ?' · Startup abort requested: native collector shutdown and verified claim release pending'
@@ -2734,7 +2743,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     ' ('+j.resource_bundle.index+'/'+j.resource_bundle.size+')'
                 :'';
             const statusCell=cell(tr,status+lineage+promoted+gpuProof+readinessText+
-                checkpointRecovery+noTrainer+distributedSummary+launchText+abortText+bundleLabel+
+                checkpointRecovery+noTrainer+distributedSummary+launchText+scheduleText+abortText+bundleLabel+
                 (hasSuccessor&&['waiting_adapter','waiting_predecessor'].includes(j.status)
                     ?' · Cancel downstream stage first':''));
 
@@ -2844,7 +2853,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // The operator may start only the collectors, or preapprove one
             // bounded learner Start that waits for authenticated running
             // receipts. Neither control changes the group's fixed leases.
-            if(j.status==='waiting_adapter'&&
+            if(j.status==='waiting_adapter'&&!unresolvedScheduledGroup&&
                 j.distributed_rollout_managed===true&&groupWorkers.length>0&&
                 groupWorkers.every(worker=>worker.status==='waiting_adapter'&&
                     !worker.dispatch_id&&worker.native_start_readiness?.eligible===true)) {
@@ -2899,6 +2908,55 @@ document.addEventListener('DOMContentLoaded', () => {
                 actions.append(button('Start coordinated group',()=>startDistributed(true)));
                 actions.append(button('Start recoverable coordinated group',()=>startDistributed(true,true)));
             }
+            // An early approval may be granted immediately after the
+            // atomic reservation, before the worker lease receipts or GPU
+            // probe have finished. All future Starts use the existing
+            // qualified distributed collector/learner admission path.
+            if(j.distributed_rollout_managed===true&&
+                j.status==='waiting_adapter'&&!j.dispatch_id&&
+                !j.distributed_abort_requested_at&&groupWorkers.length>0&&
+                !unresolvedScheduledGroup&&!distributedLaunch?.status?.includes('pending')&&
+                j.lease_id&&j.assigned_machine_id&&
+                groupWorkers.every(worker=>worker.status==='waiting_adapter'&&
+                    !worker.dispatch_id&&worker.lease_id&&worker.assigned_machine_id)) {
+                const schedule=async recovery=>{
+                    if(!confirm('Approve the complete distributed TinyBrains group for one future native Start when ALL pinned collector and learner machine claims are ready? '+
+                        'This grants real remote collector Starts and a subsequent one-use GPU learner Start only after verified original native collector ownership. '+
+                        'The approval expires after 20 minutes. '+
+                        (recovery
+                            ?'You separately permit the pending approval to survive a coordinator restart, after fresh machine, lease, HMAC and GPU proof. '
+                            :'A coordinator restart disarms the approval. ')+
+                        'No dispatched worker or learner is retried, and all resources remain fixed. '+
+                        'Verified native terminal reports release capacity.'))return;
+                    try {
+                        const plan=await action('hub/distributed/tinybrains/schedule-start',{
+                            learner_job_id:j.id,
+                            expected_collector_job_ids:groupWorkers.map(worker=>worker.id),
+                            confirm_schedule:true,confirm_learner_start:true,
+                            ...(recovery?{resume_after_restart:true,
+                                confirm_restart_rearm:true}:{}),
+                        });
+                        feedback('hub-job-message',
+                            'Distributed group '+plan.status+
+                            '. The Hub will authorize all original remote collectors atomically when their leases and GPU admission are ready.');
+                    }catch(error){feedback('hub-job-message',error.message);}
+                    await reload();
+                };
+                actions.append(button('Schedule full group when ready',()=>schedule(false)));
+                actions.append(button('Schedule recoverable group',()=>schedule(true)));
+            }
+            if(unresolvedScheduledGroup)
+                actions.append(button('Cancel scheduled group',async()=>{
+                    if(!confirm('Revoke future collector and GPU learner Starts for this group? The queued native jobs and their resource claims stay unchanged.'))return;
+                    try {
+                        await action('hub/distributed/tinybrains/cancel-start-plan',{
+                            plan_id:scheduledGroup.id,confirm_cancel:true,
+                        });
+                        feedback('hub-job-message',
+                            'Scheduled distributed group Start revoked; no native process was created by cancellation.');
+                    }catch(error){feedback('hub-job-message',error.message);}
+                    await reload();
+                }));
             if(distributedLaunch?.status==='pending')
                 actions.append(button('Cancel future learner Start',async()=>{
                     if(!confirm('Disarm this pending coordinated learner Start? '+
