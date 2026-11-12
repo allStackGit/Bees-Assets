@@ -101,10 +101,13 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             retain(name,reported[name]);
         // At most one sustained stage can dominate each fully instrumented
         // collector. Give confirmed per-worker evidence a default chart slot.
-        for(let i=0;i<9;i++)
+        for(let i=0;i<9;i++) {
+            for(const suffix of ['sim_straggler_pressure','sim_dispatch_pressure'])
+                retain('collector_'+i+'_'+suffix,reported['collector_'+i+'_'+suffix]);
             for(const stage of ['engine','observation','inference','opponent'])
                 retain('collector_'+i+'_stage_'+stage+'_dominant',
                     reported['collector_'+i+'_stage_'+stage+'_dominant']);
+        }
         for(const [name,value] of Object.entries(reported))retain(name,value);
     }
     if(!count)
@@ -163,7 +166,24 @@ class BottleneckEvidence {
                 'observation_prepare_seconds','learner_inference_seconds',
                 'opponent_processing_seconds'];
             const stageHints=[];
+            const simHints=[];
             for(let i=0;i<9;i++) {
+                const batch=seconds('collector_'+i+'_sim_batch_wall_seconds');
+                const tail=seconds('collector_'+i+'_sim_last_child_gap_seconds');
+                const queue=seconds('collector_'+i+'_sim_dispatch_queue_seconds');
+                const worker=seconds('collector_'+i+'_sim_engine_roundtrip_seconds');
+                const tailShare=(batch>0&&tail!==null&&tail<=batch)
+                    ?tail/batch:null;
+                const queueShare=(worker!==null&&queue!==null&&worker+queue>0)
+                    ?queue/(worker+queue):null;
+                if(tailShare!==null)
+                    add('collector_'+i+'_sim_last_child_gap_share',tailShare);
+                if(queueShare!==null)
+                    add('collector_'+i+'_sim_dispatch_queue_share',queueShare);
+                simHints[i]={
+                    tail:tailShare!==null&&tailShare>=0.25,
+                    queue:queueShare!==null&&queueShare>=0.20
+                };
                 const durations=sourceNames.map(name=>
                     seconds('collector_'+i+'_'+name));
                 if(durations.some(x=>x===null))continue;
@@ -176,7 +196,7 @@ class BottleneckEvidence {
                     stageHints[i]=stage;
             }
             if(Number.isFinite(at)&&at>prior.lastAt) {
-                prior.samples.push({at,fraction,waitShare,mergeShare,stageHints});
+                prior.samples.push({at,fraction,waitShare,mergeShare,stageHints,simHints});
                 if(prior.samples.length>8)prior.samples.shift();
                 prior.lastAt=at;
             }
@@ -195,6 +215,12 @@ class BottleneckEvidence {
                 if(recent.filter(x=>x.mergeShare!==null&&x.mergeShare>=0.3).length>=5)
                     add('pipeline_merge_dominant',1,'count');
                 for(let i=0;i<9;i++) {
+                    // Stable straggler tails or dispatch queueing suggest
+                    // software parallelism pressure, not CPU saturation.
+                    if(recent.filter(x=>x.simHints?.[i]?.tail).length>=5)
+                        add('collector_'+i+'_sim_straggler_pressure',1,'count');
+                    if(recent.filter(x=>x.simHints?.[i]?.queue).length>=5)
+                        add('collector_'+i+'_sim_dispatch_pressure',1,'count');
                     for(let stage=0;stage<stageNames.length;stage++) {
                         if(recent.filter(x=>x.stageHints?.[i]===stage).length>=5)
                             add('collector_'+i+'_stage_'+stageNames[stage]+
