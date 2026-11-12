@@ -224,6 +224,106 @@ impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
                 squads: Vec::new(), ships: Vec::new(),
             });
         }
+        // Validate deferred membership and physical ownership BEFORE taking
+        // any authored scene objects. Partial extraction on a malformed
+        // later wave would otherwise make this Level unusable on retry.
+        let mut source_squads = HashMap::with_capacity(squad_waves.len());
+        for squad in &self.squads {
+            if squad_waves.contains_key(&squad.owner.squad_id) &&
+                source_squads.insert(squad.owner.squad_id, squad).is_some() {
+                return Err("Reinforcements contain duplicate source squad identities");
+            }
+        }
+        if source_squads.len() != squad_waves.len() {
+            return Err("Reinforcements reference an unknown source squad item ID");
+        }
+        let mut expected_ships = HashMap::new();
+        for (wave_idx, ids) in planned_squad_order.iter().enumerate() {
+            for id in ids {
+                let squad = source_squads[id];
+                if squad.members.is_empty() || squad.side <= 0 || !squad.owner.valid() {
+                    return Err("Reinforcement squads need valid owners and nonempty membership");
+                }
+                for &ship_id in &squad.members {
+                    if ship_id <= 0 || expected_ships.insert(ship_id, (wave_idx, squad.side)).is_some() {
+                        return Err("Reinforcement ship membership must be unique and positive");
+                    }
+                }
+            }
+        }
+        let mut source_ships = HashMap::with_capacity(expected_ships.len());
+        for entity in &self.entities {
+            let NativeAuthoredEntity::Ship(ship) = entity else { continue };
+            let wave = expected_ships.get(&ship.entity_id).copied();
+            let striker_carrier = match &ship.special {
+                Some(NativeAuthoredShipSpecial::Striker { carrier, .. }) => carrier.carrier_id,
+                _ => None,
+            };
+            if [ship.drone_carrier_id, striker_carrier].into_iter().flatten().any(|id|
+                expected_ships.get(&id).map(|&(wave, _)| wave) != wave.map(|(wave, _)| wave)
+            ) {
+                return Err("Reinforcement carrier and child must deploy together");
+            }
+            let Some((wave_idx, expected_side)) = wave else { continue };
+            if ship.side != expected_side || source_ships.insert(ship.entity_id, ship).is_some() {
+                return Err("Reinforcement physical ship identities or sides conflict with squads");
+            }
+            if ship.policy.is_some() || ship.motion.is_policy_controlled {
+                return Err("Reinforcements cannot reserve a live policy controller");
+            }
+            if waves[wave_idx].entry.is_some() &&
+                (self.metadata.stored_formation_offset(ship.entity_id)
+                    .is_none_or(|offset| !offset.is_finite()) ||
+                 self.metadata.current_path_clearance(ship.entity_id)
+                    .is_none_or(|clearance| clearance < 0)) {
+                return Err("Reinforcement entry orders need finite source offsets and nonnegative clearance");
+            }
+            if let Some(spawn) = spawn_centers[wave_idx] {
+                let offset = self.metadata.stored_formation_offset(ship.entity_id)
+                    .ok_or("Reinforcement ship has no source formation offset")?;
+                let size = self.metadata.ship_catalog.sprite_size(ship.ship_type)
+                    .ok_or("Reinforcement ship has no authored sprite size")?;
+                if !size.is_finite() || size.x <= 0.0 || size.y <= 0.0 ||
+                    !offset.is_finite() || !(spawn + offset).is_finite() {
+                    return Err("Reinforcement spawn and sprite geometry must be finite and positive");
+                }
+            }
+        }
+        if source_ships.len() != expected_ships.len() {
+            return Err("Reinforcement squads need one physical ship per member");
+        }
+        // One wave represents exactly one source constructor invocation.
+        // Validate Carrier descendants EVEN when the wave's physical
+        // positions come from a later capture and spawn is omitted.
+        for ids in &planned_squad_order {
+            if ids.len() < 2 { continue; }
+            let root = source_squads[&ids[0]];
+            let parents: HashSet<i64> = root.members.iter().copied().filter(|id|
+                source_ships.get(id).is_some_and(|ship| ship.ship_type == 5)
+            ).collect();
+            for id in ids.iter().skip(1) {
+                let child = source_squads[id];
+                if child.side != root.side {
+                    return Err("Carrier child reinforcement squad has a different side from its source squad");
+                }
+                let mut parent = None;
+                for ship_id in &child.members {
+                    let ship = source_ships[ship_id];
+                    let carrier = match ship.ship_type {
+                        8 => ship.drone_carrier_id,
+                        19 => match &ship.special {
+                            Some(NativeAuthoredShipSpecial::Striker { carrier, .. }) => carrier.carrier_id,
+                            _ => None,
+                        },
+                        _ => None,
+                    }.ok_or("Multi-squad reinforcement spawn requires source-linked Carrier children")?;
+                    if !parents.contains(&carrier) || parent.is_some_and(|id| id != carrier) {
+                        return Err("Reinforcement Carrier child squad must share a parent in the primary squad");
+                    }
+                    parent = Some(carrier);
+                }
+            }
+        }
         let mut ship_waves = HashMap::new();
         let mut selected_squads = HashMap::new();
         let mut initial_squads = Vec::new();

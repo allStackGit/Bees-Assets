@@ -1,7 +1,7 @@
 //! Source Titania II player-fleet staging before the native Level is built.
 //! This is one-time authored mission setup, never a second movement engine.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use bees_gameplay::player_inputs::NativeLevelPlayerContext;
 use bees_gameplay::campaign_dialogue::TITANIA_II_CENTER;
@@ -92,10 +92,16 @@ impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
         let mut index_by_id = HashMap::new();
         for (index, entity) in self.entities.iter().enumerate() {
             if let NativeAuthoredEntity::Ship(ship) = entity {
-                index_by_id.insert(ship.entity_id, index);
+                if index_by_id.insert(ship.entity_id, index).is_some() {
+                    return Err("Titania II contains duplicate source ship identities");
+                }
             }
         }
         let mut occupied: Vec<(Vec2, f32)> = Vec::new();
+        // Resolve the complete fleet before modifying the physical scene.
+        // A malformed later squad must not leave earlier squads relocated.
+        let mut placements = Vec::new();
+        let mut staged_ship_ids = HashSet::new();
         let mut slots = Vec::new();
         let bounds = self.broadphase_bounds;
         // Level.State.GetSquadsBySide preserves this authored squad order.
@@ -103,6 +109,9 @@ impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
             if squad.side != player_side || squad.members.is_empty() { continue; }
             slots.clear();
             for &id in &squad.members {
+                if !staged_ship_ids.insert(id) {
+                    return Err("Titania II player ship belongs to multiple staged squads");
+                }
                 let &index = index_by_id.get(&id)
                     .ok_or("Titania II player squad references an absent ship")?;
                 let NativeAuthoredEntity::Ship(NativeAuthoredShip {
@@ -143,12 +152,13 @@ impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
             }
             let (actual_center, actual_width, actual_height) = geometry(&slots);
             occupied.push((actual_center, actual_width.max(actual_height) * 0.5 + 8.0));
-            for slot in &slots {
-                let NativeAuthoredEntity::Ship(ship) = &mut self.entities[slot.index] else {
-                    unreachable!("validated ship entity");
-                };
-                ship.motion.position = slot.position;
-            }
+            placements.extend(slots.iter().map(|slot| (slot.index, slot.position)));
+        }
+        for (index, position) in placements {
+            let NativeAuthoredEntity::Ship(ship) = &mut self.entities[index] else {
+                unreachable!("validated physical ship index");
+            };
+            ship.motion.position = position;
         }
         self.metadata.hivemind_starting_positions.as_mut()
             .expect("source starting positions validated")[index] = TITANIA_II_CENTER;
