@@ -237,6 +237,16 @@ def carrier_child_squads(root_id, root_members, squads, ships, bee_side, label):
         if len(types) != 1 or not types <= {8, 19}:
             fail(f"{label} Carrier child squad must be homogeneous Drone or Striker")
         children.append((sid, squad, members))
+    # A selected Carrier's generated children must not disappear merely
+    # because an export labeled a squad incorrectly or omitted it from
+    # the squad table. The captured physical parent links are the source
+    # of truth for which child hulls this construction call produced.
+    linked = {eid for eid, ship in ships.items()
+              if ship.get("is_carrier_child") is True and
+              ship.get("parent_carrier_id") in parents}
+    grouped = {eid for _, _, members in children for eid in members}
+    if linked != grouped:
+        fail(f"{label} is missing source Carrier child squad membership")
     return children
 
 
