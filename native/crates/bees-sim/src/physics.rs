@@ -1727,12 +1727,17 @@ impl KinematicPhysics {
         // avoid scanning a large fleet against those obstacles solely to
         // reject every candidate after its broadphase query.
         let mut has_ship_contact_obstacles = false;
+        let mut has_body_contact_obstacles = false;
         self.grid.rebuild_with(self.obstacles.len(), |index| {
             let obstacle = &self.obstacles[index];
             if obstacle.active {
                 if obstacle.tracks_ship_contacts && obstacle.collider.bounds.is_some() {
                     has_ship_contact_obstacles = true;
                 }
+                // Only collision asteroids own body-pair and proximity
+                // contact sources. Reuse this visit for the static-only
+                // level fast path; no second obstacle population scan.
+                has_body_contact_obstacles |= obstacle.tracks_body_contacts;
                 obstacle.collider.bounds
             } else { None }
         });
@@ -1775,7 +1780,8 @@ impl KinematicPhysics {
         // CollisionAsteroid also has a separate proximity collider; that
         // proximity state must be imported before combat damage is enabled.
         self.proximity_obstacle_current.clear();
-        for source in &self.obstacles {
+        if has_body_contact_obstacles {
+            for source in &self.obstacles {
             if !source.active || !source.tracks_body_contacts { continue; }
             let (Some(proximity), Some(layer)) = (
                 source.proximity_collider.as_ref(), source.proximity_layer,
@@ -1797,6 +1803,7 @@ impl KinematicPhysics {
                         source_obstacle_id: source.id, other_obstacle_id: other.id,
                     });
                 }
+            }
             }
         }
         update_contact_changes(
@@ -1834,7 +1841,8 @@ impl KinematicPhysics {
             }
         }
         self.obstacle_pairs_current.clear();
-        for (source_index, source) in self.obstacles.iter().enumerate() {
+        if has_body_contact_obstacles {
+            for (source_index, source) in self.obstacles.iter().enumerate() {
             if !source.active || !source.tracks_body_contacts { continue; }
             let Some(bounds) = source.collider.bounds else { continue };
             self.grid.candidates(bounds, &mut self.candidates);
@@ -1855,6 +1863,7 @@ impl KinematicPhysics {
                         second_obstacle_id: source.id.max(other.id),
                     });
                 }
+            }
             }
         }
         update_contact_changes(
