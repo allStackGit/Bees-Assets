@@ -110,6 +110,9 @@ pub struct NativeHostStatusInterval {
     pub physics_broadphase_candidates: u64,
     pub physics_ship_grid_overflow_bodies: u64,
     pub physics_obstacle_grid_overflow_bodies: u64,
+    /// Actual shared-grid rebuilds in the native simulation window.
+    pub physics_ship_grid_rebuilds: u64,
+    pub physics_obstacle_grid_rebuilds: u64,
     pub physics_narrowphase_tests: u64,
     pub physics_trigger_enters: u64,
     pub automatic_weapon_target_queries: u64,
@@ -270,6 +273,12 @@ impl NativeStatusSampler {
                 )?,
                 physics_obstacle_grid_overflow_bodies: diff(
                     s.obstacle_grid_overflow_bodies, p.obstacle_grid_overflow_bodies,
+                )?,
+                physics_ship_grid_rebuilds: diff(
+                    s.ship_grid_rebuilds, p.ship_grid_rebuilds,
+                )?,
+                physics_obstacle_grid_rebuilds: diff(
+                    s.obstacle_grid_rebuilds, p.obstacle_grid_rebuilds,
                 )?,
                 physics_narrowphase_tests: diff(
                     s.narrowphase_tests, p.narrowphase_tests,
