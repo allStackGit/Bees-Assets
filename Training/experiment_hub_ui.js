@@ -390,9 +390,12 @@ function hubDistributedMetricSelection(selected,remoteCount) {
         const missing=[first,second].filter(name=>!names.includes(name));
         if(names.length+missing.length<=96)names.push(...missing);
     };
-    for(let i=0;i<total;i++)
+    for(let i=0;i<total;i++) {
         includePair('collector_'+i+'_rollout_engine_step_seconds',
             'collector_'+i+'_learner_inference_seconds');
+        includePair('collector_'+i+'_observation_prepare_seconds',
+            'collector_'+i+'_opponent_processing_seconds');
+    }
     for(let i=0;i<total;i++) {
         const model='collector_'+i+'_model_prepare_seconds';
         if(!names.includes(model)&&names.length<96)names.push(model);
@@ -445,6 +448,8 @@ function hubCollectorStageProfile(run) {
             if(engine===null||inference===null||rate===null)continue;
             samples.push({
                 engine,inference,rate,
+                observation:value(metrics,slot,'observation_prepare_seconds','seconds'),
+                opponent:value(metrics,slot,'opponent_processing_seconds','seconds'),
                 model:value(metrics,slot,'model_prepare_seconds','seconds'),
                 roundtrip:value(metrics,slot,'roundtrip_seconds','seconds'),
             });
@@ -458,6 +463,7 @@ function hubCollectorStageProfile(run) {
         slots.push({
             slot,samples:latest.length,
             engine:observed('engine'),inference:observed('inference'),
+            observation:observed('observation'),opponent:observed('opponent'),
             rate:observed('rate'),model:observed('model'),
             roundtrip:observed('roundtrip'),
         });
@@ -1538,8 +1544,9 @@ document.addEventListener('DOMContentLoaded', () => {
             collectorStageProfiles.append(heading);
             const table=document.createElement('table');
             const headers=['Collector','Samples','Decisions/s',
-                'Engine step (s)','Inference (s)','Model prepare (s)',
-                'Roundtrip (s)'];
+                'Engine step (s)','Observation preparation (s)',
+                'Inference (s)','Opponent processing (s)',
+                'Model prepare (s)','Roundtrip (s)'];
             const tr=document.createElement('tr');
             for(const title of headers) {
                 const th=document.createElement('th');
@@ -1554,7 +1561,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 for(const value of [
                     slot.slot===0?'0 · learner':' '+slot.slot+' · remote',
                     String(slot.samples),format(slot.rate),format(slot.engine),
-                    format(slot.inference),format(slot.model),
+                    format(slot.observation),format(slot.inference),
+                    format(slot.opponent),format(slot.model),
                     slot.slot===0?'—':format(slot.roundtrip),
                 ])cell(row,value);
                 tbody.append(row);
@@ -2267,7 +2275,8 @@ document.addEventListener('DOMContentLoaded', () => {
         'engine_steps','engine_steps_per_second','ant_decisions',
         'ant_decisions_per_second','group_states','group_states_per_second',
         'collection_seconds','rollout_model_refresh_seconds',
-        'rollout_engine_step_seconds','rollout_learner_inference_seconds',
+        'rollout_engine_step_seconds','rollout_observation_prepare_seconds',
+        'rollout_learner_inference_seconds','rollout_opponent_processing_seconds',
         'optimization_seconds','overlap_seconds',
         'remote_policy_snapshot_seconds',
         'remote_opponent_snapshot_seconds','ppo_microbatches','states_per_microbatch','actor_grad_norm',
@@ -2329,7 +2338,9 @@ document.addEventListener('DOMContentLoaded', () => {
             'collector_'+i+'_action_target',
             'collector_'+i+'_elapsed_seconds',
             'collector_'+i+'_rollout_engine_step_seconds',
+            'collector_'+i+'_observation_prepare_seconds',
             'collector_'+i+'_learner_inference_seconds',
+            'collector_'+i+'_opponent_processing_seconds',
             'collector_'+i+'_roundtrip_seconds',
             'collector_'+i+'_service_seconds',
             'collector_'+i+'_serialize_seconds',
