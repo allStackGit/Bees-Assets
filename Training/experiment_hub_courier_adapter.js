@@ -48,6 +48,56 @@ function courierMetrics(source) {
     return metrics;
 }
 
+// A Courier selection evaluation is a paired policy-comparison signal,
+// not an independent fixed benchmark. Read only completed records no later
+// than the published checkpoint; never infer a missing survival score.
+function latestSelectionMetrics(root,checkpointRound) {
+    const file=path.join(root,'events.jsonl');
+    let fd;
+    try {
+        if(fs.realpathSync(file)!==file)throw Error('Courier event path is redirected.');
+        fd=fs.openSync(file,'r');
+        const stat=fs.fstatSync(fd);
+        if(!stat.isFile())throw Error('Invalid Courier event stream.');
+        const length=Math.min(stat.size,2*1024*1024);
+        if(!length)return {};
+        const buffer=Buffer.alloc(length);
+        if(fs.readSync(fd,buffer,0,length,stat.size-length)!==length)
+            throw Error('Courier event stream changed during read.');
+        const lines=buffer.toString('utf8').split('\n');
+        lines.pop(); // A final record may still be in flight.
+        if(length<stat.size)lines.shift(); // Discard the truncated first record.
+        for(let i=lines.length-1;i>=0;i--) {
+            if(!lines[i].includes('"selection_evaluation"'))continue;
+            let row;
+            try {row=JSON.parse(lines[i]);}
+            catch {continue;}
+            if(row.event!=='selection_evaluation'||
+                !Number.isSafeInteger(row.round)||row.round<0||
+                row.round>checkpointRound)continue;
+            const metrics={
+                selection_evaluation_round:{value:row.round,unit:'count'},
+            };
+            for(const [key,value] of [
+                ['selection_candidate_survival_score',row.candidate_score],
+                ['selection_incumbent_survival_score',row.incumbent_score],
+            ])if(typeof value==='number'&&Number.isFinite(value)&&
+                Math.abs(value)<=1e12)metrics[key]={value,unit:'scalar'};
+            if(typeof row.champion_promoted==='boolean')
+                metrics.selection_champion_promoted={
+                    value:row.champion_promoted?1:0,unit:'count',
+                };
+            return metrics;
+        }
+        return {};
+    }catch(error) {
+        if(error.code==='ENOENT'&&fd===undefined)return {};
+        throw error;
+    }finally {
+        if(fd!==undefined)fs.closeSync(fd);
+    }
+}
+
 function liveWindowsProgress(root) {
     // Reading the durable checkpoint can block Python's replacement on Windows.
     // The append-only event is emitted after all checkpoint files are published.
@@ -233,7 +283,10 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
                 experiment_id:context.job_id,segment_id:'training'};
             if(windows&&['running','stop_requested'].includes(context.state)) {
                 const progress=liveWindowsProgress(root);
-                return progress&&validateProgress({...identity,...progress},context.project_id);
+                return progress&&validateProgress({...identity,...progress,
+                    metrics:{...progress.metrics,
+                        ...latestSelectionMetrics(root,progress.steps_completed)},
+                },context.project_id);
             }
             const checkpoint=path.join(root,'checkpoint.json');
             let fd;
@@ -255,6 +308,7 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
                         generation:{value:summary.generation,unit:'count'},
                         active_training_time:{value:summary.active_seconds,unit:'seconds'},
                         ...courierMetrics(summary),
+                        ...latestSelectionMetrics(root,summary.round),
                     },
                 },context.project_id);
             }catch(error) {
