@@ -557,6 +557,7 @@ impl NativeSoftwareRenderer {
         counts.numbered_squad_rows = self.draw_squad_shortcuts(view);
         counts.special_ready_ships = self.draw_special_readiness(view);
         counts.tactical_buttons_drawn = self.draw_tactical_bar();
+        self.draw_selected_priority(view);
         if self.show_shooting_menu { self.draw_shooting_menu(view); }
         counts
     }
@@ -788,10 +789,49 @@ impl NativeSoftwareRenderer {
         drawn
     }
 
+    /// The live source Squad.GetShootingStrategy, including user changes
+    /// since export. The corresponding weapon targeting is read from this
+    /// metadata whenever the squad has no active command.
+    fn draw_selected_priority(&mut self, view: &NativeRenderWorldView<'_>) {
+        if self.selection.squads().is_empty() || self.width < 520 ||
+            self.height < 430 { return; }
+        let first = self.selection.squads().first().and_then(|&owner|
+            view.player_authority.player_shooting_strategy(owner));
+        let label = match first {
+            Some(shooting) if self.selection.squads().iter().all(|&owner|
+                view.player_authority.player_shooting_strategy(owner) == Some(shooting)
+            ) => format!("Shooting priority: {} (S to choose)", shooting.name),
+            Some(_) => "Shooting priority: mixed (S to choose)".to_owned(),
+            None => "Shooting priority unavailable".to_owned(),
+        };
+        let label = text::fit(&label, self.width.saturating_sub(72).min(760));
+        let w = text::width(label, 1);
+        let x = (self.width - w) / 2;
+        text::draw_at(&mut self.pixels, self.width, x,
+            self.height - 190, label, 1, [175, 207, 227]);
+    }
+
     /// Present the canonical 40-entry source registry. Current selection
     /// is read from the SAME live metadata used by automatic weapon inputs;
     /// different selected strategies produce no misleading highlighted value.
     fn draw_shooting_menu(&mut self, view: &NativeRenderWorldView<'_>) {
+        // Cover the battlefield under the modal without creating another
+        // surface, renderer or dynamically allocated panel bitmap.
+        let Some(first) = tactical_hud::shooting_rect(self.width, self.height, 0)
+            else { return };
+        let Some(last) = tactical_hud::shooting_rect(self.width, self.height, 39)
+            else { return };
+        let left = first.left.saturating_sub(12);
+        let right = (last.right + 12).min(self.width);
+        let top = first.top.saturating_sub(27);
+        let bottom = (last.bottom + 12).min(self.height);
+        for y in top..bottom {
+            self.pixels[y * self.width + left
+                ..y * self.width + right].fill(0x101d2e);
+        }
+        text::draw_at(&mut self.pixels, self.width, left + 12,
+            top + 6, "SHOOTING PRIORITY  -  click one / S or Esc cancels",
+            1, [225, 235, 250]);
         let selected = self.selection.squads().iter()
             .filter_map(|&owner| view.player_authority.player_shooting_strategy(owner))
             .map(|value| value.id)
@@ -822,7 +862,8 @@ impl NativeSoftwareRenderer {
     /// not allocate or render a second command message.
     #[cfg(feature = "client")]
     pub fn draw_tactical_feedback(&mut self, feedback: &str) {
-        if self.width < 520 || self.height < 250 { return; }
+        if self.width < 520 || self.height < 250 ||
+            self.show_shooting_menu { return; }
         let hint = self.hovered_tactical_action
             .map(tactical_hud::HudAction::hint)
             .unwrap_or(feedback);
@@ -830,7 +871,9 @@ impl NativeSoftwareRenderer {
         let message = text::fit(hint, self.width.saturating_sub(72).min(760));
         let w = (text::width(message, 1) + 20).min(self.width);
         let left = (self.width - w) / 2;
-        let top = if self.height >= 430 { self.height - 134 }
+        // The command strip starts at height-134. Draw this hint ABOVE
+        // its buttons instead of obscuring the first row.
+        let top = if self.height >= 430 { self.height - 166 }
             else { self.height - 42 };
         for y in top..(top + text::HEIGHT + 12).min(self.height) {
             self.pixels[y * self.width + left

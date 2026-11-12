@@ -106,7 +106,7 @@ pub struct NativeClient {
     pub minimap_move_orders_submitted: u64,
     pub tactical_button_clicks: u64,
     pub squad_tab_clicks: u64,
-    pub shooting_priority_changes: u64,
+    pub shooting_priority_requests_submitted: u64,
 }
 
 impl NativeClient {
@@ -140,7 +140,7 @@ impl NativeClient {
             cycled_shortcut_selections: 0,
             minimap_move_orders_submitted: 0,
             tactical_button_clicks: 0, squad_tab_clicks: 0,
-            shooting_priority_changes: 0 })
+            shooting_priority_requests_submitted: 0 })
     }
 
     /// Initial authored camera focus is a presentation-only concern. The
@@ -216,8 +216,19 @@ impl NativeClient {
     pub fn poll(
         &mut self, view: NativeRenderWorldView<'_>, bounds: Aabb, world_count: usize, fixed_dt: Duration,
     ) -> Result<NativeClientAction, Box<dyn std::error::Error>> {
-        if !self.window.is_open() || self.window.is_key_down(Key::Escape) {
+        if !self.window.is_open() {
             return Ok(NativeClientAction::Quit);
+        }
+        // Esc dismisses the temporary strategy picker before affecting
+        // the running battle. Use the press edge so a held key cannot
+        // also quit on the following frame after closing the modal.
+        if self.window.is_key_pressed(Key::Escape, KeyRepeat::No) {
+            if self.renderer.show_shooting_menu {
+                self.renderer.show_shooting_menu = false;
+                self.shooting_press = None;
+            } else {
+                return Ok(NativeClientAction::Quit);
+            }
         }
         let (window_width, window_height) = self.window.get_size();
         if window_width == 0 || window_height == 0 {
@@ -385,7 +396,7 @@ impl NativeClient {
             self.shooting_press = None;
         }
         let shooting_input = clicked_shooting.map(|strategy_id| {
-            self.shooting_priority_changes += 1;
+            self.shooting_priority_requests_submitted += 1;
             NativePlayerSquadShooting {
                 world_id: view.world_id, episode_revision: view.episode_revision,
                 squads: self.renderer.selection.squads().to_vec(), strategy_id,
@@ -416,7 +427,8 @@ impl NativeClient {
                     == Some(action))
         } else { None };
         if clicked_hud.is_some() { self.tactical_button_clicks += 1; }
-        if accepts_orders && pointer_active && (
+        if accepts_orders && pointer_active &&
+            self.held_fire_target.is_none() && (
             clicked_hud == Some(HudAction::Shooting) ||
             self.window.is_key_pressed(Key::S, KeyRepeat::No)
         ) {
