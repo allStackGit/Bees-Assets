@@ -2782,25 +2782,32 @@ service to the public Internet.
    The Hub creates each worker configuration, all jobs and all machine
    reservations atomically; if any physical worker or capacity is missing,
    no job or claim is committed. No process is started by this action.
-4. Allow each host's authenticated agent to acknowledge its offered claim.
-   In **Train**, use **Start all remote collectors** on the learner row to
-   authorize every ready collector in one durable transaction, or explicitly
-   Start the individual `tinybrains_rollout` jobs, or use an independently
-   authorized native automation session. The batch action checks the exact
-   current collector IDs, all pinned machine/HMAC endpoints, the learner's
-   fresh GPU/resource claim, and each worker's native Start readiness; any
-   failed check authorizes **zero** Starts. It does not start the learner,
-   bypass GPU qualification, retry an already dispatched collector, or
-   promise simultaneous worker execution. An authorized Start is still
-   subject to local OS enforcement. The operator CLI may invoke
-   `POST /api/hub/distributed/tinybrains/start-collectors` with
-   `{"learner_job_id":"<uuid>","expected_collector_job_ids":["<uuid>",...],"confirm_start":true}`.
-   The learner Start gate requires a **fresh verified running dispatch** from every worker,
-   exact pinned endpoints, equal key fingerprints and matching leases.
-   A coordinator restart requires fresh agent and native process receipts
-   before any new Start; persisted `running` labels are not sufficient.
-5. Perform the learner's normal GPU access qualification, then explicitly
-   Start it. Check `self-play/history.jsonl`: `collector_samples` reports
+4. Allow each host's authenticated agent to acknowledge its offered claim,
+   and qualify the learner's GPU access before launch. In **Train**, use
+   **Start collectors only** to authorize all remote native Starts atomically
+   without authorizing the learner, or **Start coordinated group** to
+   explicitly preapprove one learner GPU Start *after* every collector is
+   freshly verified running. The latter is bounded to this live coordinator
+   and 20 minutes. A coordinator restart, changed/lost agent session,
+   worker dispatch, physical endpoint, HMAC identity or lease receipt
+   disarms the future learner Start. No failed or interrupted process is
+   automatically restarted. The Hub never starts an unqualified learner
+   or assumes a persisted `running` label is live ownership. The Train
+   row shows the pending/authorized/disarmed status and can **Cancel future
+   learner Start** without stopping any existing collectors.
+   Both choices use `POST /api/hub/distributed/tinybrains/start-collectors`
+   with `{"learner_job_id":"<uuid>","expected_collector_job_ids":["<uuid>",...],"confirm_start":true}`.
+   Coordinated approval additionally supplies `"start_learner_when_ready":true,
+   "confirm_learner_start":true`. The operator CLI can submit the same
+   explicit JSON. To disarm a pending approval, POST
+   `/api/hub/distributed/tinybrains/cancel-launch` with
+   `{"learner_job_id":"<uuid>","confirm_cancel":true}`.
+   All collector Starts are one durable transition, with no partial
+   authorization if any host is ineligible. Neither action promises
+   simultaneous native execution; each machine's supervisor still enforces
+   its fixed resources.
+5. Without coordinated approval, wait for the collectors' fresh running
+   receipts and explicitly Start the learner. Check `self-play/history.jsonl`: `collector_samples` reports
    each shard's ant decisions and engine steps plus remote transfer time and
    a stable endpoint hash. Compare **end-to-end** actions/s, not just GPU busy
    percentage. For a graceful stop, Stop the learner at a PPO checkpoint
