@@ -1347,7 +1347,8 @@ document.addEventListener('DOMContentLoaded', () => {
             .filter(key=>metricOptions.some(m=>m.key===key));
         // On a new project view, show actual learning outcomes before the
         // alphabetically first resource counter. Explicit user choices win.
-        const learningDefaults=['training_win_rate','training_score_rate',
+        const learningDefaults=['selection_candidate_survival_score',
+            'selection_incumbent_survival_score','training_win_rate','training_score_rate',
             'training_mean_score','loss','entropy',
             'ant_decisions_per_second'].map(name=>'metric:'+name)
             .filter(key=>metricOptions.some(option=>option.key===key));
@@ -2187,7 +2188,9 @@ document.addEventListener('DOMContentLoaded', () => {
             // Compact Monitor summaries should show the trainer's recorded
             // learning outcomes as well as steps; timing-only summaries
             // can misleadingly look like missing learning telemetry.
-            const preferred=['training_completed_matches','training_win_rate',
+            const preferred=['selection_candidate_survival_score',
+                'selection_incumbent_survival_score','selection_champion_promoted',
+                'training_completed_matches','training_win_rate',
                 'training_score_rate','training_mean_score_margin',
                 'training_mean_score','loss','policy_loss','value_loss',
                 'entropy','total_ppo_updates','ant_decisions_per_second',
@@ -2249,6 +2252,8 @@ document.addEventListener('DOMContentLoaded', () => {
         'combat_kills_exact','combat_kills_verified_matches',
         'births_observed','deaths_observed',
         'population_mean','population_peak','combat_exposure_fraction',
+        'selection_candidate_survival_score','selection_incumbent_survival_score',
+        'selection_champion_promoted','selection_evaluation_round',
         'terminal_rewards','episodes_ended','loss','policy_loss',
         'value_loss','baseline_loss','entropy','local_elo','mean_reward'];
     const knownPerformanceMetrics=[
