@@ -99,6 +99,12 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'rollout_engine_measured_work_share',
             'rollout_inference_measured_work_share'])
             retain(name,reported[name]);
+        // At most one sustained stage can dominate each fully instrumented
+        // collector. Give confirmed per-worker evidence a default chart slot.
+        for(let i=0;i<9;i++)
+            for(const stage of ['engine','observation','inference','opponent'])
+                retain('collector_'+i+'_stage_'+stage+'_dominant',
+                    reported['collector_'+i+'_stage_'+stage+'_dominant']);
         for(const [name,value] of Object.entries(reported))retain(name,value);
     }
     if(!count)
