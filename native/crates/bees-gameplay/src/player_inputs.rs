@@ -714,21 +714,40 @@ impl NativePlayerFirePlan {
     }
 }
 
-impl<M, A> NativeLevelState<M, A> {
+impl<M: NativePlayerAuthority, A> NativeLevelState<M, A> {
     pub fn has_held_fire(&self) -> bool { !self.held_fire_ships.is_empty() }
 
-    /// Follow or release the original live ships even if selection or the
-    /// squad roster changed after key-down. Episode turnover owns the reset.
+    /// Follow the original live ships even when selection has changed,
+    /// but do not let a viewer-side switch or roster transfer continue to
+    /// aim ships controlled by another player. A valid released/retired
+    /// ship has its manual target cleared using the SAME combat weapon
+    /// owner, not a presentation-only cancellation.
+    ///
+    /// Compact the existing list in place; no per-mouse-move allocation.
     pub fn update_held_fire(&mut self, target: Option<Vec2>) -> Result<(), NativePlayerInputError> {
-        self.held_fire_ships.retain(|&id| self.combat.ship_body(id).is_some_and(|body| body.active) &&
-            self.combat.ship(id).is_some_and(|ship| !ship.vitals.is_dead()) && self.combat.policy_frame(id).is_none());
-        for &id in &self.held_fire_ships {
-            if let Err(error) = self.combat.set_game_manual_fire(id, target) {
+        let mut retained = 0;
+        for index in 0..self.held_fire_ships.len() {
+            let id = self.held_fire_ships[index];
+            if !self.combat.ship_body(id).is_some_and(|body| body.active) ||
+                !self.combat.ship(id).is_some_and(|ship| !ship.vitals.is_dead()) ||
+                self.combat.policy_frame(id).is_some() {
+                continue;
+            }
+            let owned = self.events.roster().owning_squad(id)
+                .and_then(|owner| self.events.roster().get(owner).map(|squad|
+                    self.metadata.player_owns_squad(owner, squad.side)
+                )).unwrap_or(false);
+            let next_target = if owned { target } else { None };
+            if let Err(error) = self.combat.set_game_manual_fire(id, next_target) {
                 self.events.fail_player_input();
                 return Err(NativePlayerInputError::Source(error.into()));
             }
+            if owned && target.is_some() {
+                self.held_fire_ships[retained] = id;
+                retained += 1;
+            }
         }
-        if target.is_none() { self.held_fire_ships.clear(); }
+        self.held_fire_ships.truncate(retained);
         Ok(())
     }
 }
