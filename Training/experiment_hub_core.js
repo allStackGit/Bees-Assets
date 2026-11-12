@@ -2080,8 +2080,11 @@ class ExperimentHub {
             const job=next.jobs.find(j=>j.id===move.job_id);
             if(!job||job.adapter!=='unconfigured'||job.status!=='waiting_adapter'||job.dispatch_id)
                 throw Error('Only an unstarted non-Bees job claim can move.');
-            if(job.resource_bundle)
-                throw Error('Bundle machine allocations are fixed. Cancel the unstarted bundle and queue a new allocation.');
+            if(job.resource_bundle||job.distributed_rollout_managed===true||
+                job.project_id==='tinybrains_rollout'&&next.jobs.some(parent=>
+                    parent.id===job.frozen_parameters?.learner_job_id&&
+                    parent.distributed_rollout_managed===true))
+                throw Error('Distributed group and resource-bundle machines are pinned; abandon the group before changing placement.');
             if(job.lease_id!==move.expected_lease_id)
                 throw Error('A job claim changed. Refresh Train before moving it.');
             const predecessor=predecessorBlock(next,job);
@@ -4153,6 +4156,8 @@ class ExperimentHub {
             if(typeof ancestorId!=='string'||!UUID.test(ancestorId))
                 throw Error('Select a valid predecessor job for continuation.');
             parent=next.jobs.find(j=>j.id===ancestorId);
+            if(parent?.distributed_abort_requested_at)
+                throw Error('Cannot continue an abandoned distributed learner.');
             const pinnedRoot=parent?.artifact_lineage_root_id||parent?.id;
             const futureStage=['waiting_adapter','waiting_predecessor'].includes(parent?.status);
             if(!parent||parent.project_id!==project.id||
@@ -4184,6 +4189,8 @@ class ExperimentHub {
             if(!UUID.test(String(afterId)))
                 throw Error('Select a valid independent predecessor.');
             dependency=next.jobs.find(j=>j.id===afterId);
+            if(dependency?.distributed_abort_requested_at)
+                throw Error('An abandoned distributed group cannot accept a new dependent job.');
             const completed=independentSequenceComplete(dependency);
             if(!dependency||['bees','ants'].includes(dependency.project_id)||
                 !(['waiting_adapter','waiting_predecessor',
