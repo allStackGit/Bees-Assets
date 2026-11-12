@@ -161,8 +161,9 @@ can be generated instead of transcribed. Unity selects reinforcement squads
 from the saved fleet *when the timer fires*: they are normally absent from
 the starting physical scene. Capture each wave in the **same Unity Stage
 run**, after Unity issues its entry order but before the first movement
-FixedUpdate (`has_target_coordinates=true`, `is_moving=false`). Later
-captures are not equivalent initial spawn records. Give
+FixedUpdate. Mobile ships must have `has_target_coordinates=true` and
+`is_moving=false`; immobile members retain their physical formation slots
+without point orders. Later captures are not equivalent initial spawn records. Give
 `waves.json` the actual spawned squad item IDs, source-normalized directions,
 and paths to those later scene captures (illustrative IDs):
 
