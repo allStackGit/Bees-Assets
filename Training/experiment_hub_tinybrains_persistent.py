@@ -75,6 +75,16 @@ def main():
             if not 0 < fraction <= 1:
                 raise SystemExit("Shared GPU memory request exceeds the device capacity.")
             torch.cuda.set_per_process_memory_fraction(float(fraction), 0)
+    # Existing installations may have the distributed collector protocol but
+    # not the newer conservative balancing runtime. Preserve their existing
+    # launch behavior until that trainer version is installed.
+    auto_balance = False
+    if args.remote_rollout_endpoint and not args.remote_rollout_weight:
+        from importlib.util import find_spec
+        auto_balance = find_spec("ants_mapoca.rollout_balance") is not None
+        if not auto_balance:
+            print("TinyBrains backend lacks automatic collector balancing; "
+                  "using existing fixed equal collector targets.", file=sys.stderr)
     sys.argv = [
         "ants_mapoca.learning_path",
         "--config", str(spec),
@@ -93,8 +103,7 @@ def main():
           for arg in ("--remote-rollout-weight", str(weight))],
         # Prefer sustained delivered-SPS balancing only when the operator
         # did not pin explicit immutable per-collector action weights.
-        *(["--auto-rollout-weights"] if args.remote_rollout_endpoint and
-           not args.remote_rollout_weight else []),
+        *(["--auto-rollout-weights"] if auto_balance else []),
         *(["--remote-rollout-key-file", args.remote_rollout_key_file,
            "--remote-rollout-job-id", run.name] if args.remote_rollout_endpoint else []),
     ]
