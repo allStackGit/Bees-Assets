@@ -1383,9 +1383,14 @@ The Hub derives job CPU-core usage from consecutive cumulative CPU samples;
 missing or inaccessible counters are not interpreted as zero. If available,
 `job_cpu_throttled_seconds` and `job_cpu_throttle_events` expose cumulative
 CPU-quota throttling from the verified Docker or native Linux
-systemd cgroup. These totals are not per-update PPO phase timings, and
-their growth is diagnostic evidence of throttling rather than a measure
-of marginal training throughput. These host kernel counters describe
+systemd cgroup. The cumulative `job_cpu_quota_periods` counts eligible
+quota intervals; `job_cpu_quota_throttled_periods_pct` is computed from
+the changes in throttled events and quota periods across continuous
+authenticated reports of the same owner. A missing, reset, or nonadvancing
+denominator produces no percentage. These measures describe local quota
+pressure, not necessarily all CPU contention: inherited ancestor limits
+and other scheduling delays may not appear. Totals are not per-update PPO
+phase timings, and their growth is not a measure of marginal throughput. These host kernel counters describe
 the owned workload, not GPU kernel efficiency.
 
 For Halifax, create the dedicated
