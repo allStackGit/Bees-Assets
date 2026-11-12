@@ -376,69 +376,86 @@ def expand(run, scene, manifest, read_capture=None):
             ) or len(set(members)) != len(members):
                 fail(f"source squad {squad_id} has invalid physical membership")
             selected_ships = captured_ships if capture is not None else ships
-            for entity_id in members:
-                ship = selected_ships.get(entity_id)
-                if ship is None or ship.get("side") != bee_side or (
-                    ship.get("is_rl_policy_controlled") is not False or
-                    ship.get("has_bound_policy") is not False
-                ):
-                    fail(f"source squad {squad_id} has missing or policy-controlled physical ships")
-            # Source AddTitania2BeeWave offsets one tangent lane per squad.
+            group = [(squad_id, squad, members)]
+            if capture is not None:
+                group.extend(carrier_child_squads(
+                    squad_id, members, captured_squads, captured_ships, bee_side, label
+                ))
+            # Each parent and its captured children belong to ONE source
+            # SpawnShipsAndSquads call and therefore ONE native wave plan.
+            # The manifest's outer IDs still denote independent SavedSquad
+            # slots and retain their original lane offset.
+            for group_id, group_squad, group_members in group:
+                if group_id != squad_id:
+                    if group_id in used:
+                        fail(f"source Carrier child squad {group_id} appears in multiple waves")
+                    used.add(group_id)
+                if (group_squad.get("side") != bee_side or
+                    group_squad.get("user_controlled") is not False or
+                    not isinstance(group_members, list) or not group_members or
+                    any(type(eid) is not int or eid <= 0 for eid in group_members) or
+                    len(set(group_members)) != len(group_members)):
+                    fail(f"{label} squad {group_id} has invalid membership or side")
+                for entity_id in group_members:
+                    ship = selected_ships.get(entity_id)
+                    if ship is None or ship.get("side") != bee_side or (
+                        ship.get("is_rl_policy_controlled") is not False or
+                        ship.get("has_bound_policy") is not False
+                    ):
+                        fail(f"{label} squad {group_id} has missing or policy-controlled physical ships")
+            all_members = [eid for _, _, group_members in group for eid in group_members]
+            if len(set(all_members)) != len(all_members):
+                fail(f"{label} source squads overlap physical members")
+            # Source AddTitania2BeeWave offsets one tangent lane per SAVED
+            # squad. Carrier children share the same lane as their parent.
             lane_offset = (si - (len(ids) - 1) * 0.5) * 0.16
             direction = [dx if horizontal else dx + lane_offset,
                          dy + lane_offset if horizontal else dy]
             if capture is not None:
                 matches = [(spawn, entry) for spawn, entry in lane_candidates(bounds, direction)
-                           if verify_entry_orders([members], captured_ships, spawn, entry, bounds, label)]
+                           if verify_entry_orders(
+                               [group_members for _, _, group_members in group],
+                               captured_ships, spawn, entry, bounds, label
+                           )]
                 if not matches:
-                    fail(f"{label} source movement orders match no authored entry lane")
+                    fail(f"{label} source movement orders or group positions match no authored entry lane")
                 spawn, entry = matches[0]
                 if any(not all(math.isclose(a, b, rel_tol=1e-6, abs_tol=0.005)
                                for a, b in zip(entry, other_entry))
                        for _, other_entry in matches[1:]):
                     fail(f"{label} has ambiguous captured entry orders")
-                if squad_id in source_squads or any(eid in entity_ids for eid in members):
+                if any(group_id in source_squads for group_id, _, _ in group) or any(
+                    eid in entity_ids for eid in all_members
+                ):
                     fail(f"{label} capture conflicts with an existing source identity")
-                # Unity's GameState.GetId uses a monotonically advancing
-                # Stage allocator. A ship spawned in a future wave must be
-                # newer than every entity already created in the source
-                # scene or an earlier captured wave.
+                # Stage-wide GameState IDs only increase; reject captures
+                # belonging to a different run or an earlier wave.
                 highest_created = max(entity_ids, default=0)
-                if any(eid <= highest_created for eid in members):
+                if any(eid <= highest_created for eid in all_members):
                     fail(f"{label} includes a nonmonotonic future ship ID")
-                # Retain the real source records, including weapons, movement,
-                # HiveMind authority and each member's authored formation.
-                scene["squads"].append(squad)
-                source_squads[squad_id] = squad
-                for eid in members:
-                    ship = dict(captured_ships[eid])
-                    # Unity has already issued the entry MoveToPoint when
-                    # a live wave is captured. A fresh native scene cannot
-                    # import that in-progress command: the deferred native
-                    # wave will issue its own equivalent order on arrival.
-                    # Require the capture to precede the first physics
-                    # movement tick, preserving its real spawn position,
-                    # speed, health, weapons and physical identity.
-                    # Ship.ClearData assigns CurrentSpeed = Speed and
-                    # does not establish zero rigidbody velocity as a
-                    # source invariant. Preserve the actual velocity;
-                    # only require the pre-FixedUpdate movement flags.
-                    if (ship.get("is_moving") is not False or
-                        ship.get("has_target_coordinates") is not True):
-                        fail(f"{label} ship {eid} must be captured after its entry order but before movement")
-                    ship["has_target_coordinates"] = False
-                    ship["target_coordinates"] = {"x": 0.0, "y": 0.0}
-                    scene["ships"].append(ship)
-                    ships[eid] = ship
-                    entity_ids.add(eid)
+                for group_id, group_squad, group_members in group:
+                    scene["squads"].append(group_squad)
+                    source_squads[group_id] = group_squad
+                    for eid in group_members:
+                        ship = dict(captured_ships[eid])
+                        # The source issued a move just before this capture.
+                        # The deferred native arrival reissues that move;
+                        # import the authentic pre-physics spawn state only.
+                        if (ship.get("is_moving") is not False or
+                            ship.get("has_target_coordinates") is not True):
+                            fail(f"{label} ship {eid} must be captured after its entry order but before movement")
+                        ship["has_target_coordinates"] = False
+                        ship["target_coordinates"] = {"x": 0.0, "y": 0.0}
+                        scene["ships"].append(ship)
+                        ships[eid] = ship
+                        entity_ids.add(eid)
             else:
                 spawn, entry = lane(bounds, direction)
             output.append({
                 "after_seconds": at,
-                "squad_item_ids": [squad_id],
-                # A live Unity capture already contains the authoritative
-                # off-map physical placement. Do not move it again (or
-                # re-apply its adjusted formation offsets) at native setup.
+                "squad_item_ids": [group_id for group_id, _, _ in group],
+                # The captured wave already occupies Unity's original
+                # off-map locations. Native must not reapply placement.
                 "spawn": None if capture is not None else spawn,
                 "entry": entry,
             })
