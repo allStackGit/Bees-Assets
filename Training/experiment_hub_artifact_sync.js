@@ -79,7 +79,7 @@ function durableJson(file,meta) {
         if(fs.existsSync(temp))fs.unlinkSync(temp);
     }
 }
-function shaFile(file) {
+async function shaFile(file) {
     const fd=fs.openSync(file,fs.constants.O_RDONLY|
         (fs.constants.O_NOFOLLOW||0));
     try {
@@ -91,6 +91,9 @@ function shaFile(file) {
             const n=fs.readSync(fd,buf,0,Math.min(buf.length,st.size-offset),offset);
             if(n<1)fail('Artifact shortened during verification.',409);
             hasher.update(buf.subarray(0,n));offset+=n;
+            // Share the coordinator event loop with native heartbeats.
+            if(offset<st.size)
+                await new Promise(resolve=>setImmediate(resolve));
         }
         return hasher.digest('hex');
     }finally{fs.closeSync(fd);}
@@ -99,6 +102,7 @@ class ArtifactMirror {
     constructor(getHub) {
         if(typeof getHub!=='function')throw Error('Artifact mirror requires a Hub.');
         this.getHub=getHub;
+        this.finalizing=new Map();
     }
     authorize(machineId,token,jobId,relative,sha,size) {
         const hub=this.getHub();
@@ -149,19 +153,33 @@ class ArtifactMirror {
         if(count>=MAX_FILES||size+info.size>MAX_JOB)
             fail('Job artifact storage limit reached.',413);
     }
-    finalize(info) {
-        if(shaFile(info.partFile)!==info.sha) {
-            fs.unlinkSync(info.partFile);
-            fail('Artifact snapshot checksum changed; retry a fresh snapshot.',409);
+    async finalize(info) {
+        // Large checksums yield. Share one finalizer per staged file so
+        // simultaneous status checks cannot race the atomic rename.
+        const existing=this.finalizing.get(info.partFile);
+        if(existing)return existing;
+        const operation=(async()=>{
+            if(await shaFile(info.partFile)!==info.sha) {
+                fs.unlinkSync(info.partFile);
+                fail('Artifact snapshot checksum changed; retry a fresh snapshot.',409);
+            }
+            regular(info.destination,true);
+            fs.renameSync(info.partFile,info.destination);
+            durableJson(info.metaFile,{relative:info.relative,
+                sha:info.sha,size:info.size,complete:true});
+            return {offset:info.size,complete:true};
+        })();
+        this.finalizing.set(info.partFile,operation);
+        try{return await operation;}
+        finally {
+            if(this.finalizing.get(info.partFile)===operation)
+                this.finalizing.delete(info.partFile);
         }
-        regular(info.destination,true);
-        fs.renameSync(info.partFile,info.destination);
-        durableJson(info.metaFile,{relative:info.relative,
-            sha:info.sha,size:info.size,complete:true});
-        return {offset:info.size,complete:true};
     }
-    status(machineId,token,jobId,relative,sha,size) {
+    async status(machineId,token,jobId,relative,sha,size) {
         const info=this.authorize(machineId,token,jobId,relative,sha,size);
+        const inFlight=this.finalizing.get(info.partFile);
+        if(inFlight)await inFlight;
         const meta=this.metadata(info);
         if(!meta||meta.sha!==sha||meta.size!==size)
             return {offset:0,complete:false};
@@ -179,8 +197,10 @@ class ArtifactMirror {
         if(pending.size===size)return this.finalize(info);
         return {offset:pending.size,complete:false};
     }
-    append(machineId,token,jobId,relative,sha,size,offset,bytes) {
+    async append(machineId,token,jobId,relative,sha,size,offset,bytes) {
         const info=this.authorize(machineId,token,jobId,relative,sha,size);
+        const inFlight=this.finalizing.get(info.partFile);
+        if(inFlight)await inFlight;
         if(!Number.isSafeInteger(offset)||offset<0||offset>=size||
             !Buffer.isBuffer(bytes)||bytes.length<1||bytes.length>MAX_CHUNK||
             bytes.length>size-offset)
