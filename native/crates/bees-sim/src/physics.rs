@@ -1646,11 +1646,20 @@ impl KinematicPhysics {
             }
             projectile.update_hull();
         }
+        // All contact phases share these frame-local eligibility flags.
+        // Derive them during mandatory obstacle integration, not through a
+        // separate scan or retained registry. In particular the asteroid
+        // proximity-to-ship pass happens before the obstacle grid rebuild.
+        let mut has_ship_contact_obstacles = false;
+        let mut has_body_contact_obstacles = false;
         for obstacle in &mut self.obstacles {
             if !obstacle.active { continue; }
             obstacle.pose.position += obstacle.linear_velocity * dt;
             obstacle.pose.rotation_degrees += obstacle.angular_velocity_degrees * dt;
             obstacle.update_hull();
+            has_ship_contact_obstacles |= obstacle.tracks_ship_contacts &&
+                obstacle.collider.bounds.is_some();
+            has_body_contact_obstacles |= obstacle.tracks_body_contacts;
             self.counts.integrated_bodies += 1;
         }
         self.grid.rebuild_with(self.ships.len(), |index| {
@@ -1686,28 +1695,31 @@ impl KinematicPhysics {
         }
         // Proximity-to-ship checks reuse the ship grid before it is rebuilt
         // for obstacles. Unity's child layer is evaluated independently
-        // from the primary asteroid hull layer.
+        // from the primary asteroid hull layer. With no collision asteroid,
+        // preserve exits but skip scanning static obstacles.
         self.proximity_ship_current.clear();
-        for obstacle in &self.obstacles {
-            if !obstacle.active || !obstacle.tracks_body_contacts { continue; }
-            let (Some(proximity), Some(layer)) = (
-                obstacle.proximity_collider.as_ref(), obstacle.proximity_layer,
-            ) else { continue };
-            let Some(bounds) = proximity.bounds else { continue };
-            self.grid.candidates(bounds, &mut self.candidates);
-            self.counts.broadphase_candidates += self.candidates.len() as u64;
-            for &index in &self.candidates {
-                let ship = &self.ships[index];
-                if !ship.active || !collision_matrix.allows(layer, ship.layer) {
-                    continue;
-                }
-                let Some(other_bounds) = ship.collider.bounds else { continue };
-                if !bounds.overlaps(other_bounds) { continue; }
-                self.counts.narrowphase_tests += 1;
-                if proximity.overlaps(&ship.collider) {
-                    self.proximity_ship_current.push(ShipObstacleContact {
-                        ship_id: ship.id, obstacle_id: obstacle.id,
-                    });
+        if has_body_contact_obstacles {
+            for obstacle in &self.obstacles {
+                if !obstacle.active || !obstacle.tracks_body_contacts { continue; }
+                let (Some(proximity), Some(layer)) = (
+                    obstacle.proximity_collider.as_ref(), obstacle.proximity_layer,
+                ) else { continue };
+                let Some(bounds) = proximity.bounds else { continue };
+                self.grid.candidates(bounds, &mut self.candidates);
+                self.counts.broadphase_candidates += self.candidates.len() as u64;
+                for &index in &self.candidates {
+                    let ship = &self.ships[index];
+                    if !ship.active || !collision_matrix.allows(layer, ship.layer) {
+                        continue;
+                    }
+                    let Some(other_bounds) = ship.collider.bounds else { continue };
+                    if !bounds.overlaps(other_bounds) { continue; }
+                    self.counts.narrowphase_tests += 1;
+                    if proximity.overlaps(&ship.collider) {
+                        self.proximity_ship_current.push(ShipObstacleContact {
+                            ship_id: ship.id, obstacle_id: obstacle.id,
+                        });
+                    }
                 }
             }
         }
@@ -1721,25 +1733,11 @@ impl KinematicPhysics {
         // Rebuild the SAME uniform grid for obstacle queries after all
         // ship queries finish. Two grids double the per-world cell-array
         // footprint and buy nothing when these phases are serial.
-        // Track whether any live obstacle can produce a ship-trigger event
-        // while visiting that same population for the mandatory grid build.
-        // Ordinary static walls and MapObjects do not track ship contacts;
-        // avoid scanning a large fleet against those obstacles solely to
-        // reject every candidate after its broadphase query.
-        let mut has_ship_contact_obstacles = false;
-        let mut has_body_contact_obstacles = false;
+        // Frame-local eligibility was already collected during obstacle
+        // integration, so this rebuild only populates the collision grid.
         self.grid.rebuild_with(self.obstacles.len(), |index| {
             let obstacle = &self.obstacles[index];
-            if obstacle.active {
-                if obstacle.tracks_ship_contacts && obstacle.collider.bounds.is_some() {
-                    has_ship_contact_obstacles = true;
-                }
-                // Only collision asteroids own body-pair and proximity
-                // contact sources. Reuse this visit for the static-only
-                // level fast path; no second obstacle population scan.
-                has_body_contact_obstacles |= obstacle.tracks_body_contacts;
-                obstacle.collider.bounds
-            } else { None }
+            if obstacle.active { obstacle.collider.bounds } else { None }
         });
         self.grid_contents = GridContents::Obstacles;
         self.counts.obstacle_grid_overflow_bodies = self.grid.overflow.len() as u64;
