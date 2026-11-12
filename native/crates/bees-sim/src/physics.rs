@@ -1775,13 +1775,13 @@ impl KinematicPhysics {
         // Derive them during mandatory obstacle integration, not through a
         // separate scan or retained registry. In particular the asteroid
         // proximity-to-ship pass happens before the obstacle grid rebuild.
-        let mut has_active_obstacles = false;
+        let mut active_obstacle_count = 0usize;
         let mut has_ship_contact_obstacles = false;
         let mut has_body_contact_obstacles = false;
         let mut has_ship_proximity_sources = false;
         for obstacle in &mut self.obstacles {
             if !obstacle.active { continue; }
-            has_active_obstacles = true;
+            active_obstacle_count += 1;
             obstacle.pose.position += obstacle.linear_velocity * dt;
             obstacle.pose.rotation_degrees += obstacle.angular_velocity_degrees * dt;
             obstacle.update_hull();
@@ -1883,8 +1883,14 @@ impl KinematicPhysics {
         // with no physical shots have no projectile, ship, or asteroid pair
         // contacts to process. Leave the grid for later on-demand queries,
         // instead of rebuilding an unused obstacle population every tick.
-        let needs_obstacle_grid = has_active_obstacles &&
-            (has_physical_projectiles || has_ship_contact_obstacles || has_body_contact_obstacles);
+        // A contact query needs a real participant on both ends. A lone
+        // asteroid cannot hit itself, and a border without any living ships
+        // cannot emit a ship/obstacle contact. Keep the exit reconciliation
+        // below active even when all sources disappear.
+        let needs_obstacle_grid = active_obstacle_count > 0 &&
+            (has_physical_projectiles ||
+             (has_active_ships && has_ship_contact_obstacles) ||
+             (active_obstacle_count > 1 && has_body_contact_obstacles));
         if needs_obstacle_grid {
             self.grid.rebuild_with(self.obstacles.len(), |index| {
                 let obstacle = &self.obstacles[index];
@@ -1901,7 +1907,7 @@ impl KinematicPhysics {
         // exists, and no projectile overlap to detect without an active
         // physical shot. Skip historical inactive projectile slots in those
         // cases, but still reconcile the previous overlap history below.
-        if has_active_obstacles && has_physical_projectiles && !self.grid.is_empty() {
+        if active_obstacle_count > 0 && has_physical_projectiles && !self.grid.is_empty() {
             for projectile in &self.projectiles {
                 if !projectile.active { continue; }
                 let Some(projectile_collider) = &projectile.collider else { continue };
@@ -1930,7 +1936,7 @@ impl KinematicPhysics {
         // CollisionAsteroid also has a separate proximity collider; that
         // proximity state must be imported before combat damage is enabled.
         self.proximity_obstacle_current.clear();
-        if has_body_contact_obstacles {
+        if active_obstacle_count > 1 && has_body_contact_obstacles {
             for source in &self.obstacles {
                 if !source.active || !source.tracks_body_contacts { continue; }
                 let (Some(proximity), Some(layer)) = (
@@ -1991,7 +1997,7 @@ impl KinematicPhysics {
             }
         }
         self.obstacle_pairs_current.clear();
-        if has_body_contact_obstacles {
+        if active_obstacle_count > 1 && has_body_contact_obstacles {
             for (source_index, source) in self.obstacles.iter().enumerate() {
                 if !source.active || !source.tracks_body_contacts { continue; }
                 let Some(bounds) = source.collider.bounds else { continue };
