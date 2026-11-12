@@ -77,7 +77,8 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'ppo_forward_loss_seconds','ppo_loss_finite_check_seconds',
         'ppo_backward_seconds','ppo_metric_readback_seconds',
         'ppo_gradient_processing_seconds','ppo_optimizer_step_seconds',
-        'ppo_parameter_finite_check_seconds','ppo_gpu_stream_sync_seconds'])
+        'ppo_parameter_finite_check_seconds','ppo_gpu_stream_sync_seconds',
+        'ppo_gpu_stream_interval_seconds'])
         add(name,row[name],'seconds');
     for(const name of ['simulation_active_matches','simulation_target_matches',
         'simulation_concurrency_adjustments','simulation_tuner_accepted',
