@@ -986,7 +986,11 @@ impl SpatialGrid {
         }
         Ok(Self {
             area, cell_size, width, height,
-            cells: vec![Vec::new(); count],
+            // A world with no in-grid colliders never needs thousands of
+            // empty cell vectors. The first in-grid body in rebuild_with
+            // creates the dense cell table; overflow-only worlds keep it
+            // unallocated and remain fully queryable.
+            cells: Vec::new(),
             touched: Vec::new(), overflow: Vec::new(),
             seen: Vec::new(), generation: 0,
         })
@@ -1035,6 +1039,9 @@ impl SpatialGrid {
                     self.overflow.push((ship_index, bounds));
                     continue;
                 }
+                if self.cells.is_empty() {
+                    self.cells.resize_with(self.width * self.height, Vec::new);
+                }
                 for y in min_y..=max_y {
                     for x in min_x..=max_x {
                         let index = y * self.width + x;
@@ -1065,13 +1072,17 @@ impl SpatialGrid {
             self.seen[ship_index] = self.generation;
             output.push(ship_index);
         }
-        if let Some((min_x, max_x, min_y, max_y)) = self.range(bounds) {
-            for y in min_y..=max_y {
-                for x in min_x..=max_x {
-                    for &ship_index in &self.cells[y * self.width + x] {
-                        if self.seen[ship_index] != self.generation {
-                            self.seen[ship_index] = self.generation;
-                            output.push(ship_index);
+        // Overflow-only worlds intentionally have no dense cell table.
+        // Their exact-AABB candidates were already collected above.
+        if !self.cells.is_empty() {
+            if let Some((min_x, max_x, min_y, max_y)) = self.range(bounds) {
+                for y in min_y..=max_y {
+                    for x in min_x..=max_x {
+                        for &ship_index in &self.cells[y * self.width + x] {
+                            if self.seen[ship_index] != self.generation {
+                                self.seen[ship_index] = self.generation;
+                                output.push(ship_index);
+                            }
                         }
                     }
                 }
