@@ -242,7 +242,10 @@ class JobExporter {
         const mirrorFallbackIds=new Set(mirrored.filter(item=>{
             if(!approvedRoot)return true;
             const local=path.join(approvedRoot,item.job_id);
-            return !fs.existsSync(local)||!trustedRoot(local);
+            if(!fs.existsSync(local))return true;
+            if(!trustedRoot(local))
+                throw Error('Original job artifacts were redirected or unowned.');
+            return false;
         }).map(item=>item.job_id));
         // A managed TinyBrains learner's collector is a separate Hub job.
         // Include its coordinator-received observations in the learner export,
