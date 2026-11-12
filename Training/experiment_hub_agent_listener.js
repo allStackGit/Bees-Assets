@@ -79,7 +79,7 @@ function createAgentServer(getHub) {
                 if(req.method==='GET') {
                     if(Number(req.headers['content-length']||0)!==0)
                         return respond(res,400,{error:'Artifact status must not have a body.'});
-                    return respond(res,200,mirror.status(machine,
+                    return respond(res,200,await mirror.status(machine,
                         req.headers['x-hub-agent-token'],job,file,sha,size));
                 }
                 const declared=req.headers['content-length'];
@@ -98,7 +98,7 @@ function createAgentServer(getHub) {
                 }
                 if(received!==Number(declared))
                     return respond(res,400,{error:'Artifact chunk length changed.'});
-                return respond(res,200,mirror.append(machine,
+                return respond(res,200,await mirror.append(machine,
                     req.headers['x-hub-agent-token'],job,file,sha,size,
                     Number(offset),Buffer.concat(chunks,received)));
             }catch(error) {
