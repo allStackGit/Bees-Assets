@@ -127,16 +127,21 @@ async function syncArtifacts(executor,endpoint,machineId,token,cache=new Map()) 
             try{st=fs.lstatSync(file);}catch{continue;}
             const key=record.job_id+':'+relative;
             const cached=cache.get(key);
-            const proof=cached&&st.isFile()&&st.dev===cached.dev&&
+            const unchanged=cached&&st.isFile()&&st.dev===cached.dev&&
                 st.ino===cached.ino&&st.size===cached.size&&
-                st.mtimeMs===cached.mtimeMs
-                ?cached:snapshotFile(root,relative);
+                st.mtimeMs===cached.mtimeMs;
+            if(unchanged&&cached.complete)continue;
+            const proof=unchanged?cached:snapshotFile(root,relative);
             if(!proof)continue;
             const snapshot={size:proof.size,sha:proof.sha};
-            cache.set(key,{...proof,mtimeMs:st.mtimeMs});
+            cache.set(key,{...proof,mtimeMs:st.mtimeMs,complete:false});
+            if(cache.size>10000)cache.clear();
             let response=await remoteCall(endpoint,machineId,token,
                 record.job_id,relative,snapshot,0,null);
-            if(response.complete){completed++;continue;}
+            if(response.complete){
+                cache.set(key,{...proof,mtimeMs:st.mtimeMs,complete:true});
+                completed++;continue;
+            }
             if(sent>=MAX_CYCLE)return {bytes:sent,files:completed};
             // Each chunk is bounded, resumable by its exact destination
             // offset and tied to a complete source snapshot SHA-256.
@@ -157,7 +162,10 @@ async function syncArtifacts(executor,endpoint,machineId,token,cache=new Map()) 
                         record.job_id,relative,snapshot,response.offset,block);
                     sent+=length;
                 }
-                if(response.complete)completed++;
+                if(response.complete) {
+                    cache.set(key,{...proof,mtimeMs:st.mtimeMs,complete:true});
+                    completed++;
+                }
             }finally{fs.closeSync(fd);}
         }
     }
