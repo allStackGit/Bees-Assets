@@ -2106,6 +2106,7 @@ fn run_battle(
             "squad_tab_clicks": client.squad_tab_clicks,
             "shooting_priority_requests_submitted": client.shooting_priority_requests_submitted,
             "selected_command_rows_drawn": client.selected_command_rows_drawn,
+            "command_target_markers_drawn": client.command_target_markers_drawn,
             "numbered_shortcut_selections": client.numbered_shortcut_selections,
             "cycled_shortcut_selections": client.cycled_shortcut_selections,
             "final_viewport_pixels": client.viewport_size().0 * client.viewport_size().1,

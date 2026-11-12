@@ -67,6 +67,7 @@ pub struct NativeRenderCounts {
     pub special_ready_ships: usize,
     pub tactical_buttons_drawn: usize,
     pub selected_command_rows: usize,
+    pub command_target_markers: usize,
 }
 
 pub struct NativeSoftwareRenderer {
@@ -79,6 +80,10 @@ pub struct NativeSoftwareRenderer {
     pub selection: NativeSquadSelection,
     // Reused only for large selections; small squads need no hash allocation.
     selected_squad_lookup: HashSet<bees_hivemind::session::SquadLifetime>,
+    /// Reused UI dedup for actual player Aggressive/BombingRun targets.
+    /// Filled from the live command director before the existing ship
+    /// render pass, avoiding any additional ship loop or copied roster.
+    command_target_ship_ids: HashSet<i64>,
     pub selection_box: Option<Aabb>,
     /// Optional inspection only. Disabled means no range or linecast work.
     pub show_weapon_ranges: bool,
@@ -158,6 +163,7 @@ impl NativeSoftwareRenderer {
             camera: NativeCamera::fit(bounds, width, height), selected_ship: None,
             selection: NativeSquadSelection::default(),
             selected_squad_lookup: HashSet::new(),
+            command_target_ship_ids: HashSet::new(),
             selection_box: None, show_weapon_ranges: false,
             show_minimap: true, show_shooting_menu: false,
             focused_shooting_strategy: 1,
@@ -394,6 +400,22 @@ impl NativeSoftwareRenderer {
             self.cross(position, 1.0, c * 0x010101);
         }
         self.render_obstacle_debris(view, &mut counts);
+        self.command_target_ship_ids.clear();
+        for &owner in self.selection.squads() {
+            let Some(selection) = view.commands.current_selection(owner) else { continue };
+            if !matches!(selection.origin(),
+                bees_gameplay::commands::NativeCommandOrigin::Local(local)
+                if local.source == bees_gameplay::commands::NativeLocalCommandSource::Player
+            ) || !matches!(selection.kind(),
+                bees_hivemind::dispatch::LocalCommandKind::Aggressive |
+                bees_hivemind::dispatch::LocalCommandKind::BombingRun)
+            {
+                continue;
+            }
+            let Some(enemy) = view.commands.selected_enemy(owner)
+                .and_then(|owner| view.roster.get(owner)) else { continue };
+            self.command_target_ship_ids.extend(enemy.members.iter().copied());
+        }
         for (ship, body) in view.combat.render_ships() {
             counts.ships += 1;
             let selected_ship = view.roster.owning_squad(ship.entity_id).is_some_and(|owner|
@@ -424,6 +446,19 @@ impl NativeSoftwareRenderer {
                 self.line(x, y - 16.0, x + 5.0, y - 21.0, marker);
                 self.line(x + 5.0, y - 21.0, x, y - 26.0, marker);
                 self.line(x, y - 26.0, x - 5.0, y - 21.0, marker);
+            }
+            if self.command_target_ship_ids.contains(&ship.entity_id) {
+                // Source Squad.MarkTargets shows each surviving enemy
+                // ship targeted by a player Aggressive/BombingRun order.
+                // Draw in the existing culled ship pass and use actual
+                // physical positions; do not maintain a target overlay
+                // whose contents can outlive a command or squad.
+                let marker = 0xffba6d;
+                self.line(x - 11.0, y, x, y - 11.0, marker);
+                self.line(x, y - 11.0, x + 11.0, y, marker);
+                self.line(x + 11.0, y, x, y + 11.0, marker);
+                self.line(x, y + 11.0, x - 11.0, y, marker);
+                counts.command_target_markers += 1;
             }
             let health = ship.vitals.health() as f32 / ship.vitals.max_health() as f32;
             self.line(x - 10.0, y - 12.0, x + 10.0, y - 12.0, 0x3c2837);
