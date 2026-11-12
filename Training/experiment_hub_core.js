@@ -1032,6 +1032,26 @@ function gpuProbeHoldsClaim(job) {
             (proof.status==='requested'&&proof.first_offered_at!==null)));
 }
 
+// The whole original bundle is the unit of operator authorization.
+// Validate exact membership and frozen member order before any draft is changed.
+function exactResourceBundle(snapshot,value,confirmation) {
+    if(!object(value)||value[confirmation]!==true||
+        !UUID.test(String(value.bundle_id||''))||
+        !Array.isArray(value.expected_job_ids)||
+        value.expected_job_ids.length<2||value.expected_job_ids.length>16||
+        value.expected_job_ids.some(id=>!UUID.test(String(id)))||
+        new Set(value.expected_job_ids).size!==value.expected_job_ids.length)
+        throw Error('Confirm the exact 2–16 resource-bundle members and operation.');
+    const members=snapshot.jobs.filter(job=>job.resource_bundle?.id===value.bundle_id)
+        .sort((a,b)=>a.resource_bundle.index-b.resource_bundle.index);
+    if(members.length!==value.expected_job_ids.length||
+        members.some((job,index)=>job.resource_bundle.index!==index+1||
+            job.resource_bundle.size!==members.length||
+            job.id!==value.expected_job_ids[index]))
+        throw Error('Bundle membership or order changed; refresh before authorizing an action.');
+    return members;
+}
+
 class ExperimentHub {
     constructor(root) {
         this.file = path.join(root, 'hub-v1.json');
@@ -3768,6 +3788,123 @@ class ExperimentHub {
             leases:leases.map(lease=>({...copy(lease),receipt_fresh:false})),
             starts_authorized:0,
             note:'Every member has a durable machine claim, but no Start was authorized. Jobs are independent until a trusted project-specific transport and learner barrier are installed.'};
+    }
+    // Grant independent machine-local native Starts for a reserved bundle
+    // in one registry commit. Each Start is independently OS-enforced by its
+    // machine; this grants no simultaneous-run or data-plane guarantee.
+    authorizeResourceBundle(value) {
+        if(!object(value)||Object.keys(value).some(key=>![
+            'bundle_id','expected_job_ids','confirm_start','release_on_terminal',
+        ].includes(key))||
+            (value.release_on_terminal!==undefined&&
+             typeof value.release_on_terminal!=='boolean'))
+            throw Error('Select an exact bundle and its terminal-release policy.');
+        const snapshot=this.snapshot();
+        const members=exactResourceBundle(snapshot,value,'confirm_start');
+        for(const job of members) {
+            const readiness=nativeStartReadiness(snapshot,job);
+            if(!readiness.eligible)
+                throw Error('Bundle member '+job.resource_bundle.index+
+                    ' / '+job.project_id+' cannot Start: '+readiness.reason);
+            if(job.distributed_rollout_managed===true||
+                job.project_id==='tinybrains_rollout')
+                throw Error('Distributed rollout groups use their own verified learner barrier.');
+        }
+        const next=copy(this.state),startedAt=now(),dispatches=[];
+        for(const job of members) {
+            const selected=next.jobs.find(item=>item.id===job.id);
+            selected.status='start_requested';
+            selected.dispatch_id=crypto.randomUUID();
+            selected.start_requested_at=startedAt;
+            selected.start_first_offered_at=null;
+            if(value.release_on_terminal===true)
+                selected.release_on_terminal=true;
+            selected.status_reason='Bundle Start approved; awaiting each machine-local native owner and resource enforcement.';
+            dispatches.push({job_id:selected.id,dispatch_id:selected.dispatch_id,
+                machine_id:selected.assigned_machine_id});
+        }
+        this.commit(next);
+        return {bundle_id:value.bundle_id,starts_authorized:dispatches.length,
+            dispatches,simultaneous_start_guaranteed:false,
+            release_on_terminal:value.release_on_terminal===true};
+    }
+    // Stop a mixed-project bundle without releasing any unknown or active
+    // native owner. The native Stop intent and terminal-release policy both
+    // survive a coordinator restart. A failed/unverified member remains
+    // visible for inspection and cannot silently free capacity.
+    stopResourceBundle(value) {
+        if(!object(value)||Object.keys(value).some(key=>![
+            'bundle_id','expected_job_ids','confirm_stop',
+        ].includes(key)))
+            throw Error('Select the exact resource bundle to stop.');
+        const members=exactResourceBundle(this.state,value,'confirm_stop');
+        const next=copy(this.state),at=now();
+        let changed=false;
+        for(const member of members) {
+            const job=next.jobs.find(item=>item.id===member.id);
+            if(job.status==='cancelled'||job.capacity_released_at)continue;
+            if(job.status==='waiting_adapter'&&!job.dispatch_id||
+                job.status==='start_requested'&&job.start_first_offered_at===null) {
+                if(job.status==='start_requested') {
+                    // Coordinator never offered this Start to a worker.
+                    // Withdraw it in the same draft, then release the claim.
+                    job.status='waiting_adapter';
+                    delete job.dispatch_id;
+                    delete job.start_requested_at;
+                    delete job.start_first_offered_at;
+                    delete job.automation_start_session_id;
+                }
+                this.cancelUnstartedJob(next,job,at);
+                changed=true;
+                continue;
+            }
+            const lease=next.reservations.find(item=>
+                item.id===job.lease_id&&item.job_id===job.id&&
+                item.project_id===job.project_id&&
+                item.machine_id===job.assigned_machine_id&&
+                item.issued_by==='experiment-hub'&&
+                item.status==='acknowledged');
+            if(['start_requested','launch_requested','running',
+                'stop_requested','unverified'].includes(job.status)) {
+                if(!job.dispatch_id||!lease)
+                    throw Error('Bundle member '+job.id+
+                        ' has uncertain native ownership or resource claim; no Stops committed.');
+                if(job.status!=='stop_requested') {
+                    job.status='stop_requested';
+                    job.stop_requested_at=at;
+                    job.status_reason='Bundle Stop requested; waiting for native supervisor verification.';
+                    changed=true;
+                }
+                if(job.release_on_terminal!==true) {
+                    job.release_on_terminal=true;
+                    changed=true;
+                }
+                continue;
+            }
+            if(['finished','stopped'].includes(job.status)) {
+                if(!job.dispatch_id||!job.execution_updated_at||!lease)
+                    throw Error('Bundle member '+job.id+
+                        ' has no verified terminal native ownership; no leases released.');
+                this.releaseIn(next,lease);
+                changed=true;
+                continue;
+            }
+            // Failed native services retain their claims until an operator
+            // has reviewed the failure; they cannot be inferred absent.
+            if(job.status!=='failed')
+                throw Error('Bundle member '+job.id+' needs manual lifecycle review.');
+        }
+        if(changed)this.commit(next);
+        const current=this.state.jobs.filter(job=>job.resource_bundle?.id===value.bundle_id)
+            .sort((a,b)=>a.resource_bundle.index-b.resource_bundle.index);
+        return {bundle_id:value.bundle_id,
+            stops_requested:current.filter(j=>j.status==='stop_requested').length,
+            cancelled:current.filter(j=>j.status==='cancelled').length,
+            released:current.filter(j=>Boolean(j.capacity_released_at)).length,
+            needs_review:current.filter(j=>['failed','unverified'].includes(j.status)).map(j=>j.id),
+            members:current.map(j=>({job_id:j.id,status:j.status,
+                capacity_released:Boolean(j.capacity_released_at)})),
+            note:'Stops are durable native requests. No active or uncertain service capacity is released without a native terminal receipt.'};
     }
     // Queue and reserve an entire TinyBrains rollout group as one durable
     // transaction. The operator supplies resource budgets; physical worker

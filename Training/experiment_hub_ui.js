@@ -834,7 +834,14 @@ document.addEventListener('DOMContentLoaded', () => {
             if(!groups.has(id))groups.set(id,[]);
             groups.get(id).push(job);
         }
-        for(const [id,members] of [...groups].slice(-8).reverse()) {
+        // Keep unresolved bundles visible even after many completed runs.
+        // Historical rows remain bounded; the complete job history is in Train.
+        const newest=[...groups].reverse();
+        const pending=newest.filter(([,members])=>members.some(job=>
+            job.status!=='cancelled'&&!job.capacity_released_at));
+        const completed=newest.filter(([,members])=>members.every(job=>
+            job.status==='cancelled'||job.capacity_released_at));
+        for(const [id,members] of [...pending,...completed].slice(0,32)) {
             const row=document.createElement('div');
             row.className='hub-pipeline-stage';
             const active=members.filter(j=>j.status!=='cancelled');
@@ -847,6 +854,60 @@ document.addEventListener('DOMContentLoaded', () => {
                 members.map(j=>j.project_id+' on '+
                     (j.assigned_machine_id||'unassigned')+': '+j.status).join('; ');
             row.append(details);
+            const complete=members.length===members[0].resource_bundle.size&&
+                members.every((job,index)=>job.resource_bundle.index===index+1);
+            const ids=members.map(job=>job.id);
+            const canStart=complete&&members.every(job=>
+                job.status==='waiting_adapter'&&!job.dispatch_id&&
+                job.native_start_readiness?.eligible===true);
+            if(canStart)row.append(button('Start entire bundle',async()=>{
+                const autoRelease=$('hub-native-release-on-terminal').checked;
+                if(!confirm('Authorize '+members.length+
+                    ' independent native Starts across the selected Windows/Linux machines in one durable operation? '+
+                    'All members must retain their original leases, fresh native readiness and any GPU access qualification. '+
+                    'The machines enforce each Start independently; this does not guarantee simultaneous execution or link the jobs into distributed training. '+
+                    'CUDA/ROCm GPU compute sharing is not an enforced quota. '+
+                    (autoRelease
+                        ?'Verified native finished/stopped reports will release each member’s claimed capacity. '
+                        :'Members keep their capacity claims after completion until released separately. ')))return;
+                try{
+                    const result=await action('hub/resource-bundles/start',{
+                        bundle_id:id,expected_job_ids:ids,
+                        confirm_start:true,release_on_terminal:autoRelease,
+                    });
+                    $('hub-native-release-on-terminal').checked=false;
+                    feedback('hub-resource-bundle-message',
+                        'Authorized '+result.starts_authorized+
+                        ' native Starts together. Each worker must still verify its own process.');
+                    await reload();
+                }catch(error){
+                    feedback('hub-resource-bundle-message',String(error.message||error));
+                }
+            }));
+            const canStop=complete&&members.some(job=>job.dispatch_id)&&
+                members.some(job=>job.status!=='cancelled'&&!job.capacity_released_at);
+            if(canStop)row.append(button('Stop / close bundle',async()=>{
+                if(!confirm('Request native Stop for all active bundle members and cancel undelivered Starts? '+
+                    'Finished/stopped members with verified native terminal receipts release their reservations. '+
+                    'Running or offline members retain their resources until native Stop is verified. '+
+                    'Failed or unverified owners may require manual reconciliation. '+
+                    'Existing checkpoints, records and other experiments are untouched.'))return;
+                try{
+                    const result=await action('hub/resource-bundles/stop',{
+                        bundle_id:id,expected_job_ids:ids,confirm_stop:true,
+                    });
+                    feedback('hub-resource-bundle-message',
+                        'Bundle shutdown: '+result.stops_requested+
+                        ' Stop requests pending, '+result.cancelled+
+                        ' unstarted members cancelled, '+result.released+
+                        ' capacity claims released'+
+                        (result.needs_review.length
+                            ?'; '+result.needs_review.length+' members need review.':'.'));
+                    await reload();
+                }catch(error){
+                    feedback('hub-resource-bundle-message',String(error.message||error));
+                }
+            }));
             const canCancel=members.length===members[0].resource_bundle.size&&
                 active.length>0&&active.every(j=>
                     j.status==='waiting_adapter'&&!j.dispatch_id);
