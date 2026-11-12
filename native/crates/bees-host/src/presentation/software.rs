@@ -68,12 +68,17 @@ pub struct NativeRenderCounts {
     pub tactical_buttons_drawn: usize,
     pub selected_command_rows: usize,
     pub command_target_markers: usize,
+    /// Presentation-only pixel coverage; headless physics does no work.
+    pub fog_sources: usize,
+    pub fog_occluded_pixels: usize,
 }
 
 pub struct NativeSoftwareRenderer {
     width: usize,
     height: usize,
     pixels: Vec<u32>,
+    /// Allocated only for fog-enabled graphical Levels and reused by frame.
+    fog_coverage: Vec<u8>,
     pub camera: NativeCamera,
     /// Selection is scoped to a WorldId AND episode revision by the client.
     pub selected_ship: Option<i64>,
@@ -164,6 +169,7 @@ impl NativeSoftwareRenderer {
             return Err(io::Error::new(io::ErrorKind::InvalidInput, "invalid viewport or bounds"));
         }
         Ok(Self { width, height, pixels: vec![0; width * height],
+            fog_coverage: Vec::new(),
             camera: NativeCamera::fit(bounds, width, height), selected_ship: None,
             selection: NativeSquadSelection::default(),
             selected_squad_lookup: HashSet::new(),
@@ -192,6 +198,9 @@ impl NativeSoftwareRenderer {
             return Err(io::Error::new(io::ErrorKind::InvalidInput, "invalid viewport size"));
         }
         self.pixels.resize(width * height, 0);
+        if !self.fog_coverage.is_empty() {
+            self.fog_coverage.resize(width * height, 0);
+        }
         self.width = width;
         self.height = height;
         self.selection_box = None;
@@ -252,6 +261,78 @@ impl NativeSoftwareRenderer {
         tactical_hud::shooting_hit(self.width, self.height, x, y)
     }
 
+    /// Reuse the player squad's actual current ownership, and the source's
+    /// 2x FogOfWarVision range. A policy-controlled or enemy hull can never
+    /// reveal the local player's map merely because its geometry is nearby.
+    fn fog_source_radius(view: &NativeRenderWorldView<'_>, ship_id: i64) -> Option<f32> {
+        let owner = view.roster.owning_squad(ship_id)?;
+        if !view.player_authority.player_permissions(owner)
+            .is_some_and(|permission| permission.user_controlled) {
+            return None;
+        }
+        view.player_authority.player_fog_vision_radius(ship_id)
+            .filter(|radius| radius.is_finite() && *radius > 0.0)
+    }
+
+    /// UI-only hit testing must not choose a ship or obstacle hidden by
+    /// the source fog mask. The world continues simulating every entity.
+    fn fog_visible_at(&self, view: &NativeRenderWorldView<'_>, point: Vec2) -> bool {
+        if !view.player_authority.player_fog_of_war_enabled() { return true; }
+        if !point.is_finite() { return false; }
+        view.combat.render_ships().any(|(ship, body)| {
+            let Some(radius) = Self::fog_source_radius(view, ship.entity_id)
+                else { return false };
+            let delta = body.motion.position - point;
+            delta.length_squared() <= radius * radius
+        })
+    }
+
+    /// Rasterize overlapping source sight discs into one reusable screen
+    /// mask. Each observer costs one square root per covered scanline, not
+    /// one geometry test for every pixel or other ship. No fog work happens
+    /// in the headless simulation or in levels whose source disables fog.
+    fn apply_player_fog(&mut self, view: &NativeRenderWorldView<'_>,
+        counts: &mut NativeRenderCounts,
+    ) {
+        if !view.player_authority.player_fog_of_war_enabled() { return; }
+        self.fog_coverage.resize(self.pixels.len(), 0);
+        self.fog_coverage.fill(0);
+        for (ship, body) in view.combat.render_ships() {
+            let Some(source_radius) = Self::fog_source_radius(view, ship.entity_id)
+                else { continue };
+            counts.fog_sources += 1;
+            let radius = source_radius * self.camera.pixels_per_unit;
+            if !radius.is_finite() || radius <= 0.0 { continue; }
+            let (cx, cy) = self.project(body.motion.position);
+            if !cx.is_finite() || !cy.is_finite() { continue; }
+            let first_y = (cy - radius).floor().max(0.0) as usize;
+            let last_y = (cy + radius).ceil()
+                .min(self.height as f32 - 1.0) as usize;
+            if first_y > last_y { continue; }
+            let radius_squared = radius * radius;
+            for y in first_y..=last_y {
+                let dy = y as f32 + 0.5 - cy;
+                if dy.abs() > radius { continue; }
+                let half_width = (radius_squared - dy * dy).max(0.0).sqrt();
+                let first_x = (cx - half_width).ceil().max(0.0) as usize;
+                let last_x = (cx + half_width).floor()
+                    .min(self.width as f32 - 1.0) as usize;
+                if first_x <= last_x {
+                    let row = y * self.width;
+                    self.fog_coverage[row + first_x..=row + last_x].fill(1);
+                }
+            }
+        }
+        for (pixel, visible) in self.pixels.iter_mut().zip(&self.fog_coverage) {
+            if *visible == 0 {
+                // The source SpriteMask hides every battlefield sprite,
+                // projectile, health bar and target marker outside sight.
+                *pixel = 0x080e19;
+                counts.fog_occluded_pixels += 1;
+            }
+        }
+    }
+
     /// Use the authoritative hull and healing-zone colliders for clicks,
     /// retaining screen-space tolerance for small ships. Large hull edges
     /// must remain selectable even when their centers are offscreen.
@@ -259,6 +340,7 @@ impl NativeSoftwareRenderer {
     pub fn pick_ship(&self, view: &NativeRenderWorldView<'_>, x: f32, y: f32) -> Option<i64> {
         if !x.is_finite() || !y.is_finite() { return None; }
         let point = self.camera.screen_to_world(x, y, self.width, self.height);
+        if !self.fog_visible_at(view, point) { return None; }
         let radius = 18.0 / self.camera.pixels_per_unit;
         let padding = Vec2::new(radius, radius);
         let bounds = Aabb { min: point - padding, max: point + padding };
@@ -290,6 +372,7 @@ impl NativeSoftwareRenderer {
                 bottom_right: Vec2::new(start.x.max(point.x), start.y.min(point.y)),
             });
         }
+        if !self.fog_visible_at(view, point) { return None; }
         let radius = 5.0 / self.camera.pixels_per_unit;
         let bounds = Aabb { min: point - Vec2::new(radius, radius),
             max: point + Vec2::new(radius, radius) };
@@ -573,6 +656,9 @@ impl NativeSoftwareRenderer {
             // Collider-less script entities still have an inspectable position.
             self.cross(position, 1.0, 0xffd580);
         }
+        // Only presentation pixels are masked. Commands, physics, learning
+        // and the source-owned visibility caches remain unchanged.
+        self.apply_player_fog(view, &mut counts);
         if let Some(bounds) = self.selection_box {
             self.shape(&ShipShape::Box { offset: (bounds.min + bounds.max) * 0.5,
                 half_extents: (bounds.max - bounds.min) * 0.5 },
