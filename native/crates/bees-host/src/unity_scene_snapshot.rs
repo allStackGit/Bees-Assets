@@ -2095,7 +2095,7 @@ impl NativePhysicalScene {
             let matching_speed = if squad.is_matching_speed == Some(true) {
                 let speed = squad.current_speed
                     .ok_or(NativeSnapshotError::InvalidSquad(squad.item_id))?;
-                if !speed.is_finite() || speed <= 0.0 {
+                if !speed.is_finite() || speed < 0.0 {
                     return Err(NativeSnapshotError::InvalidSquad(squad.item_id));
                 }
                 Some(speed)

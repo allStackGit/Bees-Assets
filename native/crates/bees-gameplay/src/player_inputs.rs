@@ -26,6 +26,9 @@ pub trait NativePlayerAuthority {
     fn player_shooting_strategy(&self, _owner: SquadLifetime)
         -> Option<bees_hivemind::protocol::StrategyIdentity> { None }
     fn player_should_chase(&self, _owner: SquadLifetime) -> bool { false }
+    /// The source's currently chosen match-speed state. None means the
+    /// squad is moving at its own ship speeds (not an unknown value).
+    fn player_matched_speed(&self, _owner: SquadLifetime) -> Option<f32> { None }
 }
 
 pub trait NativeLevelPlayerContext: NativeLevelActivationContext + NativePlayerAuthority {
@@ -37,6 +40,8 @@ pub trait NativeLevelPlayerContext: NativeLevelActivationContext + NativePlayerA
     fn set_player_locked_on(&mut self, owner: SquadLifetime, locked: bool)
         -> Result<(), GameCommandError>;
     fn set_player_chasing(&mut self, owner: SquadLifetime, chasing: bool)
+        -> Result<(), GameCommandError>;
+    fn set_player_matched_speed(&mut self, owner: SquadLifetime, speed: Option<f32>)
         -> Result<(), GameCommandError>;
     /// Current source Squad.GetShootingStrategy and loaded command settings.
     fn player_command_inputs(&self, _owner: SquadLifetime)
@@ -404,6 +409,15 @@ impl NativePlayerMatchSpeedPlan {
                 world.state.events.fail_player_input();
                 return Err(NativePlayerInputError::Source(error.into()));
             }
+        }
+        // Source Squad.MatchSpeed and UnmatchSpeed persist as squad state;
+        // the gameplay ShipMotion remains the only owner of per-ship speeds.
+        let matched = self.match_speed.then_some(shared_slowest_speed);
+        if let Err(error) = world.state.metadata
+            .set_player_matched_speed(self.owner, matched)
+        {
+            world.state.events.fail_player_input();
+            return Err(NativePlayerInputError::Source(error));
         }
         Ok(self.members.len())
     }

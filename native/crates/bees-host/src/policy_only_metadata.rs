@@ -256,7 +256,7 @@ impl NativePolicyOnlyMetadata {
                 !player.squads.get(owner)
                     .is_some_and(|permissions| permissions.user_controlled)) ||
             player.matching_speeds.iter().any(|(owner, &speed)|
-                !speed.is_finite() || speed <= 0.0 ||
+                !speed.is_finite() || speed < 0.0 ||
                 !player.squads.contains_key(owner)) {
             return Err(PolicyOnlyMetadataError::InvalidSource);
         }
@@ -645,9 +645,28 @@ impl NativePlayerAuthority for NativePolicyOnlyMetadata {
     fn player_should_chase(&self, owner: SquadLifetime) -> bool {
         self.player.chasing.contains(&owner)
     }
+    fn player_matched_speed(&self, owner: SquadLifetime) -> Option<f32> {
+        self.player.matching_speeds.get(&owner).copied()
+    }
 }
 
 impl NativeLevelPlayerContext for NativePolicyOnlyMetadata {
+    fn set_player_matched_speed(&mut self, owner: SquadLifetime,
+        speed: Option<f32>,
+    ) -> Result<(), GameCommandError> {
+        if !self.player.squads.get(&owner)
+            .is_some_and(|permission|
+                permission.user_controlled && permission.can_accept_input)
+            || speed.is_some_and(|s| !s.is_finite() || s < 0.0) {
+            return Err(GameCommandError::InvalidSquad);
+        }
+        match speed {
+            Some(speed) => { self.player.matching_speeds.insert(owner, speed); }
+            None => { self.player.matching_speeds.remove(&owner); }
+        }
+        Ok(())
+    }
+
     fn set_player_chasing(&mut self, owner: SquadLifetime, chasing: bool)
         -> Result<(), GameCommandError> {
         if !self.player.squads.get(&owner)
