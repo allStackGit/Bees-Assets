@@ -60,10 +60,12 @@ function verifyKernelLimits(report,cpus,ramMb,fsApi=fs) {
             const match=new RegExp('^'+name+' ([0-9]+)$','m').exec(stat);
             return match?safeUint(match[1]):null;
         };
-        const micros=value('throttled_usec'),events=value('nr_throttled');
+        const micros=value('throttled_usec'),events=value('nr_throttled'),
+            periods=value('nr_periods');
         throttling={
             ...(micros===null?{}:{cpu_throttled_seconds:micros/1000000}),
             ...(events===null?{}:{cpu_throttle_events:events}),
+            ...(periods===null?{}:{cpu_quota_periods:periods}),
         };
     }catch {
         // No invented zeros; missing optional counters cannot block Start.
