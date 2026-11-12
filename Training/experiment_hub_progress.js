@@ -159,14 +159,17 @@ class BottleneckEvidence {
             add('rollout_engine_measured_work_share',engine/(engine+inference));
             add('rollout_inference_measured_work_share',inference/(engine+inference));
         }
-        // Round-trip overhead includes transport, queueing and coordinator
-        // work. It is NOT a measurement of network bandwidth alone.
+        // Only an independently timed remote service interval can separate
+        // roundtrip overhead. Remote 'elapsed_seconds' equals roundtrip in
+        // the existing TinyBrains source and must never be subtracted from it.
+        // Residual includes transport, framing, serialization and queueing,
+        // NOT a measurement of network bandwidth alone.
         for(let i=0;i<9;i++) {
             const roundtrip=seconds('collector_'+i+'_roundtrip_seconds');
-            const elapsed=seconds('collector_'+i+'_elapsed_seconds');
-            if(roundtrip!==null&&elapsed!==null&&roundtrip>0&&elapsed<=roundtrip)
+            const service=seconds('collector_'+i+'_service_seconds');
+            if(roundtrip!==null&&service!==null&&roundtrip>0&&service<=roundtrip)
                 add('collector_'+i+'_turnaround_overhead_share',
-                    (roundtrip-elapsed)/roundtrip);
+                    (roundtrip-service)/roundtrip);
         }
         // Optional derived measures must not crowd out project-owned source
         // metrics or violate the existing bounded wire contract.
