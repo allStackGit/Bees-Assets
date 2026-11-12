@@ -31,6 +31,10 @@ pub struct VisionSweepCounts {
     /// Pairs actually examined after the physics grid or dense fallback.
     pub ship_pairs_tested: u64,
     pub unlearned_obstacle_pairs: u64,
+    /// Cheap conservative source-hull radius rejects before any geometry
+    /// refresh/exact Collider2D.ClosestPoint call. Included in the usual
+    /// bounds-rejection total for comparable historical profiling.
+    pub obstacle_radius_rejections: u64,
     pub aabb_rejections: u64,
     pub exact_collider_tests: u64,
     pub visible_enemy_pairs: u64,
@@ -109,6 +113,7 @@ impl VisionSweepCounts {
         self.live_ship_pairs += other.live_ship_pairs;
         self.ship_pairs_tested += other.ship_pairs_tested;
         self.unlearned_obstacle_pairs += other.unlearned_obstacle_pairs;
+        self.obstacle_radius_rejections += other.obstacle_radius_rejections;
         self.aabb_rejections += other.aabb_rejections;
         self.exact_collider_tests += other.exact_collider_tests;
         self.visible_enemy_pairs += other.visible_enemy_pairs;

@@ -765,6 +765,11 @@ pub struct ObstacleBody {
     /// Unity Pathfinder.GetObstaclePoints uses this shape preferentially.
     clearance_layer: Option<u8>,
     clearance_collider: Option<WorldCollider>,
+    /// Maximum distance from the authored transform origin to primary
+    /// hull/clearance shape. Conservative for every possible rotation,
+    /// including shapes offset from their GameObject origin.
+    primary_vision_radius: f32,
+    obstacle_vision_radius: f32,
 }
 
 impl ObstacleBody {
@@ -783,6 +788,7 @@ impl ObstacleBody {
         {
             return Err(PhysicsError::InvalidCollider);
         }
+        let primary_vision_radius = shape.maximum_extent();
         let mut body = Self {
             id, pose, linear_velocity, angular_velocity_degrees, layer,
             active: true, tracks_body_contacts: false,
@@ -790,6 +796,8 @@ impl ObstacleBody {
             collider: WorldCollider::new(shape)?,
             proximity_layer: None, proximity_collider: None,
             clearance_layer: None, clearance_collider: None,
+            primary_vision_radius,
+            obstacle_vision_radius: primary_vision_radius,
         };
         body.update_hull();
         Ok(body)
@@ -826,6 +834,7 @@ impl ObstacleBody {
         }
         let mut collider = WorldCollider::new(shape)?;
         collider.update(self.pose);
+        self.obstacle_vision_radius = collider.shape.maximum_extent();
         self.clearance_layer = Some(layer);
         self.clearance_collider = Some(collider);
         Ok(())
@@ -851,6 +860,28 @@ impl ObstacleBody {
 
     pub(crate) fn primary_overlaps_circle(&self, center: Vec2, radius: f32) -> bool {
         self.active && self.collider.overlaps_circle(center, radius)
+    }
+
+    /// A conservative, rotation-independent preflight for far obstacle
+    /// vision. Returns true ONLY when even the farthest point of the
+    /// authoritative hull cannot reach the observer's sight circle.
+    ///
+    /// Unlike a cached transformed AABB, this uses the current mutable
+    /// pose and remains safe after obstacles_mut() or a between-tick move.
+    /// It never replaces the exact Collider2D.ClosestPoint test.
+    pub(crate) fn outside_vision_radius(
+        &self, observer: Vec2, range: f32, map_object: bool,
+    ) -> bool {
+        if !self.active { return true; }
+        let extent = if map_object {
+            self.primary_vision_radius
+        } else {
+            self.obstacle_vision_radius
+        };
+        let limit = range + extent;
+        if !limit.is_finite() || limit < 0.0 { return false; }
+        let delta = self.pose.position - observer;
+        delta.length_squared() > limit * limit
     }
 
     /// MapObject visibility uses its primary collider, whereas Obstacle

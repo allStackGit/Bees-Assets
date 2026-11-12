@@ -198,6 +198,18 @@ impl CombatWorld {
                     continue;
                 }
                 counts.unlearned_obstacle_pairs += 1;
+                // Authored primary and clearance shapes keep conservative
+                // local-space radii even while their World pose changes.
+                // A far object can be rejected without updating its polygon
+                // or evaluating the much costlier exact collider geometry.
+                if self.physics.obstacles()[target].outside_vision_radius(
+                    origin, range, kind == DiscoveryKind::MapObject,
+                ) {
+                    counts.obstacle_radius_rejections += 1;
+                    counts.aabb_rejections += 1;
+                    all_obstacles_learned = false;
+                    continue;
+                }
                 let proximity = if kind == DiscoveryKind::MapObject {
                     self.physics.map_object_vision_proximity(
                         target, origin, range_squared,
