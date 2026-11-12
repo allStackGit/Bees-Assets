@@ -804,11 +804,13 @@ impl NativeSoftwareRenderer {
             Some(_) => "Shooting priority: mixed (S to choose)".to_owned(),
             None => "Shooting priority unavailable".to_owned(),
         };
-        let label = text::fit(&label, self.width.saturating_sub(72).min(760));
-        let w = text::width(label, 1);
-        let x = (self.width - w) / 2;
+        // Unlike the client-only hover feedback, this renderer method
+        // also builds in headless-only configurations. The glyph renderer
+        // already clips to the framebuffer without client-only text::fit.
+        let w = text::width(&label, 1);
+        let x = self.width.saturating_sub(w) / 2;
         text::draw_at(&mut self.pixels, self.width, x,
-            self.height - 190, label, 1, [175, 207, 227]);
+            self.height - 190, &label, 1, [175, 207, 227]);
     }
 
     /// Present the canonical 40-entry source registry. Current selection
