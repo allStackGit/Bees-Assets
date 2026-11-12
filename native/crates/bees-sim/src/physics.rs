@@ -1192,9 +1192,10 @@ impl KinematicPhysics {
     }
 
     /// Ship contacts use the real current ship grid, not the last
-    /// obstacle query's grid. Since step() reuses one grid for BOTH
-    /// populations, it contains OBSTACLES when physics.step() returns.
-    /// Lazily rebuild once on the first active Barge query of the tick,
+    /// obstacle query's grid. A tick with active obstacles leaves their
+    /// grid after physics.step; an obstacle-free tick preserves the ship
+    /// grid and avoids an unnecessary rebuild.
+    /// Lazily rebuild once on the first active Barge query if necessary,
     /// then reuse it for all other Barges. With no Barge this costs zero.
     ///
     /// Returns true only when a ship-grid rebuild was required, so the
@@ -1243,9 +1244,9 @@ impl KinematicPhysics {
     }
 
     /// Query MapObject range circles against the SAME obstacle grid used by
-    /// projectile collisions. Immediately after physics.step the grid is
-    /// already obstacle-bound, so all weapons share it without a rebuild.
-    /// Dynamic obstacle insertion/replacement invalidates the grid first.
+    /// projectile collisions. Active-obstacle ticks leave that grid in place;
+    /// obstacle-free ticks preserve the ship grid and rebuild only if an
+    /// actual obstacle query is made. Dynamic insertions invalidate it.
     pub(crate) fn circle_obstacle_contact_candidates(
         &mut self, center: Vec2, radius: f32, output: &mut Vec<usize>,
     ) -> bool {
@@ -1650,10 +1651,12 @@ impl KinematicPhysics {
         // Derive them during mandatory obstacle integration, not through a
         // separate scan or retained registry. In particular the asteroid
         // proximity-to-ship pass happens before the obstacle grid rebuild.
+        let mut has_active_obstacles = false;
         let mut has_ship_contact_obstacles = false;
         let mut has_body_contact_obstacles = false;
         for obstacle in &mut self.obstacles {
             if !obstacle.active { continue; }
+            has_active_obstacles = true;
             obstacle.pose.position += obstacle.linear_velocity * dt;
             obstacle.pose.rotation_degrees += obstacle.angular_velocity_degrees * dt;
             obstacle.update_hull();
@@ -1730,26 +1733,26 @@ impl KinematicPhysics {
         self.counts.proximity_ship_enters = self.proximity_ship_enters.len() as u64;
         self.counts.proximity_ship_exits = self.proximity_ship_exits.len() as u64;
 
-        // Rebuild the SAME uniform grid for obstacle queries after all
-        // ship queries finish. Two grids double the per-world cell-array
-        // footprint and buy nothing when these phases are serial.
-        // Frame-local eligibility was already collected during obstacle
-        // integration, so this rebuild only populates the collision grid.
-        self.grid.rebuild_with(self.obstacles.len(), |index| {
-            let obstacle = &self.obstacles[index];
-            if obstacle.active { obstacle.collider.bounds } else { None }
-        });
-        self.grid_contents = GridContents::Obstacles;
-        self.counts.obstacle_grid_overflow_bodies = self.grid.overflow.len() as u64;
+        // Reuse the SAME grid for obstacle queries when any obstacle is
+        // active. Obstacle-free gameplay keeps the freshly built ship grid
+        // for the subsequent turret, Barge and near-miss queries instead
+        // of clearing it and then immediately rebuilding it.
+        if has_active_obstacles {
+            self.grid.rebuild_with(self.obstacles.len(), |index| {
+                let obstacle = &self.obstacles[index];
+                if obstacle.active { obstacle.collider.bounds } else { None }
+            });
+            self.grid_contents = GridContents::Obstacles;
+            self.counts.obstacle_grid_overflow_bodies = self.grid.overflow.len() as u64;
+        }
         // Obstacle contacts retain their own overlap history and queue.
         // A shot can contact a ship and an obstacle in the same physics tick.
         self.obstacle_overlaps_current.clear();
-        // An empty obstacle broadphase cannot produce shot-obstacle
-        // contacts. Skipping the projectile population matters in clear
-        // training arenas with many shots (including dormant pool slots).
-        // Still reconcile empty contacts below so any previous overlaps
-        // produce their normal exits when the last obstacle disappears.
-        if !self.grid.is_empty() {
+        // There is no obstacle grid to query when no active obstacle
+        // exists: the shared grid still contains ships in that case.
+        // Also skip an empty obstacle grid. Reconcile historic contacts
+        // below in both cases so the last obstacle generates exits.
+        if has_active_obstacles && !self.grid.is_empty() {
             for projectile in &self.projectiles {
                 if !projectile.active { continue; }
                 let Some(projectile_collider) = &projectile.collider else { continue };
