@@ -143,7 +143,8 @@ pub struct NativePlayerSquadSpecial {
 }
 
 pub struct NativePlayerSpecialPlan {
-    authority: NativePlayerSquadPlan,
+    tick: u64,
+    owner: SquadLifetime,
     world_id: WorldId,
     episode_revision: u64,
     selected_ship: i64,
@@ -152,7 +153,7 @@ pub struct NativePlayerSpecialPlan {
 }
 
 impl NativePlayerSpecialPlan {
-    pub fn owner(&self) -> SquadLifetime { self.authority.owner }
+    pub fn owner(&self) -> SquadLifetime { self.owner }
     pub fn is_available(&self) -> bool { !self.eligible_ships.is_empty() }
 
     pub fn prepare<M: NativeLevelPlayerContext, A>(
@@ -160,31 +161,34 @@ impl NativePlayerSpecialPlan {
         world_id: WorldId, episode_revision: u64, selected_ship: i64,
         kind: NativePlayerShipSpecialKind,
     ) -> Result<Self, NativePlayerInputError> {
-        let authority = NativePlayerSquadPlan::prepare(
+        // Physical specials are legal even when movement is locked by an
+        // active strategy. Reuse world/lifetime/player authority checks,
+        // but never require an unrelated formation or path-clearance plan.
+        let (owner, squad) = authorized_player_squad(
             world, world_id, episode_revision, selected_ship,
         )?;
-        let eligible_ships = authority.members.iter().filter_map(|member| {
-            let ship = world.state.combat.ship(member.ship_id)?;
-            let body = world.state.combat.ship_body(member.ship_id)?;
+        let eligible_ships = squad.members.iter().filter_map(|&ship_id| {
+            let ship = world.state.combat.ship(ship_id)?;
+            let body = world.state.combat.ship_body(ship_id)?;
             if !body.active || ship.vitals.is_dead() ||
                 body.motion.is_policy_controlled ||
-                world.state.combat.policy_frame(member.ship_id).is_some() {
+                world.state.combat.policy_frame(ship_id).is_some() {
                 return None;
             }
             let eligible = match kind {
                 NativePlayerShipSpecialKind::DropBeacon =>
                     ship.ship_type == 18 &&
-                    world.state.combat.game_scout_beacon_ready(member.ship_id),
+                    world.state.combat.game_scout_beacon_ready(ship_id),
                 NativePlayerShipSpecialKind::Detonate =>
                     ship.ship_type == 10 &&
-                    world.state.combat.configured_fire_barge_bomb_power(member.ship_id)
+                    world.state.combat.configured_fire_barge_bomb_power(ship_id)
                         .is_some(),
             };
-            eligible.then_some(member.ship_id)
+            eligible.then_some(ship_id)
         }).collect();
         Ok(Self {
-            authority, world_id, episode_revision, selected_ship,
-            kind, eligible_ships,
+            tick: world.tick(), owner, world_id, episode_revision,
+            selected_ship, kind, eligible_ships,
         })
     }
 
@@ -195,7 +199,7 @@ impl NativePlayerSpecialPlan {
     ) -> Result<usize, NativePlayerInputError> {
         let current = Self::prepare(world, self.world_id,
             self.episode_revision, self.selected_ship, self.kind)?;
-        if current.authority != self.authority ||
+        if current.tick != self.tick || current.owner != self.owner ||
             current.eligible_ships != self.eligible_ships {
             return Err(NativePlayerInputError::StaleWorld);
         }
@@ -649,6 +653,32 @@ impl NativePlayerInputError {
     }
 }
 
+/// Shared authoritative player/world/lifetime checks for all command
+/// classes. Physical specials deliberately do not depend on movement
+/// eligibility, but they obey the exact same player ownership contract.
+fn authorized_player_squad<'a, M: NativeLevelPlayerContext, A>(
+    world: &'a World<NativeLevelState<M, A>>, world_id: WorldId,
+    episode_revision: u64, selected_ship: i64,
+) -> Result<(SquadLifetime, &'a crate::squads::NativeSquadEntry), NativePlayerInputError> {
+    if world.id != world_id || world.episode_revision() != episode_revision {
+        return Err(NativePlayerInputError::StaleWorld);
+    }
+    let state = &world.state;
+    if world.is_failed() || state.events.is_failed() || state.events.completed() {
+        return Err(NativePlayerInputError::InactiveWorld);
+    }
+    let owner = state.events.roster().owning_squad(selected_ship)
+        .ok_or(NativePlayerInputError::MissingSquad)?;
+    let permission = state.metadata.player_permissions(owner)
+        .ok_or(NativePlayerInputError::NotControllable)?;
+    if !permission.user_controlled || !permission.can_accept_input || permission.locked_on {
+        return Err(NativePlayerInputError::NotControllable);
+    }
+    let squad = state.events.roster().get(owner)
+        .ok_or(NativePlayerInputError::MissingSquad)?;
+    Ok((owner, squad))
+}
+
 /// Shared world, lifetime, permissions and formation preflight for every
 /// player order. The host retires pending AI authority only after preparation.
 #[derive(PartialEq)]
@@ -664,22 +694,10 @@ impl NativePlayerSquadPlan {
         world: &World<NativeLevelState<M, A>>, world_id: WorldId,
         episode_revision: u64, selected_ship: i64,
     ) -> Result<Self, NativePlayerInputError> {
-        if world.id != world_id || world.episode_revision() != episode_revision {
-            return Err(NativePlayerInputError::StaleWorld);
-        }
+        let (owner, squad) = authorized_player_squad(
+            world, world_id, episode_revision, selected_ship,
+        )?;
         let state = &world.state;
-        if world.is_failed() || state.events.is_failed() || state.events.completed() {
-            return Err(NativePlayerInputError::InactiveWorld);
-        }
-        let owner = state.events.roster().owning_squad(selected_ship)
-            .ok_or(NativePlayerInputError::MissingSquad)?;
-        let permission = state.metadata.player_permissions(owner)
-            .ok_or(NativePlayerInputError::NotControllable)?;
-        if !permission.user_controlled || !permission.can_accept_input || permission.locked_on {
-            return Err(NativePlayerInputError::NotControllable);
-        }
-        let squad = state.events.roster().get(owner)
-            .ok_or(NativePlayerInputError::MissingSquad)?;
         let options = state.metadata.player_formation_options();
         if !options.valid() { return Err(NativePlayerInputError::InvalidDestination); }
         let mut members = Vec::with_capacity(squad.members.len());
