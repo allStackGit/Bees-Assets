@@ -626,7 +626,7 @@ where
         // owning Level; requests use their ORIGINAL connection allocator.
         let mut issue = Vec::with_capacity(max_new_requests.min(64));
         let mut home = Vec::new();
-        'levels: for index in 0..self.simulation.world_count() {
+        for index in 0..self.simulation.world_count() {
             let world = self.simulation.world_mut(index)
                 .expect("validated number of registered native worlds");
             if world.is_failed() || world.state.events.is_failed() ||
@@ -686,8 +686,13 @@ where
                 let enemy_side = if squad.side == bee_side { human_side }
                     else if squad.side == human_side { bee_side }
                     else { return Err(HostSourceCommandError::InvalidSquadSide(owner)); };
-                issue.push((owner, source.opponent_id, enemy_side));
-                if issue.len() == max_new_requests { break 'levels; }
+                // Network admission is bounded, but the source timer must
+                // still inspect later squads for local return-home orders.
+                // An earlier in-bounds squad must not starve an out-of-bounds
+                // squad merely because the send budget was exhausted.
+                if issue.len() < max_new_requests {
+                    issue.push((owner, source.opponent_id, enemy_side));
+                }
             }
         }
         // Reuse one formation buffer across all home moves on this pulse.
