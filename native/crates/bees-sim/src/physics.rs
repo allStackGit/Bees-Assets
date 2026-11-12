@@ -1579,7 +1579,11 @@ impl KinematicPhysics {
         Ok(self.insert_prevalidated_obstacle(body))
     }
 
-    pub(crate) fn insert_prevalidated_obstacle(&mut self, body: ObstacleBody) -> usize {
+    pub(crate) fn insert_prevalidated_obstacle(&mut self, mut body: ObstacleBody) -> usize {
+        // The caller may have changed the authored pose after construction.
+        // Update this body's primary, proximity and navigation-only hulls
+        // before it becomes queryable, without rescanning other obstacles.
+        body.update_hull();
         let index = self.obstacles.len();
         self.obstacles.push(body);
         if self.grid_contents == GridContents::Obstacles {
@@ -1648,13 +1652,14 @@ impl KinematicPhysics {
     pub fn replace_ended_obstacle(
         &mut self,
         index: usize,
-        obstacle: ObstacleBody,
+        mut obstacle: ObstacleBody,
     ) -> Result<(), PhysicsError> {
         let slot = self.obstacles.get_mut(index)
             .ok_or(PhysicsError::MissingObstacleSlot)?;
         if slot.active {
             return Err(PhysicsError::ActiveObstacleSlot);
         }
+        obstacle.update_hull();
         *slot = obstacle;
         if self.grid_contents == GridContents::Obstacles {
             self.grid_contents = GridContents::Stale;
