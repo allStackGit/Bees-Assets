@@ -1475,7 +1475,8 @@ impl KinematicPhysics {
     {
         let query = Self::box_query(bounds)?;
         Ok(self.obstacles.iter().filter_map(move |body|
-            (body.active && query.overlaps(&body.collider)).then_some(body.id)))
+            (body.active && body.collider.overlaps_at_pose(&query, body.pose))
+                .then_some(body.id)))
     }
 
     fn box_query(bounds: Aabb) -> Result<WorldCollider, PhysicsError> {
