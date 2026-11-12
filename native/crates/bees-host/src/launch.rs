@@ -29,6 +29,7 @@ use bees_host::notification_file::{DurableDiagnosticNotifications, EpisodeEvalua
 use bees_host::policy_process::{PolicyProcessError, ResidentPolicyProcess};
 use bees_host::policy_action_trace::{PolicyActionPlayback, PolicyActionRecorder};
 use bees_host::player_trace::{NativePlayerInput, NativePlayerTrace, NativeTraceLevel};
+use bees_host::world_fingerprint::physical_world_sha256;
 use bees_host::presentation::NativeSoftwareRenderer;
 use bees_host::scene_assets::NativeSceneAssets;
 use bees_host::scene_builder::{NativeAuthoredEntity, NativeAuthoredGroups};
@@ -1362,7 +1363,7 @@ fn run_battle(
             .open(path)?;
         writeln!(trace, "{}", json!({
             "kind": "player_input_trace",
-            "schema_version": 1,
+            "schema_version": 2,
             "run_id": config.run_id,
             "run_config_sha256": config_digest,
             "gameplay_config_sha256": gameplay_digest,
@@ -1419,8 +1420,72 @@ fn run_battle(
     // model boundary. Count each physical episode revision exactly once.
     let mut counted_revisions = vec![None::<u64>; config.levels.len()];
     let mut next_model_update = 0usize;
+    // Physical signatures are trace-only. Sample at 64-step intervals,
+    // at the start of the next input boundary *after* any model reset,
+    // never per physics step or on every idle graphical frame.
+    #[cfg(feature = "client")]
+    let mut last_physical_checkpoint_round: Option<u64> = None;
     'battle: loop {
+        #[cfg(feature = "client")]
+        if let Some(trace) = &mut input_trace {
+            if (rounds == 0 || rounds % 64 == 0) &&
+                last_physical_checkpoint_round != Some(rounds)
+            {
+                for index in 0..host.simulation().world_count() {
+                    let world = host.simulation().world(index)
+                        .expect("registered source World");
+                    let digest = physical_world_sha256(
+                        world.id, world.episode_revision(), world.tick(),
+                        &world.state.combat,
+                    );
+                    if let Err(error) = writeln!(trace, "{}", json!({
+                        "kind": "physical_state_checkpoint",
+                        "round": rounds,
+                        "world_id": world.id.0,
+                        "episode_revision": world.episode_revision(),
+                        "tick": world.tick(),
+                        "sha256": digest,
+                    })) {
+                        failed_window = Some(format!("recording native physical checkpoint: {error}"));
+                        break 'battle;
+                    }
+                }
+                last_physical_checkpoint_round = Some(rounds);
+            }
+        }
         if let Some(trace) = &mut playback {
+            while trace.checkpoints.front().is_some_and(|entry| entry.round == rounds) {
+                let entry = trace.checkpoints.pop_front()
+                    .expect("checked next physical checkpoint");
+                let Some(world) = (0..host.simulation().world_count())
+                    .filter_map(|index| host.simulation().world(index))
+                    .find(|world| world.id == entry.world_id) else {
+                        failed_window = Some(format!(
+                            "physical replay checkpoint world {} missing at round {rounds}",
+                            entry.world_id.0,
+                        ));
+                        break 'battle;
+                    };
+                if world.episode_revision() != entry.episode_revision ||
+                    world.tick() != entry.tick ||
+                    physical_world_sha256(
+                        world.id, world.episode_revision(), world.tick(),
+                        &world.state.combat,
+                    ) != entry.sha256
+                {
+                    failed_window = Some(format!(
+                        "native physical state diverged at round {rounds}, world {}, episode {}, tick {}",
+                        entry.world_id.0, entry.episode_revision, entry.tick,
+                    ));
+                    break 'battle;
+                }
+            }
+            if trace.checkpoints.front().is_some_and(|entry| entry.round < rounds) {
+                failed_window = Some(format!(
+                    "physical replay checkpoint was skipped before round {rounds}",
+                ));
+                break 'battle;
+            }
             while trace.inputs.front().is_some_and(|entry| entry.round == rounds) {
                 let entry = trace.inputs.pop_front().expect("checked next input");
                 let (id, episode_revision) = entry.action.episode();
@@ -1437,7 +1502,12 @@ fn run_battle(
                     break 'battle;
                 }
             }
-            if rounds == trace.end_round { break; }
+            if rounds == trace.end_round {
+                if !trace.checkpoints.is_empty() {
+                    failed_window = Some("unconsumed physical replay checkpoints at final round".to_owned());
+                }
+                break;
+            }
         }
         if rounds == config.max_rounds { break; }
         // Poll before view pacing/input continues, so idle graphical frames
