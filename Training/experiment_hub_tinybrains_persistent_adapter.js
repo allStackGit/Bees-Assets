@@ -513,8 +513,12 @@ function createTinyBrainsPersistentDockerAdapter({
             const chosenThreads=threads??(cpuParallelism==='allocation'
                 ?fixedCpuParallelism(context.cpu_quota,256)
                 :item.profile.threads);
+            if(!Number.isSafeInteger(context.ram_quota_mb)||
+                context.ram_quota_mb<128||context.ram_quota_mb>1000000)
+                throw Error('TinyBrains automatic simulation requires a frozen RAM lease.');
             return ['-B',runner,'--run',JOBS_IN+'/'+context.job_id,
                 '--updates',String(updates),'--threads',String(chosenThreads),
+                '--ram-budget-mb',String(context.ram_quota_mb),
                 '--live-matches',String(item.profile.live_matches),
                 '--waves',String(item.profile.waves),
                 '--actions',String(item.profile.rollout_actions),
