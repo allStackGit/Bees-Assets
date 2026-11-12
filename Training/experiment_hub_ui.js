@@ -399,6 +399,8 @@ function hubDistributedMetricSelection(selected,remoteCount) {
     for(let i=0;i<total;i++) {
         const model='collector_'+i+'_model_prepare_seconds';
         if(!names.includes(model)&&names.length<96)names.push(model);
+        const matchRate='collector_'+i+'_match_steps_per_second';
+        if(!names.includes(matchRate)&&names.length<96)names.push(matchRate);
         if(i>0) {
             const roundtrip='collector_'+i+'_roundtrip_seconds';
             if(!names.includes(roundtrip)&&names.length<96)names.push(roundtrip);
@@ -448,6 +450,7 @@ function hubCollectorStageProfile(run) {
             if(engine===null||inference===null||rate===null)continue;
             samples.push({
                 engine,inference,rate,
+                matchRate:value(metrics,slot,'match_steps_per_second','rate'),
                 observation:value(metrics,slot,'observation_prepare_seconds','seconds'),
                 opponent:value(metrics,slot,'opponent_processing_seconds','seconds'),
                 model:value(metrics,slot,'model_prepare_seconds','seconds'),
@@ -464,7 +467,8 @@ function hubCollectorStageProfile(run) {
             slot,samples:latest.length,
             engine:observed('engine'),inference:observed('inference'),
             observation:observed('observation'),opponent:observed('opponent'),
-            rate:observed('rate'),model:observed('model'),
+            rate:observed('rate'),matchRate:observed('matchRate'),
+            model:observed('model'),
             roundtrip:observed('roundtrip'),
         });
     }
@@ -1543,7 +1547,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 ' collectors with at least five complete recent samples';
             collectorStageProfiles.append(heading);
             const table=document.createElement('table');
-            const headers=['Collector','Samples','Decisions/s',
+            const headers=['Collector','Samples','Decisions/s','Match steps/s',
                 'Engine step (s)','Observation preparation (s)',
                 'Inference (s)','Opponent processing (s)',
                 'Model prepare (s)','Roundtrip (s)'];
@@ -1560,8 +1564,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 const row=document.createElement('tr');
                 for(const value of [
                     slot.slot===0?'0 · learner':' '+slot.slot+' · remote',
-                    String(slot.samples),format(slot.rate),format(slot.engine),
-                    format(slot.observation),format(slot.inference),
+                    String(slot.samples),format(slot.rate),format(slot.matchRate),
+                    format(slot.engine),format(slot.observation),format(slot.inference),
                     format(slot.opponent),format(slot.model),
                     slot.slot===0?'—':format(slot.roundtrip),
                 ])cell(row,value);
@@ -2272,7 +2276,9 @@ document.addEventListener('DOMContentLoaded', () => {
         'pipeline_timing_sample_count','rollout_engine_measured_work_share',
         'rollout_inference_measured_work_share',
         ...Array.from({length:9},(_,i)=>'collector_'+i+'_turnaround_overhead_share'),
-        'engine_steps','engine_steps_per_second','ant_decisions',
+        'engine_steps','engine_steps_per_second',
+        'simulation_match_steps','simulation_match_steps_per_second',
+        'ant_decisions',
         'ant_decisions_per_second','group_states','group_states_per_second',
         'collection_seconds','rollout_model_refresh_seconds',
         'rollout_engine_step_seconds','rollout_observation_prepare_seconds',
@@ -2327,6 +2333,8 @@ document.addEventListener('DOMContentLoaded', () => {
         ...Array.from({length:9},(_,i)=>[
             'collector_'+i+'_ant_decisions',
             'collector_'+i+'_engine_steps',
+            'collector_'+i+'_simulation_match_steps',
+            'collector_'+i+'_match_steps_per_second',
             'collector_'+i+'_inference_shape_groups',
             'collector_'+i+'_inference_readbacks',
             'collector_'+i+'_sim_matches',
