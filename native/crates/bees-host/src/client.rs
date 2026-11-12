@@ -11,7 +11,8 @@ use crate::presentation::{HudAction, NativeCamera, NativeRenderWorldView, Native
 use bees_gameplay::player_inputs::{NativeHeldFireAction, NativePlayerHeldFire, NativePlayerSquadMoves,
     NativePlayerSquadFire, NativePlayerSquadCeaseFire,
     NativePlayerSquadSpecial, NativePlayerShipSpecialKind,
-    NativePlayerSquadMatchSpeed, NativePlayerSquadShooting};
+    NativePlayerSquadMatchSpeed, NativePlayerSquadShooting,
+    NativePlayerSquadLockOn};
 use crate::player_trace::NativePlayerInput;
 use bees_sim::geometry::Vec2;
 
@@ -687,6 +688,26 @@ impl NativeClient {
                 })
             }
         });
+        let lock_on_input = (accepts_orders && pointer_active &&
+            self.held_fire_target.is_none() &&
+            (clicked_hud == Some(HudAction::LockOn) ||
+             self.window.is_key_pressed(Key::O, KeyRepeat::No)))
+            .then(|| {
+                let squads = self.renderer.selection.squads();
+                if squads.is_empty() {
+                    self.input_feedback = "Select squads first";
+                    return None;
+                }
+                let currently_locked = squads.iter().all(|&owner|
+                    view.player_authority.player_permissions(owner)
+                        .is_some_and(|p| p.locked_on)
+                );
+                self.support_mode = None;
+                Some(NativePlayerSquadLockOn {
+                    world_id: view.world_id, episode_revision: view.episode_revision,
+                    squads: squads.to_vec(), locked: !currently_locked,
+                })
+            }).flatten();
         let matching = if accepts_orders && pointer_active &&
             (clicked_hud == Some(HudAction::MatchSpeed) ||
              self.window.is_key_pressed(Key::Y, KeyRepeat::No)) {
@@ -833,7 +854,7 @@ impl NativeClient {
             self.right_press.take()
         } else { None };
         let player_move = if special_input.is_none() && match_speed_input.is_none() &&
-            support_command.is_none() && manual_fire.is_none() &&
+            lock_on_input.is_none() && support_command.is_none() && manual_fire.is_none() &&
             cease_fire_input.is_none() && accepts_orders {
             mouse.filter(|_| !self.renderer.selection.squads().is_empty()).and_then(|(x, y)| {
                 let captured_minimap = if right_released {
@@ -940,7 +961,7 @@ impl NativeClient {
                 view.world_id.0, view.tick, status, selected,
                 self.result_controls.map_or("Space pause, N step, ", NativeResultControls::hint))
         } else { format!(
-            "Bees native | World {} | Episode {} | Tick {} | {} ships, {} shots | {} squads selected | {}{} | {} | range/obstruction {} | Left select/drag, double-click type, Ctrl add, right move/attack (also on map) | C stop chase, V cease fire, A attack on sight, Ctrl+A all squads, K beacon, D detonate, Q charge, Y match, U unmatch, S targets, G guard, P patrol, M mine, H heal, R retreat, hold J manual fire, T point fire, X stop, B ranges, Backspace cancel | Space pause, N step, Tab world, 1-0 squads, PgUp/PgDn cycle, arrows pan, wheel zoom, F fit, I map, Esc exit",
+            "Bees native | World {} | Episode {} | Tick {} | {} ships, {} shots | {} squads selected | {}{} | {} | range/obstruction {} | Left select/drag, double-click type, Ctrl add, right move/attack (also on map) | C stop chase, V cease fire, A attack on sight, Ctrl+A all squads, K beacon, D detonate, Q charge, Y match, U unmatch, S targets, O lock, G guard, P patrol, M mine, H heal, R retreat, hold J manual fire, T point fire, X stop, B ranges, Backspace cancel | Space pause, N step, Tab world, 1-0 squads, PgUp/PgDn cycle, arrows pan, wheel zoom, F fit, I map, Esc exit",
             view.world_id.0, view.episode_revision, view.tick, counts.ships, counts.projectiles,
             self.renderer.selection.squads().len(),
             if self.paused { "PAUSED" } else { "RUNNING" }, selected, self.input_feedback,
@@ -971,6 +992,7 @@ impl NativeClient {
         if !self.window.is_open() { return Ok(NativeClientAction::Quit); }
         if allows_input && held_fire.is_none() {
             let action = shooting_input.map(NativePlayerInput::Shooting)
+                .or_else(|| lock_on_input.map(NativePlayerInput::LockOn))
                 .or_else(|| special_input.map(NativePlayerInput::Special))
                 .or_else(|| match_speed_input.map(NativePlayerInput::MatchSpeed))
                 .or_else(|| cease_fire_input.map(NativePlayerInput::CeaseFire))

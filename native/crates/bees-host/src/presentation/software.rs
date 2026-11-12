@@ -87,6 +87,7 @@ pub struct NativeSoftwareRenderer {
     pub show_shooting_menu: bool,
     pub focused_shooting_strategy: u8,
     pub active_tactical_action: Option<super::HudAction>,
+    pub locked_selection_all: bool,
     pub hovered_tactical_action: Option<super::HudAction>,
     debris_frame: Option<(WorldId, u64, u64)>,
     obstacle_debris: Vec<ObstacleDebris>,
@@ -159,7 +160,7 @@ impl NativeSoftwareRenderer {
             selection_box: None, show_weapon_ranges: false,
             show_minimap: true, show_shooting_menu: false,
             focused_shooting_strategy: 1,
-            active_tactical_action: None,
+            active_tactical_action: None, locked_selection_all: false,
             hovered_tactical_action: None,
             debris_frame: None, obstacle_debris: Vec::new() })
     }
@@ -558,6 +559,10 @@ impl NativeSoftwareRenderer {
         }
         counts.numbered_squad_rows = self.draw_squad_shortcuts(view);
         counts.special_ready_ships = self.draw_special_readiness(view);
+        self.locked_selection_all = !self.selection.squads().is_empty() &&
+            self.selection.squads().iter().all(|&owner|
+                view.player_authority.player_permissions(owner)
+                    .is_some_and(|permission| permission.locked_on));
         counts.tactical_buttons_drawn = self.draw_tactical_bar();
         self.draw_selected_priority(view);
         if self.show_shooting_menu { self.draw_shooting_menu(view); }
@@ -763,6 +768,10 @@ impl NativeSoftwareRenderer {
                 0x172334
             } else if self.show_shooting_menu && action == tactical_hud::HudAction::Shooting {
                 0x456c78
+            } else if action == tactical_hud::HudAction::LockOn &&
+                !self.selection.squads().is_empty() &&
+                self.locked_selection_all {
+                0x456c78
             } else if self.active_tactical_action == Some(action) {
                 0x456c78
             } else if self.hovered_tactical_action == Some(action) {
@@ -813,6 +822,17 @@ impl NativeSoftwareRenderer {
         let x = self.width.saturating_sub(w) / 2;
         text::draw_at(&mut self.pixels, self.width, x,
             self.height - 190, &label, 1, [175, 207, 227]);
+        let locked_count = self.selection.squads().iter().filter(|&&owner|
+            view.player_authority.player_permissions(owner)
+                .is_some_and(|permission| permission.locked_on)
+        ).count();
+        if locked_count > 0 {
+            let label = format!("{locked_count}/{} squads locked on (O to toggle)",
+                self.selection.squads().len());
+            let x = self.width.saturating_sub(text::width(&label, 1)) / 2;
+            text::draw_at(&mut self.pixels, self.width,
+                x, self.height - 176, &label, 1, [255, 205, 132]);
+        }
     }
 
     /// Present the canonical 40-entry source registry. Current selection
