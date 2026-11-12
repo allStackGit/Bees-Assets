@@ -1074,10 +1074,10 @@ class ExperimentHub {
         this.progressHistory = new ProgressHistory(path.join(root,'hub-chart-v1.json'));
         this.observations = new ObservationArchive(root);
         this.executionOrderCursor = new Map();
-        // Only this live coordinator may use a preapproved future learner Start.
-        // The collectors' native Starts are durable; GPU learner authorization
-        // never survives a coordinator restart without fresh operator approval.
-        this.distributedLaunches = new Map();
+        // Coordinated learner Starts are one-use durable approvals bound
+        // to the exact already-reserved collector dispatches. A coordinator
+        // restart revokes ordinary approvals; explicit recovery permission
+        // still requires fresh native owner and GPU readiness proof.
         // Native queue automation is an explicitly armed, process-local
         // session. Durable opt-in recovery still requires fresh native and
         // lease proof before a new session can start unattended workloads.
@@ -1097,17 +1097,31 @@ class ExperimentHub {
             throw Error('Experiment Hub registry invalid; refusing to start.');
         if (!s.projects.some(p=>p.id==='bees' && p.adapter==='bees'))
             throw Error('Experiment Hub Bees project identity changed; refusing to start.');
-        // A pending GPU/native Start approval is only valid inside the
-        // coordinator process that received it. CPU-only recovery requires
-        // independent explicit operator consent at plan creation time.
-        if((s.bundle_start_plans||[]).some(plan=>
-            plan.status==='pending'&&plan.resume_after_restart!==true)) {
+        // No new native Start is issued on startup. Only explicitly
+        // restart-approved plans remain pending; fresh agents must later
+        // re-prove their exact native ownership and original leases.
+        const resetBundles=(s.bundle_start_plans||[]).some(plan=>
+            plan.status==='pending'&&plan.resume_after_restart!==true);
+        const resetDistributed=(s.distributed_launch_plans||[]).some(plan=>
+            plan.status==='pending');
+        if(resetBundles||resetDistributed) {
             const next=copy(s);
-            for(const plan of next.bundle_start_plans)
+            for(const plan of next.bundle_start_plans||[])
                 if(plan.status==='pending'&&plan.resume_after_restart!==true) {
                     plan.status='disarmed';
                     plan.reason='Coordinator restarted; this launch requires a new explicit approval.';
                     plan.resolved_at=now();
+                }
+            for(const plan of next.distributed_launch_plans||[])
+                if(plan.status==='pending') {
+                    if(plan.resume_after_restart===true) {
+                        plan.recovery_pending=true;
+                        plan.reason='Coordinator restarted; waiting for fresh native collector and learner proof.';
+                    }else {
+                        plan.status='disarmed';
+                        plan.reason='Coordinator restarted without explicit learner recovery approval.';
+                        plan.resolved_at=now();
+                    }
                 }
             this.commit(next);
         }
@@ -1135,13 +1149,16 @@ class ExperimentHub {
                     ?'A member changed native status; plan needs review.'
                 :'Waiting for matching fresh machine lease receipts and native Start readiness.'};
         });
-        snapshot.distributed_launches=[...this.distributedLaunches.values()].map(intent=>({
+        snapshot.distributed_launches=(snapshot.distributed_launch_plans||[]).map(intent=>({
             learner_job_id:intent.learner_job_id,
             collector_job_ids:Object.keys(intent.collector_dispatches),
             status:intent.status,reason:intent.reason,
             approved_at:intent.approved_at,
-            expires_at:new Date(intent.expires_ms).toISOString(),
+            expires_at:intent.expires_at,
+            recovery_pending:intent.recovery_pending===true,
+            resume_after_restart:intent.resume_after_restart===true,
         }));
+        delete snapshot.distributed_launch_plans;
         // Preserve existing Ants-v2 registry provenance without presenting
         // it as a supported executable project.
         snapshot.projects=snapshot.projects.map(project=>project.id==='ants'
@@ -2295,7 +2312,7 @@ class ExperimentHub {
     }
 
     authorizeStart(value,origin='operator') {
-        if(!['operator','automation'].includes(origin))
+        if(!['operator','automation','distributed'].includes(origin))
             throw Error('Unknown native Start authorization source.');
         if(!object(value)||value.confirm_start!==true||
             typeof value.job_id!=='string')
@@ -2314,6 +2331,12 @@ class ExperimentHub {
             !this.automation.machine_ids.includes(job.assigned_machine_id)||
             !UUID.test(String(this.automation.session_id||''))))
             throw Error('Native automation session no longer authorizes this Start.');
+        const pendingPlan=origin==='distributed'
+            ?(this.state.distributed_launch_plans||[]).find(plan=>
+                plan.learner_job_id===job.id&&plan.status==='pending')
+            :null;
+        if(origin==='distributed'&&!pendingPlan)
+            throw Error('No live, approved distributed learner Start plan was found.');
         const next=copy(this.state);
         const selected=next.jobs.find(j=>j.id===job.id);
         selected.status='start_requested';
@@ -2325,6 +2348,12 @@ class ExperimentHub {
         if(origin==='operator'&&value.release_on_terminal===true)
             selected.release_on_terminal=true;
         selected.status_reason='Start authorized; waiting for machine-local OS resource enforcement verification.';
+        if(origin==='distributed') {
+            const resolved=next.distributed_launch_plans.find(plan=>plan.id===pendingPlan.id);
+            resolved.status='authorized';
+            resolved.reason='All remote native owners freshly verified; one learner Start durably authorized.';
+            resolved.resolved_at=now();
+        }
         this.commit(next);
         return {id:selected.id,status:selected.status,dispatch_id:selected.dispatch_id};
     }
@@ -2337,12 +2366,21 @@ class ExperimentHub {
             Object.keys(value).some(key=>![
                 'learner_job_id','expected_collector_job_ids','confirm_start',
                 'start_learner_when_ready','confirm_learner_start',
+                'resume_after_restart','confirm_restart_rearm',
             ].includes(key))||
             (value.start_learner_when_ready!==undefined&&
                 typeof value.start_learner_when_ready!=='boolean')||
             (value.start_learner_when_ready===true
                 ?value.confirm_learner_start!==true
                 :value.confirm_learner_start!==undefined)||
+            (value.resume_after_restart!==undefined&&
+                typeof value.resume_after_restart!=='boolean')||
+            (value.resume_after_restart===true&&
+                (value.start_learner_when_ready!==true||
+                 value.confirm_restart_rearm!==true))||
+            (value.confirm_restart_rearm!==undefined&&
+                (value.resume_after_restart!==true||
+                 value.confirm_restart_rearm!==true))||
             !UUID.test(String(value.learner_job_id||''))||
             !Array.isArray(value.expected_collector_job_ids)||
             value.expected_collector_job_ids.length<1||
@@ -2424,28 +2462,45 @@ class ExperimentHub {
             selected.start_first_offered_at=null;
             selected.status_reason='Remote collector Start authorized as part of the learner group; awaiting native OS enforcement.';
         }
-        this.commit(next);
         if(coordinated) {
-            const authorizedAt=Date.now();
-            this.distributedLaunches.set(learner.id,{
-                learner_job_id:learner.id,
-                collector_dispatches:collectorDispatches,
+            const plans=next.distributed_launch_plans||[];
+            if(plans.length>=64) {
+                const old=plans.findIndex(plan=>plan.status!=='pending');
+                if(old<0)throw Error('Resolve earlier coordinated launch approvals before approving another.');
+                plans.splice(old,1);
+            }
+            const approvedMs=Date.now();
+            plans.push({
+                id:crypto.randomUUID(),learner_job_id:learner.id,
+                learner_machine_id:learner.assigned_machine_id,
                 learner_lease_id:learner.lease_id,
+                collector_dispatches:collectorDispatches,
+                collector_owners:workers.map(worker=>{
+                    const host=snapshot.machines.find(m=>m.id===worker.assigned_machine_id);
+                    return {job_id:worker.id,dispatch_id:collectorDispatches[worker.id],
+                        machine_id:worker.assigned_machine_id,lease_id:worker.lease_id,
+                        endpoint:host.tinybrains_rollout_endpoint,
+                        key_fingerprint:host.tinybrains_rollout_key_fingerprint};
+                }),
+                key_fingerprint:learnerHost.tinybrains_remote_key_fingerprint,
                 agent_instances:agents,
-                status:'pending',reason:'Waiting for verified running collectors.',
-                approved_at:new Date(authorizedAt).toISOString(),
-                expires_ms:authorizedAt+DISTRIBUTED_LAUNCH_TTL_MS,
+                resume_after_restart:value.resume_after_restart===true,
+                recovery_pending:false,status:'pending',
+                reason:'Waiting for verified running remote collector dispatches.',
+                approved_at:new Date(approvedMs).toISOString(),
+                expires_at:new Date(approvedMs+DISTRIBUTED_LAUNCH_TTL_MS).toISOString(),
             });
-            // Keep only a bounded number of inactive notices in process memory.
-            for(const [id,intent] of this.distributedLaunches)
-                if(this.distributedLaunches.size>32&&intent.status!=='pending')
-                    this.distributedLaunches.delete(id);
+            next.distributed_launch_plans=plans;
         }
+        // Collector Start authorizations and future learner permission form
+        // one crash-atomic commit. Restart cannot observe only half of them.
+        this.commit(next);
         return {learner_job_id:learner.id,
             collector_job_ids:workers.map(job=>job.id),
             starts_authorized:workers.length,
             learner_start_authorized:false,
-            learner_start_pending:coordinated};
+            learner_start_pending:coordinated,
+            resume_after_restart:coordinated&&value.resume_after_restart===true};
     }
     // A never-started learner may abandon its already-dispatched sidecars
     // without inventing a second process owner. Stops remain native orders;
