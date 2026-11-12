@@ -85,6 +85,9 @@ internal static class NativePhysicalSceneExporter
     {
         public string kind = "none";
         public int power;
+        // Ship.CanOverrideBounds belongs to the authored Barge, not a
+        // guessed Level-wide mobility default.
+        public bool can_override_bounds;
         public long carrier_id;
         public Vector2 offset_from_center;
         public float refill_distance;
@@ -264,7 +267,7 @@ internal static class NativePhysicalSceneExporter
     [Serializable]
     private sealed class PhysicalScene
     {
-        public int schema_version = 29;
+        public int schema_version = 30;
         public SourceTargetingContext targeting_context;
         public int source_frame_count = Time.frameCount;
         public string level_name;
@@ -1052,6 +1055,7 @@ internal static class NativePhysicalSceneExporter
             if (!barge.IsRlChargeReady || barge.IsCharging || barge.HasStartedCharging)
                 throw new InvalidOperationException("Cannot export an active Barge charge: " + ship.Id);
             result.kind = "barge";
+            result.can_override_bounds = barge.CanOverrideBounds;
             weapon = barge.Charge;
         }
         else if (ship is Scout scout)

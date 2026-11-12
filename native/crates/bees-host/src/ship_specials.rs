@@ -14,7 +14,7 @@ pub struct NativeBeaconTemplate {
 
 #[derive(Clone, Debug)]
 pub enum NativeAuthoredShipSpecial {
-    Barge { power: i32 },
+    Barge { power: i32, can_override_bounds: Option<bool> },
     FireBarge { power: i32 },
     Striker { power: i32, carrier: GameStrikerCarrier },
     YellowJacket { power: i32 },
@@ -34,7 +34,15 @@ impl NativeAuthoredShipSpecial {
                 if policy { world.configure_policy_striker(id, carrier.carrier_id, power)?; }
                 else { world.configure_game_striker(id, carrier)?; }
             }
-            Self::Barge { power } if policy => world.configure_policy_barge(id, power)?,
+            Self::Barge { power, can_override_bounds } => {
+                if policy { world.configure_policy_barge(id, power)?; }
+                else if let Some(can_override_bounds) = can_override_bounds {
+                    world.configure_game_barge(id, power, can_override_bounds)?;
+                }
+                // Legacy snapshots never authenticated this source flag:
+                // retain automated Charge support but do not fabricate
+                // the player-specific bounds capability.
+            }
             Self::YellowJacket { power } if policy => world.configure_policy_yellow_jacket(id, power)?,
             Self::Scout { beacon, enabled } => {
                 if policy {

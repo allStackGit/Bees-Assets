@@ -70,7 +70,7 @@ use crate::runtime::NativeHostRuntime;
 use crate::ship_specials::{NativeAuthoredShipSpecial, NativeBeaconTemplate};
 use crate::durable_connection::DurableHiveMindConnection;
 
-const SNAPSHOT_VERSION: u32 = 29;
+const SNAPSHOT_VERSION: u32 = 30;
 
 #[derive(Deserialize, Clone, Copy)]
 struct UnityVec2 { x: f32, y: f32 }
@@ -285,6 +285,7 @@ struct UnityShip {
 struct UnityShipSpecial {
     kind: String,
     power: i32,
+    can_override_bounds: Option<bool>,
     carrier_id: i64,
     offset_from_center: UnityVec2,
     refill_distance: f32,
@@ -325,7 +326,12 @@ impl UnityShipSpecial {
         if self.power < 0 { return Err(invalid()); }
         let special = match (self.kind.as_str(), ship_type) {
             ("none", kind) if !matches!(kind, 0 | 10 | 18 | 19 | 22) => return Ok(None),
-            ("barge", 0) => NativeAuthoredShipSpecial::Barge { power: self.power },
+            ("barge", 0) if schema >= 30 && self.can_override_bounds.is_none() =>
+                return Err(invalid()),
+            ("barge", 0) => NativeAuthoredShipSpecial::Barge {
+                power: self.power,
+                can_override_bounds: self.can_override_bounds,
+            },
             ("fire-barge", 10) => NativeAuthoredShipSpecial::FireBarge { power: self.power },
             ("yellow-jacket", 22) => NativeAuthoredShipSpecial::YellowJacket { power: self.power },
             ("striker", 19) if self.carrier_id >= 0 &&
