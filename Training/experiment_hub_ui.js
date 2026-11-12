@@ -2117,7 +2117,7 @@ document.addEventListener('DOMContentLoaded', () => {
         'ppo_backward_seconds','ppo_metric_readback_seconds',
         'ppo_gradient_processing_seconds','ppo_optimizer_step_seconds',
         'ppo_parameter_finite_check_seconds','ppo_gpu_stream_sync_seconds',
-        'ppo_minibatches','ppo_microbatches','ppo_board_pixel_samples',
+        'ppo_minibatches','ppo_board_pixel_samples',
         'ppo_max_board_cells','ppo_unique_board_shapes',
         'evaluation_seconds','collector_count',
         // The TinyBrains learner contributes slot 0; up to eight remote
