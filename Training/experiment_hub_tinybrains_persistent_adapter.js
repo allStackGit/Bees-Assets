@@ -390,6 +390,10 @@ function createTinyBrainsPersistentDockerAdapter({
     const runner=HUB_IN+'/Training/experiment_hub_tinybrains_persistent.py';
     return {
         executable,cwd:PROJECT_IN,docker,stop_policy:'interrupt-main',
+        artifact_export_dir(jobId) {
+            if(!UUID.test(String(jobId||'')))throw Error('Invalid TinyBrains job identity.');
+            return path.join(artifacts,jobId);
+        },
         gpu_execution:'cuda',
         gpu_sharing:'cooperative-pytorch',
         tinybrains_profiles:Object.fromEntries([...approved].map(([id,p])=>[id,p.sha256])),
