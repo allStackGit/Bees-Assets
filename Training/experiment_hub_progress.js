@@ -88,8 +88,10 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
         retain('total_ppo_updates',reported.total_ppo_updates);
         // Show measured stage pressure before unrelated high-cardinality
         // project metrics consume the default 96-chart-field cache.
-        for(const name of ['pipeline_collection_dominant',
-            'pipeline_optimization_dominant','pipeline_collection_work_share',
+        for(const name of ['pipeline_remote_wait_dominant',
+            'pipeline_merge_dominant','pipeline_collection_dominant',
+            'pipeline_optimization_dominant','pipeline_remote_wait_work_share',
+            'pipeline_merge_work_share','pipeline_collection_work_share',
             'pipeline_optimization_work_share','pipeline_timing_sample_count',
             'rollout_engine_measured_work_share',
             'rollout_inference_measured_work_share'])
@@ -123,6 +125,16 @@ class BottleneckEvidence {
             const fraction=collection/(collection+optimize);
             add('pipeline_collection_work_share',fraction);
             add('pipeline_optimization_work_share',1-fraction);
+            // Worker straggler waits and learner-side merge are distinct
+            // measured subsets of collection, not new hardware diagnoses.
+            const joinWait=seconds('remote_collector_join_wait_seconds');
+            const merge=seconds('collection_merge_seconds');
+            const waitShare=collection>0&&joinWait!==null&&joinWait<=collection
+                ?joinWait/collection:null;
+            const mergeShare=collection>0&&merge!==null&&merge<=collection
+                ?merge/collection:null;
+            if(waitShare!==null)add('pipeline_remote_wait_work_share',waitShare);
+            if(mergeShare!==null)add('pipeline_merge_work_share',mergeShare);
             const identity=String(job.dispatch_id||'')+':'+progress.segment_id;
             const at=Date.parse(progress.source_modified_at);
             let prior=this.byJob.get(job.id);
@@ -135,7 +147,7 @@ class BottleneckEvidence {
                 this.byJob.set(job.id,prior);
             }
             if(Number.isFinite(at)&&at>prior.lastAt) {
-                prior.samples.push({at,fraction});
+                prior.samples.push({at,fraction,waitShare,mergeShare});
                 if(prior.samples.length>8)prior.samples.shift();
                 prior.lastAt=at;
             }
@@ -149,6 +161,10 @@ class BottleneckEvidence {
                     add('pipeline_collection_dominant',1,'count');
                 else if(recent.filter(x=>x.fraction<=0.3).length>=5)
                     add('pipeline_optimization_dominant',1,'count');
+                if(recent.filter(x=>x.waitShare!==null&&x.waitShare>=0.5).length>=5)
+                    add('pipeline_remote_wait_dominant',1,'count');
+                if(recent.filter(x=>x.mergeShare!==null&&x.mergeShare>=0.3).length>=5)
+                    add('pipeline_merge_dominant',1,'count');
             }
         } else {
             // Don't carry a prior timing conclusion into a source version
