@@ -1721,9 +1721,20 @@ impl KinematicPhysics {
         // Rebuild the SAME uniform grid for obstacle queries after all
         // ship queries finish. Two grids double the per-world cell-array
         // footprint and buy nothing when these phases are serial.
+        // Track whether any live obstacle can produce a ship-trigger event
+        // while visiting that same population for the mandatory grid build.
+        // Ordinary static walls and MapObjects do not track ship contacts;
+        // avoid scanning a large fleet against those obstacles solely to
+        // reject every candidate after its broadphase query.
+        let mut has_ship_contact_obstacles = false;
         self.grid.rebuild_with(self.obstacles.len(), |index| {
             let obstacle = &self.obstacles[index];
-            if obstacle.active { obstacle.collider.bounds } else { None }
+            if obstacle.active {
+                if obstacle.tracks_ship_contacts && obstacle.collider.bounds.is_some() {
+                    has_ship_contact_obstacles = true;
+                }
+                obstacle.collider.bounds
+            } else { None }
         });
         self.grid_contents = GridContents::Obstacles;
         self.counts.obstacle_grid_overflow_bodies = self.grid.overflow.len() as u64;
@@ -1796,9 +1807,11 @@ impl KinematicPhysics {
         self.counts.proximity_obstacle_exits = self.proximity_obstacle_exits.len() as u64;
 
         self.ship_obstacle_current.clear();
-        // Without obstacle entries the contact set is already empty.
-        // Still reconcile exits below when the last obstacle was retired.
-        let ships_to_check = if self.grid.is_empty() { &[] } else { self.ships.as_slice() };
+        // Keep the exit reconciliation below even when the last eligible
+        // asteroid/border was retired during the preceding combat tick.
+        let ships_to_check = if has_ship_contact_obstacles {
+            self.ships.as_slice()
+        } else { &[] };
         for ship in ships_to_check {
             if !ship.active { continue; }
             let Some(bounds) = ship.collider.bounds else { continue };
