@@ -71,6 +71,8 @@ function recordedTinyBrainsMetrics(row,updateWall) {
     for(const name of ['collection_seconds','rollout_model_refresh_seconds',
         'rollout_engine_step_seconds','rollout_observation_prepare_seconds',
         'rollout_learner_inference_seconds','rollout_opponent_processing_seconds',
+        'simulation_engine_roundtrip_seconds','simulation_dispatch_queue_seconds',
+        'simulation_batch_wall_seconds','simulation_last_child_gap_seconds',
         'optimization_seconds','checkpoint_seconds',
         'remote_collector_join_wait_seconds','collection_merge_seconds',
         'overlap_seconds','remote_policy_snapshot_seconds',
@@ -209,6 +211,12 @@ function recordedTinyBrainsMetrics(row,updateWall) {
             add('collector_'+i+'_'+suffix,worker[name],'count');
         add('collector_'+i+'_sim_rss_mb',
             worker.simulation_engine_memory_mb,'mb');
+        for(const [suffix,name] of [
+            ['sim_engine_roundtrip_seconds','simulation_engine_roundtrip_seconds'],
+            ['sim_dispatch_queue_seconds','simulation_dispatch_queue_seconds'],
+            ['sim_batch_wall_seconds','simulation_batch_wall_seconds'],
+            ['sim_last_child_gap_seconds','simulation_last_child_gap_seconds']])
+            add('collector_'+i+'_'+suffix,worker[name],'seconds');
         add('collector_'+i+'_inference_shape_groups',
             worker.rollout_inference_shape_groups,'count');
         add('collector_'+i+'_inference_readbacks',
