@@ -772,6 +772,13 @@ fn apply_player_input(host: &mut RolloutHost, action: NativePlayerInput) -> Resu
             else { "Point fire stopped" }
         }), "Squad cannot accept manual fire"),
         NativePlayerInput::HeldFire(input) => (host.player_held_fire(input), "Squad cannot accept manual fire"),
+        NativePlayerInput::LockOn(input) => (host.player_lock_on_squads(&input).map(|counts| {
+            if counts.accepted_squads == 0 { "No selected enemy command can change lock" }
+            else if counts.rejected_squads > 0 {
+                "Lock On changed; some squads unavailable"
+            } else if input.locked { "Locked on to current enemy" }
+            else { "Lock On released" }
+        }), "Squad cannot change Lock On"),
         NativePlayerInput::Shooting(input) => (host.player_shooting_squads(&input).map(|counts| {
             if counts.accepted_squads == 0 { "No selected squads can change targeting" }
             else if counts.rejected_squads > 0 || counts.unavailable_squads > 0 {

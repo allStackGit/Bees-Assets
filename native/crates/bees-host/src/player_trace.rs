@@ -8,7 +8,7 @@ use std::path::Path;
 use bees_gameplay::player_inputs::{
     NativePlayerHeldFire, NativePlayerSquadCeaseFire, NativePlayerSquadCommands, NativePlayerSquadFire,
     NativePlayerSquadMoves, NativePlayerSquadSpecial, NativePlayerSquadMatchSpeed,
-    NativePlayerSquadShooting,
+    NativePlayerSquadShooting, NativePlayerSquadLockOn,
 };
 use bees_sim::simulation::WorldId;
 use serde::{Deserialize, Serialize};
@@ -24,6 +24,7 @@ pub enum NativePlayerInput {
     Special(NativePlayerSquadSpecial),
     MatchSpeed(NativePlayerSquadMatchSpeed),
     Shooting(NativePlayerSquadShooting),
+    LockOn(NativePlayerSquadLockOn),
 }
 
 impl NativePlayerInput {
@@ -37,6 +38,7 @@ impl NativePlayerInput {
             Self::Special(input) => (input.world_id, input.episode_revision),
             Self::MatchSpeed(input) => (input.world_id, input.episode_revision),
             Self::Shooting(input) => (input.world_id, input.episode_revision),
+            Self::LockOn(input) => (input.world_id, input.episode_revision),
         }
     }
 }
