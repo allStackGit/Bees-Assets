@@ -117,6 +117,17 @@ pub trait NativeLevelCommandContext {
     /// Level command completion is the one authoritative event source.
     fn player_command_finished(&mut self, _owner: SquadLifetime) {}
 
+    /// The original Squad.CheckChase runs a 1-second source timer.
+    /// Only a Level with actual source sight, movement and weapon inputs
+    /// may trigger it. The game and headless learner use this same phase
+    /// and the canonical command director; other adapters do no work.
+    fn advance_player_chase(
+        &mut self, _world: &mut CombatWorld,
+        _events: &mut NativeLevelEventProcessor,
+        _random: &mut bees_sim::simulation::RandomStream,
+        _completed_tick: u64, _dt_seconds: f32,
+    ) -> Result<u64, NativeLevelEventError> { Ok(0) }
+
     /// Admit scheduled source squads at the completed fixed-tick boundary.
     fn deploy_reinforcements(
         &mut self, _world: &mut CombatWorld, _events: &mut NativeLevelEventProcessor, _tick: u64,
@@ -938,6 +949,16 @@ where
         // scan of all player squads, to release source Lock On state.
         for finished in state.events.latest_finished_commands() {
             state.metadata.player_command_finished(finished.owner);
+        }
+        // Source Squad.CheckChase fires independently of the current
+        // command's timer. Install only authenticated player commands,
+        // after the prior event/timer finalizations and before the next
+        // physics tick consumes their movement instructions.
+        if !state.events.completed() {
+            state.metadata.advance_player_chase(
+                &mut state.combat, &mut state.events, &mut world.random,
+                completed_tick, dt_seconds,
+            )?;
         }
         // The observation history is part of the same World lifetime:
         // sample after physical movement and combat events, never via

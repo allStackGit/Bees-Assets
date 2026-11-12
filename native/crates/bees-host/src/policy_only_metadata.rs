@@ -146,6 +146,10 @@ pub struct NativePolicyOnlyMetadata {
     beacon_templates: HashMap<i64, Arc<NativeBeaconTemplate>>,
     player: NativeSourcePlayerInputs,
     pub(crate) reinforcements: std::collections::VecDeque<crate::reinforcements::ReinforcementWave>,
+    /// One source-second chase clock shared by the player's starting
+    /// squads, whose Unity timers are all armed at Squad.Setup.
+    chase_elapsed_seconds: f32,
+    pub auto_chase_activations: u64,
 }
 
 impl NativePolicyOnlyMetadata {
@@ -243,7 +247,10 @@ impl NativePolicyOnlyMetadata {
             !authored_ships.contains_key(id) || !template.perception.valid()
         ) { return Err(PolicyOnlyMetadataError::InvalidSource); }
         if authored_ships.keys().any(|id| !player.ships.get(id)
-            .is_some_and(|data| data.offset.is_finite() && data.clearance >= 0)) {
+            .is_some_and(|data| data.offset.is_finite() && data.clearance >= 0)) ||
+            player.chasing.iter().any(|owner|
+                !player.squads.get(owner)
+                    .is_some_and(|permissions| permissions.user_controlled)) {
             return Err(PolicyOnlyMetadataError::InvalidSource);
         }
         Ok(Self {
@@ -257,6 +264,7 @@ impl NativePolicyOnlyMetadata {
             explorers: Vec::new(),
             agents: agent_map, sides: side_map, beacon_templates, player,
             reinforcements: std::collections::VecDeque::new(),
+            chase_elapsed_seconds: 0.0, auto_chase_activations: 0,
         })
     }
 
@@ -422,6 +430,15 @@ impl NativeLevelRewardMetadata for NativePolicyOnlyMetadata {
 }
 
 impl NativeLevelCommandContext for NativePolicyOnlyMetadata {
+    fn advance_player_chase(
+        &mut self, world: &mut CombatWorld,
+        events: &mut bees_gameplay::level_events::NativeLevelEventProcessor,
+        random: &mut bees_sim::simulation::RandomStream,
+        completed_tick: u64, dt_seconds: f32,
+    ) -> Result<u64, bees_gameplay::level_events::NativeLevelEventError> {
+        self.advance_source_chase(world, events, random, completed_tick, dt_seconds)
+    }
+
     fn player_command_finished(&mut self, owner: SquadLifetime) {
         if let Some(permission) = self.player.squads.get_mut(&owner) {
             permission.locked_on = false;
