@@ -191,7 +191,10 @@ impl NativePolicyOnlyMetadata {
             return Err(err(GameCommandError::InvalidSettings));
         }
         self.chase_elapsed_seconds += dt_seconds;
-        if self.chase_elapsed_seconds < 1.0 { return Ok(0); }
+        // Unity ScaledTimer.Update fires only when Elapsed > Length,
+        // then preserves the remainder of the recurring interval. Its
+        // Squad.Setup call used isRecurring=true, not startImmediate.
+        if self.chase_elapsed_seconds <= 1.0 { return Ok(0); }
         self.chase_elapsed_seconds %= 1.0;
         self.chase_measurements.timer_callbacks += 1;
         if self.player.chasing.is_empty() ||
