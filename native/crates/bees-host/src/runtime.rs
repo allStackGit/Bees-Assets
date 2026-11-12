@@ -37,6 +37,23 @@ pub enum HostPlayerInputError {
     Driver(NativeLevelDriverError),
 }
 
+/// Typed result of one authoritative player-input dispatch. The client,
+/// offline replay, and a future authenticated network owner can all use
+/// the same host entry point without duplicating gameplay routing.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NativePlayerInputOutcome {
+    Move(NativePlayerMoveCounts),
+    Support(bees_gameplay::player_inputs::NativePlayerCommandCounts),
+    Fire(bees_gameplay::player_inputs::NativePlayerCommandCounts),
+    HeldFire(&'static str),
+    CeaseFire(bees_gameplay::player_inputs::NativePlayerCommandCounts),
+    Special(bees_gameplay::player_inputs::NativePlayerCommandCounts),
+    MatchSpeed(bees_gameplay::player_inputs::NativePlayerCommandCounts),
+    Shooting(bees_gameplay::player_inputs::NativePlayerCommandCounts),
+    LockOn(bees_gameplay::player_inputs::NativePlayerCommandCounts),
+    Chase(bees_gameplay::player_inputs::NativePlayerCommandCounts),
+}
+
 #[derive(Debug)]
 pub enum HostInitError {
     Driver(NativeLevelDriverError),
@@ -204,6 +221,35 @@ where
         let world = self.simulation.world_mut(index)
             .ok_or(NativeLevelDriverError::MissingWorld)?;
         Ok(edit(&mut world.state, &mut world.random))
+    }
+
+    /// One player-input authority boundary for the window, replay, and
+    /// future transport adapters. The existing typed methods remain the
+    /// ONLY executors; this dispatch does not cache intents, allocate an
+    /// alternate command queue, or modify network ownership.
+    ///
+    /// Replaying an input still requires the caller's exact fixed-tick
+    /// ordering, world and episode identities. Authentication of any
+    /// remote sender must happen BEFORE calling this method.
+    pub fn apply_player_input(
+        &mut self, input: &crate::player_trace::NativePlayerInput,
+    ) -> Result<NativePlayerInputOutcome, HostPlayerInputError>
+    where M: NativeLevelPlayerContext
+    {
+        use crate::player_trace::NativePlayerInput as Input;
+        use NativePlayerInputOutcome as Outcome;
+        match input {
+            Input::Move(value) => self.player_move_squads(value.clone()).map(Outcome::Move),
+            Input::Support(value) => self.player_command_squads(value).map(Outcome::Support),
+            Input::Fire(value) => self.player_fire_squads(value).map(Outcome::Fire),
+            Input::HeldFire(value) => self.player_held_fire(value.clone()).map(Outcome::HeldFire),
+            Input::CeaseFire(value) => self.player_cease_fire_squads(value).map(Outcome::CeaseFire),
+            Input::Special(value) => self.player_special_squads(value).map(Outcome::Special),
+            Input::MatchSpeed(value) => self.player_match_speed_squads(value).map(Outcome::MatchSpeed),
+            Input::Shooting(value) => self.player_shooting_squads(value).map(Outcome::Shooting),
+            Input::LockOn(value) => self.player_lock_on_squads(value).map(Outcome::LockOn),
+            Input::Chase(value) => self.player_chase_squads(value).map(Outcome::Chase),
+        }
     }
 
     pub fn player_move(&mut self, input: NativePlayerMove)

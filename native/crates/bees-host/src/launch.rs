@@ -749,15 +749,34 @@ impl RunNetwork {
 }
 
 fn apply_player_input(host: &mut RolloutHost, action: NativePlayerInput) -> Result<&'static str, String> {
-    use bees_host::runtime::HostPlayerInputError;
+    use bees_host::runtime::{HostPlayerInputError, NativePlayerInputOutcome as Outcome};
     use bees_gameplay::player_inputs::{NativePlayerSupportAction, NativePlayerShipSpecialKind};
-    let (result, rejection) = match action {
-        NativePlayerInput::Move(input) => (host.player_move_squads(input).map(|counts| {
+    // Live window and offline playback use precisely the same host-level
+    // authority dispatch. Only human-readable feedback belongs here.
+    let outcome = match host.apply_player_input(&action) {
+        Ok(outcome) => outcome,
+        Err(HostPlayerInputError::Gameplay(error)) if error.is_rejection() =>
+            return Ok(match action {
+                NativePlayerInput::Move(_) => "Squad cannot accept that move",
+                NativePlayerInput::Support(_) => "Squad cannot accept that command",
+                NativePlayerInput::Fire(_) | NativePlayerInput::HeldFire(_) =>
+                    "Squad cannot accept manual fire",
+                NativePlayerInput::CeaseFire(_) => "Cannot change firing mode",
+                NativePlayerInput::Special(_) => "Squad cannot accept that special",
+                NativePlayerInput::MatchSpeed(_) => "Squad cannot change speed",
+                NativePlayerInput::Shooting(_) => "Squad cannot change shooting priority",
+                NativePlayerInput::LockOn(_) => "Squad cannot change Lock On",
+                NativePlayerInput::Chase(_) => "Squad cannot change Chase",
+            }),
+        Err(error) => return Err(format!("native player input: {error:?}")),
+    };
+    let feedback = match (action, outcome) {
+        (NativePlayerInput::Move(_), Outcome::Move(counts)) => {
             if counts.accepted_squads == 0 { "Selected squads cannot accept that destination" }
             else if counts.rejected_squads == 0 && counts.unreachable_squads == 0 { "Moves accepted" }
             else { "Eligible squads moved; some unavailable" }
-        }), "Squad cannot accept that move"),
-        NativePlayerInput::Support(input) => (host.player_command_squads(&input).map(|counts| {
+        }
+        (NativePlayerInput::Support(input), Outcome::Support(counts)) => {
             if input.action == NativePlayerSupportAction::Hold {
                 if counts.stopped_chases > 0 { "Chase stopped" }
                 else if counts.accepted_squads > 0 { "No active chase" }
@@ -765,41 +784,39 @@ fn apply_player_input(host: &mut RolloutHost, action: NativePlayerInput) -> Resu
             } else if counts.accepted_squads == 0 { "Selected squads cannot accept that command" }
             else if counts.rejected_squads == 0 && counts.unavailable_squads == 0 { "Commands accepted" }
             else { "Eligible squads commanded; some unavailable" }
-        }), "Squad cannot accept that command"),
-        NativePlayerInput::Fire(input) => (host.player_fire_squads(&input).map(|counts| {
+        }
+        (NativePlayerInput::Fire(input), Outcome::Fire(counts)) => {
             if counts.accepted_squads == 0 { "Selected squads have no eligible manual weapons" }
             else if input.target.is_some() { "Point fire set" }
             else { "Point fire stopped" }
-        }), "Squad cannot accept manual fire"),
-        NativePlayerInput::HeldFire(input) => (host.player_held_fire(input), "Squad cannot accept manual fire"),
-        NativePlayerInput::Chase(input) => (host.player_chase_squads(&input).map(|counts| {
+        }
+        (NativePlayerInput::HeldFire(_), Outcome::HeldFire(message)) => message,
+        (NativePlayerInput::Chase(input), Outcome::Chase(counts)) => {
             if counts.accepted_squads == 0 { "No selected squads can change Chase" }
-            else if counts.rejected_squads > 0 {
-                "Chase updated; some squads unavailable"
-            } else if input.chasing { "Chase enabled" }
+            else if counts.rejected_squads > 0 { "Chase updated; some squads unavailable" }
+            else if input.chasing { "Chase enabled" }
             else { "Chase disabled" }
-        }), "Squad cannot change Chase"),
-        NativePlayerInput::LockOn(input) => (host.player_lock_on_squads(&input).map(|counts| {
+        }
+        (NativePlayerInput::LockOn(input), Outcome::LockOn(counts)) => {
             if counts.accepted_squads == 0 { "No selected enemy command can change lock" }
-            else if counts.rejected_squads > 0 {
-                "Lock On changed; some squads unavailable"
-            } else if input.locked { "Locked on to current enemy" }
+            else if counts.rejected_squads > 0 { "Lock On changed; some squads unavailable" }
+            else if input.locked { "Locked on to current enemy" }
             else { "Lock On released" }
-        }), "Squad cannot change Lock On"),
-        NativePlayerInput::Shooting(input) => (host.player_shooting_squads(&input).map(|counts| {
+        }
+        (NativePlayerInput::Shooting(_), Outcome::Shooting(counts)) => {
             if counts.accepted_squads == 0 { "No selected squads can change targeting" }
             else if counts.rejected_squads > 0 || counts.unavailable_squads > 0 {
                 "Shooting priority changed; some squads unavailable"
             } else { "Shooting priority updated" }
-        }), "Squad cannot change shooting priority"),
-        NativePlayerInput::MatchSpeed(input) => (host.player_match_speed_squads(&input).map(|counts| {
+        }
+        (NativePlayerInput::MatchSpeed(input), Outcome::MatchSpeed(counts)) => {
             if counts.accepted_squads == 0 { "No selected squads can change speed" }
             else if counts.rejected_squads > 0 || counts.unavailable_squads > 0 {
                 "Squad speeds updated; some unavailable"
             } else if input.match_speed { "Squad speeds matched" }
             else { "Original ship speeds restored" }
-        }), "Squad cannot change speed"),
-        NativePlayerInput::Special(input) => (host.player_special_squads(&input).map(|counts| {
+        }
+        (NativePlayerInput::Special(input), Outcome::Special(counts)) => {
             if counts.accepted_squads == 0 { "No selected ships have a ready special" }
             else if counts.rejected_squads > 0 || counts.unavailable_squads > 0 {
                 "Ready specials queued; some squads unavailable"
@@ -810,19 +827,16 @@ fn apply_player_input(host: &mut RolloutHost, action: NativePlayerInput) -> Resu
                     NativePlayerShipSpecialKind::Charge => "Barge charge queued",
                 }
             }
-        }), "Squad cannot accept that special"),
-        NativePlayerInput::CeaseFire(input) => (host.player_cease_fire_squads(&input).map(|counts| {
+        }
+        (NativePlayerInput::CeaseFire(input), Outcome::CeaseFire(counts)) => {
             if counts.accepted_squads == 0 { "Selected squads cannot change firing mode" }
             else if counts.rejected_squads != 0 { "Firing mode updated; some squads unavailable" }
             else if input.cease_fire { "Cease fire enabled" }
             else { "Attack on sight enabled" }
-        }), "Cannot change firing mode"),
+        }
+        _ => return Err("native host returned an input outcome for a different action".to_owned()),
     };
-    match result {
-        Ok(feedback) => Ok(feedback),
-        Err(HostPlayerInputError::Gameplay(error)) if error.is_rejection() => Ok(rejection),
-        Err(error) => Err(format!("native player input: {error:?}")),
-    }
+    Ok(feedback)
 }
 
 const USAGE: &str = "Usage: bees [play|run] <run.json> [--output-dir <new-dir>] [--capture <frame.ppm>]
