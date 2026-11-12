@@ -149,11 +149,22 @@ impl CombatWorld {
                         );
                         counts.obstacle_vision_grid_rebuilds += u64::from(rebuilt);
                         counts.obstacle_candidates += self.vision_obstacle_candidates.len() as u64;
-                        self.vision_obstacle_candidates.sort_unstable();
+                        // When grid coverage is dense, scanning the original
+                        // roster order is cheaper than sorting almost all
+                        // candidate IDs. It also avoids a second allocation.
+                        // Both paths use identical source hull narrowphase.
+                        let dense = self.vision_obstacle_candidates.len()
+                            .saturating_mul(2) >= self.obstacles.len();
+                        if dense { counts.obstacle_dense_scans += 1; }
+                        else { self.vision_obstacle_candidates.sort_unstable(); }
                         counts.unlearned_obstacle_pairs += pending;
                         let mut considered = 0_u64;
                         let mut first_seen = 0_u64;
-                        for &target in &self.vision_obstacle_candidates {
+                        let candidate_len = if dense { self.obstacles.len() }
+                            else { self.vision_obstacle_candidates.len() };
+                        for position in 0..candidate_len {
+                            let target = if dense { position }
+                                else { self.vision_obstacle_candidates[position] };
                             let obstacle = &self.obstacles[target];
                             if !obstacle.live() ||
                                 !self.physics.obstacles()[target].active {

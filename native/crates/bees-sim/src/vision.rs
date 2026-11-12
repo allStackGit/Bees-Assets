@@ -37,6 +37,9 @@ pub struct VisionSweepCounts {
     /// Rebindings of the existing shared ship/obstacle spatial grid for
     /// visibility; a multi-observer vision pass should need at most one.
     pub obstacle_vision_grid_rebuilds: u64,
+    /// Candidate-heavy obstacle vision passes using source-order linear
+    /// traversal rather than sorting most of a large physical roster.
+    pub obstacle_dense_scans: u64,
     /// Cheap conservative source-hull radius rejects before any geometry
     /// refresh/exact Collider2D.ClosestPoint call. Included in the usual
     /// bounds-rejection total for comparable historical profiling.
@@ -104,6 +107,7 @@ impl VisionSweepCounts {
             unlearned_obstacle_pairs: self.unlearned_obstacle_pairs.checked_sub(before.unlearned_obstacle_pairs)?,
             obstacle_candidates: self.obstacle_candidates.checked_sub(before.obstacle_candidates)?,
             obstacle_vision_grid_rebuilds: self.obstacle_vision_grid_rebuilds.checked_sub(before.obstacle_vision_grid_rebuilds)?,
+            obstacle_dense_scans: self.obstacle_dense_scans.checked_sub(before.obstacle_dense_scans)?,
             obstacle_radius_rejections: self.obstacle_radius_rejections.checked_sub(before.obstacle_radius_rejections)?,
             aabb_rejections: self.aabb_rejections.checked_sub(before.aabb_rejections)?,
             exact_collider_tests: self.exact_collider_tests.checked_sub(before.exact_collider_tests)?,
@@ -124,6 +128,7 @@ impl VisionSweepCounts {
         self.unlearned_obstacle_pairs += other.unlearned_obstacle_pairs;
         self.obstacle_candidates += other.obstacle_candidates;
         self.obstacle_vision_grid_rebuilds += other.obstacle_vision_grid_rebuilds;
+        self.obstacle_dense_scans += other.obstacle_dense_scans;
         self.obstacle_radius_rejections += other.obstacle_radius_rejections;
         self.aabb_rejections += other.aabb_rejections;
         self.exact_collider_tests += other.exact_collider_tests;
