@@ -84,8 +84,8 @@ function hubComparisonAxisValue(point,key) {
     if(key==='steps_completed')
         return Number.isSafeInteger(point.steps_completed)&&point.steps_completed>=0
             ?point.steps_completed:null;
-    if(key==='elapsed_training_seconds') {
-        const metric=point.metrics?.elapsed_training_seconds;
+    if(key==='elapsed_training_seconds'||key==='active_training_time') {
+        const metric=point.metrics?.[key];
         return metric?.unit==='seconds'&&Number.isFinite(metric.value)&&
             metric.value>=0?metric.value:null;
     }
@@ -279,7 +279,8 @@ function hubMeasuredSeconds(run) {
         for(const [key,item] of Object.entries(point.metrics||{})) {
             // This explicitly cumulative run clock is already an X-axis
             // choice; ranking its median among phases hides useful timings.
-            if(key==='elapsed_training_seconds')continue;
+            if(key==='elapsed_training_seconds'||key==='active_training_time')
+                continue;
             const scale=item?.unit==='seconds'?1:
                 item?.unit==='milliseconds'?0.001:null;
             if(scale===null||!Number.isFinite(item.value)||
@@ -1046,6 +1047,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const chartAxes={
         steps_completed:{label:'Cumulative project steps'},
         elapsed_training_seconds:{label:'Reported elapsed training seconds'},
+        active_training_time:{label:'Reported active training seconds'},
     };
     async function loadComparison() {
         if(!state)return;
@@ -1195,15 +1197,13 @@ document.addEventListener('DOMContentLoaded', () => {
         renderMetricPicker('hub-compare-metric','hub-compare-metric-picker');
         const selectedMetrics=selectedComparisonMetrics();
         const axisSelect=$('hub-compare-x-axis'),oldAxis=axisSelect.value;
-        const hasTrainingTime=chartable.some(job=>
+        const timeAxes=['elapsed_training_seconds','active_training_time'];
+        const availableTimeAxes=timeAxes.filter(key=>chartable.some(job=>
             hubComparisonPoints({job,points:history.get(job.id)||[]})
-                .some(point=>hubComparisonAxisValue(
-                    point,'elapsed_training_seconds')!==null));
+                .some(point=>hubComparisonAxisValue(point,key)!==null)));
         axisSelect.replaceChildren(
             new Option(comparisonAxisLabel('steps_completed'),'steps_completed'),
-            ...(hasTrainingTime?[new Option(
-                comparisonAxisLabel('elapsed_training_seconds'),
-                'elapsed_training_seconds')]:[]));
+            ...availableTimeAxes.map(key=>new Option(comparisonAxisLabel(key),key)));
         axisSelect.value=[...axisSelect.options].some(option=>
             option.value===oldAxis)?oldAxis:'steps_completed';
         const hasExportData=runs.some(run=>hubComparisonPoints(run).length);
@@ -1263,7 +1263,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 chartAxes.steps_completed.label)+'. '+
             ($('hub-compare-x-axis').value==='elapsed_training_seconds'
                 ?'Elapsed time comes from recorded trainer seconds, not the Hub heartbeat clock. Runs without this measurement are omitted from the time plots. '
-                :'Project step counts are not wall-clock time. ')+
+                :$('hub-compare-x-axis').value==='active_training_time'
+                    ?'Active training time comes from recorded trainer seconds, which may exclude pauses; it is not the Hub heartbeat clock. Runs without this measurement are omitted from these plots. '
+                    :'Project step counts are not wall-clock time. ')+
             'Source timestamps show when a trusted adapter published a summary. No training decisions use chart data.');
         const table=$('hub-compare-rows');
         table.replaceChildren();
@@ -1447,7 +1449,7 @@ document.addEventListener('DOMContentLoaded', () => {
             secondsMetricsDetails.append(table);
         }
         const note=document.createElement('p');
-        note.textContent='Read-only medians from up to 64 observations in each run’s latest contiguous chart segment, with at least five samples per metric. Second- and millisecond-valued measurements are normalized to seconds. Known cumulative elapsed_training_seconds is omitted from this ranking but remains chartable and exportable. Other duration metrics may be cumulative; overlapping stages cannot be added. These chart samples are not full-resolution profiling evidence. Export the histories for definitive bottleneck analysis.';
+        note.textContent='Read-only medians from up to 64 observations in each run’s latest contiguous chart segment, with at least five samples per metric. Second- and millisecond-valued measurements are normalized to seconds. Known cumulative elapsed_training_seconds and active_training_time clocks are omitted from this ranking but remain chartable and exportable. Other duration metrics may be cumulative; overlapping stages cannot be added. These chart samples are not full-resolution profiling evidence. Export the histories for definitive bottleneck analysis.';
         secondsMetricsDetails.append(note);
     }
     function renderRolloutRecommendations(runs) {
@@ -1764,7 +1766,7 @@ document.addEventListener('DOMContentLoaded', () => {
             x_axis:$('hub-compare-x-axis').value,
             metric:selectedComparisonMetrics()[0]||null,metrics,
             source:'Experiment Hub validated project metrics',
-            interpretation:'Training curves are observational and use cumulative steps. Compare independent evaluation receipts only across matched suite definitions and scenarios.',
+            interpretation:'Training curves are observational. Their selected horizontal axis is a recorded counter or trainer time measurement, never Hub heartbeat time. Compare independent evaluation receipts only across matched suite definitions and scenarios.',
             runs,
             candidate_selection_plans:(state.candidate_selections||[]).filter(p=>
                 p.candidate_job_ids?.some(id=>runs.some(r=>r.job_id===id))),
@@ -2081,6 +2083,7 @@ document.addEventListener('DOMContentLoaded', () => {
         'value_loss','baseline_loss','entropy','local_elo','mean_reward'];
     const knownPerformanceMetrics=[
         'total_ppo_updates','update_wall_time','elapsed_training_seconds',
+        'active_training_time',
         'engine_steps','engine_steps_per_second','ant_decisions',
         'ant_decisions_per_second','group_states','group_states_per_second',
         'collection_seconds','rollout_model_refresh_seconds',
