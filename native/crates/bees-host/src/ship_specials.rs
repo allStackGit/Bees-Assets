@@ -53,9 +53,9 @@ impl NativeAuthoredShipSpecial {
                     world.set_game_scout_enabled(id, enabled)?;
                 }
             }
-            // Non-policy Barge/YellowJacket attacks are command-owned and
+            // Non-policy YellowJacket attacks remain command-owned and
             // receive their live weapon power through the command context.
-            Self::Barge { .. } | Self::YellowJacket { .. } => {},
+            Self::YellowJacket { .. } => {},
         }
         Ok(())
     }
