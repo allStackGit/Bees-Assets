@@ -84,6 +84,14 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
         // before filling the remaining slots from the trusted trainer data.
         for(const [name,value] of Object.entries(observed))retain(name,value);
         retain('total_ppo_updates',reported.total_ppo_updates);
+        // Show measured stage pressure before unrelated high-cardinality
+        // project metrics consume the default 96-chart-field cache.
+        for(const name of ['pipeline_collection_dominant',
+            'pipeline_optimization_dominant','pipeline_collection_work_share',
+            'pipeline_optimization_work_share','pipeline_timing_sample_count',
+            'rollout_engine_measured_work_share',
+            'rollout_inference_measured_work_share'])
+            retain(name,reported[name]);
         for(const [name,value] of Object.entries(reported))retain(name,value);
     }
     if(!count)
