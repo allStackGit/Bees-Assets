@@ -95,6 +95,7 @@ pub struct NativeSoftwareRenderer {
     pub active_tactical_action: Option<super::HudAction>,
     pub locked_selection_all: bool,
     pub chasing_selection_all: bool,
+    pub matched_speed_selection_all: bool,
     pub hovered_tactical_action: Option<super::HudAction>,
     debris_frame: Option<(WorldId, u64, u64)>,
     obstacle_debris: Vec<ObstacleDebris>,
@@ -170,6 +171,7 @@ impl NativeSoftwareRenderer {
             focused_shooting_strategy: 1,
             active_tactical_action: None, locked_selection_all: false,
             chasing_selection_all: false,
+            matched_speed_selection_all: false,
             hovered_tactical_action: None,
             debris_frame: None, obstacle_debris: Vec::new() })
     }
@@ -600,6 +602,9 @@ impl NativeSoftwareRenderer {
         self.chasing_selection_all = !self.selection.squads().is_empty() &&
             self.selection.squads().iter().all(|&owner|
                 view.player_authority.player_should_chase(owner));
+        self.matched_speed_selection_all = !self.selection.squads().is_empty() &&
+            self.selection.squads().iter().all(|&owner|
+                view.player_authority.player_matched_speed(owner).is_some());
         self.locked_selection_all = !self.selection.squads().is_empty() &&
             self.selection.squads().iter().all(|&owner|
                 view.player_authority.player_permissions(owner)
@@ -810,6 +815,12 @@ impl NativeSoftwareRenderer {
                 0x172334
             } else if self.show_shooting_menu && action == tactical_hud::HudAction::Shooting {
                 0x456c78
+            } else if action == tactical_hud::HudAction::MatchSpeed &&
+                self.matched_speed_selection_all {
+                0x456c78
+            } else if action == tactical_hud::HudAction::FreeSpeed &&
+                !has_selection {
+                0x172334
             } else if action == tactical_hud::HudAction::Chase &&
                 self.chasing_selection_all {
                 0x456c78
@@ -910,6 +921,23 @@ impl NativeSoftwareRenderer {
         let x = self.width.saturating_sub(w) / 2;
         text::draw_at(&mut self.pixels, self.width, x,
             self.height - 190, &label, 1, [175, 207, 227]);
+        let matched = self.selection.squads().iter()
+            .filter_map(|&owner|
+                view.player_authority.player_matched_speed(owner))
+            .collect::<Vec<_>>();
+        if !matched.is_empty() {
+            let value = if matched.len() == self.selection.squads().len() &&
+                matched.iter().all(|&speed| speed == matched[0])
+            {
+                format!("Matched speed: {:.2}", matched[0])
+            } else {
+                format!("{}/{} squads have matched speed",
+                    matched.len(), self.selection.squads().len())
+            };
+            let x = self.width.saturating_sub(text::width(&value, 1)) / 2;
+            text::draw_at(&mut self.pixels, self.width,
+                x, self.height - 216, &value, 1, [188, 217, 255]);
+        }
         let chase_count = self.selection.squads().iter().filter(|&&owner|
             view.player_authority.player_should_chase(owner)).count();
         if chase_count > 0 {
