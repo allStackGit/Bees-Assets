@@ -86,7 +86,8 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         add(name,row[name],'seconds');
     for(const name of ['simulation_active_matches','simulation_target_matches',
         'simulation_concurrency_adjustments','simulation_tuner_accepted',
-        'simulation_tuner_settled',
+        'simulation_tuner_settled','simulation_target_restored',
+        'simulation_proven_target',
         'ant_decisions','group_states','births','deaths',
         'episodes_ended','multi_ant_states','terminal_rewards',
         'carried_matches','open_matches','peak_live_matches',
