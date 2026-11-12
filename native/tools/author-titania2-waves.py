@@ -112,14 +112,17 @@ def verify_entry_orders(squad_members, ships, spawn, entry, bounds, label):
         recorded = []
         for eid in members:
             ship = ships[eid]
-            if ship.get("mobile") is not True:
-                fail(f"{label} ship {eid} is not a mobile reinforcement")
+            mobile = ship.get("mobile")
+            if type(mobile) is not bool:
+                fail(f"{label} ship {eid} needs an authentic mobility flag")
             offset = ship.get("offset_from_center")
             target = ship.get("target_coordinates")
             position = ship.get("position")
             size = ship.get("size_pixels")
-            if not all(isinstance(value, dict) for value in (offset, target, position, size)):
-                fail(f"{label} ship {eid} is missing physical size, formation, position, or order")
+            if not all(isinstance(value, dict) for value in (offset, position, size)) or (
+                mobile and not isinstance(target, dict)
+            ):
+                fail(f"{label} ship {eid} is missing physical size, formation, position, or mobile order")
             offset_x = number(offset.get("x"), f"{label} ship {eid} offset.x")
             offset_y = number(offset.get("y"), f"{label} ship {eid} offset.y")
             position_x = number(position.get("x"), f"{label} ship {eid} position.x")
@@ -137,13 +140,16 @@ def verify_entry_orders(squad_members, ships, spawn, entry, bounds, label):
             left, right = min(left, first_x - half_width), max(right, first_x + half_width)
             bottom, top = min(bottom, first_y - half_height), max(top, first_y + half_height)
             recorded.append((position_x, position_y, placement))
-            target_x = number(target.get("x"), f"{label} ship {eid} target.x")
-            target_y = number(target.get("y"), f"{label} ship {eid} target.y")
-            expected_x = min(max(entry[0] + offset_x, min_x), max_x)
-            expected_y = min(max(entry[1] + offset_y, min_y), max_y)
-            if not (math.isclose(target_x, expected_x, rel_tol=1e-6, abs_tol=0.005) and
-                    math.isclose(target_y, expected_y, rel_tol=1e-6, abs_tol=0.005)):
-                return False
+            # Unity Squad.MoveInternal skips nonmobile members entirely;
+            # they retain their physical formation slot without a point order.
+            if mobile:
+                target_x = number(target.get("x"), f"{label} ship {eid} target.x")
+                target_y = number(target.get("y"), f"{label} ship {eid} target.y")
+                expected_x = min(max(entry[0] + offset_x, min_x), max_x)
+                expected_y = min(max(entry[1] + offset_y, min_y), max_y)
+                if not (math.isclose(target_x, expected_x, rel_tol=1e-6, abs_tol=0.005) and
+                        math.isclose(target_y, expected_y, rel_tol=1e-6, abs_tol=0.005)):
+                    return False
         center = ((left + right) * 0.5, (bottom + top) * 0.5)
         groups.append((center, right - left, recorded))
 
@@ -455,8 +461,9 @@ def expand(run, scene, manifest, read_capture=None):
                         # The deferred native arrival reissues that move;
                         # import the authentic pre-physics spawn state only.
                         if (ship.get("is_moving") is not False or
-                            ship.get("has_target_coordinates") is not True):
-                            fail(f"{label} ship {eid} must be captured after its entry order but before movement")
+                            (ship.get("mobile") is True and
+                             ship.get("has_target_coordinates") is not True)):
+                            fail(f"{label} ship {eid} must be captured before movement, with a mobile entry order")
                         ship["has_target_coordinates"] = False
                         ship["target_coordinates"] = {"x": 0.0, "y": 0.0}
                         scene["ships"].append(ship)
