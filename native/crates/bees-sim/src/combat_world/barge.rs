@@ -122,8 +122,10 @@ impl CombatWorld {
             !self.game_barge_player_config.contains_key(&ship_id) ||
             !self.game_ship_steering.contains_key(&ship_id) ||
             self.pending_player_barge_charges.contains(&ship_id) ||
-            self.game_barge_charges.get(&ship_id)
-                .is_some_and(|state| state.phase != 4) {
+            // Command-owned phase-4 entries must remain intact until the
+            // command director observes completion/finalization. Player
+            // input may not overwrite that still-owned state.
+            self.game_barge_charges.contains_key(&ship_id) {
             return false;
         }
         self.ship(ship_id).is_some_and(|ship| !ship.vitals.is_dead()) &&
@@ -156,13 +158,8 @@ impl CombatWorld {
             if self.frozen_after_elimination ||
                 self.ships[ship_index].vitals.is_dead() ||
                 !self.physics.ships()[ship_index].active ||
-                self.game_barge_charges.get(&ship_id)
-                    .is_some_and(|state| state.phase != 4) {
+                self.game_barge_charges.contains_key(&ship_id) {
                 continue;
-            }
-            if self.game_barge_charges.get(&ship_id)
-                .is_some_and(|state| state.phase == 4) {
-                self.reset_game_barge_charge(ship_id);
             }
             let map_bounds = self.level_geometry.as_ref()
                 .ok_or(CombatWorldError::InvalidGameMovementOrder)?
