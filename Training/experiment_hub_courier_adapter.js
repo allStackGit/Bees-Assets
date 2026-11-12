@@ -157,6 +157,11 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
 
     return {
         executable,cwd:project,stop_policy:windows?'terminate-group':'interrupt-main',
+        // Private machine-local export root, never an operator HTTP path.
+        artifact_export_dir(jobId) {
+            if(!UUID.test(String(jobId||'')))throw Error('Invalid Courier job identity.');
+            return path.join(artifacts,jobId);
+        },
         checkpoint_ready(context) {
             if(context.frozen_parameters?.config_sha256!==configSha256)
                 throw Error('Courier checkpoint environment pin changed.');
