@@ -509,6 +509,7 @@ pub struct NativeRuntimeStatus {
     /// rate without accounting for world resets.
     pub player_chase: crate::level_rules::NativePlayerChaseMeasurements,
     pub player_controls: crate::level_rules::NativePlayerControlGauges,
+    pub reinforcements: crate::level_rules::NativeReinforcementGauges,
     /// Sum of the current episodes' authoritative vision measurements.
     /// These reset on episode turnover, so they are gauges, not host-wide
     /// monotonic counters for deriving cross-episode rates.
@@ -1161,6 +1162,7 @@ impl NativeLevelBatchDriver {
             special_game_barge_charge_completions: 0,
             player_chase: crate::level_rules::NativePlayerChaseMeasurements::default(),
             player_controls: crate::level_rules::NativePlayerControlGauges::default(),
+            reinforcements: crate::level_rules::NativeReinforcementGauges::default(),
             vision: bees_sim::vision::VisionSweepCounts::default(),
             navigation_jobs_completed: 0,
             queued_notifications: 0,
@@ -1217,6 +1219,9 @@ impl NativeLevelBatchDriver {
             );
             status.player_controls.merge(
                 world.state.metadata.player_control_gauges(),
+            );
+            status.reinforcements.merge(
+                world.state.metadata.reinforcement_gauges(),
             );
             status.vision.merge(&world.state.combat.vision_measurements());
             let asteroids = world.state.combat.full_asteroid_pool_measurements();

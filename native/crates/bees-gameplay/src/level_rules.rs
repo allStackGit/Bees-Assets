@@ -133,6 +133,24 @@ impl NativePlayerControlGauges {
     }
 }
 
+/// Deferred authored squads not yet admitted to the canonical CombatWorld.
+/// Derived at status-sampling time from the source wave queue, with no
+/// gameplay-tick counters, extra roster, or second reinforcement scheduler.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize)]
+pub struct NativeReinforcementGauges {
+    pub pending_waves: usize,
+    pub pending_squads: usize,
+    pub pending_ships: usize,
+}
+
+impl NativeReinforcementGauges {
+    pub fn merge(&mut self, other: Self) {
+        self.pending_waves += other.pending_waves;
+        self.pending_squads += other.pending_squads;
+        self.pending_ships += other.pending_ships;
+    }
+}
+
 /// Current episode's actual source Squad.CheckChase work. These counters
 /// are incremented only at the one-second source timer boundary, not on
 /// every fixed physics or inference step.
@@ -194,6 +212,10 @@ pub trait NativeLevelCommandContext {
     }
     fn player_control_gauges(&self) -> NativePlayerControlGauges {
         NativePlayerControlGauges::default()
+    }
+
+    fn reinforcement_gauges(&self) -> NativeReinforcementGauges {
+        NativeReinforcementGauges::default()
     }
 
     /// Admit scheduled source squads at the completed fixed-tick boundary.

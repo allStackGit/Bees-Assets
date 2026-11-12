@@ -449,6 +449,18 @@ impl NativeLevelCommandContext for NativePolicyOnlyMetadata {
         self.chase_measurements
     }
 
+    fn reinforcement_gauges(&self) -> bees_gameplay::level_rules::NativeReinforcementGauges {
+        // Source owns the queue. Sample it on status requests only;
+        // never walk deferred squads during an ordinary physics tick.
+        bees_gameplay::level_rules::NativeReinforcementGauges {
+            pending_waves: self.reinforcements.len(),
+            pending_squads: self.reinforcements.iter()
+                .map(|wave| wave.squads.len()).sum(),
+            pending_ships: self.reinforcements.iter()
+                .map(|wave| wave.ships.len()).sum(),
+        }
+    }
+
     fn player_control_gauges(&self) -> NativePlayerControlGauges {
         let player = &self.player;
         let eligible = |owner: &SquadLifetime| player.squads.get(owner)
