@@ -464,6 +464,21 @@ impl WorldCollider {
         }
     }
 
+    /// Read-only input selection can run after a game command changes a
+    /// ship pose but before the next physics step refreshes the shared
+    /// collider cache. Reuse the cached shape when current; otherwise
+    /// transform a temporary hull so selection never reads old bounds.
+    /// The fixed-step physics and its contact-history ownership remain
+    /// untouched. This slow path is limited to changed between-tick poses.
+    fn overlaps_at_pose(&self, other: &Self, pose: Pose) -> bool {
+        if self.cached_pose == Some(pose) {
+            return self.overlaps(other);
+        }
+        let mut current = self.clone();
+        current.update(pose);
+        current.overlaps(other)
+    }
+
     #[inline]
     fn overlaps(&self, other: &Self) -> bool {
         if !self.bounds.zip(other.bounds)
@@ -1400,8 +1415,11 @@ impl KinematicPhysics {
         -> Result<impl Iterator<Item = i64> + '_, PhysicsError>
     {
         let query = Self::box_query(bounds)?;
-        Ok(self.ships.iter().filter_map(move |ship|
-            (ship.active && query.overlaps(&ship.collider)).then_some(ship.id)))
+        Ok(self.ships.iter().filter_map(move |ship| {
+            let pose = Pose { position: ship.motion.position,
+                rotation_degrees: ship.motion.rotation_degrees };
+            (ship.active && ship.collider.overlaps_at_pose(&query, pose)).then_some(ship.id)
+        }))
     }
 
     /// Source CheckClickCollision also recognizes a Beehive's child healing
@@ -1410,10 +1428,15 @@ impl KinematicPhysics {
         -> Result<impl Iterator<Item = i64> + '_, PhysicsError>
     {
         let query = Self::box_query(bounds)?;
-        Ok(self.ships.iter().filter_map(move |ship|
-            (ship.active && (query.overlaps(&ship.collider) ||
-                ship.healing_zone.as_ref().is_some_and(|zone| query.overlaps(zone))))
-                .then_some(ship.id)))
+        Ok(self.ships.iter().filter_map(move |ship| {
+            if !ship.active { return None; }
+            let pose = Pose { position: ship.motion.position,
+                rotation_degrees: ship.motion.rotation_degrees };
+            (ship.collider.overlaps_at_pose(&query, pose) ||
+                ship.healing_zone.as_ref().is_some_and(|zone|
+                    zone.overlaps_at_pose(&query, pose)))
+                .then_some(ship.id)
+        }))
     }
 
     /// Registered primary obstacle linecast, including exact circle, rotated
