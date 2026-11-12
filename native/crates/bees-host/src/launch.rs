@@ -2147,6 +2147,7 @@ fn run_battle(
             "viewport_resizes": client.viewport_resizes,
             "minimap_markers_drawn": client.minimap_markers_drawn,
             "numbered_squad_rows_drawn": client.numbered_squad_rows_drawn,
+            "striker_bomb_indicators_drawn": client.striker_bomb_indicators_drawn,
             "minimap_camera_moves": client.minimap_camera_moves,
             "minimap_move_orders_submitted": client.minimap_move_orders_submitted,
             "tactical_button_clicks": client.tactical_button_clicks,
