@@ -268,18 +268,30 @@ impl NativeClient {
                     self.renderer.selected_ship = self.renderer.selection
                         .representative_ships(&view).next();
                     if let Some(squad) = view.roster.get(owner) {
-                        let mut center = Vec2::ZERO;
-                        let mut members = 0usize;
+                        // Unity Squad.GetPosition is the center of the
+                        // entire live squad bounds, not the mean of its ship
+                        // centers. Prefer each current authored physical hull.
+                        let mut bounds: Option<Aabb> = None;
                         for &ship_id in &squad.members {
-                            if let Some(body) = view.combat.ship_body(ship_id)
-                                .filter(|body| body.active)
-                            {
-                                center += body.motion.position;
-                                members += 1;
-                            }
+                            let Some(body) = view.combat.ship_body(ship_id)
+                                .filter(|body| body.active) else { continue };
+                            let hull = body.primary_bounds().unwrap_or(Aabb {
+                                min: body.motion.position,
+                                max: body.motion.position,
+                            });
+                            bounds = Some(match bounds {
+                                None => hull,
+                                Some(previous) => Aabb {
+                                    min: Vec2::new(previous.min.x.min(hull.min.x),
+                                        previous.min.y.min(hull.min.y)),
+                                    max: Vec2::new(previous.max.x.max(hull.max.x),
+                                        previous.max.y.max(hull.max.y)),
+                                },
+                            });
                         }
-                        if members > 0 {
-                            self.renderer.camera.center = center * (1.0 / members as f32);
+                        if let Some(bounds) = bounds {
+                            self.renderer.camera.center =
+                                (bounds.min + bounds.max) * 0.5;
                         }
                     }
                 }
