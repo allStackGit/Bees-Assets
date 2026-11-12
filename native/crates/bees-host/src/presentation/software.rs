@@ -83,6 +83,7 @@ pub struct NativeSoftwareRenderer {
     pub show_weapon_ranges: bool,
     /// Presentation-only tactical overview, never used by headless worlds.
     pub show_minimap: bool,
+    pub active_tactical_action: Option<super::HudAction>,
     debris_frame: Option<(WorldId, u64, u64)>,
     obstacle_debris: Vec<ObstacleDebris>,
 }
@@ -152,7 +153,7 @@ impl NativeSoftwareRenderer {
             selection: NativeSquadSelection::default(),
             selected_squad_lookup: HashSet::new(),
             selection_box: None, show_weapon_ranges: false,
-            show_minimap: true,
+            show_minimap: true, active_tactical_action: None,
             debris_frame: None, obstacle_debris: Vec::new() })
     }
 
@@ -184,7 +185,8 @@ impl NativeSoftwareRenderer {
     /// UI-only action hit-test; the client converts intent into the exact
     /// same typed player inputs used by keyboard shortcuts and replay.
     pub fn tactical_action_at(&self, x: f32, y: f32) -> Option<super::HudAction> {
-        tactical_hud::hit(self.width, self.height, x, y)
+        (!self.selection.squads().is_empty()).then(||
+            tactical_hud::hit(self.width, self.height, x, y)).flatten()
     }
 
     /// Use the authoritative hull and healing-zone colliders for clicks,
@@ -707,7 +709,9 @@ impl NativeSoftwareRenderer {
         for (index, action) in tactical_hud::ACTIONS.iter().copied().enumerate() {
             let Some(rect) = tactical_hud::action_rect(self.width, self.height, index)
                 else { return drawn };
-            let background = if matches!(action,
+            let background = if self.active_tactical_action == Some(action) {
+                0x456c78
+            } else if matches!(action,
                 tactical_hud::HudAction::Detonate |
                 tactical_hud::HudAction::StopFire
             ) { 0x503a38 } else { 0x23334a };

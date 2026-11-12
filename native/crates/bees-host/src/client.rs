@@ -7,7 +7,7 @@ use bees_sim::collision::Aabb;
 use bees_sim::simulation::WorldId;
 use bees_hivemind::session::SquadLifetime;
 use minifb::{Key, KeyRepeat, MouseButton, MouseMode, Window, WindowOptions};
-use crate::presentation::{NativeCamera, NativeRenderWorldView, NativeSoftwareRenderer, NativeSupportMode};
+use crate::presentation::{HudAction, NativeCamera, NativeRenderWorldView, NativeSoftwareRenderer, NativeSupportMode};
 use bees_gameplay::player_inputs::{NativeHeldFireAction, NativePlayerHeldFire, NativePlayerSquadMoves,
     NativePlayerSquadFire, NativePlayerSquadCeaseFire,
     NativePlayerSquadSpecial, NativePlayerShipSpecialKind};
@@ -74,6 +74,9 @@ pub struct NativeClient {
     selection_drag: Option<(Vec2, Vec2)>,
     /// UI-only minimap drag. Never emits a gameplay/world input.
     minimap_dragging: bool,
+    /// Clicks execute on release over the same button. Crossing its edge
+    /// cancels; a HUD press never begins a gameplay selection drag.
+    hud_press: Option<HudAction>,
     support_mode: Option<NativeTargetMode>,
     pub rendered_frames: u64,
     /// Total software framebuffer pixels actually drawn across changing sizes.
@@ -96,6 +99,7 @@ pub struct NativeClient {
     pub numbered_shortcut_selections: u64,
     pub cycled_shortcut_selections: u64,
     pub minimap_move_orders_submitted: u64,
+    pub tactical_button_clicks: u64,
 }
 
 impl NativeClient {
@@ -116,7 +120,7 @@ impl NativeClient {
             dialogue_visible: false,
             held_fire_target: None,
             selection_drag: None, minimap_dragging: false,
-            support_mode: None,
+            hud_press: None, support_mode: None,
             rendered_frames: 0, rendered_pixels: 0, render_wall_seconds: 0.0,
             ui_wall_seconds: 0.0, window_update_wall_seconds: 0.0,
             culled_ship_draws: 0, culled_obstacle_draws: 0,
@@ -126,7 +130,8 @@ impl NativeClient {
             minimap_markers_drawn: 0, numbered_squad_rows_drawn: 0,
             minimap_camera_moves: 0, numbered_shortcut_selections: 0,
             cycled_shortcut_selections: 0,
-            minimap_move_orders_submitted: 0 })
+            minimap_move_orders_submitted: 0,
+            tactical_button_clicks: 0 })
     }
 
     /// Initial authored camera focus is a presentation-only concern. The
@@ -212,6 +217,7 @@ impl NativeClient {
             self.window.update();
             self.right_press = None;
             self.minimap_dragging = false;
+            self.hud_press = None;
             self.previous_frame = Instant::now();
             return Ok(NativeClientAction::Wait);
         }
@@ -220,6 +226,7 @@ impl NativeClient {
             // the same selection box after a window resize.
             self.selection_drag = None;
             self.minimap_dragging = false;
+            self.hud_press = None;
             self.right_press = None;
             self.last_left_press = None;
             self.double_left_press = false;
@@ -233,6 +240,7 @@ impl NativeClient {
             self.renderer.selected_ship = None;
             self.selection_drag = None;
             self.minimap_dragging = false;
+            self.hud_press = None;
             self.right_press = None;
             self.support_mode = None;
             self.last_left_press = None;
@@ -293,6 +301,7 @@ impl NativeClient {
             self.left_was_down = self.window.get_mouse_down(MouseButton::Left);
             self.right_was_down = self.window.get_mouse_down(MouseButton::Right);
             self.right_press = None;
+            self.hud_press = None;
             self.window.update();
             self.next_step = Instant::now();
             return Ok(NativeClientAction::WorldChanged);
@@ -323,10 +332,31 @@ impl NativeClient {
         }
         let accepts_orders = !briefing && !self.playback && view.terminal_result.is_none();
         let pointer_active = self.window.is_active();
+        let left_down = self.window.get_mouse_down(MouseButton::Left);
+        if !accepts_orders || !pointer_active {
+            self.hud_press = None;
+        } else if left_down && !self.left_was_down {
+            self.hud_press = mouse.and_then(|(x, y)|
+                self.renderer.tactical_action_at(x, y));
+            if self.hud_press.is_some() {
+                self.selection_drag = None;
+                self.minimap_dragging = false;
+                self.renderer.selection_box = None;
+                self.last_left_press = None;
+                self.double_left_press = false;
+            }
+        }
+        let clicked_hud = if self.left_was_down && !left_down {
+            self.hud_press.take().filter(|&action|
+                mouse.and_then(|(x, y)| self.renderer.tactical_action_at(x, y))
+                    == Some(action))
+        } else { None };
+        if clicked_hud.is_some() { self.tactical_button_clicks += 1; }
         if accepts_orders && pointer_active &&
-            (self.window.is_key_down(Key::LeftCtrl) ||
-             self.window.is_key_down(Key::RightCtrl)) &&
-            self.window.is_key_pressed(Key::A, KeyRepeat::No)
+            (clicked_hud == Some(HudAction::SelectAll) ||
+             ((self.window.is_key_down(Key::LeftCtrl) ||
+               self.window.is_key_down(Key::RightCtrl)) &&
+              self.window.is_key_pressed(Key::A, KeyRepeat::No)))
         {
             self.renderer.selection.select_all_player_squads(&view);
             self.renderer.selected_ship = self.renderer.selection
@@ -367,7 +397,8 @@ impl NativeClient {
                 self.focus_selected_squad(&view, owner);
             }
         }
-        let stop_fire = self.window.is_key_pressed(Key::X, KeyRepeat::No);
+        let stop_fire = clicked_hud == Some(HudAction::StopFire) ||
+            self.window.is_key_pressed(Key::X, KeyRepeat::No);
         let held_fire = if accepts_orders {
             let cursor = mouse.map(|(x, y)| self.renderer.camera.screen_to_world(x, y, width, height));
             if let Some(previous) = self.held_fire_target {
@@ -392,15 +423,18 @@ impl NativeClient {
         } else { None };
         let point_fire_available = self.held_fire_target.is_none() && held_fire.is_none();
         if accepts_orders {
-            for (key, mode, prompt) in [
-                (Key::G, NativeTargetMode::Support(NativeSupportMode::Guard), "Guard: click a friendly ship"),
-                (Key::P, NativeTargetMode::Support(NativeSupportMode::Patrol), "Patrol: drag the patrol area"),
-                (Key::M, NativeTargetMode::Support(NativeSupportMode::Mining), "Mine: click a mining asteroid"),
-                (Key::H, NativeTargetMode::Support(NativeSupportMode::Heal), "Heal: click a friendly Beehive"),
-                (Key::R, NativeTargetMode::Support(NativeSupportMode::FullRetreat), "Retreat: click a friendly WarpGate"),
-                (Key::T, NativeTargetMode::ManualFire, "Point fire: click a point; X stops selected weapons"),
+            for (key, button, mode, prompt) in [
+                (None, HudAction::Attack, NativeTargetMode::Support(NativeSupportMode::Attack), "Attack: click an enemy ship"),
+                (Some(Key::G), HudAction::Guard, NativeTargetMode::Support(NativeSupportMode::Guard), "Guard: click a friendly ship"),
+                (Some(Key::P), HudAction::Patrol, NativeTargetMode::Support(NativeSupportMode::Patrol), "Patrol: drag the patrol area"),
+                (Some(Key::M), HudAction::Mine, NativeTargetMode::Support(NativeSupportMode::Mining), "Mine: click a mining asteroid"),
+                (Some(Key::H), HudAction::Heal, NativeTargetMode::Support(NativeSupportMode::Heal), "Heal: click a friendly Beehive"),
+                (Some(Key::R), HudAction::Retreat, NativeTargetMode::Support(NativeSupportMode::FullRetreat), "Retreat: click a friendly WarpGate"),
+                (Some(Key::T), HudAction::PointFire, NativeTargetMode::ManualFire, "Point fire: click a point; X stops selected weapons"),
             ] {
-                if self.window.is_key_pressed(key, KeyRepeat::No) &&
+                let triggered = clicked_hud == Some(button) ||
+                    key.is_some_and(|key| self.window.is_key_pressed(key, KeyRepeat::No));
+                if triggered &&
                     (mode != NativeTargetMode::ManualFire || point_fire_available)
                 {
                     self.selection_drag = None;
@@ -452,12 +486,15 @@ impl NativeClient {
             Some(NativePlayerSquadFire { world_id: view.world_id, episode_revision: view.episode_revision,
                 squads: self.renderer.selection.squads().to_vec(), target: None })
         } else { None };
-        let firing_mode = if accepts_orders && self.window.is_key_pressed(Key::V, KeyRepeat::No) {
+        let firing_mode = if accepts_orders &&
+            (clicked_hud == Some(HudAction::CeaseFire) ||
+             self.window.is_key_pressed(Key::V, KeyRepeat::No)) {
             Some(true)
         } else if accepts_orders &&
-            !self.window.is_key_down(Key::LeftCtrl) &&
-            !self.window.is_key_down(Key::RightCtrl) &&
-            self.window.is_key_pressed(Key::A, KeyRepeat::No) {
+            (clicked_hud == Some(HudAction::AttackOnSight) ||
+             (!self.window.is_key_down(Key::LeftCtrl) &&
+              !self.window.is_key_down(Key::RightCtrl) &&
+              self.window.is_key_pressed(Key::A, KeyRepeat::No))) {
             Some(false)
         } else { None };
         let cease_fire_input = firing_mode.and_then(|cease_fire| {
@@ -480,15 +517,18 @@ impl NativeClient {
         // must never also issue a Beacon in that frame.
         let special_kind = if accepts_orders && pointer_active &&
             !self.dialogue_visible && self.held_fire_target.is_none() &&
-            self.window.is_key_pressed(Key::K, KeyRepeat::No) {
+            (clicked_hud == Some(HudAction::Beacon) ||
+             self.window.is_key_pressed(Key::K, KeyRepeat::No)) {
             Some(NativePlayerShipSpecialKind::DropBeacon)
         } else if accepts_orders && pointer_active &&
             self.held_fire_target.is_none() &&
-            self.window.is_key_pressed(Key::D, KeyRepeat::No) {
+            (clicked_hud == Some(HudAction::Detonate) ||
+             self.window.is_key_pressed(Key::D, KeyRepeat::No)) {
             Some(NativePlayerShipSpecialKind::Detonate)
         } else if accepts_orders && pointer_active &&
             self.held_fire_target.is_none() &&
-            self.window.is_key_pressed(Key::Q, KeyRepeat::No) {
+            (clicked_hud == Some(HudAction::Charge) ||
+             self.window.is_key_pressed(Key::Q, KeyRepeat::No)) {
             Some(NativePlayerShipSpecialKind::Charge)
         } else { None };
         let special_input = special_kind.and_then(|kind| {
@@ -508,7 +548,9 @@ impl NativeClient {
             }
         });
         let mut support_command = None;
-        if accepts_orders && self.window.is_key_pressed(Key::C, KeyRepeat::No) {
+        if accepts_orders &&
+            (clicked_hud == Some(HudAction::Hold) ||
+             self.window.is_key_pressed(Key::C, KeyRepeat::No)) {
             if self.renderer.selection.squads().is_empty() {
                 self.input_feedback = "Select squads first";
             } else {
@@ -520,10 +562,9 @@ impl NativeClient {
                 );
             }
         }
-        let left_down = self.window.get_mouse_down(MouseButton::Left);
         if !pointer_active { self.minimap_dragging = false; }
         if pointer_active && left_down && !self.left_was_down &&
-            self.support_mode.is_none() &&
+            self.hud_press.is_none() && self.support_mode.is_none() &&
             self.held_fire_target.is_none() &&
             mouse.is_some_and(|(x, y)|
                 self.renderer.minimap_world_at(self.bounds, x, y).is_some())
@@ -545,6 +586,7 @@ impl NativeClient {
             }
         }
         if !cancel_support && !self.minimap_dragging &&
+            self.hud_press.is_none() &&
             left_down && !self.left_was_down {
             // Unity treats two presses within 0.25 real seconds as a
             // double-click. The second release must also be prompt.
@@ -555,7 +597,8 @@ impl NativeClient {
             self.selection_drag = mouse.map(|(x, y)| (
                 self.renderer.camera.screen_to_world(x, y, width, height), Vec2::new(x, y)));
         }
-        if !cancel_support && !self.minimap_dragging {
+        if !cancel_support && !self.minimap_dragging &&
+            self.hud_press.is_none() && clicked_hud.is_none() {
             if let (Some((start, start_pixel)), Some((x, y))) = (self.selection_drag, mouse) {
                 let end = self.renderer.camera.screen_to_world(x, y, width, height);
                 let dragging = (Vec2::new(x, y) - start_pixel).length_squared() > 16.0;
@@ -666,6 +709,16 @@ impl NativeClient {
             })
         } else { None };
         self.right_was_down = right_down;
+        self.renderer.active_tactical_action = match self.support_mode {
+            Some(NativeTargetMode::Support(NativeSupportMode::Attack)) => Some(HudAction::Attack),
+            Some(NativeTargetMode::Support(NativeSupportMode::Guard)) => Some(HudAction::Guard),
+            Some(NativeTargetMode::Support(NativeSupportMode::Patrol)) => Some(HudAction::Patrol),
+            Some(NativeTargetMode::Support(NativeSupportMode::Mining)) => Some(HudAction::Mine),
+            Some(NativeTargetMode::Support(NativeSupportMode::Heal)) => Some(HudAction::Heal),
+            Some(NativeTargetMode::Support(NativeSupportMode::FullRetreat)) => Some(HudAction::Retreat),
+            Some(NativeTargetMode::ManualFire) => Some(HudAction::PointFire),
+            None => None,
+        };
         let render_started = Instant::now();
         let counts = self.renderer.render(&view, self.bounds);
         if let Some((_, speaker, line)) = dialogue {
