@@ -2383,6 +2383,240 @@ class ExperimentHub {
         this.commit(next);
         return {id:selected.id,status:selected.status,dispatch_id:selected.dispatch_id};
     }
+    // One frozen operator approval bridges group reservation to complete
+    // collector/learner authorization. No native owner is created until all
+    // original machine claims have fresh authenticated readiness.
+    scheduleDistributedGroup(value) {
+        if(!object(value)||value.confirm_schedule!==true||
+            !UUID.test(String(value.learner_job_id||''))||
+            !Array.isArray(value.expected_collector_job_ids)||
+            value.expected_collector_job_ids.length<1||
+            value.expected_collector_job_ids.length>8||
+            value.expected_collector_job_ids.some(id=>!UUID.test(String(id)))||
+            new Set(value.expected_collector_job_ids).size!==
+                value.expected_collector_job_ids.length||
+            Object.keys(value).some(key=>![
+                'learner_job_id','expected_collector_job_ids','confirm_schedule',
+                'confirm_learner_start','resume_after_restart','confirm_restart_rearm',
+            ].includes(key))||
+            value.confirm_learner_start!==true||
+            (value.resume_after_restart===true
+                ?value.confirm_restart_rearm!==true
+                :value.confirm_restart_rearm!==undefined))
+            throw Error('Confirm the exact remote collectors and one future native GPU learner Start.');
+        const snapshot=this.snapshot();
+        const learner=snapshot.jobs.find(job=>job.id===value.learner_job_id);
+        if(!learner||learner.project_id!=='tinybrains'||
+            learner.distributed_rollout_managed!==true||
+            learner.frozen_parameters?.remote_rollouts!==true||
+            learner.status!=='waiting_adapter'||learner.dispatch_id||
+            learner.distributed_abort_requested_at||
+            !learner.lease_id||predecessorBlock(snapshot,learner))
+            throw Error('Only an unstarted, checkpoint-eligible distributed group can schedule future launch.');
+        if((this.state.distributed_group_plans||[]).some(plan=>
+            plan.learner_job_id===learner.id&&
+            ['pending','needs_review'].includes(plan.status))||
+            (this.state.distributed_launch_plans||[]).some(plan=>
+                plan.learner_job_id===learner.id&&plan.status==='pending'))
+            throw Error('Cancel the existing distributed Start approval before scheduling another.');
+        const host=snapshot.machines.find(machine=>
+            machine.id===learner.assigned_machine_id);
+        const endpoints=host?.tinybrains_remote_rollout_endpoints;
+        if(!host||host.status!=='connected'||!Array.isArray(endpoints)||
+            endpoints.length!==value.expected_collector_job_ids.length||
+            !SHA256.test(String(host.tinybrains_remote_key_fingerprint||''))||
+            !host.installed_projects?.includes('tinybrains'))
+            throw Error('The original GPU learner must have approved pinned collector endpoints.');
+        const workers=snapshot.jobs.filter(job=>
+            job.project_id==='tinybrains_rollout'&&
+            job.frozen_parameters?.learner_job_id===learner.id);
+        if(workers.length!==endpoints.length||
+            workers.some(job=>!value.expected_collector_job_ids.includes(job.id)||
+                job.status!=='waiting_adapter'||job.dispatch_id))
+            throw Error('The full original collector membership must remain reserved and unstarted.');
+        const ordered=value.expected_collector_job_ids.map(id=>
+            workers.find(job=>job.id===id));
+        const seen=new Set([learner.assigned_machine_id]);
+        const all=[learner,...ordered];
+        const members=all.map((job,index)=>{
+            const machine=snapshot.machines.find(host=>host.id===job.assigned_machine_id);
+            const lease=snapshot.reservations.find(item=>
+                item.id===job.lease_id&&item.job_id===job.id&&
+                item.machine_id===job.assigned_machine_id&&
+                item.project_id===job.project_id&&
+                item.issued_by==='experiment-hub'&&
+                ['offered','acknowledged'].includes(item.status));
+            if(!machine||!lease||!job.assigned_machine_id)
+                throw Error('An original group member or Hub resource lease changed.');
+            if(index!==0) {
+                if(seen.has(machine.id)||
+                    machine.tinybrains_rollout_endpoint!==endpoints[index-1]||
+                    machine.tinybrains_rollout_key_fingerprint!==
+                        host.tinybrains_remote_key_fingerprint)
+                    throw Error('Remote machine/HMAC endpoint identity does not match the learner slot.');
+                seen.add(machine.id);
+            }
+            return {job_id:job.id,lease_id:lease.id,machine_id:machine.id,
+                ...(index?{endpoint:machine.tinybrains_rollout_endpoint}:{})};
+        });
+        const plans=copy(this.state.distributed_group_plans||[]);
+        if(plans.length>=64) {
+            const index=plans.findIndex(plan=>
+                !['pending','needs_review'].includes(plan.status));
+            if(index<0)throw Error('Resolve older distributed group approvals before adding another.');
+            plans.splice(index,1);
+        }
+        const at=Date.now(),intent={
+            id:crypto.randomUUID(),learner_job_id:learner.id,
+            collector_job_ids:ordered.map(job=>job.id),
+            frozen_members:members,
+            learner_endpoints:endpoints.slice(),
+            key_fingerprint:host.tinybrains_remote_key_fingerprint,
+            agent_instances:Object.fromEntries(members.map(member=>[
+                member.machine_id,
+                this.agentReports.get(member.machine_id)?.instance_id||null,
+            ])),
+            resume_after_restart:value.resume_after_restart===true,
+            recovery_pending:false,status:'pending',
+            reason:'Waiting for every original group member to acknowledge native capacity and GPU access.',
+            approved_at:new Date(at).toISOString(),
+            expires_at:new Date(at+DISTRIBUTED_LAUNCH_TTL_MS).toISOString(),
+        };
+        plans.push(intent);
+        const next=copy(this.state);next.distributed_group_plans=plans;
+        this.commit(next);
+        this.advancePendingDistributedGroups();
+        return copy(this.state.distributed_group_plans.find(plan=>plan.id===intent.id));
+    }
+    cancelScheduledDistributedGroup(value) {
+        if(!object(value)||value.confirm_cancel!==true||
+            !UUID.test(String(value.plan_id||''))||
+            Object.keys(value).some(key=>!['plan_id','confirm_cancel'].includes(key)))
+            throw Error('Explicitly confirm which future distributed launch to cancel.');
+        const next=copy(this.state);
+        const plan=(next.distributed_group_plans||[])
+            .find(item=>item.id===value.plan_id&&
+                ['pending','needs_review'].includes(item.status));
+        if(!plan)throw Error('No unresolved distributed group approval with this identity.');
+        plan.status='cancelled';
+        plan.reason='Operator revoked the future group Start; reserved jobs and claims remain unchanged.';
+        plan.resolved_at=now();
+        this.commit(next);
+        return {plan_id:plan.id,learner_job_id:plan.learner_job_id,
+            status:plan.status,starts_authorized:0};
+    }
+    // A native heartbeat is the only trigger for future group admission:
+    // no polling timers or speculative retries on unknown workers. The
+    // existing collector-Start + learner-plan transaction stays authoritative.
+    advancePendingDistributedGroups() {
+        const pending=(this.state.distributed_group_plans||[])
+            .filter(plan=>plan.status==='pending').map(plan=>plan.id);
+        for(const id of pending) {
+            const plan=(this.state.distributed_group_plans||[]).find(item=>
+                item.id===id&&item.status==='pending');
+            if(!plan)continue;
+            const halt=(status,reason)=>{
+                const next=copy(this.state);
+                const current=(next.distributed_group_plans||[])
+                    .find(item=>item.id===id&&item.status==='pending');
+                if(!current)return;
+                current.status=status;
+                current.reason=reason;
+                current.resolved_at=now();
+                this.commit(next);
+            };
+            if(Date.now()>=Date.parse(plan.expires_at)) {
+                halt('expired','Future distributed group authorization expired; no native Starts were created.');
+                continue;
+            }
+            const snapshot=this.snapshot();
+            const members=plan.frozen_members.map(owner=>
+                snapshot.jobs.find(job=>job.id===owner.job_id));
+            if(members.some((job,index)=>!job||
+                job.lease_id!==plan.frozen_members[index].lease_id||
+                job.assigned_machine_id!==plan.frozen_members[index].machine_id||
+                job.status!=='waiting_adapter'||job.dispatch_id||
+                job.distributed_abort_requested_at)) {
+                halt('needs_review','A group member, native status or original machine lease changed.');
+                continue;
+            }
+            const learner=members[0];
+            const other=snapshot.jobs.filter(job=>
+                job.project_id==='tinybrains_rollout'&&
+                job.frozen_parameters?.learner_job_id===learner.id);
+            if(learner.project_id!=='tinybrains'||other.length!==members.length-1||
+                members.slice(1).some(job=>job.project_id!=='tinybrains_rollout'||
+                    job.frozen_parameters?.learner_job_id!==learner.id)) {
+                halt('needs_review','Remote rollout membership changed; no Start can be authorized.');
+                continue;
+            }
+            if(members.some((job,index)=>!snapshot.reservations.some(lease=>
+                lease.id===plan.frozen_members[index].lease_id&&
+                lease.job_id===job.id&&lease.project_id===job.project_id&&
+                lease.machine_id===job.assigned_machine_id&&
+                lease.issued_by==='experiment-hub'&&
+                ['offered','acknowledged'].includes(lease.status)))) {
+                halt('needs_review','The pinned native resource ownership no longer exists.');
+                continue;
+            }
+            const learnerHost=snapshot.machines.find(host=>
+                host.id===learner.assigned_machine_id);
+            if(learnerHost?.tinybrains_remote_key_fingerprint!==plan.key_fingerprint||
+                JSON.stringify(learnerHost?.tinybrains_remote_rollout_endpoints)!==
+                    JSON.stringify(plan.learner_endpoints)||
+                members.slice(1).some((worker,index)=>{
+                    const host=snapshot.machines.find(item=>
+                        item.id===worker.assigned_machine_id);
+                    return host?.tinybrains_rollout_endpoint!==
+                        plan.frozen_members[index+1].endpoint||
+                        host?.tinybrains_rollout_key_fingerprint!==plan.key_fingerprint;
+                })) {
+                // Offline reports lack current HMAC identity. Only a live
+                // mismatch can revoke identity; a disconnected host waits
+                // for its fresh authenticated report before comparing.
+                const offline=members.some(job=>
+                    snapshot.machines.find(m=>m.id===job.assigned_machine_id)
+                        ?.status!=='connected');
+                if(offline)continue;
+                halt('needs_review','Learner/collector HMAC fingerprint or ordered endpoint changed.');
+                continue;
+            }
+            if(members.some(job=>snapshot.machines.find(host=>
+                host.id===job.assigned_machine_id)?.status!=='connected'))
+                continue;
+            if(!plan.recovery_pending&&members.some(job=>
+                this.agentReports.get(job.assigned_machine_id)?.instance_id!==
+                    plan.agent_instances[job.assigned_machine_id])) {
+                halt('disarmed','A group machine changed its native agent instance before Start.');
+                continue;
+            }
+            if(!members.slice(1).every(job=>
+                nativeStartReadiness(snapshot,job).eligible))
+                continue;
+            // The learner cannot meet the final nativeStartReadiness until
+            // its collectors have started. The existing collector admission
+            // checks its complete CPU/GPU lease, preflight, endpoint and key.
+            try {
+                this.authorizeDistributedCollectors({
+                    learner_job_id:learner.id,
+                    expected_collector_job_ids:plan.collector_job_ids,
+                    confirm_start:true,start_learner_when_ready:true,
+                    confirm_learner_start:true,
+                    ...(plan.resume_after_restart?{
+                        resume_after_restart:true,confirm_restart_rearm:true,
+                    }:{}),
+                },plan.id);
+            }catch(error) {
+                // Probe or fresh-lease readiness can change between two
+                // authenticated heartbeats. Do not retry native processes;
+                // none were authorized by a rejected atomic transaction.
+                const message=String(error.message||error).slice(0,180);
+                if(!['The learner must retain','Collector ','Coordinated launch needs']
+                    .some(prefix=>message.startsWith(prefix)))
+                    halt('needs_review','Group admission requires review: '+message);
+            }
+        }
+    }
     // Authorize an entire already-reserved remote rollout tier in one durable
     // transition. No partial Starts are offered if any collector, endpoint, or
     // native owner has lost eligibility since the operator's last refresh.
@@ -2540,6 +2774,10 @@ class ExperimentHub {
             resolved.status='authorized';
             resolved.reason='Every original native collector Start and the future learner gate were committed atomically.';
             resolved.resolved_at=requestedAt;
+            // The unattended group also owns the learner's verified terminal
+            // capacity release. The existing terminal report remains the
+            // authority; this flag does not terminate a process.
+            next.jobs.find(job=>job.id===learner.id).release_on_terminal=true;
         }
         // Collector Start authorizations and future learner permission form
         // one crash-atomic commit. Restart cannot observe only half of them.
