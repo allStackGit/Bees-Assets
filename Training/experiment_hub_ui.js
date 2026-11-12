@@ -2115,6 +2115,7 @@ document.addEventListener('DOMContentLoaded', () => {
         'rss_mb','job_memory_mb','job_peak_memory_mb','job_cpu_cores',
         'job_cpu_lease_utilization_pct','job_process_tasks',
         'job_cpu_throttled_seconds','job_cpu_throttle_events',
+        'job_cpu_quota_periods','job_cpu_quota_throttled_periods_pct',
         'job_memory_lease_utilization_pct',
         'host_cpu_busy_pct','host_gpu_busy_pct','host_gpu_vram_mb',
         'host_gpu_temperature_c','host_gpu_hotspot_temperature_c',
