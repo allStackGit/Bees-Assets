@@ -44,6 +44,10 @@ const RIGHT_DRAG_INTERVAL: Duration = Duration::from_millis(250);
 struct RightPress {
     next_move_at: Instant,
     last_move_pixel: Option<Vec2>,
+    /// Capture the input surface on mouse-down. Crossing into the minimap
+    /// must not re-map an ordinary world drag into a different coordinate
+    /// system halfway through the held gesture.
+    minimap: bool,
 }
 
 pub struct NativeClient {
@@ -91,6 +95,7 @@ pub struct NativeClient {
     pub minimap_camera_moves: u64,
     pub numbered_shortcut_selections: u64,
     pub cycled_shortcut_selections: u64,
+    pub minimap_move_orders_submitted: u64,
 }
 
 impl NativeClient {
@@ -120,7 +125,8 @@ impl NativeClient {
             viewport_resizes: 0,
             minimap_markers_drawn: 0, numbered_squad_rows_drawn: 0,
             minimap_camera_moves: 0, numbered_shortcut_selections: 0,
-            cycled_shortcut_selections: 0 })
+            cycled_shortcut_selections: 0,
+            minimap_move_orders_submitted: 0 })
     }
 
     /// Initial authored camera focus is a presentation-only concern. The
@@ -425,7 +431,12 @@ impl NativeClient {
         } else if right_pressed && accepts_orders {
             self.right_press = (mouse.is_some() && !cancel_support &&
                 !self.renderer.selection.squads().is_empty())
-                .then_some(RightPress { next_move_at: now + RIGHT_DRAG_INTERVAL, last_move_pixel: None });
+                .then_some(RightPress {
+                    next_move_at: now + RIGHT_DRAG_INTERVAL,
+                    last_move_pixel: None,
+                    minimap: mouse.is_some_and(|(x, y)|
+                        self.renderer.minimap_world_at(bounds, x, y).is_some()),
+                });
         }
         if cancel_support {
             self.support_mode = None;
@@ -602,15 +613,33 @@ impl NativeClient {
             self.double_left_press = false;
         }
         self.left_was_down = left_down;
-        let release_click = right_released && self.right_press.take().is_some();
+        let released_press = if right_released {
+            self.right_press.take()
+        } else { None };
         let player_move = if support_command.is_none() && manual_fire.is_none() &&
             cease_fire_input.is_none() && accepts_orders {
             mouse.filter(|_| !self.renderer.selection.squads().is_empty()).and_then(|(x, y)| {
-                let destination = self.renderer.camera.screen_to_world(x, y, width, height);
-                if release_click {
-                    if let Some(action) = self.renderer.pick_right_click_action(&view, destination) {
-                        support_command = self.renderer.selection.support_command(&view, action);
-                        return None;
+                let captured_minimap = if right_released {
+                    released_press.as_ref()?.minimap
+                } else {
+                    self.right_press.as_ref()?.minimap
+                };
+                let over_minimap = self.renderer.minimap_world_at(bounds, x, y);
+                // A drag beginning outside the map cannot turn into a
+                // minimap order by moving over the HUD mid-gesture.
+                let destination = if captured_minimap {
+                    over_minimap?
+                } else {
+                    if over_minimap.is_some() { return None; }
+                    self.renderer.camera.screen_to_world(x, y, width, height)
+                };
+                if right_released {
+                    if released_press.is_none() { return None; }
+                    if !captured_minimap {
+                        if let Some(action) = self.renderer.pick_right_click_action(&view, destination) {
+                            support_command = self.renderer.selection.support_command(&view, action);
+                            return None;
+                        }
                     }
                 } else {
                     if !right_down || self.paused { return None; }
@@ -621,6 +650,9 @@ impl NativeClient {
                     ) { return None; }
                     press.next_move_at = now + RIGHT_DRAG_INTERVAL;
                     press.last_move_pixel = Some(pixel);
+                }
+                if captured_minimap {
+                    self.minimap_move_orders_submitted += 1;
                 }
                 Some(NativePlayerSquadMoves { world_id: view.world_id,
                     episode_revision: view.episode_revision,
@@ -674,7 +706,7 @@ impl NativeClient {
                 view.world_id.0, view.tick, status, selected,
                 self.result_controls.map_or("Space pause, N step, ", NativeResultControls::hint))
         } else { format!(
-            "Bees native | World {} | Episode {} | Tick {} | {} ships, {} shots | {} squads selected | {}{} | {} | range/obstruction {} | Left select/drag, double-click type, Ctrl add, right move/attack | C stop chase, V cease fire, A attack on sight, Ctrl+A all squads, K beacon, D detonate, G guard, P patrol, M mine, H heal, R retreat, hold J manual fire, T point fire, X stop, B ranges, Backspace cancel | Space pause, N step, Tab world, 1-0 squads, PgUp/PgDn cycle, arrows pan, wheel zoom, F fit, I map, Esc exit",
+            "Bees native | World {} | Episode {} | Tick {} | {} ships, {} shots | {} squads selected | {}{} | {} | range/obstruction {} | Left select/drag, double-click type, Ctrl add, right move/attack (also on map) | C stop chase, V cease fire, A attack on sight, Ctrl+A all squads, K beacon, D detonate, G guard, P patrol, M mine, H heal, R retreat, hold J manual fire, T point fire, X stop, B ranges, Backspace cancel | Space pause, N step, Tab world, 1-0 squads, PgUp/PgDn cycle, arrows pan, wheel zoom, F fit, I map, Esc exit",
             view.world_id.0, view.episode_revision, view.tick, counts.ships, counts.projectiles,
             self.renderer.selection.squads().len(),
             if self.paused { "PAUSED" } else { "RUNNING" }, selected, self.input_feedback,
