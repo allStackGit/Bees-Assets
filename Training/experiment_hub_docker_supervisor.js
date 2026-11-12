@@ -121,7 +121,7 @@ function dockerCgroupCounters(doc,fsApi=fs,pathApi=path) {
                 return Number.isSafeInteger(value)?value:null;
             }catch{return null;}
         };
-        let usage=null,throttled=null,throttleEvents=null;
+        let usage=null,throttled=null,throttleEvents=null,quotaPeriods=null;
         try {
             const raw=fsApi.readFileSync(pathApi.join(dir,'cpu.stat'),'utf8');
             if(typeof raw==='string'&&raw.length<=2048) {
@@ -137,6 +137,7 @@ function dockerCgroupCounters(doc,fsApi=fs,pathApi=path) {
                 throttled=throttledMicroseconds===null?null:
                     throttledMicroseconds/1000000;
                 throttleEvents=field('nr_throttled');
+                quotaPeriods=field('nr_periods');
             }
         }catch {
             // CPU accounting is unavailable; memory may still be readable.
@@ -147,6 +148,7 @@ function dockerCgroupCounters(doc,fsApi=fs,pathApi=path) {
             ...(usage===null?{}:{cpu_time_seconds:usage}),
             ...(throttled===null?{}:{cpu_throttled_seconds:throttled}),
             ...(throttleEvents===null?{}:{cpu_throttle_events:throttleEvents}),
+            ...(quotaPeriods===null?{}:{cpu_quota_periods:quotaPeriods}),
             ...(used===null?{}:{memory_current_mb:Math.floor(used/1048576)}),
             ...(peak===null?{}:{peak_job_memory_bytes:peak}),
             ...(tasks===null?{}:{process_tasks:tasks}),
