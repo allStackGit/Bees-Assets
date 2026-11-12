@@ -959,6 +959,10 @@ where
             grid_at_level_end.ship_grid_rebuilds - grid_at_combat_end.ship_grid_rebuilds;
         counts.obstacle_grid_rebuilds +=
             grid_at_level_end.obstacle_grid_rebuilds - grid_at_combat_end.obstacle_grid_rebuilds;
+        counts.ship_grid_cells_indexed +=
+            grid_at_level_end.ship_grid_cells_indexed - grid_at_combat_end.ship_grid_cells_indexed;
+        counts.obstacle_grid_cells_indexed +=
+            grid_at_level_end.obstacle_grid_cells_indexed - grid_at_combat_end.obstacle_grid_cells_indexed;
         Ok(counts)
     }
 }

@@ -4106,6 +4106,8 @@ impl CombatWorld {
             obstacle_grid_overflow_bodies: physics_counts.obstacle_grid_overflow_bodies,
             ship_grid_rebuilds: physics_counts.ship_grid_rebuilds,
             obstacle_grid_rebuilds: physics_counts.obstacle_grid_rebuilds,
+            ship_grid_cells_indexed: physics_counts.ship_grid_cells_indexed,
+            obstacle_grid_cells_indexed: physics_counts.obstacle_grid_cells_indexed,
             narrowphase_tests: physics_counts.narrowphase_tests,
             trigger_enters: physics_counts.trigger_enters +
                 physics_counts.obstacle_trigger_enters +

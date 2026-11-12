@@ -113,6 +113,9 @@ pub struct NativeHostStatusInterval {
     /// Actual shared-grid rebuilds in the native simulation window.
     pub physics_ship_grid_rebuilds: u64,
     pub physics_obstacle_grid_rebuilds: u64,
+    /// Actual occupied cell insertions across the shared grid's rebuilds.
+    pub physics_ship_grid_cells_indexed: u64,
+    pub physics_obstacle_grid_cells_indexed: u64,
     pub physics_narrowphase_tests: u64,
     pub physics_trigger_enters: u64,
     pub automatic_weapon_target_queries: u64,
@@ -279,6 +282,12 @@ impl NativeStatusSampler {
                 )?,
                 physics_obstacle_grid_rebuilds: diff(
                     s.obstacle_grid_rebuilds, p.obstacle_grid_rebuilds,
+                )?,
+                physics_ship_grid_cells_indexed: diff(
+                    s.ship_grid_cells_indexed, p.ship_grid_cells_indexed,
+                )?,
+                physics_obstacle_grid_cells_indexed: diff(
+                    s.obstacle_grid_cells_indexed, p.obstacle_grid_cells_indexed,
                 )?,
                 physics_narrowphase_tests: diff(
                     s.narrowphase_tests, p.narrowphase_tests,

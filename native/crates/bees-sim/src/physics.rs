@@ -925,6 +925,9 @@ pub struct PhysicsStepCounts {
     /// measurement window, including late collision/weapon queries.
     pub ship_grid_rebuilds: u64,
     pub obstacle_grid_rebuilds: u64,
+    /// Occupied cells indexed across actual population rebuilds.
+    pub ship_grid_cells_indexed: u64,
+    pub obstacle_grid_cells_indexed: u64,
     pub narrowphase_tests: u64,
     pub trigger_enters: u64,
     pub obstacle_trigger_enters: u64,
@@ -1327,6 +1330,7 @@ impl KinematicPhysics {
             if ship.active { ship.collider.bounds } else { None }
         });
         self.counts.ship_grid_rebuilds += 1;
+        self.counts.ship_grid_cells_indexed += self.grid.active_buckets as u64;
         self.grid_contents = GridContents::Ships;
         true
     }
@@ -1391,6 +1395,7 @@ impl KinematicPhysics {
                 if obstacle.active { obstacle.collider.bounds } else { None }
             });
             self.counts.obstacle_grid_rebuilds += 1;
+            self.counts.obstacle_grid_cells_indexed += self.grid.active_buckets as u64;
             self.grid_contents = GridContents::Obstacles;
         }
         self.grid.candidates(Aabb {
@@ -1863,6 +1868,7 @@ impl KinematicPhysics {
                 if ship.active { ship.collider.bounds } else { None }
             });
             self.counts.ship_grid_rebuilds += 1;
+            self.counts.ship_grid_cells_indexed += self.grid.active_buckets as u64;
             self.grid_contents = GridContents::Ships;
             self.counts.ship_grid_overflow_bodies = self.grid.overflow.len() as u64;
         } else {
@@ -1952,6 +1958,7 @@ impl KinematicPhysics {
                 if obstacle.active { obstacle.collider.bounds } else { None }
             });
             self.counts.obstacle_grid_rebuilds += 1;
+            self.counts.obstacle_grid_cells_indexed += self.grid.active_buckets as u64;
             self.grid_contents = GridContents::Obstacles;
             self.counts.obstacle_grid_overflow_bodies = self.grid.overflow.len() as u64;
         }
@@ -2139,6 +2146,8 @@ impl crate::simulation::GameRules<KinematicPhysics> for KinematicPhysicsRules {
             obstacle_grid_overflow_bodies: counts.obstacle_grid_overflow_bodies,
             ship_grid_rebuilds: counts.ship_grid_rebuilds,
             obstacle_grid_rebuilds: counts.obstacle_grid_rebuilds,
+            ship_grid_cells_indexed: counts.ship_grid_cells_indexed,
+            obstacle_grid_cells_indexed: counts.obstacle_grid_cells_indexed,
             narrowphase_tests: counts.narrowphase_tests,
             trigger_enters: counts.trigger_enters + counts.obstacle_trigger_enters +
                 counts.ship_obstacle_enters + counts.obstacle_pair_enters +
