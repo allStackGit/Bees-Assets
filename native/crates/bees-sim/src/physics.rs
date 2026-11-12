@@ -1835,11 +1835,14 @@ impl KinematicPhysics {
         self.counts.proximity_ship_enters = self.proximity_ship_enters.len() as u64;
         self.counts.proximity_ship_exits = self.proximity_ship_exits.len() as u64;
 
-        // Reuse the SAME grid for obstacle queries when any obstacle is
-        // active. Obstacle-free gameplay keeps the freshly built ship grid
-        // for the subsequent turret, Barge and near-miss queries instead
-        // of clearing it and then immediately rebuilding it.
-        if has_active_obstacles {
+        // Reuse the same grid for obstacle queries only when this tick
+        // has a contact source that can query them. Static-only obstacles
+        // with no physical shots have no projectile, ship, or asteroid pair
+        // contacts to process. Leave the grid for later on-demand queries,
+        // instead of rebuilding an unused obstacle population every tick.
+        let needs_obstacle_grid = has_active_obstacles &&
+            (has_physical_projectiles || has_ship_contact_obstacles || has_body_contact_obstacles);
+        if needs_obstacle_grid {
             self.grid.rebuild_with(self.obstacles.len(), |index| {
                 let obstacle = &self.obstacles[index];
                 if obstacle.active { obstacle.collider.bounds } else { None }
