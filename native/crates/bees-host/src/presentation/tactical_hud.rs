@@ -19,6 +19,26 @@ pub const ACTIONS: [HudAction; 15] = [
 ];
 
 impl HudAction {
+    pub fn hint(self) -> &'static str {
+        match self {
+            Self::Attack => "Attack: click an enemy ship",
+            Self::Guard => "Guard: click a friendly ship",
+            Self::Patrol => "Patrol: drag a rectangular patrol area",
+            Self::Mine => "Mine: click a mining asteroid",
+            Self::Heal => "Heal: click a friendly Beehive",
+            Self::Retreat => "Retreat: click a WarpGate",
+            Self::Hold => "Hold: cancel an active chase (C)",
+            Self::CeaseFire => "Cease fire: selected squad weapons off (V)",
+            Self::AttackOnSight => "Attack on sight: selected squad weapons on (A)",
+            Self::PointFire => "Point fire: click a location, X stops (T)",
+            Self::StopFire => "Stop manually targeting (X)",
+            Self::Beacon => "Deploy a ready Scout Beacon (K)",
+            Self::Detonate => "Detonate selected Fire Barges (D)",
+            Self::Charge => "Charge forward with ready Barges (Q)",
+            Self::SelectAll => "Select all authorized squads on your current side (Ctrl+A)",
+        }
+    }
+
     pub fn label(self) -> &'static str {
         match self {
             Self::Attack => "ATTACK",

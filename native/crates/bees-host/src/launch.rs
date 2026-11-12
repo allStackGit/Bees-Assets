@@ -2082,6 +2082,8 @@ fn run_battle(
             "numbered_squad_rows_drawn": client.numbered_squad_rows_drawn,
             "minimap_camera_moves": client.minimap_camera_moves,
             "minimap_move_orders_submitted": client.minimap_move_orders_submitted,
+            "tactical_button_clicks": client.tactical_button_clicks,
+            "squad_tab_clicks": client.squad_tab_clicks,
             "numbered_shortcut_selections": client.numbered_shortcut_selections,
             "cycled_shortcut_selections": client.cycled_shortcut_selections,
             "final_viewport_pixels": client.viewport_size().0 * client.viewport_size().1,

@@ -84,6 +84,7 @@ pub struct NativeSoftwareRenderer {
     /// Presentation-only tactical overview, never used by headless worlds.
     pub show_minimap: bool,
     pub active_tactical_action: Option<super::HudAction>,
+    pub hovered_tactical_action: Option<super::HudAction>,
     debris_frame: Option<(WorldId, u64, u64)>,
     obstacle_debris: Vec<ObstacleDebris>,
 }
@@ -154,6 +155,7 @@ impl NativeSoftwareRenderer {
             selected_squad_lookup: HashSet::new(),
             selection_box: None, show_weapon_ranges: false,
             show_minimap: true, active_tactical_action: None,
+            hovered_tactical_action: None,
             debris_frame: None, obstacle_debris: Vec::new() })
     }
 
@@ -743,6 +745,8 @@ impl NativeSoftwareRenderer {
                 0x172334
             } else if self.active_tactical_action == Some(action) {
                 0x456c78
+            } else if self.hovered_tactical_action == Some(action) {
+                0x394e65
             } else if matches!(action,
                 tactical_hud::HudAction::Detonate |
                 tactical_hud::HudAction::StopFire
@@ -765,6 +769,31 @@ impl NativeSoftwareRenderer {
             drawn += 1;
         }
         drawn
+    }
+
+    /// Keep the current command prompt, feedback, and hovered action
+    /// explanation visible inside the actual framebuffer. Window managers
+    /// truncate long title strings, particularly over remote desktop.
+    /// This remains optional presentation work; the headless simulator does
+    /// not allocate or render a second command message.
+    #[cfg(feature = "client")]
+    pub fn draw_tactical_feedback(&mut self, feedback: &str) {
+        if self.width < 520 || self.height < 250 { return; }
+        let hint = self.hovered_tactical_action
+            .map(tactical_hud::HudAction::hint)
+            .unwrap_or(feedback);
+        if hint.is_empty() { return; }
+        let message = text::fit(hint, self.width.saturating_sub(72).min(760));
+        let w = (text::width(message, 1) + 20).min(self.width);
+        let left = (self.width - w) / 2;
+        let top = if self.height >= 430 { self.height - 134 }
+            else { self.height - 42 };
+        for y in top..(top + text::HEIGHT + 12).min(self.height) {
+            self.pixels[y * self.width + left
+                ..y * self.width + left + w].fill(0x16263a);
+        }
+        text::draw_at(&mut self.pixels, self.width,
+            left + 10, top + 6, message, 1, [231, 237, 248]);
     }
 
     fn draw_battle_result(

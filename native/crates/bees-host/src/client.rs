@@ -739,6 +739,9 @@ impl NativeClient {
             })
         } else { None };
         self.right_was_down = right_down;
+        self.renderer.hovered_tactical_action = if accepts_orders && pointer_active {
+            mouse.and_then(|(x, y)| self.renderer.tactical_action_at(x, y))
+        } else { None };
         self.renderer.active_tactical_action = match self.support_mode {
             Some(NativeTargetMode::Support(NativeSupportMode::Attack)) => Some(HudAction::Attack),
             Some(NativeTargetMode::Support(NativeSupportMode::Guard)) => Some(HudAction::Guard),
@@ -751,6 +754,9 @@ impl NativeClient {
         };
         let render_started = Instant::now();
         let counts = self.renderer.render(&view, self.bounds);
+        if accepts_orders {
+            self.renderer.draw_tactical_feedback(self.input_feedback);
+        }
         if let Some((_, speaker, line)) = dialogue {
             self.renderer.draw_campaign_dialogue(speaker, line);
         }
