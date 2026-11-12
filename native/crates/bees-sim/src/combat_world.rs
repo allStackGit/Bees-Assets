@@ -2835,11 +2835,12 @@ impl CombatWorld {
     }
 
     /// Unity Weapon.DistanceTo uses Collider2D.ClosestPoint, not distance
-    /// to the target ship center. This reads the SAME authoritative hull
-    /// the physics and vision systems use, updating the cached pose only
-    /// if necessary. Required by BombingRun Closest/Furthest target ranks.
+    /// to the target ship center. The existing read-only exact-hull query
+    /// uses the current pose without evicting the shared spatial grid.
+    /// BombingRun target ranking must not force a global grid rebuild for
+    /// each candidate it inspects.
     pub fn ship_hull_closest_point(
-        &mut self, target_id: i64, origin: Vec2,
+        &self, target_id: i64, origin: Vec2,
     ) -> Option<Vec2> {
         if !origin.is_finite() { return None; }
         let &index = self.ship_by_id.get(&target_id)?;
@@ -2847,7 +2848,7 @@ impl CombatWorld {
             !self.physics.ships()[index].active {
             return None;
         }
-        Some(self.physics.ships_mut()[index].primary_closest_point(origin))
+        Some(self.physics.ships()[index].primary_closest_point_readonly(origin))
     }
 
     /// Bomb.SetTargetShip reserves at weapon selection time. When its
