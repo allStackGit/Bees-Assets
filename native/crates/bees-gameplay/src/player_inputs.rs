@@ -31,6 +31,23 @@ pub trait NativePlayerAuthority {
     /// Actual Level.HasObstacles; None means range/line inspection is unavailable.
     fn weapon_obstacles_enabled(&self) -> Option<bool> { None }
     fn player_permissions(&self, owner: SquadLifetime) -> Option<NativePlayerPermissions>;
+
+    /// Use exactly the same source-side ownership rule for gameplay input
+    /// preflight and the native player's tactical presentation. This is
+    /// local-view authority, not remote sender authentication: network
+    /// transports must authenticate the sender before choosing its view.
+    /// A fog-enabled viewer without a source side cannot take control.
+    fn player_owns_squad(&self, owner: SquadLifetime, squad_side: i32) -> bool {
+        if !self.player_permissions(owner)
+            .is_some_and(|permissions| permissions.user_controlled) {
+            return false;
+        }
+        match self.player_viewer_side() {
+            Some(side) => side == squad_side,
+            None => !self.player_fog_of_war_enabled(),
+        }
+    }
+
     /// Current mutable source Squad.GetShootingStrategy, not the initial
     /// imported snapshot and not the server's immutable action identity.
     fn player_shooting_strategy(&self, _owner: SquadLifetime)
@@ -1017,15 +1034,17 @@ fn authorized_player_squad<'a, M: NativeLevelPlayerContext, A>(
     }
     let owner = state.events.roster().owning_squad(selected_ship)
         .ok_or(NativePlayerInputError::MissingSquad)?;
-    let permission = state.metadata.player_permissions(owner)
-        .ok_or(NativePlayerInputError::NotControllable)?;
-    // Unity permits tactical commands and action-box changes while
-    // locked; only LevelInputManager.MoveSquads excludes a locked squad.
-    if !permission.user_controlled || !permission.can_accept_input {
-        return Err(NativePlayerInputError::NotControllable);
-    }
     let squad = state.events.roster().get(owner)
         .ok_or(NativePlayerInputError::MissingSquad)?;
+    // Input preparation/commit must enforce the same authentic local
+    // side as selection, not just the squad's user_controlled flag.
+    // Unity permits action-box changes while locked; only ordinary
+    // ground movement excludes a locked squad.
+    if !state.metadata.player_owns_squad(owner, squad.side) ||
+        !state.metadata.player_permissions(owner)
+            .is_some_and(|permissions| permissions.can_accept_input) {
+        return Err(NativePlayerInputError::NotControllable);
+    }
     Ok((owner, squad))
 }
 

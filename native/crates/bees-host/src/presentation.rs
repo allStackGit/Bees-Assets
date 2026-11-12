@@ -67,14 +67,7 @@ impl<'a> NativeRenderWorldView<'a> {
     /// marked its squads user-controlled in the shared Level.
     pub fn is_local_player_squad(&self, owner: SquadLifetime) -> bool {
         let Some(squad) = self.roster.get(owner) else { return false };
-        if !self.player_authority.player_permissions(owner)
-            .is_some_and(|permission| permission.user_controlled) {
-            return false;
-        }
-        match self.player_authority.player_viewer_side() {
-            Some(side) => squad.side == side,
-            None => !self.player_authority.player_fog_of_war_enabled(),
-        }
+        self.player_authority.player_owns_squad(owner, squad.side)
     }
 
     /// Iterate directly over the canonical live bodies. Projectiles,
