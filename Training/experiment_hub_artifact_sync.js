@@ -14,7 +14,7 @@ const MAX_JOB=5000000000;
 const SUFFIXES=new Set(['.json','.jsonl','.ndjson','.csv','.tsv','.txt','.log']);
 const DENIED=new Set(['.git','private','secrets','credentials','keys','checkpoints',
     'models','opponents','replays','__pycache__','build','node_modules']);
-const DENIED_NAMES=['token','secret','password','credential','rollout.key',
+const DENIED_NAMES=['token','secret','password','credential','checkpoint','rollout.key',
     'api_key','api-key','api.key','apikey','access_key','access-key','accesskey',
     'private_key','private-key','privatekey','ssh_key','ssh-key','sshkey',
     'key_file','key-file','keyfile','id_rsa','id_ed25519',
