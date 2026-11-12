@@ -322,11 +322,14 @@ impl NativePolicyOnlyMetadata {
                 order, &[], source.settings, NativeLocalCommandSource::Player,
                 action, source.shooting, bombing,
             )?;
+            // Source MakeUserCommand finalizes its predecessor before
+            // attempting replacement, even if activation is unavailable.
+            // Command.SetFinalize releases Lock On in that transaction.
+            if let Some(permission) = self.player.squads.get_mut(&owner) {
+                permission.locked_on = false;
+            }
             if matches!(activation, bees_gameplay::commands::Activation::Applied { .. }) {
                 started += 1;
-                if let Some(permission) = self.player.squads.get_mut(&owner) {
-                    permission.locked_on = false;
-                }
             }
         }
         self.chase_measurements.commands_started += started;

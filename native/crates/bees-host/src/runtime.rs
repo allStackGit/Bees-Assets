@@ -331,7 +331,12 @@ where
             }
         }
         if plans.is_empty() { return Ok(counts); }
-        if plans.iter().any(|plan| plan.retires_pending_authority()) {
+        if input.action == bees_gameplay::player_inputs::NativePlayerSupportAction::Hold ||
+            plans.iter().any(|plan| plan.retires_pending_authority())
+        {
+            // Hold changes persistent ShouldChase even when no Aggressive
+            // command needs retirement; invalidate stale environment views
+            // before the first metadata mutation.
             self.driver.invalidate_environment(index).map_err(HostPlayerInputError::Driver)?;
         }
         for plan in plans {

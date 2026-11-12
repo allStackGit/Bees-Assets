@@ -91,7 +91,7 @@ impl HudRect {
 
 /// Keep the strip out of the lower-left minimap and lower-right special
 /// readiness panels. Hide rather than crowd the battlefield on small windows.
-/// Five columns / three rows scale to any sufficiently wide viewport.
+/// Five columns / four rows scale to any sufficiently wide viewport.
 pub fn action_rect(width: usize, height: usize, index: usize) -> Option<HudRect> {
     if width < 980 || height < 430 || index >= ACTIONS.len() {
         return None;
