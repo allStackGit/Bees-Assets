@@ -387,10 +387,13 @@ def expand(run, scene, manifest, read_capture=None):
                 fail(f"source squad {squad_id} has invalid physical membership")
             selected_ships = captured_ships if capture is not None else ships
             group = [(squad_id, squad, members)]
-            if capture is not None:
-                group.extend(carrier_child_squads(
-                    squad_id, members, captured_squads, captured_ships, bee_side, label
-                ))
+            # Both authoring paths must retain source-created Carrier children.
+            # An initial-scene wave reserves them for deferred deployment;
+            # a later capture imports them with their authentic physical state.
+            selected_squads = captured_squads if capture is not None else source_squads
+            group.extend(carrier_child_squads(
+                squad_id, members, selected_squads, selected_ships, bee_side, label
+            ))
             # Each parent and its captured children belong to ONE source
             # SpawnShipsAndSquads call and therefore ONE native wave plan.
             # The manifest's outer IDs still denote independent SavedSquad
