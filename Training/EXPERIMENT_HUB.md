@@ -2783,9 +2783,19 @@ service to the public Internet.
    reservations atomically; if any physical worker or capacity is missing,
    no job or claim is committed. No process is started by this action.
 4. Allow each host's authenticated agent to acknowledge its offered claim.
-   Explicitly Start every remote `tinybrains_rollout` job first, or use an
-   independently authorized native automation session. The learner Start
-   gate requires a **fresh verified running dispatch** from every worker,
+   In **Train**, use **Start all remote collectors** on the learner row to
+   authorize every ready collector in one durable transaction, or explicitly
+   Start the individual `tinybrains_rollout` jobs, or use an independently
+   authorized native automation session. The batch action checks the exact
+   current collector IDs, all pinned machine/HMAC endpoints, the learner's
+   fresh GPU/resource claim, and each worker's native Start readiness; any
+   failed check authorizes **zero** Starts. It does not start the learner,
+   bypass GPU qualification, retry an already dispatched collector, or
+   promise simultaneous worker execution. An authorized Start is still
+   subject to local OS enforcement. The operator CLI may invoke
+   `POST /api/hub/distributed/tinybrains/start-collectors` with
+   `{"learner_job_id":"<uuid>","expected_collector_job_ids":["<uuid>",...],"confirm_start":true}`.
+   The learner Start gate requires a **fresh verified running dispatch** from every worker,
    exact pinned endpoints, equal key fingerprints and matching leases.
    A coordinator restart requires fresh agent and native process receipts
    before any new Start; persisted `running` labels are not sufficient.
