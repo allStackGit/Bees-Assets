@@ -2726,7 +2726,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             ?'Also authorize ONE learner GPU Start after all collectors have fresh verified running receipts. '+
                                 'This permission expires after 20 minutes, is lost on coordinator restart, '+
                                 'and is disarmed if any machine, dispatch or lease identity changes. '+
-                                'The learner is never retried automatically. '
+                                'The learner is never retried automatically. If any collector exits before learner Start, the remaining sidecars receive native Stop/cleanup requests. '
                             :'The GPU learner must be started separately after verification. ')+
                         'All resource allocations stay fixed.'))return;
                     try {
