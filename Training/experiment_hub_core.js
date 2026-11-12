@@ -3082,6 +3082,13 @@ class ExperimentHub {
                 add('job_memory_mb',item.memory_current_mb,'mb');
                 add('job_peak_memory_mb',Number.isFinite(item.peak_job_memory_bytes)
                     ?item.peak_job_memory_bytes/1048576:null,'mb');
+                add('job_process_tasks',item.process_tasks,'count');
+                const leasedRam=job.resources?.ram_mb;
+                if(Number.isSafeInteger(leasedRam)&&leasedRam>0&&
+                    Number.isSafeInteger(item.memory_current_mb)&&
+                    item.memory_current_mb>=0)
+                    add('job_memory_lease_utilization_pct',
+                        100*item.memory_current_mb/leasedRam,'scalar');
                 if(liveOwner)add('host_cpu_busy_pct',
                     report.host_cpu_busy_pct,'scalar');
                 const lease=this.state.reservations.find(l=>
