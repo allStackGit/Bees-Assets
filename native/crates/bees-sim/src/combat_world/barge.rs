@@ -27,7 +27,7 @@ pub(super) struct PolicyBargeCharge {
 pub(super) struct GameBargeCharge {
     pub(super) phase: u8, // 1 wind-up, 2 charge, 3 cooldown, 4 completed
     pub(super) elapsed: f32,
-    pub(super) target_id: i64,
+    pub(super) target_id: Option<i64>,
     /// Barge.ChargeForward aims at Level.ForceBounds(target.GetPosition)
     /// at wind-up completion, even when the Barge itself can override
     /// bounds (Ship.MoveToDirectionOfPoint always calls ForceBounds).
@@ -88,16 +88,105 @@ impl CombatWorld {
             self.ships[target_index].side == held.side {
             return Ok(false);
         }
+        let target_id = held.target_id;
+        let power = held.amount;
+        self.begin_game_barge_charge(ship_index, Some(target_id),
+            map_bounds, can_override_bounds, power, command_outcome_id)
+    }
+
+    /// An exact non-policy Barge prefab can be activated by the player
+    /// even without a BombingRun target reservation, as in Unity's
+    /// SquadActionBox.Charge -> Barge.ChargeForward(null).
+    pub fn configure_game_barge(
+        &mut self, ship_id: i64, power: i32, can_override_bounds: bool,
+    ) -> Result<(), CombatWorldError> {
+        let &index = self.ship_by_id.get(&ship_id)
+            .ok_or(CombatWorldError::UnknownShip)?;
+        if self.ships[index].ship_type != 0 ||
+            self.ships[index].vitals.is_dead() ||
+            !self.physics.ships()[index].active || power < 0 ||
+            self.policy_ship_runtime.contains_key(&ship_id) ||
+            self.game_barge_player_config.contains_key(&ship_id) {
+            return Err(CombatWorldError::InvalidPolicyBarge);
+        }
+        self.game_barge_player_config.insert(ship_id, (power, can_override_bounds));
+        Ok(())
+    }
+
+    pub fn player_game_barge_charge_ready(&self, ship_id: i64) -> bool {
+        if self.frozen_after_elimination ||
+            !self.game_barge_player_config.contains_key(&ship_id) ||
+            !self.game_ship_steering.contains_key(&ship_id) ||
+            self.pending_player_barge_charges.contains(&ship_id) ||
+            self.game_barge_charges.get(&ship_id)
+                .is_some_and(|state| state.phase != 4) {
+            return false;
+        }
+        self.ship(ship_id).is_some_and(|ship| !ship.vitals.is_dead()) &&
+            self.ship_body(ship_id).is_some_and(|body| body.active &&
+                !body.motion.is_policy_controlled &&
+                !body.motion.cannot_change_movement_orders)
+    }
+
+    pub fn queue_player_barge_charge(
+        &mut self, ship_id: i64,
+    ) -> Result<bool, CombatWorldError> {
+        if !self.game_barge_player_config.contains_key(&ship_id) {
+            return Err(CombatWorldError::InvalidPolicyBarge);
+        }
+        if !self.player_game_barge_charge_ready(ship_id) { return Ok(false); }
+        self.pending_player_barge_charges.push(ship_id);
+        Ok(true)
+    }
+
+    pub(super) fn apply_pending_player_barge_charges(
+        &mut self,
+    ) -> Result<(), CombatWorldError> {
+        for index in 0..self.pending_player_barge_charges.len() {
+            let ship_id = self.pending_player_barge_charges[index];
+            // Exclude this request from its own readiness check; distinct
+            // players cannot queue the same ship twice in a fixed tick.
+            let Some(&(power, can_override_bounds)) =
+                self.game_barge_player_config.get(&ship_id) else { continue };
+            let Some(&ship_index) = self.ship_by_id.get(&ship_id) else { continue };
+            if self.frozen_after_elimination ||
+                self.ships[ship_index].vitals.is_dead() ||
+                !self.physics.ships()[ship_index].active ||
+                self.game_barge_charges.get(&ship_id)
+                    .is_some_and(|state| state.phase != 4) {
+                continue;
+            }
+            if self.game_barge_charges.get(&ship_id)
+                .is_some_and(|state| state.phase == 4) {
+                self.reset_game_barge_charge(ship_id);
+            }
+            let map_bounds = self.level_geometry.as_ref()
+                .ok_or(CombatWorldError::InvalidGameMovementOrder)?
+                .map_bounds;
+            self.validate_ship_game_order(ship_id)?;
+            self.begin_game_barge_charge(ship_index, None, map_bounds,
+                can_override_bounds, power, None)?;
+        }
+        self.pending_player_barge_charges.clear();
+        Ok(())
+    }
+
+    /// The original targeted command and manual forward charge share one
+    /// phase/collision/recoil machine; only target choice and attribution
+    /// differ, not physics or combat damage.
+    fn begin_game_barge_charge(
+        &mut self, ship_index: usize, target_id: Option<i64>,
+        map_bounds: Aabb, can_override_bounds: bool, power: i32,
+        command_outcome_id: Option<i64>,
+    ) -> Result<bool, CombatWorldError> {
+        let ship_id = self.ships[ship_index].entity_id;
         self.stop_ship_game_movement(ship_id)?;
         self.physics.ships_mut()[ship_index].motion
             .cannot_change_movement_orders = true;
-        self.barge_charge_hits.retain(|&(attacker, _)|
-            attacker != ship_id,
-        );
+        self.barge_charge_hits.retain(|&(attacker, _)| attacker != ship_id);
         self.game_barge_charges.insert(ship_id, GameBargeCharge {
-            phase: 1, elapsed: 0.0, target_id: held.target_id,
-            map_bounds, can_override_bounds,
-            power: held.amount, command_outcome_id,
+            phase: 1, elapsed: 0.0, target_id,
+            map_bounds, can_override_bounds, power, command_outcome_id,
         });
         self.game_barge_measurements.starts += 1;
         self.events.push(CombatEvent::BargeChargeStarted { ship_id });
@@ -181,9 +270,9 @@ impl CombatWorld {
                     let origin = self.physics.ships()[index].motion.position;
                     let rotation = self.physics.ships()[index].motion
                         .rotation_degrees;
-                    let heading = self.ship_body(charge.target_id)
-                        .filter(|body| body.active)
-                        .and_then(|body| self.ship(charge.target_id)
+                    let heading = charge.target_id
+                        .and_then(|id| self.ship_body(id).filter(|body| body.active)
+                        .and_then(|body| self.ship(id)
                             .filter(|target| !target.vitals.is_dead())
                             .map(|_| {
                                 let destination = Vec2::new(
@@ -197,7 +286,7 @@ impl CombatWorld {
                                     ),
                                 );
                                 destination - origin
-                            }))
+                            })))
                         .map_or(rotation, heading_towards);
                     // ChargeForward briefly releases the movement lock to
                     // install its heading. Unity's MoveInDirection stops

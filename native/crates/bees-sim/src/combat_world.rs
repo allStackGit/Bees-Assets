@@ -840,6 +840,12 @@ pub struct CombatWorld {
     /// Scripted Barge coroutine phase lives in the shared combat world;
     /// the HiveMind command owns only its target choice and finalization.
     game_barge_charges: BTreeMap<i64, GameBargeCharge>,
+    /// Authored Charge.Power plus per-Barge bounds capability. Both are
+    /// copied from the same source special used by policy and AI.
+    game_barge_player_config: HashMap<i64, (i32, bool)>,
+    /// Manual ChargeForward starts inside fixed_step, never in the UI
+    /// between event-reset and roster/reward reconciliation.
+    pending_player_barge_charges: Vec<i64>,
     game_barge_measurements: GameBargeMeasurements,
     tracked_order_measurements: TrackedOrderMeasurements,
     /// One hit per victim for each active charge; cleared when the
@@ -978,6 +984,8 @@ impl CombatWorld {
             game_strikers: BTreeMap::new(),
             drone_carriers: HashMap::new(),
             game_barge_charges: BTreeMap::new(),
+            game_barge_player_config: HashMap::new(),
+            pending_player_barge_charges: Vec::new(),
             game_barge_measurements: GameBargeMeasurements::default(),
             tracked_order_measurements: TrackedOrderMeasurements::default(),
             barge_charge_hits: HashSet::new(),
@@ -1154,6 +1162,7 @@ impl CombatWorld {
         self.game_strikers.remove(&victim_id);
         self.drone_carriers.remove(&victim_id);
         self.game_barge_charges.remove(&victim_id);
+        self.game_barge_player_config.remove(&victim_id);
         // Bomb.ReleaseTargetReservation is part of every authored bomber
         // Kill, not only successful BombingRun command finalization.
         if let Some(weapon_id) =
@@ -3948,6 +3957,7 @@ impl CombatWorld {
         self.apply_pending_game_warps()?;
         self.apply_pending_game_fire_barges()?;
         self.apply_pending_player_scout_beacons()?;
+        self.apply_pending_player_barge_charges()?;
         self.advance_policy_capability_cooldowns(dt);
         self.apply_pending_policy_mining()?;
         self.apply_pending_policy_ship_specials(collision_matrix)?;
