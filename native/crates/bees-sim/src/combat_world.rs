@@ -768,6 +768,9 @@ pub struct CombatWorld {
     /// Non-policy gameplay Scouts retain charges/cooldown across HiveMind
     /// command replacement, rather than each Scouting command resetting it.
     game_scout_runtime: HashMap<i64, PolicyScoutRuntime>,
+    /// Player-initiated specials execute after the next fixed-step event
+    /// buffer reset. Do not spawn physical ships from an idle UI frame.
+    pending_player_scout_beacons: Vec<i64>,
     navigation_requests: NavigationRequests,
     game_ship_steering: HashMap<i64, GameShipSteering>,
     /// The Level-owned policy controller stores actual ongoing action
@@ -940,6 +943,7 @@ impl CombatWorld {
             beacon_parent_by_id: HashMap::new(),
             scout_beacon_specs: HashMap::new(),
             game_scout_runtime: HashMap::new(),
+            pending_player_scout_beacons: Vec::new(),
             navigation_requests: NavigationRequests::new(),
             game_ship_steering: HashMap::new(),
             policy_ship_runtime: BTreeMap::new(),
@@ -3943,6 +3947,7 @@ impl CombatWorld {
         self.begin_weapon_rank_tick();
         self.apply_pending_game_warps()?;
         self.apply_pending_game_fire_barges()?;
+        self.apply_pending_player_scout_beacons()?;
         self.advance_policy_capability_cooldowns(dt);
         self.apply_pending_policy_mining()?;
         self.apply_pending_policy_ship_specials(collision_matrix)?;

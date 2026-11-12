@@ -144,6 +144,30 @@ impl CombatWorld {
         Ok(true)
     }
 
+    /// Source SquadActionBox.Detonate has no BombingRun target requirement.
+    /// The player authority adapter validates the exact squad lifetime
+    /// before queuing; game specials resolve in the SAME fixed-step death
+    /// and explosion transaction as automatic BombingRun detonations.
+    pub fn queue_player_fire_barge_detonation(
+        &mut self, ship_id: i64,
+    ) -> Result<bool, CombatWorldError> {
+        if self.frozen_after_elimination { return Ok(false); }
+        let &index = self.ship_by_id.get(&ship_id)
+            .ok_or(CombatWorldError::UnknownShip)?;
+        if self.ships[index].ship_type != 10 ||
+            self.policy_ship_runtime.contains_key(&ship_id) ||
+            !self.fire_barge_bomb_powers.contains_key(&ship_id) {
+            return Err(CombatWorldError::InvalidPolicyFireBarge);
+        }
+        if self.ships[index].vitals.is_dead() ||
+            !self.physics.ships()[index].active ||
+            self.pending_game_fire_barges.iter().any(|&(id, _)| id == ship_id) {
+            return Ok(false);
+        }
+        self.pending_game_fire_barges.push((ship_id, None));
+        Ok(true)
+    }
+
     /// Consume the short gameplay request queue after combat events have
     /// been cleared, before physics, to preserve one reward/retirement pass.
     pub(super) fn apply_pending_game_fire_barges(

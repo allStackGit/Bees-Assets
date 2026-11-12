@@ -189,6 +189,41 @@ impl CombatWorld {
         Ok(true)
     }
 
+    /// Player DropBeacon is an input, not an immediate simulation event:
+    /// the regular fixed-step event pipeline must record its creation so
+    /// the squad/minion registry, reward ledger and group notifications
+    /// all observe the new ship exactly once.
+    pub fn queue_player_scout_beacon(
+        &mut self, scout_id: i64,
+    ) -> Result<bool, CombatWorldError> {
+        if self.frozen_after_elimination { return Ok(false); }
+        let &index = self.ship_by_id.get(&scout_id)
+            .ok_or(CombatWorldError::UnknownShip)?;
+        if self.ships[index].ship_type != SCOUT_TYPE ||
+            self.policy_ship_runtime.contains_key(&scout_id) {
+            return Err(CombatWorldError::InvalidPolicyScout);
+        }
+        if !self.game_scout_beacon_ready(scout_id) ||
+            self.pending_player_scout_beacons.contains(&scout_id) {
+            return Ok(false);
+        }
+        self.pending_player_scout_beacons.push(scout_id);
+        Ok(true)
+    }
+
+    pub(super) fn apply_pending_player_scout_beacons(
+        &mut self,
+    ) -> Result<(), CombatWorldError> {
+        for index in 0..self.pending_player_scout_beacons.len() {
+            let scout_id = self.pending_player_scout_beacons[index];
+            // Another Scout in the same tick can consume the side cap.
+            // Revalidate against current world state before the real spawn.
+            self.try_drop_game_scout_beacon(scout_id)?;
+        }
+        self.pending_player_scout_beacons.clear();
+        Ok(())
+    }
+
     /// Unity's CanDropBeacons can be disabled independently from a fully
     /// charged but temporarily blocked RL action mask.
     pub fn set_policy_scout_enabled(
