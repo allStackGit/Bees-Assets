@@ -2484,8 +2484,14 @@ the top observed medians, minima, maxima and sample counts from each selected
 run's latest chart segment. Valid `seconds` and `milliseconds` source values
 are both displayed as seconds; the original stored units are not changed.
 This includes recorded optimizer/rollout phase timings when an adapter
-supplies them. A duration unit alone cannot distinguish cumulative clocks
-from individual stage durations, so the panel does not add overlapping
+supplies them. Known cumulative elapsed-training and active-training clocks
+are excluded from the stage-timing ranking, but remain chartable and
+exportable. When a trusted adapter publishes `active_training_time` in
+seconds (as Courier checkpoints do), Compare offers a separate active-time
+horizontal axis. Active time may exclude pauses, and it is never inferred
+from the Hub heartbeat or interchanged with elapsed training time.
+A duration unit alone cannot distinguish other cumulative clocks from
+individual stage durations, so the panel does not add overlapping
 stages or infer a causal bottleneck.
 
 ## Courier Ants (Basic Training)
