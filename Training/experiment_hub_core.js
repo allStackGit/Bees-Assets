@@ -166,7 +166,9 @@ function boundedReport(value) {
                     g.gpu_busy_pct<0||g.gpu_busy_pct>100))||
             ['temperature_c','hotspot_temperature_c'].some(k=>
                 g[k]!=null&&(!Number.isFinite(g[k])||
-                    g[k]<0||g[k]>150)))||
+                    g[k]<0||g[k]>150))||
+            (g.power_w!=null&&(!Number.isFinite(g.power_w)||
+                g.power_w<0||g.power_w>1500)))||
         new Set(devices.map(g=>g.pci_address)).size!==devices.length||
         (gpuSource==='nvidia-smi-v1'&&
             new Set(devices.map(g=>g.cuda_uuid.toLowerCase())).size!==devices.length))
@@ -177,6 +179,7 @@ function boundedReport(value) {
         gpu_busy_pct:g.gpu_busy_pct??null,
         temperature_c:g.temperature_c??null,
         hotspot_temperature_c:g.hotspot_temperature_c??null,
+        power_w:g.power_w??null,
         ...(gpuSource==='nvidia-smi-v1'?{cuda_uuid:g.cuda_uuid}:{}),
     }));
     const localExecutor=value.local_executor===true;
@@ -1110,6 +1113,7 @@ class ExperimentHub {
                     gpu_busy_pct:actual.gpu_busy_pct,
                     temperature_c:actual.temperature_c,
                     hotspot_temperature_c:actual.hotspot_temperature_c,
+                    power_w:actual.power_w,
                     ...(actual.cuda_uuid?{cuda_uuid:actual.cuda_uuid}:{}),
                 }]:[];
             }):[];
@@ -3089,12 +3093,14 @@ class ExperimentHub {
                     if(!device)continue;
                     add('host_gpu_'+i+'_busy_pct',device.gpu_busy_pct,'scalar');
                     add('host_gpu_'+i+'_used_vram_mb',device.used_vram_mb,'mb');
+                    add('host_gpu_'+i+'_power_w',device.power_w,'watts');
                     add('host_gpu_'+i+'_temperature_c',device.temperature_c,'scalar');
                     add('host_gpu_'+i+'_hotspot_temperature_c',
                         device.hotspot_temperature_c,'scalar');
                     if(bindings.length===1) {
                         add('host_gpu_busy_pct',device.gpu_busy_pct,'scalar');
                         add('host_gpu_vram_mb',device.used_vram_mb,'mb');
+                        add('host_gpu_power_w',device.power_w,'watts');
                         add('host_gpu_temperature_c',device.temperature_c,'scalar');
                         add('host_gpu_hotspot_temperature_c',
                             device.hotspot_temperature_c,'scalar');
