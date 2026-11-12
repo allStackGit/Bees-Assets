@@ -1458,6 +1458,12 @@ fn run_battle(
             }
         }
         if let Some(trace) = &mut playback {
+            if let Err(error) = trace.load_round(rounds) {
+                failed_window = Some(format!(
+                    "reading native player trace at round {rounds}: {error}"
+                ));
+                break 'battle;
+            }
             while trace.checkpoints.front().is_some_and(|entry| entry.round == rounds) {
                 let entry = trace.checkpoints.pop_front()
                     .expect("checked next physical checkpoint");
