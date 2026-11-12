@@ -19,6 +19,7 @@ const POST_ACTIONS={
     '/api/hub/jobs':[201,'queueConfiguration'],
     '/api/hub/pipelines':[201,'queuePipeline'],
     '/api/hub/distributed/tinybrains':[201,'queueDistributedTinyBrains'],
+    '/api/hub/distributed/tinybrains/start-collectors':[200,'authorizeDistributedCollectors'],
     '/api/hub/candidates/rank':[200,'rankCandidates'],
     '/api/hub/candidates/schedule':[201,'queueCandidateSelection'],
     '/api/hub/candidates/cancel':[200,'cancelCandidateSelection'],
