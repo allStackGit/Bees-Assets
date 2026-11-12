@@ -67,7 +67,8 @@ function recordedTinyBrainsMetrics(row,updateWall) {
     }
     for(const name of ['collection_seconds','rollout_model_refresh_seconds',
         'rollout_engine_step_seconds','rollout_learner_inference_seconds',
-        'optimization_seconds',
+        'optimization_seconds','checkpoint_seconds',
+        'remote_collector_join_wait_seconds','collection_merge_seconds',
         'overlap_seconds','remote_policy_snapshot_seconds',
         'remote_opponent_snapshot_seconds',
         'ppo_profile_host_seconds','ppo_advantages_seconds',
