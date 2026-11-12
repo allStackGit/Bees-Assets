@@ -97,64 +97,82 @@ def source_placement_offset(ship_type, members, offset, label):
     return (offset[0] * scale[0], offset[1] * scale[1])
 
 
-def verify_entry_orders(members, ships, spawn, entry, bounds, label):
-    """Verify Unity's two-pass physical spawn and resulting entry orders.
+def verify_entry_orders(squad_members, ships, spawn, entry, bounds, label):
+    """Match the full source LevelConstructor two-pass placement and orders.
 
-    LevelConstructor.PositionSquads calls SetStartingPosition(spawn),
-    measures Squad.GetCenterPoint from live sprite extents, and calls
-    SetStartingPosition again at that center. Its first SetOffsets preserves
-    original offsets, so movement orders use the unadjusted formation.
+    A single SavedSquad may construct several additional CarrierSquads in
+    its own SpawnShipsAndSquads call. They share the entry move, but Unity
+    positions them left/right of the parent formation, not on top of it.
     """
     min_x, min_y, max_x, max_y = bounds
-    left, right = math.inf, -math.inf
-    bottom, top = math.inf, -math.inf
-    recorded = []
-    for eid in members:
-        ship = ships[eid]
-        if ship.get("mobile") is not True:
-            fail(f"{label} ship {eid} is not a mobile reinforcement")
-        offset = ship.get("offset_from_center")
-        target = ship.get("target_coordinates")
-        position = ship.get("position")
-        size = ship.get("size_pixels")
-        if not all(isinstance(value, dict) for value in (offset, target, position, size)):
-            fail(f"{label} ship {eid} is missing physical size, formation, position, or order")
-        offset_x = number(offset.get("x"), f"{label} ship {eid} offset.x")
-        offset_y = number(offset.get("y"), f"{label} ship {eid} offset.y")
-        position_x = number(position.get("x"), f"{label} ship {eid} position.x")
-        position_y = number(position.get("y"), f"{label} ship {eid} position.y")
-        width_pixels = size.get("x")
-        height_pixels = size.get("y")
-        if (type(width_pixels) is not int or width_pixels <= 0 or
-            type(height_pixels) is not int or height_pixels <= 0):
-            fail(f"{label} ship {eid} needs positive source sprite dimensions")
-        placement = source_placement_offset(
-            ship.get("ship_type"), len(members), (offset_x, offset_y), f"{label} ship {eid}"
-        )
-        first_x, first_y = spawn[0] + placement[0], spawn[1] + placement[1]
-        # Unity's ConfigData.PixelsPerUnit is 8; Ship.GetSize is an
-        # unrotated sprite extent, not the physics collider's bounds.
-        half_width, half_height = width_pixels / 16.0, height_pixels / 16.0
-        left, right = min(left, first_x - half_width), max(right, first_x + half_width)
-        bottom, top = min(bottom, first_y - half_height), max(top, first_y + half_height)
-        recorded.append((position_x, position_y, placement))
-        target_x = number(target.get("x"), f"{label} ship {eid} target.x")
-        target_y = number(target.get("y"), f"{label} ship {eid} target.y")
-        expected_x = min(max(entry[0] + offset_x, min_x), max_x)
-        expected_y = min(max(entry[1] + offset_y, min_y), max_y)
-        if not (math.isclose(target_x, expected_x, rel_tol=1e-6, abs_tol=0.005) and
-                math.isclose(target_y, expected_y, rel_tol=1e-6, abs_tol=0.005)):
-            return False
-    first_center = ((left + right) * 0.5, (bottom + top) * 0.5)
-    for position_x, position_y, placement in recorded:
-        # A later moved formation can keep plausible source entry orders.
-        # Match the physical source spawn too, not merely an off-map edge.
-        expected = (first_center[0] + placement[0],
-                    first_center[1] + placement[1])
-        if not all(math.isclose(a, b, rel_tol=1e-6, abs_tol=0.005)
-                   for a, b in zip((position_x, position_y), expected)):
-            return False
+    groups = []
+    for members in squad_members:
+        left, right = math.inf, -math.inf
+        bottom, top = math.inf, -math.inf
+        recorded = []
+        for eid in members:
+            ship = ships[eid]
+            if ship.get("mobile") is not True:
+                fail(f"{label} ship {eid} is not a mobile reinforcement")
+            offset = ship.get("offset_from_center")
+            target = ship.get("target_coordinates")
+            position = ship.get("position")
+            size = ship.get("size_pixels")
+            if not all(isinstance(value, dict) for value in (offset, target, position, size)):
+                fail(f"{label} ship {eid} is missing physical size, formation, position, or order")
+            offset_x = number(offset.get("x"), f"{label} ship {eid} offset.x")
+            offset_y = number(offset.get("y"), f"{label} ship {eid} offset.y")
+            position_x = number(position.get("x"), f"{label} ship {eid} position.x")
+            position_y = number(position.get("y"), f"{label} ship {eid} position.y")
+            width_pixels, height_pixels = size.get("x"), size.get("y")
+            if (type(width_pixels) is not int or width_pixels <= 0 or
+                type(height_pixels) is not int or height_pixels <= 0):
+                fail(f"{label} ship {eid} needs positive source sprite dimensions")
+            placement = source_placement_offset(
+                ship.get("ship_type"), len(members), (offset_x, offset_y), f"{label} ship {eid}"
+            )
+            first_x, first_y = spawn[0] + placement[0], spawn[1] + placement[1]
+            # Unity Ship.GetSize uses ConfigData.PixelsPerUnit = 8.
+            half_width, half_height = width_pixels / 16.0, height_pixels / 16.0
+            left, right = min(left, first_x - half_width), max(right, first_x + half_width)
+            bottom, top = min(bottom, first_y - half_height), max(top, first_y + half_height)
+            recorded.append((position_x, position_y, placement))
+            target_x = number(target.get("x"), f"{label} ship {eid} target.x")
+            target_y = number(target.get("y"), f"{label} ship {eid} target.y")
+            expected_x = min(max(entry[0] + offset_x, min_x), max_x)
+            expected_y = min(max(entry[1] + offset_y, min_y), max_y)
+            if not (math.isclose(target_x, expected_x, rel_tol=1e-6, abs_tol=0.005) and
+                    math.isclose(target_y, expected_y, rel_tol=1e-6, abs_tol=0.005)):
+                return False
+        center = ((left + right) * 0.5, (bottom + top) * 0.5)
+        groups.append((center, right - left, recorded))
+
+    first_y = None
+    left_span = right_span = 0.0
+    previous_left_width = previous_right_width = 0.0
+    for ordinal, (initial_center, width, recorded) in enumerate(groups):
+        x, y = initial_center
+        if ordinal == 0:
+            previous_left_width = previous_right_width = width
+        else:
+            y = first_y
+            if ordinal % 2 == 0:
+                right_span += width * 0.5 + 10.0 + previous_right_width * 0.5
+                x += right_span
+                previous_right_width = width
+            else:
+                left_span += width * 0.5 + 10.0 + previous_left_width * 0.5
+                x -= left_span
+                previous_left_width = width
+        for position_x, position_y, placement in recorded:
+            expected = (x + placement[0], y + placement[1])
+            if not all(math.isclose(a, b, rel_tol=1e-6, abs_tol=0.005)
+                       for a, b in zip((position_x, position_y), expected)):
+                return False
+        if ordinal == 0:
+            first_y = y + initial_center[1] - spawn[1]
     return True
+
 
 def _source_records(scene, label):
     if not all(isinstance(scene.get(key), list)
@@ -332,7 +350,7 @@ def expand(run, scene, manifest, read_capture=None):
                          dy + lane_offset if horizontal else dy]
             if capture is not None:
                 matches = [(spawn, entry) for spawn, entry in lane_candidates(bounds, direction)
-                           if verify_entry_orders(members, captured_ships, spawn, entry, bounds, label)]
+                           if verify_entry_orders([members], captured_ships, spawn, entry, bounds, label)]
                 if not matches:
                     fail(f"{label} source movement orders match no authored entry lane")
                 spawn, entry = matches[0]
