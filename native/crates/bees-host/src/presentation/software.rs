@@ -496,6 +496,7 @@ impl NativeSoftwareRenderer {
         if self.show_minimap {
             self.draw_minimap(view, bounds);
         }
+        self.draw_squad_shortcuts(view);
         counts
     }
 
@@ -564,6 +565,47 @@ impl NativeSoftwareRenderer {
             self.line(x1, y0, x1, y1, color);
             self.line(x1, y1, x0, y1, color);
             self.line(x0, y1, x0, y0, color);
+        }
+    }
+
+    /// A lightweight source-squad tab strip. Shortcut numbers come from the
+    /// actual schema-29 Unity export, not an index assigned by the renderer.
+    /// It is omitted for legacy scenes lacking authoritative squad numbers.
+    /// Only user-controlled ships are listed; enemy roster data stays private.
+    fn draw_squad_shortcuts(&mut self, view: &NativeRenderWorldView<'_>) {
+        if self.width < 560 || self.height < 360 { return; }
+        let mut row = 0usize;
+        for &owner in view.roster.source_order() {
+            let Some(squad) = view.roster.get(owner) else { continue };
+            let Some(number) = squad.source_hotkey_number else { continue };
+            if number > 10 || !view.player_authority.player_permissions(owner)
+                .is_some_and(|permission| permission.user_controlled) {
+                continue;
+            }
+            let Some(&ship_id) = squad.members.first() else { continue };
+            let Some(ship) = view.combat.ship(ship_id) else { continue };
+            let selected = if self.selection.squads().len() > 8 {
+                self.selected_squad_lookup.contains(&owner)
+            } else {
+                self.selection.squads().contains(&owner)
+            };
+            let key = if number == 10 { 0 } else { number };
+            let label = format!("{key}: type {} / {} ships",
+                ship.ship_type, squad.members.len());
+            let x = 14usize;
+            let y = 14 + row * (text::HEIGHT + 6);
+            if y + text::HEIGHT + 5 >= self.height / 2 { break; }
+            let width = (text::width(&label, 1) + 16).min(228usize);
+            for scanline in y.saturating_sub(2)..(y + text::HEIGHT + 4) {
+                let start = scanline * self.width + x.saturating_sub(5);
+                self.pixels[start..start + width].fill(
+                    if selected { 0x35465d } else { 0x142338 });
+            }
+            text::draw_at(&mut self.pixels, self.width, x, y,
+                &label, 1, if selected { [255, 241, 194] }
+                    else { [182, 211, 239] });
+            row += 1;
+            if row == 10 { break; }
         }
     }
 

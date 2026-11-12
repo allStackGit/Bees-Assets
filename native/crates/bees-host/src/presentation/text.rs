@@ -39,8 +39,18 @@ pub(super) fn blend(destination: u32, color: [u8; 3], opacity: u32) -> u32 {
 pub(super) fn draw_centered(
     pixels: &mut [u32], stride: usize, top: usize, text: &str, scale: usize, color: [u8; 3],
 ) {
+    draw_at(pixels, stride, stride.saturating_sub(width(text, scale)) / 2,
+        top, text, scale, color);
+}
+
+/// Draw at a particular screen coordinate. The clipping and font path are
+/// identical to the existing centered text renderer; no second glyph cache.
+pub(super) fn draw_at(
+    pixels: &mut [u32], stride: usize, x: usize, top: usize,
+    text: &str, scale: usize, color: [u8; 3],
+) {
     let height = pixels.len() / stride;
-    let mut cursor = stride.saturating_sub(width(text, scale)) / 2;
+    let mut cursor = x;
     for character in text.chars() {
         let glyph = glyph(character);
         let left = cursor as isize - (LEFT_PADDING * scale) as isize;
