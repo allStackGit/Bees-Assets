@@ -141,9 +141,15 @@ function recordedTinyBrainsMetrics(row,updateWall) {
             }
         }
     }
-    if(scored)add('training_mean_score',scoreSum/scored,'scalar');
+    if(scored) {
+        add('training_mean_score',scoreSum/scored,'scalar');
+        add('training_scored_matches',scored,'count');
+    }
     // A solo match has a score but no opponent-relative margin.
-    if(margins)add('training_mean_score_margin',marginSum/margins,'scalar');
+    if(margins) {
+        add('training_mean_score_margin',marginSum/margins,'scalar');
+        add('training_opponent_margin_matches',margins,'count');
+    }
     if(turns)add('training_mean_match_turns',turnsSum/turns,'scalar');
     if(foodGames) {
         add('food_gathered_exact',exactFood,'count');
