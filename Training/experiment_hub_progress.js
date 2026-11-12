@@ -269,11 +269,19 @@ class BottleneckEvidence {
         // Optional derived measures must not crowd out project-owned source
         // metrics or violate the existing bounded wire contract.
         const available=Math.max(0,MAX_SOURCE_METRICS-Object.keys(metrics).length);
-        const additions=Object.entries(derived).slice(0,available);
+        // Confirmed, sustained stage limitations matter more than optional
+        // continuous ratios when nine profiled collectors approach the wire
+        // limit. Never evict a project-owned source metric for a diagnosis.
+        const priority=name=>
+            name.startsWith('pipeline_')&&name.endsWith('_dominant')?0:
+            name.endsWith('_pressure')?1:
+            name.endsWith('_dominant')?2:
+            name==='pipeline_timing_sample_count'?3:4;
+        const additions=Object.entries(derived).sort(
+            ([a],[b])=>priority(a)-priority(b)).slice(0,available);
         // A heavily instrumented job can approach the 32-KiB report limit.
-        // Retain the earliest, most important completed-stage evidence
-        // instead of discarding *all* derived metrics when the full set
-        // would exceed the unchanged wire envelope.
+        // Retain confirmed bottlenecks first and then as many of the
+        // remaining measurements as fit, without widening the envelope.
         while(additions.length) {
             const enriched={...progress,metrics:{
                 ...metrics,...Object.fromEntries(additions)}};
