@@ -95,7 +95,10 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
     }
     const project=fs.realpathSync(projectRoot);
     const artifacts=fs.realpathSync(artifactRoot);
-    const executable=fs.realpathSync(pythonPath);
+    // Python locates pyvenv.cfg from the invoked executable path. Resolving
+    // bin/python to /usr/bin/python discards the approved venv site-packages.
+    // Keep the trusted configured path; statSync below still follows and validates it.
+    const executable=pythonPath;
     const script=path.join(project,'courier.py');
     if(!fs.statSync(artifacts).isDirectory()||!fs.statSync(executable).isFile()||
         !fs.statSync(script).isFile()||inside(project,artifacts)||inside(artifacts,project))
