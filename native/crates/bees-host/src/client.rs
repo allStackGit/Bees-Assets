@@ -169,8 +169,9 @@ impl NativeClient {
     pub fn set_source_zoom_limits(&mut self, limits: Vec<Option<(f32, f32)>>) {
         self.source_zoom_by_world = limits;
         let (width, height) = self.renderer.size();
+        let authored_zoom = self.active_source_zoom();
         if self.renderer.camera.constrain_source_zoom(
-            self.active_source_zoom(), height,
+            authored_zoom, height,
         ) {
             self.camera_zoom_clamps += 1;
         }
@@ -379,6 +380,7 @@ impl NativeClient {
             return Ok(NativeClientAction::WorldChanged);
         }
         let (width, height) = self.renderer.size();
+        let authored_zoom = self.active_source_zoom();
         if self.window.is_key_pressed(Key::F, KeyRepeat::No) {
             self.renderer.camera = NativeCamera::fit(self.bounds, width, height);
         }
@@ -435,10 +437,10 @@ impl NativeClient {
                         self.renderer.camera.center = map_point;
                         self.minimap_camera_moves += 1;
                         self.renderer.camera.zoom_at(factor, width as f32 * 0.5,
-                            height as f32 * 0.5, width, height, self.active_source_zoom());
+                            height as f32 * 0.5, width, height, authored_zoom);
                     } else {
                         self.renderer.camera.zoom_at(factor, x, y, width, height,
-                            self.active_source_zoom());
+                            authored_zoom);
                     }
                 }
             }
@@ -1014,7 +1016,7 @@ impl NativeClient {
         // drags and window resizing. Never let a game-control input move
         // the graphical camera beyond the authored map.
         if self.renderer.camera.constrain_source_zoom(
-            self.active_source_zoom(), height,
+            authored_zoom, height,
         ) {
             self.camera_zoom_clamps += 1;
         }
