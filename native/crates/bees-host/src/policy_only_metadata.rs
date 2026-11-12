@@ -773,6 +773,9 @@ impl NativePlayerAuthority for NativePolicyOnlyMetadata {
     fn player_permissions(&self, owner: SquadLifetime) -> Option<NativePlayerPermissions> {
         self.player.squads.get(&owner).copied()
     }
+    fn player_carrier_squad(&self, owner: SquadLifetime) -> Option<bool> {
+        self.player.commands.get(&owner).and_then(|source| source.is_carrier_squad)
+    }
     fn player_shooting_strategy(&self, owner: SquadLifetime)
         -> Option<bees_hivemind::protocol::StrategyIdentity>
     {

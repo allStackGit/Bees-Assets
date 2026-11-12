@@ -32,6 +32,11 @@ pub trait NativePlayerAuthority {
     fn weapon_obstacles_enabled(&self) -> Option<bool> { None }
     fn player_permissions(&self, owner: SquadLifetime) -> Option<NativePlayerPermissions>;
 
+    /// Captured source Squad.IsCarrierSquad, distinct from merely having
+    /// Drone/Striker member types. No UI or multiplayer adapter may invent
+    /// a parent relationship from a ship class alone.
+    fn player_carrier_squad(&self, _owner: SquadLifetime) -> Option<bool> { None }
+
     /// Use exactly the same source-side ownership rule for gameplay input
     /// preflight and the native player's tactical presentation. This is
     /// local-view authority, not remote sender authentication: network

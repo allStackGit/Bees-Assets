@@ -1080,16 +1080,19 @@ impl NativeSoftwareRenderer {
             self.selection.squads().is_empty() { return 0; }
         let mut scouts = 0usize;
         let mut scouts_ready = 0usize;
+        // Striker.LoadedIndicator is a live read-only status, not an
+        // executable special: show it for selected local Carrier children.
+        let mut strikers = 0usize;
+        let mut strikers_ready = 0usize;
         let mut barges = 0usize;
         let mut barges_ready = 0usize;
         let mut charge_barges = 0usize;
         let mut charges_ready = 0usize;
         for &owner in self.selection.squads() {
-            if !view.player_authority.player_permissions(owner)
-                .is_some_and(|permission| permission.user_controlled &&
-                    permission.can_accept_input && !permission.locked_on) {
-                continue;
-            }
+            if !view.is_local_player_squad(owner) { continue; }
+            let can_issue = view.player_authority.player_permissions(owner)
+                .is_some_and(|permission|
+                    permission.can_accept_input && !permission.locked_on);
             let Some(squad) = view.roster.get(owner) else { continue };
             for &ship_id in &squad.members {
                 let Some(ship) = view.combat.ship(ship_id) else { continue };
@@ -1098,18 +1101,25 @@ impl NativeSoftwareRenderer {
                     body.motion.is_policy_controlled ||
                     view.combat.policy_frame(ship_id).is_some() { continue; }
                 match ship.ship_type {
-                    18 if view.combat.game_scout_configured(ship_id) => {
+                    19 => {
+                        if let Some(ready) = view.combat.game_striker_bomb_ready(ship_id)
+                            .or_else(|| view.combat.policy_striker_bomb_ready(ship_id)) {
+                            strikers += 1;
+                            strikers_ready += usize::from(ready);
+                        }
+                    }
+                    18 if can_issue && view.combat.game_scout_configured(ship_id) => {
                         scouts += 1;
                         scouts_ready += usize::from(
                             view.combat.player_scout_beacon_ready(ship_id));
                     }
-                    10 if view.combat.configured_fire_barge_bomb_power(ship_id)
+                    10 if can_issue && view.combat.configured_fire_barge_bomb_power(ship_id)
                         .is_some() => {
                         barges += 1;
                         barges_ready += usize::from(
                             view.combat.player_fire_barge_detonation_ready(ship_id));
                     }
-                    0 => {
+                    0 if can_issue => {
                         // Legacy snapshots intentionally lack authenticated
                         // CanOverrideBounds and player Charge configuration.
                         // Do not advertise an unsupported ability.
@@ -1123,7 +1133,8 @@ impl NativeSoftwareRenderer {
                 }
             }
         }
-        if scouts == 0 && barges == 0 && charge_barges == 0 { return 0; }
+        if scouts == 0 && barges == 0 && charge_barges == 0 &&
+            strikers == 0 { return 0; }
         let x = self.width - 268;
         let y = self.height - 84;
         for row in y.saturating_sub(5)..(y + 78).min(self.height) {
@@ -1144,7 +1155,14 @@ impl NativeSoftwareRenderer {
             y + (text::HEIGHT + 9) * 2, &charge, 1,
             if charges_ready > 0 { [244, 211, 142] }
             else { [136, 151, 172] });
-        scouts_ready + barges_ready + charges_ready
+        if strikers > 0 {
+            let loaded = format!("Strikers loaded {strikers_ready}/{strikers}");
+            text::draw_at(&mut self.pixels, self.width, x,
+                y + (text::HEIGHT + 9) * 3, &loaded, 1,
+                if strikers_ready > 0 { [178, 230, 188] }
+                else { [136, 151, 172] });
+        }
+        scouts_ready + barges_ready + charges_ready + strikers_ready
     }
 
     fn draw_tactical_bar(&mut self) -> usize {
@@ -1221,9 +1239,18 @@ impl NativeSoftwareRenderer {
                 .is_some_and(|permission| permission.user_controlled) {
                 continue;
             }
-            let label = squad.source_hotkey_number
+            let mut label = squad.source_hotkey_number
                 .map_or_else(|| "Squad".to_owned(),
                     |number| format!("Squad {number}"));
+            if let Some(parent) = view.carrier_squad_parent(owner) {
+                match parent {
+                    Some(id) if view.combat.ship(id).is_some_and(|ship|
+                        !ship.vitals.is_dead()) =>
+                        label.push_str(&format!(" C:{id}")),
+                    Some(_) => label.push_str(" C:dead"),
+                    None => label.push_str(" C:orphan"),
+                }
+            }
             let command = view.commands.current_kind(owner)
                 .map_or_else(|| "Idle".to_owned(), |kind| format!("{kind:?}"));
             let status = if let Some(enemy) = view.commands.selected_enemy(owner)

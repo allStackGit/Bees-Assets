@@ -70,6 +70,34 @@ impl<'a> NativeRenderWorldView<'a> {
         self.player_authority.player_owns_squad(owner, squad.side)
     }
 
+    /// Read-only current CarrierShip.Carrier for a real source CarrierSquad.
+    /// Parent reassignment happens in CombatWorld at Carrier death, so this
+    /// never stores a stale presentation parent. Some(None) is an orphan;
+    /// None is either a non-Carrier squad or missing/conflicting source data.
+    pub fn carrier_squad_parent(&self, owner: SquadLifetime) -> Option<Option<i64>> {
+        if self.player_authority.player_carrier_squad(owner) != Some(true) {
+            return None;
+        }
+        let squad = self.roster.get(owner)?;
+        let mut shared = None;
+        for &id in &squad.members {
+            let ship = self.combat.ship(id)?;
+            let parent = match ship.ship_type {
+                8 => self.combat.drone_carrier(id)?,
+                19 => self.combat.game_striker_carrier(id)
+                    .map(|carrier| carrier.carrier_id)
+                    .or_else(|| self.combat.policy_striker_carrier(id))?,
+                _ => return None,
+            };
+            if let Some(existing) = shared {
+                if existing != parent { return None; }
+            } else {
+                shared = Some(parent);
+            }
+        }
+        shared
+    }
+
     /// Iterate directly over the canonical live bodies. Projectiles,
     /// asteroids and ships all retain their authored collider/gameplay
     /// types; no display-only positional cache or fake interpolator.
