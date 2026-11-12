@@ -12,6 +12,7 @@
 //! Exact Unity physics step/callback ordering and the current Physics2D
 //! collision-layer matrix remain to be established before parity is claimed.
 
+use std::collections::{hash_map::Entry, HashMap};
 use std::sync::Arc;
 
 use crate::collision::{
@@ -959,8 +960,13 @@ struct SpatialGrid {
     cell_size: f32,
     width: usize,
     height: usize,
-    cells: Vec<Vec<usize>>,
-    touched: Vec<usize>,
+    /// Cell coordinates mapped into a reusable dense bucket pool. Only
+    /// occupied cells require storage, regardless of the world's area.
+    /// Hash lookups never dictate query/event order: candidates still visit
+    /// cells in original row-major coordinate order.
+    cell_to_bucket: HashMap<usize, usize>,
+    buckets: Vec<Vec<usize>>,
+    active_buckets: usize,
     /// Off-grid or wide bodies still participate in contact queries, but
     /// their retained exact bounds reject unrelated far-away queries before
     /// the expensive candidate/narrowphase stages.
@@ -986,12 +992,12 @@ impl SpatialGrid {
         }
         Ok(Self {
             area, cell_size, width, height,
-            // A world with no in-grid colliders never needs thousands of
-            // empty cell vectors. The first in-grid body in rebuild_with
-            // creates the dense cell table; overflow-only worlds keep it
-            // unallocated and remain fully queryable.
-            cells: Vec::new(),
-            touched: Vec::new(), overflow: Vec::new(),
+            // Do not allocate a width*height vector table, even for the
+            // first in-grid body: many parallel training worlds are sparse.
+            // The pool retains only peak *occupied* bucket storage.
+            cell_to_bucket: HashMap::new(),
+            buckets: Vec::new(), active_buckets: 0,
+            overflow: Vec::new(),
             seen: Vec::new(), generation: 0,
         })
     }
@@ -1011,10 +1017,11 @@ impl SpatialGrid {
     }
 
     fn rebuild_with(&mut self, item_count: usize, mut item_bounds: impl FnMut(usize) -> Option<Aabb>) {
-        for &index in &self.touched {
-            self.cells[index].clear();
+        for bucket in self.buckets.iter_mut().take(self.active_buckets) {
+            bucket.clear();
         }
-        self.touched.clear();
+        self.cell_to_bucket.clear();
+        self.active_buckets = 0;
         self.overflow.clear();
         self.seen.resize(item_count, 0);
         for ship_index in 0..item_count {
@@ -1039,16 +1046,23 @@ impl SpatialGrid {
                     self.overflow.push((ship_index, bounds));
                     continue;
                 }
-                if self.cells.is_empty() {
-                    self.cells.resize_with(self.width * self.height, Vec::new);
-                }
+                // The first occupied cell obtains one reusable bucket.
                 for y in min_y..=max_y {
                     for x in min_x..=max_x {
                         let index = y * self.width + x;
-                        if self.cells[index].is_empty() {
-                            self.touched.push(index);
-                        }
-                        self.cells[index].push(ship_index);
+                        let bucket = match self.cell_to_bucket.entry(index) {
+                            Entry::Occupied(entry) => *entry.get(),
+                            Entry::Vacant(entry) => {
+                                let bucket = self.active_buckets;
+                                self.active_buckets += 1;
+                                if bucket == self.buckets.len() {
+                                    self.buckets.push(Vec::new());
+                                }
+                                entry.insert(bucket);
+                                bucket
+                            }
+                        };
+                        self.buckets[bucket].push(ship_index);
                     }
                 }
             }
@@ -1056,7 +1070,7 @@ impl SpatialGrid {
     }
 
     fn is_empty(&self) -> bool {
-        self.touched.is_empty() && self.overflow.is_empty()
+        self.active_buckets == 0 && self.overflow.is_empty()
     }
 
     fn candidates(&mut self, bounds: Aabb, output: &mut Vec<usize>) {
@@ -1072,17 +1086,18 @@ impl SpatialGrid {
             self.seen[ship_index] = self.generation;
             output.push(ship_index);
         }
-        // Overflow-only worlds intentionally have no dense cell table.
-        // Their exact-AABB candidates were already collected above.
-        if !self.cells.is_empty() {
-            if let Some((min_x, max_x, min_y, max_y)) = self.range(bounds) {
-                for y in min_y..=max_y {
-                    for x in min_x..=max_x {
-                        for &ship_index in &self.cells[y * self.width + x] {
-                            if self.seen[ship_index] != self.generation {
-                                self.seen[ship_index] = self.generation;
-                                output.push(ship_index);
-                            }
+        // Iterate coordinates, not HashMap entries: this preserves the
+        // exact source-order broadphase traversal (row then column) and
+        // deterministic downstream contact/event ordering.
+        if let Some((min_x, max_x, min_y, max_y)) = self.range(bounds) {
+            for y in min_y..=max_y {
+                for x in min_x..=max_x {
+                    let Some(&bucket) = self.cell_to_bucket.get(&(y * self.width + x))
+                        else { continue };
+                    for &ship_index in &self.buckets[bucket] {
+                        if self.seen[ship_index] != self.generation {
+                            self.seen[ship_index] = self.generation;
+                            output.push(ship_index);
                         }
                     }
                 }
