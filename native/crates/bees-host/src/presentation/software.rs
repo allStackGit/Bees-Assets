@@ -935,7 +935,12 @@ impl NativeSoftwareRenderer {
                 continue;
             }
             markers += 1;
-            if !controlled { enemies += 1; }
+            // Non-commandable same-side escorts remain friendly; only
+            // opposite-side units count as tactical enemy sightings.
+            if view.player_authority.player_viewer_side()
+                .is_some_and(|side| ship.side != side) {
+                enemies += 1;
+            }
             let selected = controlled && owner.is_some_and(|owner|
                 if self.selection.squads().len() > 8 {
                     self.selected_squad_lookup.contains(&owner)
