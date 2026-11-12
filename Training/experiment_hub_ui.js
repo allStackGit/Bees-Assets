@@ -2296,6 +2296,8 @@ document.addEventListener('DOMContentLoaded', () => {
         'ppo_minibatches','ppo_board_pixel_samples',
         'ppo_max_board_cells','ppo_unique_board_shapes',
         'evaluation_seconds','collector_count',
+        'collector_auto_balance_adjustments',
+        'collector_balance_changed_for_next_update',
         // The TinyBrains learner contributes slot 0; up to eight remote
         // workers contribute slots 1–8. Let the operator select every slot.
         ...Array.from({length:9},(_,i)=>[
