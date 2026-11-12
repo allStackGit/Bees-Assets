@@ -11,6 +11,7 @@ use bees_sim::simulation::WorldId;
 
 mod software;
 mod selection;
+mod minimap;
 mod text;
 #[cfg(feature = "client")]
 pub(crate) mod campaign_dialogue;

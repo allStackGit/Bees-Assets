@@ -66,6 +66,8 @@ pub struct NativeClient {
     dialogue_visible: bool,
     held_fire_target: Option<Vec2>,
     selection_drag: Option<(Vec2, Vec2)>,
+    /// UI-only minimap drag. Never emits a gameplay/world input.
+    minimap_dragging: bool,
     support_mode: Option<NativeTargetMode>,
     pub rendered_frames: u64,
     /// Total software framebuffer pixels actually drawn across changing sizes.
@@ -101,7 +103,8 @@ impl NativeClient {
             dialogue_line: 0,
             dialogue_visible: false,
             held_fire_target: None,
-            selection_drag: None, support_mode: None,
+            selection_drag: None, minimap_dragging: false,
+            support_mode: None,
             rendered_frames: 0, rendered_pixels: 0, render_wall_seconds: 0.0,
             ui_wall_seconds: 0.0, window_update_wall_seconds: 0.0,
             culled_ship_draws: 0, culled_obstacle_draws: 0,
@@ -155,6 +158,7 @@ impl NativeClient {
             // without trying to submit a zero-sized bitmap.
             self.window.update();
             self.right_press = None;
+            self.minimap_dragging = false;
             self.previous_frame = Instant::now();
             return Ok(NativeClientAction::Wait);
         }
@@ -162,6 +166,7 @@ impl NativeClient {
             // A drag's original screen coordinates no longer describe
             // the same selection box after a window resize.
             self.selection_drag = None;
+            self.minimap_dragging = false;
             self.right_press = None;
             self.last_left_press = None;
             self.double_left_press = false;
@@ -174,6 +179,7 @@ impl NativeClient {
         if self.selection_owner != Some(owner) {
             self.renderer.selected_ship = None;
             self.selection_drag = None;
+            self.minimap_dragging = false;
             self.right_press = None;
             self.support_mode = None;
             self.last_left_press = None;
@@ -212,6 +218,10 @@ impl NativeClient {
         }
         if self.window.is_key_pressed(Key::B, KeyRepeat::No) {
             self.renderer.show_weapon_ranges = !self.renderer.show_weapon_ranges;
+        }
+        if self.window.is_key_pressed(Key::I, KeyRepeat::No) {
+            self.renderer.show_minimap = !self.renderer.show_minimap;
+            if !self.renderer.show_minimap { self.minimap_dragging = false; }
         }
         let single_step = self.paused && self.window.is_key_pressed(Key::N, KeyRepeat::No);
         if self.window.is_key_pressed(Key::Tab, KeyRepeat::No) && world_count > 1 && self.held_fire_target.is_none() {
@@ -410,7 +420,28 @@ impl NativeClient {
             }
         }
         let left_down = self.window.get_mouse_down(MouseButton::Left);
-        if !cancel_support && left_down && !self.left_was_down {
+        if !pointer_active { self.minimap_dragging = false; }
+        if pointer_active && left_down && !self.left_was_down &&
+            self.support_mode.is_none() &&
+            self.held_fire_target.is_none() &&
+            mouse.is_some_and(|(x, y)|
+                self.renderer.minimap_world_at(self.bounds, x, y).is_some())
+        {
+            self.minimap_dragging = true;
+            self.selection_drag = None;
+            self.renderer.selection_box = None;
+            self.last_left_press = None;
+            self.double_left_press = false;
+        }
+        if self.minimap_dragging && left_down {
+            if let Some(center) = mouse.and_then(|(x, y)|
+                self.renderer.minimap_world_at(self.bounds, x, y))
+            {
+                self.renderer.camera.center = center;
+            }
+        }
+        if !cancel_support && !self.minimap_dragging &&
+            left_down && !self.left_was_down {
             // Unity treats two presses within 0.25 real seconds as a
             // double-click. The second release must also be prompt.
             self.double_left_press = self.support_mode.is_none() &&
@@ -420,7 +451,7 @@ impl NativeClient {
             self.selection_drag = mouse.map(|(x, y)| (
                 self.renderer.camera.screen_to_world(x, y, width, height), Vec2::new(x, y)));
         }
-        if !cancel_support {
+        if !cancel_support && !self.minimap_dragging {
             if let (Some((start, start_pixel)), Some((x, y))) = (self.selection_drag, mouse) {
                 let end = self.renderer.camera.screen_to_world(x, y, width, height);
                 let dragging = (Vec2::new(x, y) - start_pixel).length_squared() > 16.0;
@@ -476,6 +507,7 @@ impl NativeClient {
             }
         }
         if !left_down {
+            self.minimap_dragging = false;
             self.selection_drag = None;
             self.renderer.selection_box = None;
             self.double_left_press = false;
@@ -553,7 +585,7 @@ impl NativeClient {
                 view.world_id.0, view.tick, status, selected,
                 self.result_controls.map_or("Space pause, N step, ", NativeResultControls::hint))
         } else { format!(
-            "Bees native | World {} | Episode {} | Tick {} | {} ships, {} shots | {} squads selected | {}{} | {} | range/obstruction {} | Left select/drag, double-click type, Ctrl add, right move/attack | C stop chase, V cease fire, A attack on sight, G guard, P patrol, M mine, H heal, R retreat, hold J manual fire, T point fire, X stop, B ranges, Backspace cancel | Space pause, N step, Tab world, PgUp/PgDn squads, arrows pan, wheel zoom, F fit, Esc exit",
+            "Bees native | World {} | Episode {} | Tick {} | {} ships, {} shots | {} squads selected | {}{} | {} | range/obstruction {} | Left select/drag, double-click type, Ctrl add, right move/attack | C stop chase, V cease fire, A attack on sight, G guard, P patrol, M mine, H heal, R retreat, hold J manual fire, T point fire, X stop, B ranges, Backspace cancel | Space pause, N step, Tab world, PgUp/PgDn squads, arrows pan, wheel zoom, F fit, I map, Esc exit",
             view.world_id.0, view.episode_revision, view.tick, counts.ships, counts.projectiles,
             self.renderer.selection.squads().len(),
             if self.paused { "PAUSED" } else { "RUNNING" }, selected, self.input_feedback,

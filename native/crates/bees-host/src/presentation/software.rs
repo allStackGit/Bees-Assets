@@ -9,6 +9,7 @@ use bees_sim::geometry::Vec2;
 use bees_sim::physics::ShipShape;
 use bees_sim::simulation::{RandomStream, WorldId};
 use super::{NativeRenderWorldView, NativeSquadSelection, battle_outcome_label, text};
+use super::minimap::MiniMapLayout;
 
 #[derive(Clone, Copy, Debug)]
 pub struct NativeCamera {
@@ -75,6 +76,8 @@ pub struct NativeSoftwareRenderer {
     pub selection_box: Option<Aabb>,
     /// Optional inspection only. Disabled means no range or linecast work.
     pub show_weapon_ranges: bool,
+    /// Presentation-only tactical overview, never used by headless worlds.
+    pub show_minimap: bool,
     debris_frame: Option<(WorldId, u64, u64)>,
     obstacle_debris: Vec<ObstacleDebris>,
 }
@@ -144,6 +147,7 @@ impl NativeSoftwareRenderer {
             selection: NativeSquadSelection::default(),
             selected_squad_lookup: HashSet::new(),
             selection_box: None, show_weapon_ranges: false,
+            show_minimap: true,
             debris_frame: None, obstacle_debris: Vec::new() })
     }
 
@@ -163,6 +167,13 @@ impl NativeSoftwareRenderer {
         self.height = height;
         self.selection_box = None;
         Ok(true)
+    }
+
+    /// The same coordinate frame used by drawing and click/drag navigation.
+    /// Returns None when the overview is hidden or the window is too small.
+    pub fn minimap_world_at(&self, bounds: Aabb, x: f32, y: f32) -> Option<Vec2> {
+        self.show_minimap.then(|| MiniMapLayout::new(self.width, self.height, bounds))
+            .flatten()?.world_at(x, y)
     }
 
     /// Use the authoritative hull and healing-zone colliders for clicks,
@@ -482,7 +493,78 @@ impl NativeSoftwareRenderer {
             };
             text::draw_centered(&mut self.pixels, self.width, 8, &label, 1, [239, 247, 255]);
         }
+        if self.show_minimap {
+            self.draw_minimap(view, bounds);
+        }
         counts
+    }
+
+    /// Render only known player-owned units. Unlike the full spectator
+    /// viewport, this map must not expose hidden enemy locations. Read
+    /// permissions and current hull poses from the authoritative world.
+    fn draw_minimap(&mut self, view: &NativeRenderWorldView<'_>, bounds: Aabb) {
+        let Some(layout) = MiniMapLayout::new(self.width, self.height, bounds)
+            else { return };
+        for y in layout.top..layout.bottom {
+            self.pixels[y * self.width + layout.left
+                ..y * self.width + layout.right].fill(0x101c2e);
+        }
+        let edge = 0x6e829e;
+        let x0 = layout.plot_left;
+        let y0 = layout.plot_top;
+        let x1 = layout.plot_right;
+        let y1 = layout.plot_bottom;
+        self.line(x0, y0, x1, y0, edge);
+        self.line(x1, y0, x1, y1, edge);
+        self.line(x1, y1, x0, y1, edge);
+        self.line(x0, y1, x0, y0, edge);
+
+        // The HUD displays no tactical knowledge beyond current
+        // player-controlled ships. A future fog-of-war presentation can
+        // add authenticated discovered entities without leaking enemies.
+        for (ship, body) in view.combat.render_ships() {
+            let Some(owner) = view.roster.owning_squad(ship.entity_id)
+                else { continue };
+            if !view.player_authority.player_permissions(owner)
+                .is_some_and(|permissions| permissions.user_controlled) {
+                continue;
+            }
+            let Some((x, y)) = layout.project(body.motion.position)
+                else { continue };
+            let selected = if self.selection.squads().len() > 8 {
+                self.selected_squad_lookup.contains(&owner)
+            } else {
+                self.selection.squads().contains(&owner)
+            };
+            let color = if selected { 0xffffff } else { side_color(ship.side) };
+            let x = x.round() as i32;
+            let y = y.round() as i32;
+            let radius = if selected { 3 } else { 1 };
+            for yy in (y - radius)..=(y + radius) {
+                for xx in (x - radius)..=(x + radius) {
+                    if xx >= layout.plot_left.floor() as i32 &&
+                        xx <= layout.plot_right.ceil() as i32 &&
+                        yy >= layout.plot_top.floor() as i32 &&
+                        yy <= layout.plot_bottom.ceil() as i32 &&
+                        xx >= 0 && yy >= 0 &&
+                        (xx as usize) < self.width && (yy as usize) < self.height
+                    {
+                        self.pixels[yy as usize * self.width + xx as usize] = color;
+                    }
+                }
+            }
+        }
+        let bottom_left = self.camera.screen_to_world(
+            0.0, self.height as f32, self.width, self.height);
+        let top_right = self.camera.screen_to_world(
+            self.width as f32, 0.0, self.width, self.height);
+        if let Some((x0, y0, x1, y1)) = layout.camera_rect(bottom_left, top_right) {
+            let color = 0xe2c473;
+            self.line(x0, y0, x1, y0, color);
+            self.line(x1, y0, x1, y1, color);
+            self.line(x1, y1, x0, y1, color);
+            self.line(x0, y1, x0, y0, color);
+        }
     }
 
     fn draw_battle_result(
