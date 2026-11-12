@@ -1191,6 +1191,27 @@ impl KinematicPhysics {
             ShipHullOverlap::Contact
     }
 
+    /// A mutable ship borrow may change its pose, active status, or
+    /// collider geometry between physics ticks. Only a Stale grid needs
+    /// hull refresh; an Obstacle grid after a completed physics step has
+    /// current ship hulls already and only needs a population switch.
+    fn ensure_ship_grid(&mut self) -> bool {
+        if self.grid_contents == GridContents::Ships {
+            return false;
+        }
+        if self.grid_contents == GridContents::Stale {
+            for ship in &mut self.ships {
+                if ship.active { ship.update_hull(); }
+            }
+        }
+        self.grid.rebuild_with(self.ships.len(), |index| {
+            let ship = &self.ships[index];
+            if ship.active { ship.collider.bounds } else { None }
+        });
+        self.grid_contents = GridContents::Ships;
+        true
+    }
+
     /// Ship contacts use the real current ship grid, not the last
     /// obstacle query's grid. A tick with active obstacles leaves their
     /// grid after physics.step; an obstacle-free tick preserves the ship
@@ -1206,20 +1227,11 @@ impl KinematicPhysics {
     ) -> bool {
         output.clear();
         let Some(ship) = self.ships.get(index) else { return false };
-        if !ship.active || ship.collider.bounds.is_none() {
-            return false;
-        }
-        let mut rebuilt = false;
-        if self.grid_contents != GridContents::Ships {
-            self.grid.rebuild_with(self.ships.len(), |index| {
-                let ship = &self.ships[index];
-                if ship.active { ship.collider.bounds } else { None }
-            });
-            self.grid_contents = GridContents::Ships;
-            rebuilt = true;
-        }
-        let bounds = self.ships[index].collider.bounds
-            .expect("validated active hull bounds");
+        if !ship.active { return false; }
+        let rebuilt = self.ensure_ship_grid();
+        let Some(bounds) = self.ships[index].collider.bounds else {
+            return rebuilt;
+        };
         self.grid.candidates(bounds, output);
         output.sort_unstable();
         rebuilt
@@ -1230,14 +1242,7 @@ impl KinematicPhysics {
     pub(crate) fn circle_ship_contact_candidates(&mut self, center: Vec2, radius: f32,
         output: &mut Vec<usize>,
     ) -> bool {
-        let rebuilt = self.grid_contents != GridContents::Ships;
-        if rebuilt {
-            self.grid.rebuild_with(self.ships.len(), |index| {
-                let ship = &self.ships[index];
-                if ship.active { ship.collider.bounds } else { None }
-            });
-            self.grid_contents = GridContents::Ships;
-        }
+        let rebuilt = self.ensure_ship_grid();
         self.grid.candidates(Aabb { min: center - Vec2::new(radius, radius),
             max: center + Vec2::new(radius, radius) }, output);
         rebuilt
@@ -1269,21 +1274,12 @@ impl KinematicPhysics {
         self.ships.get(index).is_some_and(|ship| ship.active && ship.collider.overlaps_circle(center, radius))
     }
 
-    /// On-demand contact queries can run before physics.step(), including
-    /// a ship whose position was changed after the previous fixed tick.
-    /// Refresh the real authored hull poses before the one shared grid
-    /// rebuild, then reuse that grid for the remaining contact queries.
-    /// The narrowphase still checks actual hulls and collision layers.
+    /// On-demand queries use the shared ship grid. Mutation through
+    /// ships_mut invalidates it so the same canonical hull refresh applies
+    /// before a between-tick contact check.
     pub fn current_ship_contact_candidates(
         &mut self, index: usize, output: &mut Vec<usize>,
     ) -> bool {
-        if self.grid_contents != GridContents::Ships {
-            for ship in &mut self.ships {
-                if ship.active {
-                    ship.update_hull();
-                }
-            }
-        }
         self.ship_contact_candidates(index, output)
     }
 
@@ -1319,15 +1315,7 @@ impl KinematicPhysics {
                 bounds.max.y.max(previous.y + half_height) + near_distance,
             ),
         };
-        let mut rebuilt = false;
-        if self.grid_contents != GridContents::Ships {
-            self.grid.rebuild_with(self.ships.len(), |index| {
-                let ship = &self.ships[index];
-                if ship.active { ship.collider.bounds } else { None }
-            });
-            self.grid_contents = GridContents::Ships;
-            rebuilt = true;
-        }
+        let rebuilt = self.ensure_ship_grid();
         self.grid.candidates(sweep, output);
         output.sort_unstable();
         output.dedup();
@@ -1427,7 +1415,12 @@ impl KinematicPhysics {
         }))
     }
 
-    pub fn ships_mut(&mut self) -> &mut [ShipBody] { &mut self.ships }
+    /// Any mutable access can change ship positions or hull geometry.
+    /// Defer rebuilding until a spatial query actually needs the grid.
+    pub fn ships_mut(&mut self) -> &mut [ShipBody] {
+        self.grid_contents = GridContents::Stale;
+        &mut self.ships
+    }
 
     /// Read-only UI target query against the same cached obstacle hulls as
     /// gameplay. It creates no contact events or alternate obstacle state.
