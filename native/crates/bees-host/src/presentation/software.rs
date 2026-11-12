@@ -39,6 +39,29 @@ impl NativeCamera {
         self.pixels_per_unit = (self.pixels_per_unit * factor).clamp(0.001, 1000.0);
         self.center += before - self.screen_to_world(x, y, width, height);
     }
+
+    /// Source LevelInputManager.MaintainScrollBoundary uses the map extent
+    /// minus the camera's orthographic half-width and half-height. If the
+    /// viewport is wider than the map, center that axis instead of asking
+    /// f32::clamp to use reversed bounds. This is presentation-only.
+    pub fn constrain_to_map(
+        &mut self, map: Aabb, width: usize, height: usize,
+    ) -> bool {
+        if !self.center.is_finite() || !self.pixels_per_unit.is_finite() ||
+            self.pixels_per_unit <= 0.0 { return false; }
+        let half_width = width as f32 * 0.5 / self.pixels_per_unit;
+        let half_height = height as f32 * 0.5 / self.pixels_per_unit;
+        let constrain = |value: f32, low: f32, high: f32, half: f32| {
+            let min = low + half;
+            let max = high - half;
+            if min > max { (low + high) * 0.5 }
+            else { value.clamp(min, max) }
+        };
+        let before = self.center;
+        self.center.x = constrain(before.x, map.min.x, map.max.x, half_width);
+        self.center.y = constrain(before.y, map.min.y, map.max.y, half_height);
+        self.center != before
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, serde::Serialize)]
