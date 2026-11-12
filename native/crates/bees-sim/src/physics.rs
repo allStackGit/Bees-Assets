@@ -1624,7 +1624,12 @@ impl KinematicPhysics {
         Ok(self.insert_prevalidated_projectile(projectile))
     }
 
-    pub(crate) fn insert_prevalidated_projectile(&mut self, projectile: ProjectileBody) -> usize {
+    pub(crate) fn insert_prevalidated_projectile(&mut self, mut projectile: ProjectileBody) -> usize {
+        // ProjectileBody::from_shape leaves cached world bounds empty.
+        // Populate only this newly spawned shot's hull so between-tick
+        // range and presentation queries can observe its real shape.
+        // Contact events still arise exclusively during physics.step().
+        projectile.update_hull();
         let index = self.projectiles.len();
         self.projectiles.push(projectile);
         index
@@ -1636,13 +1641,14 @@ impl KinematicPhysics {
     pub fn replace_ended_projectile(
         &mut self,
         index: usize,
-        projectile: ProjectileBody,
+        mut projectile: ProjectileBody,
     ) -> Result<(), PhysicsError> {
         let slot = self.projectiles.get_mut(index)
             .ok_or(PhysicsError::MissingProjectileSlot)?;
         if slot.active {
             return Err(PhysicsError::ActiveProjectileSlot);
         }
+        projectile.update_hull();
         *slot = projectile;
         Ok(())
     }
