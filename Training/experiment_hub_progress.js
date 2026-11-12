@@ -274,9 +274,14 @@ class BottleneckEvidence {
         // limit. Never evict a project-owned source metric for a diagnosis.
         const priority=name=>
             name.startsWith('pipeline_')&&name.endsWith('_dominant')?0:
-            name.endsWith('_pressure')?1:
-            name.endsWith('_dominant')?2:
-            name==='pipeline_timing_sample_count'?3:4;
+            // Keep evidence from every machine before filling the report
+            // with a second or third warning from the first collector.
+            name.endsWith('_sim_straggler_pressure')?1:
+            name.endsWith('_sim_dispatch_pressure')?2:
+            name.endsWith('_record_encode_pressure')?3:
+            name.endsWith('_pressure')?4:
+            name.endsWith('_dominant')?5:
+            name==='pipeline_timing_sample_count'?6:7;
         const additions=Object.entries(derived).sort(
             ([a],[b])=>priority(a)-priority(b)).slice(0,available);
         // A heavily instrumented job can approach the 32-KiB report limit.
