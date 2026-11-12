@@ -63,6 +63,7 @@ pub struct NativeRenderCounts {
     pub obstructed_ranges: usize,
     pub missing_range_data: usize,
     pub minimap_ship_markers: usize,
+    pub minimap_visible_enemy_markers: usize,
     pub numbered_squad_rows: usize,
     pub special_ready_ships: usize,
     pub tactical_buttons_drawn: usize,
@@ -810,7 +811,9 @@ impl NativeSoftwareRenderer {
             }
         }
         if self.show_minimap {
-            counts.minimap_ship_markers = self.draw_minimap(view, bounds);
+            let (ships, enemies) = self.draw_minimap(view, bounds);
+            counts.minimap_ship_markers = ships;
+            counts.minimap_visible_enemy_markers = enemies;
         }
         counts.numbered_squad_rows = self.draw_squad_shortcuts(view);
         counts.special_ready_ships = self.draw_special_readiness(view);
@@ -837,13 +840,57 @@ impl NativeSoftwareRenderer {
         counts
     }
 
-    /// Render only known player-owned units. Unlike the full spectator
-    /// viewport, this map must not expose hidden enemy locations. Read
-    /// permissions and current hull poses from the authoritative world.
-    fn draw_minimap(&mut self, view: &NativeRenderWorldView<'_>, bounds: Aabb) -> usize {
+    /// Stamp one vision disc into the already allocated main-screen fog
+    /// buffer, restricted to the small fixed minimap plot. This avoids
+    /// O(player ships x enemy ships) queries for marker visibility, and
+    /// allocates no second minimap visibility state.
+    fn stamp_minimap_fog(&mut self, layout: MiniMapLayout,
+        position: Vec2, source_radius: f32,
+    ) {
+        if !position.is_finite() || source_radius <= 0.0 { return; }
+        let (cx, cy) = layout.project_unbounded(position);
+        let radius = source_radius * layout.scale;
+        if !radius.is_finite() || radius <= 0.0 || !cx.is_finite() || !cy.is_finite() {
+            return;
+        }
+        if cx + radius < layout.plot_left || cx - radius > layout.plot_right ||
+            cy + radius < layout.plot_top || cy - radius > layout.plot_bottom {
+            return;
+        }
+        let top = (cy - radius).ceil().max(layout.plot_top.ceil()) as usize;
+        let bottom = (cy + radius).floor()
+            .min(layout.plot_bottom.floor()) as usize;
+        if top > bottom { return; }
+        let radius_sq = radius * radius;
+        for y in top..=bottom {
+            let dy = y as f32 - cy;
+            if dy.abs() > radius { continue; }
+            let width = (radius_sq - dy * dy).max(0.0).sqrt();
+            if cx + width < layout.plot_left || cx - width > layout.plot_right {
+                continue;
+            }
+            let left = (cx - width).ceil().max(layout.plot_left.ceil()) as usize;
+            let right = (cx + width).floor()
+                .min(layout.plot_right.floor()) as usize;
+            if left <= right {
+                let row = y * self.width;
+                self.fog_coverage[row + left..=row + right].fill(1);
+            }
+        }
+    }
+
+    /// The physical minimap draws live player ships and currently visible
+    /// opponents, rather than silently hiding every enemy. Source fog
+    /// limits enemy markers using the same live player masks and fading
+    /// vision used by the main viewport. When source fog is OFF, all live
+    /// ships are visible as in the unmasked tactical battlefield.
+    fn draw_minimap(&mut self, view: &NativeRenderWorldView<'_>, bounds: Aabb)
+        -> (usize, usize)
+    {
         let Some(layout) = MiniMapLayout::new(self.width, self.height, bounds)
-            else { return 0 };
+            else { return (0, 0) };
         let mut markers = 0usize;
+        let mut enemies = 0usize;
         for y in layout.top..layout.bottom {
             self.pixels[y * self.width + layout.left
                 ..y * self.width + layout.right].fill(0x101c2e);
@@ -858,32 +905,57 @@ impl NativeSoftwareRenderer {
         self.line(x1, y1, x0, y1, edge);
         self.line(x0, y1, x0, y0, edge);
 
-        // The HUD displays no tactical knowledge beyond current
-        // player-controlled ships. A future fog-of-war presentation can
-        // add authenticated discovered entities without leaking enemies.
-        for (ship, body) in view.combat.render_ships() {
-            let Some(owner) = view.roster.owning_squad(ship.entity_id)
-                else { continue };
-            if !view.player_authority.player_permissions(owner)
-                .is_some_and(|permissions| permissions.user_controlled) ||
-                (view.player_authority.player_fog_of_war_enabled() &&
-                    view.player_authority.player_fog_viewer_side() != Some(ship.side)) {
-                continue;
+        let fog = view.player_authority.player_fog_of_war_enabled();
+        let viewer_side = view.player_authority.player_fog_viewer_side();
+        if fog {
+            // The same allocation already holds the main-view fog stencil.
+            // It has already been used for that viewport's pixel mask; only
+            // its minimap panel region needs resetting here.
+            for y in layout.top..layout.bottom {
+                let row = y * self.width;
+                self.fog_coverage[row + layout.left..row + layout.right].fill(0);
             }
+            for (ship, body) in view.combat.render_ships() {
+                let Some(radius) = Self::fog_source_radius(view, ship.entity_id)
+                    else { continue };
+                self.stamp_minimap_fog(layout, body.motion.position, radius);
+            }
+            for index in 0..self.fog_fades.len() {
+                let fade = self.fog_fades[index];
+                self.stamp_minimap_fog(layout, fade.position,
+                    fade.current_radius(view.tick, view.fixed_step_seconds));
+            }
+        }
+
+        for (ship, body) in view.combat.render_ships() {
+            let owner = view.roster.owning_squad(ship.entity_id);
+            let controlled = owner.is_some_and(|id|
+                view.player_authority.player_permissions(id)
+                    .is_some_and(|permission| permission.user_controlled)
+            ) && (!fog || viewer_side == Some(ship.side));
             let Some((x, y)) = layout.project(body.motion.position)
                 else { continue };
+            let px = x.round() as i32;
+            let py = y.round() as i32;
+            if !controlled && fog &&
+                self.fog_coverage.get(py as usize * self.width + px as usize) != Some(&1) {
+                // Never reveal the position of a concealed enemy or an
+                // unrelated player's units in a masked local viewport.
+                continue;
+            }
             markers += 1;
-            let selected = if self.selection.squads().len() > 8 {
-                self.selected_squad_lookup.contains(&owner)
-            } else {
-                self.selection.squads().contains(&owner)
-            };
+            if !controlled { enemies += 1; }
+            let selected = controlled && owner.is_some_and(|owner|
+                if self.selection.squads().len() > 8 {
+                    self.selected_squad_lookup.contains(&owner)
+                } else {
+                    self.selection.squads().contains(&owner)
+                }
+            );
             let color = if selected { 0xffffff } else { side_color(ship.side) };
-            let x = x.round() as i32;
-            let y = y.round() as i32;
             let radius = if selected { 3 } else { 1 };
-            for yy in (y - radius)..=(y + radius) {
-                for xx in (x - radius)..=(x + radius) {
+            for yy in (py - radius)..=(py + radius) {
+                for xx in (px - radius)..=(px + radius) {
                     if xx >= layout.plot_left.floor() as i32 &&
                         xx <= layout.plot_right.ceil() as i32 &&
                         yy >= layout.plot_top.floor() as i32 &&
@@ -907,7 +979,7 @@ impl NativeSoftwareRenderer {
             self.line(x1, y1, x0, y1, color);
             self.line(x0, y1, x0, y0, color);
         }
-        markers
+        (markers, enemies)
     }
 
     /// A lightweight source-squad tab strip. Shortcut numbers come from the

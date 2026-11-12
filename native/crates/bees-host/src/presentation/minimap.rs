@@ -16,7 +16,7 @@ pub(super) struct MiniMapLayout {
     pub plot_right: f32,
     pub plot_bottom: f32,
     bounds: Aabb,
-    scale: f32,
+    pub(super) scale: f32,
 }
 
 impl MiniMapLayout {
@@ -71,10 +71,16 @@ impl MiniMapLayout {
             point.y < self.bounds.min.y || point.y > self.bounds.max.y {
             return None;
         }
-        Some((
+        Some(self.project_unbounded(point))
+    }
+
+    /// Fog sources may lie just outside the map while their masks extend
+    /// into it; their projected centers must not be clipped at the border.
+    pub(super) fn project_unbounded(self, point: Vec2) -> (f32, f32) {
+        (
             self.plot_left + (point.x - self.bounds.min.x) * self.scale,
             self.plot_top + (self.bounds.max.y - point.y) * self.scale,
-        ))
+        )
     }
 
     pub fn camera_rect(self, bottom_left: Vec2, top_right: Vec2) ->
