@@ -174,7 +174,7 @@ class BottleneckEvidence {
         }
         // Optional derived measures must not crowd out project-owned source
         // metrics or violate the existing bounded wire contract.
-        const available=Math.max(0,256-Object.keys(metrics).length);
+        const available=Math.max(0,MAX_SOURCE_METRICS-Object.keys(metrics).length);
         const extras=Object.fromEntries(Object.entries(derived).slice(0,available));
         const enriched={...progress,metrics:{...metrics,...extras}};
         return JSON.stringify(enriched).length<=32768?enriched:progress;
