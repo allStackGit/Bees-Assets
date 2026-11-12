@@ -83,6 +83,8 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'carried_matches','open_matches','peak_live_matches',
         'truncated_groups','terminal_groups','collector_count',
         'ppo_minibatches','ppo_microbatches',
+        'ppo_gpu_pixel_budget',
+        'rollout_inference_shape_groups','rollout_inference_readbacks',
         'collector_auto_balance_adjustments',
         'collector_balance_changed_for_next_update',
         'ppo_board_pixel_samples','ppo_max_board_cells',
@@ -181,6 +183,10 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         ?row.collector_samples:[]).slice(0,9).entries()) {
         add('collector_'+i+'_ant_decisions',worker.ant_decisions,'count');
         add('collector_'+i+'_engine_steps',worker.engine_steps,'count');
+        add('collector_'+i+'_inference_shape_groups',
+            worker.rollout_inference_shape_groups,'count');
+        add('collector_'+i+'_inference_readbacks',
+            worker.rollout_inference_readbacks,'count');
         add('collector_'+i+'_action_target',worker.action_target,'count');
         add('collector_'+i+'_roundtrip_seconds',
             worker.transport_roundtrip_seconds,'seconds');
