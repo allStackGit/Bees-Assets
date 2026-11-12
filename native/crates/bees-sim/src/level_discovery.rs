@@ -58,6 +58,11 @@ impl LevelDiscovery {
         self.sides.clear();
     }
 
+    /// Source-owned faction IDs for optional deterministic replay capture.
+    pub fn sides(&self) -> impl Iterator<Item = i32> + '_ {
+        self.sides.keys().copied()
+    }
+
     /// Store a discovery event validated by the actual gameplay Level.
     /// Reports the FIRST sighting by any observer on this side, which is
     /// the only sighting that should trigger discovery reward bookkeeping.
