@@ -2661,7 +2661,26 @@ change during execution. Bundle machines cannot be moved by manual claim
 changes or the Hub's automatic queued-claim rebalancing: cancel a fully
 unstarted bundle and submit a new one to change placement. Each member
 receives its own native owner, lease, artifact lineage and existing GPU
-qualification/Start/Stop gates.
+qualification/Start/Stop gates. After the agents acknowledge their fixed
+claims and any GPU access probes complete, **Start entire bundle** approves
+all 2–16 native Starts in one durable transaction, or none if a member is
+no longer eligible. The equivalent API is
+`POST /api/hub/resource-bundles/start` with
+`{"bundle_id":"<uuid>","expected_job_ids":["<ordered-member-uuid>",...],"confirm_start":true,"release_on_terminal":true}`.
+The last flag is optional and releases each member's claim only after a
+verified native `finished` or `stopped` report. Machine supervisors still
+launch independently, and physical GPU compute shares are advisory.
+
+**Stop / close bundle** performs the corresponding atomic native shutdown
+request for its exact current members:
+`POST /api/hub/resource-bundles/stop` with
+`{"bundle_id":"<uuid>","expected_job_ids":["<ordered-member-uuid>",...],"confirm_stop":true}`.
+Unsent Starts are withdrawn and their jobs cancelled; native owners that may
+already have launched receive durable Stop requests and retain their claims
+until verified terminal receipts. Already verified `finished`/`stopped`
+members release their capacity; failed owners retain their original claims
+for review. No process, checkpoint or history is deleted. Group shutdown
+requests and release-on-terminal intent survive coordinator restart.
 
 A bundle is **resource coordination**, not a distributed learner.
 There is no automatic rollout transport, policy synchronization, gradient
@@ -2679,8 +2698,10 @@ and appear in Train. To withdraw an entirely unstarted bundle, use
 `{"bundle_id":"<uuid>","expected_job_ids":["<uuid>",...],"confirm_cancel":true}`.
 The exact current members are checked before claims are released, and
 a started, dispatched, or uncertain member blocks cancellation of the
-whole bundle. Existing native Stop and checkpoint verification remain
-mandatory for active jobs. Canceling a bundle never terminates a process.
+whole bundle. For a bundle that has already begun execution, use
+**Stop / close bundle** instead; it never infers that an unknown native owner
+has terminated. Unresolved bundles are prioritized in the Train panel over
+older completed history.
 
 ## Trusted distributed TinyBrains rollout group (opt-in)
 
