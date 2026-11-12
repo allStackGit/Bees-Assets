@@ -551,7 +551,7 @@ impl RunNetwork {
         if fixed_dt_by_level.len() != levels.len() {
             return Err(invalid("HiveMind command clock has mismatched Level timesteps"));
         }
-        let scheduler = NativeSourceCommandScheduler::new(fixed_dt_by_level)?;
+        let scheduler = NativeSourceCommandScheduler::new(&levels, fixed_dt_by_level)?;
         let mut network = Self {
             worker: NativeSocketWorker::start(config.endpoint.clone(), config.allow_insecure_loopback)
                 .map_err(|error| contextual("HiveMind network startup", error))?,
@@ -579,7 +579,7 @@ impl RunNetwork {
     // The launcher remains only the source of socket/setup readiness.
     fn issue_due_source_commands(&mut self, host: &mut RolloutHost) -> io::Result<()> {
         if !self.issue_source_commands { return Ok(()); }
-        self.scheduler.issue_due(host, &self.worker, &self.levels,
+        self.scheduler.issue_due(host, &self.worker,
             self.next_level == self.levels.len())
     }
 

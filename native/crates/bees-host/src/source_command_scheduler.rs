@@ -43,6 +43,16 @@ struct SourceCommandClock {
     next_due_seconds: f64,
 }
 
+/// Registration and its timer always move together, including append-only
+/// runtime enrollment and per-episode reset. The connection still owns
+/// all request IDs and the Level owns each SquadLifetime.
+#[derive(Clone, Copy, Debug)]
+struct SourceWorldClock {
+    level_id: i32,
+    fixed_dt: f32,
+    clock: Option<SourceCommandClock>,
+}
+
 fn invalid(message: &'static str) -> io::Error {
     io::Error::new(ErrorKind::InvalidInput, message)
 }
@@ -62,24 +72,28 @@ fn source_command_ticks(seconds: f64, dt: f32) -> io::Result<u64> {
 /// A caller may own one scheduler per native game/trainer session; no
 /// scheduler is installed in CombatWorld and pure CPU PPO stays unchanged.
 pub struct NativeSourceCommandScheduler {
-    fixed_dt_by_world: Vec<f32>,
-    clocks: Vec<Option<SourceCommandClock>>,
+    worlds: Vec<SourceWorldClock>,
     due_levels: HashSet<i64>,
     measurements: NativeSourceCommandPulse,
     schedule_measurements: NativeSourceScheduleMeasurements,
 }
 
 impl NativeSourceCommandScheduler {
-    pub fn new(fixed_dt_by_world: &[f32]) -> io::Result<Self> {
-        if fixed_dt_by_world.is_empty() {
-            return Err(invalid("source HiveMind scheduler needs at least one Level"));
+    pub fn new(level_ids: &[i32], fixed_dt_by_world: &[f32]) -> io::Result<Self> {
+        if fixed_dt_by_world.is_empty() || level_ids.len() != fixed_dt_by_world.len() {
+            return Err(invalid("source HiveMind scheduler needs matching nonempty Level registrations"));
         }
-        for &dt in fixed_dt_by_world {
-            source_command_ticks(0.25, dt)?;
+        let mut known_levels = HashSet::with_capacity(level_ids.len());
+        let mut worlds = Vec::with_capacity(level_ids.len());
+        for (&level_id, &fixed_dt) in level_ids.iter().zip(fixed_dt_by_world) {
+            if level_id <= 0 || !known_levels.insert(level_id) {
+                return Err(invalid("source HiveMind scheduler requires unique positive Level IDs"));
+            }
+            source_command_ticks(0.25, fixed_dt)?;
+            worlds.push(SourceWorldClock { level_id, fixed_dt, clock: None });
         }
         Ok(Self {
-            fixed_dt_by_world: fixed_dt_by_world.to_vec(),
-            clocks: vec![None; fixed_dt_by_world.len()],
+            worlds,
             due_levels: HashSet::new(),
             measurements: NativeSourceCommandPulse::default(),
             schedule_measurements: NativeSourceScheduleMeasurements::default(),
@@ -95,7 +109,7 @@ impl NativeSourceCommandScheduler {
     }
 
     pub fn registered_worlds(&self) -> usize {
-        self.clocks.len()
+        self.worlds.len()
     }
 
     /// The shared native host can add an independently seeded Level
@@ -106,6 +120,7 @@ impl NativeSourceCommandScheduler {
         &mut self,
         host: &NativeHostRuntime<M, A, B, S>,
         index: usize,
+        level_id: i32,
     ) -> io::Result<()>
     where
         M: NativeLevelRewardMetadata + NativeLevelActivationContext +
@@ -114,31 +129,33 @@ impl NativeSourceCommandScheduler {
         B: NativePolicyInference,
         S: NativeLevelNotificationSink,
     {
-        if index != self.clocks.len() ||
+        if index != self.worlds.len() ||
             host.simulation().world_count() != index + 1 {
             return Err(invalid("source HiveMind scheduler requires append-only registration"));
         }
-        let dt = host.simulation().world_fixed_step_seconds(index)
+        if level_id <= 0 || self.worlds.iter().any(|world| world.level_id == level_id) {
+            return Err(invalid("source HiveMind scheduler requires unique positive Level IDs"));
+        }
+        let fixed_dt = host.simulation().world_fixed_step_seconds(index)
             .ok_or_else(|| invalid("added native Level has no fixed-step clock"))?;
-        source_command_ticks(0.25, dt)?;
-        self.fixed_dt_by_world.push(dt);
-        self.clocks.push(None);
+        source_command_ticks(0.25, fixed_dt)?;
+        self.worlds.push(SourceWorldClock { level_id, fixed_dt, clock: None });
         Ok(())
     }
 
     fn ensure_clock(
         &mut self, index: usize, revision: u64, first_delay: i32,
     ) -> io::Result<()> {
-        if self.clocks[index].is_none_or(|clock| clock.revision != revision) {
+        if self.worlds[index].clock.is_none_or(|clock| clock.revision != revision) {
             self.schedule_measurements.episode_clock_resets += 1;
             // Unity SetupHivemind's initial one-shot timer is
             // (InitialDelay - 0.25) followed by recurring quarter seconds.
             // Even a zero initial delay starts at the first timer callback.
             let initial = f64::from(first_delay.max(0)).max(0.25);
-            self.clocks[index] = Some(SourceCommandClock {
-                revision,
-                next_due_tick: source_command_ticks(initial, self.fixed_dt_by_world[index])?,
-                next_due_seconds: initial,
+            let fixed_dt = self.worlds[index].fixed_dt;
+            let next_due_tick = source_command_ticks(initial, fixed_dt)?;
+            self.worlds[index].clock = Some(SourceCommandClock {
+                revision, next_due_tick, next_due_seconds: initial,
             });
         }
         Ok(())
@@ -152,7 +169,6 @@ impl NativeSourceCommandScheduler {
         &mut self,
         host: &mut NativeHostRuntime<M, A, B, S>,
         worker: &NativeSocketWorker,
-        level_ids: &[i32],
         setup_complete: bool,
     ) -> io::Result<()>
     where
@@ -162,20 +178,21 @@ impl NativeSourceCommandScheduler {
         B: NativePolicyInference,
         S: NativeLevelNotificationSink,
     {
-        if level_ids.len() != self.clocks.len() ||
-            host.simulation().world_count() != self.clocks.len() {
+        if host.simulation().world_count() != self.worlds.len() {
             return Err(invalid("source HiveMind scheduler World count changed"));
         }
         self.due_levels.clear();
         let ready = setup_complete && worker.ready();
-        for index in 0..self.clocks.len() {
+        for index in 0..self.worlds.len() {
             let world = host.simulation().world(index)
                 .ok_or_else(|| invalid("registered native Level disappeared"))?;
             let initial = world.state.metadata.source_hivemind_initial_delay_seconds()
                 .ok_or_else(|| invalid("source HiveMind delay missing from Level"))?;
             let tick = world.tick();
             self.ensure_clock(index, world.episode_revision(), initial)?;
-            let clock = self.clocks[index].as_mut().expect("initialized source clock");
+            let level_id = self.worlds[index].level_id;
+            let fixed_dt = self.worlds[index].fixed_dt;
+            let clock = self.worlds[index].clock.as_mut().expect("initialized source clock");
             if tick >= clock.next_due_tick {
                 self.schedule_measurements.due_beats += 1;
                 let active = world.state.metadata.source_hivemind_active() == Some(true) &&
@@ -183,7 +200,7 @@ impl NativeSourceCommandScheduler {
                     !world.state.events.completed() && !world.state.events.was_aborted();
                 if ready && active {
                     self.schedule_measurements.ready_beats += 1;
-                    self.due_levels.insert(i64::from(level_ids[index]));
+                    self.due_levels.insert(i64::from(level_id));
                 } else if !ready {
                     self.schedule_measurements.transport_blocked_beats += 1;
                 } else {
@@ -191,14 +208,14 @@ impl NativeSourceCommandScheduler {
                 }
                 // Accumulate the original fractional timer duration and
                 // skip overdue callbacks without duplicating requests.
-                let elapsed = tick as f64 * f64::from(self.fixed_dt_by_world[index]);
+                let elapsed = tick as f64 * f64::from(fixed_dt);
                 let overdue = (elapsed - clock.next_due_seconds).max(0.0);
                 let periods = (overdue / 0.25).floor() + 1.0;
                 self.schedule_measurements.skipped_overdue_beats +=
                     (periods - 1.0).min(u64::MAX as f64) as u64;
                 clock.next_due_seconds += periods * 0.25;
                 clock.next_due_tick = source_command_ticks(
-                    clock.next_due_seconds, self.fixed_dt_by_world[index],
+                    clock.next_due_seconds, fixed_dt,
                 )?.max(tick.saturating_add(1));
             }
         }
@@ -234,22 +251,22 @@ impl NativeSourceCommandScheduler {
         S: NativeLevelNotificationSink,
     {
         if !setup_complete { return Ok(u64::MAX); }
-        if host.simulation().world_count() != self.clocks.len() {
+        if host.simulation().world_count() != self.worlds.len() {
             return Err(invalid("source HiveMind scheduler World count changed"));
         }
         let mut limit = u64::MAX;
-        for index in 0..self.clocks.len() {
+        for index in 0..self.worlds.len() {
             let world = host.simulation().world(index)
                 .ok_or_else(|| invalid("registered native Level disappeared"))?;
             if world.is_failed() || world.state.events.is_failed() ||
                 world.state.events.completed() || world.state.events.was_aborted() ||
-                world.state.metadata.hivemind_active != Some(true) {
+                world.state.metadata.source_hivemind_active() != Some(true) {
                 continue;
             }
             let initial = world.state.metadata.source_hivemind_initial_delay_seconds()
                 .ok_or_else(|| invalid("source HiveMind delay missing from Level"))?;
             self.ensure_clock(index, world.episode_revision(), initial)?;
-            let due = self.clocks[index].expect("initialized source clock").next_due_tick;
+            let due = self.worlds[index].clock.expect("initialized source clock").next_due_tick;
             limit = limit.min(due.saturating_sub(world.tick()).max(1));
         }
         Ok(limit)
