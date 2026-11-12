@@ -1685,12 +1685,22 @@ class ExperimentHub {
                         ' needs review: '+String(error.message||error));
                 }
             }
-            const reservedForBundlePlans=new Set(
-                (this.state.bundle_start_plans||[])
+            // Frozen group plans have their own all-member atomic Start
+            // gate. Generic queue automation must neither issue an early
+            // Start for a collector nor race the approved learner barrier.
+            const reservedForGroupStarts=new Set([
+                ...(this.state.bundle_start_plans||[])
                     .filter(plan=>['pending','needs_review'].includes(plan.status))
-                    .flatMap(plan=>plan.member_job_ids));
+                    .flatMap(plan=>plan.member_job_ids),
+                ...(this.state.distributed_group_plans||[])
+                    .filter(plan=>['pending','needs_review'].includes(plan.status))
+                    .flatMap(plan=>[plan.learner_job_id,...plan.collector_job_ids]),
+                ...(this.state.distributed_launch_plans||[])
+                    .filter(plan=>plan.status==='pending')
+                    .map(plan=>plan.learner_job_id),
+            ]);
             const pending=snapshot.jobs.filter(j=>
-                !reservedForBundlePlans.has(j.id)&&
+                !reservedForGroupStarts.has(j.id)&&
                 j.adapter==='unconfigured'&&j.status==='waiting_adapter'&&
                 !['bees','ants'].includes(j.project_id)&&
                 !predecessorBlock(snapshot,j));
