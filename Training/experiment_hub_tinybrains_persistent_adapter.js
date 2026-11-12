@@ -83,6 +83,8 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'carried_matches','open_matches','peak_live_matches',
         'truncated_groups','terminal_groups','collector_count',
         'ppo_minibatches','ppo_microbatches',
+        'collector_auto_balance_adjustments',
+        'collector_balance_changed_for_next_update',
         'ppo_board_pixel_samples','ppo_max_board_cells',
         'ppo_unique_board_shapes','policy_lag','action_target'])
         add(name,row[name],'count');
