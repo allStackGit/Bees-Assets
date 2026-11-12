@@ -772,6 +772,12 @@ fn apply_player_input(host: &mut RolloutHost, action: NativePlayerInput) -> Resu
             else { "Point fire stopped" }
         }), "Squad cannot accept manual fire"),
         NativePlayerInput::HeldFire(input) => (host.player_held_fire(input), "Squad cannot accept manual fire"),
+        NativePlayerInput::Shooting(input) => (host.player_shooting_squads(&input).map(|counts| {
+            if counts.accepted_squads == 0 { "No selected squads can change targeting" }
+            else if counts.rejected_squads > 0 || counts.unavailable_squads > 0 {
+                "Shooting priority changed; some squads unavailable"
+            } else { "Shooting priority updated" }
+        }), "Squad cannot change shooting priority"),
         NativePlayerInput::MatchSpeed(input) => (host.player_match_speed_squads(&input).map(|counts| {
             if counts.accepted_squads == 0 { "No selected squads can change speed" }
             else if counts.rejected_squads > 0 || counts.unavailable_squads > 0 {
