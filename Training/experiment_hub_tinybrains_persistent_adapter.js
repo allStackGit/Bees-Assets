@@ -155,7 +155,10 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         add('food_gathered_exact',exactFood,'count');
         add('food_gathered_verified_matches',foodGames,'count');
     }
-    if(killGames)add('combat_kills_exact',exactKills,'count');
+    if(killGames) {
+        add('combat_kills_exact',exactKills,'count');
+        add('combat_kills_verified_matches',killGames,'count');
+    }
 
     const gameplay=row.gameplay||{};
     for(const name of ['births_observed','deaths_observed',
