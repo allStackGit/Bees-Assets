@@ -1976,8 +1976,11 @@ terminal state, the agent sends approved log snapshots to the existing
 loopback/SSH-forwarded machine endpoint on port 7149. Heartbeats and native
 Stop/Inspect commands are independent of this lower-priority transfer.
 Each HTTP chunk is limited to 1 MiB, a single file snapshot to 500 MB,
-and the receiving Hub to 256 files / 5 GB per job. Each cycle transfers up
-to 32 MiB, resumes from a verified staging offset after interruptions, and
+and the receiving Hub to 256 files / 5 GB per job. The Hub also
+requires at least 2 GB of verified free filesystem space after each chunk
+so optional diagnostics cannot consume the checkpoint/journal disk reserve.
+Each cycle transfers up to 32 MiB, resumes from a verified staging offset,
+and
 publishes a file atomically only after its complete SHA-256 matches.
 The coordinator stores private completed snapshots in
 `hub-remote-artifacts/<job-id>/`; unfinished pieces are not export inputs.
