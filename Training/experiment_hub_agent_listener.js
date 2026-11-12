@@ -4,6 +4,7 @@
 // and isolated Hub transport qualification. The caller binds to loopback;
 // neither project administration nor Bees training routes are available here.
 const http=require('node:http');
+const {ArtifactMirror,MAX_CHUNK}=require('./experiment_hub_artifact_sync');
 const AGENT_HOST='127.0.0.1';
 const AGENT_PORT=7149;
 // A heartbeat includes machine/lease reports beyond the separately
@@ -43,11 +44,68 @@ async function readBody(req) {
 function createAgentServer(getHub) {
     if(typeof getHub!=='function')
         throw Error('Agent endpoint requires a local Hub provider.');
+    const mirror=new ArtifactMirror(getHub);
     return http.createServer(async(req,res)=>{
         const host=req.headers.host;
         if((host!==AGENT_HOST+':'+AGENT_PORT&&
             host!=='localhost:'+AGENT_PORT)||req.headers.origin)
             return respond(res,404,{error:'Agent endpoint only.'});
+        // Separate bounded binary transfers from the 64-KiB heartbeat.
+        // Worker credentials are machine-scoped; job ownership and each
+        // relative telemetry path are verified before accepting bytes.
+        if(['GET','PUT'].includes(req.method)&&
+            req.url?.startsWith('/api/hub/agent/artifacts?')) {
+            try {
+                if(req.url.length>1024||req.headers.origin)
+                    return respond(res,404,{error:'Agent endpoint only.'});
+                const url=new URL(req.url,'http://'+AGENT_HOST+':'+AGENT_PORT);
+                const params=url.searchParams,keys=[...params.keys()];
+                const required=req.method==='PUT'
+                    ?['machine_id','job_id','file','sha','size','offset']
+                    :['machine_id','job_id','file','sha','size'];
+                if(url.pathname!=='/api/hub/agent/artifacts'||url.hash||
+                    keys.length!==required.length||
+                    new Set(keys).size!==required.length||
+                    required.some(key=>!params.has(key)))
+                    return respond(res,404,{error:'Agent endpoint only.'});
+                const machine=params.get('machine_id'),job=params.get('job_id'),
+                    file=params.get('file'),sha=params.get('sha');
+                const rawSize=params.get('size');
+                if(!/^[1-9][0-9]{0,8}$/.test(rawSize||''))
+                    throw Error('Invalid artifact snapshot size.');
+                const size=Number(rawSize);
+                mirror.authorize(machine,req.headers['x-hub-agent-token'],
+                    job,file,sha,size);
+                if(req.method==='GET') {
+                    if(Number(req.headers['content-length']||0)!==0)
+                        return respond(res,400,{error:'Artifact status must not have a body.'});
+                    return respond(res,200,mirror.status(machine,
+                        req.headers['x-hub-agent-token'],job,file,sha,size));
+                }
+                const declared=req.headers['content-length'];
+                const offset=params.get('offset');
+                if(!/^(0|[1-9][0-9]{0,8})$/.test(offset||'')||
+                    !/^[1-9][0-9]{0,6}$/.test(declared||'')||
+                    Number(declared)>MAX_CHUNK||
+                    req.headers['content-type']!=='application/octet-stream')
+                    return respond(res,413,{error:'Invalid artifact chunk envelope.'});
+                let received=0;const chunks=[];
+                for await(const chunk of req) {
+                    received+=chunk.length;
+                    if(received>MAX_CHUNK)
+                        return respond(res,413,{error:'Artifact chunk too large.'});
+                    chunks.push(chunk);
+                }
+                if(received!==Number(declared))
+                    return respond(res,400,{error:'Artifact chunk length changed.'});
+                return respond(res,200,mirror.append(machine,
+                    req.headers['x-hub-agent-token'],job,file,sha,size,
+                    Number(offset),Buffer.concat(chunks,received)));
+            }catch(error) {
+                return respond(res,[401,409,413].includes(error.status)
+                    ?error.status:400,{error:String(error.message||error)});
+            }
+        }
         if(req.method==='GET') {
             // Only an enrolled machine may inspect its own evaluator
             // worklist. Never expose the privileged /api/hub dashboard
