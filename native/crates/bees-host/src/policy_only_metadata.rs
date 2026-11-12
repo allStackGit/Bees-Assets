@@ -677,6 +677,10 @@ impl NativeLevelActivationContext for NativePolicyOnlyMetadata {
         self.hivemind_active
     }
 
+    fn source_hivemind_initial_delay_seconds(&self) -> Option<i32> {
+        self.hivemind_initial_delay_seconds
+    }
+
     fn source_hivemind_starting_position(&self, side: i32) -> Option<Vec2> {
         let index = usize::try_from(side.checked_sub(1)?).ok()?;
         self.hivemind_starting_positions?.get(index).copied()

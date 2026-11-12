@@ -138,6 +138,11 @@ pub trait NativeLevelActivationContext: NativeLevelCommandContext {
     /// authorization to autonomously issue command reservations.
     fn source_hivemind_active(&self) -> Option<bool> { None }
 
+    /// Unity Stage.InitialCommandDelay. This only schedules external
+    /// request pulses, never commands or simulated physics. Legacy scene
+    /// metadata without the field fails closed for autonomous requests.
+    fn source_hivemind_initial_delay_seconds(&self) -> Option<i32> { None }
+
     /// Level.StartingPositions[side-1], never guessed from the map center
     /// or a ship's current physical placement.
     fn source_hivemind_starting_position(&self, _side: i32) -> Option<Vec2> { None }

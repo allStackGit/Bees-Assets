@@ -11,11 +11,12 @@ use std::collections::HashSet;
 use std::io::{self, ErrorKind};
 
 use bees_gameplay::inference::NativePolicyInference;
-use bees_gameplay::level_host::NativeLevelNotificationSink;
+use bees_gameplay::level_host::{NativeLevelActivationContext,
+    NativeLevelNotificationSink, NativeLevelObservationContext};
+use bees_gameplay::level_rules::NativeLevelRewardMetadata;
 use bees_gameplay::squads::SquadRosterError;
 use bees_hivemind::session::SquadLifetime;
 
-use crate::policy_only_metadata::NativePolicyOnlyMetadata;
 use crate::runtime::{NativeHostRuntime, NativeSourceCommandPulse};
 use crate::socket_worker::NativeSocketWorker;
 
@@ -101,12 +102,14 @@ impl NativeSourceCommandScheduler {
     /// in-place. Admit its source clock AFTER successful host registration;
     /// all existing worlds preserve their absolute timer deadlines.
     /// No scheduler-side copy of the Level or its commands is created.
-    pub fn register_added_world<A, B, S>(
+    pub fn register_added_world<M, A, B, S>(
         &mut self,
-        host: &NativeHostRuntime<NativePolicyOnlyMetadata, A, B, S>,
+        host: &NativeHostRuntime<M, A, B, S>,
         index: usize,
     ) -> io::Result<()>
     where
+        M: NativeLevelRewardMetadata + NativeLevelActivationContext +
+            NativeLevelObservationContext,
         A: FnMut(SquadLifetime, i64) -> Result<SquadLifetime, SquadRosterError>,
         B: NativePolicyInference,
         S: NativeLevelNotificationSink,
@@ -145,14 +148,16 @@ impl NativeSourceCommandScheduler {
     /// command owner to emit requests for due Levels. Transport setup
     /// readiness is passed by the caller; missed beats are not replayed
     /// in a burst after an outage.
-    pub fn issue_due<A, B, S>(
+    pub fn issue_due<M, A, B, S>(
         &mut self,
-        host: &mut NativeHostRuntime<NativePolicyOnlyMetadata, A, B, S>,
+        host: &mut NativeHostRuntime<M, A, B, S>,
         worker: &NativeSocketWorker,
         level_ids: &[i32],
         setup_complete: bool,
     ) -> io::Result<()>
     where
+        M: NativeLevelRewardMetadata + NativeLevelActivationContext +
+            NativeLevelObservationContext,
         A: FnMut(SquadLifetime, i64) -> Result<SquadLifetime, SquadRosterError>,
         B: NativePolicyInference,
         S: NativeLevelNotificationSink,
@@ -166,14 +171,14 @@ impl NativeSourceCommandScheduler {
         for index in 0..self.clocks.len() {
             let world = host.simulation().world(index)
                 .ok_or_else(|| invalid("registered native Level disappeared"))?;
-            let initial = world.state.metadata.hivemind_initial_delay_seconds
+            let initial = world.state.metadata.source_hivemind_initial_delay_seconds()
                 .ok_or_else(|| invalid("source HiveMind delay missing from Level"))?;
             let tick = world.tick();
             self.ensure_clock(index, world.episode_revision(), initial)?;
             let clock = self.clocks[index].as_mut().expect("initialized source clock");
             if tick >= clock.next_due_tick {
                 self.schedule_measurements.due_beats += 1;
-                let active = world.state.metadata.hivemind_active == Some(true) &&
+                let active = world.state.metadata.source_hivemind_active() == Some(true) &&
                     !world.is_failed() && !world.state.events.is_failed() &&
                     !world.state.events.completed() && !world.state.events.was_aborted();
                 if ready && active {
@@ -216,12 +221,14 @@ impl NativeSourceCommandScheduler {
     /// boundary. Graphical windows are already one fixed tick at a time;
     /// a headless host must use this limit to preserve real-time command
     /// sequencing instead of stepping over the due timer.
-    pub fn rounds_until_next_pulse<A, B, S>(
+    pub fn rounds_until_next_pulse<M, A, B, S>(
         &mut self,
-        host: &NativeHostRuntime<NativePolicyOnlyMetadata, A, B, S>,
+        host: &NativeHostRuntime<M, A, B, S>,
         setup_complete: bool,
     ) -> io::Result<u64>
     where
+        M: NativeLevelRewardMetadata + NativeLevelActivationContext +
+            NativeLevelObservationContext,
         A: FnMut(SquadLifetime, i64) -> Result<SquadLifetime, SquadRosterError>,
         B: NativePolicyInference,
         S: NativeLevelNotificationSink,
@@ -239,7 +246,7 @@ impl NativeSourceCommandScheduler {
                 world.state.metadata.hivemind_active != Some(true) {
                 continue;
             }
-            let initial = world.state.metadata.hivemind_initial_delay_seconds
+            let initial = world.state.metadata.source_hivemind_initial_delay_seconds()
                 .ok_or_else(|| invalid("source HiveMind delay missing from Level"))?;
             self.ensure_clock(index, world.episode_revision(), initial)?;
             let due = self.clocks[index].expect("initialized source clock").next_due_tick;
