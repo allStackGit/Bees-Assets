@@ -137,15 +137,18 @@ before issuing the ordinary squad move to `entry`. For example, with
 Omitting `spawn` retains the imported ship positions. Omitting `entry`,
 or setting it to Unity's zero-vector sentinel, places the wave without
 a movement order. Both coordinates use the source scene's frame.
-Single-ship squads spawn exactly at `spawn`; larger squads use Unity's
-ship-type-adjusted authored offsets and two-pass placement around their
-sprite bounds. Original unadjusted offsets remain the source for movement.
-A plan with `spawn` must contain only one squad: Unity independently
-spawns separate saved squads but positions Carrier child squads together,
-so a combined spawn plan cannot distinguish their source layouts. For
-multi-squad arrivals, omit `spawn` and preserve captured physical positions
-or author separate known single-squad plans. Multi-squad waves deploy in
-`squad_item_ids` order, even when the captured scene arrays differ.
+In obstacle-free levels, `spawn` reproduces Unity's two-pass
+`PositionSquads` placement using source ship-type-adjusted offsets and
+sprite bounds. A plan can group multiple squads from **one**
+`AddReinforcementSquads` construction call, including Carrier child squads:
+their `squad_item_ids` order determines alternating left/right placement
+and the source 10-unit gaps. Independently spawned saved squads require
+separate plans, even at the same time. Original unadjusted offsets remain
+the source for movement orders. In obstacle-bearing levels, Unity may
+move formation centers or individual ships with Pathfinder. Omit `spawn`
+and supply authentic captured positions instead; synthesized spawning is
+rejected. Captured-position waves preserve all physical positions and
+deploy in `squad_item_ids` order, regardless of scene-array order.
 The squads arrive on the first fixed tick after their scheduled time while
 the battle is active. Use nondecreasing times and unique squad item IDs.
 Same-time waves retain their authored order and distinct positions. All ship,
