@@ -219,6 +219,12 @@ impl NativeScriptedQueueMeasurements {
     /// geometry, preserving Level.State.Squads order. Command activation
     /// and timer callbacks use this same authoritative view.
 pub trait NativeLevelCommandContext {
+    /// While a mission queue owns a SquadLifetime, its saved scripted
+    /// commands have priority over requests made before it was armed.
+    /// Returning false is the generic Level default; only an authored
+    /// mission adapter can assert ownership.
+    fn scripted_queue_owns(&self, _owner: SquadLifetime) -> bool { false }
+
     /// Unity Command.SetFinalize releases user squads' IsLockedOn state.
     /// Level command completion is the one authoritative event source.
     fn player_command_finished(&mut self, _owner: SquadLifetime) {}

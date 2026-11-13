@@ -236,8 +236,12 @@ where
     ]);
     if world.is_failed() || world.state.events.is_failed() ||
         world.state.events.completed() ||
-        world.state.events.roster().get(owner).is_none()
+        world.state.events.roster().get(owner).is_none() ||
+        world.state.metadata.scripted_queue_owns(owner)
     {
+        // A scripted mission command supersedes the request's original
+        // authority. Do not install a late server command over the queue;
+        // the two returned OutcomeIds still require durable discard.
         return Ok(discard());
     }
     let fail = |error: GameCommandError| StrategyReceiptFailure {
@@ -1014,8 +1018,19 @@ impl NativeLevelBatchDriver {
         // Death/terminal retirement instructions persist across rollout
         // windows. Apply them before validating this server response.
         flush_all_squad_retirements(simulation, connection);
+        let scripted = found.is_some_and(|index|
+            simulation.world(index).is_some_and(|world|
+                world.state.metadata.scripted_queue_owns(owner)
+            )
+        );
+        if scripted {
+            // Mark all existing hashes retired in the connection owner.
+            // The response still validates against its original request
+            // and returns the exact reservation IDs for StoreCommands.
+            connection.retire_squad(owner);
+        }
         let receipt = connection.receive_strategy(
-            response, found.map(|_| owner),
+            response, found.filter(|_| !scripted).map(|_| owner),
         ).map_err(NativeLevelStrategyReceiveError::Session)?;
         match receipt {
             StrategyReceipt::Retired { reservation_ids, .. } =>
@@ -1064,8 +1079,16 @@ impl NativeLevelBatchDriver {
         let found = self.locate_live_owner(simulation, owner)
             .map_err(NativeLevelTargetingReceiveError::Routing)?;
         flush_all_squad_retirements(simulation, connection);
+        let scripted = found.is_some_and(|index|
+            simulation.world(index).is_some_and(|world|
+                world.state.metadata.scripted_queue_owns(owner)
+            )
+        );
+        if scripted {
+            connection.retire_squad(owner);
+        }
         let receipt = connection.receive_targeting(
-            response, found.map(|_| owner),
+            response, found.filter(|_| !scripted).map(|_| owner),
         ).map_err(NativeLevelTargetingReceiveError::Session)?;
         let world_index = match receipt {
             TargetingReceipt::Retired { .. } => None,

@@ -462,6 +462,10 @@ impl NativeLevelRewardMetadata for NativePolicyOnlyMetadata {
 }
 
 impl NativeLevelCommandContext for NativePolicyOnlyMetadata {
+    fn scripted_queue_owns(&self, owner: SquadLifetime) -> bool {
+        self.scripted_queues.iter().any(|queue| queue.owner == owner)
+    }
+
     fn player_chase_measurements(&self) -> NativePlayerChaseMeasurements {
         self.chase_measurements
     }
