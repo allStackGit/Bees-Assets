@@ -4150,6 +4150,29 @@ class ExperimentHub {
         this.commit(next);
         return copy(job);
     }
+    // Human-readable comparison labels are job metadata, not trainer inputs.
+    // Renaming cannot mutate a frozen configuration, checkpoint or lease.
+    renameJob(value) {
+        if(!object(value)||!UUID.test(String(value.job_id||''))||
+            Object.keys(value).some(key=>
+                !['job_id','run_name','expected_run_name'].includes(key))||
+            (value.expected_run_name!==undefined&&
+                value.expected_run_name!==null&&
+                (typeof value.expected_run_name!=='string'||
+                 value.expected_run_name.length>100)))
+            throw Error('Select a valid job and its current run label.');
+        const next=copy(this.state);
+        const job=next.jobs.find(item=>item.id===value.job_id&&
+            item.adapter==='unconfigured'&&item.project_id!=='ants');
+        if(!job)throw Error('Managed project job not found.');
+        if(value.expected_run_name!==undefined&&
+            (job.run_name||null)!==(value.expected_run_name||null))
+            throw Error('Run label changed. Refresh Train before renaming.');
+        if(value.run_name===null||value.run_name==='')delete job.run_name;
+        else job.run_name=name(value.run_name,'Run name');
+        this.commit(next);
+        return copy(job);
+    }
     // Atomically reserve fixed resources for independently executable jobs
     // across projects and machines. This is the common *control-plane*
     // foundation for distributed workloads, not a data-plane protocol or a
@@ -4875,6 +4898,8 @@ class ExperimentHub {
         // directory, or process arguments can be supplied in the job request.
         const frozen = config(selected.parameters);
         const resources = resourceRequest(value.resources);
+        const runName=value.run_name==null||value.run_name===''
+            ?null:name(value.run_name,'Run name');
         // Telemetry selection is independent from optimizer configuration
         // fingerprints. It never influences a model or continuation lineage.
         const selectedMetrics=value.metric_selection??null;
@@ -5009,6 +5034,7 @@ class ExperimentHub {
             configuration_id:selected.id,
             configuration_revision:selected.revision,
             configuration_name:selected.name,
+            ...(runName?{run_name:runName}:{}),
             configuration_sha256:crypto.createHash('sha256')
                 .update(JSON.stringify(frozen)).digest('hex'),
             frozen_parameters:frozen, resources,
