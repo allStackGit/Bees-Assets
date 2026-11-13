@@ -99,6 +99,7 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'remote_policy_shared_collectors',
             'remote_policy_shared_encode_seconds',
             'remote_policy_shared_bytes',
+            'local_lease_ram_charged_mb','local_lease_ram_headroom_mb',
             'local_gpu_collectors_pending_at_local_end',
             'collector_join_wait_seconds','local_gpu_join_wait_seconds',
             'rollout_onnx_batch_share','rollout_onnx_calls',
