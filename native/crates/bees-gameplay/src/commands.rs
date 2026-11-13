@@ -1234,9 +1234,14 @@ impl NativeSquadCommandDirector {
                 )?.is_some()
             }
             LocalCommandKind::MoveToRandom => {
+                // Unity MoveToRandom.Setup uses the source maximum when
+                // its optional range is zero or negative. Only nonfinite
+                // runtime inputs are invalid, never an authored zero.
                 let range = match local {
                     Some(NativeLocalCommandAction::MoveToRandom { range }) if
                         range.is_finite() && range > 0.0 => range,
+                    Some(NativeLocalCommandAction::MoveToRandom { range }) if
+                        range.is_finite() => settings.ai_random_max_distance,
                     Some(NativeLocalCommandAction::MoveToRandom { .. }) =>
                         return Err(GameCommandError::InvalidCombatSnapshot),
                     _ => settings.ai_random_max_distance,

@@ -45,7 +45,7 @@ impl NativeScriptedOrder {
     fn valid(self) -> bool {
         match self {
             Self::MoveToPoint { destination } => destination.is_finite(),
-            Self::MoveToRandom { range } => range.is_finite() && range > 0.0,
+            Self::MoveToRandom { range } => range.is_finite(),
             Self::Aggressive { enemy_squad_item_id } => enemy_squad_item_id > 0,
         }
     }

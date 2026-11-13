@@ -121,7 +121,7 @@ struct ScriptedQueueConfig {
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum ScriptedOrderConfig {
     MoveToPoint { destination: [f32; 2] },
-    MoveToRandom { range: f32 },
+    MoveToRandom { #[serde(default)] range: f32 },
     Aggressive { enemy_squad_item_id: i64 },
 }
 
