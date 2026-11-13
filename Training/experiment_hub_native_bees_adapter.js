@@ -20,6 +20,31 @@ function trustedFile(file) {
     return resolved;
 }
 
+// The Hub job config owns the whole executable training task, not just the
+// top-level JSON. The scene, source collision assets and model worker must
+// remain byte-identical between separate jobs and checkpoint continuations.
+// A bundle-only learner has no local scene, by design; its collector bundle
+// receipts prove their own physical input identity.
+function nativeSourceDependencies(runFile, config) {
+    const references = new Map();
+    const pin = (value, key) => {
+        if (typeof value !== 'string' || !value)
+            throw Error('Native Bees requires an existing ' + key + ' file.');
+        const file = trustedFile(path.resolve(path.dirname(runFile), value));
+        references.set(file, sha256(fs.readFileSync(file)));
+    };
+    if (!Object.hasOwn(config, 'rollout_bundles')) {
+        if (!Array.isArray(config.levels) || !config.levels.length)
+            throw Error('Native Bees source run must contain physical Levels.');
+        for (const level of config.levels)
+            pin(level?.scene, 'Level scene');
+    }
+    for (const key of ['policy_worker', 'collision_matrix', 'stage_palette']) {
+        if (config[key] != null) pin(config[key], key);
+    }
+    return references;
+}
+
 
 // The manifest is the complete runnable model set, not just the learner
 // checkpoint. Resolve every slot against its declared digest before leasing
@@ -178,12 +203,15 @@ function createNativeBeesAdapter({
     const manifest = trustedFile(path.resolve(path.dirname(run), config.model_manifest));
     const pins = new Map([
         [run, sha256(runBytes)],
-        ...[trainer, input, manifest].map(file => [file, sha256(fs.readFileSync(file))]),
+        ...[trainer, input, manifest, runner, ...(binary ? [binary] : [])]
+            .map(file => [file, sha256(fs.readFileSync(file))]),
+        ...nativeSourceDependencies(run, config),
     ]);
     const initialGpuInference = verifyModelDependencies(
         manifest, new Map([[input, pins.get(input)]]), input, learnerSlot,
     );
-    const configIdentity = [...pins.values(), learnerSlot ?? null];
+    const configIdentity = [...[...pins.entries()].sort(([a], [b]) => a.localeCompare(b))
+        .map(([file, digest]) => [file, digest]), learnerSlot ?? null];
     if (collectOnly) configIdentity.push(project);
     if (inbox) configIdentity.push(inbox);
     const configSha256 = sha256(JSON.stringify(configIdentity));
@@ -308,14 +336,16 @@ function createNativeBeesAdapter({
             const output = jobRoot(context);
             const {config_sha256, seed_offset, rollout_bundles, optimizer_threads, rollout_workers,
                 collection_id, rollout_world_start, rollout_worlds,
-                bundle_directory} = parameters;
+                bundle_directory, refresh_opponent_slot} = parameters;
             const allowed = inboxLearner
-                ? ['config_sha256', 'seed_offset', 'rollout_bundles', 'optimizer_threads']
+                ? ['config_sha256', 'seed_offset', 'rollout_bundles', 'optimizer_threads',
+                    'refresh_opponent_slot']
                 : collectOnly
                     ? ['config_sha256', 'seed_offset', 'rollout_workers',
                         'collection_id', 'rollout_world_start', 'rollout_worlds',
                         'bundle_directory']
-                    : ['config_sha256', 'seed_offset', 'optimizer_threads', 'rollout_workers'];
+                    : ['config_sha256', 'seed_offset', 'optimizer_threads', 'rollout_workers',
+                        'refresh_opponent_slot'];
             if (Object.keys(parameters).some(key => !allowed.includes(key)) ||
                 config_sha256 !== configSha256 || !Number.isSafeInteger(seed_offset) || seed_offset < 0 ||
                 (bundleRound && seed_offset !== 0))
@@ -370,6 +400,20 @@ function createNativeBeesAdapter({
                 (!gpu && cudaUuid !== undefined) || (collectOnly && gpu))
                 throw Error('Native Bees execution requires an exclusive single-GPU lease or CPU-only placement.');
             const inputs = roundInputs(context);
+            if (refresh_opponent_slot !== undefined) {
+                if (learnerSlot === undefined || !Number.isSafeInteger(refresh_opponent_slot) ||
+                    refresh_opponent_slot < 0 || refresh_opponent_slot > 0xffffffff ||
+                    refresh_opponent_slot === learnerSlot)
+                    throw Error('Native Bees self-play requires a distinct existing uint32 opponent and explicit learner slot.');
+                const current = JSON.parse(fs.readFileSync(inputs.manifest, 'utf8'));
+                const opponents = current.models.filter(model => model.slot === refresh_opponent_slot);
+                if (opponents.length !== 1 || opponents[0].backend !== 'mlagents')
+                    throw Error('Native Bees self-play promotion requires an existing MA-POCA opponent slot.');
+                if (!config.levels?.some(level =>
+                    [learnerSlot, refresh_opponent_slot].every(slot =>
+                        Object.values(level.model_slots || {}).includes(slot))) && !inboxLearner)
+                    throw Error('Native Bees training Levels must route the learner and selected opponent.');
+            }
             if (!gpu && inputs.requiresGpuInference)
                 throw Error('Native Bees GPU inference requires an exclusive GPU lease.');
             if (context.continuation_of_job_id &&
@@ -395,7 +439,9 @@ function createNativeBeesAdapter({
                 ...(rollout_workers === undefined ? [] :
                     ['--rollout-workers', String(rollout_workers)]),
                 '--seed-offset', String(seed_offset),
-                ...(learnerSlot === undefined ? [] : ['--learner-slot', String(learnerSlot)])];
+                ...(learnerSlot === undefined ? [] : ['--learner-slot', String(learnerSlot)]),
+                ...(refresh_opponent_slot === undefined ? [] :
+                    ['--refresh-opponent-slot', String(refresh_opponent_slot)])];
         },
         ...(collectOnly ? {} : {
             checkpoint_ready(context) {
