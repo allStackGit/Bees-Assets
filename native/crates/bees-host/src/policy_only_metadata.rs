@@ -166,6 +166,7 @@ pub struct NativePolicyOnlyMetadata {
     pub(crate) reinforcements: std::collections::VecDeque<crate::reinforcements::ReinforcementWave>,
     scripted_queues: Vec<scripted::NativeScriptedQueueState>,
     scripted_members: Vec<bees_sim::squad_movement::SquadFormationMember>,
+    scripted_friendlies: Vec<bees_gameplay::commands::NativeFriendlySquad>,
     scripted_counts: NativeScriptedQueueMeasurements,
     /// One source-second chase clock shared by the player's starting
     /// squads, whose Unity timers are all armed at Squad.Setup.
@@ -295,6 +296,7 @@ impl NativePolicyOnlyMetadata {
             reinforcements: std::collections::VecDeque::new(),
             scripted_queues: Vec::new(),
             scripted_members: Vec::new(),
+            scripted_friendlies: Vec::new(),
             scripted_counts: NativeScriptedQueueMeasurements::default(),
             chase_elapsed_seconds: 0.0,
             chase_measurements: NativePlayerChaseMeasurements::default(),
