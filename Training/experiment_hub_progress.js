@@ -91,7 +91,11 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             reported.simulation_match_steps_per_second);
         // Show measured stage pressure before unrelated high-cardinality
         // project metrics consume the default 96-chart-field cache.
-        for(const name of ['pipeline_remote_wait_dominant',
+        for(const name of ['pipeline_cpu_lease_pressure',
+            'pipeline_cpu_throttle_pressure','pipeline_ram_lease_pressure',
+            'pipeline_gpu_host_busy_pressure',
+            'pipeline_cpu_underuse_evidence','pipeline_gpu_idle_evidence',
+            'pipeline_remote_wait_dominant',
             'pipeline_merge_dominant','pipeline_collection_dominant',
             'pipeline_optimization_dominant','pipeline_remote_wait_work_share',
             'pipeline_merge_work_share','pipeline_collection_work_share',
@@ -120,7 +124,7 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
 // independent capacity benchmarks. Unreported timing cannot be guessed.
 class BottleneckEvidence {
     constructor() { this.byJob=new Map(); }
-    enrich(job,progress) {
+    enrich(job,progress,observed={}) {
         if(!progress||!job?.id)return progress;
         const metrics=progress.metrics||{};
         const derived={};
@@ -131,6 +135,32 @@ class BottleneckEvidence {
             if(Number.isFinite(value)&&value>=0&&value<=1e12&&
                 (unit!=='ratio'||value<=1))
                 derived[name]={value,unit};
+        };
+        // These are trusted, authenticated native-job/cgroup observations.
+        // GPU occupancy remains HOST-wide even with an exclusive Hub lease.
+        // It cannot certify useful per-job GPU work or exclude outside load.
+        const percent=name=>{
+            const item=observed?.[name];
+            return item?.unit==='scalar'&&Number.isFinite(item.value)&&
+                item.value>=0&&item.value<=1000?item.value:null;
+        };
+        const cpu=percent('job_cpu_lease_utilization_pct');
+        const throttle=percent('job_cpu_quota_throttled_periods_pct');
+        const ram=percent('job_memory_lease_utilization_pct');
+        const gpuCount=job.resources?.gpu_count;
+        const eligibleGpu=job.resources?.gpu_mode==='exclusive'&&
+            Number.isSafeInteger(gpuCount)&&gpuCount>0&&gpuCount<=32;
+        const gpuBusy=eligibleGpu
+            ?Array.from({length:gpuCount},(_,i)=>percent(
+                'host_gpu_'+i+'_busy_pct')):[];
+        const allGpuKnown=gpuBusy.length>0&&gpuBusy.every(x=>x!==null);
+        const resourceHints={
+            cpuBusy:cpu!==null&&cpu>=90,
+            cpuIdle:cpu!==null&&cpu<=40,
+            throttled:throttle!==null&&throttle>=10,
+            ramNear:ram!==null&&ram>=90,
+            gpuBusy:allGpuKnown&&gpuBusy.every(x=>x>=90),
+            gpuIdle:allGpuKnown&&gpuBusy.every(x=>x<=30)
         };
         const collection=seconds('collection_seconds');
         const optimize=seconds('optimization_seconds');
@@ -221,7 +251,8 @@ class BottleneckEvidence {
                     stageHints[i]=stage;
             }
             if(Number.isFinite(at)&&at>prior.lastAt) {
-                prior.samples.push({at,fraction,waitShare,mergeShare,stageHints,simHints});
+                prior.samples.push({at,fraction,waitShare,mergeShare,stageHints,simHints,
+                    resourceHints});
                 if(prior.samples.length>8)prior.samples.shift();
                 prior.lastAt=at;
             }
@@ -239,6 +270,25 @@ class BottleneckEvidence {
                     add('pipeline_remote_wait_dominant',1,'count');
                 if(recent.filter(x=>x.mergeShare!==null&&x.mergeShare>=0.3).length>=5)
                     add('pipeline_merge_dominant',1,'count');
+                // Cross-stage capacity evidence requires *sustained* host
+                // data. Observations are independent and can overlap:
+                // saturation, throttling and inefficient software may coexist.
+                const sustained=name=>recent.filter(
+                    x=>x.resourceHints?.[name]).length>=5;
+                if(sustained('cpuBusy'))
+                    add('pipeline_cpu_lease_pressure',1,'count');
+                if(sustained('throttled'))
+                    add('pipeline_cpu_throttle_pressure',1,'count');
+                if(sustained('ramNear'))
+                    add('pipeline_ram_lease_pressure',1,'count');
+                if(sustained('gpuBusy'))
+                    add('pipeline_gpu_host_busy_pressure',1,'count');
+                if(sustained('cpuIdle')&&
+                        recent.filter(x=>x.fraction>=0.7).length>=5)
+                    add('pipeline_cpu_underuse_evidence',1,'count');
+                if(sustained('gpuIdle')&&
+                        recent.filter(x=>x.fraction<=0.3).length>=5)
+                    add('pipeline_gpu_idle_evidence',1,'count');
                 for(let i=0;i<9;i++) {
                     // Stable straggler tails or dispatch queueing suggest
                     // software parallelism pressure, not CPU saturation.
@@ -285,6 +335,8 @@ class BottleneckEvidence {
         // continuous ratios when nine profiled collectors approach the wire
         // limit. Never evict a project-owned source metric for a diagnosis.
         const priority=name=>
+            name.startsWith('pipeline_')&&(
+                name.endsWith('_pressure')||name.endsWith('_evidence'))?0:
             name.startsWith('pipeline_')&&name.endsWith('_dominant')?0:
             // Keep evidence from every machine before filling the report
             // with a second or third warning from the first collector.
