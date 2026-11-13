@@ -44,11 +44,25 @@ function fieldsFor(config,project) {
             if(project==='tinybrains'&&!['training','environment','reward','self_play'].includes(path[0]))
                 continue;
             const leaf=key.toLowerCase(),integer=typeof value==='number'&&Number.isInteger(value);
-            const ratio=/(?:^|_)(?:gamma|lambda|probability|rate|fraction|ppo_clip)(?:$|_)/.test(leaf);
+            const tinyLimits=project==='tinybrains'?{
+                'training.gamma':[0.000000001,1],
+                'training.gae_lambda':[0,1],
+                'training.ppo_clip':[0.000000001,0.999999],
+                'training.learning_rate':[0.000000001,1],
+                'training.max_grad_norm':[0.000000001,1000000],
+                'training.entropy_coefficient':[0,1000000],
+                'training.value_coefficient':[0,1000000],
+                'training.baseline_coefficient':[0,1000000],
+                'environment.max_turns':[1,1000000000],
+                'environment.timeout_seconds':[0.000000001,1000000000],
+                'self_play.snapshot_every':[1,1000000000],
+                'self_play.max_snapshots':[1,1000000000],
+            }[joined]:null;
             const positive=/(learning_rate|batch_size|buffer_size|epochs|colony_batch_size|turns|timeout|count|size|radius)/.test(leaf);
-            const min=typeof value==='boolean'?undefined:positive?(leaf==='learning_rate'?0.000000001:1):value<0?-1000000000:0;
-            const max=typeof value==='boolean'?undefined:ratio?1:
-                leaf==='learning_rate'?1:integer?1000000000:1000000000;
+            const min=typeof value==='boolean'?undefined:tinyLimits?tinyLimits[0]:
+                positive?(leaf==='learning_rate'?0.000000001:1):value<0?-1000000000:0;
+            const max=typeof value==='boolean'?undefined:tinyLimits?tinyLimits[1]:
+                leaf==='learning_rate'?1:1000000000;
             fields.push({key:joined,section:project==='tinybrains'
                     ?path[0]==='training'?'training':'environment'
                     :TRAINING.test(joined)?'training':'environment',
