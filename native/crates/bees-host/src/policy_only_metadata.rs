@@ -11,6 +11,7 @@ mod scripted;
 mod mission_cues;
 pub use scripted::{NativeScriptedOrder, NativeScriptedQueuePlan, NativeScriptedActivation};
 pub use mission_cues::NativeMissionCue;
+pub(crate) use mission_cues::NativeMissionEvent;
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::sync::Arc;
@@ -506,8 +507,10 @@ impl NativeLevelCommandContext for NativePolicyOnlyMetadata {
                 .map(|wave| wave.ship_count()).sum(),
             waiting_for_campaign_cue: self.reinforcements.iter()
                 .filter(|wave| wave.is_campaign_triggered()).count(),
+            waiting_for_ship_death: self.reinforcements.iter()
+                .filter(|wave| wave.is_ship_death_triggered()).count(),
             timed_waves: self.reinforcements.iter()
-                .filter(|wave| !wave.is_campaign_triggered()).count(),
+                .filter(|wave| wave.scheduled_tick().is_some()).count(),
         }
     }
 

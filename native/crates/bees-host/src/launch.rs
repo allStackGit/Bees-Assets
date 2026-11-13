@@ -128,6 +128,7 @@ enum ScriptedActivationConfig {
     OnDeployment,
     OnArrival,
     OnCampaignCue { cue: bees_host::policy_only_metadata::NativeMissionCue },
+    OnShipDestroyed { ship_id: i64 },
 }
 
 #[derive(Clone, Copy, Deserialize, Serialize)]
@@ -148,6 +149,8 @@ struct ReinforcementConfig {
     after_seconds: Option<f32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     on_campaign_cue: Option<bees_host::policy_only_metadata::NativeMissionCue>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    on_ship_destroyed: Option<i64>,
     squad_item_ids: Vec<i64>,
     /// Explicit physical starting center (may be outside scene bounds).
     /// Omitted for older captured waves whose ships are already positioned.
@@ -423,13 +426,17 @@ fn make_setup(
         }),
         campaign_dialogue: level.campaign_dialogue,
         reinforcements: level.reinforcements.iter().map(|wave| {
-            let activation = match (wave.after_seconds, wave.on_campaign_cue) {
-                (Some(seconds), None) =>
+            let activation = match (
+                wave.after_seconds, wave.on_campaign_cue, wave.on_ship_destroyed,
+            ) {
+                (Some(seconds), None, None) =>
                     bees_host::NativeReinforcementActivation::AfterSeconds(seconds),
-                (None, Some(cue)) =>
+                (None, Some(cue), None) =>
                     bees_host::NativeReinforcementActivation::OnCampaignCue(cue),
+                (None, None, Some(ship_id)) =>
+                    bees_host::NativeReinforcementActivation::OnShipDestroyed(ship_id),
                 _ => return Err(invalid(
-                    "reinforcement needs exactly one of after_seconds or on_campaign_cue",
+                    "reinforcement needs exactly one of after_seconds, on_campaign_cue or on_ship_destroyed",
                 )),
             };
             Ok(bees_host::NativeReinforcementPlan {
@@ -456,6 +463,8 @@ fn make_setup(
                         bees_host::policy_only_metadata::NativeScriptedActivation::OnArrival,
                     ScriptedActivationConfig::OnCampaignCue { cue } =>
                         bees_host::policy_only_metadata::NativeScriptedActivation::OnCampaignCue(cue),
+                    ScriptedActivationConfig::OnShipDestroyed { ship_id } =>
+                        bees_host::policy_only_metadata::NativeScriptedActivation::OnShipDestroyed(ship_id),
                 },
                 orders: queue.orders.iter().map(|order| match *order {
                     ScriptedOrderConfig::MoveToPoint { destination } =>

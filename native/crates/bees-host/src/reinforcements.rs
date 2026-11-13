@@ -10,7 +10,9 @@ use bees_sim::{combat_world::CombatWorld, geometry::Vec2, squad_movement::{
     SquadFormationMember, authored_placement_offset, issue_squad_move,
 }};
 
-use crate::policy_only_metadata::{NativePolicyOnlyMetadata, NativeMissionCue};
+use crate::policy_only_metadata::{
+    NativePolicyOnlyMetadata, NativeMissionCue, NativeMissionEvent,
+};
 use crate::scene_builder::{NativeAuthoredEntity, NativeAuthoredLevel, NativeAuthoredShip, NativeAuthoredSquad,
     install_ship_attachments, spawn_authored_ship};
 use crate::ship_specials::NativeAuthoredShipSpecial;
@@ -20,6 +22,7 @@ use crate::ship_specials::NativeAuthoredShipSpecial;
 pub enum NativeReinforcementActivation {
     AfterSeconds(f32),
     OnCampaignCue(NativeMissionCue),
+    OnShipDestroyed(i64),
 }
 
 pub struct NativeReinforcementPlan {
@@ -34,7 +37,7 @@ pub struct NativeReinforcementPlan {
 #[derive(Clone, Copy)]
 enum ReinforcementDue {
     Tick(u64),
-    CampaignCue(NativeMissionCue),
+    Event(NativeMissionEvent),
 }
 
 pub(crate) struct ReinforcementWave {
@@ -48,20 +51,30 @@ impl ReinforcementWave {
     pub(crate) fn scheduled_tick(&self) -> Option<u64> {
         match self.due {
             ReinforcementDue::Tick(tick) => Some(tick),
-            ReinforcementDue::CampaignCue(_) => None,
+            ReinforcementDue::Event(_) => None,
         }
     }
 
-    fn is_due(&self, tick: u64, events: &NativeLevelEventProcessor) -> bool {
+    fn is_due(
+        &self, tick: u64, world: &CombatWorld,
+        events: &NativeLevelEventProcessor,
+    ) -> bool {
         match self.due {
             ReinforcementDue::Tick(due) => tick >= due,
-            ReinforcementDue::CampaignCue(expected) =>
-                events.campaign_cue_fired(tick, |cue| expected.matches(cue)),
+            ReinforcementDue::Event(expected) => expected.fired(tick, world, events),
         }
     }
 
     pub(crate) fn is_campaign_triggered(&self) -> bool {
-        matches!(self.due, ReinforcementDue::CampaignCue(_))
+        matches!(self.due,
+            ReinforcementDue::Event(NativeMissionEvent::CampaignCue(_))
+        )
+    }
+
+    pub(crate) fn is_ship_death_triggered(&self) -> bool {
+        matches!(self.due,
+            ReinforcementDue::Event(NativeMissionEvent::ShipDestroyed(_))
+        )
     }
     pub(crate) fn squad_count(&self) -> usize { self.squads.len() }
     pub(crate) fn ship_count(&self) -> usize { self.ships.len() }
@@ -209,10 +222,23 @@ impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
                     ReinforcementDue::Tick(tick as u64)
                 }
                 NativeReinforcementActivation::OnCampaignCue(cue) => {
-                    if !cue.valid_for(self.campaign_dialogue) {
+                    let event = NativeMissionEvent::CampaignCue(cue);
+                    if !event.valid_for(self.campaign_dialogue, |_| false) {
                         return Err("Reinforcement campaign cue is unavailable in this Level");
                     }
-                    ReinforcementDue::CampaignCue(cue)
+                    ReinforcementDue::Event(event)
+                }
+                NativeReinforcementActivation::OnShipDestroyed(ship_id) => {
+                    let event = NativeMissionEvent::ShipDestroyed(ship_id);
+                    if !event.valid_for(self.campaign_dialogue, |id|
+                        self.entities.iter().any(|entity| matches!(
+                            entity,
+                            NativeAuthoredEntity::Ship(ship) if ship.entity_id == id
+                        ))
+                    ) {
+                        return Err("Reinforcement ship-death trigger needs an authored source ship");
+                    }
+                    ReinforcementDue::Event(event)
                 }
             };
             if plan.squad_item_ids.is_empty() ||
@@ -397,7 +423,7 @@ impl NativePolicyOnlyMetadata {
         let mut navigation_refreshed = false;
         let mut index = 0;
         while index < self.reinforcements.len() {
-            if !self.reinforcements[index].is_due(tick, events) {
+            if !self.reinforcements[index].is_due(tick, world, events) {
                 index += 1;
                 continue;
             }

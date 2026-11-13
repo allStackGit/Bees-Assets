@@ -144,6 +144,7 @@ pub struct NativeReinforcementGauges {
     /// These are subsets of pending_waves, not additional waves.
     pub timed_waves: usize,
     pub waiting_for_campaign_cue: usize,
+    pub waiting_for_ship_death: usize,
 }
 
 impl NativeReinforcementGauges {
@@ -153,6 +154,7 @@ impl NativeReinforcementGauges {
         self.pending_ships += other.pending_ships;
         self.timed_waves += other.timed_waves;
         self.waiting_for_campaign_cue += other.waiting_for_campaign_cue;
+        self.waiting_for_ship_death += other.waiting_for_ship_death;
     }
 }
 
@@ -186,6 +188,7 @@ pub struct NativeScriptedQueueMeasurements {
     pub pending_orders: usize,
     /// Exclusive queue categories sampled from real roster and World time.
     pub waiting_for_campaign_cue: usize,
+    pub waiting_for_ship_death: usize,
     pub waiting_for_deployment: usize,
     pub waiting_for_start_time: usize,
     pub waiting_for_arrival: usize,
@@ -202,6 +205,7 @@ impl NativeScriptedQueueMeasurements {
         self.active_queues += other.active_queues;
         self.pending_orders += other.pending_orders;
         self.waiting_for_campaign_cue += other.waiting_for_campaign_cue;
+        self.waiting_for_ship_death += other.waiting_for_ship_death;
         self.waiting_for_deployment += other.waiting_for_deployment;
         self.waiting_for_start_time += other.waiting_for_start_time;
         self.waiting_for_arrival += other.waiting_for_arrival;
