@@ -103,6 +103,7 @@ impl NavigationRequests {
             if owner.waiting.is_some() && owner.running.is_none() {
                 self.claimable_waiting -= 1;
             }
+            self.compact_obsolete_queue();
         }
     }
 
@@ -125,6 +126,7 @@ impl NavigationRequests {
             lifecycle_id: lifecycle,
             ..ShipPathOwner::default()
         });
+        self.compact_obsolete_queue();
         Ok(lifecycle)
     }
 
@@ -144,6 +146,7 @@ impl NavigationRequests {
         }
         // Never clear owner.running here: CPU work still owns its slot.
         owner.deferred = None;
+        self.compact_obsolete_queue();
         Ok(())
     }
 
@@ -296,6 +299,34 @@ impl NavigationRequests {
             self.claimable_waiting -= 1;
         }
         owner.deferred = None;
+        self.compact_obsolete_queue();
+    }
+
+    /// Obsolete tokens are cheap until they dominate the source FIFO.
+    /// Compact only after at least 128 more retained slots than useful
+    /// claims accumulate, amortizing cleanup over retirements/cancellations
+    /// rather than rescanning on each fixed path-worker pump.
+    fn compact_obsolete_queue(&mut self) {
+        if self.waiting_ship_ids.len() <=
+            self.claimable_waiting.saturating_mul(2).saturating_add(128)
+        {
+            return;
+        }
+        let owners = &self.ships;
+        self.waiting_ship_ids.retain(|&(ship_id, lifecycle)| owners
+            .get(&ship_id).is_some_and(|owner|
+                owner.lifecycle_id == lifecycle && owner.queued &&
+                owner.waiting.is_some() && owner.running.is_none(),
+            ));
+        // Invalidation can leave a queue token but no waiting request.
+        // Clearing its bit here lets a later real request append at the
+        // correct tail; valid waiting owners keep their original place.
+        for owner in self.ships.values_mut() {
+            if owner.queued && (owner.waiting.is_none() || owner.running.is_some()) {
+                owner.queued = false;
+            }
+        }
+        debug_assert_eq!(self.waiting_ship_ids.len(), self.claimable_waiting);
     }
 
     fn reserve_request_id(&mut self) -> Result<u64, NavigationRequestError> {
