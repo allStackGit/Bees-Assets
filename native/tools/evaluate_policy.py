@@ -47,10 +47,24 @@ def setup_config(source_path, manifest, output):
                 type(seed) is not int or not 0 <= seed < (1 << 64) for seed in seeds)):
             raise ValueError("holdout seeds must be valid unsigned 64-bit integers")
         level["scene"] = resolved(source_path.parent, level["scene"])
-    for key in ("collision_matrix", "stage_palette", "policy_worker"):
-        if not isinstance(source.get(key), str) or not source[key]:
-            raise ValueError(f"evaluation requires {key}")
-        source[key] = resolved(source_path.parent, source[key])
+    # Native-authored gameplay and MA-POCA Levels share the same Stage asset
+    # contract. A holdout may use an embedded, authoritative native_stage or
+    # the two legacy exported Stage files, but never a mixture. Preserve the
+    # embedded collision matrix/palette unchanged when updating model weights.
+    native_stage = source.get("native_stage")
+    if native_stage is not None:
+        if (not isinstance(native_stage, dict) or
+                source.get("collision_matrix") is not None or
+                source.get("stage_palette") is not None):
+            raise ValueError("holdout native_stage cannot mix legacy Stage asset paths")
+    else:
+        for key in ("collision_matrix", "stage_palette"):
+            if not isinstance(source.get(key), str) or not source[key]:
+                raise ValueError(f"evaluation requires {key} or native_stage")
+            source[key] = resolved(source_path.parent, source[key])
+    if not isinstance(source.get("policy_worker"), str) or not source["policy_worker"]:
+        raise ValueError("evaluation requires policy_worker")
+    source["policy_worker"] = resolved(source_path.parent, source["policy_worker"])
     python = source.get("python")
     if not isinstance(python, str) or not python:
         raise ValueError("evaluation requires native policy Python")
