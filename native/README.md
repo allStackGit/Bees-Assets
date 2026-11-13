@@ -102,8 +102,10 @@ checkpoint and journal in that directory.
 For headless multi-arena policy rollouts, set `"physics_workers": 4` in
 the run configuration to fan out independent physical Levels **after**
 one batched model inference. The default is one worker, which preserves
-the original serial/client path. Worker threads are created per model
-step, so this is intended for sufficiently expensive arenas; compare
+the original serial/client path. Model-step physics threads are created lazily and retained across inference
+rounds, then released when the Simulation is dropped. Their arena work
+queue remains dynamic so larger worlds can consume more worker time;
+compare the fixed worker allocation at representative arena sizes, compare
 `world_steps_per_execution_second` at fixed allocations before keeping
 it enabled. The `interval` and `run_final` reports include worker
 counts, total worker elapsed time, and rounds serialized to preserve

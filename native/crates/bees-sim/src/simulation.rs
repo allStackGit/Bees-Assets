@@ -5,6 +5,7 @@
 //! This initial foundation deliberately does not substitute approximate
 //! physics for Unity's behavior.
 
+use rayon::prelude::*;
 use std::num::{NonZeroU32, NonZeroUsize};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -227,16 +228,18 @@ pub struct ParallelSelectedStep<E> {
     pub serialized_arenas: usize,
 }
 
-/// A single world scheduler defaults to the cheapest serial path. For
-/// independent rollout windows, the same worlds and rules may be partitioned
-/// across scoped CPU workers for many steps at a time, amortizing thread
-/// creation instead of spawning threads on each simulation tick.
+/// A single world scheduler defaults to the cheapest serial path. Model-batched
+/// physics reuses a bounded CPU pool between inference rounds; independent
+/// multi-step rollout windows retain their separate scoped-worker execution.
 pub struct Simulation<S, R> {
     rules: R,
     worlds: Vec<World<S>>,
     dt_seconds: f32,
     sample_every: Option<NonZeroU32>,
     measurements: Measurements,
+    // Built lazily for the configured model-step allocation, never per tick.
+    // Only worker-local physics runs here; inference stays on the caller.
+    model_physics_pool: Option<(usize, rayon::ThreadPool)>,
 }
 
 impl<S, R: GameRules<S>> Simulation<S, R> {
@@ -252,6 +255,7 @@ impl<S, R: GameRules<S>> Simulation<S, R> {
             dt_seconds,
             sample_every: None,
             measurements: Measurements::default(),
+            model_physics_pool: None,
         })
     }
 
@@ -394,6 +398,17 @@ impl<S, R: GameRules<S>> Simulation<S, R> {
             action.is_some() && serialized_indices.binary_search(index).is_err()
         ).count();
         let workers = worker_count.get().min(parallel_count);
+        // Build before any world advances: a thread-allocation failure must
+        // never leave a partial model batch or silently change the physics.
+        if workers > 1 && self.model_physics_pool.as_ref()
+            .is_none_or(|(count, _)| *count != workers)
+        {
+            let pool = rayon::ThreadPoolBuilder::new()
+                .num_threads(workers)
+                .build()
+                .map_err(|_| "unable to initialize native physics worker pool")?;
+            self.model_physics_pool = Some((workers, pool));
+        }
         let rules = &self.rules;
         let dt = self.dt_seconds;
         let sample = self.sample_every;
@@ -466,12 +481,11 @@ impl<S, R: GameRules<S>> Simulation<S, R> {
                 }
                 action.as_ref().map(|action| (index, world, action.as_slice()))
             }));
-        // Run one worker on the owning caller thread. Spawning every
-        // worker and then immediately blocking on joins wasted one CPU core
-        // and paid an extra thread creation on every model inference round.
-        // The model has already finished; only disjoint world ticks run
-        // here. Catch the inline panic too so all scoped workers are joined
-        // before the same all-world failure path invalidates trajectories.
+        // Threads are retained across successive model inference rounds;
+        // only these small scheduling tasks are created each tick. Workers
+        // still claim independent arena borrows and never own model state.
+        // Catch any worker panic before the same all-world failure path
+        // invalidates trajectories.
         let work = || {
             let started = Instant::now();
             let mut measurements = Measurements::default();
@@ -490,17 +504,12 @@ impl<S, R: GameRules<S>> Simulation<S, R> {
             }
             (measurements, arenas, failures, started.elapsed())
         };
-        let outcomes = std::thread::scope(|scope| {
-            let mut handles = Vec::with_capacity(workers - 1);
-            for _ in 1..workers {
-                handles.push(scope.spawn(&work));
-            }
-            let mut outcomes = Vec::with_capacity(workers);
-            outcomes.push(std::panic::catch_unwind(
-                std::panic::AssertUnwindSafe(&work),
-            ));
-            outcomes.extend(handles.into_iter().map(|handle| handle.join()));
-            outcomes
+        let pool = &self.model_physics_pool.as_ref()
+            .expect("multi-worker physics pool initialized above").1;
+        let outcomes = pool.install(|| {
+            (0..workers).into_par_iter().map(|_| {
+                std::panic::catch_unwind(std::panic::AssertUnwindSafe(&work))
+            }).collect::<Vec<_>>()
         });
         // Release claimed/unclaimed mutable references before modifying
         // world state after a worker failure.
