@@ -26,6 +26,22 @@ legacy Unity match. Game and headless runs both use the existing
 `NativePhysicalScene` -> `NativeAuthoredLevel` -> `CombatWorld`
 pipeline, including identical collision and weapon implementations.
 
+A larger authored gameplay configuration is
+`native/examples/native-skirmish.run.json` with its companion
+`native-skirmish.scene.json`. It uses the same launcher as the duel,
+but additionally authors a Carrier/Striker relationship, Barge and Fire
+Barge charges, Yellow Jacket, Scout/Beacon spawns, Beehive and Warp Gate
+child trigger colliders, a CarpenterBee mining an authored mineral asteroid,
+and a destructible Fire Tank linked to a static obstacle. No Unity export
+is needed. The ship/weapon values are deliberate example inputs, not
+measured parity claims. Native `special` and `special_weapon` data
+must agree on Bomb power; all special weapon IDs, collider ranges and
+Carrier links are validated. `support_zone` takes an exact circle, box
+or polygon for a Beehive/Warp Gate, while `mining_asteroids` and
+`map_objects` provide their own physical collider, health and identity.
+Damage, mining, child spawns and static-wall destruction use the same
+CombatWorld shared with headless training.
+
 Native scene files use `"native_game_schema": 1` instead of the Unity
 snapshot's `schema_version`. Weapon range colliders, aiming modes,
 projectile speeds, health, formation offsets, vision and command timings are
