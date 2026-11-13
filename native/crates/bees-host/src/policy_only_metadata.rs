@@ -727,9 +727,12 @@ impl NativeLevelCommandContext for NativePolicyOnlyMetadata {
         // animated static poses. A source geometry revision (or real motion)
         // invalidates its snapshot, not merely the presence of static walls.
         let revision = world.static_navigation_revision();
-        let static_moves = world.has_moving_static_navigation_obstacles();
+        // A game/editor adapter can invalidate NavigationRuntime's map
+        // workspace without adding an obstacle. The same canonical cache
+        // contract handles both this and genuinely animated static bodies.
+        let static_dirty = world.static_navigation_needs_refresh(&self.navigation);
         let step = scheduler.pump(
-            world, &mut self.navigation, completed_tick, revision, static_moves,
+            world, &mut self.navigation, completed_tick, revision, static_dirty,
             self.activate_collision_asteroids,
         ).map_err(|error| match error {
             NavigationSchedulerError::InvalidMap(source) =>
