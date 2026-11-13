@@ -1132,6 +1132,8 @@ document.addEventListener('DOMContentLoaded', () => {
     secondsMetricsDetails.id='hub-compare-recorded-seconds';
     collectorStageProfiles.insertAdjacentElement('afterend',secondsMetricsDetails);
     const comparisonMetricOverrides=new Map();
+    const comparisonChartAverages=new Map();
+    let lastComparisonChart=null,lastComparisonChartWidth=0;
     let compareSerial=0;
     const compareColor=i=>'hsl('+((i*137.508+211)%360).toFixed(2)+' 65% 38%)';
     function addComparisonSlot() {
@@ -1853,6 +1855,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     function drawComparisonCharts(runs,keys,xKey) {
         const container=$('hub-compare-plots');
+        lastComparisonChart={runs,keys,xKey};
+        lastComparisonChartWidth=container.clientWidth;
         container.replaceChildren();
         if(!runs.length||!keys.length) {
             const notice=document.createElement('p');
@@ -1870,25 +1874,39 @@ document.addEventListener('DOMContentLoaded', () => {
             section.className='hub-progress-plot';
             const title=document.createElement('h3');
             title.textContent=key.slice(7);
+            const header=document.createElement('div');
+            header.className='hub-plot-header';
+            const averageLabel=document.createElement('label');
+            averageLabel.className='hub-plot-average-toggle';
+            averageLabel.title='Arithmetic mean of retained chart samples for each run, not weighted by elapsed time or steps.';
+            const average=document.createElement('input');
+            average.type='checkbox';
+            const averageId=project+'|'+key;
+            average.checked=comparisonChartAverages.get(averageId)===true;
+            averageLabel.append(average,document.createTextNode(' Show sample mean'));
+            header.append(title,averageLabel);
+            const description=document.createElement('p');
+            description.className='hub-plot-description';
+            description.textContent=hubMetricDescription(key.slice(7));
             const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
             svg.setAttribute('role','img');
-            svg.setAttribute('viewBox','0 0 900 320');
-            svg.setAttribute('preserveAspectRatio','xMidYMid meet');
+            svg.setAttribute('preserveAspectRatio','xMinYMin meet');
             svg.style.width='100%';
-            const legend=document.createElement('p');
-            legend.className='muted';
-            for(const run of runs) {
-                const swatch=document.createElement('span');
-                swatch.style.display='inline-block';
-                swatch.style.borderTop='4px solid '+run.color;
-                swatch.style.width='22px';
-                swatch.style.margin='0 5px 3px 12px';
-                legend.append(swatch,document.createTextNode(
-                    run.slot+' · '+run.job.configuration_name+'  '));
-            }
-            section.append(title,svg,legend);
+            svg.style.height='330px';
+            const legend=document.createElement('div');
+            legend.className='hub-plot-legend';
+            const tooltip=document.createElement('div');
+            tooltip.className='hub-plot-tooltip';
+            tooltip.hidden=true;
+            section.append(header,description,svg,tooltip,legend);
             container.append(section);
-            drawComparisonChart(runs,key,xKey,svg);
+            const redraw=()=>drawComparisonChart(runs,key,xKey,svg,
+                legend,tooltip,average.checked);
+            average.addEventListener('change',()=>{
+                comparisonChartAverages.set(averageId,average.checked);
+                redraw();
+            });
+            redraw();
         }
     }
     function drawComparisonChart(runs,key,xKey,svg) {
