@@ -357,6 +357,7 @@ def run_parallel_rollouts(shards, command, manifest_sha, diagnostics):
     started = time.perf_counter()
     processes = []
     metrics = {}
+    settled = set()
     with ExitStack() as files:
         try:
             for shard, config_path in shards:
@@ -371,7 +372,7 @@ def run_parallel_rollouts(shards, command, manifest_sha, diagnostics):
                 ))
             while len(metrics) != len(shards):
                 for index, (shard, _) in enumerate(shards):
-                    if index in metrics:
+                    if index in settled:
                         continue
                     returncode = processes[index].poll()
                     if returncode is None:
@@ -383,25 +384,30 @@ def run_parallel_rollouts(shards, command, manifest_sha, diagnostics):
                     metrics[index] = rollout_metrics(
                         Path(shard["rollout_summary"]), shard, manifest_sha,
                     )
+                    # Clean each completed group immediately. A fast worker
+                    # can finish long before slower environments; waiting
+                    # until the last sibling completes could allow its PID
+                    # to be recycled and endanger an unrelated process group.
+                    if os.name != "nt":
+                        stop_parallel_rollout_workers([processes[index]])
+                    settled.add(index)
                 if len(metrics) != len(shards):
                     time.sleep(0.1)
             if len(shards) == 1:
-                # Retain the historical single-process receipt layout while
-                # giving it the same supervised process-tree lifetime.
-                combined = metrics[0]
-            else:
-                combined = combined_rollout_metrics(
-                    [metrics[index] for index in range(len(shards))],
-                    time.perf_counter() - started,
-                )
-            if os.name != "nt":
-                # A successful Rust parent has finished writing its summary.
-                # Retire any remaining inference descendants before the
-                # next round starts or its GPU allocation is reused.
-                stop_parallel_rollout_workers(processes)
-            return combined
+                # Preserve the historical one-process metric receipt layout.
+                return metrics[0]
+            return combined_rollout_metrics(
+                [metrics[index] for index in range(len(shards))],
+                time.perf_counter() - started,
+            )
         except BaseException:
-            stop_parallel_rollout_workers(processes)
+            # Only recently observed or still-running groups belong here.
+            # Never revisit an early-completed process group: its PID may
+            # eventually be reused while a much slower worker is running.
+            stop_parallel_rollout_workers([
+                process for index, process in enumerate(processes)
+                if index not in settled
+            ])
             raise
 
 
