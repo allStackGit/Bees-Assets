@@ -126,6 +126,10 @@ function learnerMeasurements(metrics) {
     add('optimizer_steps_per_update_second', 'rate');
     add('torch_cuda_process_peak_allocated_bytes', 'bytes');
     add('torch_cuda_process_peak_reserved_bytes', 'bytes');
+    if (metrics.refreshed_opponent_slot != null) {
+        report.self_play_opponent_promotion = {value: 1, unit: 'count'};
+        report.self_play_opponent_slot = {value: metrics.refreshed_opponent_slot, unit: 'count'};
+    }
 
     const outcomes = metrics.training_outcomes;
     if (!outcomes || !outcomes.episodes) return report;
@@ -272,6 +276,13 @@ function createNativeBeesAdapter({
             metrics.learner_slot !== (learnerSlot ?? null) ||
             metrics.input_checkpoint_sha256 !== receipt.input_checkpoint_sha256 ||
             metrics.input_manifest_sha256 !== receipt.input_manifest_sha256 ||
+            (metrics.refreshed_opponent_slot != null && (
+                !Number.isSafeInteger(metrics.refreshed_opponent_slot) ||
+                metrics.refreshed_opponent_slot < 0 ||
+                metrics.refreshed_opponent_slot > 0xffffffff ||
+                metrics.refreshed_opponent_slot === learnerSlot ||
+                metrics.refreshed_opponent_from_checkpoint_sha256 !== receipt.next_checkpoint_sha256
+            )) ||
             !Number.isSafeInteger(metrics.optimizer_input_steps) || metrics.optimizer_input_steps < 1)
             throw Error('Invalid native Bees completion receipt.');
         return {receipt, metrics, stat};
@@ -297,6 +308,14 @@ function createNativeBeesAdapter({
             manifest, new Map([[checkpoint, receipt.next_checkpoint_sha256]]),
             checkpoint, learnerSlot,
         );
+        if (metrics.refreshed_opponent_slot != null) {
+            const models = JSON.parse(fs.readFileSync(manifest, 'utf8')).models;
+            const promoted = models.filter(m => m.slot === metrics.refreshed_opponent_slot);
+            if (promoted.length !== 1 || promoted[0].backend !== 'mlagents' ||
+                promoted[0].sha256 !== receipt.next_checkpoint_sha256 ||
+                path.resolve(path.dirname(manifest), promoted[0].path) !== checkpoint)
+                throw Error('Native Bees promoted opponent does not reference its committed checkpoint.');
+        }
         return {checkpoint, manifest, checkpointDigest: receipt.next_checkpoint_sha256,
             manifestDigest: receipt.next_manifest_sha256, requiresGpuInference};
     }
@@ -320,6 +339,11 @@ function createNativeBeesAdapter({
         if (round.receipt.input_checkpoint_sha256 !== inputs.checkpointDigest ||
             round.receipt.input_manifest_sha256 !== inputs.manifestDigest)
             throw Error('Native Bees completion receipt disagrees with the approved inputs.');
+        if (context.frozen_parameters) {
+            const expected = context.frozen_parameters.refresh_opponent_slot ?? null;
+            if ((round.metrics.refreshed_opponent_slot ?? null) !== expected)
+                throw Error('Native Bees completed self-play promotion differs from the frozen job parameters.');
+        }
         return round;
     }
 
