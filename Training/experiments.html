@@ -368,6 +368,17 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
 .hub-notice { font-size: 12px; font-weight: 700; border-bottom: 2px solid var(--ink); padding: 6px 0; }
 .hub-controls { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 10px; }
  .hub-controls button { flex: 0 1 auto; }
+.hub-design-editor { margin: 14px 0; display: grid; gap: 16px; }
+.hub-design-editor fieldset { min-width: 0; margin: 0; padding: 14px; }
+.hub-design-editor legend { font-size: 15px; font-weight: 900; padding: 0 6px; }
+.hub-design-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(100%,240px),1fr)); gap: 14px 18px; }
+.hub-design-grid label { display: block; min-width: 0; }
+.hub-design-grid label small { display: block; margin-top: 4px; font-weight: 400; }
+.hub-design-note { margin: 0; padding: 6px 0; }
+#hub-config-advanced { margin: 14px 0; border: 1px solid var(--ink); padding: 12px; }
+#hub-config-advanced summary { font-weight: 800; cursor: pointer; }
+#hub-config-advanced textarea { margin-top: 8px; font-family: monospace; font-size: 13px; }
+#hub-config-rows td:last-child { min-width: 170px; }
 #benchmark-target-controls .benchmark-target-toggle {
     display: flex; flex-direction: row; align-items: flex-start;
     gap: 8px; cursor: pointer;
@@ -601,8 +612,26 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
     <h3>Saved configuration</h3>
     <form id="hub-config-form">
       <div class="formgrid">
-        <label>Configuration name<input id="hub-config-name" maxlength="100" required placeholder="Aiming baseline — beta 0.001"></label>
-        <label class="wide">Parameters (JSON)<textarea id="hub-config-json" rows="9" required>{}</textarea></label>
+        <label>Configuration name<input id="hub-config-name" maxlength="100" required placeholder="Experiment configuration"></label>
+      </div>
+      <div class="hub-design-editor" id="hub-design-editor" hidden>
+        <p id="hub-design-source" class="muted hub-design-note"></p>
+        <fieldset>
+          <legend>Training hyperparameters</legend>
+          <div class="hub-design-grid" id="hub-design-training"></div>
+        </fieldset>
+        <fieldset>
+          <legend>Training environment parameters</legend>
+          <div class="hub-design-grid" id="hub-design-environment"></div>
+        </fieldset>
+        <div class="hub-controls"><button type="button" id="hub-design-reset">Reset parameters to project defaults</button></div>
+      </div>
+      <details id="hub-config-advanced">
+        <summary>Advanced: view or edit parameters (JSON)</summary>
+        <p class="muted">The typed controls and JSON represent the same frozen configuration. Unsupported or unapproved overrides cannot execute.</p>
+        <label>Parameters (JSON)<textarea id="hub-config-json" rows="9" required>{}</textarea></label>
+      </details>
+      <div class="formgrid">
         <fieldset class="wide" id="hub-config-evaluation" hidden>
           <legend>Independent evaluation stop (optional)</legend>
           <label>Approved suite ID <input id="hub-evaluation-suite" maxlength="48" placeholder="heldout"></label>
