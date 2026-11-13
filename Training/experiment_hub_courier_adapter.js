@@ -416,7 +416,8 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
                     chosenWorkers,fixedCpuParallelism(context.cpu_quota,64)))]:[]),
                 ...(auto?['--auto-active-learners']:[]),
                 ...(simulationShards>1
-                    ?['--simulation-shards',String(simulationShards)]:[]),
+                    ?['--cpu-lease',String(context.cpu_quota),
+                      '--simulation-shards',String(simulationShards)]:[]),
                 ...(auto||context.gpu_pci_address!==undefined||
                     context.gpu_pci_addresses!==undefined
                     ?['--ram-lease-mb',String(context.ram_quota_mb)]:[]),
