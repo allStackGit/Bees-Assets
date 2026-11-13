@@ -306,11 +306,13 @@ function createNativeBeesAdapter({
         } : {}),
         args(parameters, context) {
             const output = jobRoot(context);
-            const {config_sha256, seed_offset, rollout_bundles, optimizer_threads, rollout_workers} = parameters;
+            const {config_sha256, seed_offset, rollout_bundles, optimizer_threads, rollout_workers,
+                collection_id, rollout_world_start, rollout_worlds} = parameters;
             const allowed = inboxLearner
                 ? ['config_sha256', 'seed_offset', 'rollout_bundles', 'optimizer_threads']
                 : collectOnly
-                    ? ['config_sha256', 'seed_offset', 'rollout_workers']
+                    ? ['config_sha256', 'seed_offset', 'rollout_workers',
+                        'collection_id', 'rollout_world_start', 'rollout_worlds']
                     : ['config_sha256', 'seed_offset', 'optimizer_threads', 'rollout_workers'];
             if (Object.keys(parameters).some(key => !allowed.includes(key)) ||
                 config_sha256 !== configSha256 || !Number.isSafeInteger(seed_offset) || seed_offset < 0 ||
@@ -322,14 +324,31 @@ function createNativeBeesAdapter({
                     !Number.isSafeInteger(context.cpu_quota) ||
                     optimizer_threads > context.cpu_quota))
                 throw Error('Optimizer threads must be positive and within the fixed Hub CPU quota.');
+            // The coordinator owns machine/CPU/RAM leases. A native
+            // collector job may additionally receive an immutable World
+            // window and SHA-256 work-order identity; these select
+            // simulation work *within* its existing Hub resource lease.
+            if (collectOnly && (
+                (collection_id !== undefined &&
+                    (!/^[0-9a-f]{64}$/.test(String(collection_id)) ||
+                        !Number.isSafeInteger(rollout_world_start) ||
+                        rollout_world_start < 0 ||
+                        !Number.isSafeInteger(rollout_worlds) ||
+                        rollout_worlds < 1 || rollout_worlds > 1024)) ||
+                (collection_id === undefined &&
+                    (rollout_world_start !== undefined || rollout_worlds !== undefined))
+            ))
+                throw Error('Native distributed work order needs an exact ID and bounded World window.');
+            const activeWorlds = collectOnly && rollout_worlds !== undefined
+                ? rollout_worlds : config.levels?.length;
             if (rollout_workers !== undefined &&
                 (bundleRound || inboxLearner || !Number.isSafeInteger(rollout_workers) ||
                     rollout_workers < 1 || rollout_workers > 256 ||
                     !Number.isSafeInteger(context.cpu_quota) ||
                     rollout_workers > context.cpu_quota ||
-                    !Array.isArray(config.levels) ||
-                    rollout_workers > config.levels.length))
-                throw Error('Rollout workers must fit the fixed Hub CPU quota and the authored Level count.');
+                    !Number.isSafeInteger(activeWorlds) ||
+                    rollout_workers > activeWorlds))
+                throw Error('Rollout workers must fit the fixed Hub CPU quota and allocated World count.');
             for (const [file, digest] of pins) {
                 if (sha256(fs.readFileSync(file)) !== digest)
                     throw Error('Native Bees pinned input changed after adapter installation.');
@@ -354,6 +373,11 @@ function createNativeBeesAdapter({
                 '--stage-diagnostics',
                 ...(collectOnly ? ['--collect-only'] : []),
                 ...(collectOnly && inbox ? ['--bundle-inbox', inbox] : []),
+                ...(collection_id === undefined ? [] : [
+                    '--collection-id', collection_id,
+                    '--rollout-world-start', String(rollout_world_start),
+                    '--rollout-worlds', String(rollout_worlds),
+                ]),
                 ...(inboxLearner ? bundleArguments(rollout_bundles) : []),
                 '--device', gpu ? 'cuda' : 'cpu',
                 ...(optimizer_threads === undefined ? [] :
