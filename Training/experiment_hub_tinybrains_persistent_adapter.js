@@ -321,8 +321,7 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'worker_auth_seconds','worker_decompress_seconds',
         'worker_deserialize_seconds',
         'prev_reply_serial_seconds','prev_reply_compress_seconds',
-        'prev_reply_auth_seconds','prev_reply_update',
-        'prev_reply_prepare_seconds','prev_reply_send_seconds'];
+        'prev_reply_auth_seconds'];
     const collectors=Math.min(9,Array.isArray(row.collector_samples)
         ?row.collector_samples.length:0);
     const fits=()=>Object.keys(metrics).length<=500&&
@@ -335,6 +334,15 @@ function recordedTinyBrainsMetrics(row,updateWall) {
                 delete metrics['collector_'+i+'_'+suffix];
                 if(fits())break;
             }
+            if(fits())break;
+        }
+        // Previous-reply diagnosis needs all three fields from the same
+        // update. Remove complete per-worker groups rather than publishing
+        // a partial summary that can no longer be interpreted accurately.
+        if(!fits())for(let i=collectors-1;i>=0;i--) {
+            for(const suffix of ['prev_reply_prepare_seconds',
+                                 'prev_reply_send_seconds','prev_reply_update'])
+                delete metrics['collector_'+i+'_'+suffix];
             if(fits())break;
         }
     }
