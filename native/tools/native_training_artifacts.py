@@ -44,3 +44,18 @@ def sync_directory(path: Path) -> None:
             os.fsync(directory)
         finally:
             os.close(directory)
+
+def atomic_json(path: Path, value) -> None:
+    """Publish a derived progress snapshot or a completed output receipt.
+
+    The final path appears only after fully writing and syncing its content.
+    Interrupted .pending files are never interpreted as accepted work.
+    """
+    pending = path.with_name(path.name + ".pending")
+    with pending.open("w", encoding="utf-8") as stream:
+        json.dump(value, stream, indent=2)
+        stream.write("\n")
+        stream.flush()
+        os.fsync(stream.fileno())
+    os.replace(pending, path)
+    sync_directory(path.parent)
