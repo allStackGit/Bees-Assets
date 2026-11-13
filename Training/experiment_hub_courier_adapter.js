@@ -392,7 +392,9 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
             if(context.frozen_parameters?.config_sha256!==configSha256)
                 throw Error('Courier checkpoint environment pin changed.');
             const saved=completedCheckpoint(jobRoot(context),10000000);
-            if(!saved.environment.equals(effectiveConfig(context.frozen_parameters?.design_overrides))||
+            if((expectedTraining(context.frozen_parameters?.design_overrides)!==null&&
+                    context.frozen_parameters?.training_schema_sha256!==trainingSchemaSha256)||
+                !saved.environment.equals(effectiveConfig(context.frozen_parameters?.design_overrides))||
                 expectedTraining(savedOverrides(jobRoot(context)))!==
                     expectedTraining(context.frozen_parameters?.design_overrides))
                 throw Error('Courier checkpoint design differs from its frozen job.');
@@ -400,7 +402,9 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
         },
         model_checkpoint_sha256(context) {
             const saved=completedCheckpoint(jobRoot(context),10000000);
-            if(!saved.environment.equals(effectiveConfig(context.frozen_parameters?.design_overrides))||
+            if((expectedTraining(context.frozen_parameters?.design_overrides)!==null&&
+                    context.frozen_parameters?.training_schema_sha256!==trainingSchemaSha256)||
+                !saved.environment.equals(effectiveConfig(context.frozen_parameters?.design_overrides))||
                 expectedTraining(savedOverrides(jobRoot(context)))!==
                     expectedTraining(context.frozen_parameters?.design_overrides))
                 throw Error('Courier checkpoint design differs from its frozen job.');
