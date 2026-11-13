@@ -1539,6 +1539,10 @@ fn run_battle(
     let status_every_rounds = config.status_every_rounds.unwrap_or(u64::from(window.get()));
     let mut successful_world_steps = 0_u64;
     let mut successful_policy_rows = 0_u64;
+    let mut parallel_physics_rounds = 0_u64;
+    let mut stage_id_serialized_rounds = 0_u64;
+    let mut peak_parallel_physics_workers = 0_usize;
+    let mut parallel_physics_worker_nanos = 0_u128;
     let mut rounds = 0_u64;
     let mut failed_window = None;
     let mut segment_start_round = 0_u64;
@@ -1747,6 +1751,11 @@ fn run_battle(
         rounds += u64::from(counts.rounds);
         successful_world_steps += counts.world_steps as u64;
         successful_policy_rows += counts.policy_rows as u64;
+        parallel_physics_rounds += u64::from(counts.parallel_physics_rounds);
+        stage_id_serialized_rounds += u64::from(counts.parallel_stage_id_serialized_rounds);
+        peak_parallel_physics_workers = peak_parallel_physics_workers
+            .max(counts.parallel_physics_max_workers);
+        parallel_physics_worker_nanos += counts.parallel_physics_worker_nanos;
         // Pause completed worlds while the slowest active arena reaches
         // the same model-change boundary. A physical episode must never
         // contribute a partially old/partially new benchmark result.
@@ -2218,6 +2227,11 @@ fn run_battle(
             "policy_rows_per_wall_second": rate(successful_policy_rows, wall_seconds),
             "world_steps_per_execution_second": rate(successful_world_steps, execution_wall_seconds),
             "policy_rows_per_execution_second": rate(successful_policy_rows, execution_wall_seconds),
+            "requested_physics_workers": physical_workers.get(),
+            "parallel_physics_rounds": parallel_physics_rounds,
+            "parallel_stage_id_serialized_rounds": stage_id_serialized_rounds,
+            "peak_parallel_physics_workers": peak_parallel_physics_workers,
+            "parallel_worker_cpu_wall_seconds_sum": parallel_physics_worker_nanos as f64 / 1e9,
         },
         "sampled_model_timing": (status.inference.model_forward_timed_calls != 0).then(|| json!({
             "calls": status.inference.model_forward_timed_calls,
