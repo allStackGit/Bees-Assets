@@ -401,6 +401,7 @@ function createTinyBrainsPersistentDockerAdapter({
     const designEnabled=fs.readFileSync(learningPath,'utf8')
         .includes('HUB_DESIGN_OVERRIDES_VERSION = 1');
     const designFields=described(originalSpec,'tinybrains');
+    const designSourceSha256=crypto.createHash('sha256').update(frozen).digest('hex');
     function approvedDesign(overrides) {
         if(overrides!==undefined&&!designEnabled)
             throw Error('Install a trusted TinyBrains Design-capable runtime before running overrides.');
@@ -495,7 +496,7 @@ function createTinyBrainsPersistentDockerAdapter({
             return path.join(artifacts,jobId);
         },
         gpu_execution:'cuda',
-        ...(designEnabled?{design_catalog:{tinybrains:{...designFields,profiles:
+        ...(designEnabled?{design_catalog:{tinybrains:{...designFields,source_sha256:designSourceSha256,profiles:
             Object.fromEntries([...approved].map(([id,item])=>[
                 id,{profile_sha256:item.sha256},
             ]))}}}:{}),
@@ -530,7 +531,7 @@ function createTinyBrainsPersistentDockerAdapter({
         args(parameters,context) {
             const {profile,profile_sha256,updates,threads,device,remote_rollouts,
                 rollout_action_weights,import_checkpoint,import_checkpoint_sha256,
-                design_overrides}=parameters;
+                design_overrides,design_source_sha256}=parameters;
             approvedDesign(design_overrides);
             const item=approved.get(profile);
             if(remote_rollouts===true&&!frozenRemoteKeyIntact())
@@ -538,7 +539,10 @@ function createTinyBrainsPersistentDockerAdapter({
             if(!item||item.sha256!==profile_sha256||
                 Object.keys(parameters).some(k=>!['profile','profile_sha256','updates',
                     'threads','device','remote_rollouts','rollout_action_weights',
-                    'import_checkpoint','import_checkpoint_sha256','design_overrides'].includes(k))||
+                    'import_checkpoint','import_checkpoint_sha256','design_overrides','design_source_sha256'].includes(k))||
+                (design_overrides===undefined
+                    ?design_source_sha256!==undefined
+                    :design_source_sha256!==designSourceSha256)||
                 (remote_rollouts!==undefined&&
                     (remote_rollouts!==true||!remote||device==='cpu'))||
                 (rollout_action_weights!==undefined&&
