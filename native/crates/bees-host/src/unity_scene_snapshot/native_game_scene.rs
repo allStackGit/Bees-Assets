@@ -245,6 +245,29 @@ enum GameShipSpecial {
         offset_from_center: [f32; 2],
         refill_distance: f32,
     },
+    Scout { enabled: bool, beacon: GameBeacon },
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct GameBeacon {
+    health: i32,
+    original_health: i32,
+    max_tsv: i32,
+    size_class: f32,
+    base_speed: f32,
+    rotation_speed: f32,
+    height: f32,
+    longest_side: f32,
+    effective_vision_range: i32,
+    hivemind_registered: bool,
+    hivemind_vision_enabled: bool,
+    #[serde(default)]
+    max_living_ships_per_side: Option<usize>,
+    front_offset: f32,
+    ship_type_letter: u8,
+    firepower: f32,
+    combat_window_seconds: f32,
 }
 
 #[derive(Deserialize)]
@@ -401,7 +424,7 @@ impl NativePhysicalScene {
                 ship.policy.is_some() && (ship.user_controlled || ship.mined_cargo != 0) ||
                 // Beacon/Heal/Warp/Scout and other special controllers must
                 // first have their complete source-owned trigger data.
-                matches!(ship.ship_type, 1 | 2 | 9 | 18 | 20)
+                matches!(ship.ship_type, 1 | 2 | 9 | 20)
             {
                 return Err(invalid("invalid native ordinary game ship or unsupported special hull"));
             }
@@ -436,11 +459,80 @@ impl NativePhysicalScene {
                             refill_distance: *refill_distance,
                         },
                     }),
-                None if !matches!(ship.ship_type, 0 | 10 | 19 | 22) => None,
+                Some(GameShipSpecial::Scout { enabled, beacon }) if ship.ship_type == 18 => {
+                    if beacon.health <= 0 || beacon.original_health < beacon.health ||
+                        beacon.max_tsv < 0 || !beacon.size_class.is_finite() ||
+                        beacon.size_class < 0.0 || !beacon.base_speed.is_finite() ||
+                        beacon.base_speed < 0.0 || !beacon.rotation_speed.is_finite() ||
+                        beacon.rotation_speed < 0.0 || !beacon.height.is_finite() ||
+                        beacon.height <= 0.0 || !beacon.longest_side.is_finite() ||
+                        beacon.longest_side <= 0.0 || beacon.effective_vision_range < 0 ||
+                        (beacon.hivemind_vision_enabled &&
+                            (!beacon.hivemind_registered ||
+                             beacon.effective_vision_range == 0)) ||
+                        beacon.max_living_ships_per_side == Some(0) ||
+                        !beacon.front_offset.is_finite() ||
+                        beacon.ship_type_letter >= 24 ||
+                        !beacon.firepower.is_finite() || beacon.firepower < 0.0 ||
+                        !beacon.combat_window_seconds.is_finite() ||
+                        beacon.combat_window_seconds <= 0.0
+                    {
+                        return Err(invalid("native Scout requires a valid authored Beacon prefab and vision source"));
+                    }
+                    let beacon_asset = catalog.by_type(BEACON_TYPE)
+                        .ok_or(invalid("native Beacon collider asset is missing"))?.clone();
+                    let physical = ScoutBeaconSpec {
+                        combat_activity: Some(bees_sim::combat_world::NativeCombatActivity {
+                            enabled: true, window_seconds: beacon.combat_window_seconds,
+                            elapsed_seconds: None,
+                        }),
+                        beacon_asset,
+                        beacon_vitals: ShipVitals::new(
+                            beacon.health, beacon.health, beacon.max_tsv, 0,
+                        ).map_err(NativeSnapshotError::Combat)?,
+                        beacon_base_speed: beacon.base_speed,
+                        beacon_rotation_speed: beacon.rotation_speed,
+                        beacon_height: beacon.height,
+                        beacon_original_health: beacon.original_health,
+                        beacon_size_class: beacon.size_class,
+                        targeting: Some(bees_sim::combat_world::NativeBeaconTargetSource {
+                            front_offset: beacon.front_offset,
+                            ship_type_letter: beacon.ship_type_letter,
+                            firepower: beacon.firepower,
+                        }),
+                        max_living_ships_per_side: beacon.max_living_ships_per_side,
+                    };
+                    let template = NativeBeaconTemplate {
+                        physical,
+                        perception: AuthoredShipPerception {
+                            longest_side: beacon.longest_side,
+                            max_weapon_range: 0.0,
+                            firepower: beacon.firepower,
+                            is_bomber: false, is_carrier_ship: false,
+                            minerals_mined_this_level: 0,
+                            observed_weapons: [None; 5],
+                            allied_communication: None,
+                        },
+                        vision: NativeSourceVision {
+                            source_sight: Some(beacon.effective_vision_range),
+                            effective_range: beacon.effective_vision_range,
+                            trigger_range: beacon.effective_vision_range,
+                            fog_radius: None,
+                            registered: beacon.hivemind_registered,
+                            enabled: beacon.hivemind_vision_enabled,
+                        },
+                    };
+                    Some(NativeAuthoredShipSpecial::Scout {
+                        enabled: *enabled,
+                        beacon: Arc::new(template),
+                    })
+                },
+                None if !matches!(ship.ship_type, 0 | 10 | 19 | 22 | 18) => None,
                 _ => return Err(invalid("native special ship requires an exact matching ability and power")),
             };
             if (ship.policy.is_some() && special.is_some()) ||
-                ship.special_weapon.is_some() != special.is_some()
+                ship.special_weapon.is_some() !=
+                    matches!(ship.ship_type, 0 | 10 | 19 | 22)
             {
                 return Err(invalid("native game special requires its weapon; special policy abilities are not yet independently authored"));
             }
