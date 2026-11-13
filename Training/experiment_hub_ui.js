@@ -1946,7 +1946,7 @@ document.addEventListener('DOMContentLoaded', () => {
             averageLabel.append(average,document.createTextNode(' Show sample mean'));
             const rollingLabel=document.createElement('label');
             rollingLabel.className='hub-plot-average-toggle';
-            rollingLabel.title='Mean of up to N consecutive, regularly spaced recorded chart samples. Windows restart at missing measurements, segment breaks or changed spacing.';
+            rollingLabel.title='Mean of up to N consecutive retained chart samples. Downsampling makes older samples farther apart; missing measurements or training segment breaks restart the window.';
             const rolling=document.createElement('input');
             rolling.type='checkbox';
             const rollingId=project+'|'+key;
@@ -1964,7 +1964,7 @@ document.addEventListener('DOMContentLoaded', () => {
             rollingSize.value=String(comparisonChartRollingSizes.get(rollingId)||50);
             rollingSize.setAttribute('aria-label',
                 'Rolling mean sample count for '+key.slice(7));
-            rollingSize.title='Use the latest 2–256 regularly spaced retained samples. Early windows use fewer samples until full.';
+            rollingSize.title='Use the latest 2–256 consecutive retained samples. Early windows use fewer samples; older history may cover more updates because it is downsampled.';
             rollingSizeLabel.append(rollingSize);
             const rollingControls=document.createElement('div');
             rollingControls.className='hub-plot-rolling-controls';
@@ -2187,7 +2187,6 @@ document.addEventListener('DOMContentLoaded', () => {
             stats.set(run,{mean,rollingByPoint});
             if(showRolling) {
                 let samples=[],sum=0,part=[],lastStep=null,lastAxis=null;
-                let regularSpacing=null;
                 const flush=()=>{
                     if(part.length>1)
                         overlays.push({tag:'path',attrs:{
@@ -2203,7 +2202,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 };
                 const reset=()=>{
                     flush();samples=[];sum=0;lastStep=null;
-                    lastAxis=null;regularSpacing=null;
+                    lastAxis=null;
                 };
                 for(const point of run.valid) {
                     const step=point.steps_completed;
@@ -2211,21 +2210,15 @@ document.addEventListener('DOMContentLoaded', () => {
                     const valid=usable(point)&&Number.isSafeInteger(step)&&step>=0;
                     if(point.break_before||!valid)reset();
                     if(!valid)continue;
-                    if(lastStep!==null) {
-                        const spacing=axis-lastAxis;
-                        // Only smooth consecutive, approximately evenly
-                        // spaced observations along the chosen X-axis. A
-                        // downsampling boundary or telemetry gap starts a
-                        // new window; do not interpolate missing samples.
-                        if(step<=lastStep||!Number.isFinite(spacing)||
-                            spacing<=0||
-                            regularSpacing!==null&&
-                            Math.abs(spacing-regularSpacing)>
-                                Math.max(1,Math.abs(regularSpacing)*0.20))
-                            reset();
-                        else if(regularSpacing===null)
-                            regularSpacing=spacing;
-                    }
+                    if(lastStep!==null&&
+                        (step<=lastStep||!Number.isFinite(axis)||
+                         axis<=lastAxis))
+                        reset();
+                    // Historical chart decimation deliberately varies the
+                    // spacing between retained observations. A rolling
+                    // N-sample mean must not restart at those boundaries:
+                    // only invalid metrics, explicit segment breaks and
+                    // non-increasing progress are discontinuities.
                     const value=hubMetricValue(point,key);
                     samples.push(value);
                     sum+=value;
@@ -2404,7 +2397,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     line('Rolling mean ('+
                         (rolling?.count||0)+' / '+rollingSamples+' samples): '+
                         (rolling===undefined
-                            ?'Unavailable (needs 2 consecutive, regularly spaced samples)'
+                            ?'Unavailable (needs 2 consecutive recorded samples)'
                             :formattedValue(rolling.value)));
                 }
                 return item;
