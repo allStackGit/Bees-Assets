@@ -239,6 +239,43 @@ function recordedTinyBrainsMetrics(row,updateWall) {
                 worker.engine_steps/elapsed,'rate');
         }
     }
+    // Locally multiplexed engine slots share a leased CPU budget. Stage
+    // totals are summed across overlapping subprocesses (not critical-path
+    // wall time); the independently measured wall/critical times are separate.
+    for(const name of ['local_engine_count','local_engine_active_count',
+        'local_engine_max_count','local_engine_retiring_count','local_engine_retired'])
+        add(name,row[name],'count');
+    for(const name of ['local_engine_wall_seconds',
+        'local_engine_critical_seconds','local_engine_elapsed_spread_seconds',
+        'local_engine_cpu_seconds_total',
+        'local_engine_engine_step_seconds_sum',
+        'local_engine_learner_inference_seconds_sum',
+        'local_engine_observation_encode_seconds_sum',
+        'local_engine_opponent_inference_seconds_sum',
+        'local_engine_result_processing_seconds_sum'])
+        add(name,row[name],'seconds');
+    add('local_engine_rss_mb_total',row.local_engine_rss_mb_total,'mb');
+    add('local_engine_actions_per_second',row.local_engine_actions_per_second,'rate');
+    for(const [index,slot] of (Array.isArray(row.local_engine_samples)
+        ?row.local_engine_samples:[]).slice(0,64).entries()) {
+        // Stable slot ID survives tuning even when other engines retire.
+        const id=Number.isSafeInteger(slot.id)&&slot.id>=0?slot.id:index;
+        add('local_engine_'+id+'_actions',slot.actions,'count');
+        add('local_engine_'+id+'_elapsed_seconds',slot.elapsed_seconds,'seconds');
+        add('local_engine_'+id+'_retiring',slot.retiring,'count');
+        add('local_engine_'+id+'_cpu_seconds',slot.rollout_engine_cpu_seconds,'seconds');
+        add('local_engine_'+id+'_rss_mb',slot.rollout_engine_rss_mb,'mb');
+        add('local_engine_'+id+'_inference_batches',
+            slot.rollout_inference_batches,'count');
+        add('local_engine_'+id+'_inference_mean_batch',
+            slot.rollout_inference_mean_batch,'scalar');
+        if(Number.isFinite(slot.elapsed_seconds)&&slot.elapsed_seconds>0)
+            add('local_engine_'+id+'_decisions_per_second',
+                slot.actions/slot.elapsed_seconds,'rate');
+    }
+    for(const event of ['probing','accepted','draining','retired'])
+        if(row.local_engine_tune_event===event)
+            add('local_engine_tune_'+event,1,'count');
     return metrics;
 }
 
