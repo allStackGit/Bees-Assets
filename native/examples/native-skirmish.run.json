@@ -89,6 +89,15 @@
               "enemy_squad_item_id": 101
             }
           ]
+        },
+        {
+          "squad_item_id": 104,
+          "orders": [
+            {
+              "kind": "mining",
+              "asteroid_id": 30
+            }
+          ]
         }
       ]
     }
