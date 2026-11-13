@@ -5,7 +5,7 @@ const path=require('node:path');
 const crypto=require('node:crypto');
 const {validateProgress}=require('./experiment_hub_progress');
 const {fixedCpuParallelism}=require('./experiment_hub_resources');
-const {applyOverrides,described}=require('./experiment_hub_design_fields');
+const {applyOverrides,described,validateCatalog}=require('./experiment_hub_design_fields');
 const {evaluationReader,modelFileSha256}=require('./experiment_hub_evaluation');
 
 const UUID=/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
@@ -254,14 +254,68 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
     if(!parsed||typeof parsed!=='object'||Array.isArray(parsed))
         throw Error('Courier environment configuration must be a JSON object.');
     const configSha256=crypto.createHash('sha256').update(config).digest('hex');
+    // Courier's learning settings belong to the trainer, not the simulation
+    // environment. Read a single machine-local schema shared with courier.py.
+    const trainingSchemaFile=path.join(project,'courier_training_schema.json');
+    let trainingSchemaSha256=null,trainingFields=[];
+    if(fs.existsSync(trainingSchemaFile)) {
+        const data=fs.readFileSync(trainingSchemaFile);
+        if(data.length>16384||!fs.statSync(trainingSchemaFile).isFile()||
+            !fs.readFileSync(script,'utf8').includes('--hub-training-config'))
+            throw Error('Courier PPO Design requires the matching installed trainer and bounded training schema.');
+        const schema=JSON.parse(data);
+        if(schema?.version!==1||!Array.isArray(schema.fields)||
+            schema.fields.length<1||schema.fields.length>32)
+            throw Error('Invalid locally installed Courier training schema.');
+        trainingFields=schema.fields
+            .filter(field=>field.key!=='colony_batch_size'||parsed.colony===true)
+            .map(field=>({...field,key:'training.'+field.key,section:'training'}));
+        // Field typing/ranges must meet the coordinator's shared capability
+        // contract, before advertising that the local trainer supports them.
+        validateCatalog({courier:{version:1,fields:trainingFields,
+            config_sha256:configSha256}},['courier']);
+        trainingSchemaSha256=crypto.createHash('sha256').update(data).digest('hex');
+    }
     const designFields=described(parsed,'courier');
-    function effectiveConfig(overrides) {
-        if(overrides===undefined||Object.keys(overrides||{}).length===0) {
-            applyOverrides(parsed,'courier',overrides);
-            return config;
+    designFields.fields.push(...trainingFields);
+    const editableTraining=new Map(trainingFields.map(field=>[field.key,field]));
+    function splitOverrides(overrides) {
+        if(overrides===undefined)return {environment:{},training:{}};
+        if(!overrides||typeof overrides!=='object'||Array.isArray(overrides)||
+            Object.keys(overrides).length>128)
+            throw Error('Courier Design overrides must be a bounded object.');
+        const environment={},training={};
+        for(const [key,value] of Object.entries(overrides)) {
+            if(!key.startsWith('training.')) { environment[key]=value;continue; }
+            const field=editableTraining.get(key);
+            if(!field||typeof value!=='number'||!Number.isFinite(value)||
+                field.type==='integer'&&!Number.isSafeInteger(value)||
+                value<field.min||value>field.max)
+                throw Error('Invalid or unsupported Courier PPO Design parameter: '+key);
+            training[key.slice('training.'.length)]=value;
         }
+        applyOverrides(parsed,'courier',environment);
+        return {environment,training};
+    }
+    function effectiveConfig(overrides) {
+        const changes=splitOverrides(overrides).environment;
+        if(!Object.keys(changes).length)return config;
         return Buffer.from(JSON.stringify(
-            applyOverrides(parsed,'courier',overrides),null,2)+'\n');
+            applyOverrides(parsed,'courier',changes),null,2)+'\n');
+    }
+    function expectedTraining(overrides) {
+        const changes=splitOverrides(overrides).training;
+        return Object.keys(changes).length ? JSON.stringify(changes)+'\n':null;
+    }
+    function verifyTrainingFile(folder,overrides) {
+        const expected=expectedTraining(overrides),file=path.join(folder,'hub-training-overrides.json');
+        if(expected===null) {
+            if(fs.existsSync(file))throw Error('Unexpected Courier PPO settings in checkpoint.');
+            return;
+        }
+        if(fs.realpathSync(file)!==file||!fs.statSync(file).isFile()||
+            fs.statSync(file).size>4096||fs.readFileSync(file,'utf8')!==expected)
+            throw Error('Frozen Courier PPO parameters changed on disk.');
     }
     function savedOverrides(folder) {
         const file=path.join(folder,'hub-design-overrides.json');
@@ -311,7 +365,9 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
         if(fs.statSync(summaryFile).size>256*1024)
             throw Error('Courier checkpoint summary exceeds 256 KiB.');
         const checkpoint=JSON.parse(fs.readFileSync(summaryFile,'utf8'));
-        const environment=effectiveConfig(savedOverrides(source));
+        const saved=savedOverrides(source);
+        verifyTrainingFile(source,saved);
+        const environment=effectiveConfig(saved);
         if(!fs.readFileSync(localFile('hub-environment.json')).equals(environment)||
             !within(checkpoint.round,1,Number.MAX_SAFE_INTEGER-maxRounds)||
             !Array.isArray(checkpoint.lineage)||!within(checkpoint.lineage.length,1,64))
@@ -325,7 +381,8 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
 
     return {
         executable,cwd:project,stop_policy:windows?'terminate-group':'interrupt-main',
-        design_catalog:{courier:{...designFields,config_sha256:configSha256}},
+        design_catalog:{courier:{...designFields,config_sha256:configSha256,
+            ...(trainingSchemaSha256?{training_schema_sha256:trainingSchemaSha256}:{})}},
         // Private machine-local export root, never an operator HTTP path.
         artifact_export_dir(jobId) {
             if(!UUID.test(String(jobId||'')))throw Error('Invalid Courier job identity.');
@@ -335,13 +392,17 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
             if(context.frozen_parameters?.config_sha256!==configSha256)
                 throw Error('Courier checkpoint environment pin changed.');
             const saved=completedCheckpoint(jobRoot(context),10000000);
-            if(!saved.environment.equals(effectiveConfig(context.frozen_parameters?.design_overrides)))
+            if(!saved.environment.equals(effectiveConfig(context.frozen_parameters?.design_overrides))||
+                expectedTraining(savedOverrides(jobRoot(context)))!==
+                    expectedTraining(context.frozen_parameters?.design_overrides))
                 throw Error('Courier checkpoint design differs from its frozen job.');
             return true;
         },
         model_checkpoint_sha256(context) {
             const saved=completedCheckpoint(jobRoot(context),10000000);
-            if(!saved.environment.equals(effectiveConfig(context.frozen_parameters?.design_overrides)))
+            if(!saved.environment.equals(effectiveConfig(context.frozen_parameters?.design_overrides))||
+                expectedTraining(savedOverrides(jobRoot(context)))!==
+                    expectedTraining(context.frozen_parameters?.design_overrides))
                 throw Error('Courier checkpoint design differs from its frozen job.');
             const model=saved.files.find(file=>path.basename(file)==='lineage-0.zip');
             if(!model)throw Error('Courier evaluated policy is not available for promotion.');
@@ -350,10 +411,17 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
         checkpoint_stop_file:context=>path.join(jobRoot(context),'hub-stop.request'),
         ...evaluator,
         args(parameters,context) {
-            const {config_sha256,seed,workers,max_rounds,checkpoint_rounds,design_overrides}=parameters;
+            const {config_sha256,seed,workers,max_rounds,checkpoint_rounds,
+                design_overrides,training_schema_sha256}=parameters;
             const environment=effectiveConfig(design_overrides);
+            const training=expectedTraining(design_overrides);
+            if(training!==null
+                ?training_schema_sha256!==trainingSchemaSha256
+                :training_schema_sha256!==undefined)
+                throw Error('Courier training overrides require the exact installed training schema digest.');
             if(Object.keys(parameters).some(key=>
-                !['config_sha256','seed','workers','max_rounds','checkpoint_rounds','design_overrides'].includes(key))||
+                !['config_sha256','seed','workers','max_rounds','checkpoint_rounds','design_overrides',
+                    'training_schema_sha256'].includes(key))||
                 config_sha256!==configSha256||!within(seed,0,4294967295)||
                 !(workers===undefined&&cpuParallelism==='allocation')&&
                     !within(workers,1,64)||
@@ -392,6 +460,9 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
             if(design_overrides!==undefined)
                 fs.writeFileSync(path.join(out,'hub-design-overrides.json'),
                     JSON.stringify(design_overrides)+'\n',{flag:'wx',mode:0o600});
+            if(training!==null)
+                fs.writeFileSync(path.join(out,'hub-training-overrides.json'),
+                    training,{flag:'wx',mode:0o600});
             // The wrapper provides the same checkpoint-boundary Stop request
             // on both platforms; systemd remains the sole Linux service owner.
             const launch=[path.join(__dirname,'experiment_hub_courier_train.py'),
@@ -401,6 +472,8 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
             return ['-B',...entry,'--config',configFile,'--run-dir',out,'--port','0',
                 '--seed',String(seed),'--workers',String(chosenWorkers),
                 '--max-rounds',String(limit),'--checkpoint-rounds',String(checkpoint_rounds),
+                ...(training!==null?['--hub-training-config',
+                    path.join(out,'hub-training-overrides.json')]:[]),
                 ...(predecessor?['--resume']:[])];
         },
         readProgress(context) {
