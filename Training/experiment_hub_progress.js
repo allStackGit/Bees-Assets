@@ -114,6 +114,8 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'training_gpu_device_0_peak_allocated_mb',
             'training_gpu_device_1_peak_allocated_mb',
             'training_gpu_stream_max_seconds',
+            'training_gpu_state_reused_lineages',
+            'training_gpu_state_cache_mb',
             'training_gpu_metric_readback_max_seconds',
             'training_gpu_optimizer_peak_allocated_mb',
             'training_cpu_parallelism','training_queue_max_seconds',
