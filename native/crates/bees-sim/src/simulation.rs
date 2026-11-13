@@ -654,13 +654,14 @@ impl<S, R: GameRules<S>> Simulation<S, R> {
                 let caller_started = Instant::now();
                 let caller = std::panic::catch_unwind(
                     std::panic::AssertUnwindSafe(|| {
+                        let assigned = remaining.len();
                         let mut decisions = Vec::new();
                         let mut report = ParallelWindow::default();
                         run_partition(
                             rules, dt, sample, remaining, steps, decide, &mut decisions,
                             &mut report,
                         );
-                        (report, remaining.len(), caller_started.elapsed())
+                        (report, assigned, caller_started.elapsed())
                     }),
                 );
                 let mut outcomes = Vec::with_capacity(workers);
