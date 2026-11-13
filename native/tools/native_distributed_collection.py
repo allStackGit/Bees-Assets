@@ -13,7 +13,7 @@ from pathlib import Path
 import re
 import time
 
-from native_training_artifacts import atomic_json, file_sha256
+from native_training_artifacts import atomic_json, file_sha256, native_source_contract_sha256
 
 
 COLLECTOR_ID = re.compile(r"[A-Za-z0-9_-]{1,48}\Z")
@@ -82,6 +82,7 @@ def make_orders(root, round_number, seed_offset, plan, run, checkpoint, manifest
         "source_run_id": source_run_id,
         "source_run_config": run["path"],
         "source_run_config_sha256": run["sha256"],
+        "source_run_contract_sha256": native_source_contract_sha256(Path(run["path"])),
         "checkpoint": str(checkpoint),
         "input_checkpoint_sha256": identity["checkpoint_sha256"],
         "model_manifest": str(manifest),
@@ -119,7 +120,16 @@ def make_orders(root, round_number, seed_offset, plan, run, checkpoint, manifest
         })
     path = root / f"collection-round-{round_number:05d}.json"
     if path.exists():
-        if json.loads(path.read_text(encoding="utf-8")) != orders:
+        previous = json.loads(path.read_text(encoding="utf-8"))
+        if "source_run_contract_sha256" not in previous:
+            # An interrupted session can finish its already-issued legacy
+            # exact-byte work order; do not reinterpret its original identity.
+            legacy = {k: v for k, v in orders.items()
+                      if k != "source_run_contract_sha256"}
+            if previous != legacy:
+                raise ValueError(f"distributed round work order changed: {path}")
+            return previous, path
+        if previous != orders:
             raise ValueError(f"distributed round work order changed: {path}")
     else:
         atomic_json(path, orders)
@@ -136,7 +146,12 @@ def verify_bundle(path, job, orders):
         receipt.get("collection_id") == job["collection_id"] and
         receipt.get("input_manifest_sha256") == orders["input_manifest_sha256"] and
         receipt.get("input_checkpoint_sha256") == orders["input_checkpoint_sha256"] and
-        receipt.get("run_config_sha256") == orders["source_run_config_sha256"] and
+        (
+            (receipt.get("source_run_contract_sha256") ==
+             orders["source_run_contract_sha256"])
+            if "source_run_contract_sha256" in orders else
+            receipt.get("run_config_sha256") == orders["source_run_config_sha256"]
+        ) and
         receipt.get("seed_offset") == orders["seed_offset"] and
         receipt.get("learner_slot") == orders["learner_slot"] and
         receipt.get("rollout_worlds") == job["world_count"] and
