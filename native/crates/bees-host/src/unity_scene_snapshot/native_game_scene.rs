@@ -301,6 +301,7 @@ impl NativePhysicalScene {
                 ship.sight.fog_radius.is_some_and(|v| !v.is_finite() || v < 0.0) ||
                 !ship.combat_window_seconds.is_finite() ||
                 ship.combat_window_seconds <= 0.0 ||
+                ship.is_bomber || ship.is_carrier_ship ||
                 // Special lifecycle/controllers need fully authored native
                 // relationship specifications, not missing Unity components.
                 matches!(ship.ship_type, 0 | 1 | 2 | 5 | 9 | 10 | 18 | 19 | 20 | 22)
