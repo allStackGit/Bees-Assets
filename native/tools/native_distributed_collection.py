@@ -168,12 +168,19 @@ def verify_bundle(path, job, orders):
         not math.isfinite(metrics["wall_seconds"]) or metrics["wall_seconds"] <= 0
     ):
         raise ValueError(f"distributed collector returned invalid work measurements: {path}")
-    capacity = receipt["rollout_processes"] * receipt.get("physics_workers_per_process", 1)
-    if (type(receipt.get("physics_workers_per_process", 1)) is not int or
-            not 1 <= receipt.get("physics_workers_per_process", 1) <= 128 or
-            type(metrics.get("requested_physics_worker_slots")) is not int or
-            metrics["requested_physics_worker_slots"] != capacity):
-        raise ValueError(f"distributed collector physics allocation and measured receipt disagree: {path}")
+    per_process = receipt.get("physics_workers_per_process", 1)
+    if type(per_process) is not int or not 1 <= per_process <= 128:
+        raise ValueError(f"distributed collector has invalid physics allocation: {path}")
+    requested = metrics.get("requested_physics_worker_slots")
+    capacity = receipt["rollout_processes"] * per_process
+    # Historical bundles did not record model-step CPU limits. Their
+    # absent field denotes the old single-worker default, not a claimed
+    # measurement. Explicit allocations always require an exact matching
+    # simulator receipt.
+    if (requested is not None or "physics_workers" in job or
+            "physics_workers_per_process" in receipt):
+        if type(requested) is not int or requested != capacity:
+            raise ValueError(f"distributed collector physics allocation and measured receipt disagree: {path}")
     return {
         "path": str(path.resolve()),
         "sha256": hashlib.sha256(raw).hexdigest(),
