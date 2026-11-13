@@ -1140,6 +1140,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const comparisonMetricOverrides=new Map();
     const comparisonChartAverages=new Map();
     const comparisonChartRolling=new Map();
+    const comparisonChartRollingSizes=new Map();
     const comparisonChartRunVisibility=new Map();
     let lastComparisonChart=null,lastComparisonChartWidth=0;
     let compareSerial=0;
@@ -1945,15 +1946,30 @@ document.addEventListener('DOMContentLoaded', () => {
             averageLabel.append(average,document.createTextNode(' Show sample mean'));
             const rollingLabel=document.createElement('label');
             rollingLabel.className='hub-plot-average-toggle';
-            rollingLabel.title='Mean of available retained chart samples within the preceding 50 project updates/rounds. Chart downsampling means this is not a mean of every raw update.';
+            rollingLabel.title='Mean of up to N consecutive, regularly spaced recorded chart samples. Windows restart at missing measurements, segment breaks or changed spacing.';
             const rolling=document.createElement('input');
             rolling.type='checkbox';
             const rollingId=project+'|'+key;
             rolling.checked=comparisonChartRolling.get(rollingId)===true;
-            rollingLabel.append(rolling,document.createTextNode(
-                project==='tinybrains'?' Rolling 50-update mean':
-                project==='courier'?' Rolling 50-round mean':' Rolling 50-step mean'));
-            toggles.append(averageLabel,rollingLabel);
+            rollingLabel.append(rolling,document.createTextNode(' Rolling mean'));
+            const rollingSizeLabel=document.createElement('label');
+            rollingSizeLabel.className='hub-plot-rolling-size-label';
+            rollingSizeLabel.textContent='Samples';
+            const rollingSize=document.createElement('input');
+            rollingSize.className='hub-plot-rolling-size';
+            rollingSize.type='number';
+            rollingSize.min='2';
+            rollingSize.max='256';
+            rollingSize.step='1';
+            rollingSize.value=String(comparisonChartRollingSizes.get(rollingId)||50);
+            rollingSize.setAttribute('aria-label',
+                'Rolling mean sample count for '+key.slice(7));
+            rollingSize.title='Use the latest 2–256 regularly spaced retained samples. Early windows use fewer samples until full.';
+            rollingSizeLabel.append(rollingSize);
+            const rollingControls=document.createElement('div');
+            rollingControls.className='hub-plot-rolling-controls';
+            rollingControls.append(rollingLabel,rollingSizeLabel);
+            toggles.append(averageLabel,rollingControls);
             header.append(title,toggles);
             const description=document.createElement('p');
             description.className='hub-plot-description';
@@ -1970,12 +1986,13 @@ document.addEventListener('DOMContentLoaded', () => {
             tooltip.hidden=true;
             section.append(header,description,svg,tooltip,legend);
             const chart={key,runs,xKey,svg,legend,tooltip,average,rolling,
-                averageId,rollingId,signature:null,width:0};
+                rollingSize,averageId,rollingId,signature:null,width:0};
             section._hubChart=chart;
             const redraw=()=>{
                 chart.signature=null;
                 drawComparisonChart(chart.runs,chart.key,chart.xKey,svg,
-                    legend,tooltip,average.checked,rolling.checked);
+                    legend,tooltip,average.checked,rolling.checked,
+                    Number(rollingSize.value));
             };
             average.addEventListener('change',()=>{
                 comparisonChartAverages.set(averageId,average.checked);
@@ -1983,6 +2000,14 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             rolling.addEventListener('change',()=>{
                 comparisonChartRolling.set(rollingId,rolling.checked);
+                redraw();
+            });
+            rollingSize.addEventListener('change',()=>{
+                const requested=Number(rollingSize.value);
+                const count=Number.isFinite(requested)
+                    ?Math.min(256,Math.max(2,Math.trunc(requested))):50;
+                rollingSize.value=String(count);
+                comparisonChartRollingSizes.set(rollingId,count);
                 redraw();
             });
             return section;
@@ -2014,11 +2039,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 chart.svg.clientWidth||900);
             if(chart.signature===signature&&chart.width===width)continue;
             drawComparisonChart(runs,chart.key,xKey,chart.svg,chart.legend,
-                chart.tooltip,chart.average.checked,chart.rolling.checked);
+                chart.tooltip,chart.average.checked,chart.rolling.checked,
+                Number(chart.rollingSize.value));
             chart.signature=signature;chart.width=width;
         }
     }
-    function drawComparisonChart(runs,key,xKey,svg,legend,tooltip,showAverage,showRolling) {
+    function drawComparisonChart(runs,key,xKey,svg,legend,tooltip,showAverage,showRolling,rollingSamples=50) {
+        rollingSamples=Number.isSafeInteger(rollingSamples)
+            ?Math.min(256,Math.max(2,rollingSamples)):50;
         const width=Math.max(320,Math.round(svg.getBoundingClientRect().width||
             svg.clientWidth||svg.parentElement?.clientWidth||900));
         svg.setAttribute('viewBox','0 0 '+width+' 330');
@@ -2088,9 +2116,7 @@ document.addEventListener('DOMContentLoaded', () => {
             legendItem.append(checkbox,swatch,document.createTextNode(
                 run.slot+' · '+hubJobLabel(run.job)+
                 (showAverage&&mean!==null?' · mean '+formatted(mean):'')+
-                (showRolling?' · rolling 50-'+(project==='tinybrains'
-                    ?'update':project==='courier'?'round':'step')+
-                    ' sample mean':'')));
+                (showRolling?' · rolling up to '+rollingSamples+' samples':'')));
             checkbox.addEventListener('change',()=>{
                 comparisonChartRunVisibility.set(
                     project+'|'+key+'|'+run.job.id,checkbox.checked);
@@ -2098,7 +2124,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 delete tooltip.dataset.pinnedFraction;
                 tooltip.classList.remove('hub-plot-tooltip-pinned');
                 drawComparisonChart(runs,key,xKey,svg,legend,tooltip,
-                    showAverage,showRolling);
+                    showAverage,showRolling,rollingSamples);
             });
             legend.append(legendItem);
         }
@@ -2357,10 +2383,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     line('Sample mean: '+formattedValue(summary.mean));
                 if(showRolling) {
                     const rolling=summary?.rollingByPoint.get(closest.point);
-                    line('Rolling 50-'+(project==='tinybrains'?'update':
-                        project==='courier'?'round':'step')+' mean: '+
-                        (rolling===undefined?'Unavailable (fewer than 2 retained samples in this window)'
-                            :formattedValue(rolling)));
+                    line('Rolling mean ('+
+                        (rolling?.count||0)+' / '+rollingSamples+' samples): '+
+                        (rolling===undefined
+                            ?'Unavailable (needs 2 consecutive, regularly spaced samples)'
+                            :formattedValue(rolling.value)));
                 }
                 return item;
             });
