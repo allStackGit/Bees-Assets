@@ -1,6 +1,5 @@
 //! Shared launcher for native gameplay, headless rollouts, and evaluation.
 
-use std::cell::Cell;
 use std::collections::{HashMap, HashSet};
 use std::env;
 use std::error::Error;
@@ -8,10 +7,9 @@ use std::fs;
 use std::io::{self, ErrorKind};
 #[cfg(feature = "client")]
 use std::io::Write;
-use std::num::NonZeroU32;
+use std::num::{NonZeroU32, NonZeroUsize};
 use std::path::{Path, PathBuf};
-use std::rc::Rc;
-use std::sync::Arc;
+use std::sync::{Arc, atomic::{AtomicI64, Ordering}};
 use std::time::Instant;
 
 use bees_gameplay::inference::{NativePolicyInference, NativePolicyRoute};
@@ -51,7 +49,7 @@ use sha2::{Digest, Sha256};
 mod battle_catalog;
 
 type MinionAllocator = Box<
-    dyn FnMut(SquadLifetime, i64) -> Result<SquadLifetime, SquadRosterError>,
+    dyn FnMut(SquadLifetime, i64) -> Result<SquadLifetime, SquadRosterError> + Send,
 >;
 
 #[derive(Deserialize, Serialize)]
@@ -261,6 +259,10 @@ struct RunConfig {
     #[serde(default = "one_episode")]
     episodes_per_world: u32,
     rounds_per_window: u32,
+    /// CPU workers for authoritative physics after one shared model pass.
+    /// Omitted or one retains the original serial gameplay path.
+    #[serde(default)]
+    physics_workers: Option<usize>,
     status_every_rounds: Option<u64>,
     delivery_every: u32,
     timing_sample_period: Option<u32>,
@@ -299,12 +301,17 @@ fn vec2(coordinates: [f32; 2]) -> Vec2 {
     Vec2::new(coordinates[0], coordinates[1])
 }
 
-fn allocate_from_stage(next_id: Rc<Cell<i64>>) -> MinionAllocator {
+/// The Stage pool remains one monotonic identity authority when independent
+/// worlds retire Beacon minions concurrently on CPU workers.
+fn take_stage_item_id(next_id: &AtomicI64) -> Option<i64> {
+    next_id.fetch_update(Ordering::Relaxed, Ordering::Relaxed,
+        |value| value.checked_add(1)).ok()
+}
+
+fn allocate_from_stage(next_id: Arc<AtomicI64>) -> MinionAllocator {
     Box::new(move |mother, _beacon| {
-        let item_id = next_id.get();
-        let next = item_id.checked_add(1)
+        let item_id = take_stage_item_id(&next_id)
             .ok_or(SquadRosterError::InvalidOwner)?;
-        next_id.set(next);
         Ok(SquadLifetime {
             level_id: mother.level_id,
             squad_id: item_id,
@@ -386,7 +393,7 @@ fn make_setup(
     level: &LevelConfig,
     assets: &NativeSceneAssets,
     period: NonZeroU32,
-    next_id: Rc<Cell<i64>>,
+    next_id: Arc<AtomicI64>,
     seed: u64,
     episode_offset: u32,
     sides: [i32; 2],
@@ -1012,6 +1019,11 @@ fn run_battle(
     let period = nonzero(config.decision_period, "decision_period")?;
     let window = nonzero(config.rounds_per_window, "rounds_per_window")?;
     let delivery = nonzero(config.delivery_every, "delivery_every")?;
+    let physical_workers = NonZeroUsize::new(config.physics_workers.unwrap_or(1))
+        .ok_or_else(|| invalid("physics_workers must be positive"))?;
+    if physical_workers.get() > 128 {
+        return Err(invalid("physics_workers must be at most 128").into());
+    }
     let timing = config.timing_sample_period
         .map(|value| nonzero(value, "timing_sample_period"))
         .transpose()?;
@@ -1315,10 +1327,9 @@ fn run_battle(
         ).into());
     }
 
-    // Unity's Stage Pool.ItemCount is a single monotonic allocator; a
-    // shared Rc<Cell> gives independent Level callbacks one identity stream
-    // while keeping all mutable state on the simulation-owning thread.
-    let next_id = Rc::new(Cell::new(config.next_squad_item_id));
+    // Every world shares the one source Stage pool identity stream, even
+    // when an opted-in physics worker admits a newly spawned child squad.
+    let next_id = Arc::new(AtomicI64::new(config.next_squad_item_id));
     // Multiple independently driven arena instances may intentionally use
     // the same exported Level template, whose original Stage pool IDs are
     // duplicates. Keep the first source lifetime and allocate fresh IDs
@@ -1329,10 +1340,8 @@ fn run_battle(
         let mut remapped = HashMap::new();
         for squad in &mut source.source_squads {
             if !seen_squad_ids.insert(squad.item_id) {
-                let item_id = next_id.get();
-                let following = item_id.checked_add(1)
+                let item_id = take_stage_item_id(&next_id)
                     .ok_or_else(|| invalid("Stage squad identities exhausted"))?;
-                next_id.set(following);
                 remapped.insert(squad.item_id, item_id);
                 squad.item_id = item_id;
                 seen_squad_ids.insert(item_id);
@@ -1384,7 +1393,7 @@ fn run_battle(
             source,
             make_setup(
                 &config, level, &assets, period,
-                Rc::clone(&next_id), level.episode_seed(0), 0, source_sides[index], &remapped_squads_by_level[index],
+                Arc::clone(&next_id), level.episode_seed(0), 0, source_sides[index], &remapped_squads_by_level[index],
             )?,
         ));
     }
@@ -1515,6 +1524,7 @@ fn run_battle(
         "policy_manifest_sha256": host.model_mut().model_manifest_sha256(),
         "decision_period": config.decision_period,
         "delivery_every": config.delivery_every,
+        "physics_workers": physical_workers.get(),
         "timing_sample_period": config.timing_sample_period,
         "interactive_view": view,
         "source_hivemind_commands": config.hivemind.as_ref()
@@ -1717,7 +1727,14 @@ fn run_battle(
         } else { u64::MAX };
         let count = nonzero(remaining.min(source_pulse_limit)
             .min(u64::from(if view || playback.is_some() { 1 } else { window.get() })) as u32, "window")?;
-        let counts = match host.run_window(count, delivery) {
+        let physical_result = if !view && playback.is_none() &&
+            physical_workers.get() > 1 && config.levels.len() > 1
+        {
+            host.run_window_parallel(count, delivery, physical_workers)
+        } else {
+            host.run_window(count, delivery)
+        };
+        let counts = match physical_result {
             Ok(counts) => counts,
             Err(error) => {
                 // The partial world/trajectory is never counted as a
@@ -1879,10 +1896,8 @@ fn run_battle(
                 // squad lifetimes, not aliases of retired pooled wrappers.
                 let mut remapped = HashMap::new();
                 for squad in &mut scene.source_squads {
-                    let item_id = next_id.get();
-                    let following = item_id.checked_add(1)
+                    let item_id = take_stage_item_id(&next_id)
                         .ok_or_else(|| invalid("Stage squad identities exhausted"))?;
-                    next_id.set(following);
                     remapped.insert(squad.item_id, item_id);
                     squad.item_id = item_id;
                 }
@@ -1894,7 +1909,7 @@ fn run_battle(
                     )?;
                 }
                 let setup = make_setup(
-                    &config, level, &assets, period, Rc::clone(&next_id), seed,
+                    &config, level, &assets, period, Arc::clone(&next_id), seed,
                     completed_episodes[index], source_sides[index], &remapped,
                 )?;
                 let authored = scene.into_exported_policy_only_level(setup)
