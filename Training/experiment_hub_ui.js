@@ -1139,19 +1139,25 @@ document.addEventListener('DOMContentLoaded', () => {
     function addComparisonSlot() {
         const slot='run'+(++compareSerial);
         compareSlots.push(slot);
+        const row=document.createElement('div');
+        row.className='hub-compare-run';
         const label=document.createElement('label');
-        label.textContent='Run '+compareSerial+' ';
         const select=document.createElement('select');
         select.id='hub-compare-'+slot;
+        label.htmlFor=select.id;
+        label.textContent='Run '+compareSerial;
         select.addEventListener('change',renderComparison);
         const remove=button('Remove',()=>{
             compareSlots.splice(compareSlots.indexOf(slot),1);
-            label.remove();
+            row.remove();
             renderComparison();
         });
         remove.title='Remove from comparison (does not modify the job)';
-        label.append(select,remove);
-        $('hub-compare-run-list').append(label);
+        const controls=document.createElement('div');
+        controls.className='hub-compare-run-controls';
+        controls.append(select,remove);
+        row.append(label,controls);
+        $('hub-compare-run-list').append(row);
         return slot;
     }
     // Keep the native multi-select as the single source of selected IDs.
@@ -1455,6 +1461,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }))).map(metric=>({
             key:'metric:'+metric.key,
             label:metric.key+' ('+metric.units.join('/')+')',
+            units:metric.units,
         }));
         metricSelect.replaceChildren(...metricOptions.map(m=>{
             const option=new Option(m.label,m.key);
@@ -3809,6 +3816,16 @@ document.addEventListener('DOMContentLoaded', () => {
         b.addEventListener('click',()=>selectTab(b.dataset.hubGo));
     addComparisonSlot();
     addComparisonSlot();
+    if(typeof ResizeObserver==='function') {
+        const plotResize=new ResizeObserver(entries=>{
+            const width=Math.round(entries[0].contentRect.width);
+            if(width>0&&width!==lastComparisonChartWidth&&
+                lastComparisonChart&&tab==='compare')
+                drawComparisonCharts(lastComparisonChart.runs,
+                    lastComparisonChart.keys,lastComparisonChart.xKey);
+        });
+        plotResize.observe($('hub-compare-plots'));
+    }
     $('hub-compare-add-run').addEventListener('click',()=>{
         addComparisonSlot();
         renderComparison();
