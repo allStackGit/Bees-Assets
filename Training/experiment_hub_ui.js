@@ -1909,7 +1909,14 @@ document.addEventListener('DOMContentLoaded', () => {
             redraw();
         }
     }
-    function drawComparisonChart(runs,key,xKey,svg) {
+    function drawComparisonChart(runs,key,xKey,svg,legend,tooltip,showAverage) {
+        const width=Math.max(320,Math.round(svg.getBoundingClientRect().width||
+            svg.clientWidth||svg.parentElement?.clientWidth||900));
+        svg.setAttribute('viewBox','0 0 '+width+' 330');
+        legend.replaceChildren();
+        tooltip.hidden=true;
+        svg.onpointermove=null;
+        svg.onpointerleave=null;
         const axisLabel=comparisonAxisLabel(xKey);
         const genericKey=key.startsWith('metric:')?key.slice(7):null;
         const units=genericKey?[...new Set(runs.flatMap(run=>
@@ -1931,7 +1938,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return item;
         };
         if(units.length>1) {
-            node('text',{x:450,y:160,'text-anchor':'middle'},
+            node('text',{x:width/2,y:160,'text-anchor':'middle'},
                 'Selected metric uses incompatible units across runs');
             return;
         }
@@ -1946,11 +1953,11 @@ document.addEventListener('DOMContentLoaded', () => {
             .filter(usable)
             .map(p=>({x:hubComparisonAxisValue(p,xKey),y:hubMetricValue(p,key)})));
         if(!values.length) {
-            node('text',{x:450,y:160,'text-anchor':'middle'},
+            node('text',{x:width/2,y:160,'text-anchor':'middle'},
                 'No recorded samples for the selected runs and metric');
             return;
         }
-        const bounds={left:85,right:865,top:64,bottom:265};
+        const bounds={left:85,right:width-24,top:20,bottom:270};
         let xmin=Infinity,xmax=-Infinity,minY=0,maxY=0.001;
         for(const point of values) {
             xmin=Math.min(xmin,point.x);xmax=Math.max(xmax,point.x);
@@ -1972,17 +1979,39 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         for(let i=0;i<=4;i++) {
             const value=xmin+(xmax-xmin)*i/4,xp=x(value);
-            node('text',{x:xp,y:288,'text-anchor':'middle'},
+            node('text',{x:xp,y:295,'text-anchor':'middle'},
                 Math.round(value).toLocaleString());
         }
         node('line',{x1:bounds.left,y1:bounds.bottom,
             x2:bounds.right,y2:bounds.bottom,class:'plot-axis'});
         node('line',{x1:bounds.left,y1:bounds.top,
             x2:bounds.left,y2:bounds.bottom,class:'plot-axis'});
-        node('text',{x:450,y:313,'text-anchor':'middle'},
+        node('text',{x:width/2,y:320,'text-anchor':'middle'},
             axisLabel);
         const showPoints=series.reduce((n,run)=>n+run.valid.length,0)<=300;
         for(const run of series) {
+            const sampled=run.valid.filter(usable).map(p=>hubMetricValue(p,key));
+            const mean=sampled.length
+                ?sampled.reduce((sum,value)=>sum+value,0)/sampled.length:null;
+            if(showAverage&&mean!==null)
+                node('line',{x1:bounds.left,y1:y(mean),x2:bounds.right,y2:y(mean),
+                    stroke:run.color,'stroke-dasharray':'7 5',class:'plot-average'});
+            const legendItem=document.createElement('span');
+            legendItem.className='hub-plot-legend-entry';
+            const swatch=document.createElement('span');
+            swatch.className='hub-plot-legend-swatch';
+            swatch.style.borderColor=run.color;
+            const unit=units[0]||'';
+            const formatted=value=>unit==='ratio'
+                ?(value*100).toFixed(2)+'%'
+                :Number(value.toPrecision(6)).toLocaleString()+
+                    (unit==='seconds'?' s':unit==='rate'?' /s':
+                        unit==='mb'?' MiB':unit==='watts'?' W':
+                        unit==='scalar'||unit==='count'?'':' '+unit);
+            legendItem.append(swatch,document.createTextNode(
+                run.slot+' · '+run.job.configuration_name+
+                (showAverage&&mean!==null?' · mean '+formatted(mean):'')));
+            legend.append(legendItem);
             let part=[],previousX=null;
             const flush=()=>{
                 if(part.length>1)
