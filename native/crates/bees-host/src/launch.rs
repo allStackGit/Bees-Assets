@@ -140,7 +140,9 @@ enum ScriptedOrderConfig {
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct ReinforcementConfig {
-    after_seconds: f32,
+    /// Exactly one activation source. Existing configs use after_seconds.
+    after_seconds: Option<f32>,
+    on_campaign_cue: Option<bees_host::policy_only_metadata::NativeMissionCue>,
     squad_item_ids: Vec<i64>,
     /// Explicit physical starting center (may be outside scene bounds).
     /// Omitted for older captured waves whose ships are already positioned.
@@ -415,12 +417,24 @@ fn make_setup(
             seconds: objective.seconds,
         }),
         campaign_dialogue: level.campaign_dialogue,
-        reinforcements: level.reinforcements.iter().map(|wave| bees_host::NativeReinforcementPlan {
-            after_seconds: wave.after_seconds,
-            squad_item_ids: wave.squad_item_ids.iter().map(|id| remapped_squads.get(id).copied().unwrap_or(*id)).collect(),
-            spawn: wave.spawn.map(vec2),
-            entry: wave.entry.map(vec2),
-        }).collect(),
+        reinforcements: level.reinforcements.iter().map(|wave| {
+            let activation = match (wave.after_seconds, wave.on_campaign_cue) {
+                (Some(seconds), None) =>
+                    bees_host::NativeReinforcementActivation::AfterSeconds(seconds),
+                (None, Some(cue)) =>
+                    bees_host::NativeReinforcementActivation::OnCampaignCue(cue),
+                _ => return Err(invalid(
+                    "reinforcement needs exactly one of after_seconds or on_campaign_cue",
+                )),
+            };
+            Ok(bees_host::NativeReinforcementPlan {
+                activation,
+                squad_item_ids: wave.squad_item_ids.iter()
+                    .map(|id| remapped_squads.get(id).copied().unwrap_or(*id)).collect(),
+                spawn: wave.spawn.map(vec2),
+                entry: wave.entry.map(vec2),
+            })
+        }).collect::<io::Result<Vec<_>>>()?,
         scripted_queues: level.scripted_queues.iter().map(|queue|
             bees_host::policy_only_metadata::NativeScriptedQueuePlan {
                 squad_item_id: remapped_squads.get(&queue.squad_item_id)

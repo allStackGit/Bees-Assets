@@ -2,7 +2,7 @@
 
 use std::collections::{HashMap, HashSet, VecDeque};
 
-use bees_gameplay::level_events::NativeLevelEventProcessor;
+use bees_gameplay::level_events::{NativeLevelEventProcessor, NativeLevelNotificationKind};
 use bees_gameplay::level_host::NativeLevelActivationContext;
 use bees_gameplay::level_rules::NativeLevelStepError;
 use bees_gameplay::player_inputs::NativeLevelPlayerContext;
@@ -10,13 +10,20 @@ use bees_sim::{combat_world::CombatWorld, geometry::Vec2, squad_movement::{
     SquadFormationMember, authored_placement_offset, issue_squad_move,
 }};
 
-use crate::policy_only_metadata::NativePolicyOnlyMetadata;
+use crate::policy_only_metadata::{NativePolicyOnlyMetadata, NativeMissionCue};
 use crate::scene_builder::{NativeAuthoredEntity, NativeAuthoredLevel, NativeAuthoredShip, NativeAuthoredSquad,
     install_ship_attachments, spawn_authored_ship};
 use crate::ship_specials::NativeAuthoredShipSpecial;
 
+/// Exactly one source-owned admission gate for a deferred wave.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum NativeReinforcementActivation {
+    AfterSeconds(f32),
+    OnCampaignCue(NativeMissionCue),
+}
+
 pub struct NativeReinforcementPlan {
-    pub after_seconds: f32,
+    pub activation: NativeReinforcementActivation,
     pub squad_item_ids: Vec<i64>,
     /// Source AddReinforcementSquads startingPosition. When supplied, the
     /// authored formation is placed here before its entry move.
@@ -24,15 +31,40 @@ pub struct NativeReinforcementPlan {
     pub entry: Option<Vec2>,
 }
 
+#[derive(Clone, Copy)]
+enum ReinforcementDue {
+    Tick(u64),
+    CampaignCue(NativeMissionCue),
+}
+
 pub(crate) struct ReinforcementWave {
-    tick: u64,
+    due: ReinforcementDue,
     entry: Option<Vec2>,
     squads: Vec<NativeAuthoredSquad>,
     ships: Vec<NativeAuthoredShip>,
 }
 
 impl ReinforcementWave {
-    pub(crate) fn scheduled_tick(&self) -> u64 { self.tick }
+    pub(crate) fn scheduled_tick(&self) -> Option<u64> {
+        match self.due {
+            ReinforcementDue::Tick(tick) => Some(tick),
+            ReinforcementDue::CampaignCue(_) => None,
+        }
+    }
+
+    fn is_due(&self, tick: u64, events: &NativeLevelEventProcessor) -> bool {
+        match self.due {
+            ReinforcementDue::Tick(due) => tick >= due,
+            ReinforcementDue::CampaignCue(expected) =>
+                events.pending_notifications().iter().rev().take_while(|entry|
+                    entry.tick == tick
+                ).any(|entry|
+                    matches!(&entry.kind, NativeLevelNotificationKind::CampaignDialogue(cue)
+                        if expected.matches(*cue))
+                ),
+        }
+    }
+
     pub(crate) fn squad_count(&self) -> usize { self.squads.len() }
     pub(crate) fn ship_count(&self) -> usize { self.ships.len() }
 }
@@ -162,19 +194,34 @@ impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
         let mut waves = Vec::with_capacity(plans.len());
         let mut spawn_centers = Vec::with_capacity(plans.len());
         let mut planned_squad_order = Vec::with_capacity(plans.len());
-        let mut previous = 0.0;
-        // Equal-time waves are valid: Titania II stages two distinct
-        // formations at 375 seconds with different entry destinations.
-        // Preserve authored order for a common due tick.
+        let mut previous_timed = 0.0;
+        // Equal-time waves and simultaneous mission cues retain authored
+        // construction order. Timed waves remain sorted relative to other
+        // timed waves; cue-triggered waves may interleave them.
         for plan in plans {
-            let tick = (f64::from(plan.after_seconds) / f64::from(dt)).floor() + 1.0;
-            if !plan.after_seconds.is_finite() || plan.after_seconds <= 0.0 ||
-                plan.after_seconds < previous ||
-                !tick.is_finite() || tick >= u64::MAX as f64 || plan.squad_item_ids.is_empty() ||
+            let due = match plan.activation {
+                NativeReinforcementActivation::AfterSeconds(seconds) => {
+                    let tick = (f64::from(seconds) / f64::from(dt)).floor() + 1.0;
+                    if !seconds.is_finite() || seconds <= 0.0 ||
+                        seconds < previous_timed ||
+                        !tick.is_finite() || tick >= u64::MAX as f64 {
+                        return Err("Timed reinforcements need positive, finite, nondecreasing times");
+                    }
+                    previous_timed = seconds;
+                    ReinforcementDue::Tick(tick as u64)
+                }
+                NativeReinforcementActivation::OnCampaignCue(cue) => {
+                    if !cue.valid_for(self.campaign_dialogue) {
+                        return Err("Reinforcement campaign cue is unavailable in this Level");
+                    }
+                    ReinforcementDue::CampaignCue(cue)
+                }
+            };
+            if plan.squad_item_ids.is_empty() ||
                 plan.spawn.is_some_and(|spawn| !spawn.is_finite()) ||
                 plan.entry.is_some_and(|entry| !entry.is_finite())
             {
-                return Err("Reinforcements need positive nondecreasing times, nonempty squads, and finite spawn/entry coordinates");
+                return Err("Reinforcements need nonempty squads and finite spawn/entry coordinates");
             }
             // Multiple IDs within a single plan share the source
             // LevelConstructor.PositionSquads call, including Carrier
@@ -185,15 +232,13 @@ impl<A> NativeAuthoredLevel<NativePolicyOnlyMetadata, A> {
                 }
             }
             planned_squad_order.push(plan.squad_item_ids);
-            previous = plan.after_seconds;
             spawn_centers.push(plan.spawn);
             // Unity LevelConstructor.PositionSquads skips Squad.Move when
             // moveToPoint == Vector2.zero. That is a source sentinel, not a
             // physical point order; use Unity's epsilon-aware equality.
             let entry = plan.entry.filter(|point| !point.unity_equal(Vec2::ZERO));
             waves.push(ReinforcementWave {
-                tick: tick as u64, entry,
-                squads: Vec::new(), ships: Vec::new(),
+                due, entry, squads: Vec::new(), ships: Vec::new(),
             });
         }
         // Validate deferred membership and physical ownership BEFORE taking
@@ -352,8 +397,16 @@ impl NativePolicyOnlyMetadata {
         // has moved or destroyed collision asteroids. Refresh once per
         // arrival tick, only when a due wave has an obstacle-aware entry move.
         let mut navigation_refreshed = false;
-        while self.reinforcements.front().is_some_and(|wave| wave.tick <= tick) {
-            let wave = self.reinforcements.pop_front().expect("due wave");
+        let mut index = 0;
+        while index < self.reinforcements.len() {
+            if !self.reinforcements[index].is_due(tick, events) {
+                index += 1;
+                continue;
+            }
+            // Source order is retained for waves released by the same
+            // mission event. A later timed wave need not wait for an
+            // unrelated earlier dialogue-triggered reinforcement.
+            let wave = self.reinforcements.remove(index).expect("due wave");
             let (ships, squads) = (wave.ships.len(), wave.squads.len());
             let invalid = |error| NativeLevelStepError::Reinforcements(error);
             let mut attachments = Vec::new();

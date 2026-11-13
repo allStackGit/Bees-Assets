@@ -480,7 +480,7 @@ impl NativeLevelCommandContext for NativePolicyOnlyMetadata {
     }
 
     fn next_reinforcement_tick(&self) -> Option<u64> {
-        self.reinforcements.front().map(|wave| wave.scheduled_tick())
+        self.reinforcements.iter().filter_map(|wave| wave.scheduled_tick()).min()
     }
 
     fn pending_reinforcement_waves(&self) -> usize {

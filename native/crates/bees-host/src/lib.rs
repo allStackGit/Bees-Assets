@@ -18,7 +18,7 @@ pub mod scene_assets;
 pub mod scene_builder;
 mod reinforcements;
 mod campaign_staging;
-pub use reinforcements::NativeReinforcementPlan;
+pub use reinforcements::{NativeReinforcementPlan, NativeReinforcementActivation};
 pub mod ship_specials;
 pub mod fleet_inventory;
 pub mod policy_only_metadata;
