@@ -44,7 +44,12 @@ function fieldsFor(config,project) {
                 continue;
             if(project==='tinybrains'&&!['training','environment','reward','self_play'].includes(path[0]))
                 continue;
-            const leaf=key.toLowerCase(),integer=typeof value==='number'&&Number.isInteger(value);
+            // JSON cannot preserve 1.0 versus 1. Distinguish semantically
+            // fractional model/reward rates from whole-number quantities.
+            const leaf=key.toLowerCase();
+            const fractional=project==='tinybrains'&&path[0]==='reward'||
+                /(?:rate|gamma|lambda|clip|coefficient|grad_norm|cost|energy|penalty|ratio|fraction|seconds|probability|scale|weight)/i.test(leaf);
+            const integer=typeof value==='number'&&Number.isInteger(value)&&!fractional;
             const tinyLimits=project==='tinybrains'?{
                 'training.gamma':[0.000000001,1],
                 'training.gae_lambda':[0,1],
