@@ -135,6 +135,12 @@ def verify_bundle(path, job, orders):
     )
     if not expected:
         raise ValueError(f"distributed collector returned a mismatched or stale bundle: {path}")
+    for key in ("native_runner_sha256", "policy_worker_sha256"):
+        digest = receipt.get(key)
+        if not isinstance(digest, str) or len(digest) != 64 or any(
+            char not in "0123456789abcdef" for char in digest
+        ):
+            raise ValueError(f"collector did not pin its runtime implementation: {path}")
     metrics = receipt.get("rollout_metrics")
     if not isinstance(metrics, dict) or any(
         type(metrics.get(key)) is not int or metrics[key] <= 0
@@ -149,6 +155,8 @@ def verify_bundle(path, job, orders):
         "sha256": hashlib.sha256(raw).hexdigest(),
         "collector_id": job["id"],
         "partition": partition,
+        "native_runner_sha256": receipt["native_runner_sha256"],
+        "policy_worker_sha256": receipt["policy_worker_sha256"],
         "metrics": metrics,
     }
 
@@ -188,6 +196,9 @@ def aggregate_collection_metrics(bundles):
     """
     if not bundles:
         raise ValueError("at least one completed collection is required")
+    worker_digests = {bundle["policy_worker_sha256"] for bundle in bundles}
+    if len(worker_digests) != 1:
+        raise ValueError("mixed native policy inference implementations in one optimizer round")
     rows = [bundle["metrics"] for bundle in bundles]
     steps = sum(row["successful_world_steps"] for row in rows)
     policies = sum(row["successful_policy_rows"] for row in rows)
@@ -202,10 +213,12 @@ def aggregate_collection_metrics(bundles):
         "world_steps_per_wall_second": steps / seconds,
         "policy_rows_per_wall_second": policies / seconds,
         "collector_count": len(rows),
+        "policy_worker_sha256": next(iter(worker_digests)),
         "collectors": [
             {
                 "id": bundle["collector_id"],
                 "partition": bundle["partition"],
+                "native_runner_sha256": bundle["native_runner_sha256"],
                 "world_steps": row["successful_world_steps"],
                 "policy_rows": row["successful_policy_rows"],
                 "wall_seconds": row["wall_seconds"],
