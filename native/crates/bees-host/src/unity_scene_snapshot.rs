@@ -825,6 +825,7 @@ struct NativeSourcePolicyInputs {
 
 /// Runtime source Squad.ItemId is allocated once per Squad.Setup by the
 /// Stage-wide monotonic Pool.ItemCount, even for reused pooled wrappers.
+#[derive(Clone)]
 pub struct NativeSourceSquad {
     pub command_bans: Option<Vec<bees_hivemind::dispatch::LocalCommandKind>>,
     pub is_carrier_squad: Option<bool>,
