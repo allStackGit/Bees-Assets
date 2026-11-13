@@ -15,7 +15,7 @@ use std::time::{Duration, Instant};
 
 use crate::combat_world::{CombatWorld, CombatWorldError};
 use crate::navigation::{NavigationError, NavigationGrid};
-use crate::navigation_clearance::NavigationClearance;
+use crate::navigation_clearance::NavigationSearchSnapshot;
 use crate::navigation_requests::{NavigationCompletion, NavigationRequest};
 use crate::navigation_runtime::{NavigationMapFrame, NavigationRuntime};
 use crate::navigation_search::{NavigationPath, NavigationSearch};
@@ -56,7 +56,7 @@ pub struct NavigationSchedulerStep {
 struct Job {
     request: NavigationRequest,
     frame: NavigationMapFrame,
-    clearance: Arc<NavigationClearance>,
+    clearance: Arc<NavigationSearchSnapshot>,
 }
 
 enum Command {
@@ -86,7 +86,7 @@ pub struct NavigationScheduler {
     grid: NavigationGrid,
     workers: Vec<Worker>,
     replies: mpsc::Receiver<Reply>,
-    clearance_snapshot: Option<Arc<NavigationClearance>>,
+    clearance_snapshot: Option<Arc<NavigationSearchSnapshot>>,
     snapshot_frame: Option<u64>,
     snapshot_asteroids_enabled: Option<bool>,
     pending_static_rebuild: bool,
@@ -254,8 +254,11 @@ impl NavigationScheduler {
             return Ok(step);
         }
 
+        // A static-only map is identical across fixed frames: keep one
+        // immutable snapshot until geometry or asteroid mode changes.
+        // Active moving asteroids still require a fresh frame's clearance.
         if self.clearance_snapshot.is_none() ||
-            self.snapshot_frame != Some(fixed_frame) ||
+            (collision_asteroids_enabled && self.snapshot_frame != Some(fixed_frame)) ||
             self.snapshot_asteroids_enabled != Some(collision_asteroids_enabled) ||
             self.pending_static_rebuild {
             world.refresh_world_navigation(

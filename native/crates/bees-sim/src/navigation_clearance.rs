@@ -6,6 +6,7 @@
 //! clearance map before recalculating, exactly as Unity does. Path search may
 //! read an immutable snapshot without racing a concurrent update.
 use std::collections::{HashMap, VecDeque};
+use std::sync::Arc;
 
 use crate::geometry::Vec2;
 use crate::navigation::{
@@ -15,17 +16,48 @@ use crate::physics::ObstacleBody;
 
 const UNREACHABLE_SIGNED: i32 = i32::MAX / 4;
 
+/// Immutable, search-only clearance for an in-flight path worker. Retains no
+/// static connectivity cache or obstacle raster scratch. A stable authored
+/// static map is shared across frames and workers; only moving-asteroid
+/// clearance is captured anew when it changes.
+#[derive(Clone, Debug)]
+pub struct NavigationSearchSnapshot {
+    grid: NavigationGrid,
+    signed_static: Arc<Vec<i32>>,
+    dynamic: Vec<i32>,
+}
+
+/// The synchronous world and asynchronous workers search the identical
+/// physical clearance fields without copying ownership-only map state.
+pub trait NavigationSearchLayers {
+    fn grid(&self) -> NavigationGrid;
+    fn dynamic_clearance(&self) -> &[i32];
+    fn static_signed_clearance(&self) -> &[i32];
+}
+
+impl NavigationSearchLayers for NavigationSearchSnapshot {
+    fn grid(&self) -> NavigationGrid { self.grid }
+    fn dynamic_clearance(&self) -> &[i32] { &self.dynamic }
+    fn static_signed_clearance(&self) -> &[i32] { self.signed_static.as_slice() }
+}
+
 #[derive(Clone, Debug)]
 pub struct NavigationClearance {
     grid: NavigationGrid,
     base: Vec<i32>,
-    signed_static: Vec<i32>,
+    signed_static: Arc<Vec<i32>>,
     dynamic: Vec<i32>,
     moving_blocked: Vec<bool>,
     /// Unity's static-region cache is keyed by effective ship clearance.
     /// Dynamic asteroids do not invalidate these permanent connectivity
     /// components; static obstacle updates do.
     static_components_by_clearance: HashMap<i32, Vec<i32>>,
+}
+
+impl NavigationSearchLayers for NavigationClearance {
+    fn grid(&self) -> NavigationGrid { self.grid }
+    fn dynamic_clearance(&self) -> &[i32] { &self.dynamic }
+    fn static_signed_clearance(&self) -> &[i32] { self.signed_static.as_slice() }
 }
 
 impl NavigationClearance {
@@ -37,7 +69,7 @@ impl NavigationClearance {
         let length = static_blocked.len();
         let mut layers = Self {
             grid, base: vec![0; length],
-            signed_static: vec![0; length],
+            signed_static: Arc::new(vec![0; length]),
             dynamic: vec![0; length],
             moving_blocked: vec![false; length],
             static_components_by_clearance: HashMap::new(),
@@ -48,20 +80,18 @@ impl NavigationClearance {
 
     pub fn grid(&self) -> NavigationGrid { self.grid }
     pub fn static_clearance(&self) -> &[i32] { &self.base }
-    pub fn static_signed_clearance(&self) -> &[i32] { &self.signed_static }
+    pub fn static_signed_clearance(&self) -> &[i32] { self.signed_static.as_slice() }
     pub fn dynamic_clearance(&self) -> &[i32] { &self.dynamic }
 
-    /// A search worker owns an immutable copy captured at dispatch time.
-    /// Static region caches do not participate in A* and need not be
-    /// replicated for each new worker snapshot.
-    pub fn search_snapshot(&self) -> Self {
-        Self {
+    /// Capture the moving clearance without duplicating the static map,
+    /// static connected components, or raster scratch per dispatch frame.
+    /// Copy-on-write keeps prior workers' signed static field valid when
+    /// authored static obstacles are rebuilt.
+    pub fn search_snapshot(&self) -> NavigationSearchSnapshot {
+        NavigationSearchSnapshot {
             grid: self.grid,
-            base: self.base.clone(),
-            signed_static: self.signed_static.clone(),
+            signed_static: Arc::clone(&self.signed_static),
             dynamic: self.dynamic.clone(),
-            moving_blocked: vec![false; self.moving_blocked.len()],
-            static_components_by_clearance: HashMap::new(),
         }
     }
 
@@ -237,7 +267,7 @@ impl NavigationClearance {
     fn rebuild_static_fields(&mut self) {
         self.static_components_by_clearance.clear();
         calculate_clearance(self.grid, &mut self.base);
-        build_signed_static(self.grid, &self.base, &mut self.signed_static);
+        build_signed_static(self.grid, &self.base, Arc::make_mut(&mut self.signed_static).as_mut_slice());
         self.dynamic.copy_from_slice(&self.base);
         self.moving_blocked.fill(false);
     }
@@ -260,6 +290,9 @@ impl NavigationClearance {
             asteroids, to_world, to_level, &mut self.moving_blocked,
         )?;
         self.dynamic.copy_from_slice(&self.base);
+        // With no occupied moving cells the precomputed static distance
+        // transform is already the exact answer; avoid two full-grid passes.
+        if counts.blocked_cells == 0 { return Ok(counts); }
         for (clearance, &moving) in self.dynamic.iter_mut().zip(&self.moving_blocked) {
             if moving { *clearance = 0; }
         }

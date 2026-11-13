@@ -10,7 +10,7 @@ use std::time::Instant;
 
 use crate::geometry::Vec2;
 use crate::navigation::{NavigationError, NavigationGrid};
-use crate::navigation_clearance::NavigationClearance;
+use crate::navigation_clearance::NavigationSearchLayers;
 
 pub const MINIMUM_CLEARANCE: i32 = 2;
 pub const PREFERRED_CLEARANCE_BUFFER: i32 = 2;
@@ -78,7 +78,7 @@ impl NavigationSearch {
     /// that scheduler frame.
     pub fn find_path(
         &mut self,
-        layers: &NavigationClearance,
+        layers: &impl NavigationSearchLayers,
         start: (usize, usize),
         end: (usize, usize),
         ship_clearance: i32,
@@ -90,7 +90,7 @@ impl NavigationSearch {
     /// Headless/synchronous route queries use None for deterministic work.
     pub fn find_path_until(
         &mut self,
-        layers: &NavigationClearance,
+        layers: &impl NavigationSearchLayers,
         start: (usize, usize),
         end: (usize, usize),
         ship_clearance: i32,
@@ -141,7 +141,7 @@ impl NavigationSearch {
     /// Convenience for callers holding Unity-style Level-local coordinates.
     pub fn find_level_path(
         &mut self,
-        layers: &NavigationClearance,
+        layers: &impl NavigationSearchLayers,
         start: Vec2,
         end: Vec2,
         ship_clearance: i32,
@@ -156,7 +156,7 @@ impl NavigationSearch {
 
     pub fn find_level_path_until(
         &mut self,
-        layers: &NavigationClearance,
+        layers: &impl NavigationSearchLayers,
         start: Vec2,
         end: Vec2,
         ship_clearance: i32,
