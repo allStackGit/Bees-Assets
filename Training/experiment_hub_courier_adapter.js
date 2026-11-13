@@ -15,7 +15,7 @@ const ROCM_UUID=/^GPU-(?:[0-9a-f]{16}|[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12
 const COURIER_COUNT_FIELDS=new Set([
     'training_profile_round','training_lineage_workers',
     'training_slowest_worker','training_last_reply_worker',
-    'training_simulation_slowest_worker',
+    'training_simulation_slowest_worker','training_inference_slowest_worker',
     'training_simulated_steps','training_useful_steps',
     'training_total_useful_steps','training_rejected_workers',
     'training_concurrency_limit','training_concurrency_next_limit',
@@ -55,8 +55,28 @@ function courierMetrics(source) {
     // simulation/observation stages instead of truncating the second half
     // of the population at the old 253-field adapter limit. Reserve space
     // for the envelope, host data and optional derived diagnoses.
+    // For large saved populations, retain core stage evidence from *every*
+    // lineage before optional per-lineage detail. The old insertion-order
+    // 480-field cutoff could silently discard workers near slot 63 when
+    // new CPU/GPU profiling stages were added. All original measurements
+    // remain in Courier's completed-round source history.
+    const fields=Object.entries(stats);
+    const workerField=/^worker_([0-9]{1,2})_(.+)$/;
+    const core=new Set(['collection_seconds','optimization_seconds',
+        'simulation_seconds','inference_seconds','ingestion_seconds']);
+    const ordered=[
+        ...fields.filter(([name])=>!workerField.test(name)),
+        ...fields.filter(([name])=>{
+            const m=workerField.exec(name);
+            return m&&core.has(m[2]);
+        }),
+        ...fields.filter(([name])=>{
+            const m=workerField.exec(name);
+            return m&&!core.has(m[2]);
+        }),
+    ];
     let retained=0;
-    for(const [name,value] of Object.entries(stats)) {
+    for(const [name,value] of ordered) {
         if(retained>=480)break;
         if(['generation','active_training_time','checkpoint_write_time'].includes(name)||
             !/^[a-z][a-z0-9_]{0,39}$/.test(name)||
