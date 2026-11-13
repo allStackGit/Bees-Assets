@@ -157,7 +157,10 @@ weapon and squad attributes must come from the authentic scene capture,
 not synthesized from ship type. The battle journal records their arrival
 tick and counts. A wave can alternatively omit `after_seconds` and use
 `"on_campaign_cue":"fire_tank_spotted"` (or another valid live cue from
-the Level's authored `campaign_dialogue`). The same canonical Level
+the Level's authored `campaign_dialogue`), or
+`"on_ship_destroyed":527` where 527 is the authentic source ship ID
+from this same Level. The ship-death gate uses the actual
+`CombatEvent::ShipDied` event, not a missing-entity or proximity guess. The same canonical Level
 notification triggers deployment, without a second mission timer. Timed
 and cue-triggered waves may be interleaved; same-tick admissions preserve
 the wave configuration's original order. Terminal victory/defeat cues
@@ -193,16 +196,23 @@ source gate, for example:
 `"activation":{"kind":"on_deployment"}` for deferred source squads,
 `"activation":{"kind":"on_arrival"}` to preserve their real entry
 movement until every member reaches its destination, or
-`"activation":{"kind":"on_campaign_cue","cue":"upload_fifty"}`.
+`"activation":{"kind":"on_campaign_cue","cue":"upload_fifty"}`,
+or `"activation":{"kind":"on_ship_destroyed","ship_id":527}`.
+Ship-death triggers require a real authored squad member and latch
+that exact death event, including if the receiving squad deploys later.
 A cue is latched exactly once, even if the squad arrives afterward.
 The `on_arrival` gate requires a deferred squad with a nonzero `entry`
 in its reinforcement plan. Fire Tank and upload cues are validated against
 the imported campaign type; cues emitted only after battle completion
 are not accepted as movement or reinforcement activation sources.
 Subsequent orders start after the previous native command finishes,
-including its timer completion. Source HiveMind requests are suppressed
-while a scripted queue is pending or active. A player replacement cancels
-its remaining orders. Events not actually emitted by the native mission
+including its timer completion. Source HiveMind requests continue while a delayed mission trigger is
+dormant. When the gate fires, the script takes authority immediately,
+supersedes any existing HiveMind command, and retires delayed strategy
+or targeting replies without misattributing their reservation IDs.
+An `on_arrival` queue claims authority at deployment while preserving
+the authentic incoming movement. A player replacement cancels
+remaining scripted orders. Events not actually emitted by the native mission
 cannot be synthesized by an authored configuration. The source's
 dialogue/mission-triggered queue arming is not otherwise inferred from
 a static scene. An actual native mission callback can instead call
@@ -217,7 +227,7 @@ resumed from an exported initial scene. `NativeHostGauges.scripted_queues`
 reports current active queues, pending orders, per-gate waiting states,
 and episode-local starts, repeats, completions, cancellations and
 vanished-target skips. Reinforcement gauges separately expose the
-remaining timed and campaign-cue wave counts.
+remaining timed, campaign-cue and ship-death wave counts.
 
 
 For Titania II's *obstacle-free* mission, the authored approach lanes
