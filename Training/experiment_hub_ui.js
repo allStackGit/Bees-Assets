@@ -1089,6 +1089,16 @@ document.addEventListener('DOMContentLoaded', () => {
             search.type='search';
             search.placeholder='Search metric names or units';
             search.setAttribute('aria-label','Search metrics');
+            const defaultsButton=selectId==='hub-job-metrics'
+                ?document.createElement('button'):null;
+            if(defaultsButton) {
+                defaultsButton.type='button';
+                defaultsButton.textContent='Use project defaults';
+                defaultsButton.addEventListener('click',()=>{
+                    jobMetricChoicesByProject.delete(project);
+                    renderJobMetricSelection();
+                });
+            }
             const shownButton=document.createElement('button');
             shownButton.type='button';
             shownButton.textContent='Select shown';
@@ -1102,7 +1112,8 @@ document.addEventListener('DOMContentLoaded', () => {
             rows.className='hub-metric-options';
             rows.setAttribute('role','group');
             rows.setAttribute('aria-label','Available metrics');
-            toolbar.append(search,shownButton,clearButton,count);
+            toolbar.append(search,...(defaultsButton?[defaultsButton]:[]),
+                shownButton,clearButton,count);
             panel.append(toolbar,rows);
             const matches=()=>[...source.options].filter(option=>
                 (option.value+' '+option.textContent).toLowerCase()
@@ -1117,7 +1128,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     groups.get(group).push(option);
                 }
                 const nodes=[];
-                for(const [group,options] of groups) {
+                // Learning outcomes should not be buried below hundreds of
+                // hardware/performance counters in the metric picker.
+                const priority={'Learning outcomes':0,'Performance and resources':1};
+                for(const [group,options] of [...groups].sort(([a],[b])=>
+                    (priority[a]??2)-(priority[b]??2)||a.localeCompare(b))) {
                     const heading=document.createElement('div');
                     heading.className='hub-metric-group-title';
                     heading.textContent=group+' · '+options.length;
@@ -2238,7 +2253,36 @@ document.addEventListener('DOMContentLoaded', () => {
         return {suite_id:suite,min_trials:Number(trials),min_success_rate:Number(rate),
             ...(digest?{suite_sha256:digest}:{})};
     }
-    let jobMetricSelectionProject=null;
+    // New jobs inherit a project-specific measurement priority, not a claim
+    // that every candidate metric is available in every worker version.
+    // Individual job choices remain editable without changing the project
+    // defaults or previously frozen jobs.
+    const defaultJobMetrics={
+        tinybrains:[
+            'training_score_rate','training_win_rate',
+            'training_mean_score_margin','training_completed_matches',
+            'food_gathered_exact','ant_decisions_per_second',
+            'total_ppo_updates','update_wall_time','job_cpu_cores',
+            'host_gpu_busy_pct',
+        ],
+        courier:[
+            'selection_candidate_mean_deliveries',
+            'selection_candidate_pickup_rate',
+            'selection_candidate_mean_steps_per_delivery',
+            'selection_candidate_survival_rate',
+            'selection_candidate_mean_lifespan',
+            'selection_candidate_gross_energy_per_step',
+            'training_recent_mean_completed_lifespan',
+            'active_training_time','job_cpu_cores','host_cpu_busy_pct',
+        ],
+        tinybrains_rollout:[
+            'ant_decisions_per_second','engine_steps_per_second',
+            'job_cpu_cores','host_cpu_busy_pct',
+        ],
+        other:['active_training_time','job_cpu_cores','job_memory_mb',
+            'host_cpu_busy_pct'],
+    };
+    const jobMetricChoicesByProject=new Map();
     // Availability is adapter-driven. These are discoverable requests, not a
     // promise that every project provides every physical/game measurement.
     const knownLearningMetrics=[
@@ -2330,8 +2374,8 @@ document.addEventListener('DOMContentLoaded', () => {
     function renderJobMetricSelection() {
         const select=$('hub-job-metrics');
         if(!select)return;
-        const prior=jobMetricSelectionProject===project
-            ?new Set([...select.selectedOptions].map(o=>o.value)):new Set();
+        const prior=jobMetricChoicesByProject.get(project) ??
+            new Set(defaultJobMetrics[project]||defaultJobMetrics.other);
         const observed=new Set();
         for(const job of state?.jobs||[]) {
             if(job.project_id!==project)continue;
@@ -2358,12 +2402,14 @@ document.addEventListener('DOMContentLoaded', () => {
                     ?'Performance and resources':'Other observed metrics';
             return option;
         }));
-        jobMetricSelectionProject=project;
         renderMetricPicker('hub-job-metrics','hub-job-metric-picker');
     }
     function selectedJobMetrics() {
         return [...$('hub-job-metrics').selectedOptions].map(o=>o.value);
     }
+    $('hub-job-metrics').addEventListener('change',()=>{
+        jobMetricChoicesByProject.set(project,new Set(selectedJobMetrics()));
+    });
     function display() {
         if(!state)return;
         const current=project;
