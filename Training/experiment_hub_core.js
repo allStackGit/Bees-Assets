@@ -904,7 +904,9 @@ function allocationChoice(machines,reservations,job,preferredMachineId=null,
         const nativeGpu=r.gpu_count===1&&['exclusive','shared'].includes(r.gpu_mode);
         const dualGpu=r.gpu_count===2&&r.gpu_mode==='exclusive'&&
             selected.project_id==='tinybrains'&&selected.frozen_parameters?.device==='dual';
-        if(r.ram_mb<128||(!cpuOnly&&!nativeGpu&&!dualGpu))return fits;
+        const courierMulti=r.gpu_count>=2&&r.gpu_count<=8&&
+            r.gpu_mode==='exclusive'&&selected.project_id==='courier';
+        if(r.ram_mb<128||(!cpuOnly&&!nativeGpu&&!dualGpu&&!courierMulti))return fits;
         const ready=new Set(eligible.filter(machine=>
             machine.local_executor_enabled===true&&machine.native_preflight_passed===true&&
             machine.installed_projects?.includes(selected.project_id)&&
@@ -916,12 +918,13 @@ function allocationChoice(machines,reservations,job,preferredMachineId=null,
                 (machine.agent_platform==='win32'
                     ?machine.gpu_inventory_source==='nvidia-smi-v1'&&machine.observed_gpus?.length>=1&&
                         (r.gpu_mode!=='shared'||machine.gpu_shared_projects?.includes(selected.project_id))
-                    :(r.gpu_count===2
-                        ?dualGpu&&machine.tinybrains_dual_gpu_profiles
-                            ?.includes(selected.frozen_parameters.profile)
-                        :r.gpu_mode==='exclusive'||r.gpu_mode==='shared'&&
-                            machine.gpu_shared_projects?.includes(selected.project_id))&&
-                        machine.observed_gpus?.length>=2))
+                    :(courierMulti||
+                        r.gpu_count===2
+                            ?courierMulti||dualGpu&&machine.tinybrains_dual_gpu_profiles
+                                ?.includes(selected.frozen_parameters.profile)
+                            :r.gpu_mode==='exclusive'||r.gpu_mode==='shared'&&
+                                machine.gpu_shared_projects?.includes(selected.project_id))&&
+                        machine.observed_gpus?.length>=Math.max(2,r.gpu_count)))
         ).map(machine=>machine.id));
         const runnable=fits.filter(p=>ready.has(p.machine_id));
         if(runnable.length)return runnable;
