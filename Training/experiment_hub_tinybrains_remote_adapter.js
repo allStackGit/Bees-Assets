@@ -12,6 +12,7 @@ const {spawnSync}=require('node:child_process');
 const UUID=/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
 const CUDA=/^GPU-[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
 const PCI=/^[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]$/;
+const ROCM_UUID=/^GPU-(?:[0-9a-f]{16}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
 const TAILNET=/^100\.\d{1,3}\.\d{1,3}\.\d{1,3}$/;
 
 function directory(value) {
@@ -44,13 +45,22 @@ function tailnetIp(ip) {
 
 function createTinyBrainsRemoteRolloutAdapter({
     projectRoot,pythonPath,keyPath,cacheRoot,listenIp,port,threads,
-    enableCuda=false,enableRocm=false,
+    enableCuda=false,enableRocm=false,rocrGpuUuids={},
 }) {
     if(typeof enableCuda!=='boolean'||typeof enableRocm!=='boolean'||
         (enableCuda&&enableRocm)||
         (enableCuda&&process.platform!=='win32')||
         (enableRocm&&process.platform!=='linux'))
         throw Error('Remote GPU rollout needs exactly one locally opted-in Windows CUDA or Linux ROCm runtime.');
+    if(!rocrGpuUuids||typeof rocrGpuUuids!=='object'||
+        Array.isArray(rocrGpuUuids)||
+        Object.keys(rocrGpuUuids).length>32||
+        (!enableRocm&&Object.keys(rocrGpuUuids).length)||
+        Object.entries(rocrGpuUuids).some(([pci,uuid])=>
+            !PCI.test(pci)||typeof uuid!=='string'||!ROCM_UUID.test(uuid))||
+        new Set(Object.values(rocrGpuUuids)).size!==Object.keys(rocrGpuUuids).length)
+        throw Error('Remote ROCm selector must bind distinct locally approved GPU UUIDs to canonical PCI addresses.');
+    const approvedRocr=Object.freeze({...rocrGpuUuids});
     const project=directory(projectRoot);
     const cache=directory(cacheRoot);
     const secret=keyFile(keyPath);
@@ -91,6 +101,7 @@ function createTinyBrainsRemoteRolloutAdapter({
         tinybrains_rollout_thread_limit:threads,
         ...(enableCuda?{gpu_execution:'cuda'}:{}),
         ...(enableRocm?{
+            rocr_gpu_uuids:approvedRocr,
             // Executed only through the Hub's qualified, device-filtered
             // Linux preflight (and again as ExecStartPre). This verifies
             // the physical HIP PCI identity without starting a collector.
