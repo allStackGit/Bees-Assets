@@ -272,6 +272,7 @@ impl NativePhysicalScene {
         let mut source_vision = HashMap::new();
         let mut source_formation = HashMap::new();
         let mut ship_sides = HashMap::new();
+        let mut ship_player_control = HashMap::new();
         for ship in raw.ships {
             let id = ship.entity_id;
             let pos = Vec2::new(ship.position[0], ship.position[1]);
@@ -320,6 +321,7 @@ impl NativePhysicalScene {
             if vitals.is_dead() {
                 return Err(invalid("native initial ship must be alive"));
             }
+            ship_player_control.insert(id, ship.user_controlled);
             let mut motion = ShipMotion::new(
                 pos, ship.rotation_degrees,
                 ship.rotation_speed_degrees_per_second, ship.base_speed,
@@ -329,9 +331,13 @@ impl NativePhysicalScene {
             let mut observed_weapons = [None; 5];
             let mut turrets = Vec::with_capacity(ship.turrets.len());
             for turret in ship.turrets {
+                let is_beam = matches!(&turret.fire_pattern, GameFirePattern::BeamCannon);
                 if turret.slot >= 5 || observed_weapons[turret.slot].is_some() ||
                     !turret.projectile_speed.is_finite() ||
-                    turret.projectile_speed <= 0.0 || turret.power < 0 ||
+                    (is_beam && turret.projectile_speed != 0.0) ||
+                    (!is_beam && turret.projectile_speed <= 0.0) ||
+                    turret.range_collider.is_none() ||
+                    turret.aim_at_front_of_ship.is_none() || turret.power < 0 ||
                     !turret.range.is_finite() || turret.range <= 0.0 ||
                     !turret.rate_of_fire.is_finite() || turret.rate_of_fire <= 0.0 ||
                     turret.weapon_type >= 10 ||
@@ -387,6 +393,9 @@ impl NativePhysicalScene {
             };
             if !perception.valid() {
                 return Err(invalid("invalid native weapon/perception values"));
+            }
+            if raw.activate_fog_of_war && ship.sight.fog_radius.is_none() {
+                return Err(invalid("fog-enabled native ships require an explicitly authored fog radius"));
             }
             authored_ship_perceptions.insert(id, perception);
             source_vision.insert(id, NativeSourceVision {
@@ -447,7 +456,8 @@ impl NativePhysicalScene {
                 squad.hotkey_number.is_some() != squad.original_squad_count.is_some() ||
                 squad.matching_speed.is_some_and(|value| !value.is_finite() || value < 0.0) ||
                 squad.members.iter().any(|id|
-                    !assigned.insert(*id) || ship_sides.get(id) != Some(&squad.side)
+                    !assigned.insert(*id) || ship_sides.get(id) != Some(&squad.side) ||
+                    ship_player_control.get(id) != Some(&squad.user_controlled)
                 ) || raw.activate_hivemind && squad.hivemind.is_none()
             {
                 return Err(invalid("invalid native squad identity, membership or authority"));
