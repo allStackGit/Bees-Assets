@@ -22,6 +22,7 @@ const COURIER_COUNT_FIELDS=new Set([
     'training_shared_copy_slowest_worker',
     'training_shared_gather_slowest_worker',
     'training_sim_copy_ratio_owner','training_sim_gather_ratio_owner',
+    'training_sim_info_ratio_owner','training_info_recv_slowest_worker',
     'training_total_useful_steps','training_rejected_workers',
     'training_concurrency_limit','training_concurrency_next_limit',
     'training_environment_version',
@@ -82,6 +83,7 @@ function courierMetrics(source) {
         'training_shared_copy_slowest_worker',
         'training_shared_gather_slowest_worker',
         'training_sim_copy_ratio_owner','training_sim_gather_ratio_owner',
+        'training_sim_info_ratio_owner','training_info_recv_slowest_worker',
         'training_simulation_slowest_worker',
         'training_inference_slowest_worker',
         'training_ppo_data_slowest_worker',
@@ -89,7 +91,7 @@ function courierMetrics(source) {
     const detail=[
         'sim_shard_wall_seconds','sim_dispatch_seconds',
         'sim_shared_copy_seconds','sim_shared_gather_seconds',
-        'sim_shared_transfer_mb','sim_child_cpu_seconds',
+        'sim_info_recv_seconds','sim_shared_transfer_mb','sim_child_cpu_seconds',
         'sim_active_shards','sim_next_shards',
     ];
     for(const key of ownerKeys) {
