@@ -250,11 +250,25 @@ struct PriorOutcomeJournalConfig { run_id: String, path: PathBuf }
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
+struct NativeStageConfig {
+    /// Symmetric 32-layer physics collision bits, not a guessed all-contact
+    /// matrix. Used by every gameplay and RL physics world.
+    collision_matrix_rows: [u32; 32],
+    /// Exact ordered prefab selection, including meaningful duplicates.
+    asteroid_prefab_numbers: Vec<u8>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct RunConfig {
     run_id: String,
     stage_name: String,
-    collision_matrix: PathBuf,
-    stage_palette: PathBuf,
+    /// Legacy Unity-exported Stage assets. Omit both when native_stage is
+    /// supplied; the same validated collision/asteroid catalogs are used.
+    collision_matrix: Option<PathBuf>,
+    stage_palette: Option<PathBuf>,
+    #[serde(default)]
+    native_stage: Option<NativeStageConfig>,
     fragment_spawn: FragmentConfig,
     python: Option<PathBuf>,
     policy_worker: Option<PathBuf>,
@@ -1198,12 +1212,25 @@ fn run_battle(
 
     // Preflight source assets, every Level identity and the requested model
     // routes before touching an output file or opening the policy process.
-    let assets = NativeSceneAssets::load(
-        &resolve(root, &config.collision_matrix),
-        &resolve(root, &config.stage_palette),
-        &config.stage_name,
-        fragment_settings,
-    ).map_err(|error| contextual("stage assets", error))?;
+    let assets = match (
+        config.native_stage.as_ref(),
+        config.collision_matrix.as_ref(),
+        config.stage_palette.as_ref(),
+    ) {
+        (Some(native), None, None) => NativeSceneAssets::from_native_stage(
+            native.collision_matrix_rows,
+            &native.asteroid_prefab_numbers,
+            &config.stage_name, fragment_settings,
+        ),
+        (None, Some(matrix), Some(palette)) => NativeSceneAssets::load(
+            &resolve(root, matrix),
+            &resolve(root, palette),
+            &config.stage_name, fragment_settings,
+        ),
+        _ => return Err(invalid(
+            "supply either native_stage or both legacy collision_matrix and stage_palette, not both",
+        ).into()),
+    }.map_err(|error| contextual("stage assets", error))?;
     let mut declared = HashSet::new();
     let model_source = match (&config.python, &config.policy_worker, &config.model_manifest) {
         (Some(python), Some(worker), Some(manifest)) => {
