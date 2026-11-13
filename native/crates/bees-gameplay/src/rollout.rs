@@ -33,6 +33,12 @@ pub struct NativeBatchedStepCounts {
     /// Live worlds advanced without invoking a pointless observation
     /// builder because no policy controller is due on this physics tick.
     pub worlds_without_due_agents: usize,
+    /// Number of actual CPU workers used by this round's physical phase.
+    /// Zero denotes the ordinary serial path or no live worlds.
+    pub parallel_physics_workers: usize,
+    /// Sum of worker wall durations, including scheduling overhead. This
+    /// deliberately differs from real elapsed wall time when workers overlap.
+    pub parallel_physics_worker_nanos: u128,
     /// False when Simulation timing sampling is disabled or this call
     /// was not selected. The three durations are then exactly zero.
     pub phase_timing_sampled: bool,
@@ -186,6 +192,10 @@ where
                 per_world_actions, workers,
             ).map_err(NativeBatchedStepError::ParallelPlan)?;
             counts.worlds_stepped = report.worlds_stepped;
+            counts.parallel_physics_workers = report.worker_loads.len();
+            counts.parallel_physics_worker_nanos = report.worker_loads.iter()
+                .map(|load| load.wall_elapsed.as_nanos())
+                .sum();
             if !report.failed_worlds.is_empty() {
                 return Err(NativeBatchedStepError::ParallelStep {
                     worlds_stepped: report.worlds_stepped,
