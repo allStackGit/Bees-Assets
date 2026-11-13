@@ -122,8 +122,11 @@ function validateCatalog(raw,installed=[],approved={}) {
             Object.entries(profiles).some(([id,entry])=>!Object.hasOwn(approved,id)||
                 entry?.profile_sha256!==approved[id]))
             throw Error('TinyBrains Design defaults require approved profile identities.');
-        result.tinybrains={...validateFields(raw.tinybrains),profiles:
-            Object.fromEntries(Object.entries(profiles).map(([id,entry])=>
+        if(!/^[0-9a-f]{64}$/.test(raw.tinybrains.source_sha256))
+            throw Error('TinyBrains Design requires its frozen source run specification.');
+        result.tinybrains={...validateFields(raw.tinybrains),
+            source_sha256:raw.tinybrains.source_sha256,
+            profiles:Object.fromEntries(Object.entries(profiles).map(([id,entry])=>
                 [id,{profile_sha256:entry.profile_sha256}]))};
     }
     return result;
@@ -136,7 +139,9 @@ function supportsDesign(catalog,project,parameters) {
     const entry=project==='courier'&&catalog?.courier?.config_sha256===parameters.config_sha256
         ?catalog.courier:project==='tinybrains'
             ?catalog?.tinybrains?.profiles?.[parameters.profile]:null;
-    if(!entry||project==='tinybrains'&&entry.profile_sha256!==parameters.profile_sha256)
+    if(!entry||project==='tinybrains'&&
+        (entry.profile_sha256!==parameters.profile_sha256||
+            catalog.tinybrains.source_sha256!==parameters.design_source_sha256))
         return false;
     const known=new Map((entry.fields||catalog?.tinybrains?.fields||[]).map(field=>[field.key,field]));
     return Object.entries(changes).every(([key,value])=>{
