@@ -100,6 +100,12 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'remote_policy_shared_encode_seconds',
             'remote_policy_shared_bytes',
             'local_lease_ram_charged_mb','local_lease_ram_headroom_mb',
+            'local_lease_active_native_pools',
+            'local_lease_native_engines_admitted',
+            'local_lease_engines_admitted_delta',
+            'local_lease_ram_admission_denials',
+            'local_lease_admission_denials_delta',
+            'local_lease_admission_wait_delta',
             'local_gpu_collectors_pending_at_local_end',
             'collector_join_wait_seconds','local_gpu_join_wait_seconds',
             'rollout_onnx_batch_share','rollout_onnx_calls',
@@ -143,6 +149,7 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'pipeline_remote_wait_dominant',
             'pipeline_local_gpu_wait_dominant',
             'pipeline_local_gpu_wait_work_share',
+            'pipeline_native_admission_pressure',
             'training_queue_pressure','training_final_join_pressure',
             'training_parallelism_underuse_evidence',
             'training_queue_work_share','training_reply_gap_work_share',
@@ -255,7 +262,12 @@ class BottleneckEvidence {
             // occupancy; not a per-job GPU utilization measurement.
             add('pipeline_gpu_host_busy_device_share',
                 gpuBusy.filter(x=>x>=90).length/gpuBusy.length);
+        const nativeDenials=metrics.local_lease_admission_denials_delta;
+        const memoryDenied=nativeDenials?.unit==='count'&&
+            Number.isSafeInteger(nativeDenials.value)&&
+            nativeDenials.value>0;
         const resourceHints={
+            nativeAdmission:memoryDenied,
             cpuBusy:cpu!==null&&cpu>=90,
             cpuIdle:cpu!==null&&cpu<=40,
             throttled:throttle!==null&&throttle>=10,
@@ -448,6 +460,8 @@ class BottleneckEvidence {
                     add('pipeline_cpu_throttle_pressure',1,'count');
                 if(sustained('ramNear'))
                     add('pipeline_ram_lease_pressure',1,'count');
+                if(sustained('nativeAdmission'))
+                    add('pipeline_native_admission_pressure',1,'count');
                 if(sustained('gpuBusy'))
                     add('pipeline_gpu_host_busy_pressure',1,'count');
                 if(sustained('gpuMixed'))
