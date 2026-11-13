@@ -8,7 +8,7 @@
 use std::collections::HashSet;
 
 use bees_gameplay::commands::{
-    Activation, GameCommandError, NativeCommandOrigin,
+    Activation, GameCommandError, NativeCommandOrigin, NativeScoutingContext,
     NativeLocalCommandAction, NativeLocalCommandSource,
 };
 use bees_gameplay::level_events::{NativeLevelEventError, NativeLevelEventProcessor};
@@ -37,6 +37,9 @@ pub enum NativeScriptedOrder {
     Guard { friendly_squad_item_id: i64 },
     Patrol { top_left: Vec2, bottom_right: Vec2 },
     Hold,
+    ClosestFriendly,
+    /// Genuine source Squad.MaxSight and ConfigData.HumanSide.
+    Scouting { max_sight: f32, human_side: i32 },
     Mining { asteroid_id: i64 },
     FullRetreat { warp_gate_id: i64 },
 }
@@ -58,6 +61,8 @@ impl NativeScriptedOrder {
             Self::Patrol { top_left, bottom_right } =>
                 NativeLocalCommandAction::Patrol { top_left, bottom_right },
             Self::Hold => NativeLocalCommandAction::Hold,
+            Self::ClosestFriendly => NativeLocalCommandAction::ClosestFriendly,
+            Self::Scouting { .. } => NativeLocalCommandAction::Scouting,
             Self::Mining { asteroid_id } =>
                 NativeLocalCommandAction::Mining { asteroid_id },
             Self::FullRetreat { warp_gate_id } =>
@@ -74,7 +79,9 @@ impl NativeScriptedOrder {
             Self::Guard { friendly_squad_item_id } => friendly_squad_item_id > 0,
             Self::Patrol { top_left, bottom_right } =>
                 top_left.is_finite() && bottom_right.is_finite(),
-            Self::Hold => true,
+            Self::Hold | Self::ClosestFriendly => true,
+            Self::Scouting { max_sight, human_side } =>
+                max_sight.is_finite() && max_sight >= 0.0 && human_side > 0,
             Self::Mining { asteroid_id } => asteroid_id > 0,
             Self::FullRetreat { warp_gate_id } => warp_gate_id > 0,
         }
@@ -477,8 +484,13 @@ impl NativePolicyOnlyMetadata {
                 map_bounds: self.bounds, has_obstacles: self.player.has_obstacles,
                 can_override_bounds: false,
             };
+            let scouting = if let NativeScriptedOrder::Scouting {
+                max_sight, human_side,
+            } = order {
+                Some(NativeScoutingContext { max_sight, human_side })
+            } else { None };
             let order_view = native_squad_order_from_catalog(
-                world, squad, &self.ship_catalog, formation, enemy, None,
+                world, squad, &self.ship_catalog, formation, enemy, scouting,
                 |id| self.player.ships.get(&id).map(|source| source.offset),
                 |id| self.player.ships.get(&id).map(|source| source.clearance),
                 &mut self.scripted_members,
@@ -502,7 +514,10 @@ impl NativePolicyOnlyMetadata {
             // exactly as the ordinary player/HiveMind Guard implementation.
             // Non-Guard scripted commands skip this projection entirely.
             self.scripted_friendlies.clear();
-            if matches!(order, NativeScriptedOrder::Guard { .. }) {
+            if matches!(order,
+                NativeScriptedOrder::Guard { .. } |
+                NativeScriptedOrder::ClosestFriendly
+            ) {
                 collect_live_friendlies_from_catalog(
                     world, events.roster(), &self.ship_catalog,
                     events.roster().source_order(),
