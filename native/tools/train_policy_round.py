@@ -641,7 +641,8 @@ def main() -> None:
     # One-shot build evidence for a collector. Native runners naturally
     # differ between Windows and Linux, but every collector in one update
     # must use identical policy-worker implementation bytes.
-    runner_sha = file_sha256(binary) if args.collect_only else None
+    runner_sha = (file_sha256(binary)
+                  if args.collect_only and args.rollout_binary is not None else None)
     policy_worker_path = Path(config["policy_worker"])
     policy_worker_sha = file_sha256(policy_worker_path) if args.collect_only else None
     shifted_seeds(config, args.seed_offset)
