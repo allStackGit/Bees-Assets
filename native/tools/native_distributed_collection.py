@@ -17,6 +17,7 @@ from native_training_artifacts import atomic_json, file_sha256
 
 
 COLLECTOR_ID = re.compile(r"[A-Za-z0-9_-]{1,48}\Z")
+HUB_JOB_ID = re.compile(r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\Z")
 
 
 def read_plan(path):
@@ -88,7 +89,13 @@ def make_orders(root, round_number, seed_offset, plan, run, checkpoint, manifest
     }
     for item in plan["collectors"]:
         job_id = hashlib.sha256((digest + ":" + item["id"]).encode("utf-8")).hexdigest()
-        basename = f"native-r{round_number:05d}-{item['id']}-{job_id[:12]}"
+        # A Hub bees_native_collect adapter publishes a completed bundle
+        # under its immutable Hub job UUID. Reuse that directory when the
+        # collector ID is the Hub job, rather than adding a second inbox
+        # naming/transport protocol. Standalone collectors retain the
+        # session-local work-order name.
+        basename = (item["id"] if HUB_JOB_ID.fullmatch(item["id"])
+                    else f"native-r{round_number:05d}-{item['id']}-{job_id[:12]}")
         orders["jobs"].append({
             **item,
             "collection_id": job_id,
