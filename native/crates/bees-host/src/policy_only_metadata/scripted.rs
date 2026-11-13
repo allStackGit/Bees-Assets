@@ -6,6 +6,7 @@
 //! scripted physics or HiveMind outcome IDs are created.
 
 use std::collections::HashSet;
+use std::sync::Arc;
 
 use bees_gameplay::commands::{
     Activation, GameCommandError, NativeCommandOrigin, NativeScoutingContext,
@@ -26,7 +27,7 @@ use bees_sim::squad_movement::SquadFormationOptions;
 use super::{NativePolicyOnlyMetadata, NativeMissionCue};
 use super::mission_cues::NativeMissionEvent;
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum NativeScriptedOrder {
     MoveToPoint { destination: Vec2 },
     MoveToRandom { range: f32 },
@@ -41,12 +42,13 @@ pub enum NativeScriptedOrder {
     /// Genuine source Squad.MaxSight and ConfigData.HumanSide.
     Scouting { max_sight: f32, human_side: i32 },
     Mining { asteroid_id: i64 },
+    Heal { beehive_ids: Arc<[i64]> },
     FullRetreat { warp_gate_id: i64 },
 }
 
 impl NativeScriptedOrder {
-    fn action(self, target: Option<SquadLifetime>) -> NativeLocalCommandAction<'static> {
-        match self {
+    fn action(&self, target: Option<SquadLifetime>) -> NativeLocalCommandAction<'_> {
+        match *self {
             Self::MoveToPoint { destination } =>
                 NativeLocalCommandAction::MoveToPoint { destination },
             Self::MoveToRandom { range } =>
@@ -65,13 +67,15 @@ impl NativeScriptedOrder {
             Self::Scouting { .. } => NativeLocalCommandAction::Scouting,
             Self::Mining { asteroid_id } =>
                 NativeLocalCommandAction::Mining { asteroid_id },
+            Self::Heal { ref beehive_ids } =>
+                NativeLocalCommandAction::Heal { beehive_ids },
             Self::FullRetreat { warp_gate_id } =>
                 NativeLocalCommandAction::FullRetreat { warp_gate_id },
         }
     }
 
-    fn valid(self) -> bool {
-        match self {
+    fn valid(&self) -> bool {
+        match *self {
             Self::MoveToPoint { destination } => destination.is_finite(),
             Self::MoveToRandom { range } => range.is_finite(),
             Self::Aggressive { enemy_squad_item_id } |
@@ -83,12 +87,18 @@ impl NativeScriptedOrder {
             Self::Scouting { max_sight, human_side } =>
                 max_sight.is_finite() && max_sight >= 0.0 && human_side > 0,
             Self::Mining { asteroid_id } => asteroid_id > 0,
+            Self::Heal { ref beehive_ids } =>
+                !beehive_ids.is_empty() && beehive_ids.len() <= 256 &&
+                beehive_ids.iter().all(|id| *id > 0) && {
+                    let mut seen = HashSet::new();
+                    beehive_ids.iter().all(|id| seen.insert(*id))
+                },
             Self::FullRetreat { warp_gate_id } => warp_gate_id > 0,
         }
     }
 
-    fn target_squad(self) -> Option<(i64, bool)> {
-        match self {
+    fn target_squad(&self) -> Option<(i64, bool)> {
+        match *self {
             Self::Aggressive { enemy_squad_item_id } |
             Self::TargetEnemy { enemy_squad_item_id } =>
                 Some((enemy_squad_item_id, true)),
@@ -439,7 +449,9 @@ impl NativePolicyOnlyMetadata {
                 self.scripted_queues[index].cursor = 0;
                 self.scripted_counts.queues_repeated += 1;
             }
-            let order = self.scripted_queues[index].orders[self.scripted_queues[index].cursor];
+            let order = self.scripted_queues[index].orders[
+                self.scripted_queues[index].cursor
+            ].clone();
             let source = *self.player.commands.get(&owner)
                 .ok_or(NativeLevelEventError::Commands(GameCommandError::MissingCombatSnapshot))?;
             // Every prepared target is re-resolved against the current
