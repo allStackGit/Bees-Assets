@@ -4367,13 +4367,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 // The initial HTML contains an empty JSON placeholder. Populate
                 // it from the connected trusted adapter, including its digest,
                 // rather than saving an unintentionally empty native job.
+                let seeded=false;
                 if(!editing&&$('hub-config-json').value.trim()==='{}') {
                     const defaults=projectDefaultParameters();
-                    if(Object.keys(defaults).length)
+                    if(Object.keys(defaults).length) {
                         $('hub-config-json').value=JSON.stringify(defaults,null,2);
+                        seeded=true;
+                    }
                 }
                 display();
-                syncTinyBrainsEditor(JSON.parse($('hub-config-json').value));
+                if(seeded)syncTinyBrainsEditor(JSON.parse($('hub-config-json').value));
                 selectTab(tab);
             };
             if(tab==='compare')withCompareViewport(apply);
