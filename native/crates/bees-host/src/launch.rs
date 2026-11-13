@@ -2345,7 +2345,7 @@ fn run_battle(
                 player_side: mission.player_side, winner_side: result.winner_side,
             })
         });
-    let final_summary = json!({
+    let mut final_summary = json!({
         "kind": "run_final",
         "run_id": config.run_id,
         "rounds": rounds,
@@ -2437,6 +2437,18 @@ fn run_battle(
         "final_physical_worlds": final_physical_worlds,
         "final_gameplay_worlds": final_gameplay_worlds,
     });
+    if config.levels.iter().any(|level| level.native_layout.is_some()) {
+        final_summary["native_layouts"] = json!(config.levels.iter().filter_map(|level|
+            level.native_layout.as_ref().map(|layout| json!({
+                "world_id": level.world_id,
+                "removed_static": layout.remove_static_ids.len(),
+                "placed_boxes": layout.add_static_boxes.len(),
+                "placed_polygons": layout.add_static_polygons.len(),
+                "translated_squads": layout.translate_squads.len(),
+            }))
+        ).collect::<Vec<_>>());
+    }
+
     println!("{final_summary}");
     #[cfg(feature = "client")]
     if let Some(client) = &client {
