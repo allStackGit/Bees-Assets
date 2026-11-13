@@ -774,7 +774,9 @@ impl NativeLevelCommandContext for NativePolicyOnlyMetadata {
     fn initialize_navigation_from_world(
         &mut self, combat: &CombatWorld,
     ) -> Result<(), bees_sim::navigation::NavigationError> {
-        self.navigation.refresh_static(combat.static_navigation_obstacles())?;
+        self.navigation.refresh_world_static(
+            combat.static_navigation_revision(), combat.static_navigation_obstacles(),
+        )?;
         Ok(())
     }
 }
