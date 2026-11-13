@@ -111,7 +111,7 @@ def bootstrap(output: Path, trainer_config: Path, seed: int, slots: list[int],
 
     # This is also the exact strict actor-loading path used by the resident
     # inference process, not just a JSON/hash format check.
-    policies, _, _ = checked_manifest(manifest)
+    _, policies, _ = checked_manifest(manifest)
     if set(policies) != set(slots):
         raise RuntimeError("native model bootstrap failed to load every configured slot")
     checkpoint_hash = file_sha256(checkpoint)
