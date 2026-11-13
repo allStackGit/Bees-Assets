@@ -297,17 +297,22 @@ def combined_rollout_metrics(shards, wall_seconds):
             max(shard["world_steps_per_execution_second"] for shard in shards),
         "requested_physics_worker_slots":
             sum(shard["requested_physics_worker_slots"] for shard in shards),
-        "parallel_physics_rounds":
-            sum(shard["parallel_physics_rounds"] for shard in shards),
-        "parallel_stage_id_serialized_rounds":
-            sum(shard["parallel_stage_id_serialized_rounds"] for shard in shards),
-        "parallel_stage_id_serialized_arenas":
-            sum(shard["parallel_stage_id_serialized_arenas"] for shard in shards),
-        "parallel_worker_cpu_wall_seconds_sum":
-            sum(shard["parallel_worker_cpu_wall_seconds_sum"] for shard in shards),
-        "peak_parallel_physics_workers":
-            max(shard["peak_parallel_physics_workers"] for shard in shards),
+        "shards_with_physics_worker_measurements":
+            sum("parallel_physics_rounds" in shard for shard in shards),
     })
+    if all("parallel_physics_rounds" in shard for shard in shards):
+        metrics.update({
+            "parallel_physics_rounds":
+                sum(shard["parallel_physics_rounds"] for shard in shards),
+            "parallel_stage_id_serialized_rounds":
+                sum(shard["parallel_stage_id_serialized_rounds"] for shard in shards),
+            "parallel_stage_id_serialized_arenas":
+                sum(shard["parallel_stage_id_serialized_arenas"] for shard in shards),
+            "parallel_worker_cpu_wall_seconds_sum":
+                sum(shard["parallel_worker_cpu_wall_seconds_sum"] for shard in shards),
+            "peak_parallel_physics_workers":
+                max(shard["peak_parallel_physics_workers"] for shard in shards),
+        })
     # Retain per-process evidence so a resource scheduler can distinguish
     # an overloaded process, a scene-dependent straggler and accelerator
     # inference time without requiring frame-level logs or guessed CPU use.
@@ -324,16 +329,14 @@ def combined_rollout_metrics(shards, wall_seconds):
                 shard["world_steps_per_execution_second"],
             "policy_rows_per_execution_second":
                 shard["policy_rows_per_execution_second"],
-            "requested_physics_workers": shard["requested_physics_workers"],
-            "parallel_physics_rounds": shard["parallel_physics_rounds"],
-            "parallel_stage_id_serialized_rounds":
-                shard["parallel_stage_id_serialized_rounds"],
-            "parallel_stage_id_serialized_arenas":
-                shard["parallel_stage_id_serialized_arenas"],
-            "peak_parallel_physics_workers":
-                shard["peak_parallel_physics_workers"],
-            "parallel_worker_cpu_wall_seconds_sum":
-                shard["parallel_worker_cpu_wall_seconds_sum"],
+            "requested_physics_workers": shard["requested_physics_worker_slots"],
+            **({key: shard[key] for key in (
+                "parallel_physics_rounds",
+                "parallel_stage_id_serialized_rounds",
+                "parallel_stage_id_serialized_arenas",
+                "peak_parallel_physics_workers",
+                "parallel_worker_cpu_wall_seconds_sum",
+            )} if "parallel_physics_rounds" in shard else {}),
             **({"sampled_model_timing": shard["sampled_model_timing"]}
                if "sampled_model_timing" in shard else {}),
         }
