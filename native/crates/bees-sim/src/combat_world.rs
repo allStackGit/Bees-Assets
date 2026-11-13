@@ -1457,9 +1457,10 @@ impl CombatWorld {
         )
     }
 
-    /// Revisions track actual additions to the world-owned static collider
-    /// registry. The physics core has no external mutable obstacle access;
-    /// animated static obstacles must still refresh each completed tick.
+    /// Revisions track actual admission and retirement of static colliders
+    /// in the world-owned registry (including Fire Tank wall destruction).
+    /// The physics core has no external mutable obstacle access; animated
+    /// static obstacles must still refresh each completed tick.
     pub fn static_navigation_revision(&self) -> u64 {
         self.static_navigation_revision
     }
