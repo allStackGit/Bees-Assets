@@ -192,6 +192,9 @@ pub struct NativeScriptedQueueMeasurements {
     pub waiting_for_deployment: usize,
     pub waiting_for_start_time: usize,
     pub waiting_for_arrival: usize,
+    /// Already running a native command from this authored queue.
+    pub executing_queues: usize,
+    /// Owned by a source trigger but with no running scripted command.
     pub ready_queues: usize,
     pub commands_started: u64,
     pub orders_skipped_target_gone: u64,
@@ -209,6 +212,7 @@ impl NativeScriptedQueueMeasurements {
         self.waiting_for_deployment += other.waiting_for_deployment;
         self.waiting_for_start_time += other.waiting_for_start_time;
         self.waiting_for_arrival += other.waiting_for_arrival;
+        self.executing_queues += other.executing_queues;
         self.ready_queues += other.ready_queues;
         self.commands_started += other.commands_started;
         self.orders_skipped_target_gone += other.orders_skipped_target_gone;
@@ -269,7 +273,7 @@ pub trait NativeLevelCommandContext {
     ) -> Result<u64, NativeLevelEventError> { Ok(0) }
 
     fn scripted_queue_measurements(
-        &self, _tick: u64, _roster: &NativeSquadRoster,
+        &self, _tick: u64, _events: &NativeLevelEventProcessor,
     ) -> NativeScriptedQueueMeasurements {
         NativeScriptedQueueMeasurements::default()
     }

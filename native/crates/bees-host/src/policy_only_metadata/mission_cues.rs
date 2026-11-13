@@ -82,11 +82,4 @@ impl NativeMissionEvent {
         }
     }
 
-    pub(crate) fn waiting_for_campaign_cue(self) -> bool {
-        matches!(self, Self::CampaignCue(_))
-    }
-
-    pub(crate) fn waiting_for_ship_death(self) -> bool {
-        matches!(self, Self::ShipDestroyed(_))
-    }
 }

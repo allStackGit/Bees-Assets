@@ -483,9 +483,9 @@ impl NativeLevelCommandContext for NativePolicyOnlyMetadata {
     }
 
     fn scripted_queue_measurements(
-        &self, tick: u64, roster: &NativeSquadRoster,
+        &self, tick: u64, events: &bees_gameplay::level_events::NativeLevelEventProcessor,
     ) -> NativeScriptedQueueMeasurements {
-        self.current_scripted_queue_measurements(tick, roster)
+        self.current_scripted_queue_measurements(tick, events)
     }
 
     fn next_reinforcement_tick(&self) -> Option<u64> {

@@ -1239,7 +1239,7 @@ impl NativeLevelBatchDriver {
             );
             status.scripted_queues.merge(
                 world.state.metadata.scripted_queue_measurements(
-                    world.tick(), events.roster(),
+                    world.tick(), events,
                 ),
             );
             status.navigation_jobs_completed += world.state.navigation_jobs_completed();

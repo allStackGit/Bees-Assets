@@ -273,8 +273,9 @@ impl NativePolicyOnlyMetadata {
     }
 
     pub(super) fn current_scripted_queue_measurements(
-        &self, tick: u64, roster: &NativeSquadRoster,
+        &self, tick: u64, events: &NativeLevelEventProcessor,
     ) -> bees_gameplay::level_rules::NativeScriptedQueueMeasurements {
+        let roster = events.roster();
         let mut counts = self.scripted_counts;
         counts.active_queues = self.scripted_queues.len();
         for state in &self.scripted_queues {
@@ -293,6 +294,12 @@ impl NativePolicyOnlyMetadata {
                 counts.waiting_for_start_time += 1;
             } else if state.wait_for_entry {
                 counts.waiting_for_arrival += 1;
+            } else if events.commands().current_selection(state.owner)
+                .is_some_and(|selection| matches!(selection.origin(),
+                    NativeCommandOrigin::Local(identity)
+                        if identity.source == NativeLocalCommandSource::Scripted
+                )) {
+                counts.executing_queues += 1;
             } else {
                 counts.ready_queues += 1;
             }
