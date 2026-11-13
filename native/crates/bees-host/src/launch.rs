@@ -141,8 +141,12 @@ enum ScriptedOrderConfig {
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct ReinforcementConfig {
-    /// Exactly one activation source. Existing configs use after_seconds.
+    /// Preserve legacy timed-wave serialization for existing gameplay
+    /// config fingerprints: absent cue fields must not add a null key.
+    /// Exactly one activation source is validated before scene setup.
+    #[serde(skip_serializing_if = "Option::is_none")]
     after_seconds: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     on_campaign_cue: Option<bees_host::policy_only_metadata::NativeMissionCue>,
     squad_item_ids: Vec<i64>,
     /// Explicit physical starting center (may be outside scene bounds).
