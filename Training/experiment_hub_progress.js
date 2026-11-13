@@ -89,11 +89,14 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
         retain('ant_decisions_per_second',reported.ant_decisions_per_second);
         retain('simulation_match_steps_per_second',
             reported.simulation_match_steps_per_second);
-        for(const name of ['training_useful_steps_per_second',
+        for(const name of ['training_end_to_end_steps_per_second',
+            'training_useful_steps_per_second',
             'training_concurrency_limit','training_concurrency_next_limit',
             'training_tuner_adjustments','training_tuner_accepted',
             'training_tuner_settled',
             'training_cpu_parallelism','training_queue_max_seconds',
+            'training_checkpoint_snapshot_seconds',
+            'training_checkpoint_max_worker_seconds',
             'training_reply_gap_seconds','training_last_reply_worker'])
             retain(name,reported[name]);
         // Show measured stage pressure before unrelated high-cardinality
