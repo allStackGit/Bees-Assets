@@ -77,6 +77,11 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
         for(const name of preferred)
             retain(name,Object.hasOwn(observed,name)?observed[name]:reported[name]);
         retain('total_ppo_updates',reported.total_ppo_updates);
+        // Horizontal axes are part of the chart's coordinate contract,
+        // independent of which learning/throughput metrics are selected.
+        // Keep only real trainer clocks, never derive time from Hub heartbeats.
+        for(const key of ['elapsed_training_seconds','active_training_time'])
+            if(reported[key]?.unit==='seconds')retain(key,reported[key]);
         // Spare chart slots still show observed host resources. The
         // operator's requested metrics retain first priority; unrelated
         // trainer fields remain out of an explicitly selected view.
@@ -86,6 +91,8 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
         // before filling the remaining slots from the trusted trainer data.
         for(const [name,value] of Object.entries(observed))retain(name,value);
         retain('total_ppo_updates',reported.total_ppo_updates);
+        for(const key of ['elapsed_training_seconds','active_training_time'])
+            if(reported[key]?.unit==='seconds')retain(key,reported[key]);
         for(const [name,value] of Object.entries(reported))retain(name,value);
     }
     if(!count)
