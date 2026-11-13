@@ -204,7 +204,19 @@ def rollout_metrics(summary_path, config, manifest_sha):
                 for value in times.values()) or times["wall_seconds"] <= 0 or
             times["execution_wall_seconds"] <= 0):
         raise ValueError("native rollout summary contains invalid work or timing")
-    metrics = {**counts, **times}
+    metrics = {
+        **counts, **times,
+        "worlds": len(config["levels"]),
+        "episodes": expected_episodes,
+        # Overall wall includes child startup/finalization. The execution
+        # denominator isolates actual simulator work on this shard.
+        "world_steps_per_wall_second": counts["successful_world_steps"] / times["wall_seconds"],
+        "policy_rows_per_wall_second": counts["successful_policy_rows"] / times["wall_seconds"],
+        "world_steps_per_execution_second":
+            counts["successful_world_steps"] / times["execution_wall_seconds"],
+        "policy_rows_per_execution_second":
+            counts["successful_policy_rows"] / times["execution_wall_seconds"],
+    }
     model_timing = summary.get("sampled_model_timing")
     if model_timing is not None:
         calls, rows, seconds = (model_timing[key] for key in ("calls", "rows", "wall_seconds"))
@@ -229,12 +241,19 @@ def prepare_rollout(config, directory):
 
 
 def combined_rollout_metrics(shards, wall_seconds):
+    if not math.isfinite(wall_seconds) or wall_seconds <= 0:
+        raise ValueError("parallel native rollout has invalid wall timing")
     metrics = {
         "workers": len(shards),
         "wall_seconds": wall_seconds,
         **{key: sum(shard[key] for shard in shards)
-           for key in ("successful_world_steps", "successful_policy_rows")},
+           for key in ("successful_world_steps", "successful_policy_rows", "worlds", "episodes")},
     }
+    # The parallel wall denominator includes launch/join overhead and can
+    # be compared against a one-process run without adding together
+    # overlapping worker execution times.
+    metrics["world_steps_per_wall_second"] = metrics["successful_world_steps"] / wall_seconds
+    metrics["policy_rows_per_wall_second"] = metrics["successful_policy_rows"] / wall_seconds
     # Summary-only imbalance evidence. No per-world/per-frame logging or
     # scheduler feedback; each shard keeps its frozen share of Levels.
     metrics.update({
@@ -242,6 +261,10 @@ def combined_rollout_metrics(shards, wall_seconds):
         "worker_execution_max_seconds": max(shard["execution_wall_seconds"] for shard in shards),
         "worker_world_steps_min": min(shard["successful_world_steps"] for shard in shards),
         "worker_world_steps_max": max(shard["successful_world_steps"] for shard in shards),
+        "worker_world_steps_per_execution_second_min":
+            min(shard["world_steps_per_execution_second"] for shard in shards),
+        "worker_world_steps_per_execution_second_max":
+            max(shard["world_steps_per_execution_second"] for shard in shards),
     })
     samples = [shard["sampled_model_timing"] for shard in shards if "sampled_model_timing" in shard]
     if samples:
@@ -537,6 +560,8 @@ def main() -> None:
             "input_checkpoint_sha256": input_checkpoint_sha,
             "input_manifest_sha256": input_manifest_sha,
             "learner_slot": args.learner_slot,
+            "rollout_worlds": len(levels),
+            "rollout_processes": workers,
             "captures": captures,
             "rollout_metrics": rollout,
         }
