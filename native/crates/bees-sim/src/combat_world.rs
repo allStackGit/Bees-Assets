@@ -2268,7 +2268,9 @@ impl CombatWorld {
         collision_asteroids_enabled: bool,
     ) -> Result<(Option<NavigationRasterCounts>, NavigationRasterCounts), CombatWorldError> {
         let static_counts = if static_changed {
-            Some(runtime.refresh_static(self.static_navigation_obstacles())?)
+            Some(runtime.refresh_world_static(
+                self.static_navigation_revision, self.static_navigation_obstacles(),
+            )?)
         } else {
             None
         };
