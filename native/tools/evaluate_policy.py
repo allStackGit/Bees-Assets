@@ -66,7 +66,7 @@ def setup_config(source_path, manifest, output):
     return source, len(levels) * episodes
 
 
-def evaluate(source_path, manifest, output, learner_side, binary):
+def evaluate(source_path, manifest, output, learner_side, binary, policy_seed):
     manifest = manifest.resolve(strict=True)
     source_path = source_path.resolve(strict=True)
     manifest_sha = file_sha256(manifest)
@@ -89,8 +89,13 @@ def evaluate(source_path, manifest, output, learner_side, binary):
                    "-p", "bees-host", "--example", "policy_rollout", "--", str(generated)]
     else:
         command = [str(binary.resolve(strict=True)), str(generated)]
+    # Pin the stochastic MA-POCA action sampler across evaluated model
+    # generations. The environment seed plans remain fixed in the source
+    # Level config; a distinct inference RNG controls policy sampling.
+    env = dict(os.environ)
+    env["BEES_NATIVE_EVALUATION_SEED"] = str(policy_seed)
     with (output / "evaluation.log").open("x", encoding="utf-8") as log:
-        subprocess.run(command, check=True, stdout=log, stderr=subprocess.STDOUT)
+        subprocess.run(command, check=True, stdout=log, stderr=subprocess.STDOUT, env=env)
     summary_path = output / "rollout-summary.json"
     summary = json.loads(summary_path.read_text(encoding="utf-8"))
     score = summary.get("evaluation")
@@ -122,7 +127,8 @@ def evaluate(source_path, manifest, output, learner_side, binary):
         "schema_version": 1, "kind": "native_policy_evaluation_complete",
         "source_run_config": str(source_path), "source_run_config_sha256": source_sha,
         "model_manifest": str(manifest), "model_manifest_sha256": manifest_sha,
-        "learner_side": learner_side, "run_id": config["run_id"],
+        "learner_side": learner_side, "policy_sampling_seed": policy_seed,
+        "run_id": config["run_id"],
         "episodes": expected, "worlds": len(config["levels"]),
         "side_victories": wins, "draws": draws,
         "side_win_rate": wins / expected, "draw_rate": draws / expected,
@@ -144,12 +150,17 @@ def main():
     parser.add_argument("model_manifest", type=Path)
     parser.add_argument("output_dir", type=Path)
     parser.add_argument("--learner-side", type=int, required=True)
+    parser.add_argument("--policy-seed", type=int, default=0,
+                        help="fixed stochastic action-sampling seed across checkpoints")
     parser.add_argument("--rollout-binary", type=Path)
     args = parser.parse_args()
     if args.learner_side not in (1, 2):
         parser.error("--learner-side must identify the source side 1 or 2")
+    if not 0 <= args.policy_seed < (1 << 63):
+        parser.error("--policy-seed must be a nonnegative int63")
     result = evaluate(args.run_config, args.model_manifest,
-                      args.output_dir.resolve(), args.learner_side, args.rollout_binary)
+                      args.output_dir.resolve(), args.learner_side,
+                      args.rollout_binary, args.policy_seed)
     print(json.dumps(result), flush=True)
 
 
