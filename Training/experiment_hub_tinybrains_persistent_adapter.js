@@ -71,6 +71,7 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'rollout_result_processing_seconds',
         'optimization_seconds','collector_wait_seconds',
         'collector_critical_path_seconds','collector_elapsed_spread_seconds',
+        'rollout_engine_cpu_seconds_total','rollout_engine_cpu_seconds',
         'checkpoint_write_seconds',
         'overlap_seconds','remote_policy_snapshot_seconds',
         'remote_opponent_snapshot_seconds',
@@ -102,6 +103,8 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         add(name,row[name],'scalar');
     add('gae_lambda',row.gae_lambda,'ratio');
     add('rss_mb',row.rss_mb,'mb');
+    add('rollout_engine_cpu_cores',row.rollout_engine_cpu_cores,'scalar');
+    add('rollout_engine_rss_mb',row.rollout_engine_rss_mb,'mb');
     if(Number.isFinite(row.elapsed_seconds))
         add('elapsed_training_seconds',row.elapsed_seconds,'seconds');
 
@@ -201,6 +204,12 @@ function recordedTinyBrainsMetrics(row,updateWall) {
             add('collector_'+i+'_'+name,worker[name],'count');
         add('collector_'+i+'_rollout_inference_mean_batch',
             worker.rollout_inference_mean_batch,'scalar');
+        add('collector_'+i+'_rollout_engine_cpu_seconds',
+            worker.rollout_engine_cpu_seconds,'seconds');
+        add('collector_'+i+'_rollout_engine_cpu_cores',
+            worker.rollout_engine_cpu_cores,'scalar');
+        add('collector_'+i+'_rollout_engine_rss_mb',
+            worker.rollout_engine_rss_mb,'mb');
         for(const name of ['rollout_observation_encode_seconds',
             'rollout_opponent_inference_seconds','rollout_result_processing_seconds'])
             add('collector_'+i+'_'+name,worker[name],'seconds');
