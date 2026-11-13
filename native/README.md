@@ -202,10 +202,18 @@ cancels its queue:
 }]
 ```
 
-An explicit opposing target also permits
-`{"kind":"aggressive","enemy_squad_item_id":52}` in the orders.
-The enemy must be an actual initially deployed opposing squad; no
-nearest-enemy guess substitutes for the source Command.EnemySquad.
+An explicit opposing target permits
+`{"kind":"aggressive","enemy_squad_item_id":52}` or
+`{"kind":"target_enemy","enemy_squad_item_id":52}`.
+Other source-authored orders include `{"kind":"hold"}`,
+`{"kind":"patrol","top_left":[-20,20],"bottom_right":[20,-20]}`,
+`{"kind":"guard","friendly_squad_item_id":53}`,
+`{"kind":"mining","asteroid_id":100}` and
+`{"kind":"full_retreat","warp_gate_id":101}`.
+The enemy/guard references must identify actual opposite/allied
+source squads, respectively. No nearest-enemy or arbitrary friendly
+substitution is used. Invalid references fail scene setup; targets retired
+before execution are skipped without fabricating new identities.
 Without an `activation` field the first scripted command starts on the
 first completed fixed tick. The optional field selects an authentic
 source gate, for example:
@@ -242,8 +250,8 @@ when to invoke it; the native engine does not guess Unity cutscene/dialogue
 timing. Existing live Unity command/queue histories still cannot be
 resumed from an exported initial scene. `NativeHostGauges.scripted_queues`
 reports current active queues, pending orders, per-gate waiting states,
-and episode-local starts, repeats, completions, cancellations and
-vanished-target skips. Reinforcement gauges separately expose the
+and episode-local starts, repeats, completions, cancellations,
+vanished-target skips and unavailable source orders. Reinforcement gauges separately expose the
 remaining timed, campaign-cue and ship-death wave counts.
 
 
@@ -1463,10 +1471,10 @@ the old command first, including when the new target is unavailable. Local Guard
 Patrol, Mining and Heal omit the source's AI-only timeout. Friendly projections
 use the canonical roster's registration order and director state for every origin.
 Host/player routing supports movement, chosen support actions and ranged Attack.
-Fresh authored scripted MoveToPoint, MoveToRandom and targeted Aggressive
-queues execute through the same canonical director; dialogue-triggered
-queue enrollment and arbitrary prepared Unity command histories remain
-outside the static Level-config contract.
+Fresh authored scripted movement, Hold, Patrol, Guard, targeted Aggressive,
+Mining and FullRetreat orders execute through the same canonical director;
+dialogue-triggered queue enrollment and arbitrary prepared Unity command
+histories remain outside the static Level-config contract.
 
 **Aggressive** uses the shared ranked target queue and authoritative
 tracked ship orders, but unlike Swipe or InAndOut advances its attack
