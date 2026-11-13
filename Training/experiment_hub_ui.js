@@ -2097,7 +2097,9 @@ document.addEventListener('DOMContentLoaded', () => {
             .map(p=>({x:hubComparisonAxisValue(p,xKey),y:hubMetricValue(p,key)})));
         if(!values.length) {
             node('text',{x:width/2,y:160,'text-anchor':'middle'},
-                'No recorded samples for the selected runs and metric');
+                series.length
+                    ?'No recorded samples for the selected runs and metric'
+                    :'All runs hidden. Check a run in the legend to display it.');
             return;
         }
         const bounds={left:85,right:width-24,top:20,bottom:270};
