@@ -1258,7 +1258,9 @@ fn run_battle(
         let mut source = NativePhysicalScene::parse_with_ship_catalog(&source_json, assets.ship_catalog())
             .map_err(|error| contextual("exported Level", error))?;
         if let Some(layout) = &level.native_layout {
-            source.apply_native_layout(layout, assets.box_catalog())
+            source.apply_native_layout(
+                layout, assets.box_catalog(), assets.polygon_catalog(),
+            )
                 .map_err(|error| contextual("native Level layout", error))?;
         }
         if source.stage_name != config.stage_name {
@@ -2023,7 +2025,9 @@ fn run_battle(
                 let mut scene = NativePhysicalScene::parse_with_ship_catalog(&source_jsons[index], assets.ship_catalog())
                     .map_err(|error| contextual("cached authored Level", error))?;
                 if let Some(layout) = &level.native_layout {
-                    scene.apply_native_layout(layout, assets.box_catalog())
+                    scene.apply_native_layout(
+                        layout, assets.box_catalog(), assets.polygon_catalog(),
+                    )
                         .map_err(|error| contextual("native episode layout", error))?;
                 }
                 // Replaying an authored template creates new real Stage
