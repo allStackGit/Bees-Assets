@@ -69,10 +69,10 @@ real `python`, `policy_worker`, `model_manifest` and
 training checkpoint is shipped with the example. The normal native PPO
 round/session tooling also accepts `native_stage` now.
 
-`native/examples/native-skirmish.policy.scene.json` combines seven actual
+`native/examples/native-skirmish.policy.scene.json` combines eight actual
 policy agents with the existing ordinary native fleet: policy Scout/Beacon,
-Fire Barge, Striker/Carrier, Wasp healing, CarpenterBee mining, Gunship
-Warp Gate use, and an explicitly parented policy Drone. Its mineral asteroid,
+Fire Barge, Striker/Carrier, Wasp healing, CarpenterBee and Factory mining,
+Gunship Warp Gate use, and an explicitly parented policy Drone. Its mineral asteroid,
 destructible Fire Tank and Beehive/WarpGate trigger colliders use the same
 CombatWorld as the unbound gameplay skirmish. Use the skirmish run
 configuration as a starting point, change the scene path, remove its
