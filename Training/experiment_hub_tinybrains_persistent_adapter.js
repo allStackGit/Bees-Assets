@@ -91,7 +91,8 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'ppo_gradient_processing_seconds','ppo_optimizer_step_seconds',
         'ppo_parameter_finite_check_seconds','ppo_gpu_stream_sync_seconds',
         'ppo_gpu_stream_interval_seconds'])
-        add(name,row[name],'seconds');
+        add(name==='remote_collector_wait_after_local_max_seconds'
+            ?'remote_wait_after_local_max_seconds':name,row[name],'seconds');
     for(const name of ['simulation_active_matches','simulation_target_matches',
         'simulation_concurrency_adjustments','simulation_tuner_accepted',
         'simulation_tuner_settled','simulation_target_restored',
@@ -273,7 +274,7 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         add('collector_'+i+'_elapsed_seconds',worker.elapsed_seconds,'seconds');
         // Learner-local elapsed wait measured after local collection; never
         // inferred from remote clocks or socket blocking as a network cause.
-        add('collector_'+i+'_learner_wait_after_local_seconds',
+        add('collector_'+i+'_join_exposed_seconds',
             worker.learner_wait_after_local_seconds,'seconds');
         add('collector_'+i+'_service_seconds',worker.collector_service_seconds,'seconds');
         add('collector_'+i+'_record_encode_seconds',
@@ -408,7 +409,7 @@ function recordedTinyBrainsMetrics(row,updateWall) {
             if(!collectorField.test(key))include(key);
         const core=[
             'ant_decisions','decisions_per_second','elapsed_seconds',
-            'learner_wait_after_local_seconds','simulation_match_steps',
+            'join_exposed_seconds','simulation_match_steps',
             'match_steps_per_second','sim_matches','sim_target',
             'sim_ram_headroom_mb','gpu_allocated_mb','gpu_vram_lease_mb',
             'rollout_engine_step_seconds','learner_inference_seconds',
