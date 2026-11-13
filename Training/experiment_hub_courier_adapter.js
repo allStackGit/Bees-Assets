@@ -11,6 +11,7 @@ const UUID=/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
 const COURIER_COUNT_FIELDS=new Set([
     'training_profile_round','training_lineage_workers',
     'training_slowest_worker','training_last_reply_worker',
+    'training_simulation_slowest_worker',
     'training_simulated_steps','training_useful_steps',
     'training_total_useful_steps','training_rejected_workers',
     'training_concurrency_limit','training_concurrency_next_limit',
@@ -38,11 +39,14 @@ function courierMetrics(source) {
     const metrics={};
     const stats=source?.metrics;
     if(!stats||typeof stats!=='object'||Array.isArray(stats))return metrics;
-    // The wire contract accepts 256 measurements. Reserve room for the
-    // mandatory checkpoint fields; chart downselection happens separately.
+    // The shared contract accepts 512 fields and a 32-KiB report. Courier
+    // can report 64 independent recurrent policies; keep their actual
+    // simulation/observation stages instead of truncating the second half
+    // of the population at the old 253-field adapter limit. Reserve space
+    // for the envelope, host data and optional derived diagnoses.
     let retained=0;
     for(const [name,value] of Object.entries(stats)) {
-        if(retained>=253)break;
+        if(retained>=480)break;
         if(['generation','active_training_time','checkpoint_write_time'].includes(name)||
             !/^[a-z][a-z0-9_]{0,39}$/.test(name)||
             !Number.isFinite(value)||Math.abs(value)>1e12)continue;
@@ -54,6 +58,10 @@ function courierMetrics(source) {
         if(((unit==='seconds'||unit==='rate')&&value<0)||
             (unit==='count'&&(!Number.isSafeInteger(value)||value<0)))continue;
         metrics[name]={value,unit};
+        if(JSON.stringify(metrics).length>29*1024) {
+            delete metrics[name];
+            continue;
+        }
         retained++;
     }
     return metrics;
