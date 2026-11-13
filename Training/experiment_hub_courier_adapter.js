@@ -26,7 +26,8 @@ const COURIER_COUNT_FIELDS=new Set([
     'training_gpu_optimizer_tuner_adjustments',
     'training_gpu_optimizer_tuner_accepted',
     'training_gpu_optimizer_tuner_settled',
-    'training_gpu_metric_readbacks','training_gpu_metric_rows']);
+    'training_gpu_metric_readbacks','training_gpu_metric_rows',
+    'training_gpu_devices_assigned','training_gpu_devices_active']);
 const WINDOWS_ENTRY=[
     'import os, runpy, sys',
     "sys.stdout = open(os.devnull, 'w', encoding='utf-8')",
@@ -59,7 +60,8 @@ function courierMetrics(source) {
         if(['generation','active_training_time','checkpoint_write_time'].includes(name)||
             !/^[a-z][a-z0-9_]{0,39}$/.test(name)||
             !Number.isFinite(value)||Math.abs(value)>1e12)continue;
-        const unit=COURIER_COUNT_FIELDS.has(name)?'count':
+        const unit=(COURIER_COUNT_FIELDS.has(name)||
+            /^training_gpu_device_[0-7]_lineages$/.test(name))?'count':
             name.endsWith('_mb')?'mb':
             /(?:^|_)(?:seconds|duration|time_s)$/.test(name)
                 ?'seconds':name.endsWith('_per_second')
