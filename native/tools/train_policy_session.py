@@ -98,14 +98,25 @@ def session_lock(root):
                 fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
 
 
-def verify_round(directory, manifest_sha, checkpoint_sha, learner_slot):
+def scheduled_opponent_slot(self_play, round_number):
+    return (
+        self_play["opponent_slot"]
+        if self_play is not None and round_number % self_play["every"] == 0
+        else None
+    )
+
+
+def verify_round(directory, manifest_sha, checkpoint_sha, learner_slot,
+                 refresh_opponent_slot=None):
     receipt_path = directory / "round-result.json"
     record = read_json(receipt_path)
     if (record.get("kind") != "native_training_round_complete" or
             record.get("schema_version") != 1 or
             record.get("input_manifest_sha256") != manifest_sha or
             record.get("input_checkpoint_sha256") != checkpoint_sha or
-            record.get("learner_metrics", {}).get("learner_slot") != learner_slot):
+            record.get("learner_metrics", {}).get("learner_slot") != learner_slot or
+            record.get("learner_metrics", {}).get("refreshed_opponent_slot") !=
+                refresh_opponent_slot):
         raise ValueError(f"round completion receipt does not match its lineage: {receipt_path}")
     checkpoint = directory / "learner" / "checkpoint.pt"
     manifest = directory / "learner" / "manifest.json"
@@ -134,7 +145,8 @@ def verify_round(directory, manifest_sha, checkpoint_sha, learner_slot):
     return record, manifest, checkpoint
 
 
-def existing_rounds(root, initial_manifest, initial_checkpoint, learner_slot):
+def existing_rounds(root, initial_manifest, initial_checkpoint, learner_slot,
+                    self_play=None):
     attempts = defaultdict(list)
     for path in root.iterdir():
         match = ATTEMPT.fullmatch(path.name)
@@ -162,6 +174,7 @@ def existing_rounds(root, initial_manifest, initial_checkpoint, learner_slot):
             break
         record, manifest, checkpoint = verify_round(
             valid[0], manifest_sha, checkpoint_sha, learner_slot,
+            scheduled_opponent_slot(self_play, number),
         )
         completed.append((valid[0], record))
         manifest_sha = record["next_manifest_sha256"]
@@ -270,6 +283,10 @@ def progress_snapshot(completed, target, evaluations=None, baseline_holdout=None
         "total_world_steps": world_steps,
         "total_policy_rows": policy_rows,
         "total_optimizer_input_steps": optimizer_steps,
+        "self_play_opponent_promotions": sum(
+            record["learner_metrics"].get("refreshed_opponent_slot") is not None
+            for _, record in completed
+        ),
         "rounds_with_physics_worker_measurements": len(measured_physics),
         "total_parallel_physics_rounds": sum(
             row["parallel_physics_rounds"] for row in measured_physics
@@ -348,6 +365,10 @@ def main():
     parser.add_argument("--evaluation-policy-seed", type=int, default=0,
                         help="fixed policy action-sampling RNG seed during holdout evaluation")
     parser.add_argument("--learner-slot", type=int)
+    parser.add_argument("--self-play-opponent-slot", type=int,
+                        help="existing MA-POCA slot to refresh from the completed learner checkpoint")
+    parser.add_argument("--self-play-refresh-every", type=int,
+                        help="number of finished optimizer rounds between opponent promotions")
     parser.add_argument("--rollout-binary", type=Path)
     parser.add_argument("--rollout-workers", type=int)
     parser.add_argument("--physics-workers", type=int,
@@ -368,6 +389,14 @@ def main():
     args = parser.parse_args()
     if not 1 <= args.rounds <= 99999:
         parser.error("--rounds must be between 1 and 99999")
+    if (args.self_play_opponent_slot is None) != (args.self_play_refresh_every is None):
+        parser.error("self-play requires both --self-play-opponent-slot and --self-play-refresh-every")
+    if args.self_play_opponent_slot is not None and (
+        args.learner_slot is None or args.self_play_opponent_slot == args.learner_slot or
+        not 0 <= args.self_play_opponent_slot < (1 << 32) or
+        not 1 <= args.self_play_refresh_every <= 99999
+    ):
+        parser.error("self-play requires a distinct uint32 opponent slot, explicit learner slot and positive refresh interval")
     if ((args.evaluation_run_config is None) != (args.evaluation_side is None) or
             args.evaluation_side is not None and args.evaluation_side not in (1, 2)):
         parser.error("specify both --evaluation-run-config and --evaluation-side 1 or 2")
@@ -420,6 +449,25 @@ def main():
         manifest_path = Path(run["path"]).parent / manifest_path
     manifest = pinned(manifest_path)
     check_learner(Path(manifest["path"]), Path(checkpoint["path"]), args.learner_slot)
+    self_play = None
+    if args.self_play_opponent_slot is not None:
+        models = read_json(Path(manifest["path"]))["models"]
+        opponent = [
+            model for model in models if model.get("slot") == args.self_play_opponent_slot
+        ]
+        if len(opponent) != 1 or opponent[0].get("backend") != "mlagents":
+            parser.error("self-play opponent must reference one existing native MA-POCA model")
+        if not any(
+            {args.learner_slot, args.self_play_opponent_slot}.issubset(
+                set(level.get("model_slots", {}).values())
+            )
+            for level in config.get("levels", [])
+        ):
+            parser.error("self-play source Levels must route learner and opponent model slots")
+        self_play = {
+            "opponent_slot": args.self_play_opponent_slot,
+            "every": args.self_play_refresh_every,
+        }
     if args.rollout_binary is not None:
         binary = pinned(args.rollout_binary)
     else:
@@ -444,6 +492,8 @@ def main():
     # selection was not specified; older recipes have no such field.
     if args.physics_workers is not None:
         recipe["physics_workers"] = args.physics_workers
+    if self_play is not None:
+        recipe["self_play"] = self_play
     if args.distributed_plan is not None:
         recipe["distributed_plan"] = pinned(args.distributed_plan)
         recipe["bundle_inbox"] = str(args.bundle_inbox.resolve(strict=True))
@@ -496,6 +546,7 @@ def main():
                 atomic_json(template, expected_template)
         completed, next_manifest, next_checkpoint, next_attempt = existing_rounds(
             root, Path(manifest["path"]), Path(checkpoint["path"]), args.learner_slot,
+            recipe.get("self_play"),
         )
         evaluations = {}
         baseline_holdout = None
@@ -544,6 +595,9 @@ def main():
                 "--model-manifest", str(next_manifest),
                 "--device", args.device,
             ]
+            refreshing = scheduled_opponent_slot(self_play, index)
+            if refreshing is not None:
+                command.extend(["--refresh-opponent-slot", str(refreshing)])
             if args.learner_slot is not None:
                 command.extend(["--learner-slot", str(args.learner_slot)])
             if args.torch_threads is not None:
@@ -586,7 +640,7 @@ def main():
             launch_round(command, log)
             record, next_manifest, next_checkpoint = verify_round(
                 directory, file_sha256(next_manifest), file_sha256(next_checkpoint),
-                args.learner_slot,
+                args.learner_slot, refreshing,
             )
             completed.append((directory, record))
             # A successfully learned checkpoint remains committed even if
