@@ -118,6 +118,7 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'training_gpu_state_cache_mb',
             'training_inference_max_seconds','training_ingestion_max_seconds',
             'training_inference_slowest_worker',
+            'training_ppo_data_slowest_worker',
             'training_ppo_data_max_seconds','training_padding_sync_max_seconds',
             'training_gpu_metric_readback_max_seconds',
             'training_gpu_optimizer_peak_allocated_mb',
