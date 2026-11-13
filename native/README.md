@@ -218,6 +218,10 @@ Unity to move entire squads or change static obstacle layouts. Add
   ],
   "translate_squads": [
     {"squad_item_id": 51, "by": [16, 0]}
+  ],
+  "clone_squads": [
+    {"source_squad_item_id": 51, "new_squad_item_id": 8000,
+     "ship_ids": [9100, 9101], "by": [24, 0]}
   ]
 }
 ```
@@ -230,13 +234,23 @@ every captured entity ID and must be unique across both kinds.
 Removal accepts only existing static box/polygon obstacles, never MapBorder,
 ships, projectiles or mission objects. Squad shifts preserve the original
 ship/weapon identity and formation offsets and require stationary initial
-ships within the authored map bounds. Validation is transactional at scene
-setup, and the same edits apply to every restarted episode and gameplay
-fingerprint. This feature applies only to gameplay Levels without captured
-policy reward baselines; modifying training discovery denominators and
-resizing a Level's map bounds are not claimed to be supported. It still
-starts from a verified source scene and prefab catalog, rather than
-inventing missing ship/weapon data.
+ships within the authored map bounds. Cloned squads instantiate exact ordinary-ship hulls, turrets, targeting,
+visibility and formation templates under *new* ship/squad IDs. They receive
+fresh nonpersistent fleet records; the originals remain in the game. The
+`ship_ids` array must match the number of source squad members, and all
+new ship IDs must exceed the imported world's highest entity ID. New squad
+IDs must exceed the imported highest Stage squad ID and stay below the
+run's `next_squad_item_id`. Clones are unnumbered in the original fleet's
+hotkey scheme. Only stationary, non-policy, non-carrier and non-special
+ship templates can be cloned while their source lifecycle contracts remain
+unimplemented. This is an actual initial placement, not a mid-battle copy.
+
+Validation is transactional at scene setup, and the same edits apply to
+every restarted episode and gameplay fingerprint. This feature applies only
+to gameplay Levels without captured policy reward baselines; modifying
+training discovery denominators and resizing a Level's map bounds are not
+claimed to be supported. It still starts from a verified source scene and
+prefab catalog, rather than inventing missing ship/weapon data.
 
 An explicit opposing target permits
 `{"kind":"aggressive","enemy_squad_item_id":52}`,
