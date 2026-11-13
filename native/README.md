@@ -618,8 +618,12 @@ native simulator and resident policy inference process as local training.
 The collector copies completed captures and their durable receipt to a
 unique shared-inbox directory; it never overwrites an earlier delivery.
 The session accepts only matching receipt IDs, source bytes, model SHA-256,
-seed offset, partition and process allocation. When every collector has
-delivered, the original MA-POCA learner imports the pinned captures,
+seed offset, partition and process allocation. The receipt also records each
+native executable's SHA-256 for cross-platform diagnostics and rejects
+mixed policy-worker source implementations (with Git CRLF/LF differences
+normalized). These fingerprints do not certify runtime-library parity.
+When every collector has delivered, the original MA-POCA learner imports
+the pinned captures,
 rejects duplicate episode/partition identities, and publishes the next
 checkpoint. A failed learner update retains the collected bundles so
 `--resume` can optimize them without re-simulating; the next round gets
