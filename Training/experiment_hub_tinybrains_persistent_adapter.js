@@ -268,6 +268,16 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         // later; never label these durations as current-update service time.
         add('collector_'+i+'_prev_reply_update',
             worker.collector_worker_previous_reply_update,'count');
+        // Preserve two compact summary fields for each previous worker
+        // reply even when the 32-KiB source envelope cannot hold every
+        // optional timing breakdown from many independent collectors.
+        const priorStages=[
+            worker.collector_worker_previous_reply_serialize_seconds,
+            worker.collector_worker_previous_reply_compress_seconds,
+            worker.collector_worker_previous_reply_authenticate_seconds];
+        if(priorStages.every(v=>Number.isFinite(v)&&v>=0))
+            add('collector_'+i+'_prev_reply_prepare_seconds',
+                priorStages.reduce((sum,v)=>sum+v,0),'seconds');
         add('collector_'+i+'_request_wire_bytes',
             worker.collector_request_wire_bytes,'bytes');
         add('collector_'+i+'_response_wire_bytes',
@@ -297,6 +307,35 @@ function recordedTinyBrainsMetrics(row,updateWall) {
                 worker.engine_steps/elapsed,'rate');
             add('collector_'+i+'_match_steps_per_second',
                 worker.simulation_match_steps/elapsed,'rate');
+        }
+    }
+    // This is only a source-report envelope: the TinyBrains committed row
+    // retains the full transport profile. Never reject a valid many-worker
+    // update merely because optional detailed timings overflow the Hub's
+    // fixed project-neutral 512-field / 32-KiB progress contract.
+    // Keep the compact previous-reply summary for every worker as long as
+    // possible, dropping finer breakdowns across workers before summaries.
+    const optionalSuffixes=[
+        'client_auth_seconds','reply_auth_seconds',
+        'reply_decompress_seconds','reply_deserialize_seconds',
+        'worker_auth_seconds','worker_decompress_seconds',
+        'worker_deserialize_seconds',
+        'prev_reply_serial_seconds','prev_reply_compress_seconds',
+        'prev_reply_auth_seconds','prev_reply_update',
+        'prev_reply_prepare_seconds','prev_reply_send_seconds'];
+    const collectors=Math.min(9,Array.isArray(row.collector_samples)
+        ?row.collector_samples.length:0);
+    const fits=()=>Object.keys(metrics).length<=500&&
+        JSON.stringify(metrics).length<=31000;
+    if(!fits()) {
+        for(const suffix of optionalSuffixes) {
+            // Delete a detail for all workers before deleting a more
+            // valuable stage from just one worker.
+            for(let i=collectors-1;i>=0;i--) {
+                delete metrics['collector_'+i+'_'+suffix];
+                if(fits())break;
+            }
+            if(fits())break;
         }
     }
     return metrics;
