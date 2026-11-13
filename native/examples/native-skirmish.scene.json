@@ -25,7 +25,7 @@
   },
   "shots_harmless": false,
   "activate_collision_asteroids": false,
-  "activate_mining": false,
+  "activate_mining": true,
   "activate_fog_of_war": false,
   "activate_hivemind": false,
   "starting_positions": [
@@ -619,6 +619,44 @@
       "user_controlled": false,
       "turrets": [],
       "is_carrier_ship": true
+    },
+    {
+      "entity_id": 16,
+      "ship_type": 4,
+      "side": 1,
+      "position": [
+        -30,
+        60
+      ],
+      "rotation_degrees": 270,
+      "rotation_speed_degrees_per_second": 135,
+      "base_speed": 14,
+      "height": 6,
+      "turning_radius": 6,
+      "size_class": 1,
+      "health": 100,
+      "max_health": 100,
+      "max_tsv": 100,
+      "original_health": 100,
+      "formation_offset": [
+        0,
+        0
+      ],
+      "path_clearance": 1,
+      "sight": {
+        "source_sight": 65,
+        "effective_range": 65,
+        "trigger_range": 65,
+        "fog_radius": 65
+      },
+      "max_weapon_range": 0,
+      "firepower": 0,
+      "ship_type_letter": 4,
+      "target_max_range": 0,
+      "front_offset": 0,
+      "combat_window_seconds": 5,
+      "user_controlled": false,
+      "turrets": []
     }
   ],
   "squads": [
@@ -658,6 +696,16 @@
       "shooting_strategy_id": 1,
       "user_controlled": true,
       "can_accept_input": true
+    },
+    {
+      "item_id": 104,
+      "side": 1,
+      "members": [
+        16
+      ],
+      "shooting_strategy_id": 1,
+      "user_controlled": false,
+      "can_accept_input": false
     }
   ],
   "layout": {
