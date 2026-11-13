@@ -884,6 +884,23 @@ function allocationBlockReason(machines,job,preferredMachineId=null) {
     if(job.project_id==='tinybrains'&&
         !candidates.some(machine=>supportsTinyBrainsProfile(machine,job)))
         return 'No eligible worker approves this TinyBrains profile, GPU mode, checkpoint import and update count.';
+    // An incompatible frozen Design contract is not a lack of CPU/RAM.
+    // Make the failed capability gate visible without weakening admission.
+    if(job.project_id==='courier'&&job.frozen_parameters?.design_overrides&&
+        !candidates.some(machine=>supportsDesign(
+            machine.design_catalog,'courier',job.frozen_parameters))) {
+        const frozen=job.frozen_parameters;
+        const compatibleEnvironment=candidates.filter(machine=>
+            machine.installed_projects?.includes('courier')&&
+            machine.design_catalog?.courier?.config_sha256===frozen.config_sha256);
+        if(compatibleEnvironment.length&&
+            Object.keys(frozen.design_overrides).some(key=>key.startsWith('training.'))&&
+            !compatibleEnvironment.some(machine=>
+                machine.design_catalog.courier.training_schema_sha256===
+                    frozen.training_schema_sha256))
+            return 'No connected Courier worker advertises the frozen PPO training schema SHA-256. Check the installed Basic-Training branch, trusted adapter path, and worker restart.';
+        return 'No connected Courier worker approves the frozen Design environment identity or parameter overrides.';
+    }
     return 'No eligible connected worker has enough remaining capacity.';
 }
 function allocationChoice(machines,reservations,job,preferredMachineId=null,
