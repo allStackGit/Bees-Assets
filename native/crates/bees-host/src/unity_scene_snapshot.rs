@@ -732,6 +732,7 @@ pub struct NativeExportedPolicyLevelSetup<A> {
     pub survival: Option<bees_sim::episode_terminal::SurvivalObjective>,
     pub campaign_dialogue: Option<bees_gameplay::campaign_dialogue::CampaignDialogueSpec>,
     pub reinforcements: Vec<crate::reinforcements::NativeReinforcementPlan>,
+    pub scripted_queues: Vec<crate::policy_only_metadata::NativeScriptedQueuePlan>,
     // Team-owned exploration starts fresh for the newly constructed
     // episode, and then follows the actual fixed-step ship movement.
     pub allocate_minion: A,
@@ -740,6 +741,7 @@ pub struct NativeExportedPolicyLevelSetup<A> {
 #[derive(Debug)]
 pub enum NativePolicyOnlyLevelError {
     InvalidReinforcements(&'static str),
+    InvalidScriptedCommands(&'static str),
     InvalidCampaignPlacement(&'static str),
     Snapshot(NativeSnapshotError),
     Metadata(PolicyOnlyMetadataError),
@@ -967,6 +969,9 @@ impl NativePhysicalScene {
         authored.campaign_dialogue = setup.campaign_dialogue;
         authored.stage_reinforcements(setup.reinforcements, dt)
             .map_err(NativePolicyOnlyLevelError::InvalidReinforcements)?;
+        authored.metadata.stage_scripted_queues(
+            &authored.squads, setup.scripted_queues,
+        ).map_err(NativePolicyOnlyLevelError::InvalidScriptedCommands)?;
         if let Some(CampaignDialogueSpec::TitaniaBeenoculars { player_side, .. }) =
             authored.campaign_dialogue
         {
