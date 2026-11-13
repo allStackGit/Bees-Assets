@@ -234,7 +234,16 @@ every captured entity ID and must be unique across both kinds.
 Removal accepts only existing static box/polygon obstacles, never MapBorder,
 ships, projectiles or mission objects. Squad shifts preserve the original
 ship/weapon identity and formation offsets and require stationary initial
-ships within the authored map bounds. Cloned squads instantiate exact ordinary-ship hulls, turrets, targeting,
+ships within the authored map bounds. To remove an entire original ordinary gameplay squad from the new
+scenario, add `"remove_squads":[52]` alongside these layout fields.
+Removing a squad also removes its ships' episode-local fleet, sight,
+perception and formation records. Surviving carrier children or special
+ship relationships cannot be orphaned; such changes fail setup. A layout
+cannot remove the last squad unless it also creates replacement squads.
+Mission triggers and reinforcement plans must reference squads that
+remain in the authored scene.
+
+Cloned squads instantiate exact ordinary-ship hulls, turrets, targeting,
 visibility and formation templates under *new* ship/squad IDs. They receive
 fresh nonpersistent fleet records; the originals remain in the game. The
 `ship_ids` array must match the number of source squad members, and all
