@@ -383,7 +383,10 @@ impl NativeLevelRewardMetadata for NativePolicyOnlyMetadata {
         counts.waiting_for_static_rebuild_frames +=
             u64::from(step.waiting_for_static_rebuild);
         counts.busy_workers = step.busy_workers;
-        Ok(step.applied as u64)
+        // Match the synchronous Level counter: every completed path job
+        // counts, including lifecycle-safe requeues and discarded results.
+        // The accepted/requeued/discarded split remains separately measured.
+        Ok(step.completed as u64)
     }
 
     fn register_scout_beacons(
