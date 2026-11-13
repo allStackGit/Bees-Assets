@@ -444,6 +444,31 @@ class LinuxSupervisor {
             throw Error('CPU/RAM preflight must pass before GPU device checks.');
         if(this.gpuProbeCleanupPending())
             throw Error('Previous GPU access probe cleanup unconfirmed; inspect the recorded local service before retry.');
+        if(Array.isArray(bindings)&&bindings.length>1) {
+            // A union of N GPUs can have no unselected render nodes on a
+            // two-GPU host. Prove kernel allow/deny and HIP PCI identity
+            // for *each* GPU separately before authorizing the union.
+            if(bindings.length>8||!runtimeProof||
+                !Array.isArray(runtimeProof.singleProofs)||
+                runtimeProof.singleProofs.length!==bindings.length||
+                !Number.isSafeInteger(runtimeProof.ram_mb))
+                throw Error('Multi-GPU preflight requires one trusted physical proof per GPU.');
+            for(let i=0;i<bindings.length;i++) {
+                const result=await this.qualifyGpuDeviceAccess([bindings[i]],{
+                    ...runtimeProof.singleProofs[i],ram_mb:runtimeProof.ram_mb});
+                if(result.runtime_pci_verified!==true||
+                    result.selected.length!==1||
+                    result.selected[0]!==bindings[i].pci_address)
+                    throw Error('An individual leased GPU did not pass HIP device isolation.');
+            }
+            const full=resolveRocmDevices(bindings,{fsApi:this.fs});
+            if(full.selected.length!==bindings.length||
+                full.selected.some((g,i)=>g.pci_address!==bindings[i].pci_address))
+                throw Error('Combined native GPU set changed after isolation qualification.');
+            return {qualified_at:new Date().toISOString(),
+                selected:bindings.map(b=>b.pci_address),
+                runtime_pci_verified:true};
+        }
         // A real native Start would create a durable ownership journal. Do
         // the same tiny HIP runtime attestation here *before* that Start,
         // within the short-lived, device-restricted qualification service.
