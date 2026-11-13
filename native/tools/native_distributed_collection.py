@@ -177,8 +177,7 @@ def verify_bundle(path, job, orders):
     # absent field denotes the old single-worker default, not a claimed
     # measurement. Explicit allocations always require an exact matching
     # simulator receipt.
-    if (requested is not None or "physics_workers" in job or
-            "physics_workers_per_process" in receipt):
+    if requested is not None or "physics_workers" in job:
         if type(requested) is not int or requested != capacity:
             raise ValueError(f"distributed collector physics allocation and measured receipt disagree: {path}")
     return {
