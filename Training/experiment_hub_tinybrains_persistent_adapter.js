@@ -95,7 +95,10 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'carried_matches','open_matches','peak_live_matches',
         'truncated_groups','terminal_groups','collector_count',
         'ppo_minibatches','ppo_microbatches',
-        'ppo_board_pixel_samples','ppo_max_board_cells',
+        'ppo_board_pixel_samples','ppo_board_states',
+        'ppo_gpu_pixel_budget','ppo_gpu_microbatch_adjustments',
+        'ppo_gpu_microbatch_accepted','ppo_gpu_microbatch_settled',
+        'ppo_gpu_microbatch_restored','ppo_max_board_cells',
         'ppo_unique_board_shapes','policy_lag','action_target',
         'automatic_collector_allocation','collector_allocation_rebalanced',
         'rollout_inference_batches','rollout_inference_boards',
@@ -114,8 +117,22 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'entropy','actor_grad_norm','group_grad_norm',
         'baseline_grad_norm','actor_max_weight_change',
         'critic_max_weight_change','learning_rate','population_mean',
-        'states_per_microbatch','rollout_inference_mean_batch'])
+        'states_per_microbatch','rollout_inference_mean_batch',
+        'ppo_gpu_microbatch_used_factor',
+        'ppo_gpu_microbatch_next_factor',
+        'ppo_gpu_microbatch_proven_factor'])
         add(name,row[name],'scalar');
+    // PPO board states count every epoch; they are NOT distinct experience
+    // steps. Never combine these processing rates with useful training SPS.
+    if(Number.isFinite(row.optimization_seconds)&&row.optimization_seconds>0) {
+        add('ppo_board_states_processed_per_second',
+            row.ppo_board_states/row.optimization_seconds,'rate');
+        add('ppo_board_pixels_processed_per_second',
+            row.ppo_board_pixel_samples/row.optimization_seconds,'rate');
+    }
+    if(['baseline','trial','cooldown','settled'].includes(
+        row.ppo_gpu_microbatch_phase))
+        add('ppo_microbatch_phase_'+row.ppo_gpu_microbatch_phase,1,'count');
     add('gae_lambda',row.gae_lambda,'ratio');
     add('rss_mb',row.rss_mb,'mb');
     add('simulation_engine_memory_mb',row.simulation_engine_memory_mb,'mb');
