@@ -2241,6 +2241,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 ['pipeline_cpu_throttle_pressure','CPU quota throttling'],
                 ['pipeline_ram_lease_pressure','RAM lease nearly occupied'],
                 ['pipeline_gpu_host_busy_pressure','allocated GPUs host-busy'],
+                ['pipeline_gpu_mixed_host_evidence','allocated GPUs show mixed host activity'],
                 ['pipeline_cpu_underuse_evidence','CPU lease underused during collection'],
                 ['pipeline_gpu_idle_evidence','allocated GPUs host-idle during optimization']
             ].filter(([metric])=>measured[metric]?.value===1)
@@ -2321,6 +2322,7 @@ document.addEventListener('DOMContentLoaded', () => {
         'pipeline_remote_wait_dominant','pipeline_merge_dominant',
         'pipeline_cpu_lease_pressure','pipeline_cpu_throttle_pressure',
         'pipeline_ram_lease_pressure','pipeline_gpu_host_busy_pressure',
+        'pipeline_gpu_mixed_host_evidence','pipeline_gpu_host_busy_device_share',
         'pipeline_cpu_underuse_evidence','pipeline_gpu_idle_evidence',
         'pipeline_timing_sample_count','rollout_engine_measured_work_share',
         'rollout_inference_measured_work_share',
