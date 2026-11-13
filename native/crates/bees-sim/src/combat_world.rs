@@ -126,6 +126,10 @@ pub enum CombatWorldError {
     Reservation(ReservationError),
     Navigation(NavigationRequestError),
     NavigationMap(crate::navigation::NavigationError),
+    /// A background navigation worker failed, not a valid path-not-found.
+    NavigationWorkerUnavailable,
+    NavigationWorkerPanicked,
+    NavigationWorkerProtocol,
     MissingGameMovementProfile,
     InvalidGameMovementProfile,
     InvalidGameMovementOrder,
