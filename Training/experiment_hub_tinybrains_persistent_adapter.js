@@ -251,8 +251,23 @@ function recordedTinyBrainsMetrics(row,updateWall) {
             ['decode_seconds','collector_client_decode_seconds'],
             ['ingestion_seconds','collector_learner_ingestion_seconds'],
             ['worker_receive_seconds','collector_worker_receive_seconds'],
-            ['worker_decode_seconds','collector_worker_decode_seconds']])
+            ['worker_decode_seconds','collector_worker_decode_seconds'],
+            ['client_auth_seconds','collector_client_authenticate_seconds'],
+            ['reply_auth_seconds','collector_client_authenticate_reply_seconds'],
+            ['reply_decompress_seconds','collector_client_decompress_seconds'],
+            ['reply_deserialize_seconds','collector_client_deserialize_seconds'],
+            ['worker_auth_seconds','collector_worker_authenticate_seconds'],
+            ['worker_decompress_seconds','collector_worker_decompress_seconds'],
+            ['worker_deserialize_seconds','collector_worker_deserialize_seconds'],
+            ['prev_reply_serial_seconds','collector_worker_previous_reply_serialize_seconds'],
+            ['prev_reply_compress_seconds','collector_worker_previous_reply_compress_seconds'],
+            ['prev_reply_auth_seconds','collector_worker_previous_reply_authenticate_seconds'],
+            ['prev_reply_send_seconds','collector_worker_previous_reply_send_seconds']])
             add('collector_'+i+'_'+suffix,worker[name],'seconds');
+        // Reply timing from the worker necessarily arrives one PPO update
+        // later; never label these durations as current-update service time.
+        add('collector_'+i+'_prev_reply_update',
+            worker.collector_worker_previous_reply_update,'count');
         add('collector_'+i+'_request_wire_bytes',
             worker.collector_request_wire_bytes,'bytes');
         add('collector_'+i+'_response_wire_bytes',
