@@ -211,6 +211,32 @@ def rollout_metrics(summary_path, config, manifest_sha):
         "policy_rows_per_execution_second":
             counts["successful_policy_rows"] / times["execution_wall_seconds"],
     }
+    # Preserve actual model-step CPU utilization reported by the native
+    # simulator, not just the requested per-process thread limit. These
+    # counters distinguish real parallel rounds from Stage-order fallbacks.
+    physics_ints = (
+        "requested_physics_workers", "parallel_physics_rounds",
+        "parallel_stage_id_serialized_rounds",
+        "parallel_stage_id_serialized_arenas",
+        "peak_parallel_physics_workers",
+    )
+    physics = {key: throughput.get(key) for key in physics_ints}
+    requested = config.get("physics_workers", 1)
+    if (type(requested) is not int or not 1 <= requested <= 128 or
+            any(type(value) is not int or value < 0 for value in physics.values()) or
+            physics["requested_physics_workers"] != requested or
+            physics["peak_parallel_physics_workers"] > min(requested, len(config["levels"])) or
+            any(physics[key] > summary["rounds"] for key in (
+                "parallel_physics_rounds", "parallel_stage_id_serialized_rounds",
+            ))):
+        raise ValueError("native rollout summary has an invalid physical worker allocation")
+    worker_seconds = throughput.get("parallel_worker_cpu_wall_seconds_sum")
+    if (type(worker_seconds) not in (float, int) or
+            not math.isfinite(worker_seconds) or worker_seconds < 0):
+        raise ValueError("native rollout summary has invalid physical worker timing")
+    metrics.update(physics)
+    metrics["parallel_worker_cpu_wall_seconds_sum"] = worker_seconds
+    metrics["requested_physics_worker_slots"] = requested
     model_timing = summary.get("sampled_model_timing")
     if model_timing is not None:
         calls, rows, seconds = (model_timing[key] for key in ("calls", "rows", "wall_seconds"))
@@ -259,6 +285,18 @@ def combined_rollout_metrics(shards, wall_seconds):
             min(shard["world_steps_per_execution_second"] for shard in shards),
         "worker_world_steps_per_execution_second_max":
             max(shard["world_steps_per_execution_second"] for shard in shards),
+        "requested_physics_worker_slots":
+            sum(shard["requested_physics_worker_slots"] for shard in shards),
+        "parallel_physics_rounds":
+            sum(shard["parallel_physics_rounds"] for shard in shards),
+        "parallel_stage_id_serialized_rounds":
+            sum(shard["parallel_stage_id_serialized_rounds"] for shard in shards),
+        "parallel_stage_id_serialized_arenas":
+            sum(shard["parallel_stage_id_serialized_arenas"] for shard in shards),
+        "parallel_worker_cpu_wall_seconds_sum":
+            sum(shard["parallel_worker_cpu_wall_seconds_sum"] for shard in shards),
+        "peak_parallel_physics_workers":
+            max(shard["peak_parallel_physics_workers"] for shard in shards),
     })
     # Retain per-process evidence so a resource scheduler can distinguish
     # an overloaded process, a scene-dependent straggler and accelerator
@@ -276,6 +314,16 @@ def combined_rollout_metrics(shards, wall_seconds):
                 shard["world_steps_per_execution_second"],
             "policy_rows_per_execution_second":
                 shard["policy_rows_per_execution_second"],
+            "requested_physics_workers": shard["requested_physics_workers"],
+            "parallel_physics_rounds": shard["parallel_physics_rounds"],
+            "parallel_stage_id_serialized_rounds":
+                shard["parallel_stage_id_serialized_rounds"],
+            "parallel_stage_id_serialized_arenas":
+                shard["parallel_stage_id_serialized_arenas"],
+            "peak_parallel_physics_workers":
+                shard["peak_parallel_physics_workers"],
+            "parallel_worker_cpu_wall_seconds_sum":
+                shard["parallel_worker_cpu_wall_seconds_sum"],
             **({"sampled_model_timing": shard["sampled_model_timing"]}
                if "sampled_model_timing" in shard else {}),
         }
