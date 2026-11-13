@@ -16,6 +16,7 @@ const COURIER_COUNT_FIELDS=new Set([
     'training_profile_round','training_lineage_workers',
     'training_slowest_worker','training_last_reply_worker',
     'training_simulation_slowest_worker','training_inference_slowest_worker',
+    'training_ppo_data_slowest_worker',
     'training_simulated_steps','training_useful_steps',
     'training_total_useful_steps','training_rejected_workers',
     'training_concurrency_limit','training_concurrency_next_limit',
