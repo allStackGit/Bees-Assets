@@ -379,6 +379,9 @@ impl<S, R: GameRules<S>> Simulation<S, R> {
                     rules, dt, sample, world, action, &mut measurements,
                 ) {
                     report.failed_worlds.push((index, error));
+                    // Preserve serial first-failure semantics when an
+                    // identity-sensitive tick was intentionally serialized.
+                    break;
                 }
             }
             report.worlds_stepped = measurements.ticks as usize;
