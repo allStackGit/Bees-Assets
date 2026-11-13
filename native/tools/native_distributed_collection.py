@@ -244,6 +244,12 @@ def aggregate_collection_metrics(bundles):
         "total_rollout_processes": sum(
             bundle["rollout_processes"] for bundle in bundles
         ),
+        # Upper bound requested by the distributed plan, not an observed
+        # number of busy cores or an estimate of process utilization.
+        "requested_physics_worker_slots": sum(
+            bundle["rollout_processes"] * bundle["physics_workers_per_process"]
+            for bundle in bundles
+        ),
         "collector_world_steps_per_wall_second_min": min(collector_rates),
         "collector_world_steps_per_wall_second_max": max(collector_rates),
         "policy_worker_sha256": next(iter(worker_digests)),
@@ -253,6 +259,7 @@ def aggregate_collection_metrics(bundles):
                 "partition": bundle["partition"],
                 "native_runner_sha256": bundle["native_runner_sha256"],
                 "rollout_processes": bundle["rollout_processes"],
+                "physics_workers_per_process": bundle["physics_workers_per_process"],
                 "worker_shards": row.get("worker_shards", []),
                 "sampled_model_timing": row.get("sampled_model_timing"),
                 "world_steps": row["successful_world_steps"],
