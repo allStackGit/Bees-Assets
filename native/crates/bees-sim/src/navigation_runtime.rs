@@ -60,6 +60,23 @@ impl NavigationMapFrame {
     }
 }
 
+/// Actual rasterization work performed by this Level. Counters are
+/// episode-local and count completed operations rather than estimates.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize)]
+pub struct NavigationRasterMeasurements {
+    pub static_rebuilds: u64,
+    pub dynamic_asteroid_passes: u64,
+    pub static_only_restores: u64,
+}
+
+impl NavigationRasterMeasurements {
+    pub fn merge(&mut self, other: Self) {
+        self.static_rebuilds += other.static_rebuilds;
+        self.dynamic_asteroid_passes += other.dynamic_asteroid_passes;
+        self.static_only_restores += other.static_only_restores;
+    }
+}
+
 /// A reusable source-equivalent navigation workspace. Clearance is
 /// refreshed from actual world geometry; search arrays are reused across
 /// requests. A caller may own a workspace per arena or per Level.
@@ -73,6 +90,7 @@ pub struct NavigationRuntime {
     /// Last authoritative CombatWorld static obstacle revision that
     /// populated this clearance. None after external manual map edits.
     world_static_revision: Option<u64>,
+    raster_measurements: NavigationRasterMeasurements,
 }
 
 impl NavigationRuntime {
@@ -88,7 +106,8 @@ impl NavigationRuntime {
             .ok_or(NavigationError::InvalidMap)?;
         let clearance = NavigationClearance::new(grid, &vec![false; n])?;
         Ok(Self { map_frame: frame, clearance, search,
-            static_obstacles_present: None, world_static_revision: None })
+            static_obstacles_present: None, world_static_revision: None,
+            raster_measurements: NavigationRasterMeasurements::default() })
     }
 
     pub fn map_frame(&self) -> NavigationMapFrame { self.map_frame }
@@ -105,6 +124,10 @@ impl NavigationRuntime {
 
     pub fn world_static_revision(&self) -> Option<u64> {
         self.world_static_revision
+    }
+
+    pub fn raster_measurements(&self) -> NavigationRasterMeasurements {
+        self.raster_measurements
     }
 
     /// Update after authored static objects are created, moved or destroyed.
@@ -124,6 +147,7 @@ impl NavigationRuntime {
         )?;
         self.static_obstacles_present = Some(counts.active_obstacles != 0);
         self.world_static_revision = None;
+        self.raster_measurements.static_rebuilds += 1;
         Ok(counts)
     }
 
@@ -154,6 +178,7 @@ impl NavigationRuntime {
     {
         if !moving_asteroids_enabled {
             self.clearance.restore_static_only();
+            self.raster_measurements.static_only_restores += 1;
             return Ok(NavigationRasterCounts::default());
         }
         // Most headless training scenes have zero live collision asteroids
@@ -163,14 +188,17 @@ impl NavigationRuntime {
         let mut asteroids = live_asteroids.into_iter();
         let Some(first) = asteroids.next() else {
             self.clearance.restore_static_only();
+            self.raster_measurements.static_only_restores += 1;
             return Ok(NavigationRasterCounts::default());
         };
         let frame = self.map_frame;
-        self.clearance.update_dynamic_asteroids(
+        let counts = self.clearance.update_dynamic_asteroids(
             std::iter::once(first).chain(asteroids),
             |point| frame.level_to_world(point),
             |point| frame.world_to_level(point),
-        )
+        )?;
+        self.raster_measurements.dynamic_asteroid_passes += 1;
+        Ok(counts)
     }
 
     /// Unity's Path is expressed in Level-local coordinates. Convert both
