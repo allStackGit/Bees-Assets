@@ -148,6 +148,20 @@ impl CombatWorld {
         self.game_scout_runtime.contains_key(&scout_id)
     }
 
+    /// Fast conservative Stage-allocation guard used by the batched
+    /// simulation scheduler. Only configured Scouts can spawn a Beacon,
+    /// and registration/death update this map at the same authoritative
+    /// CombatWorld boundary as the gameplay roster. Deliberately does
+    /// not use the per-ship readiness clock: scripted/player callbacks
+    /// can run later in the same Level tick.
+    ///
+    /// Exhausted or temporarily disabled Scouts may cause an unnecessary
+    /// serial lane, but never an unsafe concurrent Stage ID allocation.
+    #[inline]
+    pub fn has_scout_beacon_sources(&self) -> bool {
+        !self.scout_beacon_specs.is_empty()
+    }
+
     /// Read only, suitable for a sparse ten-second Scouting callback.
     pub fn game_scout_beacon_ready(&self, scout_id: i64) -> bool {
         let Some(&runtime) = self.game_scout_runtime.get(&scout_id) else {
