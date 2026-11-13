@@ -22,6 +22,9 @@ pub struct NativeHostGauges {
     pub worlds_failed: usize,
     pub ships_living: usize,
     pub commands_active: usize,
+    /// Episode-local live roster and VisionCache observations. Candidate
+    /// ratios are real query counts, not inferred from physics population.
+    pub observation_candidates: bees_sim::combat_perception_bridge::LiveShipCandidateMeasurements,
     /// Current occupancy and per-world retained bucket pools summed across
     /// worlds, sampled at the same cadence as all other host gauges.
     pub spatial_grid_active_buckets: usize,
@@ -74,6 +77,7 @@ impl From<&NativeRuntimeStatus> for NativeHostGauges {
             worlds_failed: value.failed_worlds,
             ships_living: value.living_ships,
             commands_active: value.active_commands,
+            observation_candidates: value.observation_candidates,
             spatial_grid_active_buckets: value.spatial_grid_active_buckets,
             spatial_grid_retained_buckets: value.spatial_grid_retained_buckets,
             special_scout_beacons_spawned: value.special_scout_beacons_spawned,

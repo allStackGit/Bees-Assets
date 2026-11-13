@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use bees_sim::collision::Aabb;
 use bees_sim::combat_perception_bridge::{
     AuthoredShipPerception, CombatPerceptionError,
-    ControlledShipPerception, LiveShipCandidateCollector,
+    ControlledShipPerception, LiveShipCandidateCollector, LiveShipCandidateMeasurements,
     observed_ship_from_world, self_source_from_world,
     capability_source_from_world, collect_learned_map_objects,
     collect_learned_collision_asteroids,
@@ -142,6 +142,7 @@ impl NativeWorldPerceptionAssembler {
         self.allies.clear();
         self.enemies.clear();
         self.own_weapons = [None; 5];
+        self.candidates.reset_measurements();
         self.live_roster_epoch = None;
         self.mining_counts_epoch = None;
         // Retain storage for recurring episode resets but never reuse
@@ -153,6 +154,11 @@ impl NativeWorldPerceptionAssembler {
 
     pub fn assigned_identity_count(&self) -> usize {
         self.identities.assigned_count()
+    }
+
+    /// Episode-local work counters for the shared policy observation path.
+    pub fn candidate_measurements(&self) -> LiveShipCandidateMeasurements {
+        self.candidates.measurements()
     }
 
     /// Boundary observations must not assign identities in the live policy stream.
