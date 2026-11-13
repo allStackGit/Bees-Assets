@@ -1,0 +1,96 @@
+{
+  "run_id": "native-duel-demo",
+  "stage_name": "Native Duel",
+  "native_stage": {
+    "collision_matrix_rows": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      528384,
+      790528,
+      527360,
+      0,
+      0,
+      0,
+      0,
+      0,
+      526336,
+      269312,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "asteroid_prefab_numbers": [
+      1
+    ]
+  },
+  "fragment_spawn": {
+    "map_bounds": {
+      "min": [
+        -160,
+        -100
+      ],
+      "max": [
+        160,
+        100
+      ]
+    },
+    "half_map_extents": [
+      160,
+      100
+    ],
+    "asteroid_max_speed_exclusive": 4,
+    "training_health_ratio": null
+  },
+  "connection_checkpoint": "native-duel-connection.json",
+  "notifications": "native-duel-notifications.jsonl",
+  "next_squad_item_id": 1000,
+  "broadphase_cell_size": 20,
+  "decision_period": 1,
+  "max_rounds": 12000,
+  "episodes_per_world": 1,
+  "rounds_per_window": 16,
+  "delivery_every": 16,
+  "levels": [
+    {
+      "scene": "native-duel.scene.json",
+      "world_id": 1,
+      "level_id": 1,
+      "seed": 347,
+      "scripted_queues": [
+        {
+          "squad_item_id": 101,
+          "orders": [
+            {
+              "kind": "move_to_point",
+              "destination": [
+                -10,
+                0
+              ]
+            },
+            {
+              "kind": "aggressive",
+              "enemy_squad_item_id": 102
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
