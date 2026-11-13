@@ -770,6 +770,50 @@
         "quarter_turns": 1,
         "movement_disabled": false
       }
+    },
+    {
+      "entity_id": 26,
+      "ship_type": 9,
+      "side": 2,
+      "position": [
+        48,
+        62
+      ],
+      "rotation_degrees": 270,
+      "rotation_speed_degrees_per_second": 0,
+      "base_speed": 0,
+      "height": 6,
+      "turning_radius": 6,
+      "size_class": 1,
+      "health": 100,
+      "max_health": 100,
+      "max_tsv": 100,
+      "original_health": 100,
+      "formation_offset": [
+        0,
+        0
+      ],
+      "path_clearance": 1,
+      "sight": {
+        "source_sight": 65,
+        "effective_range": 65,
+        "trigger_range": 65,
+        "fog_radius": 65
+      },
+      "max_weapon_range": 0,
+      "firepower": 0,
+      "ship_type_letter": 9,
+      "target_max_range": 0,
+      "front_offset": 0,
+      "combat_window_seconds": 5,
+      "user_controlled": false,
+      "turrets": [],
+      "policy": {
+        "agent_id": 1026,
+        "team_id": 1,
+        "quarter_turns": 1,
+        "movement_disabled": false
+      }
     }
   ],
   "squads": [
@@ -825,6 +869,16 @@
       "side": 2,
       "members": [
         15
+      ],
+      "shooting_strategy_id": 1,
+      "user_controlled": false,
+      "can_accept_input": false
+    },
+    {
+      "item_id": 106,
+      "side": 2,
+      "members": [
+        26
       ],
       "shooting_strategy_id": 1,
       "user_controlled": false,
@@ -900,11 +954,11 @@
   "policy_episode": {
     "episode_number": 1,
     "bee_starting_tsv": 550,
-    "human_starting_tsv": 1100,
+    "human_starting_tsv": 1200,
     "timeout_seconds": 120,
     "discovery_baselines": [
       [
-        1100,
+        1200,
         100,
         1000,
         45
