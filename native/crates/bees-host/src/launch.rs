@@ -129,7 +129,7 @@ enum ScriptedActivationConfig {
     OnShipDestroyed { ship_id: i64 },
 }
 
-#[derive(Clone, Copy, Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum ScriptedOrderConfig {
     MoveToPoint { destination: [f32; 2] },
@@ -142,6 +142,7 @@ enum ScriptedOrderConfig {
     ClosestFriendly,
     Scouting { max_sight: f32, human_side: i32 },
     Mining { asteroid_id: i64 },
+    Heal { beehive_ids: Vec<i64> },
     FullRetreat { warp_gate_id: i64 },
 }
 
@@ -481,7 +482,7 @@ fn make_setup(
                     ScriptedActivationConfig::OnShipDestroyed { ship_id } =>
                         bees_host::policy_only_metadata::NativeScriptedActivation::OnShipDestroyed(ship_id),
                 },
-                orders: queue.orders.iter().map(|order| match *order {
+                orders: queue.orders.iter().map(|order| match order.clone() {
                     ScriptedOrderConfig::MoveToPoint { destination } =>
                         bees_host::policy_only_metadata::NativeScriptedOrder::MoveToPoint {
                             destination: vec2(destination),
@@ -517,6 +518,10 @@ fn make_setup(
                         },
                     ScriptedOrderConfig::Mining { asteroid_id } =>
                         bees_host::policy_only_metadata::NativeScriptedOrder::Mining { asteroid_id },
+                    ScriptedOrderConfig::Heal { beehive_ids } =>
+                        bees_host::policy_only_metadata::NativeScriptedOrder::Heal {
+                            beehive_ids: beehive_ids.into(),
+                        },
                     ScriptedOrderConfig::FullRetreat { warp_gate_id } =>
                         bees_host::policy_only_metadata::NativeScriptedOrder::FullRetreat { warp_gate_id },
                 }).collect(),
