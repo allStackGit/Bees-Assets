@@ -1908,7 +1908,8 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         const existing=new Map([...container.children].filter(element=>
-            element.classList.contains('hub-progress-plot')&&element.dataset.metric)
+            element.classList.contains('hub-progress-plot')&&
+            element.dataset.project===project&&element.dataset.metric)
             .map(element=>[element.dataset.metric,element]));
         const sections=keys.map(key=>{
             let section=existing.get(key);
@@ -1916,6 +1917,7 @@ document.addEventListener('DOMContentLoaded', () => {
             section=document.createElement('div');
             section.className='hub-progress-plot';
             section.dataset.metric=key;
+            section.dataset.project=project;
             const title=document.createElement('h3');
             title.textContent=key.slice(7);
             const header=document.createElement('div');
