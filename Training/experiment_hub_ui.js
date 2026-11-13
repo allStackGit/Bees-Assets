@@ -2236,6 +2236,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 ?' · Sustained simulation pressure: '+enginePressure.slice(0,2).join('; ')+
                     (enginePressure.length>2?' (+'+(enginePressure.length-2)+' more)':'')
                 :'';
+            const resourceFlags=[
+                ['pipeline_cpu_lease_pressure','CPU lease nearly occupied'],
+                ['pipeline_cpu_throttle_pressure','CPU quota throttling'],
+                ['pipeline_ram_lease_pressure','RAM lease nearly occupied'],
+                ['pipeline_gpu_host_busy_pressure','allocated GPUs host-busy'],
+                ['pipeline_cpu_underuse_evidence','CPU lease underused during collection'],
+                ['pipeline_gpu_idle_evidence','allocated GPUs host-idle during optimization']
+            ].filter(([metric])=>measured[metric]?.value===1)
+                .map(([,name])=>name);
+            const resourceSignal=resourceFlags.length
+                ?' · Sustained resource evidence: '+resourceFlags.slice(0,2).join('; ')+
+                    (resourceFlags.length>2?' (+'+(resourceFlags.length-2)+' more)':'')+
+                    ' (not proof of a causal hardware bottleneck)'
+                :'';
             const preferred=['total_ppo_updates','update_wall_time',
                 'ant_decisions_per_second','collection_seconds','optimization_seconds'];
             const priority=preferred.filter(key=>Object.hasOwn(p.metrics,key));
@@ -2250,7 +2264,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return 'Steps '+p.steps_completed.toLocaleString()+
                 ' · '+values.join(' · ')+
                 (remaining?' · +'+remaining+' more':'')+signal+workerSignal+
-                enginePressureSignal+
+                enginePressureSignal+resourceSignal+
                 ' · Summary written '+new Date(p.source_modified_at).toLocaleString();
         }
         if(live?.progress_issue)
@@ -2305,6 +2319,9 @@ document.addEventListener('DOMContentLoaded', () => {
         'pipeline_collection_dominant','pipeline_optimization_dominant',
         'pipeline_remote_wait_work_share','pipeline_merge_work_share',
         'pipeline_remote_wait_dominant','pipeline_merge_dominant',
+        'pipeline_cpu_lease_pressure','pipeline_cpu_throttle_pressure',
+        'pipeline_ram_lease_pressure','pipeline_gpu_host_busy_pressure',
+        'pipeline_cpu_underuse_evidence','pipeline_gpu_idle_evidence',
         'pipeline_timing_sample_count','rollout_engine_measured_work_share',
         'rollout_inference_measured_work_share',
         ...Array.from({length:9},(_,i)=>'collector_'+i+'_turnaround_overhead_share'),
