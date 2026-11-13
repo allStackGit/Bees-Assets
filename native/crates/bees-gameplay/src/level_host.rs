@@ -567,6 +567,11 @@ pub struct NativeLevelWindowCounts {
     pub sampled_observation_build_nanos: u128,
     pub sampled_inference_and_validation_nanos: u128,
     pub sampled_world_dispatch_and_step_nanos: u128,
+    /// Headless model-batched rounds that used multiple physical workers.
+    pub parallel_physics_rounds: u32,
+    pub parallel_physics_max_workers: usize,
+    /// Sum of real worker elapsed time, not a speedup estimate.
+    pub parallel_physics_worker_nanos: u128,
     pub retirement_notifications: usize,
     pub delivered_notifications: usize,
     pub stopped_with_no_live_worlds: bool,
@@ -1579,6 +1584,13 @@ impl NativeLevelBatchDriver {
             counts.rounds += 1;
             counts.world_steps += step.worlds_stepped;
             counts.policy_rows += step.policy_agents_inferred;
+            if step.parallel_physics_workers > 1 {
+                counts.parallel_physics_rounds += 1;
+                counts.parallel_physics_max_workers = counts.parallel_physics_max_workers
+                    .max(step.parallel_physics_workers);
+                counts.parallel_physics_worker_nanos +=
+                    step.parallel_physics_worker_nanos;
+            }
             if step.phase_timing_sampled {
                 counts.sampled_rounds += 1;
                 counts.sampled_policy_rows += step.policy_agents_inferred;
