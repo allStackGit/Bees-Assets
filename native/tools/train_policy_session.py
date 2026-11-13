@@ -127,7 +127,7 @@ def existing_rounds(root, initial_manifest, initial_checkpoint, learner_slot):
     return completed, manifest, checkpoint, next_attempt
 
 
-def verify_evaluation(directory, manifest_sha, source_sha, learner_side):
+def verify_evaluation(directory, manifest_sha, source_sha, learner_side, policy_seed):
     result = read_json(directory / "evaluation-result.json")
     summary_path = directory / "rollout-summary.json"
     if (result.get("kind") != "native_policy_evaluation_complete" or
@@ -135,6 +135,7 @@ def verify_evaluation(directory, manifest_sha, source_sha, learner_side):
             result.get("model_manifest_sha256") != manifest_sha or
             result.get("source_run_config_sha256") != source_sha or
             result.get("learner_side") != learner_side or
+            result.get("policy_sampling_seed") != policy_seed or
             result.get("rollout_summary_sha256") != file_sha256(summary_path)):
         raise ValueError(f"holdout evaluation does not match its pinned inputs: {directory}")
     summary = read_json(summary_path)
@@ -166,20 +167,22 @@ def ensure_evaluation(round_directory, manifest, recipe):
         raise ValueError(f"more than one completed evaluation for {round_directory}")
     if completed:
         return verify_evaluation(completed[0], manifest_sha, source_sha,
-                                 recipe["evaluation_side"])
+                                 recipe["evaluation_side"], recipe["evaluation_policy_seed"])
     attempt = max((number for number, _ in attempts), default=0) + 1
     if attempt > 999:
         raise ValueError("holdout evaluation exhausted its attempt numbers")
     output = round_directory / f"evaluation-attempt-{attempt:03d}"
     command = [sys.executable, str(Path(__file__).with_name("evaluate_policy.py")),
                eval_source["path"], str(manifest), str(output),
-               "--learner-side", str(recipe["evaluation_side"])]
+               "--learner-side", str(recipe["evaluation_side"]),
+               "--policy-seed", str(recipe["evaluation_policy_seed"])]
     if recipe["rollout_binary"] is not None:
         command.extend(["--rollout-binary", recipe["rollout_binary"]["path"]])
     print(json.dumps({"kind":"native_training_session_evaluation_started",
                       "round_directory":str(round_directory), "attempt":attempt}),flush=True)
     launch_round(command, round_directory / f"evaluation-attempt-{attempt:03d}.log")
-    return verify_evaluation(output, manifest_sha, source_sha, recipe["evaluation_side"])
+    return verify_evaluation(output, manifest_sha, source_sha,
+                             recipe["evaluation_side"], recipe["evaluation_policy_seed"])
 
 
 def progress_snapshot(completed, target, evaluations=None):
@@ -262,6 +265,8 @@ def main():
                         help="independent fixed-seed Levels evaluated after each completed update")
     parser.add_argument("--evaluation-side", type=int,
                         help="source side 1 or 2 whose victories are measured")
+    parser.add_argument("--evaluation-policy-seed", type=int, default=0,
+                        help="fixed policy action-sampling RNG seed during holdout evaluation")
     parser.add_argument("--learner-slot", type=int)
     parser.add_argument("--rollout-binary", type=Path)
     parser.add_argument("--rollout-workers", type=int)
@@ -278,6 +283,9 @@ def main():
     if ((args.evaluation_run_config is None) != (args.evaluation_side is None) or
             args.evaluation_side is not None and args.evaluation_side not in (1, 2)):
         parser.error("specify both --evaluation-run-config and --evaluation-side 1 or 2")
+    if (not 0 <= args.evaluation_policy_seed < (1 << 63) or
+            args.evaluation_run_config is None and args.evaluation_policy_seed != 0):
+        parser.error("--evaluation-policy-seed requires a holdout and a nonnegative int63 seed")
     if (args.seed_offset_start < 0 or args.seed_offset_stride < 1 or
             args.seed_offset_start + (args.rounds - 1) * args.seed_offset_stride >= (1 << 64)):
         parser.error("session seed offsets must be distinct and fit uint64")
@@ -334,6 +342,7 @@ def main():
     if args.evaluation_run_config is not None:
         recipe["evaluation_config"] = pinned(args.evaluation_run_config)
         recipe["evaluation_side"] = args.evaluation_side
+        recipe["evaluation_policy_seed"] = args.evaluation_policy_seed
     root = args.output_dir.resolve()
     if args.resume:
         if not root.is_dir():
