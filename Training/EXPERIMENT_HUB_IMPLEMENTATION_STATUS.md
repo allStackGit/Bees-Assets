@@ -1,6 +1,6 @@
 # Experiment Hub implementation status
 
-Last updated: 2026-11-12. Development branch: `feat/hub-resource-experiments-20261110`.
+Last updated: 2026-11-13. Hub integration base: `feat/hub-resource-experiments-20261110`.
 This is a compact continuation index; `Training/EXPERIMENT_HUB.md` describes the detailed operator contracts. Update this file when a **substantive capability** is completed or a real development gap is established; do not append per-commit activity or speculative TODOs.
 
 ## Scope boundaries
