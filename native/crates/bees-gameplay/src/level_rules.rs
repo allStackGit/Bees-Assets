@@ -173,6 +173,31 @@ impl NativePlayerChaseMeasurements {
     }
 }
 
+/// Current episode's authored mission-queue work, never host-lifetime
+/// cumulative rates. Gauges and counters share one Level-owned lifetime.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize)]
+pub struct NativeScriptedQueueMeasurements {
+    pub active_queues: usize,
+    pub pending_orders: usize,
+    pub commands_started: u64,
+    pub orders_skipped_target_gone: u64,
+    pub queues_completed: u64,
+    pub queues_cancelled: u64,
+    pub queues_repeated: u64,
+}
+
+impl NativeScriptedQueueMeasurements {
+    pub fn merge(&mut self, other: Self) {
+        self.active_queues += other.active_queues;
+        self.pending_orders += other.pending_orders;
+        self.commands_started += other.commands_started;
+        self.orders_skipped_target_gone += other.orders_skipped_target_gone;
+        self.queues_completed += other.queues_completed;
+        self.queues_cancelled += other.queues_cancelled;
+        self.queues_repeated += other.queues_repeated;
+    }
+}
+
 /// Source-facing gameplay inputs for timed Hive Mind commands.
     /// Must be refreshed after the combat/roster step from live Level
     /// geometry, preserving Level.State.Squads order. Command activation
@@ -216,6 +241,10 @@ pub trait NativeLevelCommandContext {
         _random: &mut bees_sim::simulation::RandomStream,
         _completed_tick: u64,
     ) -> Result<u64, NativeLevelEventError> { Ok(0) }
+
+    fn scripted_queue_measurements(&self) -> NativeScriptedQueueMeasurements {
+        NativeScriptedQueueMeasurements::default()
+    }
 
     fn player_chase_measurements(&self) -> NativePlayerChaseMeasurements {
         NativePlayerChaseMeasurements::default()

@@ -490,6 +490,9 @@ pub enum NativeLevelDriverError {
 pub struct NativeRuntimeStatus {
     pub simulation: Measurements,
     pub inference: NativeInferenceMeasurements,
+    /// Episode-local authored scripted mission queue work and remaining
+    /// pending orders. Collected only when a status snapshot is requested.
+    pub scripted_queues: crate::level_rules::NativeScriptedQueueMeasurements,
     /// Episode-local live-roster selection work. These counts reset with
     /// policy identity on world recycle; never treat them as host lifetime rates.
     pub observation_candidates: bees_sim::combat_perception_bridge::LiveShipCandidateMeasurements,
@@ -1157,6 +1160,7 @@ impl NativeLevelBatchDriver {
         let mut status = NativeRuntimeStatus {
             simulation: simulation.measurements(),
             inference: self.inference.measurements(),
+            scripted_queues: Default::default(),
             observation_candidates: Default::default(),
             total_worlds: simulation.world_count(),
             running_worlds: 0,
@@ -1209,6 +1213,9 @@ impl NativeLevelBatchDriver {
             let events = &world.state.events;
             status.observation_candidates.merge(
                 slot.perception.candidate_measurements(),
+            );
+            status.scripted_queues.merge(
+                world.state.metadata.scripted_queue_measurements(),
             );
             status.navigation_jobs_completed += world.state.navigation_jobs_completed();
             let (waiting, queue_slots) = world.state.combat.navigation_queue_gauges();

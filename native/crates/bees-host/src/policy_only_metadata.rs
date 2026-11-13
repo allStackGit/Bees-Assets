@@ -22,6 +22,7 @@ use bees_gameplay::level_host::{
 use bees_gameplay::level_rules::{
     NativeLevelRewardMetadata, NativeLevelCommandContext,
     NativePlayerChaseMeasurements, NativePlayerControlGauges,
+    NativeScriptedQueueMeasurements,
 };
 use bees_gameplay::perception_world::NativeLevelPerceptionInputs;
 use bees_gameplay::squads::NativeSquadRoster;
@@ -162,6 +163,7 @@ pub struct NativePolicyOnlyMetadata {
     pub(crate) reinforcements: std::collections::VecDeque<crate::reinforcements::ReinforcementWave>,
     scripted_queues: Vec<scripted::NativeScriptedQueueState>,
     scripted_members: Vec<bees_sim::squad_movement::SquadFormationMember>,
+    scripted_counts: NativeScriptedQueueMeasurements,
     /// One source-second chase clock shared by the player's starting
     /// squads, whose Unity timers are all armed at Squad.Setup.
     chase_elapsed_seconds: f32,
@@ -290,6 +292,7 @@ impl NativePolicyOnlyMetadata {
             reinforcements: std::collections::VecDeque::new(),
             scripted_queues: Vec::new(),
             scripted_members: Vec::new(),
+            scripted_counts: NativeScriptedQueueMeasurements::default(),
             chase_elapsed_seconds: 0.0,
             chase_measurements: NativePlayerChaseMeasurements::default(),
         })
@@ -470,6 +473,10 @@ impl NativeLevelCommandContext for NativePolicyOnlyMetadata {
         self.advance_source_scripted(world, events, random, completed_tick)
     }
 
+    fn scripted_queue_measurements(&self) -> NativeScriptedQueueMeasurements {
+        self.current_scripted_queue_measurements()
+    }
+
     fn next_reinforcement_tick(&self) -> Option<u64> {
         self.reinforcements.front().map(|wave| wave.scheduled_tick())
     }
@@ -570,7 +577,10 @@ impl NativeLevelCommandContext for NativePolicyOnlyMetadata {
     }
 
     fn player_squad_retired(&mut self, owner: SquadLifetime) {
+        let before = self.scripted_queues.len();
         self.scripted_queues.retain(|queue| queue.owner != owner);
+        self.scripted_counts.queues_cancelled +=
+            (before - self.scripted_queues.len()) as u64;
         // A dead source squad cannot reappear under the same lifetime.
         // Drop mutable UI/command preferences without touching original
         // fleet, reward, sight or discovery history.
@@ -892,7 +902,10 @@ impl NativeLevelPlayerContext for NativePolicyOnlyMetadata {
         // Unity FinalizeUserCommand clears all pending scripted commands
         // before replacing the current command. The shared event director
         // handles finalizing the current scripted command exactly once.
+        let before = self.scripted_queues.len();
         self.scripted_queues.retain(|queue| queue.owner != owner);
+        self.scripted_counts.queues_cancelled +=
+            (before - self.scripted_queues.len()) as u64;
         Ok(())
     }
 }

@@ -119,6 +119,17 @@ impl NativePolicyOnlyMetadata {
         Ok(())
     }
 
+    pub(super) fn current_scripted_queue_measurements(
+        &self,
+    ) -> bees_gameplay::level_rules::NativeScriptedQueueMeasurements {
+        let mut counts = self.scripted_counts;
+        counts.active_queues = self.scripted_queues.len();
+        counts.pending_orders = self.scripted_queues.iter()
+            .map(|state| state.orders.len().saturating_sub(state.cursor))
+            .sum();
+        counts
+    }
+
     pub(super) fn advance_source_scripted(
         &mut self, world: &mut CombatWorld,
         events: &mut NativeLevelEventProcessor, random: &mut RandomStream,
@@ -131,6 +142,7 @@ impl NativePolicyOnlyMetadata {
             let owner = self.scripted_queues[index].owner;
             if events.roster().get(owner).is_none() {
                 self.scripted_queues.remove(index);
+                self.scripted_counts.queues_cancelled += 1;
                 continue;
             }
             if events.commands().has_active(owner) {
@@ -141,9 +153,11 @@ impl NativePolicyOnlyMetadata {
             if state.cursor == state.orders.len() {
                 if !state.repeat {
                     self.scripted_queues.remove(index);
+                    self.scripted_counts.queues_completed += 1;
                     continue;
                 }
                 self.scripted_queues[index].cursor = 0;
+                self.scripted_counts.queues_repeated += 1;
             }
             let order = self.scripted_queues[index].orders[self.scripted_queues[index].cursor];
             let source = *self.player.commands.get(&owner)
@@ -159,6 +173,7 @@ impl NativePolicyOnlyMetadata {
                     // unavailable prepared order without credit or a
                     // second physical action.
                     self.scripted_queues[index].cursor += 1;
+                    self.scripted_counts.orders_skipped_target_gone += 1;
                     index += 1;
                     continue;
                 };
@@ -199,6 +214,7 @@ impl NativePolicyOnlyMetadata {
                 return Err(NativeLevelEventError::Commands(GameCommandError::MissingCombatSnapshot));
             }
             self.scripted_queues[index].cursor += 1;
+            self.scripted_counts.commands_started += 1;
             started += 1;
             index += 1;
         }
