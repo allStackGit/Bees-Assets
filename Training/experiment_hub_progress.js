@@ -91,6 +91,8 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             reported.simulation_match_steps_per_second);
         for(const name of ['training_useful_steps_per_second',
             'training_concurrency_limit','training_concurrency_next_limit',
+            'training_tuner_adjustments','training_tuner_accepted',
+            'training_tuner_settled',
             'training_cpu_parallelism','training_queue_max_seconds',
             'training_finish_gap_seconds','training_last_finished_worker'])
             retain(name,reported[name]);
@@ -153,7 +155,12 @@ class BottleneckEvidence {
                 derived[name]={value,unit};
         };
         const history=()=>{
-            const identity=String(job.dispatch_id||'')+':'+progress.segment_id;
+            const version=metrics.training_environment_version;
+            const environment=(version?.unit==='count'&&
+                Number.isSafeInteger(version.value))
+                ?':environment-'+version.value:'';
+            const identity=String(job.dispatch_id||'')+':'+progress.segment_id+
+                environment;
             const at=Date.parse(progress.source_modified_at);
             let prior=this.byJob.get(job.id);
             if(!prior||prior.identity!==identity||at<prior.lastAt) {
