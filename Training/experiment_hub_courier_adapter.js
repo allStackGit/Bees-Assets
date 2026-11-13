@@ -10,9 +10,12 @@ const {evaluationReader,modelFileSha256}=require('./experiment_hub_evaluation');
 const UUID=/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
 const COURIER_COUNT_FIELDS=new Set([
     'training_profile_round','training_lineage_workers',
-    'training_slowest_worker','training_simulated_steps',
-    'training_useful_steps','training_rejected_workers',
-    'training_concurrency_limit']);
+    'training_slowest_worker','training_last_finished_worker',
+    'training_simulated_steps','training_useful_steps',
+    'training_rejected_workers',
+    'training_concurrency_limit','training_concurrency_next_limit',
+    'training_tuner_adjustments','training_tuner_accepted',
+    'training_tuner_settled']);
 const WINDOWS_ENTRY=[
     'import os, runpy, sys',
     "sys.stdout = open(os.devnull, 'w', encoding='utf-8')",
