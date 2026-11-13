@@ -74,6 +74,84 @@ function hubGenericMetricCatalog(runs) {
     return [...types].sort(([a],[b])=>a.localeCompare(b))
         .map(([key,units])=>({key,units:[...units]}));
 }
+
+function hubMetricDescription(name,units=[]) {
+    const known={
+        training_score_rate:'Training score per completed match, counting wins as one and draws as one-half. Opponent changes can affect this rate.',
+        training_win_rate:'Fraction of completed training matches won. It is not a fixed-opponent benchmark.',
+        training_completed_matches:'Count of completed matches contributing training outcomes. Sample count is not learning quality.',
+        training_mean_score_margin:'Average score advantage over the opponent in observed matches. Positive values favor the trained team.',
+        training_wins:'Count of training matches won. Interpret alongside the number and difficulty of opponents.',
+        training_losses:'Count of training matches lost. Changing opponents can change this count.',
+        training_draws:'Count of drawn training matches. Draws contribute half a point to the training score rate.',
+        training_mean_score:'Average score obtained in observed matches. Comparability depends on game rules and opponents.',
+        food_gathered_exact:'Food gathered according to the simulation’s direct accounting. Consider game duration and available food.',
+        combat_kills_exact:'Combat kills directly recorded by the simulation. This alone does not establish match success.',
+        ant_decisions_per_second:'Ant policy decisions per second. This measures training throughput rather than model quality.',
+        engine_steps_per_second:'Simulation engine steps per second. One step can include multiple ant decisions.',
+        total_ppo_updates:'Completed PPO optimization updates. Update count is not evidence of improving policy strength.',
+        update_wall_time:'Wall-clock duration of a PPO update. Lower sustained times indicate faster updates.',
+        active_training_time:'Trainer-reported active training time, which can exclude pauses. It is not derived from Hub heartbeat time.',
+        elapsed_training_seconds:'Trainer-reported elapsed training seconds. This is not inferred from Hub observation timestamps.',
+        training_recent_mean_completed_lifespan:'Average lifespan of recently completed courier or colony lives. Still-living subjects do not yet contribute to this average.',
+        training_recent_deaths:'Number of deaths or extinctions in the recent training lifespan window. This indicates the lifespan sample size.',
+        training_mean_active_age:'Average age of currently living training couriers. A living episode may span several policy updates.',
+        training_oldest_active_age:'Oldest currently living courier or colony age. Extreme lifespans do not represent the average.',
+        training_active_couriers:'Number of currently active training couriers. Population alone is not a quality score.',
+        training_mean_active_colony_age:'Mean age of living training colonies. Compare under similar task settings.',
+        training_active_colonies:'Count of currently active colonies. It does not indicate how well they are performing.',
+        selection_candidate_survival_score:'Survival-based qualification score for a screened candidate. Selection scenarios can differ across rounds.',
+        selection_incumbent_survival_score:'Qualification score for the existing champion. Compare against candidates evaluated under matching conditions.',
+        selection_champion_promoted:'Whether the newly evaluated candidate replaced the incumbent champion. Promotion is not an independent measure of generalization.',
+        selection_evaluation_round:'Training round at which the candidate was evaluated. This locates the evaluation rather than measuring quality.',
+        selection_candidate_mean_deliveries:'Average food deliveries per evaluated courier life or colony. More completed deliveries generally indicate better food-return behavior.',
+        selection_candidate_pickup_rate:'Fraction of evaluated lives that pick up food. Picking up food does not guarantee delivery.',
+        selection_candidate_mean_steps_per_delivery:'Evaluated steps divided by completed food deliveries. Lower values indicate more efficient delivery; undefined if there were no deliveries.',
+        selection_candidate_survival_rate:'Fraction of evaluation lives still alive at the selection horizon. This is bounded survival, not indefinite survival.',
+        selection_candidate_mean_lifespan:'Mean observed lifespan in selection evaluation. Lives surviving the horizon are right-censored.',
+        selection_candidate_gross_energy_per_step:'Net delivery energy minus energy costs per evaluated step. Positive values suggest more sustainable behavior under the configured rules.',
+        selection_candidate_mean_feedings:'Average feeding events per evaluated colony. Track with food collection, births, and survival.',
+        selection_candidate_mean_births:'Average births per evaluated colony. Track alongside food supply and colony survival.',
+        benchmark_round:'Training round of the last fixed reporting benchmark. These results may be older than the current training checkpoint.',
+        benchmark_survival_rate:'Survival fraction in a fixed reporting evaluation. Compare results only under matching benchmark conditions.',
+        benchmark_mean_lifespan:'Mean observed lifespan in a fixed reporting benchmark. Survivors at the horizon are right-censored.',
+        benchmark_mean_deliveries:'Average completed food deliveries per fixed reporting evaluation. This better controls scenario variation than rotating selection evaluations.',
+        benchmark_pickup_rate:'Fraction of benchmark lives that collected food. Food collection is separate from successful delivery.',
+        benchmark_mean_steps_per_delivery:'Steps per completed food delivery in the reporting benchmark. Lower is generally more efficient.',
+        benchmark_gross_energy_per_step:'Net energy per step in the reporting benchmark. Interpret using the benchmark’s energy rules.',
+        benchmark_mean_feedings:'Average colony feedings in the reporting benchmark. This reflects food consumption at home.',
+        benchmark_mean_births:'Average colony births in the reporting benchmark. Interpret with survival and food availability.',
+        job_cpu_cores:'Observed CPU core-equivalents consumed by the managed job. This may be less than its leased CPU capacity.',
+        job_cpu_lease_utilization_pct:'CPU utilization relative to the job’s allocated quota. High utilization alone does not establish useful training progress.',
+        job_memory_mb:'Memory used by the supervised job, in MiB. This is not total machine memory.',
+        job_memory_lease_utilization_pct:'Memory used as a percentage of the job’s configured limit. High values can indicate limited headroom.',
+        job_cpu_throttled_seconds:'Accumulated CPU quota throttling time. Heavy throttling may limit training throughput.',
+        job_cpu_throttle_events:'Count of CPU quota throttling events. Interpret together with CPU allocation and timing.',
+        host_cpu_busy_pct:'Overall host CPU busy percentage, including other workloads. It is not isolated job utilization.',
+        host_gpu_busy_pct:'Utilization of the physical GPU. This is host-wide, not isolated to a job.',
+        host_gpu_vram_mb:'Used VRAM on the physical GPU, including other processes. This is not the job’s exclusive memory usage.',
+        host_gpu_temperature_c:'GPU temperature reported by the hardware sensor. Temperature alone cannot establish throttling.',
+        host_gpu_hotspot_temperature_c:'GPU hotspot or junction temperature. Interpretation requires device-specific limits.',
+        host_gpu_power_w:'Power consumption of the physical GPU. It is not isolated job energy use.',
+        collection_seconds:'Time spent collecting training experience. Compare with optimization time to identify bottlenecks.',
+        optimization_seconds:'Time spent optimizing the model. A high share may indicate learner-bound throughput.',
+        ppo_metric_readback_seconds:'Time spent reading PPO metrics back from the device. GPU synchronization may contribute.',
+        loss:'Model training loss reported by the optimizer. A lower loss does not necessarily mean better gameplay.',
+        policy_loss:'Policy optimization objective reported by the trainer. It is not a direct measure of game performance.',
+        value_loss:'Value-function training loss. Interpret alongside reward and independent evaluations.',
+        entropy:'Entropy of the policy’s action distribution. Lower entropy can indicate less exploration, not necessarily stronger play.',
+        mean_reward:'Average training reward. The interpretation depends on the task and reward definition.',
+    };
+    if(Object.hasOwn(known,name))return known[name];
+    const gpu=/^host_gpu_(\d+)_(busy_pct|used_vram_mb|temperature_c|hotspot_temperature_c|power_w)$/.exec(name);
+    if(gpu)return 'Reports '+gpu[2].replace(/_/g,' ')+' of physical GPU '+gpu[1]+'. This is host-wide hardware telemetry, not isolated job usage.';
+    const collector=/^collector_(\d+)_(.+)$/.exec(name);
+    if(collector)return 'Reports '+collector[2].replace(/_/g,' ')+' for rollout collector '+collector[1]+'. Use this to inspect collector throughput or overhead, not policy strength.';
+    const display=name.replace(/_/g,' ');
+    const unit=units.length?' (units: '+units.join('/')+')':'';
+    return 'Reports '+display+unit+' as published by the trainer or machine agent. This diagnostic value alone does not establish learning quality.';
+}
+
 function hubMetricValue(point,key) {
     return point.metrics?.[key.slice(7)]?.value;
 }
@@ -1154,6 +1232,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         check.disabled=!check.checked&&selectionLimit!==null&&
                             source.selectedOptions.length>=selectionLimit;
                         check.dataset.metricValue=option.value;
+                        check.title=option.dataset.description||'';
+                        label.title=check.title;
                         const key=option.value.replace(/^metric:/,'');
                         const name=document.createElement('span');
                         name.textContent=key;
@@ -1193,7 +1273,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     remove.className='hub-metric-selected-chip';
                     remove.textContent=metric+' ×';
                     remove.setAttribute('aria-label','Remove '+metric+' from selected metrics');
-                    remove.title='Remove '+metric;
+                    remove.title=(option.dataset.description||'')+
+                        '\nClick to remove '+metric;
                     remove.addEventListener('click',()=>{
                         option.selected=false;
                         source.dispatchEvent(new Event('change',{bubbles:true}));
@@ -1376,6 +1457,8 @@ document.addEventListener('DOMContentLoaded', () => {
         metricSelect.replaceChildren(...metricOptions.map(m=>{
             const option=new Option(m.label,m.key);
             const key=m.key.slice(7);
+            option.dataset.description=hubMetricDescription(key,m.units);
+            option.title=option.dataset.description;
             option.dataset.category=knownLearningMetrics.includes(key)
                 ?'Learning outcomes':knownPerformanceMetrics.includes(key)
                     ?'Performance and resources':'Other recorded metrics';
@@ -2418,9 +2501,10 @@ document.addEventListener('DOMContentLoaded', () => {
         select.replaceChildren(...all.map(key=>{
             const option=new Option(key+(observed.has(key)
                 ?' · recorded':' · not yet observed'),key);
-            option.title=observed.has(key)
+            option.dataset.description=hubMetricDescription(key);
+            option.title=option.dataset.description+'\n'+(observed.has(key)
                 ?'This metric has been published by a job in this project.'
-                :'Selecting a metric does not install missing project instrumentation.';
+                :'Selecting a metric does not install missing project instrumentation.');
             option.selected=prior.has(key);
             option.dataset.category=knownLearningMetrics.includes(key)
                 ?'Learning outcomes':knownPerformanceMetrics.includes(key)
