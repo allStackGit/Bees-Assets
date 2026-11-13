@@ -284,7 +284,7 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
         if(!overrides||typeof overrides!=='object'||Array.isArray(overrides)||
             Object.keys(overrides).length>128)
             throw Error('Courier Design overrides must be a bounded object.');
-        const environment={},training={};
+        const environment=Object.create(null),training=Object.create(null);
         for(const [key,value] of Object.entries(overrides)) {
             if(!key.startsWith('training.')) { environment[key]=value;continue; }
             const field=editableTraining.get(key);
