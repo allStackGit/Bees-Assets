@@ -83,8 +83,10 @@ def source_inputs(suite_file: Path, suite: dict):
             raise ValueError("Native evaluation Levels must route real policy-controlled ships.")
         for ship in snapshot["ships"]:
             policy = ship.get("policy")
-            if not policy:
+            if policy is None:
                 continue
+            if not isinstance(policy, dict):
+                raise ValueError("Native evaluation has an invalid source policy controller.")
             model_slot = routed.get(str(policy.get("team_id")))
             if ship.get("side") == suite["learner_side"]:
                 if model_slot != suite["learner_slot"]:
@@ -275,10 +277,22 @@ def main():
         if not UUID.fullmatch(args.dispatch_id):
             raise ValueError("Invalid Hub native Bees dispatch identity.")
         suite = read_suite(args.suite)
-        with tempfile.TemporaryDirectory(prefix="native-bees-eval-", dir=args.scratch.resolve(strict=True)) as directory:
+        checkpoint = args.checkpoint.resolve(strict=True)
+        manifest = args.candidate_manifest.resolve(strict=True)
+        scratch = args.scratch.resolve(strict=True)
+        receipts = args.receipt_root.resolve(strict=True)
+        references = source_inputs(args.suite.resolve(strict=True), suite)
+        protected = [checkpoint.parent, manifest.parent, *[p.parent for p in references]]
+        if (not scratch.is_dir() or not receipts.is_dir() or
+                scratch == receipts or
+                scratch.is_relative_to(receipts) or receipts.is_relative_to(scratch) or
+                any(scratch.is_relative_to(root) or root.is_relative_to(scratch) or
+                    receipts.is_relative_to(root) or root.is_relative_to(receipts)
+                    for root in protected)):
+            raise ValueError("Independent evaluation scratch and receipts must be outside training and scenario artifacts.")
+        with tempfile.TemporaryDirectory(prefix="native-bees-eval-", dir=scratch) as directory:
             wins = evaluate(
-                args.checkpoint.resolve(strict=True), args.checkpoint_sha256,
-                args.candidate_manifest.resolve(strict=True),
+                checkpoint, args.checkpoint_sha256, manifest,
                 args.suite.resolve(strict=True), suite, Path(directory),
                 args.rollout_binary,
             )
@@ -289,7 +303,7 @@ def main():
             "checkpoint_sha256": args.checkpoint_sha256,
             "trials": suite["trials"], "successes": wins,
         }
-        print(publish(args.receipt_root.resolve(strict=True), result))
+        print(publish(receipts, result))
         print(f"Native Bees fixed-reference victories: {wins}/{suite['trials']}")
         return 0
     except (OSError, ValueError, RuntimeError, KeyError, TypeError) as exc:
