@@ -10,6 +10,7 @@ The Hub's independent evaluator scheduler publishes the evaluation receipt.
 import argparse
 import hashlib
 import json
+import os
 from pathlib import Path
 import sys
 import tempfile
@@ -175,7 +176,99 @@ def evaluate(checkpoint: Path, checkpoint_digest: str, source_manifest: Path,
     return receipt["side_victories"]
 
 
+def create_suite_main(arguments) -> int:
+    """Freeze a portable suite definition from the actual native run inputs."""
+    parser = argparse.ArgumentParser(
+        description="Create an immutable native Bees Hub benchmark suite",
+    )
+    parser.add_argument("--suite-id", required=True)
+    parser.add_argument("--run-config", type=Path, required=True,
+                        help="fixed-seed native holdout-run.json from bootstrap")
+    parser.add_argument("--reference-manifest", type=Path, required=True,
+                        help="initial fixed reference policy manifest.json")
+    parser.add_argument("--rollout-binary", type=Path, required=True)
+    parser.add_argument("--learner-slot", type=int, required=True)
+    parser.add_argument("--learner-side", type=int, required=True)
+    parser.add_argument("--policy-seed", type=int, default=0)
+    parser.add_argument("--output", type=Path, required=True)
+    args = parser.parse_args(arguments)
+    if not SUITE_ID.fullmatch(args.suite_id):
+        parser.error("invalid suite ID")
+    run = args.run_config.resolve(strict=True)
+    reference = args.reference_manifest.resolve(strict=True)
+    binary = args.rollout_binary.resolve(strict=True)
+    output = args.output.resolve()
+    config = json.loads(read_bounded(run, 1024 * 1024))
+    if (not isinstance(config, dict) or not isinstance(config.get("native_stage"), dict) or
+            not isinstance(config.get("levels"), list) or not config["levels"] or
+            not isinstance(config.get("policy_worker"), str)):
+        parser.error("requires a native-authored policy run with fixed seeded Levels")
+    scenes = {
+        (run.parent / level["scene"]).resolve(strict=True)
+        for level in config["levels"]
+    }
+    if len(scenes) != 1:
+        parser.error("use one physical native scene per independent suite")
+    episodes = config.get("episodes_per_world", 1)
+    if type(episodes) is not int or not 1 <= episodes <= 10000:
+        parser.error("native evaluation episodes_per_world must be 1..10000")
+    def relative(file):
+        try:
+            return os.path.relpath(file, output.parent)
+        except ValueError:
+            # Windows may place project and evaluator configuration on
+            # separate drives. The exact bytes remain pinned regardless.
+            return str(file)
+    worker = (run.parent / config["policy_worker"]).resolve(strict=True)
+    suite = {
+        "suite_id": args.suite_id,
+        "run_config": relative(run),
+        "run_config_sha256": file_sha256(run),
+        "scene_sha256": file_sha256(next(iter(scenes))),
+        "reference_manifest": relative(reference),
+        "reference_manifest_sha256": file_sha256(reference),
+        "policy_worker_sha256": normalized_python_source_sha256(worker),
+        "rollout_binary_sha256": file_sha256(binary),
+        "learner_slot": args.learner_slot,
+        "learner_side": args.learner_side,
+        "policy_seed": args.policy_seed,
+        "trials": len(config["levels"]) * episodes,
+    }
+    if (output.exists() or not output.parent.is_dir() or
+            not 1 <= suite["trials"] <= 10000):
+        parser.error("suite output must be new and trial count must be 1..10000")
+    # Validate its ABI/side and physical source contract before publishing.
+    read_suite_data = dict(suite)
+    if not 0 <= args.learner_slot < (1 << 32) or args.learner_side not in (1, 2):
+        parser.error("invalid learner slot or physical side")
+    # This helper reads only existing source inputs; no evaluation is run.
+    # The output path is deliberately not created until the suite is valid.
+    source_inputs_for_new_suite(output, read_suite_data)
+    with output.open("x", encoding="utf-8", newline="\n") as stream:
+        json.dump(suite, stream, indent=2)
+        stream.write("\n")
+        stream.flush()
+        os.fsync(stream.fileno())
+    print(json.dumps({
+        "suite": str(output), "suite_id": suite["suite_id"],
+        "suite_sha256": suite_digest(suite), "trials": suite["trials"],
+    }, sort_keys=True))
+    return 0
+
+
+def source_inputs_for_new_suite(output: Path, suite: dict) -> None:
+    # source_inputs normally takes a published suite; its path is only the
+    # base for resolving approved relative file references, never suite data.
+    source_inputs(output.parent / "existing-sibling.json", suite)
+
+
 def main():
+    if len(sys.argv) >= 2 and sys.argv[1] == "create-suite":
+        try:
+            return create_suite_main(sys.argv[2:])
+        except (OSError, ValueError, RuntimeError, KeyError, TypeError) as exc:
+            print(f"Native Bees suite creation failed: {exc}", file=sys.stderr)
+            return 1
     parser = argparse.ArgumentParser(description=__doc__)
     for key in ("checkpoint", "candidate-manifest", "suite", "rollout-binary",
                 "scratch", "receipt-root"):
