@@ -4881,7 +4881,7 @@ class ExperimentHub {
         if(selectedMetrics!==null&&(!Array.isArray(selectedMetrics)||
             selectedMetrics.length>96||
             selectedMetrics.some(k=>typeof k!=='string'||
-                !/^[a-z][a-z0-9_]{0,39}$/.test(k))||
+                !/^[a-z][a-z0-9_]{0,63}$/.test(k))||
             new Set(selectedMetrics).size!==selectedMetrics.length))
             throw Error('Select up to 96 distinct project metric names.');
 
