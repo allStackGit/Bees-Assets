@@ -274,6 +274,10 @@ def checked_manifest(path: Path, expected_digest: bytes | None = None):
     if not isinstance(configurations, list) or not configurations:
         raise ValueError("manifest must contain loaded model slots")
     policies = {}
+    # Several independently routed teams can share one immutable checkpoint.
+    # Cache by all backend settings and verified bytes, not the slot number
+    # or artifact path, so distinct devices/providers never share a model.
+    loaded_models = {}
     for config in configurations:
         if not isinstance(config, dict):
             raise ValueError("invalid model slot configuration")
@@ -300,14 +304,22 @@ def checked_manifest(path: Path, expected_digest: bytes | None = None):
             raise ValueError("model requires a canonical lowercase SHA-256 digest")
         if file_sha256(model_file) != expected_sha256:
             raise ValueError(f"model artifact content changed: slot {slot}")
-        if backend == "torchscript":
-            model = TorchScriptPolicy(model_file, config)
-        elif backend == "onnx":
-            model = OnnxPolicy(model_file, config)
-        elif backend == "mlagents":
-            model = MlagentsPolicy(model_file, config)
-        else:
+        if backend not in ("torchscript", "onnx", "mlagents"):
             raise ValueError(f"unsupported native model backend: {backend}")
+        settings = {
+            key: value for key, value in config.items()
+            if key not in ("slot", "path", "sha256")
+        }
+        identity = (expected_sha256, json.dumps(settings, sort_keys=True))
+        model = loaded_models.get(identity)
+        if model is None:
+            if backend == "torchscript":
+                model = TorchScriptPolicy(model_file, config)
+            elif backend == "onnx":
+                model = OnnxPolicy(model_file, config)
+            else:
+                model = MlagentsPolicy(model_file, config)
+            loaded_models[identity] = model
         # Libraries reopen model paths during deserialization. Detect an
         # artifact replaced between the first verified read and actual
         # model load, rather than attributing different weights to the
@@ -362,26 +374,42 @@ def collect_predictions(
     continuous = np.empty((rows, CONTINUOUS), dtype="<f4")
     discrete = np.empty((rows, DISCRETE), dtype=np.uint8)
     behavior = None
-    # Most short-range runs use a single policy slot for both factions.
-    # Avoid sorting model IDs, allocating N row indices and scattering
-    # N actions when the whole batch already belongs to one loaded model.
+
+    # One inference pass per distinct resident model, not per routing slot.
+    # An initial two-team PPO bootstrap deliberately has separate slot IDs
+    # pointing at identical weights: this makes both teams one GPU/CPU batch.
+    # Distinct checkpoints and different device/provider settings keep their
+    # independent execution and actor sampling streams.
     single_slot = bool(np.all(slots == slots[0]))
     unique_slots = (slots[:1] if single_slot else np.unique(slots))
+    groups = {}
     for slot in unique_slots:
         slot_id = int(slot)
         if slot_id not in policy_map:
             raise ValueError(f"no genuine model loaded for slot {slot_id}")
         model = policy_map[slot_id]
-        if single_slot:
+        identity = id(model)
+        if identity not in groups:
+            groups[identity] = (model, [])
+        groups[identity][1].append(slot_id)
+    fully_sampled = all(isinstance(model, MlagentsPolicy)
+                        for model, _ in groups.values())
+
+    for model, model_slots in groups.values():
+        if len(groups) == 1:
+            # All rows use the same loaded checkpoint. Keep their actual
+            # source order and borrow the entire contiguous observation
+            # matrix rather than constructing per-slot gathered copies.
             indices = slice(None)
             count = rows
             sub_obs, sub_mask = observations, allowed
         else:
-            indices = np.flatnonzero(slots == slot)
+            matching = (slots == model_slots[0] if len(model_slots) == 1
+                        else np.isin(slots, model_slots))
+            indices = np.flatnonzero(matching)
             count = len(indices)
-            # A single arena often presents a contiguous block per slot.
-            # A slice borrows its wide observation rows instead of gathering
-            # copies. Interleaved batches retain their original gather order.
+            # Contiguous model rows borrow their existing memory even when
+            # they arrive through several distinct routing slots.
             first, last = int(indices[0]), int(indices[-1])
             if last - first + 1 == count:
                 indices = slice(first, last + 1)
@@ -398,17 +426,9 @@ def collect_predictions(
             if stats.shape != (count, CONTINUOUS * 2 + DISCRETE) or not np.isfinite(stats).all():
                 raise ValueError("invalid sampled action or behavior log probabilities")
             if behavior is None:
-                # A batch may combine a trainable ML-Agents slot with ONNX
-                # or TorchScript opponents that do not return log probabilities.
-                # The capture uses one all-row behavior frame. Mixed-backend
-                # batches must zero-fill non-sampled opponent rows, while
-                # all-ML-Agents batches overwrite every statistics row and
-                # can retain the allocation-free initialization fast path.
+                # The protocol emits one all-row frame. Non-sampled
+                # TorchScript/ONNX opponents must retain zeroed statistics.
                 shape = (rows, CONTINUOUS * 2 + DISCRETE)
-                fully_sampled = all(
-                    isinstance(policy_map[int(key)], MlagentsPolicy)
-                    for key in unique_slots
-                )
                 behavior = (
                     np.empty(shape, dtype="<f4") if fully_sampled
                     else np.zeros(shape, dtype="<f4")
@@ -434,7 +454,6 @@ def collect_predictions(
     if np.any(~special[np.arange(rows), discrete[:, 5]]):
         raise ValueError("model selected unavailable special action")
     return continuous, discrete, behavior
-
 
 def main() -> None:
     parser = argparse.ArgumentParser()
