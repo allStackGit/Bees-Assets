@@ -86,7 +86,7 @@ function liveWindowsProgress(root) {
 }
 
 function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,evaluationRoot,evaluationSuites,snapshotRoot,
-    cpuParallelism='profile'}) {
+    cpuParallelism='allocation'}) {
     if(!['profile','allocation'].includes(cpuParallelism))
         throw Error('Courier CPU concurrency must be explicitly profile-based or follow allocated CPU cores.');
     for(const target of [projectRoot,pythonPath,artifactRoot,configPath]) {
