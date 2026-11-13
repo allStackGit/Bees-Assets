@@ -169,7 +169,7 @@ function validateLocalInput(job,lease,machineId,adapters,hostOs=os,gpuEnabled=fa
         throw Error('Invalid immutable local continuation ancestry.');
     const context=Object.freeze({
         job_id:job.id,project_id:job.project_id,
-        cpu_quota:r.cpus,
+        cpu_quota:r.cpus,ram_quota_mb:r.ram_mb,
         dispatch_id:job.dispatch_id||null,evaluation_suite_id:job.evaluation_stop?.suite_id||
             job.evaluation_stop?.all_of?.[0]?.suite_id||null,
         continuation_of_job_id:predecessor,
