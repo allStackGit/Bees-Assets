@@ -4883,6 +4883,16 @@ class ExperimentHub {
         // directory, or process arguments can be supplied in the job request.
         const frozen = config(selected.parameters);
         const resources = resourceRequest(value.resources);
+        // Hardware choice belongs to the lease. A saved TinyBrains policy
+        // profile without an explicit device works with a CPU-only, one-GPU
+        // or supported two-GPU lease without requiring a separate profile.
+        // Keep the derived choice frozen before the job fingerprint and all
+        // existing capability, GPU isolation and continuation checks.
+        if(project.id==='tinybrains'&&frozen.device===undefined) {
+            if(resources.gpu_count===0)frozen.device='cpu';
+            else if(resources.gpu_count===2&&resources.gpu_mode==='exclusive')
+                frozen.device='dual';
+        }
         // Telemetry selection is independent from optimizer configuration
         // fingerprints. It never influences a model or continuation lineage.
         const selectedMetrics=value.metric_selection??null;
