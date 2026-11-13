@@ -11,6 +11,7 @@ const {tinyBrainsProfiles,tinyBrainsImports,supportsTinyBrainsProfile}=require('
 const {evaluationPolicy,evaluationEvidence,evaluationRules,evaluationComplete,suiteIds,supportsEvaluation}=
     require('./experiment_hub_evaluation');
 const {ProgressHistory}=require('./experiment_hub_history');
+const {validateCatalog,supportsDesign}=require('./experiment_hub_design_fields');
 const {ObservationArchive}=require('./experiment_hub_observations');
 const ID = /^[a-z][a-z0-9_-]{0,47}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -201,6 +202,7 @@ function boundedReport(value) {
         Object.keys(evaluators).some(project=>!installed.includes(project)))
         throw Error('Evaluation capability requires a corresponding installed adapter.');
     const profiles=tinyBrainsProfiles(value.tinybrains_profiles??{});
+    const designCatalog=validateCatalog(value.design_catalog,installed,profiles);
     if(Object.keys(profiles).length&&(!installed.includes('tinybrains')||!['win32','linux'].includes(value.platform)))
         throw Error('TinyBrains profiles require an installed native adapter.');
     const cudaProfiles=value.tinybrains_cuda_profiles??[];
@@ -286,6 +288,7 @@ function boundedReport(value) {
         native_preflight_reason:reason||null,
         evaluation_suites:localExecutor?evaluationSuites:{},
         tinybrains_profiles:profiles,
+        design_catalog:designCatalog,
         tinybrains_cuda_profiles:cudaProfiles.slice(),
         tinybrains_thread_overrides:threadOverrides.slice(),
         tinybrains_cpu_fallback_profiles:cpuFallback.slice(),
@@ -678,6 +681,8 @@ function nativeStartReadiness(snapshot, job) {
         return block('Linux cgroup v2 CPU and memory controllers are unavailable.');
     if(!supportsTinyBrainsProfile(machine,job))
         return block('The assigned worker does not approve this TinyBrains profile, GPU mode, checkpoint import and update count.');
+    if(!supportsDesign(machine.design_catalog,job.project_id,job.frozen_parameters))
+        return block('The assigned worker has not approved this exact Design configuration.');
     if(!distributedRolloutHost(snapshot,job,machine))
         return block('The remote collector is not assigned to an active learner and its pinned physical endpoint.');
     if(job.project_id==='tinybrains'&&job.frozen_parameters?.remote_rollouts===true) {
@@ -887,6 +892,7 @@ function allocationChoice(machines,reservations,job,preferredMachineId=null,
         const eligible=hosts.filter(machine=>
             supportsEvaluation(machine.evaluation_suites,selected)&&
             supportsTinyBrainsProfile(machine,selected)&&
+            supportsDesign(machine.design_catalog,selected.project_id,selected.frozen_parameters)&&
             (!snapshot||distributedRolloutHost(snapshot,selected,machine))&&
             (!preferred||preferred===machine.id)&&
             (!selected.continuation_machine_id||selected.continuation_machine_id===machine.id));
@@ -1236,6 +1242,7 @@ class ExperimentHub {
                 machine.installed_projects = report.installed_projects.slice();
                 machine.evaluation_suites = copy(report.evaluation_suites);
                 machine.tinybrains_profiles = copy(report.tinybrains_profiles||{});
+                machine.design_catalog=copy(report.design_catalog||{});
                 machine.tinybrains_cuda_profiles=report.tinybrains_cuda_profiles.slice();
                 machine.tinybrains_thread_overrides=report.tinybrains_thread_overrides.slice();
                 machine.tinybrains_cpu_fallback_profiles=report.tinybrains_cpu_fallback_profiles.slice();
