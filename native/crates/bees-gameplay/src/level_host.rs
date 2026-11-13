@@ -14,7 +14,7 @@
 //! episode-reset boundary. Stale world indices/revisions are rejected, not
 //! silently allowed to corrupt PPO trajectories.
 
-use std::num::NonZeroU32;
+use std::num::{NonZeroU32, NonZeroUsize};
 use bees_hivemind::connection::NativeHiveMindConnection;
 use bees_hivemind::outcomes::StoreAcknowledgement;
 use bees_hivemind::wire::{
@@ -64,7 +64,8 @@ use crate::perception_world::{
     NativeWorldPerceptionError,
 };
 use crate::rollout::{
-    step_batched_levels, reset_level_after_delivery,
+    step_batched_levels, step_batched_levels_parallel,
+    reset_level_after_delivery,
     flush_all_squad_retirements, abort_failed_level, cancel_level,
     NativeBatchedStepCounts, NativeBatchedStepError, NativeLevelResetError,
     NativeFailedLevelAbortError, NativeLevelCancelError,
@@ -636,6 +637,8 @@ pub struct NativeLevelBatchDriver {
     worlds: Vec<NativeWorldAssembly>,
     inference: NativeLevelInferenceBatch,
     decisions: Vec<Decision>,
+    /// Reused per-world action rows only for opted-in parallel physics.
+    parallel_actions: Vec<Option<Vec<Decision>>>,
 }
 
 impl NativeLevelBatchDriver {
@@ -716,6 +719,7 @@ impl NativeLevelBatchDriver {
             worlds: Vec::with_capacity(simulation.world_count()),
             inference: NativeLevelInferenceBatch::new(),
             decisions: Vec::new(),
+            parallel_actions: Vec::new(),
         };
         for index in 0..simulation.world_count() {
             driver.register_added_world(simulation, index)?;
@@ -1314,14 +1318,8 @@ impl NativeLevelBatchDriver {
         Ok(())
     }
 
-    /// One complete model-inference and fixed-physics step across all live
-    /// Levels. The model backend is injected, not fabricated. Observation
-    /// completeness, world/episode/tick keys, policy masks and actions are
-    /// validated by step_batched_levels before any world mutates.
-    ///
-    /// When a world fails during dispatch, step_batched_levels reports how
-    /// many preceding worlds advanced. The owner must not reuse the partial
-    /// PPO trajectory as if the batch succeeded.
+    /// Same model/roster/world identity preflight for rendered and headless
+    /// execution; only the final physical dispatch strategy differs.
     pub fn step<M, A, B>(
         &mut self,
         simulation: &mut Simulation<NativeLevelState<M, A>, NativeLevelRules>,
@@ -1335,6 +1333,62 @@ impl NativeLevelBatchDriver {
             NativeLevelObservationContext,
         A: FnMut(SquadLifetime, i64) -> Result<SquadLifetime, SquadRosterError>,
         B: NativePolicyInference,
+    {
+        self.step_with_dispatch(simulation, backend,
+            |simulation, batch, backend, build, decisions, _parallel_actions| {
+                step_batched_levels(simulation, batch, backend,
+                    &mut build, decisions)
+            })
+    }
+
+    /// Opt-in shared-model batched inference with independent physical
+    /// Levels executed on CPU workers. Each Level still uses the *same*
+    /// authoritative NativeLevelRules and durable notification outbox.
+    pub fn step_parallel<M, A, B>(
+        &mut self,
+        simulation: &mut Simulation<NativeLevelState<M, A>, NativeLevelRules>,
+        backend: &mut B,
+        workers: NonZeroUsize,
+    ) -> Result<NativeBatchedStepCounts,
+        NativeBatchedStepError<
+            NativeLevelSourceError<<M as NativeLevelObservationContext>::Error>,
+            B::Error>>
+    where
+        M: NativeLevelRewardMetadata + NativeLevelCommandContext +
+            NativeLevelObservationContext + Send,
+        A: FnMut(SquadLifetime, i64) -> Result<SquadLifetime, SquadRosterError> + Send,
+        B: NativePolicyInference,
+    {
+        self.step_with_dispatch(simulation, backend,
+            |simulation, batch, backend, build, decisions, parallel_actions| {
+                step_batched_levels_parallel(simulation, batch, backend,
+                    &mut build, decisions, parallel_actions, workers)
+            })
+    }
+
+    fn step_with_dispatch<M, A, B, D>(
+        &mut self,
+        simulation: &mut Simulation<NativeLevelState<M, A>, NativeLevelRules>,
+        backend: &mut B,
+        dispatch: D,
+    ) -> Result<NativeBatchedStepCounts,
+        NativeBatchedStepError<
+            NativeLevelSourceError<<M as NativeLevelObservationContext>::Error>,
+            B::Error>>
+    where
+        M: NativeLevelRewardMetadata + NativeLevelCommandContext +
+            NativeLevelObservationContext,
+        A: FnMut(SquadLifetime, i64) -> Result<SquadLifetime, SquadRosterError>,
+        B: NativePolicyInference,
+        D: FnOnce(
+            &mut Simulation<NativeLevelState<M, A>, NativeLevelRules>,
+            &mut NativeLevelInferenceBatch, &mut B,
+            &mut dyn FnMut(usize, &World<NativeLevelState<M, A>>,
+                &mut NativeLevelInferenceBatch)
+                -> Result<(), NativeLevelSourceError<M::Error>>,
+            &mut Vec<Decision>, &mut Vec<Option<Vec<Decision>>>,
+        ) -> Result<NativeBatchedStepCounts,
+            NativeBatchedStepError<NativeLevelSourceError<M::Error>, B::Error>>,
     {
         // Preflight ALL slots, including complete worlds and worlds whose
         // policy period is not due. The lower-level observation callback is
@@ -1362,7 +1416,7 @@ impl NativeLevelBatchDriver {
             }
         }
         let worlds = &mut self.worlds;
-        step_batched_levels(
+        dispatch(
             simulation, &mut self.inference, backend,
             &mut |index, world, batch| {
                 let state = worlds.get_mut(index)
@@ -1391,10 +1445,9 @@ impl NativeLevelBatchDriver {
                 }
                 Ok(())
             },
-            &mut self.decisions,
+            &mut self.decisions, &mut self.parallel_actions,
         )
     }
-
     /// Drive a bounded synchronous rollout window across all registered
     /// Levels with the REAL v26 model, shared physics and one durable
     /// notification sink. A rendered client uses delivery_every = 1 to
