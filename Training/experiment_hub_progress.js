@@ -175,10 +175,17 @@ class BottleneckEvidence {
                 const worker=seconds('collector_'+i+'_sim_engine_roundtrip_seconds');
                 const tailShare=(batch>0&&tail!==null&&tail<=batch)
                     ?tail/batch:null;
+                const exposed=seconds('collector_'+i+'_rollout_engine_step_seconds');
+                const early=metrics['collector_'+i+'_sim_prefetch_engine_steps'];
+                const prefetched=early?.unit==='count'&&early.value>0;
+                const exposedShare=(batch>0&&exposed!==null&&exposed<=batch)
+                    ?exposed/batch:null;
                 const queueShare=(worker!==null&&queue!==null&&worker+queue>0)
                     ?queue/(worker+queue):null;
                 if(tailShare!==null)
                     add('collector_'+i+'_sim_last_child_gap_share',tailShare);
+                if(exposedShare!==null)
+                    add('collector_'+i+'_sim_exposed_wait_share',exposedShare);
                 if(queueShare!==null)
                     add('collector_'+i+'_sim_dispatch_queue_share',queueShare);
                 if(batch>0&&worker!==null)
@@ -193,7 +200,12 @@ class BottleneckEvidence {
                 if(packingShare!==null)
                     add('collector_'+i+'_record_encode_work_share',packingShare);
                 simHints[i]={
-                    tail:tailShare!==null&&tailShare>=0.25,
+                    // With early dispatch, the slowest-child completion
+                    // tail may have been hidden under opponent preparation.
+                    // Diagnose an actual collection stall only if the
+                    // remaining join wait also occupies substantial time.
+                    tail:tailShare!==null&&tailShare>=0.25&&
+                        (!prefetched||(exposedShare!==null&&exposedShare>=0.25)),
                     queue:queueShare!==null&&queueShare>=0.20,
                     packing:packingShare!==null&&packingShare>=0.30
                 };
