@@ -358,13 +358,108 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
 }
 .hub-tabs label select { min-width: 150px; }
 #hub-placements, #hub-plan-result { white-space: pre-line; }
-.hub-progress-plot { margin: 12px 0; width: 100%; border: 2px solid var(--ink); background: var(--paper); padding: 8px; }
-.hub-progress-plot svg { display: block; width: 100%; height: auto; max-height: 350px; }
+/* Keep the long metric selector, run inputs, and export actions aligned. */
+#hub-compare-filters {
+    display: grid;
+    grid-template-columns: minmax(350px, 1.4fr) minmax(220px, .6fr);
+    gap: 16px;
+    align-items: start;
+}
+#hub-compare-filters > label, #hub-compare-filters .hub-metric-field { min-width: 0; margin: 0; }
+#hub-compare-run-list {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px 18px;
+    margin: 16px 0 12px;
+    align-items: start;
+}
+.hub-compare-run { min-width: 0; }
+.hub-compare-run-controls { display: flex; gap: 8px; align-items: center; margin-top: 5px; }
+.hub-compare-run-controls select { flex: 1 1 auto; min-width: 0; width: 100%; margin: 0; }
+.hub-compare-run-controls button { flex: 0 0 auto; }
+#hub-compare-actions { align-items: center; gap: 10px 12px; margin: 12px 0; }
+#hub-compare-actions button {
+    flex: 0 1 auto;
+    height: auto;
+    min-height: var(--control-height);
+    padding: 7px 11px;
+    white-space: normal;
+    text-align: center;
+}
+#hub-compare-actions label {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    min-height: var(--control-height);
+    margin: 0;
+    font-weight: 700;
+    font-size: 12px;
+}
+#hub-compare-actions input[type="checkbox"] {
+    flex: 0 0 16px;
+    width: 16px;
+    height: 16px;
+    margin: 0;
+    padding: 0;
+}
+.hub-progress-plot {
+    position: relative;
+    min-width: 0;
+    margin: 12px 0;
+    width: 100%;
+    border: 2px solid var(--ink);
+    background: var(--paper);
+    padding: 12px 14px;
+}
+.hub-progress-plot svg { display: block; width: 100%; height: 330px; max-height: none; }
+.hub-plot-header { display: flex; align-items: center; justify-content: space-between; gap: 8px 16px; flex-wrap: wrap; }
+.hub-plot-header h3 { margin: 0; font-size: 17px; overflow-wrap: anywhere; }
+.hub-plot-description { margin: 6px 0 10px; font-size: 12px; line-height: 1.45; }
+.hub-plot-average-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    margin: 0;
+    cursor: pointer;
+    font-weight: 700;
+    font-size: 12px;
+}
+.hub-plot-average-toggle input[type="checkbox"] {
+    flex: 0 0 17px;
+    width: 17px;
+    height: 17px;
+    padding: 0;
+    margin: 0;
+}
+.hub-plot-legend { display: flex; gap: 7px 18px; flex-wrap: wrap; font-size: 12px; padding: 5px 0 0; }
+.hub-plot-legend-entry { display: inline-flex; align-items: baseline; gap: 7px; }
+.hub-plot-legend-swatch { display: inline-block; flex: 0 0 20px; width: 20px; border-top: 4px solid; }
+.hub-plot-tooltip {
+    position: absolute;
+    z-index: 3;
+    pointer-events: none;
+    max-width: 270px;
+    padding: 8px 10px;
+    border: 2px solid var(--ink);
+    background: var(--paper);
+    box-shadow: 3px 3px 0 #bbb;
+    white-space: pre-line;
+    font: 12px/1.5 Arial, Helvetica, sans-serif;
+    overflow-wrap: anywhere;
+}
 .hub-progress-plot text { font: 13px Arial, Helvetica, sans-serif; fill: #000; }
 .hub-progress-plot .plot-axis { stroke: #000; stroke-width: 2; }
 .hub-progress-plot .plot-grid { stroke: #ddd; stroke-width: 1; }
 .hub-progress-plot .plot-line { fill: none; stroke-width: 3; }
+.hub-progress-plot .plot-average { stroke-width: 2; opacity: .85; }
+.hub-progress-plot .plot-crosshair { stroke: #555; stroke-width: 1.5; stroke-dasharray: 4 4; }
+.hub-progress-plot .plot-hover-area { cursor: crosshair; }
 .hub-progress-plot .plot-point { stroke: #fff; stroke-width: 1.5; }
+@media (max-width: 800px) {
+    #hub-compare-filters, #hub-compare-run-list { grid-template-columns: minmax(0,1fr); }
+    #hub-compare-actions { align-items: stretch; }
+    #hub-compare-actions label { width: 100%; }
+}
 </style>
 </head>
 <body>
@@ -609,7 +704,7 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
 <section data-hub-tab="compare" data-project="all">
   <h2>Project comparisons</h2>
   <p id="hub-compare-notice" class="hub-notice">Select two or more jobs to compare reported learning progress. A chart describes progress; it does not establish experimental equivalence.</p>
-  <div class="formgrid">
+  <div class="formgrid" id="hub-compare-filters">
     <div class="hub-metric-field">
       <label for="hub-compare-metric">Chart and export metrics</label>
       <select id="hub-compare-metric" class="hub-metric-source" multiple size="12" aria-label="Metrics to chart and export"></select>
@@ -622,7 +717,7 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
     </label>
   </div>
   <div id="hub-compare-run-list" class="formgrid" aria-label="Selected comparison runs"></div>
-  <div class="hub-controls">
+  <div class="hub-controls" id="hub-compare-actions">
     <button type="button" id="hub-compare-add-run">Add run</button>
     <button type="button" id="hub-compare-export-csv" disabled>Export selected CSV</button>
     <button type="button" id="hub-compare-export-json" disabled>Export selected JSON</button>
