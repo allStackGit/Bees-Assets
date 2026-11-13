@@ -171,6 +171,45 @@ manifest passed their artifact checks. Training, native gameplay
 qualification and actual throughput still require an executable Rust
 runner and compatible ML-Agents Python runtime.
 
+Native Bees checkpoints from separate Experiment Hub jobs can now be
+independently ranked and continued, rather than selected from training
+reward metrics. Compile a native `policy_rollout` executable for the
+evaluation machine, then freeze a one-scene benchmark against the initial
+reference weights:
+
+```sh
+python Training/experiment_hub_native_bees_evaluate.py create-suite \
+  --suite-id bees_native_duel --run-config native-first/holdout-run.json \
+  --reference-manifest native-first/manifest.json \
+  --rollout-binary native/target/release/examples/policy_rollout \
+  --learner-slot 0 --learner-side 1 \
+  --output /absolute/path/to/evaluation-suites/bees_native_duel.json
+```
+
+Configure the native Bees Hub adapter's `evaluationRoot` to an independent
+receipt directory and `evaluationSuites` to `["bees_native_duel"]`.
+A separate scheduled invocation on the enrolled evaluation machine runs:
+
+```sh
+python Training/experiment_hub_native_bees_eval_poll.py \
+  --machine MY_MACHINE_ID --port 7148 \
+  --suite /absolute/path/to/evaluation-suites/bees_native_duel.json \
+  --rollout-binary native/target/release/examples/policy_rollout \
+  --artifact-root /absolute/path/to/hub-artifacts \
+  --scratch /absolute/path/to/evaluation-scratch \
+  --receipt-root /absolute/path/to/evaluation-receipts
+```
+
+The suite pins the run, physical scene, policy worker, native executable
+and original opponent weights. Each candidate replaces only the learner
+slot; independent native battles produce the Hub's verified suite receipts
+for checkpoint continuation and candidate comparison. The candidate jobs
+must specify the same approved evaluation suite, trial count and
+checkpoint-compatible `config_sha256`. For Windows, use its compiled
+`policy_rollout.exe` and the corresponding platform-specific suite.
+These commands describe an execution workflow, not a claim that native
+gameplay or learning has passed release qualification.
+
 Native PPO ships require explicitly authored group/reward inputs; the
 runtime rejects missing group agents, inconsistent team/frame/authority,
 or policy scene edits that change fixed initial membership after its
