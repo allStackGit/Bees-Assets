@@ -2788,11 +2788,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     return {entry,machine};
             }else if(project==='tinybrains') {
                 const profiles=machine.design_catalog?.tinybrains?.profiles||{};
-                for(const [profile,entry] of Object.entries(profiles))
+                for(const [profile,pin] of Object.entries(profiles))
                     if((!parameters.profile||parameters.profile===profile)&&
                         (!parameters.profile_sha256||
-                            parameters.profile_sha256===entry.profile_sha256))
-                        return {entry,machine,profile};
+                            parameters.profile_sha256===pin.profile_sha256))
+                        return {entry:{...machine.design_catalog.tinybrains,
+                            profile_sha256:pin.profile_sha256},machine,profile};
             }
         }
         return null;
