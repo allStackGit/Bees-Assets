@@ -70,6 +70,9 @@ pub struct NavigationRuntime {
     /// None until the first physical static-obstacle rasterization. Empty
     /// static scenes can reuse the same clearance until a body appears.
     static_obstacles_present: Option<bool>,
+    /// Last authoritative CombatWorld static obstacle revision that
+    /// populated this clearance. None after external manual map edits.
+    world_static_revision: Option<u64>,
 }
 
 impl NavigationRuntime {
@@ -84,7 +87,8 @@ impl NavigationRuntime {
         let n = grid.width.checked_mul(grid.height)
             .ok_or(NavigationError::InvalidMap)?;
         let clearance = NavigationClearance::new(grid, &vec![false; n])?;
-        Ok(Self { map_frame: frame, clearance, search, static_obstacles_present: None })
+        Ok(Self { map_frame: frame, clearance, search,
+            static_obstacles_present: None, world_static_revision: None })
     }
 
     pub fn map_frame(&self) -> NavigationMapFrame { self.map_frame }
@@ -92,10 +96,15 @@ impl NavigationRuntime {
     pub fn clearance_mut(&mut self) -> &mut NavigationClearance {
         // External map edits must not inherit the no-static-obstacles fast path.
         self.static_obstacles_present = None;
+        self.world_static_revision = None;
         &mut self.clearance
     }
     pub fn static_obstacles_present(&self) -> Option<bool> {
         self.static_obstacles_present
+    }
+
+    pub fn world_static_revision(&self) -> Option<u64> {
+        self.world_static_revision
     }
 
     /// Update after authored static objects are created, moved or destroyed.
@@ -114,6 +123,21 @@ impl NavigationRuntime {
             |point| frame.world_to_level(point),
         )?;
         self.static_obstacles_present = Some(counts.active_obstacles != 0);
+        self.world_static_revision = None;
+        Ok(counts)
+    }
+
+    /// The owning CombatWorld has supplied its actual static geometry and
+    /// monotonic revision, not a renderer or inference-side copy. A map
+    /// edit through clearance_mut() invalidates this stamp automatically.
+    pub fn refresh_world_static<'a, I>(
+        &mut self, revision: u64, live_static: I,
+    ) -> Result<NavigationRasterCounts, NavigationError>
+    where
+        I: IntoIterator<Item = (i64, &'a ObstacleBody)>,
+    {
+        let counts = self.refresh_static(live_static)?;
+        self.world_static_revision = Some(revision);
         Ok(counts)
     }
 
