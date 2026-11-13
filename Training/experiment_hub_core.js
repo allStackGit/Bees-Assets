@@ -4218,18 +4218,22 @@ class ExperimentHub {
                 !supportsEvaluation(machine.evaluation_suites,job)||
                 !supportsTinyBrainsProfile(machine,job))
                 throw Error('Bundle member '+(index+1)+' requires an approved independent project adapter and configuration.');
+            const courierMulti=job.project_id==='courier'&&
+                machine.agent_platform==='linux'&&
+                job.resources.gpu_count>=2&&job.resources.gpu_count<=8&&
+                job.resources.gpu_mode==='exclusive';
             if(job.resources.ram_mb<128||
                 (job.resources.gpu_count>0&&
                     (!machine.gpu_projects?.includes(job.project_id)||
                      (job.resources.gpu_mode==='shared'&&
                          !machine.gpu_shared_projects?.includes(job.project_id))||
-                     (job.resources.gpu_count===2&&
+                     (job.resources.gpu_count===2&&!courierMulti&&
                          (job.project_id!=='tinybrains'||
                           job.frozen_parameters?.device!=='dual'||
-                          machine.agent_platform!=='linux'|| 
+                          machine.agent_platform!=='linux'||
                           !machine.tinybrains_dual_gpu_profiles
                               ?.includes(job.frozen_parameters.profile)))||
-                     job.resources.gpu_count>2)))
+                     (job.resources.gpu_count>2&&!courierMulti))))
                 throw Error('Bundle member '+(index+1)+' is not eligible for its requested native CPU/GPU mode.');
             // Use the actual lease allocator, not a separate capacity
             // estimate. Earlier members consume budget in the same draft;
