@@ -67,7 +67,9 @@ function recordedTinyBrainsMetrics(row,updateWall) {
     }
     for(const name of ['collection_seconds','rollout_model_refresh_seconds',
         'rollout_engine_step_seconds','rollout_learner_inference_seconds',
-        'optimization_seconds',
+        'optimization_seconds','collector_wait_seconds',
+        'collector_critical_path_seconds','collector_elapsed_spread_seconds',
+        'checkpoint_write_seconds',
         'overlap_seconds','remote_policy_snapshot_seconds',
         'remote_opponent_snapshot_seconds',
         'ppo_profile_host_seconds','ppo_advantages_seconds',
@@ -189,6 +191,10 @@ function recordedTinyBrainsMetrics(row,updateWall) {
             worker.rollout_learner_inference_seconds,'seconds');
         add('collector_'+i+'_model_prepare_seconds',
             worker.model_prepare_seconds,'seconds');
+        for(const stage of ['remote_collect_seconds','remote_record_encode_seconds',
+            'transport_connect_seconds','transport_request_send_seconds',
+            'transport_response_receive_seconds','transport_record_decode_seconds'])
+            add('collector_'+i+'_'+stage,worker[stage],'seconds');
         add('collector_'+i+'_snapshot_cache_files',
             worker.snapshot_cache_files,'count');
         add('collector_'+i+'_snapshot_cache_bytes',
