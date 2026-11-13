@@ -525,9 +525,9 @@ where
         }
         for _ in 0..steps {
             decisions.clear();
-            decide(world, &mut decisions);
+            decide(world, decisions);
             if let Err(error) = step_one(
-                rules, dt, sample_every, world, &decisions,
+                rules, dt, sample_every, world, decisions.as_slice(),
                 &mut report.measurements,
             ) {
                 report.failed_worlds.push(error);
