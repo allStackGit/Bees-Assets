@@ -178,6 +178,7 @@ evaluation machine, then freeze a one-scene benchmark against the initial
 reference weights:
 
 ```sh
+cargo build --release --manifest-path native/Cargo.toml -p bees-host --example policy_rollout
 python Training/experiment_hub_native_bees_evaluate.py create-suite \
   --suite-id bees_native_duel --run-config native-first/holdout-run.json \
   --reference-manifest native-first/manifest.json \
@@ -192,7 +193,7 @@ A separate scheduled invocation on the enrolled evaluation machine runs:
 
 ```sh
 python Training/experiment_hub_native_bees_eval_poll.py \
-  --machine MY_MACHINE_ID --port 7148 \
+  --machine halifax --port 7148 \
   --suite /absolute/path/to/evaluation-suites/bees_native_duel.json \
   --rollout-binary native/target/release/examples/policy_rollout \
   --artifact-root /absolute/path/to/hub-artifacts \
