@@ -116,6 +116,10 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'training_gpu_stream_max_seconds',
             'training_gpu_state_reused_lineages',
             'training_gpu_state_cache_mb',
+            'training_inference_max_seconds','training_ingestion_max_seconds',
+            'training_inference_slowest_worker',
+            'training_ppo_data_slowest_worker',
+            'training_ppo_data_max_seconds','training_padding_sync_max_seconds',
             'training_gpu_metric_readback_max_seconds',
             'training_gpu_optimizer_peak_allocated_mb',
             'training_cpu_parallelism','training_queue_max_seconds',
@@ -156,8 +160,9 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
         // With many independent recurrent PPO lineages, retain sustained
         // limiting stages rather than the first dozens of raw counters.
         for(let i=0;i<64;i++)
-            for(const stage of ['collection','optimization',
-                'simulation','observation','collection_other'])
+            for(const stage of ['collection','optimization','ppo_data',
+                'simulation','observation','inference','ingestion',
+                'collection_other'])
                 retain('worker_'+i+'_'+stage+'_dominant',
                     reported['worker_'+i+'_'+stage+'_dominant']);
         for(const [name,value] of Object.entries(reported))retain(name,value);
@@ -440,6 +445,15 @@ class BottleneckEvidence {
             if(queueShare!==null)add('training_queue_work_share',queueShare);
             if(gapShare!==null)add('training_reply_gap_work_share',gapShare);
             const stageHints=[];
+            // The backend reports its measured worst recurrent-minibatch
+            // preparation alongside the *owning* lineage index. Comparing
+            // unrelated maxima from different workers is not causal evidence.
+            const dataOwner=metrics.training_ppo_data_slowest_worker;
+            const dataOwnerIndex=(dataOwner?.unit==='count'&&
+                Number.isSafeInteger(dataOwner.value)&&
+                dataOwner.value>=0&&dataOwner.value<count)
+                ?dataOwner.value:null;
+            const dataWorst=seconds('training_ppo_data_max_seconds');
             for(let i=0;i<count;i++) {
                 const collect=seconds('worker_'+i+'_collection_seconds');
                 const optimize=seconds('worker_'+i+'_optimization_seconds');
@@ -450,7 +464,12 @@ class BottleneckEvidence {
                 // must never be summed as independent elapsed stages.
                 const simulation=seconds('worker_'+i+'_simulation_seconds');
                 const observation=seconds('worker_'+i+'_observation_seconds');
+                const inference=seconds('worker_'+i+'_inference_seconds');
+                const ingestion=seconds('worker_'+i+'_ingestion_seconds');
                 const fraction=collect/(collect+optimize);
+                const dataShare=(i===dataOwnerIndex&&dataWorst!==null&&
+                    optimize>0&&dataWorst<=optimize*1.02)
+                    ?dataWorst/optimize:null;
                 const simShare=(collect>0&&simulation!==null&&
                     simulation<=collect)?simulation/collect:null;
                 const obsShare=(simulation>0&&observation!==null&&
@@ -459,22 +478,47 @@ class BottleneckEvidence {
                     add('worker_'+i+'_simulation_work_share',simShare);
                 if(obsShare!==null)
                     add('worker_'+i+'_observation_work_share',obsShare);
-                // Report the broad collection/optimization split and at
-                // most one deeper collection cause per worker. Otherwise
-                // 64 lineages can displace later workers' evidence at the
-                // 512-field report limit simply through nested duplicates.
-                const observationHeavy=simShare!==null&&simShare>=0.50&&
-                    obsShare!==null&&obsShare>=0.60;
+                // The new CPU inference, environment and buffer-ingestion
+                // intervals are siblings inside collection, NOT children
+                // of one another. Observation is a child of simulation.
+                // Require complete and non-overlapping accounting before
+                // attributing the residual to Python/recurrent coordination.
+                // A 40/40 simulation/inference split is genuinely mixed;
+                // report broad collection pressure, not a guessed cause.
+                let cause=null;
+                if(fraction>=0.70&&simulation!==null&&
+                    inference!==null&&ingestion!==null&&collect>0&&
+                    simulation+inference+ingestion<=collect*1.02) {
+                    const sources=[['simulation',simulation/collect],
+                        ['inference',inference/collect],
+                        ['ingestion',ingestion/collect]];
+                    sources.sort((a,b)=>b[1]-a[1]);
+                    if(sources[0][1]>=0.50) {
+                        cause=sources[0][0];
+                        if(cause==='simulation'&&obsShare!==null&&
+                            obsShare>=0.60)cause='observation';
+                    } else if((collect-simulation-inference-ingestion)/collect>=0.50) {
+                        cause='collection_other';
+                    }
+                } else if(fraction>=0.70&&inference===null&&
+                    ingestion===null&&simShare!==null) {
+                    // Historical Courier sources lacked separate inference
+                    // and ingestion intervals. Keep only their supported
+                    // older simulation/observation evidence.
+                    if(simShare>=0.65)
+                        cause=obsShare!==null&&obsShare>=0.60
+                            ?'observation':'simulation';
+                    else if(simShare<=0.35)cause='collection_other';
+                }
                 stageHints[i]={
                     collection:fraction>=0.70,
                     optimization:fraction<=0.30,
-                    simulation:fraction>=0.70&&!observationHeavy&&
-                        simShare!==null&&simShare>=0.65,
-                    observation:fraction>=0.70&&observationHeavy,
-                    // Unmeasured work also includes actor inference,
-                    // recurrent state handling and Python coordination.
-                    collection_other:fraction>=0.70&&simShare!==null&&
-                        simShare<=0.35
+                    ppo_data:fraction<=0.30&&dataShare!==null&&dataShare>=0.50,
+                    simulation:cause==='simulation',
+                    observation:cause==='observation',
+                    inference:cause==='inference',
+                    ingestion:cause==='ingestion',
+                    collection_other:cause==='collection_other'
                 };
             }
             const {at,prior}=history();
@@ -507,8 +551,9 @@ class BottleneckEvidence {
                     sustained(x=>x.courierQueue))
                     add('training_parallelism_underuse_evidence',1,'count');
                 for(let i=0;i<count;i++)
-                    for(const stage of ['collection','optimization',
-                        'simulation','observation','collection_other'])
+                    for(const stage of ['collection','optimization','ppo_data',
+                        'simulation','observation','inference','ingestion',
+                        'collection_other'])
                         if(sustained(x=>x.stageHints?.[i]?.[stage]))
                             add('worker_'+i+'_'+stage+'_dominant',1,'count');
             }
