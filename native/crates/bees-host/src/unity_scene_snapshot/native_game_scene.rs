@@ -17,6 +17,11 @@ struct GameScene {
     command_settings: GameCommandSettings,
     ships: Vec<GameShip>,
     squads: Vec<GameSquad>,
+    /// Native-authored physical resources and destructible level objects.
+    #[serde(default)]
+    mining_asteroids: Vec<GameMiningAsteroid>,
+    #[serde(default)]
+    map_objects: Vec<GameMapObject>,
     /// Supply the authentic MA-POCA group/episode baselines explicitly when
     /// the native scene owns actual policy-controlled ships.
     #[serde(default)]
@@ -272,6 +277,43 @@ struct GameBeacon {
     ship_type_letter: u8,
     firepower: f32,
     combat_window_seconds: f32,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct GameMiningAsteroid {
+    entity_id: i64,
+    position: [f32; 2],
+    rotation_degrees: f32,
+    layer: u8,
+    health: i32,
+    /// Exact collider path relative to the asteroid root. No guessed
+    /// mining radius or duplicate training-only resource entity.
+    local_vertices: Vec<[f32; 2]>,
+    #[serde(default)]
+    velocity: [f32; 2],
+    #[serde(default)]
+    angular_velocity_degrees: f32,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum GameMapObjectKind { Generic, FireTank }
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct GameMapObject {
+    entity_id: i64,
+    kind: GameMapObjectKind,
+    position: [f32; 2],
+    rotation_degrees: f32,
+    layer: u8,
+    max_health: i32,
+    collider: GameCollider,
+    #[serde(default)]
+    explosion_power: Option<i32>,
+    #[serde(default)]
+    linked_obstacle_id: Option<i64>,
 }
 
 #[derive(Deserialize)]
@@ -839,6 +881,75 @@ impl NativePhysicalScene {
             return Err(invalid("native Bomb weapon identities collide with ships or a Striker links to a non-Carrier on another side"));
         }
 
+        let mut world_ids = ship_sides.keys().copied().collect::<HashSet<_>>();
+        world_ids.extend(special_weapon_ids.iter().copied());
+        for resource in raw.mining_asteroids {
+            let id = resource.entity_id;
+            let position = Vec2::new(resource.position[0], resource.position[1]);
+            let velocity = Vec2::new(resource.velocity[0], resource.velocity[1]);
+            if id <= 0 || id == i64::MAX || !world_ids.insert(id) ||
+                !position.is_finite() || !velocity.is_finite() ||
+                !resource.rotation_degrees.is_finite() ||
+                !resource.angular_velocity_degrees.is_finite() ||
+                resource.layer >= 32 || resource.health <= 0 ||
+                !(3..=8192).contains(&resource.local_vertices.len())
+            {
+                return Err(invalid("invalid native mining asteroid identity, health or pose"));
+            }
+            let vertices = resource.local_vertices.into_iter()
+                .map(|p| Vec2::new(p[0], p[1])).collect::<Vec<_>>();
+            if vertices.iter().any(|p| !p.is_finite()) {
+                return Err(invalid("native mining asteroid has nonfinite collider vertices"));
+            }
+            let body = ObstacleBody::new(id,
+                Pose { position, rotation_degrees: resource.rotation_degrees },
+                resource.layer, ShipShape::Polygon(Arc::from(vertices.into_boxed_slice())),
+                velocity, resource.angular_velocity_degrees,
+            ).map_err(|_| invalid("invalid native mining asteroid physical collider"))?;
+            let vitals = ObstacleVitals::new(resource.health, resource.health)
+                .ok_or(invalid("invalid native resource health"))?;
+            entities.push(NativeAuthoredEntity::MiningAsteroid {
+                obstacle: CombatObstacle {
+                    entity_id: id, kind: ObstacleKind::MiningAsteroid,
+                    vitals: Some(vitals), size_class: 0,
+                },
+                body,
+            });
+        }
+        for source in raw.map_objects {
+            let id = source.entity_id;
+            let position = Vec2::new(source.position[0], source.position[1]);
+            if id <= 0 || id == i64::MAX || !world_ids.insert(id) ||
+                !position.is_finite() || !source.rotation_degrees.is_finite() ||
+                source.layer >= 32 || source.max_health <= 0
+            {
+                return Err(invalid("invalid native MapObject identity, health or pose"));
+            }
+            let shape = source.collider.into_native()
+                .ok_or(invalid("native MapObject requires an exact valid collider"))?;
+            let object = match source.kind {
+                GameMapObjectKind::Generic if source.explosion_power.is_none() &&
+                    source.linked_obstacle_id.is_none() =>
+                    CombatMapObject::new(
+                        id, bees_sim::map_object::MapObjectKind::Generic,
+                        source.max_health,
+                    ),
+                GameMapObjectKind::FireTank => CombatMapObject::new_fire_tank(
+                    id, source.max_health,
+                    source.explosion_power.ok_or(invalid(
+                        "Fire Tank requires its authored explosion power",
+                    ))?,
+                    source.linked_obstacle_id,
+                ),
+                _ => return Err(invalid("generic MapObject cannot have a Fire Tank blast or link")),
+            }.map_err(|_| invalid("invalid native MapObject damage or explosion contract"))?;
+            let body = ObstacleBody::new(
+                id, Pose { position, rotation_degrees: source.rotation_degrees },
+                source.layer, shape, Vec2::ZERO, 0.0,
+            ).map_err(|_| invalid("invalid native MapObject collider"))?;
+            entities.push(NativeAuthoredEntity::MapObject { object, body });
+        }
+
         let mut source_squads = Vec::with_capacity(raw.squads.len());
         let mut assigned = HashSet::new();
         let mut squad_ids = HashSet::new();
@@ -965,6 +1076,23 @@ impl NativePhysicalScene {
             source_formation,
         };
         scene.apply_native_layout(&raw.layout, boxes, polygons)?;
+        // A Fire Tank may destroy only an actual static obstacle in the
+        // *final* authored layout. Validate after optional removals and
+        // additions, before any world or policy agent has started.
+        let static_ids = scene.entities.iter().filter_map(|entity| match entity {
+            NativeAuthoredEntity::BoxObstacle { entity_id, .. } |
+            NativeAuthoredEntity::PolygonObstacle { entity_id, .. } =>
+                Some(*entity_id),
+            _ => None,
+        }).collect::<HashSet<_>>();
+        if scene.entities.iter().any(|entity| match entity {
+            NativeAuthoredEntity::MapObject { object, .. } =>
+                object.fire_tank.and_then(|tank| tank.target_obstacle_id)
+                    .is_some_and(|id| !static_ids.contains(&id)),
+            _ => false,
+        }) {
+            return Err(invalid("native Fire Tank linked static obstacle is absent from final Level"));
+        }
         scene.source_episode = episode_source;
         scene.source_policy_group = group_source;
         Ok(scene)
