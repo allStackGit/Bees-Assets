@@ -129,6 +129,8 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'training_shared_gather_max_seconds',
             'training_shared_copy_slowest_worker',
             'training_shared_gather_slowest_worker',
+            'training_sim_copy_ratio_owner',
+            'training_sim_gather_ratio_owner',
             'training_sim_copy_max_ratio',
             'training_sim_gather_max_ratio',
             'training_tuner_adjustments','training_tuner_accepted',
