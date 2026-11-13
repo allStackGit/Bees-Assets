@@ -1758,17 +1758,19 @@ class ExperimentHub {
                 (job.resources.gpu_count===0||
                     machine.gpu_projects?.includes(job.project_id)&&
                     (machine.agent_platform==='linux'
-                        ?(job.resources.gpu_count===2
-                            ?job.project_id==='tinybrains'&&
-                                job.frozen_parameters?.device==='dual'&&
-                                job.resources.gpu_mode==='exclusive'&&
-                                machine.tinybrains_dual_gpu_profiles
-                                    ?.includes(job.frozen_parameters.profile)
+                        ?(job.resources.gpu_count>=2
+                            ?job.resources.gpu_mode==='exclusive'&&(
+                                job.project_id==='courier'&&job.resources.gpu_count<=8||
+                                job.project_id==='tinybrains'&&
+                                    job.resources.gpu_count===2&&
+                                    job.frozen_parameters?.device==='dual'&&
+                                    machine.tinybrains_dual_gpu_profiles
+                                        ?.includes(job.frozen_parameters.profile))
                             :job.resources.gpu_count===1&&
                                 (job.resources.gpu_mode==='exclusive'||
                                     job.resources.gpu_mode==='shared'&&
                                         machine.gpu_shared_projects?.includes(job.project_id)))&&
-                            machine.observed_gpus?.length>=2
+                            machine.observed_gpus?.length>=Math.max(2,job.resources.gpu_count)
                         :machine.agent_platform==='win32'&&
                             machine.gpu_inventory_source==='nvidia-smi-v1'&&
                             machine.observed_gpus?.length>=1&&
@@ -1814,7 +1816,10 @@ class ExperimentHub {
             }
             if(session.probe_exclusive_gpu) {
                 for(const job of pendingClaims) {
-                    if(![1,2].includes(job.resources.gpu_count)||
+                    if(!(job.resources.gpu_count===1||
+                            job.project_id==='tinybrains'&&job.resources.gpu_count===2||
+                            job.project_id==='courier'&&
+                                job.resources.gpu_count>=2&&job.resources.gpu_count<=8)||
                         !(job.resources.gpu_mode==='exclusive'||
                             job.resources.gpu_mode==='shared'&&
                                 snapshot.machines.find(m=>m.id===job.assigned_machine_id)
@@ -1845,7 +1850,9 @@ class ExperimentHub {
                         r.gpu_count===1&&['exclusive','shared'].includes(r.gpu_mode)||
                         r.gpu_count===2&&r.gpu_mode==='exclusive'&&
                             job.project_id==='tinybrains'&&
-                            job.frozen_parameters?.device==='dual'));
+                            job.frozen_parameters?.device==='dual'||
+                        r.gpu_count>=2&&r.gpu_count<=8&&
+                            r.gpu_mode==='exclusive'&&job.project_id==='courier'));
             };
             for(const [index,job] of pendingClaims.entries()) {
                 if(!claimable(job))continue;
