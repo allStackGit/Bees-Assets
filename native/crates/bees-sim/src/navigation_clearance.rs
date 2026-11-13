@@ -48,6 +48,9 @@ pub struct NavigationClearance {
     signed_static: Arc<Vec<i32>>,
     dynamic: Vec<i32>,
     moving_blocked: Vec<bool>,
+    /// An obstacle-free rectangular map has one connected walkable region
+    /// at every clearance. No per-clearance flood-fill cache is needed.
+    has_static_blocked_cells: bool,
     /// Unity's static-region cache is keyed by effective ship clearance.
     /// Dynamic asteroids do not invalidate these permanent connectivity
     /// components; static obstacle updates do.
@@ -72,6 +75,7 @@ impl NavigationClearance {
             signed_static: Arc::new(vec![0; length]),
             dynamic: vec![0; length],
             moving_blocked: vec![false; length],
+            has_static_blocked_cells: false,
             static_components_by_clearance: HashMap::new(),
         };
         layers.set_static_blocked(static_blocked)?;
@@ -166,6 +170,9 @@ impl NavigationClearance {
         if self.base[from] < clearance || self.base[to] < clearance {
             return true;
         }
+        // Without blocked static cells the walkable interior is a single
+        // rectangle, irrespective of the ship's clearance threshold.
+        if !self.has_static_blocked_cells { return true; }
         if !self.static_components_by_clearance.contains_key(&clearance) {
             let components = self.build_static_components(clearance);
             self.static_components_by_clearance.insert(clearance, components);
@@ -230,9 +237,12 @@ impl NavigationClearance {
         if blocked.len() != self.base.len() {
             return Err(NavigationError::IncorrectCellBuffer);
         }
+        let mut has_blocked = false;
         for (base, &blocked) in self.base.iter_mut().zip(blocked) {
             *base = if blocked { 0 } else { 1 };
+            has_blocked |= blocked;
         }
+        self.has_static_blocked_cells = has_blocked;
         self.rebuild_static_fields();
         Ok(())
     }
@@ -260,6 +270,7 @@ impl NavigationClearance {
         for (base, &blocked) in self.base.iter_mut().zip(&self.moving_blocked) {
             *base = if blocked { 0 } else { 1 };
         }
+        self.has_static_blocked_cells = counts.blocked_cells != 0;
         self.rebuild_static_fields();
         Ok(counts)
     }
