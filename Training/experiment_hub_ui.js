@@ -2083,7 +2083,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const distance=Math.hypot(mouseX-sample.cx,mouseY-sample.cy);
                 if(distance<best){best=distance;nearest=sample;}
             }
-            if(!nearest||best>95)return hide();
+            if(!nearest)return hide();
             guide.setAttribute('x1',nearest.cx);
             guide.setAttribute('x2',nearest.cx);
             guide.setAttribute('visibility','visible');
@@ -2100,6 +2100,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         unit==='scalar'||unit==='count'?'':' '+unit);
             const timestamp=nearest.point.source_modified_at;
             tooltip.textContent=[
+                'Nearest recorded sample',
                 nearest.run.slot+' · '+nearest.run.job.configuration_name,
                 genericKey+': '+value,
                 axisLabel+': '+Number(nearest.axis.toPrecision(8)).toLocaleString(),
