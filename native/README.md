@@ -40,7 +40,13 @@ Carrier links are validated. `support_zone` takes an exact circle, box
 or polygon for a Beehive/Warp Gate, while `mining_asteroids` and
 `map_objects` provide their own physical collider, health and identity.
 Damage, mining, child spawns and static-wall destruction use the same
-CombatWorld shared with headless training.
+CombatWorld shared with headless training. Native policy Bomb specialists
+also require an explicit `special_weapon.observation` with `range`,
+`rate_of_fire`, `rotation_rate` and `projectile_value`; optional
+`projectile_speed` and `has_target_ship` retain their source semantics.
+Those numbers are not guessed from the physical charge/proximity trigger.
+The observation's weapon position comes from the live shared CombatWorld
+mount, so movement and hull rotation update the v26 policy input.
 
 Native scene files use `"native_game_schema": 1` instead of the Unity
 snapshot's `schema_version`. Weapon range colliders, aiming modes,
