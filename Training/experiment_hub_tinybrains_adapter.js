@@ -64,7 +64,7 @@ function supportsTinyBrainsProfile(machine,job) {
             p?.device===undefined&&job.resources?.gpu_count===0)&&
         p&&Object.keys(p).every(key=>
             ['profile','profile_sha256','updates','threads','device','remote_rollouts','import_checkpoint',
-                'import_checkpoint_sha256','rollout_action_weights','design_overrides'].includes(key))&&
+                'import_checkpoint_sha256','rollout_action_weights','design_overrides','design_source_sha256'].includes(key))&&
         (p.rollout_action_weights===undefined||
             remote&&Array.isArray(p.rollout_action_weights)&&
             p.rollout_action_weights.length===machine.tinybrains_remote_rollout_count+1&&
