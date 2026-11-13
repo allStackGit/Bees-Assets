@@ -94,6 +94,7 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
         for(const name of ['pipeline_cpu_lease_pressure',
             'pipeline_cpu_throttle_pressure','pipeline_ram_lease_pressure',
             'pipeline_gpu_host_busy_pressure',
+            'pipeline_gpu_mixed_host_evidence','pipeline_gpu_host_busy_device_share',
             'pipeline_cpu_underuse_evidence','pipeline_gpu_idle_evidence',
             'pipeline_remote_wait_dominant',
             'pipeline_merge_dominant','pipeline_collection_dominant',
@@ -154,13 +155,20 @@ class BottleneckEvidence {
             ?Array.from({length:gpuCount},(_,i)=>percent(
                 'host_gpu_'+i+'_busy_pct')):[];
         const allGpuKnown=gpuBusy.length>0&&gpuBusy.every(x=>x!==null);
+        if(allGpuKnown)
+            // Share of *assigned physical devices* observed at high host
+            // occupancy; not a per-job GPU utilization measurement.
+            add('pipeline_gpu_host_busy_device_share',
+                gpuBusy.filter(x=>x>=90).length/gpuBusy.length);
         const resourceHints={
             cpuBusy:cpu!==null&&cpu>=90,
             cpuIdle:cpu!==null&&cpu<=40,
             throttled:throttle!==null&&throttle>=10,
             ramNear:ram!==null&&ram>=90,
             gpuBusy:allGpuKnown&&gpuBusy.every(x=>x>=90),
-            gpuIdle:allGpuKnown&&gpuBusy.every(x=>x<=30)
+            gpuIdle:allGpuKnown&&gpuBusy.every(x=>x<=30),
+            gpuMixed:allGpuKnown&&gpuBusy.length>1&&
+                gpuBusy.some(x=>x>=90)&&gpuBusy.some(x=>x<=30)
         };
         const collection=seconds('collection_seconds');
         const optimize=seconds('optimization_seconds');
@@ -283,6 +291,8 @@ class BottleneckEvidence {
                     add('pipeline_ram_lease_pressure',1,'count');
                 if(sustained('gpuBusy'))
                     add('pipeline_gpu_host_busy_pressure',1,'count');
+                if(sustained('gpuMixed'))
+                    add('pipeline_gpu_mixed_host_evidence',1,'count');
                 if(sustained('cpuIdle')&&
                         recent.filter(x=>x.fraction>=0.7).length>=5)
                     add('pipeline_cpu_underuse_evidence',1,'count');
