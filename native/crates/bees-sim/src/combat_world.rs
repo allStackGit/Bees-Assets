@@ -2140,6 +2140,11 @@ impl CombatWorld {
         self.navigation_requests.has_waiting_jobs()
     }
 
+    /// A constant-time sampler for the exact source-owned navigation queue.
+    pub fn navigation_queue_gauges(&self) -> (usize, usize) {
+        self.navigation_requests.queue_gauges()
+    }
+
     /// A failed native worker is not a gameplay path-not-found result.
     pub(crate) fn abandon_path_job(&mut self, job: NavigationRequest) {
         self.navigation_requests.abandon_failed_job(job);

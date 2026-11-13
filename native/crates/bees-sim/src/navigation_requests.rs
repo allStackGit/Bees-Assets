@@ -214,6 +214,13 @@ impl NavigationRequests {
         self.claimable_waiting != 0
     }
 
+    /// On-demand pending work and retained queue slots. The difference
+    /// consists of stale IDs/deferred slots awaiting lazy disposal; it
+    /// must not be mistaken for a currently executable path request.
+    pub fn queue_gauges(&self) -> (usize, usize) {
+        (self.claimable_waiting, self.waiting_ship_ids.len())
+    }
+
     /// Worker claims the next still-current job. At most one queue slot per
     /// ship is present; coalescing never creates an obsolete worker tail.
     pub fn next(&mut self) -> Option<NavigationRequest> {

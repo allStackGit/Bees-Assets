@@ -523,6 +523,8 @@ pub struct NativeRuntimeStatus {
     /// Sum of current episodes' lifecycle-checked navigation completions.
     /// Resets with worlds; this is not a host-lifetime rate counter.
     pub navigation_jobs_completed: u64,
+    pub navigation_jobs_waiting: usize,
+    pub navigation_queue_slots: usize,
     pub queued_notifications: usize,
     pub queued_squad_retirements: usize,
     pub pending_hivemind_requests: usize,
@@ -1172,6 +1174,8 @@ impl NativeLevelBatchDriver {
             reinforcement_arrivals: crate::level_events::NativeReinforcementArrivals::default(),
             vision: bees_sim::vision::VisionSweepCounts::default(),
             navigation_jobs_completed: 0,
+            navigation_jobs_waiting: 0,
+            navigation_queue_slots: 0,
             queued_notifications: 0,
             queued_squad_retirements: 0,
             pending_hivemind_requests: connection.pending_request_count(),
@@ -1200,6 +1204,9 @@ impl NativeLevelBatchDriver {
             }
             let events = &world.state.events;
             status.navigation_jobs_completed += world.state.navigation_jobs_completed();
+            let (waiting, queue_slots) = world.state.combat.navigation_queue_gauges();
+            status.navigation_jobs_waiting += waiting;
+            status.navigation_queue_slots += queue_slots;
             if events.was_aborted() {
                 status.aborted_worlds += 1;
             } else if world.is_failed() || events.is_failed() {

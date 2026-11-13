@@ -45,6 +45,10 @@ pub struct NativeHostGauges {
     /// rate. After episode reset these counts restart from zero.
     pub vision: bees_sim::vision::VisionSweepCounts,
     pub navigation_jobs_completed: u64,
+    /// The exact claimable count and retained FIFO slots, including stale
+    /// retired IDs not eligible to launch a worker.
+    pub navigation_jobs_waiting: usize,
+    pub navigation_queue_slots: usize,
     pub notifications_queued: usize,
     pub squad_retirements_queued: usize,
     pub hivemind_requests_pending: usize,
@@ -83,6 +87,8 @@ impl From<&NativeRuntimeStatus> for NativeHostGauges {
             reinforcement_arrivals: value.reinforcement_arrivals,
             vision: value.vision,
             navigation_jobs_completed: value.navigation_jobs_completed,
+            navigation_jobs_waiting: value.navigation_jobs_waiting,
+            navigation_queue_slots: value.navigation_queue_slots,
             notifications_queued: value.queued_notifications,
             squad_retirements_queued: value.queued_squad_retirements,
             hivemind_requests_pending: value.pending_hivemind_requests,
