@@ -172,6 +172,14 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
                 reported['collector_'+i+'_is_local_gpu']);
             retain('collector_'+i+'_gpu_ordinal',
                 reported['collector_'+i+'_gpu_ordinal']);
+            retain('collector_'+i+'_gpu_lease_index',
+                reported['collector_'+i+'_gpu_lease_index']);
+            retain('collector_'+i+'_host_gpu_busy_pct',
+                reported['collector_'+i+'_host_gpu_busy_pct']);
+            retain('collector_'+i+'_gpu_busy_with_join',
+                reported['collector_'+i+'_gpu_busy_with_join']);
+            retain('collector_'+i+'_gpu_idle_with_join',
+                reported['collector_'+i+'_gpu_idle_with_join']);
         }
         for(let i=0;i<17;i++)
             retain('collector_'+i+'_onnx_batch_share',
@@ -291,6 +299,7 @@ class BottleneckEvidence {
             const stageHints=[];
             const simHints=[];
             const joinHints=[];
+            const gpuHints=[];
             for(let i=0;i<17;i++) {
                 const batch=seconds('collector_'+i+'_sim_batch_wall_seconds');
                 const tail=seconds('collector_'+i+'_sim_last_child_gap_seconds');
@@ -353,6 +362,23 @@ class BottleneckEvidence {
                 // late relative to local collection, not just because the
                 // coordinator read its future in a particular order.
                 joinHints[i]=joinExposed>=0.5&&joinShare>=0.20;
+                // Unlike HIP's ordinal, this index was attested against
+                // the job's frozen PCI lease and is therefore the same
+                // physical device as host_gpu_N. Host utilization remains
+                // host-wide and need not be exclusive useful PPO work.
+                const leaseIndex=metrics['collector_'+i+'_gpu_lease_index'];
+                const ordinal=(eligibleGpu&&leaseIndex?.unit==='count'&&
+                    Number.isSafeInteger(leaseIndex.value)&&
+                    leaseIndex.value>=0&&leaseIndex.value<gpuCount)
+                    ?leaseIndex.value:null;
+                const deviceBusy=ordinal===null?null:percent(
+                    'host_gpu_'+ordinal+'_busy_pct');
+                if(deviceBusy!==null&&deviceBusy<=100)
+                    add('collector_'+i+'_host_gpu_busy_pct',deviceBusy,'scalar');
+                gpuHints[i]={
+                    busy:deviceBusy!==null&&deviceBusy>=90&&deviceBusy<=100,
+                    idle:deviceBusy!==null&&deviceBusy<=30,
+                };
                 simHints[i]={
                     // With early dispatch, the slowest-child completion
                     // tail may have been hidden under opponent preparation.
@@ -391,7 +417,7 @@ class BottleneckEvidence {
             }
             if(Number.isFinite(at)&&at>prior.lastAt) {
                 prior.samples.push({at,fraction,waitShare,localShare,mergeShare,stageHints,simHints,
-                    joinHints,resourceHints});
+                    joinHints,gpuHints,resourceHints});
                 if(prior.samples.length>8)prior.samples.shift();
                 prior.lastAt=at;
             }
@@ -437,6 +463,16 @@ class BottleneckEvidence {
                     // the frozen remote fanout, not an inferred host label.
                     if(recent.filter(x=>x.joinHints?.[i]).length>=5)
                         add('collector_'+i+'_join_delay_pressure',1,'count');
+                    // Co-occurrence only: a host-wide busy GPU may be doing
+                    // unrelated work. Conversely, a late collector on an
+                    // observed idle assigned GPU suggests coordination,
+                    // engine, or batch inefficiency before GPU saturation.
+                    if(recent.filter(x=>x.joinHints?.[i]&&
+                            x.gpuHints?.[i]?.busy).length>=5)
+                        add('collector_'+i+'_gpu_busy_with_join',1,'count');
+                    if(recent.filter(x=>x.joinHints?.[i]&&
+                            x.gpuHints?.[i]?.idle).length>=5)
+                        add('collector_'+i+'_gpu_idle_with_join',1,'count');
                     // Stable straggler tails or dispatch queueing suggest
                     // software parallelism pressure, not CPU saturation.
                     if(recent.filter(x=>x.simHints?.[i]?.tail).length>=5)
