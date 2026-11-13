@@ -514,9 +514,19 @@ def main() -> None:
                         help="publish a portable rollout bundle without running the optimizer")
     parser.add_argument("--bundle-inbox", type=Path,
                         help="also deliver the collected bundle to an existing shared inbox")
+    parser.add_argument("--collection-id",
+                        help="pin this collection to one distributed round work order")
     parser.add_argument("--pinned-rollout-bundle", nargs=2, action="append", default=[],
                         metavar=("RECEIPT", "SHA256"), help="supply an approved receipt to an empty bundle template")
     args = parser.parse_args()
+    if args.collection_id is not None and (
+        len(args.collection_id) != 64 or any(
+            char not in "0123456789abcdef" for char in args.collection_id
+        )
+    ):
+        parser.error("--collection-id must be a lowercase SHA-256 hex work-order identity")
+    if args.collection_id is not None and not args.collect_only:
+        parser.error("--collection-id requires --collect-only")
     if args.torch_threads is not None and not 1 <= args.torch_threads <= 256:
         parser.error("--torch-threads must be between 1 and 256")
     if args.rollout_workers is not None and not 1 <= args.rollout_workers <= 256:
@@ -685,6 +695,9 @@ def main() -> None:
             "input_checkpoint_sha256": input_checkpoint_sha,
             "input_manifest_sha256": input_manifest_sha,
             "learner_slot": args.learner_slot,
+            "run_config_sha256": hashlib.sha256(run_bytes).hexdigest(),
+            "seed_offset": args.seed_offset,
+            **({"collection_id": args.collection_id} if args.collection_id is not None else {}),
             "rollout_worlds": len(levels),
             "rollout_processes": workers,
             "partition": {
