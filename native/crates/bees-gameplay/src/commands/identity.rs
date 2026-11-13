@@ -8,6 +8,10 @@ use bees_sim::geometry::Vec2;
 
 #[derive(Clone, Copy, Debug)]
 pub enum NativeLocalCommandAction<'a> {
+    /// Only the source mission/script queue issues these. A player ground
+    /// click remains a separate direct movement authority transaction.
+    MoveToPoint { destination: Vec2 },
+    MoveToRandom { range: f32 },
     Aggressive,
     TargetEnemy { target: SquadLifetime },
     BombingRun,
@@ -23,6 +27,8 @@ pub enum NativeLocalCommandAction<'a> {
 impl NativeLocalCommandAction<'_> {
     pub fn kind(self) -> LocalCommandKind {
         match self {
+            Self::MoveToPoint { .. } => LocalCommandKind::MoveToPoint,
+            Self::MoveToRandom { .. } => LocalCommandKind::MoveToRandom,
             Self::Aggressive | Self::TargetEnemy { .. } => LocalCommandKind::Aggressive,
             Self::BombingRun => LocalCommandKind::BombingRun,
             Self::Charge => LocalCommandKind::Charge,

@@ -291,6 +291,7 @@ pub enum StrategyReceiptFailureCause {
 pub enum CommandFinishCause {
     Timeout,
     ReachedRandomDestination,
+    ReachedSpecifiedDestination,
     ReachedRetreatDestination,
     AlreadySafe,
     FriendlyGone,
@@ -1043,8 +1044,10 @@ impl NativeSquadCommandDirector {
                 return Err(GameCommandError::InvalidEnemy);
             }
         }
-        if selection.local_command == LocalCommandKind::Hold &&
-            identity.source != NativeLocalCommandSource::Scripted {
+        if matches!(selection.local_command,
+            LocalCommandKind::MoveToPoint | LocalCommandKind::MoveToRandom |
+            LocalCommandKind::Hold
+        ) && identity.source != NativeLocalCommandSource::Scripted {
             self.measurements.unsupported += 1;
             return Ok(Activation::Unsupported(selection));
         }
@@ -1217,10 +1220,30 @@ impl NativeSquadCommandDirector {
                 charge = Some(run);
                 false
             }
+            LocalCommandKind::MoveToPoint => {
+                let Some(NativeLocalCommandAction::MoveToPoint { destination }) = local else {
+                    self.measurements.unsupported += 1;
+                    return Ok(Activation::Unsupported(selection));
+                };
+                if !destination.is_finite() {
+                    return Err(GameCommandError::InvalidCombatSnapshot);
+                }
+                issue_squad_move(
+                    world, navigation, squad.members,
+                    destination, squad.formation,
+                )?.is_some()
+            }
             LocalCommandKind::MoveToRandom => {
+                let range = match local {
+                    Some(NativeLocalCommandAction::MoveToRandom { range }) if
+                        range.is_finite() && range > 0.0 => range,
+                    Some(NativeLocalCommandAction::MoveToRandom { .. }) =>
+                        return Err(GameCommandError::InvalidCombatSnapshot),
+                    _ => settings.ai_random_max_distance,
+                };
                 let requested = choose_random_coordinate(
                     random, squad.squad_center, squad.formation.map_bounds,
-                    settings.ai_random_max_distance, RANDOM_MIN_DISTANCE,
+                    range, RANDOM_MIN_DISTANCE,
                 );
                 issue_squad_move(
                     world, navigation, squad.members,
@@ -1447,7 +1470,7 @@ impl NativeSquadCommandDirector {
                 ScaledTimer::new(seconds, false, false)),
             command_poll: if matches!(
                 selection.local_command,
-                LocalCommandKind::MoveToRandom | LocalCommandKind::Patrol |
+                LocalCommandKind::MoveToPoint | LocalCommandKind::MoveToRandom | LocalCommandKind::Patrol |
                 LocalCommandKind::Mining | LocalCommandKind::Heal |
                 LocalCommandKind::Scouting | LocalCommandKind::FullRetreat |
                 LocalCommandKind::ClosestFriendly |
@@ -2121,11 +2144,12 @@ impl NativeSquadCommandDirector {
                                 )?;
                                 route.current = next;
                             } else {
-                                let cause = if command.selection.local_command ==
-                                    LocalCommandKind::Retreat {
-                                    CommandFinishCause::ReachedRetreatDestination
-                                } else {
-                                    CommandFinishCause::ReachedRandomDestination
+                                let cause = match command.selection.local_command {
+                                    LocalCommandKind::Retreat =>
+                                        CommandFinishCause::ReachedRetreatDestination,
+                                    LocalCommandKind::MoveToPoint =>
+                                        CommandFinishCause::ReachedSpecifiedDestination,
+                                    _ => CommandFinishCause::ReachedRandomDestination,
                                 };
                                 self.completed_scratch.push((owner, cause));
                                 finished_by_poll = true;
