@@ -921,11 +921,11 @@ impl NativePhysicalScene {
             let pose = Pose {
                 position, rotation_degrees: placement.rotation_degrees,
             };
-            if !position.is_finite() || !pose.rotation_degrees.is_finite() ||
-                position.x < self.bounds.min.x || position.x > self.bounds.max.x ||
-                position.y < self.bounds.min.y || position.y > self.bounds.max.y
-            {
-                return Err(invalid("new obstacle origin is outside the native Level bounds"));
+            // Like Unity-authored obstacles, a box may overhang the map
+            // boundary. Only finite geometry is mandatory; collision and
+            // navigation use the source Level's actual world bounds.
+            if !position.is_finite() || !pose.rotation_degrees.is_finite() {
+                return Err(invalid("new obstacle has nonfinite authored placement"));
             }
             let prepared = if let Some(corners) = placement.local_corners {
                 asset.prepare_spawn_live_box(placement.entity_id, pose,
@@ -944,11 +944,8 @@ impl NativePhysicalScene {
             }
             let position = Vec2::new(placement.position[0], placement.position[1]);
             let pose = Pose { position, rotation_degrees: placement.rotation_degrees };
-            if !position.is_finite() || !pose.rotation_degrees.is_finite() ||
-                position.x < self.bounds.min.x || position.x > self.bounds.max.x ||
-                position.y < self.bounds.min.y || position.y > self.bounds.max.y
-            {
-                return Err(invalid("new polygon origin is outside the native Level bounds"));
+            if !position.is_finite() || !pose.rotation_degrees.is_finite() {
+                return Err(invalid("new polygon has nonfinite authored placement"));
             }
             let prepared = match &placement.local_vertices {
                 Some(vertices) => polygons.prepare_spawn_live_polygon(
