@@ -1917,7 +1917,14 @@ the worker fails closed instead of silently evaluating another network.
 Hashes are computed only on startup/manifest creation, not during rollout.
 
 Both processes must use matching artifacts. Diagnostics go to stderr;
-stdout is exclusively binary protocol.
+stdout is exclusively binary protocol. The resident worker emits sparse
+`native_policy_inference_efficiency` JSON metrics on stderr: loaded model
+slots versus distinct resident networks, inference agent rows, true model
+forward calls versus per-slot calls, avoided forwards, and model reloads.
+Unchanged SHA-256-pinned models are retained across accepted episode-boundary
+updates, while superseded networks are released. Measure actual SPS
+separately through the native rollout timing counters; model call savings
+alone are not a measured throughput improvement.
 
 **Boundary:** Existing ML-Agents checkpoints have NOT been
 verified/exported into a matching model interface here. This backend is not yet an operating
