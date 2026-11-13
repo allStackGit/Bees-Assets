@@ -77,6 +77,8 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'simulation_prefetch_overlap_seconds',
         'optimization_seconds','checkpoint_seconds',
         'remote_collector_join_wait_seconds','remote_collector_wait_after_local_max_seconds',
+        'collector_join_wait_seconds','local_gpu_join_wait_seconds',
+        'local_gpu_wait_after_local_max_seconds',
         'collection_merge_seconds',
         'overlap_seconds','remote_policy_snapshot_seconds',
         'remote_policy_shared_encode_seconds',
@@ -123,6 +125,8 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'rollout_onnx_batched_states','rollout_onnx_states',
         'remote_collectors_ready_at_local_end',
         'remote_collectors_pending_at_local_end',
+        'local_gpu_collectors_ready_at_local_end',
+        'local_gpu_collectors_pending_at_local_end',
         'collector_auto_balance_adjustments',
         'collector_auto_balance_accepted','collector_auto_balance_settled',
         'collector_balance_changed_next_update',
@@ -238,6 +242,9 @@ function recordedTinyBrainsMetrics(row,updateWall) {
     for(const [i,worker] of (Array.isArray(row.collector_samples)
         ?row.collector_samples:[]).slice(0,17).entries()) {
         add('collector_'+i+'_ant_decisions',worker.ant_decisions,'count');
+        if(worker.mode==='local_gpu')
+            add('collector_'+i+'_is_local_gpu',1,'count');
+        add('collector_'+i+'_gpu_ordinal',worker.gpu_ordinal,'count');
         add('collector_'+i+'_engine_steps',worker.engine_steps,'count');
         add('collector_'+i+'_simulation_match_steps',
             worker.simulation_match_steps,'count');
@@ -437,6 +444,7 @@ function recordedTinyBrainsMetrics(row,updateWall) {
             'join_exposed_seconds','simulation_match_steps',
             'match_steps_per_second','sim_matches','sim_target',
             'sim_ram_headroom_mb','gpu_allocated_mb','gpu_vram_lease_mb',
+            'is_local_gpu','gpu_ordinal',
             'rollout_engine_step_seconds','learner_inference_seconds',
             'roundtrip_seconds','service_seconds',
             'sim_dispatch_queue_seconds','sim_last_child_gap_seconds',
