@@ -203,8 +203,13 @@ cancels its queue:
 ```
 
 An explicit opposing target permits
-`{"kind":"aggressive","enemy_squad_item_id":52}` or
+`{"kind":"aggressive","enemy_squad_item_id":52}`,
 `{"kind":"target_enemy","enemy_squad_item_id":52}`,
+`{"kind":"retreat","enemy_squad_item_id":52}`,
+`{"kind":"circle_squad","enemy_squad_item_id":52}`,
+`{"kind":"right_swipe","enemy_squad_item_id":52}`,
+`{"kind":"left_swipe","enemy_squad_item_id":52}`,
+`{"kind":"in_and_out","enemy_squad_item_id":52}`,
 `{"kind":"bombing_run","enemy_squad_item_id":52}` or
 `{"kind":"charge","enemy_squad_item_id":52}`.
 BombingRun and Charge require the actual source weapon specs, eligible
