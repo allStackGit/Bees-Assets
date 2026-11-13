@@ -42,6 +42,8 @@ class LocalExecution {
     advertisement(){
         return {local_executor:true,installed_projects:this.projects.slice(),
             evaluation_suites:structuredClone(this.evaluationSuites),
+            design_catalog:Object.assign({},...this.projects.map(project=>
+                this.supervisor.adapters?.[project]?.design_catalog||{})),
             tinybrains_profiles:{...this.supervisor.adapters?.tinybrains?.tinybrains_profiles},
             tinybrains_cuda_profiles:[...(this.supervisor.adapters?.tinybrains?.tinybrains_cuda_profiles||[])],
             tinybrains_thread_overrides:[...(this.supervisor.adapters?.tinybrains?.tinybrains_thread_overrides||[])],
