@@ -12,6 +12,7 @@ import hashlib
 import json
 import math
 import os
+import re
 from pathlib import Path
 import shutil
 import signal
@@ -424,8 +425,11 @@ def publish_receipt(output, filename, receipt, *, announce=True):
         print(json.dumps(receipt), flush=True)
 
 
-def deliver_bundle(output, inbox, receipt):
-    destination = inbox / output.name
+def deliver_bundle(output, inbox, receipt, delivery_name=None):
+    # A Hub job's artifact root is its immutable job UUID. A separately
+    # pinned distributed work order may name the inbox delivery without
+    # changing that Hub-owned root or any resource/owner identity.
+    destination = inbox / (delivery_name or output.name)
     if destination.exists():
         raise FileExistsError(f"rollout inbox already contains {destination.name}")
     started = time.perf_counter()
@@ -538,6 +542,8 @@ def main() -> None:
                         help="also deliver the collected bundle to an existing shared inbox")
     parser.add_argument("--collection-id",
                         help="pin this collection to one distributed round work order")
+    parser.add_argument("--bundle-delivery-name",
+                        help="work-order inbox directory; local Hub job artifacts retain their original UUID")
     parser.add_argument("--pinned-rollout-bundle", nargs=2, action="append", default=[],
                         metavar=("RECEIPT", "SHA256"), help="supply an approved receipt to an empty bundle template")
     parser.add_argument("--collection-orders", type=Path,
@@ -551,6 +557,11 @@ def main() -> None:
         parser.error("--collection-id must be a lowercase SHA-256 hex work-order identity")
     if args.collection_id is not None and not args.collect_only:
         parser.error("--collection-id requires --collect-only")
+    if args.bundle_delivery_name is not None and (
+        args.collection_id is None or args.bundle_inbox is None or
+        re.fullmatch(r"[A-Za-z0-9_-]{1,96}", args.bundle_delivery_name) is None
+    ):
+        parser.error("--bundle-delivery-name requires a pinned collection, inbox and safe name")
     if args.torch_threads is not None and not 1 <= args.torch_threads <= 256:
         parser.error("--torch-threads must be between 1 and 256")
     if args.rollout_workers is not None and not 1 <= args.rollout_workers <= 256:
@@ -769,7 +780,7 @@ def main() -> None:
             "rollout_metrics": rollout,
         }
         if inbox is not None:
-            destination = deliver_bundle(output, inbox, receipt)
+            destination = deliver_bundle(output, inbox, receipt, args.bundle_delivery_name)
             print(json.dumps({"kind": "native_rollout_delivered", "directory": str(destination)}), flush=True)
         publish_receipt(output, "rollout-bundle.json", receipt)
         return
