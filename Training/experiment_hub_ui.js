@@ -2894,6 +2894,10 @@ document.addEventListener('DOMContentLoaded', () => {
         catch {return;}
         const chosen=designDefinition(parameters);
         const editor=$('hub-design-editor');
+        $('hub-design-availability').textContent=project==='bees'||chosen?'':(
+            project==='courier'||project==='tinybrains'
+                ?'Editable project defaults require a connected worker with a trusted, compatible Design-capable adapter. Existing drafts remain preserved; Advanced JSON can be viewed without a worker.'
+                :'This project has no installed Design schema. Registering a project does not install its training adapter.');
         editor.hidden=!chosen;
         $('hub-design-training').replaceChildren();
         $('hub-design-environment').replaceChildren();
