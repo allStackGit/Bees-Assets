@@ -2334,6 +2334,7 @@ fn run_battle(
         "vision_current_episodes": status.vision,
         "vision_completed_step_totals": status.simulation.vision,
         "navigation_current_episodes": status.navigation_workers,
+        "navigation_raster_work_current_episodes": status.navigation_rasters,
         "campaign_outcome": campaign_outcome,
         "aborted_worlds": status.aborted_worlds,
         "failed_worlds": status.failed_worlds,
