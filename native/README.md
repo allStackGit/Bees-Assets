@@ -448,9 +448,14 @@ update, run
 `python native/tools/train_policy_round.py run.json checkpoint.pt Training/rl_1v1_config.yaml fresh-round-directory`.
 For model-only training, use `--rollout-worlds N` (or `"rollout_worlds": N`
 in the training template) to run N independent native worlds from the
-authored Levels without copying their scene JSON. Existing worlds retain
-their seeds; additional worlds receive deterministic derived seeds and
-unique world/Level IDs. Use `--rollout-workers M` to partition these worlds
+authored Levels without copying their scene JSON. `--rollout-world-start S`
+(or `"rollout_world_start": S`) selects global world indices [S, S+N)
+for independent machine collectors, without duplicating seeds or IDs
+between disjoint windows of the same run template. Source world indices
+retain their original seeds and IDs; replicas receive deterministic derived
+seeds and unique world/Level IDs. Use one consistent source `run_id` and
+nonoverlapping windows across collectors; the receipt identifies its
+source run and window for duplicate-partition detection on import. Use `--rollout-workers M` to partition these worlds
 across M native rollout processes, with a compiled `--rollout-binary` for
 parallel processes. Shards balance Level counts and spread repeated
 source Levels across workers to reduce scene-dependent stragglers.
