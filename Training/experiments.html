@@ -788,9 +788,9 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
       <h3 id="hub-pipeline-title">Queue a multi-job pipeline</h3>
       <label>Relationship between jobs
         <select id="hub-pipeline-kind">
-          <option value="independent">Independent fresh jobs (no shared checkpoint)</option>
-          <option value="batch">Independent trials (no dependency)</option>
-          <option value="continuation">TinyBrains checkpoint-continuation stages</option>
+          <option value="batch">Independent trials (can run concurrently)</option>
+          <option value="independent">Fresh jobs in sequence (wait for predecessor)</option>
+          <option value="continuation">Checkpoint continuation (sequential, inherited model)</option>
         </select>
       </label>
       <p class="muted" id="hub-pipeline-description">Choose two or more saved configurations. Queueing is atomic and does not authorize execution.</p>
