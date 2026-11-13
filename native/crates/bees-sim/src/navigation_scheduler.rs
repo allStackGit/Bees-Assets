@@ -269,9 +269,19 @@ impl NavigationScheduler {
                 self.pending_static_rebuild,
                 collision_asteroids_enabled,
             )?;
-            self.clearance_snapshot = Some(Arc::new(
-                runtime.clearance().search_snapshot()
-            ));
+            // A prior frame's buffer can be overwritten only when no
+            // in-flight worker still holds that immutable snapshot. Most
+            // short searches have finished by the next dispatch; retain
+            // their allocation instead of cloning a full grid each time.
+            if let Some(reusable) = self.clearance_snapshot.as_mut()
+                .and_then(Arc::get_mut)
+            {
+                runtime.clearance().refresh_search_snapshot(reusable);
+            } else {
+                self.clearance_snapshot = Some(Arc::new(
+                    runtime.clearance().search_snapshot()
+                ));
+            }
             self.snapshot_frame = Some(fixed_frame);
             self.snapshot_moving_asteroids_present = Some(moving_asteroids_present);
             self.pending_static_rebuild = false;

@@ -112,6 +112,16 @@ impl NavigationClearance {
         }
     }
 
+    /// Reuse an exclusively owned prior frame's search buffer. Its dynamic
+    /// values are overwritten before any new job can observe the snapshot.
+    /// A snapshot still held by a running worker must never be modified.
+    pub fn refresh_search_snapshot(&self, snapshot: &mut NavigationSearchSnapshot) {
+        debug_assert_eq!(snapshot.grid, self.grid);
+        snapshot.signed_static = Arc::clone(&self.signed_static);
+        snapshot.dynamic.copy_from_slice(&self.dynamic);
+        snapshot.unobstructed = self.unobstructed();
+    }
+
     /// Unity CanOccupyDestination's clearance criterion, after the owning
     /// Level has enforced ForceBounds and HasObstacles. The caller must still
     /// reject destinations that were outside the Level's configured bounds.
