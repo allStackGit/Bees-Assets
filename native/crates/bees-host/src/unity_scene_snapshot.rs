@@ -71,6 +71,8 @@ use crate::runtime::NativeHostRuntime;
 use crate::ship_specials::{NativeAuthoredShipSpecial, NativeBeaconTemplate};
 use crate::durable_connection::DurableHiveMindConnection;
 
+mod native_game_scene;
+
 const SNAPSHOT_VERSION: u32 = 33;
 
 #[derive(Deserialize, Clone, Copy)]
@@ -1711,6 +1713,27 @@ impl NativePhysicalScene {
     pub fn parse(json: &str) -> Result<Self, NativeSnapshotError> {
         let catalog = ShipAssetCatalog::embedded().map_err(NativeSnapshotError::ShipCatalog)?;
         Self::parse_with_ship_catalog(json, &catalog)
+    }
+
+    /// One native scene authoring boundary for the game and headless runner.
+    /// Legacy Unity snapshots retain their original strict importer while
+    /// explicit native_game_schema files construct the same owned world
+    /// without a Unity scene, editor, GameObject or source-only defaults.
+    pub fn parse_scene_with_assets(
+        json: &str, assets: &NativeSceneAssets,
+    ) -> Result<Self, NativeSnapshotError> {
+        #[derive(Deserialize)]
+        struct Format { #[serde(default)] native_game_schema: Option<u32> }
+        let format: Format = serde_json::from_str(json)
+            .map_err(NativeSnapshotError::Malformed)?;
+        if format.native_game_schema.is_some() {
+            Self::parse_native_game_scene(
+                json, assets.ship_catalog(), assets.box_catalog(),
+                assets.polygon_catalog(),
+            )
+        } else {
+            Self::parse_with_ship_catalog(json, assets.ship_catalog())
+        }
     }
 
     /// Reuse the Stage's immutable hull catalog when many arenas share a source.
