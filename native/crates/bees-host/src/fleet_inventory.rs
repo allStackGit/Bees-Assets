@@ -54,6 +54,13 @@ impl NativeFleetInventory {
         self.entries.get(&ship_id).copied()
     }
 
+    /// Native initial scene composition can omit ships before the Level is
+    /// constructed. This removes only the episode-local FleetShip lookup,
+    /// never the external player's persistent fleet/account record.
+    pub fn omit_initial_ship(&mut self, ship_id: i64) -> bool {
+        self.entries.remove(&ship_id).is_some()
+    }
+
     pub fn register_spawned_ship(
         &mut self,
         source: NativeFleetShipValue,
