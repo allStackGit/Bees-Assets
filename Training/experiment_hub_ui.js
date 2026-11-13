@@ -1108,13 +1108,21 @@ document.addEventListener('DOMContentLoaded', () => {
             const count=document.createElement('span');
             count.className='hub-metric-count';
             count.setAttribute('aria-live','polite');
+            const selectedSummary=document.createElement('div');
+            selectedSummary.className='hub-metric-selection-summary';
+            selectedSummary.setAttribute('aria-label','Selected metrics');
+            const selectedHeading=document.createElement('strong');
+            selectedHeading.className='hub-metric-selected-heading';
+            const selectedItems=document.createElement('div');
+            selectedItems.className='hub-metric-selected-items';
+            selectedSummary.append(selectedHeading,selectedItems);
             const rows=document.createElement('div');
             rows.className='hub-metric-options';
             rows.setAttribute('role','group');
             rows.setAttribute('aria-label','Available metrics');
             toolbar.append(search,...(defaultsButton?[defaultsButton]:[]),
                 shownButton,clearButton,count);
-            panel.append(toolbar,rows);
+            panel.append(toolbar,selectedSummary,rows);
             const matches=()=>[...source.options].filter(option=>
                 (option.value+' '+option.textContent).toLowerCase()
                     .includes(search.value.trim().toLowerCase()));
@@ -1176,6 +1184,23 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 rows.replaceChildren(...nodes);
                 rows.scrollTop=scroll;
+                const chosen=[...source.selectedOptions];
+                selectedHeading.textContent='Selected metrics ('+chosen.length+')';
+                selectedItems.replaceChildren(...(chosen.length?chosen.map(option=>{
+                    const metric=option.value.replace(/^metric:/,'');
+                    const remove=document.createElement('button');
+                    remove.type='button';
+                    remove.className='hub-metric-selected-chip';
+                    remove.textContent=metric+' ×';
+                    remove.setAttribute('aria-label','Remove '+metric+' from selected metrics');
+                    remove.title='Remove '+metric;
+                    remove.addEventListener('click',()=>{
+                        option.selected=false;
+                        source.dispatchEvent(new Event('change',{bubbles:true}));
+                        draw();
+                    });
+                    return remove;
+                }):[document.createTextNode('None selected')]));
                 count.textContent=source.selectedOptions.length+
                     (selectionLimit===null?'':' / '+selectionLimit)+
                     ' selected · '+visible.length+' of '+
