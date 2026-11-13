@@ -13,7 +13,9 @@ use bees_gameplay::commands::{
 };
 use bees_gameplay::level_events::{NativeLevelEventError, NativeLevelEventProcessor};
 use bees_gameplay::campaign_dialogue::CampaignDialogueSpec;
-use bees_gameplay::level_inputs::native_squad_order_from_catalog;
+use bees_gameplay::level_inputs::{
+    collect_live_friendlies_from_catalog, native_squad_order_from_catalog,
+};
 use bees_gameplay::squads::NativeSquadRoster;
 use bees_hivemind::session::SquadLifetime;
 use bees_sim::combat_world::CombatWorld;
@@ -28,19 +30,38 @@ use super::mission_cues::NativeMissionEvent;
 pub enum NativeScriptedOrder {
     MoveToPoint { destination: Vec2 },
     MoveToRandom { range: f32 },
-    /// The source Queue's prepared Command.EnemySquad reference. A mission
-    /// must identify an actual opposing squad, never a guessed nearest side.
+    /// Prepared source EnemySquad identity. Never guess an opponent.
     Aggressive { enemy_squad_item_id: i64 },
+    TargetEnemy { enemy_squad_item_id: i64 },
+    /// Prepared source Squad.GuardedSquad identity.
+    Guard { friendly_squad_item_id: i64 },
+    Patrol { top_left: Vec2, bottom_right: Vec2 },
+    Hold,
+    Mining { asteroid_id: i64 },
+    FullRetreat { warp_gate_id: i64 },
 }
 
 impl NativeScriptedOrder {
-    fn action(self) -> NativeLocalCommandAction<'static> {
+    fn action(self, target: Option<SquadLifetime>) -> NativeLocalCommandAction<'static> {
         match self {
             Self::MoveToPoint { destination } =>
                 NativeLocalCommandAction::MoveToPoint { destination },
             Self::MoveToRandom { range } =>
                 NativeLocalCommandAction::MoveToRandom { range },
             Self::Aggressive { .. } => NativeLocalCommandAction::Aggressive,
+            Self::TargetEnemy { .. } => NativeLocalCommandAction::TargetEnemy {
+                target: target.expect("authenticated current enemy squad"),
+            },
+            Self::Guard { .. } => NativeLocalCommandAction::Guard {
+                target: target.expect("authenticated current friendly squad"),
+            },
+            Self::Patrol { top_left, bottom_right } =>
+                NativeLocalCommandAction::Patrol { top_left, bottom_right },
+            Self::Hold => NativeLocalCommandAction::Hold,
+            Self::Mining { asteroid_id } =>
+                NativeLocalCommandAction::Mining { asteroid_id },
+            Self::FullRetreat { warp_gate_id } =>
+                NativeLocalCommandAction::FullRetreat { warp_gate_id },
         }
     }
 
@@ -48,7 +69,25 @@ impl NativeScriptedOrder {
         match self {
             Self::MoveToPoint { destination } => destination.is_finite(),
             Self::MoveToRandom { range } => range.is_finite(),
-            Self::Aggressive { enemy_squad_item_id } => enemy_squad_item_id > 0,
+            Self::Aggressive { enemy_squad_item_id } |
+            Self::TargetEnemy { enemy_squad_item_id } => enemy_squad_item_id > 0,
+            Self::Guard { friendly_squad_item_id } => friendly_squad_item_id > 0,
+            Self::Patrol { top_left, bottom_right } =>
+                top_left.is_finite() && bottom_right.is_finite(),
+            Self::Hold => true,
+            Self::Mining { asteroid_id } => asteroid_id > 0,
+            Self::FullRetreat { warp_gate_id } => warp_gate_id > 0,
+        }
+    }
+
+    fn target_squad(self) -> Option<(i64, bool)> {
+        match self {
+            Self::Aggressive { enemy_squad_item_id } |
+            Self::TargetEnemy { enemy_squad_item_id } =>
+                Some((enemy_squad_item_id, true)),
+            Self::Guard { friendly_squad_item_id } =>
+                Some((friendly_squad_item_id, false)),
+            _ => None,
         }
     }
 }
