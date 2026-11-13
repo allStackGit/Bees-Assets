@@ -115,7 +115,9 @@
         "team_id": 0,
         "quarter_turns": 0,
         "movement_disabled": false
-      }
+      },
+      "persistent_fleet": true,
+      "fleet_ship_id": 11
     },
     {
       "entity_id": 12,
@@ -189,7 +191,9 @@
         "team_id": 1,
         "quarter_turns": 1,
         "movement_disabled": false
-      }
+      },
+      "persistent_fleet": true,
+      "fleet_ship_id": 12
     },
     {
       "entity_id": 13,
@@ -254,7 +258,9 @@
         "team_id": 0,
         "quarter_turns": 0,
         "movement_disabled": false
-      }
+      },
+      "persistent_fleet": true,
+      "fleet_ship_id": 13
     },
     {
       "entity_id": 14,
@@ -300,7 +306,9 @@
           0
         ],
         "radius": 21
-      }
+      },
+      "persistent_fleet": true,
+      "fleet_ship_id": 14
     },
     {
       "entity_id": 15,
@@ -346,7 +354,9 @@
           0
         ],
         "radius": 18
-      }
+      },
+      "persistent_fleet": true,
+      "fleet_ship_id": 15
     },
     {
       "entity_id": 20,
@@ -408,7 +418,9 @@
           "layer": 19,
           "enabled": true
         }
-      }
+      },
+      "persistent_fleet": true,
+      "fleet_ship_id": 20
     },
     {
       "entity_id": 21,
@@ -475,7 +487,9 @@
         "team_id": 1,
         "quarter_turns": 1,
         "movement_disabled": false
-      }
+      },
+      "persistent_fleet": true,
+      "fleet_ship_id": 21
     },
     {
       "entity_id": 22,
@@ -536,7 +550,9 @@
           "layer": 18,
           "enabled": true
         }
-      }
+      },
+      "persistent_fleet": true,
+      "fleet_ship_id": 22
     },
     {
       "entity_id": 23,
@@ -609,7 +625,9 @@
         "team_id": 1,
         "quarter_turns": 1,
         "movement_disabled": false
-      }
+      },
+      "is_carrier_ship": true,
+      "persistent_fleet": false
     },
     {
       "entity_id": 24,
@@ -648,7 +666,9 @@
       "combat_window_seconds": 5,
       "user_controlled": false,
       "turrets": [],
-      "is_carrier_ship": true
+      "is_carrier_ship": true,
+      "persistent_fleet": true,
+      "fleet_ship_id": 24
     },
     {
       "entity_id": 16,
@@ -692,7 +712,9 @@
         "team_id": 0,
         "quarter_turns": 0,
         "movement_disabled": false
-      }
+      },
+      "persistent_fleet": true,
+      "fleet_ship_id": 16
     },
     {
       "entity_id": 25,
@@ -762,14 +784,15 @@
         }
       ],
       "drone_carrier_id": 24,
-      "is_carrier_ship": false,
+      "is_carrier_ship": true,
       "is_bomber": false,
       "policy": {
         "agent_id": 1025,
         "team_id": 1,
         "quarter_turns": 1,
         "movement_disabled": false
-      }
+      },
+      "persistent_fleet": false
     },
     {
       "entity_id": 26,
@@ -813,7 +836,9 @@
         "team_id": 1,
         "quarter_turns": 1,
         "movement_disabled": false
-      }
+      },
+      "persistent_fleet": true,
+      "fleet_ship_id": 26
     }
   ],
   "squads": [
@@ -958,7 +983,7 @@
     "timeout_seconds": 120,
     "discovery_baselines": [
       [
-        1200,
+        1000,
         100,
         1000,
         45

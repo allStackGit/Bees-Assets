@@ -109,7 +109,9 @@
             "enabled": true
           }
         }
-      ]
+      ],
+      "persistent_fleet": true,
+      "fleet_ship_id": 11
     },
     {
       "entity_id": 12,
@@ -177,7 +179,9 @@
             "enabled": true
           }
         }
-      ]
+      ],
+      "persistent_fleet": true,
+      "fleet_ship_id": 12
     }
   ],
   "squads": [

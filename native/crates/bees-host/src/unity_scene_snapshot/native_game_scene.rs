@@ -115,6 +115,14 @@ struct GameShip {
     is_bomber: bool,
     #[serde(default)]
     is_carrier_ship: bool,
+    /// Whether this ship contributes the original fleet's damage/discovery
+    /// value. Free Carrier children and minions never contribute.
+    #[serde(default)]
+    persistent_fleet: bool,
+    /// Explicit identity of its durable FleetShip record; mandatory for
+    /// persistent hulls, optional for temporary ones.
+    #[serde(default)]
+    fleet_ship_id: Option<i64>,
     #[serde(default)]
     user_controlled: bool,
     #[serde(default)]
@@ -472,6 +480,7 @@ impl NativePhysicalScene {
         let mut source_formation = HashMap::new();
         let mut ship_sides = HashMap::new();
         let mut ship_types = HashMap::new();
+        let mut persistent_fleet_ids = HashSet::new();
         let mut special_weapon_ids = HashSet::new();
         let mut carrier_children = Vec::new();
         let beehive_sprite = catalog.sprite_size(2)
@@ -516,7 +525,11 @@ impl NativePhysicalScene {
                 ship.sight.fog_radius.is_some_and(|v| !v.is_finite() || v < 0.0) ||
                 !ship.combat_window_seconds.is_finite() ||
                 ship.combat_window_seconds <= 0.0 ||
-                (ship.is_carrier_ship && ship.ship_type != 5) ||
+                (ship.is_carrier_ship && !matches!(ship.ship_type, 8 | 19)) ||
+                ship.fleet_ship_id.is_some_and(|value| value <= 0) ||
+                (ship.persistent_fleet && (ship.is_carrier_ship ||
+                    ship.fleet_ship_id.is_none() ||
+                    !persistent_fleet_ids.insert(ship.fleet_ship_id.expect("checked above")))) ||
                 ship.policy.is_some() && (ship.user_controlled || ship.mined_cargo != 0) ||
                 ship.drone_carrier_id.is_some_and(|carrier|
                     ship.ship_type != 8 || carrier <= 0 || carrier == id
@@ -826,7 +839,7 @@ impl NativePhysicalScene {
             });
             fleet.push(NativeFleetShipValue {
                 ship_id: id,
-                has_persistent_fleet_value: false,
+                has_persistent_fleet_value: ship.persistent_fleet,
                 minerals_mined_this_level: ship.mined_cargo,
             });
             if let Some(policy) = ship.policy {
@@ -890,7 +903,8 @@ impl NativePhysicalScene {
                 healing_zone: if ship.ship_type == 2 { support_zone.clone() } else { None },
                 warp_zone: if ship.ship_type == 20 { support_zone } else { None },
                 policy_capabilities,
-                fleet_ship_id: special.as_ref().map(|_| id),
+                fleet_ship_id: ship.fleet_ship_id.or_else(||
+                    special.as_ref().map(|_| id)),
                 policy: None, drone_carrier_id: ship.drone_carrier_id,
                 cease_fire: ship.cease_fire, turrets, special,
                 special_weapon,
@@ -907,7 +921,7 @@ impl NativePhysicalScene {
                         firepower: ship.firepower, max_range: ship.target_max_range,
                         speed: ship.base_speed,
                     },
-                    fleet_owner_ship_id: id,
+                    fleet_owner_ship_id: ship.fleet_ship_id.unwrap_or(id),
                 }),
                 target_geometry: Some(NativeShipTargetGeometry {
                     front_offset: ship.front_offset, bounds_latched: false,
@@ -1119,6 +1133,55 @@ impl NativePhysicalScene {
             source_formation,
         };
         scene.apply_native_layout(&raw.layout, boxes, polygons)?;
+        // Discovery denominators are fixed at episode start by the Unity
+        // coordinator, never by how many objects happen to be visible after
+        // physics advances. This scene owns all its initial physical entities
+        // and source-authored static values, so independently validate the
+        // supplied frozen reward contract instead of training on arbitrary
+        // normalization numbers.
+        if let Some(episode) = policy_episode {
+            let mut fleet_tsv = [0_i32; 2];
+            let mut mining = 0_i32;
+            let mut map_objects = 0_i32;
+            for entity in &scene.entities {
+                match entity {
+                    NativeAuthoredEntity::Ship(ship) if scene.fleet.get(ship.entity_id)
+                        .is_some_and(|value| value.has_persistent_fleet_value) =>
+                    {
+                        let side = usize::from(ship.side != scene.bee_side);
+                        fleet_tsv[side] = fleet_tsv[side].checked_add(ship.vitals.tsv().max(1))
+                            .ok_or(invalid("native persistent fleet discovery TSV overflow"))?;
+                    }
+                    NativeAuthoredEntity::MiningAsteroid { obstacle, .. } => {
+                        let vitals = obstacle.vitals.ok_or(invalid(
+                            "native mining asteroid is missing authored health",
+                        ))?;
+                        mining = mining.checked_add(vitals.original_health.max(1))
+                            .ok_or(invalid("native mining discovery TSV overflow"))?;
+                    }
+                    NativeAuthoredEntity::MapObject { object, .. } => {
+                        map_objects = map_objects.checked_add(object.max_health.max(1))
+                            .ok_or(invalid("native map object discovery TSV overflow"))?;
+                    }
+                    _ => {}
+                }
+            }
+            let statics = scene.source_static_discovery_values.values()
+                .try_fold(0_i32, |total, &value|
+                    total.checked_add(value.max(1)).ok_or(invalid(
+                        "native static obstacle discovery TSV overflow",
+                    ))
+                )?;
+            let expected = [
+                [fleet_tsv[1], mining, statics, map_objects],
+                [fleet_tsv[0], mining, statics, map_objects],
+            ];
+            if episode.discovery_baselines != expected {
+                return Err(invalid(
+                    "native policy discovery denominators disagree with authored initial physical fleet and obstacles",
+                ));
+            }
+        }
         // A Fire Tank may destroy only an actual static obstacle in the
         // *final* authored layout. Validate after optional removals and
         // additions, before any world or policy agent has started.

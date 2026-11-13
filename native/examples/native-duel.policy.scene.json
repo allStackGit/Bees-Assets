@@ -115,7 +115,9 @@
         "team_id": 0,
         "quarter_turns": 0,
         "movement_disabled": false
-      }
+      },
+      "persistent_fleet": true,
+      "fleet_ship_id": 11
     },
     {
       "entity_id": 12,
@@ -189,7 +191,9 @@
         "team_id": 1,
         "quarter_turns": 1,
         "movement_disabled": false
-      }
+      },
+      "persistent_fleet": true,
+      "fleet_ship_id": 12
     }
   ],
   "squads": [
