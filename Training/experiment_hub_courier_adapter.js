@@ -100,6 +100,23 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
     if(!fs.statSync(artifacts).isDirectory()||!fs.statSync(executable).isFile()||
         !fs.statSync(script).isFile()||inside(project,artifacts)||inside(artifacts,project))
         throw Error('Courier needs an installed trainer and a dedicated artifact directory outside the project.');
+    // Old Courier installations do not know --active-learners. The explicit,
+    // bounded backend capability manifest allows the same Hub adapter to
+    // launch both old and new trainers without interpreting source text.
+    const capabilitiesFile=path.join(project,'hub-capabilities.json');
+    let boundedLearners=false;
+    if(fs.existsSync(capabilitiesFile)) {
+        if(fs.realpathSync(capabilitiesFile)!==capabilitiesFile||
+            !fs.statSync(capabilitiesFile).isFile()||
+            fs.statSync(capabilitiesFile).size>4096)
+            throw Error('Invalid Courier backend capabilities manifest.');
+        const capabilities=JSON.parse(fs.readFileSync(capabilitiesFile,'utf8'));
+        if(!capabilities||typeof capabilities!=='object'||
+            Array.isArray(capabilities)||capabilities.schema_version!==1||
+            typeof capabilities.courier_active_learners!=='boolean')
+            throw Error('Unsupported Courier backend capabilities manifest.');
+        boundedLearners=capabilities.courier_active_learners;
+    }
     const config=fs.readFileSync(configPath);
     const parsed=JSON.parse(config.toString('utf8'));
     if(!parsed||typeof parsed!=='object'||Array.isArray(parsed))
@@ -228,8 +245,8 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
             const entry=windows?['-c',WINDOWS_ENTRY,path.join(out,'trainer.stderr.txt'),...launch]:launch;
             return ['-B',...entry,'--config',configFile,'--run-dir',out,'--port','0',
                 '--seed',String(seed),'--workers',String(chosenWorkers),
-                '--active-learners',String(Math.min(chosenWorkers,
-                    fixedCpuParallelism(context.cpu_quota,64))),
+                ...(boundedLearners?['--active-learners',String(Math.min(
+                    chosenWorkers,fixedCpuParallelism(context.cpu_quota,64)))]:[]),
                 '--max-rounds',String(limit),'--checkpoint-rounds',String(checkpoint_rounds),
                 ...(predecessor?['--resume']:[])];
         },
