@@ -25,7 +25,7 @@ use bees_gameplay::level_host::{
 use bees_gameplay::level_rules::{
     NativeLevelRewardMetadata, NativeLevelCommandContext,
     NativePlayerChaseMeasurements, NativePlayerControlGauges,
-    NativeScriptedQueueMeasurements,
+    NativeScriptedQueueMeasurements, NativeNavigationWorkerMeasurements,
 };
 use bees_gameplay::perception_world::NativeLevelPerceptionInputs;
 use bees_gameplay::squads::NativeSquadRoster;
@@ -36,6 +36,7 @@ use bees_sim::combat_perception_bridge::{
 };
 use bees_sim::combat_world::{CombatWorld, CombatWorldError, CombatEvent};
 use bees_sim::navigation_runtime::NavigationRuntime;
+use bees_sim::navigation_scheduler::{NavigationScheduler, NavigationSchedulerError};
 use bees_sim::perception::CapabilitySource;
 use bees_sim::combat_perception_bridge::{
     update_exploration_from_world, CombatPerceptionError,
@@ -148,6 +149,10 @@ pub struct NativePolicyOnlyMetadata {
     pub hivemind_squads: HashMap<SquadLifetime, bees_gameplay::level_host::NativeHiveMindSquadSource>,
     pub bounds: Aabb,
     pub navigation: NavigationRuntime,
+    /// Persistent background pathfinding for explicitly opted-in graphical
+    /// games. Training and replay retain deterministic synchronous routes.
+    navigation_scheduler: Option<NavigationScheduler>,
+    navigation_worker_counts: NativeNavigationWorkerMeasurements,
     pub activate_collision_asteroids: bool,
     pub fleet: NativeFleetInventory,
     pub ship_catalog: Arc<ShipAssetCatalog>,
@@ -175,6 +180,18 @@ pub struct NativePolicyOnlyMetadata {
 }
 
 impl NativePolicyOnlyMetadata {
+    /// Interactive presentation may dedicate long-lived CPU path workers to
+    /// this actual Level. The same CombatWorld still owns each job, route
+    /// installation and physics; model-driven headless runs leave this off.
+    pub fn enable_navigation_workers(
+        &mut self, count: usize,
+    ) -> Result<(), NavigationSchedulerError> {
+        let workers = NavigationScheduler::new(self.navigation.clearance().grid(), count)?;
+        self.navigation_scheduler = Some(workers);
+        self.navigation_worker_counts = NativeNavigationWorkerMeasurements::default();
+        Ok(())
+    }
+
     /// Initial controller routes for the current episode, independent of reward groups.
     pub fn authored_policy_slots_by_side(&self) -> BTreeMap<i32, BTreeSet<u32>> {
         let mut slots = BTreeMap::<i32, BTreeSet<u32>>::new();
@@ -288,7 +305,9 @@ impl NativePolicyOnlyMetadata {
             activate_fog_of_war: None, hivemind_active: None, hivemind_initial_delay_seconds: None,
             hivemind_starting_positions: None,
             hivemind_squads: HashMap::new(),
-            bounds, navigation, activate_collision_asteroids, fleet, ship_catalog,
+            bounds, navigation, navigation_scheduler: None,
+            navigation_worker_counts: NativeNavigationWorkerMeasurements::default(),
+            activate_collision_asteroids, fleet, ship_catalog,
             authored_ships, effective_vision,
             source_static_discovery_values,
             explorers: Vec::new(),
@@ -322,6 +341,51 @@ impl NativePolicyOnlyMetadata {
 }
 
 impl NativeLevelRewardMetadata for NativePolicyOnlyMetadata {
+    fn navigation_worker_measurements(&self) -> NativeNavigationWorkerMeasurements {
+        self.navigation_worker_counts
+    }
+
+    fn advance_navigation_for_tick(
+        &mut self, world: &mut CombatWorld, completed_tick: u64,
+    ) -> Result<u64, CombatWorldError> {
+        let Some(scheduler) = self.navigation_scheduler.as_mut() else {
+            // Deterministic headless simulation executes the same canonical
+            // path requests synchronously with its Level-owned workspace.
+            return self.advance_navigation(world);
+        };
+        // Until the source exposes an exact static-collider revision, retain
+        // the synchronous adapter's conservative dirty-geometry policy.
+        // Empty/static-free training maps skip this scan's heavy raster work.
+        let static_dirty = world.static_navigation_obstacles().next().is_some() ||
+            self.navigation.static_obstacles_present() != Some(false);
+        let step = scheduler.pump(
+            world, &mut self.navigation, completed_tick, static_dirty,
+            self.activate_collision_asteroids,
+        ).map_err(|error| match error {
+            NavigationSchedulerError::InvalidMap(source) =>
+                CombatWorldError::NavigationMap(source),
+            NavigationSchedulerError::World(source) => source,
+            NavigationSchedulerError::WorkerPanicked =>
+                CombatWorldError::NavigationWorkerPanicked,
+            NavigationSchedulerError::WorkerProtocol =>
+                CombatWorldError::NavigationWorkerProtocol,
+            NavigationSchedulerError::WorkerUnavailable |
+            NavigationSchedulerError::InvalidWorkerCount |
+            NavigationSchedulerError::Spawn(_) =>
+                CombatWorldError::NavigationWorkerUnavailable,
+        })?;
+        let counts = &mut self.navigation_worker_counts;
+        counts.launched += step.launched as u64;
+        counts.completed += step.completed as u64;
+        counts.requeued += step.requeued as u64;
+        counts.discarded += step.discarded as u64;
+        counts.clearance_refreshes += u64::from(step.clearance_refreshed);
+        counts.waiting_for_static_rebuild_frames +=
+            u64::from(step.waiting_for_static_rebuild);
+        counts.busy_workers = step.busy_workers;
+        Ok(step.applied as u64)
+    }
+
     fn register_scout_beacons(
         &mut self, world: &CombatWorld, events: &[CombatEvent],
     ) -> Result<(), CombatPerceptionError> {
