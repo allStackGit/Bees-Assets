@@ -2952,7 +2952,10 @@ document.addEventListener('DOMContentLoaded', () => {
         $('hub-design-source').textContent='Defaults from '+machine.id+
             ' · approved '+(project==='courier'?'environment':'profile')+
             ' '+(entry.config_sha256||entry.profile_sha256).slice(0,12)+
-            '. Overrides are frozen in each saved draft and verified by the worker at Start.';
+            '. Overrides are frozen in each saved draft and verified by the worker at Start.'+
+            (project==='tinybrains'
+                ?' These defaults come from the frozen source run specification. Unchanged settings continue with the imported optimizer checkpoint, which may have different current values.'
+                :'');
         for(const field of entry.fields) {
             const label=document.createElement('label');
             label.append(document.createTextNode(field.label));
