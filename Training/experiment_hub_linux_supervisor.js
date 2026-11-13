@@ -816,8 +816,8 @@ class LinuxSupervisor {
             throw Error('Job already has a local launch record; reconcile rather than restart.');
         const invocation=validateLocalInput(job,lease,this.machineId,
             this.adapters,this.hostOs,this.gpuEnabled);
-        if(job.resources?.gpu_count===2)
-            throw Error('Two-GPU TinyBrains needs the locally qualified Docker backend.');
+        if(job.resources?.gpu_count>1&&job.project_id!=='courier')
+            throw Error('Multi-GPU native execution requires the approved Courier PPO backend.');
         const cpuSlots=typeof this.hostOs.availableParallelism==='function'
             ?this.hostOs.availableParallelism():this.hostOs.cpus().length;
         ensureLocalCpuRamCapacity(this.state.records,invocation.cpus,
@@ -854,21 +854,32 @@ class LinuxSupervisor {
         if(existing.unit_exists!==false)
             throw Error('A matching systemd unit already exists without a local ownership record.');
         const gpuPlan=invocation.gpu
-            ?resolveRocmDevices([invocation.gpu.binding],{fsApi:this.fs}):null;
-        if(gpuPlan&&(!gpuPlan.unselected.length||this.fs.existsSync(this.gpuProbePending)||
-            this.state.records.some(r=>r.gpu_pci_address===invocation.gpu.binding.pci_address&&
-                !['finished','stopped','failed'].includes(r.state))))
-            throw Error('GPU launch requires excluded-device evidence and unambiguous local PCI ownership.');
+            ?resolveRocmDevices(invocation.gpu.bindings,{fsApi:this.fs}):null;
+        const selectedPcis=new Set(gpuPlan?.selected.map(g=>g.pci_address)||[]);
+        if(gpuPlan&&(
+            // A one-device service still needs an excluded device to
+            // verify eBPF enforcement. Multi-GPU Courier has separately
+            // qualified *every* selected GPU under this same filter.
+            (gpuPlan.selected.length===1&&!gpuPlan.unselected.length)||
+            this.fs.existsSync(this.gpuProbePending)||
+            this.state.records.some(record=>
+                !['finished','stopped','failed'].includes(record.state)&&
+                (record.gpu_pci_addresses||(
+                    record.gpu_pci_address?[record.gpu_pci_address]:[]))
+                    .some(pci=>selectedPcis.has(pci)))))
+            throw Error('GPU launch requires unambiguous exclusive PCI ownership and completed device qualification.');
         if(gpuPlan)verifyUnconfinedDeviceAccess(gpuPlan,this.fs);
         if(gpuPlan) {
             const physical=discoverAmdGpus({fsApi:this.fs}).find(device=>
-                device.pci_address===invocation.gpu.binding.pci_address);
+                device.pci_address===gpuPlan.selected[0].pci_address);
             const gpuBlock=startHeadroom(job.resources,availableRam,physical);
             if(gpuBlock)throw Error(gpuBlock);
         }
         const record={
             job_id:job.id,lease_id:lease.id,project_id:job.project_id,
-            ...(gpuPlan?{gpu_pci_address:invocation.gpu.binding.pci_address}:{}),
+            ...(gpuPlan?(gpuPlan.selected.length===1
+                ?{gpu_pci_address:gpuPlan.selected[0].pci_address}
+                :{gpu_pci_addresses:gpuPlan.selected.map(g=>g.pci_address)}):{}),
             continuation_of_job_id:job.continuation_of_job_id||null,
             artifact_lineage_root_id:job.artifact_lineage_root_id||job.id,
             unit:unitFor(job.id),state:'launch_requested',
