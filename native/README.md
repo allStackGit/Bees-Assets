@@ -548,7 +548,11 @@ seeds and unique world/Level IDs. Use one consistent source `run_id` and
 nonoverlapping windows across collectors; the receipt identifies its
 source run and window for duplicate-partition detection on import. Use `--rollout-workers M` to partition these worlds
 across M native rollout processes, with a compiled `--rollout-binary` for
-parallel processes. Shards balance Level counts and spread repeated
+parallel processes. `--physics-workers K` sets the maximum CPU physics
+workers **inside each rollout process**, after its single model inference
+batch. A collector running M processes can request up to M × K physics
+workers; choose K from that machine's actual Experiment Hub CPU allocation,
+not its unrestricted host logical-core count. Shards balance Level counts and spread repeated
 source Levels across workers to reduce scene-dependent stragglers.
 Both counts remain operator-owned; the wrapper does
 not claim to auto-tune CPU/RAM or distributed placement. Completed
@@ -588,7 +592,7 @@ To train continuously without manually handing off a checkpoint after each
 round, use the native session controller over the same collector and learner:
 
 ```sh
-python native/tools/train_policy_session.py run.json checkpoint.pt Training/rl_1v1_config.yaml native-session --rounds 100 --rollout-binary path/to/policy_rollout --rollout-worlds 16 --rollout-workers 4 --device cuda
+python native/tools/train_policy_session.py run.json checkpoint.pt Training/rl_1v1_config.yaml native-session --rounds 100 --rollout-binary path/to/policy_rollout --rollout-worlds 16 --rollout-workers 4 --physics-workers 2 --device cuda
 ```
 
 After interruption or a failed round, repeat the command with `--resume`;
@@ -607,8 +611,8 @@ allocation (Experiment Hub retains machine/CPU/GPU/RAM ownership):
 
 ```json
 {"collectors":[
-  {"id":"halifax","world_start":0,"world_count":64,"rollout_workers":8},
-  {"id":"exeter","world_start":64,"world_count":32,"rollout_workers":4}
+  {"id":"halifax","world_start":0,"world_count":64,"rollout_workers":8,"physics_workers":2},
+  {"id":"exeter","world_start":64,"world_count":32,"rollout_workers":4,"physics_workers":2}
 ]}
 ```
 
@@ -618,7 +622,10 @@ python native/tools/train_policy_session.py run.json checkpoint.pt Training/rl_1
 
 The session publishes `collection-round-NNNNN.json` each round, naming
 the exact learner checkpoint, manifest, seed offset, source run fingerprint,
-nonoverlapping World windows and collector-specific SHA-256 work-order IDs.
+nonoverlapping World windows, optional per-process physics CPU allocations,
+and collector-specific SHA-256 work-order IDs. The standalone collector
+passes each requested `physics_workers` to its native rollout processes
+and the learner verifies the number reported in each collection receipt.
 The Experiment Hub or operator starts this command on each allocated machine,
 mapping its local source/config/model paths while retaining the pinned hashes:
 
