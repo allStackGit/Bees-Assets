@@ -23,11 +23,62 @@ from policy_worker import checked_manifest, install_bees_actor, mlagents_behavio
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_CONFIG = ROOT / "Training" / "rl_1v1_config.yaml"
+U64 = 1 << 64
+
+
+def write_native_holdout(output: Path, training_run: dict,
+                         worlds: int, seed: int, episodes: int) -> None:
+    """Create a fixed native Stage holdout independent of training seed shifts.
+
+    The evaluator runs this identical physical scene with each checkpoint;
+    only model_manifest changes. No Unity snapshot or second simulation
+    implementation is needed.
+    """
+    if not 1 <= worlds <= 1024 or not 1 <= episodes <= 10000 or not 0 <= seed < U64:
+        raise ValueError("invalid native holdout worlds, episodes, or seed")
+    run = json.loads(json.dumps(training_run))
+    if len(run.get("levels", [])) != 1:
+        raise ValueError("native bootstrap holdout requires one source scene")
+    original = run["levels"][0]
+    if not isinstance(original.get("seed"), int) or not isinstance(
+        original.get("world_id"), int
+    ) or not isinstance(original.get("level_id"), int):
+        raise ValueError("native holdout requires explicit source seed and Level identities")
+    if not 0 < original["world_id"] <= (1 << 64) - worlds or not (
+        0 < original["level_id"] <= (1 << 63) - worlds
+    ):
+        raise ValueError("native holdout would exhaust source Level identities")
+    per_episode_budget, remainder = divmod(
+        run["max_rounds"], run["episodes_per_world"],
+    )
+    if remainder or per_episode_budget <= 0 or per_episode_budget * episodes >= U64:
+        raise ValueError("native holdout round budget is invalid")
+    run["run_id"] += "-fixed-holdout"
+    run["max_rounds"] = per_episode_budget * episodes
+    run["episodes_per_world"] = episodes
+    run["levels"] = []
+    for index in range(worlds):
+        level = dict(original)
+        level["world_id"] += index
+        level["level_id"] += index
+        # The odd golden-ratio stride provides unique seeds for every world
+        # over uint64 arithmetic. Unlike learner round seed offsets, these
+        # never change between holdout evaluations.
+        level["seed"] = (seed + index * 0x9E3779B97F4A7C15) % U64
+        if level["seed"] == original["seed"]:
+            raise ValueError("holdout seed must differ from the training source seed")
+        run["levels"].append(level)
+    with (output / "holdout-run.json").open("x", encoding="utf-8", newline="\n") as file:
+        json.dump(run, file, indent=2)
+        file.write("\n")
+        file.flush()
+        os.fsync(file.fileno())
 
 
 def bootstrap(output: Path, trainer_config: Path, seed: int, slots: list[int],
               inference_device: str, cargo: str, scenario: str,
-              episodes_per_world: int = 1) -> dict:
+              episodes_per_world: int = 1, holdout_worlds: int | None = None,
+              holdout_seed: int = 918273645, holdout_episodes: int = 1) -> dict:
     if output.exists():
         raise FileExistsError(f"refusing to overwrite existing output: {output}")
     if (not slots or len(slots) != len(set(slots)) or
@@ -113,6 +164,10 @@ def bootstrap(output: Path, trainer_config: Path, seed: int, slots: list[int],
         file.write("\n")
         file.flush()
         os.fsync(file.fileno())
+    if holdout_worlds is not None:
+        write_native_holdout(
+            output, run, holdout_worlds, holdout_seed, holdout_episodes,
+        )
     sync_directory(output)
 
     trainer = POCATrainer(
@@ -170,6 +225,13 @@ def bootstrap(output: Path, trainer_config: Path, seed: int, slots: list[int],
         "trainer_config_sha256": source_hash,
         "scenario": scenario,
         "episodes_per_world": episodes_per_world,
+        "holdout_worlds": holdout_worlds,
+        "holdout_seed": holdout_seed if holdout_worlds is not None else None,
+        "holdout_episodes": holdout_episodes if holdout_worlds is not None else None,
+        **({
+            "holdout_run": "holdout-run.json",
+            "holdout_run_sha256": file_sha256(output / "holdout-run.json"),
+        } if holdout_worlds is not None else {}),
         "scene": "scene.json",
         "scene_sha256": file_sha256(output / "scene.json"),
         "run": "run.json",
@@ -182,7 +244,9 @@ def bootstrap(output: Path, trainer_config: Path, seed: int, slots: list[int],
 
 
 def verified_existing_bootstrap(output: Path, seed: int, slots: list[int],
-                                scenario: str, episodes_per_world: int) -> dict:
+                                scenario: str, episodes_per_world: int,
+                                holdout_worlds: int | None, holdout_seed: int,
+                                holdout_episodes: int) -> dict:
     """Resume only a fully committed, unchanged initial model lineage."""
     if not output.is_dir():
         raise ValueError(f"native bootstrap directory does not exist: {output}")
@@ -192,7 +256,12 @@ def verified_existing_bootstrap(output: Path, seed: int, slots: list[int],
             receipt.get("schema_version") != 1 or
             receipt.get("seed") != seed or receipt.get("slots") != slots or
             receipt.get("scenario") != scenario or
-            receipt.get("episodes_per_world") != episodes_per_world):
+            receipt.get("episodes_per_world") != episodes_per_world or
+            receipt.get("holdout_worlds") != holdout_worlds or
+            (holdout_worlds is not None and (
+                receipt.get("holdout_seed") != holdout_seed or
+                receipt.get("holdout_episodes") != holdout_episodes
+            ))):
         raise ValueError("bootstrap receipt does not match the requested initial run")
     for name in ("checkpoint", "manifest", "trainer_config", "scene", "run"):
         expected_name = {
@@ -207,6 +276,10 @@ def verified_existing_bootstrap(output: Path, seed: int, slots: list[int],
         actual = file_sha256(output / expected_name)
         if actual != receipt.get(f"{name}_sha256"):
             raise ValueError(f"initial bootstrap artifact changed: {name}")
+    if holdout_worlds is not None:
+        if (receipt.get("holdout_run") != "holdout-run.json" or
+                file_sha256(output / "holdout-run.json") != receipt.get("holdout_run_sha256")):
+            raise ValueError("frozen native holdout configuration changed")
     config = json.loads((output / "run.json").read_text(encoding="utf-8"))
     if (config.get("episodes_per_world") != episodes_per_world or
             config.get("model_manifest") != "manifest.json" or
