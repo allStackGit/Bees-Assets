@@ -1,6 +1,6 @@
 //! Source Squad.RunCommandQueue over the one native Level command director.
 //!
-//! Prepared mission movements are authored immutable values. The queue owns
+//! Prepared mission movements and targeting are immutable source values. The queue owns
 //! only pending order and cursor; CombatWorld owns movement and the canonical
 //! director owns timers, completion and command identifiers. No independent
 //! scripted physics or HiveMind outcome IDs are created.
@@ -256,11 +256,16 @@ impl NativePolicyOnlyMetadata {
                 |id| self.player.ships.get(&id).map(|source| source.clearance),
                 &mut self.scripted_members,
             ).map_err(NativeLevelEventError::Commands)?;
-            // Refresh once for the first source movement on this tick.
-            // All later queue members reuse this exact world-owned grid.
+            // Refresh the same authoritative clearance used by normal
+            // player/AI commands, once for all scripted activations on this
+            // tick. Empty native arenas retain their already-initialized
+            // static grid; a present static collider may have moved/died.
             if started == 0 {
+                let has_static = world.static_navigation_obstacles().next().is_some();
+                let rebuild_static = has_static ||
+                    self.navigation.static_obstacles_present() != Some(false);
                 world.refresh_world_navigation(
-                    &mut self.navigation, true, self.activate_collision_asteroids,
+                    &mut self.navigation, rebuild_static, self.activate_collision_asteroids,
                 ).map_err(|error| NativeLevelEventError::Commands(
                     GameCommandError::World(error),
                 ))?;

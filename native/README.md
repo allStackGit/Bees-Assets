@@ -183,9 +183,18 @@ The first scripted command starts on the first completed fixed tick.
 Subsequent orders start after the prior native command finishes, including
 its normal timed completion, and source HiveMind requests are suppressed
 while the scripted queue is active. Player command replacement cancels
-remaining orders. The source's complex dialogue/mission-triggered queue
-arming and deferred-reinforcement queue enrollment require separately
-authored activation boundaries and are **not** implied by this static plan.
+remaining orders. The source's dialogue/mission-triggered queue arming is not implied
+by this static plan. An actual native mission callback can instead call
+`NativePolicyOnlyMetadata::enqueue_live_scripted_queue(roster, plan)`
+after the original trigger fires (including after a deferred wave's squads
+have entered the real roster). This public entry point validates the live
+squad lifetime, source formation and any opposing Aggressive target before
+arming orders for the next completed fixed tick. The mission adapter owns
+when to invoke it; the native engine does not guess Unity cutscene/dialogue
+timing. Existing live Unity command/queue histories still cannot be
+resumed from an exported initial scene. `NativeHostGauges.scripted_queues`
+reports current active queues and pending orders plus episode-local
+starts, repeats, completions, cancellations and vanished-target skips.
 
 
 For Titania II's *obstacle-free* mission, the authored approach lanes

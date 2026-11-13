@@ -117,7 +117,7 @@ struct ScriptedQueueConfig {
     orders: Vec<ScriptedOrderConfig>,
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Clone, Copy, Deserialize, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum ScriptedOrderConfig {
     MoveToPoint { destination: [f32; 2] },
