@@ -285,6 +285,8 @@ def main():
     parser.add_argument("--learner-slot", type=int)
     parser.add_argument("--rollout-binary", type=Path)
     parser.add_argument("--rollout-workers", type=int)
+    parser.add_argument("--physics-workers", type=int,
+                        help="CPU physics threads in each local rollout process; distributed collectors use their plan")
     parser.add_argument("--rollout-worlds", type=int)
     parser.add_argument("--rollout-world-start", type=int)
     parser.add_argument("--distributed-plan", type=Path,
@@ -312,6 +314,8 @@ def main():
         parser.error("session seed offsets must be distinct and fit uint64")
     if args.rollout_workers is not None and not 1 <= args.rollout_workers <= 256:
         parser.error("rollout workers must be between 1 and 256")
+    if args.physics_workers is not None and not 1 <= args.physics_workers <= 128:
+        parser.error("physics workers must be between 1 and 128")
     if args.rollout_worlds is not None and not 1 <= args.rollout_worlds <= 1024:
         parser.error("rollout worlds must be between 1 and 1024")
     if args.rollout_world_start is not None and args.rollout_world_start < 0:
@@ -325,6 +329,7 @@ def main():
     if args.distributed_plan is not None and any(
         value is not None for value in (
             args.rollout_workers, args.rollout_worlds, args.rollout_world_start,
+            args.physics_workers,
         )
     ):
         parser.error("distributed collector windows/workers belong to --distributed-plan")
@@ -362,6 +367,7 @@ def main():
         "round_python": round_python,
         "rollout_binary": binary,
         "rollout_workers": args.rollout_workers,
+        "physics_workers": args.physics_workers,
         "rollout_worlds": args.rollout_worlds,
         "rollout_world_start": args.rollout_world_start,
         "seed_offset_start": args.seed_offset_start,
@@ -479,6 +485,7 @@ def main():
             else:
                 command.extend(["--seed-offset", str(seed_offset)])
                 for option, value in (("--rollout-workers", args.rollout_workers),
+                                      ("--physics-workers", args.physics_workers),
                                       ("--rollout-worlds", args.rollout_worlds),
                                       ("--rollout-world-start", args.rollout_world_start)):
                     if value is not None:
