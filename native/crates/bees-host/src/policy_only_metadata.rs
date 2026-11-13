@@ -723,13 +723,13 @@ impl NativeLevelCommandContext for NativePolicyOnlyMetadata {
             // path requests synchronously with its Level-owned workspace.
             return self.advance_navigation(world);
         };
-        // Until the source exposes an exact static-collider revision, retain
-        // the synchronous adapter's conservative dirty-geometry policy.
-        // Empty/static-free training maps skip this scan's heavy raster work.
-        let static_dirty = world.static_navigation_obstacles().next().is_some() ||
-            self.navigation.static_obstacles_present() != Some(false);
+        // Physics owns all StaticObstacle admissions and integrates any
+        // animated static poses. A source geometry revision (or real motion)
+        // invalidates its snapshot, not merely the presence of static walls.
+        let revision = world.static_navigation_revision();
+        let static_moves = world.has_moving_static_navigation_obstacles();
         let step = scheduler.pump(
-            world, &mut self.navigation, completed_tick, static_dirty,
+            world, &mut self.navigation, completed_tick, revision, static_moves,
             self.activate_collision_asteroids,
         ).map_err(|error| match error {
             NavigationSchedulerError::InvalidMap(source) =>
