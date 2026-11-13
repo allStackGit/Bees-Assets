@@ -154,14 +154,20 @@ pub struct ParallelWorkerMeasurements {
     pub ticks: u64,
     pub integrated_bodies: u64,
     pub narrowphase_tests: u64,
+    /// Whole worker wall time; sampled once per window, including queue
+    /// claims but not aggregation on the caller thread.
+    pub wall_elapsed: Duration,
 }
 
 impl ParallelWorkerMeasurements {
-    fn from_report(arenas: usize, measurements: &Measurements) -> Self {
+    fn from_report(
+        arenas: usize, measurements: &Measurements, wall_elapsed: Duration,
+    ) -> Self {
         Self {
             arenas, ticks: measurements.ticks,
             integrated_bodies: measurements.integrated_bodies,
             narrowphase_tests: measurements.narrowphase_tests,
+            wall_elapsed,
         }
     }
 }
@@ -358,7 +364,7 @@ impl<S, R: GameRules<S>> Simulation<S, R> {
                 rules, dt, sample, &mut self.worlds, steps, decide, &mut decisions,
             );
             part.worker_loads.push(ParallelWorkerMeasurements::from_report(
-                self.worlds.len(), &part.measurements,
+                self.worlds.len(), &part.measurements, started.elapsed(),
             ));
             self.measurements.merge(&part.measurements);
             part.wall_elapsed = started.elapsed();
@@ -382,6 +388,7 @@ impl<S, R: GameRules<S>> Simulation<S, R> {
                 for _ in 0..workers {
                     let pending = &pending;
                     handles.push(scope.spawn(move || {
+                        let worker_started = Instant::now();
                         let mut report = ParallelWindow::default();
                         let mut decisions = Vec::new();
                         let mut assigned = 0;
@@ -399,7 +406,7 @@ impl<S, R: GameRules<S>> Simulation<S, R> {
                             report.completed_worlds += part.completed_worlds;
                             report.failed_worlds.extend(part.failed_worlds);
                         }
-                        (report, assigned)
+                        (report, assigned, worker_started.elapsed())
                     }));
                 }
                 handles.into_iter().map(|handle| handle.join())
@@ -418,10 +425,12 @@ impl<S, R: GameRules<S>> Simulation<S, R> {
                     let (chunk, rest) = remaining.split_at_mut(size);
                     remaining = rest;
                     handles.push(scope.spawn(move || {
+                        let worker_started = Instant::now();
                         let mut decisions = Vec::new();
-                        (run_partition(
+                        let report = run_partition(
                             rules, dt, sample, chunk, steps, decide, &mut decisions,
-                        ), size)
+                        );
+                        (report, size, worker_started.elapsed())
                     }));
                 }
                 handles.into_iter().map(|handle| handle.join())
@@ -432,9 +441,9 @@ impl<S, R: GameRules<S>> Simulation<S, R> {
         let mut panicked = false;
         for outcome in outcomes {
             match outcome {
-                Ok((part, assigned)) => {
+                Ok((part, assigned, worker_elapsed)) => {
                     result.worker_loads.push(ParallelWorkerMeasurements::from_report(
-                        assigned, &part.measurements,
+                        assigned, &part.measurements, worker_elapsed,
                     ));
                     self.measurements.merge(&part.measurements);
                     result.measurements.merge(&part.measurements);
