@@ -2147,7 +2147,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const unit=units[0]||'';
             const formatted=value=>unit==='ratio'
                 ?(value*100).toFixed(2)+'%'
-                :Number(value.toPrecision(6)).toLocaleString()+
+                :Number(value).toLocaleString(undefined,{maximumFractionDigits:2})+
                     (unit==='seconds'?' s':unit==='rate'?' /s':
                         unit==='mb'?' MiB':unit==='watts'?' W':
                         unit==='scalar'||unit==='count'?'':' '+unit);
