@@ -2706,7 +2706,8 @@ document.addEventListener('DOMContentLoaded', () => {
             ...(remoteRollouts?{remote_rollouts:true}:{}),
             ...(weights.length?{rollout_action_weights:weights}:{}),
             ...(current.profile===profile&&current.profile_sha256===digest&&
-                current.design_overrides?{design_overrides:current.design_overrides}:{}),
+                current.design_overrides?{design_overrides:current.design_overrides,
+                    design_source_sha256:current.design_source_sha256}:{}),
             ...(sourceId&&sourceDigest?{
                 import_checkpoint:sourceId,
                 import_checkpoint_sha256:sourceDigest,
@@ -2872,8 +2873,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 throw Error(key.replace(/_/g,' ')+' is outside its approved limits.');
             parameters[key]=value;
         }
-        if(Object.keys(overrides).length)parameters.design_overrides=overrides;
-        else delete parameters.design_overrides;
+        if(Object.keys(overrides).length) {
+            parameters.design_overrides=overrides;
+            if(project==='tinybrains')
+                parameters.design_source_sha256=choice.machine.design_catalog.tinybrains.source_sha256;
+        }else {
+            delete parameters.design_overrides;
+            delete parameters.design_source_sha256;
+        }
         $('hub-config-json').value=JSON.stringify(parameters,null,2);
         return parameters;
     }
@@ -2965,6 +2972,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const chosen=designDefinition(parameters);
             if(!chosen)throw Error('No matching approved project defaults.');
             delete parameters.design_overrides;
+            delete parameters.design_source_sha256;
             if(project==='courier') {
                 parameters.seed=42;
                 parameters.workers=1;
