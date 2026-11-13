@@ -398,19 +398,21 @@ impl<S, R: GameRules<S>> Simulation<S, R> {
             action.is_some() && serialized_indices.binary_search(index).is_err()
         ).count();
         let workers = worker_count.get().min(parallel_count);
-        // Keep the requested allocation stable even when some arenas finish
-        // their episodes. Only the number of scheduled tasks varies per tick;
-        // rebuilding the pool as active arena counts fluctuate defeats reuse.
+        // An arena allocation is stable across episode resets, whereas the
+        // number of active arenas is not. Keep the pool at the smaller of the
+        // requested CPU limit and registered worlds, rebuilding only if that
+        // allocation changes, not each time an episode completes.
         // Initialize before stepping any world so failure cannot partially
         // apply a model batch.
+        let pool_size = worker_count.get().min(self.worlds.len());
         if workers > 1 && self.model_physics_pool.as_ref()
-            .is_none_or(|(count, _)| *count != worker_count.get())
+            .is_none_or(|(count, _)| *count != pool_size)
         {
             let pool = rayon::ThreadPoolBuilder::new()
-                .num_threads(worker_count.get())
+                .num_threads(pool_size)
                 .build()
                 .map_err(|_| "unable to initialize native physics worker pool")?;
-            self.model_physics_pool = Some((worker_count.get(), pool));
+            self.model_physics_pool = Some((pool_size, pool));
         }
         let rules = &self.rules;
         let dt = self.dt_seconds;
