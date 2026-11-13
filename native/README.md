@@ -126,12 +126,14 @@ python native/tools/bootstrap_policy.py native-first --scenario duel --seed 42 \
 ```
 
 This runs sixteen independent training arenas with four source-numbered
-episodes each, followed by native MA-POCA updates. After each update,
-eight separate, fixed-seed native holdout arenas measure the same gameplay
-with that checkpoint; unlike training seeds, their seeds remain unchanged
-across rounds. The holdout evaluator accepts embedded `native_stage`
-assets without Unity exports. `native-first/session` stores resumable
-round receipts, model lineage, throughput and per-round holdout results.
+episodes each, followed by native MA-POCA updates. Eight separate
+fixed-seed native holdout arenas first measure the initial untrained model
+and then each updated checkpoint with identical gameplay and seeds.
+The session reports win-rate change against that starting baseline, while
+training seeds advance independently between rounds. The holdout evaluator
+accepts embedded `native_stage` assets without Unity exports.
+`native-first/session` stores resumable round receipts, model lineage,
+throughput and both baseline and per-round holdout results.
 The default single collector uses `cargo run --release`; pass a compiled
 `policy_rollout` via `--rollout-binary` for multiple local processes.
 An existing distributed plan can be supplied with `--distributed-plan`
