@@ -13,7 +13,7 @@ const PROJECT=/^[a-z][a-z0-9_-]{0,47}$/;
 const METRIC=/^[a-z][a-z0-9_]{0,63}$/;
 const KEEP_MS=2*60*60*1000;
 const JOB_FIELDS=[
-    'id','project_id','configuration_name','configuration_sha256',
+    'id','project_id','configuration_name','run_name','configuration_sha256',
     'frozen_parameters','metric_selection','resources','resource_bundle',
     'trial_batch','distributed_rollout_managed','status',
     'assigned_machine_id','continuation_of_job_id','artifact_lineage_root_id',
@@ -293,6 +293,27 @@ class JobExporter {
                 ];
             });
         });
+        // Download names describe the selected jobs, not just the project.
+        // Slugs are bounded and reduced to safe ASCII; the UUID makes
+        // repeated exports unique even within the same second.
+        const id=crypto.randomUUID();
+        const slug=value=>String(value||'run').normalize('NFKD')
+            .toLowerCase().replace(/[^a-z0-9]+/g,'-')
+            .replace(/^-+|-+$/g,'').slice(0,32).replace(/-+$/g,'')||'run';
+        const labels=jobs.slice(0,2).map(job=>{
+            const resources=job.resources||{};
+            const cpu=Number.isSafeInteger(resources.cpus)
+                ?resources.cpus+'cpu':null;
+            const gpu=Number.isSafeInteger(resources.gpu_count)
+                ?resources.gpu_count+'gpu':null;
+            return [slug(job.run_name||job.configuration_name),
+                cpu,gpu].filter(Boolean).join('-');
+        });
+        const suffix=jobs.length>2?'-plus-'+(jobs.length-2)+'-more':'';
+        const timestamp=new Date().toISOString()
+            .replace(/[-:.]/g,'').slice(0,15).toLowerCase();
+        const downloadBase=project+'-'+labels.join('-vs-')+suffix+
+            '-'+timestamp+'-'+id.slice(0,12)+'-analysis';
         const dir=fs.mkdtempSync(path.join(this.dataRoot,'job-export-'));
         fs.chmodSync(dir,0o700);
         const spec=path.join(dir,'request.json');
@@ -318,12 +339,11 @@ class JobExporter {
                     }];
                 }),...linkedCollectorSources,...mounted,...mirrored],
         }),{flag:'wx',mode:0o600});
-        const id=crypto.randomUUID();
         const session={id,dir,project,status:'preparing',parts:[],error:null};
         this.sessions.set(id,session);
         const script=path.join(__dirname,'experiment_hub_job_export.py');
         const child=spawn(python,
-            [script,'--spec',spec,'--output',path.join(dir,project+'-analysis.zip')],
+            [script,'--spec',spec,'--output',path.join(dir,downloadBase+'.zip')],
             {shell:false,windowsHide:true,stdio:['ignore','pipe','pipe']});
         let stdout='',stderr='',done=false;
         function cleanupLater() {
