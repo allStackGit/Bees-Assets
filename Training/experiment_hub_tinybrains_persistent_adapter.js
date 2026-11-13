@@ -98,7 +98,9 @@ function recordedTinyBrainsMetrics(row,updateWall) {
     for(const name of ['simulation_active_matches','simulation_target_matches',
         'simulation_concurrency_adjustments','simulation_tuner_accepted',
         'simulation_tuner_settled','simulation_target_restored',
-        'simulation_proven_target',
+        'simulation_proven_target','simulation_completed_retirements',
+        'simulation_native_engines_admitted','simulation_admission_denied',
+        'simulation_memory_rejected_trials',
         'ant_decisions','group_states','births','deaths',
         'episodes_ended','multi_ant_states','terminal_rewards',
         'carried_matches','open_matches','peak_live_matches',
@@ -284,6 +286,10 @@ function recordedTinyBrainsMetrics(row,updateWall) {
             add('collector_'+i+'_'+suffix,worker[name],'mb');
         add('collector_'+i+'_sim_prefetch_engine_steps',
             worker.simulation_prefetch_engine_steps,'count');
+        add('collector_'+i+'_sim_admission_denied',
+            worker.simulation_admission_denied,'count');
+        add('collector_'+i+'_sim_memory_rejected_trials',
+            worker.simulation_memory_rejected_trials,'count');
         for(const [suffix,name] of [
             ['sim_engine_roundtrip_seconds','simulation_engine_roundtrip_seconds'],
             ['sim_dispatch_queue_seconds','simulation_dispatch_queue_seconds'],
@@ -461,7 +467,8 @@ function recordedTinyBrainsMetrics(row,updateWall) {
             'ant_decisions','decisions_per_second','elapsed_seconds',
             'join_exposed_seconds','simulation_match_steps',
             'match_steps_per_second','sim_matches','sim_target',
-            'sim_ram_headroom_mb','gpu_allocated_mb','gpu_vram_lease_mb',
+            'sim_ram_headroom_mb','sim_admission_denied',
+            'gpu_allocated_mb','gpu_vram_lease_mb',
             'is_local_gpu','gpu_ordinal','gpu_lease_index',
             'rollout_engine_step_seconds','learner_inference_seconds',
             'roundtrip_seconds','service_seconds',
