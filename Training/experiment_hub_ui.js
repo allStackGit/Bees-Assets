@@ -1356,7 +1356,9 @@ document.addEventListener('DOMContentLoaded', () => {
             refreshComparisonKeepingViewport();
         }catch(error){
             if(serial!==comparisonRequest||requested!==project)return;
-            comparisonData=null;
+            // A transient progress-request failure must not erase already
+            // verified chart observations or the selected metrics.
+            if(comparisonProject!==requested)comparisonData=null;
             comparisonProject=requested;
             comparisonError=String(error.message||error);
             refreshComparisonKeepingViewport();
