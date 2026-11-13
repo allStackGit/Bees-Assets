@@ -8,6 +8,7 @@ const path=require('node:path');
 const crypto=require('node:crypto');
 const {spawnSync}=require('node:child_process');
 const {validateProgress}=require('./experiment_hub_progress');
+const {applyOverrides,described}=require('./experiment_hub_design_fields');
 const {fixedCpuParallelism}=require('./experiment_hub_resources');
 const {modelFileSha256}=require('./experiment_hub_evaluation');
 
@@ -394,6 +395,32 @@ function createTinyBrainsPersistentDockerAdapter({
     if(originalSpec?.model_config?.training?.algorithm!=='colony_ppo'||
         !Number.isSafeInteger(originalSpec.self_play_updates))
         throw Error('Original run is not the approved persistent colony-PPO lineage.');
+    // Do not advertise editable hyperparameters unless the installed project
+    // runtime actually consumes overrides from the resumed checkpoint.
+    const learningPath=path.join(project,'src/ants_mapoca/learning_path.py');
+    const designEnabled=fs.readFileSync(learningPath,'utf8')
+        .includes('HUB_DESIGN_OVERRIDES_VERSION = 1');
+    const designFields=described(originalSpec,'tinybrains');
+    function approvedDesign(overrides) {
+        if(overrides!==undefined&&!designEnabled)
+            throw Error('Install a trusted TinyBrains Design-capable runtime before running overrides.');
+        applyOverrides(originalSpec,'tinybrains',overrides);
+    }
+    function checkpointDesign(out,expected,strict=false) {
+        const file=path.join(out,'hub-design-overrides.json');
+        if(!fs.existsSync(file)) {
+            if(strict&&expected!==undefined)throw Error('Missing TinyBrains frozen Design overrides.');
+            return;
+        }
+        const stat=fs.statSync(file);
+        if(!stat.isFile()||stat.size>16384||fs.realpathSync(file)!==file)
+            throw Error('TinyBrains checkpoint Design override manifest is invalid.');
+        const actual=JSON.parse(fs.readFileSync(file,'utf8'));
+        approvedDesign(actual);
+        if(strict&&(expected===undefined||
+            JSON.stringify(actual)!==JSON.stringify(expected)))
+            throw Error('TinyBrains checkpoint Design differs from its frozen job.');
+    }
 
     function frozenRemoteKeyIntact() {
         if(!remote)return true;
@@ -416,7 +443,7 @@ function createTinyBrainsPersistentDockerAdapter({
             fs.readFileSync(path.join(folder,'gate-passed.json')).equals(evidence)&&
             modelFileSha256(runRelative(folder,gate.checkpoint))===gate.checkpoint_sha256;
     }
-    function checkpointReady(out,text) {
+    function checkpointReady(out,text,overrides,strict=false) {
         const profile=path.join(out,'hub-profile.json');
         const latest=path.join(out,'self-play/latest.pt');
         const stat=fs.statSync(latest);
@@ -424,6 +451,7 @@ function createTinyBrainsPersistentDockerAdapter({
             fs.readFileSync(profile,'utf8')!==text||
             !frozenEvidenceIntact(out))
             throw Error('Finished TinyBrains job does not have its original frozen lineage and checkpoint.');
+        checkpointDesign(out,overrides,strict);
         const status=JSON.parse(fs.readFileSync(path.join(out,'status.json'),'utf8'));
         const start=JSON.parse(fs.readFileSync(path.join(out,'hub-start-update.json'),'utf8'));
         if(!Number.isSafeInteger(start.update)||start.update<1||
@@ -467,6 +495,10 @@ function createTinyBrainsPersistentDockerAdapter({
             return path.join(artifacts,jobId);
         },
         gpu_execution:'cuda',
+        ...(designEnabled?{design_catalog:{tinybrains:{profiles:
+            Object.fromEntries([...approved].map(([id,item])=>[
+                id,{...designFields,profile_sha256:item.sha256},
+            ]))}}}:{}),
         gpu_sharing:'cooperative-pytorch',
         tinybrains_profiles:Object.fromEntries([...approved].map(([id,p])=>[id,p.sha256])),
         tinybrains_cuda_profiles:[...approved.keys()],
@@ -497,14 +529,16 @@ function createTinyBrainsPersistentDockerAdapter({
         },
         args(parameters,context) {
             const {profile,profile_sha256,updates,threads,device,remote_rollouts,
-                rollout_action_weights,import_checkpoint,import_checkpoint_sha256}=parameters;
+                rollout_action_weights,import_checkpoint,import_checkpoint_sha256,
+                design_overrides}=parameters;
+            approvedDesign(design_overrides);
             const item=approved.get(profile);
             if(remote_rollouts===true&&!frozenRemoteKeyIntact())
                 throw Error('Remote rollout key was rotated or changed after local adapter approval.');
             if(!item||item.sha256!==profile_sha256||
                 Object.keys(parameters).some(k=>!['profile','profile_sha256','updates',
                     'threads','device','remote_rollouts','rollout_action_weights',
-                    'import_checkpoint','import_checkpoint_sha256'].includes(k))||
+                    'import_checkpoint','import_checkpoint_sha256','design_overrides'].includes(k))||
                 (remote_rollouts!==undefined&&
                     (remote_rollouts!==true||!remote||device==='cpu'))||
                 (rollout_action_weights!==undefined&&
@@ -561,6 +595,8 @@ function createTinyBrainsPersistentDockerAdapter({
                     JSON.parse(fs.readFileSync(path.join(out,'hub-start-update.json'),'utf8')).update!==startingUpdate||
                     !frozenEvidenceIntact(out))
                     throw Error('Previously launched or changed Hub training output cannot be re-used.');
+                checkpointDesign(out,design_overrides,true);
+
             }else{
                 fs.mkdirSync(out,{mode:0o700});
                 stageFile(sourceCheckpoint,path.join(out,'self-play/latest.pt'));
@@ -568,6 +604,9 @@ function createTinyBrainsPersistentDockerAdapter({
                 stageFile(path.join(source,'gate-passed.json'),path.join(out,'gate-passed.json'));
                 stageFile(candidate,runRelative(out,gate.checkpoint));
                 fs.writeFileSync(path.join(out,'hub-profile.json'),item.text,{flag:'wx',mode:0o600});
+                if(design_overrides!==undefined)
+                    fs.writeFileSync(path.join(out,'hub-design-overrides.json'),
+                        JSON.stringify(design_overrides)+'\n',{flag:'wx',mode:0o600});
                 fs.writeFileSync(path.join(out,'hub-start-update.json'),
                     JSON.stringify({update:startingUpdate})+'\n',{flag:'wx',mode:0o600});
             }
@@ -582,6 +621,8 @@ function createTinyBrainsPersistentDockerAdapter({
                 '--live-matches',String(item.profile.live_matches),
                 '--waves',String(item.profile.waves),
                 '--actions',String(item.profile.rollout_actions),
+                ...(design_overrides===undefined?[]:
+                    ['--hub-design-overrides',JSON.stringify(design_overrides)]),
                 ...(remote_rollouts===true?[]:['--adaptive-local-engines']),
                 ...(remote_rollouts===true?[...remote.endpoints.flatMap(endpoint=>
                     ['--remote-rollout-endpoint',endpoint]),
@@ -600,14 +641,14 @@ function createTinyBrainsPersistentDockerAdapter({
             const item=approved.get(context.frozen_parameters?.profile);
             if(!item||item.sha256!==context.frozen_parameters?.profile_sha256)
                 throw Error('Unknown approved checkpoint profile.');
-            checkpointReady(targetFor(context),item.text);
+            checkpointReady(targetFor(context),item.text,context.frozen_parameters?.design_overrides,true);
             return true;
         },
         model_checkpoint_sha256(context){
             const item=approved.get(context.frozen_parameters?.profile);
             if(!item||item.sha256!==context.frozen_parameters?.profile_sha256)
                 throw Error('Unknown approved checkpoint profile.');
-            return modelFileSha256(checkpointReady(targetFor(context),item.text));
+            return modelFileSha256(checkpointReady(targetFor(context),item.text,context.frozen_parameters?.design_overrides,true));
         },
         readProgress(context){
             const file=path.join(targetFor(context),'self-play/history.jsonl');
