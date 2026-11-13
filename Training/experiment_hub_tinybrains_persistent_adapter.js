@@ -88,7 +88,8 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'ppo_backward_seconds','ppo_metric_readback_seconds',
         'ppo_gradient_processing_seconds','ppo_optimizer_step_seconds',
         'ppo_parameter_finite_check_seconds','ppo_gpu_stream_sync_seconds',
-        'ppo_gpu_stream_interval_seconds','checkpoint_seconds'])
+        'ppo_gpu_stream_interval_seconds','checkpoint_seconds',
+        'rollout_inference_tuning_seconds'])
         add(name,row[name],'seconds');
     for(const name of ['ant_decisions','group_states','births','deaths',
         'episodes_ended','multi_ant_states','terminal_rewards',
@@ -99,10 +100,20 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'ppo_gpu_pixel_budget','ppo_gpu_microbatch_adjustments',
         'ppo_gpu_microbatch_accepted','ppo_gpu_microbatch_settled',
         'ppo_gpu_microbatch_restored','ppo_max_board_cells',
+        'rollout_inference_tuning_board_pixels',
+        'rollout_inference_tuning_board_states',
+        'rollout_inference_tuning_chunks',
+        'rollout_inference_tuning_shape_groups',
+        'rollout_inference_pixel_budget',
+        'rollout_inference_batch_adjustments',
+        'rollout_inference_batch_accepted',
+        'rollout_inference_batch_settled',
         'ppo_unique_board_shapes','policy_lag','action_target',
         'automatic_collector_allocation','collector_allocation_rebalanced',
         'rollout_inference_batches','rollout_inference_boards',
         'rollout_inference_max_batch',
+        'rollout_inference_forward_chunks',
+        'rollout_inference_shape_groups','rollout_inference_readbacks',
         'simulation_active_matches','simulation_target_matches',
         'simulation_concurrency_adjustments','simulation_tuner_accepted',
         'simulation_tuner_settled','simulation_target_restored',
@@ -120,7 +131,10 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'states_per_microbatch','rollout_inference_mean_batch',
         'ppo_gpu_microbatch_used_factor',
         'ppo_gpu_microbatch_next_factor',
-        'ppo_gpu_microbatch_proven_factor'])
+        'ppo_gpu_microbatch_proven_factor',
+        'rollout_inference_used_factor',
+        'rollout_inference_next_factor',
+        'rollout_inference_proven_factor'])
         add(name,row[name],'scalar');
     // PPO board states count every epoch; they are NOT distinct experience
     // steps. Never combine these processing rates with useful training SPS.
@@ -133,6 +147,9 @@ function recordedTinyBrainsMetrics(row,updateWall) {
     if(['baseline','trial','cooldown','settled'].includes(
         row.ppo_gpu_microbatch_phase))
         add('ppo_microbatch_phase_'+row.ppo_gpu_microbatch_phase,1,'count');
+    if(['baseline','trial','cooldown','settled'].includes(
+        row.rollout_inference_batch_phase))
+        add('inference_batch_phase_'+row.rollout_inference_batch_phase,1,'count');
     add('gae_lambda',row.gae_lambda,'ratio');
     add('rss_mb',row.rss_mb,'mb');
     add('simulation_engine_memory_mb',row.simulation_engine_memory_mb,'mb');
@@ -259,6 +276,14 @@ function recordedTinyBrainsMetrics(row,updateWall) {
             worker.rollout_engine_step_seconds,'seconds');
         add('collector_'+i+'_learner_inference_seconds',
             worker.rollout_learner_inference_seconds,'seconds');
+        // Retain a bounded per-host calibration view alongside full source
+        // history, within the existing 640-field/48-KiB progress envelope.
+        add('collector_'+i+'_inference_tuning_seconds',
+            worker.rollout_inference_tuning_seconds,'seconds');
+        add('collector_'+i+'_inference_used_factor',
+            worker.rollout_inference_used_factor,'scalar');
+        add('collector_'+i+'_inference_batch_accepted',
+            worker.rollout_inference_batch_accepted,'count');
         add('collector_'+i+'_model_prepare_seconds',
             worker.model_prepare_seconds,'seconds');
         // Match the current persistent remote collector's native stage and
