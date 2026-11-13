@@ -156,6 +156,10 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         row.simulation_total_charged_memory_mb,'mb');
     add('simulation_ram_lease_headroom_mb',
         row.simulation_ram_lease_headroom_mb,'mb');
+    // Actual combined on-host native child charge plus the shared learner
+    // process exactly once, distinct from the independent per-pool bounds.
+    add('local_lease_ram_charged_mb',row.local_lease_ram_charged_mb,'mb');
+    add('local_lease_ram_headroom_mb',row.local_lease_ram_headroom_mb,'mb');
     add('ppo_prestaged_board_bytes',row.ppo_prestaged_board_bytes,'bytes');
     add('checkpoint_archive_bytes',row.checkpoint_archive_bytes,'bytes');
     add('checkpoint_archive_hardlinked',row.checkpoint_archive_hardlinked,'count');
