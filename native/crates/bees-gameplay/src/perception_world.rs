@@ -217,8 +217,20 @@ impl NativeWorldPerceptionAssembler {
             world, ship_id, inputs.level_bounds, metadata,
             inputs.controller, &mut self.identities,
         )?;
-        let capability =
+        let mut capability =
             capability_source_from_world(world, ship_id, inputs.capability);
+        // Imported/source-authored capability metadata is only an initial
+        // snapshot. Training's authoritative economic ledger tracks credits,
+        // safe returns and forfeitures, including ships no longer in the
+        // live combat roster. Read it here for both ordinary inference and
+        // terminal/boundary observations.
+        if let Some(side) = world.ship(ship_id).map(|ship| ship.side) {
+            if let Some(retainable) =
+                owning_world.state.events.retainable_mined_tsv(side)
+            {
+                capability.team_retainable_mined_tsv = retainable;
+            }
+        }
         self.own_weapons = *inputs.own_weapons;
         // Real registered turrets own aiming, cooldown, attachment
         // offsets and readiness; an external snapshot may only supply

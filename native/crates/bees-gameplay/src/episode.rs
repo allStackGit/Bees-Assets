@@ -205,6 +205,21 @@ impl NativeEpisodeRewardCoordinator {
         self.terminal.normalized_episode_progress()
     }
 
+    /// Current retainable mineral TSV uses the same economic ledger as the
+    /// eventual winner's terminal reward. Unlike a scene snapshot, this
+    /// changes when mining, death or safe WarpGate returns are processed.
+    /// None means this is an ordinary non-training game episode.
+    pub fn retainable_mined_tsv(&self, side: i32) -> Option<i32> {
+        if side != self.bee_side && side != self.human_side {
+            return None;
+        }
+        match &self.mode {
+            EpisodeMode::Game(_) => None,
+            EpisodeMode::Training(training) =>
+                Some(training.economy.retainable_mined_tsv(side)),
+        }
+    }
+
     pub fn latest_emissions(&self) -> &[RewardEmission] {
         &self.merged_emissions
     }

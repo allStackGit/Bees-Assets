@@ -239,6 +239,7 @@ pub enum NativeSceneBuildError {
     Vision(NativeLevelVisionError),
     Group(GroupRewardError),
     GroupConfiguration(NativeLevelEventError),
+    InitialMining(NativeLevelEventError),
     CampaignDialogue(NativeLevelEventError),
 }
 
@@ -424,6 +425,19 @@ impl NativeSceneAssets {
             return Err(NativeSceneBuildError::EmptyScene);
         }
         let mut events = NativeLevelEventProcessor::new(authored.episode);
+        // Seed the same live economic ledger that future mining updates and
+        // deaths will mutate. This preserves an imported Level's authentic
+        // starting FleetShip cargo without a shadow observation accumulator.
+        // Native-authored training scenes normally begin with zero cargo.
+        for ship in combat.ships() {
+            if ship.vitals.is_dead() { continue; }
+            let Some(mined) = authored.metadata.current_mined_tsv(ship.entity_id)
+                else { continue; };
+            if mined != 0 {
+                events.record_mined_value(&combat, ship.entity_id, mined)
+                    .map_err(NativeSceneBuildError::InitialMining)?;
+            }
+        }
         if let Some(mut groups) = authored.groups {
             for (side, agent_id) in groups.participants {
                 groups.delivery.register_agent(side, agent_id)

@@ -1338,6 +1338,12 @@ impl NativeLevelEventProcessor {
         self.episode.normalized_episode_progress()
     }
 
+    /// Read the authoritative live mining ledger between decision ticks.
+    /// Gameplay and terminal reward delivery share this single value.
+    pub fn retainable_mined_tsv(&self, side: i32) -> Option<i32> {
+        self.episode.retainable_mined_tsv(side)
+    }
+
     /// Immutable view after Simulation::step_world; no per-frame copies.
     /// Must be consumed before the next successful world step.
     pub fn latest_squad_changes(&self) -> &[SquadRosterChange] {
