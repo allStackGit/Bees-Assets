@@ -251,6 +251,13 @@ def main() -> None:
         worlds = args.rollout_worlds or 1
         if args.rollout_workers > worlds:
             parser.error("--rollout-workers cannot exceed --rollout-worlds")
+        if args.rollout_workers > 1 and args.rollout_binary is None:
+            parser.error("multiple rollout processes require --rollout-binary")
+    if args.train_rounds is None and args.optimizer_device != "cpu":
+        parser.error("--optimizer-device requires --train-rounds")
+    if args.train_rounds is not None and args.rollout_binary is not None:
+        if not args.rollout_binary.resolve().is_file():
+            parser.error("--rollout-binary must identify an existing executable")
     result = bootstrap(args.output.resolve(), args.trainer_config,
                        args.seed, args.slots, args.inference_device, args.cargo,
                        args.scenario)
