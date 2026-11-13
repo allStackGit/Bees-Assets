@@ -571,6 +571,7 @@ pub struct NativeLevelWindowCounts {
     pub parallel_physics_rounds: u32,
     /// Rounds intentionally serialized for deterministic Beacon lifetimes.
     pub parallel_stage_id_serialized_rounds: u32,
+    pub parallel_stage_id_serialized_arenas: usize,
     pub parallel_physics_max_workers: usize,
     /// Sum of real worker elapsed time, not a speedup estimate.
     pub parallel_physics_worker_nanos: u128,
@@ -1593,6 +1594,7 @@ impl NativeLevelBatchDriver {
             counts.policy_rows += step.policy_agents_inferred;
             counts.parallel_stage_id_serialized_rounds +=
                 u32::from(step.serialized_for_stage_ids);
+            counts.parallel_stage_id_serialized_arenas += step.serialized_stage_arenas;
             if step.parallel_physics_workers > 1 {
                 counts.parallel_physics_rounds += 1;
                 counts.parallel_physics_max_workers = counts.parallel_physics_max_workers
