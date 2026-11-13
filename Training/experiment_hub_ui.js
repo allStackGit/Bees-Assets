@@ -2340,7 +2340,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 if(result.status==='ready') {
                     message.replaceChildren(document.createTextNode(
                         result.parts.length+' independently downloadable ZIP part(s), each at most 500 MB. '+
-                        (includeReplays?'Replay inclusion was requested; check the ZIP manifest for replay availability. ':'')+
+                        (includeReplays
+                            ?Number.isSafeInteger(result.replay_files_included)
+                                ?result.replay_files_included+
+                                    ' locally available raw replay file(s) included. '
+                                :'Replay inclusion requested; check the ZIP manifest for availability. '
+                            :'Raw replay files excluded. ')+
                         (result.missing_artifact_job_ids?.length
                             ?'Some jobs have no local artifacts: '+
                               result.missing_artifact_job_ids.join(', ')+'. ':'')+
