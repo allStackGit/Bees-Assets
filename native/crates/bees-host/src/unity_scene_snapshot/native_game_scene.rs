@@ -120,6 +120,10 @@ struct GameShip {
     special: Option<GameShipSpecial>,
     #[serde(default)]
     special_weapon: Option<GameSpecialWeapon>,
+    /// A Beehive HealCollider or WarpGate trigger, separate from its
+    /// immutable collision hull and from all targeting weapon ranges.
+    #[serde(default)]
+    support_zone: Option<GameCollider>,
     #[serde(default)]
     policy: Option<GamePolicyAgent>,
 }
@@ -283,6 +287,44 @@ struct GameSpecialWeapon {
     proximity: Option<GameWeaponRange>,
 }
 
+#[derive(Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+enum GameCollider {
+    Circle { offset: [f32; 2], radius: f32 },
+    Box { offset: [f32; 2], half_extents: [f32; 2] },
+    Polygon { vertices: Vec<[f32; 2]> },
+}
+
+impl GameCollider {
+    fn into_native(self) -> Option<ShipShape> {
+        match self {
+            Self::Circle { offset, radius } => {
+                let offset = Vec2::new(offset[0], offset[1]);
+                (offset.is_finite() && radius.is_finite() && radius > 0.0)
+                    .then_some(ShipShape::Circle { offset, radius })
+            }
+            Self::Box { offset, half_extents } => {
+                let offset = Vec2::new(offset[0], offset[1]);
+                let half_extents = Vec2::new(half_extents[0], half_extents[1]);
+                (offset.is_finite() && half_extents.is_finite() &&
+                    half_extents.x > 0.0 && half_extents.y > 0.0)
+                    .then_some(ShipShape::Box { offset, half_extents })
+            }
+            Self::Polygon { vertices } => {
+                if !(3..=8192).contains(&vertices.len()) {
+                    return None;
+                }
+                let points = vertices.into_iter()
+                    .map(|point| Vec2::new(point[0], point[1]))
+                    .collect::<Vec<_>>();
+                points.iter().all(|point| point.is_finite()).then(||
+                    ShipShape::Polygon(Arc::from(points.into_boxed_slice()))
+                )
+            }
+        }
+    }
+}
+
 impl GameWeaponRange {
     fn into_native(self) -> NativeTurretRangeSpec {
         NativeTurretRangeSpec {
@@ -424,7 +466,7 @@ impl NativePhysicalScene {
                 ship.policy.is_some() && (ship.user_controlled || ship.mined_cargo != 0) ||
                 // Beacon/Heal/Warp/Scout and other special controllers must
                 // first have their complete source-owned trigger data.
-                matches!(ship.ship_type, 1 | 2 | 9 | 20)
+                matches!(ship.ship_type, 1 | 9)
             {
                 return Err(invalid("invalid native ordinary game ship or unsupported special hull"));
             }
@@ -570,6 +612,13 @@ impl NativePhysicalScene {
                 }
             }
             ship_types.insert(id, ship.ship_type);
+
+            let support_zone = ship.support_zone
+                .map(GameCollider::into_native).transpose_option()
+                .ok_or(invalid("native support collider has invalid authored geometry"))?;
+            if support_zone.is_some() != matches!(ship.ship_type, 2 | 20) {
+                return Err(invalid("only Beehives and Warp Gates take exact support trigger colliders"));
+            }
 
             let game_movement = GameMovementProfile {
                 turning_radius: ship.turning_radius,
@@ -751,7 +800,8 @@ impl NativePhysicalScene {
                 entity_id: id, ship_type: ship.ship_type, side: ship.side,
                 vitals, motion, game_movement,
                 original_health: ship.original_health, size_class: ship.size_class,
-                healing_zone: None, warp_zone: None,
+                healing_zone: if ship.ship_type == 2 { support_zone.clone() } else { None },
+                warp_zone: if ship.ship_type == 20 { support_zone } else { None },
                 policy_capabilities: NativeAuthoredPolicyCapabilities::default(),
                 fleet_ship_id: special.as_ref().map(|_| id),
                 policy: None, drone_carrier_id: None,
