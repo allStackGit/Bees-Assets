@@ -244,23 +244,38 @@ impl NativeWorldPerceptionAssembler {
             episode: owning_world.episode_revision(),
             tick: owning_world.tick(),
         };
-        // All agents in this world see the same immutable source ship
-        // population at a fixed decision boundary. Build one side-indexed
-        // live roster for the entire batch rather than rescanning every
-        // active ship for each observer's nearest 64 allies.
+        // A one-ship or 1v1 world has no nearest-64 selection problem.
+        // Keep the original source scan here: allocating and sorting two
+        // side indexes for every inference tick would add fixed overhead
+        // to the smallest headless training environments.
         let sides = owning_world.state.events.sides();
-        if self.live_roster_epoch != Some(epoch) {
-            self.candidates.prepare_live_roster(world, sides)?;
-            self.live_roster_epoch = Some(epoch);
+        if world.total_living_ships() <= 2 {
+            self.live_roster_epoch = None;
+            self.candidates.collect_allies(
+                world, ship_id, &mut self.identities,
+                |id| authored_ship(id), &mut self.allies,
+            )?;
+            self.candidates.collect_learned_enemies(
+                world, ship_id, &mut self.identities,
+                |id| authored_ship(id), &mut self.enemies,
+            )?;
+        } else {
+            // All agents in this world see the same immutable source ship
+            // population at a fixed decision boundary. The side-indexed
+            // roster and discovered enemies are projected once per epoch.
+            if self.live_roster_epoch != Some(epoch) {
+                self.candidates.prepare_live_roster(world, sides)?;
+                self.live_roster_epoch = Some(epoch);
+            }
+            self.candidates.collect_prepared_allies(
+                world, ship_id, &mut self.identities,
+                |id| authored_ship(id), &mut self.allies,
+            )?;
+            self.candidates.collect_prepared_learned_enemies(
+                world, ship_id, &mut self.identities,
+                |id| authored_ship(id), &mut self.enemies,
+            )?;
         }
-        self.candidates.collect_prepared_allies(
-            world, ship_id, &mut self.identities,
-            |id| authored_ship(id), &mut self.allies,
-        )?;
-        self.candidates.collect_prepared_learned_enemies(
-            world, ship_id, &mut self.identities,
-            |id| authored_ship(id), &mut self.enemies,
-        )?;
         let side = world.ship(ship_id).ok_or(
             NativeWorldPerceptionError::Combat(
                 CombatPerceptionError::MissingShip(ship_id),
