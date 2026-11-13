@@ -18,6 +18,7 @@ const COURIER_COUNT_FIELDS=new Set([
     'training_simulation_slowest_worker','training_inference_slowest_worker',
     'training_ppo_data_slowest_worker',
     'training_simulated_steps','training_useful_steps',
+    'training_parallel_dispatch_slowest_worker',
     'training_total_useful_steps','training_rejected_workers',
     'training_concurrency_limit','training_concurrency_next_limit',
     'training_environment_version',
@@ -64,8 +65,7 @@ function courierMetrics(source) {
     const fields=Object.entries(stats);
     const workerField=/^worker_([0-9]{1,2})_(.+)$/;
     const core=new Set(['collection_seconds','optimization_seconds',
-        'simulation_seconds','inference_seconds','ingestion_seconds',
-        'sim_shards','sim_shard_wall_seconds','sim_inflight_factor']);
+        'simulation_seconds','inference_seconds','ingestion_seconds']);
     const ordered=[
         ...fields.filter(([name])=>!workerField.test(name)),
         ...fields.filter(([name])=>{
