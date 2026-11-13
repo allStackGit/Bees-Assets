@@ -1255,7 +1255,7 @@ fn run_battle(
             (text, digest)
         };
         source_digests.push(source_digest);
-        let mut source = NativePhysicalScene::parse_with_ship_catalog(&source_json, assets.ship_catalog())
+        let mut source = NativePhysicalScene::parse_scene_with_assets(&source_json, &assets)
             .map_err(|error| contextual("exported Level", error))?;
         if let Some(layout) = &level.native_layout {
             source.apply_native_layout(
@@ -2022,7 +2022,7 @@ fn run_battle(
                 {
                     continue;
                 }
-                let mut scene = NativePhysicalScene::parse_with_ship_catalog(&source_jsons[index], assets.ship_catalog())
+                let mut scene = NativePhysicalScene::parse_scene_with_assets(&source_jsons[index], &assets)
                     .map_err(|error| contextual("cached authored Level", error))?;
                 if let Some(layout) = &level.native_layout {
                     scene.apply_native_layout(
