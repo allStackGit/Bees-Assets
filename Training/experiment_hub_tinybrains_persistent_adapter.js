@@ -57,6 +57,24 @@ function recordedTinyBrainsMetrics(row,updateWall) {
             (unit==='ratio'&&(value<0||value>1)))return;
         metrics[name]={value,unit};
     }
+    // Count only real network collectors, never the local learner or
+    // additional GPUs within its process. Setup is measured client-side,
+    // while a full roundtrip includes independent worker compute.
+    const remoteSamples=(Array.isArray(row.collector_samples)
+        ?row.collector_samples:[]).filter(w=>w.mode==='remote'&&
+            (w.collector_client_connection_reused===0||
+             w.collector_client_connection_reused===1));
+    if(remoteSamples.length) {
+        const reused=remoteSamples.filter(
+            w=>w.collector_client_connection_reused===1).length;
+        add('remote_connection_reuse_share',
+            reused/remoteSamples.length,'ratio');
+        add('remote_connections_new',remoteSamples.length-reused,'count');
+        const times=remoteSamples.map(w=>w.collector_client_connect_seconds);
+        if(times.every(x=>Number.isFinite(x)&&x>=0))
+            add('remote_connection_setup_max_seconds',
+                Math.max(...times),'seconds');
+    }
     add('total_ppo_updates',row.update,'count');
     add('engine_steps',row.engine_steps,'count');
     add('simulation_match_steps',row.simulation_match_steps,'count');
