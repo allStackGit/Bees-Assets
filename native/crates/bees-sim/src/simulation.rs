@@ -5,7 +5,9 @@
 //! This initial foundation deliberately does not substitute approximate
 //! physics for Unity's behavior.
 
+use std::collections::VecDeque;
 use std::num::{NonZeroU32, NonZeroUsize};
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use crate::policy::Decision;
@@ -158,6 +160,12 @@ pub struct ParallelWindow<E> {
     /// generation. Unlike summed per-step timings, this measures observed
     /// multi-core throughput for this specific window.
     pub wall_elapsed: Duration,
+    /// Number of arenas claimed by each CPU worker in this window.
+    /// Shows load balancing without recording per-tick traces.
+    pub worker_arenas: Vec<usize>,
+    /// Actual successful physics ticks executed by each worker.
+    /// Compare with worker_arenas to identify uneven arena costs.
+    pub worker_ticks: Vec<u64>,
 }
 
 impl<E> ParallelWindow<E> {
@@ -176,6 +184,8 @@ impl<E> Default for ParallelWindow<E> {
             skipped_failed_worlds: 0,
             completed_worlds: 0,
             wall_elapsed: Duration::ZERO,
+            worker_arenas: Vec::new(),
+            worker_ticks: Vec::new(),
         }
     }
 }
@@ -326,37 +336,87 @@ impl<S, R: GameRules<S>> Simulation<S, R> {
         let steps = steps_per_world.get();
 
         if workers == 1 {
-            let part = run_partition(rules, dt, sample, &mut self.worlds, steps, decide);
+            let mut decisions = Vec::new();
+            let mut part = run_partition(
+                rules, dt, sample, &mut self.worlds, steps, decide, &mut decisions,
+            );
+            part.worker_arenas.push(self.worlds.len());
+            part.worker_ticks.push(part.measurements.ticks);
             self.measurements.merge(&part.measurements);
-            let mut part = part;
             part.wall_elapsed = started.elapsed();
             return part;
         }
 
-        // Exactly `workers` consecutive ranges, balanced within one
-        // arena. Chunks keep full ownership of each world and its RNG.
-        let base = self.worlds.len() / workers;
-        let extras = self.worlds.len() % workers;
-        let outcomes = std::thread::scope(|scope| {
-            let mut remaining = self.worlds.as_mut_slice();
-            let mut handles = Vec::with_capacity(workers);
-            for index in 0..workers {
-                let size = base + usize::from(index < extras);
-                let (chunk, rest) = remaining.split_at_mut(size);
-                remaining = rest;
-                handles.push(scope.spawn(move || {
-                    run_partition(rules, dt, sample, chunk, steps, decide)
-                }));
-            }
-            // Join in world-index order, independent of thread scheduling.
-            handles.into_iter().map(|handle| handle.join())
-                .collect::<Vec<_>>()
-        });
+        // Short windows and exactly one arena per worker retain the cheapest
+        // fixed-slice dispatch. For longer multi-arena CPU windows, take each
+        // independent world from a single bounded queue. A worker owns that
+        // world for its WHOLE window, retaining local RNG, game scratch and
+        // one reusable action buffer. Only the arena claim takes a lock;
+        // physics and policy decisions never execute under one.
+        //
+        // This avoids one busy world holding a whole static partition while
+        // other workers finish their cheap arenas and sit idle. The threshold
+        // keeps queue setup off the one-/few-tick path used by clients.
+        let outcomes = if steps >= 64 && self.worlds.len() > workers {
+            let pending = Mutex::new(self.worlds.iter_mut().collect::<VecDeque<_>>());
+            std::thread::scope(|scope| {
+                let mut handles = Vec::with_capacity(workers);
+                for _ in 0..workers {
+                    let pending = &pending;
+                    handles.push(scope.spawn(move || {
+                        let mut report = ParallelWindow::default();
+                        let mut decisions = Vec::new();
+                        let mut assigned = 0;
+                        loop {
+                            let next = pending.lock()
+                                .expect("native arena queue poisoned").pop_front();
+                            let Some(world) = next else { break };
+                            assigned += 1;
+                            let part = run_partition(
+                                rules, dt, sample,
+                                std::slice::from_mut(world), steps, decide, &mut decisions,
+                            );
+                            report.measurements.merge(&part.measurements);
+                            report.skipped_failed_worlds += part.skipped_failed_worlds;
+                            report.completed_worlds += part.completed_worlds;
+                            report.failed_worlds.extend(part.failed_worlds);
+                        }
+                        (report, assigned)
+                    }));
+                }
+                handles.into_iter().map(|handle| handle.join())
+                    .collect::<Vec<_>>()
+            })
+        } else {
+            // Fixed consecutive partitions avoid the queue entirely for
+            // short windows. Workers still hold their own decision buffers.
+            let base = self.worlds.len() / workers;
+            let extras = self.worlds.len() % workers;
+            std::thread::scope(|scope| {
+                let mut remaining = self.worlds.as_mut_slice();
+                let mut handles = Vec::with_capacity(workers);
+                for index in 0..workers {
+                    let size = base + usize::from(index < extras);
+                    let (chunk, rest) = remaining.split_at_mut(size);
+                    remaining = rest;
+                    handles.push(scope.spawn(move || {
+                        let mut decisions = Vec::new();
+                        (run_partition(
+                            rules, dt, sample, chunk, steps, decide, &mut decisions,
+                        ), size)
+                    }));
+                }
+                handles.into_iter().map(|handle| handle.join())
+                    .collect::<Vec<_>>()
+            })
+        };
 
         let mut panicked = false;
         for outcome in outcomes {
             match outcome {
-                Ok(part) => {
+                Ok((part, assigned)) => {
+                    result.worker_arenas.push(assigned);
+                    result.worker_ticks.push(part.measurements.ticks);
                     self.measurements.merge(&part.measurements);
                     result.measurements.merge(&part.measurements);
                     result.skipped_failed_worlds += part.skipped_failed_worlds;
@@ -427,14 +487,14 @@ fn run_partition<S, R, F>(
     worlds: &mut [World<S>],
     steps: u32,
     decide: &F,
+    decisions: &mut Vec<Decision>,
 ) -> ParallelWindow<R::Error>
 where
     R: GameRules<S>,
     F: Fn(&World<S>, &mut Vec<Decision>),
 {
     let mut report = ParallelWindow::default();
-    // Reuse action memory across every world and step in this worker.
-    let mut decisions = Vec::new();
+    // Reuse action memory across every world claimed by this worker.
     for world in worlds {
         if world.failed {
             report.skipped_failed_worlds += 1;
