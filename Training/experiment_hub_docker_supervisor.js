@@ -379,7 +379,7 @@ class DockerSupervisor {
             (bindings.length>2&&
                 this.adapters.tinybrains?.gpu_multi_execution!=='ppo-local-collectors')||
             this.gpuProbeCleanupPending())
-            throw Error('Approved Docker one- or two-GPU proof is unavailable.');
+            throw Error('Approved Docker one-to-eight GPU proof is unavailable.');
         const plan=resolveRocmDevices(bindings);
         if(bindings.length===1&&!plan.unselected.length)
             throw Error('Single-GPU Docker proof requires an excluded peer GPU.');
