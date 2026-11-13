@@ -1133,6 +1133,7 @@ document.addEventListener('DOMContentLoaded', () => {
     collectorStageProfiles.insertAdjacentElement('afterend',secondsMetricsDetails);
     const comparisonMetricOverrides=new Map();
     const comparisonChartAverages=new Map();
+    const comparisonChartRolling=new Map();
     let lastComparisonChart=null,lastComparisonChartWidth=0;
     let compareSerial=0;
     const compareColor=i=>'hsl('+((i*137.508+211)%360).toFixed(2)+' 65% 38%)';
@@ -1904,6 +1905,8 @@ document.addEventListener('DOMContentLoaded', () => {
             title.textContent=key.slice(7);
             const header=document.createElement('div');
             header.className='hub-plot-header';
+            const toggles=document.createElement('div');
+            toggles.className='hub-plot-toggles';
             const averageLabel=document.createElement('label');
             averageLabel.className='hub-plot-average-toggle';
             averageLabel.title='Arithmetic mean of retained chart samples for each run, not weighted by elapsed time or steps.';
@@ -1912,7 +1915,18 @@ document.addEventListener('DOMContentLoaded', () => {
             const averageId=project+'|'+key;
             average.checked=comparisonChartAverages.get(averageId)===true;
             averageLabel.append(average,document.createTextNode(' Show sample mean'));
-            header.append(title,averageLabel);
+            const rollingLabel=document.createElement('label');
+            rollingLabel.className='hub-plot-average-toggle';
+            rollingLabel.title='Mean of available retained chart samples within the preceding 50 project updates/rounds. Chart downsampling means this is not a mean of every raw update.';
+            const rolling=document.createElement('input');
+            rolling.type='checkbox';
+            const rollingId=project+'|'+key;
+            rolling.checked=comparisonChartRolling.get(rollingId)===true;
+            rollingLabel.append(rolling,document.createTextNode(
+                project==='tinybrains'?' Rolling 50-update mean':
+                project==='courier'?' Rolling 50-round mean':' Rolling 50-step mean'));
+            toggles.append(averageLabel,rollingLabel);
+            header.append(title,toggles);
             const description=document.createElement('p');
             description.className='hub-plot-description';
             description.textContent=hubMetricDescription(key.slice(7));
@@ -1929,15 +1943,19 @@ document.addEventListener('DOMContentLoaded', () => {
             section.append(header,description,svg,tooltip,legend);
             container.append(section);
             const redraw=()=>drawComparisonChart(runs,key,xKey,svg,
-                legend,tooltip,average.checked);
+                legend,tooltip,average.checked,rolling.checked);
             average.addEventListener('change',()=>{
                 comparisonChartAverages.set(averageId,average.checked);
+                redraw();
+            });
+            rolling.addEventListener('change',()=>{
+                comparisonChartRolling.set(rollingId,rolling.checked);
                 redraw();
             });
             redraw();
         }
     }
-    function drawComparisonChart(runs,key,xKey,svg,legend,tooltip,showAverage) {
+    function drawComparisonChart(runs,key,xKey,svg,legend,tooltip,showAverage,showRolling) {
         const width=Math.max(320,Math.round(svg.getBoundingClientRect().width||
             svg.clientWidth||svg.parentElement?.clientWidth||900));
         svg.setAttribute('viewBox','0 0 '+width+' 330');
@@ -2024,6 +2042,38 @@ document.addEventListener('DOMContentLoaded', () => {
             if(showAverage&&mean!==null)
                 node('line',{x1:bounds.left,y1:y(mean),x2:bounds.right,y2:y(mean),
                     stroke:run.color,'stroke-dasharray':'7 5',class:'plot-average'});
+            if(showRolling) {
+                let window=[],part=[],lastStep=null,lastAxis=null;
+                const flush=()=>{
+                    if(part.length>1)
+                        node('path',{d:part.map((sample,i)=>
+                            (i?'L':'M')+x(sample.axis).toFixed(1)+' '+
+                            y(sample.mean).toFixed(1)).join(' '),
+                            stroke:run.color,class:'plot-rolling'});
+                    else if(part.length===1)
+                        node('circle',{cx:x(part[0].axis),cy:y(part[0].mean),
+                            r:3,fill:run.color,class:'plot-rolling-point'});
+                    part=[];
+                };
+                for(const point of run.valid) {
+                    const step=point.steps_completed;
+                    const axis=hubComparisonAxisValue(point,xKey);
+                    if(point.break_before||!usable(point)||
+                        !Number.isSafeInteger(step)||step<0||
+                        lastStep!==null&&step<lastStep||
+                        lastAxis!==null&&axis<lastAxis) {
+                        flush();window=[];lastStep=null;lastAxis=null;
+                    }
+                    if(!usable(point)||!Number.isSafeInteger(step)||step<0)
+                        continue;
+                    window=window.filter(item=>item.step>step-50);
+                    window.push({step,value:hubMetricValue(point,key)});
+                    part.push({axis,mean:window.reduce((sum,item)=>
+                        sum+item.value,0)/window.length});
+                    lastStep=step;lastAxis=axis;
+                }
+                flush();
+            }
             const legendItem=document.createElement('span');
             legendItem.className='hub-plot-legend-entry';
             const swatch=document.createElement('span');
@@ -2038,7 +2088,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         unit==='scalar'||unit==='count'?'':' '+unit);
             legendItem.append(swatch,document.createTextNode(
                 run.slot+' · '+run.job.configuration_name+
-                (showAverage&&mean!==null?' · mean '+formatted(mean):'')));
+                (showAverage&&mean!==null?' · mean '+formatted(mean):'')+
+                (showRolling?' · rolling 50-step sample mean':'')));
             legend.append(legendItem);
             let part=[],previousX=null;
             const flush=()=>{
