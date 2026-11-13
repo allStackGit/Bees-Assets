@@ -12,7 +12,9 @@ use bees_gameplay::commands::{
     Activation, GameCommandError, NativeCommandOrigin, NativeScoutingContext,
     NativeLocalCommandAction, NativeLocalCommandSource,
 };
-use bees_gameplay::level_events::{NativeLevelEventError, NativeLevelEventProcessor};
+use bees_gameplay::level_events::{
+    NativeLevelEventError, NativeLevelEventProcessor, NativeLocalBombingTargets,
+};
 use bees_gameplay::campaign_dialogue::CampaignDialogueSpec;
 use bees_gameplay::level_inputs::{
     collect_live_friendlies_from_catalog, native_squad_order_from_catalog,
@@ -34,6 +36,8 @@ pub enum NativeScriptedOrder {
     /// Prepared source EnemySquad identity. Never guess an opponent.
     Aggressive { enemy_squad_item_id: i64 },
     TargetEnemy { enemy_squad_item_id: i64 },
+    BombingRun { enemy_squad_item_id: i64 },
+    Charge { enemy_squad_item_id: i64 },
     /// Prepared source Squad.GuardedSquad identity.
     Guard { friendly_squad_item_id: i64 },
     Patrol { top_left: Vec2, bottom_right: Vec2 },
@@ -57,6 +61,8 @@ impl NativeScriptedOrder {
             Self::TargetEnemy { .. } => NativeLocalCommandAction::TargetEnemy {
                 target: target.expect("authenticated current enemy squad"),
             },
+            Self::BombingRun { .. } => NativeLocalCommandAction::BombingRun,
+            Self::Charge { .. } => NativeLocalCommandAction::Charge,
             Self::Guard { .. } => NativeLocalCommandAction::Guard {
                 target: target.expect("authenticated current friendly squad"),
             },
@@ -79,7 +85,9 @@ impl NativeScriptedOrder {
             Self::MoveToPoint { destination } => destination.is_finite(),
             Self::MoveToRandom { range } => range.is_finite(),
             Self::Aggressive { enemy_squad_item_id } |
-            Self::TargetEnemy { enemy_squad_item_id } => enemy_squad_item_id > 0,
+            Self::TargetEnemy { enemy_squad_item_id } |
+            Self::BombingRun { enemy_squad_item_id } |
+            Self::Charge { enemy_squad_item_id } => enemy_squad_item_id > 0,
             Self::Guard { friendly_squad_item_id } => friendly_squad_item_id > 0,
             Self::Patrol { top_left, bottom_right } =>
                 top_left.is_finite() && bottom_right.is_finite(),
@@ -96,7 +104,9 @@ impl NativeScriptedOrder {
     fn target_squad(&self) -> Option<(i64, bool)> {
         match *self {
             Self::Aggressive { enemy_squad_item_id } |
-            Self::TargetEnemy { enemy_squad_item_id } =>
+            Self::TargetEnemy { enemy_squad_item_id } |
+            Self::BombingRun { enemy_squad_item_id } |
+            Self::Charge { enemy_squad_item_id } =>
                 Some((enemy_squad_item_id, true)),
             Self::Guard { friendly_squad_item_id } =>
                 Some((friendly_squad_item_id, false)),
