@@ -586,9 +586,53 @@ are retained, never silently reused as learning data. The atomic
 `native-session/session-progress.json` combines simulation throughput,
 optimizer steps, and learning outcomes across verified rounds. Original
 round receipts and checkpoint hashes, not that derived progress snapshot,
-are the source of truth for safe resumption. This controller coordinates
-sequential local rounds; distributed collectors still use separately
-allocated, pinned bundle windows, not a repeated stale capture.
+are the source of truth for safe resumption.
+
+For distributed training, the same session now accepts a fixed collector
+allocation (Experiment Hub retains machine/CPU/GPU/RAM ownership):
+
+```json
+{"collectors":[
+  {"id":"halifax","world_start":0,"world_count":64,"rollout_workers":8},
+  {"id":"exeter","world_start":64,"world_count":32,"rollout_workers":4}
+]}
+```
+
+```sh
+python native/tools/train_policy_session.py run.json checkpoint.pt Training/rl_1v1_config.yaml native-session --rounds 100 --distributed-plan collectors.json --bundle-inbox /shared/native-inbox --device cuda
+```
+
+The session publishes `collection-round-NNNNN.json` each round, naming
+the exact learner checkpoint, manifest, seed offset, source run fingerprint,
+nonoverlapping World windows and collector-specific SHA-256 work-order IDs.
+The Experiment Hub or operator starts this command on each allocated machine,
+mapping its local source/config/model paths while retaining the pinned hashes:
+
+```sh
+python native/tools/run_distributed_collector.py collection-round-00001.json halifax run.json checkpoint.pt manifest.json trainer.yaml /local/scratch /shared/native-inbox --rollout-binary /path/to/policy_rollout
+```
+
+Use the actual `trainer.yaml` file required by the collector CLI; it is
+not consumed by a collect-only run. Each collector reuses the same compiled
+native simulator and resident policy inference process as local training.
+The collector copies completed captures and their durable receipt to a
+unique shared-inbox directory; it never overwrites an earlier delivery.
+The session accepts only matching receipt IDs, source bytes, model SHA-256,
+seed offset, partition and process allocation. When every collector has
+delivered, the original MA-POCA learner imports the pinned captures,
+rejects duplicate episode/partition identities, and publishes the next
+checkpoint. A failed learner update retains the collected bundles so
+`--resume` can optimize them without re-simulating; the next round gets
+new collection IDs and the updated checkpoint.
+
+Rollout metrics retain individual collector SPS and a capacity-weighted
+aggregate: `wall_seconds_scope=sum_of_independent_collector_wall_seconds`
+means summed host-seconds, **not** a measured fleet-wide elapsed SPS.
+Use a relative, portable run configuration and stage the exact manifest
+and referenced model/scene artifacts on each machine. The hub still owns
+physical resource enforcement and dispatch, not this checkpoint-lineage
+controller. `--collector-timeout-seconds` optionally caps the wait;
+zero waits until a collector delivers or the session is interrupted.
 
 To measure learning separately from training episodes, add
 `--evaluation-run-config fixed-holdout.json --evaluation-side 1` to
