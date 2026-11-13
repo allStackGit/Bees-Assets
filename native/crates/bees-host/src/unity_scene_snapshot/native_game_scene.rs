@@ -117,6 +117,10 @@ struct GameShip {
     #[serde(default)]
     turrets: Vec<GameTurret>,
     #[serde(default)]
+    special: Option<GameShipSpecial>,
+    #[serde(default)]
+    special_weapon: Option<GameSpecialWeapon>,
+    #[serde(default)]
     policy: Option<GamePolicyAgent>,
 }
 
@@ -160,6 +164,8 @@ struct GameSquad {
     hivemind: Option<GameHiveMindSquad>,
     #[serde(default)]
     command_bans: Vec<u8>,
+    #[serde(default)]
+    is_carrier_squad: bool,
 }
 
 #[derive(Deserialize)]
@@ -222,6 +228,45 @@ struct GameWeaponRange {
     radius: f32,
     layer: u8,
     enabled: bool,
+}
+
+/// Authored game-ship abilities are connected to the existing world
+/// implementations, never approximated from hull class or geometry.
+#[derive(Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+enum GameShipSpecial {
+    Barge { power: i32, can_override_bounds: bool },
+    FireBarge { power: i32 },
+    YellowJacket { power: i32 },
+    Striker {
+        power: i32,
+        #[serde(default)]
+        carrier_id: Option<i64>,
+        offset_from_center: [f32; 2],
+        refill_distance: f32,
+    },
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct GameSpecialWeapon {
+    weapon_id: i64,
+    slot: usize,
+    power: i32,
+    mount_offset: [f32; 2],
+    #[serde(default)]
+    charge_range: Option<GameWeaponRange>,
+    #[serde(default)]
+    proximity: Option<GameWeaponRange>,
+}
+
+impl GameWeaponRange {
+    fn into_native(self) -> NativeTurretRangeSpec {
+        NativeTurretRangeSpec {
+            offset: Vec2::new(self.offset[0], self.offset[1]),
+            radius: self.radius, layer: self.layer, enabled: self.enabled,
+        }
+    }
 }
 
 impl NativePhysicalScene {
@@ -315,6 +360,9 @@ impl NativePhysicalScene {
         let mut source_vision = HashMap::new();
         let mut source_formation = HashMap::new();
         let mut ship_sides = HashMap::new();
+        let mut ship_types = HashMap::new();
+        let mut special_weapon_ids = HashSet::new();
+        let mut striker_carriers = Vec::new();
         let mut ship_player_control = HashMap::new();
         let mut source_policy_bindings = HashMap::new();
         let mut source_policy_inputs = HashMap::new();
@@ -349,14 +397,88 @@ impl NativePhysicalScene {
                 ship.sight.fog_radius.is_some_and(|v| !v.is_finite() || v < 0.0) ||
                 !ship.combat_window_seconds.is_finite() ||
                 ship.combat_window_seconds <= 0.0 ||
-                ship.is_bomber || ship.is_carrier_ship ||
+                (ship.is_carrier_ship && ship.ship_type != 5) ||
                 ship.policy.is_some() && (ship.user_controlled || ship.mined_cargo != 0) ||
-                // Special lifecycle/controllers need fully authored native
-                // relationship specifications, not missing Unity components.
-                matches!(ship.ship_type, 0 | 1 | 2 | 5 | 9 | 10 | 18 | 19 | 20 | 22)
+                // Beacon/Heal/Warp/Scout and other special controllers must
+                // first have their complete source-owned trigger data.
+                matches!(ship.ship_type, 1 | 2 | 9 | 18 | 20)
             {
                 return Err(invalid("invalid native ordinary game ship or unsupported special hull"));
             }
+            // All ordinary game specialists need the real Bomb weapon
+            // identity and authored trigger radius. A bare ship type is
+            // insufficient for command reservation or physical hits.
+            let special = match &ship.special {
+                Some(GameShipSpecial::Barge { power, can_override_bounds })
+                    if ship.ship_type == 0 && *power >= 0 =>
+                    Some(NativeAuthoredShipSpecial::Barge {
+                        power: *power, can_override_bounds: Some(*can_override_bounds),
+                    }),
+                Some(GameShipSpecial::FireBarge { power })
+                    if ship.ship_type == 10 && *power >= 0 =>
+                    Some(NativeAuthoredShipSpecial::FireBarge { power: *power }),
+                Some(GameShipSpecial::YellowJacket { power })
+                    if ship.ship_type == 22 && *power >= 0 =>
+                    Some(NativeAuthoredShipSpecial::YellowJacket { power: *power }),
+                Some(GameShipSpecial::Striker {
+                    power, carrier_id, offset_from_center, refill_distance,
+                }) if ship.ship_type == 19 && *power >= 0 &&
+                    carrier_id.is_none_or(|id| id > 0 && id != ship.entity_id) &&
+                    Vec2::new(offset_from_center[0], offset_from_center[1]).is_finite() &&
+                    refill_distance.is_finite() && *refill_distance > 0.0 =>
+                    Some(NativeAuthoredShipSpecial::Striker {
+                        power: *power,
+                        carrier: GameStrikerCarrier {
+                            carrier_id: *carrier_id,
+                            offset_from_center: Vec2::new(
+                                offset_from_center[0], offset_from_center[1],
+                            ),
+                            refill_distance: *refill_distance,
+                        },
+                    }),
+                None if !matches!(ship.ship_type, 0 | 10 | 19 | 22) => None,
+                _ => return Err(invalid("native special ship requires an exact matching ability and power")),
+            };
+            if (ship.policy.is_some() && special.is_some()) ||
+                ship.special_weapon.is_some() != special.is_some()
+            {
+                return Err(invalid("native game special requires its weapon; special policy abilities are not yet independently authored"));
+            }
+            let authored_power = match &special {
+                Some(NativeAuthoredShipSpecial::Barge { power, .. }) |
+                Some(NativeAuthoredShipSpecial::FireBarge { power }) |
+                Some(NativeAuthoredShipSpecial::YellowJacket { power }) |
+                Some(NativeAuthoredShipSpecial::Striker { power, .. }) => Some(*power),
+                _ => None,
+            };
+            let special_weapon = if let Some(weapon) = ship.special_weapon {
+                let charge = weapon.charge_range.map(GameWeaponRange::into_native);
+                let proximity = weapon.proximity.map(GameWeaponRange::into_native);
+                let mount_offset = Vec2::new(weapon.mount_offset[0], weapon.mount_offset[1]);
+                if weapon.weapon_id <= 0 || weapon.weapon_id == i64::MAX ||
+                    !special_weapon_ids.insert(weapon.weapon_id) ||
+                    weapon.slot >= 5 || !mount_offset.is_finite() ||
+                    Some(weapon.power) != authored_power ||
+                    charge.is_some_and(|range| !range.valid()) ||
+                    proximity.is_some_and(|range| !range.valid()) ||
+                    (ship.ship_type == 0 && charge.is_none()) ||
+                    (ship.ship_type != 0 && proximity.is_none())
+                {
+                    return Err(invalid("invalid authored native Bomb weapon identity, power or trigger geometry"));
+                }
+                Some(bees_sim::combat_world::NativeSpecialWeaponSpec {
+                    weapon_id: weapon.weapon_id, slot: weapon.slot,
+                    power: weapon.power, mount_offset,
+                    charge_range: charge, proximity,
+                })
+            } else { None };
+            if let Some(NativeAuthoredShipSpecial::Striker { carrier, .. }) = &special {
+                if let Some(carrier_id) = carrier.carrier_id {
+                    striker_carriers.push((ship.entity_id, ship.side, carrier_id));
+                }
+            }
+            ship_types.insert(id, ship.ship_type);
+
             let game_movement = GameMovementProfile {
                 turning_radius: ship.turning_radius,
                 half_width: sprite.x * 0.5,
@@ -398,11 +520,7 @@ impl NativePhysicalScene {
                 {
                     return Err(invalid("invalid native turret or duplicate mount slot"));
                 }
-                let range_collider = turret.range_collider.map(|range|
-                    NativeTurretRangeSpec {
-                        offset: Vec2::new(range.offset[0], range.offset[1]),
-                        radius: range.radius, layer: range.layer, enabled: range.enabled,
-                    });
+                let range_collider = turret.range_collider.map(GameWeaponRange::into_native);
                 if range_collider.is_some_and(|range| !range.valid()) {
                     return Err(invalid("invalid native turret child range collider"));
                 }
@@ -543,9 +661,10 @@ impl NativePhysicalScene {
                 original_health: ship.original_health, size_class: ship.size_class,
                 healing_zone: None, warp_zone: None,
                 policy_capabilities: NativeAuthoredPolicyCapabilities::default(),
-                fleet_ship_id: None, policy: None, drone_carrier_id: None,
-                cease_fire: ship.cease_fire, turrets, special: None,
-                special_weapon: None,
+                fleet_ship_id: special.as_ref().map(|_| id),
+                policy: None, drone_carrier_id: None,
+                cease_fire: ship.cease_fire, turrets, special,
+                special_weapon,
                 combat_activity: Some(bees_sim::combat_world::NativeCombatActivity {
                     enabled: true,
                     window_seconds: ship.combat_window_seconds,
@@ -565,6 +684,15 @@ impl NativePhysicalScene {
                     front_offset: ship.front_offset, bounds_latched: false,
                 }),
             }));
+        }
+
+        if special_weapon_ids.iter().any(|id| ship_sides.contains_key(id)) ||
+            striker_carriers.iter().any(|&(_, side, carrier_id)|
+                ship_types.get(&carrier_id) != Some(&5) ||
+                ship_sides.get(&carrier_id) != Some(&side)
+            )
+        {
+            return Err(invalid("native Bomb weapon identities collide with ships or a Striker links to a non-Carrier on another side"));
         }
 
         let mut source_squads = Vec::with_capacity(raw.squads.len());
@@ -606,7 +734,7 @@ impl NativePhysicalScene {
                 item_id: squad.item_id, side: squad.side,
                 members: squad.members,
                 command_bans: Some(bans),
-                is_carrier_squad: Some(false),
+                is_carrier_squad: Some(squad.is_carrier_squad),
                 hotkey_number: squad.hotkey_number,
                 original_squad_count: squad.original_squad_count,
                 hivemind,
