@@ -11,9 +11,7 @@ use bees_gameplay::commands::{
     Activation, GameCommandError, NativeLocalCommandAction,
     NativeLocalCommandSource,
 };
-use bees_gameplay::level_events::{
-    NativeLevelEventError, NativeLevelEventProcessor, NativeLevelNotificationKind,
-};
+use bees_gameplay::level_events::{NativeLevelEventError, NativeLevelEventProcessor};
 use bees_gameplay::campaign_dialogue::CampaignDialogueSpec;
 use bees_gameplay::level_inputs::native_squad_order_from_catalog;
 use bees_gameplay::squads::NativeSquadRoster;
@@ -287,13 +285,8 @@ impl NativePolicyOnlyMetadata {
             if !self.scripted_queues[index].cue_armed {
                 let expected = self.scripted_queues[index].required_cue
                     .expect("unarmed queues always wait for a source cue");
-                if events.pending_notifications().iter().any(|entry|
-                    entry.tick == completed_tick &&
-                    match &entry.kind {
-                        NativeLevelNotificationKind::CampaignDialogue(cue) =>
-                            expected.matches(*cue),
-                        _ => false,
-                    }
+                if events.campaign_cue_fired(completed_tick,
+                    |cue| expected.matches(cue)
                 ) {
                     // Latch an authentic event before checking deployment:
                     // a mission's cue may precede the arrival of its squad.

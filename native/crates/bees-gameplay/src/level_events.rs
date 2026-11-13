@@ -855,6 +855,23 @@ impl NativeLevelEventProcessor {
         &self.pending_notifications
     }
 
+    /// Mission consumers inspect only the authentic current-tick campaign
+    /// events already emitted by this Level. The durable outbox is ordered
+    /// by completed simulation tick: a backward scan stops at the first
+    /// older event, independent of how many past notifications remain
+    /// unacknowledged. No separate cue cache, clock or event stream.
+    pub fn campaign_cue_fired(
+        &self, tick: u64,
+        accepts: impl Fn(crate::campaign_dialogue::CampaignCue) -> bool,
+    ) -> bool {
+        self.pending_notifications.iter().rev()
+            .take_while(|event| event.tick == tick)
+            .any(|event| match &event.kind {
+                NativeLevelNotificationKind::CampaignDialogue(cue) => accepts(*cue),
+                _ => false,
+            })
+    }
+
     pub(crate) fn queue_campaign_dialogue(
         &mut self, tick: u64, cue: crate::campaign_dialogue::CampaignCue,
     ) -> Result<(), NativeLevelEventError> {

@@ -2,7 +2,7 @@
 
 use std::collections::{HashMap, HashSet, VecDeque};
 
-use bees_gameplay::level_events::{NativeLevelEventProcessor, NativeLevelNotificationKind};
+use bees_gameplay::level_events::NativeLevelEventProcessor;
 use bees_gameplay::level_host::NativeLevelActivationContext;
 use bees_gameplay::level_rules::NativeLevelStepError;
 use bees_gameplay::player_inputs::NativeLevelPlayerContext;
@@ -56,12 +56,7 @@ impl ReinforcementWave {
         match self.due {
             ReinforcementDue::Tick(due) => tick >= due,
             ReinforcementDue::CampaignCue(expected) =>
-                events.pending_notifications().iter().rev().take_while(|entry|
-                    entry.tick == tick
-                ).any(|entry|
-                    matches!(&entry.kind, NativeLevelNotificationKind::CampaignDialogue(cue)
-                        if expected.matches(*cue))
-                ),
+                events.campaign_cue_fired(tick, |cue| expected.matches(cue)),
         }
     }
 
