@@ -206,6 +206,7 @@ def export(spec: dict, output: Path) -> dict:
         "full_project_histories": "available local files only",
         "local_artifact_root_missing": missing_local_root,
         "include_replays": bool(spec.get("include_replays", False)),
+        "replay_files_included": 0,
         "excluded": [
             "checkpoints and model binaries", "secrets and credentials",
             "symlinks and non-regular files",
@@ -447,6 +448,9 @@ def export(spec: dict, output: Path) -> dict:
                         continue
                     add_file(source, name_prefix + "/" +
                              source.relative_to(folder).as_posix())
+                    if any(part.lower() == "replays"
+                           for part in source.relative_to(folder).parts):
+                        manifest["replay_files_included"] += 1
                     found_by_job[job_id] += 1
                     if counts_as_trainer:
                         trainer_files_by_job[job_id] += 1
@@ -534,6 +538,7 @@ def export(spec: dict, output: Path) -> dict:
         add_bytes("export-manifest.json", json.dumps(manifest, indent=2).encode("utf-8"))
         end_part()
         return {"project_id": project, "parts": parts,
+                "replay_files_included": manifest["replay_files_included"],
                 "missing_artifact_job_ids": manifest["missing_artifact_job_ids"],
                 "missing_sources": missing_sources[:64],
                 "missing_source_count": len(missing_sources),
