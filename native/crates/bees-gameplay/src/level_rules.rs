@@ -385,8 +385,15 @@ pub trait NativeLevelCommandContext {
     {
         if !combat.has_waiting_path_jobs() { return Ok(0); }
         let asteroids = self.collision_asteroids_enabled();
+        // Most empty training arenas have no StaticObstacle at all.
+        // Keep re-rasterizing when any static geometry is present because
+        // it may move or be destroyed, but do not rebuild the full grid on
+        // every queued path request while the world stays static-empty.
+        let has_static_obstacles = combat.static_navigation_obstacles().next().is_some();
         let navigation = self.navigation_mut();
-        combat.refresh_world_navigation(navigation, true, asteroids)?;
+        let refresh_static = has_static_obstacles ||
+            navigation.static_obstacles_present() != Some(false);
+        combat.refresh_world_navigation(navigation, refresh_static, asteroids)?;
         let mut jobs = 0;
         while combat.solve_next_world_navigation_job(navigation)?.is_some() {
             jobs += 1;

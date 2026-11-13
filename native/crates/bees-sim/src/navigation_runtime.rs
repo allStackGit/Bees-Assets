@@ -67,6 +67,9 @@ pub struct NavigationRuntime {
     map_frame: NavigationMapFrame,
     clearance: NavigationClearance,
     search: NavigationSearch,
+    /// None until the first physical static-obstacle rasterization. Empty
+    /// static scenes can reuse the same clearance until a body appears.
+    static_obstacles_present: Option<bool>,
 }
 
 impl NavigationRuntime {
@@ -81,12 +84,19 @@ impl NavigationRuntime {
         let n = grid.width.checked_mul(grid.height)
             .ok_or(NavigationError::InvalidMap)?;
         let clearance = NavigationClearance::new(grid, &vec![false; n])?;
-        Ok(Self { map_frame: frame, clearance, search })
+        Ok(Self { map_frame: frame, clearance, search, static_obstacles_present: None })
     }
 
     pub fn map_frame(&self) -> NavigationMapFrame { self.map_frame }
     pub fn clearance(&self) -> &NavigationClearance { &self.clearance }
-    pub fn clearance_mut(&mut self) -> &mut NavigationClearance { &mut self.clearance }
+    pub fn clearance_mut(&mut self) -> &mut NavigationClearance {
+        // External map edits must not inherit the no-static-obstacles fast path.
+        self.static_obstacles_present = None;
+        &mut self.clearance
+    }
+    pub fn static_obstacles_present(&self) -> Option<bool> {
+        self.static_obstacles_present
+    }
 
     /// Update after authored static objects are created, moved or destroyed.
     /// Only StaticObstacle belongs here (not map borders or asteroids).
@@ -98,11 +108,13 @@ impl NavigationRuntime {
         I: IntoIterator<Item = (i64, &'a ObstacleBody)>,
     {
         let frame = self.map_frame;
-        self.clearance.update_static_from_obstacles(
+        let counts = self.clearance.update_static_from_obstacles(
             live_static,
             |point| frame.level_to_world(point),
             |point| frame.world_to_level(point),
-        )
+        )?;
+        self.static_obstacles_present = Some(counts.active_obstacles != 0);
+        Ok(counts)
     }
 
     /// Called only when Unity would request the current fixed-frame dynamic

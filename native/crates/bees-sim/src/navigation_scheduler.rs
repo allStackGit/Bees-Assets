@@ -88,7 +88,7 @@ pub struct NavigationScheduler {
     replies: mpsc::Receiver<Reply>,
     clearance_snapshot: Option<Arc<NavigationSearchSnapshot>>,
     snapshot_frame: Option<u64>,
-    snapshot_asteroids_enabled: Option<bool>,
+    snapshot_moving_asteroids_present: Option<bool>,
     pending_static_rebuild: bool,
 }
 
@@ -107,7 +107,7 @@ impl NavigationScheduler {
             replies,
             clearance_snapshot: None,
             snapshot_frame: None,
-            snapshot_asteroids_enabled: None,
+            snapshot_moving_asteroids_present: None,
             pending_static_rebuild: true,
         };
         for index in 0..worker_count {
@@ -254,12 +254,15 @@ impl NavigationScheduler {
             return Ok(step);
         }
 
-        // A static-only map is identical across fixed frames: keep one
-        // immutable snapshot until geometry or asteroid mode changes.
-        // Active moving asteroids still require a fresh frame's clearance.
+        // A static-only map is identical across fixed frames, even when
+        // asteroid collision is configured but the world has no live
+        // CollisionAsteroids. Detect arrivals/departures from the actual
+        // canonical world, not a stale second obstacle registry.
+        let moving_asteroids_present = collision_asteroids_enabled &&
+            world.dynamic_navigation_asteroids().next().is_some();
         if self.clearance_snapshot.is_none() ||
-            (collision_asteroids_enabled && self.snapshot_frame != Some(fixed_frame)) ||
-            self.snapshot_asteroids_enabled != Some(collision_asteroids_enabled) ||
+            (moving_asteroids_present && self.snapshot_frame != Some(fixed_frame)) ||
+            self.snapshot_moving_asteroids_present != Some(moving_asteroids_present) ||
             self.pending_static_rebuild {
             world.refresh_world_navigation(
                 runtime,
@@ -270,7 +273,7 @@ impl NavigationScheduler {
                 runtime.clearance().search_snapshot()
             ));
             self.snapshot_frame = Some(fixed_frame);
-            self.snapshot_asteroids_enabled = Some(collision_asteroids_enabled);
+            self.snapshot_moving_asteroids_present = Some(moving_asteroids_present);
             self.pending_static_rebuild = false;
             step.clearance_refreshed = true;
         }
