@@ -37,11 +37,17 @@ function courierMetrics(source) {
         if(['generation','active_training_time','checkpoint_write_time'].includes(name)||
             !/^[a-z][a-z0-9_]{0,39}$/.test(name)||
             !Number.isFinite(value)||Math.abs(value)>1e12)continue;
-        const unit=/(?:^|_)(?:seconds|duration|time_s)$/.test(name)
-            ?'seconds':name.endsWith('_per_second')
-                ?'rate':/(?:^|_)(?:rate|ratio|fraction)$/.test(name)&&
-                value>=0&&value<=1?'ratio':'scalar';
-        if((unit==='seconds'||unit==='rate')&&value<0)continue;
+        const countFields=new Set([
+            'training_profile_round','training_lineage_workers',
+            'training_slowest_worker','training_simulated_steps',
+            'training_useful_steps','training_rejected_workers']);
+        const unit=countFields.has(name)?'count':
+            /(?:^|_)(?:seconds|duration|time_s)$/.test(name)
+                ?'seconds':name.endsWith('_per_second')
+                    ?'rate':/(?:^|_)(?:rate|ratio|fraction)$/.test(name)&&
+                    value>=0&&value<=1?'ratio':'scalar';
+        if(((unit==='seconds'||unit==='rate')&&value<0)||
+            (unit==='count'&&(!Number.isSafeInteger(value)||value<0)))continue;
         metrics[name]={value,unit};
         retained++;
     }
