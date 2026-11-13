@@ -75,37 +75,45 @@ def source_inputs(suite_file: Path, suite: dict):
             type(config.get("episodes_per_world", 1)) is not int or
             len(config["levels"]) * config.get("episodes_per_world", 1) != suite["trials"]):
         raise ValueError("Evaluation suite must use a native-authored fixed trial count.")
-    # One approved scene, possibly repeated in many independent worlds.
-    # Multiple physical scenarios belong in separately fingerprinted suites.
+    # Holdouts commonly reuse one scene across hundreds of native worlds.
+    # Read and parse that physical roster exactly once, then validate only
+    # each world's small model routing table. No world-sized JSON copies.
     scenes = set()
-    observed_learner = False
     for level in config["levels"]:
         if not isinstance(level, dict) or not isinstance(level.get("scene"), str):
             raise ValueError("Every native evaluation Level needs an authored scene.")
-        scene_path = (run_file.parent / level["scene"]).resolve(strict=True)
-        scenes.add(scene_path)
-        snapshot = json.loads(read_bounded(scene_path, 8 * 1024 * 1024))
-        routed = level.get("model_slots", {})
-        if (not isinstance(routed, dict) or not isinstance(snapshot.get("ships"), list)):
-            raise ValueError("Native evaluation Levels must route real policy-controlled ships.")
-        for ship in snapshot["ships"]:
-            policy = ship.get("policy")
-            if policy is None:
-                continue
-            if not isinstance(policy, dict):
-                raise ValueError("Native evaluation has an invalid source policy controller.")
-            model_slot = routed.get(str(policy.get("team_id")))
-            if ship.get("side") == suite["learner_side"]:
-                if model_slot != suite["learner_slot"]:
-                    raise ValueError("Evaluation learner side is not controlled by the learner slot.")
-                observed_learner = True
-            elif model_slot == suite["learner_slot"]:
-                raise ValueError("Evaluation learner controls both physical sides.")
-    if len(scenes) != 1 or not observed_learner:
-        raise ValueError("Native evaluation requires one frozen scene and an actual learner side.")
+        scenes.add((run_file.parent / level["scene"]).resolve(strict=True))
+    if len(scenes) != 1:
+        raise ValueError("Native evaluation requires one frozen physical scene.")
     scene = next(iter(scenes))
     if file_sha256(scene) != suite["scene_sha256"]:
         raise ValueError("Native evaluation scene differs from its frozen suite.")
+    snapshot = json.loads(read_bounded(scene, 8 * 1024 * 1024))
+    if not isinstance(snapshot.get("ships"), list):
+        raise ValueError("Native evaluation requires physical policy-controlled ships.")
+    teams_by_side = {}
+    for ship in snapshot["ships"]:
+        if not isinstance(ship, dict):
+            raise ValueError("Native evaluation has an invalid source ship.")
+        policy = ship.get("policy")
+        if policy is None:
+            continue
+        if not isinstance(policy, dict):
+            raise ValueError("Native evaluation has an invalid source policy controller.")
+        teams_by_side.setdefault(ship.get("side"), set()).add(policy.get("team_id"))
+    if not teams_by_side.get(suite["learner_side"]):
+        raise ValueError("Native evaluation learner side has no real policy agents.")
+    for level in config["levels"]:
+        routed = level.get("model_slots")
+        if not isinstance(routed, dict):
+            raise ValueError("Every native evaluation Level requires explicit model slots.")
+        for side, teams in teams_by_side.items():
+            for team in teams:
+                model_slot = routed.get(str(team))
+                if side == suite["learner_side"] and model_slot != suite["learner_slot"]:
+                    raise ValueError("Evaluation learner side is not controlled by the learner slot.")
+                if side != suite["learner_side"] and model_slot == suite["learner_slot"]:
+                    raise ValueError("Evaluation learner controls both physical sides.")
     worker = (run_file.parent / config["policy_worker"]).resolve(strict=True)
     if normalized_python_source_sha256(worker) != suite["policy_worker_sha256"]:
         raise ValueError("Native policy inference implementation changed.")
