@@ -126,13 +126,15 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'remote_collectors_ready_at_local_end',
         'remote_collectors_pending_at_local_end',
         'local_gpu_collectors_ready_at_local_end',
-        'local_gpu_collectors_pending_at_local_end',
+        
         'collector_auto_balance_adjustments',
         'collector_auto_balance_accepted','collector_auto_balance_settled',
         'collector_balance_changed_next_update',
         'ppo_board_pixel_samples','ppo_max_board_cells',
         'ppo_unique_board_shapes','policy_lag','action_target'])
         add(name,row[name],'count');
+    add('local_gpu_collectors_pending',
+        row.local_gpu_collectors_pending_at_local_end,'count');
     if(Number.isSafeInteger(row.rollout_onnx_states)&&row.rollout_onnx_states>0&&
         Number.isSafeInteger(row.rollout_onnx_batched_states)&&
         row.rollout_onnx_batched_states>=0&&
