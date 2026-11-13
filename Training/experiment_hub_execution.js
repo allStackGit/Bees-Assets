@@ -54,6 +54,10 @@ class LocalExecution {
                 this.supervisor instanceof DockerSupervisor&&
                 this.supervisor.adapters?.tinybrains?.gpu_dual_execution==='split-ppo'
                 ?[...(this.supervisor.adapters.tinybrains.tinybrains_dual_gpu_profiles||[])]:[],
+            tinybrains_multi_gpu_profiles:this.supervisor.gpuEnabled===true&&
+                this.supervisor instanceof DockerSupervisor&&
+                this.supervisor.adapters?.tinybrains?.gpu_multi_execution==='ppo-local-collectors'
+                ?[...(this.supervisor.adapters.tinybrains.tinybrains_multi_gpu_profiles||[])]:[],
             tinybrains_imports:{...this.supervisor.adapters?.tinybrains?.tinybrains_imports},
             gpu_projects:this.projects.filter(project=>
                 this.supervisor.gpuEnabled===true&&
@@ -113,9 +117,13 @@ class LocalExecution {
                     job.frozen_parameters?.device==='dual'&&
                     job.resources?.gpu_mode==='exclusive';
                 const multi=count>=2&&count<=8&&
-                    this.supervisor instanceof LinuxSupervisor&&
-                    job.project_id==='courier'&&
-                    localAdapter?.gpu_multi_execution==='independent-ppo'&&
+                    (this.supervisor instanceof LinuxSupervisor&&
+                     job.project_id==='courier'&&
+                     localAdapter?.gpu_multi_execution==='independent-ppo'||
+                     this.supervisor instanceof DockerSupervisor&&
+                     job.project_id==='tinybrains'&&count>=3&&
+                     job.frozen_parameters?.device==='multi'&&
+                     localAdapter?.gpu_multi_execution==='ppo-local-collectors')&&
                     job.resources?.gpu_mode==='exclusive';
                 const single=count===1;
                 if(typeof this.supervisor.qualifyGpuDeviceAccess!=='function'||
