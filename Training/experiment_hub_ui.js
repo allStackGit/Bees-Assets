@@ -1140,6 +1140,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const comparisonMetricOverrides=new Map();
     const comparisonChartAverages=new Map();
     const comparisonChartRolling=new Map();
+    const comparisonChartRunVisibility=new Map();
     let lastComparisonChart=null,lastComparisonChartWidth=0;
     let compareSerial=0;
     const compareColor=i=>'hsl('+((i*137.508+211)%360).toFixed(2)+' 65% 38%)';
@@ -2046,9 +2047,50 @@ document.addEventListener('DOMContentLoaded', () => {
             ' by '+axisLabel.toLowerCase()+' for selected runs');
         const usable=p=>hubComparisonAxisValue(p,xKey)!==null&&
             Number.isFinite(hubMetricValue(p,key));
-        const series=runs.map(run=>({
+        const allSeries=runs.map(run=>({
             ...run,valid:hubComparisonPoints(run),
         }));
+        const visible=run=>comparisonChartRunVisibility.get(
+            project+'|'+key+'|'+run.job.id)!==false;
+        const series=allSeries.filter(visible);
+        for(const run of allSeries) {
+            const checkbox=document.createElement('input');
+            checkbox.type='checkbox';
+            checkbox.checked=visible(run);
+            checkbox.setAttribute('aria-label',
+                'Show '+hubJobLabel(run.job)+' in '+genericKey+' chart');
+            checkbox.title='Show or hide this run in this chart';
+            const legendItem=document.createElement('label');
+            legendItem.className='hub-plot-legend-entry';
+            const swatch=document.createElement('span');
+            swatch.className='hub-plot-legend-swatch';
+            swatch.style.borderColor=run.color;
+            const unit=units[0]||'';
+            const samples=run.valid.filter(usable).map(p=>hubMetricValue(p,key));
+            const mean=samples.length
+                ?samples.reduce((sum,value)=>sum+value,0)/samples.length:null;
+            const formatted=value=>unit==='ratio'
+                ?(value*100).toFixed(2)+'%'
+                :Number(value).toLocaleString(undefined,{maximumFractionDigits:2})+
+                    (unit==='seconds'?' s':unit==='rate'?' /s':
+                        unit==='mb'?' MiB':unit==='watts'?' W':
+                        unit==='scalar'||unit==='count'?'':' '+unit);
+            legendItem.append(checkbox,swatch,document.createTextNode(
+                run.slot+' · '+hubJobLabel(run.job)+
+                (showAverage&&mean!==null?' · mean '+formatted(mean):'')+
+                (showRolling?' · rolling 50-'+(project==='tinybrains'
+                    ?'update':project==='courier'?'round':'step')+
+                    ' sample mean':'')));
+            checkbox.addEventListener('change',()=>{
+                comparisonChartRunVisibility.set(
+                    project+'|'+key+'|'+run.job.id,checkbox.checked);
+                delete tooltip.dataset.pinned;
+                delete tooltip.dataset.pinnedFraction;
+                drawComparisonChart(runs,key,xKey,svg,legend,tooltip,
+                    showAverage,showRolling);
+            });
+            legend.append(legendItem);
+        }
         const values=series.flatMap(r=>r.valid
             .filter(usable)
             .map(p=>({x:hubComparisonAxisValue(p,xKey),y:hubMetricValue(p,key)})));
@@ -2139,23 +2181,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 flush();
             }
-            const legendItem=document.createElement('span');
-            legendItem.className='hub-plot-legend-entry';
-            const swatch=document.createElement('span');
-            swatch.className='hub-plot-legend-swatch';
-            swatch.style.borderColor=run.color;
-            const unit=units[0]||'';
-            const formatted=value=>unit==='ratio'
-                ?(value*100).toFixed(2)+'%'
-                :Number(value).toLocaleString(undefined,{maximumFractionDigits:2})+
-                    (unit==='seconds'?' s':unit==='rate'?' /s':
-                        unit==='mb'?' MiB':unit==='watts'?' W':
-                        unit==='scalar'||unit==='count'?'':' '+unit);
-            legendItem.append(swatch,document.createTextNode(
-                run.slot+' · '+hubJobLabel(run.job)+
-                (showAverage&&mean!==null?' · mean '+formatted(mean):'')+
-                (showRolling?' · rolling 50-'+(project==='tinybrains'?'update':project==='courier'?'round':'step')+' sample mean':'')));
-            legend.append(legendItem);
             let part=[],previousX=null;
             const flush=()=>{
                 if(part.length>1)
@@ -2274,11 +2299,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 close.addEventListener('click',clearPin);
                 heading.append(close);
             }
-            const note=document.createElement('div');
-            note.className='hub-plot-tooltip-instruction';
-            note.textContent=pinned
-                ?'Pinned sample values remain fixed while new chart data arrives. Scroll here; Unpin or press Escape to close.'
-                :'Click anywhere on the chart to pin these values and scroll.';
             const rows=chosen.map(({run,closest})=>{
                 const item=document.createElement('div');
                 item.className='hub-plot-tooltip-run';
@@ -2319,7 +2339,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 return item;
             });
             const originalScroll=tooltip.scrollTop;
-            tooltip.replaceChildren(heading,note,...rows);
+            tooltip.replaceChildren(heading,...rows);
             tooltip.hidden=false;
             tooltip.classList.toggle('hub-plot-tooltip-pinned',pinned);
             tooltip.tabIndex=0;
