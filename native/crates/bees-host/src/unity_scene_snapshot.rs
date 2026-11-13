@@ -26,6 +26,7 @@ use bees_sim::collision::{Aabb, Pose};
 use bees_sim::combat::{CombatError, ShipVitals};
 use bees_sim::geometry::Vec2;
 use bees_sim::box_obstacle_assets::{live_box_shape, BoxObstacleCatalog};
+use bees_sim::polygon_obstacle_assets::PolygonObstacleCatalog;
 use bees_sim::physics::{ObstacleBody, ShipShape};
 use bees_sim::map_object::CombatMapObject;
 use bees_sim::obstacle::{CombatObstacle, ObstacleKind, ObstacleVitals};
@@ -626,6 +627,8 @@ pub struct NativeLevelLayout {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub add_static_boxes: Vec<NativePlacedStaticBox>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub add_static_polygons: Vec<NativePlacedStaticPolygon>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub translate_squads: Vec<NativeSquadTranslation>,
 }
 
@@ -641,6 +644,18 @@ pub struct NativePlacedStaticBox {
     /// same validated geometry.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub local_corners: Option<[[f32; 2]; 4]>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct NativePlacedStaticPolygon {
+    pub entity_id: i64,
+    pub position: [f32; 2],
+    pub rotation_degrees: f32,
+    /// Omit to use the verified immutable source Polygon Obstacle outline;
+    /// set explicitly for a resized/edited exact collider-local path.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub local_vertices: Option<Vec<[f32; 2]>>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
@@ -857,7 +872,8 @@ impl NativePhysicalScene {
     /// formation; gameplay still owns all subsequent motion and collisions.
     /// Validate the complete patch before mutating the imported template.
     pub fn apply_native_layout(
-        &mut self, layout: &NativeLevelLayout, boxes: &BoxObstacleCatalog,
+        &mut self, layout: &NativeLevelLayout,
+        boxes: &BoxObstacleCatalog, polygons: &PolygonObstacleCatalog,
     ) -> Result<(), NativeSnapshotError> {
         use bees_sim::obstacle::ObstacleKind;
         let invalid = NativeSnapshotError::InvalidNativeLayout;
@@ -919,6 +935,30 @@ impl NativePhysicalScene {
             };
             if prepared.is_err() {
                 return Err(invalid("native box collider corners are invalid"));
+            }
+        }
+        for placement in &layout.add_static_polygons {
+            if placement.entity_id <= highest_original_id ||
+                placement.entity_id <= 0 || !new_ids.insert(placement.entity_id) {
+                return Err(invalid("new polygon identities must be unique and above the captured world"));
+            }
+            let position = Vec2::new(placement.position[0], placement.position[1]);
+            let pose = Pose { position, rotation_degrees: placement.rotation_degrees };
+            if !position.is_finite() || !pose.rotation_degrees.is_finite() ||
+                position.x < self.bounds.min.x || position.x > self.bounds.max.x ||
+                position.y < self.bounds.min.y || position.y > self.bounds.max.y
+            {
+                return Err(invalid("new polygon origin is outside the native Level bounds"));
+            }
+            let prepared = match &placement.local_vertices {
+                Some(vertices) => polygons.prepare_spawn_live_polygon(
+                    placement.entity_id, pose,
+                    vertices.iter().map(|v| Vec2::new(v[0], v[1])).collect(),
+                ),
+                None => polygons.prepare_spawn(placement.entity_id, Some(pose)),
+            };
+            if prepared.is_err() {
+                return Err(invalid("native polygon collider vertices are invalid"));
             }
         }
 
@@ -986,7 +1026,20 @@ impl NativePhysicalScene {
                     corners.map(|v| Vec2::new(v[0], v[1]))),
             });
         }
-        if !layout.add_static_boxes.is_empty() {
+        for placement in &layout.add_static_polygons {
+            self.source_static_discovery_values
+                .insert(placement.entity_id, polygons.authored_health);
+            self.entities.push(NativeAuthoredEntity::PolygonObstacle {
+                entity_id: placement.entity_id,
+                pose: Some(Pose {
+                    position: Vec2::new(placement.position[0], placement.position[1]),
+                    rotation_degrees: placement.rotation_degrees,
+                }),
+                live_vertices: placement.local_vertices.as_ref().map(|vertices|
+                    vertices.iter().map(|v| Vec2::new(v[0], v[1])).collect()),
+            });
+        }
+        if !layout.add_static_boxes.is_empty() || !layout.add_static_polygons.is_empty() {
             self.has_obstacles = true;
         }
         Ok(())
