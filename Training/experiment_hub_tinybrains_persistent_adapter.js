@@ -160,6 +160,17 @@ function recordedTinyBrainsMetrics(row,updateWall) {
     // process exactly once, distinct from the independent per-pool bounds.
     add('local_lease_ram_charged_mb',row.local_lease_ram_charged_mb,'mb');
     add('local_lease_ram_headroom_mb',row.local_lease_ram_headroom_mb,'mb');
+    add('local_lease_admission_wait_seconds',
+        row.local_lease_admission_wait_seconds,'seconds');
+    add('local_lease_admission_wait_delta',
+        row.local_lease_admission_wait_delta,'seconds');
+    for(const name of [
+        'local_lease_ram_admission_denials',
+        'local_lease_native_engines_admitted',
+        'local_lease_active_native_pools',
+        'local_lease_admission_denials_delta',
+        'local_lease_engines_admitted_delta'])
+        add(name,row[name],'count');
     add('ppo_prestaged_board_bytes',row.ppo_prestaged_board_bytes,'bytes');
     add('checkpoint_archive_bytes',row.checkpoint_archive_bytes,'bytes');
     add('checkpoint_archive_hardlinked',row.checkpoint_archive_hardlinked,'count');
