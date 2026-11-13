@@ -233,7 +233,7 @@ function recordedTinyBrainsMetrics(row,updateWall) {
             ['sim_restored','simulation_target_restored'],
             ['sim_proven','simulation_proven_target']])
             add('collector_'+i+'_'+suffix,worker[name],'count');
-        add('collector_'+i+'_sim_rss_mb',
+        add('collector_'+i+'_sim_engine_charged_mb',
             worker.simulation_engine_memory_mb,'mb');
         for(const [suffix,name] of [
             ['sim_learner_mb','simulation_learner_memory_mb'],
