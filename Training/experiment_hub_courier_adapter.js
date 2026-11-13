@@ -55,9 +55,11 @@ function courierMetrics(source) {
     return metrics;
 }
 
-function liveWindowsProgress(root) {
-    // Reading the durable checkpoint can block Python's replacement on Windows.
-    // The append-only event is emitted after all checkpoint files are published.
+function liveCourierProgress(root,allowCheckpointEvent) {
+    // The append-only event stream already exists on both operating systems.
+    // On Windows, prefer checkpoint events to reading open files that can
+    // interfere with atomic replacement. Completed training events are
+    // observational and do not authorize model promotion/checkpoint release.
     const file=path.join(root,'events.jsonl');
     let fd;
     try {
@@ -72,9 +74,20 @@ function liveWindowsProgress(root) {
         lines.pop(); // The final line may still be in flight.
         if(size<stat.size)lines.shift();
         for(let i=lines.length-1;i>=0;i--) {
-            if(!lines[i].includes('"checkpoint_saved"'))continue;
+            if(!lines[i].includes('"checkpoint_saved"')&&
+                !lines[i].includes('"batch_finished"'))continue;
             const event=JSON.parse(lines[i]);
-            if(event.event==='checkpoint_saved')return {
+            if(event.event==='batch_finished'&&event.operation==='train'&&
+                Number.isSafeInteger(event.completed_round)&&event.completed_round>=0&&
+                event.metrics?.training_profile_round===event.completed_round&&
+                typeof event.completed_at_utc==='string')return {
+                steps_completed:event.completed_round,
+                // Immutable event-specific timestamp; file mtime can move
+                // when later unrelated diagnostics are appended.
+                source_modified_at:new Date(event.completed_at_utc).toISOString(),
+                metrics:courierMetrics(event),
+            };
+            if(allowCheckpointEvent&&event.event==='checkpoint_saved')return {
                 steps_completed:event.round,
                 source_modified_at:new Date(event.utc).toISOString(),
                 metrics:{
@@ -261,9 +274,11 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
             const root=jobRoot(context);
             const identity={schema_version:1,source:'hub-metrics-v1',
                 experiment_id:context.job_id,segment_id:'training'};
-            if(windows&&['running','stop_requested'].includes(context.state)) {
-                const progress=liveWindowsProgress(root);
-                return progress&&validateProgress({...identity,...progress},context.project_id);
+            if(['running','stop_requested'].includes(context.state)) {
+                const progress=liveCourierProgress(root,windows);
+                if(progress)return validateProgress(
+                    {...identity,...progress},context.project_id);
+                if(windows)return null;
             }
             const checkpoint=path.join(root,'checkpoint.json');
             let fd;
