@@ -40,7 +40,8 @@ function courierMetrics(source) {
         const countFields=new Set([
             'training_profile_round','training_lineage_workers',
             'training_slowest_worker','training_simulated_steps',
-            'training_useful_steps','training_rejected_workers']);
+            'training_useful_steps','training_rejected_workers',
+            'training_concurrency_limit']);
         const unit=countFields.has(name)?'count':
             /(?:^|_)(?:seconds|duration|time_s)$/.test(name)
                 ?'seconds':name.endsWith('_per_second')
