@@ -741,13 +741,14 @@ struct LiveShipCandidateSource {
     fleet_id: i64,
 }
 
-/// Episode-local observation work. Eligible counts are the source's
-/// full-scan alternatives, and examined counts are actual pruned visits.
+/// Episode-local observation work. Eligible/examined candidate counts
+/// describe indexed queries; direct tiny-world scans are counted separately.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize)]
 pub struct LiveShipCandidateMeasurements {
     pub snapshots: u64,
     pub indexed_live_ships: u64,
     pub indexed_learned_enemies: u64,
+    pub direct_scan_queries: u64,
     pub eligible_candidates: u64,
     pub examined_candidates: u64,
     pub selected_candidates: u64,
@@ -758,6 +759,7 @@ impl LiveShipCandidateMeasurements {
         self.snapshots += other.snapshots;
         self.indexed_live_ships += other.indexed_live_ships;
         self.indexed_learned_enemies += other.indexed_learned_enemies;
+        self.direct_scan_queries += other.direct_scan_queries;
         self.eligible_candidates += other.eligible_candidates;
         self.examined_candidates += other.examined_candidates;
         self.selected_candidates += other.selected_candidates;
@@ -996,6 +998,7 @@ impl LiveShipCandidateCollector {
         let side = observer.side;
         let origin = observer_body.motion.position;
         self.candidates.clear();
+        self.measurements.direct_scan_queries += 1;
         if world.ships().len() != world.physics().ships().len() {
             return Err(CombatPerceptionError::MismatchedWorldStorage);
         }
@@ -1027,6 +1030,7 @@ impl LiveShipCandidateCollector {
         let side = observer.side;
         let origin = observer_body.motion.position;
         self.candidates.clear();
+        self.measurements.direct_scan_queries += 1;
         if let Some(known) = world.discovery().ship_ids(side) {
             for &id in known {
                 let Some(candidate) = world.ship(id) else {
