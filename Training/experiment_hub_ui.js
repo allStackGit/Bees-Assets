@@ -2897,11 +2897,19 @@ document.addEventListener('DOMContentLoaded', () => {
         $('hub-config-json').value=JSON.stringify(parameters,null,2);
         return parameters;
     }
-    function renderDesignEditor() {
+    let renderedDesignSignature=null;
+    function renderDesignEditor(force=false) {
         let parameters;
         try {parameters=JSON.parse($('hub-config-json').value);}
         catch {return;}
         const chosen=designDefinition(parameters);
+        const signature=JSON.stringify({project,parameters,
+            machine:chosen?.machine?.id||null,
+            catalog:chosen?.entry||null});
+        // Periodic monitor/worker refresh must not discard an in-progress
+        // number edit while the last saved JSON is still unchanged.
+        if(!force&&signature===renderedDesignSignature)return;
+        renderedDesignSignature=signature;
         const editor=$('hub-design-editor');
         $('hub-design-availability').textContent=project==='bees'||chosen?'':(
             project==='courier'||project==='tinybrains'
@@ -3014,10 +3022,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 parameters.checkpoint_rounds=250;
             }
             $('hub-config-json').value=JSON.stringify(parameters,null,2);
-            renderDesignEditor();
+            renderDesignEditor(true);
         }catch(error){feedback('hub-config-message',error.message);}
     });
-    $('hub-config-json').addEventListener('change',renderDesignEditor);
+    $('hub-config-json').addEventListener('change',()=>renderDesignEditor(true));
     function resetEditor() {
         editing=null;
         $('hub-config-name').value='';
