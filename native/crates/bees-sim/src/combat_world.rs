@@ -2132,6 +2132,19 @@ impl CombatWorld {
         self.navigation_requests.is_pathfinding(ship_id)
     }
 
+    /// One authoritative arrival predicate for ordinary game orders.
+    /// A ship awaiting an A* job has no target coordinates yet, and a
+    /// failed request may be in its source-style retry window. Treat
+    /// either state as pending movement so mission scripts cannot
+    /// prematurely overwrite a reinforcement's real entry order.
+    pub fn ship_has_pending_game_movement(&self, ship_id: i64) -> bool {
+        self.navigation_requests.is_pathfinding(ship_id) ||
+            self.game_ship_steering.get(&ship_id)
+                .is_some_and(|steering| steering.has_game_order()) ||
+            self.ship_body(ship_id)
+                .is_some_and(|body| body.motion.has_target_coordinates)
+    }
+
     pub fn claim_next_path_job(&mut self) -> Option<NavigationRequest> {
         self.navigation_requests.next()
     }

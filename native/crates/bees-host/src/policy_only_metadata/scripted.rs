@@ -344,13 +344,16 @@ impl NativePolicyOnlyMetadata {
                 self.scripted_queues[index].claimed = true;
                 let squad = events.roster().get(owner)
                     .ok_or(NativeLevelEventError::Commands(GameCommandError::InvalidSquad))?;
-                let mut moving = false;
+                let mut pending = false;
                 for &ship_id in &squad.members {
-                    let body = world.ship_body(ship_id)
-                        .ok_or(NativeLevelEventError::Commands(GameCommandError::InvalidSquad))?;
-                    moving |= body.motion.has_target_coordinates;
+                    if world.ship_body(ship_id).is_none() {
+                        return Err(NativeLevelEventError::Commands(
+                            GameCommandError::InvalidSquad,
+                        ));
+                    }
+                    pending |= world.ship_has_pending_game_movement(ship_id);
                 }
-                if moving {
+                if pending {
                     index += 1;
                     continue;
                 }
