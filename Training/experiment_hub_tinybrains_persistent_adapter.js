@@ -251,6 +251,7 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         if(worker.mode==='local_gpu')
             add('collector_'+i+'_is_local_gpu',1,'count');
         add('collector_'+i+'_gpu_ordinal',worker.gpu_ordinal,'count');
+        add('collector_'+i+'_gpu_lease_index',worker.gpu_lease_index,'count');
         add('collector_'+i+'_engine_steps',worker.engine_steps,'count');
         add('collector_'+i+'_simulation_match_steps',
             worker.simulation_match_steps,'count');
@@ -450,7 +451,7 @@ function recordedTinyBrainsMetrics(row,updateWall) {
             'join_exposed_seconds','simulation_match_steps',
             'match_steps_per_second','sim_matches','sim_target',
             'sim_ram_headroom_mb','gpu_allocated_mb','gpu_vram_lease_mb',
-            'is_local_gpu','gpu_ordinal',
+            'is_local_gpu','gpu_ordinal','gpu_lease_index',
             'rollout_engine_step_seconds','learner_inference_seconds',
             'roundtrip_seconds','service_seconds',
             'sim_dispatch_queue_seconds','sim_last_child_gap_seconds',
