@@ -77,4 +77,74 @@ function applyOverrides(config,project,overrides) {
 function described(config,project) {
     return {version:1,fields:fieldsFor(config,project)};
 }
-module.exports={fieldsFor,applyOverrides,described};
+// An authenticated worker describes locally installed, approved defaults.
+// Reject malformed descriptions before they become UI or placement evidence.
+function validField(field) {
+    if(!field||typeof field!=='object'||Array.isArray(field)||
+        typeof field.key!=='string'||!/^[a-z][a-z0-9_]*(?:\\.[a-z][a-z0-9_]*){0,6}$/i.test(field.key)||
+        typeof field.label!=='string'||field.label.length>100||
+        !['training','environment'].includes(field.section)||
+        !['number','integer','boolean'].includes(field.type))
+        return false;
+    if(field.type==='boolean')return typeof field.default==='boolean';
+    return typeof field.default==='number'&&Number.isFinite(field.default)&&
+        typeof field.min==='number'&&Number.isFinite(field.min)&&
+        typeof field.max==='number'&&Number.isFinite(field.max)&&
+        field.min<=field.default&&field.default<=field.max&&
+        field.min<=field.max&&
+        (field.type!=='integer'||[field.min,field.max,field.default]
+            .every(Number.isSafeInteger));
+}
+function validateCatalog(raw,installed=[],approved={}) {
+    if(raw==null)return {};
+    if(!raw||typeof raw!=='object'||Array.isArray(raw)||
+        Object.keys(raw).some(key=>!['courier','tinybrains'].includes(key))||
+        JSON.stringify(raw).length>262144)
+        throw Error('Invalid bounded project Design catalogue.');
+    const validateFields=entry=>{
+        if(!entry||entry.version!==1||!Array.isArray(entry.fields)||
+            entry.fields.length>128||entry.fields.some(field=>!validField(field))||
+            new Set(entry.fields.map(field=>field.key)).size!==entry.fields.length)
+            throw Error('Invalid project Design field definitions.');
+        return {version:1,fields:entry.fields.map(field=>({...field}))};
+    };
+    const result={};
+    if(raw.courier!==undefined) {
+        if(!installed.includes('courier')||!/^[0-9a-f]{64}$/.test(raw.courier.config_sha256))
+            throw Error('Courier Design defaults require the installed adapter digest.');
+        result.courier={...validateFields(raw.courier),config_sha256:raw.courier.config_sha256};
+    }
+    if(raw.tinybrains!==undefined) {
+        const profiles=raw.tinybrains?.profiles;
+        if(!installed.includes('tinybrains')||!profiles||
+            typeof profiles!=='object'||Array.isArray(profiles)||
+            Object.keys(profiles).length>32||
+            Object.entries(profiles).some(([id,entry])=>!Object.hasOwn(approved,id)||
+                entry.profile_sha256!==approved[id]))
+            throw Error('TinyBrains Design defaults require approved profile identities.');
+        result.tinybrains={profiles:Object.fromEntries(
+            Object.entries(profiles).map(([id,entry])=>
+                [id,{...validateFields(entry),profile_sha256:entry.profile_sha256}]))};
+    }
+    return result;
+}
+function supportsDesign(catalog,project,parameters) {
+    const changes=parameters?.design_overrides;
+    if(changes===undefined)return true;
+    if(!changes||typeof changes!=='object'||Array.isArray(changes)||
+        Object.keys(changes).length>128)return false;
+    const entry=project==='courier'&&catalog?.courier?.config_sha256===parameters.config_sha256
+        ?catalog.courier:project==='tinybrains'
+            ?catalog?.tinybrains?.profiles?.[parameters.profile]:null;
+    if(!entry||project==='tinybrains'&&entry.profile_sha256!==parameters.profile_sha256)
+        return false;
+    const known=new Map(entry.fields.map(field=>[field.key,field]));
+    return Object.entries(changes).every(([key,value])=>{
+        const field=known.get(key);
+        return field&&(field.type==='boolean'?typeof value==='boolean':
+            typeof value==='number'&&Number.isFinite(value)&&
+            value>=field.min&&value<=field.max&&
+            (field.type!=='integer'||Number.isSafeInteger(value)));
+    });
+}
+module.exports={fieldsFor,applyOverrides,described,validateCatalog,supportsDesign};
