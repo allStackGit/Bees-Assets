@@ -19,6 +19,18 @@ def file_sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+
+def normalized_python_source_sha256(path: Path) -> str:
+    """Fingerprint policy code independently of Git CRLF checkout policy.
+
+    Windows and Linux may materialize the same Python source with different
+    line endings. Normalize source line endings only: checkpoints, scenario
+    JSON and captured binary data retain strict raw-byte identities.
+    """
+    data = path.read_bytes().replace(b"\\r\\n", b"\\n").replace(b"\\r", b"\\n")
+    return hashlib.sha256(data).hexdigest()
+
+
 def check_learner(manifest: Path, checkpoint: Path, slot: int | None) -> str:
     record = json.loads(manifest.read_text(encoding="utf-8"))
     if record.get("format") != "bees-native-model-v1" or not isinstance(record.get("models"), list):
