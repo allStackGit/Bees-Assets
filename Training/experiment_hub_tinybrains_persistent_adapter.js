@@ -259,6 +259,13 @@ function recordedTinyBrainsMetrics(row,updateWall) {
             worker.collector_record_packed,'count');
         add('collector_'+i+'_record_board_groups',
             worker.collector_record_board_groups,'count');
+        for(const [suffix,name] of [
+            ['gpu_allocated_mb','collector_gpu_allocated_mb'],
+            ['gpu_reserved_mb','collector_gpu_reserved_mb'],
+            ['gpu_peak_allocated_mb','collector_gpu_peak_allocated_mb'],
+            ['gpu_physical_free_mb','collector_gpu_physical_free_mb'],
+            ['gpu_vram_lease_mb','collector_gpu_vram_lease_mb']])
+            add('collector_'+i+'_'+suffix,worker[name],'mb');
         // Separately timed remote/learner stages are observational; never
         // treat socket send/receive blocking as measured network bandwidth.
         for(const [suffix,name] of [
