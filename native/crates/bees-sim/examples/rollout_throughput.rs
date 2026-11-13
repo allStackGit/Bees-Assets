@@ -36,12 +36,16 @@ struct Options {
     heavy_ships: Option<usize>,
     /// Exercise the exact one-physics-tick-per-inference-frame dispatcher.
     model_step_dispatch: bool,
+    /// Model-step fixture only: source-order a prefix of worlds as if
+    /// they could allocate Stage identities during their tick.
+    serial_worlds: usize,
 }
 
 impl Default for Options {
     fn default() -> Self {
         Self { worlds: 16, ships: 2, steps: 1000, workers: 4,
-            heavy_ships: None, model_step_dispatch: false }
+            heavy_ships: None, model_step_dispatch: false,
+            serial_worlds: 0 }
     }
 }
 
@@ -54,7 +58,7 @@ fn options() -> Options {
             continue;
         }
         if flag == "--help" || flag == "-h" {
-            println!("Usage: rollout_throughput [--worlds 1..256] [--ships 1..256] [--steps 1..1000000] [--workers 1..128] [--heavy-ships 1..256] [--model-step-dispatch]");
+            println!("Usage: rollout_throughput [--worlds 1..256] [--ships 1..256] [--steps 1..1000000] [--workers 1..128] [--heavy-ships 1..256] [--model-step-dispatch] [--serial-worlds 0..256]");
             std::process::exit(0);
         }
         let value = arguments.next().unwrap_or_else(|| panic!("missing value for {flag}"));
@@ -65,8 +69,14 @@ fn options() -> Options {
             "--steps" if (1..=1_000_000).contains(&parsed) => opt.steps = parsed as u32,
             "--workers" if (1..=128).contains(&parsed) => opt.workers = parsed,
             "--heavy-ships" if (1..=256).contains(&parsed) => opt.heavy_ships = Some(parsed),
+            "--serial-worlds" if parsed <= 256 => opt.serial_worlds = parsed,
             _ => panic!("unknown option or value out of range: {flag}={value}"),
         }
+    }
+    if opt.serial_worlds > opt.worlds ||
+        (opt.serial_worlds != 0 && !opt.model_step_dispatch)
+    {
+        panic!("--serial-worlds requires --model-step-dispatch and cannot exceed --worlds");
     }
     opt
 }
@@ -209,17 +219,20 @@ fn measure_model_step_dispatch(
     let mut sim = build_worlds(opt, assets, projectiles);
     let actions = (0..opt.worlds).map(|_| Some(Vec::<Decision>::new()))
         .collect::<Vec<_>>();
+    let serial_indices = (0..opt.serial_worlds).collect::<Vec<_>>();
     // No hidden warm-up worlds: both modes start with identical authored
     // hulls, RNG and physics state and complete exactly opt.steps ticks.
     let started = Instant::now();
     let mut actual_workers = 0usize;
+    let mut source_serial_arenas = 0usize;
     for _ in 0..opt.steps {
-        let report = sim.step_selected_worlds_parallel(
-            &actions, NonZeroUsize::new(workers).unwrap(),
+        let report = sim.step_selected_worlds_partitioned(
+            &actions, NonZeroUsize::new(workers).unwrap(), &serial_indices,
         ).expect("matching arena action count");
         assert!(report.failed_worlds.is_empty(), "model-step physics failed");
         assert_eq!(report.worlds_stepped, opt.worlds);
-        actual_workers = actual_workers.max(report.worker_loads.len());
+        actual_workers = actual_workers.max(report.parallel_workers);
+        source_serial_arenas += report.serialized_arenas;
     }
     let elapsed = started.elapsed().as_secs_f64();
     let m = sim.measurements();
@@ -231,7 +244,7 @@ fn measure_model_step_dispatch(
         m.narrowphase_tests, m.trigger_enters,
         opt.heavy_ships.unwrap_or(0),
     );
-    eprintln!("{label}: requested={workers} actual_max_workers={actual_workers}");
+    eprintln!("{label}: requested={workers} actual_max_workers={actual_workers} source_serial_arenas={source_serial_arenas}");
     (fingerprint(&sim), m.ticks, m.integrated_bodies,
         m.broadphase_candidates, m.narrowphase_tests, m.trigger_enters)
 }
@@ -239,6 +252,9 @@ fn measure_model_step_dispatch(
 fn main() {
     let opt = options();
     eprintln!("PHYSICS BASELINE ONLY: authored ship hulls, no weapons, no AI, collision layers disabled; not full gameplay/training TPS.");
+    if opt.serial_worlds != 0 {
+        eprintln!("--serial-worlds reserves artificial source-order lanes for scheduler profiling; this fixture does not spawn Scouts or Stage minions.");
+    }
     let assets = ShipAssetCatalog::embedded().expect("authored ship collider catalog");
     let projectiles = Arc::new(
         ProjectileAssetCatalog::embedded().expect("authored projectile collider catalog"),
