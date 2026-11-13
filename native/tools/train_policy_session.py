@@ -21,6 +21,7 @@ from native_training_artifacts import check_learner, file_sha256, sync_directory
 
 
 ATTEMPT = re.compile(r"round-(\d{5})-attempt-(\d{3})\Z")
+EVALUATION_ATTEMPT = re.compile(r"evaluation-attempt-(\d{3})\Z")
 
 
 def pinned(path):
@@ -137,7 +138,63 @@ def existing_rounds(root, initial_manifest, initial_checkpoint, learner_slot):
     return completed, manifest, checkpoint, next_attempt
 
 
-def progress_snapshot(completed, target):
+def verify_evaluation(directory, manifest_sha, source_sha, learner_side):
+    result = read_json(directory / "evaluation-result.json")
+    summary_path = directory / "rollout-summary.json"
+    if (result.get("kind") != "native_policy_evaluation_complete" or
+            result.get("schema_version") != 1 or
+            result.get("model_manifest_sha256") != manifest_sha or
+            result.get("source_run_config_sha256") != source_sha or
+            result.get("learner_side") != learner_side or
+            result.get("rollout_summary_sha256") != file_sha256(summary_path)):
+        raise ValueError(f"holdout evaluation does not match its pinned inputs: {directory}")
+    summary = read_json(summary_path)
+    if (summary.get("run_id") != result.get("run_id") or
+            summary.get("policy_manifest_sha256") != manifest_sha or
+            summary.get("completed_episodes") != result.get("episodes") or
+            summary.get("evaluation") != result.get("evaluation") or
+            result.get("side_victories") != summary.get("evaluation", {}).get(
+                "victories_by_side", {}).get(str(learner_side), 0)):
+        raise ValueError(f"holdout summary differs from published evaluation: {directory}")
+    return result
+
+
+def ensure_evaluation(round_directory, manifest, recipe):
+    eval_source = recipe["evaluation_config"]
+    source_sha = eval_source["sha256"]
+    if file_sha256(Path(eval_source["path"])) != source_sha:
+        raise ValueError("holdout evaluation configuration changed during session")
+    manifest_sha = file_sha256(manifest)
+    attempts = []
+    for path in round_directory.iterdir():
+        match = EVALUATION_ATTEMPT.fullmatch(path.name)
+        if match:
+            if not path.is_dir():
+                raise ValueError(f"invalid holdout attempt path: {path}")
+            attempts.append((int(match.group(1)), path))
+    completed = [path for _, path in attempts if (path / "evaluation-result.json").is_file()]
+    if len(completed) > 1:
+        raise ValueError(f"more than one completed evaluation for {round_directory}")
+    if completed:
+        return verify_evaluation(completed[0], manifest_sha, source_sha,
+                                 recipe["evaluation_side"])
+    attempt = max((number for number, _ in attempts), default=0) + 1
+    if attempt > 999:
+        raise ValueError("holdout evaluation exhausted its attempt numbers")
+    output = round_directory / f"evaluation-attempt-{attempt:03d}"
+    command = [sys.executable, str(Path(__file__).with_name("evaluate_policy.py")),
+               eval_source["path"], str(manifest), str(output),
+               "--learner-side", str(recipe["evaluation_side"])]
+    if recipe["rollout_binary"] is not None:
+        command.extend(["--rollout-binary", recipe["rollout_binary"]["path"]])
+    print(json.dumps({"kind":"native_training_session_evaluation_started",
+                      "round_directory":str(round_directory), "attempt":attempt}),flush=True)
+    launch_round(command, round_directory / f"evaluation-attempt-{attempt:03d}.log")
+    return verify_evaluation(output, manifest_sha, source_sha, recipe["evaluation_side"])
+
+
+def progress_snapshot(completed, target, evaluations=None):
+    evaluations = evaluations or {}
     world_steps = sum(record["rollout_metrics"]["successful_world_steps"]
                       for _, record in completed)
     policy_rows = sum(record["rollout_metrics"]["successful_policy_rows"]
@@ -149,8 +206,11 @@ def progress_snapshot(completed, target):
     optimizer_seconds = sum(record["learner_metrics"]["total_wall_seconds"]
                             for _, record in completed)
     latest = completed[-1][1]["learner_metrics"].get("training_outcomes", {}) if completed else {}
+    latest_holdout = evaluations.get(str(completed[-1][0])) if completed else None
     return {
         "schema_version": 1, "kind": "native_training_session_progress",
+        "evaluated_rounds": len(evaluations),
+        "latest_holdout": latest_holdout,
         "completed_rounds": len(completed), "target_rounds": target,
         "total_world_steps": world_steps,
         "total_policy_rows": policy_rows,
@@ -168,7 +228,8 @@ def progress_snapshot(completed, target):
              "next_manifest_sha256": record["next_manifest_sha256"],
              "world_steps": record["rollout_metrics"]["successful_world_steps"],
              "optimizer_input_steps": record["learner_metrics"]["optimizer_input_steps"],
-             "training_outcomes": record["learner_metrics"].get("training_outcomes", {})}
+             "training_outcomes": record["learner_metrics"].get("training_outcomes", {}),
+             "holdout": evaluations.get(str(path))}
             for index, (path, record) in enumerate(completed, 1)
         ],
     }
@@ -208,6 +269,10 @@ def main():
     parser.add_argument("--resume", action="store_true",
                         help="resume an existing session without changing its pinned inputs")
     parser.add_argument("--model-manifest", type=Path)
+    parser.add_argument("--evaluation-run-config", type=Path,
+                        help="independent fixed-seed Levels evaluated after each completed update")
+    parser.add_argument("--evaluation-side", type=int,
+                        help="source side 1 or 2 whose victories are measured")
     parser.add_argument("--learner-slot", type=int)
     parser.add_argument("--rollout-binary", type=Path)
     parser.add_argument("--rollout-workers", type=int)
@@ -221,6 +286,9 @@ def main():
     args = parser.parse_args()
     if not 1 <= args.rounds <= 99999:
         parser.error("--rounds must be between 1 and 99999")
+    if ((args.evaluation_run_config is None) != (args.evaluation_side is None) or
+            args.evaluation_side is not None and args.evaluation_side not in (1, 2)):
+        parser.error("specify both --evaluation-run-config and --evaluation-side 1 or 2")
     if (args.seed_offset_start < 0 or args.seed_offset_stride < 1 or
             args.seed_offset_start + (args.rounds - 1) * args.seed_offset_stride >= (1 << 64)):
         parser.error("session seed offsets must be distinct and fit uint64")
@@ -274,6 +342,9 @@ def main():
         "device": args.device,
         "stage_diagnostics": args.stage_diagnostics,
     }
+    if args.evaluation_run_config is not None:
+        recipe["evaluation_config"] = pinned(args.evaluation_run_config)
+        recipe["evaluation_side"] = args.evaluation_side
     root = args.output_dir.resolve()
     if args.resume:
         if not root.is_dir():
@@ -292,7 +363,15 @@ def main():
         completed, next_manifest, next_checkpoint, next_attempt = existing_rounds(
             root, Path(manifest["path"]), Path(checkpoint["path"]), args.learner_slot,
         )
-        atomic_json(root / "session-progress.json", progress_snapshot(completed, args.rounds))
+        evaluations = {}
+        if "evaluation_config" in recipe:
+            for directory, record in completed:
+                evaluations[str(directory)] = ensure_evaluation(
+                    directory, Path(record["next_manifest"]), recipe,
+                )
+        atomic_json(root / "session-progress.json", progress_snapshot(
+            completed, args.rounds, evaluations,
+        ))
         if len(completed) > args.rounds:
             raise ValueError("target round count is smaller than the completed checkpoint lineage")
         first_pending_round = len(completed) + 1
@@ -336,7 +415,15 @@ def main():
                 args.learner_slot,
             )
             completed.append((directory, record))
-            snapshot = progress_snapshot(completed, args.rounds)
+            # A successfully learned checkpoint remains committed even if
+            # its subsequent holdout run fails. Resume evaluates this exact
+            # artifact rather than collecting another training round.
+            atomic_json(root / "session-progress.json", progress_snapshot(
+                completed, args.rounds, evaluations,
+            ))
+            if "evaluation_config" in recipe:
+                evaluations[str(directory)] = ensure_evaluation(directory, next_manifest, recipe)
+            snapshot = progress_snapshot(completed, args.rounds, evaluations)
             atomic_json(root / "session-progress.json", snapshot)
             print(json.dumps({"kind": "native_training_session_round_complete",
                               "round": index, "directory": str(directory),
