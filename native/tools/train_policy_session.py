@@ -18,6 +18,7 @@ import subprocess
 import sys
 
 from native_training_artifacts import atomic_json, check_learner, file_sha256
+from native_distributed_collection import read_plan, make_orders, wait_for_collections
 
 
 ATTEMPT = re.compile(r"round-(\d{5})-attempt-(\d{3})\Z")
@@ -87,6 +88,14 @@ def verify_round(directory, manifest_sha, checkpoint_sha, learner_slot):
             metrics["optimizer_input_steps"] <= 0):
         raise ValueError(f"optimizer metrics do not identify these artifacts: {receipt_path}")
     check_learner(manifest, checkpoint, learner_slot)
+    if "collection_orders" in record:
+        work_order = Path(record["collection_orders"])
+        if (not work_order.is_file() or
+                file_sha256(work_order) != record["collection_orders_sha256"]):
+            raise ValueError(f"distributed collection provenance changed: {directory}")
+        for bundle in record.get("rollout_bundles", []):
+            if file_sha256(Path(bundle["path"])) != bundle["sha256"]:
+                raise ValueError(f"distributed rollout receipt changed: {bundle['path']}")
     return record, manifest, checkpoint
 
 
@@ -198,6 +207,11 @@ def progress_snapshot(completed, target, evaluations=None):
     optimizer_seconds = sum(record["learner_metrics"]["total_wall_seconds"]
                             for _, record in completed)
     latest = completed[-1][1]["learner_metrics"].get("training_outcomes", {}) if completed else {}
+    rollout_scope = (
+        "sum_of_independent_collector_wall_seconds"
+        if any("collection_orders" in record for _, record in completed)
+        else "local_rollout_wall_seconds"
+    )
     latest_holdout = evaluations.get(str(completed[-1][0])) if completed else None
     return {
         "schema_version": 1, "kind": "native_training_session_progress",
@@ -208,6 +222,7 @@ def progress_snapshot(completed, target, evaluations=None):
         "total_policy_rows": policy_rows,
         "total_optimizer_input_steps": optimizer_steps,
         "sum_round_rollout_wall_seconds": rollout_seconds,
+        "rollout_wall_seconds_scope": rollout_scope,
         "sum_round_optimizer_wall_seconds": optimizer_seconds,
         "world_steps_per_rollout_wall_second":
             world_steps / rollout_seconds if rollout_seconds > 0 else None,
@@ -272,6 +287,12 @@ def main():
     parser.add_argument("--rollout-workers", type=int)
     parser.add_argument("--rollout-worlds", type=int)
     parser.add_argument("--rollout-world-start", type=int)
+    parser.add_argument("--distributed-plan", type=Path,
+                        help="explicit multi-machine collector windows; Experiment Hub executes orders")
+    parser.add_argument("--bundle-inbox", type=Path,
+                        help="shared directory for collector deliveries in distributed mode")
+    parser.add_argument("--collector-timeout-seconds", type=int, default=0,
+                        help="time to await each distributed round (0 means no deadline)")
     parser.add_argument("--seed-offset-start", type=int, default=0)
     parser.add_argument("--seed-offset-stride", type=int, default=1)
     parser.add_argument("--torch-threads", type=int)
@@ -297,6 +318,16 @@ def main():
         parser.error("rollout world start must be nonnegative")
     if args.torch_threads is not None and not 1 <= args.torch_threads <= 256:
         parser.error("torch threads must be between 1 and 256")
+    if (args.distributed_plan is None) != (args.bundle_inbox is None):
+        parser.error("distributed sessions require both --distributed-plan and --bundle-inbox")
+    if args.collector_timeout_seconds < 0:
+        parser.error("--collector-timeout-seconds cannot be negative")
+    if args.distributed_plan is not None and any(
+        value is not None for value in (
+            args.rollout_workers, args.rollout_worlds, args.rollout_world_start,
+        )
+    ):
+        parser.error("distributed collector windows/workers belong to --distributed-plan")
 
     run = pinned(args.run_config)
     trainer = pinned(args.trainer_config)
@@ -339,6 +370,11 @@ def main():
         "device": args.device,
         "stage_diagnostics": args.stage_diagnostics,
     }
+    if args.distributed_plan is not None:
+        recipe["distributed_plan"] = pinned(args.distributed_plan)
+        recipe["bundle_inbox"] = str(args.bundle_inbox.resolve(strict=True))
+        recipe["collector_timeout_seconds"] = args.collector_timeout_seconds
+        read_plan(Path(recipe["distributed_plan"]["path"]))
     if args.evaluation_run_config is not None:
         recipe["evaluation_config"] = pinned(args.evaluation_run_config)
         recipe["evaluation_side"] = args.evaluation_side
@@ -358,6 +394,22 @@ def main():
             if config_path.exists():
                 raise ValueError("session configuration already exists")
             atomic_json(config_path, recipe)
+        distributed = "distributed_plan" in recipe
+        if distributed:
+            # One imported-bundle template for the entire checkpoint
+            # lineage. The original run.json remains the collector's
+            # authoritative source of physical scenes and seed plans.
+            template = root / "distributed-bundle-template.json"
+            expected_template = {
+                "run_id": config["run_id"] + "-distributed",
+                "python": round_python,
+                "rollout_bundles": [],
+            }
+            if template.exists():
+                if read_json(template) != expected_template:
+                    raise ValueError("distributed learner template changed")
+            else:
+                atomic_json(template, expected_template)
         completed, next_manifest, next_checkpoint, next_attempt = existing_rounds(
             root, Path(manifest["path"]), Path(checkpoint["path"]), args.learner_slot,
         )
@@ -387,26 +439,54 @@ def main():
             directory = root / f"round-{index:05d}-attempt-{attempt:03d}"
             log = root / (directory.name + ".log")
             seed_offset = args.seed_offset_start + (index - 1) * args.seed_offset_stride
-            command = [
-                round_python, str(Path(__file__).with_name("train_policy_round.py")),
-                run["path"], str(next_checkpoint), trainer["path"], str(directory),
-                "--model-manifest", str(next_manifest),
-                "--device", args.device, "--seed-offset", str(seed_offset),
-            ]
-            for option, value in (("--learner-slot", args.learner_slot),
-                                  ("--rollout-workers", args.rollout_workers),
-                                  ("--rollout-worlds", args.rollout_worlds),
-                                  ("--rollout-world-start", args.rollout_world_start),
-                                  ("--torch-threads", args.torch_threads)):
-                if value is not None:
-                    command.extend([option, str(value)])
-            if binary is not None:
-                command.extend(["--rollout-binary", binary["path"]])
-            if args.stage_diagnostics:
-                command.append("--stage-diagnostics")
             print(json.dumps({"kind": "native_training_session_round_started",
                               "round": index, "target_rounds": args.rounds,
                               "directory": str(directory), "seed_offset": seed_offset}), flush=True)
+            command = [
+                round_python, str(Path(__file__).with_name("train_policy_round.py")),
+                str(template if distributed else run["path"]),
+                str(next_checkpoint), trainer["path"], str(directory),
+                "--model-manifest", str(next_manifest),
+                "--device", args.device,
+            ]
+            if args.learner_slot is not None:
+                command.extend(["--learner-slot", str(args.learner_slot)])
+            if args.torch_threads is not None:
+                command.extend(["--torch-threads", str(args.torch_threads)])
+            if distributed:
+                plan_path = Path(recipe["distributed_plan"]["path"])
+                if file_sha256(plan_path) != recipe["distributed_plan"]["sha256"]:
+                    raise ValueError("distributed collector allocations changed during session")
+                orders, order_path = make_orders(
+                    root, index, seed_offset, read_plan(plan_path),
+                    run, next_checkpoint, next_manifest, args.learner_slot,
+                )
+                print(json.dumps({"kind": "native_distributed_collection_orders_ready",
+                                  "round": index, "orders": str(order_path),
+                                  "jobs": orders["jobs"]}), flush=True)
+                bundles = wait_for_collections(
+                    Path(recipe["bundle_inbox"]), orders,
+                    args.collector_timeout_seconds,
+                    progress=lambda kind, details: print(json.dumps(
+                        {"kind": kind, "round": index, **details},
+                    ), flush=True),
+                )
+                command.extend(["--collection-orders", str(order_path)])
+                for bundle in bundles:
+                    command.extend([
+                        "--pinned-rollout-bundle", bundle["path"], bundle["sha256"],
+                    ])
+            else:
+                command.extend(["--seed-offset", str(seed_offset)])
+                for option, value in (("--rollout-workers", args.rollout_workers),
+                                      ("--rollout-worlds", args.rollout_worlds),
+                                      ("--rollout-world-start", args.rollout_world_start)):
+                    if value is not None:
+                        command.extend([option, str(value)])
+                if binary is not None:
+                    command.extend(["--rollout-binary", binary["path"]])
+            if args.stage_diagnostics:
+                command.append("--stage-diagnostics")
             launch_round(command, log)
             record, next_manifest, next_checkpoint = verify_round(
                 directory, file_sha256(next_manifest), file_sha256(next_checkpoint),
