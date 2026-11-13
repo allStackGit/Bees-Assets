@@ -22,6 +22,7 @@ use bees_sim::simulation::RandomStream;
 use bees_sim::squad_movement::SquadFormationOptions;
 
 use super::{NativePolicyOnlyMetadata, NativeMissionCue};
+use super::mission_cues::NativeMissionEvent;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum NativeScriptedOrder {
@@ -70,6 +71,9 @@ pub enum NativeScriptedActivation {
     /// Subscribe to the same-tick authored campaign notification.
     /// A cue is latched once even if the intended squad deploys later.
     OnCampaignCue(NativeMissionCue),
+    /// A canonical CombatEvent::ShipDied from this world's authored
+    /// squad roster. The trigger is a real event, not an absent-ship poll.
+    OnShipDestroyed(i64),
 }
 
 pub struct NativeScriptedQueuePlan {
@@ -87,8 +91,8 @@ pub(super) struct NativeScriptedQueueState {
     ready_tick: u64,
     on_deployment: bool,
     wait_for_entry: bool,
-    required_cue: Option<NativeMissionCue>,
-    cue_armed: bool,
+    required_event: Option<NativeMissionEvent>,
+    event_armed: bool,
     /// A dormant source trigger does not suppress HiveMind commands before
     /// the mission event actually claims this live squad. Once claimed,
     /// a late server reply cannot take ownership back.
@@ -147,7 +151,8 @@ impl NativePolicyOnlyMetadata {
             if (is_deferred && !matches!(plan.activation,
                     NativeScriptedActivation::OnDeployment |
                     NativeScriptedActivation::OnArrival |
-                    NativeScriptedActivation::OnCampaignCue(_))) ||
+                    NativeScriptedActivation::OnCampaignCue(_) |
+                    NativeScriptedActivation::OnShipDestroyed(_))) ||
                 (!is_deferred && matches!(plan.activation,
                     NativeScriptedActivation::OnDeployment |
                     NativeScriptedActivation::OnArrival)) {
@@ -157,18 +162,31 @@ impl NativePolicyOnlyMetadata {
                 !with_entry_order.contains(&plan.squad_item_id) {
                 return Err("on_arrival requires a deferred squad with a real entry movement");
             }
-            let required_cue = match plan.activation {
-                NativeScriptedActivation::OnCampaignCue(cue) if cue.valid_for(campaign) =>
-                    Some(cue),
-                NativeScriptedActivation::OnCampaignCue(_) =>
-                    return Err("scripted campaign cue is not available in this Level"),
+            let required_event = match plan.activation {
+                NativeScriptedActivation::OnCampaignCue(cue) => {
+                    let event = NativeMissionEvent::CampaignCue(cue);
+                    if !event.valid_for(campaign, |_| false) {
+                        return Err("scripted campaign cue is not available in this Level");
+                    }
+                    Some(event)
+                }
+                NativeScriptedActivation::OnShipDestroyed(ship_id) => {
+                    let event = NativeMissionEvent::ShipDestroyed(ship_id);
+                    if !event.valid_for(campaign, |id|
+                        squads.iter().any(|squad| squad.members.contains(&id))
+                    ) {
+                        return Err("scripted ship-death trigger needs an authored squad ship");
+                    }
+                    Some(event)
+                }
                 _ => None,
             };
             let ready_tick = match plan.activation {
                 NativeScriptedActivation::Immediate |
                 NativeScriptedActivation::OnDeployment |
                 NativeScriptedActivation::OnArrival |
-                NativeScriptedActivation::OnCampaignCue(_) => 1,
+                NativeScriptedActivation::OnCampaignCue(_) |
+                NativeScriptedActivation::OnShipDestroyed(_) => 1,
                 NativeScriptedActivation::AfterSeconds(seconds) => {
                     let tick = (f64::from(seconds) / f64::from(dt_seconds)).floor() + 1.0;
                     if !seconds.is_finite() || seconds <= 0.0 ||
@@ -183,7 +201,7 @@ impl NativePolicyOnlyMetadata {
                 cursor: 0, repeat: plan.repeat, ready_tick,
                 on_deployment: is_deferred,
                 wait_for_entry: matches!(plan.activation, NativeScriptedActivation::OnArrival),
-                required_cue, cue_armed: required_cue.is_none(),
+                required_event, event_armed: required_event.is_none(),
                 claimed: matches!(plan.activation, NativeScriptedActivation::Immediate),
             });
         }
@@ -250,7 +268,7 @@ impl NativePolicyOnlyMetadata {
         self.scripted_queues.insert(insert_at, NativeScriptedQueueState {
             owner, orders: plan.orders, cursor: 0, repeat: plan.repeat,
             ready_tick: 1, on_deployment: false, wait_for_entry: false,
-            required_cue: None, cue_armed: true, claimed: true,
+            required_event: None, event_armed: true, claimed: true,
         });
         Ok(())
     }
@@ -262,8 +280,14 @@ impl NativePolicyOnlyMetadata {
         counts.active_queues = self.scripted_queues.len();
         for state in &self.scripted_queues {
             counts.pending_orders += state.orders.len().saturating_sub(state.cursor);
-            if !state.cue_armed {
-                counts.waiting_for_campaign_cue += 1;
+            if !state.event_armed {
+                match state.required_event {
+                    Some(NativeMissionEvent::CampaignCue(_)) =>
+                        counts.waiting_for_campaign_cue += 1,
+                    Some(NativeMissionEvent::ShipDestroyed(_)) =>
+                        counts.waiting_for_ship_death += 1,
+                    None => unreachable!("ungated queue has no source event"),
+                }
             } else if roster.get(state.owner).is_none() {
                 counts.waiting_for_deployment += 1;
             } else if tick < state.ready_tick {
@@ -287,15 +311,13 @@ impl NativePolicyOnlyMetadata {
         let mut index = 0;
         while index < self.scripted_queues.len() {
             let owner = self.scripted_queues[index].owner;
-            if !self.scripted_queues[index].cue_armed {
-                let expected = self.scripted_queues[index].required_cue
-                    .expect("unarmed queues always wait for a source cue");
-                if events.campaign_cue_fired(completed_tick,
-                    |cue| expected.matches(cue)
-                ) {
-                    // Latch an authentic event before checking deployment:
-                    // a mission's cue may precede the arrival of its squad.
-                    self.scripted_queues[index].cue_armed = true;
+            if !self.scripted_queues[index].event_armed {
+                let expected = self.scripted_queues[index].required_event
+                    .expect("unarmed queues always wait for a source event");
+                if expected.fired(completed_tick, world, events) {
+                    // Latch the authentic event before checking deployment:
+                    // a ship can die before a reserved squad arrives.
+                    self.scripted_queues[index].event_armed = true;
                 } else {
                     index += 1;
                     continue;
