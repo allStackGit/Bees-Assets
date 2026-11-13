@@ -578,6 +578,7 @@ function createTinyBrainsPersistentDockerAdapter({
                 :item.profile.threads);
             return ['-B',runner,'--run',JOBS_IN+'/'+context.job_id,
                 '--updates',String(updates),'--threads',String(chosenThreads),
+                '--ram-mb',String(context.ram_quota_mb),
                 '--live-matches',String(item.profile.live_matches),
                 '--waves',String(item.profile.waves),
                 '--actions',String(item.profile.rollout_actions),
