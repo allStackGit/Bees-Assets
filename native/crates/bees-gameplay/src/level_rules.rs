@@ -225,6 +225,33 @@ impl NativeScriptedQueueMeasurements {
     }
 }
 
+/// Episode-local interactive navigation worker measurements. An unused
+/// synchronous navigation path reports zero workers; the separate canonical
+/// path completion count remains NativeLevelState.navigation_jobs_completed.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize)]
+pub struct NativeNavigationWorkerMeasurements {
+    pub launched: u64,
+    pub completed: u64,
+    pub requeued: u64,
+    pub discarded: u64,
+    pub clearance_refreshes: u64,
+    pub waiting_for_static_rebuild_frames: u64,
+    /// Current concurrent background searches across live Levels.
+    pub busy_workers: usize,
+}
+
+impl NativeNavigationWorkerMeasurements {
+    pub fn merge(&mut self, other: Self) {
+        self.launched += other.launched;
+        self.completed += other.completed;
+        self.requeued += other.requeued;
+        self.discarded += other.discarded;
+        self.clearance_refreshes += other.clearance_refreshes;
+        self.waiting_for_static_rebuild_frames += other.waiting_for_static_rebuild_frames;
+        self.busy_workers += other.busy_workers;
+    }
+}
+
 /// Source-facing gameplay inputs for timed Hive Mind commands.
     /// Must be refreshed after the combat/roster step from live Level
     /// geometry, preserving Level.State.Squads order. Command activation
@@ -446,6 +473,12 @@ pub trait NativeLevelCommandContext {
 
     fn navigation(&self) -> &NavigationRuntime;
     fn navigation_mut(&mut self) -> &mut NavigationRuntime;
+
+    /// Optional Level-owned interactive path workers; regular synchronous
+    /// game/training adapters do not manufacture background worker gauges.
+    fn navigation_worker_measurements(&self) -> NativeNavigationWorkerMeasurements {
+        NativeNavigationWorkerMeasurements::default()
+    }
 
     /// Exact Level.ActivateCollisionAsteroids, independent of asteroid count.
     fn collision_asteroids_enabled(&self) -> bool;
