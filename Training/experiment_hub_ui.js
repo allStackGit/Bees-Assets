@@ -2805,7 +2805,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if(!choice)return {};
         if(project==='courier')return {
             config_sha256:choice.entry.config_sha256,
-            seed:42,workers:1,max_rounds:1000,checkpoint_rounds:250,
+            seed:42,max_rounds:1000,checkpoint_rounds:250,
         };
         if(project==='tinybrains') {
             const {profile,entry,machine}=choice;
@@ -3017,7 +3017,7 @@ document.addEventListener('DOMContentLoaded', () => {
             delete parameters.design_source_sha256;
             if(project==='courier') {
                 parameters.seed=42;
-                parameters.workers=1;
+                delete parameters.workers;
                 parameters.max_rounds=1000;
                 parameters.checkpoint_rounds=250;
             }
