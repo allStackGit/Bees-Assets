@@ -322,7 +322,11 @@ def stop_parallel_rollout_workers(processes):
                     check=False, timeout=5,
                 )
             except (OSError, subprocess.TimeoutExpired):
-                process.kill()
+                if process.poll() is None:
+                    try:
+                        process.kill()
+                    except ProcessLookupError:
+                        pass
     else:
         # Each launched rollout has a separate session/process group.
         # A child policy backend inherits that group, so stopping its
