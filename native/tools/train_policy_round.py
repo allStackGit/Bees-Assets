@@ -6,6 +6,7 @@ never converts a failed or incomplete rollout into training data.
 """
 
 import argparse
+import copy
 from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import json
@@ -86,6 +87,71 @@ def shifted_seeds(config: dict, offset: int) -> None:
             raise ValueError("seed offset requires unsigned 64-bit source seeds")
         updated = [(seed + offset) % (1 << 64) for seed in fields]
         level[label] = updated[0] if label == "seed" else updated
+
+
+def expand_rollout_worlds(config: dict, requested_worlds: int) -> None:
+    """Reuse authentic source Levels as independent native simulation worlds.
+
+    The native launcher itself remaps duplicate source squad lifetimes, while
+    each world retains the same exported physics and gameplay contracts.
+    Only the world/Level identity and reproducible episode seeds differ.
+    """
+    originals = config["levels"]
+    if (type(requested_worlds) is not int or
+            not len(originals) <= requested_worlds <= 1024):
+        raise ValueError("rollout_worlds must be between the authored Level count and 1024")
+    if requested_worlds == len(originals):
+        return
+    if config.get("hivemind") is not None or any(config.get(key) for key in (
+        "recover_notifications", "recover_outcome_journals", "model_updates",
+    )):
+        raise ValueError("replicated native rollouts require model-only, unrecovered Levels")
+
+    for key, maximum in (("world_id", (1 << 64) - 1),
+                         ("level_id", (1 << 63) - 1)):
+        ids = [level.get(key) for level in originals]
+        if (any(type(value) is not int or not 1 <= value <= maximum for value in ids)
+                or len(set(ids)) != len(ids)
+                or max(ids) + requested_worlds - len(originals) > maximum):
+            raise ValueError(f"replicated native Levels need distinct valid {key} values")
+
+    for level in originals:
+        has_seed = type(level.get("seed")) is int and "episode_seeds" not in level
+        has_episode_seeds = (
+            level.get("seed") is None and isinstance(level.get("episode_seeds"), list)
+            and len(level["episode_seeds"]) == config.get("episodes_per_world", 1)
+        )
+        if not has_seed and not has_episode_seeds:
+            raise ValueError("replicated Level needs a valid source seed plan")
+        values = [level["seed"]] if has_seed else level["episode_seeds"]
+        if any(type(seed) is not int or not 0 <= seed < (1 << 64) for seed in values):
+            raise ValueError("replicated Level seeds must be unsigned 64-bit integers")
+
+    max_world = max(level["world_id"] for level in originals)
+    max_level = max(level["level_id"] for level in originals)
+    source_count = len(originals)
+    # Every source appears once before cloning, preserving its authored seed
+    # plan exactly. Subsequent copies use a stable per-copy cryptographic
+    # seed derivation; generated run UUIDs never enter the seed calculation.
+    for index in range(source_count, requested_worlds):
+        source_index = index % source_count
+        replica = index // source_count
+        clone = copy.deepcopy(originals[source_index])
+        clone["world_id"] = max_world + index - source_count + 1
+        clone["level_id"] = max_level + index - source_count + 1
+
+        def derive(seed: int, episode: int) -> int:
+            label = (f"bees-native-world-v1:{config['run_id']}:{source_index}:"
+                     f"{replica}:{episode}:{seed}")
+            return int.from_bytes(hashlib.sha256(label.encode("utf-8")).digest()[:8], "little")
+
+        if clone.get("seed") is not None:
+            clone["seed"] = derive(clone["seed"], 0)
+        else:
+            clone["episode_seeds"] = [
+                derive(seed, episode) for episode, seed in enumerate(clone["episode_seeds"])
+            ]
+        config["levels"].append(clone)
 
 
 def check_learner(manifest: Path, checkpoint: Path, slot: int | None) -> str:
@@ -303,6 +369,8 @@ def main() -> None:
                         help="fixed optimizer intra-op threads, not rollout parallelism")
     parser.add_argument("--rollout-workers", type=int,
                         help="fixed number of parallel native rollout processes")
+    parser.add_argument("--rollout-worlds", type=int,
+                        help="total independent native Worlds; replicate source Levels with distinct seeds")
     parser.add_argument(
         "--seed-offset", type=int, default=0,
         help="unsigned offset to all authored episode seeds for a new reproducible round",
@@ -401,6 +469,10 @@ def main() -> None:
 
     config = source_config(run_path, manifest, output)
     shifted_seeds(config, args.seed_offset)
+    template_worlds = config.pop("rollout_worlds", None)
+    requested_worlds = args.rollout_worlds if args.rollout_worlds is not None else template_worlds
+    if requested_worlds is not None:
+        expand_rollout_worlds(config, requested_worlds)
     template_workers = config.pop("rollout_workers", 1)
     workers = args.rollout_workers if args.rollout_workers is not None else template_workers
     levels = config["levels"]
@@ -428,6 +500,7 @@ def main() -> None:
     first, config_path = shards[0]
 
     print(json.dumps({"kind": "native_training_round_started", "run_config": str(config_path),
+                      "rollout_worlds": len(levels), "rollout_processes": workers,
                       "seed_offset": args.seed_offset,
                       "input_manifest_sha256": input_manifest_sha,
                       "input_checkpoint_sha256": input_checkpoint_sha}), flush=True)
@@ -477,6 +550,8 @@ def main() -> None:
         rollout_args += ["--rollout", shard["policy_capture"], shard["notifications"], str(manifest)]
     result.update(
         run_id=first["run_id"],
+        rollout_worlds=len(levels),
+        rollout_processes=workers,
         run_config=str(config_path),
         run_config_sha256=file_sha256(config_path),
         capture=first["policy_capture"],

@@ -446,6 +446,15 @@ observation and final group reward. Controller rebinding is still unsupported.
 For one operator- or Experiment Hub-owned rollout followed by one optimizer
 update, run
 `python native/tools/train_policy_round.py run.json checkpoint.pt Training/rl_1v1_config.yaml fresh-round-directory`.
+For model-only training, use `--rollout-worlds N` (or `"rollout_worlds": N`
+in the training template) to run N independent native worlds from the
+authored Levels without copying their scene JSON. Existing worlds retain
+their seeds; additional worlds receive deterministic derived seeds and
+unique world/Level IDs. Use `--rollout-workers M` to partition these worlds
+across M native rollout processes, with a compiled `--rollout-binary` for
+parallel processes. Both counts remain operator-owned; the wrapper does
+not claim to auto-tune CPU/RAM or distributed placement. The native
+launcher remaps duplicate squad pool identities inside each process.
 Use `--learner-slot N` for mixed-checkpoint opponents, `--device cuda`
 for a supported GPU optimizer, `--seed-offset N` to vary source episode
 seeds reproducibly, and `--rollout-binary PATH` if the Rust runner is
