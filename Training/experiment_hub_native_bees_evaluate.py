@@ -51,7 +51,7 @@ def read_suite(file: Path) -> dict:
 
 
 def pinned_source(suite_file: Path, relative: str, digest: str) -> Path:
-    path = (suite_file.resolve(strict=True).parent / relative).resolve(strict=True)
+    path = (suite_file.parent.resolve(strict=True) / relative).resolve(strict=True)
     if not path.is_file() or file_sha256(path) != digest:
         raise ValueError(f"Native Bees evaluation source changed: {relative}")
     return path
@@ -238,12 +238,13 @@ def create_suite_main(arguments) -> int:
             not 1 <= suite["trials"] <= 10000):
         parser.error("suite output must be new and trial count must be 1..10000")
     # Validate its ABI/side and physical source contract before publishing.
-    read_suite_data = dict(suite)
-    if not 0 <= args.learner_slot < (1 << 32) or args.learner_side not in (1, 2):
-        parser.error("invalid learner slot or physical side")
-    # This helper reads only existing source inputs; no evaluation is run.
-    # The output path is deliberately not created until the suite is valid.
-    source_inputs_for_new_suite(output, read_suite_data)
+    if (not 0 <= args.learner_slot < (1 << 32) or
+            args.learner_side not in (1, 2) or
+            not 0 <= args.policy_seed < (1 << 63)):
+        parser.error("invalid learner slot, physical side or policy sampling seed")
+    # Nothing is written until the candidate suite has passed its source
+    # scene, team routing, worker and artifact hash contract.
+    source_inputs(output, suite)
     with output.open("x", encoding="utf-8", newline="\n") as stream:
         json.dump(suite, stream, indent=2)
         stream.write("\n")
@@ -254,12 +255,6 @@ def create_suite_main(arguments) -> int:
         "suite_sha256": suite_digest(suite), "trials": suite["trials"],
     }, sort_keys=True))
     return 0
-
-
-def source_inputs_for_new_suite(output: Path, suite: dict) -> None:
-    # source_inputs normally takes a published suite; its path is only the
-    # base for resolving approved relative file references, never suite data.
-    source_inputs(output.parent / "existing-sibling.json", suite)
 
 
 def main():
