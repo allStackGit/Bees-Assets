@@ -10,3 +10,11 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/* \
     && node -e "if (Number(process.versions.node.split('.')[0]) < 18) process.exit(1)"
+
+# The TinyBrains deployment uses ONNX opset 17. Its memory and standard
+# exporters both explicitly use the legacy TorchScript export path, preserving
+# dynamic H/W axes and avoiding unsupported opset conversion in ROCm PyTorch.
+# Check that path in the interpreter used by the Hub without altering ROCm.
+RUN /opt/tinybrains-venv/bin/python -c \
+        'import torch, onnx; torch.onnx.export(torch.nn.Identity().eval(), (torch.zeros(1, 2),), "/tmp/tinybrains-onnx-smoke.onnx", opset_version=17, dynamo=False); assert onnx.load("/tmp/tinybrains-onnx-smoke.onnx").opset_import[0].version == 17' \
+    && rm /tmp/tinybrains-onnx-smoke.onnx

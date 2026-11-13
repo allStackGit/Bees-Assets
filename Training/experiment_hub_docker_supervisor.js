@@ -63,8 +63,26 @@ function fixedDockerSpec(adapter) {
 }
 function writeAtomic(file,value) {
     const tmp=file+'.'+crypto.randomBytes(8).toString('hex')+'.tmp';
-    fs.writeFileSync(tmp,JSON.stringify(value,null,2)+'\n',{flag:'wx',mode:0o600});
-    fs.renameSync(tmp,file);
+    try {
+        fs.writeFileSync(tmp,JSON.stringify(value,null,2)+'\n',
+            {flag:'wx',mode:0o600});
+        // A successful rename alone does not prove the ownership journal
+        // survives power loss. Sync the new file before publishing its name.
+        const fd=fs.openSync(tmp,'r');
+        try{fs.fsyncSync(fd);}
+        finally{fs.closeSync(fd);}
+        fs.renameSync(tmp,file);
+        // Persist the directory entry before the local owner is authorized
+        // to continue. An fsync failure remains an ambiguous, fail-closed
+        // condition rather than proof that a trainer can be relaunched.
+        const directory=fs.openSync(path.dirname(file),'r');
+        try{fs.fsyncSync(directory);}
+        finally{fs.closeSync(directory);}
+    }finally {
+        // A failed write or rename must not leave a private, stale copy
+        // of native ownership behind or consume disk on every retry.
+        if(fs.existsSync(tmp))fs.unlinkSync(tmp);
+    }
 }
 function parseInspect(text) {
     const result=JSON.parse(text);
@@ -72,8 +90,77 @@ function parseInspect(text) {
         throw Error('Docker returned an invalid container inspection.');
     return result[0];
 }
+// Read optional cgroup-v2 counters only after Docker's persisted ownership
+// identity has been verified. A PID alone is never sufficient: the host
+// cgroup must also contain the full, inspected Docker container ID.
+function dockerCgroupCounters(doc,fsApi=fs,pathApi=path) {
+    try {
+        const id=String(doc?.Id||'').toLowerCase(),pid=doc?.State?.Pid;
+        if(!/^[a-f0-9]{64}$/.test(id)||
+            !Number.isSafeInteger(pid)||pid<1)return {};
+        const membership=fsApi.readFileSync('/proc/'+pid+'/cgroup','utf8');
+        if(typeof membership!=='string'||membership.length>8192)return {};
+        const lines=membership.trim().split(/\r?\n/).filter(s=>s.startsWith('0::/'));
+        if(lines.length!==1)return {};
+        const segments=lines[0].slice(4).split('/').filter(Boolean);
+        if(!segments.length||segments.length>32||
+            segments.some(s=>s==='.'||s==='..'||!/^[-A-Za-z0-9_.:@]{1,128}$/.test(s)))return {};
+        const ownerIndex=segments.findIndex(s=>s===id||s==='docker-'+id||
+            s==='docker-'+id+'.scope');
+        if(ownerIndex<0)return {};
+        const root=fsApi.realpathSync('/sys/fs/cgroup');
+        // The entrypoint may move into a delegated child cgroup; read
+        // Docker's owning cgroup so sibling worker tasks are included.
+        const dir=pathApi.join(root,...segments.slice(0,ownerIndex+1));
+        if(fsApi.realpathSync(dir)!==dir)return {};
+        const counter=name=>{
+            try {
+                const raw=fsApi.readFileSync(pathApi.join(dir,name),'utf8').trim();
+                if(!/^[0-9]{1,16}$/.test(raw))return null;
+                const value=Number(raw);
+                return Number.isSafeInteger(value)?value:null;
+            }catch{return null;}
+        };
+        let usage=null,throttled=null,throttleEvents=null,quotaPeriods=null;
+        try {
+            const raw=fsApi.readFileSync(pathApi.join(dir,'cpu.stat'),'utf8');
+            if(typeof raw==='string'&&raw.length<=2048) {
+                const field=name=>{
+                    const match=new RegExp('(?:^|\\n)'+name+
+                        ' ([0-9]{1,16})(?:\\n|$)').exec(raw);
+                    const value=match?Number(match[1]):null;
+                    return Number.isSafeInteger(value)?value:null;
+                };
+                const cpuMicroseconds=field('usage_usec');
+                const throttledMicroseconds=field('throttled_usec');
+                usage=cpuMicroseconds===null?null:cpuMicroseconds/1000000;
+                throttled=throttledMicroseconds===null?null:
+                    throttledMicroseconds/1000000;
+                throttleEvents=field('nr_throttled');
+                quotaPeriods=field('nr_periods');
+            }
+        }catch {
+            // CPU accounting is unavailable; memory may still be readable.
+        }
+        const used=counter('memory.current'),peak=counter('memory.peak');
+        const tasks=counter('pids.current');
+        return {
+            ...(usage===null?{}:{cpu_time_seconds:usage}),
+            ...(throttled===null?{}:{cpu_throttled_seconds:throttled}),
+            ...(throttleEvents===null?{}:{cpu_throttle_events:throttleEvents}),
+            ...(quotaPeriods===null?{}:{cpu_quota_periods:quotaPeriods}),
+            ...(used===null?{}:{memory_current_mb:Math.floor(used/1048576)}),
+            ...(peak===null?{}:{peak_job_memory_bytes:peak}),
+            ...(tasks===null?{}:{process_tasks:tasks}),
+        };
+    }catch {
+        // Missing, unreadable, or renamed optional sensors are unknown.
+        // Never let telemetry change Docker owner or training state.
+        return {};
+    }
+}
 class DockerSupervisor {
-    constructor({root,machineId,adapters,gpuEnabled=false,dockerSudo=false}) {
+    constructor({root,machineId,adapters,gpuEnabled=false,dockerSudo=false,allowNativePeer=false}) {
         this.root=fs.realpathSync(root);
         this.machineId=machineId;
         this.adapters=adapters;
@@ -94,7 +181,7 @@ class DockerSupervisor {
         if(fs.existsSync(native)) {
             const existing=JSON.parse(fs.readFileSync(native,'utf8'));
             if(!Array.isArray(existing.records)||
-                existing.records.some(r=>ACTIVE.has(r.state)))
+                (!allowNativePeer&&existing.records.some(r=>ACTIVE.has(r.state))))
                 throw Error('An unresolved native supervisor owner blocks Docker adoption.');
         }
         this.journal=fs.existsSync(this.file)
@@ -130,9 +217,12 @@ class DockerSupervisor {
             if(current.version!==1||current.machine_id!==this.machineId||
                 current.revision!==this.journal.revision)
                 throw Error('Docker journal changed concurrently; reopen supervisor.');
-            this.journal={version:1,machine_id:this.machineId,
+            const committed={version:1,machine_id:this.machineId,
                 revision:current.revision+1,records};
-            writeAtomic(this.file,this.journal);
+            // Publish ownership in memory only after the journal is written.
+            // A failed write must leave the same revision retryable.
+            writeAtomic(this.file,committed);
+            this.journal=committed;
             this.state=records;
         }finally{
             fs.closeSync(fd);
@@ -471,8 +561,9 @@ class DockerSupervisor {
         if(record.state!==state||record.container_id!==doc.Id||
             record.checkpoint_stop_verified!==updated.checkpoint_stop_verified)
             this.commit(this.state.map(r=>r.job_id===jobId?updated:r));
-        return {state,checkpoint_stop_verified:verified,
-            memory_current_mb:null,cpu_time_ns:null,process_tasks:null,
+        const measured=['running','stop_requested'].includes(state)
+            ?dockerCgroupCounters(doc):{};
+        return {state,checkpoint_stop_verified:verified,...measured,
             ...(state==='failed'?{diagnostic:'Docker trainer exit code '+doc.State.ExitCode}:{}),
         };
     }

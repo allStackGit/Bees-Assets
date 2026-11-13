@@ -10,6 +10,8 @@ const crypto=require('node:crypto');
 const {inspectHost,availableMemoryMb}=require('./experiment_hub_host');
 const {discoverAmdGpus,discoverNvidiaGpus}=require('./experiment_hub_gpu_inventory');
 const {fromEnvironment}=require('./experiment_hub_execution');
+const {syncArtifacts}=require('./experiment_hub_artifact_agent');
+const {MAX_BODY_BYTES}=require('./experiment_hub_agent_listener');
 const {request: resourceRequest}=require('./experiment_hub_resources');
 
 const ID = /^[a-z][a-z0-9_-]{0,47}$/;
@@ -232,6 +234,11 @@ function sendHeartbeat(url,machineId,token,observedLeaseIds=[],
         native_preflight_reason:advertisement.native_preflight_reason||null,
         agent_instance_id:advertisement.instance_id||null,
     });
+    // Progress fits its own bounded envelope; the complete heartbeat
+    // separately includes physical inventory, leases and native receipts.
+    if(Buffer.byteLength(payload)>MAX_BODY_BYTES)
+        return Promise.reject(Error('Agent heartbeat exceeds '+MAX_BODY_BYTES+
+            ' bytes, including native reports and machine observations.'));
     return new Promise((resolve,reject)=>{
         const req=http.request(url,{
             method:'POST',timeout:10000,
@@ -275,6 +282,9 @@ async function main() {
     // Disabled unless the operator explicitly configures local adapter code,
     // a private supervisor ledger and the opt-in execution environment flag.
     const executor=fromEnvironment(process.env);
+    const syncLogs=process.env.EXPERIMENT_HUB_SYNC_ARTIFACTS==='1';
+    if(syncLogs&&!executor)
+        throw Error('Log sync requires an opted-in native execution adapter.');
     let nativePreflightReason=null;
     if(executor?.projects.length) {
         try {
@@ -293,6 +303,17 @@ async function main() {
     };
     let active=false,executingNative=false,busyHeartbeat=null,
         last='initial',receipts=[],pendingReports=[],pendingGpuReports=[];
+    const artifactCache=new Map();
+    let artifactSync=null;
+    const collectArtifacts=()=>{
+        if(!syncLogs||!executor||active||executingNative||artifactSync)
+            return;
+        const work=syncArtifacts(executor,url,id,token,artifactCache)
+            .catch(error=>console.error('[experiment-hub-agent] Artifact mirror: '+
+                String(error.message||error).slice(0,180)))
+            .finally(()=>{if(artifactSync===work)artifactSync=null;});
+        artifactSync=work;
+    };
     const once=process.argv.includes('--once');
     const poll=async(expedite=false)=>{
         if(active) {
@@ -356,7 +377,9 @@ async function main() {
                         gpuResult||orders[0].action==='start'||
                         orders[0].refresh_native_observation===true||
                         ['stop_requested','finished','failed','stopped'].includes(result?.state)))
-                        setTimeout(()=>poll(),0);
+                        setTimeout(()=>poll(true),0);
+                    if(['finished','failed','stopped'].includes(result?.state))
+                        setTimeout(collectArtifacts,0);
                 }
             }
             if(last!=='connected')
@@ -379,7 +402,12 @@ async function main() {
     // directive. It now sends an observation-only heartbeat while that
     // directive is in flight, rather than skipping a whole TTL.
     const timer=setInterval(()=>poll(true),INTERVAL_MS);
+    // Large telemetry transfers run separately from the 15-second agent
+    // heartbeat and never block native Stop/Inspect report delivery.
+    const mirrorTimer=!once&&syncLogs
+        ?setInterval(collectArtifacts,60000):null;
     await poll(!once);
+    if(!once)collectArtifacts();
     if(once) {
         clearInterval(timer);
         if(last!=='connected')process.exitCode=1;

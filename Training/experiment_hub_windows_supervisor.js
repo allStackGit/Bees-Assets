@@ -332,9 +332,13 @@ class WindowsSupervisor {
         const integer=k=>Number.isSafeInteger(report[k])&&report[k]>=0
             ?report[k]:null;
         const exitCode=integer('exit_code');
+        const cpuSeconds=Number.isFinite(report.cpu_time_seconds)&&
+            report.cpu_time_seconds>=0&&report.cpu_time_seconds<=1e12
+            ?report.cpu_time_seconds:null;
         return {state:report.state,active:report.active,
             exit_code:terminal.has(report.state)&&exitCode!==null&&exitCode<=4294967295?exitCode:null,
             cpu_time_ns:integer('cpu_time_ns'),
+            cpu_time_seconds:cpuSeconds,
             peak_job_memory_bytes:integer('peak_job_memory_bytes'),
             process_tasks:integer('process_tasks')};
     }
@@ -400,6 +404,9 @@ class WindowsSupervisor {
                 observation.owner_verified===true&&observation.exit_code===0,
             diagnostic:issue,
             cpu_time_ns:observation.cpu_time_ns??null,
+            // Keep the owner's verified decimal-seconds counter when the
+            // nanosecond total is no longer a safe JavaScript integer.
+            cpu_time_seconds:observation.cpu_time_seconds??null,
             peak_job_memory_bytes:observation.peak_job_memory_bytes??null,
             process_tasks:observation.process_tasks??null};
     }

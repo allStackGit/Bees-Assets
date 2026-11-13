@@ -74,14 +74,106 @@ function hubGenericMetricCatalog(runs) {
     return [...types].sort(([a],[b])=>a.localeCompare(b))
         .map(([key,units])=>({key,units:[...units]}));
 }
+
+function hubMetricDescription(name,units=[]) {
+    const known={
+        training_score_rate:'Training score per completed match, counting wins as one and draws as one-half. Opponent changes can affect this rate.',
+        training_win_rate:'Fraction of completed training matches won. It is not a fixed-opponent benchmark.',
+        training_completed_matches:'Count of completed matches contributing training outcomes. Sample count is not learning quality.',
+        training_mean_score_margin:'Average score advantage over the opponent in observed matches. Positive values favor the trained team.',
+        training_wins:'Count of training matches won. Interpret alongside the number and difficulty of opponents.',
+        training_losses:'Count of training matches lost. Changing opponents can change this count.',
+        training_draws:'Count of drawn training matches. Draws contribute half a point to the training score rate.',
+        training_mean_score:'Average score obtained in observed matches. Comparability depends on game rules and opponents.',
+        food_gathered_exact:'Food gathered according to the simulation’s direct accounting. Consider game duration and available food.',
+        combat_kills_exact:'Combat kills directly recorded by the simulation. This alone does not establish match success.',
+        ant_decisions_per_second:'Ant policy decisions per second. This measures training throughput rather than model quality.',
+        engine_steps_per_second:'Simulation engine steps per second. One step can include multiple ant decisions.',
+        total_ppo_updates:'Completed PPO optimization updates. Update count is not evidence of improving policy strength.',
+        update_wall_time:'Wall-clock duration of a PPO update. Lower sustained times indicate faster updates.',
+        active_training_time:'Trainer-reported active training time, which can exclude pauses. It is not derived from Hub heartbeat time.',
+        elapsed_training_seconds:'Trainer-reported elapsed training seconds. This is not inferred from Hub observation timestamps.',
+        training_recent_mean_completed_lifespan:'Average lifespan of recently completed courier or colony lives. Still-living subjects do not yet contribute to this average.',
+        training_recent_deaths:'Number of deaths or extinctions in the recent training lifespan window. This indicates the lifespan sample size.',
+        training_mean_active_age:'Average age of currently living training couriers. A living episode may span several policy updates.',
+        training_oldest_active_age:'Oldest currently living courier or colony age. Extreme lifespans do not represent the average.',
+        training_active_couriers:'Number of currently active training couriers. Population alone is not a quality score.',
+        training_mean_active_colony_age:'Mean age of living training colonies. Compare under similar task settings.',
+        training_active_colonies:'Count of currently active colonies. It does not indicate how well they are performing.',
+        selection_candidate_survival_score:'Survival-based qualification score for a screened candidate. Selection scenarios can differ across rounds.',
+        selection_incumbent_survival_score:'Qualification score for the existing champion. Compare against candidates evaluated under matching conditions.',
+        selection_champion_promoted:'Whether the newly evaluated candidate replaced the incumbent champion. Promotion is not an independent measure of generalization.',
+        selection_evaluation_round:'Training round at which the candidate was evaluated. This locates the evaluation rather than measuring quality.',
+        selection_candidate_mean_deliveries:'Average food deliveries per evaluated courier life or colony. More completed deliveries generally indicate better food-return behavior.',
+        selection_candidate_pickup_rate:'Fraction of evaluated lives that pick up food. Picking up food does not guarantee delivery.',
+        selection_candidate_mean_steps_per_delivery:'Evaluated steps divided by completed food deliveries. Lower values indicate more efficient delivery; undefined if there were no deliveries.',
+        selection_candidate_survival_rate:'Fraction of evaluation lives still alive at the selection horizon. This is bounded survival, not indefinite survival.',
+        selection_candidate_mean_lifespan:'Mean observed lifespan in selection evaluation. Lives surviving the horizon are right-censored.',
+        selection_candidate_gross_energy_per_step:'Net delivery energy minus energy costs per evaluated step. Positive values suggest more sustainable behavior under the configured rules.',
+        selection_candidate_mean_feedings:'Average feeding events per evaluated colony. Track with food collection, births, and survival.',
+        selection_candidate_mean_births:'Average births per evaluated colony. Track alongside food supply and colony survival.',
+        benchmark_round:'Training round of the last fixed reporting benchmark. These results may be older than the current training checkpoint.',
+        benchmark_survival_rate:'Survival fraction in a fixed reporting evaluation. Compare results only under matching benchmark conditions.',
+        benchmark_mean_lifespan:'Mean observed lifespan in a fixed reporting benchmark. Survivors at the horizon are right-censored.',
+        benchmark_mean_deliveries:'Average completed food deliveries per fixed reporting evaluation. This better controls scenario variation than rotating selection evaluations.',
+        benchmark_pickup_rate:'Fraction of benchmark lives that collected food. Food collection is separate from successful delivery.',
+        benchmark_mean_steps_per_delivery:'Steps per completed food delivery in the reporting benchmark. Lower is generally more efficient.',
+        benchmark_gross_energy_per_step:'Net energy per step in the reporting benchmark. Interpret using the benchmark’s energy rules.',
+        benchmark_mean_feedings:'Average colony feedings in the reporting benchmark. This reflects food consumption at home.',
+        benchmark_mean_births:'Average colony births in the reporting benchmark. Interpret with survival and food availability.',
+        job_cpu_cores:'Observed CPU core-equivalents consumed by the managed job. This may be less than its leased CPU capacity.',
+        job_cpu_lease_utilization_pct:'CPU utilization relative to the job’s allocated quota. High utilization alone does not establish useful training progress.',
+        job_memory_mb:'Memory used by the supervised job, in MiB. This is not total machine memory.',
+        job_memory_lease_utilization_pct:'Memory used as a percentage of the job’s configured limit. High values can indicate limited headroom.',
+        job_cpu_throttled_seconds:'Accumulated CPU quota throttling time. Heavy throttling may limit training throughput.',
+        job_cpu_throttle_events:'Count of CPU quota throttling events. Interpret together with CPU allocation and timing.',
+        host_cpu_busy_pct:'Overall host CPU busy percentage, including other workloads. It is not isolated job utilization.',
+        host_gpu_busy_pct:'Utilization of the physical GPU. This is host-wide, not isolated to a job.',
+        host_gpu_vram_mb:'Used VRAM on the physical GPU, including other processes. This is not the job’s exclusive memory usage.',
+        host_gpu_temperature_c:'GPU temperature reported by the hardware sensor. Temperature alone cannot establish throttling.',
+        host_gpu_hotspot_temperature_c:'GPU hotspot or junction temperature. Interpretation requires device-specific limits.',
+        host_gpu_power_w:'Power consumption of the physical GPU. It is not isolated job energy use.',
+        collection_seconds:'Time spent collecting training experience. Compare with optimization time to identify bottlenecks.',
+        optimization_seconds:'Time spent optimizing the model. A high share may indicate learner-bound throughput.',
+        ppo_metric_readback_seconds:'Time spent reading PPO metrics back from the device. GPU synchronization may contribute.',
+        loss:'Model training loss reported by the optimizer. A lower loss does not necessarily mean better gameplay.',
+        policy_loss:'Policy optimization objective reported by the trainer. It is not a direct measure of game performance.',
+        value_loss:'Value-function training loss. Interpret alongside reward and independent evaluations.',
+        entropy:'Entropy of the policy’s action distribution. Lower entropy can indicate less exploration, not necessarily stronger play.',
+        mean_reward:'Average training reward. The interpretation depends on the task and reward definition.',
+    };
+    if(Object.hasOwn(known,name))return known[name];
+    const gpu=/^host_gpu_(\d+)_(busy_pct|used_vram_mb|temperature_c|hotspot_temperature_c|power_w)$/.exec(name);
+    if(gpu)return 'Reports '+gpu[2].replace(/_/g,' ')+' of physical GPU '+gpu[1]+'. This is host-wide hardware telemetry, not isolated job usage.';
+    const collector=/^collector_(\d+)_(.+)$/.exec(name);
+    if(collector)return 'Reports '+collector[2].replace(/_/g,' ')+' for rollout collector '+collector[1]+'. Use this to inspect collector throughput or overhead, not policy strength.';
+    const display=name.replace(/_/g,' ');
+    const unit=units.length?' (units: '+units.join('/')+')':'';
+    return 'Reports '+display+unit+' as published by the trainer or machine agent. This diagnostic value alone does not establish learning quality.';
+}
+
 function hubMetricValue(point,key) {
     return point.metrics?.[key.slice(7)]?.value;
+}
+// A chart axis is either the recorded project step counter or an explicit,
+// correctly unit-tagged trainer measurement. Never infer elapsed training
+// time from asynchronous Hub heartbeat arrival or host utilization.
+function hubComparisonAxisValue(point,key) {
+    if(key==='steps_completed')
+        return Number.isSafeInteger(point.steps_completed)&&point.steps_completed>=0
+            ?point.steps_completed:null;
+    if(key==='elapsed_training_seconds'||key==='active_training_time') {
+        const metric=point.metrics?.[key];
+        return metric?.unit==='seconds'&&Number.isFinite(metric.value)&&
+            metric.value>=0?metric.value:null;
+    }
+    return null;
 }
 
 // Observational scaling evidence only. Chart histories are bounded/decimated;
 // never use these summaries to tune a running job, select a winning model or
 // claim experimental equivalence. An allocation is not a measured CPU/GPU use.
-function hubScalingEvidence(runs,key) {
+function hubScalingEvidence(runs,key,allJobs=[],leases=[]) {
     const name=typeof key==='string'&&key.startsWith('metric:')?key.slice(7):null;
     if(!name)return [];
     const median=values=>{
@@ -90,32 +182,109 @@ function hubScalingEvidence(runs,key) {
         return sorted.length%2?sorted[middle]:
             (sorted[middle-1]+sorted[middle])/2;
     };
+    // The learner's reservation is only one member of an atomic distributed
+    // group. Read the separately reserved remote jobs; never infer resources
+    // from collector counts, measured rates or machine CPU capacity.
+    const allocation=job=>{
+        const distributed=job.distributed_rollout_managed===true;
+        const workers=distributed?allJobs.filter(other=>
+            other.project_id==='tinybrains_rollout'&&
+            other.frozen_parameters?.learner_job_id===job.id):[];
+        if(distributed&&(workers.length<1||workers.length>8))return null;
+        const pinnedThreads=distributed&&workers.every(worker=>
+            Number.isSafeInteger(worker.frozen_parameters?.threads)&&
+            worker.frozen_parameters.threads>=1&&
+            Number.isSafeInteger(worker.resources?.cpus)&&
+            worker.frozen_parameters.threads<=worker.resources.cpus)
+            ?{
+                threads:workers.reduce((sum,worker)=>
+                    sum+worker.frozen_parameters.threads,0),
+                cpus:workers.reduce((sum,worker)=>
+                    sum+worker.resources.cpus,0),
+            }:null;
+        const members=[job,...workers].map((member,index)=>{
+            const gpuCount=member.resources?.gpu_count;
+            const lease=leases.find(item=>item.id===member.lease_id&&
+                item.job_id===member.id&&
+                item.project_id===member.project_id&&
+                item.machine_id===member.assigned_machine_id&&
+                item.issued_by==='experiment-hub'&&
+                ['acknowledged','released'].includes(item.status)&&
+                item.resources?.cpus===member.resources?.cpus&&
+                item.resources?.ram_mb===member.resources?.ram_mb&&
+                item.resources?.gpu_count===gpuCount&&
+                (item.resources?.gpu_mode||'exclusive')===
+                    (member.resources?.gpu_mode||'exclusive')&&
+                (item.resources?.gpu_vram_mb??0)===(member.resources?.gpu_vram_mb??0)&&
+                (item.resources?.gpu_compute_pct??100)===(member.resources?.gpu_compute_pct??100)&&
+                (item.resources?.min_gpu_vram_mb??0)===(member.resources?.min_gpu_vram_mb??0));
+            const pinned=lease?.gpu_bindings;
+            // A CPU-only job still requires its own genuine frozen lease.
+            // Otherwise project metadata could be mistaken for a proven
+            // physical allocation when drawing marginal CPU comparisons.
+            const physical=lease&&Number.isSafeInteger(gpuCount)&&gpuCount===0
+                ?[]:Array.isArray(pinned)&&pinned.length===gpuCount&&
+                    pinned.every(item=>/^[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]$/.test(
+                        item.pci_address||''))
+                    ?pinned.map(item=>item.pci_address).sort():null;
+            return {
+                host:member.assigned_machine_id,
+                role:index===0?'learner':'collector',
+                cpus:member.resources?.cpus,
+                ram_mb:member.resources?.ram_mb,
+                gpus:gpuCount,
+                mode:member.resources?.gpu_mode||'exclusive',
+                gpu_vram_mb:member.resources?.gpu_vram_mb??0,
+                gpu_compute_pct:member.resources?.gpu_compute_pct??100,
+                min_gpu_vram_mb:member.resources?.min_gpu_vram_mb??0,
+                gpu_ids:physical,
+            };
+        });
+        if(members.some(member=>!member.host||
+            !Number.isSafeInteger(member.cpus)||member.cpus<1||
+            !Number.isSafeInteger(member.ram_mb)||member.ram_mb<1||
+            !Number.isSafeInteger(member.gpus)||member.gpus<0)||
+            new Set(members.map(member=>member.host)).size!==members.length)
+            return null;
+        members.sort((a,b)=>a.host.localeCompare(b.host));
+        return {
+            members,
+            cpus:members.reduce((total,m)=>total+m.cpus,0),
+            gpus:members.reduce((total,m)=>total+m.gpus,0),
+            host:members.map(m=>m.host).join(' + '),
+            topology:members.map(m=>m.host+':'+m.role).join('|'),
+            gpu_mode:members.map(m=>m.mode).join('|'),
+            claims_verified:members.every(m=>m.gpu_ids!==null),
+            collector_threads:pinnedThreads?.threads??null,
+            collector_cpus:pinnedThreads?.cpus??null,
+        };
+    };
     const rows=runs.map(run=>{
         const points=hubComparisonPoints(run);
-        // A chart may contain multiple segments or reset its step axis.
-        // Only the last contiguous segment is eligible for this summary.
         let lastBreak=0;
         for(let i=1;i<points.length;i++)
             if(points[i].break_before)lastBreak=i;
-        const current=points.slice(lastBreak);
-        const observations=current.map(point=>point.metrics?.[name])
+        const recent=points.slice(lastBreak);
+        const observations=recent.map(point=>point.metrics?.[name])
             .filter(m=>m?.unit==='rate'&&
                 Number.isFinite(m.value)&&m.value>=0)
             .map(m=>m.value);
-        const resources=run.job.resources;
-        const validCpus=Number.isSafeInteger(resources?.cpus)&&resources.cpus>0;
-        const validGpus=Number.isSafeInteger(resources?.gpu_count)&&
-            resources.gpu_count>=0;
+        const resources=allocation(run.job);
         return {
             slot:run.slot,job_id:run.job.id,
             configuration_sha256:run.job.configuration_sha256,
-            host:run.job.assigned_machine_id,
+            host:resources?.host||null,
+            topology:resources?.topology||null,
+            claims_verified:resources?.claims_verified===true,
+            collector_threads:resources?.collector_threads??null,
+            collector_cpus:resources?.collector_cpus??null,
+            members:resources?.members||null,
             lineage:run.job.artifact_lineage_root_id||run.job.id,
             status:run.job.status,
             distributed:run.job.distributed_rollout_managed===true,
-            cpus:validCpus?resources.cpus:null,
-            gpus:validGpus?resources.gpu_count:null,
-            gpu_mode:resources?.gpu_mode||'exclusive',
+            cpus:resources?.cpus??null,
+            gpus:resources?.gpus??null,
+            gpu_mode:resources?.gpu_mode||null,
             sample_count:observations.length,
             median_rate:observations.length?median(observations):null,
             low_rate:observations.length?Math.min(...observations):null,
@@ -123,25 +292,42 @@ function hubScalingEvidence(runs,key) {
             comparison:null,
         };
     });
+    const samePerHost=(a,b,key)=>a.members.every((m,i)=>
+        m[key]===b.members[i][key]);
+    const samePhysicalGpus=(a,b)=>a.members.every((m,i)=>
+        m.gpu_ids.length===b.members[i].gpu_ids.length&&
+        m.gpu_ids.every((id,j)=>id===b.members[i].gpu_ids[j]));
+    const retainsPhysicalGpus=(a,b)=>a.members.every((m,i)=>
+        b.members[i].gpu_ids.every(id=>m.gpu_ids.includes(id)));
+    const nondecreasing=(a,b,key)=>a.members.every((m,i)=>
+        m[key]>=b.members[i][key]);
     for(const row of rows) {
-        if(row.distributed||row.sample_count<5||
+        if(!row.members||!row.claims_verified||row.sample_count<5||
             !['finished','stopped','completed','ended_early'].includes(row.status)||
-            row.cpus===null||row.gpus===null||
             !/^[0-9a-f]{64}$/.test(row.configuration_sha256||''))continue;
         const comparable=rows.filter(other=>other!==row&&
-            other.cpus!==null&&other.gpus!==null&&
-            other.sample_count>=5&&!other.distributed&&
+            other.members&&other.claims_verified&&other.sample_count>=5&&
+            other.distributed===row.distributed&&
             ['finished','stopped','completed','ended_early'].includes(other.status)&&
-            other.host&&other.host===row.host&&
+            other.topology===row.topology&&
             other.configuration_sha256===row.configuration_sha256&&
             other.gpu_mode===row.gpu_mode&&
+            ['ram_mb','gpu_vram_mb','gpu_compute_pct',
+                'min_gpu_vram_mb'].every(key=>samePerHost(row,other,key))&&
             other.median_rate!==null);
-        // Isolate one allocation dimension. Never infer a marginal GPU
-        // benefit from changing CPUs, configuration, or physical host too.
-        const cpuBase=comparable.filter(other=>other.gpus===row.gpus&&
-            other.cpus<row.cpus).sort((a,b)=>b.cpus-a.cpus)[0];
-        const gpuBase=comparable.filter(other=>other.cpus===row.cpus&&
-            other.gpus<row.gpus).sort((a,b)=>b.gpus-a.gpus)[0];
+        // A group is comparable only if all member hosts and GPU modes
+        // match. No machine may lose CPU capacity in an "added CPU" trial,
+        // or silently exchange GPU/CPU allocation with another member.
+        const cpuBase=comparable.filter(other=>
+            other.gpus===row.gpus&&samePerHost(row,other,'gpus')&&
+            samePhysicalGpus(row,other)&&
+            other.cpus<row.cpus&&nondecreasing(row,other,'cpus'))
+            .sort((a,b)=>b.cpus-a.cpus)[0];
+        const gpuBase=comparable.filter(other=>
+            other.cpus===row.cpus&&samePerHost(row,other,'cpus')&&
+            retainsPhysicalGpus(row,other)&&
+            other.gpus<row.gpus&&nondecreasing(row,other,'gpus'))
+            .sort((a,b)=>b.gpus-a.gpus)[0];
         const baseline=cpuBase||gpuBase;
         if(baseline) {
             const resource=cpuBase?'cpu':'gpu';
@@ -156,6 +342,206 @@ function hubScalingEvidence(runs,key) {
     }
     return rows;
 }
+// Generic, observational profile of recorded duration measurements.
+// Units of seconds or milliseconds do not prove a per-update stage duration:
+// cumulative clocks and overlapping work must not be added or compared as
+// exclusive CPU/GPU time.
+function hubMeasuredSeconds(run) {
+    const points=hubComparisonPoints(run);
+    let lastBreak=0;
+    for(let i=1;i<points.length;i++)
+        if(points[i].break_before)lastBreak=i;
+    const recent=points.slice(lastBreak).slice(-64);
+    const values=new Map();
+    for(const point of recent)
+        for(const [key,item] of Object.entries(point.metrics||{})) {
+            // This explicitly cumulative run clock is already an X-axis
+            // choice; ranking its median among phases hides useful timings.
+            if(key==='elapsed_training_seconds'||key==='active_training_time'||
+                key==='job_cpu_throttled_seconds')continue;
+            const scale=item?.unit==='seconds'?1:
+                item?.unit==='milliseconds'?0.001:null;
+            if(scale===null||!Number.isFinite(item.value)||
+                item.value<0||item.value>1e12)continue;
+            if(!values.has(key))values.set(key,[]);
+            values.get(key).push(item.value*scale);
+        }
+    const rows=[];
+    for(const [key,samples] of values) {
+        if(samples.length<5)continue;
+        const sorted=samples.slice().sort((a,b)=>a-b);
+        const mid=Math.floor(sorted.length/2);
+        const median=sorted.length%2?sorted[mid]:
+            (sorted[mid-1]+sorted[mid])/2;
+        rows.push({key,samples:samples.length,median,
+            minimum:sorted[0],maximum:sorted.at(-1)});
+    }
+    return rows.sort((a,b)=>b.median-a.median||
+        a.key.localeCompare(b.key)).slice(0,12);
+}
+// Read-only, next-run guidance from actual paired per-update collector rates.
+// Never modify a running job or infer unmeasured machine scaling.
+function hubRolloutWeightRecommendation(run) {
+    const job=run.job;
+    if(job.project_id!=='tinybrains'||job.distributed_rollout_managed!==true||
+        job.frozen_parameters?.remote_rollouts!==true||
+        !['finished','stopped'].includes(job.status))return null;
+    const points=hubComparisonPoints(run);
+    let lastBreak=0;
+    for(let i=1;i<points.length;i++)
+        if(points[i].break_before)lastBreak=i;
+    const recent=points.slice(lastBreak).slice(-64);
+    let collectorCount=null;
+    const complete=[];
+    for(const point of recent) {
+        const metrics=point.metrics||{};
+        const count=metrics.collector_count;
+        if(count?.unit!=='count'||!Number.isSafeInteger(count.value)||
+            count.value<2||count.value>9)continue;
+        if(collectorCount===null)collectorCount=count.value;
+        if(count.value!==collectorCount)return null;
+        const rates=[],targets=[];
+        for(let i=0;i<collectorCount;i++) {
+            const rate=metrics['collector_'+i+'_decisions_per_second'];
+            const target=metrics['collector_'+i+'_action_target'];
+            if(rate?.unit!=='rate'||!Number.isFinite(rate.value)||
+                rate.value<=0||target?.unit!=='count'||
+                !Number.isSafeInteger(target.value)||target.value<1)break;
+            rates.push(rate.value);
+            targets.push(target.value);
+        }
+        if(rates.length===collectorCount)complete.push({rates,targets});
+    }
+    if(complete.length<5)return null;
+    // Shard work shares are frozen for this run. If the published targets
+    // changed, these historical rate samples do not support one recommendation.
+    const targets=complete[0].targets;
+    if(complete.some(sample=>sample.targets.some((v,i)=>v!==targets[i])))
+        return null;
+    const original=job.frozen_parameters.rollout_action_weights;
+    if(original!==undefined&&(!Array.isArray(original)||
+        original.length!==collectorCount))return null;
+    const latest=complete.slice(-32);
+    const median=values=>{
+        const sorted=values.slice().sort((a,b)=>a-b);
+        const middle=Math.floor(sorted.length/2);
+        return sorted.length%2?sorted[middle]:
+            (sorted[middle-1]+sorted[middle])/2;
+    };
+    const rates=targets.map((_,i)=>median(latest.map(x=>x.rates[i])));
+    const smallest=Math.min(...rates),largest=Math.max(...rates);
+    if(!Number.isFinite(smallest)||smallest<=0||largest/smallest>1024)
+        return null;
+    // Approximate relative rates in small deterministic integer weights.
+    // Bound every value to TinyBrains' frozen CLI range [1,1024].
+    const scale=Math.min(16,1024/(largest/smallest));
+    const raw=rates.map(rate=>Math.max(1,Math.round(rate/smallest*scale)));
+    const gcd=(a,b)=>b?gcd(b,a%b):a;
+    const divisor=raw.reduce(gcd);
+    return {
+        job_id:job.id,
+        profile:job.frozen_parameters.profile,
+        profile_sha256:job.frozen_parameters.profile_sha256,
+        weights:raw.map(value=>value/divisor),
+        current:original||Array(collectorCount).fill(1),
+        rates,targets,samples:latest.length,
+        // A new target can change throughput; this is a starting estimate.
+    };
+}
+
+// Preserve the operator's explicit chart selection while adding balanced
+// collector timing pairs when the bounded project-neutral chart has room.
+// Full source telemetry remains in the separate observation archive.
+function hubDistributedMetricSelection(selected,remoteCount) {
+    if(!Array.isArray(selected)||!Number.isSafeInteger(remoteCount)||
+        remoteCount<1||remoteCount>8)
+        throw Error('Choose recorded metrics and 1–8 approved collectors.');
+    const total=remoteCount+1;
+    const required=['collector_count',...Array.from({length:total},(_,i)=>[
+        'collector_'+i+'_decisions_per_second',
+        'collector_'+i+'_action_target',
+    ]).flat()];
+    const names=[...new Set([...selected,...required])];
+    if(names.length>96)
+        throw Error('Distributed collector metrics plus selected Train metrics exceed 96. Deselect unused metrics before queueing.');
+    const includePair=(first,second)=>{
+        const missing=[first,second].filter(name=>!names.includes(name));
+        if(names.length+missing.length<=96)names.push(...missing);
+    };
+    for(let i=0;i<total;i++)
+        includePair('collector_'+i+'_rollout_engine_step_seconds',
+            'collector_'+i+'_learner_inference_seconds');
+    for(let i=0;i<total;i++) {
+        const model='collector_'+i+'_model_prepare_seconds';
+        if(!names.includes(model)&&names.length<96)names.push(model);
+        if(i>0) {
+            const roundtrip='collector_'+i+'_roundtrip_seconds';
+            if(!names.includes(roundtrip)&&names.length<96)names.push(roundtrip);
+        }
+    }
+    return names;
+}
+function hubCollectorStageProfile(run) {
+    const job=run.job;
+    if(job.project_id!=='tinybrains'||job.distributed_rollout_managed!==true||
+        job.frozen_parameters?.remote_rollouts!==true)return null;
+    const points=hubComparisonPoints(run);
+    let lastBreak=0;
+    for(let i=1;i<points.length;i++)
+        if(points[i].break_before)lastBreak=i;
+    const recent=points.slice(lastBreak).slice(-64);
+    let count=null;
+    for(const point of recent) {
+        const item=point.metrics?.collector_count;
+        if(item?.unit!=='count'||!Number.isSafeInteger(item.value)||
+            item.value<2||item.value>9)continue;
+        if(count!==null&&count!==item.value)return null;
+        count=item.value;
+    }
+    if(count===null)return null;
+    const value=(metrics,slot,name,unit)=>{
+        const item=metrics['collector_'+slot+'_'+name];
+        return item?.unit===unit&&Number.isFinite(item.value)&&
+            item.value>=0?item.value:null;
+    };
+    const median=values=>{
+        if(!values.length)return null;
+        const sorted=values.slice().sort((a,b)=>a-b);
+        const middle=Math.floor(sorted.length/2);
+        return sorted.length%2?sorted[middle]:
+            (sorted[middle-1]+sorted[middle])/2;
+    };
+    const slots=[];
+    for(let slot=0;slot<count;slot++) {
+        const samples=[];
+        for(const point of recent) {
+            const metrics=point.metrics||{};
+            if(metrics.collector_count?.value!==count)continue;
+            const engine=value(metrics,slot,'rollout_engine_step_seconds','seconds');
+            const inference=value(metrics,slot,'learner_inference_seconds','seconds');
+            const rate=value(metrics,slot,'decisions_per_second','rate');
+            if(engine===null||inference===null||rate===null)continue;
+            samples.push({
+                engine,inference,rate,
+                model:value(metrics,slot,'model_prepare_seconds','seconds'),
+                roundtrip:value(metrics,slot,'roundtrip_seconds','seconds'),
+            });
+        }
+        if(samples.length<5)continue;
+        const latest=samples.slice(-32);
+        const observed=key=>{
+            const values=latest.map(sample=>sample[key]);
+            return values.every(v=>v!==null)?median(values):null;
+        };
+        slots.push({
+            slot,samples:latest.length,
+            engine:observed('engine'),inference:observed('inference'),
+            rate:observed('rate'),model:observed('model'),
+            roundtrip:observed('roundtrip'),
+        });
+    }
+    return slots.length?{job_id:job.id,collector_count:count,slots}:null;
+}
 function trialBatchLabel(job) {
     const batch=job.trial_batch;
     return batch?' · batch '+batch.id.slice(-8)+' · trial '+batch.index+'/'+batch.size:'';
@@ -166,7 +552,7 @@ function hubComparisonCsv(exported) {
         'selected_x_axis','selected_metric','selected_metrics','assigned_machine_id',
         'artifact_lineage_root_id','continuation_of_job_id','status',
         'observed_at','source_modified_at','experiment_id','segment_id',
-        'break_before','steps_completed',
+        'break_before','steps_completed','x_value',
         'trial_batch_id','trial_batch_index','trial_batch_size',
         'resource_bundle_id','resource_bundle_index','resource_bundle_size',
     ];
@@ -416,7 +802,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     function renderPipelineStages() {
         const rows=[...$('hub-pipeline-rows').children];
-        const checkpointPipeline=['tinybrains','courier','bees_native'].includes(project)&&
+        const checkpointPipeline=['tinybrains','courier'].includes(project)&&
             $('hub-pipeline-kind').value==='continuation';
         const configs=(state?.configurations||[]).filter(c=>
             checkpointPipeline?c.project_id===project:
@@ -526,9 +912,20 @@ document.addEventListener('DOMContentLoaded', () => {
             if(!groups.has(id))groups.set(id,[]);
             groups.get(id).push(job);
         }
-        for(const [id,members] of [...groups].slice(-8).reverse()) {
+        // Keep unresolved bundles visible even after many completed runs.
+        // Historical rows remain bounded; the complete job history is in Train.
+        const newest=[...groups].reverse();
+        const pending=newest.filter(([,members])=>members.some(job=>
+            job.status!=='cancelled'&&!job.capacity_released_at));
+        const completed=newest.filter(([,members])=>members.every(job=>
+            job.status==='cancelled'||job.capacity_released_at));
+        for(const [id,members] of [...pending,...completed].slice(0,32)) {
             const row=document.createElement('div');
             row.className='hub-pipeline-stage';
+            const launchPlan=(state.bundle_start_plans||[])
+                .filter(plan=>plan.bundle_id===id).at(-1);
+            const unresolvedLaunch=launchPlan&&
+                ['pending','needs_review'].includes(launchPlan.status);
             const active=members.filter(j=>j.status!=='cancelled');
             const claims=active.filter(j=>
                 (state.reservations||[]).some(lease=>lease.id===j.lease_id&&
@@ -537,8 +934,133 @@ document.addEventListener('DOMContentLoaded', () => {
             details.textContent='Bundle '+id.slice(-8)+' · '+
                 members.length+' jobs · '+claims.length+' outstanding claims · '+
                 members.map(j=>j.project_id+' on '+
-                    (j.assigned_machine_id||'unassigned')+': '+j.status).join('; ');
+                    (j.assigned_machine_id||'unassigned')+': '+j.status).join('; ')+
+                (launchPlan?' · Scheduled launch '+launchPlan.status+
+                    ' (expires '+new Date(launchPlan.expires_at).toLocaleString()+')'+
+                    (launchPlan.status==='pending'&&launchPlan.waiting_reason
+                        ?': '+launchPlan.waiting_reason
+                        :launchPlan.reason?': '+launchPlan.reason:''):'');
             row.append(details);
+            const complete=members.length===members[0].resource_bundle.size&&
+                members.every((job,index)=>job.resource_bundle.index===index+1);
+            const ids=members.map(job=>job.id);
+            const canStart=complete&&!unresolvedLaunch&&members.every(job=>
+                job.status==='waiting_adapter'&&!job.dispatch_id&&
+                job.native_start_readiness?.eligible===true);
+            const reserved=complete&&members.every(job=>
+                job.status==='waiting_adapter'&&!job.dispatch_id&&
+                Boolean(job.lease_id)&&Boolean(job.assigned_machine_id));
+            if(reserved&&!unresolvedLaunch) {
+                const usesGpu=members.some(job=>job.resources?.gpu_count>0);
+                let keepAcrossRestart=false;
+                if(!usesGpu) {
+                    const label=document.createElement('label');
+                    const check=document.createElement('input');
+                    check.type='checkbox';
+                    check.checked=false;
+                    label.append(check,document.createTextNode(
+                        ' Keep CPU-only approval across coordinator restart'));
+                    label.title='Requires fresh authenticated agents, native preflight and the original matching resource claims. No ambiguous process is retried.';
+                    row.append(label);
+                    label.dataset.bundleRestart='1';
+                    row.append(button('Schedule auto-start when ready',async()=>{
+                        keepAcrossRestart=check.checked;
+                        await scheduleLaunch(keepAcrossRestart,false);
+                    }));
+                }else {
+                    row.append(button('Schedule GPU auto-start when ready',async()=>{
+                        await scheduleLaunch(false,true);
+                    }));
+                }
+                async function scheduleLaunch(restart,gpu) {
+                    if(!confirm('Approve one native Start for each of the '+members.length+
+                        ' reserved jobs as soon as ALL native lease receipts and Start checks pass? '+
+                        'No work starts until every machine is qualified. '+
+                        'Every finished/stopped member will release its own claim after a verified native report. '+
+                        (gpu?'This includes GPU execution, expires after 20 minutes and NEVER survives a coordinator restart. ':
+                            'This CPU-only approval expires after 24 hours. '+
+                            (restart?'You explicitly authorize recovery after coordinator restart, only after fresh machine and lease reconciliation. ':
+                                'It is disarmed on coordinator restart. '))+
+                        'No failed, unverified or previously dispatched job is ever retried.'))return;
+                    try{
+                        const plan=await action('hub/resource-bundles/schedule-start',{
+                            bundle_id:id,expected_job_ids:ids,confirm_schedule:true,
+                            ...(gpu?{confirm_gpu_start:true}:{}),
+                            ...(restart?{resume_after_restart:true,
+                                confirm_restart_rearm:true}:{}),
+                        });
+                        feedback('hub-resource-bundle-message',
+                            plan.status==='authorized'
+                                ?'All '+members.length+' bundle Starts authorized after verifying native readiness.'
+                                :'Unattended bundle launch '+plan.status+'; waiting for fresh machine-local proof.');
+                        await reload();
+                    }catch(error){
+                        feedback('hub-resource-bundle-message',String(error.message||error));
+                    }
+                }
+            }
+            if(unresolvedLaunch)
+                row.append(button('Cancel scheduled launch',async()=>{
+                    if(!confirm('Cancel this unattended group Start approval? The reserved jobs and native claims remain unchanged.'))return;
+                    try{
+                        await action('hub/resource-bundles/cancel-start-plan',{
+                            plan_id:launchPlan.id,confirm_cancel:true,
+                        });
+                        feedback('hub-resource-bundle-message',
+                            'Unattended Start permission revoked; reserved jobs remain unchanged.');
+                        await reload();
+                    }catch(error){
+                        feedback('hub-resource-bundle-message',String(error.message||error));
+                    }
+                }));
+            if(canStart)row.append(button('Start entire bundle',async()=>{
+                const autoRelease=$('hub-native-release-on-terminal').checked;
+                if(!confirm('Authorize '+members.length+
+                    ' independent native Starts across the selected Windows/Linux machines in one durable operation? '+
+                    'All members must retain their original leases, fresh native readiness and any GPU access qualification. '+
+                    'The machines enforce each Start independently; this does not guarantee simultaneous execution or link the jobs into distributed training. '+
+                    'CUDA/ROCm GPU compute sharing is not an enforced quota. '+
+                    (autoRelease
+                        ?'Verified native finished/stopped reports will release each member’s claimed capacity. '
+                        :'Members keep their capacity claims after completion until released separately. ')))return;
+                try{
+                    const result=await action('hub/resource-bundles/start',{
+                        bundle_id:id,expected_job_ids:ids,
+                        confirm_start:true,release_on_terminal:autoRelease,
+                    });
+                    $('hub-native-release-on-terminal').checked=false;
+                    feedback('hub-resource-bundle-message',
+                        'Authorized '+result.starts_authorized+
+                        ' native Starts together. Each worker must still verify its own process.');
+                    await reload();
+                }catch(error){
+                    feedback('hub-resource-bundle-message',String(error.message||error));
+                }
+            }));
+            const canStop=complete&&members.some(job=>job.dispatch_id)&&
+                members.some(job=>job.status!=='cancelled'&&!job.capacity_released_at);
+            if(canStop)row.append(button('Stop / close bundle',async()=>{
+                if(!confirm('Request native Stop for all active bundle members and cancel undelivered Starts? '+
+                    'Finished/stopped members with verified native terminal receipts release their reservations. '+
+                    'Running or offline members retain their resources until native Stop is verified. '+
+                    'Failed or unverified owners may require manual reconciliation. '+
+                    'Existing checkpoints, records and other experiments are untouched.'))return;
+                try{
+                    const result=await action('hub/resource-bundles/stop',{
+                        bundle_id:id,expected_job_ids:ids,confirm_stop:true,
+                    });
+                    feedback('hub-resource-bundle-message',
+                        'Bundle shutdown: '+result.stops_requested+
+                        ' Stop requests pending, '+result.cancelled+
+                        ' unstarted members cancelled, '+result.released+
+                        ' capacity claims released'+
+                        (result.needs_review.length
+                            ?'; '+result.needs_review.length+' members need review.':'.'));
+                    await reload();
+                }catch(error){
+                    feedback('hub-resource-bundle-message',String(error.message||error));
+                }
+            }));
             const canCancel=members.length===members[0].resource_bundle.size&&
                 active.length>0&&active.every(j=>
                     j.status==='waiting_adapter'&&!j.dispatch_id);
@@ -599,25 +1121,43 @@ document.addEventListener('DOMContentLoaded', () => {
         if(tab==='machines') loadLiveBeesWorkers();
     }
     const compareSlots=[];
+    const rolloutRecommendations=document.createElement('div');
+    rolloutRecommendations.id='hub-compare-rollout-recommendations';
+    $('hub-compare-scaling-note').insertAdjacentElement('afterend',
+        rolloutRecommendations);
+    const collectorStageProfiles=document.createElement('details');
+    collectorStageProfiles.id='hub-compare-collector-stages';
+    rolloutRecommendations.insertAdjacentElement('afterend',collectorStageProfiles);
+    const secondsMetricsDetails=document.createElement('details');
+    secondsMetricsDetails.id='hub-compare-recorded-seconds';
+    collectorStageProfiles.insertAdjacentElement('afterend',secondsMetricsDetails);
     const comparisonMetricOverrides=new Map();
+    const comparisonChartAverages=new Map();
+    let lastComparisonChart=null,lastComparisonChartWidth=0;
     let compareSerial=0;
     const compareColor=i=>'hsl('+((i*137.508+211)%360).toFixed(2)+' 65% 38%)';
     function addComparisonSlot() {
         const slot='run'+(++compareSerial);
         compareSlots.push(slot);
+        const row=document.createElement('div');
+        row.className='hub-compare-run';
         const label=document.createElement('label');
-        label.textContent='Run '+compareSerial+' ';
         const select=document.createElement('select');
         select.id='hub-compare-'+slot;
+        label.htmlFor=select.id;
+        label.textContent='Run '+compareSerial;
         select.addEventListener('change',renderComparison);
         const remove=button('Remove',()=>{
             compareSlots.splice(compareSlots.indexOf(slot),1);
-            label.remove();
+            row.remove();
             renderComparison();
         });
         remove.title='Remove from comparison (does not modify the job)';
-        label.append(select,remove);
-        $('hub-compare-run-list').append(label);
+        const controls=document.createElement('div');
+        controls.className='hub-compare-run-controls';
+        controls.append(select,remove);
+        row.append(label,controls);
+        $('hub-compare-run-list').append(row);
         return slot;
     }
     // Keep the native multi-select as the single source of selected IDs.
@@ -625,6 +1165,9 @@ document.addEventListener('DOMContentLoaded', () => {
     function renderMetricPicker(selectId,pickerId) {
         const source=$(selectId),panel=$(pickerId);
         if(!source||!panel)return;
+        // Frozen Hub jobs accept up to 96 preferred chart metrics.
+        // Compare charts are intentionally not subject to this cap.
+        const selectionLimit=selectId==='hub-job-metrics'?96:null;
         if(!panel._metricView) {
             const toolbar=document.createElement('div');
             toolbar.className='hub-metric-toolbar';
@@ -632,6 +1175,16 @@ document.addEventListener('DOMContentLoaded', () => {
             search.type='search';
             search.placeholder='Search metric names or units';
             search.setAttribute('aria-label','Search metrics');
+            const defaultsButton=selectId==='hub-job-metrics'
+                ?document.createElement('button'):null;
+            if(defaultsButton) {
+                defaultsButton.type='button';
+                defaultsButton.textContent='Use project defaults';
+                defaultsButton.addEventListener('click',()=>{
+                    jobMetricChoicesByProject.delete(project);
+                    renderJobMetricSelection();
+                });
+            }
             const shownButton=document.createElement('button');
             shownButton.type='button';
             shownButton.textContent='Select shown';
@@ -641,12 +1194,21 @@ document.addEventListener('DOMContentLoaded', () => {
             const count=document.createElement('span');
             count.className='hub-metric-count';
             count.setAttribute('aria-live','polite');
+            const selectedSummary=document.createElement('div');
+            selectedSummary.className='hub-metric-selection-summary';
+            selectedSummary.setAttribute('aria-label','Selected metrics');
+            const selectedHeading=document.createElement('strong');
+            selectedHeading.className='hub-metric-selected-heading';
+            const selectedItems=document.createElement('div');
+            selectedItems.className='hub-metric-selected-items';
+            selectedSummary.append(selectedHeading,selectedItems);
             const rows=document.createElement('div');
             rows.className='hub-metric-options';
             rows.setAttribute('role','group');
             rows.setAttribute('aria-label','Available metrics');
-            toolbar.append(search,shownButton,clearButton,count);
-            panel.append(toolbar,rows);
+            toolbar.append(search,...(defaultsButton?[defaultsButton]:[]),
+                shownButton,clearButton,count);
+            panel.append(toolbar,selectedSummary,rows);
             const matches=()=>[...source.options].filter(option=>
                 (option.value+' '+option.textContent).toLowerCase()
                     .includes(search.value.trim().toLowerCase()));
@@ -660,7 +1222,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     groups.get(group).push(option);
                 }
                 const nodes=[];
-                for(const [group,options] of groups) {
+                // Learning outcomes should not be buried below hundreds of
+                // hardware/performance counters in the metric picker.
+                const priority={'Learning outcomes':0,'Performance and resources':1};
+                for(const [group,options] of [...groups].sort(([a],[b])=>
+                    (priority[a]??2)-(priority[b]??2)||a.localeCompare(b))) {
                     const heading=document.createElement('div');
                     heading.className='hub-metric-group-title';
                     heading.textContent=group+' · '+options.length;
@@ -671,13 +1237,23 @@ document.addEventListener('DOMContentLoaded', () => {
                         const check=document.createElement('input');
                         check.type='checkbox';
                         check.checked=option.selected;
+                        check.disabled=!check.checked&&selectionLimit!==null&&
+                            source.selectedOptions.length>=selectionLimit;
                         check.dataset.metricValue=option.value;
+                        check.title=option.dataset.description||'';
+                        label.title=check.title;
                         const key=option.value.replace(/^metric:/,'');
                         const name=document.createElement('span');
                         name.textContent=key;
                         const note=document.createElement('small');
                         note.textContent=option.textContent.slice(key.length).trim();
                         check.addEventListener('change',()=>{
+                            if(check.checked&&selectionLimit!==null&&
+                                source.selectedOptions.length>=selectionLimit) {
+                                check.checked=false;
+                                draw(option.value);
+                                return;
+                            }
                             option.selected=check.checked;
                             source.dispatchEvent(new Event('change',{bubbles:true}));
                             draw(option.value);
@@ -696,8 +1272,28 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 rows.replaceChildren(...nodes);
                 rows.scrollTop=scroll;
-                count.textContent=source.selectedOptions.length+' selected · '+
-                    visible.length+' of '+source.options.length+' shown';
+                const chosen=[...source.selectedOptions];
+                selectedHeading.textContent='Selected metrics ('+chosen.length+')';
+                selectedItems.replaceChildren(...(chosen.length?chosen.map(option=>{
+                    const metric=option.value.replace(/^metric:/,'');
+                    const remove=document.createElement('button');
+                    remove.type='button';
+                    remove.className='hub-metric-selected-chip';
+                    remove.textContent=metric+' ×';
+                    remove.setAttribute('aria-label','Remove '+metric+' from selected metrics');
+                    remove.title=(option.dataset.description||'')+
+                        '\nClick to remove '+metric;
+                    remove.addEventListener('click',()=>{
+                        option.selected=false;
+                        source.dispatchEvent(new Event('change',{bubbles:true}));
+                        draw();
+                    });
+                    return remove;
+                }):[document.createTextNode('None selected')]));
+                count.textContent=source.selectedOptions.length+
+                    (selectionLimit===null?'':' / '+selectionLimit)+
+                    ' selected · '+visible.length+' of '+
+                    source.options.length+' shown';
                 if(focusKey!==null)
                     for(const check of rows.querySelectorAll('input[type="checkbox"]'))
                         if(check.dataset.metricValue===focusKey) {
@@ -706,8 +1302,15 @@ document.addEventListener('DOMContentLoaded', () => {
                         }
             }
             function toggle(checked,visibleOnly) {
-                for(const option of visibleOnly?matches():[...source.options])
-                    option.selected=checked;
+                let available=selectionLimit===null?Infinity:
+                    Math.max(0,selectionLimit-source.selectedOptions.length);
+                for(const option of visibleOnly?matches():[...source.options]) {
+                    if(!checked)option.selected=false;
+                    else if(!option.selected&&available>0) {
+                        option.selected=true;
+                        available--;
+                    }
+                }
                 source.dispatchEvent(new Event('change',{bubbles:true}));
                 draw();
             }
@@ -726,7 +1329,11 @@ document.addEventListener('DOMContentLoaded', () => {
     function selectedComparisonMetrics() {
         return [...$('hub-compare-metric').selectedOptions].map(option=>option.value);
     }
-    const chartAxes={steps_completed:{label:'Cumulative project steps'}};
+    const chartAxes={
+        steps_completed:{label:'Cumulative project steps'},
+        elapsed_training_seconds:{label:'Reported elapsed training seconds'},
+        active_training_time:{label:'Reported active training seconds'},
+    };
     async function loadComparison() {
         if(!state)return;
         const requested=project,serial=++comparisonRequest;
@@ -854,10 +1461,13 @@ document.addEventListener('DOMContentLoaded', () => {
         }))).map(metric=>({
             key:'metric:'+metric.key,
             label:metric.key+' ('+metric.units.join('/')+')',
+            units:metric.units,
         }));
         metricSelect.replaceChildren(...metricOptions.map(m=>{
             const option=new Option(m.label,m.key);
             const key=m.key.slice(7);
+            option.dataset.description=hubMetricDescription(key,m.units);
+            option.title=option.dataset.description;
             option.dataset.category=knownLearningMetrics.includes(key)
                 ?'Learning outcomes':knownPerformanceMetrics.includes(key)
                     ?'Performance and resources':'Other recorded metrics';
@@ -867,17 +1477,32 @@ document.addEventListener('DOMContentLoaded', () => {
         const preferred=[...new Set(runs.flatMap(run=>run.job.metric_selection||[]))]
             .map(key=>'metric:'+key)
             .filter(key=>metricOptions.some(m=>m.key===key));
+        // On a new project view, show actual learning outcomes before the
+        // alphabetically first resource counter. Explicit user choices win.
+        const learningDefaults=['selection_candidate_survival_score',
+            'selection_incumbent_survival_score','training_win_rate','training_score_rate',
+            'training_mean_score','loss','entropy',
+            'ant_decisions_per_second'].map(name=>'metric:'+name)
+            .filter(key=>metricOptions.some(option=>option.key===key));
         const metricChoices=comparisonMetricOverrides.get(project) ??
-            (keep.length?keep:preferred.length?preferred:[metricOptions[0]?.key]);
+            (keep.length?keep:preferred.length?preferred:
+                learningDefaults.length?learningDefaults.slice(0,5):
+                    [metricOptions[0]?.key]);
         for(const option of metricSelect.options)
             option.selected=metricChoices.includes(option.value);
         metricSelect.dataset.metricProject=project;
         renderMetricPicker('hub-compare-metric','hub-compare-metric-picker');
         const selectedMetrics=selectedComparisonMetrics();
         const axisSelect=$('hub-compare-x-axis'),oldAxis=axisSelect.value;
+        const timeAxes=['elapsed_training_seconds','active_training_time'];
+        const availableTimeAxes=timeAxes.filter(key=>chartable.some(job=>
+            hubComparisonPoints({job,points:history.get(job.id)||[]})
+                .some(point=>hubComparisonAxisValue(point,key)!==null)));
         axisSelect.replaceChildren(
-            new Option(comparisonAxisLabel('steps_completed'),'steps_completed'));
-        axisSelect.value='steps_completed';
+            new Option(comparisonAxisLabel('steps_completed'),'steps_completed'),
+            ...availableTimeAxes.map(key=>new Option(comparisonAxisLabel(key),key)));
+        axisSelect.value=[...axisSelect.options].some(option=>
+            option.value===oldAxis)?oldAxis:'steps_completed';
         const hasExportData=runs.some(run=>hubComparisonPoints(run).length);
         const legacyBeesCoordinator=project==='bees'&&
             !document.documentElement.dataset.hubDefaultProject;
@@ -932,7 +1557,12 @@ document.addEventListener('DOMContentLoaded', () => {
         feedback('hub-compare-chart-note',
             warnings.join(' ')+(warnings.length?' ':'')+
             'Horizontal axis: '+(comparisonAxisLabel($('hub-compare-x-axis').value)||
-                chartAxes.steps_completed.label)+'. Not wall-clock time. '+
+                chartAxes.steps_completed.label)+'. '+
+            ($('hub-compare-x-axis').value==='elapsed_training_seconds'
+                ?'Elapsed time comes from recorded trainer seconds, not the Hub heartbeat clock. Runs without this measurement are omitted from the time plots. '
+                :$('hub-compare-x-axis').value==='active_training_time'
+                    ?'Active training time comes from recorded trainer seconds, which may exclude pauses; it is not the Hub heartbeat clock. Runs without this measurement are omitted from these plots. '
+                    :'Project step counts are not wall-clock time. ')+
             'Source timestamps show when a trusted adapter published a summary. No training decisions use chart data.');
         const table=$('hub-compare-rows');
         table.replaceChildren();
@@ -968,6 +1598,9 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         renderComparisonEvaluations(runs);
         renderScalingEvidence(runs,selectedMetrics);
+        renderRolloutRecommendations(runs);
+        renderCollectorStageProfiles(runs);
+        renderMeasuredSeconds(runs);
         drawComparisonCharts(runs,selectedMetrics,
             $('hub-compare-x-axis').value);
     }
@@ -982,23 +1615,27 @@ document.addEventListener('DOMContentLoaded', () => {
                     .filter(([,value])=>value.unit==='rate')
                     .map(([name])=>'metric:'+name))))];
         const key=keys.find(value=>available.includes(value))||null;
-        const rows=hubScalingEvidence(runs,key);
+        const rows=hubScalingEvidence(runs,key,state?.jobs||[],
+            state?.reservations||[]);
         feedback('hub-compare-scaling-note',key
             ?'Showing '+key.slice(7)+'. Medians use bounded chart samples from each run’s latest segment, not complete histories. '+
-              'CPU/GPU values are allocations, not measured utilization. Marginal comparisons require five samples per job, completed jobs, matching frozen configuration and host, and only one changed resource dimension. '+
+              'CPU/GPU values are allocations, not measured utilization. Distributed TinyBrains groups sum only their explicitly reserved learner and remote worker resources; the remote threads/CPU column shows frozen collector concurrency, not actual CPU occupancy. Marginal comparisons require five samples per job, completed jobs, verified matching resource leases, identical per-host RAM and shared GPU budgets, fixed machine group/configuration, physical GPU identity, and one increased CPU or GPU dimension. '+
               'They remain observational, not guaranteed improvements or independent learning evaluations.'
             :'Select a recorded throughput metric (unit: rate) above to inspect resource scaling. No CPU/GPU efficiency can be inferred from utilization alone.');
         for(const row of rows) {
             const tr=document.createElement('tr');
             cell(tr,row.slot+' · '+row.job_id.slice(-8));
             cell(tr,row.cpus===null?'Unknown':row.cpus.toLocaleString()+
-                (row.distributed?' (learner only)':''));
+                (row.distributed?' (group allocation)':''));
             cell(tr,row.gpus===null?'Unknown':row.gpus.toLocaleString());
             cell(tr,row.host||'Unknown');
+            cell(tr,!row.distributed?'—':
+                row.collector_threads===null?'Unknown':
+                    row.collector_threads+' / '+row.collector_cpus);
             cell(tr,String(row.sample_count));
             cell(tr,row.median_rate===null?'—':
                 row.median_rate.toLocaleString(undefined,{maximumFractionDigits:2}));
-            cell(tr,row.cpus&&row.median_rate!==null&&!row.distributed
+            cell(tr,row.cpus&&row.median_rate!==null
                 ?(row.median_rate/row.cpus).toLocaleString(undefined,{
                     maximumFractionDigits:2}):'—');
             const diff=row.comparison;
@@ -1016,9 +1653,145 @@ document.addEventListener('DOMContentLoaded', () => {
             const tr=document.createElement('tr');
             cell(tr,runs.length
                 ?'No recorded rate samples for the selected runs and metric.'
-                :'Select one or more runs to review observed scaling.').colSpan=8;
+                :'Select one or more runs to review observed scaling.').colSpan=9;
             table.append(tr);
         }
+    }
+
+    function renderCollectorStageProfiles(runs) {
+        collectorStageProfiles.replaceChildren();
+        const profiles=project==='tinybrains'
+            ?runs.map(run=>({run,profile:hubCollectorStageProfile(run)}))
+                .filter(item=>item.profile):[];
+        collectorStageProfiles.hidden=!profiles.length;
+        if(!profiles.length)return;
+        const summary=document.createElement('summary');
+        summary.textContent='Per-collector rollout stage timings ('+
+            profiles.length+' run'+(profiles.length===1?'':'s')+')';
+        collectorStageProfiles.append(summary);
+        const format=value=>value===null?'—':
+            value.toLocaleString(undefined,{maximumFractionDigits:2});
+        for(const {run,profile} of profiles) {
+            const heading=document.createElement('p');
+            heading.textContent='Run '+run.slot+' · '+profile.job_id.slice(-8)+
+                ' · '+profile.slots.length+'/'+profile.collector_count+
+                ' collectors with at least five complete recent samples';
+            collectorStageProfiles.append(heading);
+            const table=document.createElement('table');
+            const headers=['Collector','Samples','Decisions/s',
+                'Engine step (s)','Inference (s)','Model prepare (s)',
+                'Roundtrip (s)'];
+            const tr=document.createElement('tr');
+            for(const title of headers) {
+                const th=document.createElement('th');
+                th.textContent=title;
+                tr.append(th);
+            }
+            const thead=document.createElement('thead');
+            thead.append(tr);
+            const tbody=document.createElement('tbody');
+            for(const slot of profile.slots) {
+                const row=document.createElement('tr');
+                for(const value of [
+                    slot.slot===0?'0 · learner':' '+slot.slot+' · remote',
+                    String(slot.samples),format(slot.rate),format(slot.engine),
+                    format(slot.inference),format(slot.model),
+                    slot.slot===0?'—':format(slot.roundtrip),
+                ])cell(row,value);
+                tbody.append(row);
+            }
+            table.append(thead,tbody);
+            collectorStageProfiles.append(table);
+        }
+        const note=document.createElement('p');
+        note.textContent='Medians use up to 32 paired observations from the latest chart segment. Engine and inference timings are host-wall stage observations, not exclusive CPU or GPU time; stages may overlap. Remote roundtrip includes transfer and worker computation, not network latency alone. Missing columns mean the recorded samples did not contain the metric consistently; no values are inferred.';
+        collectorStageProfiles.append(note);
+    }
+    function renderMeasuredSeconds(runs) {
+        secondsMetricsDetails.replaceChildren();
+        const profiles=runs.map(run=>({run,metrics:hubMeasuredSeconds(run)}))
+            .filter(item=>item.metrics.length);
+        secondsMetricsDetails.hidden=!profiles.length;
+        if(!profiles.length)return;
+        const heading=document.createElement('summary');
+        heading.textContent='Recorded time metrics ('+profiles.length+
+            ' run'+(profiles.length===1?'':'s')+', all projects)';
+        secondsMetricsDetails.append(heading);
+        const format=value=>value.toLocaleString(undefined,{
+            maximumFractionDigits:4});
+        for(const {run,metrics} of profiles) {
+            const caption=document.createElement('p');
+            caption.textContent='Run '+run.slot+' · '+run.job.id.slice(-8)+
+                ' · top '+metrics.length+' metrics by recorded median';
+            secondsMetricsDetails.append(caption);
+            const table=document.createElement('table');
+            const header=document.createElement('tr');
+            for(const title of ['Metric','Samples','Median (s)',
+                'Minimum (s)','Maximum (s)']) {
+                const th=document.createElement('th');
+                th.textContent=title;
+                header.append(th);
+            }
+            const thead=document.createElement('thead');
+            thead.append(header);
+            const tbody=document.createElement('tbody');
+            for(const metric of metrics) {
+                const tr=document.createElement('tr');
+                for(const item of [metric.key,String(metric.samples),
+                    format(metric.median),format(metric.minimum),
+                    format(metric.maximum)])cell(tr,item);
+                tbody.append(tr);
+            }
+            table.append(thead,tbody);
+            secondsMetricsDetails.append(table);
+        }
+        const note=document.createElement('p');
+        note.textContent='Read-only medians from up to 64 observations in each run’s latest contiguous chart segment, with at least five samples per metric. Second- and millisecond-valued measurements are normalized to seconds. Known cumulative elapsed_training_seconds and active_training_time clocks are omitted from this ranking but remain chartable and exportable. Other duration metrics may be cumulative; overlapping stages cannot be added. These chart samples are not full-resolution profiling evidence. Export the histories for definitive bottleneck analysis.';
+        secondsMetricsDetails.append(note);
+    }
+    function renderRolloutRecommendations(runs) {
+        rolloutRecommendations.replaceChildren();
+        rolloutRecommendations.hidden=project!=='tinybrains';
+        if(project!=='tinybrains')return;
+        const heading=document.createElement('strong');
+        heading.textContent='Next-run distributed rollout action weights';
+        rolloutRecommendations.append(heading);
+        const suggestions=runs.map(run=>({
+            run,recommendation:hubRolloutWeightRecommendation(run),
+        })).filter(item=>item.recommendation);
+        if(!suggestions.length) {
+            const note=document.createElement('p');
+            note.textContent='Select a finished or stopped distributed TinyBrains learner with at least five complete paired collector throughput and action-target observations in its latest segment. No weights are inferred from utilization or missing samples.';
+            rolloutRecommendations.append(note);
+            return;
+        }
+        for(const {run,recommendation:r} of suggestions) {
+            const entry=document.createElement('p');
+            const format=value=>value.toLocaleString(undefined,{maximumFractionDigits:1});
+            entry.textContent='Run '+run.slot+' · '+r.job_id.slice(-8)+
+                ' · '+r.samples+' paired updates · observed decisions/s ['+
+                r.rates.map(format).join(', ')+'] · current weights ['+
+                r.current.join(', ')+'] · proposed ['+r.weights.join(', ')+']. ';
+            const action=button('Use proposed weights in Design',()=>{
+                const key=r.profile+':'+r.profile_sha256;
+                if(![...tinyBrainsSelect.options].some(option=>option.value===key)) {
+                    feedback('hub-compare-scaling-note',
+                        'The original learner profile is not available in Design. Review the printed weights and the current approved machines manually.');
+                    return;
+                }
+                tinyBrainsSelect.value=key;
+                tinyBrainsRemote.checked=true;
+                tinyBrainsWeights.value=r.weights.join(',');
+                selectTab('design');
+                feedback('hub-config-message',
+                    'Proposed weights copied to the Design input only. Click Use profile and update count, review the entire draft (including approved remote count and checkpoint lineage), and Save. No job or reservation was changed.');
+            });
+            entry.append(action);
+            rolloutRecommendations.append(entry);
+        }
+        const disclaimer=document.createElement('p');
+        disclaimer.textContent='Advisory starting estimates only: recent delivered rates depend on the previous work shares, network and workload. The suggested weights do not change CPU/GPU leases, optimize the live job, or certify higher PPO steps/s. Validate with a new fixed-allocation run.';
+        rolloutRecommendations.append(disclaimer);
     }
     function renderComparisonEvaluations(runs) {
         const table=$('hub-compare-evaluation-rows');
@@ -1089,6 +1862,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     function drawComparisonCharts(runs,keys,xKey) {
         const container=$('hub-compare-plots');
+        lastComparisonChart={runs,keys,xKey};
+        lastComparisonChartWidth=container.clientWidth;
         container.replaceChildren();
         if(!runs.length||!keys.length) {
             const notice=document.createElement('p');
@@ -1106,28 +1881,49 @@ document.addEventListener('DOMContentLoaded', () => {
             section.className='hub-progress-plot';
             const title=document.createElement('h3');
             title.textContent=key.slice(7);
+            const header=document.createElement('div');
+            header.className='hub-plot-header';
+            const averageLabel=document.createElement('label');
+            averageLabel.className='hub-plot-average-toggle';
+            averageLabel.title='Arithmetic mean of retained chart samples for each run, not weighted by elapsed time or steps.';
+            const average=document.createElement('input');
+            average.type='checkbox';
+            const averageId=project+'|'+key;
+            average.checked=comparisonChartAverages.get(averageId)===true;
+            averageLabel.append(average,document.createTextNode(' Show sample mean'));
+            header.append(title,averageLabel);
+            const description=document.createElement('p');
+            description.className='hub-plot-description';
+            description.textContent=hubMetricDescription(key.slice(7));
             const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
             svg.setAttribute('role','img');
-            svg.setAttribute('viewBox','0 0 900 320');
-            svg.setAttribute('preserveAspectRatio','xMidYMid meet');
+            svg.setAttribute('preserveAspectRatio','xMinYMin meet');
             svg.style.width='100%';
-            const legend=document.createElement('p');
-            legend.className='muted';
-            for(const run of runs) {
-                const swatch=document.createElement('span');
-                swatch.style.display='inline-block';
-                swatch.style.borderTop='4px solid '+run.color;
-                swatch.style.width='22px';
-                swatch.style.margin='0 5px 3px 12px';
-                legend.append(swatch,document.createTextNode(
-                    run.slot+' · '+run.job.configuration_name+'  '));
-            }
-            section.append(title,svg,legend);
+            svg.style.height='330px';
+            const legend=document.createElement('div');
+            legend.className='hub-plot-legend';
+            const tooltip=document.createElement('div');
+            tooltip.className='hub-plot-tooltip';
+            tooltip.hidden=true;
+            section.append(header,description,svg,tooltip,legend);
             container.append(section);
-            drawComparisonChart(runs,key,xKey,svg);
+            const redraw=()=>drawComparisonChart(runs,key,xKey,svg,
+                legend,tooltip,average.checked);
+            average.addEventListener('change',()=>{
+                comparisonChartAverages.set(averageId,average.checked);
+                redraw();
+            });
+            redraw();
         }
     }
-    function drawComparisonChart(runs,key,xKey,svg) {
+    function drawComparisonChart(runs,key,xKey,svg,legend,tooltip,showAverage) {
+        const width=Math.max(320,Math.round(svg.getBoundingClientRect().width||
+            svg.clientWidth||svg.parentElement?.clientWidth||900));
+        svg.setAttribute('viewBox','0 0 '+width+' 330');
+        legend.replaceChildren();
+        tooltip.hidden=true;
+        svg.onpointermove=null;
+        svg.onpointerleave=null;
         const axisLabel=comparisonAxisLabel(xKey);
         const genericKey=key.startsWith('metric:')?key.slice(7):null;
         const units=genericKey?[...new Set(runs.flatMap(run=>
@@ -1149,26 +1945,26 @@ document.addEventListener('DOMContentLoaded', () => {
             return item;
         };
         if(units.length>1) {
-            node('text',{x:450,y:160,'text-anchor':'middle'},
+            node('text',{x:width/2,y:160,'text-anchor':'middle'},
                 'Selected metric uses incompatible units across runs');
             return;
         }
         svg.setAttribute('aria-label',metric.label+
             ' by '+axisLabel.toLowerCase()+' for selected runs');
-        const usable=p=>Number.isSafeInteger(p[xKey])&&p[xKey]>=0&&
+        const usable=p=>hubComparisonAxisValue(p,xKey)!==null&&
             Number.isFinite(hubMetricValue(p,key));
         const series=runs.map(run=>({
             ...run,valid:hubComparisonPoints(run),
         }));
         const values=series.flatMap(r=>r.valid
             .filter(usable)
-            .map(p=>({x:p[xKey],y:hubMetricValue(p,key)})));
+            .map(p=>({x:hubComparisonAxisValue(p,xKey),y:hubMetricValue(p,key)})));
         if(!values.length) {
-            node('text',{x:450,y:160,'text-anchor':'middle'},
+            node('text',{x:width/2,y:160,'text-anchor':'middle'},
                 'No recorded samples for the selected runs and metric');
             return;
         }
-        const bounds={left:85,right:865,top:64,bottom:265};
+        const bounds={left:85,right:width-24,top:20,bottom:270};
         let xmin=Infinity,xmax=-Infinity,minY=0,maxY=0.001;
         for(const point of values) {
             xmin=Math.min(xmin,point.x);xmax=Math.max(xmax,point.x);
@@ -1190,40 +1986,135 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         for(let i=0;i<=4;i++) {
             const value=xmin+(xmax-xmin)*i/4,xp=x(value);
-            node('text',{x:xp,y:288,'text-anchor':'middle'},
+            node('text',{x:xp,y:295,'text-anchor':'middle'},
                 Math.round(value).toLocaleString());
         }
         node('line',{x1:bounds.left,y1:bounds.bottom,
             x2:bounds.right,y2:bounds.bottom,class:'plot-axis'});
         node('line',{x1:bounds.left,y1:bounds.top,
             x2:bounds.left,y2:bounds.bottom,class:'plot-axis'});
-        node('text',{x:450,y:313,'text-anchor':'middle'},
+        node('text',{x:width/2,y:320,'text-anchor':'middle'},
             axisLabel);
         const showPoints=series.reduce((n,run)=>n+run.valid.length,0)<=300;
         for(const run of series) {
-            let part=[];
+            const sampled=run.valid.filter(usable).map(p=>hubMetricValue(p,key));
+            const mean=sampled.length
+                ?sampled.reduce((sum,value)=>sum+value,0)/sampled.length:null;
+            if(showAverage&&mean!==null)
+                node('line',{x1:bounds.left,y1:y(mean),x2:bounds.right,y2:y(mean),
+                    stroke:run.color,'stroke-dasharray':'7 5',class:'plot-average'});
+            const legendItem=document.createElement('span');
+            legendItem.className='hub-plot-legend-entry';
+            const swatch=document.createElement('span');
+            swatch.className='hub-plot-legend-swatch';
+            swatch.style.borderColor=run.color;
+            const unit=units[0]||'';
+            const formatted=value=>unit==='ratio'
+                ?(value*100).toFixed(2)+'%'
+                :Number(value.toPrecision(6)).toLocaleString()+
+                    (unit==='seconds'?' s':unit==='rate'?' /s':
+                        unit==='mb'?' MiB':unit==='watts'?' W':
+                        unit==='scalar'||unit==='count'?'':' '+unit);
+            legendItem.append(swatch,document.createTextNode(
+                run.slot+' · '+run.job.configuration_name+
+                (showAverage&&mean!==null?' · mean '+formatted(mean):'')));
+            legend.append(legendItem);
+            let part=[],previousX=null;
             const flush=()=>{
                 if(part.length>1)
                     node('path',{d:part.map((p,i)=>(i?'L':'M')+
-                        x(p[xKey]).toFixed(1)+' '+
+                        x(hubComparisonAxisValue(p,xKey)).toFixed(1)+' '+
                         y(hubMetricValue(p,key)).toFixed(1)).join(' '),
                         stroke:run.color,class:'plot-line'});
                 else if(part.length===1&&!showPoints)
-                    node('circle',{cx:x(part[0][xKey]),
+                    node('circle',{cx:x(hubComparisonAxisValue(part[0],xKey)),
                         cy:y(hubMetricValue(part[0],key)),r:3.5,
                         fill:run.color,class:'plot-point'});
                 part=[];
             };
             for(const point of run.valid) {
-                if(point.break_before||!usable(point))flush();
-                if(!usable(point))continue;
+                const currentX=hubComparisonAxisValue(point,xKey);
+                if(point.break_before||!usable(point)||
+                    previousX!==null&&currentX!==null&&currentX<previousX)
+                    flush();
+                if(!usable(point)) {
+                    previousX=null;
+                    continue;
+                }
+                previousX=currentX;
                 part.push(point);
                 if(showPoints)
-                    node('circle',{cx:x(point[xKey]),cy:y(hubMetricValue(point,key)),
+                    node('circle',{cx:x(hubComparisonAxisValue(point,xKey)),
+                        cy:y(hubMetricValue(point,key)),
                         r:3.5,fill:run.color,class:'plot-point'});
             }
             flush();
         }
+        const points=series.flatMap(run=>run.valid.filter(usable).map(point=>({
+            run,point,cx:x(hubComparisonAxisValue(point,xKey)),
+            cy:y(hubMetricValue(point,key)),
+            value:hubMetricValue(point,key),
+            axis:hubComparisonAxisValue(point,xKey),
+        })));
+        // Keep the plot area hoverable even when only one or two samples exist.
+        node('rect',{x:bounds.left,y:bounds.top,width:bounds.right-bounds.left,
+            height:bounds.bottom-bounds.top,fill:'transparent',
+            class:'plot-hover-area'});
+        const guide=node('line',{x1:bounds.left,x2:bounds.left,
+            y1:bounds.top,y2:bounds.bottom,class:'plot-crosshair',
+            visibility:'hidden','pointer-events':'none'});
+        const focus=node('circle',{cx:bounds.left,cy:bounds.bottom,r:6,
+            fill:'white',stroke:'black','stroke-width':2,
+            visibility:'hidden','pointer-events':'none'});
+        const hide=()=>{
+            tooltip.hidden=true;
+            guide.setAttribute('visibility','hidden');
+            focus.setAttribute('visibility','hidden');
+        };
+        svg.onpointerleave=hide;
+        svg.onpointermove=event=>{
+            const rect=svg.getBoundingClientRect();
+            const mouseX=(event.clientX-rect.left)*width/rect.width;
+            const mouseY=(event.clientY-rect.top)*330/rect.height;
+            if(mouseX<bounds.left||mouseX>bounds.right||
+                mouseY<bounds.top||mouseY>bounds.bottom)return hide();
+            let nearest=null,best=Infinity;
+            for(const sample of points) {
+                const distance=Math.hypot(mouseX-sample.cx,mouseY-sample.cy);
+                if(distance<best){best=distance;nearest=sample;}
+            }
+            if(!nearest)return hide();
+            guide.setAttribute('x1',nearest.cx);
+            guide.setAttribute('x2',nearest.cx);
+            guide.setAttribute('visibility','visible');
+            focus.setAttribute('cx',nearest.cx);
+            focus.setAttribute('cy',nearest.cy);
+            focus.setAttribute('stroke',nearest.run.color);
+            focus.setAttribute('visibility','visible');
+            const unit=units[0]||'';
+            const value=unit==='ratio'
+                ?(nearest.value*100).toFixed(2)+'%'
+                :Number(nearest.value.toPrecision(7)).toLocaleString()+
+                    (unit==='seconds'?' s':unit==='rate'?' /s':
+                        unit==='mb'?' MiB':unit==='watts'?' W':
+                        unit==='scalar'||unit==='count'?'':' '+unit);
+            const timestamp=nearest.point.source_modified_at;
+            tooltip.textContent=[
+                'Nearest recorded sample',
+                nearest.run.slot+' · '+nearest.run.job.configuration_name,
+                genericKey+': '+value,
+                axisLabel+': '+Number(nearest.axis.toPrecision(8)).toLocaleString(),
+                'Published: '+(timestamp?new Date(timestamp).toLocaleString():'unknown'),
+                'Segment: '+(nearest.point.segment_id||'unknown'),
+            ].join('\n');
+            const parent=svg.parentElement;
+            const box=parent.getBoundingClientRect();
+            tooltip.style.left=Math.max(8,Math.min(parent.clientWidth-265,
+                event.clientX-box.left+14))+'px';
+            tooltip.style.top=Math.max(38,Math.min(parent.clientHeight-126,
+                event.clientY-box.top+14))+'px';
+            tooltip.hidden=false;
+        };
     }
     function exportComparison(format) {
         if(!state)
@@ -1264,7 +2155,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 evaluation_candidates:job.evaluation_candidates||null,
                 stop_requested_at:job.stop_requested_at||null,
                 points:hubComparisonPoints({job,points:byJob.get(id)||[]})
-                    .map(point=>({...point,metrics:Object.fromEntries(
+                    .map(point=>({...point,
+                        x_value:hubComparisonAxisValue(
+                            point,$('hub-compare-x-axis').value),
+                        metrics:Object.fromEntries(
                         Object.entries(point.metrics||{})
                             .filter(([name])=>chosen.has(name)))})),
             };
@@ -1279,7 +2173,7 @@ document.addEventListener('DOMContentLoaded', () => {
             x_axis:$('hub-compare-x-axis').value,
             metric:selectedComparisonMetrics()[0]||null,metrics,
             source:'Experiment Hub validated project metrics',
-            interpretation:'Training curves are observational and use cumulative steps. Compare independent evaluation receipts only across matched suite definitions and scenarios.',
+            interpretation:'Training curves are observational. Their selected horizontal axis is a recorded counter or trainer time measurement, never Hub heartbeat time. Compare independent evaluation receipts only across matched suite definitions and scenarios.',
             runs,
             candidate_selection_plans:(state.candidate_selections||[]).filter(p=>
                 p.candidate_job_ids?.some(id=>runs.some(r=>r.job_id===id))),
@@ -1315,7 +2209,9 @@ document.addEventListener('DOMContentLoaded', () => {
             feedback('hub-compare-export-message','Preparing complete job archives; no training files will be modified.');
             const requested=await action('hub/exports',{
                 project_id:project,job_ids:ids,
-                metrics:selectedComparisonMetrics().map(key=>key.slice(7)),
+                metrics:exportAllMetricsToggle.checked?[]:
+                    selectedComparisonMetrics().map(key=>key.slice(7)),
+                all_recorded_metrics:exportAllMetricsToggle.checked,
                 include_replays:$('hub-compare-export-replays').checked,
             });
             // An export is read-only and asynchronous. Poll its status rather
@@ -1531,8 +2427,16 @@ document.addEventListener('DOMContentLoaded', () => {
         const live=job.live_execution;
         const p=live?.progress||job.final_progress;
         if(p?.source==='hub-metrics-v1') {
-            const preferred=['total_ppo_updates','update_wall_time',
-                'ant_decisions_per_second','collection_seconds','optimization_seconds'];
+            // Compact Monitor summaries should show the trainer's recorded
+            // learning outcomes as well as steps; timing-only summaries
+            // can misleadingly look like missing learning telemetry.
+            const preferred=['selection_candidate_survival_score',
+                'selection_incumbent_survival_score','selection_champion_promoted',
+                'training_completed_matches','training_win_rate',
+                'training_score_rate','training_mean_score_margin',
+                'training_mean_score','loss','policy_loss','value_loss',
+                'entropy','total_ppo_updates','ant_decisions_per_second',
+                'update_wall_time','collection_seconds','optimization_seconds'];
             const priority=preferred.filter(key=>Object.hasOwn(p.metrics,key));
             const entries=[...priority.map(key=>[key,p.metrics[key]]),
                 ...Object.entries(p.metrics).filter(([key])=>!priority.includes(key))];
@@ -1576,33 +2480,94 @@ document.addEventListener('DOMContentLoaded', () => {
         return {suite_id:suite,min_trials:Number(trials),min_success_rate:Number(rate),
             ...(digest?{suite_sha256:digest}:{})};
     }
-    let jobMetricSelectionProject=null;
+    // New jobs inherit a project-specific measurement priority, not a claim
+    // that every candidate metric is available in every worker version.
+    // Individual job choices remain editable without changing the project
+    // defaults or previously frozen jobs.
+    const defaultJobMetrics={
+        tinybrains:[
+            'training_score_rate','training_win_rate',
+            'training_mean_score_margin','training_completed_matches',
+            'food_gathered_exact','ant_decisions_per_second',
+            'total_ppo_updates','update_wall_time','job_cpu_cores',
+            'host_gpu_busy_pct',
+        ],
+        courier:[
+            'selection_candidate_mean_deliveries',
+            'selection_candidate_pickup_rate',
+            'selection_candidate_mean_steps_per_delivery',
+            'selection_candidate_survival_rate',
+            'selection_candidate_mean_lifespan',
+            'selection_candidate_gross_energy_per_step',
+            'training_recent_mean_completed_lifespan',
+            'active_training_time','job_cpu_cores','host_cpu_busy_pct',
+        ],
+        tinybrains_rollout:[
+            'ant_decisions_per_second','engine_steps_per_second',
+            'job_cpu_cores','host_cpu_busy_pct',
+        ],
+        other:['active_training_time','job_cpu_cores','job_memory_mb',
+            'host_cpu_busy_pct'],
+    };
+    const jobMetricChoicesByProject=new Map();
     // Availability is adapter-driven. These are discoverable requests, not a
     // promise that every project provides every physical/game measurement.
     const knownLearningMetrics=[
         'training_wins','training_losses','training_draws',
         'training_completed_matches','training_win_rate','training_score_rate',
         'training_mean_score','training_mean_score_margin',
+        'training_scored_matches','training_opponent_margin_matches',
         'training_mean_match_turns','food_gathered_exact',
+        'food_gathered_verified_matches',
         'food_disappearances_near_own_ant','visible_food_mean',
-        'combat_kills_exact','births_observed','deaths_observed',
+        'combat_kills_exact','combat_kills_verified_matches',
+        'births_observed','deaths_observed',
         'population_mean','population_peak','combat_exposure_fraction',
+        'selection_candidate_survival_score','selection_incumbent_survival_score',
+        'selection_champion_promoted','selection_evaluation_round',
+        'training_recent_mean_completed_lifespan','training_recent_deaths',
+        'training_mean_active_age','training_oldest_active_age',
+        'training_active_couriers','training_mean_active_colony_age',
+        'training_active_colonies',
+        'selection_candidate_survival_rate','selection_candidate_mean_lifespan',
+        'selection_candidate_mean_deliveries','selection_candidate_pickup_rate',
+        'selection_candidate_mean_steps_per_delivery',
+        'selection_candidate_gross_energy_per_step',
+        'selection_candidate_mean_feedings','selection_candidate_mean_births',
+        'benchmark_round','benchmark_survival_rate','benchmark_mean_lifespan',
+        'benchmark_mean_deliveries','benchmark_pickup_rate',
+        'benchmark_mean_steps_per_delivery','benchmark_gross_energy_per_step',
+        'benchmark_mean_feedings','benchmark_mean_births',
         'terminal_rewards','episodes_ended','loss','policy_loss',
         'value_loss','baseline_loss','entropy','local_elo','mean_reward'];
     const knownPerformanceMetrics=[
         'total_ppo_updates','update_wall_time','elapsed_training_seconds',
+        'active_training_time',
         'engine_steps','engine_steps_per_second','ant_decisions',
         'ant_decisions_per_second','group_states','group_states_per_second',
         'collection_seconds','rollout_model_refresh_seconds',
+        'rollout_engine_step_seconds','rollout_learner_inference_seconds',
         'optimization_seconds','overlap_seconds',
         'remote_policy_snapshot_seconds',
         'remote_opponent_snapshot_seconds','ppo_microbatches','states_per_microbatch','actor_grad_norm',
         'group_grad_norm','baseline_grad_norm','policy_lag',
         'rss_mb','job_memory_mb','job_peak_memory_mb','job_cpu_cores',
-        'job_cpu_lease_utilization_pct',
+        'job_cpu_lease_utilization_pct','job_process_tasks',
+        'job_cpu_throttled_seconds','job_cpu_throttle_events',
+        'job_cpu_quota_periods','job_cpu_quota_throttled_periods_pct',
+        'job_memory_lease_utilization_pct',
         'host_cpu_busy_pct','host_gpu_busy_pct','host_gpu_vram_mb',
-        'host_gpu_0_busy_pct','host_gpu_0_used_vram_mb',
-        'host_gpu_1_busy_pct','host_gpu_1_used_vram_mb',
+        'host_gpu_temperature_c','host_gpu_hotspot_temperature_c',
+        'host_gpu_power_w',
+        // The wire inventory supports up to 32 physical devices. Operators
+        // can prioritize metrics for any pinned GPU before its first run.
+        ...Array.from({length:32},(_,i)=>[
+            'host_gpu_'+i+'_busy_pct',
+            'host_gpu_'+i+'_used_vram_mb',
+            'host_gpu_'+i+'_temperature_c',
+            'host_gpu_'+i+'_hotspot_temperature_c',
+            'host_gpu_'+i+'_power_w',
+        ]).flat(),
         'data_preparation_seconds','inference_seconds','forward_seconds',
         'backward_seconds','optimizer_step_seconds','cpu_wait_seconds',
         'gpu_transfer_seconds','network_transfer_seconds',
@@ -1614,7 +2579,7 @@ document.addEventListener('DOMContentLoaded', () => {
         'ppo_backward_seconds','ppo_metric_readback_seconds',
         'ppo_gradient_processing_seconds','ppo_optimizer_step_seconds',
         'ppo_parameter_finite_check_seconds','ppo_gpu_stream_sync_seconds',
-        'ppo_minibatches','ppo_microbatches','ppo_board_pixel_samples',
+        'ppo_minibatches','ppo_board_pixel_samples',
         'ppo_max_board_cells','ppo_unique_board_shapes',
         'evaluation_seconds','collector_count',
         // The TinyBrains learner contributes slot 0; up to eight remote
@@ -1624,16 +2589,20 @@ document.addEventListener('DOMContentLoaded', () => {
             'collector_'+i+'_engine_steps',
             'collector_'+i+'_action_target',
             'collector_'+i+'_elapsed_seconds',
+            'collector_'+i+'_rollout_engine_step_seconds',
+            'collector_'+i+'_learner_inference_seconds',
             'collector_'+i+'_roundtrip_seconds',
             'collector_'+i+'_model_prepare_seconds',
+            'collector_'+i+'_snapshot_cache_files',
+            'collector_'+i+'_snapshot_cache_bytes',
             'collector_'+i+'_decisions_per_second',
             'collector_'+i+'_engine_steps_per_second',
         ]).flat()];
     function renderJobMetricSelection() {
         const select=$('hub-job-metrics');
         if(!select)return;
-        const prior=jobMetricSelectionProject===project
-            ?new Set([...select.selectedOptions].map(o=>o.value)):new Set();
+        const prior=jobMetricChoicesByProject.get(project) ??
+            new Set(defaultJobMetrics[project]||defaultJobMetrics.other);
         const observed=new Set();
         for(const job of state?.jobs||[]) {
             if(job.project_id!==project)continue;
@@ -1646,26 +2615,29 @@ document.addEventListener('DOMContentLoaded', () => {
                 for(const point of item.points||[])
                     for(const name of Object.keys(point.metrics||{}))observed.add(name);
         const all=[...new Set([...knownLearningMetrics,...knownPerformanceMetrics,
-            ...observed])].filter(key=>/^[a-z][a-z0-9_]{0,39}$/.test(key))
+            ...observed])].filter(key=>/^[a-z][a-z0-9_]{0,63}$/.test(key))
             .sort();
         select.replaceChildren(...all.map(key=>{
             const option=new Option(key+(observed.has(key)
                 ?' · recorded':' · not yet observed'),key);
-            option.title=observed.has(key)
+            option.dataset.description=hubMetricDescription(key);
+            option.title=option.dataset.description+'\n'+(observed.has(key)
                 ?'This metric has been published by a job in this project.'
-                :'Selecting a metric does not install missing project instrumentation.';
+                :'Selecting a metric does not install missing project instrumentation.');
             option.selected=prior.has(key);
             option.dataset.category=knownLearningMetrics.includes(key)
                 ?'Learning outcomes':knownPerformanceMetrics.includes(key)
                     ?'Performance and resources':'Other observed metrics';
             return option;
         }));
-        jobMetricSelectionProject=project;
         renderMetricPicker('hub-job-metrics','hub-job-metric-picker');
     }
     function selectedJobMetrics() {
         return [...$('hub-job-metrics').selectedOptions].map(o=>o.value);
     }
+    $('hub-job-metrics').addEventListener('change',()=>{
+        jobMetricChoicesByProject.set(project,new Set(selectedJobMetrics()));
+    });
     function display() {
         if(!state)return;
         const current=project;
@@ -1745,7 +2717,7 @@ document.addEventListener('DOMContentLoaded', () => {
             })
             .map(j=>j.continuation_of_job_id||j.after_job_id));
         const availableParents=(state.jobs||[]).filter(j=>
-            ['tinybrains','courier','bees_native'].includes(project)&&j.project_id===project&&!successors.has(j.id)&&(
+            ['tinybrains','courier'].includes(project)&&j.project_id===project&&!successors.has(j.id)&&(
                 j.assigned_machine_id&&j.dispatch_id&&(
                     (j.status==='finished'&&
                         (j.checkpoint_ready_verified===true||
@@ -1830,16 +2802,16 @@ document.addEventListener('DOMContentLoaded', () => {
         kind.replaceChildren(
             new Option('Independent fresh jobs (no shared checkpoint)','independent'),
             new Option('Independent trials (no dependency)','batch'),
-            ...(['tinybrains','courier','bees_native'].includes(project)
+            ...(['tinybrains','courier'].includes(project)
                 ?[new Option('Checkpoint-continuation stages','continuation')]
                 :[]));
         if(pipelineKindProject===project&&
             ['independent','batch','continuation'].includes(oldKind)&&
-            (oldKind!=='continuation'||['tinybrains','courier','bees_native'].includes(project)))
+            (oldKind!=='continuation'||['tinybrains','courier'].includes(project)))
             kind.value=oldKind;
-        else kind.value=['tinybrains','courier','bees_native'].includes(project)?'continuation':'independent';
+        else kind.value=['tinybrains','courier'].includes(project)?'continuation':'independent';
         pipelineKindProject=project;
-        const checkpointPipeline=['tinybrains','courier','bees_native'].includes(project)&&kind.value==='continuation';
+        const checkpointPipeline=['tinybrains','courier'].includes(project)&&kind.value==='continuation';
         const trialBatch=kind.value==='batch';
         $('hub-pipeline-add').textContent=trialBatch?'Add trial':'Add stage';
         $('hub-pipeline-queue').textContent=trialBatch?'Queue all trials':'Queue entire pipeline';
@@ -2048,6 +3020,25 @@ document.addEventListener('DOMContentLoaded', () => {
                 j.distributed_rollout_managed===true
                 ?state.jobs.filter(worker=>worker.project_id==='tinybrains_rollout'&&
                     worker.frozen_parameters?.learner_job_id===j.id):[];
+            const scheduledGroup=(state.distributed_group_plans||[])
+                .filter(plan=>plan.learner_job_id===j.id).at(-1);
+            const unresolvedScheduledGroup=scheduledGroup&&
+                ['pending','needs_review'].includes(scheduledGroup.status);
+            const distributedLaunch=(state.distributed_launches||[]).find(launch=>
+                launch.learner_job_id===j.id);
+            const launchText=distributedLaunch
+                ?' · Coordinated Start '+distributedLaunch.status+
+                    (distributedLaunch.recovery_pending?' (coordinator restart recovery)':'')+
+                    ': '+distributedLaunch.reason
+                :'';
+            const scheduleText=scheduledGroup
+                ?' · Group scheduled Start '+scheduledGroup.status+
+                    (scheduledGroup.recovery_pending?' (restart reconciliation)':'')+
+                    ': '+scheduledGroup.reason
+                :'';
+            const abortText=j.distributed_abort_requested_at
+                ?' · Startup abort requested: native collector shutdown and verified claim release pending'
+                :'';
             const distributedSummary=groupWorkers.length
                 ?' · Distributed collectors: '+groupWorkers.map(worker=>
                     (worker.assigned_machine_id||'unassigned')+' '+worker.status+
@@ -2058,7 +3049,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     ' ('+j.resource_bundle.index+'/'+j.resource_bundle.size+')'
                 :'';
             const statusCell=cell(tr,status+lineage+promoted+gpuProof+readinessText+
-                checkpointRecovery+noTrainer+distributedSummary+bundleLabel+
+                checkpointRecovery+noTrainer+distributedSummary+launchText+scheduleText+abortText+bundleLabel+
                 (hasSuccessor&&['waiting_adapter','waiting_predecessor'].includes(j.status)
                     ?' · Cancel downstream stage first':''));
 
@@ -2073,7 +3064,13 @@ document.addEventListener('DOMContentLoaded', () => {
                     return description+(observed==null?''
                         :' · '+observed+' MiB host GPU used')+
                         (physical?.gpu_busy_pct==null?''
-                            :' · '+physical.gpu_busy_pct+'% host GPU busy');
+                            :' · '+physical.gpu_busy_pct+'% host GPU busy')+
+                        (physical?.power_w==null?''
+                            :' · '+physical.power_w+' W host GPU')+
+                        (physical?.temperature_c==null?''
+                            :' · '+physical.temperature_c+'°C GPU')+
+                        (physical?.hotspot_temperature_c==null?''
+                            :' · '+physical.hotspot_temperature_c+'°C hotspot');
                 });
             const resourceText=j.resources.cpus+' CPU / '+j.resources.ram_mb+
                 ' MiB / '+j.resources.gpu_count+' GPUs'+
@@ -2157,6 +3154,149 @@ document.addEventListener('DOMContentLoaded', () => {
                     }catch(error){
                         feedback('hub-job-message',error.message);
                     }
+                    await reload();
+                }));
+            // The operator may start only the collectors, or preapprove one
+            // bounded learner Start that waits for authenticated running
+            // receipts. Neither control changes the group's fixed leases.
+            if(j.status==='waiting_adapter'&&!unresolvedScheduledGroup&&
+                j.distributed_rollout_managed===true&&groupWorkers.length>0&&
+                groupWorkers.every(worker=>worker.status==='waiting_adapter'&&
+                    !worker.dispatch_id&&worker.native_start_readiness?.eligible===true)) {
+                const startDistributed=async (coordinated,recovery=false)=>{
+                    const hosts=groupWorkers.map(worker=>worker.assigned_machine_id);
+                    const gpus=groupWorkers.reduce((sum,worker)=>
+                        sum+worker.resources.gpu_count,0);
+                    const cpus=groupWorkers.reduce((sum,worker)=>
+                        sum+worker.resources.cpus,0);
+                    if(!confirm('Authorize '+groupWorkers.length+
+                        ' pinned remote collectors across '+hosts.join(', ')+
+                        ' with '+cpus+' leased CPUs'+
+                        (gpus?' and '+gpus+' exclusive CUDA GPUs':'')+'? '+
+                        'These are real native processes; CUDA access on Windows is cooperative. '+
+                        'If any host, lease or native Start proof is invalid, no collector is authorized. '+
+                        (coordinated
+                            ?'Also authorize ONE learner GPU Start after all collectors have fresh verified running receipts. '+
+                                'This permission expires after 20 minutes. '+
+                                (recovery
+                                    ?'You separately approve coordinator restart recovery, but ONLY after all ORIGINAL remote dispatches are freshly verified running and the GPU learner passes its native admission and HMAC endpoint checks again. The learner and remote workers are NEVER retried. '
+                                    :'Coordinator restart disarms learner Start. ')+
+                                'Changed collector dispatches, lease owners, HMAC identities or unsafe machine states disarm launch. '+
+                                'If any collector exits before learner Start, remaining sidecars receive native Stop/cleanup requests. '
+                            :'The GPU learner must be started separately after verification. ')+
+                        'All resource allocations stay fixed.'))return;
+                    try {
+                        const result=await action('hub/distributed/tinybrains/start-collectors',{
+                            learner_job_id:j.id,
+                            expected_collector_job_ids:groupWorkers.map(worker=>worker.id),
+                            confirm_start:true,
+                            ...(coordinated?{
+                                start_learner_when_ready:true,confirm_learner_start:true,
+                                ...(recovery?{
+                                    resume_after_restart:true,confirm_restart_rearm:true,
+                                }:{}),
+                            }:{}),
+                        });
+                        feedback('hub-job-message',result.starts_authorized+
+                            ' remote collector Starts authorized atomically. '+
+                            (coordinated
+                                ?'Learner Start preapproved'+
+                                    (recovery?' for bounded restart-reconciled recovery':' for this coordinator session')+
+                                    '; awaiting verified remote native owners.'
+                                :'Start the learner separately after the collectors are verified.'));
+                        await reload();
+                    }catch(error){
+                        feedback('hub-job-message',error.message);
+                        await reload();
+                    }
+                };
+                actions.append(button('Start collectors only',()=>startDistributed(false)));
+                actions.append(button('Start coordinated group',()=>startDistributed(true)));
+                actions.append(button('Start recoverable coordinated group',()=>startDistributed(true,true)));
+            }
+            // An early approval may be granted immediately after the
+            // atomic reservation, before the worker lease receipts or GPU
+            // probe have finished. All future Starts use the existing
+            // qualified distributed collector/learner admission path.
+            if(j.distributed_rollout_managed===true&&
+                j.status==='waiting_adapter'&&!j.dispatch_id&&
+                !j.distributed_abort_requested_at&&groupWorkers.length>0&&
+                !unresolvedScheduledGroup&&!distributedLaunch?.status?.includes('pending')&&
+                j.lease_id&&j.assigned_machine_id&&
+                groupWorkers.every(worker=>worker.status==='waiting_adapter'&&
+                    !worker.dispatch_id&&worker.lease_id&&worker.assigned_machine_id)) {
+                const schedule=async recovery=>{
+                    if(!confirm('Approve the complete distributed TinyBrains group for one future native Start when ALL pinned collector and learner machine claims are ready? '+
+                        'This grants real remote collector Starts and a subsequent one-use GPU learner Start only after verified original native collector ownership. '+
+                        'The approval expires after 20 minutes. '+
+                        (recovery
+                            ?'You separately permit the pending approval to survive a coordinator restart, after fresh machine, lease, HMAC and GPU proof. '
+                            :'A coordinator restart disarms the approval. ')+
+                        'No dispatched worker or learner is retried, and all resources remain fixed. '+
+                        'Verified native terminal reports release capacity.'))return;
+                    try {
+                        const plan=await action('hub/distributed/tinybrains/schedule-start',{
+                            learner_job_id:j.id,
+                            expected_collector_job_ids:groupWorkers.map(worker=>worker.id),
+                            confirm_schedule:true,confirm_learner_start:true,
+                            ...(recovery?{resume_after_restart:true,
+                                confirm_restart_rearm:true}:{}),
+                        });
+                        feedback('hub-job-message',
+                            'Distributed group '+plan.status+
+                            '. The Hub will authorize all original remote collectors atomically when their leases and GPU admission are ready.');
+                    }catch(error){feedback('hub-job-message',error.message);}
+                    await reload();
+                };
+                actions.append(button('Schedule full group when ready',()=>schedule(false)));
+                actions.append(button('Schedule recoverable group',()=>schedule(true)));
+            }
+            if(unresolvedScheduledGroup)
+                actions.append(button('Cancel scheduled group',async()=>{
+                    if(!confirm('Revoke future collector and GPU learner Starts for this group? The queued native jobs and their resource claims stay unchanged.'))return;
+                    try {
+                        await action('hub/distributed/tinybrains/cancel-start-plan',{
+                            plan_id:scheduledGroup.id,confirm_cancel:true,
+                        });
+                        feedback('hub-job-message',
+                            'Scheduled distributed group Start revoked; no native process was created by cancellation.');
+                    }catch(error){feedback('hub-job-message',error.message);}
+                    await reload();
+                }));
+            if(distributedLaunch?.status==='pending')
+                actions.append(button('Cancel future learner Start',async()=>{
+                    if(!confirm('Disarm this pending coordinated learner Start? '+
+                        'The existing remote collector processes and all resource claims remain unchanged.'))return;
+                    try{
+                        await action('hub/distributed/tinybrains/cancel-launch',{
+                            learner_job_id:j.id,confirm_cancel:true,
+                        });
+                        feedback('hub-job-message',
+                            'Future learner Start disarmed. Native collectors and reservations remain unchanged.');
+                    }catch(error){feedback('hub-job-message',error.message);}
+                    await reload();
+                }));
+            if(j.distributed_rollout_managed===true&&
+                j.status==='waiting_adapter'&&!j.dispatch_id&&
+                !j.distributed_abort_requested_at&&groupWorkers.length>0)
+                actions.append(button('Abort distributed startup',async()=>{
+                    if(!confirm('Abandon this unstarted TinyBrains learner and its '+
+                        groupWorkers.length+' remote collectors? Undelivered Starts will be cancelled; '+
+                        'already dispatched collectors receive native Stop requests. '+
+                        'No running or uncertain process claim will be released without verified termination. '+
+                        'The learner GPU claim is released only after every sidecar is proven stopped '+
+                        'or absent. Native stops can remain pending on offline machines. '+
+                        'Existing checkpoints and runs are never deleted.'))return;
+                    try{
+                        const result=await action('hub/distributed/tinybrains/abort-startup',{
+                            learner_job_id:j.id,
+                            expected_collector_job_ids:groupWorkers.map(worker=>worker.id),
+                            confirm_abort:true,
+                        });
+                        feedback('hub-job-message',result.learner_cancelled
+                            ?'Distributed startup cancelled; all native collector claims safely released.'
+                            :'Distributed startup abort requested; awaiting sidecar Stop/absence receipts.');
+                    }catch(error){feedback('hub-job-message',error.message);}
                     await reload();
                 }));
             if(j.status==='waiting_adapter'&&readiness?.eligible===true)
@@ -2372,14 +3512,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 nativePeak,
                 final.peak_observed_memory_mb==null?null:
                     final.peak_observed_memory_mb.toLocaleString()+' MiB highest sampled RAM',
-                final.cpu_time_ns_high_water==null?null:
-                    (final.cpu_time_ns_high_water/1e9).toFixed(2)+' highest reported CPU seconds',
+                final.cpu_time_seconds_high_water!=null
+                    ?final.cpu_time_seconds_high_water.toFixed(2)+' highest reported CPU seconds'
+                    :final.cpu_time_ns_high_water==null?null:
+                        (final.cpu_time_ns_high_water/1e9).toFixed(2)+' highest reported CPU seconds',
             ].filter(Boolean).join(' · '):live?[
                 nativePeak,
                 live.memory_current_mb==null?null:
                     live.memory_current_mb.toLocaleString()+' MiB RAM',
-                live.cpu_time_ns==null?null:
-                    Math.round(live.cpu_time_ns/1e9).toLocaleString()+' CPU seconds',
+                live.cpu_time_seconds!=null
+                    ?Math.round(live.cpu_time_seconds).toLocaleString()+' CPU seconds'
+                    :live.cpu_time_ns==null?null:
+                        Math.round(live.cpu_time_ns/1e9).toLocaleString()+' CPU seconds',
                 Number.isFinite(live.cpu_cores_used)
                     ?live.cpu_cores_used.toFixed(2)+' average CPU cores':null,
             ].filter(Boolean).join(' · '):'';
@@ -2516,7 +3660,11 @@ document.addEventListener('DOMContentLoaded', () => {
             const discovered=(m.observed_gpus||[]).map(g=>
                 g.pci_address+' ('+g.vram_mb+' MiB'+
                 (g.used_vram_mb==null?'':', '+g.used_vram_mb+' MiB used')+
-                (g.gpu_busy_pct==null?'':', '+g.gpu_busy_pct+'% host busy')+')');
+                (g.gpu_busy_pct==null?'':', '+g.gpu_busy_pct+'% host busy')+
+                (g.power_w==null?'':', '+g.power_w+' W host GPU')+
+                (g.temperature_c==null?'':', '+g.temperature_c+'°C GPU')+
+                (g.hotspot_temperature_c==null?'':', '+g.hotspot_temperature_c+
+                    '°C hotspot')+')');
             cell(tr,(configured.join(' / ')||'No configured GPUs')+
                 (discovered.length?' · Detected '+(m.agent_platform==='win32'?'NVIDIA':'AMD')+' GPUs: '+
                     discovered.join(', '):''));
@@ -2669,6 +3817,16 @@ document.addEventListener('DOMContentLoaded', () => {
         b.addEventListener('click',()=>selectTab(b.dataset.hubGo));
     addComparisonSlot();
     addComparisonSlot();
+    if(typeof ResizeObserver==='function') {
+        const plotResize=new ResizeObserver(entries=>{
+            const width=Math.round(entries[0].contentRect.width);
+            if(width>0&&width!==lastComparisonChartWidth&&
+                lastComparisonChart&&tab==='compare')
+                drawComparisonCharts(lastComparisonChart.runs,
+                    lastComparisonChart.keys,lastComparisonChart.xKey);
+        });
+        plotResize.observe($('hub-compare-plots'));
+    }
     $('hub-compare-add-run').addEventListener('click',()=>{
         addComparisonSlot();
         renderComparison();
@@ -2685,6 +3843,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 feedback('hub-compare-export-message',String(error.message||error));
             }
         });
+    const exportAllMetricsLabel=document.createElement('label');
+    const exportAllMetricsToggle=document.createElement('input');
+    exportAllMetricsToggle.type='checkbox';
+    exportAllMetricsToggle.id='hub-export-all-recorded-metrics';
+    exportAllMetricsLabel.append(exportAllMetricsToggle,
+        document.createTextNode(' Export every recorded metric, including those not retained in charts'));
+    $('hub-compare-export-full').insertAdjacentElement(
+        'beforebegin',exportAllMetricsLabel);
     $('hub-compare-export-full').addEventListener('click',async()=>{
         try{await exportCompleteComparison();}
         catch(error){
@@ -3211,7 +4377,7 @@ document.addEventListener('DOMContentLoaded', () => {
     $('hub-pipeline-queue').addEventListener('click',async()=>{
         if(project==='bees'||!state)return;
         try {
-            const checkpointPipeline=['tinybrains','courier','bees_native'].includes(project)&&
+            const checkpointPipeline=['tinybrains','courier'].includes(project)&&
                 $('hub-pipeline-kind').value==='continuation';
             const trialBatch=$('hub-pipeline-kind').value==='batch';
             const configs=state.configurations.filter(c=>checkpointPipeline
@@ -3339,6 +4505,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 selectedMachine?.tinybrains_remote_rollout_endpoints?.length)
                 throw Error('Supply one resource budget for each physically approved remote collector.');
             const resources=JSON.parse($('hub-job-resources').value);
+            // The distributed queue must preserve the same Train metrics as
+            // ordinary queueing. Prioritize paired collector evidence for
+            // a subsequent *advisory* allocation recommendation.
+            const metricSelection=hubDistributedMetricSelection(
+                selectedJobMetrics(),budgets.length);
             if(!confirm('Queue '+(predecessor?'checkpoint continuation':'new TinyBrains learner')+
                 ' on '+distributedMachine.value+
                 ' and '+budgets.length+' remotely pinned collectors? All CPU, RAM and GPU'+
@@ -3347,6 +4518,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 confirm_queue:true,
                 learner:{configuration_id:selected.id,expected_revision:selected.revision,
                     machine_id:distributedMachine.value,resources,
+                    metric_selection:metricSelection,
                     ...(predecessor?{continuation_of_job_id:predecessor}:{})},
                 collectors:budgets.map(item=>{
                     if(!item||typeof item!=='object'||Array.isArray(item))

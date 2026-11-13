@@ -66,7 +66,13 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         add('group_states_per_second',row.group_states/updateWall,'rate');
     }
     for(const name of ['collection_seconds','rollout_model_refresh_seconds',
-        'optimization_seconds',
+        'rollout_engine_step_seconds','rollout_learner_inference_seconds',
+        'rollout_observation_encode_seconds','rollout_opponent_inference_seconds',
+        'rollout_result_processing_seconds',
+        'optimization_seconds','collector_wait_seconds',
+        'collector_critical_path_seconds','collector_elapsed_spread_seconds',
+        'rollout_engine_cpu_seconds_total','rollout_engine_cpu_seconds',
+        'checkpoint_write_seconds',
         'overlap_seconds','remote_policy_snapshot_seconds',
         'remote_opponent_snapshot_seconds',
         'ppo_profile_host_seconds','ppo_advantages_seconds',
@@ -83,7 +89,10 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'truncated_groups','terminal_groups','collector_count',
         'ppo_minibatches','ppo_microbatches',
         'ppo_board_pixel_samples','ppo_max_board_cells',
-        'ppo_unique_board_shapes','policy_lag','action_target'])
+        'ppo_unique_board_shapes','policy_lag','action_target',
+        'automatic_collector_allocation','collector_allocation_rebalanced',
+        'rollout_inference_batches','rollout_inference_boards',
+        'rollout_inference_max_batch'])
         add(name,row[name],'count');
     // These optimizer observations can be negative; they are scalar values,
     // never performance or strength certification.
@@ -91,9 +100,12 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'entropy','actor_grad_norm','group_grad_norm',
         'baseline_grad_norm','actor_max_weight_change',
         'critic_max_weight_change','learning_rate','population_mean',
-        'states_per_microbatch'])add(name,row[name],'scalar');
+        'states_per_microbatch','rollout_inference_mean_batch'])
+        add(name,row[name],'scalar');
     add('gae_lambda',row.gae_lambda,'ratio');
     add('rss_mb',row.rss_mb,'mb');
+    add('rollout_engine_cpu_cores',row.rollout_engine_cpu_cores,'scalar');
+    add('rollout_engine_rss_mb',row.rollout_engine_rss_mb,'mb');
     if(Number.isFinite(row.elapsed_seconds))
         add('elapsed_training_seconds',row.elapsed_seconds,'seconds');
 
@@ -111,7 +123,7 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         }
     }
     const games=Array.isArray(row.match_results)?row.match_results:[];
-    let scoreSum=0,marginSum=0,turnsSum=0,scored=0,turns=0;
+    let scoreSum=0,marginSum=0,turnsSum=0,scored=0,margins=0,turns=0;
     let exactFood=0,exactKills=0,foodGames=0,killGames=0;
     for(const game of games) {
         if(Array.isArray(game.scores)&&
@@ -121,7 +133,10 @@ function recordedTinyBrainsMetrics(row,updateWall) {
             const own=game.scores[game.learner_seat];
             const others=game.scores.filter((_,i)=>i!==game.learner_seat);
             scoreSum+=own;
-            if(others.length)marginSum+=own-others.reduce((a,b)=>a+b,0)/others.length;
+            if(others.length) {
+                marginSum+=own-others.reduce((a,b)=>a+b,0)/others.length;
+                margins++;
+            }
             scored++;
         }
         if(Number.isFinite(game.turns)&&game.turns>=0) {
@@ -139,14 +154,22 @@ function recordedTinyBrainsMetrics(row,updateWall) {
     }
     if(scored) {
         add('training_mean_score',scoreSum/scored,'scalar');
-        add('training_mean_score_margin',marginSum/scored,'scalar');
+        add('training_scored_matches',scored,'count');
+    }
+    // A solo match has a score but no opponent-relative margin.
+    if(margins) {
+        add('training_mean_score_margin',marginSum/margins,'scalar');
+        add('training_opponent_margin_matches',margins,'count');
     }
     if(turns)add('training_mean_match_turns',turnsSum/turns,'scalar');
     if(foodGames) {
         add('food_gathered_exact',exactFood,'count');
         add('food_gathered_verified_matches',foodGames,'count');
     }
-    if(killGames)add('combat_kills_exact',exactKills,'count');
+    if(killGames) {
+        add('combat_kills_exact',exactKills,'count');
+        add('combat_kills_verified_matches',killGames,'count');
+    }
 
     const gameplay=row.gameplay||{};
     for(const name of ['births_observed','deaths_observed',
@@ -164,15 +187,47 @@ function recordedTinyBrainsMetrics(row,updateWall) {
     // Each collector is a separately identified contributor; remote transfer
     // roundtrip includes transmission and worker compute, not network-only time.
     for(const [i,worker] of (Array.isArray(row.collector_samples)
-        ?row.collector_samples:[]).slice(0,9).entries()) {
+        ?row.collector_samples:[]).slice(0,17).entries()) {
         add('collector_'+i+'_ant_decisions',worker.ant_decisions,'count');
         add('collector_'+i+'_engine_steps',worker.engine_steps,'count');
         add('collector_'+i+'_action_target',worker.action_target,'count');
+        if(Array.isArray(row.collector_action_weights))
+            add('collector_'+i+'_action_weight',
+                row.collector_action_weights[i],'count');
+        if(Array.isArray(row.next_collector_action_weights))
+            add('collector_'+i+'_next_action_weight',
+                row.next_collector_action_weights[i],'count');
         add('collector_'+i+'_roundtrip_seconds',
             worker.transport_roundtrip_seconds,'seconds');
         add('collector_'+i+'_elapsed_seconds',worker.elapsed_seconds,'seconds');
+        add('collector_'+i+'_rollout_engine_step_seconds',
+            worker.rollout_engine_step_seconds,'seconds');
+        add('collector_'+i+'_learner_inference_seconds',
+            worker.rollout_learner_inference_seconds,'seconds');
         add('collector_'+i+'_model_prepare_seconds',
             worker.model_prepare_seconds,'seconds');
+        for(const name of ['rollout_inference_batches','rollout_inference_boards',
+            'rollout_inference_max_batch'])
+            add('collector_'+i+'_'+name,worker[name],'count');
+        add('collector_'+i+'_rollout_inference_mean_batch',
+            worker.rollout_inference_mean_batch,'scalar');
+        add('collector_'+i+'_rollout_engine_cpu_seconds',
+            worker.rollout_engine_cpu_seconds,'seconds');
+        add('collector_'+i+'_rollout_engine_cpu_cores',
+            worker.rollout_engine_cpu_cores,'scalar');
+        add('collector_'+i+'_rollout_engine_rss_mb',
+            worker.rollout_engine_rss_mb,'mb');
+        for(const name of ['rollout_observation_encode_seconds',
+            'rollout_opponent_inference_seconds','rollout_result_processing_seconds'])
+            add('collector_'+i+'_'+name,worker[name],'seconds');
+        for(const stage of ['remote_collect_seconds','remote_record_encode_seconds',
+            'transport_connect_seconds','transport_request_send_seconds',
+            'transport_response_receive_seconds','transport_record_decode_seconds'])
+            add('collector_'+i+'_'+stage,worker[stage],'seconds');
+        add('collector_'+i+'_snapshot_cache_files',
+            worker.snapshot_cache_files,'count');
+        add('collector_'+i+'_snapshot_cache_bytes',
+            worker.snapshot_cache_bytes,'bytes');
         // This includes input transfer, remote compute and returned data;
         // unlike GPU busy time, it measures useful delivered experience.
         const elapsed=Number.isFinite(worker.elapsed_seconds)
@@ -184,6 +239,43 @@ function recordedTinyBrainsMetrics(row,updateWall) {
                 worker.engine_steps/elapsed,'rate');
         }
     }
+    // Locally multiplexed engine slots share a leased CPU budget. Stage
+    // totals are summed across overlapping subprocesses (not critical-path
+    // wall time); the independently measured wall/critical times are separate.
+    for(const name of ['local_engine_count','local_engine_active_count',
+        'local_engine_max_count','local_engine_retiring_count','local_engine_retired'])
+        add(name,row[name],'count');
+    for(const name of ['local_engine_wall_seconds',
+        'local_engine_critical_seconds','local_engine_elapsed_spread_seconds',
+        'local_engine_cpu_seconds_total',
+        'local_engine_engine_step_seconds_sum',
+        'local_engine_learner_inference_seconds_sum',
+        'local_engine_observation_encode_seconds_sum',
+        'local_engine_opponent_inference_seconds_sum',
+        'local_engine_result_processing_seconds_sum'])
+        add(name,row[name],'seconds');
+    add('local_engine_rss_mb_total',row.local_engine_rss_mb_total,'mb');
+    add('local_engine_actions_per_second',row.local_engine_actions_per_second,'rate');
+    for(const [index,slot] of (Array.isArray(row.local_engine_samples)
+        ?row.local_engine_samples:[]).slice(0,64).entries()) {
+        // Stable slot ID survives tuning even when other engines retire.
+        const id=Number.isSafeInteger(slot.id)&&slot.id>=0?slot.id:index;
+        add('local_engine_'+id+'_actions',slot.actions,'count');
+        add('local_engine_'+id+'_elapsed_seconds',slot.elapsed_seconds,'seconds');
+        add('local_engine_'+id+'_retiring',slot.retiring,'count');
+        add('local_engine_'+id+'_cpu_seconds',slot.rollout_engine_cpu_seconds,'seconds');
+        add('local_engine_'+id+'_rss_mb',slot.rollout_engine_rss_mb,'mb');
+        add('local_engine_'+id+'_inference_batches',
+            slot.rollout_inference_batches,'count');
+        add('local_engine_'+id+'_inference_mean_batch',
+            slot.rollout_inference_mean_batch,'scalar');
+        if(Number.isFinite(slot.elapsed_seconds)&&slot.elapsed_seconds>0)
+            add('local_engine_'+id+'_decisions_per_second',
+                slot.actions/slot.elapsed_seconds,'rate');
+    }
+    for(const event of ['probing','accepted','draining','retired'])
+        if(row.local_engine_tune_event===event)
+            add('local_engine_tune_'+event,1,'count');
     return metrics;
 }
 
@@ -370,6 +462,10 @@ function createTinyBrainsPersistentDockerAdapter({
     const runner=HUB_IN+'/Training/experiment_hub_tinybrains_persistent.py';
     return {
         executable,cwd:PROJECT_IN,docker,stop_policy:'interrupt-main',
+        artifact_export_dir(jobId) {
+            if(!UUID.test(String(jobId||'')))throw Error('Invalid TinyBrains job identity.');
+            return path.join(artifacts,jobId);
+        },
         gpu_execution:'cuda',
         gpu_sharing:'cooperative-pytorch',
         tinybrains_profiles:Object.fromEntries([...approved].map(([id,p])=>[id,p.sha256])),
@@ -482,9 +578,11 @@ function createTinyBrainsPersistentDockerAdapter({
                 :item.profile.threads);
             return ['-B',runner,'--run',JOBS_IN+'/'+context.job_id,
                 '--updates',String(updates),'--threads',String(chosenThreads),
+                '--ram-mb',String(context.ram_quota_mb),
                 '--live-matches',String(item.profile.live_matches),
                 '--waves',String(item.profile.waves),
                 '--actions',String(item.profile.rollout_actions),
+                ...(remote_rollouts===true?[]:['--adaptive-local-engines']),
                 ...(remote_rollouts===true?[...remote.endpoints.flatMap(endpoint=>
                     ['--remote-rollout-endpoint',endpoint]),
                     '--remote-rollout-key-file',REMOTE_KEY_IN+'/rollout.key']:[]),

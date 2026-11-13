@@ -1,5 +1,8 @@
 # Experiment Hub foundation
 
+For a compact record of completed implementation and outstanding substantive
+work, see [Experiment Hub implementation status](EXPERIMENT_HUB_IMPLEMENTATION_STATUS.md).
+
 The dashboard remains at `http://127.0.0.1:7148` and now has Design, Train,
 Monitor, Compare, and Machines tabs. The existing Bees experiment coordinator,
 operator, queue, checkpoint history, release compatibility checks, and evaluations
@@ -36,7 +39,8 @@ capacity claims or native starts are authorized.
   reports and research charts remain intact. Non-experiment training is shown
   as distinct from experiment-owned training. Trusted non-Bees adapters
   can publish unit-typed metrics for cumulative project-step comparisons
-  across up to four jobs. These observations are never treated as
+  across an operator-selected set of runs, with additional comparison
+  slots added on demand. These observations are never treated as
   independent evaluations or stopping criteria.
 - **Machines:** Show read-only Bees worker reports from the existing control
   plane. Manually register project-independent machines (CPU, RAM, GPU capacity)
@@ -1163,7 +1167,10 @@ instance cannot take over its machine identity or receive native
 instructions. Replacement agents become eligible after that instance
 expires (45 seconds); this does not release job leases or bypass
 the deterministic systemd unit and local ownership ledger. The
-worker-only endpoint also enforces a 32-KiB request byte limit.
+worker-only endpoint also enforces a 64-KiB heartbeat request byte limit,
+independent of the 32-KiB trainer-progress envelope. The agent checks
+complete request size before sending; oversize messages cannot update native
+ownership, leases or checkpoints.
 
 The agent sends a native report only after its local systemd supervisor
 inspects exact service identity, systemd `CPUQuota`/`MemoryMax`
@@ -1187,9 +1194,12 @@ reconcile previously owned native work. One-shot sign-off disarms armed
 native automation; unattended scheduling requires a continuous agent.
 Repeated launch instructions are reconciled against the durable local
 journal, never executed twice. One directive is delivered per heartbeat:
-stops take priority, then starts, then GPU device probes, then
-inspections. Jobs rotate fairly within each priority level using
-independent cursors. Once an authenticated native report confirms local
+stops take priority; pending starts and overdue native inspections share
+a fair rotation so neither can indefinitely starve the other. GPU
+device probes and fresh native inspections follow. Explicit checkpoint
+reinspection remains ahead of ordinary fresh inspection. Jobs rotate
+fairly within each priority level using independent cursors. Once an
+authenticated native report confirms local
 Stop intent, that job moves into ordinary inspection while it shuts down;
 a lost or expired report restores urgent Stop priority. This prevents a
 slow shutdown from monopolizing observations of unrelated jobs. The
@@ -1369,6 +1379,22 @@ identity, read-only source mounts and a persistent, named container per job.
 The host's Docker service, not a systemd client process, owns the workload.
 The local journal and unresolved GPU proof are retained across restarts;
 ambiguous operations are never automatically retried or removed.
+Running Docker owners also expose optional read-only cgroup-v2 CPU time
+(`cpu.stat: usage_usec`), memory use/peak, and task counts when the host
+process cgroup matches the verified full Docker container identity.
+The Hub derives job CPU-core usage from consecutive cumulative CPU samples;
+missing or inaccessible counters are not interpreted as zero. If available,
+`job_cpu_throttled_seconds` and `job_cpu_throttle_events` expose cumulative
+CPU-quota throttling from the verified Docker or native Linux
+systemd cgroup. The cumulative `job_cpu_quota_periods` counts eligible
+quota intervals; `job_cpu_quota_throttled_periods_pct` is computed from
+the changes in throttled events and quota periods across continuous
+authenticated reports of the same owner. A missing, reset, or nonadvancing
+denominator produces no percentage. These measures describe local quota
+pressure, not necessarily all CPU contention: inherited ancestor limits
+and other scheduling delays may not appear. Totals are not per-update PPO
+phase timings, and their growth is not a measure of marginal throughput.
+These kernel counters describe the owned workload, not GPU kernel efficiency.
 
 For Halifax, create the dedicated
 `~/ai/experiments/experiment-hub/tinybrains-jobs` directory and use
@@ -1423,6 +1449,60 @@ waits for the trainer to flush a checkpoint and exit, and does not kill
 unfinished PPO updates. Containers remain available for inspect/recovery;
 the supervisor does not delete a container whose ownership is ambiguous.
 
+### Halifax mixed Courier CPU + TinyBrains ROCm Docker owner (opt-in)
+
+To run both projects under the **same enrolled Halifax machine**, select
+`EXPERIMENT_HUB_LINUX_BACKEND=mixed`. This is an explicit third execution
+mode; the existing `native` and `docker` modes retain their exclusive
+ownership checks. Mixed mode requires the trusted Courier native adapter and
+the trusted TinyBrains persistent Docker adapter, not two independently
+enrolled agents. The operator-approved example is
+`Training/experiment_hub_halifax_mixed_adapter.example.js`.
+
+The mixed agent keeps the original, independent systemd and Docker durable
+journals in one private `EXPERIMENT_HUB_LOCAL_ROOT`. It serializes launches
+using `mixed-launch.lock` and checks the **combined** unresolved CPU/RAM
+commitment against the real host before invoking either owner. Both projects
+still use their existing adapter-specific checkpoint/STOP and progress
+contracts. Courier has no GPU lease; only TinyBrains may request a Docker
+ROCm device. An unresolved native GPU owner blocks a new Docker GPU claim.
+The Hub's normal machine reservations remain the cross-job scheduling budget.
+Do not run a second local agent or an independent supervisor writer against
+the same owner root. A leftover mixed launch lock after a crash is an
+ownership-recovery condition, **not** a reason to delete its file blindly.
+
+Before opting in, check both existing owner ledgers and any GPU preflight
+journals, ensure that their identities belong to this machine, and reconcile
+any unresolved launches. The agent will not resume or start previous jobs on
+startup. Existing terminal jobs remain in their respective ledgers; do not
+delete or migrate them to change modes. Create only the new Courier artifacts
+directory; do not modify TinyBrains' imported checkpoint or original run.
+
+For the Halifax layout in the example:
+
+```sh
+mkdir -p "$HOME/ai/experiments/experiment-hub/courier-jobs"
+chmod 700 "$HOME/ai/experiments/experiment-hub/courier-jobs"
+# Configure these variables in the existing private agent environment:
+# EXPERIMENT_HUB_LINUX_BACKEND=mixed
+# EXPERIMENT_HUB_LOCAL_ADAPTERS=/home/halifax/ai/projects/experiment-hub/Assets/Training/experiment_hub_halifax_mixed_adapter.example.js
+# EXPERIMENT_HUB_ENABLE_EXECUTION=1
+# EXPERIMENT_HUB_ENABLE_ROCM=1
+# EXPERIMENT_HUB_DOCKER_SUDO=1  # ONLY with explicitly approved noninteractive Docker access
+```
+
+Both systemd CPU/memory enforcement and Docker cgroup-v2 enforcement must
+pass local preflight before either backend advertises Start readiness. A
+TinyBrains GPU job still requires its **current** bounded, leased PCI/HIP
+runtime proof and a real successful container launch. This mode has not
+established live Halifax qualification until the operator observes Courier
+and TinyBrains concurrently running, with distinct durable owners, correct
+combined CPU/RAM limits, a single selected R9700, and completed checkpoint
+stops. In Compare, run the 6+6 CPU pair before the 12+12 pair with frozen
+per-project configuration, identical GPU binding, and original learning
+metrics. Missing PPO metrics or sample counts must be reported as missing,
+not inferred from throughput.
+
 #### Opt-in native Linux GPU launch
 
 After deployment qualification, a Linux agent can set
@@ -1452,63 +1532,6 @@ no matching UUID, existing selector-clearing behavior is retained and
 the native launch must independently demonstrate exactly one visible
 correct PCI GPU. No enrollment token or saved experiment configuration
 may override this operator-owned mapping.
-
-The installed `createNativeBeesAdapter` supports the same preflight for
-`bees_native` **optimizer** jobs, but not collection-only jobs. A single
-exclusive GPU lease selects `--device cuda` (also the ROCm PyTorch device
-name); a CPU-only lease selects `--device cpu`. Shared and multi-GPU Bees
-optimizer leases are not supported by this adapter. A Bees job
-training an ML-Agents model against ONNX or TorchScript opponents must
-configure the approved adapter's `learnerSlot` to that ML-Agents slot.
-Mixed-backend batches preserve learner action probabilities; opponent-only
-batches legitimately contain actions without policy log probabilities.
-Adapter installation, dispatch and checkpoint-continuation readiness verify
-the full manifest model set, including any externally referenced opponent
-artifacts. Local continuation remains tied to the original host.
-To export a completed checkpoint plus all referenced opponent weights for
-transfer, run `python native/tools/package_policy_manifest.py
-<round>/learner/manifest.json <new-package-directory>` from the checkout.
-The output contains relative `models/` references and `receipt.json`
-written only after copy/hash verification. The destination must not exist;
-a failed copy leaves no completion receipt. After transferring the whole
-directory to another machine, run
-`python native/tools/package_policy_manifest.py --verify <package-directory>
---learner-slot <slot>` on that machine. Verification checks the receipt,
-manifest, model digests and safe portable paths without loading model weights.
-For an ML-Agents learner slot, it prints the verified absolute manifest and
-learner checkpoint paths to use in a new locally approved Hub adapter
-configuration. Omit `--learner-slot` for a read-only package check without
-selecting a learner. The receipt proves internal consistency, **not** sender
-authenticity or Hub authorization; obtain artifacts only from trusted sources.
-The Hub's predecessor continuation rule still requires the original machine.
-Automatic transfer and cross-host checkpoint lineage are not implemented.
-On multi-GPU Linux hosts, provide the optional machine-local `rocrGpuUuids` PCI-to-ROCr-UUID
-map to the adapter when the runtime cannot otherwise prove one visible
-leased device. The fixed HIP/PyTorch PCI verifier is shared with TinyBrains.
-For reproducible CPU scaling experiments, a Bees training job may specify
-`optimizer_threads` in its frozen parameters (1–256, not exceeding the
-assigned Hub CPU count); this sets the learner's PyTorch intra-op threads,
-not the rollout worker count. A direct training or collection job can
-separately specify `rollout_workers` (1–256, no more than either its
-fixed CPU lease or the authored Level count). This launches that many
-independent native rollout processes, with Levels sharded across them;
-it does not distribute a single job across machines or change its
-resource reservation. Imported-bundle learners cannot set this option.
-Omit either parameter to retain the installed run template's behavior.
-Use measured world steps/s and policy rows/s to compare fixed settings;
-more workers do not guarantee higher throughput.
-For completed direct rounds, Compare reports separately the simulator's
-world steps, captured policy rows, and MA-POCA optimizer input steps per
-second. The whole-round rates use collection wall time plus learner wall
-time; they are not GPU kernel throughput. Learner stage `*_cpu_seconds`
-counters are aggregate process CPU time, potentially greater than wall
-time when PyTorch uses multiple CPU threads; they exclude separate rollout
-worker processes. They allow bottleneck comparisons without inferring GPU
-efficiency from busy percentages alone. Reward journal event counts and
-payload bytes quantify the packed tick/amount data across parsed journals;
-they are not peak process RSS or the full JSON journal's file size.
-Imported bundle rounds have no single sequential collection interval,
-so no whole-round rate is invented.
 
 Queue placement prefers fitting hosts advertising the adapter's GPU capability.
 Train requires explicit Start and a current device-access **plus runtime**
@@ -1925,28 +1948,54 @@ the trusted metric source and semantics. Example observational payload:
 ```
 
 The shared Compare view allows an arbitrary number of selected runs, with
-multiple independently plotted metrics. CSV keeps selected metric columns as
-numeric values (including negative rewards and losses); JSON includes only
+multiple independently plotted metrics. The horizontal axis can show recorded
+project steps or, where an adapter provides `elapsed_training_seconds` in
+seconds, trainer-reported elapsed training time. A missing or incompatible
+time measurement is never inferred from heartbeat timestamps. Both the CSV
+and JSON comparison exports retain the chosen axis and each point's x value.
+CSV keeps selected metric columns as numeric values (including negative
+rewards and losses); JSON includes only
 selected progress metrics while retaining job and evaluation provenance. **Train** can
 freeze an optional per-job list of preferred chart measurements. This is an
 archive/visualization preference; it never changes PPO model settings or
 manufactures metrics the project's adapter did not record. The native Hub
 retains a bounded history of up to 256 chart points for each of 256 jobs;
 project-owned full-resolution histories remain authoritative. When explicit
-metric preferences are present, the Hub filters trainer metrics before adding
-requested CPU/GPU observations, so a larger trainer report cannot crowd out
-a selected host measurement. With no explicit preference, measured host resource
+metric preferences are present, the Hub retains operator-selected fields first
+and then fills spare chart slots with observed host CPU/GPU resources, without
+adding unrelated trainer fields. With no explicit preference, measured host resource
 usage and the PPO update counter take priority within the 96-field chart cap;
-remaining slots retain trainer metrics. Source reports may contain up to 192
-metrics, while charts retain at most 96 per observation. Select high-index
-collector metrics in Train before starting the job to prioritize their chart
-retention; all received source measurements remain in the raw diagnostic
+remaining slots retain trainer metrics. Source reports may contain up to 256
+metrics (within the unchanged 32-KiB source-progress envelope), while charts
+retain at most 96 per observation. Select high-index collector metrics or any of the 32 supported
+indexed physical-GPU measurements in Train before starting the job to
+prioritize their chart retention; all received source measurements remain in the raw diagnostic
 archive regardless of chart selection. Full project telemetry is not filtered
-by these display choices. Host GPU utilization/VRAM measurements describe
-the pinned physical device, not isolated per-job GPU consumption. The native
+by these display choices. Host GPU utilization/VRAM/power measurements describe
+the pinned physical device, not isolated per-job GPU consumption. Passive
+optional temperature readings are reported in °C from identified AMD
+edge/junction hwmon labels or NVIDIA's GPU-core sensor. Passive power
+measurements in W come from AMD hwmon (microwatt readings) or NVIDIA
+nvidia-smi. Unknown, unavailable or unreadable sensors remain absent.
+Power draw is not per-job energy consumption, and a high temperature
+alone does not establish throttling. These measurements never alter GPU admission,
+resource leases, job execution or training workloads. The native
 Hub also appends each distinct **received** validated source update to private
 `hub-observations-v1/<job-id>.jsonl` in its data directory, retaining source
 trainer metrics and observed resource metrics independently of chart limits.
+When a valid native owner observation has no new trainer update, the Hub
+also appends host-only CPU, RAM and physical GPU measurements to
+`hub-observations-v1/<job-id>-resources.jsonl`. These records have
+`observation_kind:host_only`, no trainer step count and no fabricated
+trainer source timestamp. `trainer_source_status` distinguishes an adapter
+returning no progress (`absent`), a source read or validation failure
+(`read_error`), or a source version the Hub already recorded
+(`not_advanced`). Host-only resource samples are appended only for reported
+running or stop-requested processes, not terminal inspections; neither
+observation alone proves the trainer has stalled. Complete Export includes both files and marks
+host-only rows separately in the long-form observation CSV. The host-only
+series may continue while the trainer is stalled, but still cannot prove
+GPU work or account for unobserved updates.
 These files are diagnostic observations, not authoritative trainer histories;
 missed worker updates cannot be reconstructed. A failed archive write does not
 stop training and appears as an archive warning in Compare. This archive is
@@ -1954,13 +2003,63 @@ append-only and should be included when managing the Hub's disk capacity.
 
 **Export complete job diagnostics** in Compare packages the selected local
 job histories and run-scoped text/JSON logs into independent ZIP archives of
-at most 500,000,000 bytes each. Choose several jobs and metrics; optionally
-include raw replays. No checkpoint, model, private key or credential files are
+at most 500,000,000 bytes each. Choose several jobs and up to 256
+metric names; optionally include raw replays. This export selection is
+independent of the 96-field per-observation chart cache. No checkpoint, model, private key or credential files are
 intentionally included. Every part has a segment manifest for reconstructing
-large logs. The overall manifest reports jobs without local artifacts and
+large logs; each entry records the SHA-256 of the uncompressed segment bytes.
+These hashes let an operator verify and reassemble files from split ZIP parts
+without confusing a segment's checksum with a hash of a whole training run.
+The overall manifest reports jobs without local artifacts and
 individual unavailable or excluded log sources by job ID and source label;
-no private host paths are included in that report.
-When metrics are selected, the archive also includes
+no private host paths are included in that report. A job with only the Hub's
+received observation archive still appears in `missing_artifact_job_ids`:
+those observations do not prove that its original trainer histories were
+captured.
+Select **Export every recorded metric** to include all locally retained
+project-neutral source and host-resource measurements in the derived CSVs,
+including fields missing from the 96-metric chart cache. This does not require
+a script or guessing metric names. The existing selected-metrics mode remains
+available; complete exports may contain much more data and still split into
+independently downloadable ZIP parts of at most 500 MB. Remote-only trainer artifacts that have not been collected are reported
+missing. An optional, authenticated artifact mirror can collect selected
+finished-job text histories without a shared filesystem mount.
+
+Set `EXPERIMENT_HUB_SYNC_ARTIFACTS=1` on a machine already configured with
+`EXPERIMENT_HUB_ENABLE_EXECUTION=1` and an installed Courier or persistent
+TinyBrains adapter. The adapter—not the Hub or a saved configuration—selects
+the job's private artifact directory. After the local native owner reaches a
+terminal state, the agent sends approved log snapshots to the existing
+loopback/SSH-forwarded machine endpoint on port 7149. Heartbeats and native
+Stop/Inspect commands are independent of this lower-priority transfer.
+Each HTTP chunk is limited to 1 MiB, a single file snapshot to 500 MB,
+and the receiving Hub to 256 files / 5 GB per job. The Hub also
+requires at least 2 GB of verified free filesystem space after each chunk
+so optional diagnostics cannot consume the checkpoint/journal disk reserve.
+Each cycle transfers up to 32 MiB, resumes from a verified staging offset,
+and
+publishes a file atomically only after its complete SHA-256 matches.
+The coordinator stores private completed snapshots in
+`hub-remote-artifacts/<job-id>/`; unfinished pieces are not export inputs.
+Complete Export includes these original trainer-log copies as
+`agent-artifacts` alongside Hub observation histories, or under the
+managed collector's linked-log source if collected separately.
+
+Automatic mirroring is opt-in because **text logs can contain secrets even
+when their filenames are innocuous**. It excludes credential-related paths,
+model/checkpoint files, symlinks and replays, but does not inspect and redact
+arbitrary log *contents*. Use only with trusted project adapters and trusted
+training outputs. It copies selected supported files, not model weights or
+a guaranteed full-resolution snapshot of every original run: files too
+large, unsupported names, unavailable owners, or machine failures remain
+outside the mirror. The `--once` agent does not run background log mirroring.
+Uncollected trainer artifacts remain explicitly unavailable in the export
+manifest rather than inferred from heartbeat summaries.
+When no project artifact root is locally mounted, the coordinator can still
+export its own recorded Hub observations and metadata, marking each selected
+job's project-owned artifacts as unavailable. An existing but unsafe or
+redirected configured root is never silently substituted.
+When metrics are selected (or all recorded metrics are requested), the archive also includes
 `hub-selected-metric-samples.csv`: a metric-filtered, long-form CSV from the
 bounded Hub comparison history, with job IDs, timestamps, project steps,
 segments, values, and units. This CSV is **not** the full-resolution training
@@ -1977,16 +2076,72 @@ through its size when opened, not as one atomic multi-machine snapshot;
 captured byte boundary. The Hub also warns about such files when parts are
 ready. Rewritten or redirected files fail export rather than silently mixing
 unverified bytes. Download the numbered parts before the private export
-session expires. Selected chart metrics never truncate the underlying source
+session expires. The loopback CLI also supports the same export sessions
+without loading ZIP parts into Node.js memory:
+
+```sh
+node Training/experiment_hub_cli.js post exports --data request.json
+node Training/experiment_hub_cli.js get exports/<session-id>
+node Training/experiment_hub_cli.js get exports/<session-id>/part/1 --output part-0001.zip
+```
+
+Use the returned session ID and repeat the last command for each numbered
+part. Output files are created exclusively: an existing download is never
+overwritten, and incomplete transfers are rejected. Export sessions and
+artifact access remain governed by the local coordinator, not a new remote
+transfer endpoint. Selected chart metrics never truncate the underlying source
 histories; files that change during export may require a later capture.
+Native project exports also include `hub-resource-claims.json`, which pins
+each selected job's persisted Hub CPU/RAM/GPU lease and physical GPU bindings.
+For managed distributed TinyBrains learners this file includes each linked
+collector's machine assignment, pinned thread count and matching resource
+lease, even if the collector's raw logs are unavailable.
+The same learner export also includes coordinator-received
+`tinybrains_rollout` collector observations under source labels containing
+each full collector UUID. The long-form observation CSV identifies these
+rows by their **collector job ID and project**, rather than attributing them
+to the learner. A missing collector observation is listed in the manifest.
+When an operator provides an approved `tinybrains_rollout` machine mount
+with per-collector directories named by the collector job UUID, the learner
+export includes those child-owned text/JSON log files as distinct sources
+as well. A missing collector mount appears in `missing_sources`; the reason
+`mount_not_configured` explicitly marks a collector with no approved mount
+mapping, rather than silently treating its original logs as complete. Child
+files never count as evidence that the learner's own trainer histories
+were obtained. This is an operator-provided read-only mount, **not**
+automatic worker-to-coordinator artifact transfer. Neither Hub observation
+file proves that the worker's original trainer log
+was obtained or that the allocated cores performed useful work. Missing leases
+remain null. This is historical allocation evidence, **not** a measurement
+of utilization or proof that a GPU completed useful training work.
 The native coordinator reads TinyBrains jobs under the Hub data root's
 `tinybrains-jobs/` directory. For another project (including Courier),
 install a private mode-0600 `job-export-roots.json` in the same Hub data
 root, mapping project IDs to approved, absolute, owner-owned artifact
-directories; these are never specified in HTTP requests. The legacy Bees
-coordinator uses its operator-owned metrics and run-scoped log paths.
-Remote-only worker data is **not** collected through the coordinator;
-copy or upload those logs through a separately approved mechanism.
+directories; these are never specified in HTTP requests. For jobs on other
+machines, the same file can additionally map **operator-mounted, read-only**
+worker artifact directories to the enrolled machine IDs and project IDs:
+
+```json
+{
+  "@machine_roots": {
+    "exeter": {"tinybrains": "/mnt/exeter/tinybrains",
+               "tinybrains_rollout": "/mnt/exeter/rollout"},
+    "warwick": {"courier": "/mnt/warwick/courier"}
+  }
+}
+```
+
+The coordinator uses the mounted `<root>/<job-uuid>/` only for jobs
+actually assigned to that machine and project, preserving the existing
+approved file-extension, symlink and credential exclusions. A missing mount
+is reported in the export manifest; an existing redirected/unowned mount
+is rejected. Project-owned histories remain on their training machines
+unless the operator independently provides a secure mounted directory
+(e.g., read-only SSHFS/SMB with appropriate owner mapping). This is
+**not** automatic file transfer and does not grant the Hub SSH access or
+allow arbitrary commands. The legacy Bees coordinator continues to use
+its existing operator-owned metrics and run-scoped log paths.
 Inspect archives before sharing them, as ordinary application logs can
 contain sensitive content.
 
@@ -1996,8 +2151,15 @@ produce real measurements. Host GPU utilization and VRAM values are physical
 device observations, **not per-job GPU accounting**. For native jobs,
 `job_cpu_lease_utilization_pct` reports sampled process CPU-core equivalents
 as a percentage of the job's fixed CPU budget, using continuous authenticated
-CPU-time observations. It is not a measure of marginal throughput, and short
-sampling intervals may show values above 100%.
+CPU-time observations. Linux systemd and Windows native owners also supply
+optional cumulative CPU seconds for long-running multicore jobs once exact
+integer nanoseconds exceed JavaScript's safe range. This is diagnostic
+precision, not a change in enforcement or terminal receipt authentication.
+It is not a measure of marginal throughput, and short sampling intervals
+may show values above 100%. Where a trusted native supervisor provides
+per-job task and memory counters, `job_process_tasks` reports the observed
+task count and `job_memory_lease_utilization_pct` compares sampled job
+memory against its frozen RAM allocation. Missing counters remain absent.
 
 ### Selecting and promoting independently trained models
 
@@ -2177,7 +2339,8 @@ must exercise both a natural exit and an explicit Stop.
 ### Completed-job resource observations
 
 When a native job reaches a verified terminal state, the Hub retains the
-highest reported CPU time, the highest sampled RAM, and the observed
+highest reported CPU time (seconds where available, retaining older
+nanosecond-only summaries), the highest sampled RAM, and the observed
 time window. Monitor, the JSON comparison export and `get state` expose
 the retained summary after restart. Missing counters remain null. The
 summary covers the observations still in memory when the job ends, plus
@@ -2185,7 +2348,8 @@ any terminal counters. A coordinator restart before completion can
 shorten that window. Sampled RAM does not measure the OS lifetime peak.
 Windows owners also report their OS Job Object peak-memory counter
 separately. Version-2 signed terminal receipts carry that counter and final
-CPU time even if the coordinator missed all live samples. Legacy signed
+CPU time when its nanosecond value is representable; sufficiently long
+multicore jobs rely on previously received live CPU-second observations. Legacy signed
 receipts remain valid and leave those terminal counters unavailable.
 Deploy the updated supervisor before updating the pinned Windows owner.
 
@@ -2417,12 +2581,44 @@ Compare includes **Observed resource scaling** for selected runs with a
 recorded throughput metric (unit `rate`). It summarizes bounded chart
 samples from the latest continuous segment and shows throughput per allocated
 CPU core. Marginal figures are shown only for completed jobs with at least
-five samples and matching frozen configuration, physical host ID, GPU mode,
-and one varied resource dimension. Multi-machine TinyBrains jobs report
-learner-only CPU budgets and never receive a misleading marginal estimate.
+five samples, matching frozen configurations, and exactly one monotonically
+increased resource dimension. For distributed TinyBrains learners, the
+allocator sums the learner and its separately leased remote collectors;
+the comparison requires the same set of machines, the same learner/collector
+roles, and unchanged GPU modes. Comparisons also require a persisted Hub-issued resource lease for every
+job (including CPU-only jobs), with matching frozen CPU, RAM, GPU count,
+GPU mode and per-device shared compute/VRAM claims. Matched run groups
+must keep each host's RAM, shared-GPU budget and minimum GPU-VRAM
+constraint fixed; otherwise changing those alongside CPU/GPU counts
+would confound marginal throughput. For GPU jobs the comparison also
+requires physical PCI GPU identities:
+CPU scaling must use the same devices, while GPU scaling may add devices
+but must retain existing ones. Missing or mismatched historical claims
+disable marginal estimates rather than guessing allocation equivalence. It refuses
+incomplete group records and CPU/GPU reallocations that reduce resources
+on one host while increasing another. Distributed rows also show the
+total frozen remote collector threads versus CPUs reserved for those
+collectors. A thread count smaller than the CPU lease is an observable
+allocation/concurrency mismatch, not proof that remaining CPUs are unused
+or that adding threads would improve throughput. These remain *reserved*
+resources: they do not prove useful utilization or incremental speed.
 All such comparisons remain observational, not independent evidence of
 causality, energy efficiency, or full-resolution training performance.
 Export the complete job histories for definitive throughput investigation.
+Compare also has a project-neutral **Recorded time metrics** panel showing
+the top observed medians, minima, maxima and sample counts from each selected
+run's latest chart segment. Valid `seconds` and `milliseconds` source values
+are both displayed as seconds; the original stored units are not changed.
+This includes recorded optimizer/rollout phase timings when an adapter
+supplies them. Known cumulative elapsed-training and active-training clocks
+are excluded from the stage-timing ranking, but remain chartable and
+exportable. When a trusted adapter publishes `active_training_time` in
+seconds (as Courier checkpoints do), Compare offers a separate active-time
+horizontal axis. Active time may exclude pauses, and it is never inferred
+from the Hub heartbeat or interchanged with elapsed training time.
+A duration unit alone cannot distinguish other cumulative clocks from
+individual stage durations, so the panel does not add overlapping
+stages or infer a causal bottleneck.
 
 ## Courier Ants (Basic Training)
 
@@ -2522,7 +2718,56 @@ change during execution. Bundle machines cannot be moved by manual claim
 changes or the Hub's automatic queued-claim rebalancing: cancel a fully
 unstarted bundle and submit a new one to change placement. Each member
 receives its own native owner, lease, artifact lineage and existing GPU
-qualification/Start/Stop gates.
+qualification/Start/Stop gates. After the agents acknowledge their fixed
+claims and any GPU access probes complete, **Start entire bundle** approves
+all 2–16 native Starts in one durable transaction, or none if a member is
+no longer eligible. The equivalent API is
+`POST /api/hub/resource-bundles/start` with
+`{"bundle_id":"<uuid>","expected_job_ids":["<ordered-member-uuid>",...],"confirm_start":true,"release_on_terminal":true}`.
+The last flag is optional and releases each member's claim only after a
+verified native `finished` or `stopped` report. Machine supervisors still
+launch independently, and physical GPU compute shares are advisory.
+
+To leave a reserved bundle awaiting machine readiness without repeatedly
+returning to Train, choose **Schedule auto-start when ready**, or POST
+`/api/hub/resource-bundles/schedule-start` with
+`{"bundle_id":"<uuid>","expected_job_ids":["<ordered-member-uuid>",...],"confirm_schedule":true}`.
+This grants **one future atomic group Start** only after every pinned job,
+machine, outstanding lease and native Start gate is freshly qualified.
+It never changes resource requests, automatically retries a dispatched job,
+or assumes a persisted `running` label proves ownership. Every such
+launch freezes `release_on_terminal:true` for safe unattended terminal
+capacity release. If a member's dispatch, machine or lease identity changes,
+the approval needs review; no partial Start is issued. Ordinary CPU queue
+automation cannot start individual members while a group approval is pending.
+
+CPU-only groups may additionally set
+`"resume_after_restart":true,"confirm_restart_rearm":true` (separate
+explicit approval) to retain their pending *unstarted* permission after
+a coordinator restart. Fresh agent/lease/native preflight proof is required
+again. Without that approval, a restart disarms the plan. CPU approvals
+expire after 24 hours. For bundles containing a GPU, the operator must
+set `"confirm_gpu_start":true`; GPU approval lasts at most 20 minutes,
+requires the originally authenticated agent identities, and **never**
+survives a coordinator restart or agent replacement.
+
+Train shows pending, authorized, cancelled and review-required launch
+states. **Cancel scheduled launch** leaves the original reserved jobs
+untouched; the API is
+`POST /api/hub/resource-bundles/cancel-start-plan` with
+`{"plan_id":"<uuid>","confirm_cancel":true}`. The existing bundle
+Stop/cancel operations also revoke any outstanding future launch authority.
+
+**Stop / close bundle** performs the corresponding atomic native shutdown
+request for its exact current members:
+`POST /api/hub/resource-bundles/stop` with
+`{"bundle_id":"<uuid>","expected_job_ids":["<ordered-member-uuid>",...],"confirm_stop":true}`.
+Unsent Starts are withdrawn and their jobs cancelled; native owners that may
+already have launched receive durable Stop requests and retain their claims
+until verified terminal receipts. Already verified `finished`/`stopped`
+members release their capacity; failed owners retain their original claims
+for review. No process, checkpoint or history is deleted. Group shutdown
+requests and release-on-terminal intent survive coordinator restart.
 
 A bundle is **resource coordination**, not a distributed learner.
 There is no automatic rollout transport, policy synchronization, gradient
@@ -2540,8 +2785,10 @@ and appear in Train. To withdraw an entirely unstarted bundle, use
 `{"bundle_id":"<uuid>","expected_job_ids":["<uuid>",...],"confirm_cancel":true}`.
 The exact current members are checked before claims are released, and
 a started, dispatched, or uncertain member blocks cancellation of the
-whole bundle. Existing native Stop and checkpoint verification remain
-mandatory for active jobs. Canceling a bundle never terminates a process.
+whole bundle. For a bundle that has already begun execution, use
+**Stop / close bundle** instead; it never infers that an unknown native owner
+has terminated. Unresolved bundles are prioritized in the Train panel over
+older completed history.
 
 ## Trusted distributed TinyBrains rollout group (opt-in)
 
@@ -2560,6 +2807,19 @@ least one action to each collector and preserving the total. The chosen
 weights never change during a run and do not resize CPU/GPU leases; use
 measured per-collector delivered throughput to select meaningful weights.
 The Hub records each collector's assigned `action_target` as a chart metric.
+The distributed queue also freezes the Train metric selection and adds each
+collector's decisions/s and action target, plus the collector count (up to
+96 chart fields total). After a finished or stopped distributed learner has
+at least five **paired**, complete collector-rate/target observations in the
+latest uninterrupted chart segment, **Compare** displays advisory
+`rollout_action_weights` for a *future* run. The ratios use per-collector
+median delivered decisions/s, reduced to bounded integer weights; they are
+a starting estimate, not a guarantee of faster PPO updates. Rates from
+different action targets may change when their work shares change.
+**Use proposed weights in Design** only fills the input for an approved
+matching profile: review the full draft and save explicitly. Nothing
+rebalances a running job, changes its resource lease, or starts training.
+Re-measure when worker machines, assigned CPUs/GPUs, network or model change.
 Remote workers never publish or advance learner checkpoints.
 
 Install the *same* randomly generated 32+-byte HMAC key on each trusted host
@@ -2594,6 +2854,18 @@ service to the public Internet.
    Updated remote workers report `collector_N_model_prepare_seconds`
    (policy/critic weight loading plus first-use allocation) so that model
    reuse can be measured separately from end-to-end collection time.
+   Remote workers also report optional `collector_N_snapshot_cache_files`
+   and `collector_N_snapshot_cache_bytes`: retained active frozen opponent
+   artifacts after each successful update. These measure the worker's
+   temporary snapshot disk footprint, not the learner's checkpoint storage;
+   they should remain bounded by the active opponent manifest.
+   With locally approved TinyBrains `profilePpo:true`, the collector's
+   `rollout_engine_step_seconds` and `rollout_learner_inference_seconds`
+   distinguish official-engine stepping (including transport) from
+   learner policy/critic inference, CPU readbacks and record assembly.
+   They are host-wall observations on each collector, not exclusive CPU
+   consumption or GPU kernel time. The Hub exposes both per-collector
+   measurements; legacy histories without them remain valid.
    The Hub also derives `collector_N_decisions_per_second` and
    `collector_N_engine_steps_per_second` from delivered work divided
    by `collector_N_elapsed_seconds`. For the learner's local collector
@@ -2618,15 +2890,71 @@ service to the public Internet.
    The Hub creates each worker configuration, all jobs and all machine
    reservations atomically; if any physical worker or capacity is missing,
    no job or claim is committed. No process is started by this action.
-4. Allow each host's authenticated agent to acknowledge its offered claim.
-   Explicitly Start every remote `tinybrains_rollout` job first, or use an
-   independently authorized native automation session. The learner Start
-   gate requires a **fresh verified running dispatch** from every worker,
-   exact pinned endpoints, equal key fingerprints and matching leases.
-   A coordinator restart requires fresh agent and native process receipts
-   before any new Start; persisted `running` labels are not sufficient.
-5. Perform the learner's normal GPU access qualification, then explicitly
-   Start it. Check `self-play/history.jsonl`: `collector_samples` reports
+4. Allow each host's authenticated agent to acknowledge its offered claim,
+   and qualify the learner's GPU access before launch. In **Train**, use
+   **Start collectors only** to authorize all remote native Starts atomically
+   without authorizing the learner, **Start coordinated group** to preapprove
+   one learner GPU Start when every collector is freshly verified running, or
+   **Start recoverable coordinated group** to separately approve resumption of
+   that *pending* learner Start after a coordinator restart. All three use
+   `POST /api/hub/distributed/tinybrains/start-collectors` with
+   `{"learner_job_id":"<uuid>","expected_collector_job_ids":["<uuid>",...],"confirm_start":true}`.
+   Coordinated launch also supplies `"start_learner_when_ready":true,
+   "confirm_learner_start":true`. Restart recovery additionally supplies
+   `"resume_after_restart":true,"confirm_restart_rearm":true`.
+
+   To approve the **entire group before its leases or GPU probes finish**,
+   choose **Schedule full group when ready** in Train, or POST
+   `/api/hub/distributed/tinybrains/schedule-start` with
+   `{"learner_job_id":"<uuid>","expected_collector_job_ids":["<uuid>",...],"confirm_schedule":true,"confirm_learner_start":true}`.
+   The coordinator freezes the original learner/collector host assignments,
+   leases, ordered HMAC endpoints and key fingerprint. Once every original
+   machine has freshly acknowledged capacity and passed native admission,
+   the existing atomic collector Start action is authorized together with
+   one bounded future learner Start. The learner still waits for every
+   original collector's authenticated running dispatch; this is not a
+   second training protocol. All members, including the learner, release
+   their capacity after verified native terminal receipts.
+
+   This preapproved group launch expires after 20 minutes. Separately pass
+   `"resume_after_restart":true,"confirm_restart_rearm":true` only to
+   retain its *unfulfilled* authorization through coordinator restart;
+   fresh machine/lease/GPU/HMAC proof is still mandatory and neither
+   a failed nor interrupted native owner is retried. Without approval,
+   restart disarms the future Start. Cancel before dispatch with
+   `POST /api/hub/distributed/tinybrains/cancel-start-plan` and
+   `{"plan_id":"<uuid>","confirm_cancel":true}`. Cancellation preserves
+   the reserved group. Individual Start/cancellation must first resolve
+   the outstanding group plan.
+
+   Both the original remote collector Starts and the one-use future learner
+   permission are committed **atomically** and expire after 20 minutes.
+   Ordinary approval is disarmed on coordinator restart, agent replacement,
+   lost lease or HMAC identity mismatch. Separately approved recovery retains
+   only that *one unfulfilled* future permission; after a coordinator restart
+   the Hub must see fresh authenticated agent/lease receipts and every
+   **original native collector dispatch** verified running. It checks the
+   exact pinned machine, lease, HMAC fingerprint, endpoint ordering and the
+   learner's current GPU/native access qualification before authorizing the
+   learner. Replacing the agent does not bypass these barriers. No previously
+   failed, uncertain, or interrupted trainer is automatically retried, and
+   persisted `running` status alone cannot authorize GPU training.
+
+   The Train row shows pending, authorized or disarmed launch status and
+   offers **Cancel future learner Start** without stopping any collectors.
+   The equivalent API is
+   `POST /api/hub/distributed/tinybrains/cancel-launch` with
+   `{"learner_job_id":"<uuid>","confirm_cancel":true}`.
+   All collector Starts are one durable transition, with no partial
+   authorization if any host is ineligible. Neither action promises
+   simultaneous native execution; each machine's supervisor still enforces
+   its fixed resources. If a collector reports a verified terminal failure
+   before learner Start under coordinated approval, the Hub automatically
+   abandons the pending launch and issues durable native Stops for its other
+   sidecars, retaining claims until verified termination. Unverified native
+   owners are never treated as safe to release.
+5. Without coordinated approval, wait for the collectors' fresh running
+   receipts and explicitly Start the learner. Check `self-play/history.jsonl`: `collector_samples` reports
    each shard's ant decisions and engine steps plus remote transfer time and
    a stable endpoint hash. Compare **end-to-end** actions/s, not just GPU busy
    percentage. For a graceful stop, Stop the learner at a PPO checkpoint
@@ -2637,8 +2965,26 @@ service to the public Internet.
    reservations for operator inspection. Do not delete source runs,
    checkpoints or independent trainer directories.
 
-This path is initially queued as one atomic resource group but is not
-live-rebalanced or automatically restarted as one native process.
+To abort a **never-dispatched** learner with already-started collectors,
+choose **Abort distributed startup** in Train, or POST
+`/api/hub/distributed/tinybrains/abort-startup` with
+`{"learner_job_id":"<uuid>","expected_collector_job_ids":["<uuid>",...],"confirm_abort":true}`.
+This durably withdraws undelivered Starts, sends native Stop requests to
+dispatched sidecars, and blocks any new group Starts. Verified terminal
+collector claims are released, while failed services lacking explicit
+prelaunch-absence evidence and unverified processes retain their reservations
+for manual review. Only after **all** sidecars are cancelled or their native
+leases have been safely released does the Hub cancel the unstarted learner
+and release its GPU/CPU claim. This cleanup intent survives coordinator
+restart. A separately approved, bounded pending learner Start may also survive
+coordinator restart, but only after fresh native proof; ordinary approvals do
+not. Abort never stops a dispatched learner or deletes checkpoints. Group members cannot change
+machines or accept a new queued dependency during teardown.
+
+This path is initially queued as one atomic resource group and can receive
+one bounded unattended launch approval. It is not live-rebalanced, and
+unknown, failed or interrupted native services are never automatically
+restarted.
 Collector interruptions fail the learner's active PPO update rather than
 allowing incomplete or mixed-policy data into its optimizer. After a
 **checkpoint-verified finished or stopped** learner has released its capacity,

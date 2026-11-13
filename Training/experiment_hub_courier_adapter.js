@@ -29,8 +29,11 @@ function courierMetrics(source) {
     const metrics={};
     const stats=source?.metrics;
     if(!stats||typeof stats!=='object'||Array.isArray(stats))return metrics;
+    // The wire contract accepts 256 measurements. Reserve room for the
+    // mandatory checkpoint fields; chart downselection happens separately.
+    let retained=0;
     for(const [name,value] of Object.entries(stats)) {
-        if(Object.keys(metrics).length>=90)break;
+        if(retained>=253)break;
         if(['generation','active_training_time','checkpoint_write_time'].includes(name)||
             !/^[a-z][a-z0-9_]{0,39}$/.test(name)||
             !Number.isFinite(value)||Math.abs(value)>1e12)continue;
@@ -40,8 +43,154 @@ function courierMetrics(source) {
                 value>=0&&value<=1?'ratio':'scalar';
         if((unit==='seconds'||unit==='rate')&&value<0)continue;
         metrics[name]={value,unit};
+        retained++;
     }
     return metrics;
+}
+
+// A Courier selection evaluation is a paired policy-comparison signal,
+// not an independent fixed benchmark. Read only completed records no later
+// than the published checkpoint; never infer a missing survival score.
+function latestSelectionMetrics(root,checkpointRound) {
+    const file=path.join(root,'events.jsonl');
+    let fd;
+    try {
+        if(fs.realpathSync(file)!==file)throw Error('Courier event path is redirected.');
+        fd=fs.openSync(file,'r');
+        const stat=fs.fstatSync(fd);
+        if(!stat.isFile())throw Error('Invalid Courier event stream.');
+        const length=Math.min(stat.size,2*1024*1024);
+        if(!length)return {};
+        const buffer=Buffer.alloc(length);
+        if(fs.readSync(fd,buffer,0,length,stat.size-length)!==length)
+            throw Error('Courier event stream changed during read.');
+        const lines=buffer.toString('utf8').split('\n');
+        lines.pop(); // A final record may still be in flight.
+        if(length<stat.size)lines.shift(); // Discard the truncated first record.
+        for(let i=lines.length-1;i>=0;i--) {
+            if(!lines[i].includes('"selection_evaluation"'))continue;
+            let row;
+            try {row=JSON.parse(lines[i]);}
+            catch {continue;}
+            if(row.event!=='selection_evaluation'||
+                !Number.isSafeInteger(row.round)||row.round<0||
+                row.round>checkpointRound)continue;
+            const metrics={
+                selection_evaluation_round:{value:row.round,unit:'count'},
+            };
+            for(const [key,value] of [
+                ['selection_candidate_survival_score',row.candidate_score],
+                ['selection_incumbent_survival_score',row.incumbent_score],
+            ])if(typeof value==='number'&&Number.isFinite(value)&&
+                Math.abs(value)<=1e12)metrics[key]={value,unit:'scalar'};
+            if(typeof row.champion_promoted==='boolean')
+                metrics.selection_champion_promoted={
+                    value:row.champion_promoted?1:0,unit:'count',
+                };
+            return metrics;
+        }
+        return {};
+    }catch(error) {
+        if(error.code==='ENOENT'&&fd===undefined)return {};
+        throw error;
+    }finally {
+        if(fd!==undefined)fs.closeSync(fd);
+    }
+}
+
+// The Courier trainer already publishes real gameplay outcomes in its
+// checkpoint-bound status.json. Keep this read paired with the same committed
+// checkpoint round; older reports remain explicitly labeled by report round.
+// Selection lives rotate seeds and are NOT a fixed benchmark.
+function recordedCourierGameplay(root,checkpointRound) {
+    const file=path.join(root,'status.json');
+    let fd;
+    try {
+        if(fs.realpathSync(file)!==file)
+            throw Error('Courier gameplay status path is redirected.');
+        fd=fs.openSync(file,'r');
+        const stat=fs.fstatSync(fd);
+        if(!stat.isFile()||stat.size<1||stat.size>4*1024*1024)
+            throw Error('Courier gameplay status exceeds its bounded read.');
+        const buffer=Buffer.alloc(stat.size);
+        if(fs.readSync(fd,buffer,0,buffer.length,0)!==stat.size)
+            throw Error('Courier gameplay status changed during read.');
+        const saved=JSON.parse(buffer.toString('utf8'));
+        if(saved.round!==checkpointRound)return {};
+        const metrics={};
+        const add=(source,fields)=>{
+            if(!source||typeof source!=='object'||Array.isArray(source))return;
+            for(const [key,name,unit] of fields) {
+                const value=source[key];
+                if(typeof value!=='number'||!Number.isFinite(value)||
+                    Math.abs(value)>1e12||
+                    unit==='ratio'&&(value<0||value>1)||
+                    unit==='count'&&(!Number.isSafeInteger(value)||value<0))
+                    continue;
+                metrics[name]={value,unit};
+            }
+        };
+        add(saved.training_lifespan,[
+            ['recent_mean_completed_lifespan','training_recent_mean_completed_lifespan','scalar'],
+            ['recent_deaths','training_recent_deaths','count'],
+            ['mean_active_age','training_mean_active_age','scalar'],
+            ['oldest_active_age','training_oldest_active_age','scalar'],
+            ['active_couriers','training_active_couriers','count'],
+            ['mean_active_colony_age','training_mean_active_colony_age','scalar'],
+            ['active_colonies','training_active_colonies','count'],
+        ]);
+        // The policy that won the just-completed selection comparison has
+        // full gameplay metrics in the lineage's qualifying evaluation. It
+        // must match this round's scored candidate, never a previous result.
+        if(saved.selection?.qualified===true&&
+            typeof saved.selection.candidate_score==='number'&&
+            Array.isArray(saved.lineage)) {
+            const qualified=saved.lineage.map(row=>row?.qualification_metrics)
+                .filter(row=>row&&typeof row==='object'&&
+                    Number.isFinite(row.mean_survival_score)&&
+                    Number.isFinite(row.survival_rate)&&
+                    Number.isFinite(row.mean_deliveries))
+                .sort((a,b)=>b.mean_survival_score-a.mean_survival_score||
+                    b.survival_rate-a.survival_rate||
+                    b.mean_deliveries-a.mean_deliveries);
+            const candidate=qualified[0];
+            if(candidate&&
+                candidate.mean_survival_score===saved.selection.candidate_score)
+                add(candidate,[
+                    ['survival_rate','selection_candidate_survival_rate','ratio'],
+                    ['mean_lifespan','selection_candidate_mean_lifespan','scalar'],
+                    ['mean_deliveries','selection_candidate_mean_deliveries','scalar'],
+                    ['pickup_rate','selection_candidate_pickup_rate','ratio'],
+                    ['mean_steps_per_delivery','selection_candidate_mean_steps_per_delivery','scalar'],
+                    ['gross_energy_per_step','selection_candidate_gross_energy_per_step','scalar'],
+                    ['mean_feedings','selection_candidate_mean_feedings','scalar'],
+                    ['mean_births','selection_candidate_mean_births','scalar'],
+                ]);
+        }
+        // Optional fixed report benchmarks are disabled by default. When
+        // recorded, do not silently represent an older report as fresh.
+        if(Number.isSafeInteger(saved.benchmark_round)&&
+            saved.benchmark_round>=0&&saved.benchmark_round<=checkpointRound&&
+            saved.benchmark) {
+            metrics.benchmark_round={value:saved.benchmark_round,unit:'count'};
+            add(saved.benchmark,[
+                ['survival_rate','benchmark_survival_rate','ratio'],
+                ['mean_lifespan','benchmark_mean_lifespan','scalar'],
+                ['mean_deliveries','benchmark_mean_deliveries','scalar'],
+                ['pickup_rate','benchmark_pickup_rate','ratio'],
+                ['mean_steps_per_delivery','benchmark_mean_steps_per_delivery','scalar'],
+                ['gross_energy_per_step','benchmark_gross_energy_per_step','scalar'],
+                ['mean_feedings','benchmark_mean_feedings','scalar'],
+                ['mean_births','benchmark_mean_births','scalar'],
+            ]);
+        }
+        return metrics;
+    }catch(error) {
+        if(error.code==='ENOENT'&&fd===undefined)return {};
+        throw error;
+    }finally {
+        if(fd!==undefined)fs.closeSync(fd);
+    }
 }
 
 function liveWindowsProgress(root) {
@@ -91,7 +240,10 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
     }
     const project=fs.realpathSync(projectRoot);
     const artifacts=fs.realpathSync(artifactRoot);
-    const executable=fs.realpathSync(pythonPath);
+    // Python locates pyvenv.cfg from the invoked executable path. Resolving
+    // bin/python to /usr/bin/python discards the approved venv site-packages.
+    // Keep the trusted configured path; statSync below still follows and validates it.
+    const executable=pythonPath;
     const script=path.join(project,'courier.py');
     if(!fs.statSync(artifacts).isDirectory()||!fs.statSync(executable).isFile()||
         !fs.statSync(script).isFile()||inside(project,artifacts)||inside(artifacts,project))
@@ -153,6 +305,11 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
 
     return {
         executable,cwd:project,stop_policy:windows?'terminate-group':'interrupt-main',
+        // Private machine-local export root, never an operator HTTP path.
+        artifact_export_dir(jobId) {
+            if(!UUID.test(String(jobId||'')))throw Error('Invalid Courier job identity.');
+            return path.join(artifacts,jobId);
+        },
         checkpoint_ready(context) {
             if(context.frozen_parameters?.config_sha256!==configSha256)
                 throw Error('Courier checkpoint environment pin changed.');
@@ -221,7 +378,11 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
                 experiment_id:context.job_id,segment_id:'training'};
             if(windows&&['running','stop_requested'].includes(context.state)) {
                 const progress=liveWindowsProgress(root);
-                return progress&&validateProgress({...identity,...progress},context.project_id);
+                return progress&&validateProgress({...identity,...progress,
+                    metrics:{...progress.metrics,
+                        ...latestSelectionMetrics(root,progress.steps_completed),
+                        ...recordedCourierGameplay(root,progress.steps_completed)},
+                },context.project_id);
             }
             const checkpoint=path.join(root,'checkpoint.json');
             let fd;
@@ -243,6 +404,8 @@ function createCourierAdapter({projectRoot,pythonPath,artifactRoot,configPath,ev
                         generation:{value:summary.generation,unit:'count'},
                         active_training_time:{value:summary.active_seconds,unit:'seconds'},
                         ...courierMetrics(summary),
+                        ...latestSelectionMetrics(root,summary.round),
+                        ...recordedCourierGameplay(root,summary.round),
                     },
                 },context.project_id);
             }catch(error) {

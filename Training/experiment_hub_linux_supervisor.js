@@ -169,7 +169,7 @@ function validateLocalInput(job,lease,machineId,adapters,hostOs=os,gpuEnabled=fa
         throw Error('Invalid immutable local continuation ancestry.');
     const context=Object.freeze({
         job_id:job.id,project_id:job.project_id,
-        cpu_quota:r.cpus,
+        cpu_quota:r.cpus,ram_quota_mb:r.ram_mb,
         dispatch_id:job.dispatch_id||null,evaluation_suite_id:job.evaluation_stop?.suite_id||
             job.evaluation_stop?.all_of?.[0]?.suite_id||null,
         continuation_of_job_id:predecessor,
@@ -209,6 +209,13 @@ function verifyUnconfinedDeviceAccess(plan,fsApi) {
 const terminalStates=new Set(['finished','stopped','failed']);
 const numeric=value=>/^[0-9]+$/.test(value||'')&&
     Number.isSafeInteger(Number(value))?Number(value):null;
+// Decimal nanosecond uptime remains measurable as diagnostic seconds after
+// total CPU nanoseconds exceed the safe integer range.
+const cpuTimeSeconds=value=>{
+    if(!/^[0-9]+$/.test(value||''))return null;
+    const seconds=Number(value)/1e9;
+    return Number.isFinite(seconds)&&seconds<=1e12?seconds:null;
+};
 
 function terminalResult(record,result,exitStatus) {
     const expectedInterrupt=record.stop_requested_at&&
@@ -270,7 +277,16 @@ function writeAtomic(file,data,fsApi=fs) {
     try{
         fsApi.writeFileSync(pending,JSON.stringify(data,null,2)+'\n',
             {flag:'wx',mode:0o600});
+        // The durable owner journal is recorded before asking systemd to
+        // launch a native trainer. Flush data and the renamed directory
+        // entry before publishing its new in-memory revision.
+        const fd=fsApi.openSync(pending,'r');
+        try{fsApi.fsyncSync(fd);}
+        finally{fsApi.closeSync(fd);}
         fsApi.renameSync(pending,file);
+        const dirFd=fsApi.openSync(path.dirname(file),'r');
+        try{fsApi.fsyncSync(dirFd);}
+        finally{fsApi.closeSync(dirFd);}
     }finally{
         if(fsApi.existsSync(pending))fsApi.unlinkSync(pending);
     }
@@ -554,6 +570,7 @@ class LinuxSupervisor {
         const absent={state:'unverified',active:false,unit_exists:false};
         if(record.native_terminal_at&&terminalStates.has(record.state))
             return {...absent,state:record.state,cpu_time_ns:record.terminal_cpu_time_ns??null,
+                cpu_time_seconds:record.terminal_cpu_time_seconds??null,
                 diagnostic:record.diagnostic||null};
         const receipt=this.readTerminalReceipt(record);
         if(!receipt)return absent;
@@ -618,17 +635,21 @@ class LinuxSupervisor {
             if(record.stop_requested_at&&record.native_verified_at&&
                 p.MainPID==='0') {
                 return {state:'stop_requested',active:false,unit_exists:true,
-                    pid:null,cpu_time_ns:numeric(p.CPUUsageNSec)};
+                    pid:null,cpu_time_ns:numeric(p.CPUUsageNSec),
+                    cpu_time_seconds:cpuTimeSeconds(p.CPUUsageNSec)};
             }
             const kernel=requireKernel
                 ?verifyKernelLimits(p,record.cpus,record.ram_mb,this.fs):null;
             const memoryBytes=numeric(p.MemoryCurrent);
             return {state:'running',active:true,unit_exists:true,
                 kernel_limits_verified:kernel?.verified===true,
+                cpu_throttled_seconds:kernel?.cpu_throttled_seconds??null,
+                cpu_throttle_events:kernel?.cpu_throttle_events??null,
                 pid:numeric(p.MainPID)||null,
                 memory_current_mb:memoryBytes==null?null:
                     Math.round(memoryBytes/1048576),
                 cpu_time_ns:numeric(p.CPUUsageNSec),
+                    cpu_time_seconds:cpuTimeSeconds(p.CPUUsageNSec),
                 process_tasks:numeric(p.TasksCurrent)};
         }
         if(p.ActiveState==='inactive'||p.ActiveState==='failed') {
@@ -636,7 +657,8 @@ class LinuxSupervisor {
             const receipt=['courier','tinybrains'].includes(record.project_id)&&record.stop_requested_at&&
                 result.state==='finished'?this.readTerminalReceipt(record):null;
             return {...result,checkpoint_stop_verified:checkpointStopVerified(record,receipt),
-                active:false,unit_exists:true,pid:null,cpu_time_ns:numeric(p.CPUUsageNSec)};
+                active:false,unit_exists:true,pid:null,cpu_time_ns:numeric(p.CPUUsageNSec),
+                    cpu_time_seconds:cpuTimeSeconds(p.CPUUsageNSec)};
         }
         return {state:'unverified',active:false,unit_exists:true};
     }
@@ -682,6 +704,7 @@ class LinuxSupervisor {
         if(!record.native_terminal_at&&terminalStates.has(state)) {
             updated.native_terminal_at=updated.observed_at;
             updated.terminal_cpu_time_ns=result.cpu_time_ns??null;
+            updated.terminal_cpu_time_seconds=result.cpu_time_seconds??null;
         }
         if(record.state!==updated.state||
             record.native_verified_at!==updated.native_verified_at||
@@ -694,6 +717,12 @@ class LinuxSupervisor {
             memory_current_mb:result.memory_current_mb??null,
             cpu_time_ns:result.cpu_time_ns??
                 (terminalStates.has(state)?updated.terminal_cpu_time_ns??null:null),
+            // Preserve the decimal seconds path even when total nanoseconds
+            // exceed JavaScript's safe integer range, including after unload.
+            cpu_time_seconds:result.cpu_time_seconds??
+                (terminalStates.has(state)?updated.terminal_cpu_time_seconds??null:null),
+            cpu_throttled_seconds:result.cpu_throttled_seconds??null,
+            cpu_throttle_events:result.cpu_throttle_events??null,
             process_tasks:result.process_tasks??null};
     }
     async quarantineUnverified(jobId,reason) {

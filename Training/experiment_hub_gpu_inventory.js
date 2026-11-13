@@ -22,6 +22,54 @@ function readBytes(fsApi,file) {
         throw Error('Unsafe AMDGPU memory byte counter.');
     return bytes;
 }
+// Passive sysfs observations only. AMD labels identify edge/core and
+// junction/hotspot independently; do not guess a sensor's meaning by index.
+function readAmdSensors(fsApi,pathApi,devicePath) {
+    let temperatureC=null,hotspotC=null,powerW=null;
+    let hwmons;
+    try{hwmons=fsApi.readdirSync(pathApi.join(devicePath,'hwmon'),{withFileTypes:true});}
+    catch{return {temperature_c:null,hotspot_temperature_c:null,power_w:null};}
+    if(!Array.isArray(hwmons)||hwmons.length>16)
+        return {temperature_c:null,hotspot_temperature_c:null,power_w:null};
+    for(const hwmon of hwmons) {
+        if(!/^hwmon[0-9]{1,3}$/.test(hwmon.name))continue;
+        // Linux hwmon power attributes are in microwatts. The reported
+        // physical-device sample is not attributable to a single Hub job.
+        if(powerW===null)for(const attribute of ['power1_average','power1_input']) {
+            try {
+                const raw=boundedRead(fsApi,pathApi.join(
+                    devicePath,'hwmon',hwmon.name,attribute));
+                if(!/^[0-9]{1,10}$/.test(raw))continue;
+                const watts=Number(raw)/1000000;
+                if(Number.isFinite(watts)&&watts<=1500) {
+                    powerW=watts;
+                    break;
+                }
+            }catch {
+                // This optional sensor is not available on every AMD GPU.
+            }
+        }
+        for(let channel=1;channel<=4;channel++) {
+            try {
+                const base=pathApi.join(devicePath,'hwmon',hwmon.name,
+                    'temp'+channel);
+                const label=boundedRead(fsApi,base+'_label');
+                if(!['edge','junction','hotspot'].includes(label))continue;
+                const raw=boundedRead(fsApi,base+'_input');
+                if(!/^[0-9]{1,6}$/.test(raw))continue;
+                const value=Number(raw)/1000;
+                if(!Number.isFinite(value)||value>150)continue;
+                if(label==='edge'&&temperatureC===null)temperatureC=value;
+                if((label==='junction'||label==='hotspot')&&hotspotC===null)
+                    hotspotC=value;
+            }catch{
+                // Missing or unreadable optional hardware sensors are unknown.
+            }
+        }
+    }
+    return {temperature_c:temperatureC,hotspot_temperature_c:hotspotC,
+        power_w:powerW};
+}
 function discoverAmdGpus(options={}) {
     const fsApi=options.fsApi||fs;
     const pathApi=options.pathApi||path;
@@ -70,7 +118,8 @@ function discoverAmdGpus(options={}) {
             }
             seen.add(pci);
             result.push({pci_address:pci,vram_mb:totalMb,
-                used_vram_mb:usedMb,gpu_busy_pct:busyPct});
+                used_vram_mb:usedMb,gpu_busy_pct:busyPct,
+                ...readAmdSensors(fsApi,pathApi,devicePath)});
         }catch {
             // A missing driver, missing VRAM counter or disappearing DRM
             // device is not evidence of an available and usable GPU.
@@ -84,11 +133,19 @@ const CUDA_UUID=/^GPU-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{1
 // GPU isolation and VRAM/compute quotas are not enforced by this probe.
 function discoverNvidiaGpus(options={}) {
     const run=options.run||spawnSync;
-    const result=run('nvidia-smi',[
-        '--query-gpu=pci.bus_id,memory.total,memory.used,utilization.gpu,uuid',
-        '--format=csv,noheader,nounits',
-    ],{encoding:'utf8',windowsHide:true,timeout:5000,maxBuffer:8192});
+    const runOptions={encoding:'utf8',windowsHide:true,timeout:5000,maxBuffer:8192};
+    const common='pci.bus_id,memory.total,memory.used,utilization.gpu,uuid,temperature.gpu';
+    const query=fields=>run('nvidia-smi',[
+        '--query-gpu='+fields,'--format=csv,noheader,nounits',
+    ],runOptions);
+    let result=query(common+',power.draw'),hasPower=true;
     if(result.error?.code==='ENOENT')return [];
+    // An optional power field must not remove otherwise valid CUDA devices
+    // from machine inventory on drivers that cannot query power.draw.
+    if(result.error||result.status!==0) {
+        result=query(common);
+        hasPower=false;
+    }
     if(result.error||result.status!==0)
         throw Error('NVIDIA GPU inventory unavailable: '+
             String(result.error?.message||result.stderr||'nvidia-smi failed').trim().slice(0,160));
@@ -97,7 +154,8 @@ function discoverNvidiaGpus(options={}) {
     const seenPci=new Set(),seenUuid=new Set(),devices=[];
     for(const row of rows) {
         const columns=row.split(',').map(v=>v.trim());
-        if(columns.length!==5)throw Error('Invalid NVIDIA GPU inventory row.');
+        if(columns.length!==(hasPower?7:6))
+            throw Error('Invalid NVIDIA GPU inventory row.');
         let pci=columns[0].toLowerCase();
         if(/^0000[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]$/.test(pci))
             pci=pci.slice(4);
@@ -105,16 +163,27 @@ function discoverNvidiaGpus(options={}) {
         const used=columns[2].toUpperCase()==='N/A'?null:Number(columns[2]);
         const busy=columns[3].toUpperCase()==='N/A'?null:Number(columns[3]);
         const uuid=columns[4];
+        const temperature=columns[5].toUpperCase()==='N/A'
+            ?null:Number(columns[5]);
+        // nvidia-smi may report N/A or an unsupported optional power
+        // sensor. Do not turn an absent value into a fabricated zero.
+        const watts=hasPower&&/^[0-9]+(?:\.[0-9]+)?$/.test(columns[6])
+            ?Number(columns[6]):null;
+        const powerW=watts!==null&&watts<=1500?watts:null;
         if(!PCI.test(pci)||!Number.isSafeInteger(memory)||
             memory<1||memory>1000000||
             (used!==null&&(!Number.isSafeInteger(used)||used<0||used>memory))||
             (busy!==null&&(!Number.isSafeInteger(busy)||busy<0||busy>100))||
+            (temperature!==null&&(!Number.isFinite(temperature)||
+                temperature<0||temperature>150))||
             !CUDA_UUID.test(uuid)||
             seenPci.has(pci)||seenUuid.has(uuid.toLowerCase()))
             throw Error('Invalid or duplicate physical NVIDIA GPU identity.');
         seenPci.add(pci);seenUuid.add(uuid.toLowerCase());
         devices.push({pci_address:pci,vram_mb:memory,
-            used_vram_mb:used,gpu_busy_pct:busy,cuda_uuid:uuid});
+            used_vram_mb:used,gpu_busy_pct:busy,cuda_uuid:uuid,
+            temperature_c:temperature,hotspot_temperature_c:null,
+            power_w:powerW});
     }
     return devices;
 }

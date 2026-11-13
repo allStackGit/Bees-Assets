@@ -16,17 +16,19 @@ def main():
     parser.add_argument("--run", type=Path, required=True)
     parser.add_argument("--updates", type=int, required=True)
     parser.add_argument("--threads", type=int, required=True)
+    parser.add_argument("--ram-mb", type=int)
     parser.add_argument("--live-matches", type=int, required=True)
     parser.add_argument("--waves", type=int, required=True)
     parser.add_argument("--actions", type=int, required=True)
     parser.add_argument("--device", choices=("cpu", "cuda", "dual"), default="cuda")
     parser.add_argument("--rocm-pci", action="append")
     parser.add_argument("--gpu-vram-mb", type=int)
+    parser.add_argument("--adaptive-local-engines", action="store_true")
     parser.add_argument("--remote-rollout-endpoint", action="append", default=[])
     parser.add_argument("--remote-rollout-weight", action="append", type=int, default=[])
     parser.add_argument("--remote-rollout-key-file")
     args = parser.parse_args()
-    if min(args.updates, args.threads, args.live_matches, args.waves, args.actions) < 1:
+    if min(args.updates, args.threads, args.live_matches, args.waves, args.actions) < 1 or (args.ram_mb is not None and args.ram_mb < 128):
         parser.error("All training limits must be positive.")
     if args.live_matches % args.waves:
         parser.error("Live matches must divide evenly into waves.")
@@ -80,9 +82,11 @@ def main():
         "--config", str(spec),
         "--out", str(run),
         "--persistent",
+        *(["--adaptive-local-engines"] if args.adaptive_local_engines else []),
         "--self-play-device", optimization_device,
         *(["--self-play-collection-device", collection_device] if collection_device else []),
         "--self-play-threads", str(args.threads),
+        *(["--self-play-ram-mb", str(args.ram_mb)] if args.ram_mb else []),
         "--live-matches", str(args.live_matches),
         "--waves", str(args.waves),
         "--rollout-actions", str(args.actions),

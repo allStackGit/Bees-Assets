@@ -343,6 +343,9 @@ internal sealed class OwnedJob : IDisposable
             process_tasks=(long)accounting.ActiveProcesses,
             cpu_time_ns=cpuTime>=0&&cpuTime<=90071992547409L?
                 (long?)cpuTime*100:null,
+            // Observational seconds remain useful after nanosecond counters
+            // exceed JavaScript's safe-integer range on multicore jobs.
+            cpu_time_seconds=cpuTime>=0?(double?)(cpuTime/10000000d):null,
             memory_current_mb=(long?)null,
             peak_job_memory_bytes=peakJobMemory<=9007199254740991UL?
                 (long?)peakJobMemory:null,

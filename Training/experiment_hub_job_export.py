@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 import os
 import re
@@ -25,22 +26,39 @@ CHUNK_BYTES = 24_000_000
 UUID = re.compile(r"^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$")
 PROJECT = re.compile(r"^[a-z][a-z0-9_-]{0,47}$")
 METRIC = re.compile(r"^[a-z][a-z0-9_]{0,39}$")
+COLLECTOR_SOURCE = re.compile(r"^collector_([0-9a-f]{32})_(host|src|logs)$")
 SUFFIXES = {".json", ".jsonl", ".ndjson", ".csv", ".tsv", ".txt", ".log"}
 DENIED_PARTS = {
     ".git", "private", "secrets", "credentials", "keys", "checkpoints",
     "models", "opponents", "__pycache__", "build", "node_modules",
 }
-DENIED_NAMES = ("token", "secret", "password", "credential", "rollout.key")
+# The export walks trusted job artifact folders, not just known log files.
+# Credential material can be hidden under an ordinary-looking child filename
+# inside a sensitive subfolder, or use unseparated key names.
+DENIED_NAMES = (
+    "token", "secret", "password", "credential", "checkpoint", "rollout.key",
+    "api_key", "api-key", "api.key", "apikey",
+    "access_key", "access-key", "accesskey",
+    "private_key", "private-key", "privatekey",
+    "ssh_key", "ssh-key", "sshkey",
+    "key_file", "key-file", "keyfile",
+    "id_rsa", "id_ed25519", "service_account", "service-account",
+    "connection_string", "connection-string", "connectionstring",
+    "bearer", "authorization", "authentication",
+)
 MAX_SOURCE_FILES = 200_000
+
+
+def forbidden_part(name: str) -> bool:
+    lowered = name.lower()
+    return lowered in DENIED_PARTS or any(term in lowered for term in DENIED_NAMES)
 
 
 def safe_source(root: Path, source: Path, include_replays: bool) -> bool:
     rel = source.relative_to(root)
-    if not rel.parts or any(part.lower() in DENIED_PARTS for part in rel.parts):
+    if not rel.parts or any(forbidden_part(part) for part in rel.parts):
         return False
     if not include_replays and any(part.lower() == "replays" for part in rel.parts):
-        return False
-    if any(term in source.name.lower() for term in DENIED_NAMES):
         return False
     if source.suffix.lower() not in SUFFIXES:
         return False
@@ -56,7 +74,7 @@ def safe_source(root: Path, source: Path, include_replays: bool) -> bool:
 class SelectedObservationRows:
     """Stream one captured native observation file into a selected-metric CSV."""
 
-    def __init__(self, job_id: str, project: str, names: set[str], writer) -> None:
+    def __init__(self, job_id: str, project: str, names: set[str] | None, writer) -> None:
         self.job_id = job_id
         self.project = project
         self.names = names
@@ -74,12 +92,14 @@ class SelectedObservationRows:
             raise ValueError("Observation archive lineage does not match the selected job")
         for origin, field in (("trainer", "metrics"), ("resource", "resource_metrics")):
             for name, measurement in (row.get(field) or {}).items():
-                if name not in self.names:
+                if self.names is not None and name not in self.names:
                     continue
                 self.writer.writerow((
                     self.job_id, self.project, row.get("observed_at"),
                     row.get("source_modified_at"), row.get("experiment_id"),
                     row.get("segment_id"), row.get("steps_completed"),
+                    row.get("observation_kind", "trainer_update"),
+                    row.get("trainer_source_status"),
                     origin, name, measurement["value"], measurement["unit"],
                 ))
                 self.rows += 1
@@ -106,6 +126,9 @@ def export(spec: dict, output: Path) -> dict:
     project = spec["project_id"]
     jobs = spec["jobs"]
     root = Path(spec["artifact_root"])
+    missing_local_root = spec.get("local_artifact_root_missing", False)
+    if type(missing_local_root) is not bool:
+        raise ValueError("Invalid local artifact availability flag")
     if not PROJECT.fullmatch(project) or not isinstance(jobs, list) or not 1 <= len(jobs) <= 1000:
         raise ValueError("Invalid selected project or job count")
     if len({job["id"] for job in jobs}) != len(jobs) or any(
@@ -114,13 +137,23 @@ def export(spec: dict, output: Path) -> dict:
     ):
         raise ValueError("Invalid selected job identifiers")
     metrics = spec.get("metrics", [])
-    if not isinstance(metrics, list) or len(metrics) > 96 or any(
+    if not isinstance(metrics, list) or len(metrics) > 256 or any(
         not isinstance(name, str) or not METRIC.fullmatch(name)
         for name in metrics
     ) or len(set(metrics)) != len(metrics):
         raise ValueError("Invalid metric selection")
+    all_recorded_metrics = spec.get("all_recorded_metrics", False)
+    if type(all_recorded_metrics) is not bool or (all_recorded_metrics and metrics):
+        raise ValueError("Export all metrics must not include a separate metric selection")
     additional = spec.get("additional_sources", [])
     selected_ids = {job["id"] for job in jobs}
+    mounted_ids = spec.get("mounted_artifact_job_ids", [])
+    if not isinstance(mounted_ids, list) or len(mounted_ids) > len(jobs) or (
+        any(not isinstance(job_id, str) or job_id not in selected_ids
+            for job_id in mounted_ids)
+    ) or len(set(mounted_ids)) != len(mounted_ids):
+        raise ValueError("Invalid selected machine-mounted job IDs")
+    mounted = set(mounted_ids)
     if not isinstance(additional, list) or len(additional) > 6000 or any(
         not isinstance(entry, dict) or
         set(entry) != {"job_id", "label", "path"} or
@@ -131,6 +164,33 @@ def export(spec: dict, output: Path) -> dict:
         for entry in additional
     ):
         raise ValueError("Invalid operator-owned extra artifact sources")
+    # Resolve collector identities from frozen Hub job provenance. The
+    # selected learner owns each linked worker; a source label alone is not
+    # sufficient authority to import another job's observations.
+    provenance_jobs = (spec.get("resource_provenance") or {}).get("jobs", [])
+    collector_pairs = {
+        (parent["job_id"], child["job_id"])
+        for parent in provenance_jobs for child in parent.get("collectors", [])
+    }
+    collector_sources: dict[str, str] = {}
+    collector_log_sources: set[str] = set()
+    for entry in additional:
+        match = COLLECTOR_SOURCE.fullmatch(entry["label"])
+        if not match:
+            continue
+        key, kind = match.groups()
+        child_id = (key[:8] + "-" + key[8:12] + "-" + key[12:16] +
+                    "-" + key[16:20] + "-" + key[20:])
+        expected = (child_id + "-resources.jsonl" if kind == "host" else
+                    child_id + ".jsonl" if kind == "src" else child_id)
+        if (project != "tinybrains" or
+            (entry["job_id"], child_id) not in collector_pairs or
+            Path(entry["path"]).name != expected):
+            raise ValueError("Collector artifact source is not a managed child")
+        if kind == "logs":
+            collector_log_sources.add(entry["label"])
+        else:
+            collector_sources[entry["label"]] = child_id
     if output.exists() or not output.parent.is_dir():
         raise ValueError("Export location already exists or is unavailable")
     if root.is_symlink() or not root.is_dir() or root.resolve() != root.absolute():
@@ -142,7 +202,9 @@ def export(spec: dict, output: Path) -> dict:
         "exported_at": datetime.now(timezone.utc).isoformat(),
         "selected_job_ids": [job["id"] for job in jobs],
         "selected_metrics": metrics,
+        "all_recorded_metrics": all_recorded_metrics,
         "full_project_histories": "available local files only",
+        "local_artifact_root_missing": missing_local_root,
         "include_replays": bool(spec.get("include_replays", False)),
         "excluded": [
             "checkpoints and model binaries", "secrets and credentials",
@@ -210,6 +272,7 @@ def export(spec: dict, output: Path) -> dict:
         item = {
             "name": target, "source": name, "segment": index,
             "original_file_bytes": source_bytes, "uncompressed_bytes": len(data),
+            "sha256": hashlib.sha256(data).hexdigest(),
         }
         part_entries.append(item)
         entry_count += 1
@@ -287,7 +350,7 @@ def export(spec: dict, output: Path) -> dict:
                         continue
                     for point in entry.get("points", []):
                         for name, measurement in (point.get("metrics") or {}).items():
-                            if name not in selected:
+                            if not all_recorded_metrics and name not in selected:
                                 continue
                             writer.writerow((
                                 entry["job_id"], point.get("observed_at"),
@@ -309,14 +372,25 @@ def export(spec: dict, output: Path) -> dict:
         metadata = {
             "schema_version": 1, "project_id": project,
             "jobs": jobs, "selected_metrics": metrics,
+            "all_recorded_metrics": all_recorded_metrics,
         }
         add_bytes("hub-jobs.json", json.dumps(metadata, indent=2).encode("utf-8"))
+        provenance = spec.get("resource_provenance")
+        if provenance is not None:
+            if not isinstance(provenance, dict) or provenance.get("schema_version") != 1 or (
+                not isinstance(provenance.get("jobs"), list) or
+                len(provenance["jobs"]) != len(jobs)
+            ):
+                raise ValueError("Invalid immutable resource provenance metadata")
+            add_bytes("hub-resource-claims.json",
+                      json.dumps(provenance, indent=2).encode("utf-8"))
+        manifest["resource_provenance_included"] = provenance is not None
         add_bytes(
             "hub-comparison-history.json",
             json.dumps(spec.get("progress", {}), indent=2).encode("utf-8"),
         )
         manifest["selected_metric_sample_rows"] = (
-            add_selected_metric_history() if metrics else 0
+            add_selected_metric_history() if metrics or all_recorded_metrics else 0
         )
         manifest["selected_metric_sample_resolution"] = (
             "bounded Hub chart history; full project logs remain separate"
@@ -327,7 +401,10 @@ def export(spec: dict, output: Path) -> dict:
         selected_observation_path = None
         selected_observation_stream = None
         selected_observation_writer = None
-        if metrics and any(source["label"] == "hub-observations" for source in additional):
+        if (metrics or all_recorded_metrics) and any(
+                source["label"] in ("hub-observations", "hub-host-observations")
+                or source["label"] in collector_sources
+                for source in additional):
             selected_observation_stream = tempfile.NamedTemporaryFile(
                 mode="w", encoding="utf-8", newline="", dir=output.parent,
                 prefix="hub-selected-observations-", suffix=".csv", delete=False,
@@ -336,15 +413,32 @@ def export(spec: dict, output: Path) -> dict:
             selected_observation_writer = csv.writer(selected_observation_stream)
             selected_observation_writer.writerow((
                 "job_id", "project_id", "observed_at", "source_modified_at",
-                "experiment_id", "segment_id", "steps_completed", "origin",
+                "experiment_id", "segment_id", "steps_completed",
+                "observation_kind", "trainer_source_status", "origin",
                 "metric", "value", "unit",
             ))
         found_by_job = {job["id"]: 0 for job in jobs}
+        # Hub observations prove that telemetry reached the coordinator,
+        # not that the remote trainer's original histories were collected.
+        trainer_files_by_job = {job["id"]: 0 for job in jobs}
         missing_sources: list[dict] = []
-        def scan_directory(folder: Path, name_prefix: str, job_id: str) -> None:
+        # A distributed collector's original logs are still unavailable when
+        # no machine mount was configured. Report that explicitly rather than
+        # allowing its Hub observations to make a learner export appear complete.
+        for learner_id, child_id in sorted(collector_pairs):
+            label = "collector_" + child_id.replace("-", "") + "_logs"
+            if label not in collector_log_sources:
+                missing_sources.append({
+                    "job_id": learner_id, "label": label,
+                    "reason": "mount_not_configured",
+                })
+        def scan_directory(folder: Path, name_prefix: str, job_id: str,
+                           counts_as_trainer: bool = True) -> None:
             for dirpath, dirs, files in os.walk(folder, followlinks=False):
                 current = Path(dirpath)
-                dirs[:] = sorted(d for d in dirs if d.lower() not in DENIED_PARTS
+                # Do not traverse sensitive folders at all; the same rule
+                # also rejects individual files and nested credential paths.
+                dirs[:] = sorted(d for d in dirs if not forbidden_part(d)
                     and (bool(spec.get("include_replays", False)) or d.lower() != "replays")
                     and not (current / d).is_symlink())
                 for filename in sorted(files):
@@ -354,12 +448,21 @@ def export(spec: dict, output: Path) -> dict:
                     add_file(source, name_prefix + "/" +
                              source.relative_to(folder).as_posix())
                     found_by_job[job_id] += 1
+                    if counts_as_trainer:
+                        trainer_files_by_job[job_id] += 1
                     if entry_count > MAX_SOURCE_FILES:
                         raise ValueError("Too many export entries")
 
         # Legacy Bees run artifacts live in separately approved named sources,
         # not a job-ID directory under the coordinator data root.
-        scanned_jobs = [] if project == "bees" else jobs
+        scanned_jobs = [] if project == "bees" or missing_local_root else [
+            job for job in jobs if job["id"] not in mounted
+        ]
+        if missing_local_root:
+            missing_sources.extend({
+                "job_id": job["id"], "label": "artifacts",
+                "reason": "not_available",
+            } for job in jobs if job["id"] not in mounted)
         for job in scanned_jobs:
             job_id = job["id"]
             folder = root / job_id
@@ -382,18 +485,29 @@ def export(spec: dict, output: Path) -> dict:
             if source.is_symlink() or not source.exists():
                 reason = "not_available"
             elif source.is_dir() and source.resolve() == source.absolute():
-                scan_directory(source, prefix, job_id)
+                scan_directory(source, prefix, job_id,
+                               entry["label"] not in collector_log_sources)
                 reason = "no_approved_logs"
             elif source.is_file() and safe_source(source.parent, source, False):
-                observer = (SelectedObservationRows(job_id, project, set(metrics),
+                child_id = collector_sources.get(entry["label"])
+                is_observation = entry["label"] in (
+                    "hub-observations", "hub-host-observations"
+                ) or child_id is not None
+                observer = (SelectedObservationRows(
+                    child_id or job_id,
+                    "tinybrains_rollout" if child_id else project,
+                    None if all_recorded_metrics else set(metrics),
                     selected_observation_writer)
-                    if entry["label"] == "hub-observations" and metrics else None)
+                    if is_observation and (metrics or all_recorded_metrics)
+                    else None)
                 add_file(source, prefix + "/" + source.name, observer)
                 if observer is not None:
                     observation_sources += 1
                     observation_rows += observer.rows
                     partial_observation_files += int(observer.finish())
                 found_by_job[job_id] += 1
+                if not is_observation:
+                    trainer_files_by_job[job_id] += 1
                 reason = None
             else:
                 reason = "no_approved_logs"
@@ -414,7 +528,7 @@ def export(spec: dict, output: Path) -> dict:
         )
         manifest["missing_sources"] = missing_sources
         manifest["missing_artifact_job_ids"] = [
-            job_id for job_id, found in found_by_job.items() if not found
+            job_id for job_id, found in trainer_files_by_job.items() if not found
         ]
         manifest["exported_segments"] = entry_count
         add_bytes("export-manifest.json", json.dumps(manifest, indent=2).encode("utf-8"))

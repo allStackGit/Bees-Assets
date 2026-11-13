@@ -123,6 +123,29 @@ select[multiple].hub-metric-source.is-enhanced { display: none; }
 }
 .hub-metric-toolbar button { font-size: 12px; }
 .hub-metric-count { font-size: 13px; font-weight: 700; }
+.hub-metric-selection-summary {
+    margin-top: 10px;
+    padding: 8px 10px;
+    border: 1px solid var(--ink);
+}
+.hub-metric-selected-heading { display: block; font-size: 13px; margin-bottom: 6px; }
+.hub-metric-selected-items {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 5px;
+    max-height: 132px;
+    overflow-y: auto;
+    font-size: 12px;
+}
+.hub-metric-selected-chip {
+    max-width: 100%;
+    padding: 4px 7px;
+    font-size: 12px;
+    line-height: 1.35;
+    text-align: left;
+    overflow-wrap: anywhere;
+}
 .hub-metric-options {
     height: min(48vh, 430px);
     min-height: 230px;
@@ -335,13 +358,108 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
 }
 .hub-tabs label select { min-width: 150px; }
 #hub-placements, #hub-plan-result { white-space: pre-line; }
-.hub-progress-plot { margin: 12px 0; width: 100%; border: 2px solid var(--ink); background: var(--paper); padding: 8px; }
-.hub-progress-plot svg { display: block; width: 100%; height: auto; max-height: 350px; }
+/* Keep the long metric selector, run inputs, and export actions aligned. */
+#hub-compare-filters {
+    display: grid;
+    grid-template-columns: minmax(350px, 1.4fr) minmax(220px, .6fr);
+    gap: 16px;
+    align-items: start;
+}
+#hub-compare-filters > label, #hub-compare-filters .hub-metric-field { min-width: 0; margin: 0; }
+#hub-compare-run-list {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px 18px;
+    margin: 16px 0 12px;
+    align-items: start;
+}
+.hub-compare-run { min-width: 0; }
+.hub-compare-run-controls { display: flex; gap: 8px; align-items: center; margin-top: 5px; }
+.hub-compare-run-controls select { flex: 1 1 auto; min-width: 0; width: 100%; margin: 0; }
+.hub-compare-run-controls button { flex: 0 0 auto; }
+#hub-compare-actions { align-items: center; gap: 10px 12px; margin: 12px 0; }
+#hub-compare-actions button {
+    flex: 0 1 auto;
+    height: auto;
+    min-height: var(--control-height);
+    padding: 7px 11px;
+    white-space: normal;
+    text-align: center;
+}
+#hub-compare-actions label {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    min-height: var(--control-height);
+    margin: 0;
+    font-weight: 700;
+    font-size: 12px;
+}
+#hub-compare-actions input[type="checkbox"] {
+    flex: 0 0 16px;
+    width: 16px;
+    height: 16px;
+    margin: 0;
+    padding: 0;
+}
+.hub-progress-plot {
+    position: relative;
+    min-width: 0;
+    margin: 12px 0;
+    width: 100%;
+    border: 2px solid var(--ink);
+    background: var(--paper);
+    padding: 12px 14px;
+}
+.hub-progress-plot svg { display: block; width: 100%; height: 330px; max-height: none; }
+.hub-plot-header { display: flex; align-items: center; justify-content: space-between; gap: 8px 16px; flex-wrap: wrap; }
+.hub-plot-header h3 { margin: 0; font-size: 17px; overflow-wrap: anywhere; }
+.hub-plot-description { margin: 6px 0 10px; font-size: 12px; line-height: 1.45; }
+.hub-plot-average-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    margin: 0;
+    cursor: pointer;
+    font-weight: 700;
+    font-size: 12px;
+}
+.hub-plot-average-toggle input[type="checkbox"] {
+    flex: 0 0 17px;
+    width: 17px;
+    height: 17px;
+    padding: 0;
+    margin: 0;
+}
+.hub-plot-legend { display: flex; gap: 7px 18px; flex-wrap: wrap; font-size: 12px; padding: 5px 0 0; }
+.hub-plot-legend-entry { display: inline-flex; align-items: baseline; gap: 7px; }
+.hub-plot-legend-swatch { display: inline-block; flex: 0 0 20px; width: 20px; border-top: 4px solid; }
+.hub-plot-tooltip {
+    position: absolute;
+    z-index: 3;
+    pointer-events: none;
+    max-width: 270px;
+    padding: 8px 10px;
+    border: 2px solid var(--ink);
+    background: var(--paper);
+    box-shadow: 3px 3px 0 #bbb;
+    white-space: pre-line;
+    font: 12px/1.5 Arial, Helvetica, sans-serif;
+    overflow-wrap: anywhere;
+}
 .hub-progress-plot text { font: 13px Arial, Helvetica, sans-serif; fill: #000; }
 .hub-progress-plot .plot-axis { stroke: #000; stroke-width: 2; }
 .hub-progress-plot .plot-grid { stroke: #ddd; stroke-width: 1; }
 .hub-progress-plot .plot-line { fill: none; stroke-width: 3; }
+.hub-progress-plot .plot-average { stroke-width: 2; opacity: .85; }
+.hub-progress-plot .plot-crosshair { stroke: #555; stroke-width: 1.5; stroke-dasharray: 4 4; }
+.hub-progress-plot .plot-hover-area { cursor: crosshair; }
 .hub-progress-plot .plot-point { stroke: #fff; stroke-width: 1.5; }
+@media (max-width: 800px) {
+    #hub-compare-filters, #hub-compare-run-list { grid-template-columns: minmax(0,1fr); }
+    #hub-compare-actions { align-items: stretch; }
+    #hub-compare-actions label { width: 100%; }
+}
 </style>
 </head>
 <body>
@@ -475,7 +593,7 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
         <label for="hub-job-metrics">Metrics to retain in Hub comparison history (optional)</label>
         <select id="hub-job-metrics" class="hub-metric-source" multiple size="12" aria-label="Metrics to retain in Hub comparison history"></select>
         <div id="hub-job-metric-picker" class="hub-metric-picker" aria-label="Search and select job metrics"></div>
-        <small>Leave all unchecked to prioritize observed host CPU/GPU measurements, followed by project metrics within the shared 96-field chart limit. Checked metrics take priority. Device busy and VRAM are host-wide measurements, not individual shared-GPU usage. Full project histories are unaffected; selecting a metric cannot install missing instrumentation.</small>
+        <small>New jobs start with a project-specific set of learning-quality and training-speed metrics. Adjust them for this job or use <strong>Use project defaults</strong> to restore the preset. Leave all unchecked to prioritize observed host CPU/GPU measurements, followed by project metrics within the 96-field chart limit. Metrics not reported by the trainer remain unavailable; device busy and VRAM are host-wide. The underlying project history is unaffected.</small>
       </div>
       <label class="wide">Requested resources (JSON)<textarea id="hub-job-resources" rows="5">{"cpus":2,"ram_mb":2048,"gpu_count":0}</textarea></label>
       <fieldset class="wide">
@@ -586,7 +704,7 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
 <section data-hub-tab="compare" data-project="all">
   <h2>Project comparisons</h2>
   <p id="hub-compare-notice" class="hub-notice">Select two or more jobs to compare reported learning progress. A chart describes progress; it does not establish experimental equivalence.</p>
-  <div class="formgrid">
+  <div class="formgrid" id="hub-compare-filters">
     <div class="hub-metric-field">
       <label for="hub-compare-metric">Chart and export metrics</label>
       <select id="hub-compare-metric" class="hub-metric-source" multiple size="12" aria-label="Metrics to chart and export"></select>
@@ -599,7 +717,7 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
     </label>
   </div>
   <div id="hub-compare-run-list" class="formgrid" aria-label="Selected comparison runs"></div>
-  <div class="hub-controls">
+  <div class="hub-controls" id="hub-compare-actions">
     <button type="button" id="hub-compare-add-run">Add run</button>
     <button type="button" id="hub-compare-export-csv" disabled>Export selected CSV</button>
     <button type="button" id="hub-compare-export-json" disabled>Export selected JSON</button>
@@ -614,7 +732,7 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
   <h3>Observed resource scaling</h3>
   <p id="hub-compare-scaling-note" class="muted">Select a throughput metric and two or more runs. These comparisons are observational, not automatic resource tuning.</p>
   <div class="tablewrap hub-table"><table>
-    <thead><tr><th>Run</th><th>Allocated CPU cores</th><th>Allocated GPUs</th><th>Host</th><th>Samples</th><th>Median throughput</th><th>Throughput / allocated core</th><th>Marginal throughput</th></tr></thead>
+    <thead><tr><th>Run</th><th>Allocated CPU cores</th><th>Allocated GPUs</th><th>Host</th><th>Remote threads / leased CPUs</th><th>Samples</th><th>Median throughput</th><th>Throughput / allocated core</th><th>Marginal throughput</th></tr></thead>
     <tbody id="hub-compare-scaling-rows"></tbody>
   </table></div>
   <div class="hub-standalone" id="hub-compare-selection-panel">
