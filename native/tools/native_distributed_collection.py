@@ -274,11 +274,11 @@ def aggregate_collection_metrics(bundles):
                 "native_runner_sha256": bundle["native_runner_sha256"],
                 "rollout_processes": bundle["rollout_processes"],
                 "physics_workers_per_process": bundle["physics_workers_per_process"],
-                "parallel_physics_rounds": row.get("parallel_physics_rounds", 0),
-                "parallel_stage_id_serialized_arenas":
-                    row.get("parallel_stage_id_serialized_arenas", 0),
-                "parallel_worker_cpu_wall_seconds_sum":
-                    row.get("parallel_worker_cpu_wall_seconds_sum", 0.0),
+                **({key: row[key] for key in (
+                    "parallel_physics_rounds",
+                    "parallel_stage_id_serialized_arenas",
+                    "parallel_worker_cpu_wall_seconds_sum",
+                )} if "parallel_physics_rounds" in row else {}),
                 "worker_shards": row.get("worker_shards", []),
                 "sampled_model_timing": row.get("sampled_model_timing"),
                 "world_steps": row["successful_world_steps"],
