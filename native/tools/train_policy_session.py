@@ -16,6 +16,7 @@ import re
 import signal
 import subprocess
 import sys
+import time
 
 from native_training_artifacts import atomic_json, check_learner, file_sha256
 from native_distributed_collection import read_plan, make_orders, wait_for_collections
@@ -676,6 +677,10 @@ def main():
                 plan_path = Path(recipe["distributed_plan"]["path"])
                 if file_sha256(plan_path) != recipe["distributed_plan"]["sha256"]:
                     raise ValueError("distributed collector allocations changed during session")
+                work_order_existed = (
+                    root / f"collection-round-{index:05d}.json"
+                ).exists()
+                collection_start = time.monotonic()
                 orders, order_path = make_orders(
                     root, index, seed_offset, read_plan(plan_path),
                     run, next_checkpoint, next_manifest, args.learner_slot,
@@ -690,6 +695,39 @@ def main():
                         {"kind": kind, "round": index, **details},
                     ), flush=True),
                 )
+                # Only a newly published order yields a real end-to-end
+                # measurement. A restarted learner can collect receipts
+                # that arrived while it was offline; never divide those
+                # historic world steps by a near-zero recovery wait.
+                if not work_order_existed:
+                    elapsed = time.monotonic() - collection_start
+                    steps = sum(bundle["metrics"]["successful_world_steps"]
+                                for bundle in bundles)
+                    rows = sum(bundle["metrics"]["successful_policy_rows"]
+                               for bundle in bundles)
+                    if elapsed <= 0 or steps <= 0 or rows <= 0:
+                        raise ValueError("invalid native distributed collection timing")
+                    window = {
+                        "schema_version": 1,
+                        "kind": "native_distributed_collection_window",
+                        "round": index,
+                        "orders_sha256": file_sha256(order_path),
+                        "source_run_contract_sha256":
+                            orders.get("source_run_contract_sha256"),
+                        "collector_count": len(bundles),
+                        "work_order_to_last_receipt_wall_seconds": elapsed,
+                        "useful_world_steps": steps,
+                        "useful_policy_rows": rows,
+                        "world_steps_per_wall_second": steps / elapsed,
+                        "policy_rows_per_wall_second": rows / elapsed,
+                        "sum_independent_collector_wall_seconds": sum(
+                            bundle["metrics"]["wall_seconds"] for bundle in bundles
+                        ),
+                    }
+                    atomic_json(
+                        root / f"collection-round-{index:05d}-window.json", window,
+                    )
+                    print(json.dumps(window, sort_keys=True), flush=True)
                 command.extend(["--collection-orders", str(order_path)])
                 for bundle in bundles:
                     command.extend([
