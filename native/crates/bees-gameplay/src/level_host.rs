@@ -646,6 +646,9 @@ pub struct NativeLevelBatchDriver {
     decisions: Vec<Decision>,
     /// Reused per-world action rows only for opted-in parallel physics.
     parallel_actions: Vec<Option<Vec<Decision>>>,
+    /// Sorted indices whose source Stage identities must be minted on the
+    /// owning thread, reused across model rounds.
+    parallel_serial_worlds: Vec<usize>,
 }
 
 impl NativeLevelBatchDriver {
@@ -727,6 +730,7 @@ impl NativeLevelBatchDriver {
             inference: NativeLevelInferenceBatch::new(),
             decisions: Vec::new(),
             parallel_actions: Vec::new(),
+            parallel_serial_worlds: Vec::new(),
         };
         for index in 0..simulation.world_count() {
             driver.register_added_world(simulation, index)?;
@@ -1342,7 +1346,7 @@ impl NativeLevelBatchDriver {
         B: NativePolicyInference,
     {
         self.step_with_dispatch(simulation, backend,
-            |simulation, batch, backend, mut build, decisions, _parallel_actions| {
+            |simulation, batch, backend, mut build, decisions, _parallel_actions, _serialized_worlds| {
                 step_batched_levels(simulation, batch, backend,
                     &mut build, decisions)
             })
@@ -1367,9 +1371,9 @@ impl NativeLevelBatchDriver {
         B: NativePolicyInference,
     {
         self.step_with_dispatch(simulation, backend,
-            |simulation, batch, backend, mut build, decisions, parallel_actions| {
+            |simulation, batch, backend, mut build, decisions, parallel_actions, serialized_worlds| {
                 step_batched_levels_parallel(simulation, batch, backend,
-                    &mut build, decisions, parallel_actions, workers)
+                    &mut build, decisions, parallel_actions, serialized_worlds, workers)
             })
     }
 
@@ -1393,7 +1397,7 @@ impl NativeLevelBatchDriver {
             &mut dyn FnMut(usize, &World<NativeLevelState<M, A>>,
                 &mut NativeLevelInferenceBatch)
                 -> Result<(), NativeLevelSourceError<M::Error>>,
-            &mut Vec<Decision>, &mut Vec<Option<Vec<Decision>>>,
+            &mut Vec<Decision>, &mut Vec<Option<Vec<Decision>>>, &mut Vec<usize>,
         ) -> Result<NativeBatchedStepCounts,
             NativeBatchedStepError<NativeLevelSourceError<M::Error>, B::Error>>,
     {
@@ -1453,6 +1457,7 @@ impl NativeLevelBatchDriver {
                 Ok(())
             },
             &mut self.decisions, &mut self.parallel_actions,
+            &mut self.parallel_serial_worlds,
         )
     }
     /// Drive a bounded synchronous rollout window across all registered
