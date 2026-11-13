@@ -291,9 +291,15 @@ class BottleneckEvidence {
             add('pipeline_gpu_host_busy_device_share',
                 gpuBusy.filter(x=>x>=90).length/gpuBusy.length);
         const nativeDenials=metrics.local_lease_admission_denials_delta;
-        const memoryDenied=nativeDenials?.unit==='count'&&
-            Number.isSafeInteger(nativeDenials.value)&&
-            nativeDenials.value>0;
+        const poolDenials=metrics.simulation_admission_denied;
+        const memoryDenied=[nativeDenials,poolDenials].some(item=>
+            item?.unit==='count'&&
+            Number.isSafeInteger(item.value)&&item.value>0);
+        const collectorNativeDenials=Array.from({length:17},(_,i)=>{
+            const item=metrics['collector_'+i+'_sim_admission_denied'];
+            return item?.unit==='count'&&
+                Number.isSafeInteger(item.value)&&item.value>0;
+        });
         const resourceHints={
             nativeAdmission:memoryDenied,
             cpuBusy:cpu!==null&&cpu>=90,
@@ -457,7 +463,7 @@ class BottleneckEvidence {
             }
             if(Number.isFinite(at)&&at>prior.lastAt) {
                 prior.samples.push({at,fraction,waitShare,localShare,mergeShare,stageHints,simHints,
-                    joinHints,gpuHints,resourceHints});
+                    joinHints,gpuHints,collectorNativeDenials,resourceHints});
                 if(prior.samples.length>8)prior.samples.shift();
                 prior.lastAt=at;
             }
@@ -488,7 +494,9 @@ class BottleneckEvidence {
                     add('pipeline_cpu_throttle_pressure',1,'count');
                 if(sustained('ramNear'))
                     add('pipeline_ram_lease_pressure',1,'count');
-                if(sustained('nativeAdmission'))
+                if(sustained('nativeAdmission')||
+                    Array.from({length:17},(_,i)=>i).some(i=>
+                        recent.filter(x=>x.collectorNativeDenials?.[i]).length>=5))
                     add('pipeline_native_admission_pressure',1,'count');
                 if(sustained('gpuBusy'))
                     add('pipeline_gpu_host_busy_pressure',1,'count');
@@ -517,6 +525,8 @@ class BottleneckEvidence {
                         add('collector_'+i+'_gpu_idle_with_join',1,'count');
                     // Stable straggler tails or dispatch queueing suggest
                     // software parallelism pressure, not CPU saturation.
+                    if(recent.filter(x=>x.collectorNativeDenials?.[i]).length>=5)
+                        add('collector_'+i+'_sim_admission_pressure',1,'count');
                     if(recent.filter(x=>x.simHints?.[i]?.tail).length>=5)
                         add('collector_'+i+'_sim_straggler_pressure',1,'count');
                     if(recent.filter(x=>x.simHints?.[i]?.queue).length>=5)
