@@ -221,6 +221,11 @@ pub struct ParallelSelectedStep<E> {
     pub worlds_stepped: usize,
     pub failed_worlds: Vec<(usize, StepError<E>)>,
     pub worker_loads: Vec<ParallelWorkerMeasurements>,
+    /// Number of parallel CPU workers (not including the source-ordered
+    /// Stage-identity lane). One denotes serial execution.
+    pub parallel_workers: usize,
+    /// Live arenas stepped on the Stage-identity lane.
+    pub serialized_arenas: usize,
 }
 
 /// A single world scheduler defaults to the cheapest serial path. For
@@ -330,20 +335,11 @@ impl<S, R: GameRules<S>> Simulation<S, R> {
         )
     }
 
-    /// Execute one already-validated decision batch across independent worlds.
-    /// None skips a world; Some(empty) advances physics without a policy
-    /// decision. Caller-owned vectors are borrowed, not copied or replaced.
-    ///
-    /// This is the shared gameplay rules path, including vision, command
-    /// retirement and episode notifications. The owner MUST discard the
-    /// whole policy batch if any world fails: completed worlds may not be
-    /// a contiguous prefix in parallel execution. Model inference and
-    /// durable notification delivery stay on the owning caller thread.
-    ///
-    /// Parallel execution uses one queue claim per arena (never per ship)
-    /// and merges worker measurements only after all physics has finished.
-    /// Callers should request >1 worker only for measured heavyweight
-    /// configurations; thread startup can outweigh small arena ticks.
+    /// Execute one already-validated model decision batch through the
+    /// authoritative game rules. `None` skips a world and `Some(empty)`
+    /// advances its physics without an AI action. All arenas keep unique
+    /// mutable ownership. Model inference and durable delivery stay with
+    /// the caller and are never executed on the CPU worker threads.
     pub fn step_selected_worlds_parallel(
         &mut self,
         actions: &[Option<Vec<Decision>>],
@@ -354,37 +350,74 @@ impl<S, R: GameRules<S>> Simulation<S, R> {
         R: Sync,
         R::Error: Send,
     {
+        self.step_selected_worlds_partitioned(actions, worker_count, &[])
+    }
+
+    /// The source Stage allocator is globally ordered across independent
+    /// Levels. The sorted list names worlds allowed to create new Stage
+    /// identities during the upcoming tick; only those worlds must execute
+    /// serially in canonical index order. All other worlds may still run
+    /// concurrently without changing the allocation stream.
+    ///
+    /// The caller must establish this set from *actual* current gameplay
+    /// capabilities before the model batch is dispatched, not infer it from
+    /// the absence of a policy decision. Failed worlds are still reported
+    /// by their original indices; no partial batch is a valid trajectory.
+    pub fn step_selected_worlds_partitioned(
+        &mut self,
+        actions: &[Option<Vec<Decision>>],
+        worker_count: NonZeroUsize,
+        serialized_indices: &[usize],
+    ) -> Result<ParallelSelectedStep<R::Error>, &'static str>
+    where
+        S: Send,
+        R: Sync,
+        R::Error: Send,
+    {
         if actions.len() != self.worlds.len() {
             return Err("parallel action count must match registered worlds");
+        }
+        if serialized_indices.windows(2).any(|pair| pair[0] >= pair[1]) ||
+            serialized_indices.last().is_some_and(|&index| index >= self.worlds.len())
+        {
+            return Err("serialized world indices must be sorted, unique and in range");
         }
         let mut report = ParallelSelectedStep {
             worlds_stepped: 0,
             failed_worlds: Vec::new(),
             worker_loads: Vec::new(),
+            parallel_workers: 0,
+            serialized_arenas: 0,
         };
         let scheduled = actions.iter().filter(|entry| entry.is_some()).count();
         if scheduled == 0 { return Ok(report); }
-        let workers = worker_count.get().min(scheduled);
+        let parallel_count = actions.iter().enumerate().filter(|(index, action)|
+            action.is_some() && serialized_indices.binary_search(index).is_err()
+        ).count();
+        let workers = worker_count.get().min(parallel_count);
         let rules = &self.rules;
         let dt = self.dt_seconds;
         let sample = self.sample_every;
-        if workers == 1 {
+        if workers <= 1 {
+            // With one available worker, preserve full source step order
+            // including first-error semantics. Avoid creating any threads.
             let started = Instant::now();
             let mut measurements = Measurements::default();
             let mut arenas = 0;
             for (index, (world, action)) in self.worlds.iter_mut().zip(actions).enumerate() {
                 let Some(action) = action else { continue };
                 arenas += 1;
+                report.serialized_arenas += usize::from(
+                    serialized_indices.binary_search(&index).is_ok());
                 if let Err(error) = step_one(
                     rules, dt, sample, world, action, &mut measurements,
                 ) {
                     report.failed_worlds.push((index, error));
-                    // Preserve serial first-failure semantics when an
-                    // identity-sensitive tick was intentionally serialized.
                     break;
                 }
             }
             report.worlds_stepped = measurements.ticks as usize;
+            report.parallel_workers = 1;
             report.worker_loads.push(ParallelWorkerMeasurements::from_report(
                 arenas, &measurements, started.elapsed(),
             ));
@@ -392,10 +425,48 @@ impl<S, R: GameRules<S>> Simulation<S, R> {
             return Ok(report);
         }
 
+        // First process the few identity-sensitive Levels in their exact
+        // source order. The remaining Levels do not allocate Stage IDs,
+        // so their own tick ordering can safely differ from these Levels.
+        if !serialized_indices.is_empty() {
+            let started = Instant::now();
+            let mut measurements = Measurements::default();
+            for &index in serialized_indices {
+                let Some(action) = &actions[index] else { continue };
+                report.serialized_arenas += 1;
+                let world = &mut self.worlds[index];
+                if let Err(error) = step_one(
+                    rules, dt, sample, world, action, &mut measurements,
+                ) {
+                    report.failed_worlds.push((index, error));
+                    break;
+                }
+            }
+            report.worlds_stepped += measurements.ticks as usize;
+            report.worker_loads.push(ParallelWorkerMeasurements::from_report(
+                report.serialized_arenas, &measurements, started.elapsed(),
+            ));
+            self.measurements.merge(&measurements);
+            if !report.failed_worlds.is_empty() {
+                // No unsafe resumption of a partially failed batch.
+                // Non-sensitive worlds are still at the previous tick.
+                report.parallel_workers = 1;
+                return Ok(report);
+            }
+        }
+
+        // Each worker claims an entire independently owned arena under a
+        // short mutex; it executes its full physics tick without holding
+        // the queue lock. One contiguous action Vec per world is reused
+        // across model rounds. Neither per-ship locks nor trace allocations
+        // are involved.
         let pending = Mutex::new(self.worlds.iter_mut().zip(actions)
-            .enumerate().filter_map(|(index, (world, action))|
+            .enumerate().filter_map(|(index, (world, action))| {
+                if serialized_indices.binary_search(&index).is_ok() {
+                    return None;
+                }
                 action.as_ref().map(|action| (index, world, action.as_slice()))
-            ).collect::<VecDeque<_>>());
+            }).collect::<VecDeque<_>>());
         let outcomes = std::thread::scope(|scope| {
             let mut handles = Vec::with_capacity(workers);
             for _ in 0..workers {
@@ -421,8 +492,10 @@ impl<S, R: GameRules<S>> Simulation<S, R> {
             }
             handles.into_iter().map(|handle| handle.join()).collect::<Vec<_>>()
         });
-        // Release unclaimed mutable world references before error handling.
+        // Release claimed/unclaimed mutable references before modifying
+        // world state after a worker failure.
         drop(pending);
+        report.parallel_workers = workers;
         let mut panicked = false;
         for outcome in outcomes {
             match outcome {
@@ -438,6 +511,8 @@ impl<S, R: GameRules<S>> Simulation<S, R> {
             }
         }
         if panicked {
+            // A panicking policy/physics callback may have left the world
+            // partly mutated. Never reuse any trajectory from this batch.
             for world in &mut self.worlds {
                 world.failed = true;
             }
