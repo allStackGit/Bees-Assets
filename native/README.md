@@ -960,8 +960,14 @@ the same compiled native simulator and resident policy inference process
 as local training.
 The collector copies completed captures and their durable receipt to a
 unique shared-inbox directory; it never overwrites an earlier delivery.
-The session accepts only matching receipt IDs, source bytes, model SHA-256,
-seed offset, partition and process allocation. The receipt also records each
+The session accepts only matching receipt IDs, a portable physical
+source digest, model SHA-256, seed offset, partition and process
+allocation. The digest binds source run properties, model routing, seeded
+Levels, scene and Stage JSON values, and the normalized policy-worker
+source, but allows machine-local interpreter, model and output paths to
+differ between Windows and Linux. Previously issued byte-pinned orders
+remain valid only under their original exact-byte contract. The receipt
+also records each
 native executable's SHA-256 for cross-platform diagnostics and rejects
 mixed policy-worker source implementations (with Git CRLF/LF differences
 normalized). These fingerprints do not certify runtime-library parity.
@@ -975,8 +981,13 @@ new collection IDs and the updated checkpoint.
 Rollout metrics retain individual collector SPS and a capacity-weighted
 aggregate: `wall_seconds_scope=sum_of_independent_collector_wall_seconds`
 means summed host-seconds, **not** a measured fleet-wide elapsed SPS.
-Use a relative, portable run configuration and stage the exact manifest
-and referenced model/scene artifacts on each machine. Hub resource bundles reserve and start individual native jobs; they
+Newly published work orders additionally create a small
+`collection-round-NNNNN-window.json` measuring useful world steps and
+policy rows per elapsed second from order publication to the last
+verified collector delivery. Restarted sessions do not invent such a
+rate from a short recovery wait. Stage equivalent run configuration
+values, exact model/checkpoint bytes and the corresponding physical
+scene/Stage assets on each machine. Hub resource bundles reserve and start individual native jobs; they
 do **not** perform model synchronization or optimizer updates. The
 native session owns the **one** optimizer for its collected bundles;
 do not also Start a second Hub learner against the same work order.
