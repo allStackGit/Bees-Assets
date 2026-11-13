@@ -138,6 +138,8 @@ function recordedTinyBrainsMetrics(row,updateWall) {
     add('simulation_ram_lease_headroom_mb',
         row.simulation_ram_lease_headroom_mb,'mb');
     add('ppo_prestaged_board_bytes',row.ppo_prestaged_board_bytes,'bytes');
+    add('checkpoint_archive_bytes',row.checkpoint_archive_bytes,'bytes');
+    add('checkpoint_archive_hardlinked',row.checkpoint_archive_hardlinked,'count');
     if(Number.isFinite(row.elapsed_seconds))
         add('elapsed_training_seconds',row.elapsed_seconds,'seconds');
 
