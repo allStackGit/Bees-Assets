@@ -525,8 +525,10 @@ impl NativePolicyOnlyMetadata {
             };
             let scouting = if let NativeScriptedOrder::Scouting {
                 max_sight, human_side,
-            } = order {
-                Some(NativeScoutingContext { max_sight, human_side })
+            } = &order {
+                Some(NativeScoutingContext {
+                    max_sight: *max_sight, human_side: *human_side,
+                })
             } else { None };
             let order_view = native_squad_order_from_catalog(
                 world, squad, &self.ship_catalog, formation, enemy, scouting,
@@ -553,7 +555,7 @@ impl NativePolicyOnlyMetadata {
             // exactly as the ordinary player/HiveMind Guard implementation.
             // Non-Guard scripted commands skip this projection entirely.
             self.scripted_friendlies.clear();
-            if matches!(order,
+            if matches!(&order,
                 NativeScriptedOrder::Guard { .. } |
                 NativeScriptedOrder::ClosestFriendly
             ) {
