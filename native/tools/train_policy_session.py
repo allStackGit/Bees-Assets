@@ -202,6 +202,13 @@ def progress_snapshot(completed, target, evaluations=None):
                       for _, record in completed)
     rollout_seconds = sum(record["rollout_metrics"]["wall_seconds"]
                           for _, record in completed)
+    # Rollout receipts are the source of truth. Legacy rounds lack
+    # physical worker measurements, so count those separately rather
+    # than presenting absent history as observed serial execution.
+    measured_physics = [
+        record["rollout_metrics"] for _, record in completed
+        if "parallel_physics_rounds" in record["rollout_metrics"]
+    ]
     optimizer_steps = sum(record["learner_metrics"]["optimizer_input_steps"]
                           for _, record in completed)
     optimizer_seconds = sum(record["learner_metrics"]["total_wall_seconds"]
@@ -221,6 +228,18 @@ def progress_snapshot(completed, target, evaluations=None):
         "total_world_steps": world_steps,
         "total_policy_rows": policy_rows,
         "total_optimizer_input_steps": optimizer_steps,
+        "rounds_with_physics_worker_measurements": len(measured_physics),
+        "total_parallel_physics_rounds": sum(
+            row["parallel_physics_rounds"] for row in measured_physics
+        ),
+        "total_serialized_stage_arenas": sum(
+            row.get("parallel_stage_id_serialized_arenas", 0)
+            for row in measured_physics
+        ),
+        "sum_physics_worker_wall_seconds": sum(
+            row.get("parallel_worker_cpu_wall_seconds_sum", 0.0)
+            for row in measured_physics
+        ),
         "sum_round_rollout_wall_seconds": rollout_seconds,
         "rollout_wall_seconds_scope": rollout_scope,
         "sum_round_optimizer_wall_seconds": optimizer_seconds,
@@ -234,6 +253,10 @@ def progress_snapshot(completed, target, evaluations=None):
              "next_checkpoint_sha256": record["next_checkpoint_sha256"],
              "next_manifest_sha256": record["next_manifest_sha256"],
              "world_steps": record["rollout_metrics"]["successful_world_steps"],
+             "parallel_physics_rounds":
+                 record["rollout_metrics"].get("parallel_physics_rounds"),
+             "stage_serialized_arenas":
+                 record["rollout_metrics"].get("parallel_stage_id_serialized_arenas"),
              "optimizer_input_steps": record["learner_metrics"]["optimizer_input_steps"],
              "training_outcomes": record["learner_metrics"].get("training_outcomes", {}),
              "holdout": evaluations.get(str(path))}
