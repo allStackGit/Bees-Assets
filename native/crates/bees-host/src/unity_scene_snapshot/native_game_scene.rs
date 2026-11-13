@@ -486,6 +486,57 @@ impl NativePhysicalScene {
                 has_persistent_fleet_value: false,
                 minerals_mined_this_level: ship.mined_cargo,
             });
+            if let Some(policy) = ship.policy {
+                let episode = policy_episode.expect("validated policy group episode");
+                let expected_team = team_id_for_side(
+                    raw.bee_side, raw.human_side, episode.episode_number, ship.side,
+                ).map_err(|_| invalid("invalid native policy agent team side"))?;
+                if policy.agent_id == 0 || policy.team_id != expected_team ||
+                    policy.quarter_turns >= 4 ||
+                    policy.movement_disabled !=
+                        episode.movement_disabled_by_team[usize::from(expected_team)]
+                {
+                    return Err(invalid("native policy agent team, frame or movement flag does not match the authored group"));
+                }
+                let shared_frame = &mut team_frames[usize::from(expected_team)];
+                if shared_frame.is_some_and(|frame| frame != policy.quarter_turns) {
+                    return Err(invalid("same-team native agents require an identical policy coordinate frame"));
+                }
+                *shared_frame = Some(policy.quarter_turns);
+                active_policy_ship_ids.push(id);
+                group_participants.push(NativeSourceGroupParticipant {
+                    ship_id: id, side: ship.side,
+                    team_id: expected_team, agent_id: policy.agent_id,
+                });
+                source_policy_bindings.insert(id, NativeSourcePolicyBinding {
+                    team_id: policy.team_id,
+                    frame: PolicyFrame::new(policy.quarter_turns),
+                    movement_disabled: policy.movement_disabled,
+                    cease_fire: ship.cease_fire,
+                });
+                source_policy_inputs.insert(id, NativeSourcePolicyInputs {
+                    controller: ControlledShipPerception {
+                        effective_vision_range: ship.sight.effective_range as f32,
+                        movement_disabled_for_team: policy.movement_disabled,
+                        has_weapons: !turrets.is_empty(), has_turrets: !turrets.is_empty(),
+                        has_special_action: false, special_ready: false,
+                    },
+                    capability: CapabilitySource {
+                        special_resource_fraction: 0.0,
+                        special_cooldown_fraction: 0.0,
+                        special_phase: 0.0,
+                        mining_possible: false, healing_possible: false,
+                        warp_possible: false, is_carrier_child: false,
+                        has_living_parent_carrier: false,
+                        ship_mined_tsv: 0, team_retainable_mined_tsv: 0,
+                        side_starting_tsv: if ship.side == raw.bee_side {
+                            episode.bee_starting_tsv
+                        } else { episode.human_starting_tsv },
+                    },
+                    parent_carrier_id: None,
+                    own_weapons: self_weapons,
+                });
+            }
             entities.push(NativeAuthoredEntity::Ship(NativeAuthoredShip {
                 entity_id: id, ship_type: ship.ship_type, side: ship.side,
                 vitals, motion, game_movement,
