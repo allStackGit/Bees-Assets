@@ -1085,11 +1085,18 @@ impl NativePhysicalScene {
                 new_ship.entity_id = new_id;
                 new_ship.motion.position = position;
                 new_ship.fleet_ship_id = None;
+                // Fresh Ship.Setup clears the source combat/kill history.
+                // The clone has never latched a valid target-bounds entry at
+                // its new map location or recorded a target victim.
+                if let Some(geometry) = &mut new_ship.target_geometry {
+                    geometry.bounds_latched = false;
+                }
                 if let Some(activity) = &mut new_ship.combat_activity {
                     activity.elapsed_seconds = None;
                 }
                 if let Some(rank) = &mut new_ship.weapon_rank_source {
                     rank.stats.ship_id = new_id;
+                    rank.stats.last_killed = 0;
                     rank.stats.fleet_damage_done = 0;
                     rank.fleet_owner_ship_id = new_id;
                 }
