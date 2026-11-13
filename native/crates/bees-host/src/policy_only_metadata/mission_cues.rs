@@ -46,3 +46,47 @@ impl NativeMissionCue {
     }
 }
 
+/// Every mission event is evaluated against the canonical fixed-tick
+/// simulation and its original Level notification stream.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum NativeMissionEvent {
+    CampaignCue(NativeMissionCue),
+    ShipDestroyed(i64),
+}
+
+impl NativeMissionEvent {
+    pub(crate) fn valid_for(
+        self, campaign: Option<CampaignDialogueSpec>,
+        known_ship: impl FnOnce(i64) -> bool,
+    ) -> bool {
+        match self {
+            Self::CampaignCue(cue) => cue.valid_for(campaign),
+            Self::ShipDestroyed(id) => id > 0 && known_ship(id),
+        }
+    }
+
+    pub(crate) fn fired(
+        self, tick: u64, world: &bees_sim::combat_world::CombatWorld,
+        events: &bees_gameplay::level_events::NativeLevelEventProcessor,
+    ) -> bool {
+        match self {
+            Self::CampaignCue(cue) =>
+                events.campaign_cue_fired(tick, |current| cue.matches(current)),
+            Self::ShipDestroyed(id) => world.events().iter().any(|event|
+                matches!(event,
+                    bees_sim::combat_world::CombatEvent::ShipDied {
+                        victim_id, ..
+                    } if *victim_id == id
+                )
+            ),
+        }
+    }
+
+    pub(crate) fn waiting_for_campaign_cue(self) -> bool {
+        matches!(self, Self::CampaignCue(_))
+    }
+
+    pub(crate) fn waiting_for_ship_death(self) -> bool {
+        matches!(self, Self::ShipDestroyed(_))
+    }
+}
