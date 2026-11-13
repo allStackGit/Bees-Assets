@@ -262,13 +262,8 @@ def aggregate_collection_metrics(bundles):
             bundle["rollout_processes"] * bundle["physics_workers_per_process"]
             for bundle in bundles
         ),
-        "parallel_physics_rounds": sum(row.get("parallel_physics_rounds", 0) for row in rows),
-        "parallel_stage_id_serialized_rounds":
-            sum(row.get("parallel_stage_id_serialized_rounds", 0) for row in rows),
-        "parallel_stage_id_serialized_arenas":
-            sum(row.get("parallel_stage_id_serialized_arenas", 0) for row in rows),
-        "parallel_worker_cpu_wall_seconds_sum":
-            sum(row.get("parallel_worker_cpu_wall_seconds_sum", 0.0) for row in rows),
+        "collectors_with_physics_worker_measurements":
+            sum("parallel_physics_rounds" in row for row in rows),
         "collector_world_steps_per_wall_second_min": min(collector_rates),
         "collector_world_steps_per_wall_second_max": max(collector_rates),
         "policy_worker_sha256": next(iter(worker_digests)),
@@ -300,4 +295,18 @@ def aggregate_collection_metrics(bundles):
             key: sum(sample[key] for sample in sampled)
             for key in ("calls", "rows", "wall_seconds")
         }
+    # Do not silently convert a historical unmeasured collector into
+    # zero observed parallel work. Metrics describe the entire distributed
+    # update only when every collector contributed the same evidence.
+    if all("parallel_physics_rounds" in row for row in rows):
+        result.update({
+            "parallel_physics_rounds":
+                sum(row["parallel_physics_rounds"] for row in rows),
+            "parallel_stage_id_serialized_rounds":
+                sum(row["parallel_stage_id_serialized_rounds"] for row in rows),
+            "parallel_stage_id_serialized_arenas":
+                sum(row["parallel_stage_id_serialized_arenas"] for row in rows),
+            "parallel_worker_cpu_wall_seconds_sum":
+                sum(row["parallel_worker_cpu_wall_seconds_sum"] for row in rows),
+        })
     return result
