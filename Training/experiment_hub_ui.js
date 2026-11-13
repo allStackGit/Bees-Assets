@@ -2089,7 +2089,7 @@ document.addEventListener('DOMContentLoaded', () => {
             legendItem.append(swatch,document.createTextNode(
                 run.slot+' · '+run.job.configuration_name+
                 (showAverage&&mean!==null?' · mean '+formatted(mean):'')+
-                (showRolling?' · rolling 50-step sample mean':'')));
+                (showRolling?' · rolling 50-'+(project==='tinybrains'?'update':project==='courier'?'round':'step')+' sample mean':'')));
             legend.append(legendItem);
             let part=[],previousX=null;
             const flush=()=>{
