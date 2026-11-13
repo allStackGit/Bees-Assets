@@ -2122,26 +2122,32 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             flush();
         }
-        const points=series.flatMap(run=>run.valid.filter(usable).map(point=>({
-            run,point,cx:x(hubComparisonAxisValue(point,xKey)),
-            cy:y(hubMetricValue(point,key)),
-            value:hubMetricValue(point,key),
-            axis:hubComparisonAxisValue(point,xKey),
-        })));
-        // Keep the plot area hoverable even when only one or two samples exist.
+        const perRun=series.map(run=>({
+            run,
+            points:run.valid.filter(usable).map(point=>({
+                point,cx:x(hubComparisonAxisValue(point,xKey)),
+                cy:y(hubMetricValue(point,key)),
+                value:hubMetricValue(point,key),
+                axis:hubComparisonAxisValue(point,xKey),
+            })),
+        }));
+        // Whole plot is hoverable; select a separate nearest x-axis sample
+        // for every run instead of showing only one run under the pointer.
         node('rect',{x:bounds.left,y:bounds.top,width:bounds.right-bounds.left,
             height:bounds.bottom-bounds.top,fill:'transparent',
             class:'plot-hover-area'});
         const guide=node('line',{x1:bounds.left,x2:bounds.left,
             y1:bounds.top,y2:bounds.bottom,class:'plot-crosshair',
             visibility:'hidden','pointer-events':'none'});
-        const focus=node('circle',{cx:bounds.left,cy:bounds.bottom,r:6,
-            fill:'white',stroke:'black','stroke-width':2,
-            visibility:'hidden','pointer-events':'none'});
+        const markers=perRun.map(({run})=>node('circle',{
+            cx:bounds.left,cy:bounds.bottom,r:5,fill:'white',
+            stroke:run.color,'stroke-width':2,
+            visibility:'hidden','pointer-events':'none',
+        }));
         const hide=()=>{
             tooltip.hidden=true;
             guide.setAttribute('visibility','hidden');
-            focus.setAttribute('visibility','hidden');
+            for(const marker of markers)marker.setAttribute('visibility','hidden');
         };
         svg.onpointerleave=hide;
         svg.onpointermove=event=>{
@@ -2150,42 +2156,74 @@ document.addEventListener('DOMContentLoaded', () => {
             const mouseY=(event.clientY-rect.top)*330/rect.height;
             if(mouseX<bounds.left||mouseX>bounds.right||
                 mouseY<bounds.top||mouseY>bounds.bottom)return hide();
-            let nearest=null,best=Infinity;
-            for(const sample of points) {
-                const distance=Math.hypot(mouseX-sample.cx,mouseY-sample.cy);
-                if(distance<best){best=distance;nearest=sample;}
-            }
-            if(!nearest)return hide();
-            guide.setAttribute('x1',nearest.cx);
-            guide.setAttribute('x2',nearest.cx);
+            const chosen=perRun.map(({run,points})=>{
+                let closest=null,distance=Infinity;
+                for(const point of points) {
+                    const delta=Math.abs(mouseX-point.cx);
+                    if(delta<distance){distance=delta;closest=point;}
+                }
+                return {run,closest};
+            });
+            if(!chosen.some(item=>item.closest))return hide();
+            guide.setAttribute('x1',mouseX);
+            guide.setAttribute('x2',mouseX);
             guide.setAttribute('visibility','visible');
-            focus.setAttribute('cx',nearest.cx);
-            focus.setAttribute('cy',nearest.cy);
-            focus.setAttribute('stroke',nearest.run.color);
-            focus.setAttribute('visibility','visible');
-            const unit=units[0]||'';
-            const value=unit==='ratio'
-                ?(nearest.value*100).toFixed(2)+'%'
-                :Number(nearest.value.toPrecision(7)).toLocaleString()+
-                    (unit==='seconds'?' s':unit==='rate'?' /s':
-                        unit==='mb'?' MiB':unit==='watts'?' W':
-                        unit==='scalar'||unit==='count'?'':' '+unit);
-            const timestamp=nearest.point.source_modified_at;
-            tooltip.textContent=[
-                'Nearest recorded sample',
-                nearest.run.slot+' · '+nearest.run.job.configuration_name,
-                genericKey+': '+value,
-                axisLabel+': '+Number(nearest.axis.toPrecision(8)).toLocaleString(),
-                'Published: '+(timestamp?new Date(timestamp).toLocaleString():'unknown'),
-                'Segment: '+(nearest.point.segment_id||'unknown'),
-            ].join('\n');
+            for(let i=0;i<chosen.length;i++) {
+                const point=chosen[i].closest;
+                if(point) {
+                    markers[i].setAttribute('cx',point.cx);
+                    markers[i].setAttribute('cy',point.cy);
+                }
+                markers[i].setAttribute('visibility',point?'visible':'hidden');
+            }
+            const format=value=>Number(value).toLocaleString(undefined,{
+                maximumSignificantDigits:15,
+            });
+            const heading=document.createElement('div');
+            heading.className='hub-plot-tooltip-heading';
+            heading.textContent='Nearest recorded sample for each run';
+            const rows=chosen.map(({run,closest})=>{
+                const item=document.createElement('div');
+                item.className='hub-plot-tooltip-run';
+                const title=document.createElement('div');
+                title.className='hub-plot-tooltip-run-title';
+                const swatch=document.createElement('span');
+                swatch.className='hub-plot-legend-swatch';
+                swatch.style.borderColor=run.color;
+                title.append(swatch,document.createTextNode(
+                    'Run '+run.slot+' · '+run.job.configuration_name));
+                item.append(title);
+                const line=text=>{
+                    const detail=document.createElement('div');
+                    detail.className='hub-plot-tooltip-detail';
+                    detail.textContent=text;
+                    item.append(detail);
+                };
+                if(!closest){line('No recorded metric samples');return item;}
+                const unit=units[0]||'';
+                const value=unit==='ratio'
+                    ?format(closest.value*100)+'% ('+format(closest.value)+')'
+                    :format(closest.value)+(unit==='seconds'?' s':
+                        unit==='rate'?' /s':unit==='mb'?' MiB':
+                        unit==='watts'?' W':unit==='scalar'||unit==='count'?'':' '+unit);
+                line(genericKey+': '+value);
+                line(axisLabel+': '+format(closest.axis));
+                const timestamp=closest.point.source_modified_at;
+                line('Published: '+(timestamp&&!Number.isNaN(Date.parse(timestamp))
+                    ?new Date(timestamp).toLocaleString():'unknown'));
+                line('Segment: '+(closest.point.segment_id||'unknown'));
+                return item;
+            });
+            tooltip.replaceChildren(heading,...rows);
+            tooltip.hidden=false;
             const parent=svg.parentElement;
             const box=parent.getBoundingClientRect();
-            tooltip.style.left=Math.max(8,Math.min(parent.clientWidth-265,
-                event.clientX-box.left+14))+'px';
-            tooltip.style.top=Math.max(38,Math.min(parent.clientHeight-126,
-                event.clientY-box.top+14))+'px';
-            tooltip.hidden=false;
+            const tipWidth=tooltip.offsetWidth||460;
+            const tipHeight=tooltip.offsetHeight||150;
+            tooltip.style.left=Math.max(8,Math.min(
+                parent.clientWidth-tipWidth-8,event.clientX-box.left+14))+'px';
+            tooltip.style.top=Math.max(8,Math.min(
+                parent.clientHeight-tipHeight-8,event.clientY-box.top+14))+'px';
         };
     }
     function exportComparison(format) {
