@@ -2203,18 +2203,35 @@ document.addEventListener('DOMContentLoaded', () => {
             stroke:run.color,'stroke-width':2,
             visibility:'hidden','pointer-events':'none',
         }));
+        const wasPinned=tooltip.dataset.pinned==='true';
+        const previousScroll=tooltip.scrollTop;
         const hide=()=>{
+            if(tooltip.dataset.pinned==='true')return;
             tooltip.hidden=true;
             guide.setAttribute('visibility','hidden');
             for(const marker of markers)marker.setAttribute('visibility','hidden');
         };
-        svg.onpointerleave=hide;
-        svg.onpointermove=event=>{
-            const rect=svg.getBoundingClientRect();
-            const mouseX=(event.clientX-rect.left)*width/rect.width;
-            const mouseY=(event.clientY-rect.top)*330/rect.height;
-            if(mouseX<bounds.left||mouseX>bounds.right||
-                mouseY<bounds.top||mouseY>bounds.bottom)return hide();
+        const clearPin=()=>{
+            delete tooltip.dataset.pinned;
+            delete tooltip.dataset.pinnedFraction;
+            tooltip.classList.remove('hub-plot-tooltip-pinned');
+            tooltip.hidden=true;
+            guide.setAttribute('visibility','hidden');
+            for(const marker of markers)marker.setAttribute('visibility','hidden');
+        };
+        let lastMouseX=null,lastClientX=null,lastClientY=null;
+        const format=value=>Number(value).toLocaleString(undefined,{
+            maximumSignificantDigits:15,
+        });
+        const formattedValue=value=>{
+            const unit=units[0]||'';
+            return unit==='ratio'
+                ?format(value*100)+'% ('+format(value)+')'
+                :format(value)+(unit==='seconds'?' s':unit==='rate'?' /s':
+                    unit==='mb'?' MiB':unit==='watts'?' W':
+                    unit==='scalar'||unit==='count'?'':' '+unit);
+        };
+        const inspectAt=(mouseX,clientX,clientY)=>{
             const chosen=perRun.map(({run,points})=>{
                 let closest=null,distance=Infinity;
                 for(const point of points) {
@@ -2235,12 +2252,26 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 markers[i].setAttribute('visibility',point?'visible':'hidden');
             }
-            const format=value=>Number(value).toLocaleString(undefined,{
-                maximumSignificantDigits:15,
-            });
+            const pinned=tooltip.dataset.pinned==='true';
             const heading=document.createElement('div');
             heading.className='hub-plot-tooltip-heading';
-            heading.textContent='Nearest recorded sample for each run';
+            const headingText=document.createElement('strong');
+            headingText.textContent='Nearest recorded sample for each run';
+            heading.append(headingText);
+            if(pinned) {
+                const close=document.createElement('button');
+                close.type='button';
+                close.className='hub-plot-tooltip-unpin';
+                close.textContent='Unpin';
+                close.title='Close the pinned inspector (Escape)';
+                close.addEventListener('click',clearPin);
+                heading.append(close);
+            }
+            const note=document.createElement('div');
+            note.className='hub-plot-tooltip-instruction';
+            note.textContent=pinned
+                ?'Pinned: scroll here to inspect all runs. Unpin or press Escape to close.'
+                :'Click anywhere on the chart to pin these values and scroll.';
             const rows=chosen.map(({run,closest})=>{
                 const item=document.createElement('div');
                 item.className='hub-plot-tooltip-run';
@@ -2252,38 +2283,87 @@ document.addEventListener('DOMContentLoaded', () => {
                 title.append(swatch,document.createTextNode(
                     'Run '+run.slot+' · '+hubJobLabel(run.job)));
                 item.append(title);
-                const line=text=>{
+                const line=value=>{
                     const detail=document.createElement('div');
                     detail.className='hub-plot-tooltip-detail';
-                    detail.textContent=text;
+                    detail.textContent=value;
                     item.append(detail);
                 };
-                if(!closest){line('No recorded metric samples');return item;}
-                const unit=units[0]||'';
-                const value=unit==='ratio'
-                    ?format(closest.value*100)+'% ('+format(closest.value)+')'
-                    :format(closest.value)+(unit==='seconds'?' s':
-                        unit==='rate'?' /s':unit==='mb'?' MiB':
-                        unit==='watts'?' W':unit==='scalar'||unit==='count'?'':' '+unit);
-                line(genericKey+': '+value);
+                if(!closest) {
+                    line('No recorded metric samples for this run');
+                    return item;
+                }
+                line(genericKey+': '+formattedValue(closest.value));
                 line(axisLabel+': '+format(closest.axis));
                 const timestamp=closest.point.source_modified_at;
                 line('Published: '+(timestamp&&!Number.isNaN(Date.parse(timestamp))
                     ?new Date(timestamp).toLocaleString():'unknown'));
                 line('Segment: '+(closest.point.segment_id||'unknown'));
+                const summary=stats.get(run);
+                if(showAverage&&summary?.mean!==null&&summary?.mean!==undefined)
+                    line('Sample mean: '+formattedValue(summary.mean));
+                if(showRolling) {
+                    const rolling=summary?.rollingByPoint.get(closest.point);
+                    line('Rolling 50-'+(project==='tinybrains'?'update':
+                        project==='courier'?'round':'step')+' mean: '+
+                        (rolling===undefined?'Unavailable (fewer than 2 retained samples in this window)'
+                            :formattedValue(rolling)));
+                }
                 return item;
             });
-            tooltip.replaceChildren(heading,...rows);
+            const originalScroll=tooltip.scrollTop;
+            tooltip.replaceChildren(heading,note,...rows);
             tooltip.hidden=false;
-            const parent=svg.parentElement;
-            const box=parent.getBoundingClientRect();
-            const tipWidth=tooltip.offsetWidth||460;
-            const tipHeight=tooltip.offsetHeight||150;
-            tooltip.style.left=Math.max(8,Math.min(
-                parent.clientWidth-tipWidth-8,event.clientX-box.left+14))+'px';
-            tooltip.style.top=Math.max(8,Math.min(
-                parent.clientHeight-tipHeight-8,event.clientY-box.top+14))+'px';
+            tooltip.classList.toggle('hub-plot-tooltip-pinned',pinned);
+            tooltip.tabIndex=0;
+            tooltip.scrollTop=pinned?originalScroll:0;
+            if(!pinned) {
+                const parent=svg.parentElement;
+                const box=parent.getBoundingClientRect();
+                const tipWidth=tooltip.offsetWidth||460;
+                const tipHeight=tooltip.offsetHeight||230;
+                tooltip.style.left=Math.max(8,Math.min(
+                    parent.clientWidth-tipWidth-8,clientX-box.left+14))+'px';
+                tooltip.style.top=Math.max(8,Math.min(
+                    parent.clientHeight-tipHeight-8,clientY-box.top+14))+'px';
+            }
         };
+        svg.onpointerleave=hide;
+        svg.onpointermove=event=>{
+            if(tooltip.dataset.pinned==='true')return;
+            const rect=svg.getBoundingClientRect();
+            const mouseX=(event.clientX-rect.left)*width/rect.width;
+            const mouseY=(event.clientY-rect.top)*330/rect.height;
+            if(mouseX<bounds.left||mouseX>bounds.right||
+                mouseY<bounds.top||mouseY>bounds.bottom)return hide();
+            lastMouseX=mouseX;lastClientX=event.clientX;
+            lastClientY=event.clientY;
+            inspectAt(mouseX,event.clientX,event.clientY);
+        };
+        svg.onclick=()=>{
+            if(tooltip.dataset.pinned==='true')return clearPin();
+            if(tooltip.hidden||!Number.isFinite(lastMouseX))return;
+            tooltip.dataset.pinned='true';
+            tooltip.dataset.pinnedFraction=String(
+                (lastMouseX-bounds.left)/(bounds.right-bounds.left));
+            inspectAt(lastMouseX,lastClientX,lastClientY);
+        };
+        svg.onkeydown=event=>{
+            if(event.key==='Escape')clearPin();
+        };
+        tooltip.onkeydown=event=>{
+            if(event.key==='Escape')clearPin();
+        };
+        if(wasPinned) {
+            const fraction=Number(tooltip.dataset.pinnedFraction);
+            if(Number.isFinite(fraction)&&fraction>=0&&fraction<=1) {
+                const mouseX=bounds.left+fraction*(bounds.right-bounds.left);
+                const rect=svg.getBoundingClientRect();
+                inspectAt(mouseX,rect.left+mouseX*rect.width/width,
+                    rect.top+100);
+                tooltip.scrollTop=previousScroll;
+            }else clearPin();
+        }
     }
     function exportComparison(format) {
         if(!state)
