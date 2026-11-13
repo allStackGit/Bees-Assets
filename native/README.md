@@ -69,14 +69,27 @@ real `python`, `policy_worker`, `model_manifest` and
 training checkpoint is shipped with the example. The normal native PPO
 round/session tooling also accepts `native_stage` now.
 
+`native/examples/native-skirmish.policy.scene.json` combines seven actual
+policy agents with the existing ordinary native fleet: policy Scout/Beacon,
+Fire Barge, Striker/Carrier, Wasp healing, CarpenterBee mining, Gunship
+Warp Gate use, and an explicitly parented policy Drone. Its mineral asteroid,
+destructible Fire Tank and Beehive/WarpGate trigger colliders use the same
+CombatWorld as the unbound gameplay skirmish. Use the skirmish run
+configuration as a starting point, change the scene path, remove its
+scripted queues, and supply genuine model/learner settings and per-team model
+slots as for the policy duel. Example ship values and reward baselines are
+authored demonstration inputs, not measured Unity parity.
+
 Native PPO ships require explicitly authored group/reward inputs; the
 runtime rejects missing group agents, inconsistent team/frame/authority,
 or policy scene edits that change fixed initial membership after its
 baselines are supplied. Initial static level obstacles can be authored in
-the scene before those baselines are installed. Full special-ability and
-carrier policy control, exact source reward parity, end-to-end learner
-qualification and complete campaign parity remain open work. Legacy
-exported scenes and training models still load through the same launcher;
+the scene before those baselines are installed. Native-authored policy
+specials, healing, mining, warp and Carrier child relationships now use the
+shared live combat rules. Factory/other unported ship behaviors, exact source
+reward parity, end-to-end learner qualification and complete campaign parity
+remain open work. Legacy exported scenes and training models still load
+through the same launcher;
 no second training-only combat implementation is introduced.
 
 ## Native tactical view (development)
