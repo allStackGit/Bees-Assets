@@ -42,10 +42,19 @@ def source_config(path: Path, manifest: Path, output: Path) -> dict:
     if not isinstance(config.get("run_id"), str) or not config["run_id"].strip():
         raise ValueError("native run requires a nonempty run_id")
     base = path.parent
-    for key in ("collision_matrix", "stage_palette", "policy_worker"):
-        if not isinstance(config.get(key), str) or not config[key]:
-            raise ValueError(f"run configuration requires {key}")
-        config[key] = resolved(base, config[key])
+    if config.get("native_stage") is not None:
+        if not isinstance(config["native_stage"], dict) or any(
+            key in config for key in ("collision_matrix", "stage_palette")
+        ):
+            raise ValueError("native_stage cannot be combined with exported Stage asset paths")
+    else:
+        for key in ("collision_matrix", "stage_palette"):
+            if not isinstance(config.get(key), str) or not config[key]:
+                raise ValueError(f"run configuration requires {key} or native_stage")
+            config[key] = resolved(base, config[key])
+    if not isinstance(config.get("policy_worker"), str) or not config["policy_worker"]:
+        raise ValueError("run configuration requires policy_worker")
+    config["policy_worker"] = resolved(base, config["policy_worker"])
     if (config.get("hivemind") is not None or config.get("recover_notifications")
             or config.get("recover_outcome_journals")):
         previous = config.get("connection_checkpoint")
