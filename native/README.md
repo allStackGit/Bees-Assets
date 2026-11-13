@@ -23,6 +23,20 @@ HiveMind recovery and reconnection use their original configured checkpoint
 and journal paths. A fresh HiveMind run with `--output-dir` owns its own
 checkpoint and journal in that directory.
 
+For headless multi-arena policy rollouts, set `"physics_workers": 4` in
+the run configuration to fan out independent physical Levels **after**
+one batched model inference. The default is one worker, which preserves
+the original serial/client path. Worker threads are created per model
+step, so this is intended for sufficiently expensive arenas; compare
+`world_steps_per_execution_second` at fixed allocations before keeping
+it enabled. The `interval` and `run_final` reports include worker
+counts, total worker elapsed time, and rounds serialized to preserve
+source Stage squad IDs when living Scouts could spawn Beacon children.
+An active Scout forces source-ordered physical execution for that round;
+model inference, recording, and HiveMind outcome persistence are never
+performed by worker threads. Use the same run config, seeds, and model
+manifest when comparing the serial and parallel settings.
+
 To choose among local battle configurations in a window, create a catalog:
 
 ```json
