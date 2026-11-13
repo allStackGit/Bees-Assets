@@ -52,7 +52,7 @@ def native_source_contract_sha256(path: Path) -> str:
         raise ValueError("distributed native source contract requires fresh model-only Levels")
 
     file_cache = {}
-    def sha_file(value, *, python_source=False):
+    def sha_file(value, *, python_source=False, json_source=False):
         if not isinstance(value, str) or not value:
             raise ValueError("native source contract requires a real local source file")
         file = Path(value)
@@ -61,12 +61,20 @@ def native_source_contract_sha256(path: Path) -> str:
         file = file.resolve(strict=True)
         if file not in file_cache:
             file_cache[file] = {}
-        kind = "python" if python_source else "bytes"
+        kind = "python" if python_source else "json" if json_source else "bytes"
         if kind not in file_cache[file]:
-            file_cache[file][kind] = (
-                normalized_python_source_sha256(file)
-                if python_source else file_sha256(file)
-            )
+            if python_source:
+                digest = normalized_python_source_sha256(file)
+            elif json_source:
+                # Git CRLF checkouts, indentation and field order must not
+                # prevent equivalent native Stage/scene JSON from sharing
+                # one learning task. Hash the parsed source values exactly.
+                document = json.loads(file.read_text(encoding="utf-8"))
+                packed = json.dumps(document, sort_keys=True, separators=(",", ":"))
+                digest = hashlib.sha256(packed.encode("utf-8")).hexdigest()
+            else:
+                digest = file_sha256(file)
+            file_cache[file][kind] = digest
         return file_cache[file][kind]
 
     # Output journals, interpreter installation, and model locations are
@@ -84,13 +92,13 @@ def native_source_contract_sha256(path: Path) -> str:
     )
     for key in ("collision_matrix", "stage_palette"):
         if key in portable and portable[key] is not None:
-            portable[key] = {"source_sha256": sha_file(portable[key])}
+            portable[key] = {"source_sha256": sha_file(portable[key], json_source=True)}
     portable["levels"] = []
     for level in source["levels"]:
         if not isinstance(level, dict) or not isinstance(level.get("scene"), str):
             raise ValueError("native source contract requires every Level scene")
         row = dict(level)
-        row["scene"] = {"source_sha256": sha_file(level["scene"])}
+        row["scene"] = {"source_sha256": sha_file(level["scene"], json_source=True)}
         portable["levels"].append(row)
     payload = json.dumps(portable, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
