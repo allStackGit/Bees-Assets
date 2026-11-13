@@ -63,12 +63,18 @@ def source_inputs(suite_file: Path, suite: dict):
         suite_file, suite["reference_manifest"], suite["reference_manifest_sha256"],
     )
     reference_data = json.loads(read_bounded(reference, 131072))
+    reference_models = reference_data.get("models")
     if (reference_data.get("format") != "bees-native-model-v1" or
             reference_data.get("abi_version") != 26 or
-            not isinstance(reference_data.get("models"), list) or
-            sum(model.get("slot") == suite["learner_slot"]
-                for model in reference_data["models"]) != 1):
-        raise ValueError("Native holdout reference must contain one v26 learner slot.")
+            not isinstance(reference_models, list) or not reference_models or
+            any(not isinstance(model, dict) or type(model.get("slot")) is not int or
+                not 0 <= model["slot"] < (1 << 32)
+                for model in reference_models)):
+        raise ValueError("Native holdout reference requires real v26 model slots.")
+    reference_slots = {model["slot"] for model in reference_models}
+    if (len(reference_slots) != len(reference_models) or
+            suite["learner_slot"] not in reference_slots):
+        raise ValueError("Native holdout reference has duplicate or missing model slots.")
     config = json.loads(read_bounded(run_file, 8 * 1024 * 1024))
     if (not isinstance(config, dict) or not isinstance(config.get("native_stage"), dict) or
             not isinstance(config.get("levels"), list) or not config["levels"] or
@@ -110,6 +116,8 @@ def source_inputs(suite_file: Path, suite: dict):
         for side, teams in teams_by_side.items():
             for team in teams:
                 model_slot = routed.get(str(team))
+                if type(model_slot) is not int or model_slot not in reference_slots:
+                    raise ValueError("Native evaluation Level refers to an unavailable model slot.")
                 if side == suite["learner_side"] and model_slot != suite["learner_slot"]:
                     raise ValueError("Evaluation learner side is not controlled by the learner slot.")
                 if side != suite["learner_side"] and model_slot == suite["learner_slot"]:
