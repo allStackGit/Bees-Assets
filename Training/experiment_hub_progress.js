@@ -94,7 +94,7 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'training_tuner_adjustments','training_tuner_accepted',
             'training_tuner_settled',
             'training_cpu_parallelism','training_queue_max_seconds',
-            'training_finish_gap_seconds','training_last_finished_worker'])
+            'training_reply_gap_seconds','training_last_reply_worker'])
             retain(name,reported[name]);
         // Show measured stage pressure before unrelated high-cardinality
         // project metrics consume the default 96-chart-field cache.
@@ -106,7 +106,7 @@ function selectChartMetrics(reported,observed,preferred,stepsCompleted) {
             'pipeline_remote_wait_dominant',
             'training_queue_pressure','training_final_join_pressure',
             'training_parallelism_underuse_evidence',
-            'training_queue_work_share','training_finish_gap_work_share',
+            'training_queue_work_share','training_reply_gap_work_share',
             'training_timing_sample_count',
             'pipeline_merge_dominant','pipeline_collection_dominant',
             'pipeline_optimization_dominant','pipeline_remote_wait_work_share',
@@ -381,11 +381,11 @@ class BottleneckEvidence {
             const count=metrics.training_lineage_workers.value;
             const wall=seconds('training_batch_wall_seconds');
             const queue=seconds('training_queue_max_seconds');
-            const gap=seconds('training_finish_gap_seconds');
+            const gap=seconds('training_reply_gap_seconds');
             const queueShare=queue!==null&&queue<=wall?queue/wall:null;
             const gapShare=gap!==null&&gap<=wall?gap/wall:null;
             if(queueShare!==null)add('training_queue_work_share',queueShare);
-            if(gapShare!==null)add('training_finish_gap_work_share',gapShare);
+            if(gapShare!==null)add('training_reply_gap_work_share',gapShare);
             const stageHints=[];
             for(let i=0;i<count;i++) {
                 const collect=seconds('worker_'+i+'_collection_seconds');
