@@ -496,11 +496,8 @@ pub trait NativeLevelCommandContext {
         // Keep re-rasterizing when any static geometry is present because
         // it may move or be destroyed, but do not rebuild the full grid on
         // every queued path request while the world stays static-empty.
-        let revision = combat.static_navigation_revision();
-        let moving_static = combat.has_moving_static_navigation_obstacles();
         let navigation = self.navigation_mut();
-        let refresh_static = moving_static ||
-            navigation.world_static_revision() != Some(revision);
+        let refresh_static = combat.static_navigation_needs_refresh(navigation);
         combat.refresh_world_navigation(navigation, refresh_static, asteroids)?;
         let mut jobs = 0;
         while combat.solve_next_world_navigation_job(navigation)?.is_some() {
