@@ -65,6 +65,9 @@ impl ReinforcementWave {
         }
     }
 
+    pub(crate) fn is_campaign_triggered(&self) -> bool {
+        matches!(self.due, ReinforcementDue::CampaignCue(_))
+    }
     pub(crate) fn squad_count(&self) -> usize { self.squads.len() }
     pub(crate) fn ship_count(&self) -> usize { self.ships.len() }
 }

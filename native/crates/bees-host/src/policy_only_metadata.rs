@@ -475,8 +475,10 @@ impl NativeLevelCommandContext for NativePolicyOnlyMetadata {
         self.advance_source_scripted(world, events, random, completed_tick)
     }
 
-    fn scripted_queue_measurements(&self) -> NativeScriptedQueueMeasurements {
-        self.current_scripted_queue_measurements()
+    fn scripted_queue_measurements(
+        &self, tick: u64, roster: &NativeSquadRoster,
+    ) -> NativeScriptedQueueMeasurements {
+        self.current_scripted_queue_measurements(tick, roster)
     }
 
     fn next_reinforcement_tick(&self) -> Option<u64> {
@@ -496,6 +498,10 @@ impl NativeLevelCommandContext for NativePolicyOnlyMetadata {
                 .map(|wave| wave.squad_count()).sum(),
             pending_ships: self.reinforcements.iter()
                 .map(|wave| wave.ship_count()).sum(),
+            waiting_for_campaign_cue: self.reinforcements.iter()
+                .filter(|wave| wave.is_campaign_triggered()).count(),
+            timed_waves: self.reinforcements.iter()
+                .filter(|wave| !wave.is_campaign_triggered()).count(),
         }
     }
 

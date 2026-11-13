@@ -141,6 +141,9 @@ pub struct NativeReinforcementGauges {
     pub pending_waves: usize,
     pub pending_squads: usize,
     pub pending_ships: usize,
+    /// These are subsets of pending_waves, not additional waves.
+    pub timed_waves: usize,
+    pub waiting_for_campaign_cue: usize,
 }
 
 impl NativeReinforcementGauges {
@@ -148,6 +151,8 @@ impl NativeReinforcementGauges {
         self.pending_waves += other.pending_waves;
         self.pending_squads += other.pending_squads;
         self.pending_ships += other.pending_ships;
+        self.timed_waves += other.timed_waves;
+        self.waiting_for_campaign_cue += other.waiting_for_campaign_cue;
     }
 }
 
@@ -179,6 +184,11 @@ impl NativePlayerChaseMeasurements {
 pub struct NativeScriptedQueueMeasurements {
     pub active_queues: usize,
     pub pending_orders: usize,
+    /// Exclusive queue categories sampled from real roster and World time.
+    pub waiting_for_campaign_cue: usize,
+    pub waiting_for_deployment: usize,
+    pub waiting_for_start_time: usize,
+    pub ready_queues: usize,
     pub commands_started: u64,
     pub orders_skipped_target_gone: u64,
     pub queues_completed: u64,
@@ -190,6 +200,10 @@ impl NativeScriptedQueueMeasurements {
     pub fn merge(&mut self, other: Self) {
         self.active_queues += other.active_queues;
         self.pending_orders += other.pending_orders;
+        self.waiting_for_campaign_cue += other.waiting_for_campaign_cue;
+        self.waiting_for_deployment += other.waiting_for_deployment;
+        self.waiting_for_start_time += other.waiting_for_start_time;
+        self.ready_queues += other.ready_queues;
         self.commands_started += other.commands_started;
         self.orders_skipped_target_gone += other.orders_skipped_target_gone;
         self.queues_completed += other.queues_completed;
@@ -242,7 +256,9 @@ pub trait NativeLevelCommandContext {
         _completed_tick: u64,
     ) -> Result<u64, NativeLevelEventError> { Ok(0) }
 
-    fn scripted_queue_measurements(&self) -> NativeScriptedQueueMeasurements {
+    fn scripted_queue_measurements(
+        &self, _tick: u64, _roster: &NativeSquadRoster,
+    ) -> NativeScriptedQueueMeasurements {
         NativeScriptedQueueMeasurements::default()
     }
 

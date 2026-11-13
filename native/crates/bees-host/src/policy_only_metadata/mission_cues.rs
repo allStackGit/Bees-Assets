@@ -14,15 +14,11 @@ use serde::{Deserialize, Serialize};
 pub enum NativeMissionCue {
     FireTankSpotted,
     FireTankDestroyed,
-    MinesweeperVictory,
-    MinesweeperDefeat,
     UploadTen,
     UploadTwentyFour,
     UploadFifty,
     UploadSeventyFive,
     UploadNinety,
-    BeenocularsVictory,
-    BeenocularsDefeat,
 }
 
 impl NativeMissionCue {
@@ -30,27 +26,21 @@ impl NativeMissionCue {
         matches!((self, cue),
             (Self::FireTankSpotted, CampaignCue::FireTankSpotted { .. }) |
             (Self::FireTankDestroyed, CampaignCue::FireTankDestroyed { .. }) |
-            (Self::MinesweeperVictory, CampaignCue::MinesweeperVictory) |
-            (Self::MinesweeperDefeat, CampaignCue::MinesweeperDefeat) |
             (Self::UploadTen, CampaignCue::BeenocularsUpload(UploadMilestone::Ten)) |
             (Self::UploadTwentyFour, CampaignCue::BeenocularsUpload(UploadMilestone::TwentyFour)) |
             (Self::UploadFifty, CampaignCue::BeenocularsUpload(UploadMilestone::Fifty)) |
             (Self::UploadSeventyFive, CampaignCue::BeenocularsUpload(UploadMilestone::SeventyFive)) |
-            (Self::UploadNinety, CampaignCue::BeenocularsUpload(UploadMilestone::Ninety)) |
-            (Self::BeenocularsVictory, CampaignCue::BeenocularsVictory) |
-            (Self::BeenocularsDefeat, CampaignCue::BeenocularsDefeat)
+            (Self::UploadNinety, CampaignCue::BeenocularsUpload(UploadMilestone::Ninety))
         )
     }
 
     pub(crate) fn valid_for(self, spec: Option<CampaignDialogueSpec>) -> bool {
         match spec {
             Some(CampaignDialogueSpec::TitaniaMinesweeper { .. }) =>
-                matches!(self, Self::FireTankSpotted | Self::FireTankDestroyed |
-                    Self::MinesweeperVictory | Self::MinesweeperDefeat),
+                matches!(self, Self::FireTankSpotted | Self::FireTankDestroyed),
             Some(CampaignDialogueSpec::TitaniaBeenoculars { .. }) =>
                 matches!(self, Self::UploadTen | Self::UploadTwentyFour |
-                    Self::UploadFifty | Self::UploadSeventyFive | Self::UploadNinety |
-                    Self::BeenocularsVictory | Self::BeenocularsDefeat),
+                    Self::UploadFifty | Self::UploadSeventyFive | Self::UploadNinety),
             None => false,
         }
     }

@@ -240,13 +240,22 @@ impl NativePolicyOnlyMetadata {
     }
 
     pub(super) fn current_scripted_queue_measurements(
-        &self,
+        &self, tick: u64, roster: &NativeSquadRoster,
     ) -> bees_gameplay::level_rules::NativeScriptedQueueMeasurements {
         let mut counts = self.scripted_counts;
         counts.active_queues = self.scripted_queues.len();
-        counts.pending_orders = self.scripted_queues.iter()
-            .map(|state| state.orders.len().saturating_sub(state.cursor))
-            .sum();
+        for state in &self.scripted_queues {
+            counts.pending_orders += state.orders.len().saturating_sub(state.cursor);
+            if !state.cue_armed {
+                counts.waiting_for_campaign_cue += 1;
+            } else if roster.get(state.owner).is_none() {
+                counts.waiting_for_deployment += 1;
+            } else if tick < state.ready_tick {
+                counts.waiting_for_start_time += 1;
+            } else {
+                counts.ready_queues += 1;
+            }
+        }
         counts
     }
 

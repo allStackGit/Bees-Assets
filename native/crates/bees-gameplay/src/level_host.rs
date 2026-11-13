@@ -1215,7 +1215,9 @@ impl NativeLevelBatchDriver {
                 slot.perception.candidate_measurements(),
             );
             status.scripted_queues.merge(
-                world.state.metadata.scripted_queue_measurements(),
+                world.state.metadata.scripted_queue_measurements(
+                    world.tick(), events.roster(),
+                ),
             );
             status.navigation_jobs_completed += world.state.navigation_jobs_completed();
             let (waiting, queue_slots) = world.state.combat.navigation_queue_gauges();
