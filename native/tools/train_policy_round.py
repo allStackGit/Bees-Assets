@@ -388,6 +388,10 @@ def run_parallel_rollouts(shards, command, manifest_sha, diagnostics):
                     )
                 if len(metrics) != len(shards):
                     time.sleep(0.1)
+            if len(shards) == 1:
+                # Retain the historical single-process receipt layout while
+                # giving it the same supervised process-tree lifetime.
+                return metrics[0]
             return combined_rollout_metrics(
                 [metrics[index] for index in range(len(shards))],
                 time.perf_counter() - started,
@@ -679,18 +683,9 @@ def main() -> None:
                       "seed_offset": args.seed_offset,
                       "input_manifest_sha256": input_manifest_sha,
                       "input_checkpoint_sha256": input_checkpoint_sha}), flush=True)
-    def run_shard(item):
-        shard, shard_path = item
-        run_stage([*command, str(shard_path)],
-                  shard_path.with_name("rollout.log") if args.stage_diagnostics else None)
-        return rollout_metrics(Path(shard["rollout_summary"]), shard, input_manifest_sha)
-
-    if workers == 1:
-        rollout = run_shard(shards[0])
-    else:
-        rollout = run_parallel_rollouts(
-            shards, command, input_manifest_sha, args.stage_diagnostics,
-        )
+    rollout = run_parallel_rollouts(
+        shards, command, input_manifest_sha, args.stage_diagnostics,
+    )
     if args.collect_only:
         captures = []
         for shard, _ in shards:
