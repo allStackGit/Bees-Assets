@@ -307,12 +307,14 @@ function createNativeBeesAdapter({
         args(parameters, context) {
             const output = jobRoot(context);
             const {config_sha256, seed_offset, rollout_bundles, optimizer_threads, rollout_workers,
-                collection_id, rollout_world_start, rollout_worlds} = parameters;
+                collection_id, rollout_world_start, rollout_worlds,
+                bundle_directory} = parameters;
             const allowed = inboxLearner
                 ? ['config_sha256', 'seed_offset', 'rollout_bundles', 'optimizer_threads']
                 : collectOnly
                     ? ['config_sha256', 'seed_offset', 'rollout_workers',
-                        'collection_id', 'rollout_world_start', 'rollout_worlds']
+                        'collection_id', 'rollout_world_start', 'rollout_worlds',
+                        'bundle_directory']
                     : ['config_sha256', 'seed_offset', 'optimizer_threads', 'rollout_workers'];
             if (Object.keys(parameters).some(key => !allowed.includes(key)) ||
                 config_sha256 !== configSha256 || !Number.isSafeInteger(seed_offset) || seed_offset < 0 ||
@@ -336,9 +338,13 @@ function createNativeBeesAdapter({
                         !Number.isSafeInteger(rollout_worlds) ||
                         rollout_worlds < 1 || rollout_worlds > 1024)) ||
                 (collection_id === undefined &&
-                    (rollout_world_start !== undefined || rollout_worlds !== undefined))
+                    (rollout_world_start !== undefined || rollout_worlds !== undefined ||
+                        bundle_directory !== undefined)) ||
+                (bundle_directory !== undefined &&
+                    (typeof bundle_directory !== 'string' ||
+                        !/^[A-Za-z0-9_-]{1,96}$/.test(bundle_directory) || !inbox))
             ))
-                throw Error('Native distributed work order needs an exact ID and bounded World window.');
+                throw Error('Native distributed work order needs an exact ID, bounded World window and safe inbox name.');
             const activeWorlds = collectOnly && rollout_worlds !== undefined
                 ? rollout_worlds : config.levels?.length;
             if (rollout_workers !== undefined &&
@@ -377,6 +383,9 @@ function createNativeBeesAdapter({
                     '--collection-id', collection_id,
                     '--rollout-world-start', String(rollout_world_start),
                     '--rollout-worlds', String(rollout_worlds),
+                ]),
+                ...(bundle_directory === undefined ? [] : [
+                    '--bundle-delivery-name', bundle_directory,
                 ]),
                 ...(inboxLearner ? bundleArguments(rollout_bundles) : []),
                 '--device', gpu ? 'cuda' : 'cpu',
