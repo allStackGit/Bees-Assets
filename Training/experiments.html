@@ -445,6 +445,7 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
 }
 .hub-progress-plot svg { display: block; width: 100%; height: 330px; max-height: none; }
 .hub-plot-header { display: flex; align-items: center; justify-content: space-between; gap: 8px 16px; flex-wrap: wrap; }
+.hub-plot-toggles { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; }
 .hub-plot-header h3 { margin: 0; font-size: 17px; overflow-wrap: anywhere; }
 .hub-plot-description { margin: 6px 0 10px; font-size: 12px; line-height: 1.45; }
 .hub-plot-average-toggle {
@@ -470,20 +471,35 @@ pre { max-width: 850px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12
     position: absolute;
     z-index: 3;
     pointer-events: none;
-    max-width: 270px;
-    padding: 8px 10px;
+    width: min(460px, calc(100% - 16px));
+    max-width: calc(100% - 16px);
+    max-height: min(65vh, 520px);
+    overflow-y: auto;
+    padding: 9px 12px;
     border: 2px solid var(--ink);
     background: var(--paper);
     box-shadow: 3px 3px 0 #bbb;
-    white-space: pre-line;
+    white-space: normal;
     font: 12px/1.5 Arial, Helvetica, sans-serif;
     overflow-wrap: anywhere;
 }
+.hub-plot-tooltip-heading { font-weight: 900; margin-bottom: 7px; }
+.hub-plot-tooltip-run { padding: 7px 0; border-top: 1px solid var(--ink); }
+.hub-plot-tooltip-run-title {
+    display: flex;
+    align-items: baseline;
+    gap: 7px;
+    font-weight: 800;
+    margin-bottom: 4px;
+}
+.hub-plot-tooltip-detail { display: block; padding-left: 26px; line-height: 1.5; }
 .hub-progress-plot text { font: 13px Arial, Helvetica, sans-serif; fill: #000; }
 .hub-progress-plot .plot-axis { stroke: #000; stroke-width: 2; }
 .hub-progress-plot .plot-grid { stroke: #ddd; stroke-width: 1; }
 .hub-progress-plot .plot-line { fill: none; stroke-width: 3; }
 .hub-progress-plot .plot-average { stroke-width: 2; opacity: .85; }
+.hub-progress-plot .plot-rolling { stroke-width: 2.5; stroke-dasharray: 3 5; fill: none; opacity: .9; }
+.hub-progress-plot .plot-rolling-point { stroke: var(--paper); stroke-width: 1.5; }
 .hub-progress-plot .plot-crosshair { stroke: #555; stroke-width: 1.5; stroke-dasharray: 4 4; }
 .hub-progress-plot .plot-hover-area { cursor: crosshair; }
 .hub-progress-plot .plot-point { stroke: #fff; stroke-width: 1.5; }
