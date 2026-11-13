@@ -4916,8 +4916,8 @@ class ExperimentHub {
         let parent=null,dependency=null,waitingPredecessor=false;
         let dependencyReady=false;
         if(ancestorId!==null) {
-            if(!['tinybrains','courier'].includes(project.id))
-                throw Error('Checkpoint continuation requires the TinyBrains or Courier adapter.');
+            if(!['tinybrains','courier','bees_native'].includes(project.id))
+                throw Error('Checkpoint continuation requires a verified supported learner adapter.');
             if(typeof ancestorId!=='string'||!UUID.test(ancestorId))
                 throw Error('Select a valid predecessor job for continuation.');
             parent=next.jobs.find(j=>j.id===ancestorId);
@@ -4945,7 +4945,7 @@ class ExperimentHub {
                 throw Error('This predecessor already has an active or unresolved successor.');
         }
         if(parent) {
-            const digestField=project.id==='courier'?'config_sha256':'profile_sha256';
+            const digestField=project.id==='tinybrains'?'profile_sha256':'config_sha256';
             const digest=parent.frozen_parameters?.[digestField];
             if(typeof digest!=='string'||digest!==frozen[digestField])
                 throw Error('Checkpoint continuation requires the same approved configuration digest as the predecessor.');
