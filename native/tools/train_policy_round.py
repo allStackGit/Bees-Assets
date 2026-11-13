@@ -613,6 +613,7 @@ def main() -> None:
             if any(bundle["sha256"] != source["sha256"]
                    for bundle, source in zip(pinned, collections)):
                 raise ValueError("imported native rollout receipt differs from its pinned SHA-256")
+            result["collection_orders"] = str(order_path)
             result["collection_orders_sha256"] = file_sha256(order_path)
             result["rollout_metrics"] = aggregate_collection_metrics(collections)
         output.mkdir(parents=True, exist_ok=False)
